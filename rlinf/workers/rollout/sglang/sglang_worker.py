@@ -215,12 +215,6 @@ class AsyncSGLangWorker(SGLangWorker):
         self._sync_weight_end_event = asyncio.Event()
 
         self._reward_model = MathRewardModel(scale=self._cfg.reward.reward_scale)
-
-        self._channel = self.connect_channel(self._cfg.rollout.channel.name)
-
-        # all sglang dp will get input from the same queue, and put the results to another same queue.
-        self._input_queue_name = self._cfg.rollout.channel.queue_name
-        self._output_queue_name = self._cfg.rollout.channel.output_queue_name
         assert self._rollout_batch_size is None, (
             "rollout_batch_size_per_gpu is not supported in AsyncSGLangWorker"
         )
@@ -280,14 +274,12 @@ class AsyncSGLangWorker(SGLangWorker):
         # SGLang does not return input_ids, so we need to pass them for further usage.
         return raw_id, input_ids, result
 
-    async def _put_result_to_output_queue(self, result: RolloutResult):
-        await self._channel.put(
-            item=result, queue_name=self._output_queue_name, async_op=True
-        ).async_wait()
+    async def _put_result(self, result: RolloutResult, output_channel: Channel):
+        await output_channel.put(item=result, async_op=True).async_wait()
 
-    async def rollout(self):
-        rollout_request: RolloutRequest = await self._channel.get(
-            queue_name=self._input_queue_name, async_op=True
+    async def rollout(self, input_channel: Channel, output_channel: Channel):
+        rollout_request: RolloutRequest = await input_channel.get(
+            async_op=True
         ).async_wait()
         self._current_request = rollout_request
         self._completion_info.clear_and_set(rollout_request)
@@ -335,7 +327,7 @@ class AsyncSGLangWorker(SGLangWorker):
                 rollout_result.advantages = advantages
                 return_tasks.append(
                     asyncio.create_task(
-                        self._put_result_to_output_queue(rollout_result)
+                        self._put_result(rollout_result, output_channel)
                     )
                 )
 

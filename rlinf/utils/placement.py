@@ -191,6 +191,9 @@ class ModelParallelComponentPlacement(ComponentPlacement):
             assert self.actor_tp_size >= self.rollout_tp_size, (
                 f"Actor TP size {self.actor_tp_size} must be greater or equal to Rollout TP size {self.rollout_tp_size}."
             )
+            assert self._inference_gpus is None, (
+                "Inference GPUs must not be specified in collocated mode."
+            )
             self._placement_mode = PlacementMode.COLLOCATED
             logging.info("Running in collocated mode")
         elif self._is_disaggregated():
@@ -211,6 +214,13 @@ class ModelParallelComponentPlacement(ComponentPlacement):
         assert self.rollout_tp_size <= self.rollout_world_size, (
             f"Rollout TP size {self.rollout_tp_size} must be less than or equal to Rollout world size {self.rollout_world_size}."
         )
+
+        # Rollout batch size per step
+        # By default (in collocated mode), rollout the whole batch at once
+        self._rollout_batch_size_per_step = self._config.data.rollout_batch_size
+        if self._placement_mode == PlacementMode.DISAGGREGATED:
+            # In disaggregated mode, rollout a single batch every time
+            self._rollout_batch_size_per_step = 1
 
     def _is_collocated(self):
         if self._actor_gpus == self._rollout_gpus:
@@ -264,6 +274,10 @@ class ModelParallelComponentPlacement(ComponentPlacement):
             self._placements["actor"] = PackedPlacementStrategy(
                 self._actor_gpus[0], self._actor_gpus[-1]
             )
+
+    @property
+    def rollout_batch_size_per_step(self) -> int:
+        return self._rollout_batch_size_per_step
 
     @property
     def actor_dp_size(self) -> int:

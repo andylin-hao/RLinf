@@ -73,10 +73,7 @@ from rlinf.utils.utils import (
     seq_mean_token_mean,
     seq_mean_token_sum,
 )
-from rlinf.workers.rollout.utils import (
-    DisaggRankMapper,
-    HybridRankMapper,
-)
+from rlinf.workers.rollout.utils import RankMapper
 
 
 class MegatronActor(MegatronModelManager, Worker):
@@ -96,11 +93,15 @@ class MegatronActor(MegatronModelManager, Worker):
             raise ValueError(f"Role {role} is not defined in the configuration.")
         super().__init__(role_cfg)
         self.cfg = cfg
+        self.component_placement = placement
 
+        # Data configurations
         self.response_len = (
             role_cfg.model.encoder_seq_length - cfg.data.max_prompt_length
         )
+        self.average_response_len = self.response_len
 
+        # Algo configurations
         self.calculate_entropy = self.cfg.algorithm.calculate_entropy
         self.calculate_entropy_loss = (
             self.cfg.algorithm.entropy_bonus > 0 and self.calculate_entropy
@@ -109,11 +110,9 @@ class MegatronActor(MegatronModelManager, Worker):
         self.logprob_forward_micro_batch_size = (
             self.cfg.algorithm.logprob_forward_micro_batch_size
         )
-
         self.kl_beta = self.cfg.algorithm.kl_beta
         self.kl_penalty_type = self.cfg.algorithm.kl_penalty_type
         self.clip_ratio_c = self.cfg.algorithm.clip_ratio_c
-
         if self.cfg.algorithm.loss_agg_func == "token-mean":
             self.loss_agg_func = masked_mean
         elif self.cfg.algorithm.loss_agg_func == "seq-mean-token-sum":
@@ -125,29 +124,33 @@ class MegatronActor(MegatronModelManager, Worker):
                 f"algorithm.loss_agg_func={self.cfg.algorithm.loss_agg_func} is not supported!"
             )
 
+        # Actor configurations
         self.enable_dynamic_batch_size = self.cfg.runner.enable_dynamic_batch_size
         self.max_tokens_per_mbs = self.cfg.runner.max_tokens_per_mbs
-
-        self.ref_policy_state_dict = None
-
         self.offload_optimizer = self.cfg.actor.offload_optimizer
         self.offload_weight = self.cfg.actor.offload_weight
         self.offload_grad = self.cfg.actor.offload_grad
 
+        self.ref_policy_state_dict = None
+
+        # Reward configurations
         if not self.cfg.reward.use_reward_model:
             assert self.cfg.reward.reward_type == "math", "only support math"
             self.reward_fn = math_verify_call
 
+        # Rollout configurations
         self._rollout_group_name = self.cfg.rollout.group_name
 
+        # Data I/O configurations
+        self._num_rollout_results_per_step = (
+            self.cfg.data.rollout_batch_size
+            // self.component_placement.rollout_batch_size_per_step
+        )
         self._is_data_io_rank = (
             parallel_state.get_tensor_model_parallel_rank() == 0
             and parallel_state.get_context_parallel_rank() == 0
             and parallel_state.get_pipeline_model_parallel_rank() == 0
         )
-
-        self.component_placement = placement
-
         if self.component_placement.placement_mode == PlacementMode.DISAGGREGATED:
             self.batch_iterator = BatchResizingIterator(
                 fetch_batch_fn=self.get_batch_fn,
@@ -155,10 +158,7 @@ class MegatronActor(MegatronModelManager, Worker):
                 global_batch_size_per_dp=role_cfg.global_batch_size
                 // parallel_state.get_data_parallel_world_size(),
             )
-
             self._batch_buffer_for_metrics: List[RolloutResult] = []
-
-        self.average_respone_len = self.response_len
 
         self._init_profiler()
 
@@ -638,7 +638,7 @@ class MegatronActor(MegatronModelManager, Worker):
         if self.cfg.algorithm.use_valid_token_scale:
             if pipeline_func:
                 self.global_valid_token = (
-                    self.average_respone_len
+                    self.average_response_len
                     * get_num_microbatches()
                     * self.cfg.actor.micro_batch_size
                 )
@@ -726,7 +726,7 @@ class MegatronActor(MegatronModelManager, Worker):
         rollout_metrics = compute_rollout_metrics_pipeline(
             rollout_metrics, self.cfg.data.max_prompt_length, self.response_len
         )
-        self.average_respone_len = rollout_metrics["response_length"]
+        self.average_response_len = rollout_metrics["response_length"]
 
         return rollout_metrics, training_metrics_list
 
@@ -789,7 +789,16 @@ class MegatronActor(MegatronModelManager, Worker):
             compute_ref_logprobs: Whether to compute reference logprobs.
         """
         if input_channel is not None:
-            self.rollout_batches, _ = self._get_rollout_result(input_channel)
+            self.rollout_batches, answers = self._get_rollout_result(input_channel)
+
+        if self.offload_weight:
+            self.onload_model_weights_and_grad(load_grad=self.offload_grad)
+        if self.offload_optimizer:
+            self.onload_megatron_optimizer()
+
+        # Rule-based reward
+        if not self.cfg.reward.use_reward_model:
+            self._compute_rewards(answers)
 
         def extract_batch_keys(
             rollout_batches, keys=("input_ids", "attention_mask", "position_ids")
@@ -888,29 +897,10 @@ class MegatronActor(MegatronModelManager, Worker):
 
     def _setup_rollout_weight_dst_ranks(self):
         """Setup destination ranks for token and weight communication."""
-        if self.component_placement._placement_mode == PlacementMode.COLLOCATED:
-            self._weight_dst_rank_in_rollout = (
-                HybridRankMapper.get_actor_rank_to_rollout_rank(
-                    self._rank,
-                    self.component_placement.actor_tp_size,
-                    self.component_placement.actor_pp_size,
-                    self.component_placement.rollout_tp_size,
-                    self.component_placement.actor_world_size,
-                )
-            )
-        else:
-            assert (
-                self.component_placement._placement_mode == PlacementMode.DISAGGREGATED
-            ), "Unsupported placement mode for token and weight destination ranks."
-            self._weight_dst_rank_in_rollout = (
-                DisaggRankMapper.get_actor_rank_to_rollout_ranks(
-                    self.component_placement.actor_tp_size,
-                    self.component_placement.actor_pp_size,
-                    self.component_placement.actor_world_size,
-                    self.component_placement.rollout_tp_size,
-                    self.component_placement.rollout_world_size,
-                )[self._rank]
-            )
+        rank_map = RankMapper.get_actor_rank_to_rollout_rank_map(
+            self.component_placement
+        )
+        self._weight_dst_rank_in_rollout = rank_map[self._rank]
         self.log_info(
             f"Actor rank {self._rank} will send weights to {self._weight_dst_rank_in_rollout}"
         )
@@ -1038,21 +1028,3 @@ class MegatronActor(MegatronModelManager, Worker):
         )
 
         self.rollout_batches.update({"reward_scores": all_reward_scores})
-
-    def compute_rewards(self, input_channel: Channel, output_channel: Channel):
-        """Compute rewards for the rollout results.
-
-        Args:
-            input_channel: The input channel for the rollout results.
-            output_channel: The output channel for the computed rewards. Used by independent reward worker. Not used for actor/inference.
-        """
-
-        self.rollout_batches, answers = self._get_rollout_result(input_channel)
-
-        if self.offload_weight:
-            self.onload_model_weights_and_grad(load_grad=self.offload_grad)
-        if self.offload_optimizer:
-            self.onload_megatron_optimizer()
-
-        if not self.cfg.reward.use_reward_model:
-            self._compute_rewards(answers)

@@ -24,7 +24,7 @@ from torchdata.stateful_dataloader import StatefulDataLoader
 from tqdm import tqdm
 
 from rlinf.data.io_struct import RolloutRequest
-from rlinf.scheduler import Channel, Worker
+from rlinf.scheduler import Channel
 from rlinf.utils.data_iter_utils import split_list
 from rlinf.utils.distributed import ScopedTimer
 from rlinf.utils.metric_logger import MetricLogger
@@ -53,31 +53,23 @@ class MathRunner:
         rollout: SGLangWorker,
         inference: Optional[MegatronInference],
         actor: MegatronActor,
-        reward: Optional[Worker] = None,
     ):
         """"""
         self.cfg = cfg
         self.component_placement = placement
         self.has_dedicated_inference = inference is not None
-        self.has_dedicated_reward = reward is not None
 
         # Workers
         self.rollout = rollout
         self.actor = actor
         # Collocated mode uses actor as inference
         self.inference = inference if self.has_dedicated_inference else self.actor
-        # Must be set after inference is set
-        self.reward = reward if self.has_dedicated_reward else self.inference
 
         # Data channels
         self.dataloader_channel = Channel.create("DataLoader")
         self.rollout_channel = Channel.create("Rollout")
         self.inference_channel = (
             Channel.create("Inference") if self.has_dedicated_inference else None
-        )
-        # Must be set after inference
-        self.reward_channel = (
-            Channel.create("Reward") if self.has_dedicated_reward else None
         )
         self.actor_channel = Channel.create("Actor")
 
@@ -125,7 +117,8 @@ class MathRunner:
 
         self.train_dataloader = StatefulDataLoader(
             dataset=self.train_dataset,
-            batch_size=self.cfg.data.rollout_batch_size,
+            batch_size=self.cfg.data.rollout_batch_size
+            * self.cfg.algorithm.get("max_num_gen_batches", 1),
             num_workers=num_workers,
             drop_last=True,
             collate_fn=collate_fn,
@@ -175,8 +168,6 @@ class MathRunner:
         self.actor.init_worker().wait()
         if self.has_dedicated_inference:
             self.inference.init_worker().wait()
-        if self.has_dedicated_reward:
-            self.reward.init_worker().wait()
 
         if self.cfg.runner.resume_dir is None:
             return
@@ -325,15 +316,9 @@ class MathRunner:
                             output_channel=self.rollout_channel,
                         )
 
-                        # Reward (Delegated by inference/actor if it's not a real model)
-                        self.reward.compute_rewards(
-                            input_channel=self.rollout_channel,
-                            output_channel=self.reward_channel,
-                        )
-
                         # Inference prev/ref logprobs
                         self.inference.run_inference(
-                            input_channel=self.reward_channel,
+                            input_channel=self.rollout_channel,
                             output_channel=self.inference_channel,
                             recompute_logprobs=self.recompute_logprobs,
                             compute_ref_logprobs=self.compute_ref_logprobs,
