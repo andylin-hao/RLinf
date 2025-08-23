@@ -163,37 +163,35 @@ class SGLangWorker(Worker):
         self._engine.sync_hf_weight()
 
     def rollout(self, input_channel: Channel, output_channel: Channel):
-        while True:
-            request: RolloutRequest = input_channel.get()
+        request: RolloutRequest = input_channel.get()
 
-            # Check if rollout has ended
-            if request is None:
-                self._stop()
-                break
+        # Repeat prompts based on the group_size config
+        requests = request.repeat_and_split(self._rollout_batch_size)
 
-            # Repeat prompts based on the group_size config
-            requests = request.repeat_and_split(self._rollout_batch_size)
+        rollout_results = []
+        for request in requests:
+            # Generate outputs using the SGLang engine.
+            results = self._engine.generate(
+                input_ids=request.input_ids,
+                sampling_params=self._sampling_params,
+                return_logprob=self._return_logprobs,
+            )
 
-            rollout_results = []
-            for request in requests:
-                # Generate outputs using the SGLang engine.
-                results = self._engine.generate(
-                    input_ids=request.input_ids,
-                    sampling_params=self._sampling_params,
-                    return_logprob=self._return_logprobs,
-                )
+            # Create RolloutResult from the outputs.
+            rollout_result = RolloutResult.from_engine_results(
+                results, request.input_ids, request.answers, self._return_logprobs
+            )
+            rollout_results.append(rollout_result)
 
-                # Create RolloutResult from the outputs.
-                rollout_result = RolloutResult.from_engine_results(
-                    results, request.input_ids, request.answers, self._return_logprobs
-                )
-                rollout_results.append(rollout_result)
+            # Put and print results
+            if self._cfg.rollout.print_outputs:
+                prompts = self._tokenizer.batch_decode(request.input_ids)
+                print_sglang_outputs(prompts, results, self._tokenizer)
 
-                # Put and print results
-                if self._cfg.rollout.print_outputs:
-                    prompts = self._tokenizer.batch_decode(request.input_ids)
-                    print_sglang_outputs(prompts, results, self._tokenizer)
-            output_channel.put(rollout_results)
+        # Stop and offload SGLang first before putting into channel
+        # This avoids running SGLang and Megatron simultaneously
+        self._stop()
+        output_channel.put(rollout_results)
 
 
 def all_floats_equal(float_list: list[float], epsilon: float = 1e-9) -> bool:
