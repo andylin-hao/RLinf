@@ -68,8 +68,10 @@ class MathRunner:
         # Data channels
         self.dataloader_channel = Channel.create("DataLoader")
         self.rollout_channel = Channel.create("Rollout")
-        self.inference_channel = (
-            Channel.create("Inference") if self.has_dedicated_inference else None
+        # Create a local channel (i.e., a channel that is different in every process)
+        # if inference is not a dedicated worker
+        self.inference_channel = Channel.create(
+            "Inference", local=not self.has_dedicated_inference
         )
         self.actor_channel = Channel.create("Actor")
 

@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import copy
-from typing import List
+from typing import Dict, List, Tuple
 
 import torch
 import torch.distributed
@@ -139,14 +139,14 @@ class MegatronActor(MegatronModelManager, Worker):
             self.reward_fn = math_verify_call
 
         # Rollout configurations
-        self._rollout_group_name = self.cfg.rollout.group_name
+        self.rollout_group_name = self.cfg.rollout.group_name
 
         # Data I/O configurations
-        self._num_rollout_results_per_step = (
+        self.num_rollout_results_per_step = (
             self.cfg.data.rollout_batch_size
             // self.component_placement.rollout_batch_size_per_step
         )
-        self._is_data_io_rank = (
+        self.is_data_io_rank = (
             parallel_state.get_tensor_model_parallel_rank() == 0
             and parallel_state.get_context_parallel_rank() == 0
             and parallel_state.get_pipeline_model_parallel_rank() == 0
@@ -672,6 +672,7 @@ class MegatronActor(MegatronModelManager, Worker):
 
     def run_training(self, input_channel: Channel):
         """Run the training loop for the actor."""
+        self.rollout_batches = input_channel.get()
         set_train(self)
         configure_batch_sizes(
             rank=torch.distributed.get_rank(),
@@ -788,66 +789,61 @@ class MegatronActor(MegatronModelManager, Worker):
             recompute_logprobs: Whether to recompute prev logprobs.
             compute_ref_logprobs: Whether to compute reference logprobs.
         """
-        if input_channel is not None:
-            self.rollout_batches, answers = self._get_rollout_result(input_channel)
+        for _ in range(self.num_rollout_results_per_step):
+            rollout_batches, inference_batch, rollout_answers = (
+                self._get_rollout_result(input_channel)
+            )
 
-        if self.offload_weight:
-            self.onload_model_weights_and_grad(load_grad=self.offload_grad)
-        if self.offload_optimizer:
-            self.onload_megatron_optimizer()
+            if self.offload_weight:
+                self.onload_model_weights_and_grad(load_grad=self.offload_grad)
+            if self.offload_optimizer:
+                self.onload_megatron_optimizer()
 
-        # Rule-based reward
-        if not self.cfg.reward.use_reward_model:
-            self._compute_rewards(answers)
+            # Rule-based reward
+            if not self.cfg.reward.use_reward_model:
+                self._compute_rewards(rollout_batches, rollout_answers)
 
-        def extract_batch_keys(
-            rollout_batches, keys=("input_ids", "attention_mask", "position_ids")
-        ):
-            return {k: rollout_batches[k] for k in keys if k in rollout_batches}
+            # Prev logprobs
+            if recompute_logprobs:
+                rollout_batches["prev_logprobs"] = self.inference_step(inference_batch)
 
-        batch = extract_batch_keys(self.rollout_batches)
+            # Ref logprobs
+            if compute_ref_logprobs:
+                assert self.ref_policy_state_dict is not None
+                with cpu_weight_swap(self.model[0], self.ref_policy_state_dict):
+                    rollout_batches["ref_logprobs"] = self.inference_step(
+                        inference_batch
+                    )
 
-        # Prev logprobs
-        if recompute_logprobs:
-            self.rollout_batches["prev_logprobs"] = self.inference_step(batch)
+            self._compute_advantages_and_returns(rollout_batches)
 
-        # Ref logprobs
-        if compute_ref_logprobs:
-            assert self.ref_policy_state_dict is not None
-            with cpu_weight_swap(self.model[0], self.ref_policy_state_dict):
-                self.rollout_batches["ref_logprobs"] = self.inference_step(batch)
-
-        self._compute_advantages_and_returns()
-
-        if output_channel is not None:
-            output_channel.put(self.rollout_batches)
+            output_channel.put(rollout_batches)
 
     # Advantages and returns
-    def _compute_advantages_and_returns(self):
+    def _compute_advantages_and_returns(self, rollout_batches: Dict[str, torch.Tensor]):
         """Compute the advantages and returns for the rollout batches."""
         clear_memory()
-        assert self.rollout_batches is not None
-        mask = self.rollout_batches["attention_mask"][:, -self.response_len :]
-        advantages, returns = calculate_adv_and_returns(
+        assert rollout_batches is not None
+        mask = rollout_batches["attention_mask"][:, -self.response_len :]
+        advantages, _ = calculate_adv_and_returns(
             self.cfg.algorithm.adv_type,
-            self.rollout_batches["reward_scores"].cuda(),
+            rollout_batches["reward_scores"].cuda(),
             mask.cuda(),
             self.cfg.algorithm.group_size,
         )
 
         if self.cfg.algorithm.normalize_advantages:
             advantages = masked_normalization(advantages, mask)
-        self.rollout_batches["advantages"] = advantages
+        rollout_batches["advantages"] = advantages
 
         rollout_metrics, total_prompt_lengths, total_decode_lengths = (
             compute_rollout_metrics(
-                self.rollout_batches, self.cfg.data.max_prompt_length, self.response_len
+                rollout_batches, self.cfg.data.max_prompt_length, self.response_len
             )
         )
 
         rollout_metrics = cpu_dict(rollout_metrics)
-
-        self.rollout_batches.pop("reward_scores")
+        rollout_batches.pop("reward_scores")
 
         if self.cfg.actor.get("calculate_flops", False):
             total_generation_tflops = (
@@ -878,8 +874,8 @@ class MegatronActor(MegatronModelManager, Worker):
             )
 
         if self.cfg.actor.get("enable_dp_load_balance", False):
-            self.rollout_batches = RolloutDataBalance.from_rollout_batches(
-                rollout_batches=self.rollout_batches,
+            rollout_batches = RolloutDataBalance.from_rollout_batches(
+                rollout_batches=rollout_batches,
                 dp_world_size=parallel_state.get_data_parallel_world_size(),
                 dp_rank=parallel_state.get_data_parallel_rank(),
                 dp_group=parallel_state.get_data_parallel_group(),
@@ -919,9 +915,7 @@ class MegatronActor(MegatronModelManager, Worker):
                 self.offload_model_weights_and_grad(offload_grad=self.offload_grad)
 
             handle = {k: reduce_tensor(v) for k, v in self.reshard_state_dict.items()}
-            self.send(
-                handle, self._rollout_group_name, self._weight_dst_rank_in_rollout
-            )
+            self.send(handle, self.rollout_group_name, self._weight_dst_rank_in_rollout)
         else:
             assert (
                 self.component_placement._placement_mode == PlacementMode.DISAGGREGATED
@@ -933,11 +927,13 @@ class MegatronActor(MegatronModelManager, Worker):
             for weight_dst_rank in self._weight_dst_rank_in_rollout:
                 self.send(
                     self.reshard_state_dict,
-                    self._rollout_group_name,
+                    self.rollout_group_name,
                     weight_dst_rank,
                 )
 
-    def _get_rollout_result(self, rollout_channel: Channel):
+    def _get_rollout_result(
+        self, rollout_channel: Channel
+    ) -> Tuple[RolloutResult, Dict[str, torch.Tensor], Dict[str, torch.Tensor]]:
         """Receive rollout results from the rollout channel."""
         num_results_per_actor_dp = (
             self.component_placement.rollout_dp_size
@@ -945,7 +941,7 @@ class MegatronActor(MegatronModelManager, Worker):
         )
 
         # Retrieve rollout results
-        if self._is_data_io_rank:
+        if self.is_data_io_rank:
             rollout_results = []
             for _ in range(num_results_per_actor_dp):
                 # Each result is a list of RolloutResult because of rollout_batch_size_per_gpu
@@ -968,29 +964,33 @@ class MegatronActor(MegatronModelManager, Worker):
             group=parallel_state.get_context_parallel_group(),
         )
 
-        # Flatten rollout results
-        rollout_results = [
-            rollout_result
-            for rollout_dp_results in rollout_results
-            for rollout_result in rollout_dp_results
-        ]
         rollout_result = RolloutResult.merge_result_list(rollout_results)
         self.log_debug(f"Received {rollout_result.num_sequence} responses")
 
-        return rollout_result.to_actor_batch(
+        train_batch = rollout_result.to_actor_batch(
             self.cfg.data.max_prompt_length,
             self.cfg.actor.model.encoder_seq_length,
             self.tokenizer.eos_token_id,
-        ), rollout_result.answers
+        )
+
+        inference_batch = {
+            "input_ids": train_batch["input_ids"],
+            "attention_mask": train_batch["attention_mask"],
+            "position_ids": train_batch["position_ids"],
+        }
+
+        return train_batch, inference_batch, rollout_result.answers
 
     # Reward
-    def _compute_rewards(self, answers: List[str]):
+    def _compute_rewards(
+        self, rollout_batches: Dict[str, torch.Tensor], answers: List[str]
+    ):
         """Reward computation using non-model based reward."""
         all_reward_scores = []
         texts = []
         for response, response_len in zip(
-            self.rollout_batches["input_ids"],
-            self.rollout_batches["response_lengths"],
+            rollout_batches["input_ids"],
+            rollout_batches["response_lengths"],
         ):
             response = response[
                 self.cfg.data.max_prompt_length : self.cfg.data.max_prompt_length
@@ -1027,4 +1027,4 @@ class MegatronActor(MegatronModelManager, Worker):
             broadcast_tensor_within_mp(all_reward_scores).flatten().to("cpu")
         )
 
-        self.rollout_batches.update({"reward_scores": all_reward_scores})
+        rollout_batches.update({"reward_scores": all_reward_scores})

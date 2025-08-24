@@ -220,7 +220,7 @@ class ModelParallelComponentPlacement(ComponentPlacement):
         self._rollout_batch_size_per_step = self._config.data.rollout_batch_size
         if self._placement_mode == PlacementMode.DISAGGREGATED:
             # In disaggregated mode, rollout a single batch every time
-            self._rollout_batch_size_per_step = 1
+            self._rollout_batch_size_per_step = 1 * self.rollout_dp_size
 
     def _is_collocated(self):
         if self._actor_gpus == self._rollout_gpus:

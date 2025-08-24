@@ -884,13 +884,3 @@ class Worker(metaclass=WorkerMeta):
             node_port=node_port,
             available_gpus=self._available_gpus,
         )
-
-    def is_data_io_rank(self) -> bool:
-        """Check if the worker is the rank for performing data I/O.
-
-        Returns:
-            bool: True if the worker is the data I/O rank, False otherwise.
-        """
-        raise NotImplementedError(
-            f"{self.is_data_io_rank.__name__} should be implemented in the a worker class. It is used to determine if the worker is the data I/O rank. Usually this means the model parallel source rank."
-        )

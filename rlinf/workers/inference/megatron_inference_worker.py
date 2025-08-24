@@ -129,7 +129,7 @@ class MegatronInference(MegatronActor):
             self.cfg.inference = merged_cfg
 
     def _log_on_model0(self, message: str, debug: bool = False):
-        if self._is_data_io_rank:
+        if self.is_data_io_rank:
             if debug:
                 self.log_debug(message)
             else:
@@ -199,7 +199,7 @@ class MegatronInference(MegatronActor):
 
     def _recv_rollout_results(self):
         """Receive rollout results."""
-        if self._is_data_io_rank:
+        if self.is_data_io_rank:
             recv_result: RolloutResult = self._data_server.get(
                 queue_name=self._input_queue_name
             )
@@ -234,7 +234,7 @@ class MegatronInference(MegatronActor):
                         recv_result, should_compute_ref_logprobs
                     )
 
-                if self._is_data_io_rank:
+                if self.is_data_io_rank:
                     with self._timer("put_inference_results"):
                         recv_result.prev_logprobs = rollout_batch["prev_logprobs"].cpu()
                         if rollout_batch.get("ref_logprobs", None) is not None:

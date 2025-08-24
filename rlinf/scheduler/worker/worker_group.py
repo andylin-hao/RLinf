@@ -76,16 +76,6 @@ class WorkerGroup(Generic[WorkerClsType]):
         """Get the list of workers in the group."""
         return self._workers
 
-    @property
-    def data_io_ranks(self) -> List[int]:
-        """Get the ranks of workers that are used for data I/O operations."""
-        if self._data_io_ranks is None:
-            is_data_io_ranks = self.is_data_io_rank().wait()
-            self._data_io_ranks = [
-                idx for idx, is_data_io in enumerate(is_data_io_ranks) if is_data_io
-            ]
-        return self._data_io_ranks
-
     def launch(
         self: "WorkerGroup[WorkerClsType]",
         cluster: Cluster,

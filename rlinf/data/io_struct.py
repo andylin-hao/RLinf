@@ -272,6 +272,8 @@ class RolloutResult:
     def merge_result_list(
         rollout_results: List["RolloutResult"],
     ) -> "RolloutResult":
+        if len(rollout_results) == 1:
+            return rollout_results[0]
         merged_result = RolloutResult(
             num_sequence=sum(res.num_sequence for res in rollout_results),
             prompt_lengths=[],

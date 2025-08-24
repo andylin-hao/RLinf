@@ -191,7 +191,8 @@ class SGLangWorker(Worker):
         # Stop and offload SGLang first before putting into channel
         # This avoids running SGLang and Megatron simultaneously
         self._stop()
-        output_channel.put(rollout_results)
+        rollout_result = RolloutResult.merge_result_list(rollout_results)
+        output_channel.put(rollout_result)
 
 
 def all_floats_equal(float_list: list[float], epsilon: float = 1e-9) -> bool:
