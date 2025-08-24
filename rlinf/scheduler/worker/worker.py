@@ -581,17 +581,17 @@ class Worker(metaclass=WorkerMeta):
     def create_channel(
         self,
         channel_name: str,
-        group_affinity: Optional[str] = None,
-        group_rank_affinity: Optional[int | List[int]] = None,
+        gpu_id: int = 0,
         maxsize: int = 0,
+        local: bool = False,
     ):
         """Create a new channel with the specified placement rank and maximum size.
 
         Args:
             channel_name (str): The name of the channel.
-            group_affinity (str): The name of the group you wish to place the channel data. Defaults to None, which means the channel will be placed on the first rank.
-            group_rank_affinity (int | List[int]): The rank of the group you wish to place the channel data.
+            gpu_id (int): The global ID of the GPU in the cluster where the channel will be created.
             maxsize (int): The maximum size of the channel queue. Defaults to 0 (unbounded).
+            local (bool): Create the channel for intra-process communication. Cannot be connected by other workers.
 
         Returns:
             Channel: A new instance of the Channel class.
@@ -599,12 +599,8 @@ class Worker(metaclass=WorkerMeta):
         """
         from ..channel.channel import Channel
 
-        return Channel._create_in_worker(
-            current_worker=self,
-            channel_name=channel_name,
-            group_name_affinity=group_affinity,
-            group_rank_affinity=group_rank_affinity,
-            maxsize=maxsize,
+        return Channel.create(
+            name=channel_name, gpu_id=gpu_id, maxsize=maxsize, local=local
         )
 
     def connect_channel(self, channel_name: str):
