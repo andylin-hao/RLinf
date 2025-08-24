@@ -172,6 +172,7 @@ class RolloutResult:
     """
 
     num_sequence: int
+    group_size: int
     prompt_lengths: List[int]
     prompt_ids: List[List[int]]
     response_lengths: List[int]
@@ -188,6 +189,10 @@ class RolloutResult:
     rollout_logprobs: Optional[List[List[float]]] = None
     prev_logprobs: Optional[torch.Tensor] = None
     ref_logprobs: Optional[torch.Tensor] = None
+
+    @property
+    def batch_size(self):
+        return self.num_sequence // self.group_size
 
     @staticmethod
     def _get_attention_masks_and_position_ids(
@@ -229,6 +234,7 @@ class RolloutResult:
     @staticmethod
     def from_engine_results(
         results: List[Dict],
+        group_size: int,
         input_ids: List[List[int]],
         answers: Optional[List[List[int]]] = None,
         return_logprobs: bool = False,
@@ -251,6 +257,7 @@ class RolloutResult:
         ), "Input IDs should be a list of lists."
         result = RolloutResult(
             num_sequence=len(results),
+            group_size=group_size,
             prompt_lengths=[len(input_id) for input_id in input_ids],
             prompt_ids=input_ids,
             response_lengths=[len(res["output_ids"]) for res in results],
@@ -272,10 +279,12 @@ class RolloutResult:
     def merge_result_list(
         rollout_results: List["RolloutResult"],
     ) -> "RolloutResult":
+        assert len(rollout_results) > 0, "No rollout results to merge."
         if len(rollout_results) == 1:
             return rollout_results[0]
         merged_result = RolloutResult(
             num_sequence=sum(res.num_sequence for res in rollout_results),
+            group_size=rollout_results[0].group_size,
             prompt_lengths=[],
             prompt_ids=[],
             response_lengths=[],
@@ -411,10 +420,10 @@ class RolloutResult:
             batch["advantages"] = advantages.cuda()
 
         if self.prev_logprobs is not None:
-            batch["prev_logprobs"] = self.prev_logprobs
+            batch["prev_logprobs"] = self.prev_logprobs.cuda()
 
         if self.ref_logprobs is not None:
-            batch["ref_logprobs"] = self.ref_logprobs
+            batch["ref_logprobs"] = self.ref_logprobs.cuda()
 
         if self.rollout_logprobs is not None:
             logprobs = batch_pad_to_fixed_len(
@@ -427,6 +436,20 @@ class RolloutResult:
             )
             batch["prev_logprobs"] = logprobs.cuda()
 
+        return batch
+
+    @staticmethod
+    def batch_to_cpu(batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+        for k, v in batch.items():
+            if isinstance(v, torch.Tensor):
+                batch[k] = v.cpu()
+        return batch
+
+    @staticmethod
+    def batch_to_cuda(batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+        for k, v in batch.items():
+            if isinstance(v, torch.Tensor):
+                batch[k] = v.cuda()
         return batch
 
     @staticmethod

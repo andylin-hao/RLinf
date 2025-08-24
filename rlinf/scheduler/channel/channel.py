@@ -239,6 +239,11 @@ class Channel:
         else:
             self._local_channel_id = None
 
+    @property
+    def is_local(self):
+        """Check if the channel is a local channel."""
+        return self._local_channel is not None
+
     def create_queue(self, queue_name: str, maxsize: int = 0):
         """Create a new queue in the channel. No effect if a queue with the same name already exists.
 
