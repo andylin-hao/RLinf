@@ -20,7 +20,6 @@ import torch.distributed
 from megatron.core import parallel_state
 from megatron.core.num_microbatches_calculator import get_num_microbatches
 from megatron.core.pipeline_parallel.schedules import get_forward_backward_func
-from megatron.core.utils import divide
 from megatron.training.training import unwrap_model
 from megatron.training.utils import average_losses_across_data_parallel_group
 from omegaconf import DictConfig
@@ -49,7 +48,6 @@ from rlinf.utils.distributed import (
     broadcast_tensor_within_mp,
     broadcast_tensor_within_pp,
     compute_rollout_metrics,
-    compute_rollout_metrics_pipeline,
     masked_normalization,
     vocab_parallel_entropy_and_log_probs,
     vocab_parallel_log_probs_from_logits,
@@ -163,7 +161,50 @@ class MegatronActor(MegatronModelManager, Worker):
                 global_batch_size_per_dp=role_cfg.global_batch_size
                 // parallel_state.get_data_parallel_world_size(),
             )
-            self._batch_buffer_for_metrics: List[RolloutResult] = []
+
+        # Create GLOO MP group for broadcast
+        self._mp_group_ranks = parallel_state._MODEL_PARALLEL_GLOBAL_RANKS
+        self._cp_group_ranks = parallel_state._CONTEXT_PARALLEL_GLOBAL_RANKS
+
+        self._init_profiler()
+
+    def _init_profiler(self):
+        def _validate_schedule_info():
+            assert (
+                self.cfg.actor.megatron.profiler.schedule_warmup is not None
+                and self.cfg.actor.megatron.profiler.schedule_warmup >= 0
+            ), "<schedule_warmup> must be set and greater than 0 when using profiler."
+            assert (
+                self.cfg.actor.megatron.profiler.schedule_active is not None
+                and self.cfg.actor.megatron.profiler.schedule_active > 0
+            ), "<schedule_active> must be set and greater than 0 when using profiler."
+
+        self.use_profiler = self.cfg.actor.megatron.use_profiler
+
+        # here we should validate profiler's schedule info
+        if self.use_profiler:
+            _validate_schedule_info()
+        self.profiler = (
+            PyTorchProfiler.from_config(self.cfg.actor.megatron.profiler)
+            if self.use_profiler
+            else None
+        )
+        self._forward_only_record = PyTorchProfilerFunc(
+            "forward_only", self.use_profiler
+        )
+        self._dynamic_batch_processing_record = PyTorchProfilerFunc(
+            "dynamic_batch_processing", self.use_profiler
+        )
+        self._static_batch_processing_record = PyTorchProfilerFunc(
+            "static_batch_processing", self.use_profiler
+        )
+        self._broadcast_outputs_record = PyTorchProfilerFunc(
+            "broadcast_outputs", self.use_profiler
+        )
+
+        self._megatron_forward_backward_record = PyTorchProfilerFunc(
+            "megatron_forward_backward", self.use_profiler
+        )
 
         self._init_profiler()
 
@@ -237,10 +278,6 @@ class MegatronActor(MegatronModelManager, Worker):
                 inference_reshard_config
             )
             self._setup_inference_weight_dst_ranks()
-
-        # Create GLOO MP group for broadcast
-        self._mp_group_ranks = parallel_state._MODEL_PARALLEL_GLOBAL_RANKS
-        self._cp_group_ranks = parallel_state._CONTEXT_PARALLEL_GLOBAL_RANKS
 
         torch.distributed.barrier()
 
@@ -588,47 +625,23 @@ class MegatronActor(MegatronModelManager, Worker):
         return outputs
 
     # Training
-    def get_batch_fn(self):
+    def get_batch_fn(self) -> Dict[str, torch.Tensor]:
         if (
             parallel_state.get_pipeline_model_parallel_rank() == 0
             and parallel_state.get_tensor_model_parallel_rank() == 0
         ):
-            result: RolloutResult = self._data_channel.get(queue_name=self._queue_name)
-            torch.distributed.broadcast_object_list(
-                [result],
-                device=torch.cuda.current_device(),
-                src=parallel_state.get_tensor_model_parallel_src_rank(),
-                group=parallel_state.get_tensor_model_parallel_group(),
-            )
-            self._batch_buffer_for_metrics.append(result)
-
-            batch = result.to_actor_batch(
-                self.cfg.data.max_prompt_length,
-                self.cfg.runner.seq_length,
-                pad_token=self.tokenizer.eos_token_id,
-            )
-            batch["prev_logprobs"] = result.prev_logprobs
-            batch["ref_logprobs"] = result.ref_logprobs
-            return batch
+            batch = self.data_channel.get()
+            batch = [batch]
         else:
-            results: List[RolloutResult] = [None]
-            torch.distributed.broadcast_object_list(
-                results,
-                device=torch.cuda.current_device(),
-                src=parallel_state.get_tensor_model_parallel_src_rank(),
-                group=parallel_state.get_tensor_model_parallel_group(),
-            )
+            batch = [None]
 
-            self._batch_buffer_for_metrics.append(results[0])
-            batch = results[0].to_actor_batch(
-                self.cfg.data.max_prompt_length,
-                self.cfg.runner.seq_length,
-                pad_token=self.tokenizer.eos_token_id,
-            )
-            batch["prev_logprobs"] = results[0].prev_logprobs
-            batch["ref_logprobs"] = results[0].ref_logprobs
-
-            return batch
+        torch.distributed.broadcast_object_list(
+            batch,
+            device=torch.cuda.current_device(),
+            src=parallel_state.get_model_parallel_src_rank(),
+            group=parallel_state.get_model_parallel_group(),
+        )
+        return batch[0]
 
     def training_step(self, batch, pipeline_func: bool = False):
         """Run a single training step on the model.
@@ -678,7 +691,6 @@ class MegatronActor(MegatronModelManager, Worker):
 
     def run_training(self, input_channel: Channel):
         """Run the training loop for the actor."""
-        self.rollout_batches = input_channel.get()
         set_train(self)
         configure_batch_sizes(
             rank=torch.distributed.get_rank(),
@@ -686,56 +698,37 @@ class MegatronActor(MegatronModelManager, Worker):
             gbs=self.cfg.actor.global_batch_size,
             dp=parallel_state.get_data_parallel_world_size(),
         )
-        rollout_size = self.rollout_batches["input_ids"].size(0)
-        num_microbatches = divide(
-            rollout_size,
-            self.cfg.actor.global_batch_size
-            // parallel_state.get_data_parallel_world_size(),
-        )
+        if not input_channel.is_local:
+            return self.run_training_pipeline(input_channel)
+
+        train_batch = input_channel.get()
         rollout_dataloader_iter = get_iterator_k_split(
-            batch=self.rollout_batches,
-            num_microbatches=num_microbatches,
+            batch=train_batch,
+            num_splits=self.cfg.algorithm.n_minibatches,
             shuffle=self.cfg.algorithm.get("shuffle_rollout", True),
             shuffle_seed=self.cfg.actor.seed,
         )
         training_metrics_list = []
 
         if self.use_profiler:
-            self.profiler.init_fwd_bwd_schedule(num_microbatches)
+            self.profiler.init_fwd_bwd_schedule(self.cfg.algorithm.n_minibatches)
         for batch in rollout_dataloader_iter:
             training_metrics = self.training_step(batch)
             training_metrics_list.append(training_metrics)
 
         return training_metrics_list
 
-    def run_training_pipeline(self):
-        set_train(self)
-        configure_batch_sizes(
-            rank=torch.distributed.get_rank(),
-            mbs=self.cfg.actor.micro_batch_size,
-            gbs=self.cfg.actor.global_batch_size,
-            dp=parallel_state.get_data_parallel_world_size(),
-        )
-        self.log_info(
-            f"run_training_pipeline: mbs={self.cfg.actor.micro_batch_size}, gbs={self.cfg.actor.global_batch_size}, dp={parallel_state.get_data_parallel_world_size()}, n_mbs={get_num_microbatches()}"
-        )
-
+    def run_training_pipeline(self, input_channel: Channel):
+        self.data_channel = input_channel
         num_opt_step = self.cfg.algorithm.n_minibatches
-        self._batch_buffer_for_metrics.clear()
 
         training_metrics_list = []
-        for _ in range(num_opt_step):
+        for i in range(num_opt_step):
             batch = self.batch_iterator
             training_metrics = self.training_step(batch, pipeline_func=True)
             training_metrics_list.append(training_metrics)
 
-        rollout_metrics = RolloutResult.to_metrics(self._batch_buffer_for_metrics)
-        rollout_metrics = compute_rollout_metrics_pipeline(
-            rollout_metrics, self.cfg.data.max_prompt_length, self.response_len
-        )
-        self.average_response_len = rollout_metrics["response_length"]
-
-        return rollout_metrics, training_metrics_list
+        return training_metrics_list
 
     # Inference
     @torch.no_grad()
@@ -832,10 +825,13 @@ class MegatronActor(MegatronModelManager, Worker):
             if rollout_result.advantages is None:
                 self._compute_advantages_and_returns(train_batch)
 
-            if not output_channel.is_local:
+            if output_channel.is_local:
+                output_channel.put(train_batch)
+            else:
                 # Avoid storing CUDA tensors if the channel is living on another GPU
                 train_batch = RolloutResult.batch_to_cpu(train_batch)
-            output_channel.put(train_batch)
+                if self.is_data_io_rank:
+                    output_channel.put(train_batch)
 
     # Advantages and returns
     def _compute_advantages_and_returns(self, train_batch: Dict[str, torch.Tensor]):

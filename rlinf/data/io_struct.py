@@ -536,7 +536,7 @@ class BatchResizingIterator:
             ].shape[0]
             self.current_iter = get_iterator_k_split(
                 self.current_batch,
-                num_microbatches=fetch_batch_size // self.micro_batch_size,
+                num_splits=fetch_batch_size // self.micro_batch_size,
             )
 
         self.micro_batch_counter += 1
