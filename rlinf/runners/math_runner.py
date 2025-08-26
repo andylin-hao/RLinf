@@ -193,14 +193,14 @@ class MathRunner:
 
     def _compute_flops_metrics(self, time_metrics, act_rollout_metrics) -> dict:
         rollout_time = time_metrics.get("rollout")
-        inference_time = time_metrics.get("prev_logprobs")
-        training_time = time_metrics.get("actor_training")
+        inference_time = time_metrics.get("inference")
+        training_time = time_metrics.get("training")
 
         num_gpus_actor = self.component_placement.actor_world_size
         num_gpus_inference = self.component_placement.inference_world_size
         num_gpus_rollout = self.component_placement.rollout_world_size
 
-        generation_tflops = act_rollout_metrics["generation_tflops"]
+        rollout_tflops = act_rollout_metrics["rollout_tflops"]
         inference_tflops = act_rollout_metrics["inference_tflops"]
         training_tflops = act_rollout_metrics["training_tflops"]
 
@@ -209,9 +209,9 @@ class MathRunner:
             "inference_tflops_per_gpu": 0.0,
             "training_tflops_per_gpu": 0.0,
         }
-        if rollout_time > 0 and generation_tflops > 0:
+        if rollout_time > 0 and rollout_tflops > 0:
             flops_metrics["rollout_tflops_per_gpu"] = (
-                generation_tflops / rollout_time / num_gpus_rollout
+                rollout_tflops / rollout_time / num_gpus_rollout
             )
 
         if inference_time > 0 and inference_tflops > 0:
@@ -302,32 +302,39 @@ class MathRunner:
                     with self.timer("prepare_data"):
                         self._put_batch(batch)
 
-                    with self.timer("sync_weights_to_rollout"):
+                    with self.timer("sync_weights"):
                         self._sync_weights()
 
-                    # generate response and compute rule-based rewards.
-                    with self.timer("rollout"):
-                        self._sync_weights()
+                    # Rollout
+                    rollout_handle = self.rollout.rollout(
+                        input_channel=self.dataloader_channel,
+                        output_channel=self.rollout_channel,
+                    )
 
-                        # Rollout
-                        self.rollout.rollout(
-                            input_channel=self.dataloader_channel,
-                            output_channel=self.rollout_channel,
-                        )
-
+                    if self.recompute_logprobs:
                         # Inference prev/ref logprobs
-                        self.inference.run_inference(
+                        infer_handle = self.inference.run_inference(
                             input_channel=self.rollout_channel,
                             output_channel=self.inference_channel,
-                            recompute_logprobs=self.recompute_logprobs,
                             compute_ref_logprobs=self.compute_ref_logprobs,
                         )
+                        inference_channel = self.inference_channel
+                    else:
+                        infer_handle = None
+                        inference_channel = self.rollout_channel
 
-                        # Actor training
-                        self.actor.run_training(
-                            input_channel=self.inference_channel
-                        ).wait()
-                        logging.info("Run training done")
+                    # Actor training
+                    actor_handle = self.actor.run_training(
+                        input_channel=inference_channel
+                    )
+
+                    with self.timer("training"):
+                        with self.timer("inference"):
+                            with self.timer("rollout"):
+                                rollout_handle.wait()
+                            if infer_handle is not None:
+                                infer_handle.wait()
+                        metrics = actor_handle.wait()
 
                     self.global_steps += 1
 
@@ -356,38 +363,36 @@ class MathRunner:
                         )
                         return
 
-                self.timer.consume_durations()
-                # logging_steps = (
-                #     self.global_steps - 1
-                # ) * self.cfg.algorithm.n_minibatches
-                # # add prefix to the metrics
-                # log_time_metrics = {f"time/{k}": v for k, v in time_metrics.items()}
-                # rollout_metrics = {
-                #     f"rollout/{k}": v for k, v in actor_rollout_metrics[0].items()
-                # }
+                time_metrics = self.timer.consume_durations()
+                logging_steps = (
+                    self.global_steps - 1
+                ) * self.cfg.algorithm.n_minibatches
+                # add prefix to the metrics
+                log_time_metrics = {f"time/{k}": v for k, v in time_metrics.items()}
+                rollout_metrics = {f"rollout/{k}": v for k, v in metrics[0][0].items()}
 
-                # self.metric_logger.log(log_time_metrics, logging_steps)
-                # self.metric_logger.log(rollout_metrics, logging_steps)
-                # for i in range(self.cfg.algorithm.n_minibatches):
-                #     training_metrics = {
-                #         f"train/{k}": v for k, v in actor_training_metrics[0][i].items()
-                #     }
-                #     self.metric_logger.log(training_metrics, logging_steps + i)
+                self.metric_logger.log(log_time_metrics, logging_steps)
+                self.metric_logger.log(rollout_metrics, logging_steps)
+                for i in range(self.cfg.algorithm.n_minibatches):
+                    training_metrics = {
+                        f"train/{k}": v for k, v in metrics[0][1][i].items()
+                    }
+                    self.metric_logger.log(training_metrics, logging_steps + i)
 
-                # logging_metrics = time_metrics
+                logging_metrics = time_metrics
 
-                # if self.cfg.actor.get("calculate_flops", False):
-                #     flops_metrics = self._compute_flops_metrics(
-                #         time_metrics, actor_rollout_metrics[0]
-                #     )
-                #     flops_metrics = {f"flops/{k}": v for k, v in flops_metrics.items()}
-                #     self.metric_logger.log(flops_metrics, logging_steps)
-                #     logging_metrics.update(flops_metrics)
+                if self.cfg.actor.get("calculate_flops", False):
+                    flops_metrics = self._compute_flops_metrics(
+                        time_metrics, metrics[0][0]
+                    )
+                    flops_metrics = {f"flops/{k}": v for k, v in flops_metrics.items()}
+                    self.metric_logger.log(flops_metrics, logging_steps)
+                    logging_metrics.update(flops_metrics)
 
-                # logging_metrics.update(actor_rollout_metrics[0])
-                # logging_metrics.update(actor_training_metrics[0][-1])
+                logging_metrics.update(metrics[0][0])
+                logging_metrics.update(metrics[0][1][-1])
 
-                # global_pbar.set_postfix(logging_metrics)
+                global_pbar.set_postfix(logging_metrics)
                 global_pbar.update(1)
 
         self.metric_logger.finish()

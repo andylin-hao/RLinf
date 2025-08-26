@@ -279,6 +279,10 @@ class ModelParallelComponentPlacement(ComponentPlacement):
             )
 
     @property
+    def has_dedicated_inference(self):
+        return self._placement_mode == PlacementMode.DISAGGREGATED
+
+    @property
     def rollout_batch_size_per_inference_step(self) -> int:
         return self._rollout_batch_size_per_inference_step
 

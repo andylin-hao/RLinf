@@ -73,17 +73,6 @@ class MegatronInference(MegatronActor):
                 inference_cfg.model.pipeline_model_parallel_size
             )
             merged_cfg.model.sequence_parallel = inference_cfg.model.sequence_parallel
-            merged_cfg.megatron.transformer_impl = "transformer_engine"
-            merged_cfg.megatron.swiglu = True
-            merged_cfg.megatron.untie_embeddings_and_output_weights = True
-            merged_cfg.megatron.padded_vocab_size = merged_cfg.model.override_vocab_size
-            merged_cfg.megatron.make_vocab_size_divisible_by = (
-                merged_cfg.model.make_vocab_size_divisible_by
-            )
-
-            if self.cfg.inference.load_from_actor:
-                merged_cfg.megatron.load = None
-                merged_cfg.megatron.pretrained_checkpoint = None
 
         with open_dict(self.cfg):
             self.cfg.inference = merged_cfg
