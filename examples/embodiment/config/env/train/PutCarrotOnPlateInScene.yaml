@@ -25,4 +25,4 @@ init_params:
   max_episode_steps: 80 # 100
   sensor_configs:
     shader_pack: "default"
-  render_mode: null
+  render_mode: all
