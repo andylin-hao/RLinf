@@ -579,7 +579,7 @@ class MegatronActor(MegatronModelManager, Worker):
         if self.cfg.algorithm.use_valid_token_scale:
             if self.component_placement.placement_mode == PlacementMode.DISAGGREGATED:
                 self.global_valid_token = (
-                    self.average_respone_len
+                    self.average_response_len
                     * get_num_microbatches()
                     * self.cfg.actor.micro_batch_size
                 )
