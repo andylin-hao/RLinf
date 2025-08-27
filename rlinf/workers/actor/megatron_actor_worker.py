@@ -159,16 +159,16 @@ class MegatronActor(MegatronModelManager, Worker):
             cfg=self.cfg,
             get_batch_fn=self.get_batch_fn,
             micro_batch_size=role_cfg.micro_batch_size,
-            global_batch_size_per_dp=self.total_batch_size_per_dp
-            // self.num_train_steps,
+            total_batch_size=self.total_batch_size_per_dp,
+            num_global_batches=self.num_train_steps,
             forward_only=False,
         )
         self.inference_batch_iterator = BatchResizingIterator(
             cfg=self.cfg,
             get_batch_fn=self.get_batch_fn,
             micro_batch_size=self.logprob_forward_micro_batch_size,
-            global_batch_size_per_dp=self.total_batch_size_per_dp
-            // self.num_inference_steps,
+            total_batch_size=self.total_batch_size_per_dp,
+            num_global_batches=self.num_inference_steps,
             forward_only=True,
         )
 
@@ -513,7 +513,7 @@ class MegatronActor(MegatronModelManager, Worker):
         if self.data_channel.is_local:
             # Local channel, every process will put its own data locally
             # No need to broadcast
-            result = self.data_channel.get()
+            result: RolloutResult = self.data_channel.get()
         else:
             if self.is_data_io_rank:
                 result: RolloutResult = self.data_channel.get()
@@ -581,6 +581,7 @@ class MegatronActor(MegatronModelManager, Worker):
         # Global batch iterations
         for _ in range(self.num_train_steps):
             training_metrics = self.training_step(self.train_batch_iterator)
+            self.train_batch_iterator.check_finished_global_batch()
             training_metrics_list.append(training_metrics)
 
         if self.use_profiler:
@@ -697,6 +698,7 @@ class MegatronActor(MegatronModelManager, Worker):
         for _ in range(self.num_inference_steps):
             # Prev logprobs
             prev_logprobs = self.inference_step()
+            self.inference_batch_iterator.check_finished_global_batch()
 
             rollout_result = RolloutResult.merge_result_list(self.rollout_results)
             self.rollout_results.clear()

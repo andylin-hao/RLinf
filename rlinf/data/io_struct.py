@@ -487,7 +487,8 @@ class BatchResizingIterator:
         cfg: DictConfig,
         get_batch_fn: Callable,
         micro_batch_size: int,
-        global_batch_size_per_dp: int,
+        total_batch_size: int,
+        num_global_batches: int,
         forward_only: bool,
         batch_tensor_key: str = "input_ids",
     ):
@@ -503,7 +504,9 @@ class BatchResizingIterator:
         self.cfg = cfg
         self.get_batch_fn = get_batch_fn
         self.micro_batch_size = micro_batch_size
-        self.global_batch_size_per_dp = global_batch_size_per_dp
+        self.num_global_batches = num_global_batches
+        self.total_batch_size = total_batch_size
+        self.global_batch_size = total_batch_size // num_global_batches
         self.forward_only = forward_only
         self.batch_tensor_key = batch_tensor_key
 
@@ -518,7 +521,7 @@ class BatchResizingIterator:
         self.has_enabled_dynamic_batch_size = False
 
         # Iterator states
-        self.recved_batch_size = 0
+        self.consumed_batch_size = 0
         self.micro_batch_iter = iter([])
         self.global_batch_iter = iter([])
         self.prefetch_micro_batch = None  # Used for computing batch info
@@ -526,6 +529,17 @@ class BatchResizingIterator:
         self.current_global_batch = []
         self.previous_global_batch = []
         self.global_batch_handler = None
+
+    def check_finished_global_batch(self):
+        assert self.global_batch_done, (
+            f"Batch iterator has not finished for this global batch, only consumed {self.consumed_batch_size} sequences, expected {self.global_batch_size}"
+        )
+
+    @property
+    def require_full_global_batch(self):
+        return (
+            self.has_enabled_dynamic_batch_size or self.global_batch_handler is not None
+        )
 
     def enable_dynamic_batch_size(
         self,
@@ -559,29 +573,27 @@ class BatchResizingIterator:
             self.prefetch_micro_batch = next(self)
         if self.has_enabled_dynamic_batch_size:
             assert self.dbs_total_seqlen is not None, (
-                "Dynamic batch resizing is not enabled"
+                "Dynamic batch size is not enabled"
             )
-            assert self.dbs_indices is not None, "Dynamic batch resizing is not enabled"
+            assert self.dbs_indices is not None, "Dynamic batch size is not enabled"
             assert self.dbs_n_microbatches is not None, (
-                "Dynamic batch resizing is not enabled"
+                "Dynamic batch size is not enabled"
             )
             return self.dbs_total_seqlen, self.dbs_n_microbatches, self.dbs_indices
         else:
             n_microbatches = (
-                max(1, self.global_batch_size_per_dp // forward_micro_batch_size)
+                max(1, self.global_batch_size // forward_micro_batch_size)
                 if self.forward_only
                 else get_num_microbatches()
             )
-            seqlen = self.prefetch_micro_batch[
-                list(self.prefetch_micro_batch.keys())[0]
-            ].shape[1]
+            seqlen = self.prefetch_micro_batch[self.batch_tensor_key].shape[1]
             total_seqlen = seqlen * forward_micro_batch_size
             return total_seqlen, n_microbatches, None
 
     def replay_last_global_batch(self):
         """Replay the last global batch step from the start. Useful when you wish to run different computations with the last global batch data."""
         assert self.global_batch_done, (
-            f"The last global batch has not been completed yet. Only {self.recved_batch_size} sequences have been processed, expected {self.global_batch_size_per_dp}."
+            f"The last global batch has not been completed yet. Only {self.consumed_batch_size} sequences have been processed, expected {self.global_batch_size}."
         )
         self.micro_batch_iter = iter(self.previous_global_batch)
 
@@ -603,17 +615,17 @@ class BatchResizingIterator:
             self.prefetch_micro_batch = None
         else:
             micro_batch: Dict[str, torch.Tensor] = next(self.micro_batch_iter)
-            self.recved_batch_size += micro_batch[self.batch_tensor_key].shape[0]
+            self.consumed_batch_size += micro_batch[self.batch_tensor_key].shape[0]
             self.current_global_batch.append(micro_batch)
-            if self.recved_batch_size == self.global_batch_size_per_dp:
+            if self.consumed_batch_size == self.global_batch_size:
                 # A global batch has been consumed, store the global batch step history
                 self.previous_global_batch = self.current_global_batch
                 self.current_global_batch = []
-                self.recved_batch_size = 0
+                self.consumed_batch_size = 0
                 self.global_batch_done = True
             else:
-                assert self.recved_batch_size < self.global_batch_size_per_dp, (
-                    f"Recevied batches with a total size of {self.recved_batch_size}, which exceeds the global batch size per dp {self.global_batch_size_per_dp}. This suggests that the configured global batch size cannot be divided by the actual batch size."
+                assert self.consumed_batch_size < self.global_batch_size, (
+                    f"Recevied batches with a total size of {self.consumed_batch_size}, which exceeds the global batch size per dp {self.global_batch_size}. This suggests that the configured global batch size cannot be divided by the actual batch size."
                 )
         return micro_batch
 
@@ -643,17 +655,50 @@ class BatchResizingIterator:
         self.dbs_n_microbatches = n_micro_batch
         return data_iter
 
-    def _split_batch_into_global_batches(self, batch: Dict[str, torch.Tensor]):
+    def _merge_batches(
+        self, batch1: Dict[str, torch.Tensor], batch2: Dict[str, torch.Tensor]
+    ) -> Dict[str, torch.Tensor]:
+        """Merge two batches into one."""
+        merged_batch = {}
+        for key in batch1.keys():
+            assert torch.is_tensor(batch1[key]), (
+                f"Expected tensor for key {key} in batch1, got {type(batch1[key])}"
+            )
+            assert torch.is_tensor(batch2[key]), (
+                f"Expected tensor for key {key} in batch2, got {type(batch2[key])}"
+            )
+            assert batch1[key].shape == batch2[key].shape, (
+                f"Cannot merge batches with different shapes: {batch1[key].shape} vs {batch2[key].shape}"
+            )
+            merged_batch[key] = torch.cat([batch1[key], batch2[key]], dim=0)
+        return merged_batch
+
+    def _fill_global_batches(self, current_batch: Dict[str, torch.Tensor]):
+        """Keep getting batches until the batch size is larger than a global batch if requires_full_global_batch."""
+        current_batch_size = current_batch[self.batch_tensor_key].shape[0]
+        while current_batch_size < self.global_batch_size:
+            new_batch = self.get_batch_fn(self.forward_only)
+            current_batch = self._merge_batches(current_batch, new_batch)
+            current_batch_size = current_batch[self.batch_tensor_key].shape[0]
+        return current_batch, current_batch_size
+
+    def _split_into_global_batches(self, batch: Dict[str, torch.Tensor]):
         """Split a batch into multiple global batches, each of which will be used for one step of inference/training."""
         batch_size = batch[self.batch_tensor_key].shape[0]
-        if batch_size < self.global_batch_size_per_dp:
+        if batch_size < self.global_batch_size:
             # If the batch size is smaller than the global batch size per data parallel group,
-            # we can return the batch as is. This usually occurs in pipelining mode.
-            return iter([batch])
-        assert batch_size % self.global_batch_size_per_dp == 0, (
-            f"Batch size {batch_size} is not divisible by global batch size per dp {self.global_batch_size_per_dp}."
+            # we can return the batch as is if requires_full_global_batch is False. This usually occurs in pipelining mode.
+            if self.require_full_global_batch:
+                batch, batch_size = self._fill_global_batches(batch)
+            else:
+                return iter([batch])
+        assert batch_size % self.global_batch_size == 0, (
+            f"Batch size {batch_size} is not divisible by global batch size per dp {self.global_batch_size}."
         )
-        num_splits = batch_size // self.global_batch_size_per_dp
+        num_splits = batch_size // self.global_batch_size
+        assert num_splits == self.num_global_batches, (
+            f"Expected {self.num_global_batches} global batches, but got {num_splits} with total batch size of {batch_size} and total batch size {self.total_batch_size} and {self.num_global_batches} global batches."
+        )
         return get_iterator_k_split(
             batch,
             num_splits=num_splits,
@@ -674,10 +719,8 @@ class BatchResizingIterator:
                 global_batch = next(self.global_batch_iter)
             except StopIteration:
                 # If both the current micro and global batch iterators are exhausted, fetch a new batch
-                global_batch = self.get_batch_fn(self.forward_only)
-                self.global_batch_iter = self._split_batch_into_global_batches(
-                    global_batch
-                )
+                batch = self.get_batch_fn(self.forward_only)
+                self.global_batch_iter = self._split_into_global_batches(batch)
                 global_batch = next(self.global_batch_iter)
 
             if self.global_batch_handler is not None:
