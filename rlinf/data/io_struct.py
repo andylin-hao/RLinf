@@ -667,16 +667,16 @@ class BatchResizingIterator:
             assert torch.is_tensor(batch2[key]), (
                 f"Expected tensor for key {key} in batch2, got {type(batch2[key])}"
             )
-            assert batch1[key].shape == batch2[key].shape, (
-                f"Cannot merge batches with different shapes: {batch1[key].shape} vs {batch2[key].shape}"
-            )
             merged_batch[key] = torch.cat([batch1[key], batch2[key]], dim=0)
         return merged_batch
 
     def _fill_global_batches(self, current_batch: Dict[str, torch.Tensor]):
-        """Keep getting batches until the batch size is larger than a global batch if requires_full_global_batch."""
+        """Keep getting batches until the batch size is multiple of a global batch if requires_full_global_batch."""
         current_batch_size = current_batch[self.batch_tensor_key].shape[0]
-        while current_batch_size < self.global_batch_size:
+        while (
+            current_batch_size < self.global_batch_size
+            and current_batch_size % self.global_batch_size != 0
+        ):
             new_batch = self.get_batch_fn(self.forward_only)
             current_batch = self._merge_batches(current_batch, new_batch)
             current_batch_size = current_batch[self.batch_tensor_key].shape[0]

@@ -126,7 +126,6 @@ class MegatronActor(MegatronModelManager, Worker):
         self.offload_optimizer = self.cfg.actor.offload_optimizer
         self.offload_weight = self.cfg.actor.offload_weight
         self.offload_grad = self.cfg.actor.offload_grad
-
         self.ref_policy_state_dict = None
 
         # Reward configurations
@@ -576,7 +575,18 @@ class MegatronActor(MegatronModelManager, Worker):
 
         training_metrics_list = []
         self.data_channel = input_channel
-        self.train_batch_iterator.register_global_batch_handler(self.valid_token_scale)
+
+        if self.cfg.algorithm.use_valid_token_scale:
+            if self.component_placement.placement_mode == PlacementMode.DISAGGREGATED:
+                self.global_valid_token = (
+                    self.average_respone_len
+                    * get_num_microbatches()
+                    * self.cfg.actor.micro_batch_size
+                )
+            else:
+                self.train_batch_iterator.register_global_batch_handler(
+                    self.valid_token_scale
+                )
 
         # Global batch iterations
         for _ in range(self.num_train_steps):
@@ -600,24 +610,13 @@ class MegatronActor(MegatronModelManager, Worker):
 
         return rollout_metrics, training_metrics_list
 
-    def valid_token_scale(self, global_batch: Dict[str, torch.Tensor]):
-        if not self.cfg.algorithm.use_valid_token_scale:
-            return global_batch
-        global_batch_size = global_batch["input_ids"].size(0)
-        if global_batch_size < self.total_batch_size_per_dp // self.num_train_steps:
-            self.global_valid_token = (
-                self.average_response_len
-                * get_num_microbatches()
-                * self.cfg.actor.micro_batch_size
-            )
-        else:
-            loss_mask = global_batch["attention_mask"][:, -self.response_len :]
-            global_valid_token = loss_mask.to(dtype=torch.float32).sum().cuda()
-            torch.distributed.all_reduce(
-                global_valid_token, group=parallel_state.get_data_parallel_group()
-            )
-            self.global_valid_token = global_valid_token
-        return global_batch
+    def valid_token_scale(self, batch: Dict[str, torch.Tensor]):
+        loss_mask = batch["attention_mask"][:, -self.response_len :]
+        global_valid_token = loss_mask.to(dtype=torch.float32).sum().cuda()
+        torch.distributed.all_reduce(
+            global_valid_token, group=parallel_state.get_data_parallel_group()
+        )
+        self.global_valid_token = global_valid_token
 
     def dp_load_balance(self, batch: Dict[str, torch.Tensor], batch_size):
         assert batch_size == self.total_batch_size_per_dp, (
