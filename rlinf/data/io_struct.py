@@ -607,7 +607,6 @@ class BatchResizingIterator:
 
     def _get_next_micro_batch(self):
         """Retrieve the next micro batch from the current microbatch iterator."""
-        self.global_batch_done = False
         if self.prefetch_micro_batch is not None:
             # If a microbatch has already been prefetched for batch info computation
             # Return the prefetched microbatch
@@ -615,6 +614,7 @@ class BatchResizingIterator:
             self.prefetch_micro_batch = None
         else:
             micro_batch: Dict[str, torch.Tensor] = next(self.micro_batch_iter)
+            self.global_batch_done = False
             self.consumed_batch_size += micro_batch[self.batch_tensor_key].shape[0]
             self.current_global_batch.append(micro_batch)
             if self.consumed_batch_size == self.global_batch_size:
@@ -682,8 +682,9 @@ class BatchResizingIterator:
             current_batch_size = current_batch[self.batch_tensor_key].shape[0]
         return current_batch, current_batch_size
 
-    def _split_into_global_batches(self, batch: Dict[str, torch.Tensor]):
+    def _get_global_batches(self):
         """Split a batch into multiple global batches, each of which will be used for one step of inference/training."""
+        batch = self.get_batch_fn(self.forward_only)
         batch_size = batch[self.batch_tensor_key].shape[0]
         if batch_size < self.global_batch_size:
             # If the batch size is smaller than the global batch size per data parallel group,
@@ -719,8 +720,7 @@ class BatchResizingIterator:
                 global_batch = next(self.global_batch_iter)
             except StopIteration:
                 # If both the current micro and global batch iterators are exhausted, fetch a new batch
-                batch = self.get_batch_fn(self.forward_only)
-                self.global_batch_iter = self._split_into_global_batches(batch)
+                self.global_batch_iter = self._get_global_batches()
                 global_batch = next(self.global_batch_iter)
 
             if self.global_batch_handler is not None:
