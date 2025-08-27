@@ -686,20 +686,14 @@ class BatchResizingIterator:
         """Split a batch into multiple global batches, each of which will be used for one step of inference/training."""
         batch = self.get_batch_fn(self.forward_only)
         batch_size = batch[self.batch_tensor_key].shape[0]
-        if batch_size < self.global_batch_size:
+        if batch_size % self.global_batch_size != 0:
             # If the batch size is smaller than the global batch size per data parallel group,
             # we can return the batch as is if requires_full_global_batch is False. This usually occurs in pipelining mode.
             if self.require_full_global_batch:
                 batch, batch_size = self._fill_global_batches(batch)
             else:
                 return iter([batch])
-        assert batch_size % self.global_batch_size == 0, (
-            f"Batch size {batch_size} is not divisible by global batch size per dp {self.global_batch_size}."
-        )
         num_splits = batch_size // self.global_batch_size
-        assert num_splits == self.num_global_batches, (
-            f"Expected {self.num_global_batches} global batches, but got {num_splits} with total batch size of {batch_size} and total batch size {self.total_batch_size} and {self.num_global_batches} global batches."
-        )
         return get_iterator_k_split(
             batch,
             num_splits=num_splits,
