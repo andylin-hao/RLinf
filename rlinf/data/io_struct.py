@@ -719,6 +719,9 @@ class BatchResizingIterator:
 
             if self.global_batch_handler is not None:
                 global_batch = self.global_batch_handler(global_batch)
+                assert global_batch is not None, (
+                    f"global batch handler {self.global_batch_handler} must not return None."
+                )
 
             if self.has_enabled_dynamic_batch_size:
                 self.micro_batch_iter = self._dynamic_batch_sizing(global_batch)

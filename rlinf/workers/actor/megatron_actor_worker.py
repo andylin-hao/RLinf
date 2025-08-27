@@ -617,6 +617,7 @@ class MegatronActor(MegatronModelManager, Worker):
             global_valid_token, group=parallel_state.get_data_parallel_group()
         )
         self.global_valid_token = global_valid_token
+        return batch
 
     def dp_load_balance(self, batch: Dict[str, torch.Tensor], batch_size):
         assert batch_size == self.total_batch_size_per_dp, (
