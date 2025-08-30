@@ -71,7 +71,13 @@ class WorkerMeta(type):
             @functools.wraps(func)
             def sync_func(*args, **kwargs):
                 try:
-                    return func(*args, **kwargs)
+                    worker = args[0] if isinstance(args[0], Worker) else None
+                    start_time = time.perf_counter()
+                    outputs = func(*args, **kwargs)
+                    duration = time.perf_counter() - start_time
+                    if worker:
+                        worker._timer_metrics[func.__name__] = duration
+                    return outputs
                 except SystemExit:
                     # Catch SystemExit and log the error
                     raise RuntimeError(
@@ -81,7 +87,13 @@ class WorkerMeta(type):
             @functools.wraps(func)
             async def async_func(*args, **kwargs):
                 try:
-                    return await func(*args, **kwargs)
+                    worker = args[0] if isinstance(args[0], Worker) else None
+                    start_time = time.perf_counter()
+                    outputs = await func(*args, **kwargs)
+                    duration = time.perf_counter() - start_time
+                    if worker:
+                        worker._timer_metrics[func.__name__] = duration
+                    return outputs
                 except SystemExit:
                     # Catch SystemExit and log the error
                     raise RuntimeError(
@@ -350,6 +362,7 @@ class Worker(metaclass=WorkerMeta):
 
         self._actor = None
         self._has_initialized = False
+        self._timer_metrics: Dict[str, float] = {}
         set_new_omegaconf_resolvers()
 
     def __init__(
@@ -884,3 +897,13 @@ class Worker(metaclass=WorkerMeta):
             node_port=node_port,
             available_gpus=self._available_gpus,
         )
+
+    def get_execution_time(self, func_name: str):
+        """Retrieve the execution time of a function.
+
+        Args:
+            func_name (str): The name of the function to retrieve the execution time for.
+        """
+        if func_name not in self._timer_metrics:
+            raise ValueError(f"Function '{func_name}' has not been executed.")
+        return self._timer_metrics[func_name]

@@ -25,6 +25,7 @@ from tqdm import tqdm
 
 from rlinf.data.io_struct import RolloutRequest
 from rlinf.scheduler import Channel
+from rlinf.scheduler import WorkerGroupFuncResult as Handle
 from rlinf.utils.data_iter_utils import split_list
 from rlinf.utils.distributed import ScopedTimer
 from rlinf.utils.metric_logger import MetricLogger
@@ -193,11 +194,10 @@ class MathRunner:
 
     def _compute_flops_metrics(self, time_metrics, act_rollout_metrics) -> dict:
         rollout_time = time_metrics.get("rollout")
-        inference_time = time_metrics.get("inference")
+        inference_time = time_metrics.get("inference", -1)
         training_time = time_metrics.get("training")
 
         num_gpus_actor = self.component_placement.actor_world_size
-        num_gpus_inference = self.component_placement.inference_world_size
         num_gpus_rollout = self.component_placement.rollout_world_size
 
         rollout_tflops = act_rollout_metrics["rollout_tflops"]
@@ -215,6 +215,7 @@ class MathRunner:
             )
 
         if inference_time > 0 and inference_tflops > 0:
+            num_gpus_inference = self.component_placement.inference_world_size
             flops_metrics["inference_tflops_per_gpu"] = (
                 inference_tflops / inference_time / num_gpus_inference
             )
@@ -306,14 +307,14 @@ class MathRunner:
                         self._sync_weights()
 
                     # Rollout
-                    rollout_handle = self.rollout.rollout(
+                    rollout_handle: Handle = self.rollout.rollout(
                         input_channel=self.dataloader_channel,
                         output_channel=self.rollout_channel,
                     )
 
                     if self.recompute_logprobs:
                         # Inference prev/ref logprobs
-                        infer_handle = self.inference.run_inference(
+                        infer_handle: Handle = self.inference.run_inference(
                             input_channel=self.rollout_channel,
                             output_channel=self.inference_channel,
                             compute_ref_logprobs=self.compute_ref_logprobs,
@@ -324,17 +325,14 @@ class MathRunner:
                         inference_channel = self.rollout_channel
 
                     # Actor training
-                    actor_handle = self.actor.run_training(
+                    actor_handle: Handle = self.actor.run_training(
                         input_channel=inference_channel
                     )
 
-                    with self.timer("training"):
-                        with self.timer("inference"):
-                            with self.timer("rollout"):
-                                rollout_handle.wait()
-                            if infer_handle is not None:
-                                infer_handle.wait()
-                        metrics = actor_handle.wait()
+                    metrics = actor_handle.wait()
+                    rollout_handle.wait()
+                    if infer_handle is not None:
+                        infer_handle.wait()
 
                     self.global_steps += 1
 
@@ -364,6 +362,11 @@ class MathRunner:
                         return
 
                 time_metrics = self.timer.consume_durations()
+                time_metrics["training"] = actor_handle.duration
+                time_metrics["rollout"] = rollout_handle.duration
+                if infer_handle is not None:
+                    time_metrics["inference"] = infer_handle.duration
+
                 logging_steps = (
                     self.global_steps - 1
                 ) * self.cfg.algorithm.n_minibatches

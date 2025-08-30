@@ -201,7 +201,7 @@ class ModelParallelComponentPlacement(ComponentPlacement):
                 assert self.inference_tp_size <= self.inference_world_size, (
                     f"Inference TP size {self.inference_tp_size} must be less than or equal to Inference world size {self.inference_world_size}."
                 )
-                assert self.cfg.algorithm.recompute_logprobs, (
+                assert self._config.algorithm.recompute_logprobs, (
                     f"algorithm.recompute_logprobs has been set to false, which disables inference. So inference GPUs {self._inference_gpus} must not be specified."
                 )
             self._placement_mode = PlacementMode.DISAGGREGATED
