@@ -149,7 +149,7 @@ actor:
 
   enable_dp_load_balance: False
 
-  calculate_flops: False
+  calculate_flops: True
 
   seed: 1234
 
