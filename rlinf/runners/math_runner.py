@@ -216,6 +216,8 @@ class MathRunner:
 
         if inference_time > 0 and inference_tflops > 0:
             num_gpus_inference = self.component_placement.inference_world_size
+            if num_gpus_inference == 0:
+                num_gpus_inference = self.component_placement.actor_world_size
             flops_metrics["inference_tflops_per_gpu"] = (
                 inference_tflops / inference_time / num_gpus_inference
             )
