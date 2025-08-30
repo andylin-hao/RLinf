@@ -563,6 +563,7 @@ class BatchResizingIterator:
         self.current_global_batch = []
         self.previous_global_batch = []
         self.global_batch_handler = None
+        self.full_batch_handler = None
 
     def check_finished_global_batch(self):
         assert self.global_batch_done, (
@@ -570,10 +571,14 @@ class BatchResizingIterator:
         )
 
     @property
-    def require_full_global_batch(self):
+    def require_global_batch(self):
         return (
             self.has_enabled_dynamic_batch_size or self.global_batch_handler is not None
         )
+
+    @property
+    def require_full_batch(self):
+        return self.full_batch_handler is not None
 
     def enable_dynamic_batch_size(
         self,
@@ -638,6 +643,14 @@ class BatchResizingIterator:
             handler (Callable): The handler function to process the global batch. This function will receive a single argument, which is the global batch to process, and returns the processed global batch.
         """
         self.global_batch_handler = handler
+
+    def register_full_batch_handler(self, handler: Callable):
+        """This enables processing the whole batch intended for this DP before it's splitting into global batches.
+
+        Args:
+            handler (Callable): The handler function to process the whole batch. This function will receive a single argument, which is the batch to process, and returns the processed batch.
+        """
+        self.full_batch_handler = handler
 
     def _get_next_micro_batch(self):
         """Retrieve the next micro batch from the current microbatch iterator."""
@@ -705,7 +718,7 @@ class BatchResizingIterator:
         return merged_batch
 
     def _fill_global_batches(self, current_batch: Dict[str, torch.Tensor]):
-        """Keep getting batches until the batch size is multiple of a global batch if requires_full_global_batch."""
+        """Keep getting batches until the batch size is multiple of a global batch if requires_global_batch."""
         current_batch_size = current_batch[self.batch_tensor_key].shape[0]
         while (
             current_batch_size < self.global_batch_size
@@ -714,7 +727,19 @@ class BatchResizingIterator:
             new_batch = self.get_batch_fn(self.forward_only)
             current_batch = self._merge_batches(current_batch, new_batch)
             current_batch_size = current_batch[self.batch_tensor_key].shape[0]
-        return current_batch, current_batch_size
+        return current_batch
+
+    def _fill_full_batches(self, current_batch: Dict[str, torch.Tensor]):
+        """Keep getting batches until the batch size is the total batch size if requires_full_batch."""
+        current_batch_size = current_batch[self.batch_tensor_key].shape[0]
+        while (
+            current_batch_size < self.total_batch_size
+            and current_batch_size % self.global_batch_size != 0
+        ):
+            new_batch = self.get_batch_fn(self.forward_only)
+            current_batch = self._merge_batches(current_batch, new_batch)
+            current_batch_size = current_batch[self.batch_tensor_key].shape[0]
+        return current_batch
 
     def _get_global_batches(self):
         """Split a batch into multiple global batches, each of which will be used for one step of inference/training."""
@@ -723,10 +748,15 @@ class BatchResizingIterator:
         if batch_size % self.global_batch_size != 0:
             # If the batch size is smaller than the global batch size per data parallel group,
             # we can return the batch as is if requires_full_global_batch is False. This usually occurs in pipelining mode.
-            if self.require_full_global_batch:
-                batch, batch_size = self._fill_global_batches(batch)
+            if self.require_full_batch:
+                batch = self._fill_full_batches(batch)
+                batch = self.full_batch_handler(batch)
+            elif self.require_global_batch:
+                # No need to fill global batches if it's already filled by full batches
+                batch = self._fill_global_batches(batch)
             else:
                 return iter([batch])
+        batch_size = batch[self.batch_tensor_key].shape[0]
         num_splits = batch_size // self.global_batch_size
         return get_iterator_k_split(
             batch,

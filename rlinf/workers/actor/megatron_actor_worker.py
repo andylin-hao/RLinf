@@ -552,8 +552,6 @@ class MegatronActor(MegatronModelManager, Worker):
                 self._compute_advantages(batch)
                 result.advantages = batch["advantages"].cpu()
 
-        if self.cfg.actor.get("enable_dp_load_balance", False) and not forward_only:
-            self.dp_load_balance(batch, result.num_sequence)
         return batch
 
     # Training
@@ -603,6 +601,7 @@ class MegatronActor(MegatronModelManager, Worker):
         training_metrics_list = []
         self.data_channel = input_channel
 
+        # Valid token scale
         if self.cfg.algorithm.use_valid_token_scale:
             if self.component_placement.placement_mode == PlacementMode.DISAGGREGATED:
                 self.global_valid_token = (
@@ -614,6 +613,10 @@ class MegatronActor(MegatronModelManager, Worker):
                 self.train_batch_iterator.register_global_batch_handler(
                     self.valid_token_scale
                 )
+
+        # DP load balance
+        if self.cfg.actor.get("enable_dp_load_balance", False):
+            self.train_batch_iterator.register_full_batch_handler(self.dp_load_balance)
 
         # Global batch iterations
         for _ in range(self.num_train_steps):
@@ -646,7 +649,8 @@ class MegatronActor(MegatronModelManager, Worker):
         self.global_valid_token = global_valid_token
         return batch
 
-    def dp_load_balance(self, batch: Dict[str, torch.Tensor], batch_size):
+    def dp_load_balance(self, batch: Dict[str, torch.Tensor]):
+        batch_size = batch["input_ids"].shape[0]
         assert batch_size == self.total_batch_size_per_dp, (
             f"DP Load balance is only available when a single batch contains all data, e.g., in collocated mode. But got {batch_size=} and {self.total_batch_size_per_dp=}."
         )
@@ -657,6 +661,7 @@ class MegatronActor(MegatronModelManager, Worker):
             dp_group=parallel_state.get_data_parallel_group(),
             partitioning_tool=get_seqlen_balanced_partitions,
         )
+        return batch
 
     # Inference
     def _setup_inference_weight_dst_ranks(self):
