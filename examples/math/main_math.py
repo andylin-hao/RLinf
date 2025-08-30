@@ -59,7 +59,10 @@ def main(cfg) -> None:
 
     # Inference group
     inference_group = None
-    if component_placement.placement_mode == PlacementMode.DISAGGREGATED:
+    if (
+        component_placement.placement_mode == PlacementMode.DISAGGREGATED
+        and cfg.algorithm.recompute_logprobs
+    ):
         inference_placement_strategy = component_placement.get_strategy("inference")
         inference_group = MegatronInference.create_group(
             cfg, component_placement

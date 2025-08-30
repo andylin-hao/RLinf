@@ -14,7 +14,6 @@
 
 import multiprocessing
 import re
-import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import List, Union
 
@@ -394,7 +393,6 @@ def math_verify_call(
         len(references),
     )
 
-    start_time = time.perf_counter()
     all_jobs = []
     for solutions, gen in zip(references, responses):
         jobs = []
@@ -418,8 +416,6 @@ def math_verify_call(
 
     if has_timeout:
         reset_global_process_pool()
-    duration = time.perf_counter() - start_time
-    print(f"Math verification completed in {duration:.2f} seconds")
     return labels
 
 

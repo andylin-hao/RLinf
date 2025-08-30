@@ -197,9 +197,13 @@ class ModelParallelComponentPlacement(ComponentPlacement):
             self._placement_mode = PlacementMode.COLLOCATED
             logging.info("Running in collocated mode")
         elif self._is_disaggregated():
-            assert self.inference_tp_size <= self.inference_world_size, (
-                f"Inference TP size {self.inference_tp_size} must be less than or equal to Inference world size {self.inference_world_size}."
-            )
+            if self._inference_gpus is not None:
+                assert self.inference_tp_size <= self.inference_world_size, (
+                    f"Inference TP size {self.inference_tp_size} must be less than or equal to Inference world size {self.inference_world_size}."
+                )
+                assert self.cfg.algorithm.recompute_logprobs, (
+                    f"algorithm.recompute_logprobs has been set to false, which disables inference. So inference GPUs {self._inference_gpus} must not be specified."
+                )
             self._placement_mode = PlacementMode.DISAGGREGATED
             logging.info("Running in disaggregated mode")
         else:
@@ -221,7 +225,7 @@ class ModelParallelComponentPlacement(ComponentPlacement):
             self._rollout_batch_size_per_inference_step = (
                 self._config.data.rollout_batch_size
             )
-        if self._placement_mode == PlacementMode.DISAGGREGATED:
+        if self._placement_mode == PlacementMode.DISAGGREGATED and self._inference_gpus:
             # In disaggregated mode, rollout a single batch every time
             self._rollout_batch_size_per_inference_step = 1 * self.inference_dp_size
 
@@ -231,16 +235,16 @@ class ModelParallelComponentPlacement(ComponentPlacement):
         return False
 
     def _is_disaggregated(self):
-        if self._inference_gpus is not None:
-            actor_gpu_set = set(self._actor_gpus)
-            rollout_gpu_set = set(self._rollout_gpus)
-            inference_gpu_set = set(self._inference_gpus)
-            return (
-                actor_gpu_set.isdisjoint(rollout_gpu_set)
-                and actor_gpu_set.isdisjoint(inference_gpu_set)
-                and rollout_gpu_set.isdisjoint(inference_gpu_set)
-            )
-        return False
+        actor_gpu_set = set(self._actor_gpus)
+        rollout_gpu_set = set(self._rollout_gpus)
+        inference_gpu_set = (
+            [] if self._inference_gpus is None else set(self._inference_gpus)
+        )
+        return (
+            actor_gpu_set.isdisjoint(rollout_gpu_set)
+            and actor_gpu_set.isdisjoint(inference_gpu_set)
+            and rollout_gpu_set.isdisjoint(inference_gpu_set)
+        )
 
     def _generate_placements(self):
         if self._placement_mode == PlacementMode.COLLOCATED:
@@ -271,16 +275,20 @@ class ModelParallelComponentPlacement(ComponentPlacement):
                 self._rollout_gpus[-1],
                 num_gpus_per_process=num_gpus_per_rollout_dp,
             )
-            self._placements["inference"] = PackedPlacementStrategy(
-                self._inference_gpus[0], self._inference_gpus[-1]
-            )
+            if self._inference_gpus is not None:
+                self._placements["inference"] = PackedPlacementStrategy(
+                    self._inference_gpus[0], self._inference_gpus[-1]
+                )
             self._placements["actor"] = PackedPlacementStrategy(
                 self._actor_gpus[0], self._actor_gpus[-1]
             )
 
     @property
     def has_dedicated_inference(self):
-        return self._placement_mode == PlacementMode.DISAGGREGATED
+        return (
+            self._placement_mode == PlacementMode.DISAGGREGATED
+            and self._inference_gpus is not None
+        )
 
     @property
     def rollout_batch_size_per_inference_step(self) -> int:
@@ -308,14 +316,22 @@ class ModelParallelComponentPlacement(ComponentPlacement):
 
     @property
     def inference_tp_size(self) -> int:
-        if hasattr(self._config.inference.model, "tensor_model_parallel_size"):
+        if (
+            hasattr(self._config, "inference")
+            and hasattr(self._config.inference, "model")
+            and hasattr(self._config.inference.model, "tensor_model_parallel_size")
+        ):
             return self._config.inference.model.tensor_model_parallel_size
         else:
             return self.actor_tp_size
 
     @property
     def inference_pp_size(self) -> int:
-        if hasattr(self._config.inference.model, "pipeline_model_parallel_size"):
+        if (
+            hasattr(self._config, "inference")
+            and hasattr(self._config.inference, "model")
+            and hasattr(self._config.inference.model, "pipeline_model_parallel_size")
+        ):
             return self._config.inference.model.pipeline_model_parallel_size
         else:
             return self.actor_pp_size

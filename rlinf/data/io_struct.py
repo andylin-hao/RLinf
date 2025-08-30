@@ -297,6 +297,30 @@ class RolloutResult:
             response_ids=[],
             is_end=[],
         )
+
+        def merge_tensor(dst_tensor: torch.Tensor, src_tensor: torch.Tensor):
+            assert dst_tensor is None or torch.is_tensor(dst_tensor), (
+                f"Expected tensor, got {type(dst_tensor)}"
+            )
+            assert torch.is_tensor(src_tensor), (
+                f"Expected tensor, got {type(src_tensor)}"
+            )
+            if dst_tensor is None:
+                return src_tensor
+            else:
+                return torch.cat([dst_tensor, src_tensor], dim=0)
+
+        def merge_list(dst_list: List, src_list: List):
+            assert dst_list is None or isinstance(dst_list, list), (
+                f"Expected list, got {type(dst_list)}"
+            )
+            assert isinstance(src_list, list), f"Expected list, got {type(src_list)}"
+            if dst_list is None:
+                return src_list
+            else:
+                dst_list.extend(src_list)
+                return dst_list
+
         for res in rollout_results:
             merged_result.prompt_lengths.extend(res.prompt_lengths)
             merged_result.prompt_ids.extend(res.prompt_ids)
@@ -304,35 +328,45 @@ class RolloutResult:
             merged_result.response_ids.extend(res.response_ids)
             merged_result.is_end.extend(res.is_end)
             if res.answers is not None:
-                if merged_result.answers is None:
-                    merged_result.answers = []
-                merged_result.answers.extend(res.answers)
+                merged_result.answers = merge_list(merged_result.answers, res.answers)
             if res.advantages is not None:
-                if merged_result.advantages is None:
-                    merged_result.advantages = []
-                merged_result.advantages.extend(res.advantages)
+                if isinstance(res.advantages, list):
+                    merged_result.advantages = merge_list(
+                        merged_result.advantages, res.advantages
+                    )
+                elif isinstance(res.advantages, torch.Tensor):
+                    merged_result.advantages = merge_tensor(
+                        merged_result.advantages, res.advantages
+                    )
+                else:
+                    raise ValueError(
+                        f"Wrong type of advantages {type(merged_result.advantages)}"
+                    )
             if res.rewards is not None:
-                if merged_result.rewards is None:
-                    merged_result.rewards = []
-                merged_result.rewards.extend(res.rewards)
+                if isinstance(res.rewards, list):
+                    merged_result.rewards = merge_list(
+                        merged_result.rewards, res.rewards
+                    )
+                elif isinstance(res.rewards, torch.Tensor):
+                    merged_result.rewards = merge_tensor(
+                        merged_result.rewards, res.rewards
+                    )
+                else:
+                    raise ValueError(
+                        f"Wrong type of rewards {type(merged_result.rewards)}"
+                    )
             if res.rollout_logprobs is not None:
-                if merged_result.rollout_logprobs is None:
-                    merged_result.rollout_logprobs = []
-                merged_result.rollout_logprobs.extend(res.rollout_logprobs)
-
-        # TODO Align advantages and rewards format
-        if (
-            isinstance(merged_result.advantages, list)
-            and len(merged_result.advantages) > 0
-            and isinstance(merged_result.advantages[0], torch.Tensor)
-        ):
-            merged_result.advantages = torch.cat(merged_result.advantages, dim=0)
-        if (
-            isinstance(merged_result.rewards, list)
-            and len(merged_result.rewards) > 0
-            and isinstance(merged_result.rewards[0], torch.Tensor)
-        ):
-            merged_result.rewards = torch.cat(merged_result.rewards, dim=0)
+                merged_result.rollout_logprobs = merge_list(
+                    merged_result.rollout_logprobs, res.rollout_logprobs
+                )
+            if res.prev_logprobs is not None:
+                merged_result.prev_logprobs = merge_tensor(
+                    merged_result.prev_logprobs, res.prev_logprobs
+                )
+            if res.ref_logprobs is not None:
+                merged_result.ref_logprobs = merge_tensor(
+                    merged_result.ref_logprobs, res.ref_logprobs
+                )
 
         return merged_result
 

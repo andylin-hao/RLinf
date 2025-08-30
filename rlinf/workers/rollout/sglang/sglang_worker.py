@@ -275,6 +275,7 @@ class AsyncSGLangWorker(SGLangWorker):
         result = await self._engine.async_generate(
             input_ids=input_ids,
             sampling_params=sampling_params,
+            return_logprob=self._return_logprobs,
         )
         # SGLang does not return input_ids, so we need to pass them for further usage.
         return raw_id, input_ids, result
@@ -328,7 +329,10 @@ class AsyncSGLangWorker(SGLangWorker):
 
                 input_ids = [input_ids] * len(results)
                 rollout_result = RolloutResult.from_engine_results(
-                    results, rollout_request.n, input_ids
+                    results,
+                    rollout_request.n,
+                    input_ids,
+                    return_logprobs=self._return_logprobs,
                 )
                 rollout_result.rewards = torch.tensor(
                     rewards, dtype=torch.float32
