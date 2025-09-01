@@ -361,6 +361,7 @@ class RankMapper:
             placement.rollout_world_size,
         )
 
+    @staticmethod
     def _get_rank_mapper(
         placement_mode: PlacementMode,
     ):
