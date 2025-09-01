@@ -334,7 +334,6 @@ def call_with_timeout(func, *args, timeout=3, **kwargs):
     process.join(timeout)
 
     if process.is_alive():
-        print("Reward Timeout!", flush=True)
         process.terminate()
         process.join()
         return False
@@ -386,6 +385,7 @@ def verify_math_solution(answer: str, solution: str):
 def math_verify_call(
     responses: List[str],
     references: List[str],
+    timeout: int = 10,
     check_xml_format=False,
 ) -> List:
     assert len(responses) == len(references), (
@@ -406,11 +406,10 @@ def math_verify_call(
     for jobs in all_jobs:
         label = 0
         try:
-            for job in as_completed(jobs, timeout=3):
+            for job in as_completed(jobs, timeout=timeout):
                 x = job.result()
                 label = label or x
         except TimeoutError:
-            print("Reward Timeout!", flush=True)
             has_timeout = True
         labels.append(label)
 

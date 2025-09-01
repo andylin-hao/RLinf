@@ -57,29 +57,31 @@ class SGLangWorker(Worker):
                 * self._cfg.rollout.pipeline_parallel_size
             )
 
-    def _validate_weight_at_first(self):
-        """
-        Run a test prompt batch and print its output.
-        """
-        validate_sampling_params = {"temperature": 0, "max_new_tokens": 32}
-        prompts = [
+        self._validate_sampling_params = {"temperature": 0, "max_new_tokens": 32}
+        self._validate_prompts = [
             "Hello, my name is",
             "The president of the United States is",
             "The capital of France is",
             "The future of AI is",
         ]
 
+    def _validate_weight_at_first(self):
+        """
+        Run a test prompt batch and print its output.
+        """
         if self._cfg.rollout.detokenize:
-            outputs = self._engine.generate(prompts, validate_sampling_params)
-            for prompt, output in zip(prompts, outputs):
+            outputs = self._engine.generate(
+                self._validate_prompts, self._validate_sampling_params
+            )
+            for prompt, output in zip(self._validate_prompts, outputs):
                 print("===============================")
                 print(f"Prompt: {prompt}\nGenerated text: {output['text']}")
         else:
-            prompt_ids = self._tokenizer(prompts).input_ids
+            prompt_ids = self._tokenizer(self._validate_prompts).input_ids
             outputs = self._engine.generate(
-                input_ids=prompt_ids, sampling_params=validate_sampling_params
+                input_ids=prompt_ids, sampling_params=self._validate_sampling_params
             )
-            print_sglang_outputs(prompts, outputs, self._tokenizer)
+            print_sglang_outputs(self._validate_prompts, outputs, self._tokenizer)
         print("===============================", flush=True)
 
     def _init_engine(self):
@@ -224,27 +226,29 @@ class AsyncSGLangWorker(SGLangWorker):
             "rollout_batch_size_per_gpu is not supported in AsyncSGLangWorker"
         )
 
-    def init_worker(self):
+    async def _validate_weight_at_first(self):
+        """
+        Run a test prompt batch and print its output.
+        """
+        if self._cfg.rollout.detokenize:
+            outputs = await self._engine.async_generate(
+                self._validate_prompts, self._validate_sampling_params
+            )
+            for prompt, output in zip(self._validate_prompts, outputs):
+                print("===============================")
+                print(f"Prompt: {prompt}\nGenerated text: {output['text']}")
+        else:
+            prompt_ids = self._tokenizer(self._validate_prompts).input_ids
+            outputs = await self._engine.async_generate(
+                input_ids=prompt_ids, sampling_params=self._validate_sampling_params
+            )
+            print_sglang_outputs(self._validate_prompts, outputs, self._tokenizer)
+        print("===============================", flush=True)
+
+    async def init_worker(self):
         self._init_engine()
-
-    def _calculate_reward_and_advantage(self, engine_results: List[Dict], answer: str):
-        answers = [answer] * len(engine_results)
-        texts: List[str] = []
-        for res in engine_results:
-            if hasattr(res, "text"):
-                texts.append(res["text"])
-            else:
-                texts.append(
-                    self._tokenizer.decode(res["output_ids"], skip_special_tokens=True)
-                )
-
-        rewards = self._reward_model.get_reward(texts, answers)
-        rewards_tensor = torch.tensor(rewards)
-        mean = rewards_tensor.mean()
-        std = rewards_tensor.std()
-        advantages = (rewards_tensor - mean) / (std + 1e-6)
-
-        return rewards, advantages.tolist()
+        if self._cfg.rollout.validate_weight:
+            await self._validate_weight_at_first()
 
     async def _calculate_reward_and_advantage_processpool(
         self, engine_results: List[Dict], answer: str
@@ -277,6 +281,11 @@ class AsyncSGLangWorker(SGLangWorker):
             sampling_params=sampling_params,
             return_logprob=self._return_logprobs,
         )
+
+        if self._cfg.rollout.print_outputs:
+            prompts = self._tokenizer.batch_decode(input_ids)
+            print_sglang_outputs(prompts, [result], self._tokenizer)
+
         # SGLang does not return input_ids, so we need to pass them for further usage.
         return raw_id, input_ids, result
 
