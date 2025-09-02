@@ -22,6 +22,7 @@ import threading
 import time
 import traceback
 import warnings
+from contextlib import contextmanager
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -71,13 +72,7 @@ class WorkerMeta(type):
             @functools.wraps(func)
             def sync_func(*args, **kwargs):
                 try:
-                    worker = args[0] if isinstance(args[0], Worker) else None
-                    start_time = time.perf_counter()
-                    outputs = func(*args, **kwargs)
-                    duration = time.perf_counter() - start_time
-                    if worker:
-                        worker._timer_metrics[func.__name__] = duration
-                    return outputs
+                    return func(*args, **kwargs)
                 except SystemExit:
                     # Catch SystemExit and log the error
                     raise RuntimeError(
@@ -87,13 +82,7 @@ class WorkerMeta(type):
             @functools.wraps(func)
             async def async_func(*args, **kwargs):
                 try:
-                    worker = args[0] if isinstance(args[0], Worker) else None
-                    start_time = time.perf_counter()
-                    outputs = await func(*args, **kwargs)
-                    duration = time.perf_counter() - start_time
-                    if worker:
-                        worker._timer_metrics[func.__name__] = duration
-                    return outputs
+                    return await func(*args, **kwargs)
                 except SystemExit:
                     # Catch SystemExit and log the error
                     raise RuntimeError(
@@ -898,12 +887,31 @@ class Worker(metaclass=WorkerMeta):
             available_gpus=self._available_gpus,
         )
 
-    def get_execution_time(self, func_name: str):
+    def pop_execution_time(self, tag: str):
         """Retrieve the execution time of a function.
 
         Args:
-            func_name (str): The name of the function to retrieve the execution time for.
+            tag (str): The name of the timer to retrieve the execution time for.
         """
-        if func_name not in self._timer_metrics:
-            raise ValueError(f"Function '{func_name}' has not been executed.")
-        return self._timer_metrics[func_name]
+        if tag not in self._timer_metrics:
+            raise ValueError(f"Timer '{tag}' has not been recorded.")
+        return self._timer_metrics.pop(tag)
+
+    @contextmanager
+    def worker_timer(self, tag: Optional[str] = None):
+        """Context manager to time the execution of a worker function.
+
+        Args:
+            tag (str): The name of the timer to record the execution time for. Default is the current function name.
+        """
+        if tag is None:
+            frame_num = 2
+            frame = inspect.stack()[frame_num]
+            tag = frame.function
+        assert tag is not None, "Timer tag must be provided."
+        try:
+            start_time = time.perf_counter()
+            yield
+        finally:
+            duration = time.perf_counter() - start_time
+            self._timer_metrics[tag] = self._timer_metrics.get(tag, 0.0) + duration

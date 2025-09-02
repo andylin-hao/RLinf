@@ -690,7 +690,8 @@ class MegatronActor(MegatronModelManager, Worker):
     def run_training(self, input_channel: Channel):
         """Run the training loop for the actor."""
         if self.is_pipeline:
-            return self.run_training_pipeline(input_channel)
+            with self.worker_timer():
+                return self.run_training_pipeline(input_channel)
 
         # Get all batches for this DP
         batches = []
@@ -732,10 +733,11 @@ class MegatronActor(MegatronModelManager, Worker):
         )
 
         # Global batch iterations
-        training_metrics_list = []
-        for global_batch in global_batches:
-            training_metrics = self.training_step(global_batch)
-            training_metrics_list.append(training_metrics)
+        with self.worker_timer():
+            training_metrics_list = []
+            for global_batch in global_batches:
+                training_metrics = self.training_step(global_batch)
+                training_metrics_list.append(training_metrics)
 
         # Rollout metrics
         rollout_metrics = self._compute_rollout_metrics(batch)
@@ -852,8 +854,9 @@ class MegatronActor(MegatronModelManager, Worker):
             self._load_weight_and_optimizer()
 
             # Prev logprobs
-            prev_logprobs = self.inference_step(batch)
-            rollout_result.prev_logprobs = prev_logprobs.cpu()
+            with self.worker_timer():
+                prev_logprobs = self.inference_step(batch)
+                rollout_result.prev_logprobs = prev_logprobs.cpu()
 
             # Ref logprobs
             if compute_ref_logprobs:
@@ -882,10 +885,11 @@ class MegatronActor(MegatronModelManager, Worker):
             recv_batch_size += rollout_result.num_sequence
 
             # Compute rule-based reward
-            if rollout_result.rewards is None:
-                rollout_result.rewards = self._compute_batch_rewards(
-                    batch, rollout_result.answers
-                ).cpu()
+            with self.worker_timer():
+                if rollout_result.rewards is None:
+                    rollout_result.rewards = self._compute_batch_rewards(
+                        batch, rollout_result.answers
+                    ).cpu()
 
             self.put_result(rollout_result, output_channel)
 
@@ -952,15 +956,16 @@ class MegatronActor(MegatronModelManager, Worker):
             batch, rollout_result = self.get_batch(input_channel)
             recv_batch_size += rollout_result.num_sequence
 
-            if rollout_result.advantages is None:
-                mask = batch["attention_mask"][:, -self.response_len :]
-                advantages, returns = calculate_adv_and_returns(
-                    self.cfg.algorithm.adv_type,
-                    batch["rewards"].cuda(),
-                    mask.cuda(),
-                    self.cfg.algorithm.group_size,
-                )
-                rollout_result.advantages = advantages.cpu()
+            with self.worker_timer():
+                if rollout_result.advantages is None:
+                    mask = batch["attention_mask"][:, -self.response_len :]
+                    advantages, returns = calculate_adv_and_returns(
+                        self.cfg.algorithm.adv_type,
+                        batch["rewards"].cuda(),
+                        mask.cuda(),
+                        self.cfg.algorithm.group_size,
+                    )
+                    rollout_result.advantages = advantages.cpu()
 
             self.put_result(rollout_result, output_channel)
 

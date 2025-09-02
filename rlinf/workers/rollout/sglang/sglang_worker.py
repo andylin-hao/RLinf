@@ -173,11 +173,12 @@ class SGLangWorker(Worker):
         rollout_results = []
         for request in requests:
             # Generate outputs using the SGLang engine.
-            results = self._engine.generate(
-                input_ids=request.input_ids,
-                sampling_params=self._sampling_params,
-                return_logprob=self._return_logprobs,
-            )
+            with self.worker_timer():
+                results = self._engine.generate(
+                    input_ids=request.input_ids,
+                    sampling_params=self._sampling_params,
+                    return_logprob=self._return_logprobs,
+                )
 
             # Create RolloutResult from the outputs.
             rollout_result = RolloutResult.from_engine_results(
@@ -250,7 +251,7 @@ class AsyncSGLangWorker(SGLangWorker):
         if self._cfg.rollout.validate_weight:
             await self._validate_weight_at_first()
 
-    async def _calculate_reward_and_advantage_processpool(
+    async def _compute_reward_and_advantage(
         self, engine_results: List[Dict], answer: str
     ):
         answers = [answer] * len(engine_results)
@@ -299,70 +300,71 @@ class AsyncSGLangWorker(SGLangWorker):
         self._current_request = rollout_request
         self._completion_info.clear_and_set(rollout_request)
 
-        rollout_tasks = [
-            asyncio.create_task(
-                self._async_generate(raw_id, input_ids, self._sampling_params)
-            )
-            for raw_id, input_ids in enumerate(rollout_request.input_ids)
-            for _ in range(rollout_request.n)
-        ]
-        return_tasks = []
-        total_reqs = len(rollout_tasks)
-        required_reqs = total_reqs // self._cfg.algorithm.max_num_gen_batches
-
-        droped_reqs = 0
-        finished_reqs = 0
-        abort_flag = False
-
-        for future in asyncio.as_completed(rollout_tasks):
-            raw_id, input_ids, result = await future
-            hash_id = self._completion_info.hash(input_ids)
-            self._completion_info.record_result(input_ids, result)
-
-            if self._completion_info.is_completed(hash_id):
-                results = self._completion_info.get_results(hash_id)
-                (
-                    rewards,
-                    advantages,
-                ) = await self._calculate_reward_and_advantage_processpool(
-                    results,
-                    self._current_request.answers[raw_id],
+        with self.worker_timer():
+            rollout_tasks = [
+                asyncio.create_task(
+                    self._async_generate(raw_id, input_ids, self._sampling_params)
                 )
-                if (
-                    all_floats_equal(rewards)
-                    and self._cfg.algorithm.get("max_num_gen_batches", 1) > 1
-                ):
-                    if (total_reqs - droped_reqs) > required_reqs:
-                        droped_reqs += rollout_request.n
-                        continue
+                for raw_id, input_ids in enumerate(rollout_request.input_ids)
+                for _ in range(rollout_request.n)
+            ]
+            return_tasks = []
+            total_reqs = len(rollout_tasks)
+            required_reqs = total_reqs // self._cfg.algorithm.max_num_gen_batches
 
-                input_ids = [input_ids] * len(results)
-                rollout_result = RolloutResult.from_engine_results(
-                    results,
-                    rollout_request.n,
-                    input_ids,
-                    return_logprobs=self._return_logprobs,
-                )
-                rollout_result.rewards = torch.tensor(
-                    rewards, dtype=torch.float32
-                ).reshape(1, -1)
-                rollout_result.advantages = advantages
-                return_tasks.append(
-                    asyncio.create_task(
-                        self._put_result(rollout_result, output_channel)
+            droped_reqs = 0
+            finished_reqs = 0
+            abort_flag = False
+
+            for future in asyncio.as_completed(rollout_tasks):
+                raw_id, input_ids, result = await future
+                hash_id = self._completion_info.hash(input_ids)
+                self._completion_info.record_result(input_ids, result)
+
+                if self._completion_info.is_completed(hash_id):
+                    results = self._completion_info.get_results(hash_id)
+                    (
+                        rewards,
+                        advantages,
+                    ) = await self._compute_reward_and_advantage(
+                        results,
+                        self._current_request.answers[raw_id],
                     )
-                )
+                    if (
+                        all_floats_equal(rewards)
+                        and self._cfg.algorithm.get("max_num_gen_batches", 1) > 1
+                    ):
+                        if (total_reqs - droped_reqs) > required_reqs:
+                            droped_reqs += rollout_request.n
+                            continue
 
-                finished_reqs += rollout_request.n
-                if finished_reqs == required_reqs:
-                    abort_flag = True
-                    break
+                    input_ids = [input_ids] * len(results)
+                    rollout_result = RolloutResult.from_engine_results(
+                        results,
+                        rollout_request.n,
+                        input_ids,
+                        return_logprobs=self._return_logprobs,
+                    )
+                    rollout_result.rewards = torch.tensor(
+                        rewards, dtype=torch.float32
+                    ).reshape(1, -1)
+                    rollout_result.advantages = advantages
+                    return_tasks.append(
+                        asyncio.create_task(
+                            self._put_result(rollout_result, output_channel)
+                        )
+                    )
 
-        if abort_flag:
-            # abort all req (running and waiting)
-            await self._engine.tokenizer_manager.pause_generation()
+                    finished_reqs += rollout_request.n
+                    if finished_reqs == required_reqs:
+                        abort_flag = True
+                        break
 
-        await asyncio.gather(*return_tasks)
+            if abort_flag:
+                # abort all req (running and waiting)
+                await self._engine.tokenizer_manager.pause_generation()
+
+            await asyncio.gather(*return_tasks)
 
     async def offload_engine(self):
         """

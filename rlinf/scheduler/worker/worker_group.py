@@ -402,7 +402,7 @@ class WorkerGroupFuncResult:
         This implicitly waits for the function to finish.
         """
         self.wait()
-        execution_times = self._worker_group.get_execution_time(self._func_name).wait()
+        execution_times = self._worker_group.pop_execution_time(self._func_name).wait()
         return max(execution_times)
 
     def wait(self):

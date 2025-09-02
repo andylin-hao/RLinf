@@ -77,8 +77,7 @@ class MathRunner:
         self.reward_channel = Channel.create(
             "Reward", local=not self.has_dedicated_reward
         )
-        self.advantage_channel = Channel.create("Advantage", local=True)
-        self.actor_channel = Channel.create("Actor")
+        self.actor_channel = Channel.create("Actor", local=True)
 
         # Configurations
         self.compute_ref_logprobs = self.cfg.algorithm.kl_beta > 0
@@ -344,12 +343,12 @@ class MathRunner:
                     # Advantages and returns
                     adv_handle: Handle = self.actor.compute_advantages_and_returns(
                         input_channel=self.reward_channel,
-                        output_channel=self.advantage_channel,
+                        output_channel=self.actor_channel,
                     )
 
                     # Actor training
                     actor_handle: Handle = self.actor.run_training(
-                        input_channel=self.advantage_channel,
+                        input_channel=self.actor_channel,
                     )
 
                     metrics = actor_handle.wait()
