@@ -564,6 +564,34 @@ def get_iterator_dynamic(
     return itertools.chain(microbatches), partitions, n_micro_batch
 
 
+def split_dynamic_batch_size(
+    batch: Dict[str, torch.Tensor],
+    cp_world_size: int,
+    vpp_world_size: int,
+    max_tokens_per_mbs: int,
+    microbatch_group_size_per_vp_stage: int,
+):
+    """Split a global batch using dynamic batch sizing."""
+    max_tokens_per_mbs = max_tokens_per_mbs * cp_world_size
+    vpp_size = vpp_world_size
+    if vpp_size is not None and vpp_size > 1:
+        microbatch_group_size_per_vp_stage = microbatch_group_size_per_vp_stage
+        data_iter, indices, n_micro_batch = get_iterator_dynamic(
+            batch,
+            num_batches_divided_by=microbatch_group_size_per_vp_stage,
+            max_tokens_per_mbs=max_tokens_per_mbs,
+        )
+        assert n_micro_batch % microbatch_group_size_per_vp_stage == 0, (
+            f"micro_batches {data_iter} must be divisible by microbatch_group_size_per_vp_stage {microbatch_group_size_per_vp_stage} for megatron backend"
+        )
+    else:
+        data_iter, indices, n_micro_batch = get_iterator_dynamic(
+            batch, max_tokens_per_mbs=max_tokens_per_mbs
+        )
+    total_seqlen = max_tokens_per_mbs
+    return data_iter, total_seqlen, n_micro_batch, indices
+
+
 def get_reverse_idx(idx_map):
     """
     Build the inverse of an index mapping.

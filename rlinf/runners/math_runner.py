@@ -24,7 +24,7 @@ from torchdata.stateful_dataloader import StatefulDataLoader
 from tqdm import tqdm
 
 from rlinf.data.io_struct import RolloutRequest
-from rlinf.scheduler import Channel
+from rlinf.scheduler import Channel, Worker
 from rlinf.scheduler import WorkerGroupFuncResult as Handle
 from rlinf.utils.data_iter_utils import split_list
 from rlinf.utils.distributed import ScopedTimer
@@ -51,17 +51,20 @@ class MathRunner:
         rollout: SGLangWorker,
         inference: Optional[MegatronInference],
         actor: MegatronActor,
+        reward: Optional[Worker] = None,
     ):
         """"""
         self.cfg = cfg
         self.component_placement = placement
         self.has_dedicated_inference = inference is not None
+        self.has_dedicated_reward = reward is not None
 
         # Workers
         self.rollout = rollout
         self.actor = actor
         # Collocated mode uses actor as inference
         self.inference = inference if self.has_dedicated_inference else self.actor
+        self.reward = reward if self.has_dedicated_reward else self.actor
 
         # Data channels
         self.dataloader_channel = Channel.create("DataLoader")
@@ -70,6 +73,9 @@ class MathRunner:
         # if inference is not a dedicated worker
         self.inference_channel = Channel.create(
             "Inference", local=not self.has_dedicated_inference
+        )
+        self.reward_channel = Channel.create(
+            "Reward", local=not self.has_dedicated_reward
         )
         self.actor_channel = Channel.create("Actor")
 
@@ -168,6 +174,8 @@ class MathRunner:
         self.actor.init_worker().wait()
         if self.has_dedicated_inference:
             self.inference.init_worker().wait()
+        if self.has_dedicated_reward:
+            self.reward.init_worker().wait()
 
         if self.cfg.runner.resume_dir is None:
             return
@@ -326,15 +334,18 @@ class MathRunner:
                         infer_handle = None
                         inference_channel = self.rollout_channel
 
+                    # Rewards and advantages
+                    reward_handle: Handle = self.reward.compute_rewards_and_advantages(
+                        input_channel=inference_channel,
+                        output_channel=self.reward_channel,
+                    )
+
                     # Actor training
                     actor_handle: Handle = self.actor.run_training(
-                        input_channel=inference_channel
+                        input_channel=self.reward_channel,
                     )
 
                     metrics = actor_handle.wait()
-                    rollout_handle.wait()
-                    if infer_handle is not None:
-                        infer_handle.wait()
 
                     self.global_steps += 1
 
@@ -366,6 +377,7 @@ class MathRunner:
                 time_metrics = self.timer.consume_durations()
                 time_metrics["training"] = actor_handle.duration
                 time_metrics["rollout"] = rollout_handle.duration
+                time_metrics["reward_and_advantage"] = reward_handle.duration
                 if infer_handle is not None:
                     time_metrics["inference"] = infer_handle.duration
 

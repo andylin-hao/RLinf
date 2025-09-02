@@ -13,7 +13,8 @@
 # limitations under the License.
 
 import copy
-from typing import Dict, List
+from functools import partial
+from typing import Dict, List, Optional, Tuple
 
 import torch
 import torch.distributed
@@ -31,15 +32,22 @@ from rlinf.algorithms.math.algo_functions import (
     kl_penalty,
 )
 from rlinf.algorithms.math.verifier.verify import math_verify_call
-from rlinf.data.io_struct import BatchResizingIterator, RolloutResult
+from rlinf.data.io_struct import (
+    BatchResizingIterator,
+    RolloutResult,
+    get_batch_size,
+    get_seq_length,
+)
 from rlinf.hybrid_engines.megatron.megatron_model_manager import (
     MegatronModelManager,
 )
 from rlinf.scheduler import Channel, Worker
 from rlinf.utils.data_iter_utils import (
+    get_iterator_k_split,
     get_last_rank,
     get_reverse_idx,
     get_seqlen_balanced_partitions,
+    split_dynamic_batch_size,
 )
 from rlinf.utils.distributed import (
     RolloutDataBalance,
@@ -85,6 +93,7 @@ class MegatronActor(MegatronModelManager, Worker):
         """
         Worker.__init__(self)
         role_cfg = getattr(cfg, role, None)
+        self.role_cfg = role_cfg
         if role_cfg is None:
             raise ValueError(f"Role {role} is not defined in the configuration.")
         super().__init__(role_cfg)
@@ -130,6 +139,9 @@ class MegatronActor(MegatronModelManager, Worker):
         self.is_weight_offloaded = False
         self.is_optimizer_offloaded = False
         self.ref_policy_state_dict = None
+        self.is_pipeline = (
+            self.component_placement.placement_mode == PlacementMode.DISAGGREGATED
+        )
 
         # Reward configurations
         if not self.cfg.reward.use_reward_model:
@@ -140,40 +152,17 @@ class MegatronActor(MegatronModelManager, Worker):
         self.rollout_group_name = self.cfg.rollout.group_name
 
         # Data I/O configurations
-        self.data_channel = None
         self.num_train_steps = self.cfg.algorithm.n_minibatches
         self.is_data_io_rank = (
             parallel_state.get_tensor_model_parallel_rank() == 0
             and parallel_state.get_context_parallel_rank() == 0
             and parallel_state.get_pipeline_model_parallel_rank() == 0
         )
-        self.rollout_results: List[RolloutResult] = []
         self.total_batch_size_per_dp = (
             self.cfg.data.rollout_batch_size
             * self.cfg.algorithm.group_size
             // parallel_state.get_data_parallel_world_size()
         )
-        self.train_batch_iterator = BatchResizingIterator(
-            cfg=self.cfg,
-            get_batch_fn=self.get_batch_fn,
-            micro_batch_size=role_cfg.micro_batch_size,
-            total_batch_size=self.total_batch_size_per_dp,
-            num_global_batches=self.num_train_steps,
-            forward_only=False,
-        )
-        if self.recompute_logprobs:
-            self.num_inference_steps = (
-                self.cfg.data.rollout_batch_size
-                // self.component_placement.rollout_batch_size_per_inference_step
-            )
-            self.inference_batch_iterator = BatchResizingIterator(
-                cfg=self.cfg,
-                get_batch_fn=self.get_batch_fn,
-                micro_batch_size=self.logprob_forward_micro_batch_size,
-                total_batch_size=self.total_batch_size_per_dp,
-                num_global_batches=self.num_inference_steps,
-                forward_only=True,
-            )
 
         # Create GLOO MP group for broadcast
         self._mp_group_ranks = parallel_state._MODEL_PARALLEL_GLOBAL_RANKS
@@ -219,7 +208,7 @@ class MegatronActor(MegatronModelManager, Worker):
             "megatron_forward_backward", self.use_profiler
         )
 
-    def _load_weight_optimizer(self):
+    def _load_weight_and_optimizer(self):
         if self.is_weight_offloaded:
             self.onload_model_weights_and_grad(load_grad=self.offload_grad)
             self.is_weight_offloaded = False
@@ -261,6 +250,38 @@ class MegatronActor(MegatronModelManager, Worker):
             self._setup_inference_weight_dst_ranks()
 
         torch.distributed.barrier()
+
+    def get_batch(
+        self, channel: Channel
+    ) -> Tuple[Dict[str, torch.Tensor], RolloutResult]:
+        if channel.is_local:
+            # Local channel, every process will put its own data locally
+            # No need to broadcast
+            result: RolloutResult = channel.get()
+        else:
+            if self.is_data_io_rank:
+                result: RolloutResult = channel.get()
+            else:
+                result = None
+            result = self.broadcast(result, ranks=self._mp_group_ranks)
+            result = self.broadcast(result, ranks=self._cp_group_ranks)
+
+        batch = result.to_actor_batch(
+            self.cfg.data.max_prompt_length,
+            self.cfg.actor.model.encoder_seq_length,
+            self.tokenizer.eos_token_id,
+        )
+
+        return batch, result
+
+    def put_result(self, result: RolloutResult, channel: Channel):
+        if channel.is_local:
+            # Local channel, every process will put its own data locally
+            # No need to broadcast
+            channel.put(result)
+        else:
+            if self.is_data_io_rank:
+                channel.put(result)
 
     def get_forward_step_func(self):
         """Acquire the forward step function for the model."""
@@ -442,9 +463,21 @@ class MegatronActor(MegatronModelManager, Worker):
 
         return forward_output_and_loss_func
 
-    def run_forward_backward(
-        self, batch_iterator: BatchResizingIterator, forward_only=True
-    ):
+    def _get_num_microbatches(self, batch: Dict[str, torch.Tensor], forward_only: bool):
+        batch_size = get_batch_size(batch)
+        forward_micro_batch_size = (
+            self.logprob_forward_micro_batch_size
+            if forward_only
+            else self.cfg.actor.micro_batch_size
+        )
+        num_microbatches = (
+            max(1, batch_size // forward_micro_batch_size)
+            if forward_only
+            else get_num_microbatches()
+        )
+        return num_microbatches
+
+    def run_forward_backward(self, batch: Dict[str, torch.Tensor], forward_only=True):
         """Run the forward and backward pass on the model.
 
         Args:
@@ -452,37 +485,77 @@ class MegatronActor(MegatronModelManager, Worker):
             forward_only (bool): If True, only run the forward pass without backpropagation.
         """
         clear_memory()
-
-        forward_micro_batch_size = (
-            self.logprob_forward_micro_batch_size
-            if forward_only
-            else self.cfg.actor.micro_batch_size
-        )
-        # Enable dynamic batch sizing
         if self.enable_dynamic_batch_size:
-            batch_iterator.enable_dynamic_batch_size(
-                cp_world_size=parallel_state.get_context_parallel_world_size(),
-                vpp_world_size=parallel_state.get_virtual_pipeline_model_parallel_world_size(),
-                max_tokens_per_mbs=self.max_tokens_per_mbs,
-                microbatch_group_size_per_vp_stage=self.transformer_config.microbatch_group_size_per_vp_stage,
+            # Enable dynamic batch sizing
+            batch_iter, total_seqlen, num_microbatches, self.dbs_indices = (
+                split_dynamic_batch_size(
+                    batch=batch,
+                    cp_world_size=parallel_state.get_context_parallel_world_size(),
+                    vpp_world_size=parallel_state.get_virtual_pipeline_model_parallel_world_size(),
+                    max_tokens_per_mbs=self.max_tokens_per_mbs,
+                    microbatch_group_size_per_vp_stage=self.transformer_config.microbatch_group_size_per_vp_stage,
+                )
             )
+        else:
+            total_seqlen = get_seq_length(batch)
+            num_microbatches = self._get_num_microbatches(batch, forward_only)
+            batch_iter = get_iterator_k_split(batch, num_splits=num_microbatches)
 
-        total_seqlen, num_microbatches, indices = batch_iterator.get_batch_info(
-            forward_micro_batch_size
-        )
         fwd_bwd_function = get_forward_backward_func()
         self.num_microbatches = num_microbatches
         self.return_loss = not forward_only
 
-        self.log_debug(
-            f"{total_seqlen=}, {forward_micro_batch_size=}, {num_microbatches=}, {indices=}"
-        )
+        self.log_debug(f"{total_seqlen=}, {num_microbatches=}")
 
         if forward_only:
             self._forward_only_record.start()
         forward_outputs = fwd_bwd_function(
             forward_step_func=self.get_forward_step_func(),
-            # TODO CHECK PADDING
+            data_iterator=self.make_data_iterator_list(batch_iter),
+            model=self.model,
+            num_microbatches=num_microbatches,
+            forward_only=forward_only,
+            seq_length=total_seqlen,
+            micro_batch_size=1,
+            collect_non_loss_data=forward_only,
+        )
+        if forward_only:
+            self._forward_only_record.stop()
+
+        outputs = self.process_fwd_bwd_outputs(forward_outputs, forward_only)
+
+        return outputs
+
+    def run_forward_backward_iterator(
+        self, batch_iterator: BatchResizingIterator, forward_only: bool = False
+    ):
+        """Run the forward and backward pass on the model using batch resizing iterator.
+
+        This function is solely intended for the training step of pipeline mode, which mixes RL pipeline with training pipeline parallelism.
+        So this function enforces forward_only to be false.
+
+        Args:
+            batch_iterator (Iterator): The input batch iterator for the forward pass.
+        """
+        clear_memory()
+        assert not self.enable_dynamic_batch_size, (
+            "Dynamic batch size is not supported in pipeline mode."
+        )
+
+        sample_batch = batch_iterator.prefetch_one_batch()
+        total_seqlen = get_seq_length(sample_batch)
+        num_microbatches = self._get_num_microbatches(sample_batch, forward_only)
+
+        fwd_bwd_function = get_forward_backward_func()
+        self.num_microbatches = num_microbatches
+        self.return_loss = not forward_only
+
+        self.log_debug(f"{total_seqlen=}, {num_microbatches=}")
+
+        if forward_only:
+            self._forward_only_record.start()
+        forward_outputs = fwd_bwd_function(
+            forward_step_func=self.get_forward_step_func(),
             data_iterator=self.make_data_iterator_list(batch_iterator),
             model=self.model,
             num_microbatches=num_microbatches,
@@ -494,10 +567,17 @@ class MegatronActor(MegatronModelManager, Worker):
         if forward_only:
             self._forward_only_record.stop()
 
+        outputs = self.process_fwd_bwd_outputs(forward_outputs, forward_only)
+
+        return outputs
+
+    def process_fwd_bwd_outputs(
+        self, forward_outputs: Dict[str, torch.Tensor], forward_only: bool
+    ):
         if forward_only:
             outputs = torch.cat(forward_outputs) if len(forward_outputs) > 0 else None
             if self.enable_dynamic_batch_size:
-                indices = sum(indices, [])
+                indices = sum(self.dbs_indices, [])
                 assert len(indices) == outputs.size(0), (
                     f"Dynamic batch size indices length {len(indices)} does not equal output length {outputs.size()}"
                 )
@@ -517,56 +597,24 @@ class MegatronActor(MegatronModelManager, Worker):
                     torch.distributed.broadcast(metric_mean, get_last_rank())
 
                     outputs[key] = metric_mean.cpu().item()
-
         return outputs
 
-    def get_batch_fn(self, forward_only: bool = False) -> Dict[str, torch.Tensor]:
-        if self.data_channel.is_local:
-            # Local channel, every process will put its own data locally
-            # No need to broadcast
-            result: RolloutResult = self.data_channel.get()
-        else:
-            if self.is_data_io_rank:
-                result: RolloutResult = self.data_channel.get()
-            else:
-                result = None
-            result = self.broadcast(result, ranks=self._mp_group_ranks)
-            result = self.broadcast(result, ranks=self._cp_group_ranks)
-
-        self.rollout_results.append(result)
-        batch = result.to_actor_batch(
-            self.cfg.data.max_prompt_length,
-            self.cfg.actor.model.encoder_seq_length,
-            self.tokenizer.eos_token_id,
-        )
-
-        # Compute reward and advantages in training
-        if not forward_only:
-            # Rule-based reward
-            if result.rewards is None:
-                self._compute_rewards(batch, result.answers)
-                result.rewards = batch["reward_scores"].cpu()
-
-            # Advantages
-            if result.advantages is None:
-                self._compute_advantages(batch)
-                result.advantages = batch["advantages"].cpu()
-
-        return batch
-
     # Training
-    def training_step(self, batch):
+    def training_step(self, batch: Dict[str, torch.Tensor] | BatchResizingIterator):
         """Run a single training step on the model.
 
         Args:
-            batch (dict): The input batch containing the data for the forward pass.
+            batch (Dict[str, torch.Tensor] | BatchResizingIterator): The input batch containing the data for the forward pass.
         """
         set_sync_funcs(self, forward_only=False)
         for model_chunk in self.model:
             model_chunk.zero_grad_buffer()
         self.optimizer.zero_grad()
 
-        train_metrics = self.run_forward_backward(batch, forward_only=False)
+        if isinstance(batch, BatchResizingIterator):
+            train_metrics = self.run_forward_backward_iterator(batch)
+        else:
+            train_metrics = self.run_forward_backward(batch, forward_only=False)
         increment = (
             get_num_microbatches()
             * self.cfg.actor.micro_batch_size
@@ -586,9 +634,8 @@ class MegatronActor(MegatronModelManager, Worker):
 
         return train_metrics
 
-    def run_training(self, input_channel: Channel):
-        """Run the training loop for the actor."""
-        self._load_weight_optimizer()
+    def training_setup(self):
+        self._load_weight_and_optimizer()
 
         set_train(self)
         configure_batch_sizes(
@@ -598,56 +645,21 @@ class MegatronActor(MegatronModelManager, Worker):
             dp=parallel_state.get_data_parallel_world_size(),
         )
 
-        training_metrics_list = []
-        self.data_channel = input_channel
-
-        # Valid token scale
-        if self.cfg.algorithm.use_valid_token_scale:
-            if self.component_placement.placement_mode == PlacementMode.DISAGGREGATED:
-                self.global_valid_token = (
-                    self.average_response_len
-                    * get_num_microbatches()
-                    * self.cfg.actor.micro_batch_size
-                )
-            else:
-                self.train_batch_iterator.register_global_batch_handler(
-                    self.valid_token_scale
-                )
-
-        # DP load balance
-        if self.cfg.actor.get("enable_dp_load_balance", False):
-            self.train_batch_iterator.register_full_batch_handler(self.dp_load_balance)
-
-        # Global batch iterations
-        for _ in range(self.num_train_steps):
-            training_metrics = self.training_step(self.train_batch_iterator)
-            self.train_batch_iterator.check_finished_global_batch()
-            training_metrics_list.append(training_metrics)
-
-        if self.use_profiler:
-            self.profiler.init_fwd_bwd_schedule(self.cfg.algorithm.n_minibatches)
-
-        # Rollout metrics
-        rollout_result = RolloutResult.merge_result_list(self.rollout_results)
-        batch = rollout_result.to_actor_batch(
-            self.cfg.data.max_prompt_length,
-            self.cfg.actor.model.encoder_seq_length,
-            self.tokenizer.eos_token_id,
-        )
-        batch["rewards"] = rollout_result.rewards
-        rollout_metrics = self._compute_rollout_metrics(batch)
-        self.rollout_results.clear()
-
-        return rollout_metrics, training_metrics_list
-
-    def valid_token_scale(self, batch: Dict[str, torch.Tensor]):
-        loss_mask = batch["attention_mask"][:, -self.response_len :]
-        global_valid_token = loss_mask.to(dtype=torch.float32).sum().cuda()
-        torch.distributed.all_reduce(
-            global_valid_token, group=parallel_state.get_data_parallel_group()
-        )
-        self.global_valid_token = global_valid_token
-        return batch
+    def setup_valid_token_scale(self, batch: Optional[Dict[str, torch.Tensor]] = None):
+        if batch is None:
+            self.global_valid_token = (
+                self.average_response_len
+                * get_num_microbatches()
+                * self.cfg.actor.micro_batch_size
+            )
+        else:
+            loss_mask = batch["attention_mask"][:, -self.response_len :]
+            global_valid_token = loss_mask.to(dtype=torch.float32).sum().cuda()
+            torch.distributed.all_reduce(
+                global_valid_token, group=parallel_state.get_data_parallel_group()
+            )
+            self.global_valid_token = global_valid_token
+            return batch
 
     def dp_load_balance(self, batch: Dict[str, torch.Tensor]):
         batch_size = batch["input_ids"].shape[0]
@@ -662,6 +674,96 @@ class MegatronActor(MegatronModelManager, Worker):
             partitioning_tool=get_seqlen_balanced_partitions,
         )
         return batch
+
+    def run_training(self, input_channel: Channel):
+        """Run the training loop for the actor."""
+        if self.is_pipeline:
+            return self.run_training_pipeline(input_channel)
+
+        # Get all batches for this DP
+        batches = []
+        recv_batch_size = 0
+        while recv_batch_size < self.total_batch_size_per_dp:
+            batch, rollout_result = self.get_batch(input_channel)
+            batches.append(batch)
+            recv_batch_size += rollout_result.num_sequence
+        assert recv_batch_size == self.total_batch_size_per_dp, (
+            f"Expected {self.total_batch_size_per_dp} sequences from channel, but got {recv_batch_size}"
+        )
+        batch = RolloutResult.merge_batches(batches)
+
+        # Must be called after batch is retrieved, which is when rollout has stopped
+        # Otherwise, loading model might cause OOM
+        self.training_setup()
+
+        # Valid token scale
+        if self.cfg.algorithm.use_valid_token_scale:
+            self.setup_valid_token_scale(batch)
+
+        # DP batch load balance
+        if self.cfg.actor.get("enable_dp_load_balance", False):
+            batch = self.dp_load_balance(batch)
+
+        if self.use_profiler:
+            self.profiler.init_fwd_bwd_schedule(self.cfg.algorithm.n_minibatches)
+
+        global_batches = get_iterator_k_split(
+            batch,
+            num_splits=self.num_train_steps,
+            shuffle=self.cfg.algorithm.get("shuffle_rollout", True),
+            shuffle_seed=self.cfg.actor.seed,
+        )
+
+        # Global batch iterations
+        training_metrics_list = []
+        for global_batch in global_batches:
+            training_metrics = self.training_step(global_batch)
+            training_metrics_list.append(training_metrics)
+
+        # Rollout metrics
+        rollout_metrics = self._compute_rollout_metrics(batch)
+
+        return rollout_metrics, training_metrics_list
+
+    def run_training_pipeline(self, input_channel: Channel):
+        """Run the training loop for the actor."""
+        self.training_setup()
+        # Built iterator for Megatron's pipeline schedule to run
+        # NOTE: We cannot iterate over the iterator here, as Megatron's pipeline schedule is responsible for iterating over data
+        # As a result, we need to separate the implementation for pipeline and non-pipeline mode for Megatron
+        train_batch_iterator = BatchResizingIterator(
+            cfg=self.cfg,
+            get_batch_fn=partial(self.get_batch, input_channel),
+            micro_batch_size=self.role_cfg.micro_batch_size,
+            total_batch_size=self.total_batch_size_per_dp,
+            num_global_batches=self.num_train_steps,
+            forward_only=False,
+        )
+
+        # Valid token scale
+        if self.cfg.algorithm.use_valid_token_scale:
+            self.setup_valid_token_scale()
+
+        # DP batch load balance
+        assert not self.cfg.actor.get("enable_dp_load_balance", False), (
+            "DP load balance is not supported in pipeline mode."
+        )
+
+        if self.use_profiler:
+            self.profiler.init_fwd_bwd_schedule(self.cfg.algorithm.n_minibatches)
+
+        # Global batch iterations
+        training_metrics_list = []
+        for _ in range(self.num_train_steps):
+            training_metrics = self.training_step(train_batch_iterator)
+            train_batch_iterator.check_finished_global_batch()
+            training_metrics_list.append(training_metrics)
+
+        # Rollout metrics
+        batch = train_batch_iterator.get_all_batches()
+        rollout_metrics = self._compute_rollout_metrics(batch)
+
+        return rollout_metrics, training_metrics_list
 
     # Inference
     def _setup_inference_weight_dst_ranks(self):
@@ -701,11 +803,9 @@ class MegatronActor(MegatronModelManager, Worker):
         )
 
     @torch.no_grad()
-    def inference_step(self):
+    def inference_step(self, batch):
         set_eval(self)
-        return self.run_forward_backward(
-            self.inference_batch_iterator, forward_only=True
-        )
+        return self.run_forward_backward(batch, forward_only=True)
 
     def run_inference(
         self,
@@ -718,36 +818,66 @@ class MegatronActor(MegatronModelManager, Worker):
         Args:
             input_channel: The input channel to read from.
             output_channel: The output channel to send results to.
-            recompute_logprobs: Whether to recompute prev logprobs.
             compute_ref_logprobs: Whether to compute reference logprobs.
         """
-        self._load_weight_optimizer()
+        recv_batch_size = 0
+        while recv_batch_size < self.total_batch_size_per_dp:
+            batch, rollout_result = self.get_batch(input_channel)
+            recv_batch_size += rollout_result.num_sequence
 
-        self.data_channel = input_channel
-        for _ in range(self.num_inference_steps):
+            # Must be called after batch is retrieved, suggesting that rollout has stopped
+            # Otherwise, loading model might cause OOM
+            self._load_weight_and_optimizer()
+
             # Prev logprobs
-            prev_logprobs = self.inference_step()
-            self.inference_batch_iterator.check_finished_global_batch()
-
-            rollout_result = RolloutResult.merge_result_list(self.rollout_results)
-            self.rollout_results.clear()
+            prev_logprobs = self.inference_step(batch)
             rollout_result.prev_logprobs = prev_logprobs.cpu()
 
             # Ref logprobs
             if compute_ref_logprobs:
-                self.inference_batch_iterator.replay_last_global_batch()
                 assert self.ref_policy_state_dict is not None
                 with cpu_weight_swap(self.model[0], self.ref_policy_state_dict):
-                    ref_logprobs = self.inference_step()
+                    ref_logprobs = self.inference_step(batch)
                     rollout_result.ref_logprobs = ref_logprobs.cpu()
 
-            if output_channel.is_local:
-                output_channel.put(rollout_result)
-            else:
-                if self.is_data_io_rank:
-                    output_channel.put(rollout_result)
+            self.put_result(rollout_result, output_channel)
 
-    # Advantages and metrics
+        assert recv_batch_size == self.total_batch_size_per_dp, (
+            f"Expected {self.total_batch_size_per_dp} sequences from channel, but got {recv_batch_size}"
+        )
+
+    # Rewards and advantages
+    def compute_rewards_and_advantages(
+        self, input_channel: Channel, output_channel: Channel
+    ):
+        """Compute rewards and advantages.
+
+        Args:
+            input_channel: The input channel to read from.
+            output_channel: The output channel to send results to.
+        """
+        recv_batch_size = 0
+        while recv_batch_size < self.total_batch_size_per_dp:
+            batch, rollout_result = self.get_batch(input_channel)
+            recv_batch_size += rollout_result.num_sequence
+
+            # Compute reward and advantages in training
+            # Rule-based reward
+            if rollout_result.rewards is None:
+                self._compute_rewards(batch, rollout_result.answers)
+                rollout_result.rewards = batch["rewards"].cpu()
+
+            # Advantages
+            if rollout_result.advantages is None:
+                self._compute_advantages(batch)
+                rollout_result.advantages = batch["advantages"].cpu()
+
+            self.put_result(rollout_result, output_channel)
+
+        assert recv_batch_size == self.total_batch_size_per_dp, (
+            f"Expected {self.total_batch_size_per_dp} sequences from channel, but got {recv_batch_size}"
+        )
+
     def _compute_advantages(self, batch: Dict[str, torch.Tensor]):
         """Compute the advantages and returns for the rollout batches."""
         clear_memory()
@@ -755,7 +885,7 @@ class MegatronActor(MegatronModelManager, Worker):
         mask = batch["attention_mask"][:, -self.response_len :]
         advantages, _ = calculate_adv_and_returns(
             self.cfg.algorithm.adv_type,
-            batch["reward_scores"].cuda(),
+            batch["rewards"].cuda(),
             mask.cuda(),
             self.cfg.algorithm.group_size,
         )
@@ -763,6 +893,53 @@ class MegatronActor(MegatronModelManager, Worker):
         if self.cfg.algorithm.normalize_advantages:
             advantages = masked_normalization(advantages, mask)
         batch["advantages"] = advantages.cuda()
+
+    def _compute_rewards(
+        self, train_batch: Dict[str, torch.Tensor], answers: List[str]
+    ):
+        """Reward computation using non-model based reward."""
+        all_reward_scores = []
+        texts = []
+        for response, response_len in zip(
+            train_batch["input_ids"],
+            train_batch["response_lengths"],
+        ):
+            response = response[
+                self.cfg.data.max_prompt_length : self.cfg.data.max_prompt_length
+                + response_len
+            ]
+            texts.append(
+                self.tokenizer.decode(response.tolist(), skip_special_tokens=True)
+            )
+
+        if torch.distributed.get_rank() == parallel_state.get_model_parallel_src_rank():
+            rewards = self.reward_fn(texts, answers)
+            reward_scores = [
+                self.cfg.reward.reward_scale
+                if reward == 1
+                else -self.cfg.reward.reward_scale
+                for reward in rewards
+            ]
+            all_reward_scores.extend(reward_scores)
+
+        if len(all_reward_scores) > 0:
+            new_all_rewards = []
+
+            for response in all_reward_scores:
+                if response is None:
+                    response = 0.0
+                new_all_rewards.append(response)
+
+            all_reward_scores = torch.as_tensor(
+                new_all_rewards,
+                dtype=torch.float,
+                device=torch.cuda.current_device(),
+            ).view(-1, 1)
+        all_reward_scores = (
+            broadcast_tensor_within_mp(all_reward_scores).flatten().to("cpu")
+        )
+
+        train_batch.update({"rewards": all_reward_scores})
 
     # Rollout
     def _get_rollout_model_state_dict(self):
@@ -840,51 +1017,3 @@ class MegatronActor(MegatronModelManager, Worker):
                 }
             )
         return rollout_metrics
-
-    # Reward
-    def _compute_rewards(
-        self, train_batch: Dict[str, torch.Tensor], answers: List[str]
-    ):
-        """Reward computation using non-model based reward."""
-        all_reward_scores = []
-        texts = []
-        for response, response_len in zip(
-            train_batch["input_ids"],
-            train_batch["response_lengths"],
-        ):
-            response = response[
-                self.cfg.data.max_prompt_length : self.cfg.data.max_prompt_length
-                + response_len
-            ]
-            texts.append(
-                self.tokenizer.decode(response.tolist(), skip_special_tokens=True)
-            )
-
-        if torch.distributed.get_rank() == parallel_state.get_model_parallel_src_rank():
-            rewards = self.reward_fn(texts, answers)
-            reward_scores = [
-                self.cfg.reward.reward_scale
-                if reward == 1
-                else -self.cfg.reward.reward_scale
-                for reward in rewards
-            ]
-            all_reward_scores.extend(reward_scores)
-
-        if len(all_reward_scores) > 0:
-            new_all_rewards = []
-
-            for response in all_reward_scores:
-                if response is None:
-                    response = 0.0
-                new_all_rewards.append(response)
-
-            all_reward_scores = torch.as_tensor(
-                new_all_rewards,
-                dtype=torch.float,
-                device=torch.cuda.current_device(),
-            ).view(-1, 1)
-        all_reward_scores = (
-            broadcast_tensor_within_mp(all_reward_scores).flatten().to("cpu")
-        )
-
-        train_batch.update({"reward_scores": all_reward_scores})
