@@ -164,6 +164,18 @@ class MegatronActor(MegatronModelManager, Worker):
             // parallel_state.get_data_parallel_world_size()
         )
 
+        # Config validation
+        if self.is_pipeline:
+            assert not self.cfg.algorithm.normalize_advantages, (
+                "Advantage normalization is not supported in pipeline mode."
+            )
+            assert not self.role_cfg.get("enable_dp_load_balance", False), (
+                "DP load balance is not supported in pipeline mode."
+            )
+            assert not self.cfg.runner.enable_dynamic_batch_size, (
+                "Dynamic batch size is not supported in pipeline mode."
+            )
+
         # Create GLOO MP group for broadcast
         self._mp_group_ranks = parallel_state._MODEL_PARALLEL_GLOBAL_RANKS
         self._cp_group_ranks = parallel_state._CONTEXT_PARALLEL_GLOBAL_RANKS
@@ -696,6 +708,11 @@ class MegatronActor(MegatronModelManager, Worker):
         # Otherwise, loading model might cause OOM
         self.training_setup()
 
+        # Advantage normalization
+        if self.cfg.algorithm.normalize_advantages:
+            mask = batch["attention_mask"][:, -self.response_len :]
+            batch["advantages"] = masked_normalization(batch["advantages"], mask)
+
         # Valid token scale
         if self.cfg.algorithm.use_valid_token_scale:
             self.setup_valid_token_scale(batch)
@@ -738,6 +755,11 @@ class MegatronActor(MegatronModelManager, Worker):
             total_batch_size=self.total_batch_size_per_dp,
             num_global_batches=self.num_train_steps,
             forward_only=False,
+        )
+
+        # Advantage normalization
+        assert not self.cfg.algorithm.normalize_advantages, (
+            "Advantage normalization is not supported in pipeline mode."
         )
 
         # Valid token scale
@@ -846,11 +868,9 @@ class MegatronActor(MegatronModelManager, Worker):
             f"Expected {self.total_batch_size_per_dp} sequences from channel, but got {recv_batch_size}"
         )
 
-    # Rewards and advantages
-    def compute_rewards_and_advantages(
-        self, input_channel: Channel, output_channel: Channel
-    ):
-        """Compute rewards and advantages.
+    # Rewards
+    def compute_rewards(self, input_channel: Channel, output_channel: Channel):
+        """Compute rewards.
 
         Args:
             input_channel: The input channel to read from.
@@ -861,16 +881,11 @@ class MegatronActor(MegatronModelManager, Worker):
             batch, rollout_result = self.get_batch(input_channel)
             recv_batch_size += rollout_result.num_sequence
 
-            # Compute reward and advantages in training
-            # Rule-based reward
+            # Compute rule-based reward
             if rollout_result.rewards is None:
-                self._compute_rewards(batch, rollout_result.answers)
-                rollout_result.rewards = batch["rewards"].cpu()
-
-            # Advantages
-            if rollout_result.advantages is None:
-                self._compute_advantages(batch)
-                rollout_result.advantages = batch["advantages"].cpu()
+                rollout_result.rewards = self._compute_batch_rewards(
+                    batch, rollout_result.answers
+                ).cpu()
 
             self.put_result(rollout_result, output_channel)
 
@@ -878,31 +893,15 @@ class MegatronActor(MegatronModelManager, Worker):
             f"Expected {self.total_batch_size_per_dp} sequences from channel, but got {recv_batch_size}"
         )
 
-    def _compute_advantages(self, batch: Dict[str, torch.Tensor]):
-        """Compute the advantages and returns for the rollout batches."""
-        clear_memory()
-        assert batch is not None
-        mask = batch["attention_mask"][:, -self.response_len :]
-        advantages, _ = calculate_adv_and_returns(
-            self.cfg.algorithm.adv_type,
-            batch["rewards"].cuda(),
-            mask.cuda(),
-            self.cfg.algorithm.group_size,
-        )
-
-        if self.cfg.algorithm.normalize_advantages:
-            advantages = masked_normalization(advantages, mask)
-        batch["advantages"] = advantages.cuda()
-
-    def _compute_rewards(
-        self, train_batch: Dict[str, torch.Tensor], answers: List[str]
+    def _compute_batch_rewards(
+        self, batch: Dict[str, torch.Tensor], answers: List[str]
     ):
         """Reward computation using non-model based reward."""
         all_reward_scores = []
         texts = []
         for response, response_len in zip(
-            train_batch["input_ids"],
-            train_batch["response_lengths"],
+            batch["input_ids"],
+            batch["response_lengths"],
         ):
             response = response[
                 self.cfg.data.max_prompt_length : self.cfg.data.max_prompt_length
@@ -935,11 +934,39 @@ class MegatronActor(MegatronModelManager, Worker):
                 dtype=torch.float,
                 device=torch.cuda.current_device(),
             ).view(-1, 1)
-        all_reward_scores = (
-            broadcast_tensor_within_mp(all_reward_scores).flatten().to("cpu")
-        )
+        return broadcast_tensor_within_mp(all_reward_scores).flatten().to("cpu")
 
-        train_batch.update({"rewards": all_reward_scores})
+    # Advantages and returns
+    def compute_advantages_and_returns(
+        self, input_channel: Channel, output_channel: Channel
+    ):
+        """Compute the advantages and returns.
+
+        Args:
+            input_channel: The input channel to read from.
+            output_channel: The output channel to send results to.
+        """
+        clear_memory()
+        recv_batch_size = 0
+        while recv_batch_size < self.total_batch_size_per_dp:
+            batch, rollout_result = self.get_batch(input_channel)
+            recv_batch_size += rollout_result.num_sequence
+
+            if rollout_result.advantages is None:
+                mask = batch["attention_mask"][:, -self.response_len :]
+                advantages, returns = calculate_adv_and_returns(
+                    self.cfg.algorithm.adv_type,
+                    batch["rewards"].cuda(),
+                    mask.cuda(),
+                    self.cfg.algorithm.group_size,
+                )
+                rollout_result.advantages = advantages.cpu()
+
+            self.put_result(rollout_result, output_channel)
+
+        assert recv_batch_size == self.total_batch_size_per_dp, (
+            f"Expected {self.total_batch_size_per_dp} sequences from channel, but got {recv_batch_size}"
+        )
 
     # Rollout
     def _get_rollout_model_state_dict(self):

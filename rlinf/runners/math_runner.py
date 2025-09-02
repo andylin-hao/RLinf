@@ -77,6 +77,7 @@ class MathRunner:
         self.reward_channel = Channel.create(
             "Reward", local=not self.has_dedicated_reward
         )
+        self.advantage_channel = Channel.create("Advantage", local=True)
         self.actor_channel = Channel.create("Actor")
 
         # Configurations
@@ -334,15 +335,21 @@ class MathRunner:
                         infer_handle = None
                         inference_channel = self.rollout_channel
 
-                    # Rewards and advantages
-                    reward_handle: Handle = self.reward.compute_rewards_and_advantages(
+                    # Rewards
+                    reward_handle: Handle = self.reward.compute_rewards(
                         input_channel=inference_channel,
                         output_channel=self.reward_channel,
                     )
 
+                    # Advantages and returns
+                    adv_handle: Handle = self.actor.compute_advantages_and_returns(
+                        input_channel=self.reward_channel,
+                        output_channel=self.advantage_channel,
+                    )
+
                     # Actor training
                     actor_handle: Handle = self.actor.run_training(
-                        input_channel=self.reward_channel,
+                        input_channel=self.advantage_channel,
                     )
 
                     metrics = actor_handle.wait()
@@ -377,7 +384,8 @@ class MathRunner:
                 time_metrics = self.timer.consume_durations()
                 time_metrics["training"] = actor_handle.duration
                 time_metrics["rollout"] = rollout_handle.duration
-                time_metrics["reward_and_advantage"] = reward_handle.duration
+                time_metrics["reward"] = reward_handle.duration
+                time_metrics["advantage"] = adv_handle.duration
                 if infer_handle is not None:
                     time_metrics["inference"] = infer_handle.duration
 
