@@ -220,13 +220,14 @@ class MegatronActor(MegatronModelManager, Worker):
             "megatron_forward_backward", self.use_profiler
         )
 
-    def _load_weight_and_optimizer(self):
-        if self.is_weight_offloaded:
-            self.onload_model_weights_and_grad(load_grad=self.offload_grad)
-            self.is_weight_offloaded = False
-        if self.is_optimizer_offloaded:
-            self.onload_megatron_optimizer()
-            self.is_optimizer_offloaded = False
+    def _load_weight_and_optimizer(self, channel: Channel):
+        with channel.gpu_lock:
+            if self.is_weight_offloaded:
+                self.onload_model_weights_and_grad(load_grad=self.offload_grad)
+                self.is_weight_offloaded = False
+            if self.is_optimizer_offloaded:
+                self.onload_megatron_optimizer()
+                self.is_optimizer_offloaded = False
 
     def init_worker(self):
         self.setup_model_and_optimizer()
@@ -647,8 +648,6 @@ class MegatronActor(MegatronModelManager, Worker):
         return train_metrics
 
     def training_setup(self):
-        self._load_weight_and_optimizer()
-
         set_train(self)
         configure_batch_sizes(
             rank=torch.distributed.get_rank(),
@@ -707,6 +706,7 @@ class MegatronActor(MegatronModelManager, Worker):
 
         # Must be called after batch is retrieved, which is when rollout has stopped
         # Otherwise, loading model might cause OOM
+        self._load_weight_and_optimizer(input_channel)
         self.training_setup()
 
         # Advantage normalization
@@ -746,6 +746,7 @@ class MegatronActor(MegatronModelManager, Worker):
 
     def run_training_pipeline(self, input_channel: Channel):
         """Run the training loop for the actor."""
+        self._load_weight_and_optimizer(input_channel)
         self.training_setup()
         # Built iterator for Megatron's pipeline schedule to run
         # NOTE: We cannot iterate over the iterator here, as Megatron's pipeline schedule is responsible for iterating over data
@@ -851,7 +852,7 @@ class MegatronActor(MegatronModelManager, Worker):
 
             # Must be called after batch is retrieved, suggesting that rollout has stopped
             # Otherwise, loading model might cause OOM in the collocated mode
-            self._load_weight_and_optimizer()
+            self._load_weight_and_optimizer(input_channel)
 
             # Prev logprobs
             with self.worker_timer():

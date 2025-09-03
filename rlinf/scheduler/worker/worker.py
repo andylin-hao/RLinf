@@ -389,6 +389,13 @@ class Worker(metaclass=WorkerMeta):
         Worker.PID = os.getpid()
         self._thread = threading.current_thread()
 
+        # Reset Cluster.NAMESPACE for this Worker process according to the environment variable
+        namespace = os.environ.get("CLUSTER_NAMESPACE", None)
+        assert namespace is not None, (
+            "CLUSTER_NAMESPACE environment variable must be set before initializing Worker."
+        )
+        Cluster.NAMESPACE = namespace
+
         if self._is_ray_actor and parent_address is not None:
             # The Worker is a Ray actor launched inside a Worker
             self._worker_address = parent_address.get_child_address(self._rank)
@@ -725,13 +732,6 @@ class Worker(metaclass=WorkerMeta):
         from ..collective import Collective
         from ..manager import WorkerManager
 
-        # Reset Cluster.NAMESPACE for this Worker process according to the environment variable
-        namespace = os.environ.get("CLUSTER_NAMESPACE", None)
-        assert namespace is not None, (
-            "CLUSTER_NAMESPACE environment variable must be set before initializing Worker."
-        )
-        Cluster.NAMESPACE = namespace
-
         if not ray.is_initialized():
             # Initialize Ray if not already initialized
             ray.init(
@@ -799,13 +799,19 @@ class Worker(metaclass=WorkerMeta):
 
     def _setup_gpu_info(self) -> int:
         num_available_gpus = torch.cuda.device_count()
+        cuda_devices = os.environ.get("CUDA_VISIBLE_DEVICES", None)
+        cluster = Cluster()
+        if cuda_devices is None:
+            cuda_devices = list(range(cluster.num_gpus_per_node))
+        else:
+            cuda_devices = [int(d) for d in cuda_devices.split(",")]
+
+        self.global_gpu_ids = [
+            cuda_device + self._node_id * cluster.num_gpus_per_node
+            for cuda_device in cuda_devices
+        ]
+
         if not self._is_ray_actor:
-            cuda_devices = os.environ.get("CUDA_VISIBLE_DEVICES", None)
-            if cuda_devices is None:
-                cluster = Cluster()
-                cuda_devices = list(range(cluster.num_gpus_per_node))
-            else:
-                cuda_devices = [int(d) for d in cuda_devices.split(",")]
             self._gpu_id = cuda_devices[0]
 
         # Find available GPUs visible to the worker
