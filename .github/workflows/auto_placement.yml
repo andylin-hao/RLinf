@@ -1,4 +1,4 @@
-name: Embodied End2End
+name: Math Auto Placement
 
 on:
     push:
@@ -24,8 +24,8 @@ on:
           - '.github/workflows/*.yml'
           - '!docs/**'
           - '!README.md'
-          - '!*.yaml'
-          - '!*.toml'
+          - '*.yaml'
+          - '*.toml'
 
 permissions:
   contents: read
@@ -35,19 +35,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-    openvla-ppo-test:
+    qwen-grpo-test:
         runs-on: rlinf
         container:
-            image: rlinf/rlinf:agentic-openvla-rlinf0.1-torch2.5.1-transformer4.40
+            image: rlinf/rlinf:math-rlinf0.1-torch2.5.1-sglang0.4.4-vllm0.7.1-megatron0.11.0-te2.1
             volumes:
                 - /mnt/public/dataset:/workspace/dataset
                 - /mnt/public/tokenizer:/workspace/tokenizer
-            options: --gpus="all" --shm-size=2g -e NVIDIA_DRIVER_CAPABILITIES="compute,utility,graphics"
+            options: --gpus="all" --shm-size=80g
 
         steps:
             - name: Checkout code
               uses: actions/checkout@v4
-            - name: OpenVLA test
+
+            - name: auto-placement
               run: |
                 export REPO_PATH=$(pwd)
-                bash tests/e2e_tests/embodied/run_openvla.sh
+                bash tests/e2e_tests/auto_placement/run_auto_placement.sh

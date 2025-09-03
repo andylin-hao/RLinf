@@ -100,18 +100,18 @@ Key metrics to track:
 Training Curve
 ~~~~~~~~~~~~~~
 
-The following plots show training curves, consistent with those reported in AReaL:
+The following plots show training curves.
 
 .. raw:: html
 
    <div style="display: flex; justify-content: space-between; gap: 10px;">
      <div style="flex: 1; text-align: center;">
        <img src="https://github.com/user-attachments/assets/66b79012-f2e7-4b1d-9785-5d8f4f7d9025" style="width: 100%;"/>
-       <p><em>MATH 1.5b</em></p>
+       <p><em>MATH 1.5B</em></p>
      </div>
      <div style="flex: 1; text-align: center;">
        <img src="https://github.com/user-attachments/assets/37afd9f1-c503-49ec-8657-1f8f883a85c5" style="width: 100%;"/>
-       <p><em>MATH 7b</em></p>
+       <p><em>MATH 7B</em></p>
      </div>
    </div>
 
@@ -121,74 +121,94 @@ Final Performance
 
 We provide an evaluation `toolkit <https://github.com/RLinf/LLMEvalKit>`_ and corresponding :doc:`evaluation documentation <../start/eval>`.
 
-Measured performance on AIME24, AIME25, and GPQA-diamond shows RLinf achieves results comparable to or better than AReaL.
-
-.. **1.5B model results**:
-
-.. +---------------------------------------------------------------+--------+--------+--------------+
-.. | Model                                                         | AIME24 | AIME25 | GPQA-diamond |
-.. +===============================================================+========+========+==============+
-.. | DeepSeek-R1-Distill-Qwen-1.5B                                 | 29.06  | 22.60  | 27.00        |
-.. +---------------------------------------------------------------+--------+--------+--------------+
-.. | AReaL-1.5B                                                    | 43.55  | 35.00  | 34.73        |
-.. +---------------------------------------------------------------+--------+--------+--------------+
-.. | `RLinf-math-1.5B <https://huggingface.co/RLinf/RLinf-math-1.5B>`_ | 48.44  | 35.63  | 38.46        |
-.. +---------------------------------------------------------------+--------+--------+--------------+
-
-.. **7B model results**:
-
-.. +-------------------------------------------------------------+--------+--------+--------------+
-.. | Model                                                       | AIME24 | AIME25 | GPQA-diamond |
-.. +=============================================================+========+========+==============+
-.. | DeepSeek-R1-Distill-Qwen-7B                                 | 54.90  | 40.20  | 45.48        |
-.. +-------------------------------------------------------------+--------+--------+--------------+
-.. | AReaL-7B                                                    | 62.82  | 47.29  | 46.54        |
-.. +-------------------------------------------------------------+--------+--------+--------------+
-.. | `RLinf-math-7B <https://huggingface.co/RLinf/RLinf-math-7B>`_ | 68.33  | 52.19  | 48.18        |
-.. +-------------------------------------------------------------+--------+--------+--------------+
+Measured performance on AIME24, AIME25, and GPQA-diamond shows RLinf achieves SOTA performance.
 
 .. list-table:: **1.5 B model results**
    :header-rows: 1
-   :widths: 45 15 15 25
+   :widths: 45 15 15 25 15
 
    * - Model
      - AIME 24
      - AIME 25
      - GPQA-diamond
-   * - DeepSeek-R1-Distill-Qwen-1.5B
-     - 29.06
-     - 22.60
-     - 27.00
-   * - AReaL-1.5B
-     - 43.55
+     - Average
+   * - `DeepSeek-R1-Distill-Qwen-1.5B (base model) <https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B>`_
+     - 28.33
+     - 24.90
+     - 27.45
+     - 26.89
+   * - `DeepMath-1.5B <https://huggingface.co/zwhe99/DeepMath-1.5B>`_
+     - 37.80
+     - 30.42
+     - 32.11
+     - 33.44
+   * - `DeepScaleR-1.5B-Preview <https://huggingface.co/agentica-org/DeepScaleR-1.5B-Preview>`_
+     - 40.41
+     - 30.93
+     - 27.54
+     - 32.96
+   * - `AReaL-1.5B-Preview-Stage-3 <https://huggingface.co/inclusionAI/AReaL-1.5B-Preview-Stage-3>`_
+     - 40.73
+     - 31.56
+     - 28.10
+     - 33.46
+   * - AReaL-1.5B-retrain\*
+     - 44.42
+     - 34.27
+     - 33.81
+     - 37.50
+   * - `FastCuRL-1.5B-V3 <https://huggingface.co/Nickyang/FastCuRL-1.5B-V3>`_
+     - 43.65
+     - 32.49
      - 35.00
-     - 34.73
-   * - RLinf-math-1.5B
-     - 48.44
-     - 35.63
-     - 38.46
+     - 37.05
+   * - `RLinf-math-1.5B <https://huggingface.co/RLinf/RLinf-math-1.5B>`_
+     - **48.44**
+     - **35.63**
+     - **38.46**
+     - **40.84**
+
+\* We retrain the model using the default settings for 600 steps.
 
 .. list-table:: **7 B model results**
    :header-rows: 1
-   :widths: 45 15 15 25
+   :widths: 45 15 15 25 15
 
    * - Model
      - AIME 24
      - AIME 25
      - GPQA-diamond
-   * - DeepSeek-R1-Distill-Qwen-7B
+     - Average
+   * - `DeepSeek-R1-Distill-Qwen-7B (base model) <https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-7B>`_
      - 54.90
      - 40.20
      - 45.48
-   * - AReaL-7B
-     - 62.82
-     - 47.29
-     - 46.54
-   * - RLinf-math-7B 
+     - 46.86
+   * - `AReaL-boba-RL-7B <https://huggingface.co/inclusionAI/AReaL-boba-RL-7B>`_
+     - 61.66
+     - 49.38
+     - 46.93
+     - 52.66
+   * - `Skywork-OR1-7B <https://huggingface.co/Skywork/Skywork-OR1-7B>`_
+     - 66.87
+     - 52.49
+     - 44.43
+     - 54.60
+   * - `Polaris-7B-Preview <https://huggingface.co/POLARIS-Project/Polaris-7B-Preview>`_
+     - **68.55**
+     - 51.24
+     - 43.88
+     - 54.56
+   * - `AceMath-RL-Nemotron-7B <https://huggingface.co/nvidia/AceMath-RL-Nemotron-7B>`_
+     - 67.30
+     - **55.00**
+     - 45.57
+     - 55.96
+   * - `RLinf-math-7B <https://huggingface.co/RLinf/RLinf-math-7B>`_
      - 68.33
      - 52.19
-     - 48.18
-
+     - **48.18**
+     - **56.23**
 
 
 Public Checkpoints

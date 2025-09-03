@@ -14,7 +14,6 @@ Therefore, users can find the corresponding configuration information according 
    :depth: 1
    :local:
 
-
 Basic Configuration
 ---------------------
 
@@ -505,7 +504,7 @@ actor
       ckpt_format: torch
       use_dist_ckpt: False
       tp_comm_bootstrap_backend: nccl
-      tp_comm_overlap_cfg: null #/mnt/public/megatron-infinigence-rl/examples/megatron_tp_comm_overlap_cfg.yaml
+      tp_comm_overlap_cfg: null 
       use_hf_ckpt: True # if true, will transfer hf model to generate megatron checkpoint and use it for training.
       
       ckpt: # config for ckpt convertor
@@ -524,9 +523,9 @@ actor
 
 ``actor.training_backend``: Training backend (megatron).
 
-``actor.mcore_gpt``: Use Megatron-Core GPT stack. TODO: exact scope.
+``actor.mcore_gpt``: Use Megatron-Core GPT stack. 
 
-``actor.spec_name``: Model spec/preset name (e.g., decoder-only GPT). TODO: preset mapping.
+``actor.spec_name``: Model spec/preset name (e.g., decoder-only GPT). 
 
 ``actor.offload_optimizer``: Offload optimizer state to CPU to reduce GPU memory.
 
@@ -569,19 +568,19 @@ actor
 
 ``actor.model.apply_rope_fusion``: Use fused RoPE kernels if available.
 
-``actor.model.bias_dropout_fusion``: Fuse bias + dropout kernels. TODO: kernel availability.
+``actor.model.bias_dropout_fusion``: Fuse bias + dropout kernels. 
 
-``actor.model.persist_layer_norm``: Persist LN params in higher precision. TODO: exact semantics.
+``actor.model.persist_layer_norm``: Persist LN params in higher precision. 
 
-``actor.model.bias_activation_fusion``: Fuse bias + activation kernels. TODO: kernel availability.
+``actor.model.bias_activation_fusion``: Fuse bias + activation kernels. 
 
 ``actor.model.attention_softmax_in_fp32``: Compute attention softmax in FP32 for stability.
 
-``actor.model.batch_p2p_comm``: Batch P2P communications across layers. TODO: behavior.
+``actor.model.batch_p2p_comm``: Batch P2P communications across layers. 
 
 ``actor.model.variable_seq_lengths``: Allow variable sequence lengths per micro-batch.
 
-``actor.model.gradient_accumulation_fusion``: Fused gradient accumulation. TODO: support matrix.
+``actor.model.gradient_accumulation_fusion``: Fused gradient accumulation. 
 
 ``actor.model.moe_token_dispatcher_type``: MoE token dispatcher (e.g., alltoall).
 
@@ -607,13 +606,13 @@ actor
 
 ``actor.optim.overlap_param_gather``: Overlap parameter all-gather with forward pass.
 
-``actor.optim.optimizer_enable_pin``: Pin optimizer memory. TODO: effects and scope.
+``actor.optim.optimizer_enable_pin``: Pin optimizer memory. 
 
-``actor.optim.overlap_param_gather_with_optimizer_step``: Overlap param gather with step. TODO.
+``actor.optim.overlap_param_gather_with_optimizer_step``: Overlap param gather with step. 
 
 ``actor.optim.clip_grad``: Global gradient clipping norm.
 
-``actor.optim.loss_scale_window``: Dynamic loss scale window for FP16. TODO: exact algorithm.
+``actor.optim.loss_scale_window``: Dynamic loss scale window for FP16. 
 
 **LR schedule**
 
@@ -641,7 +640,7 @@ actor
 
 **Megatron integration**
 
-``actor.megatron.ddp_bucket_size``: DDP gradient bucket size. TODO: units.
+``actor.megatron.ddp_bucket_size``: DDP gradient bucket size. 
 
 ``actor.megatron.distributed_backend``: Distributed backend (nccl or gloo).
 
@@ -649,11 +648,11 @@ actor
 
 ``actor.megatron.ckpt_format``: Checkpoint format (e.g., torch).
 
-``actor.megatron.use_dist_ckpt``: Use distributed checkpointing (sharded). TODO: behavior.
+``actor.megatron.use_dist_ckpt``: Use distributed checkpointing (sharded). 
 
 ``actor.megatron.tp_comm_bootstrap_backend``: Backend used for TP bootstrap (e.g., nccl).
 
-``actor.megatron.tp_comm_overlap_cfg``: YAML path for TP comm/compute overlap. TODO: schema.
+``actor.megatron.tp_comm_overlap_cfg``: YAML path for TP comm/compute overlap. 
 
 ``actor.megatron.use_hf_ckpt``: Convert/load from a HuggingFace checkpoint for training.
 
@@ -667,9 +666,9 @@ actor
 
 ``actor.megatron.ckpt.save_path``: Target directory to write Megatron checkpoints.
 
-``actor.megatron.ckpt.use_gpu_num``: Number of GPUs to use for conversion. TODO: behavior.
+``actor.megatron.ckpt.use_gpu_num``: Number of GPUs to use for conversion. 
 
-``actor.megatron.ckpt.use_gpu_index``: Specific GPU index to use. TODO:
+``actor.megatron.ckpt.use_gpu_index``: Specific GPU index to use. 
 
 ``actor.megatron.ckpt.process_num``: CPU processes for conversion work.
 
@@ -741,6 +740,7 @@ algorithm
   algorithm:
     auto_reset: True
     ignore_terminations: True
+    use_fixed_reset_state_ids: False
     require_values: True
     normalize_advantages: True
     kl_penalty: kl
@@ -764,6 +764,8 @@ algorithm
 ``algorithm.auto_reset``: Automatically reset environments when episodes terminate.
 
 ``algorithm.ignore_terminations``: Ignore episode terminations during training.
+
+``algorithm.use_fixed_reset_state_ids``: Use fixed reset state IDs (false for randomization). Always True for GRPO, default be False for PPO.
 
 ``algorithm.require_values``: Whether value function computation is required.
 
@@ -1054,7 +1056,7 @@ The path is
   num_task: ${algorithm.num_group_envs}
   num_group: ${algorithm.num_group_envs}
   group_size: ${algorithm.group_size}
-  use_fixed_reset_state_ids: false
+  use_fixed_reset_state_ids: ${algorithm.use_fixed_reset_state_ids}
 
 ``seed``: Random seed for environment initialization (0 for reproducibility).
 
@@ -1064,7 +1066,7 @@ The path is
 
 ``group_size``: Number of environments per group (inherits from algorithm.group_size).
 
-``use_fixed_reset_state_ids``: Use fixed reset state IDs (false for randomization).
+``use_fixed_reset_state_ids``: Use fixed reset state IDs (false for randomization). Always True for GRPO, default be False for PPO (inherits from algorithm.use_fixed_reset_state_ids).
 
 **Input Configuration**
 
