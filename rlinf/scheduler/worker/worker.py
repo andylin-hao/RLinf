@@ -681,6 +681,35 @@ class Worker(metaclass=WorkerMeta):
         """Log at the error level."""
         self._logger.error(msg, stacklevel=self._stacklevel)
 
+    def pop_execution_time(self, tag: str):
+        """Retrieve the execution time of a function.
+
+        Args:
+            tag (str): The name of the timer to retrieve the execution time for.
+        """
+        if tag not in self._timer_metrics:
+            raise ValueError(f"Timer '{tag}' has not been recorded.")
+        return self._timer_metrics.pop(tag)
+
+    @contextmanager
+    def worker_timer(self, tag: Optional[str] = None):
+        """Context manager to time the execution of a worker function.
+
+        Args:
+            tag (str): The name of the timer to record the execution time for. Default is the current function name.
+        """
+        if tag is None:
+            frame_num = 2
+            frame = inspect.stack()[frame_num]
+            tag = frame.function
+        assert tag is not None, "Timer tag must be provided."
+        try:
+            start_time = time.perf_counter()
+            yield
+        finally:
+            duration = time.perf_counter() - start_time
+            self._timer_metrics[tag] = self._timer_metrics.get(tag, 0.0) + duration
+
     def _check_initialized(self):
         """Check if the Worker has been initialized.
 
@@ -886,32 +915,3 @@ class Worker(metaclass=WorkerMeta):
             node_port=node_port,
             available_gpus=self._available_gpus,
         )
-
-    def pop_execution_time(self, tag: str):
-        """Retrieve the execution time of a function.
-
-        Args:
-            tag (str): The name of the timer to retrieve the execution time for.
-        """
-        if tag not in self._timer_metrics:
-            raise ValueError(f"Timer '{tag}' has not been recorded.")
-        return self._timer_metrics.pop(tag)
-
-    @contextmanager
-    def worker_timer(self, tag: Optional[str] = None):
-        """Context manager to time the execution of a worker function.
-
-        Args:
-            tag (str): The name of the timer to record the execution time for. Default is the current function name.
-        """
-        if tag is None:
-            frame_num = 2
-            frame = inspect.stack()[frame_num]
-            tag = frame.function
-        assert tag is not None, "Timer tag must be provided."
-        try:
-            start_time = time.perf_counter()
-            yield
-        finally:
-            duration = time.perf_counter() - start_time
-            self._timer_metrics[tag] = self._timer_metrics.get(tag, 0.0) + duration

@@ -850,7 +850,7 @@ class MegatronActor(MegatronModelManager, Worker):
             recv_batch_size += rollout_result.num_sequence
 
             # Must be called after batch is retrieved, suggesting that rollout has stopped
-            # Otherwise, loading model might cause OOM
+            # Otherwise, loading model might cause OOM in the collocated mode
             self._load_weight_and_optimizer()
 
             # Prev logprobs

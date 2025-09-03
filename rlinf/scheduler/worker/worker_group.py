@@ -17,6 +17,7 @@ import os
 import signal
 import sys
 import threading
+import warnings
 from dataclasses import dataclass
 from typing import Generic, List, Optional, Type
 
@@ -132,6 +133,21 @@ class WorkerGroup(Generic[WorkerClsType]):
         self._execution_ranks = list(ranks)
         return self
 
+    def _nccl_env_vars(self):
+        """Set the environment variables for NCCL. This is intended to align NCCL configurations of various workers."""
+        env_vars = {
+            "NCCL_CUMEM_ENABLE": "0",
+            "TORCH_NCCL_AVOID_RECORD_STREAMS": "1",
+        }
+        if os.environ.get("NCCL_CUMEM_ENABLE", "0") != "0":
+            warnings.warn(
+                f"NCCL_CUMEM_ENABLE is set to {os.environ['NCCL_CUMEM_ENABLE']}. However, "
+                "This may increase memory overhead with cudagraph+allreduce: "
+                "https://github.com/NVIDIA/nccl/issues/1234, and thus set to 0 by both vLLM and SGLang, see https://github.com/vllm-project/vllm/pull/24141.",
+            )
+            env_vars["NCCL_CUMEM_ENABLE"] = os.environ["NCCL_CUMEM_ENABLE"]
+        return env_vars
+
     def _close(self):
         """Close the worker group and release resources. This method is called when the worker group is no longer needed."""
         for worker_info in self._workers:
@@ -175,6 +191,7 @@ class WorkerGroup(Generic[WorkerClsType]):
                 "RAY_EXPERIMENTAL_NOSET_CUDA_VISIBLE_DEVICES": "1",
                 # https://github.com/ray-project/ray/blob/161849364a784442cc659fb9780f1a6adee85fce/python/ray/_private/accelerators/nvidia_gpu.py#L95-L96
             }
+            env_vars.update(self._nccl_env_vars())
 
             worker = self._cluster.allocate(
                 cls=self._worker_cls,
