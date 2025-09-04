@@ -19,6 +19,7 @@ from typing import Dict, List, Optional, Tuple
 import torch
 import torch.distributed
 from megatron.core import parallel_state
+from megatron.core.distributed import DistributedDataParallel as DDP
 from megatron.core.num_microbatches_calculator import get_num_microbatches
 from megatron.core.pipeline_parallel.schedules import get_forward_backward_func
 from megatron.training.training import unwrap_model
@@ -535,7 +536,7 @@ class MegatronActor(MegatronModelManager, Worker):
         if forward_only:
             self._forward_only_record.stop()
 
-        outputs = self.process_fwd_bwd_outputs(forward_outputs, forward_only)
+        outputs = self._process_fwd_bwd_outputs(forward_outputs, forward_only)
 
         return outputs
 
@@ -580,11 +581,11 @@ class MegatronActor(MegatronModelManager, Worker):
         if forward_only:
             self._forward_only_record.stop()
 
-        outputs = self.process_fwd_bwd_outputs(forward_outputs, forward_only)
+        outputs = self._process_fwd_bwd_outputs(forward_outputs, forward_only)
 
         return outputs
 
-    def process_fwd_bwd_outputs(
+    def _process_fwd_bwd_outputs(
         self, forward_outputs: Dict[str, torch.Tensor], forward_only: bool
     ):
         if forward_only:
@@ -648,7 +649,7 @@ class MegatronActor(MegatronModelManager, Worker):
 
         return train_metrics
 
-    def training_setup(self):
+    def _training_setup(self):
         set_train(self)
         configure_batch_sizes(
             rank=torch.distributed.get_rank(),
@@ -657,7 +658,7 @@ class MegatronActor(MegatronModelManager, Worker):
             dp=parallel_state.get_data_parallel_world_size(),
         )
 
-    def setup_valid_token_scale(self, batch: Optional[Dict[str, torch.Tensor]] = None):
+    def _setup_valid_token_scale(self, batch: Optional[Dict[str, torch.Tensor]] = None):
         if batch is None:
             self.global_valid_token = (
                 self.average_response_len
@@ -673,7 +674,7 @@ class MegatronActor(MegatronModelManager, Worker):
             self.global_valid_token = global_valid_token
             return batch
 
-    def dp_load_balance(self, batch: Dict[str, torch.Tensor]):
+    def _dp_load_balance(self, batch: Dict[str, torch.Tensor]):
         batch_size = batch["input_ids"].shape[0]
         assert batch_size == self.total_batch_size_per_dp, (
             f"DP Load balance is only available when a single batch contains all data, e.g., in collocated mode. But got {batch_size=} and {self.total_batch_size_per_dp=}."
@@ -686,6 +687,20 @@ class MegatronActor(MegatronModelManager, Worker):
             partitioning_tool=get_seqlen_balanced_partitions,
         )
         return batch
+
+    def _gather_weights_among_dp(self):
+        """Gather weights across DP when using distributed optimizer with overlap_param_gather.
+
+        When overlap_param_gather is enabled, weights are scattered across DP and gathered in the next forward pass.
+        We need to force a gather here to ensure all weights are correct before the next weight sync.
+        """
+        if (
+            self.role_cfg.optim.use_distributed_optimizer
+            and self.role_cfg.optim.overlap_param_gather
+        ):
+            for model_chunk in self.model:
+                assert isinstance(model_chunk, DDP)
+                model_chunk.start_param_sync(force_sync=True)
 
     def run_training(self, input_channel: Channel):
         """Run the training loop for the actor."""
@@ -708,7 +723,7 @@ class MegatronActor(MegatronModelManager, Worker):
         # Must be called after batch is retrieved, which is when rollout has stopped
         # Otherwise, loading model might cause OOM
         self._load_weight_and_optimizer(input_channel)
-        self.training_setup()
+        self._training_setup()
 
         # Advantage normalization
         if self.cfg.algorithm.normalize_advantages:
@@ -717,11 +732,11 @@ class MegatronActor(MegatronModelManager, Worker):
 
         # Valid token scale
         if self.cfg.algorithm.use_valid_token_scale:
-            self.setup_valid_token_scale(batch)
+            self._setup_valid_token_scale(batch)
 
         # DP batch load balance
         if self.cfg.actor.get("enable_dp_load_balance", False):
-            batch = self.dp_load_balance(batch)
+            batch = self._dp_load_balance(batch)
 
         if self.use_profiler:
             self.profiler.init_fwd_bwd_schedule(self.cfg.algorithm.n_minibatches)
@@ -740,6 +755,9 @@ class MegatronActor(MegatronModelManager, Worker):
                 training_metrics = self.training_step(global_batch)
                 training_metrics_list.append(training_metrics)
 
+        # Sync params after training and before the next weight sync
+        self._gather_weights_among_dp()
+
         # Rollout metrics
         rollout_metrics = self._compute_rollout_metrics(batch)
 
@@ -748,7 +766,7 @@ class MegatronActor(MegatronModelManager, Worker):
     def run_training_pipeline(self, input_channel: Channel):
         """Run the training loop for the actor."""
         self._load_weight_and_optimizer(input_channel)
-        self.training_setup()
+        self._training_setup()
         # Built iterator for Megatron's pipeline schedule to run
         # NOTE: We cannot iterate over the iterator here, as Megatron's pipeline schedule is responsible for iterating over data
         # As a result, we need to separate the implementation for pipeline and non-pipeline mode for Megatron
@@ -768,7 +786,7 @@ class MegatronActor(MegatronModelManager, Worker):
 
         # Valid token scale
         if self.cfg.algorithm.use_valid_token_scale:
-            self.setup_valid_token_scale()
+            self._setup_valid_token_scale()
 
         # DP batch load balance
         assert not self.cfg.actor.get("enable_dp_load_balance", False), (
@@ -784,6 +802,9 @@ class MegatronActor(MegatronModelManager, Worker):
             training_metrics = self.training_step(train_batch_iterator)
             train_batch_iterator.check_finished_global_batch()
             training_metrics_list.append(training_metrics)
+
+        # Sync params after training and before the next weight sync
+        self._gather_weights_among_dp()
 
         # Rollout metrics
         batch = train_batch_iterator.get_all_batches()
