@@ -607,9 +607,10 @@ class MegatronActor(MegatronModelManager, Worker):
                     metric_mean = torch.stack(
                         [loss_reduced[key] for loss_reduced in forward_outputs]
                     ).mean()
-                    torch.distributed.broadcast(metric_mean, get_last_rank())
-
                     outputs[key] = metric_mean.cpu().item()
+            output_list = [outputs]
+            torch.distributed.broadcast_object_list(output_list, get_last_rank())
+            outputs = output_list[0]
         return outputs
 
     # Training
