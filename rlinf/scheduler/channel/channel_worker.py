@@ -295,9 +295,6 @@ class ChannelWorker(Worker):
             WorkerGPULock()
             for _ in range(cluster.num_nodes * cluster.num_gpus_per_node)
         ]
-        print(
-            f"{len(self._gpu_locks)=}, {cluster.num_nodes=}, {cluster.num_gpus_per_node=}"
-        )
 
         self._queue_map[DEFAULT_QUEUE_NAME] = PeekQueue(maxsize=maxsize)
 
