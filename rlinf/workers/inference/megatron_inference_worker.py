@@ -89,4 +89,4 @@ class MegatronInference(MegatronActor):
         for ddp_model in self.model:
             ddp_model.broadcast_params()
 
-        self.log_info("Inference sync_model_from_actor: resharding done")
+        self.log_debug("Inference sync_model_from_actor: resharding done")

@@ -222,6 +222,8 @@ class MegatronActor(MegatronModelManager, Worker):
         )
 
     def _load_weight_and_optimizer(self, channel: Channel):
+        # Acquire the GPUs to ensure that no one is using them before loading models
+        # Otherwise, it may lead to OOM
         with channel.gpu_lock:
             if self.is_weight_offloaded:
                 self.onload_model_weights_and_grad(load_grad=self.offload_grad)
@@ -755,7 +757,7 @@ class MegatronActor(MegatronModelManager, Worker):
                 training_metrics = self.training_step(global_batch)
                 training_metrics_list.append(training_metrics)
 
-        # Sync params after training and before the next weight sync
+        # Gather weights if overlap_param_gather before the next weight sync
         self._gather_weights_among_dp()
 
         # Rollout metrics
@@ -803,7 +805,7 @@ class MegatronActor(MegatronModelManager, Worker):
             train_batch_iterator.check_finished_global_batch()
             training_metrics_list.append(training_metrics)
 
-        # Sync params after training and before the next weight sync
+        # Gather weights if overlap_param_gather before the next weight sync
         self._gather_weights_among_dp()
 
         # Rollout metrics
@@ -833,7 +835,7 @@ class MegatronActor(MegatronModelManager, Worker):
         return list(range(model_parallel_size))
 
     def _get_inference_model_state_dict(self):
-        """Get the state dictionary of the model for rollout."""
+        """Get the state dictionary of the model for inference."""
         return self.inference_weights_reshard.gather_and_reshard_model(
             unwrap_model(self.model)
         )
@@ -845,7 +847,7 @@ class MegatronActor(MegatronModelManager, Worker):
             if self._rank == rank:
                 self.send(inference_state_dict, self.cfg.inference.group_name, rank)
 
-        self.log_info(
+        self.log_debug(
             f"{self.__class__.__name__}: sync_model_to_inference resharding done."
         )
 
