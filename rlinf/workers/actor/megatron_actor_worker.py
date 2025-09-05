@@ -159,6 +159,11 @@ class MegatronActor(MegatronModelManager, Worker):
             and parallel_state.get_context_parallel_rank() == 0
             and parallel_state.get_pipeline_model_parallel_rank() == 0
         )
+        assert (
+            self.cfg.data.rollout_batch_size * self.cfg.algorithm.group_size
+        ) % parallel_state.get_data_parallel_world_size() == 0, (
+            f"rollout_batch_size * group_size must be divisible by {role} data parallel size."
+        )
         self.total_batch_size_per_dp = (
             self.cfg.data.rollout_batch_size
             * self.cfg.algorithm.group_size

@@ -64,10 +64,16 @@ def split_list(inputs, num_chunks, enforce_divisible_batch: Optional[bool] = Tru
     """
     Split a list into equal sized chunks
     """
-    chunk_size = len(inputs) // num_chunks
     if enforce_divisible_batch:
+        chunk_size = len(inputs) // num_chunks
         assert len(inputs) % chunk_size == 0, "Issue with batch size configuration!"
-    return [inputs[i : i + chunk_size] for i in range(0, len(inputs), chunk_size)]
+        return [inputs[i : i + chunk_size] for i in range(0, len(inputs), chunk_size)]
+    else:
+        k, m = divmod(len(inputs), num_chunks)
+        return [
+            inputs[i * k + min(i, m) : (i + 1) * k + min(i + 1, m)]
+            for i in range(num_chunks)
+        ]
 
 
 def get_iterator_k_split(

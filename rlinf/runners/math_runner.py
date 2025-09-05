@@ -274,8 +274,8 @@ class MathRunner:
         rollout_dp_size = self.component_placement.rollout_dp_size
 
         for input_ids, answers in zip(
-            split_list(prompts, rollout_dp_size),
-            split_list(answers, rollout_dp_size),
+            split_list(prompts, rollout_dp_size, enforce_divisible_batch=False),
+            split_list(answers, rollout_dp_size, enforce_divisible_batch=False),
         ):
             request = RolloutRequest(
                 n=self.cfg.algorithm.group_size,

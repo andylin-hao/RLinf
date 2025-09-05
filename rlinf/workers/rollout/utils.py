@@ -51,14 +51,6 @@ def green(text: str):
     return f"\033[32m{text}\033[0m"
 
 
-def split_sequence(sequence, n):
-    """Split a sequence into n parts.
-    First m parts have len(sequence) // n + 1 elements
-    the rest have len(sequence) // n elements."""
-    k, m = divmod(len(sequence), n)
-    return [sequence[i * k + min(i, m) : (i + 1) * k + min(i + 1, m)] for i in range(n)]
-
-
 @contextmanager
 def sharp_cover(header_text: str, prelen: int = 30, color="\033[32m"):
     len(header_text)
