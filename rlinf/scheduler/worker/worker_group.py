@@ -21,6 +21,7 @@ import warnings
 from dataclasses import dataclass
 from typing import Generic, List, Optional, Type
 
+import numpy as np
 import ray
 import ray.remote_function
 
@@ -412,15 +413,18 @@ class WorkerGroupFuncResult:
             exit(-1)
         self._wait_done = True
 
-    @property
-    def duration(self):
+    def consume_duration(self, reduction_type: str = "max"):
         """Get the max execution time of a function across different ranks of a group.
 
         This implicitly waits for the function to finish.
+
+        Args:
+            reduction_type (str): The type of reduction to apply. Can be "max", "min", or "mean".
         """
         self.wait()
         execution_times = self._worker_group.pop_execution_time(self._func_name).wait()
-        return max(execution_times)
+        reduction_func = getattr(np, reduction_type)
+        return reduction_func(execution_times)
 
     def wait(self):
         """Wait for all remote results to complete and return the results."""
