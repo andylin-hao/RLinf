@@ -49,10 +49,16 @@ cluster
 ``cluster.num_gpus_per_node``: GPUs per node that the placement strategy should assume are free. 
 
 ``cluster.component_placement``: 
-The *placement strategy* for each processes.
-Each line of component placement config looks like: ``actor,inference: 0-4``, 
-which means both the actor and inference groups occupy GPU 0 to 4
-Alternatively, "all" can be used to specify all GPUs
+The *placement strategy* for each component.
+Each line of component placement config is a dictionary of ``component_names: global_gpu_ids``:
+
+- The key is the names of components, e.g., ``rollout``, or ``rollout,inference,actor``
+- The value is the global GPU IDs allocated to the components, which can be:
+   - "all": use all GPUs in the cluster
+   - A single integer, e.g., "3": use GPU 3
+   - A list of integers separated by comma, e.g., "0,2,3": use GPU 0, 2, and 3
+   - A range of integers separated by hyphen, e.g., "0-3": use GPU 0, 1, 2, and 3
+   - A combination of the above two, e.g., "0-3,5,14": use GPU 0, 1, 2, 3, 5 (on node 0), and 14 (i.e., GPU 6 on node 1)
 
 See more details in :doc:`../mode/index`.
 

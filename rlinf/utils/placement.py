@@ -163,7 +163,7 @@ class ComponentPlacement:
 
 
 class HybridComponentPlacement(ComponentPlacement):
-    """Hybrid component placement that allows components to run on any sets of continuous GPUs."""
+    """Hybrid component placement that allows components to run on any sets of GPUs."""
 
     def __init__(self, config: DictConfig):
         """Initialize HybridComponentPlacement
@@ -184,7 +184,9 @@ class HybridComponentPlacement(ComponentPlacement):
 class ModelParallelComponentPlacement(ComponentPlacement):
     """Component placement for model-parallel components.
 
-    The components must be actor, rollout, and optionally inference. This placement supports both collocated and disaggregated modes.
+    The components must be actor, rollout, and optionally inference, whose GPUs must be continuous.
+
+    This placement supports both collocated and disaggregated modes.
 
     In the collocated mode, all components share the same set of GPUs. In particular, the rollout group is specially placed in a strided manner to enable fast cudaIPC-based weight sync.
     In the disaggregated mode, each component has its own dedicated set of GPUs.

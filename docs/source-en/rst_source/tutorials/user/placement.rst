@@ -29,15 +29,12 @@ For each strategy, a list of `Placement` objects is returned by the `get_placeme
 PackedPlacementStrategy
 -----------------------
 
-This unified placement strategy that can:
+This placement strategy can:
 
 * **Pack GPUs contiguously** (`stride = 1`) – the classic “close-packed”
   behaviour; or
 * **Assign GPUs in a fixed-stride pattern** (`stride > 1`) – the former
   “strided” mode, e.g. `0, 2, 4` for `stride = 2`.
-
-By tuning a **single** parameter (`stride`) you can therefore express
-both placement styles while keeping one coherent implementation.
 
 Required inputs
 ~~~~~~~~~~~~~~~~~
@@ -81,55 +78,24 @@ Purpose
 * **Strided mode** (`stride > 1`) is useful to colocation placement of rollout and training models that places model parallel source 
   ranks on the same GPUs, enabling fast zero-copy-cudaIPC-based weight synchronization
 
+FlexiblePlacementStrategy
+-----------------------
 
+This placement strategy allows arbitrary GPU IDs to be assigned to each process, specified as a list of GPU ID lists, each GPU ID list contains the global GPU IDs assigned to a worker process.
 
+Required inputs
+~~~~~~~~~~~~~~~~~
 
-.. PackedPlacementStrategy
-.. -----------------------
+* ``gpu_id_lists`` – a list of lists of global GPU IDs, each inner list specifies the GPUs assigned to a worker process.
 
-.. This strategy places processes onto GPUs in a close-packed, contiguous fashion.
+Placement principle
+~~~~~~~~~~~~~~~~~~~~~
+The scheduler iterates through the provided ``gpu_id_lists``, and for each inner list, it assigns the specified global GPU IDs to a worker process. The node ID is determined by the first GPU ID in the inner list, and the local GPU IDs are calculated relative to that node.
 
-.. **Required inputs**
+Purpose
+~~~~~~~~~~~~~
+This strategy provides maximum flexibility, allowing users to define exactly which GPUs each worker should use, regardless of contiguity or stride. It is particularly useful in scenarios where specific GPU assignments are required due to hardware topology or other constraints.
 
-.. - ``master_node`` — start node
-.. - One of ``num_nodes`` or ``num_processes`` (mutually exclusive)
-.. - ``master_gpu`` — start GPU on the master node
-.. - ``num_gpus_per_process`` — contiguous GPUs per process
-.. - ``isolate_gpu`` — Whether the worker is restricted to those GPUs
-
-.. **Placement principle**
-
-.. Starting at ``(master_node, master_gpu)``, the scheduler assigns each process a contiguous block of size ``num_gpus_per_process`` on the current node, 
-.. moving linearly across GPU indices. When a node’s GPUs are exhausted, 
-.. it advances to the next node. If ``num_nodes`` is provided, the total ``num_processes`` is derived from available GPUs and the per-process width. 
-.. Optionally, ``CUDA_VISIBLE_DEVICES`` is set so each process only “sees” its assigned GPUs.
-
-.. **Purpose**
-
-.. A straightforward default placement strategy that aligns with frameworks expecting contiguous device IDs per process, 
-.. while also allowing execution from an offset subset specified by ``(master_node, master_gpu)`` without occupying the entire cluster.
-
-
-.. StridedPlacementStrategy
-.. ------------------------
-
-.. This strategy assigns multiple GPUs per process in a fixed-stride pattern (e.g., ``0, 2, 4`` for stride 2), spreading a process’s devices across the node’s GPU index space.
-
-.. **Required inputs**
-
-.. - ``master_node`` — start node
-.. - ``num_nodes`` — span of nodes starting at master
-.. - ``stride`` — GPU index stride
-.. - ``num_gpus_per_process`` — GPUs per process
-.. - ``isolate_gpu`` — must be ``True`` (enforced)
-
-.. **Placement principle**
-
-.. The total GPU pool over the selected nodes is conceptually partitioned into equal “groups” of size ``stride × num_gpus_per_process``. Within each group, ``stride`` processes are interleaved, and each process receives GPUs ``[g, g+stride, …]``. Groups are then tightly filled across nodes, subject to divisibility and fit constraints to ensure every process’s last GPU index is in range.
-
-.. **Purpose**
-
-.. Useful to colocation placement of rollout and training models that places model parallel source ranks on the same GPUs, enabling fast zero-copy-cudaIPC-based weight synchronization
 
 Example
 ---------
