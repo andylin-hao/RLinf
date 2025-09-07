@@ -47,8 +47,15 @@ cluster
 
 ``cluster.component_placement``：  
 各组件（进程）的 *放置策略*。  
-每行形如 ``actor,inference: 0-4``，表示 actor 与 inference 组共同占用 0～4 号 GPU。  
-也可使用 “all” 表示占用 **全部** 可见 GPU。
+其中每行接受字典语法：
+
+- 键 (key) 是组件的名称，例如 ``rollout``，或 ``rollout,inference,actor``
+- 值 (value) 是分配给这些组件的全局 GPU ID，可以是：
+   - "all"：使用集群中的所有 GPU
+   - 单个整数，例如 "3"：使用 GPU 3
+   - 逗号分隔的整数列表，例如 "0,2,3"：使用 GPU 0、2 和 3
+   - 连字符分隔的整数范围，例如 "0-3"：使用 GPU 0、1、2 和 3
+   - 上述两种方式的组合，例如 "0-3,5,7"：使用 GPU 0、1、2、3、5 和 7
 
 更多细节见 :doc:`../mode/index`。
 
