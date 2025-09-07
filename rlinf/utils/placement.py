@@ -18,7 +18,11 @@ from typing import Dict, List, overload
 
 from omegaconf import DictConfig
 
-from rlinf.scheduler.placement import PackedPlacementStrategy, PlacementStrategy
+from rlinf.scheduler.placement import (
+    FlexiblePlacementStrategy,
+    PackedPlacementStrategy,
+    PlacementStrategy,
+)
 
 
 class PlacementMode(Enum):
@@ -53,34 +57,7 @@ class ComponentPlacement:
             components_gpus: str = self._placement_config[components]
             components = components.split(",")
             components = [c.strip() for c in components]
-            if components_gpus == "all":
-                start_gpu = 0
-                end_gpu = self._cluster_num_gpus - 1
-            else:
-                components_gpus = components_gpus.split("-")
-                try:
-                    if len(components_gpus) == 1:
-                        start_gpu = int(components_gpus[0])
-                        end_gpu = start_gpu
-                    elif len(components_gpus) == 2:
-                        start_gpu = int(components_gpus[0])
-                        end_gpu = int(components_gpus[1])
-                    else:
-                        raise ValueError
-                except (ValueError, IndexError):
-                    raise ValueError(
-                        f"Invalid GPU range for components {components}: {components_gpus}, expected format: start-end"
-                    )
-            assert end_gpu >= start_gpu, (
-                f"Start GPU ID {start_gpu} must be less than or equal to end GPU ID {end_gpu}."
-            )
-            assert start_gpu < self._cluster_num_gpus, (
-                f"Start GPU ID {start_gpu} must be less than total number of GPUs {self._cluster_num_gpus}."
-            )
-            assert end_gpu < self._cluster_num_gpus, (
-                f"End GPU ID {end_gpu} must be less than total number of GPUs {self._cluster_num_gpus}."
-            )
-            components_gpus = list(range(start_gpu, end_gpu + 1))
+            components_gpus = self._parse_gpu_ids(components_gpus, components)
 
             for component in components:
                 self._components.append(component)
@@ -88,6 +65,58 @@ class ComponentPlacement:
 
             self._placements: Dict[str, PlacementStrategy] = {}
             self._placement_mode: PlacementMode = None
+
+    def _parse_gpu_ids(
+        self, components_gpus: str, component_names: List[str]
+    ) -> List[int]:
+        """Parse a string of GPU IDs into a list of integers.
+
+        Args:
+            components_gpus (str): A string representing GPU IDs. The string can either be "all", representing all GPUs, or a comma-separated list of GPU IDs and ranges (e.g., "0,1,2-4").
+            component_names (List[str]): The names of the components for error reporting.
+
+        Returns:
+            List[int]: A list of GPU IDs as integers.
+        """
+        gpu_ids: List[int] = []
+        if components_gpus == "all":
+            gpu_ids = list(range(0, self._cluster_num_gpus))
+        else:
+            # If the GPU placement is a single number
+            # Omegaconf will parse it as an integer instead of a string
+            components_gpus = str(components_gpus)
+            # First split by comma
+            gpu_id_ranges = components_gpus.split(",")
+            for gpu_id_range in gpu_id_ranges:
+                gpu_id_range = gpu_id_range.strip()
+                if gpu_id_range == "":
+                    continue
+                # Then split by hyphen to get the start and end of the range
+                gpu_id_range = gpu_id_range.split("-")
+                try:
+                    if len(gpu_id_range) == 1:
+                        start_gpu = int(gpu_id_range[0])
+                        end_gpu = start_gpu
+                    elif len(gpu_id_range) == 2:
+                        start_gpu = int(gpu_id_range[0])
+                        end_gpu = int(gpu_id_range[1])
+                    else:
+                        raise ValueError
+                except (ValueError, IndexError):
+                    raise ValueError(
+                        f'Invalid GPU placement format for components {component_names}: {components_gpus}, expected format: "a,b,c-d" or "all"'
+                    )
+                assert end_gpu >= start_gpu, (
+                    f"Start GPU ID {start_gpu} must be less than or equal to end GPU ID {end_gpu}."
+                )
+                assert start_gpu < self._cluster_num_gpus, (
+                    f"Start GPU ID {start_gpu} must be less than total number of GPUs {self._cluster_num_gpus}."
+                )
+                assert end_gpu < self._cluster_num_gpus, (
+                    f"End GPU ID {end_gpu} must be less than total number of GPUs {self._cluster_num_gpus}."
+                )
+                gpu_ids.extend(list(range(start_gpu, end_gpu + 1)))
+        return gpu_ids
 
     @property
     def placement_mode(self):
@@ -147,8 +176,8 @@ class HybridComponentPlacement(ComponentPlacement):
 
     def _generate_placements(self):
         for component_name, component_gpus in self._component_gpu_map.items():
-            self._placements[component_name] = PackedPlacementStrategy(
-                start_gpu_id=component_gpus[0], end_gpu_id=component_gpus[-1]
+            self._placements[component_name] = FlexiblePlacementStrategy(
+                [[gpu_id] for gpu_id in component_gpus]
             )
 
 
@@ -180,6 +209,16 @@ class ModelParallelComponentPlacement(ComponentPlacement):
         assert self._rollout_gpus is not None, (
             "Rollout GPUs must be specified in the component_placement config."
         )
+        assert self._actor_gpus == list(
+            range(self._actor_gpus[0], self._actor_gpus[-1] + 1)
+        ), f"Actor GPUs {self._actor_gpus} must be continuous."
+        assert self._rollout_gpus == list(
+            range(self._rollout_gpus[0], self._rollout_gpus[-1] + 1)
+        ), f"Rollout GPUs {self._rollout_gpus} must be continuous."
+        if self._inference_gpus is not None:
+            assert self._inference_gpus == list(
+                range(self._inference_gpus[0], self._inference_gpus[-1] + 1)
+            ), f"Inference GPUs {self._inference_gpus} must be continuous."
 
         self._actor_num_gpus = len(self._actor_gpus)
         self._inference_num_gpus = (

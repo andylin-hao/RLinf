@@ -15,6 +15,7 @@
 from .channel import Channel, ChannelWorker, WeightedItem
 from .cluster import Cluster
 from .placement import (
+    FlexiblePlacementStrategy,
     PackedPlacementStrategy,
     PlacementStrategy,
 )
@@ -23,6 +24,7 @@ from .worker import Worker, WorkerAddress, WorkerGroupFuncResult
 __all__ = [
     "Cluster",
     "PlacementStrategy",
+    "FlexiblePlacementStrategy",
     "PackedPlacementStrategy",
     "Worker",
     "WorkerAddress",
