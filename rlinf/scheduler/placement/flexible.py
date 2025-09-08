@@ -107,7 +107,12 @@ class FlexiblePlacementStrategy(PlacementStrategy):
         placements: List[Placement] = []
         for rank, (node_id, gpu_ids) in enumerate(node_id_gpu_ids):
             local_gpu_ids = [gpu_id % num_gpus_per_node for gpu_id in gpu_ids]
-            cuda_visible_devices = [str(gpu_id) for gpu_id in local_gpu_ids]
+            if isolate_gpu:
+                cuda_visible_devices = [str(gpu_id) for gpu_id in local_gpu_ids]
+            else:
+                cuda_visible_devices = [
+                    str(gpu_id) for gpu_id in range(num_gpus_per_node)
+                ]
             placements.append(
                 Placement(
                     rank=rank,
