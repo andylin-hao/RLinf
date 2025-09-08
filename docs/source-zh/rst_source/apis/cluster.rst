@@ -10,4 +10,4 @@ Cluster
 .. autoclass:: rlinf.scheduler.cluster.Cluster
    :members:
    :member-order: bysource
-   :exclude-members: __new__,
+   :exclude-members: __new__, allocate
