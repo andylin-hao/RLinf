@@ -10,12 +10,14 @@ RolloutRequest
 
 .. autoclass:: rlinf.data.io_struct.RolloutRequest
    :members: 
+   :member-order: bysource
 
 RolloutResult
 -----------------------
 
 .. autoclass:: rlinf.data.io_struct.RolloutResult
    :members: 
+   :member-order: bysource
    
 
 

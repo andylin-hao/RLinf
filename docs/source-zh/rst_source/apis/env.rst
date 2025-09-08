@@ -11,11 +11,13 @@ EnvWorker
 
 .. autoclass:: rlinf.workers.env.env_worker.EnvWorker
    :members: 
+   :member-order: bysource
 
 Environment
 -----------------------
 
 .. autoclass:: rlinf.envs.libero.libero_env.LiberoEnv
    :members: 
+   :member-order: bysource
 
 

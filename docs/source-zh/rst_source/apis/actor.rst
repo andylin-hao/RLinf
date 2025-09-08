@@ -13,12 +13,14 @@ MegatronActor
 .. autoclass:: rlinf.workers.actor.megatron_actor_worker.MegatronActor
    :show-inheritance:
    :members: 
+   :member-order: bysource
 
 MegatronModelManager
 -----------------------
 
 .. autoclass:: rlinf.hybrid_engines.megatron.megatron_model_manager.MegatronModelManager
    :members: 
+   :member-order: bysource
 
 
 FSDPActor
@@ -27,9 +29,11 @@ FSDPActor
 .. autoclass:: rlinf.workers.actor.fsdp_actor_worker.EmbodiedFSDPActor
    :show-inheritance:
    :members: 
+   :member-order: bysource
 
 FSDPModelManager
 ------------------
 
 .. autoclass:: rlinf.hybrid_engines.fsdp.fsdp_model_manager.FSDPModelManager
    :members: 
+   :member-order: bysource

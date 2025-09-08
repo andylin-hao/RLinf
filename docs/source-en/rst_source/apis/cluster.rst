@@ -9,10 +9,5 @@ Cluster
 
 .. autoclass:: rlinf.scheduler.cluster.Cluster
    :members:
+   :member-order: bysource
    :exclude-members: __new__,
-
-NodeInfo
------------
-
-.. autoclass:: rlinf.scheduler.cluster.NodeInfo
-   :members:

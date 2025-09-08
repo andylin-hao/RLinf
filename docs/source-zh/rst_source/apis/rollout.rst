@@ -10,12 +10,15 @@ SGLang
 
 .. autoclass:: rlinf.workers.rollout.sglang.sglang_worker.SGLangWorker
    :members: 
+   :member-order: bysource
 
 .. autoclass:: rlinf.workers.rollout.sglang.sglang_worker.AsyncSGLangWorker
    :members: 
+   :member-order: bysource
 
 Huggingface
 ------------
 
 .. autoclass:: rlinf.workers.rollout.hf.huggingface_worker.MultiStepRolloutWorker
    :members: 
+   :member-order: bysource
