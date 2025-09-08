@@ -351,7 +351,7 @@ class AsyncSGLangWorker(SGLangWorker):
                     )
                     rollout_result.rewards = torch.tensor(
                         rewards, dtype=torch.float32
-                    ).reshape(1, -1)
+                    ).reshape(-1, 1)
                     rollout_result.advantages = advantages
                     return_tasks.append(
                         asyncio.create_task(
