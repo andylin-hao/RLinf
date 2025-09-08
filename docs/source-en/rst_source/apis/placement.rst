@@ -32,8 +32,7 @@ HybridComponentPlacement
    :show-inheritance:
    :members:
    :member-order: bysource
-   :class-doc-from: init
-   :exclude-members: __init__,
+   :class-doc-from: class
 
 ModelParallelComponentPlacement
 ^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -42,8 +41,7 @@ ModelParallelComponentPlacement
    :show-inheritance:
    :members:
    :member-order: bysource
-   :class-doc-from: init
-   :exclude-members: __init__,
+   :class-doc-from: class
 
 Placement Strategies
 -----------------------------------
@@ -60,8 +58,7 @@ FlexiblePlacementStrategy
    :show-inheritance:
    :members:
    :member-order: bysource
-   :class-doc-from: init
-   :exclude-members: __init__,
+   :class-doc-from: class
 
 PackedPlacementStrategy
 ^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -70,8 +67,7 @@ PackedPlacementStrategy
    :show-inheritance:
    :members:
    :member-order: bysource
-   :class-doc-from: init
-   :exclude-members: __init__,
+   :class-doc-from: class
 
 Example Usage
 ---------
@@ -87,3 +83,4 @@ Placement Metadata
 .. autoclass:: rlinf.scheduler.placement.placement.Placement
    :members:
    :member-order: bysource
+   :exclude-members: __init__

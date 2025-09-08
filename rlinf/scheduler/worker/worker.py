@@ -356,7 +356,7 @@ class Worker(metaclass=WorkerMeta):
 
     def __init__(
         self,
-        parent_address: WorkerAddress = None,
+        parent_address: Optional[WorkerAddress] = None,
         world_size: Optional[int] = None,
         rank: Optional[int] = None,
     ):
@@ -365,7 +365,7 @@ class Worker(metaclass=WorkerMeta):
         Only non-Ray workers should provide parent_address, world_size and rank. For example, when a Worker is created via multiprocessing by another Worker, the parent address, world size and rank should be provided.
 
         Args:
-            parent_address (WorkerAddress): The address of the parent worker. This is used to set up the WorkerAddress for this worker.
+            parent_address (Optional[WorkerAddress]): The address of the parent worker. This is used to set up the WorkerAddress for this worker.
             world_size (Optional[int]): The total number of workers in the group. If not provided, it will be set to the environment variable WORLD_SIZE.
             rank (Optional[int]): The rank of this worker in the group. If not provided, it will be set to the environment variable RANK.
 
