@@ -181,7 +181,7 @@ class MathRunner:
         if self.cfg.runner.resume_dir is None:
             return
 
-        # Checkpoint loading
+        # Resume from checkpoint
         logging.info(f"Load from checkpoint folder: {self.cfg.runner.resume_dir}")
         # set global step
         self.global_steps = int(self.cfg.runner.resume_dir.split("global_step_")[-1])
