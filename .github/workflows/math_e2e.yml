@@ -67,7 +67,7 @@ jobs:
                 export REPO_PATH=$(pwd)
                 bash tests/e2e_tests/math/sglang/run_pipeline.sh
 
-    qwen-grpo-test-sglang0.4.4:
+    qwen-grpo-test-sglang044:
         runs-on: rlinf
         container:
             image: rlinf/rlinf:math-rlinf0.1-torch2.5.1-sglang0.4.4-vllm0.7.1-megatron0.11.0-te2.1
