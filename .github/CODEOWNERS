@@ -41,6 +41,6 @@
 /toolkits/auto_placement: @i-Taozi
 /toolkits/ckpt_convertor: @Louis-J
 
-.pre-commit-config.yaml @andylin-hao
-pyproject.toml @andylin-hao
-README.md @zhexuanxu
+/.pre-commit-config.yaml @andylin-hao
+/pyproject.toml @andylin-hao
+/README.md @zhexuanxu
