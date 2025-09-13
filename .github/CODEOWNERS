@@ -29,7 +29,7 @@
 
 /rlinf/workers/actor/fsdp_actor_worker.py: @XuS1994 @guozhen1997
 /rlinf/workers/actor/megatron_actor_worker.py: @guozhen1997 @andylin-hao
-/rlinf/workers/env/env_worker.py: @XuS1994
+/rlinf/workers/env: @XuS1994
 /rlinf/workers/inference: @andylin-hao
 /rlinf/workers/rollout/hf: @XuS1994 @guozhen1997
 /rlinf/workers/rollout/sglang: @Lin-xs @andylin-hao
