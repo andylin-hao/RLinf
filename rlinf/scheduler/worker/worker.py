@@ -21,7 +21,6 @@ import sys
 import threading
 import time
 import traceback
-import warnings
 from contextlib import contextmanager
 from typing import (
     TYPE_CHECKING,
@@ -37,8 +36,7 @@ from typing import (
 
 import ray
 import torch
-
-from rlinf.config import set_new_omegaconf_resolvers
+from omegaconf import OmegaConf
 
 from ..cluster import Cluster
 from ..manager import WorkerAddress
@@ -352,7 +350,7 @@ class Worker(metaclass=WorkerMeta):
         self._actor = None
         self._has_initialized = False
         self._timer_metrics: Dict[str, float] = {}
-        set_new_omegaconf_resolvers()
+        self._set_new_omegaconf_resolvers()
 
     def __init__(
         self,
@@ -798,7 +796,6 @@ class Worker(metaclass=WorkerMeta):
             os.environ["MASTER_PORT"] = str(self._master_port)
 
     def _setup_gpu_info(self) -> int:
-        num_available_gpus = torch.cuda.device_count()
         cuda_devices = os.environ.get("CUDA_VISIBLE_DEVICES", None)
         cluster = Cluster()
         if cuda_devices is None:
@@ -813,19 +810,6 @@ class Worker(metaclass=WorkerMeta):
 
         if not self._is_ray_actor:
             self._gpu_id = cuda_devices[0]
-
-        # Find available GPUs visible to the worker
-        self._available_gpus = []
-        for device in range(num_available_gpus):
-            try:
-                # Check if the device is available
-                uuid = str(torch.cuda.get_device_properties(device).uuid)
-                self._available_gpus.append(uuid)
-            except Exception as e:
-                warnings.warn(
-                    f"CUDA device {device} is not available: {e}. "
-                    "This may lead to unexpected behavior in distributed workers."
-                )
 
     def _setup_logging(self):
         self._logger = logging.getLogger(self._worker_name)
@@ -890,6 +874,14 @@ class Worker(metaclass=WorkerMeta):
                 "Failed to register signal handlers. This may happen if the Worker is not running in the main thread."
             )
 
+    def _set_new_omegaconf_resolvers(self):
+        OmegaConf.register_new_resolver("multiply", lambda x, y: x * y, replace=True)
+        OmegaConf.register_new_resolver("int_div", lambda x, y: x // y, replace=True)
+        OmegaConf.register_new_resolver("subtract", lambda x, y: x - y, replace=True)
+        OmegaConf.register_new_resolver(
+            "torch.dtype", lambda dtype_name: getattr(torch, dtype_name), replace=True
+        )
+
     def _get_p2p_collective_group(self, peer_addr: WorkerAddress):
         """Get a P2P collective group for communication with a peer worker."""
         workers = [self._worker_address, peer_addr]
@@ -919,5 +911,5 @@ class Worker(metaclass=WorkerMeta):
             gpu_id=self._gpu_id,
             node_ip=node_ip,
             node_port=node_port,
-            available_gpus=self._available_gpus,
+            available_gpus=self.global_gpu_ids,
         )

@@ -17,6 +17,7 @@ import itertools
 import logging
 import threading
 import time
+from contextlib import nullcontext
 from pickle import Pickler, Unpickler
 from queue import Empty, Queue
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
@@ -47,7 +48,8 @@ class CollectiveWorkQueue:
             logger (logging.Logger): The logger to use for logging messages.
 
         """
-        self._cuda_stream = torch.cuda.Stream()
+        self._cuda_stream = None
+        self._stream_ctx = nullcontext()
         self._work_queue: Queue[AsyncFuncWork] = Queue()
         self._work_done = True
         self._type = comm_type
@@ -73,19 +75,28 @@ class CollectiveWorkQueue:
             self._work_queue.put((work, comm_id, event))
 
     def _run_queue(self):
-        with torch.cuda.stream(self._cuda_stream):
-            while True:
-                self._lock.acquire()
-                lock_has_released = False
-                try:
-                    work, comm_id, event = self._work_queue.get(block=False)
-                except Empty:
-                    self._work_done = True
-                    lock_has_released = True
-                    self._lock.release()  # The blocking get should not hold the lock
-                    work, comm_id, event = self._work_queue.get()
-                if not lock_has_released:
-                    self._lock.release()
+        while True:
+            self._lock.acquire()
+            lock_has_released = False
+            try:
+                work, comm_id, event = self._work_queue.get(block=False)
+            except Empty:
+                self._work_done = True
+                lock_has_released = True
+                self._lock.release()  # The blocking get should not hold the lock
+                work, comm_id, event = self._work_queue.get()
+            if not lock_has_released:
+                self._lock.release()
+
+            # Create CUDA stream if CUDA is initialized and not created yet
+            if torch.cuda.is_initialized() and self._cuda_stream is None:
+                self._cuda_stream = torch.cuda.Stream()
+            if self._cuda_stream is not None and isinstance(
+                self._stream_ctx, nullcontext
+            ):
+                self._stream_ctx = torch.cuda.stream(self._cuda_stream)
+
+            with self._stream_ctx:
                 if event is not None:
                     event.wait(self._cuda_stream)
                 self._logger.debug(
@@ -238,8 +249,12 @@ class CollectiveGroup:
         recv_comm_id = next(self._recv_comm_id_iter)
 
         recv_work = AsyncFuncWork(self._atomic_recv, comm_id=recv_comm_id)
-        recv_event = torch.cuda.Event()
-        recv_event.record()
+
+        if torch.cuda.is_initialized():
+            recv_event = torch.cuda.Event()
+            recv_event.record()
+        else:
+            recv_event = None
 
         work_queue = self._recv_work_queues[recv_comm_id % CollectiveGroup.POOL_SIZE]
         if async_op:
@@ -353,8 +368,11 @@ class CollectiveGroup:
             self._atomic_recv_tensor, tensor=tensor, comm_id=recv_comm_id
         )
 
-        recv_event = torch.cuda.Event()
-        recv_event.record()
+        if torch.cuda.is_initialized():
+            recv_event = torch.cuda.Event()
+            recv_event.record()
+        else:
+            recv_event = None
 
         work_queue = self._recv_work_queues[recv_comm_id % CollectiveGroup.POOL_SIZE]
         if async_op:
@@ -480,7 +498,7 @@ class CollectiveGroup:
                     )
 
         self._logger.debug(
-            f"Initializing process group for collective group {self._group_info.group_name}, master address {self._group_info.master_addr}, master port {master_port}, world size {self._group_info.world_size}, rank {self._rank}, device {torch.cuda.get_device_properties(torch.cuda.current_device()) if torch.cuda.is_available() else 'cpu'}"
+            f"Initializing process group for collective group {self._group_info.group_name}, master address {self._group_info.master_addr}, master port {master_port}, world size {self._group_info.world_size}, rank {self._rank}"
         )
 
         self._mc_group.init(

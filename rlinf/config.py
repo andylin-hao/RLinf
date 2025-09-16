@@ -215,15 +215,6 @@ def validate_model_cfg_by_hf_config(cfg, hf_model_path):
     return cfg
 
 
-def set_new_omegaconf_resolvers():
-    OmegaConf.register_new_resolver("multiply", lambda x, y: x * y, replace=True)
-    OmegaConf.register_new_resolver("int_div", lambda x, y: x // y, replace=True)
-    OmegaConf.register_new_resolver("subtract", lambda x, y: x - y, replace=True)
-    OmegaConf.register_new_resolver(
-        "torch.dtype", lambda dtype_name: getattr(torch, dtype_name), replace=True
-    )
-
-
 def validate_megatron_cfg(cfg: DictConfig) -> DictConfig:
     OmegaConf.set_struct(cfg, True)
 

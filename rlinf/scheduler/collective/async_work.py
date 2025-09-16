@@ -83,8 +83,9 @@ class AsyncFuncWork(AsyncWork):
     def __call__(self, future: Future):
         """Execute the function and set the done flag."""
         self._result = self._func(*self._args, **self._kwargs)
-        self._cuda_event = torch.cuda.Event()
-        self._cuda_event.record()
+        if torch.cuda.is_initialized():
+            self._cuda_event = torch.cuda.Event()
+            self._cuda_event.record()
         if isinstance(self._result, AsyncWork):
             # If the result is another AsyncWork, find the last work in the chain
             # Set the flag only after all works are done
@@ -118,7 +119,8 @@ class AsyncFuncWork(AsyncWork):
         """
         while not self._done.done():
             await asyncio.sleep(0.001)  # Yield control to the event loop
-        self._cuda_event.wait()
+        if self._cuda_event is not None:
+            self._cuda_event.wait()
         result = self._result
         if isinstance(result, AsyncWork):
             # If the result is another AsyncWork, wait for it to complete
@@ -135,7 +137,8 @@ class AsyncFuncWork(AsyncWork):
         """
         while not self._done.done():
             time.sleep(0.001)
-        self._cuda_event.wait()
+        if self._cuda_event is not None:
+            self._cuda_event.wait()
         result = self._result
         if isinstance(result, AsyncWork):
             # If the result is another AsyncWork, wait for it to complete

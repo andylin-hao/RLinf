@@ -152,8 +152,8 @@ class WorkerInfo:
     node_port: int
     """Port of the node where the worker is placed."""
 
-    available_gpus: List[str]
-    """List of CUDA device UUID available to the worker."""
+    available_gpus: List[int]
+    """List of global device IDs available to the worker."""
 
     def __hash__(self):
         """Hash function for WorkerInfo."""
