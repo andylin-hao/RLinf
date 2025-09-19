@@ -54,7 +54,7 @@ But if you wish to implement more customized placements, you can refer to the fo
 FlexiblePlacementStrategy
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
-.. autoclass:: rlinf.scheduler.placement.packed.FlexiblePlacementStrategy
+.. autoclass:: rlinf.scheduler.placement.flexible.FlexiblePlacementStrategy
    :show-inheritance:
    :members:
    :member-order: bysource

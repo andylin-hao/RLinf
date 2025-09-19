@@ -52,7 +52,7 @@ Placement策略是为获取组件分配所使用的每个节点和每个 GPU 资
 FlexiblePlacementStrategy
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
-.. autoclass:: rlinf.scheduler.placement.packed.FlexiblePlacementStrategy
+.. autoclass:: rlinf.scheduler.placement.flexible.FlexiblePlacementStrategy
    :show-inheritance:
    :members:
    :member-order: bysource
