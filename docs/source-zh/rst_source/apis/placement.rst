@@ -66,13 +66,14 @@ PackedPlacementStrategy
    :member-order: bysource
    :class-doc-from: class
 
-使用示例
----------
+NodePlacementStrategy
+^^^^^^^^^^^^^^^^^^^^^^^^^
 
-.. autoclass:: rlinf.scheduler.placement.PlacementStrategy
-   :no-members:
-   :no-inherited-members:
-   :exclude-members: __init__, __new__
+.. autoclass:: rlinf.scheduler.placement.node.NodePlacementStrategy
+   :show-inheritance:
+   :members:
+   :member-order: bysource
+   :class-doc-from: class
 
 Placement 元数据
 ^^^^^^^^^^^^^^^^^^^^^^^^^

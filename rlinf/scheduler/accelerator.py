@@ -41,7 +41,7 @@ class Accelerator:
     }
 
     # To support an accelerator's CCL,
-    # the `_create_process_group` and `_split_process_group` functions of `mult_channel_pg` need to be implemented
+    # the `_new_process_group_helper` functions of `mult_channel_pg` need to be implemented
     CCL_SUPPORT_LIST = [AcceleratorType.NV_GPU, AcceleratorType.AMD_GPU]
 
     UNSUPPORTED_LIST = ["neuron_cores", "TPU", "HPU", "RBLN"]

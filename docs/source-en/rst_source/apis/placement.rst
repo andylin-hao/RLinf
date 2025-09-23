@@ -78,14 +78,6 @@ NodePlacementStrategy
    :member-order: bysource
    :class-doc-from: class  
 
-Example Usage
----------
-
-.. autoclass:: rlinf.scheduler.placement.PlacementStrategy
-   :no-members:
-   :no-inherited-members:
-   :exclude-members: __init__, __new__
-
 Placement Metadata
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
