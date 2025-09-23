@@ -113,7 +113,7 @@ class WorkerGroup(Generic[WorkerClsType]):
             if cluster.num_accelerators_in_cluster > 0:
                 # Use all resources by default
                 self._placement_strategy = PackedPlacementStrategy(
-                    0, cluster.num_accelerators_in_cluster
+                    0, cluster.num_accelerators_in_cluster - 1
                 )
             else:
                 # If no accelerator is available, just launch one worker on CPU

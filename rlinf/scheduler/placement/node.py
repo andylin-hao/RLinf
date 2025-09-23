@@ -62,6 +62,7 @@ class NodePlacementStrategy(PlacementStrategy):
                 f"Node ID {node_id} exceeds number of available nodes {cluster.num_nodes}"
             )
             visible_devices = list(range(cluster.get_node_num_accelerators(node_id)))
+            visible_devices = [str(device) for device in visible_devices]
             placements.append(
                 Placement(
                     rank=rank,
