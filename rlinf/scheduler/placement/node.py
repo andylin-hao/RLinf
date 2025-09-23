@@ -20,7 +20,39 @@ from .placement import Placement, PlacementStrategy
 
 
 class NodePlacementStrategy(PlacementStrategy):
-    """This placement strategy places processes on specific nodes without limiting accelerators. This is useful for CPU-only workers who do not rely on accelerators."""
+    """This placement strategy places processes on specific nodes (using *global* node ID) without limiting accelerators. This is useful for CPU-only workers who do not rely on accelerators.
+
+    .. note::
+            The global node ID means the node ID across the entire cluster. For example, if a cluster has 16 nodes, the node IDs are 0~15.
+
+    Example::
+
+        >>> from rlinf.scheduler import (
+        ...     Cluster,
+        ...     Worker,
+        ...     NodePlacementStrategy,
+        ... )
+        >>>
+        >>> class MyWorker(Worker):
+        ...     def __init__(self, msg: str = "Hello, World!"):
+        ...         super().__init__()
+        ...         self._msg = msg
+        ...
+        ...     def hello(self):
+        ...         return self._rank
+        ...
+        >>>
+        >>> cluster = Cluster(num_nodes=1)
+        >>>
+        >>> # `NodePlacementStrategy` allows you to specify the *global* accelerator/GPU IDs for each process.
+        >>> placement = NodePlacementStrategy([0] * 4)
+        >>> my_worker = MyWorker.create_group().launch(
+        ...     cluster=cluster, name="node_placement", placement_strategy=placement
+        ... )
+        >>> my_worker.hello().wait() # This will run 4 processes on the first node
+        [0, 1, 2, 3]
+
+    """
 
     def __init__(self, node_ids: List[int]):
         """Initialize the NodePlacementStrategy.

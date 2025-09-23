@@ -20,7 +20,48 @@ from .placement import Placement, PlacementStrategy
 
 
 class FlexiblePlacementStrategy(PlacementStrategy):
-    """This placement strategy allows processes to be placed on any accelerators (GPUs) by specifying a list of accelerator IDs for each process."""
+    """This placement strategy allows processes to be placed on any accelerators (GPUs) by specifying a list of *global* accelerator IDs for each process.
+
+    .. note::
+            The global accelerator ID means the accelerator ID across the entire cluster. For example, if a cluster has 2 nodes, each with 8 GPUs, then the global GPU IDs are 0~7 for node 0 and 8~15 for node 1.
+
+    The following example shows how to use the placement strategy.
+
+    Example::
+
+        >>> from rlinf.scheduler import (
+        ...     Cluster,
+        ...     Worker,
+        ...     FlexiblePlacementStrategy,
+        ... )
+        >>>
+        >>> class MyWorker(Worker):
+        ...     def __init__(self, msg: str = "Hello, World!"):
+        ...         super().__init__()
+        ...         self._msg = msg
+        ...
+        ...     def hello(self):
+        ...         return self._rank
+        ...
+        ...     def available_gpus(self):
+        ...         import torch
+        ...         available_gpus = torch.cuda.device_count()
+        ...         gpu_ids = [
+        ...             torch.cuda.get_device_properties(i) for i in range(available_gpus)
+        ...         ]
+        ...         return available_gpus
+        >>>
+        >>> cluster = Cluster(num_nodes=1)
+        >>>
+        >>> # `FlexiblePlacementStrategy` allows you to specify the *global* accelerator/GPU IDs for each process.
+        >>> placement = FlexiblePlacementStrategy([[4, 5], [6], [7]])
+        >>> my_worker = MyWorker.create_group().launch(
+        ...     cluster=cluster, name="flexible_placement", placement_strategy=placement
+        ... )
+        >>> my_worker.available_gpus().wait() # This will run 3 processes on the first node's GPU 4, 5, 6, 7, where the first process uses GPUs 4 and 5, the second process uses GPU 6, and the third process uses GPU 7.
+        [2, 1, 1]
+
+    """
 
     def __init__(self, accelerator_ids_list: List[List[int]]):
         """Initialize the FlexiblePlacementStrategy.
