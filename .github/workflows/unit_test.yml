@@ -51,6 +51,10 @@ jobs:
               run: |
                 export PYTHONPATH=$(pwd):$(pwd)/megatron:$(pwd)/tests/unit_tests 
                 pytest tests/unit_tests
+            
+            - name: Run doctest
+              run: |
+                pytest --doctest-modules rlinf/scheduler
       
     unit-tests-cpu:
         runs-on: ubuntu-latest

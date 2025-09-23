@@ -94,7 +94,7 @@ class PlacementStrategy:
         >>>
         >>> # Create a placement strategy. This controls how workers are placed on the cluster.
         >>> # `PackedPlacementStrategy` will fill up nodes with workers before moving to the next node.
-        >>> placement = PackedPlacementStrategy(start_gpu_id=4, end_gpu_id=7)
+        >>> placement = PackedPlacementStrategy(start_accelerator_id=4, end_accelerator_id=7)
         >>> my_worker = MyWorker.create_group().launch(
         ...     cluster=cluster, name="packed_group", placement_strategy=placement
         ... )
@@ -102,10 +102,10 @@ class PlacementStrategy:
         [1, 1, 1, 1]
         >>>
         >>>
-        >>> # `num_gpus_per_process` allows for one process to hold multiple GPUs.
-        >>> # For example, if you want a process to hold 4 GPUs, you can set the `num_gpus_per_process` to 4.
+        >>> # `num_accelerators_per_process` allows for one process to hold multiple accelerators/GPUs.
+        >>> # For example, if you want a process to hold 4 GPUs, you can set the `num_accelerators_per_process` to 4.
         >>> placement_chunked = PackedPlacementStrategy(
-        ...     start_gpu_id=0, end_gpu_id=7, num_gpus_per_process=4
+        ...     start_accelerator_id=0, end_accelerator_id=7, num_accelerators_per_process=4
         ... )
         >>> my_worker_chunked = MyWorker.create_group().launch(
         ...     cluster=cluster,
@@ -119,7 +119,7 @@ class PlacementStrategy:
         >>> # `stride` allows for strided placement of workers across GPUs.
         >>> # For example, if you want to place workers on every second GPU, you can set the stride to 2.
         >>> placement_strided = PackedPlacementStrategy(
-        ...     start_gpu_id=0, end_gpu_id=7, stride=2, num_gpus_per_process=2
+        ...     start_accelerator_id=0, end_accelerator_id=7, stride=2, num_accelerators_per_process=2
         ... )
         >>> my_worker_strided = MyWorker.create_group().launch(
         ...     cluster=cluster,
