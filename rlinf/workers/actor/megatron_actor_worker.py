@@ -228,7 +228,7 @@ class MegatronActor(MegatronModelManager, Worker):
     def _load_weight_and_optimizer(self, channel: Channel):
         # Acquire the GPUs to ensure that no one is using them before loading models
         # Otherwise, it may lead to OOM
-        with channel.gpu_lock:
+        with channel.device_lock:
             if self.is_weight_offloaded:
                 self.onload_model_weights_and_grad(load_grad=self.offload_grad)
                 self.is_weight_offloaded = False

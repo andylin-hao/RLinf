@@ -16,6 +16,9 @@ import logging
 from dataclasses import dataclass
 from typing import List, overload
 
+from ..accelerator import AcceleratorType
+from ..cluster import Cluster
+
 
 @dataclass
 class Placement:
@@ -30,8 +33,11 @@ class Placement:
     node_rank: int
     """Rank of the node in the cluster."""
 
-    local_gpu_id: int
+    local_accelerator_id: int
     """Local GPU ID on the node."""
+
+    accelerator_type: AcceleratorType
+    """Type of accelerators on the node."""
 
     local_rank: int
     """Local rank of the worker on the node."""
@@ -39,10 +45,10 @@ class Placement:
     local_world_size: int
     """Local world size (number of workers) on the node."""
 
-    cuda_visible_devices: List[str]
+    visible_accelerators: List[str]
     """List of CUDA visible devices for the worker."""
 
-    isolate_gpu: bool
+    isolate_accelerator: bool
     """Flag to indicate if the local rank should be set to zero. This is useful for workers that require multiple GPUs."""
 
 
@@ -75,7 +81,7 @@ class PlacementStrategy:
         ...         ]
         ...         return available_gpus
         >>>
-        >>> cluster = Cluster(num_nodes=1, num_gpus_per_node=8)
+        >>> cluster = Cluster(num_nodes=1)
         >>>
         >>> # Launch 8 processes
         >>> my_worker_group = MyWorker.create_group(msg="Hello").launch(cluster=cluster)
@@ -125,25 +131,9 @@ class PlacementStrategy:
 
     """
 
-    def __init__(self, start_gpu_id: int, end_gpu_id: int):
-        """Initialize the PlacementStrategy.
-
-        Args:
-            start_gpu_id (int): The starting GPU ID for the placement.
-            end_gpu_id (int): The ending GPU ID for the placement.
-
-        """
+    def __init__(self):
+        """Initialize the PlacementStrategy."""
         self._placement_strategy = None
-        self._start_gpu_id = start_gpu_id
-        self._end_gpu_id = end_gpu_id
-        assert start_gpu_id >= 0, (
-            f"The start GPU ID {start_gpu_id} must be non-negative."
-        )
-        assert end_gpu_id >= 0, f"The end GPU ID {end_gpu_id} must be non-negative."
-        assert end_gpu_id >= start_gpu_id, (
-            f"The end GPU ID {end_gpu_id} must be greater than or equal to the start GPU ID {start_gpu_id}."
-        )
-        self._num_gpus = end_gpu_id - start_gpu_id + 1
         self._logger = logging.getLogger(name=self.__class__.__name__)
         self._logger.setLevel(logging.INFO)
         self._logger.propagate = False
@@ -159,6 +149,8 @@ class PlacementStrategy:
 
     @overload
     def get_placement(
-        self, num_gpus_per_node: int, isolate_gpu: bool = True
+        self,
+        cluster: Cluster,
+        isolate_accelerator: bool = True,
     ) -> List[Placement]:
         return None
