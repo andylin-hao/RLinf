@@ -47,8 +47,8 @@ Placement Strategies
 -----------------------------------
 
 Placement strategies are the underlying mechanisms for obtaining precise allocation of each node and each GPU resource used by component placement.
-Normally, users do not need to directly use placement strategies.
-But if you wish to implement more customized placements, you can refer to the following two built-in strategies, namely ``PackedPlacementStrategy`` and ``FlexiblePlacementStrategy``.
+If you wish to customize placements, you can refer to the following built-in strategies, namely ``FlexiblePlacementStrategy``, ``PackedPlacementStrategy`` and ``NodePlacementStrategy``.
+Specifically, ``FlexiblePlacementStrategy`` and ``PackedPlacementStrategy`` are used for placing worker processes on top of accelerators/GPUs, while ``NodePlacementStrategy`` is used for placing worker processes on specific nodes without considering the underlying accelerator resources and thus useful for CPU-only workers.
 
 
 FlexiblePlacementStrategy
@@ -68,6 +68,15 @@ PackedPlacementStrategy
    :members:
    :member-order: bysource
    :class-doc-from: class
+
+NodePlacementStrategy
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. autoclass:: rlinf.scheduler.placement.node.NodePlacementStrategy
+   :show-inheritance:
+   :members:
+   :member-order: bysource
+   :class-doc-from: class  
 
 Example Usage
 ---------
