@@ -158,10 +158,19 @@ class Accelerator:
         elif accelerator_type == AcceleratorType.NPU:
             visible_devices = os.environ.get("ASCEND_RT_VISIBLE_DEVICES")
         elif accelerator_type == AcceleratorType.NO_ACCEL:
-            visible_devices = []
+            visible_devices = None
 
-        visible_devices = [int(visible_device) for visible_device in visible_devices]
-        return visible_devices
+        if visible_devices is None or visible_devices == "":
+            return []
+        else:
+            try:
+                visible_devices = [int(v.strip()) for v in visible_devices.split(",")]
+            except ValueError:
+                raise ValueError(
+                    f"Invalid visible device IDs: {visible_devices}. "
+                    "Please ensure they are integers separated by commas."
+                )
+            return visible_devices
 
     @staticmethod
     def get_ccl_backend(accelerator_type: AcceleratorType) -> str:

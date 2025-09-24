@@ -414,7 +414,7 @@ class Worker(metaclass=WorkerMeta):
         # Setup local rank and world size
         self._setup_local_rank_world_size()
 
-        # Setup GPU ID
+        # Setup accelerator ID
         self._setup_accelerator_info()
 
         # Configure logging
@@ -811,17 +811,8 @@ class Worker(metaclass=WorkerMeta):
             os.environ["MASTER_PORT"] = str(self._master_port)
 
     def _setup_accelerator_info(self) -> int:
-        visible_devices = os.environ.get("VISIBLE_DEVICES", None)
         cluster = Cluster()
-        if visible_devices is None:
-            visible_devices = list(
-                range(cluster.get_node_num_accelerators(self._node_id))
-            )
-        elif len(visible_devices) == 0:
-            visible_devices = []
-        else:
-            visible_devices = [int(d) for d in visible_devices.split(",")]
-
+        visible_devices = Accelerator.get_visible_devices(self._accelerator_type)
         node_accelerator_ids = cluster.node_accelerator_ids[self._node_id]
         self.global_accelerator_ids = [
             node_accelerator_ids[local_id] for local_id in visible_devices
