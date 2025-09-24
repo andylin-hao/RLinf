@@ -44,7 +44,7 @@ class NodePlacementStrategy(PlacementStrategy):
         >>>
         >>> cluster = Cluster(num_nodes=1)
         >>>
-        >>> # `NodePlacementStrategy` allows you to specify the *global* accelerator/GPU IDs for each process.
+        >>> # `NodePlacementStrategy` allows you to specify the *global* node IDs for each process.
         >>> placement = NodePlacementStrategy([0] * 4)
         >>> my_worker = MyWorker.create_group().launch(
         ...     cluster=cluster, name="node_placement", placement_strategy=placement

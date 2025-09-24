@@ -82,7 +82,8 @@ class PackedPlacementStrategy(PlacementStrategy):
         ...     name="strided_placement",
         ...     placement_strategy=placement_strided,
         ... )
-        >>> my_worker_strided.available_gpus().wait()  # This will run 4 processes, each using 2 GPUs (0,2 1,3 4,6 5,7) of the first node.
+        >>> # This will run 4 processes, each using 2 GPUs (0,2 1,3 4,6 5,7) of the first node.
+        >>> my_worker_strided.available_gpus().wait()
         [2, 2, 2, 2]
 
     """

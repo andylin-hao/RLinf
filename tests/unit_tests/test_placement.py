@@ -23,6 +23,7 @@ from rlinf.scheduler import (
     AcceleratorType,
     Cluster,
     FlexiblePlacementStrategy,
+    NodePlacementStrategy,
     PackedPlacementStrategy,
     Worker,
 )
@@ -651,6 +652,138 @@ class TestPlacementStrategies:
             cluster = mock_cluster(num_nodes=1, num_accelerators_per_node=4)
             strategy = FlexiblePlacementStrategy([[-1]])
             strategy.get_placement(cluster=cluster)
+
+    def test_init_valid_node_ids(self):
+        """Test initialization with valid node IDs."""
+        strategy = NodePlacementStrategy([0, 1, 2])
+        assert strategy._node_ids == [0, 1, 2]
+        assert strategy._placement_strategy == "NODE"
+
+    def test_init_sorts_node_ids(self):
+        """Test that node IDs are sorted during initialization."""
+        strategy = NodePlacementStrategy([2, 0, 1])
+        assert strategy._node_ids == [0, 1, 2]
+
+    def test_init_empty_node_ids_raises_assertion(self):
+        """Test that empty node IDs list raises assertion error."""
+        with pytest.raises(AssertionError, match="The node_ids list must not be empty"):
+            NodePlacementStrategy([])
+
+    def test_get_placement_single_node(self):
+        """Test placement generation for single node."""
+        # Mock cluster
+        cluster = MagicMock(spec=Cluster)
+        cluster.num_nodes = 2
+        cluster.get_node_num_accelerators.return_value = 2
+
+        node_info = MagicMock()
+        node_info.accelerator_type = "cuda"
+        cluster.get_node_info.return_value = node_info
+
+        strategy = NodePlacementStrategy([0, 0])
+        placements = strategy.get_placement(cluster)
+
+        assert len(placements) == 2
+        assert placements[0].rank == 0
+        assert placements[0].node_id == 0
+        assert placements[0].node_rank == 0
+        assert placements[0].local_rank == 0
+        assert placements[0].local_world_size == 2
+
+        assert placements[1].rank == 1
+        assert placements[1].node_id == 0
+        assert placements[1].node_rank == 0
+        assert placements[1].local_rank == 1
+        assert placements[1].local_world_size == 2
+
+    def test_get_placement_multiple_nodes(self):
+        """Test placement generation across multiple nodes."""
+        # Mock cluster
+        cluster = MagicMock(spec=Cluster)
+        cluster.num_nodes = 3
+        cluster.get_node_num_accelerators.return_value = 1
+
+        node_info = MagicMock()
+        node_info.accelerator_type = "cuda"
+        cluster.get_node_info.return_value = node_info
+
+        strategy = NodePlacementStrategy([0, 1, 1, 2])
+        placements = strategy.get_placement(cluster)
+
+        assert len(placements) == 4
+
+        # Node 0
+        assert placements[0].node_id == 0
+        assert placements[0].node_rank == 0
+        assert placements[0].local_rank == 0
+        assert placements[0].local_world_size == 1
+
+        # Node 1
+        assert placements[1].node_id == 1
+        assert placements[1].node_rank == 1
+        assert placements[1].local_rank == 0
+        assert placements[1].local_world_size == 2
+
+        assert placements[2].node_id == 1
+        assert placements[2].node_rank == 1
+        assert placements[2].local_rank == 1
+        assert placements[2].local_world_size == 2
+
+        # Node 2
+        assert placements[3].node_id == 2
+        assert placements[3].node_rank == 2
+        assert placements[3].local_rank == 0
+        assert placements[3].local_world_size == 1
+
+    def test_get_placement_no_accelerators(self):
+        """Test placement generation when no accelerators available."""
+        # Mock cluster
+        cluster = MagicMock(spec=Cluster)
+        cluster.num_nodes = 2
+        cluster.get_node_num_accelerators.return_value = 0
+
+        node_info = MagicMock()
+        node_info.accelerator_type = "cpu"
+        cluster.get_node_info.return_value = node_info
+
+        strategy = NodePlacementStrategy([0])
+        placements = strategy.get_placement(cluster)
+
+        assert len(placements) == 1
+        assert placements[0].local_accelerator_id == -1
+        assert placements[0].visible_accelerators == []
+
+    def test_get_placement_node_id_exceeds_cluster_size(self):
+        """Test that node ID exceeding cluster size raises assertion error."""
+        # Mock cluster
+        cluster = MagicMock(spec=Cluster)
+        cluster.num_nodes = 2
+        cluster.get_node_num_accelerators.return_value = 2
+
+        strategy = NodePlacementStrategy([0, 2])
+
+        with pytest.raises(
+            AssertionError, match="Node ID 2 exceeds number of available nodes 2"
+        ):
+            strategy.get_placement(cluster)
+
+    def test_get_placement_isolate_accelerator_false(self):
+        """Test placement generation with isolate_accelerator=False."""
+        # Mock cluster
+        cluster = MagicMock(spec=Cluster)
+        cluster.num_nodes = 1
+        cluster.get_node_num_accelerators.return_value = 2
+
+        node_info = MagicMock()
+        node_info.accelerator_type = "cuda"
+        cluster.get_node_info.return_value = node_info
+
+        strategy = NodePlacementStrategy([0])
+        placements = strategy.get_placement(cluster, isolate_accelerator=False)
+
+        assert len(placements) == 1
+        assert not placements[0].isolate_accelerator
+        assert placements[0].visible_accelerators == ["0", "1"]
 
     def test_hybrid_component_placement_generate_placements(self):
         """Test HybridComponentPlacement._generate_placements method."""

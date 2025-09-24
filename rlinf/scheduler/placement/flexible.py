@@ -58,7 +58,8 @@ class FlexiblePlacementStrategy(PlacementStrategy):
         >>> my_worker = MyWorker.create_group().launch(
         ...     cluster=cluster, name="flexible_placement", placement_strategy=placement
         ... )
-        >>> my_worker.available_gpus().wait() # This will run 3 processes on the first node's GPU 4, 5, 6, 7, where the first process uses GPUs 4 and 5, the second process uses GPU 6, and the third process uses GPU 7.
+        >>> # This will run 3 processes on the first node's GPU 4, 5, 6, 7, where the first process uses GPUs 4 and 5, the second process uses GPU 6, and the third process uses GPU 7.
+        >>> my_worker.available_gpus().wait()
         [2, 1, 1]
 
     """
