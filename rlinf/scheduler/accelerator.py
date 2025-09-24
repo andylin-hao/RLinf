@@ -31,20 +31,12 @@ class AcceleratorType(Enum):
 class Accelerator:
     """Utility class representing an accelerator and abstracting device operations."""
 
-    RAY_NAME_TYPE_MAP = {
-        "GPU": [
-            AcceleratorType.NV_GPU,
-            AcceleratorType.AMD_GPU,
-            AcceleratorType.INTEL_GPU,
-        ],
-        "NPU": AcceleratorType.NPU,
-    }
+    SUPPORTED_LIST = ["GPU", "NPU"]
+    UNSUPPORTED_LIST = ["neuron_cores", "TPU", "HPU", "RBLN"]
 
     # To support an accelerator's CCL,
     # the `_new_process_group_helper` functions of `mult_channel_pg` need to be implemented
     CCL_SUPPORT_LIST = [AcceleratorType.NV_GPU, AcceleratorType.AMD_GPU]
-
-    UNSUPPORTED_LIST = ["neuron_cores", "TPU", "HPU", "RBLN"]
 
     @staticmethod
     def get_node_accelerator_type_and_num(node_info: Dict[str, int]):
@@ -65,9 +57,9 @@ class Accelerator:
                     f"Unsupported accelerator type {unsupported} detected on node {node_info}"
                 )
 
-        for ray_name, accel_type in Accelerator.RAY_NAME_TYPE_MAP.items():
-            if ray_name in node_resources and node_resources[ray_name] > 0:
-                if ray_name == "GPU":
+        for supported in Accelerator.SUPPORTED_LIST:
+            if supported in node_resources and node_resources[supported] > 0:
+                if supported == "GPU":
                     # Find the accelerator_type to distinguish NV/AMD/Intel GPUs
                     # accelerator_type is a key in node_resources which starts with "accelerator_type"
                     accelerator_type = AcceleratorType.NV_GPU
@@ -80,9 +72,9 @@ class Accelerator:
                                 # https://github.com/ray-project/ray/blob/161849364a784442cc659fb9780f1a6adee85fce/python/ray/_private/accelerators/intel_gpu.py#L82
                                 accelerator_type = AcceleratorType.INTEL_GPU
                             break
-                else:
-                    accelerator_type = accel_type
-                return accelerator_type, int(node_resources[ray_name])
+                elif supported == "NPU":
+                    accelerator_type = AcceleratorType.NPU
+                return accelerator_type, int(node_resources[supported])
         return AcceleratorType.NO_ACCEL, 0
 
     @staticmethod
