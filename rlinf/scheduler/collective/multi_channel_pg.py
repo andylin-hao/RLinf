@@ -19,7 +19,7 @@ from typing import List, Optional
 import torch
 import torch.distributed as dist
 
-from ..accelerator import Accelerator
+from ..accelerator import Accelerator, AcceleratorType
 from .async_work import AsyncCollWork, AsyncWork
 from .collective_group import CollectiveGroup, CollectiveGroupInfo
 
@@ -59,15 +59,18 @@ class MultiChannelProcessGroup:
         self._is_initialized = False
         self._no_accel_ccl = False
         self._group_name = None
+        self._group_info = group_info
 
         # Check if all workers have the same accelerator type
         accel_type = group_info.workers[0].accelerator_type
-        for worker in group_info.workers:
-            if worker.accelerator_type != accel_type or accel_type == Accelerator:
-                self._no_accel_ccl = True
-                break
-        if accel_type not in Accelerator.CCL_SUPPORT_LIST:
-            self._no_accel_ccl = True
+        self._no_accel_ccl = (
+            # Hetero workers in the same group, disable CCL
+            any(worker.accelerator_type != accel_type for worker in group_info.workers)
+            # CPU only, disable CCL
+            or accel_type == AcceleratorType.NO_ACCEL
+            # Unsupported accelerator CCL type, disable CCL
+            or accel_type not in Accelerator.CCL_SUPPORT_LIST
+        )
         self._accel_ccl_backend = (
             Accelerator.get_ccl_backend(accel_type) if not self._no_accel_ccl else None
         )
@@ -216,7 +219,7 @@ class MultiChannelProcessGroup:
         # NOTE: GLOO backend doesn't support dist.Work.get_future, use broadcast to simulate send/recv instead
         if self._no_accel_ccl and device == CollectiveGroup.ACCEL:
             raise RuntimeError(
-                f"Collective group {self._group_name} is first initialized on the same GPU device and thus NCCL is disabled. But now you have switched to another GPU device on one rank (possibly via `torch.cuda.set_device()`), resulting in NCCL communications. We currently do not support this use case. Please ensure that all ranks are initialized on the same GPU device and do not switch devices after initialization."
+                f"Collective group {self._group_name} does not support accelerator CCL backend, possibly because (1) the workers in the group have different accelerator types:  {[worker.accelerator_type for worker in self._group_info.workers]}, (2) the workers are CPU-only, or (3) the accelerator CCL is not among the supported CCL: {Accelerator.CCL_SUPPORT_LIST}."
             )
         group = (
             self._send_accel_ccl_process_groups[channel_id]
