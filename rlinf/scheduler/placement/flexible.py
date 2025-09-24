@@ -102,7 +102,6 @@ class FlexiblePlacementStrategy(PlacementStrategy):
         assert self._end_accel_id >= self._start_accel_id, (
             f"The end accelerator ID {self._end_accel_id} must be greater than or equal to the start accelerator ID {self._start_accel_id}."
         )
-        self._num_accelerators = self._end_accel_id - self._start_accel_id + 1
 
         self._placement_strategy = "FLEXIBLE"
 
