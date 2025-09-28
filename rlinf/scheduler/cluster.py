@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 import os
 import signal
 import sys
@@ -108,6 +109,21 @@ class Cluster:
 
     def _init_and_launch_managers(self, num_nodes: int):
         assert num_nodes > 0, "num_nodes must be greater than 0."
+
+        # Add logger
+        self._logger = logging.getLogger(Cluster.SYS_NAME)
+        self._logger.setLevel(Cluster.LOGGING_LEVEL)
+        self._logger.propagate = False
+        for handler in self._logger.handlers:
+            self._logger.removeHandler(handler)
+        handler = logging.StreamHandler()
+        formatter = logging.Formatter(
+            fmt="[%(levelname)s %(asctime)s %(name)s] %(message)s",
+            datefmt="%H:%M:%S",
+        )
+        handler.setFormatter(formatter)
+        self._logger.addHandler(handler)
+
         self._num_nodes = num_nodes
         self._set_default_env_vars()
 
@@ -145,9 +161,8 @@ class Cluster:
 
         # Wait for the cluster to be ready
         while len(ray.nodes()) < self._num_nodes:
-            print(
-                f"Waiting for {self._num_nodes} nodes to be ready, currently {len(ray.nodes())} nodes available.",
-                flush=True,
+            self._logger.warning(
+                f"Waiting for {self._num_nodes} nodes to be ready, currently {len(ray.nodes())} nodes available."
             )
             time.sleep(1)
 
@@ -186,7 +201,7 @@ class Cluster:
             )
             self._nodes = self._nodes[: self._num_nodes]
 
-        print(
+        self._logger.info(
             f"{Cluster.SYS_NAME} is running on a cluster with {len(self._nodes)} node{'s' if len(self._nodes) > 1 else ''} and {self.num_accelerators_in_cluster} accelerator{'s' if self.num_accelerators_in_cluster > 1 else ''}. The nodes' details are: {self._nodes}"
         )
 
