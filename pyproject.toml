@@ -44,6 +44,7 @@ dependencies = [
     "pybind11",
     "torch-memory-saver",
     "setuptools>=69.5.1,<75.9",
+    "ninja",
 
     # Logging
     "swanlab",
@@ -80,6 +81,11 @@ conflicts = [
       { extra = "vllm" },
       { extra = "embodied" },
     ],
+]
+override-dependencies = [
+    "torch==2.6.0",
+    "torchvision==0.21.0",
+    "torchaudio==2.6.0"
 ]
 
 [tool.ruff]

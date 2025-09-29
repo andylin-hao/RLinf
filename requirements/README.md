@@ -53,10 +53,13 @@ For embodied experiments, first install the necessary system dependencies (curre
 bash requirements/install_embodied_deps.sh
 uv sync --extra embodied
 ```
-Next, depending on the experiment types, install the `openvla` or `pi0` dependencies.
+Next, depending on the experiment types, install the `openvla`, `openvla_oft` or `pi0` dependencies.
 ```shell
-# For OpenVLA/OpenVLA-oft experiments
+# For OpenVLA experiments
 UV_TORCH_BACKEND=auto uv pip install -r requirements/openvla.txt --no-build-isolation
+
+# For OpenVLA-oft experiment
+UV_TORCH_BACKEND=auto uv pip install -r requirements/openvla_oft.txt --no-build-isolation
 
 # For Pi0 experiment
 UV_TORCH_BACKEND=auto uv pip install -r requirements/pi0.txt --no-build-isolation
