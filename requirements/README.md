@@ -50,8 +50,8 @@ uv sync --extra vllm
 ### Embodied Dependencies
 For embodied experiments, first install the necessary system dependencies (currently only Debian/Ubuntu `apt` package management is supported).
 ```shell
-bash requirements/install_embodied_deps.sh
 uv sync --extra embodied
+bash requirements/install_embodied_deps.sh # Must be run after the above command
 ```
 Next, depending on the experiment types, install the `openvla`, `openvla_oft` or `pi0` dependencies.
 ```shell

@@ -188,8 +188,8 @@ vLLM 安装：
 
 .. code-block:: shell
 
-   bash requirements/install_embodied_deps.sh
    uv sync --extra embodied
+   bash requirements/install_embodied_deps.sh # Must be run after the above command
 
 接着，根据具体实验类型安装对应的 Python 包：
 

@@ -193,8 +193,8 @@ For embodied experiments, first install the necessary system dependencies (curre
 
 .. code-block:: shell
 
-   bash requirements/install_embodied_deps.sh
    uv sync --extra embodied
+   bash requirements/install_embodied_deps.sh # Must be run after the above command
 
 Then, depending on the experiment type, install the required packages for ``openvla``, ``openvla-oft`` and ``pi0``:
 

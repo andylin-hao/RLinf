@@ -20,4 +20,7 @@ apt-get install -y --no-install-recommends \
     libxrender-dev \
     libgomp1 \
 
+python -m mani_skill.utils.download_asset bridge_v2_real2sim
+python -m mani_skill.utils.download_asset widowx250s
+
 
