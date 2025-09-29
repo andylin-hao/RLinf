@@ -54,7 +54,7 @@ we highly recommend updating the following configuration option in
 
 
 You can set it to **0-1**, **0-3** or  **0-7** to use 2/4/8 GPUs depending on your available resources.
-Refer to :doc:`../../tutorials/user/yaml` for a more detailed explanation of the placement configuration.
+Refer to :doc:`../tutorials/user/yaml` for a more detailed explanation of the placement configuration.
 
 .. code-block:: yaml
 
