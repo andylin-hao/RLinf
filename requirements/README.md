@@ -26,25 +26,14 @@ UV_TORCH_BACKEND=auto uv sync
 ### Megatron and SGLang/vLLM Dependencies
 Run the following to install Megatron, SGLang or vLLM and their dependencies.
 
-Megatron installation:
 ```shell
-uv sync --extra sgl_vllm
+uv sync --extra sglang-vllm
 mkdir -p /opt && git clone https://github.com/NVIDIA/Megatron-LM.git -b core_r0.13.0 /opt/Megatron-LM
-APEX_CPP_EXT=1 APEX_CUDA_EXT=1 uv pip install -r requirements/megatron.txt --no-build-isolation
+APEX_CPP_EXT=1 APEX_CUDA_EXT=1 NVCC_APPEND_FLAGS="--threads 24" APEX_PARALLEL_BUILD=24 uv pip install -r requirements/megatron.txt --no-build-isolation
 ```
 Before using Megatron, make sure it's path is added to the `PYTHONPATH` environment variables.
 ```shell
 export PYTHONPATH=/opt/Megatron-LM:$PYTHONPATH
-```
-
-SGLang installation:
-```shell
-uv sync --extra sglang
-```
-
-vLLM installation:
-```shell
-uv sync --extra vllm
 ```
 
 ### Embodied Dependencies

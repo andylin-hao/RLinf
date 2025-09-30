@@ -157,27 +157,15 @@ Megatron 和 SGLang/vLLM 依赖
 
 .. code-block:: shell
 
-   uv sync --extra sgl_vllm
+   uv sync --extra sglang-vllm
    mkdir -p /opt && git clone https://github.com/NVIDIA/Megatron-LM.git -b core_r0.13.0 /opt/Megatron-LM
-   APEX_CPP_EXT=1 APEX_CUDA_EXT=1 uv pip install -r requirements/megatron.txt --no-build-isolation
+   APEX_CPP_EXT=1 APEX_CUDA_EXT=1 NVCC_APPEND_FLAGS="--threads 24" APEX_PARALLEL_BUILD=24 uv pip install -r requirements/megatron.txt --no-build-isolation
 
 使用 Megatron 前，请将其路径加入 ``PYTHONPATH`` 环境变量：
 
 .. code-block:: shell
 
    export PYTHONPATH=/opt/Megatron-LM:$PYTHONPATH
-
-SGLang 安装：
-
-.. code-block:: shell
-
-   uv sync --extra sglang
-
-vLLM 安装：
-
-.. code-block:: shell
-
-   uv sync --extra vllm
 
 .. _embodied-dependencies:
 
