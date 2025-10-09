@@ -75,14 +75,13 @@ RLinf 提供两种安装方式。我们 **推荐使用 Docker**，因为这可�
 
 我们提供了两个官方镜像，分别针对不同后端配置进行了优化：
 
-- **Megatron + SGLang/vLLM**：
+- **基于Megatron + SGLang/vLLM的数学推理镜像**：
 
   - ``rlinf/rlinf:math-rlinf0.1-torch2.5.1-sglang0.4.4-vllm0.7.1-megatron0.11.0-te2.1`` （用于增强大语言模型在 MATH 任务中的推理能力）
 
-- **FSDP + Huggingface**：
+- **基于FSDP + Huggingface的具身智能镜像**：
 
-  - ``rlinf/rlinf:agentic-openvla-rlinf0.1-torch2.5.1`` （适用于 OpenVLA 模型）  
-  - ``rlinf/rlinf:agentic-openvlaoft-rlinf0.1-torch2.5.1`` （适用于 OpenVLA-OFT 模型）
+  - ``rlinf/rlinf:embodied-rlinf0.1-torch2.6.0-openvla-openvlaoft-pi0`` （适用于 OpenVLA/OpenVLA-OFT/Pi0 模型）
 
 确认适合你任务的镜像后，拉取镜像：
 
@@ -97,7 +96,6 @@ RLinf 提供两种安装方式。我们 **推荐使用 Docker**，因为这可�
    docker run -it --gpus all \
       --shm-size 100g \
       --net=host \
-      --env NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics \
       --name rlinf \
       rlinf/rlinf:CHOSEN_IMAGE /bin/bash
 
@@ -107,6 +105,13 @@ RLinf 提供两种安装方式。我们 **推荐使用 Docker**，因为这可�
 
    git clone https://github.com/RLinf/RLinf.git
    cd RLinf
+
+具身智能镜像中包含多个 Python 虚拟环境（venv），位于 ``/opt/venv`` 目录下，分别对应不同模型，即 ``openvla``、``openvla-oft`` 和 ``pi0``。
+默认环境设置为 ``openvla``。
+要切换到所需的 venv，可以使用内置脚本 `switch_env`：
+.. code-block:: bash
+
+   source switch_env <env_name> # 例如，source switch_env openvla-oft, source switch_env pi0 等
 
 .. tip::
 

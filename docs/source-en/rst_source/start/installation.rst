@@ -77,15 +77,13 @@ Install from Docker Image
 
 We provide two official Docker images optimized for different backend configurations:
 
-- **Megatron + SGLang/vLLM**:  
+- **Math reasoning with Megatron + SGLang/vLLM**:  
 
   - ``rlinf/rlinf:math-rlinf0.1-torch2.5.1-sglang0.4.4-vllm0.7.1-megatron0.11.0-te2.1`` (used for enhancing LLM reasoning on MATH tasks)
 
-- **FSDP + Huggingface**:  
+- **Embodied with FSDP + Huggingface**:  
 
-  - ``rlinf/rlinf:agentic-openvla-rlinf0.1-torch2.5.1`` (for the OpenVLA model)  
-  - ``rlinf/rlinf:agentic-openvlaoft-rlinf0.1-torch2.5.1`` (for the OpenVLA-OFT model)
-
+  - ``rlinf/rlinf:embodied-rlinf0.1-torch2.6.0-openvla-openvlaoft-pi0`` (for the OpenVLA/OpenVLA-OFT/Pi0 model)
 
 Once you've identified the appropriate image for your setup, pull the Docker image:
 
@@ -100,7 +98,6 @@ Then, start the container using the pulled image:
    docker run -it --gpus all \
       --shm-size 100g \
       --net=host \
-      --env NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics \
       --name rlinf \
       rlinf/rlinf:CHOSEN_IMAGE /bin/bash
 
@@ -110,6 +107,14 @@ Inside the container, clone the RLinf repository:
 
    git clone https://github.com/RLinf/RLinf.git
    cd RLinf
+
+The embodied image contains multiple Python virtual environments (venv) located in the `/opt/venv` directory for different models, namely ``openvla``, ``openvla-oft``, and ``pi0``.
+The default environment is set to ``openvla``.
+To switch to the desired venv, use the built-in script `switch_env`:
+
+.. code-block:: bash
+
+   source switch_env <env_name> # e.g., source switch_env openvla-oft, source switch_env pi0, etc.
 
 .. tip::
 
