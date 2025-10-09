@@ -34,6 +34,8 @@ ENV UV_CACHE_DIR=$UV_PATH/.cache
 
 FROM base-image AS reason-image
 
+ARG APEX_BUILD_THREADS=24
+
 # Install Megatron-LM
 RUN git clone https://github.com/NVIDIA/Megatron-LM.git -b core_r0.13.0 /opt/Megatron-LM
 ENV PYTHONPATH=/opt/Megatron-LM:$PYTHONPATH
@@ -42,7 +44,7 @@ ENV PYTHONPATH=/opt/Megatron-LM:$PYTHONPATH
 RUN uv venv reason && source ${UV_PATH}/reason/bin/activate && \
     UV_TORCH_BACKEND=auto uv sync --active && \
     uv sync --extra sglang-vllm --active && \
-    APEX_CPP_EXT=1 APEX_CUDA_EXT=1 NVCC_APPEND_FLAGS="--threads 24" APEX_PARALLEL_BUILD=24 uv pip install git+https://github.com/NVIDIA/apex.git --no-build-isolation && \
+    APEX_CPP_EXT=1 APEX_CUDA_EXT=1 NVCC_APPEND_FLAGS="--threads $APEX_BUILD_THREADS" APEX_PARALLEL_BUILD=$APEX_BUILD_THREADS uv pip install git+https://github.com/NVIDIA/apex.git --no-build-isolation && \
     uv pip install transformer_engine[pytorch]==2.1.0 --no-build-isolation && \
     uv pip install https://github.com/Dao-AILab/flash-attention/releases/download/v2.7.4.post1/flash_attn-2.7.4.post1+cu12torch2.6cxx11abiFALSE-cp311-cp311-linux_x86_64.whl && \
     uv pip uninstall pynvml
@@ -93,7 +95,7 @@ RUN uv venv openvla-oft && source ${UV_PATH}/openvla-oft/bin/activate && \
 RUN uv venv pi0 && source ${UV_PATH}/pi0/bin/activate && \
     UV_TORCH_BACKEND=auto uv sync --active && \
     uv sync --extra embodied --active && \
-    uv pip install lerobot>=0.3.3 && \
+    uv pip install "lerobot>=0.3.3" && \
     uv pip install flash-attn==2.5.5 --no-build-isolation && \
     uv pip uninstall pynvml
 
