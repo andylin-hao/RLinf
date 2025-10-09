@@ -59,6 +59,8 @@ ENV NVIDIA_DRIVER_CAPABILITIES="compute,utility,graphics"
 
 # Embodied system dependencies
 RUN apt-get install -y --no-install-recommends \
+    wget \
+    unzip \
     mesa-utils \
     libosmesa6-dev \
     freeglut3-dev \
@@ -103,6 +105,13 @@ RUN uv venv pi0 && source ${UV_PATH}/pi0/bin/activate && \
 RUN source ${UV_PATH}/openvla/bin/activate && \
     python -m mani_skill.utils.download_asset bridge_v2_real2sim -y && \
     python -m mani_skill.utils.download_asset widowx250s -y
+
+# Install SAPIEN PhysX Patch
+RUN export PHYSX_VERSION=105.1-physx-5.3.1.patch0 && \
+    export PHYSX_DIR=~/.sapien/physx/$PHYSX_VERSION && \ 
+    mkdir -p $PHYSX_DIR && \
+    wget -O $PHYSX_DIR/linux-so.zip https://github.com/sapien-sim/physx-precompiled/releases/download/$PHYSX_VERSION/linux-so.zip && \
+    unzip $PHYSX_DIR/linux-so.zip -d $PHYSX_DIR && rm $PHYSX_DIR/linux-so.zip
 
 # Set default env
 RUN echo "source ${UV_PATH}/openvla/bin/activate" >> ~/.bashrc

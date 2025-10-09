@@ -46,7 +46,7 @@ jobs:
             volumes:
                 - /mnt/public/dataset:/workspace/dataset
                 - /mnt/public/tokenizer:/workspace/tokenizer
-            options: --gpus="all" --shm-size=2g"
+            options: --gpus="all" --shm-size=2g
 
         steps:
             - name: Checkout code
