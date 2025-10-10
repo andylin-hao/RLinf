@@ -118,12 +118,12 @@ To switch to the desired venv, use the built-in script `switch_env`:
 
 .. tip::
 
-   For multi-node training, make sure to clone the repository in shared storage so that every node has access to it.
-
-
+   - For multi-node training, make sure to clone the repository in shared storage so that every node has access to it.
+   - To use ManiSkill settings, refer to the README at ``https://huggingface.co/datasets/RLinf/maniskill_assets`` for instructions on downloading the required files.
 
 Installation Method 2: UV Custom Environment
 -------------------------------
+**If you have already used the Docker image, you can skip the following steps.**
 
 Installation is divided into two parts depending on the type of experiments you plan to run.
 
