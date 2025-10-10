@@ -41,12 +41,6 @@ concurrency:
 jobs:
     openvla-ppo-test:
         runs-on: embodied
-        container:
-            image: rlinf/rlinf:agentic-rlinf0.1-torch2.6.0-openvla-openvlaoft-pi0
-            volumes:
-                - /mnt/public/dataset:/workspace/dataset
-                - /mnt/public/tokenizer:/workspace/tokenizer
-            options: --gpus="all" --shm-size=2g
 
         steps:
             - name: Checkout code
