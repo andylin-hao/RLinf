@@ -21,12 +21,6 @@ Backend Engines
 
    - **Huggingface**: Easy to use, with native APIs provided by the Huggingface ecosystem.
 
-Installation Methods
---------------------
-
-RLinf provides two installation options. We **recommend using Docker**, as it provides the fastest and most reproducible environment.
-However, if your system is incompatible with the Docker image, you can also install RLinf manually in a Python environment.
-
 Hardware Requirements
 ~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -71,8 +65,14 @@ Software Requirements
    * - NVIDIA Container Toolkit
      - 1.17.8
 
+Installation Methods
+--------------------
 
-Install from Docker Image
+RLinf provides two installation options. We **recommend using Docker**, as it provides the fastest and most reproducible environment.
+However, if your system is incompatible with the Docker image, you can also install RLinf manually in a Python environment.
+
+
+Installation Method 1: Docker Image
 -------------------------
 
 We provide two official Docker images optimized for different backend configurations:
@@ -83,7 +83,7 @@ We provide two official Docker images optimized for different backend configurat
 
 - **Embodied with FSDP + Huggingface**:  
 
-  - ``rlinf/rlinf:embodied-rlinf0.1-torch2.6.0-openvla-openvlaoft-pi0`` (for the OpenVLA/OpenVLA-OFT/Pi0 model)
+  - ``rlinf/rlinf:agentic-rlinf0.1-torch2.6.0-openvla-openvlaoft-pi0`` (for the OpenVLA/OpenVLA-OFT/Pi0 model)
 
 Once you've identified the appropriate image for your setup, pull the Docker image:
 
@@ -122,19 +122,18 @@ To switch to the desired venv, use the built-in script `switch_env`:
 
 
 
-Install from Custom Environment
+Installation Method 2: UV Custom Environment
 -------------------------------
 
-Installation is divided into three parts depending on the type of experiments you plan to run.
+Installation is divided into two parts depending on the type of experiments you plan to run.
 
-First, for all experiments, follow the :ref:`Common Dependencies <common-dependencies>` section to install the shared dependencies.  
-This already includes the full backend setup for **FSDP + Huggingface**.
+First, for all experiments, follow the :ref:`Common Dependencies <common-dependencies>` section to install the shared dependencies.
 
-Second, for experiments using **Megatron** and **SGLang/vLLM** backends,  
-follow the :ref:`Megatron and SGLang/vLLM Dependencies <megatron-and-sglang-vllm-dependencies>` section to install all required packages.  
+Next, install the specific dependencies based on your experiment type.
 
-Third, for embodied intelligence experiments (e.g., OpenVLA, OpenVLA-OFT and Pi0),  
-follow the :ref:`Embodied Dependencies <embodied-dependencies>` section to install their specific dependencies.
+* For reasoning experiments using **Megatron** and **SGLang/vLLM** backends, follow the :ref:`Megatron and SGLang/vLLM Dependencies <megatron-and-sglang-vllm-dependencies>` section to install all required packages.  
+
+* For embodied intelligence experiments (e.g., OpenVLA, OpenVLA-OFT and Pi0), follow the :ref:`Embodied Dependencies <embodied-dependencies>` section to install their specific dependencies.
 
 .. _common-dependencies:
 
@@ -162,6 +161,10 @@ After installing ``uv``, create a virtual environment and install PyTorch along 
 
 Megatron and SGLang/vLLM Dependencies
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. note::
+  If you are running embodied experiments, there is no need to install these dependencies.
+  Please proceed directly to the :ref:`Embodied Dependencies <embodied-dependencies>` section.
 
 Run the following commands to install Megatron, SGLang or vLLM, and their dependencies:
 
