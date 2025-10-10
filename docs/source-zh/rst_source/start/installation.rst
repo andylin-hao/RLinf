@@ -201,3 +201,13 @@ Megatron 和 SGLang/vLLM 依赖
 
    # Pi0 实验所需依赖
    UV_TORCH_BACKEND=auto uv pip install -r requirements/pi0.txt --no-build-isolation
+
+最后，运行以下命令安装 LIBERO 依赖：
+.. code-block:: shell
+
+   mkdir -p /opt && git clone https://github.com/Lifelong-Robot-Learning/LIBERO.git /opt/libero
+
+使用 LIBERO 前，请将其路径加入 ``PYTHONPATH`` 环境变量：
+.. code-block:: shell
+
+   export PYTHONPATH=/opt/libero:$PYTHONPATH
