@@ -40,7 +40,7 @@ concurrency:
 
 jobs:
     openvla-ppo-test:
-        runs-on: rlinf
+        runs-on: embodied
         container:
             image: rlinf/rlinf:agentic-rlinf0.1-torch2.6.0-openvla-openvlaoft-pi0
             volumes:
