@@ -36,7 +36,7 @@ jobs:
 
         steps:
             - name: Checkout code
-              uses: actions/checkout@v4
+              uses: actions/checkout@v5
 
             - name: Install pytest
               run: pip install pytest
@@ -54,15 +54,13 @@ jobs:
       
     unit-tests-cpu:
         runs-on: ubuntu-latest
-        container:
-            image: rlinf/rlinf:math-rlinf0.1-torch2.6.0-sglang0.4.6.post5-vllm0.8.5-megatron0.13.0-te2.1
 
         steps:
             - name: Checkout code
-              uses: actions/checkout@v4
+              uses: actions/checkout@v5
 
-            - name: Install pytest
-              run: pip install pytest
+            - name: Install dependencies
+              run: pip install pytest torch==2.6.0 torchvision torchaudio ray hydra-core==1.4.0.dev1 numpy
 
             - name: Run pytest
               timeout-minutes: 20

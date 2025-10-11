@@ -44,7 +44,7 @@ jobs:
 
         steps:
             - name: Checkout code
-              uses: actions/checkout@v4
+              uses: actions/checkout@v5
             - name: OpenVLA test
               timeout-minutes: 20
               run: |
@@ -55,7 +55,7 @@ jobs:
 
         steps:
             - name: Checkout code
-              uses: actions/checkout@v4
+              uses: actions/checkout@v5
             - name: OpenVLA-OFT test
               run: |
                 export REPO_PATH=$(pwd)
