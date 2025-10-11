@@ -50,23 +50,27 @@ jobs:
               timeout-minutes: 20
               run: |
                 export REPO_PATH=$(pwd)
+                source switch_env reason
                 bash tests/e2e_tests/math/sglang/run_collocated.sh qwen2.5-1.5b-grpo-collocated-rollout-logprobs.yaml
 
             - name: vLLM Collocated mode
               timeout-minutes: 20
               run: |
                 export REPO_PATH=$(pwd)
+                source switch_env reason
                 bash tests/e2e_tests/math/vllm/run_collocated.sh qwen2.5-1.5b-grpo-collocated-rollout-logprobs.yaml
 
             - name: SGLang Pipeline mode
               timeout-minutes: 20
               run: |
                 export REPO_PATH=$(pwd)
+                source switch_env reason
                 bash tests/e2e_tests/math/sglang/run_pipeline.sh qwen2.5-1.5b-grpo-pipeline-rollout-logprobs.yaml
 
             - name: vLLM Pipeline mode
               timeout-minutes: 20
               run: |
                 export REPO_PATH=$(pwd)
+                source switch_env reason
                 bash tests/e2e_tests/math/vllm/run_pipeline.sh qwen2.5-1.5b-grpo-pipeline-rollout-logprobs.yaml
 

@@ -50,4 +50,5 @@ jobs:
               timeout-minutes: 20
               run: |
                 export REPO_PATH=$(pwd)
+                source switch_env reason
                 bash tests/e2e_tests/auto_placement/run_auto_placement.sh

@@ -50,22 +50,26 @@ jobs:
               timeout-minutes: 20
               run: |
                 export REPO_PATH=$(pwd)
+                source switch_env reason
                 bash tests/e2e_tests/math/sglang/run_collocated.sh
 
             - name: vLLM Collocated mode
               timeout-minutes: 20
               run: |
                 export REPO_PATH=$(pwd)
+                source switch_env reason
                 bash tests/e2e_tests/math/vllm/run_collocated.sh
 
             - name: SGLang Pipeline mode
               timeout-minutes: 20
               run: |
                 export REPO_PATH=$(pwd)
+                source switch_env reason
                 bash tests/e2e_tests/math/sglang/run_pipeline.sh
 
             - name: vLLM Pipeline mode
               timeout-minutes: 20
               run: |
                 export REPO_PATH=$(pwd)
+                source switch_env reason
                 bash tests/e2e_tests/math/vllm/run_pipeline.sh

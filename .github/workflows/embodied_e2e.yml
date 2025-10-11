@@ -49,7 +49,9 @@ jobs:
               timeout-minutes: 20
               run: |
                 export REPO_PATH=$(pwd)
+                source switch_env openvla
                 bash tests/e2e_tests/embodied/run_openvla.sh
+
     openvlaoft-grpo-test:
         runs-on: embodied
 
@@ -59,4 +61,5 @@ jobs:
             - name: OpenVLA-OFT test
               run: |
                 export REPO_PATH=$(pwd)
+                source switch_env openvla-oft
                 bash tests/e2e_tests/embodied/run_openvlaoft_libero130.sh

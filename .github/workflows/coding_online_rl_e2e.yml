@@ -53,4 +53,5 @@ jobs:
             - name: SGLang Collocated mode
               run: |
                 export REPO_PATH=$(pwd)
+                source switch_env reason
                 bash tests/e2e_tests/coding_online_rl/run_coding_online_rl.sh
