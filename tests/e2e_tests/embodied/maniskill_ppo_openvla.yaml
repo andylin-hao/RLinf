@@ -24,12 +24,12 @@ runner:
     experiment_name: "ci-test"
     logger_backends: ["tensorboard"] # wandb, swanlab
 
-  max_epochs: 3
+  max_epochs: 2
   max_steps: -1
 
   val_check_interval: -1
   save_interval: -1
-  seq_length: 4096
+  seq_length: 1024
   max_prompt_length: 30
 
 algorithm:
@@ -115,8 +115,8 @@ actor:
   checkpoint_load_path: "/workspace/dataset/openvla-7b"
   checkpoint_save_path: "/workspace/results"
 
-  micro_batch_size: 20
-  global_batch_size: 80
+  micro_batch_size: 10
+  global_batch_size: 40
   seed: 1234
   enable_offload: True
 

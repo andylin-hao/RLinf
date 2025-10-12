@@ -1,6 +1,6 @@
 defaults:
-  - env/train: libero_130
-  - env/eval: libero_130
+  - env/train: PutOnPlateInScene25Main
+  - env/eval: maniskill_ood_template
   - override hydra/job_logging: stdout
 
 hydra:
@@ -23,29 +23,28 @@ runner:
     experiment_name: "ci-test"
     logger_backends: ["tensorboard"] # wandb, swanlab
 
-  max_epochs: 1
+  max_epochs: 2
   max_steps: -1
 
-  only_eval: False
   val_check_interval: -1
   save_interval: -1
-  seq_length: 4096
-  max_prompt_length: 128
+  seq_length: 1024
+  max_prompt_length: 30
 
 algorithm:
   auto_reset: False
   ignore_terminations: False
   use_fixed_reset_state_ids: True
   require_values: False
-  shuffle_samples: True
   normalize_advantages: True
   kl_penalty: kl  # how to estimate kl divergence: kl or kl_penalty
-  group_size: 8
-  n_chunk_steps: ${int_div:${env.train.max_episode_steps}, ${actor.model.num_action_chunks}}
-  n_eval_chunk_steps: ${int_div:${env.train.max_episode_steps}, ${actor.model.num_action_chunks}}
+  group_size: 2
+
+  n_chunk_steps: 10
+  n_eval_chunk_steps: 10
   num_group_envs: 8
   rollout_epoch: 1
-  reward_type: step_level  # step_level or chunk_level
+  reward_type: action_level  # action_level or chunk_level
   logprob_type: token_level
   entropy_type: token_level
 
@@ -63,11 +62,12 @@ algorithm:
   gamma: 0.99
   gae_lambda: 0.95
 
+  # params for rollout
   sampling_params:
     use_greedy: False
-    temperature_train: 1.6
-    temperature_eval: 1.6
-    top_k: -1
+    temperature_train: 1.0
+    temperature_eval: 0.6
+    top_k: 0
     top_p: 1.0
     repetition_penalty: 1.0
 
@@ -77,10 +77,6 @@ algorithm:
     max_new_token: null
     max_length: 1024
     min_length: 1
-
-  filter_rewards: True
-  rewards_lower_bound: 0.5
-  rewards_upper_bound: 4.5
 
 env:
   group_name: "EnvGroup"
@@ -98,8 +94,7 @@ rollout:
     queue_size: 0
   mode: "colocate"
   generation_backend: "huggingface"
-  model_dir: "/workspace/dataset/RLinf-OpenVLAOFT-LIBERO-130-Base-Lora"
-
+  model_dir: "/workspace/dataset/Openvla-oft-SFT-libero-goal-traj1/"
   enable_offload: True
   pipeline_stage_num: 1
 
@@ -110,10 +105,11 @@ actor:
     queue_name: "replay_buffer"
     queue_size: 0
   training_backend: "fsdp"
-  checkpoint_load_path: "/workspace/dataset/RLinf-OpenVLAOFT-LIBERO-130-Base-Lora"
+  checkpoint_load_path: "/workspace/dataset/Openvla-oft-SFT-libero-goal-traj1/"
   checkpoint_save_path: "/workspace/results"
-  micro_batch_size: 2
-  global_batch_size: 256
+
+  micro_batch_size: 10
+  global_batch_size: 40
   seed: 1234
   enable_offload: True
 
@@ -123,7 +119,7 @@ actor:
     action_dim: 7
     num_action_chunks: 8
     use_proprio: False
-    unnorm_key: libero_130_no_noops_trajall
+    unnorm_key: bridge_orig
     center_crop: True
 
     precision: "bf16"
@@ -134,28 +130,30 @@ actor:
     policy_setup: "widowx_bridge"
     vh_mode: "a0"
     image_size: [224, 224]
-    is_lora: False
+    is_lora: True
     lora_rank: 32
+    lora_path: /workspace/dataset/RLinf-OpenVLAOFT-LIBERO-130-Base-Lora/lora_adapter
+    ckpt_path: null
     num_images_in_input: 1
     attn_implementation: "flash_attention_2"
     low_cpu_mem_usage: True
     trust_remote_code: True
     gradient_checkpointing: False
 
+  tokenizer:
+    tokenizer_type: "HuggingFaceTokenizer"
+    tokenizer_model: "/workspace/dataset/Openvla-oft-SFT-libero-goal-traj1/"
+    use_fast: False
+    trust_remote_code: True
+    padding_side: "right"
+
   optim:
-    lr: 2.0e-5
+    lr: 1.0e-4
     value_lr: 3.0e-3
     adam_beta1: 0.9
     adam_beta2: 0.999
     adam_eps: 1.0e-05
-    clip_grad: 1.0
-
-  tokenizer:
-    tokenizer_type: "HuggingFaceTokenizer"
-    tokenizer_model: "/workspace/dataset/RLinf-OpenVLAOFT-LIBERO-130-Base-Lora"
-    use_fast: False
-    trust_remote_code: True
-    padding_side: "right"
+    clip_grad: 10.0
 
 reward:
   use_reward_model: False
