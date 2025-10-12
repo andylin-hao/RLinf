@@ -190,6 +190,7 @@ jobs:
           pip install httpx asyncio fuzzywuzzy
 
       - name: SGLang Collocated mode
+        timeout-minutes: 20
         run: |
           export REPO_PATH=$(pwd)
           source switch_env reason
@@ -234,6 +235,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
       - name: OpenVLA-OFT test
+        timeout-minutes: 20
         run: |
           export REPO_PATH=$(pwd)
           source switch_env openvla-oft
@@ -247,6 +249,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
       - name: OpenVLA-OFT test
+        timeout-minutes: 20
         run: |
           export REPO_PATH=$(pwd)
           source switch_env openvla-oft
