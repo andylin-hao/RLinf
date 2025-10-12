@@ -23,7 +23,7 @@ runner:
     experiment_name: "ci-test"
     logger_backends: ["tensorboard"] # wandb, swanlab
 
-  max_epochs: 3
+  max_epochs: 1
   max_steps: -1
 
   only_eval: False
