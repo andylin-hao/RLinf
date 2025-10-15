@@ -120,11 +120,17 @@ RUN source switch_env openvla && \
 
 # Install SAPIEN PhysX Patch
 RUN export PHYSX_VERSION=105.1-physx-5.3.1.patch0 && \
-    export PHYSX_DIR=~/.sapien/physx/$PHYSX_VERSION && \ 
+    export PHYSX_DIR=~/.sapien/physx/$PHYSX_VERSION && \
     mkdir -p $PHYSX_DIR && \
     wget -O $PHYSX_DIR/linux-so.zip https://github.com/sapien-sim/physx-precompiled/releases/download/$PHYSX_VERSION/linux-so.zip && \
     unzip $PHYSX_DIR/linux-so.zip -d $PHYSX_DIR && rm $PHYSX_DIR/linux-so.zip
 
+# Install OpenPI dependencies
+RUN cp -r ${UV_PATH}/openpi/lib/python3.11/site-packages/openpi/models_pytorch/transformers_replace/* ${UV_PATH}/openpi/lib/python3.11/site-packages/transformers/
+ARG TOKENIZER_DIR=/root/.cache/openpi/big_vision/
+RUN source ${UV_PATH}/openpi/bin/activate && mkdir -p $TOKENIZER_DIR && gsutil -m cp -r gs://big_vision/paligemma_tokenizer.model $TOKENIZER_DIR
+
+# Install LIBERO
 RUN git clone https://github.com/RLinf/LIBERO.git /opt/libero
 ENV PYTHONPATH=/opt/libero:$PYTHONPATH
 

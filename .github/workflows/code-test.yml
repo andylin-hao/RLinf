@@ -44,13 +44,8 @@ jobs:
             file_filter:
               - '**/*.py'
               - 'tests/**'
-              - '.github/workflows/*.yml'
-              - '!docs/**'
-              - '!README.md'
+              - '.github/workflows/code-test.yml'
               - '*.yaml'
-              - '!*.toml'
-              - '!ray_utils/**'
-              - '!requirements/**'
 
   # =============================================== unit tests ====================================================
 
