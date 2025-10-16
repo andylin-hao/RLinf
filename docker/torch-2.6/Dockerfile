@@ -32,22 +32,35 @@ COPY project $UV_PATH/pyproject.toml
 ENV UV_LINK_MODE=symlink
 ENV UV_CACHE_DIR=$UV_PATH/.cache
 
-FROM base-image AS reason-image
+# switch_env utility
+RUN cat <<EOF > /usr/local/bin/switch_env
+#!/bin/bash
+if [ -z "\$1" ]; then
+    echo "Usage: switch_env <env_name>"
+    exit 1
+fi
+if [ ! -d "${UV_PATH}/\$1" ]; then
+    echo "Environment \$1 does not exist in ${UV_PATH}."
+    exit 1
+fi
+source ${UV_PATH}/\$1/bin/activate
+EOF
+RUN chmod +x /usr/local/bin/switch_env
 
-ARG APEX_BUILD_THREADS=24
+FROM base-image AS reason-image
 
 # Install Megatron-LM
 RUN git clone https://github.com/NVIDIA/Megatron-LM.git -b core_r0.13.0 /opt/Megatron-LM
 ENV PYTHONPATH=/opt/Megatron-LM:$PYTHONPATH
 
 # Install reasoning env
-RUN uv venv reason && source ${UV_PATH}/reason/bin/activate && \
-    UV_TORCH_BACKEND=auto uv sync --active && \
-    uv sync --extra sglang-vllm --active && \
-    APEX_CPP_EXT=1 APEX_CUDA_EXT=1 NVCC_APPEND_FLAGS="--threads $APEX_BUILD_THREADS" APEX_PARALLEL_BUILD=$APEX_BUILD_THREADS uv pip install git+https://github.com/NVIDIA/apex.git --no-build-isolation && \
-    uv pip install transformer_engine[pytorch]==2.1.0 --no-build-isolation && \
-    uv pip install https://github.com/Dao-AILab/flash-attention/releases/download/v2.7.4.post1/flash_attn-2.7.4.post1+cu12torch2.6cxx11abiFALSE-cp311-cp311-linux_x86_64.whl && \
-    uv pip uninstall pynvml
+RUN uv venv reason
+RUN source switch_env reason && UV_TORCH_BACKEND=auto uv sync --active
+RUN source switch_env reason && uv sync --extra sglang-vllm --active
+RUN source switch_env reason && uv pip install https://github.com/RLinf/apex/releases/download/25.09/apex-0.1-cp311-cp311-linux_x86_64.whl
+RUN source switch_env reason && uv pip install transformer_engine[pytorch]==2.1.0 --no-build-isolation
+RUN source switch_env reason && uv pip install https://github.com/Dao-AILab/flash-attention/releases/download/v2.7.4.post1/flash_attn-2.7.4.post1+cu12torch2.6cxx11abiFALSE-cp311-cp311-linux_x86_64.whl
+RUN source switch_env reason && uv pip uninstall pynvml
 
 # Set default env
 RUN echo "source ${UV_PATH}/reason/bin/activate" >> ~/.bashrc
@@ -78,31 +91,30 @@ RUN apt-get install -y --no-install-recommends \
     libgomp1
 
 # Install openvla env
-RUN uv venv openvla && source ${UV_PATH}/openvla/bin/activate && \
-    UV_TORCH_BACKEND=auto uv sync --active && \
-    uv sync --extra embodied --active && \
-    uv pip install git+https://github.com/openvla/openvla.git --no-build-isolation && \
-    uv pip install flash-attn==2.5.5 --no-build-isolation && \
-    uv pip uninstall pynvml
+RUN uv venv openvla
+RUN source switch_env openvla && UV_TORCH_BACKEND=auto uv sync --active
+RUN source switch_env openvla && uv sync --extra embodied --active
+RUN source switch_env openvla && uv pip install git+https://github.com/openvla/openvla.git --no-build-isolation
+RUN source switch_env openvla && uv pip install https://github.com/Dao-AILab/flash-attention/releases/download/v2.7.4.post1/flash_attn-2.7.4.post1+cu12torch2.6cxx11abiFALSE-cp311-cp311-linux_x86_64.whl --no-build-isolation
+RUN source switch_env openvla && uv pip uninstall pynvml
 
 # Install openvla-oft env
-RUN uv venv openvla-oft && source ${UV_PATH}/openvla-oft/bin/activate && \
-    UV_TORCH_BACKEND=auto uv sync --active && \
-    uv sync --extra embodied --active && \
-    uv pip install git+https://github.com/moojink/openvla-oft.git --no-build-isolation && \
-    uv pip install flash-attn==2.5.5 --no-build-isolation && \
-    uv pip uninstall pynvml
+RUN uv venv openvla-oft
+RUN source switch_env openvla-oft && UV_TORCH_BACKEND=auto uv sync --active
+RUN source switch_env openvla-oft && uv sync --extra embodied --active
+RUN source switch_env openvla-oft && uv pip install git+https://github.com/moojink/openvla-oft.git --no-build-isolation
+RUN source switch_env openvla-oft && uv pip install https://github.com/Dao-AILab/flash-attention/releases/download/v2.7.4.post1/flash_attn-2.7.4.post1+cu12torch2.6cxx11abiFALSE-cp311-cp311-linux_x86_64.whl --no-build-isolation
+RUN source switch_env openvla-oft && uv pip uninstall pynvml
 
-# Install pi0 env
-RUN uv venv pi0 && source ${UV_PATH}/pi0/bin/activate && \
-    UV_TORCH_BACKEND=auto uv sync --active && \
-    uv sync --extra embodied --active && \
-    uv pip install "lerobot>=0.3.3" && \
-    uv pip install flash-attn==2.5.5 --no-build-isolation && \
-    uv pip uninstall pynvml
+# Install openpi env
+RUN uv venv openpi
+RUN source switch_env openpi && UV_TORCH_BACKEND=auto uv sync --active
+RUN source switch_env openpi && uv sync --extra embodied --active
+RUN source switch_env openpi && GIT_LFS_SKIP_SMUDGE=1 uv pip install git+https://github.com/Physical-Intelligence/openpi
+RUN source switch_env openpi && uv pip uninstall pynvml
 
 # Install maniskill assets
-RUN source ${UV_PATH}/openvla/bin/activate && \
+RUN source switch_env openvla && \
     python -m mani_skill.utils.download_asset bridge_v2_real2sim -y && \
     python -m mani_skill.utils.download_asset widowx250s -y
 
@@ -120,21 +132,6 @@ ENV PYTHONPATH=/opt/libero:$PYTHONPATH
 RUN echo "source ${UV_PATH}/openvla/bin/activate" >> ~/.bashrc
 
 FROM ${BUILD_TARGET}-image AS final-image
-
-# switch_env utility
-RUN cat <<EOF > /usr/local/bin/switch_env
-#!/bin/bash
-if [ -z "\$1" ]; then
-    echo "Usage: switch_env <env_name>"
-    exit 1
-fi
-if [ ! -d "${UV_PATH}/\$1" ]; then
-    echo "Environment \$1 does not exist in ${UV_PATH}."
-    exit 1
-fi
-source ${UV_PATH}/\$1/bin/activate
-EOF
-RUN chmod +x /usr/local/bin/switch_env
 
 # Clean up
 RUN uv clean prune

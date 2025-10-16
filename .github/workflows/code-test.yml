@@ -48,7 +48,7 @@ jobs:
               - '!docs/**'
               - '!README.md'
               - '*.yaml'
-              - '*.toml'
+              - '!*.toml'
               - '!ray_utils/**'
               - '!requirements/**'
 
