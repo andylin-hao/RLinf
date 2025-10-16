@@ -193,10 +193,10 @@ class FSDPActor(FSDPModelManager, Worker):
             if self.is_data_io_rank:
                 channel.put(result)
 
-    def _load_weight_and_optimizer(self, channel: Channel) -> None:
+    def _load_weight_and_optimizer(self) -> None:
         # Acquire the GPUs to ensure that no one is using them before loading models
         # Otherwise, it may lead to OOM
-        with channel.device_lock:
+        with self.device_lock:
             if self.cfg.actor.get("enable_offload", False):
                 self.load_fsdp_param_and_grad(self.device)
                 self.load_fsdp_optimizer(self.device)
@@ -238,7 +238,6 @@ class FSDPActor(FSDPModelManager, Worker):
         self,
         input_channel: Channel,
         output_channel: Channel,
-        rollout_channel: Channel,
         compute_ref_logprobs: bool,
     ) -> None:
         """
@@ -254,9 +253,7 @@ class FSDPActor(FSDPModelManager, Worker):
         while recv_batch_size < self.total_batch_size_per_dp:
             batch, rollout_result = self.get_batch(input_channel)
             recv_batch_size += rollout_result.num_sequence
-            self._load_weight_and_optimizer(
-                input_channel if self.is_pipeline else rollout_channel
-            )
+            self._load_weight_and_optimizer()
 
             with self.worker_timer():
                 prev_logprobs = self.inference_step(batch)
@@ -289,7 +286,7 @@ class FSDPActor(FSDPModelManager, Worker):
         batch = RolloutResult.merge_batches(batches)
         # Must be called after batch is retrieved, which is when rollout has stopped
         # Otherwise, loading model might cause OOM
-        self._load_weight_and_optimizer(input_channel)
+        self._load_weight_and_optimizer()
 
         global_batches = get_iterator_k_split(
             batch,
