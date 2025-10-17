@@ -13,26 +13,6 @@ body:
     required: true
 - type: textarea
   attributes:
-    label: Environment
-    description: |
-      Please provide the environment you are using via the following command:
-      ```
-      python -V
-      pip list | grep -E "torch|sglang|vllm|ray|transformers"
-      nvidia-smi
-      ```
-      Additionally, please provide the RLinf version, Megatron version if you are using Megatron, and docker image version if you are using our images
-    value: |
-      Python version:
-      PIP list:
-      RLinf version: 
-      Megatron version: 
-      Docker image version: 
-      nvidia-smi:
-  validations:
-    required: true
-- type: textarea
-  attributes:
     label: Configuration YAML file
     description: |
       Please provide the configuration YAML file that leads to the bug.
@@ -68,7 +48,7 @@ body:
       Please provide the environment you are using via the following command:
       ```
       python -V
-      uv pip list"
+      uv pip list
       nvidia-smi
       ```
       Additionally, please provide the RLinf version, Megatron version if you are using Megatron, and docker image tag if you are using our images
