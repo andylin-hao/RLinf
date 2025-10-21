@@ -9,7 +9,7 @@ keywords = [
     "large-language-models",
 ]
 classifiers = [
-    #   2 - Pre-Alpha  
+    #   2 - Pre-Alpha
     #   3 - Alpha
     #   4 - Beta
     #   5 - Production/Stable
