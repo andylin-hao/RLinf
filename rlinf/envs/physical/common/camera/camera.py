@@ -16,7 +16,6 @@ import queue
 import threading
 import time
 from dataclasses import dataclass
-from typing import Tuple
 
 import numpy as np
 import pyrealsense2 as rs  # Intel RealSense cross-platform open-source API
@@ -26,7 +25,7 @@ import pyrealsense2 as rs  # Intel RealSense cross-platform open-source API
 class CameraInfo:
     name: str
     serial_number: str
-    resolution: Tuple[int, int] = (640, 480)
+    resolution: tuple[int, int] = (640, 480)
     fps: int = 15
     enable_depth: bool = False
 
