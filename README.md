@@ -285,7 +285,7 @@ and exhibits greater stability.
   </tr>
   <tr>
     <td rowspan="3" style="text-align:center;">&pi;<sub>0</sub></td>
-    <td style="text-align:center;"><a href="https://huggingface.co/RLinf/RLinf-Pi0-SFT-Spatial-Object-Goal"><img src="docs/source-en/_static/svg/hf-logo.svg" alt="HF" width="16" height="16" style="vertical-align: middle;">SFT</a></td>
+    <td style="text-align:center;"><a href="https://www.modelscope.cn/models/RLinf/RLinf-Pi0-SFT-Spatial-Object-Goal"><img src="docs/source-en/_static/svg/modelscope-logo.svg" alt="HF" width="16" height="16" style="vertical-align: middle;"></a><a href="https://huggingface.co/RLinf/RLinf-Pi0-SFT-Spatial-Object-Goal"><img src="docs/source-en/_static/svg/hf-logo.svg" alt="HF" width="16" height="16" style="vertical-align: middle;">SFT</a></td>
     <td style="text-align:center;">65.3%</td>
     <td style="text-align:center;">64.4%</td>
     <td style="text-align:center;">49.8%</td>
@@ -313,7 +313,7 @@ and exhibits greater stability.
   </tr>
   <tr>
     <td rowspan="3" style="text-align:center;">&pi;<sub>0.5</sub></td>
-    <td style="text-align:center;"><a href="https://huggingface.co/RLinf/RLinf-Pi05-SFT"><img src="docs/source-en/_static/svg/hf-logo.svg" alt="HF" width="16" height="16" style="vertical-align: middle;">SFT</a></td>
+    <td style="text-align:center;"><a href="https://www.modelscope.cn/models/RLinf/RLinf-Pi05-SFT"><img src="docs/source-en/_static/svg/modelscope-logo.svg" alt="HF" width="16" height="16" style="vertical-align: middle;"></a><a href="https://huggingface.co/RLinf/RLinf-Pi05-SFT"><img src="docs/source-en/_static/svg/hf-logo.svg" alt="HF" width="16" height="16" style="vertical-align: middle;">SFT</a></td>
     <td style="text-align:center;">84.6%</td>
     <td style="text-align:center;">95.4%</td>
     <td style="text-align:center;">84.6%</td>

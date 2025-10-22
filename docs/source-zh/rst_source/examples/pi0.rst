@@ -76,6 +76,8 @@
    pip install huggingface-hub
    hf download RLinf/RLinf-Pi0-SFT-Spatial-Object-Goal
 
+或者，您可以从ModelScope下载该模型 https://www.modelscope.cn/models/RLinf/RLinf-Pi0-SFT-Spatial-Object-Goal。
+
 **Option #2 RLinf-Pi0-SFT-Long 模型**
 
 该模型专门用于处理 Long（libero10）类型任务。
@@ -91,6 +93,8 @@
    pip install huggingface-hub
    hf download RLinf/RLinf-Pi0-SFT-Long
 
+或者，您可以从ModelScope下载该模型 https://www.modelscope.cn/models/RLinf/RLinf-Pi0-SFT-Long。
+
 **π**\ :sub:`0.5`\ **模型下载**
 
 π\ :sub:`0.5`\ 提供一个统一的模型，该模型适用于所有类型的任务，包括 object、goal、spatial 和 Long 类型任务。
@@ -104,6 +108,8 @@
    # 方式2：使用 huggingface-hub
    pip install huggingface-hub
    hf download RLinf/RLinf-Pi05-SFT
+
+或者，您可以从ModelScope下载该模型 https://www.modelscope.cn/models/RLinf/RLinf-Pi05-SFT。
 
 **模型选择指南**
 

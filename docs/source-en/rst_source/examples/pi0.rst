@@ -98,6 +98,8 @@ This model is designed specifically for handling object, goal, and spatial task 
    pip install huggingface-hub
    hf download RLinf/RLinf-Pi0-SFT-Spatial-Object-Goal
 
+Alternatively, you can also use ModelScope to download the model from https://www.modelscope.cn/models/RLinf/RLinf-Pi0-SFT-Spatial-Object-Goal.
+
 **Option #2 RLinf-Pi0-SFT-Long Model**
 
 This model is dedicated to handling Long (libero10) task type.
@@ -113,6 +115,8 @@ This model is dedicated to handling Long (libero10) task type.
    pip install huggingface-hub
    hf download RLinf/RLinf-Pi0-SFT-Long
 
+Alternatively, you can also use ModelScope to download the model from https://www.modelscope.cn/models/RLinf/RLinf-Pi0-SFT-Long.
+
 **π**\ :sub:`0.5`\  **Model Download**
 
 π\ :sub:`0.5`\  provides a unified model that is suitable for all task types, including object, goal, spatial, and Long types.
@@ -127,6 +131,8 @@ This model is dedicated to handling Long (libero10) task type.
    # Method 2: Using huggingface-hub
    pip install huggingface-hub
    hf download RLinf/RLinf-Pi05-SFT
+
+Alternatively, you can also use ModelScope to download the model from https://www.modelscope.cn/models/RLinf/RLinf-Pi05-SFT.
 
 **Model Selection Guide**
 
