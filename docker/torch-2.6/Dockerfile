@@ -135,10 +135,10 @@ RUN source ${UV_PATH}/openpi/bin/activate && mkdir -p $TOKENIZER_DIR && gsutil -
 # link_assets utility
 RUN cat <<EOF > /usr/local/bin/link_assets
 #!/bin/bash
-ln -s /opt/.maniskill /root/.maniskill
-ln -s /opt/.sapien /root/.sapien
-mkdir -p /root/.cache
-ln -s /opt/.openpi /root/.cache/openpi
+ln -s /opt/.maniskill ~/.maniskill
+ln -s /opt/.sapien ~/.sapien
+mkdir -p ~/.cache
+ln -s /opt/.openpi ~/.cache/openpi
 EOF
 RUN chmod +x /usr/local/bin/link_assets
 RUN link_assets

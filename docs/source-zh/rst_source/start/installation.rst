@@ -94,9 +94,11 @@ RLinf 提供两种安装方式。我们 **推荐使用 Docker**，因为这可�
 
 .. warning::
 
-  1. 确保使用 `-e NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics` 启动 docker，以启用 GPU 支持，尤其是具身实验中渲染所需的 `graphics` 功能。
+  1. 请确保使用 `-e NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics` 启动 docker，以启用 GPU 支持，尤其是具身实验中渲染所需的 `graphics` 功能。
 
-  2. 不要覆盖容器内的 `/root` 和 `/opt` 目录（通过 `docker run` 的 `-v` 或 `--volume`），因为它们包含重要的资源文件和环境。如果你的平台一定会挂载 `/root`，请在启动容器后在容器内运行 `link_assets` 来恢复 `/root` 目录中的资源链接。
+  2. 请勿覆盖容器内的 `/root` 和 `/opt` 目录（通过 `docker run` 的 `-v` 或 `--volume`），因为它们包含重要的资源文件和环境。如果你的平台一定会挂载 `/root`，请在启动容器后在容器内运行 `link_assets` 来恢复 `/root` 目录中的资源链接。
+
+  3. 请避免更改 `$HOME` 环境变量（例如通过 `docker run -e HOME=/new_home` ），该变量默认应为 `/root`。ManiSkill 和其他工具依赖此路径查找需要的资源。如果您在镜像中运行脚本之前更改了 `$HOME`，请执行 `link_assets` 将资源重新链接到新的 `$HOME`。
 
 .. code-block:: bash
 

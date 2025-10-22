@@ -99,6 +99,8 @@ Then, start the container using the pulled image:
 
   2. Do not override the `/root` and `/opt` directories in the container (with `-v` or `--volume` of `docker run`), as they contain important asset files and environments. If your platform requires mounting `/root`, run `link_assets` in the container after starting it to restore the asset links in the `/root` directory.
 
+  3. Avoid changing the `$HOME` environment variable (e.g., `docker run -e HOME=/new_home`), which should be `/root` by default. ManiSkill and other tools rely on this path to find the assets. If `$HOME` is changed before running scripts in the docker image, make sure to relink the assets to the new `$HOME` by executing `link_assets`.
+
 .. code-block:: bash
 
    docker run -it --gpus all \
