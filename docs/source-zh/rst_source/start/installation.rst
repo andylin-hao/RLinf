@@ -127,6 +127,10 @@ RLinf 提供两种安装方式。我们 **推荐使用 Docker**，因为这可�
    # source switch_env openvla-oft
    # source switch_env openpi
 
+.. note::
+
+  `link_assets` 和 `switch_env` 脚本是我们提供的 Docker 镜像中的内置工具。您可以在 `/usr/local/bin` 中找到它们。
+
 .. tip::
 
    如果进行多节点训练，请将仓库克隆到共享存储路径，确保每个节点都能访问该代码。

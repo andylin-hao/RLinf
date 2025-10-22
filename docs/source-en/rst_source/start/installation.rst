@@ -128,6 +128,10 @@ To switch to the desired venv, use the built-in script `switch_env`:
    # source switch_env openvla-oft
    # source switch_env openpi
 
+.. note::
+
+  Both the `link_assets` and `switch_env` scripts are built-in utilities in the Docker image provided by us. You can find them in `/usr/local/bin`.
+
 .. tip::
 
    - For multi-node training, make sure to clone the repository in shared storage so that every node has access to it.
