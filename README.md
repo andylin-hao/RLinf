@@ -9,6 +9,7 @@
 <a href="https://rlinf.readthedocs.io/zh-cn/latest/"><img src="https://img.shields.io/badge/中文文档-red?logo=readthedocs"></a>
 <a href="https://deepwiki.com/RLinf/RLinf"><img src="https://img.shields.io/badge/Ask%20DeepWiki-1DA1F2?logo=databricks&logoColor=white&color=00ADEF" alt="Ask DeepWiki"></a>
 <a href="https://github.com/RLinf/misc/blob/main/pic/wechat.jpg?raw=true"><img src="https://img.shields.io/badge/微信-green?logo=wechat&amp"></a>
+<img alt="GitHub Actions Workflow Status" src="https://img.shields.io/github/actions/workflow/status/RLinf/RLinf/code-test.yml?branch=main&label=CI%20Test">
 </div>
 
 <div align="center">
@@ -506,16 +507,9 @@ and exhibits greater stability.
 - [ ] Support for world model   
 - [ ] Support for real-world RL embodied intelligence
 
-## Build Status
-
-| Type             | Status |
-| :--------------: | :----: |
-| Reasoning RL-MATH | [![Build Status](https://github.com/RLinf/RLinf/actions/workflows/math_e2e.yml/badge.svg)](https://github.com/RLinf/RLinf/actions/workflows/math_e2e.yml) |
-| Embodied RL-VLA   | [![Build Status](https://github.com/RLinf/RLinf/actions/workflows/embodied_e2e.yml/badge.svg)](https://github.com/RLinf/RLinf/actions/workflows/embodied_e2e.yml) |
-
 
 ## Contribution Guidelines
-We welcome contributions to RLinf. Please read [contribution guide](https://rlinf.readthedocs.io/en/latest/index.html#contribution-guidelines) before taking action. Thank the following contributors and welcome more developers to join us on this open source project.
+We welcome contributions to RLinf. Please read [contribution guide](https://github.com/RLinf/RLinf?tab=contributing-ov-file#contributing-to-rlinf) before taking action. Thank the following contributors and welcome more developers to join us on this open source project.
 
 <a href="https://github.com/RLinf/RLinf/graphs/contributors"><img src="https://contrib.rocks/image?repo=RLinf/RLinf&max=240&columns=18" /></a>
 
