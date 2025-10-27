@@ -512,7 +512,7 @@ Below is the summary of the CI test status of the main branch:
 
 | Test Name | Status |
 | -------- | ------ |
-| unit-tests | <img alt="GitHub Actions Workflow Status" src="https://img.shields.io/github/actions/workflow/status/RLinf/RLinf/unit-tests.yml?branch=main&label=Status"> |
+| unit-tests | <img alt="GitHub Actions Workflow Status" src="https://byob.yarr.is/andylin-hao/RLinf/unit-tests"> |
 | agent-reason-e2e-tests | <img alt="GitHub Actions Workflow Status" src="https://img.shields.io/github/actions/workflow/status/RLinf/RLinf/agent-e2e-tests.yml?branch=main&label=Status"> |
 | embodied-e2e-tests | <img alt="GitHub Actions Workflow Status" src="https://img.shields.io/github/actions/workflow/status/RLinf/RLinf/embodied-e2e-tests.yml?branch=main&label=Status"> |
 | scheduler-tests | <img alt="GitHub Actions Workflow Status" src="https://img.shields.io/github/actions/workflow/status/RLinf/RLinf/scheduler-tests.yml?branch=main&label=Status"> |
