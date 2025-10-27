@@ -13,11 +13,13 @@
 # limitations under the License.
 
 import asyncio
+import queue
 import threading
 import time
 from typing import Any, Callable, Dict, List, Optional, overload
 
 import ray
+import ray.actor
 import torch.distributed as dist
 from torch.futures import Future
 
@@ -232,47 +234,170 @@ class AsyncCollWork(AsyncWork):
 
 
 class AsyncChannelWork(AsyncWork):
+    """Asynchronous work for channel operations.
+
+    This class handles the asynchronous execution of operations on a channel.
+    It runs a dedicated thread to process channel operations asynchronously.
+    All operations are enqueued and processed in the order they are created, so as to ensure the correct execution order.
+
+    For each channel's each key, a dedicated asyncio coroutine is created to process all its operations.
+    So, execution order is preserved within each channel-key combination.
+    Different channels, or same channel under different keys, are thus processed concurrently without blocking each other, and no ordering is guaranteed between them.
+    """
+
+    # Operation queues used to communicate with the operation processing thread
+    async_op_queue: queue.Queue["AsyncChannelWork"] = queue.Queue()
+    # Operation queues for each channel-key combination
+    channel_op_queue_map: Dict[str, asyncio.Queue] = {}
+    # Global thread lock
+    lock: threading.Lock = None
+    # Channel operation processing thread
+    execution_thread: threading.Thread = None
+
+    def __init__(
+        self,
+        channel_name: str,
+        channel_key: str,
+        channel_actor: ray.actor.ActorHandle,
+        method: str,
+        *args,
+        **kwargs,
+    ):
+        """Initialize the AsyncChannelWork.
+
+        Args:
+            channel_name (str): The name of the channel.
+            channel_key (str): The key for the channel.
+            channel_actor (ray.actor.ActorHandle): The actor handle for the channel.
+            method (str): The method to call on the channel actor.
+            *args: Positional arguments to pass to the method.
+            **kwargs: Keyword arguments to pass to the method.
+        """
+        self._channel_key = f"{channel_name}:{channel_key}"
+        self._channel_actor = channel_actor
+        self._method = method
+        self._args = args
+        self._kwargs = kwargs
+        self._future = Future()
+
+        # Create lock if not exist
+        if AsyncChannelWork.lock is None:
+            AsyncChannelWork.lock = threading.Lock()
+
+        # Create thread if not exist
+        with AsyncChannelWork.lock:
+            if AsyncChannelWork.execution_thread is None:
+                AsyncChannelWork.execution_thread = threading.Thread(
+                    target=self._run, daemon=True
+                )
+                AsyncChannelWork.execution_thread.start()
+
+        # Enqueue the operation
+        AsyncChannelWork.async_op_queue.put(self)
+
+    @staticmethod
+    def _run():
+        """Run the channel work."""
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        # Dedicated coroutine for processing a channel-key's operations
+        async def process_work(channel_op_queue: asyncio.Queue[AsyncChannelWork]):
+            while True:
+                work = await channel_op_queue.get()
+                try:
+                    result = await work._execute()
+                except Exception as e:
+                    work._future.set_exception(e)
+                else:
+                    work._future.set_result(result)
+
+        # Main loop of the processing thread
+        async def run_loop():
+            while True:
+                try:
+                    operation = AsyncChannelWork.async_op_queue.get(block=False)
+                except queue.Empty:
+                    await asyncio.sleep(0.001)  # Yield control to the event loop
+                    continue
+
+                op_queue_map = AsyncChannelWork.channel_op_queue_map
+                channel_key = operation._channel_key
+
+                # Create a new operation queue for the channel-key if it doesn't exist
+                if channel_key not in op_queue_map:
+                    channel_op_queue = asyncio.Queue()
+                    op_queue_map[channel_key] = channel_op_queue
+                    asyncio.create_task(process_work(channel_op_queue))
+
+                channel_op_queue = op_queue_map[channel_key]
+                await channel_op_queue.put(operation)
+
+        loop.run_until_complete(run_loop())
+
+    async def _execute(self):
+        """Execute the operation."""
+        method = getattr(self._channel_actor, self._method)
+        return await method.remote(*self._args, **self._kwargs)
+
+    async def async_wait(self):
+        """Async wait for the work to complete.
+
+        Returns:
+            Any: The result of the work if applicable, otherwise None.
+
+        """
+        while not self._future.done():
+            await asyncio.sleep(0.01)
+        return self._future.value()
+
+    def wait(self):
+        """Wait for the work to complete.
+
+        Returns:
+            Any: The result of the work if applicable, otherwise None.
+
+        """
+        self._future.wait()
+        return self._future.value()
+
+
+class AsyncChannelCommWork(AsyncWork):
     """Asynchronous work for channel operations."""
 
     channel_data_store: Dict[int, Future] = {}
     store_lock = threading.Lock()  # Protect store access
 
-    def __init__(
-        self, func_result: ray.ObjectRef | AsyncWork, query_id: Optional[int] = None
-    ):
-        """Initialize the AsyncChannelWork with a Ray function result or an AsyncWork.
+    def __init__(self, async_comm_work: AsyncWork, query_id: int):
+        """Initialize the AsyncChannelWork with a async recv comm of the get operation.
 
-        When wrapping an AsyncWork, a query_id must be provided to identify the data get query.
+        A query_id should be provided to identify the data get query.
         This is because the received data of this recv call may be from another get,
         as the async task execution order at the channel worker side is non-deterministic.
         And so we need to associate the data with an identifier and store it for later retrieval.
 
         Args:
-            func_result (ray.ObjectRef): The Ray function result to wrap.
-            query_id (Optional[int]): The query ID to associate with the work.
+            async_comm_work (AsyncWork): The async communication work to wrap.
+            query_id (int): The query ID to associate with the work.
 
         """
-        self._func_result = func_result
-        if isinstance(func_result, AsyncWork):
-            # The func_result's value is not necessarily the data of the get query associated with the query_id
-            # Only when the query_id's Future is set is the data available
-            assert query_id is not None, (
-                "query_id must be provided when wrapping AsyncWork"
-            )
-            self._query_id = query_id
-            with AsyncChannelWork.store_lock:
-                if query_id not in AsyncChannelWork.channel_data_store:
-                    AsyncChannelWork.channel_data_store[query_id] = Future()
-                self._data_future = AsyncChannelWork.channel_data_store[query_id]
-            self._func_result.then(self._store_channel_data)
+        self._async_comm_work = async_comm_work
+        # The async_comm_work's value is not necessarily the data of the get query associated with the query_id
+        # Only when the query_id's Future is set is the data available
+        self._query_id = query_id
+        with AsyncChannelCommWork.store_lock:
+            if query_id not in AsyncChannelCommWork.channel_data_store:
+                AsyncChannelCommWork.channel_data_store[query_id] = Future()
+            self._data_future = AsyncChannelCommWork.channel_data_store[query_id]
+        self._async_comm_work.then(self._store_channel_data)
 
     def _store_channel_data(self):
         """Store channel data in the channel data store."""
-        query_id, data = self._func_result.wait()
-        with AsyncChannelWork.store_lock:
-            if query_id not in AsyncChannelWork.channel_data_store:
-                AsyncChannelWork.channel_data_store[query_id] = Future()
-            data_future = AsyncChannelWork.channel_data_store[query_id]
+        query_id, data = self._async_comm_work.wait()
+        with AsyncChannelCommWork.store_lock:
+            if query_id not in AsyncChannelCommWork.channel_data_store:
+                AsyncChannelCommWork.channel_data_store[query_id] = Future()
+            data_future = AsyncChannelCommWork.channel_data_store[query_id]
         data_future.set_result(data)
 
     async def async_wait(self):
@@ -282,13 +407,11 @@ class AsyncChannelWork(AsyncWork):
             Any: The result of the work if applicable, otherwise None.
 
         """
-        if isinstance(self._func_result, AsyncWork):
-            while not self._data_future.done():
-                await asyncio.sleep(0.01)  # Yield control to the event loop
-            with AsyncChannelWork.store_lock:
-                AsyncChannelWork.channel_data_store.pop(self._query_id, None)
-            return self._data_future.value()
-        return await self._func_result
+        while not self._data_future.done():
+            await asyncio.sleep(0.01)  # Yield control to the event loop
+        with AsyncChannelCommWork.store_lock:
+            AsyncChannelCommWork.channel_data_store.pop(self._query_id, None)
+        return self._data_future.value()
 
     def wait(self):
         """Wait for the work to complete.
@@ -297,9 +420,7 @@ class AsyncChannelWork(AsyncWork):
             Any: The result of the work if applicable, otherwise None.
 
         """
-        if isinstance(self._func_result, AsyncWork):
-            self._data_future.wait()
-            with AsyncChannelWork.store_lock:
-                AsyncChannelWork.channel_data_store.pop(self._query_id, None)
-            return self._data_future.value()
-        return ray.get(self._func_result)
+        self._data_future.wait()
+        with AsyncChannelCommWork.store_lock:
+            AsyncChannelCommWork.channel_data_store.pop(self._query_id, None)
+        return self._data_future.value()

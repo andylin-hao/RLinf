@@ -21,7 +21,7 @@ import ray
 import ray.actor
 
 from ..cluster import Cluster
-from ..collective import AsyncChannelWork, AsyncWork
+from ..collective import AsyncChannelCommWork, AsyncChannelWork, AsyncWork
 from ..manager import WorkerAddress
 from ..placement import NodePlacementStrategy
 from ..worker import Worker, WorkerGroup
@@ -320,30 +320,38 @@ class Channel:
         # First run async put to avoid send blocking put
         if self._current_worker is not None:
             # Inside a worker, use send/recv
-            put_work = AsyncChannelWork(
-                self._channel_worker_actor.put.remote(
-                    src_addr=self._current_worker.worker_address,
-                    weight=weight,
-                    key=key,
-                )
+            put_kwargs = {
+                "src_addr": self._current_worker.worker_address,
+                "weight": weight,
+                "key": key,
+            }
+            async_channel_work = AsyncChannelWork(
+                channel_name=self._channel_name,
+                channel_key=key,
+                channel_actor=self._channel_worker_actor,
+                method="put",
+                **put_kwargs,
             )
             self._current_worker.send(item, self._channel_name, 0, async_op=True)
 
             if async_op:
-                return put_work
+                return async_channel_work
             else:
-                put_work.wait()
+                async_channel_work.wait()
         else:
             # Outside a worker, use ray comm
-            put_work = AsyncChannelWork(
-                self._channel_worker_actor.put_via_ray.remote(
-                    item=item, weight=weight, key=key
-                )
+            put_kwargs = {"item": item, "weight": weight, "key": key}
+            async_channel_work = AsyncChannelWork(
+                channel_name=self._channel_name,
+                channel_key=key,
+                channel_actor=self._channel_worker_actor,
+                method="put_via_ray",
+                **put_kwargs,
             )
             if async_op:
-                return put_work
+                return async_channel_work
             else:
-                put_work.wait()
+                async_channel_work.wait()
 
     def put_nowait(self, item: Any, weight: int = 0, key: Any = DEFAULT_KEY):
         """Put an item into the channel queue without waiting. Raises asyncio.QueueFull if the queue is full.
@@ -364,23 +372,31 @@ class Channel:
             return
 
         if self._current_worker is not None:
-            put_work = AsyncChannelWork(
-                self._channel_worker_actor.put.remote(
-                    src_addr=self._current_worker.worker_address,
-                    weight=weight,
-                    key=key,
-                    nowait=True,
-                )
+            put_kwargs = {
+                "src_addr": self._current_worker.worker_address,
+                "weight": weight,
+                "key": key,
+                "nowait": True,
+            }
+            async_channel_work = AsyncChannelWork(
+                channel_name=self._channel_name,
+                channel_key=key,
+                channel_actor=self._channel_worker_actor,
+                method="put",
+                **put_kwargs,
             )
             self._current_worker.send(item, self._channel_name, 0, async_op=True)
-            put_work.wait()
+            async_channel_work.wait()
         else:
-            put_work = AsyncChannelWork(
-                self._channel_worker_actor.put_via_ray.remote(
-                    item=item, weight=weight, key=key, nowait=True
-                )
+            put_kwargs = {"item": item, "weight": weight, "key": key, "nowait": True}
+            async_channel_work = AsyncChannelWork(
+                channel_name=self._channel_name,
+                channel_key=key,
+                channel_actor=self._channel_worker_actor,
+                method="put_via_ray",
+                **put_kwargs,
             )
-            put_work.wait()
+            async_channel_work.wait()
 
     def get(self, key: Any = DEFAULT_KEY, async_op: bool = False) -> AsyncWork | Any:
         """Get an item from the channel queue.
@@ -401,27 +417,42 @@ class Channel:
         if self._current_worker is not None:
             # Inside a worker, use send/recv
             query_id = uuid.uuid4().int
-            self._channel_worker_actor.get.remote(
-                self._current_worker.worker_address,
-                query_id=query_id,
-                key=key,
+            get_kwargs = {
+                "dst_addr": self._current_worker.worker_address,
+                "query_id": query_id,
+                "key": key,
+            }
+            async_channel_work = AsyncChannelWork(
+                channel_name=self._channel_name,
+                channel_key=key,
+                channel_actor=self._channel_worker_actor,
+                method="get",
+                **get_kwargs,
             )
-            result = self._current_worker.recv(self._channel_name, 0, async_op=async_op)
+            async_comm_work = self._current_worker.recv(
+                self._channel_name, 0, async_op=True
+            )
             if async_op:
-                return AsyncChannelWork(result, query_id)
+                return AsyncChannelCommWork(async_comm_work, query_id)
             else:
+                async_channel_work.wait()
                 # query_id, data
-                _, data = result
+                _, data = async_comm_work.wait()
                 return data
         else:
             # Outside a worker, use ray comm
-            async_work = AsyncChannelWork(
-                self._channel_worker_actor.get_via_ray.remote(key=key)
+            get_kwargs = {"key": key}
+            async_channel_work = AsyncChannelWork(
+                channel_name=self._channel_name,
+                channel_key=key,
+                channel_actor=self._channel_worker_actor,
+                method="get_via_ray",
+                **get_kwargs,
             )
             if async_op:
-                return async_work
+                return async_channel_work
             else:
-                return async_work.wait()
+                return async_channel_work.wait()
 
     def get_nowait(self, key: Any = DEFAULT_KEY) -> Any:
         """Get an item from the channel queue without waiting. Raises asyncio.QueueEmpty if the queue is empty.
@@ -442,21 +473,33 @@ class Channel:
 
         if self._current_worker is not None:
             query_id = uuid.uuid4().int
-            self._channel_worker_actor.get.remote(
-                self._current_worker.worker_address,
-                query_id=query_id,
-                key=key,
-                nowait=True,
+            get_kwargs = {
+                "dst_addr": self._current_worker.worker_address,
+                "query_id": query_id,
+                "key": key,
+                "nowait": True,
+            }
+            AsyncChannelWork(
+                channel_name=self._channel_name,
+                channel_key=key,
+                channel_actor=self._channel_worker_actor,
+                method="get",
+                **get_kwargs,
             )
             query_id, data = self._current_worker.recv(self._channel_name, 0)
             if query_id == asyncio.QueueEmpty:
                 raise asyncio.QueueEmpty
             return data
         else:
-            async_work = AsyncChannelWork(
-                self._channel_worker_actor.get_via_ray.remote(key=key, nowait=True)
+            get_kwargs = {"key": key, "nowait": True}
+            async_channel_work = AsyncChannelWork(
+                channel_name=self._channel_name,
+                channel_key=key,
+                channel_actor=self._channel_worker_actor,
+                method="get_via_ray",
+                **get_kwargs,
             )
-            return async_work.wait()
+            return async_channel_work.wait()
 
     def get_batch(
         self,
@@ -484,29 +527,42 @@ class Channel:
 
         if self._current_worker is not None:
             query_id = uuid.uuid4().int
-            self._channel_worker_actor.get_batch.remote(
-                self._current_worker.worker_address,
-                query_id=query_id,
-                target_weight=target_weight,
-                key=key,
+            get_kwargs = {
+                "dst_addr": self._current_worker.worker_address,
+                "query_id": query_id,
+                "target_weight": target_weight,
+                "key": key,
+            }
+            async_channel_work = AsyncChannelWork(
+                channel_name=self._channel_name,
+                channel_key=key,
+                channel_actor=self._channel_worker_actor,
+                method="get_batch",
+                **get_kwargs,
             )
-            result = self._current_worker.recv(self._channel_name, 0, async_op=async_op)
+            async_comm_work = self._current_worker.recv(
+                self._channel_name, 0, async_op=True
+            )
             if async_op:
-                return AsyncChannelWork(result, query_id)
+                return AsyncChannelCommWork(async_comm_work, query_id)
             else:
+                async_channel_work.wait()
                 # query_id, data
-                _, data = result
+                _, data = async_comm_work.wait()
                 return data
         else:
-            async_work = AsyncChannelWork(
-                self._channel_worker_actor.get_batch_via_ray.remote(
-                    target_weight=target_weight, key=key
-                )
+            get_kwargs = {"target_weight": target_weight, "key": key}
+            async_channel_work = AsyncChannelWork(
+                channel_name=self._channel_name,
+                channel_key=key,
+                channel_actor=self._channel_worker_actor,
+                method="get_batch_via_ray",
+                **get_kwargs,
             )
             if async_op:
-                return async_work
+                return async_channel_work
             else:
-                return async_work.wait()
+                return async_channel_work.wait()
 
     def __str__(self, key: Any = DEFAULT_KEY) -> str:
         """Get a all the items in the channel queue as a string.
@@ -517,7 +573,7 @@ class Channel:
         """
         if self._local_channel is not None:
             return str(self._local_channel.get_all(key))
-        async_work = AsyncChannelWork(
+        async_work = AsyncChannelCommWork(
             self._channel_worker_actor.get_all.remote(key=key)
         )
         items = async_work.wait()

@@ -75,13 +75,7 @@ class ProducerWorker(Worker):
         return True
 
     async def put_get_ood(self, channel: Channel):
-        channel.put(key="q1", item="Hello")
-        handle2 = channel.get(key="q2", async_op=True)
-        handle1 = channel.get(key="q1", async_op=True)
         channel.put(key="q2", item="World")
-        data1 = await handle1.async_wait()
-        data2 = await handle2.async_wait()
-        return data1, data2
 
     def put_nowait(self, channel: Channel, item: Any):
         channel.put_nowait(item, key="nowait")
@@ -148,6 +142,14 @@ class ConsumerWorker(Worker):
         if result:
             return await result.async_wait()
         return None
+
+    async def put_get_ood(self, channel: Channel):
+        channel.put(key="q1", item="Hello")
+        handle2 = channel.get(key="q2", async_op=True)
+        handle1 = channel.get(key="q1", async_op=True)
+        data1 = await handle1.async_wait()
+        data2 = await handle2.async_wait()
+        return data1, data2
 
     def get_nowait(self, channel: Channel):
         try:
@@ -375,9 +377,12 @@ class TestChannel:
     def test_channel_multiple_queues_order(self, worker_groups, channel):
         """Tests the order of items in multiple queues."""
         producer: ProducerWorker = worker_groups[0]
+        consumer: ConsumerWorker = worker_groups[1]
 
         # Put items in different queues
-        item1, item2 = producer.put_get_ood(channel).wait()[0]
+        handle = consumer.put_get_ood(channel)
+        producer.put_get_ood(channel)
+        item1, item2 = handle.wait()[0]
 
         assert item1 == "Hello"
         assert item2 == "World"
@@ -400,11 +405,11 @@ class TestChannel:
         producer: ProducerWorker = worker_groups[0]
         num_items = 100
 
-        # data = producer.stress(channel, num_items).wait()[0]
-        # assert data == list(range(num_items))
-
-        data = producer.stress_multiple_queues(channel, num_items).wait()[0]
+        data = producer.stress(channel, num_items).wait()[0]
         assert data == list(range(num_items))
+
+        # data = producer.stress_multiple_queues(channel, num_items).wait()[0]
+        # assert data == list(range(num_items))
 
     def _assert_equal(self, received: Any, expected: Any):
         """Helper to compare various data types."""
