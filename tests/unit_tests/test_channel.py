@@ -395,7 +395,7 @@ class TestChannel:
         data = consumer.get_nowait(channel).wait()[0]
         assert data is None
 
-        producer.put_nowait(channel, "item_100")
+        producer.put_nowait(channel, "item_100").wait()
         data = consumer.get_nowait(channel).wait()[0]
 
         assert data == "item_100"
