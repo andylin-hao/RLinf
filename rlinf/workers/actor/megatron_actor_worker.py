@@ -383,10 +383,10 @@ class MegatronActor(MegatronModelManager, Worker):
                     ref_logprobs = batch["ref_logprobs"]
 
                 if self.cfg.algorithm.get("importance_sampling_fix", False):
-                    inference_prev_logprobs = prev_logprobs
-                    training_prev_logprobs = batch["megatron_prev_logprobs"]
+                    rollout_prev_logprobs = prev_logprobs
+                    recompute_prev_logprobs = batch["recompute_prev_logprobs"]
                     advantages = advantages * torch.clamp(
-                        (training_prev_logprobs - inference_prev_logprobs).exp(),
+                        (recompute_prev_logprobs - rollout_prev_logprobs).exp(),
                         min=self.cfg.algorithm.importance_sampling_clip,
                     )
 
@@ -871,8 +871,8 @@ class MegatronActor(MegatronModelManager, Worker):
             with self.worker_timer():
                 prev_logprobs = self.inference_step(batch)
 
-                if self.cfg.algorithm.get("importance_sampling_fix", False):
-                    rollout_result.megatron_prev_logprobs = prev_logprobs.cpu()
+                if rollout_result.prev_logprobs is not None and self.recompute_logprobs:
+                    rollout_result.recompute_prev_logprobs = prev_logprobs.cpu()
                 else:
                     rollout_result.prev_logprobs = prev_logprobs.cpu()
 
