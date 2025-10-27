@@ -111,7 +111,6 @@ class MegatronActor(MegatronModelManager, Worker):
         self.average_response_len = self.response_len
 
         # Algo configurations
-        self.recompute_logprobs = self.cfg.algorithm.recompute_logprobs
         self.calculate_entropy = self.cfg.algorithm.calculate_entropy
         self.calculate_entropy_loss = (
             self.cfg.algorithm.entropy_bonus > 0 and self.calculate_entropy
@@ -871,7 +870,7 @@ class MegatronActor(MegatronModelManager, Worker):
             with self.worker_timer():
                 prev_logprobs = self.inference_step(batch)
 
-                if rollout_result.prev_logprobs is not None and self.recompute_logprobs:
+                if rollout_result.rollout_logprobs is not None:
                     rollout_result.recompute_prev_logprobs = prev_logprobs.cpu()
                 else:
                     rollout_result.prev_logprobs = prev_logprobs.cpu()

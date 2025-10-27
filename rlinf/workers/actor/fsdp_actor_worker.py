@@ -268,7 +268,10 @@ class FSDPActor(FSDPModelManager, Worker):
                 for micro_batch in micro_batches:
                     prev_logprobs.append(self.inference_step(micro_batch).cpu())
 
-                rollout_result.prev_logprobs = torch.cat(prev_logprobs)
+                if rollout_result.rollout_logprobs is not None:
+                    rollout_result.recompute_prev_logprobs = torch.cat(prev_logprobs)
+                else:
+                    rollout_result.prev_logprobs = torch.cat(prev_logprobs)
 
             if compute_ref_logprobs:
                 assert self.ref_policy_state_dict is not None, (
@@ -399,6 +402,14 @@ class FSDPActor(FSDPModelManager, Worker):
                         else clip_ratio
                     )
                     clip_ratio_c = self.cfg.algorithm.get("clip_ratio_c", 3.0)
+
+                    if self.cfg.algorithm.get("importance_sampling_fix", False):
+                        rollout_prev_logprobs = prev_logprobs
+                        recompute_prev_logprobs = batch["recompute_prev_logprobs"]
+                        advantages = advantages * torch.clamp(
+                            (recompute_prev_logprobs - rollout_prev_logprobs).exp(),
+                            min=self.cfg.algorithm.importance_sampling_clip,
+                        )
 
                     loss, mbs_metrics_data = policy_loss(
                         loss_type=self.cfg.algorithm.loss_type,

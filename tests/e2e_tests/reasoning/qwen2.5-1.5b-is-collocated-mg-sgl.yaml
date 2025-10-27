@@ -31,7 +31,7 @@ runner:
   max_tokens_per_mbs: 1024
 
   resume_dir: null
-  experiment_name: grpo-1.5b
+  experiment_name: grpo_importance_sampling-1.5b
   output_dir: /workspace/results
 
 algorithm:
@@ -67,6 +67,9 @@ algorithm:
   early_stop_imp_ratio: 5.0
   use_valid_token_scale: False
 
+  importance_sampling_fix: True
+  importance_sampling_clip: 1.0
+  
   # params for rollout
   sampling_params:
     use_greedy: False
@@ -104,8 +107,6 @@ rollout:
     enable_chunked_prefill: True  # enable vllm to use chunked_prefill.
     enable_prefix_caching: True   # enable vllm to use prefix_caching.
     enable_flash_infer_sampler: True # if True, vllm will use flashinfer to do sampling.
-    max_num_batched_tokens: null # the maximum number of tokens to be batched together in vllm. If set to null, vllm will use its default value.
-    torch_profiler_dir: null # if not null, vllm will enable torch profiler and save the result to the specified directory.
 
   return_logprobs: ${not:${algorithm.recompute_logprobs}}
 
@@ -121,7 +122,6 @@ rollout:
 
 data:
   type: math
-  dataset_name: boba
   max_prompt_length: 256
   filter_prompt_by_length: True
   rollout_batch_size: 8
