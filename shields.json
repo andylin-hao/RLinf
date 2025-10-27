@@ -1,1 +1,1 @@
-{"unit-tests":{"label":"Unit Tests","status":"success","color":"00FF00"}}
+{"unit-tests":{"label":"Unit Tests","status":"success","color":"00FF00"},"agent-reason-e2e-tests":{"label":"Agent/Reason E2E Tests","status":"success","color":"00FF00"}}
