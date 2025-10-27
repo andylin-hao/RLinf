@@ -269,8 +269,10 @@ class FSDPActor(FSDPModelManager, Worker):
                     prev_logprobs.append(self.inference_step(micro_batch).cpu())
 
                 if rollout_result.rollout_logprobs is not None:
+                    # Rollout has returned logprobs, store the recomputed logprobs in recompute_prev_logprobs
                     rollout_result.recompute_prev_logprobs = torch.cat(prev_logprobs)
                 else:
+                    # Otherwise, directly store the logprobs in prev_logprobs (the final logprobs used for training)
                     rollout_result.prev_logprobs = torch.cat(prev_logprobs)
 
             if compute_ref_logprobs:

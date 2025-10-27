@@ -871,8 +871,10 @@ class MegatronActor(MegatronModelManager, Worker):
                 prev_logprobs = self.inference_step(batch)
 
                 if rollout_result.rollout_logprobs is not None:
+                    # Rollout has returned logprobs, store the recomputed logprobs in recompute_prev_logprobs
                     rollout_result.recompute_prev_logprobs = prev_logprobs.cpu()
                 else:
+                    # Otherwise, store the logprobs in prev_logprobs (the final logprobs used for training)
                     rollout_result.prev_logprobs = prev_logprobs.cpu()
 
             # Ref logprobs

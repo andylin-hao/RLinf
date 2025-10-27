@@ -305,11 +305,16 @@ class RolloutResult:
     image_data: Optional[Union[List[List[bytes]], List[List[str]]]] = None
     multi_modal_inputs: Optional[List[dict]] = None
     # Inference
-    # Only set when recompute_logprobs is False
+    # Logprobs returned by rollout engines
     rollout_logprobs: Optional[List[List[float]]] = None
-    prev_logprobs: Optional[torch.Tensor] = None
-    ref_logprobs: Optional[torch.Tensor] = None
+    # Logprobs recomputed by inference when rollout has returned logprobs
     recompute_prev_logprobs: Optional[torch.Tensor] = None
+    # The final prev_logprobs used for training
+    # When rollout has returned logprobs, this is rollout_logprobs
+    # Otherwise, this is the logprobs recomputed by inference
+    prev_logprobs: Optional[torch.Tensor] = None
+    # Reference logprobs for comparison
+    ref_logprobs: Optional[torch.Tensor] = None
 
     @property
     def batch_size(self):
