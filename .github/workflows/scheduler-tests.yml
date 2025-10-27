@@ -1,0 +1,19 @@
+name: Scheduler Tests
+
+
+on:
+  workflow_call:
+
+jobs:
+  static-auto-placement-test:
+    runs-on: reason
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: auto-placement
+        timeout-minutes: 20
+        run: |
+          export REPO_PATH=$(pwd)
+          source switch_env reason
+          bash tests/e2e_tests/auto_placement/run.sh

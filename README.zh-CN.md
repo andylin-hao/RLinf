@@ -9,7 +9,6 @@
 <a href="https://rlinf.readthedocs.io/zh-cn/latest/"><img src="https://img.shields.io/badge/中文文档-red?logo=readthedocs"></a>
 <a href="https://deepwiki.com/RLinf/RLinf"><img src="https://img.shields.io/badge/Ask%20DeepWiki-1DA1F2?logo=databricks&logoColor=white&color=00ADEF" alt="Ask DeepWiki"></a>
 <a href="https://github.com/RLinf/misc/blob/main/pic/wechat.jpg?raw=true"><img src="https://img.shields.io/badge/微信-green?logo=wechat&amp"></a>
-<img alt="GitHub Actions Workflow Status" src="https://img.shields.io/github/actions/workflow/status/RLinf/RLinf/code-test.yml?branch=main&label=CI%20Test">
 </div>
 
 <div align="center">
@@ -512,6 +511,16 @@ RLinf 是一个灵活且可扩展的开源框架，专为利用强化学习进�
 
 - [ ] 支持真实世界的具身智能强化学习
 
+# 持续集成测试状态
+RLinf 具有全面的 CI 测试，涵盖核心组件（通过单元测试）和具身、智能体和推理场景的端到端 RL 训练工作流。
+以下是主分支 CI 测试状态的摘要：
+
+| 测试名 | 状态 |
+| -------- | ------ |
+| 单元测试 | <img alt="GitHub Actions Workflow Status" src="https://img.shields.io/github/actions/workflow/status/RLinf/RLinf/unit-tests.yml?branch=main&label=Status"> |
+| 智能体/推理端到端测试 | <img alt="GitHub Actions Workflow Status" src="https://img.shields.io/github/actions/workflow/status/RLinf/RLinf/agent-e2e-tests.yml?branch=main&label=Status"> |
+| 具身智能端到端测试 | <img alt="GitHub Actions Workflow Status" src="https://img.shields.io/github/actions/workflow/status/RLinf/RLinf/embodied-e2e-tests.yml?branch=main&label=Status"> |
+| 调度器测试 | <img alt="GitHub Actions Workflow Status" src="https://img.shields.io/github/actions/workflow/status/RLinf/RLinf/scheduler-tests.yml?branch=main&label=Status"> |
 
 ## 贡献指南
 我们欢迎对 RLinf 的贡献。在参与之前，请先阅读 [贡献指南](https://github.com/RLinf/RLinf?tab=contributing-ov-file#contributing-to-rlinf)。感谢以下贡献者，并诚邀更多开发者加入我们的开源项目，共建具身智能与强化学习系统。
