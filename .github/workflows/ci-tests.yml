@@ -44,7 +44,7 @@ jobs:
             file_filter:
               - '**/*.py'
               - 'tests/**'
-              - '.github/workflows/code-test.yml'
+              - '.github/workflows/*tests.yml'
               - '*.yaml'
 
   # =============================================== unit tests ====================================================
@@ -127,6 +127,7 @@ jobs:
           # If the loop completes, all jobs were successful
           echo "All jobs completed successfully"
           exit 0
+
       - name: Create unit-tests badge
         uses: RubbaBoy/BYOB@v1.3.0
         with:
