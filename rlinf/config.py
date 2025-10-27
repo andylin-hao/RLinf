@@ -145,7 +145,7 @@ def activation_to_func(
     return activation_func
 
 
-def validate_rollout_cfg(cfg, full_cfg):
+def validate_rollout_cfg(cfg, algorithm_cfg):
     def validate_sglang_cfg(cfg):
         assert cfg is not None, (
             "sglang config must be specified if rollout_backend is sglang."
@@ -180,7 +180,7 @@ def validate_rollout_cfg(cfg, full_cfg):
         assert cfg.rollout_backend in SUPPORTED_ROLLOUT_BACKENDS, (
             f"rollout_backend must be one of {SUPPORTED_ROLLOUT_BACKENDS}."
         )
-        cfg.return_logprobs = cfg.return_logprobs or full_cfg.algorithm.get(
+        cfg.return_logprobs = cfg.return_logprobs or algorithm_cfg.get(
             "importance_sampling_fix", False
         )
         cfg.sglang = validate_sglang_cfg(cfg.sglang)
@@ -610,7 +610,7 @@ def validate_reasoning_cfg(cfg: DictConfig) -> DictConfig:
             or cfg.algorithm.get("importance_sampling_fix", False)
         )
 
-        cfg.rollout = validate_rollout_cfg(cfg.rollout, cfg)
+        cfg.rollout = validate_rollout_cfg(cfg.rollout, cfg.algorithm)
     return cfg
 
 
@@ -666,7 +666,7 @@ def validate_coding_online_rl_cfg(cfg: DictConfig) -> DictConfig:
             or cfg.algorithm.get("importance_sampling_fix", False)
         )
 
-        cfg.rollout = validate_rollout_cfg(cfg.rollout, cfg)
+        cfg.rollout = validate_rollout_cfg(cfg.rollout, cfg.algorithm)
     return cfg
 
 

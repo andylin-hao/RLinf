@@ -101,6 +101,32 @@ jobs:
           source switch_env reason
           bash tests/e2e_tests/reasoning/run.sh qwen2.5-1.5b-grpo-collocated-fsdp-vllm-rollout-logprobs
 
+  reason-qwen-importance-sampling-test:
+    runs-on: reason
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+  
+      - name: Megatron SGLang Collocated mode
+        timeout-minutes: 20
+        run: |
+          export REPO_PATH=$(pwd)
+          source switch_env reason
+          bash tests/e2e_tests/reasoning/run.sh qwen2.5-1.5b-is-collocated-mg-sgl
+
+  reason-qwen-reinforcepp-test:
+    runs-on: reason
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+  
+      - name: Megatron SGLang Collocated mode
+        timeout-minutes: 20
+        run: |
+          export REPO_PATH=$(pwd)
+          source switch_env reason
+          bash tests/e2e_tests/reasoning/run.sh qwen2.5-1.5b-reinpp-collocated-mg-sgl
+
   coding-online-rl-qwen-ppo-test:
     runs-on: reason
     steps:
