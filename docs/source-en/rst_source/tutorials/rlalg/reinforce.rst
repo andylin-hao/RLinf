@@ -67,7 +67,6 @@ REINFORCE++
      use_reinpp_baseline: False    # no baseline
      group_size:    1              # one response per prompt
      kl_beta:       0.0001
-     normalize_advantages: False   # global norm already applied
 
    data:
      rollout_batch_size: 8192

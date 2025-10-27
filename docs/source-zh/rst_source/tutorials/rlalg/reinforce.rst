@@ -66,7 +66,6 @@ REINFORCE++
      reinpp_kl_beta: 0.001         # REINFORCE++中的KL惩罚系数，与计算loss时使用的kl系数的区分
      use_reinpp_baseline: False    # 不使用基线
      group_size:    1              # 每个 prompt 一个响应
-     normalize_advantages: False   # 全局归一化已启用
 
    data:
      rollout_batch_size: 8192
