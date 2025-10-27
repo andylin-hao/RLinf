@@ -178,6 +178,8 @@ def preprocess_reasoning_advantages_inputs(
     rewards: torch.Tensor,
     loss_mask: torch.Tensor,
     values: Optional[torch.Tensor] = None,
+    logprob: Optional[torch.Tensor] = None,
+    ref_logprob: Optional[torch.Tensor] = None,
     **kwargs,
 ) -> dict:
     # NOTE: to align with embodied inputs, we transpose loss mask and rewards when needed.
@@ -222,6 +224,14 @@ def preprocess_reasoning_advantages_inputs(
         )  # [seq_len+1, bsz]
 
         kwargs.update({"values": values})
+
+    if logprob is not None:
+        logprob = logprob.transpose(0, 1)
+        kwargs.update({"logprob": logprob})
+
+    if ref_logprob is not None:
+        ref_logprob = ref_logprob.transpose(0, 1)
+        kwargs.update({"ref_logprob": ref_logprob})
 
     # Create done flags (episode ends at the last token)
     dones = torch.zeros(seq_len + 1, bsz, dtype=torch.bool)
