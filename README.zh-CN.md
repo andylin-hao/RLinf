@@ -517,10 +517,10 @@ RLinf 具有全面的 CI 测试，涵盖核心组件（通过单元测试）和�
 
 | 测试名 | 状态 |
 | -------- | ------ |
-| 单元测试 | <img alt="GitHub Actions Workflow Status" src="https://byob.yarr.is/RLinf/RLinf/unit-tests"> |
-| 智能体/推理端到端测试 | <img alt="GitHub Actions Workflow Status" src="https://byob.yarr.is/RLinf/RLinf/agent-reason-e2e-tests"> |
-| 具身智能端到端测试 | <img alt="GitHub Actions Workflow Status" src="https://byob.yarr.is/RLinf/RLinf/embodied-e2e-tests"> |
-| 调度器测试 | <img alt="GitHub Actions Workflow Status" src="https://byob.yarr.is/RLinf/RLinf/scheduler-tests"> |
+| 单元测试 | <img alt="GitHub Actions Workflow Status" src="https://img.shields.io/github/actions/workflow/status/RLinf/RLinf/ci-tests.yml?label=Status"> |
+| 智能体/推理端到端测试 | <img alt="GitHub Actions Workflow Status" src="https://img.shields.io/github/actions/workflow/status/RLinf/RLinf/ci-tests.yml?label=Status"> |
+| 具身智能端到端测试 | <img alt="GitHub Actions Workflow Status" src="https://img.shields.io/github/actions/workflow/status/RLinf/RLinf/ci-tests.yml?label=Status"> |
+| 调度器测试 | <img alt="GitHub Actions Workflow Status" src="https://img.shields.io/github/actions/workflow/status/RLinf/RLinf/ci-tests.yml?label=Status"> |
 
 ## 贡献指南
 我们欢迎对 RLinf 的贡献。在参与之前，请先阅读 [贡献指南](https://github.com/RLinf/RLinf?tab=contributing-ov-file#contributing-to-rlinf)。感谢以下贡献者，并诚邀更多开发者加入我们的开源项目，共建具身智能与强化学习系统。

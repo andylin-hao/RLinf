@@ -512,10 +512,10 @@ Below is the summary of the CI test status of the main branch:
 
 | Test Name | Status |
 | -------- | ------ |
-| unit-tests | <img alt="GitHub Actions Workflow Status" src="https://byob.yarr.is/RLinf/RLinf/unit-tests"> |
-| agent-reason-e2e-tests | <img alt="GitHub Actions Workflow Status" src="https://byob.yarr.is/RLinf/RLinf/agent-reason-e2e-tests"> |
-| embodied-e2e-tests | <img alt="GitHub Actions Workflow Status" src="https://byob.yarr.is/RLinf/RLinf/embodied-e2e-tests"> |
-| scheduler-tests | <img alt="GitHub Actions Workflow Status" src="https://byob.yarr.is/RLinf/RLinf/scheduler-tests"> |
+| unit-tests | <img alt="GitHub Actions Workflow Status" src="https://img.shields.io/github/actions/workflow/status/RLinf/RLinf/ci-tests.yml?label=Status"> |
+| agent-reason-e2e-tests | <img alt="GitHub Actions Workflow Status" src="https://img.shields.io/github/actions/workflow/status/RLinf/RLinf/ci-tests.yml?label=Status"> |
+| embodied-e2e-tests | <img alt="GitHub Actions Workflow Status" src="https://img.shields.io/github/actions/workflow/status/RLinf/RLinf/ci-tests.yml?label=Status"> |
+| scheduler-tests | <img alt="GitHub Actions Workflow Status" src="https://img.shields.io/github/actions/workflow/status/RLinf/RLinf/ci-tests.yml?label=Status"> |
 
 ## Contribution Guidelines
 We welcome contributions to RLinf. Please read [contribution guide](https://github.com/RLinf/RLinf?tab=contributing-ov-file#contributing-to-rlinf) before taking action. Thank the following contributors and welcome more developers to join us on this open source project.
