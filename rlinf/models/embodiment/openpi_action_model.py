@@ -51,7 +51,7 @@ class OpenPi0Config(Pi0Config):
     ignore_last: bool = False
     value_after_vlm: bool = False
     value_vlm_mode: str = "mean_token"  # last_token, mean_token, first_token
-
+    simulator_type: str = "libero"  # libero, maniskill, robotwin, metaworld
 
 class OpenPi0ForRLActionPrediction(PI0Pytorch):
     """Pi0 model for reinforcement learning action prediction.
@@ -249,10 +249,11 @@ class OpenPi0ForRLActionPrediction(PI0Pytorch):
     def input_processor(self, env_processed_obs):
         to_process_obs = {
             "observation/image": env_processed_obs["images"],
-            "observation/wrist_image": env_processed_obs["wrist_images"],
             "observation/state": env_processed_obs["states"],
             "prompt": env_processed_obs["task_descriptions"],
         }
+        if self.config.simulator_type == "libero":
+            to_process_obs[f"observation/wrist_image"] = env_processed_obs["wrist_images"]
         processed_obs = self.input_transform(to_process_obs)
         device = next(self.parameters()).device
         for key, value in processed_obs.items():
@@ -288,11 +289,13 @@ class OpenPi0ForRLActionPrediction(PI0Pytorch):
             "chains": outputs["chains"],
             "denoise_inds": outputs["denoise_inds"],
             "observation/image": env_obs["images"],
-            "observation/wrist_image": env_obs["wrist_images"],
             "observation/state": env_obs["states"],
             "tokenized_prompt": processed_obs["tokenized_prompt"],
             "tokenized_prompt_mask": processed_obs["tokenized_prompt_mask"],
         }
+        if self.config.simulator_type == "libero":
+            forward_inputs[f"observation/wrist_image"] = env_obs["wrist_images"]
+
 
         result = {
             "prev_logprobs": outputs["prev_logprobs"],

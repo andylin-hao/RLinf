@@ -788,7 +788,7 @@ class EmbodiedFSDPActor(FSDPModelManager, Worker):
             self.cfg.actor.global_batch_size
             % (self.cfg.actor.micro_batch_size * self._world_size)
             == 0
-        )
+        ), "global_batch_size is not divisible by micro_batch_size * world_size"
 
         self.gradient_accumulation = (
             self.cfg.actor.global_batch_size

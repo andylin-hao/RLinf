@@ -168,10 +168,24 @@ def compute_ppo_critic_loss(
     value_clip_indicator = (value_pred_clipped - prev_values).abs() > value_clip
     value_clip_ratio = value_clip_indicator.float().mean()
 
+    # explained variance
+    if loss_mask is not None:
+        masked_returns = returns[loss_mask]
+        masked_values = values[loss_mask]
+        var_returns = torch.var(masked_returns)
+        var_diff = torch.var(masked_returns - masked_values)
+        eps = 1e-8
+        if var_returns > eps and torch.isfinite(var_returns) and torch.isfinite(var_diff):
+            explained_variance = 1 - var_diff / var_returns
+        else:
+            explained_variance = torch.tensor(float('nan'), device=returns.device)
+    else:
+        explained_variance = torch.tensor(float('nan'), device=returns.device)
     # Compile metrics for logging
     metrics_data = {
         "critic/value_loss": value_loss.detach().item(),
         "critic/value_clip_ratio": value_clip_ratio.detach().item(),
+        "critic/explained_variance": explained_variance.detach().item(),
     }
     return value_loss, metrics_data
 

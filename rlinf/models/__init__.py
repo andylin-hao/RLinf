@@ -185,10 +185,18 @@ def get_model(model_path, cfg: DictConfig, override_config_kwargs=None):
         )
 
         # config
-        if getattr(cfg.openpi, "pi05", False):
-            actor_train_config = _config.get_config("pi05_libero")
+        if cfg.openpi.simulator_type == "libero":
+            if getattr(cfg.openpi, "pi05", False):
+                actor_train_config = _config.get_config("pi05_libero")
+            else:
+                actor_train_config = _config.get_config("pi0_libero")
+        elif cfg.openpi.simulator_type == "metaworld":
+            if getattr(cfg.openpi, "pi05", False):
+                actor_train_config = _config.get_config("pi05_metaworld")
+            else:
+                actor_train_config = _config.get_config("pi0_metaworld")
         else:
-            actor_train_config = _config.get_config("pi0_libero")
+            raise ValueError(f"Invalid simulator type: {cfg.openpi.simulator_type}")
         actor_model_config = actor_train_config.model
         actor_model_config = OpenPi0Config(**actor_model_config.__dict__)
         override_config_kwargs = cfg.openpi
@@ -218,8 +226,9 @@ def get_model(model_path, cfg: DictConfig, override_config_kwargs=None):
             # that the policy is using the same normalization stats as the original training process.
             if data_config.asset_id is None:
                 raise ValueError("Asset id is required to load norm stats.")
+            # TODO: add assets here for fast runing
             norm_stats = _checkpoints.load_norm_stats(
-                checkpoint_dir, data_config.asset_id
+                checkpoint_dir, "assets/" + data_config.asset_id
             )
         # wrappers
         repack_transforms = transforms.Group()
