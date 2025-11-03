@@ -299,8 +299,6 @@ class ChannelWorker(Worker):
     async def put(
         self,
         src_addr: WorkerAddress,
-        weight: int,
-        key: Any = DEFAULT_KEY,
         nowait: bool = False,
     ):
         """Put an item into the channel queue.
@@ -313,8 +311,8 @@ class ChannelWorker(Worker):
             nowait (bool): If True, directly raise asyncio.QueueFull if the queue is full. Defaults to False.
 
         """
+        key, item, weight = self.recv(src_addr.root_group_name, src_addr.rank_path)
         self.create_queue(key, self.maxsize())
-        item = self.recv(src_addr.root_group_name, src_addr.rank_path)
         item = WeightedItem(weight=weight, item=item)
         if nowait:
             self._queue_map[key].put_nowait(item)

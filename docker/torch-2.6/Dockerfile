@@ -2,10 +2,11 @@ ARG BUILD_TARGET=reason
 
 FROM nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04 AS base-image
 
+ARG NO_MIRROR
 SHELL ["/bin/bash", "-c"]
 ENV PATH=/opt/conda/bin:$PATH
 ENV DEBIAN_FRONTEND=noninteractive
-RUN sed -i 's@//.*archive.ubuntu.com@//mirrors.ustc.edu.cn@g' /etc/apt/sources.list
+RUN if [ -z "$NO_MIRROR" ]; then sed -i 's@//.*archive.ubuntu.com@//mirrors.ustc.edu.cn@g' /etc/apt/sources.list; fi
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git vim libibverbs-dev openssh-server sudo runit runit-systemd tmux \
     build-essential python3-dev cmake pkg-config iproute2 pciutils python3 python3-pip \
@@ -17,15 +18,9 @@ RUN python3 -m pip install -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simp
 ENV HF_HOME=/opt/.cache/huggingface
 RUN mkdir -p $HF_HOME
 
-# UV index
-RUN mkdir -p /etc/uv
-RUN cat <<EOF > /etc/uv/uv.toml
-[[index]]
-url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
-default = true
-EOF
-
 # UV setup
+ENV UV_DEFAULT_INDEX=${NO_MIRROR:+"https://pypi.org/simple/"}
+ENV UV_DEFAULT_INDEX=${UV_DEFAULT_INDEX:-"https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"}
 ENV UV_PATH=/opt/venv
 RUN mkdir $UV_PATH
 WORKDIR $UV_PATH

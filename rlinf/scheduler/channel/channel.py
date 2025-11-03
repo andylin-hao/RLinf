@@ -170,7 +170,11 @@ class Channel:
         placement = NodePlacementStrategy(node_ids=[node_id])
         try:
             channel_worker_group = ChannelWorker.create_group(maxsize=maxsize).launch(
-                cluster=cluster, name=name, placement_strategy=placement
+                cluster=cluster,
+                name=name,
+                placement_strategy=placement,
+                # Set max_concurrency to a high value to avoid large number of gets blocking puts
+                max_concurrency=2**31 - 1,
             )
         except ValueError:
             Worker.logger.warning(f"Channel {name} already exists, connecting to it.")
@@ -322,8 +326,6 @@ class Channel:
             # Inside a worker, use send/recv
             put_kwargs = {
                 "src_addr": self._current_worker.worker_address,
-                "weight": weight,
-                "key": key,
             }
             async_channel_work = AsyncChannelWork(
                 channel_name=self._channel_name,
@@ -332,7 +334,9 @@ class Channel:
                 method="put",
                 **put_kwargs,
             )
-            self._current_worker.send(item, self._channel_name, 0, async_op=True)
+            self._current_worker.send(
+                (key, item, weight), self._channel_name, 0, async_op=True
+            )
 
             if async_op:
                 return async_channel_work
@@ -374,8 +378,6 @@ class Channel:
         if self._current_worker is not None:
             put_kwargs = {
                 "src_addr": self._current_worker.worker_address,
-                "weight": weight,
-                "key": key,
                 "nowait": True,
             }
             async_channel_work = AsyncChannelWork(
@@ -385,7 +387,9 @@ class Channel:
                 method="put",
                 **put_kwargs,
             )
-            self._current_worker.send(item, self._channel_name, 0, async_op=True)
+            self._current_worker.send(
+                (key, item, weight), self._channel_name, 0, async_op=True
+            )
             async_channel_work.wait()
         else:
             put_kwargs = {"item": item, "weight": weight, "key": key, "nowait": True}

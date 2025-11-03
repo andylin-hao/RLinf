@@ -383,6 +383,7 @@ class Cluster:
         cls: type["Worker"],
         worker_name: str,
         node_id: int,
+        max_concurrency: int,
         env_vars: dict,
         cls_args: list = [],
         cls_kwargs: dict = {},
@@ -393,6 +394,7 @@ class Cluster:
             cls (Type[Worker]): The class to allocate.
             worker_name (str): The name of the worker.
             node_id (int): The ID of the node to allocate on.
+            max_concurrency (Optional[int]): The maximum concurrency for the worker's underlying ray actor.
             env_vars (dict): Environment variables to set for the worker.
             cls_args (List): Positional arguments to pass to the class constructor.
             cls_kwargs (dict): Keyword arguments to pass to the class constructor.
@@ -417,5 +419,10 @@ class Cluster:
                 soft=False,
             ),
         }
+        if max_concurrency is not None:
+            assert 1 <= max_concurrency <= 2**31 - 1, (
+                f"Invalid max_concurrency: {max_concurrency}. Must be between 1 and {2**31 - 1} (max int32) due to Ray's native layer limitation."
+            )
+            options["max_concurrency"] = max_concurrency
 
         return remote_cls.options(**options).remote(*cls_args, **cls_kwargs)
