@@ -29,6 +29,7 @@ from rlinf.envs.libero.utils import (
     to_tensor,
 )
 from rlinf.envs.metaworld.utils import load_prompt_from_json
+from rlinf.envs.metaworld.venv import ReconfigureSubprocEnv
 
 # TODO: metaworld assumes the state is the same for the same task
 
@@ -76,7 +77,18 @@ class MetaWorldEnv(gym.Env):
         self.env_all_names = list(self.task_description_dict.keys())
         self.task_all_names = list(self.task_description_dict.values())
         env_fns = self.get_env_fns()
-        self.env = gym.vector.AsyncVectorEnv(env_fns) # TODO: env vectorization?
+        # ! ReconfigureSubprocEnv supports reconfigure environments, but AsyncVectorEnv does not.
+        # ! ReconfigureSubprocEnv is slower than AsyncVectorEnv under the osmesa render setting.
+        # ! Their speed is comparable under the egl render setting.
+        self.use_async_vector_env = getattr(self.cfg, "use_async_vector_env", False)
+        # set egl render device
+        os.environ["MUJOCO_EGL_DEVICE_ID"] = str(self.seed_offset)
+        if self.use_async_vector_env:
+            assert self.auto_reset == False, "AsyncVectorEnv does not support auto_reset."
+            self.env = gym.vector.AsyncVectorEnv(env_fns)
+        else:
+            self.env = ReconfigureSubprocEnv(env_fns)
+
 
     def get_env_fns(self):
         env_fn_params = self.get_env_fn_params()
@@ -256,17 +268,25 @@ class MetaWorldEnv(gym.Env):
         }
         return obs
 
-    # todo: omit the reconfigure, directly reset the whole env, to modify
     def _reconfigure(self, reset_state_ids, env_idx):
+        reconfig_env_idx = []
         task_ids, trial_ids = self._get_task_and_trial_ids_from_reset_state_ids(
             reset_state_ids
         )
         for j, env_id in enumerate(env_idx):
+            if self.task_ids[env_id] != task_ids[j]:
+                reconfig_env_idx.append(env_id)
             self.task_ids[env_id] = task_ids[j]
             self.trial_ids[env_id] = trial_ids[j]
-        env_fns = self.get_env_fns()
-        self.env = gym.vector.AsyncVectorEnv(env_fns)
-        self.env.reset()
+        if self.use_async_vector_env:
+            env_fns = self.get_env_fns()
+            self.env = gym.vector.AsyncVectorEnv(env_fns)
+            self.env.reset()
+        else:
+            if reconfig_env_idx:
+                env_fn_params = self.get_env_fn_params(reconfig_env_idx)
+                self.env.reconfigure_env_fns(env_fn_params, reconfig_env_idx)
+            self.env.reset(id=env_idx)
 
     def reset(
         self,
@@ -283,9 +303,16 @@ class MetaWorldEnv(gym.Env):
 
         self._reconfigure(reset_state_ids, env_idx)
 
-        for _ in range(15):
-            zero_actions = np.zeros((self.num_envs, 4))
-            raw_obs, _reward, _, _, _ = self.env.step(zero_actions)
+        if self.use_async_vector_env:
+            for _ in range(15):
+                zero_action = np.zeros((self.num_envs, 4))
+                raw_obs, _reward, _, _, _ = self.env.step(zero_action)
+        else:
+            for _ in range(15):
+                zero_action = np.zeros((len(env_idx), 4))
+                self.env.step(zero_action, id=env_idx)
+            all_actions = np.zeros((self.num_envs, 4))
+            raw_obs, _reward, _, _, _ = self.env.step(all_actions)
 
         obs = self._wrap_obs(raw_obs)
         if env_idx is not None:
@@ -315,8 +342,12 @@ class MetaWorldEnv(gym.Env):
 
         self._elapsed_steps += 1
         
-        raw_obs, _reward, _, _, infos = self.env.step(actions)
-        terminations = infos["success"].astype(bool)
+        if self.use_async_vector_env:
+            raw_obs, _reward, _, _, infos = self.env.step(actions)
+        else:
+            raw_obs, _reward, _, _, info_lists = self.env.step(actions)
+            infos = list_of_dict_to_dict_of_list(info_lists)
+        terminations = np.array(infos["success"]).astype(bool)
         truncations = self.elapsed_steps >= self.cfg.max_episode_steps
         obs = self._wrap_obs(raw_obs)
 
