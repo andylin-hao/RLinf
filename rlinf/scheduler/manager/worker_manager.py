@@ -15,7 +15,7 @@
 import bisect
 from dataclasses import dataclass
 
-from ..accelerator import AcceleratorType
+from ..hardware import AcceleratorType
 from .manager import Manager
 
 

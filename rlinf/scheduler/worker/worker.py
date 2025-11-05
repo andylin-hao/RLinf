@@ -34,8 +34,8 @@ import ray
 import torch
 from omegaconf import OmegaConf
 
-from ..accelerator import Accelerator, AcceleratorType
 from ..cluster import Cluster
+from ..hardware import Accelerator, AcceleratorType
 from ..manager import WorkerAddress
 
 if TYPE_CHECKING:
