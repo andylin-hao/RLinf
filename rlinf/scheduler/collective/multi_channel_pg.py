@@ -19,7 +19,7 @@ from typing import Optional
 import torch
 import torch.distributed as dist
 
-from ..accelerator import Accelerator, AcceleratorType
+from ..hardware import Accelerator, AcceleratorType
 from .async_work import AsyncCollWork, AsyncWork
 from .collective_group import CollectiveGroup, CollectiveGroupInfo
 

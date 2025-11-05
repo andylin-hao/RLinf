@@ -29,7 +29,7 @@ from ray._private import ray_logging
 from ray.actor import ActorHandle
 from ray.util.state import list_actors
 
-from .accelerator import Accelerator, AcceleratorType
+from .hardware import Accelerator, AcceleratorType
 
 ray_version = version("ray")
 assert vs.parse(ray_version) >= vs.parse("2.47.0"), (

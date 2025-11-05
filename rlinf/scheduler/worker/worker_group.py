@@ -24,8 +24,8 @@ import numpy as np
 import ray
 import ray.remote_function
 
-from ..accelerator import Accelerator
 from ..cluster import Cluster
+from ..hardware import Accelerator
 from ..manager import WorkerInfo
 from ..placement import (
     NodePlacementStrategy,

@@ -16,8 +16,8 @@ import logging
 from dataclasses import dataclass
 from typing import overload
 
-from ..accelerator import AcceleratorType
 from ..cluster import Cluster
+from ..hardware import AcceleratorType
 
 
 @dataclass

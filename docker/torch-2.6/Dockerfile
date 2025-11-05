@@ -186,6 +186,8 @@ RUN source switch_env openvla-oft && cd /opt/BEHAVIOR-1K && UV_LINK_MODE=hardlin
 RUN source switch_env openvla-oft && uv pip install git+https://github.com/moojink/openvla-oft.git --no-build-isolation
 RUN source switch_env openvla-oft && uv pip install $FLASH_ATTENTION_WHEEL --no-build-isolation
 RUN source switch_env openvla-oft && uv pip install ml_dtypes==0.5.3 protobuf==3.20.3
+# Ray is not compatible with click 8.3.0 on Python 3.10
+RUN source switch_env openvla-oft && pip install click==8.2.1
 RUN source switch_env openvla-oft && cd && uv pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 && cd -
 RUN source switch_env openvla-oft && uv pip uninstall pynvml
 # omnigibson downloads assets to /tmp during initialization

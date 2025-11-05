@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .accelerator import Accelerator, AcceleratorType
 from .channel import Channel, ChannelWorker, WeightedItem
 from .cluster import Cluster
+from .hardware import Accelerator, AcceleratorType
 from .placement import (
     FlexiblePlacementStrategy,
     NodePlacementStrategy,
