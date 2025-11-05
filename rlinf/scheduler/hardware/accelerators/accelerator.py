@@ -17,7 +17,7 @@ import warnings
 from enum import Enum
 
 
-class AcceleratorType(Enum):
+class AcceleratorType(str, Enum):
     """Enum representing different types of accelerators."""
 
     NV_GPU = "NV_GPU"
