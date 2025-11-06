@@ -92,7 +92,6 @@ class WorkerGroup(Generic[WorkerClsType]):
 
         Args:
             cluster (ClusterResource): The cluster resource to use for worker placement.
-            num_nodes (int): The number of nodes to create workers on.
             placement_strategy (Optional[PlacementStrategy]): The strategy to use for placing workers on nodes.
             name (str, optional): The name of the worker group.
             max_concurrency (Optional[int]): The maximum concurrency for the worker's underlying ray actor. See https://docs.ray.io/en/latest/ray-core/actors/async_api.html#setting-concurrency-in-async-actors for detailed explanation.
@@ -303,7 +302,6 @@ class WorkerGroupFunc:
         Args:
             worker_group (WorkerGroup): The worker group to attach the function to.
             func_name (str): The name of the function.
-            func (Callable): The function to attach to the worker group.
 
         """
         self._worker_group = worker_group
