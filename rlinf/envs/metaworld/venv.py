@@ -107,6 +107,7 @@ def _worker(
             elif cmd == "reconfigure":
                 # metaworld reconfigure
                 env.close()
+                import metaworld
                 seed = data.pop("seed")
                 env_name = data.pop("env_name")
                 env = gym.make(

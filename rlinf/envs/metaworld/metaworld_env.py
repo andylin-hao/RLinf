@@ -19,13 +19,14 @@ from typing import List, Optional, Union
 import gymnasium as gym
 import numpy as np
 import torch
-
-from rlinf.envs.libero.utils import (
+from rlinf.envs.utils import (
     list_of_dict_to_dict_of_list,
+    to_tensor,
+)
+from rlinf.envs.libero.utils import (
     put_info_on_image,
     save_rollout_video,
     tile_images,
-    to_tensor,
 )
 from rlinf.envs.metaworld.utils import load_prompt_from_json
 from rlinf.envs.metaworld.venv import ReconfigureSubprocEnv
@@ -94,6 +95,7 @@ class MetaWorldEnv(gym.Env):
         for env_fn_param in env_fn_params:
 
             def env_fn(param=env_fn_param):
+                import metaworld
                 seed = param["seed"]
                 env_name = param["env_name"]
                 env = gym.make(

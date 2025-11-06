@@ -177,8 +177,7 @@ def get_model(model_path, cfg: DictConfig, override_config_kwargs=None):
         import openpi.transforms as transforms
         import safetensors
         from openpi.training import checkpoints as _checkpoints
-        from openpi.training import config as _config
-
+        from .embodiment.openpi import get_openpi_config
         from .embodiment.openpi_action_model import (
             OpenPi0Config,
             OpenPi0ForRLActionPrediction,
@@ -187,14 +186,14 @@ def get_model(model_path, cfg: DictConfig, override_config_kwargs=None):
         # config
         if cfg.openpi.simulator_type == "libero":
             if getattr(cfg.openpi, "pi05", False):
-                actor_train_config = _config.get_config("pi05_libero")
+                actor_train_config = get_openpi_config("pi05_libero")
             else:
-                actor_train_config = _config.get_config("pi0_libero")
+                actor_train_config = get_openpi_config("pi0_libero")
         elif cfg.openpi.simulator_type == "metaworld":
             if getattr(cfg.openpi, "pi05", False):
-                actor_train_config = _config.get_config("pi05_metaworld")
+                actor_train_config = get_openpi_config("pi05_metaworld")
             else:
-                actor_train_config = _config.get_config("pi0_metaworld")
+                actor_train_config = get_openpi_config("pi0_metaworld")
         else:
             raise ValueError(f"Invalid simulator type: {cfg.openpi.simulator_type}")
         actor_model_config = actor_train_config.model
@@ -226,9 +225,8 @@ def get_model(model_path, cfg: DictConfig, override_config_kwargs=None):
             # that the policy is using the same normalization stats as the original training process.
             if data_config.asset_id is None:
                 raise ValueError("Asset id is required to load norm stats.")
-            # TODO: add assets here for fast runing
             norm_stats = _checkpoints.load_norm_stats(
-                checkpoint_dir, "assets/" + data_config.asset_id
+                checkpoint_dir, data_config.asset_id
             )
         # wrappers
         repack_transforms = transforms.Group()
