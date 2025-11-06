@@ -390,7 +390,10 @@ class Channel:
             self._current_worker.send(
                 (key, item, weight), self._channel_name, 0, async_op=True
             )
-            async_channel_work.wait()
+            try:
+                async_channel_work.wait()
+            except asyncio.QueueFull:
+                raise asyncio.QueueFull
         else:
             put_kwargs = {"item": item, "weight": weight, "key": key, "nowait": True}
             async_channel_work = AsyncChannelWork(
@@ -400,7 +403,10 @@ class Channel:
                 method="put_via_ray",
                 **put_kwargs,
             )
-            async_channel_work.wait()
+            try:
+                async_channel_work.wait()
+            except asyncio.QueueFull:
+                raise asyncio.QueueFull
 
     def get(self, key: Any = DEFAULT_KEY, async_op: bool = False) -> AsyncWork | Any:
         """Get an item from the channel queue.
