@@ -17,6 +17,7 @@ import os
 from typing import Optional, Union
 
 import gymnasium as gym
+import metaworld
 import numpy as np
 import torch
 
@@ -31,6 +32,11 @@ from rlinf.envs.utils import (
     list_of_dict_to_dict_of_list,
     to_tensor,
 )
+
+# Ensure MW envs only register once
+if not getattr(metaworld, "_has_registered_mw_envs", False):
+    metaworld.register_mw_envs()
+    metaworld._has_registered_mw_envs = True
 
 
 class MetaWorldEnv(gym.Env):
