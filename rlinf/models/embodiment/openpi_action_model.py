@@ -684,8 +684,14 @@ class OpenPi0ForRLActionPrediction(PI0Pytorch):
         else:
             lang_length = 48
             all_length = 816
+        if self.config.simulator_type == "metaworld":
+            camera_num = 1
+        elif self.config.simulator_type == "libero":
+            camera_num = 2
+        else:
+            raise ValueError(f"Invalid simulator type: {self.config.simulator_type}")
         if self.config.value_vlm_mode == "mean_token":
-            prefix_mask = [True] * 512 + [False] * 256 + [True] * lang_length
+            prefix_mask = [True] * 256 * camera_num + [False] * 256 * (3 - camera_num) + [True] * lang_length
         elif self.config.value_vlm_mode == "last_token":
             prefix_mask = [False] * (all_length - 1) + [True] * 1
         elif self.config.value_vlm_mode == "first_token":

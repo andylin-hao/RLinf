@@ -31,7 +31,6 @@ from rlinf.envs.libero.utils import (
 from rlinf.envs.metaworld.utils import load_prompt_from_json
 from rlinf.envs.metaworld.venv import ReconfigureSubprocEnv
 
-# TODO: metaworld assumes the state is the same for the same task
 
 
 class MetaWorldEnv(gym.Env):
@@ -80,7 +79,7 @@ class MetaWorldEnv(gym.Env):
         # ! ReconfigureSubprocEnv supports reconfigure environments, but AsyncVectorEnv does not.
         # ! ReconfigureSubprocEnv is slower than AsyncVectorEnv under the osmesa render setting.
         # ! Their speed is comparable under the egl render setting.
-        self.use_async_vector_env = getattr(self.cfg, "use_async_vector_env", False)
+        self.use_async_vector_env = False
         # set egl render device
         os.environ["MUJOCO_EGL_DEVICE_ID"] = str(self.seed_offset)
         if self.use_async_vector_env:
