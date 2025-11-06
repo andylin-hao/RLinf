@@ -18,7 +18,7 @@ import signal
 import sys
 import time
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from importlib.metadata import version
 from typing import TYPE_CHECKING, Optional
 
@@ -29,7 +29,7 @@ from ray._private import ray_logging
 from ray.actor import ActorHandle
 from ray.util.state import list_actors
 
-from .hardware import Accelerator, AcceleratorType
+from .hardware import AcceleratorType, HardwareEnumerator, HardwareInfo
 
 ray_version = version("ray")
 assert vs.parse(ray_version) >= vs.parse("2.47.0"), (
@@ -53,14 +53,35 @@ class NodeInfo:
     node_ip: str
     """IP address of the node."""
 
-    accelerator_type: AcceleratorType
-    """Type of accelerator available on the node."""
-
-    num_accelerators: int
-    """Number of accelerators available on the node."""
-
     num_cpus: int
     """Number of CPUs available on the node."""
+
+    hardware_resources: list[HardwareInfo] = field(default_factory=list)
+    """List of hardware resources available on the node."""
+
+    @property
+    def accelerator_type(self) -> AcceleratorType:
+        """Type of accelerator available on the node."""
+        for resource in self.hardware_resources:
+            if resource.type in AcceleratorType._value2member_map_:
+                return resource.type
+        return AcceleratorType.NO_ACCEL
+
+    @property
+    def num_accelerators(self) -> int:
+        """Number of accelerators available on the node."""
+        for resource in self.hardware_resources:
+            if resource.type in AcceleratorType._value2member_map_:
+                return resource.count
+        return 0
+
+    @property
+    def accelerator_model(self) -> str:
+        """Model of the accelerator available on the node."""
+        for resource in self.hardware_resources:
+            if resource.type in AcceleratorType._value2member_map_:
+                return resource.model
+        return "N/A"
 
 
 class Cluster:
@@ -170,32 +191,33 @@ class Cluster:
             )
             time.sleep(1)
 
+        # Detect hardware resources on each node
+        self._hardware_enumerator = HardwareEnumerator()
+        hardware_resources = self._hardware_enumerator.enumerate()
+
         self._nodes: list[NodeInfo] = []
         for node in ray.nodes():
-            accelerator_type, num_accelerators = (
-                Accelerator.get_node_accelerator_type_and_num(node)
-            )
+            ray_id = node["NodeID"]
             self._nodes.append(
                 NodeInfo(
                     node_rank=0,
-                    ray_id=node["NodeID"],
+                    ray_id=ray_id,
                     node_ip=node["NodeManagerAddress"],
-                    accelerator_type=accelerator_type,
-                    num_accelerators=num_accelerators,
                     num_cpus=int(node["Resources"].get("CPU", 0)),
+                    hardware_resources=hardware_resources[ray_id],
                 )
             )
 
-        # Sort nodes first by accelerator type, then by IP
-        nodes_group_by_accel_type: dict[AcceleratorType, list[NodeInfo]] = {
-            accel_type: [] for accel_type in AcceleratorType
-        }
+        # Sort nodes first by accelerator type and model, then by IP
+        nodes_group_by_accel: dict[str, list[NodeInfo]] = {}
         for node in self._nodes:
-            nodes_group_by_accel_type[node.accelerator_type].append(node)
-        for accel_type in nodes_group_by_accel_type.keys():
-            nodes_group_by_accel_type[accel_type].sort(key=lambda x: x.node_ip)
+            accel_name = f"{node.accelerator_type.value}_{node.accelerator_model}"
+            nodes_group_by_accel.setdefault(accel_name, [])
+            nodes_group_by_accel[accel_name].append(node)
+        for accel_name in nodes_group_by_accel.keys():
+            nodes_group_by_accel[accel_name].sort(key=lambda x: x.node_ip)
         self._nodes = [
-            node for nodes in nodes_group_by_accel_type.values() for node in nodes
+            node for nodes in nodes_group_by_accel.values() for node in nodes
         ]
 
         # Handle num_nodes configuration mismatch with actual node number
