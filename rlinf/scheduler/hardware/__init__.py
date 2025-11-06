@@ -13,5 +13,6 @@
 # limitations under the License.
 
 from .accelerators import Accelerator, AcceleratorType
+from .hw_enumerator import HardwareEnumerator, HardwareInfo
 
-__all__ = ["Accelerator", "AcceleratorType"]
+__all__ = ["Accelerator", "AcceleratorType", "HardwareEnumerator", "HardwareInfo"]
