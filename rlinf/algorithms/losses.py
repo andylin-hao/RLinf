@@ -172,15 +172,20 @@ def compute_ppo_critic_loss(
     if loss_mask is not None:
         masked_returns = returns[loss_mask]
         masked_values = values[loss_mask]
-        var_returns = torch.var(masked_returns)
-        var_diff = torch.var(masked_returns - masked_values)
-        eps = 1e-8
-        if var_returns > eps and torch.isfinite(var_returns) and torch.isfinite(var_diff):
-            explained_variance = 1 - var_diff / var_returns
-        else:
-            explained_variance = torch.tensor(float('nan'), device=returns.device)
     else:
-        explained_variance = torch.tensor(float('nan'), device=returns.device)
+        masked_returns = returns
+        masked_values = values
+
+    var_returns = torch.var(masked_returns)
+    if torch.isnan(var_returns) or var_returns == 0:
+        explained_variance = torch.tensor(float("nan"), device=returns.device)
+    else:
+        var_diff = torch.var(masked_returns - masked_values)
+        if torch.isnan(var_diff):
+            explained_variance = torch.tensor(float("nan"), device=returns.device)
+        else:
+            explained_variance = 1 - var_diff / var_returns
+
     # Compile metrics for logging
     metrics_data = {
         "critic/value_loss": value_loss.detach().item(),

@@ -1,10 +1,5 @@
 # Metaworld Environment Setup Guide
 
-## To RLinf authors:
-1. The main code of `metaworld_env.py` was adapted from the Libero environment. Would you consider implementing a base environment class so that other environments can inherit from it?
-2. I modified a version of `ReconfigureSubprocEnv` (originally from Libero) to support autoreset mode. However, I noticed that this environment runs significantly slower than `gym.vector.AsyncVectorEnv` under the osmesa mode. In the `egl` mode, their performance is comparable.
-3. Currently, the EGL rendering method is inelegantly set using `os.environ["MUJOCO_EGL_DEVICE_ID"] = str(self.seed_offset)`. Is there a better approach to manage this?
-
 ## Installation
 
 Install the Metaworld environment with:

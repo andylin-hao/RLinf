@@ -183,7 +183,7 @@ if __name__ == "__main__":
         type=str,
         default="/mnt/mnt/public/liuzhihao/openpi-main/checkpoints/sft/pi0_metaworld/metaworld_32",
     )
-    parser.add_argument("--num_trials_per_task", type=int, default=1)
+    parser.add_argument("--num_trials_per_task", type=int, default=10)
     parser.add_argument("--max_steps", type=int, default=160)
     parser.add_argument("--action_chunk", type=int, default=5)
     args = parser.parse_args()
