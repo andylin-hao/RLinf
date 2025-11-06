@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import metaworld
+
 import copy
 import os
 from typing import List, Optional, Union
@@ -19,7 +19,6 @@ from typing import List, Optional, Union
 import gymnasium as gym
 import numpy as np
 import torch
-from omegaconf.omegaconf import OmegaConf
 
 from rlinf.envs.libero.utils import (
     list_of_dict_to_dict_of_list,
@@ -30,7 +29,6 @@ from rlinf.envs.libero.utils import (
 )
 from rlinf.envs.metaworld.utils import load_prompt_from_json
 from rlinf.envs.metaworld.venv import ReconfigureSubprocEnv
-
 
 
 class MetaWorldEnv(gym.Env):
@@ -72,7 +70,9 @@ class MetaWorldEnv(gym.Env):
     def _init_env(self):
         # metaworld task and prompt description
         config_path = os.path.join(os.path.dirname(__file__), "metaworld_config.json")
-        self.task_description_dict = load_prompt_from_json(config_path, "TASK_DESCRIPTIONS")
+        self.task_description_dict = load_prompt_from_json(
+            config_path, "TASK_DESCRIPTIONS"
+        )
         self.env_all_names = list(self.task_description_dict.keys())
         self.task_all_names = list(self.task_description_dict.values())
         env_fns = self.get_env_fns()
@@ -83,38 +83,36 @@ class MetaWorldEnv(gym.Env):
         # set egl render device
         os.environ["MUJOCO_EGL_DEVICE_ID"] = str(self.seed_offset)
         if self.use_async_vector_env:
-            assert self.auto_reset == False, "AsyncVectorEnv does not support auto_reset."
+            assert not self.auto_reset, "AsyncVectorEnv does not support auto_reset."
             self.env = gym.vector.AsyncVectorEnv(env_fns)
         else:
             self.env = ReconfigureSubprocEnv(env_fns)
-
 
     def get_env_fns(self):
         env_fn_params = self.get_env_fn_params()
         env_fns = []
         for env_fn_param in env_fn_params:
+
             def env_fn(param=env_fn_param):
-                import metaworld
                 seed = param["seed"]
                 env_name = param["env_name"]
                 env = gym.make(
-                    "Meta-World/MT1", 
-                    env_name=env_name, 
+                    "Meta-World/MT1",
+                    env_name=env_name,
                     render_mode="rgb_array",
-                    camera_id = 2,
-                    seed = seed,
+                    camera_id=2,
+                    seed=seed,
                     disable_env_checker=True,
                 )
                 # Set camera position to align with sft
-                env.env.env.env.env.env.env.model.cam_pos[2] = [0.75, 0.075, 0.7]  
+                env.env.env.env.env.env.env.model.cam_pos[2] = [0.75, 0.075, 0.7]
                 return env
+
             env_fns.append(env_fn)
         return env_fns
 
     def get_env_fn_params(self, env_idx=None):
         env_fn_params = []
-        base_env_args = OmegaConf.to_container(self.cfg.init_params, resolve=True)
-
         task_descriptions = []
         if env_idx is None:
             env_idx = np.arange(self.cfg.num_envs)
@@ -237,21 +235,21 @@ class MetaWorldEnv(gym.Env):
         episode_info["reward"] = episode_info["return"] / episode_info["episode_len"]
         infos["episode"] = to_tensor(episode_info)
         return infos
-    
+
     def _extract_image_and_state(self, obs):
         images = self.env.render()
-        images = np.array(images)[:,::-1,::-1]
-        state = obs[:,:4]
+        images = np.array(images)[:, ::-1, ::-1]
+        state = obs[:, :4]
         return {
             "full_image": images,
             "state": state,
         }
-    
+
     def _wrap_obs(self, obs_list):
         images_and_states_list = []
         images = self.env.render()
-        images = np.array(images)[:,::-1,::-1]
-        state = obs_list[:,:4]
+        images = np.array(images)[:, ::-1, ::-1]
+        state = obs_list[:, :4]
         for idx in range(self.num_envs):
             images_and_states = {
                 "full_image": images[idx],
@@ -340,7 +338,7 @@ class MetaWorldEnv(gym.Env):
             actions = actions.detach().cpu().numpy()
 
         self._elapsed_steps += 1
-        
+
         if self.use_async_vector_env:
             raw_obs, _reward, _, _, infos = self.env.step(actions)
         else:
