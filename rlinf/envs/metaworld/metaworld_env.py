@@ -14,15 +14,12 @@
 
 import copy
 import os
-from typing import List, Optional, Union
+from typing import Optional, Union
 
 import gymnasium as gym
 import numpy as np
 import torch
-from rlinf.envs.utils import (
-    list_of_dict_to_dict_of_list,
-    to_tensor,
-)
+
 from rlinf.envs.libero.utils import (
     put_info_on_image,
     save_rollout_video,
@@ -30,6 +27,10 @@ from rlinf.envs.libero.utils import (
 )
 from rlinf.envs.metaworld.utils import load_prompt_from_json
 from rlinf.envs.metaworld.venv import ReconfigureSubprocEnv
+from rlinf.envs.utils import (
+    list_of_dict_to_dict_of_list,
+    to_tensor,
+)
 
 
 class MetaWorldEnv(gym.Env):
@@ -95,7 +96,6 @@ class MetaWorldEnv(gym.Env):
         for env_fn_param in env_fn_params:
 
             def env_fn(param=env_fn_param):
-                import metaworld
                 seed = param["seed"]
                 env_name = param["env_name"]
                 env = gym.make(
@@ -289,7 +289,7 @@ class MetaWorldEnv(gym.Env):
 
     def reset(
         self,
-        env_idx: Optional[Union[int, List[int], np.ndarray]] = None,
+        env_idx: Optional[Union[int, list[int], np.ndarray]] = None,
         reset_state_ids=None,
         options: Optional[dict] = {},
     ):

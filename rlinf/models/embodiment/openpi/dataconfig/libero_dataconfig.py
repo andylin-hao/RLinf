@@ -1,10 +1,13 @@
-from openpi.training.config import DataConfig, DataConfigFactory, ModelTransformFactory
-from rlinf.models.embodiment.openpi.policies import libero_policy
 import dataclasses
 import pathlib
-from typing_extensions import override
+
 import openpi.models.model as _model
 import openpi.transforms as _transforms
+from openpi.training.config import DataConfig, DataConfigFactory, ModelTransformFactory
+from typing_extensions import override
+
+from rlinf.models.embodiment.openpi.policies import libero_policy
+
 
 @dataclasses.dataclass(frozen=True)
 class LeRobotLiberoDataConfig(DataConfigFactory):
@@ -17,7 +20,9 @@ class LeRobotLiberoDataConfig(DataConfigFactory):
     extra_delta_transform: bool = False
 
     @override
-    def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
+    def create(
+        self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig
+    ) -> DataConfig:
         # The repack transform is *only* applied to the data coming from the dataset,
         # and *not* during inference. We can use it to make inputs from the dataset look
         # as close as possible to those coming from the inference environment (e.g. match the keys).
@@ -61,7 +66,7 @@ class LeRobotLiberoDataConfig(DataConfigFactory):
         # apply a separate delta conversion (that's why it's commented out). Choose whether to apply this
         # transform based on whether your dataset uses ``absolute`` or ``delta`` actions out of the box.
 
-        # LIBERO already represents actions as deltas, 
+        # LIBERO already represents actions as deltas,
         # but we have some old Pi0 checkpoints that are trained with this
         # extra delta transform.
         if self.extra_delta_transform:
@@ -82,4 +87,3 @@ class LeRobotLiberoDataConfig(DataConfigFactory):
             data_transforms=data_transforms,
             model_transforms=model_transforms,
         )
-

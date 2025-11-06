@@ -2,7 +2,6 @@ import dataclasses
 
 import einops
 import numpy as np
-
 from openpi import transforms
 from openpi.models import model as _model
 
@@ -12,7 +11,9 @@ def make_libero_example() -> dict:
     return {
         "observation/state": np.random.rand(8),
         "observation/image": np.random.randint(256, size=(224, 224, 3), dtype=np.uint8),
-        "observation/wrist_image": np.random.randint(256, size=(224, 224, 3), dtype=np.uint8),
+        "observation/wrist_image": np.random.randint(
+            256, size=(224, 224, 3), dtype=np.uint8
+        ),
         "prompt": "do something",
     }
 
@@ -46,9 +47,9 @@ class LiberoInputs(transforms.DataTransformFn):
         # in a different key than "observation/image" or "observation/wrist_image",
         # you should change it below.
         # Pi0 models support three image inputs at the moment: one third-person view,
-        # and two wrist views (left and right). 
+        # and two wrist views (left and right).
         # If your dataset does not have a particular type
-        # of image, e.g. wrist images, you can comment it out here and 
+        # of image, e.g. wrist images, you can comment it out here and
         # replace it with zeros like we do for the
         # right wrist image below.
         base_image = _parse_image(data["observation/image"])
@@ -67,7 +68,9 @@ class LiberoInputs(transforms.DataTransformFn):
                 "base_0_rgb": np.True_,
                 "left_wrist_0_rgb": np.True_,
                 # We only mask padding images for pi0 model, not pi0-FAST. Do not change this for your own dataset.
-                "right_wrist_0_rgb": np.True_ if self.model_type == _model.ModelType.PI0_FAST else np.False_,
+                "right_wrist_0_rgb": np.True_
+                if self.model_type == _model.ModelType.PI0_FAST
+                else np.False_,
             },
         }
 

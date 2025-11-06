@@ -2,7 +2,6 @@ import dataclasses
 
 import einops
 import numpy as np
-
 from openpi import transforms
 from openpi.models import model as _model
 
@@ -45,9 +44,9 @@ class MetaworldInputs(transforms.DataTransformFn):
         # in a different key than "observation/image" or "observation/wrist_image",
         # you should change it below.
         # Pi0 models support three image inputs at the moment: one third-person view,
-        # and two wrist views (left and right). 
+        # and two wrist views (left and right).
         # If your dataset does not have a particular type
-        # of image, e.g. wrist images, you can comment it out here and 
+        # of image, e.g. wrist images, you can comment it out here and
         # replace it with zeros like we do for the
         # right wrist image below.
         base_image = _parse_image(data["observation/image"])

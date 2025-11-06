@@ -1,10 +1,13 @@
-from openpi.training.config import DataConfig, DataConfigFactory, ModelTransformFactory
-from rlinf.models.embodiment.openpi.policies import metaworld_policy
 import dataclasses
 import pathlib
-from typing_extensions import override
+
 import openpi.models.model as _model
 import openpi.transforms as _transforms
+from openpi.training.config import DataConfig, DataConfigFactory, ModelTransformFactory
+from typing_extensions import override
+
+from rlinf.models.embodiment.openpi.policies import metaworld_policy
+
 
 @dataclasses.dataclass(frozen=True)
 class LeRobotMetaworldDataConfig(DataConfigFactory):
@@ -17,7 +20,9 @@ class LeRobotMetaworldDataConfig(DataConfigFactory):
     extra_delta_transform: bool = False
 
     @override
-    def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
+    def create(
+        self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig
+    ) -> DataConfig:
         repack_transform = _transforms.Group(
             inputs=[
                 _transforms.RepackTransform(
@@ -32,7 +37,9 @@ class LeRobotMetaworldDataConfig(DataConfigFactory):
         )
 
         data_transforms = _transforms.Group(
-            inputs=[metaworld_policy.MetaworldInputs(model_type=model_config.model_type)],
+            inputs=[
+                metaworld_policy.MetaworldInputs(model_type=model_config.model_type)
+            ],
             outputs=[metaworld_policy.MetaworldOutputs()],
         )
 
@@ -53,5 +60,5 @@ class LeRobotMetaworldDataConfig(DataConfigFactory):
             repack_transforms=repack_transform,
             data_transforms=data_transforms,
             model_transforms=model_transforms,
-            action_sequence_keys=("action",)
+            action_sequence_keys=("action",),
         )
