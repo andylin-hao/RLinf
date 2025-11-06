@@ -42,6 +42,9 @@ if [[ " ${EMBODIED_TARGET[*]} " == *" $TARGET "* ]]; then
     bash requirements/install_embodied_deps.sh # Must be run after the above command
     mkdir -p /opt && git clone https://github.com/RLinf/LIBERO.git /opt/libero
     echo "export PYTHONPATH=/opt/libero:$PYTHONPATH" >> .venv/bin/activate
+    echo "export NVIDIA_DRIVER_CAPABILITIES=all" >> .venv/bin/activate
+    echo "export VK_DRIVER_FILES=/etc/vulkan/icd.d/nvidia_icd.json" >> .venv/bin/activate
+    echo "export VK_ICD_FILENAMES=/etc/vulkan/icd.d/nvidia_icd.json" >> .venv/bin/activate
 fi
 
 if [ "$TARGET" = "openvla" ]; then
