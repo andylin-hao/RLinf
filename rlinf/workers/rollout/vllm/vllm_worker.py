@@ -114,7 +114,7 @@ class VLLMWorker(Worker):
         Process the batch image data which can be bytes or image paths.
 
         Args:
-            batch_image_data (Optional[List[List[Union[bytes,str]]]]): A batch of
+            image_data (Optional[List[List[Union[bytes,str]]]]): A batch of
                 image data, each item can be bytes or image path (local or URL).
         Returns:
             Optional[List[List[Image]]]: A batch of list of PIL Image. If input

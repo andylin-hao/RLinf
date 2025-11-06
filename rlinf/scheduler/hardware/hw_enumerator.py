@@ -113,9 +113,6 @@ class _NodeHardwareEnumerator:
 
         Args:
             policies (list[EnumerationPolicy]): List of enumeration policies to use.
-
-        Returns:
-            dict: A dictionary containing hardware resource information.
         """
         self._policies = policies
 
