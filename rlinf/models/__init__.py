@@ -185,18 +185,19 @@ def get_model(model_path, cfg: DictConfig, override_config_kwargs=None):
         )
 
         # config
-        if cfg.openpi.simulator_type == "libero":
+        simulator_type = getattr(cfg.openpi, "simulator_type", "libero")
+        if simulator_type == "libero":
             if getattr(cfg.openpi, "pi05", False):
                 actor_train_config = get_openpi_config("pi05_libero")
             else:
                 actor_train_config = get_openpi_config("pi0_libero")
-        elif cfg.openpi.simulator_type == "metaworld":
+        elif simulator_type == "metaworld":
             if getattr(cfg.openpi, "pi05", False):
                 actor_train_config = get_openpi_config("pi05_metaworld")
             else:
                 actor_train_config = get_openpi_config("pi0_metaworld")
         else:
-            raise ValueError(f"Invalid simulator type: {cfg.openpi.simulator_type}")
+            raise ValueError(f"Invalid simulator type: {simulator_type}")
         actor_model_config = actor_train_config.model
         actor_model_config = OpenPi0Config(**actor_model_config.__dict__)
         override_config_kwargs = cfg.openpi
