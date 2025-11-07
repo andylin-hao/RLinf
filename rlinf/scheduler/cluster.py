@@ -351,6 +351,66 @@ class Cluster:
             node_start_accel_id += node.num_accelerators
         return node_accel_ids
 
+    def get_nodes_by_accel_model(self, model: Optional[str]) -> list[int]:
+        """Get the node IDs that have the specified accelerator model.
+
+        Args:
+            model (Optional[str]): The model of the accelerator, e.g., A100, H100, 4090.
+
+        Returns:
+            list[int]: A list of node IDs matching the specified model.
+        """
+        node_ids = []
+        if model is None:
+            return list(range(len(self._nodes)))
+        for node in self._nodes:
+            if model in node.accelerator_model:
+                node_ids.extend(node.node_rank)
+        return node_ids
+
+    def get_available_accel_models(self) -> list[str]:
+        """Get the list of available accelerator models in the cluster.
+
+        Returns:
+            list[str]: A list of available accelerator models.
+        """
+        models = set()
+        for node in self._nodes:
+            if node.num_accelerators > 0:
+                models.add(node.accelerator_model)
+        return list(models)
+
+    def accel_id_in_selected_nodes_to_global_accel_id(
+        self, accel_id: int, selected_node_ids: list[int]
+    ) -> int:
+        """Convert a local accelerator ID in selected nodes to the global accelerator ID.
+
+        Args:
+            accel_id (int): The local accelerator ID in the selected nodes.
+            selected_node_ids (list[int]): The list of selected node IDs.
+
+        Returns:
+            int: The global accelerator ID.
+        """
+        selected_node_start_accel_id = 0
+        selected_node_accel_ids = []
+        for node_id in selected_node_ids:
+            node = self._nodes[node_id]
+            selected_node_accel_ids.append(
+                list(
+                    range(
+                        selected_node_start_accel_id,
+                        selected_node_start_accel_id + node.num_accelerators,
+                    )
+                )
+            )
+            selected_node_start_accel_id += node.num_accelerators
+        return -1
+
+        raise ValueError(
+            f"Accelerator ID {accel_id} not found in selected nodes {selected_node_ids}."
+        )
+
     def get_node_id_from_accel_id(self, accel_id: int) -> int:
         """Get the node ID from the global accelerator ID.
 

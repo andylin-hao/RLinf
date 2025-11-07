@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import Optional
 
 from ..cluster import Cluster
 from .placement import Placement, PlacementStrategy
@@ -93,6 +94,7 @@ class PackedPlacementStrategy(PlacementStrategy):
         end_accelerator_id: int,
         num_accelerators_per_process: int = 1,
         stride: int = 1,
+        accelerator_model: Optional[str] = None,
     ):
         """Initialize the PackedPlacementStrategy.
 
@@ -101,12 +103,14 @@ class PackedPlacementStrategy(PlacementStrategy):
             end_accelerator_id (int): The global ID of the end accelerator in the cluster for the placement.
             num_accelerators_per_process (int): The number of accelerators to allocate for each process.
             stride (int): The stride to use when allocating accelerators. This allows one process to have multiple accelerators in a strided manner, e.g., Accelerator 0, 2, 4 (stride 2) or Accelerator 0, 3, 6 (stride 3).
+            accelerator_model (Optional[str]): The model of the accelerator to use for placement, e.g., A800, H100, 4090. This allows you to assign the placement to nodes with a specific accelerator model, especially in a heterogeneous cluster. If None, any accelerator model is allowed.
 
         """
         super().__init__()
 
         self._start_accel_id = start_accelerator_id
         self._end_accel_id = end_accelerator_id
+        self._accel_model = accelerator_model
         assert self._start_accel_id >= 0, (
             f"The start accelerator ID {self._start_accel_id} must be non-negative."
         )
@@ -146,11 +150,17 @@ class PackedPlacementStrategy(PlacementStrategy):
             isolate_accelerator (bool): Whether accelerators not allocated to a worker will *not* be visible to the worker (by settings envs like CUDA_VISIBLE_DEVICES). Defaults to True.
 
         Returns:
-            List[Placement]: A list of Placement objects representing the placements of processes on accelerators.
+            list[Placement]: A list of Placement objects representing the placements of processes on accelerators.
 
         """
         rank = 0
         placements: list[Placement] = []
+        selected_node_ids = cluster.get_nodes_by_accel_model(self._accel_model)
+        if self._accel_model is not None and len(selected_node_ids) == 0:
+            raise ValueError(
+                f"No accelerators of model {self._accel_model} found in the cluster. Available accelerator models: {cluster.get_available_accel_models()}."
+            )
+
         start_node = cluster.get_node_id_from_accel_id(self._start_accel_id)
         accel_usage_map: dict[int, bool] = dict.fromkeys(
             range(self._start_accel_id, self._end_accel_id + 1), False
