@@ -53,7 +53,7 @@ _CONFIGS = [
         ),
         data=LeRobotLiberoDataConfig(
             repo_id="physical-intelligence/libero",
-            base_config=DataConfig(prompt_from_task=True, root="data/libero"),
+            base_config=DataConfig(prompt_from_task=True),
             assets=AssetsConfig(assets_dir="checkpoints/torch/pi0_libero/assets"),
             extra_delta_transform=False,
         ),
@@ -77,9 +77,9 @@ _CONFIGS = [
         model=pi0_config.Pi0Config(action_horizon=5),
         data=LeRobotMetaworldDataConfig(
             repo_id="lerobot/metaworld_mt50",
-            base_config=DataConfig(prompt_from_task=True, root="data/metaworld_mt50"),
+            base_config=DataConfig(prompt_from_task=True),
             assets=AssetsConfig(assets_dir="checkpoints/torch/pi0_metaworld/assets"),
-            extra_delta_transform=False,  # TODO: required
+            extra_delta_transform=False,  
         ),
         weight_loader=weight_loaders.CheckpointWeightLoader(
             "checkpoints/jax/pi0_base/params"
@@ -94,9 +94,9 @@ _CONFIGS = [
         ),
         data=LeRobotMetaworldDataConfig(
             repo_id="lerobot/metaworld_mt50",
-            base_config=DataConfig(prompt_from_task=True, root="data/metaworld_mt50"),
+            base_config=DataConfig(prompt_from_task=True),
             assets=AssetsConfig(assets_dir="checkpoints/torch/pi0_metaworld/assets"),
-            extra_delta_transform=False,  # TODO: required
+            extra_delta_transform=False,  
         ),
         weight_loader=weight_loaders.CheckpointWeightLoader(
             "checkpoints/jax/pi05_base/params"

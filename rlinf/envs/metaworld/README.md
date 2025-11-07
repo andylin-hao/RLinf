@@ -1,16 +1,9 @@
 # Metaworld Environment Setup Guide
 
 ## Installation
-
 Install the Metaworld environment with:
 ```
 pip install metaworld
-```
-
-## Running Environment Tests
-Run the test script with:
-```
-python metaworld_test.py
 ```
 
 ## Getting Help

@@ -84,12 +84,7 @@ class MetaWorldEnv(gym.Env):
         self.env_all_names = list(self.task_description_dict.keys())
         self.task_all_names = list(self.task_description_dict.values())
         env_fns = self.get_env_fns()
-        # ! ReconfigureSubprocEnv supports reconfigure environments, but AsyncVectorEnv does not.
-        # ! ReconfigureSubprocEnv is slower than AsyncVectorEnv under the osmesa render setting.
-        # ! Their speed is comparable under the egl render setting.
         self.use_async_vector_env = False
-        # set egl render device
-        os.environ["MUJOCO_EGL_DEVICE_ID"] = str(self.seed_offset)
         if self.use_async_vector_env:
             assert not self.auto_reset, "AsyncVectorEnv does not support auto_reset."
             self.env = gym.vector.AsyncVectorEnv(env_fns)
