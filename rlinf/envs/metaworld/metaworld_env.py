@@ -97,6 +97,7 @@ class MetaWorldEnv(gym.Env):
         for env_fn_param in env_fn_params:
 
             def env_fn(param=env_fn_param):
+                os.environ["MUJOCO_EGL_DEVICE_ID"] = str(self.seed_offset)
                 seed = param["seed"]
                 env_name = param["env_name"]
                 env = gym.make(
