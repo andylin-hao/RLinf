@@ -36,7 +36,7 @@ _CONFIGS = [
         model=pi0_config.Pi0Config(),
         data=LeRobotLiberoDataConfig(
             repo_id="physical-intelligence/libero",
-            base_config=DataConfig(prompt_from_task=True, root="data/libero"),
+            base_config=DataConfig(prompt_from_task=True),
             assets=AssetsConfig(assets_dir="checkpoints/torch/pi0_libero/assets"),
             extra_delta_transform=True,
         ),
