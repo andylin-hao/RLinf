@@ -20,6 +20,7 @@ import geometry_msgs.msg as geom_msg
 import numpy as np
 import psutil
 import rospy
+from dynamic_reconfigure.client import Client as ReconfClient
 from franka_gripper.msg import GraspActionGoal, MoveActionGoal
 from franka_msgs.msg import ErrorRecoveryActionGoal, FrankaState
 from scipy.spatial.transform import Rotation as R
@@ -85,6 +86,11 @@ class FrankaController(Worker):
 
         # Start impedance control
         self.start_impedance()
+
+        # Start reconfigure client
+        self._reconf_client = ReconfClient(
+            "cartesian_impedance_controllerdynamic_reconfigure_compliance_param_node"
+        )
 
     def _init_ros_channels(self):
         """Initialize ROS channels for communication."""
@@ -201,6 +207,15 @@ class FrankaController(Worker):
                 f"Joint position reached {self._state.arm_joint_position}"
             )
 
+    def reconfigure_compliance_params(self, params: dict[str, float]):
+        """Reconfigure the compliance parameters.
+
+        Args:
+            params (dict[str, float]): The parameters to reconfigure.
+        """
+        self._reconf_client.update_configuration(params)
+        self.log_debug(f"Reconfigure compliance parameters: {params}")
+
     def is_robot_up(self) -> bool:
         """Check if all ROS channels are connected.
 
@@ -236,7 +251,7 @@ class FrankaController(Worker):
             stderr=sys.stdout,
         )
 
-        self._wait_robot()
+        self._wait_robot(5)
         self.log_debug(f"Start Impedance controller: {self._impedance.status()}")
 
     def stop_impedance(self):
@@ -267,13 +282,16 @@ class FrankaController(Worker):
         assert len(reset_pos) == 7, (
             f"Invalid reset position, expected 7 dimensions but got {len(reset_pos)}"
         )
+
+        # Launch joint controller reset
+        rospy.set_param("/target_joint_positions", reset_pos)
         self._joint = psutil.Popen(
             [
                 "roslaunch",
                 self._ros_pkg,
                 "joint.launch",
                 "robot_ip:=" + self._robot_ip,
-                "load_gripper:='true'",
+                "load_gripper:=true",
             ],
             stdout=sys.stdout,
         )

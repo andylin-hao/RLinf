@@ -40,11 +40,12 @@ class Camera:
         camera_info: CameraInfo,
     ):
         self._camera_info = camera_info
-        self._device_info = {
-            device.get_info(rs.camera_info.serial_number): device
-            for device in rs.context().devices
-        }
-        assert camera_info.serial_number in self._device_info.keys()
+        self._device_info = {}
+        for device in rs.context().devices:
+            self._device_info[device.get_info(rs.camera_info.serial_number)] = device
+        assert camera_info.serial_number in self._device_info.keys(), (
+            f"Camera with serial number {camera_info.serial_number} not found. Detected cameras are {list(self._device_info.keys())}."
+        )
 
         self._serial_number = camera_info.serial_number
         self._device = self._device_info[self._serial_number]
