@@ -58,13 +58,12 @@
    - 通过减去组平均奖励来计算每个动作的优势
 
 
-环境配置
+依赖安装
 --------------
-直接运行以下代码安装即可
 
-.. code:: bash
+如果您使用的是 Docker 镜像，请通过 `docker pull` 拉取最新镜像以获取所需的依赖项。
 
-   pip install metaworld
+如果您已经手动安装了uv虚拟环境，请运行 `uv pip install metaworld` 来安装 MetaWorld 包及其依赖项。
 
 
 模型下载

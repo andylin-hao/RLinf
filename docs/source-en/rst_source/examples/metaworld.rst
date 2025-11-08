@@ -58,14 +58,12 @@ Algorithm
    - Compute the advantage of each action by subtracting the group's mean reward
 
 
-Environment Setup
+Dependency Installation
 --------------
 
-Simply run the following command to install:
+If you are using the Docker image, please pull the latest image via `docker pull` to get the required dependencies.
 
-.. code:: bash
-
-   pip install metaworld
+If you have set up the environment manually, please run `uv pip install metaworld` to install the MetaWorld package along with its dependencies.
 
 
 Model Download
