@@ -154,7 +154,6 @@ class EnvWorker(Worker):
                             enable_offload=enable_offload,
                         )
                     )
-        # TODO: why not merge them together?
         elif self.cfg.env.train.simulator_type == "metaworld":
             from rlinf.envs.metaworld.metaworld_env import MetaWorldEnv
 

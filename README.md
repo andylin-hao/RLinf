@@ -63,6 +63,7 @@ RLinf is a flexible and scalable open-source infrastructure designed for post-tr
           <li>RoboTwin</li>
           <li>RoboVerse</li>
           <li><a href="https://rlinf.readthedocs.io/en/latest/rst_source/examples/behavior.html">BEHAVIOR</a> ✅</li>
+          <li><a href="https://rlinf.readthedocs.io/en/latest/rst_source/examples/metaworld.html">MetaWorld</a> ✅</li>
           <li>IsaacLab</li>
           <li>RoboCasa</li>
           <li>More...</li>
