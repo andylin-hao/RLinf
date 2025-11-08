@@ -98,14 +98,12 @@ class MetaWorldEnv(gym.Env):
 
             def env_fn(param=env_fn_param):
                 os.environ["MUJOCO_EGL_DEVICE_ID"] = str(self.seed_offset)
-                seed = param["seed"]
                 env_name = param["env_name"]
                 env = gym.make(
                     "Meta-World/MT1",
                     env_name=env_name,
                     render_mode="rgb_array",
                     camera_id=2,
-                    seed=seed,
                     disable_env_checker=True,
                 )
                 # Set camera position to align with sft
@@ -130,7 +128,6 @@ class MetaWorldEnv(gym.Env):
             env_fn_params.append(
                 {
                     "env_name": env_name,
-                    "seed": self.seed,
                 }
             )
             task_descriptions.append(task_description)

@@ -107,14 +107,12 @@ def _worker(
             elif cmd == "reconfigure":
                 # metaworld reconfigure
                 env.close()
-                seed = data.pop("seed")
                 env_name = data.pop("env_name")
                 env = gym.make(
                     "Meta-World/MT1",
                     env_name=env_name,
                     render_mode="rgb_array",
                     camera_id=2,
-                    seed=seed,
                     disable_env_checker=True,
                 )
                 # Set camera position to align with sft
