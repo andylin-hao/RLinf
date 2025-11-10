@@ -147,14 +147,10 @@ class FSDP1Strategy(FSDPStrategyBase):
         Load model, optimizer and lr_scheduler(if exists) state dicts from the specified path.
 
         Args:
-            - model (FSDP): The FSDP wrapped model.
-            - optimizer (Optimizer): The optimizer used for training.
-            - lr_scheduler (Optional[LRScheduler]): The learning rate scheduler used for training.
-            - load_path (str): The directory path to load the checkpoint files from.
-
-        Raises:
-            - FileNotFoundError: If the checkpoint files are not found in the specified path.
-            - RuntimeError: If there is a mismatch in the state dict keys when loading the model
+            model (FSDP): The FSDP wrapped model.
+            optimizer (Optimizer): The optimizer used for training.
+            lr_scheduler (Optional[LRScheduler]): The learning rate scheduler used for training.
+            load_path (str): The directory path to load the checkpoint files from.
         """
         torch.distributed.barrier()
 
