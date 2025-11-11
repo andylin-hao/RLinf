@@ -29,7 +29,7 @@ from ray._private import ray_logging
 from ray.actor import ActorHandle
 from ray.util.state import list_actors
 
-from .hardware import AcceleratorType, HardwareEnumerator, HardwareInfo
+from ..hardware import AcceleratorType, HardwareEnumerator, HardwareInfo
 
 ray_version = version("ray")
 assert vs.parse(ray_version) >= vs.parse("2.47.0"), (
@@ -37,7 +37,7 @@ assert vs.parse(ray_version) >= vs.parse("2.47.0"), (
 )
 
 if TYPE_CHECKING:
-    from .worker import Worker
+    from ..worker import Worker
 
 
 @dataclass
@@ -232,7 +232,7 @@ class Cluster:
         )
 
         # Launch managers
-        from .manager import (
+        from ..manager import (
             CollectiveManager,
             DeviceLockManager,
             NodeManager,
@@ -298,7 +298,7 @@ class Cluster:
                 logging_level=Cluster.LOGGING_LEVEL,
             )
 
-        from .manager.node_manager import NodeManager
+        from ..manager.node_manager import NodeManager
 
         self._node_manager = NodeManager.get_proxy()
         self._nodes = self._node_manager.get_nodes()
