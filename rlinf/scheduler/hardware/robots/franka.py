@@ -12,13 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .cluster import Cluster, NodeInfo
-from .config import ClusterConfig, NodeGroupConfig, dataclass_arg_check
+from dataclasses import dataclass
 
-__all__ = [
-    "Cluster",
-    "NodeInfo",
-    "ClusterConfig",
-    "NodeGroupConfig",
-    "dataclass_arg_check",
-]
+from ..hardware import NodeHardwareConfig
+
+
+@NodeHardwareConfig.register_hardware_config("franka")
+@dataclass
+class FrankaConfig:
+    """Configuration for a robotic system."""
+
+    robot_ip: str
+    """IP address of the robotic system."""
+
+    camera_serials: list[str]
+    """List of camera serial numbers associated with the robot."""
