@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from .channel import Channel, ChannelWorker, WeightedItem
-from .cluster import Cluster
+from .cluster import Cluster, ClusterConfig
 from .hardware import Accelerator, AcceleratorType
 from .placement import (
     FlexiblePlacementStrategy,
@@ -27,6 +27,7 @@ __all__ = [
     "Accelerator",
     "AcceleratorType",
     "Cluster",
+    "ClusterConfig",
     "PlacementStrategy",
     "FlexiblePlacementStrategy",
     "NodePlacementStrategy",

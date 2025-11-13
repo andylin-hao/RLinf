@@ -52,9 +52,9 @@ class IntelGPUManager(AcceleratorManager):
             Dict[str, str]: A dictionary containing the accelerator environment variables.
         """
         env_vars = {}
-        visible_accelerators = ",".join(visible_accelerators)
+        visible_accelerators_str = ",".join(visible_accelerators)
 
-        env_vars["ONEAPI_DEVICE_SELECTOR"] = visible_accelerators
+        env_vars["ONEAPI_DEVICE_SELECTOR"] = visible_accelerators_str
         env_vars["RAY_EXPERIMENTAL_NOSET_ONEAPI_DEVICE_SELECTOR"] = "1"
         # https://github.com/ray-project/ray/blob/161849364a784442cc659fb9780f1a6adee85fce/python/ray/_private/accelerators/intel_gpu.py#L94
 
