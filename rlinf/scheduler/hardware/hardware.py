@@ -13,10 +13,70 @@
 # limitations under the License.
 
 from dataclasses import dataclass
+from typing import Any, ClassVar
 
 import ray
 import ray.actor
 import ray.util.scheduling_strategies
+
+
+@dataclass
+class NodeHardwareConfig:
+    """This represents hardware configs for a set of nodes."""
+
+    type: str
+    """Hardware type"""
+
+    node_ranks: list[int]
+    """The ranks of the nodes that have this type of hardware."""
+
+    configs: list[dict]
+    """List of hardware configurations."""
+
+    _hardware_config_registry: ClassVar[dict[str, Any]] = {}
+
+    @classmethod
+    def register_hardware_config(cls, type: str):
+        """Register a hardware config into the global registry.
+
+        Args:
+            type (str): The type of the hardware. This type is not case sensitive.
+        """
+
+        def hardware_config_decorator(hardware_config):
+            cls._hardware_config_registry[type.lower()] = hardware_config
+            return hardware_config
+
+        return hardware_config_decorator
+
+    def __post_init__(self):
+        """Post-initialization to convert hardware_configs dicts to their respective dataclass instances."""
+        self.type = self.type.lower()
+        hardware_config_class = NodeHardwareConfig._hardware_config_registry.get(
+            self.type
+        )
+        if hardware_config_class is None:
+            raise ValueError(
+                f"Unsupported hardware type: {self.type}. Currently supported types only include: {list(self._hardware_config_registry.keys())}"
+            )
+
+        from ..cluster import dataclass_arg_check
+
+        # Arg check
+        for config in self.configs:
+            assert hasattr(config, "keys"), (
+                f"Each hardware config must be a dictionary. But got {type(config)}: {config}"
+            )
+            missing_args, unknown_args, valid_args = dataclass_arg_check(
+                hardware_config_class, config
+            )
+            assert not missing_args, (
+                f"Missing fields '{missing_args}' detected in cluster node hardware configs yaml config. Only got: {config.keys()}."
+            )
+            assert not unknown_args, (
+                f"Unknown fields '{unknown_args}' detected in cluster node hardware configs yaml config. Valid fields are: {valid_args}."
+            )
+        self.configs = [hardware_config_class(**config) for config in self.configs]
 
 
 @dataclass
@@ -39,10 +99,10 @@ class HardwareEnumerationPolicy:
     This is the base class for different hardware to implement their enumeration policies.
     """
 
-    policy_registry: list["HardwareEnumerationPolicy"] = []
+    policy_registry: list[type["HardwareEnumerationPolicy"]] = []
 
     @classmethod
-    def register_policy(cls, policy: "HardwareEnumerationPolicy"):
+    def register_policy(cls, policy: type["HardwareEnumerationPolicy"]):
         """Register a new enumeration policy.
 
         This is to be used as a decorator for subclasses of EnumerationPolicy.
@@ -75,8 +135,8 @@ class HardwareEnumerator:
             "Ray must be initialized before creating HardwareEnumerator."
         )
 
-        self._enumerators: dict[str, ray.actor.ActorHandle] = {}
-        self._hardware_resources: dict[str, dict] = {}
+        self._enumerators: dict[str, ray.actor.ActorHandle | ray.ObjectRef] = {}
+        self._hardware_resources: dict[str, list[HardwareInfo]] = {}
 
         for node_info in ray.nodes():
             node_ray_id = node_info["NodeID"]
@@ -97,8 +157,8 @@ class HardwareEnumerator:
         """
         handles = []
         for node_id, enumerator in self._enumerators.items():
-            handles.append(enumerator.enumerate_hardware.remote())
-        hardware_info = ray.get(handles)
+            handles.append(enumerator.enumerate_hardware.remote())  # type: ignore
+        hardware_info: list[list[HardwareInfo]] = ray.get(handles)
         for node_id, info in zip(self._enumerators.keys(), hardware_info):
             self._hardware_resources[node_id] = info
         return self._hardware_resources
@@ -108,7 +168,7 @@ class HardwareEnumerator:
 class _NodeHardwareEnumerator:
     """Remote actor that enumerates hardware resources on a node."""
 
-    def __init__(self, policies: list[HardwareEnumerationPolicy]):
+    def __init__(self, policies: list[type["HardwareEnumerationPolicy"]]):
         """Enumerate hardware resources on the node.
 
         Args:

@@ -14,7 +14,7 @@
 
 from enum import Enum
 
-from ..hw_enumerator import HardwareEnumerationPolicy, HardwareInfo
+from ..hardware import HardwareEnumerationPolicy, HardwareInfo
 
 
 class AcceleratorType(str, Enum):
@@ -30,13 +30,13 @@ class AcceleratorType(str, Enum):
 class AcceleratorManager:
     """Base Manager for accelerator-related operations."""
 
-    manager_register: dict[AcceleratorType, "AcceleratorManager"] = {}
+    manager_register: dict[AcceleratorType, type["AcceleratorManager"]] = {}
 
     @staticmethod
     def register_manager(accelerator_type: AcceleratorType):
         """Register an accelerator manager for a specific accelerator type."""
 
-        def manager_decorator(manager: type["AcceleratorManager"]):
+        def manager_decorator(manager):
             AcceleratorManager.manager_register[accelerator_type] = manager
             return manager
 
@@ -167,7 +167,7 @@ class Accelerator:
         return visible_devices
 
     @staticmethod
-    def get_ccl_backend(accelerator_type: AcceleratorType) -> str:
+    def get_ccl_backend(accelerator_type: AcceleratorType):
         """Get the CCL backend based on the accelerator type.
 
         Args:
@@ -194,7 +194,7 @@ class Accelerator:
         raise ValueError(f"Unsupported accelerator type: {accelerator_type}")
 
     @staticmethod
-    def get_device_type(accelerator_type: AcceleratorType) -> str:
+    def get_device_type(accelerator_type: AcceleratorType):
         """Get the device type based on the accelerator type."""
         if accelerator_type == AcceleratorType.NO_ACCEL:
             return None
