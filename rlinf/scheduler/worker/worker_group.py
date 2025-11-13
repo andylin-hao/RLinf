@@ -24,7 +24,7 @@ import numpy as np
 import ray
 import ray.remote_function
 
-from ..cluster import Cluster
+from ..cluster import Cluster, ClusterEnvVar
 from ..hardware import Accelerator
 from ..manager import WorkerInfo
 from ..placement import (
@@ -109,7 +109,9 @@ class WorkerGroup(Generic[WorkerClsType]):
         self._catch_system_failure = catch_system_failure
         self._max_concurrency = max_concurrency
         if self._catch_system_failure is None:
-            self._catch_system_failure = Cluster.get_sys_env_var("CATCH_FAILURE") == "1"
+            self._catch_system_failure = (
+                Cluster.get_sys_env_var(ClusterEnvVar.CATCH_FAILURE, "0") == "1"
+            )
 
         if self._placement_strategy is None:
             if cluster.num_accelerators_in_cluster > 0:

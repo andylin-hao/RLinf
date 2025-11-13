@@ -12,11 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .cluster import Cluster, NodeInfo
+from .cluster import Cluster, ClusterEnvVar
 from .config import ClusterConfig, NodeGroupConfig, dataclass_arg_check
+from .node import NodeInfo
 
 __all__ = [
     "Cluster",
+    "ClusterEnvVar",
     "NodeInfo",
     "ClusterConfig",
     "NodeGroupConfig",

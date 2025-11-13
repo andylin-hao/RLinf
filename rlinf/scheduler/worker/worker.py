@@ -34,7 +34,7 @@ import ray
 import torch
 from omegaconf import OmegaConf
 
-from ..cluster import Cluster
+from ..cluster import Cluster, ClusterEnvVar
 from ..hardware import Accelerator, AcceleratorType
 from ..manager import WorkerAddress
 
@@ -833,7 +833,7 @@ class Worker(metaclass=WorkerMeta):
 
     def _setup_logging(self):
         self._logger = logging.getLogger(self._worker_name)
-        logging_level = Cluster.get_sys_env_var("LOG_LEVEL", "INFO").upper()
+        logging_level = Cluster.get_sys_env_var(ClusterEnvVar.LOG_LEVEL, "INFO").upper()
         if logging_level == "DEBUG":
             self._logging_level = logging.DEBUG
         elif logging_level == "INFO":

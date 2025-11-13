@@ -115,7 +115,7 @@ class AcceleratorEnumerationPolicy(HardwareEnumerationPolicy):
             num_devices = manager.get_num_devices()
             if num_devices > 0:
                 hardware_info = HardwareInfo(
-                    type=accel_type,
+                    type=accel_type.value,
                     model=manager.get_accelerator_model(),
                     count=num_devices,
                 )
