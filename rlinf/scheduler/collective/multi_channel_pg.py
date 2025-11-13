@@ -109,12 +109,12 @@ class MultiChannelProcessGroup:
             group_name (str): The name of the group.
 
         """
-        from ..cluster import Cluster
+        from ..cluster import Cluster, ClusterEnvVar
 
         self._group_name = group_name
         try:
             # Set default timeout to 180 minutes
-            timeout = int(Cluster.get_sys_env_var("TIMEOUT", "180"))
+            timeout = int(Cluster.get_sys_env_var(ClusterEnvVar.TIMEOUT, "180"))
             self._logger.debug(
                 f"Setting timeout to {timeout} minutes for group {group_name}"
             )

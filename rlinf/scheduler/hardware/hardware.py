@@ -15,10 +15,6 @@
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
-import ray
-import ray.actor
-import ray.util.scheduling_strategies
-
 
 @dataclass
 class NodeHardwareConfig:
@@ -120,69 +116,3 @@ class HardwareEnumerationPolicy:
             HardwareInfo: An object representing the hardware resources.
         """
         raise NotImplementedError
-
-
-class HardwareEnumerator:
-    """Hardware enumerator that enumerates hardware resources on a node.
-
-    This class launches one _NodeHardwareEnumerator actor on each node in the Ray cluster to enumerate
-    hardware resources available on that node.
-    """
-
-    def __init__(self):
-        """Launch the HardwareEnumerator on the specified nodes."""
-        assert ray.is_initialized(), (
-            "Ray must be initialized before creating HardwareEnumerator."
-        )
-
-        self._enumerators: dict[str, ray.actor.ActorHandle | ray.ObjectRef] = {}
-        self._hardware_resources: dict[str, list[HardwareInfo]] = {}
-
-        for node_info in ray.nodes():
-            node_ray_id = node_info["NodeID"]
-            enumerator = _NodeHardwareEnumerator.options(
-                scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
-                    node_id=node_ray_id, soft=False
-                ),
-                name=f"HardwareEnumerator_{node_ray_id}",
-            ).remote(HardwareEnumerationPolicy.policy_registry)
-            self._enumerators[node_ray_id] = enumerator
-
-    def enumerate(self) -> dict[str, list[HardwareInfo]]:
-        """Enumerate hardware resources on all nodes in the Ray cluster.
-
-        Returns:
-            dict[str, list[HardwareInfo]]: A dictionary mapping node IDs to lists of HardwareInfo objects
-            representing the hardware resources on each node.
-        """
-        handles = []
-        for node_id, enumerator in self._enumerators.items():
-            handles.append(enumerator.enumerate_hardware.remote())  # type: ignore
-        hardware_info: list[list[HardwareInfo]] = ray.get(handles)
-        for node_id, info in zip(self._enumerators.keys(), hardware_info):
-            self._hardware_resources[node_id] = info
-        return self._hardware_resources
-
-
-@ray.remote
-class _NodeHardwareEnumerator:
-    """Remote actor that enumerates hardware resources on a node."""
-
-    def __init__(self, policies: list[type["HardwareEnumerationPolicy"]]):
-        """Enumerate hardware resources on the node.
-
-        Args:
-            policies (list[EnumerationPolicy]): List of enumeration policies to use.
-        """
-        self._policies = policies
-
-    def enumerate_hardware(self) -> list[HardwareInfo]:
-        """Enumerate hardware resources on the node.
-
-        Returns:
-            list[HardwareInfo]: A list of HardwareInfo objects representing the hardware resources.
-        """
-        hardware_info: list[HardwareInfo] = []
-        for policy in self._policies:
-            hardware_info.append(policy.enumerate())
-        return hardware_info
