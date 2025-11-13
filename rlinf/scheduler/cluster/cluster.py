@@ -18,7 +18,7 @@ import signal
 import sys
 import time
 import warnings
-from dataclasses import dataclass, field
+from enum import Enum
 from importlib.metadata import version
 from typing import TYPE_CHECKING, Optional
 
@@ -29,7 +29,7 @@ from ray._private import ray_logging
 from ray.actor import ActorHandle
 from ray.util.state import list_actors
 
-from ..hardware import AcceleratorType, HardwareEnumerator, HardwareInfo
+from .node import NodeProbe
 
 ray_version = version("ray")
 assert vs.parse(ray_version) >= vs.parse("2.47.0"), (
@@ -40,48 +40,23 @@ if TYPE_CHECKING:
     from ..worker import Worker
 
 
-@dataclass
-class NodeInfo:
-    """Information about a node in the cluster."""
+class ClusterEnvVar(str, Enum):
+    """Scheduler environment variables. All env vars are prefixed with {Cluster.SYS_NAME}_ in usage."""
 
-    node_rank: str
-    """Rank of the node in the cluster."""
+    CATCH_FAILURE = "CATCH_FAILURE"
+    """Whether to catch failures in workers to avoid exiting the main process."""
 
-    ray_id: str
-    """Ray's unique identifier for the node."""
+    LOG_LEVEL = "LOG_LEVEL"
+    """Logging level for the cluster and workers."""
 
-    node_ip: str
-    """IP address of the node."""
+    TIMEOUT = "TIMEOUT"
+    """Timeout for the all inter-worker communications."""
 
-    num_cpus: int
-    """Number of CPUs available on the node."""
+    NODE_RANK = "NODE_RANK"
+    """Rank of each node in the cluster."""
 
-    hardware_resources: list[HardwareInfo] = field(default_factory=list)
-    """List of hardware resources available on the node."""
-
-    @property
-    def accelerator_type(self) -> AcceleratorType:
-        """Type of accelerator available on the node."""
-        for resource in self.hardware_resources:
-            if resource.type in AcceleratorType._value2member_map_:
-                return resource.type
-        return AcceleratorType.NO_ACCEL
-
-    @property
-    def num_accelerators(self) -> int:
-        """Number of accelerators available on the node."""
-        for resource in self.hardware_resources:
-            if resource.type in AcceleratorType._value2member_map_:
-                return resource.count
-        return 0
-
-    @property
-    def accelerator_model(self) -> str:
-        """Model of the accelerator available on the node."""
-        for resource in self.hardware_resources:
-            if resource.type in AcceleratorType._value2member_map_:
-                return resource.model
-        return "N/A"
+    NET_DEVICES = "NET_DEVICES"
+    """Network devices to use for inter-node communication."""
 
 
 class Cluster:
@@ -91,6 +66,13 @@ class Cluster:
     NAMESPACE = SYS_NAME
     LOGGING_LEVEL = "INFO"
     TIMEOUT_WARN_TIME = 60000
+    DEFAULT_SYS_ENV_VAR = {
+        ClusterEnvVar.CATCH_FAILURE: "0",
+        ClusterEnvVar.LOG_LEVEL: "INFO",
+        ClusterEnvVar.TIMEOUT: "180",
+        ClusterEnvVar.NODE_RANK: None,
+        ClusterEnvVar.NET_DEVICES: None,
+    }
 
     @classmethod
     def find_free_port(cls):
@@ -185,40 +167,15 @@ class Cluster:
             )
 
         # Wait for the cluster to be ready
-        while len(ray.nodes()) < self._num_nodes:
+        while len(Cluster.get_alive_nodes()) < self._num_nodes:
             self._logger.warning(
-                f"Waiting for {self._num_nodes} nodes to be ready, currently {len(ray.nodes())} nodes available."
+                f"Waiting for {self._num_nodes} nodes to be ready, currently {len(Cluster.get_alive_nodes())} nodes available."
             )
             time.sleep(1)
 
-        # Detect hardware resources on each node
-        self._hardware_enumerator = HardwareEnumerator()
-        hardware_resources = self._hardware_enumerator.enumerate()
-
-        self._nodes: list[NodeInfo] = []
-        for node in ray.nodes():
-            ray_id = node["NodeID"]
-            self._nodes.append(
-                NodeInfo(
-                    node_rank=0,
-                    ray_id=ray_id,
-                    node_ip=node["NodeManagerAddress"],
-                    num_cpus=int(node["Resources"].get("CPU", 0)),
-                    hardware_resources=hardware_resources[ray_id],
-                )
-            )
-
-        # Sort nodes first by accelerator type and model, then by IP
-        nodes_group_by_accel: dict[str, list[NodeInfo]] = {}
-        for node in self._nodes:
-            accel_name = f"{node.accelerator_type.value}_{node.accelerator_model}"
-            nodes_group_by_accel.setdefault(accel_name, [])
-            nodes_group_by_accel[accel_name].append(node)
-        for accel_name in nodes_group_by_accel.keys():
-            nodes_group_by_accel[accel_name].sort(key=lambda x: x.node_ip)
-        self._nodes = [
-            node for nodes in nodes_group_by_accel.values() for node in nodes
-        ]
+        # Get node info
+        self._node_probe = NodeProbe()
+        self._nodes = self._node_probe.nodes
 
         # Handle num_nodes configuration mismatch with actual node number
         if len(self._nodes) > self._num_nodes:
@@ -228,7 +185,9 @@ class Cluster:
             self._nodes = self._nodes[: self._num_nodes]
 
         self._logger.info(
-            f"{Cluster.SYS_NAME} is running on a cluster with {len(self._nodes)} node{'s' if len(self._nodes) > 1 else ''} and {self.num_accelerators_in_cluster} accelerator{'s' if self.num_accelerators_in_cluster > 1 else ''}. The nodes' details are: {self._nodes}"
+            f"{Cluster.SYS_NAME} is running on a cluster with {len(self._nodes)} node{'s' if len(self._nodes) > 1 else ''} and {self.num_accelerators_in_cluster} accelerator{'s' if self.num_accelerators_in_cluster > 1 else ''}. The nodes' details are: "
+            + "\n\n"
+            + "\n\n".join(str(node) for node in self._nodes)
         )
 
         # Launch managers
@@ -304,26 +263,27 @@ class Cluster:
         self._nodes = self._node_manager.get_nodes()
         self._num_nodes = len(self._nodes)
 
+    @staticmethod
+    def get_full_env_var_name(var: ClusterEnvVar) -> str:
+        """Get the full environment variable name with system prefix."""
+        return f"{Cluster.SYS_NAME.upper()}_{var.value}"
+
     def _set_default_env_vars(self):
         """Set default environment variables for the system."""
-        env_var_list = ["CATCH_FAILURE", "LOG_LEVEL", "TIMEOUT"]
-        system_name = Cluster.SYS_NAME.upper()
+        env_var_list = list(ClusterEnvVar._value2member_map_.values())
         for env_var in env_var_list:
-            env_var = f"{system_name}_{env_var}"
-            if env_var not in os.environ:
-                if env_var == f"{system_name}_CATCH_FAILURE":
-                    os.environ[env_var] = "0"
-                elif env_var == f"{system_name}_LOG_LEVEL":
-                    os.environ[env_var] = "INFO"
-                elif env_var == f"{system_name}_TIMEOUT":
-                    os.environ[env_var] = "180"
+            full_env_var_name = Cluster.get_full_env_var_name(env_var)
+            if (
+                default_value := Cluster.DEFAULT_SYS_ENV_VAR[env_var]
+            ) is not None and full_env_var_name not in os.environ:
+                os.environ[full_env_var_name] = default_value
 
     @staticmethod
-    def get_sys_env_var(env_var: str, default: Optional[str] = None) -> Optional[str]:
+    def get_sys_env_var(
+        env_var: ClusterEnvVar, default: Optional[str] = None
+    ) -> Optional[str]:
         """Get the system environment variable for the cluster."""
-        system_name = Cluster.SYS_NAME.upper()
-        env_var = f"{system_name}_{env_var}"
-        return os.environ.get(env_var, default)
+        return os.environ.get(Cluster.get_full_env_var_name(env_var), default)
 
     @property
     def num_nodes(self):
@@ -350,6 +310,11 @@ class Cluster:
             )
             node_start_accel_id += node.num_accelerators
         return node_accel_ids
+
+    @staticmethod
+    def get_alive_nodes():
+        """Get the list of alive nodes in the Ray cluster."""
+        return [node for node in ray.nodes() if node["Alive"]]
 
     def get_nodes_by_accel_model(self, model: Optional[str]) -> list[int]:
         """Get the node IDs that have the specified accelerator model.

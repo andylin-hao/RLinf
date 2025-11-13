@@ -13,13 +13,13 @@
 # limitations under the License.
 
 from .accelerators import Accelerator, AcceleratorType
-from .hardware import HardwareEnumerator, HardwareInfo, NodeHardwareConfig
+from .hardware import HardwareEnumerationPolicy, HardwareInfo, NodeHardwareConfig
 from .robots import FrankaConfig
 
 __all__ = [
     "Accelerator",
     "AcceleratorType",
-    "HardwareEnumerator",
+    "HardwareEnumerationPolicy",
     "HardwareInfo",
     "NodeHardwareConfig",
     "FrankaConfig",
