@@ -22,8 +22,16 @@ from ..hardware import NodeHardwareConfig
 class FrankaConfig:
     """Configuration for a robotic system."""
 
+    node_rank: int
+    """The rank of the node that has this robotic system."""
+
     robot_ip: str
     """IP address of the robotic system."""
 
     camera_serials: list[str]
     """List of camera serial numbers associated with the robot."""
+
+    def __post_init__(self):
+        """Post-initialization to validate the configuration."""
+        if self.camera_serials:
+            self.camera_serials = list(self.camera_serials)

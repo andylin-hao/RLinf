@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from ..cluster import NodeInfo
+from typing import Optional
+
+from ..cluster import ClusterConfig, NodeInfo
 from .manager import Manager
 
 
@@ -24,15 +26,18 @@ class NodeManager(Manager):
     def __init__(
         self,
         nodes: list[NodeInfo],
+        cluster_cfg: Optional[ClusterConfig],
     ):
         """Initialize the NodeManager.
 
         Args:
             nodes (list[NodeInfo]): List of NodeInfo objects representing the nodes in the cluster
+            cluster_cfg (Optional[ClusterConfig]): Configuration of the cluster.
 
         """
         self._nodes = nodes
+        self._cluster_cfg = cluster_cfg
 
     def get_nodes(self):
         """Get the list of nodes in the cluster."""
-        return self._nodes
+        return self._nodes, self._cluster_cfg
