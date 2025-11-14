@@ -24,11 +24,13 @@ from typing import TYPE_CHECKING, Optional
 
 import ray
 import ray.util.scheduling_strategies
+from omegaconf import DictConfig
 from packaging import version as vs
 from ray._private import ray_logging
 from ray.actor import ActorHandle
 from ray.util.state import list_actors
 
+from .config import ClusterConfig
 from .node import NodeProbe
 
 ray_version = version("ray")
@@ -95,24 +97,27 @@ class Cluster:
             cls._instance._has_initialized = False
         return cls._instance
 
-    def __init__(self, num_nodes: Optional[int] = None):
+    def __init__(
+        self, num_nodes: Optional[int] = None, cluster_cfg: Optional[DictConfig] = None
+    ):
         """Initialize the cluster.
 
         Args:
             num_nodes (int): The number of nodes in the cluster. When you wish to acquire the cluster instance in a processes other than the main driver process, do not pass this argument. Instead, use the `Cluster()` constructor without arguments.
+            cluster_cfg (Optional[DictConfig]): The cluster's configuration dictionary. If set, num_nodes will be ignored and inferred from the config.
         """
         if self._has_initialized:
             return
-        if num_nodes is not None:
+        if num_nodes is not None or cluster_cfg is not None:
             self._ray_instance_count = 0
-            self._init_and_launch_managers(num_nodes)
+            self._init_and_launch_managers(num_nodes, cluster_cfg)
         else:
             self._init_from_existing_managers()
         self._has_initialized = True
 
-    def _init_and_launch_managers(self, num_nodes: int):
-        assert num_nodes > 0, "num_nodes must be greater than 0."
-
+    def _init_and_launch_managers(
+        self, num_nodes: int, cluster_cfg: Optional[DictConfig]
+    ):
         # Add logger
         self._logger = logging.getLogger(Cluster.SYS_NAME)
         self._logger.setLevel(Cluster.LOGGING_LEVEL)
@@ -126,9 +131,6 @@ class Cluster:
         )
         handler.setFormatter(formatter)
         self._logger.addHandler(handler)
-
-        self._num_nodes = num_nodes
-        self._set_default_env_vars()
 
         if ray.is_initialized():
             if self._ray_instance_count > 0:
@@ -147,23 +149,35 @@ class Cluster:
         if "RAY_DEDUP_LOGS" not in os.environ:
             # Default disabling deduplication of logs to ensure all logs are printed.
             ray_logging.RAY_DEDUP_LOGS = 0
+
+        # Cluster configurations
+        self._cluster_cfg = (
+            ClusterConfig.from_dict_cfg(cluster_cfg) if cluster_cfg else None
+        )
+        if (
+            self._cluster_cfg is not None
+            and num_nodes is not None
+            and self._cluster_cfg.num_nodes != num_nodes
+        ):
+            raise ValueError(
+                f"num_nodes ({num_nodes}) passed in Cluster init does not match the number of nodes in configuration ({self._cluster_cfg.num_nodes}). Please ensure they are consistent."
+            )
+        self._num_nodes = (
+            self._cluster_cfg.num_nodes if self._cluster_cfg is not None else num_nodes
+        )
+        assert self._num_nodes > 0, "num_nodes must be greater than 0."
+
         try:
             # First try to connect to an existing Ray cluster
             ray.init(
                 address="auto",
                 logging_level=Cluster.LOGGING_LEVEL,
                 namespace=Cluster.NAMESPACE,
-                runtime_env={
-                    "env_vars": dict(os.environ),
-                },
             )
         except ConnectionError:
             ray.init(
                 logging_level=Cluster.LOGGING_LEVEL,
                 namespace=Cluster.NAMESPACE,
-                runtime_env={
-                    "env_vars": dict(os.environ),
-                },
             )
 
         # Wait for the cluster to be ready
@@ -174,7 +188,7 @@ class Cluster:
             time.sleep(1)
 
         # Get node info
-        self._node_probe = NodeProbe()
+        self._node_probe = NodeProbe(self._cluster_cfg)
         self._nodes = self._node_probe.nodes
 
         # Handle num_nodes configuration mismatch with actual node number
@@ -189,6 +203,9 @@ class Cluster:
             + "\n\n"
             + "\n\n".join(str(node) for node in self._nodes)
         )
+
+        # Set environment variables
+        self._set_scheduler_env_vars()
 
         # Launch managers
         from ..manager import (
@@ -212,7 +229,7 @@ class Cluster:
             self._node_manager = (
                 ray.remote(NodeManager)
                 .options(name=NodeManager.MANAGER_NAME)
-                .remote(self._nodes)
+                .remote(self._nodes, self._cluster_cfg)
             )
             self._lock_manager = (
                 ray.remote(DeviceLockManager)
@@ -260,7 +277,7 @@ class Cluster:
         from ..manager.node_manager import NodeManager
 
         self._node_manager = NodeManager.get_proxy()
-        self._nodes = self._node_manager.get_nodes()
+        self._nodes, self._cluster_cfg = self._node_manager.get_nodes()
         self._num_nodes = len(self._nodes)
 
     @staticmethod
@@ -268,15 +285,18 @@ class Cluster:
         """Get the full environment variable name with system prefix."""
         return f"{Cluster.SYS_NAME.upper()}_{var.value}"
 
-    def _set_default_env_vars(self):
+    def _set_scheduler_env_vars(self):
         """Set default environment variables for the system."""
         env_var_list = list(ClusterEnvVar._value2member_map_.values())
-        for env_var in env_var_list:
-            full_env_var_name = Cluster.get_full_env_var_name(env_var)
-            if (
-                default_value := Cluster.DEFAULT_SYS_ENV_VAR[env_var]
-            ) is not None and full_env_var_name not in os.environ:
-                os.environ[full_env_var_name] = default_value
+        for node in self._nodes:
+            for env_var in env_var_list:
+                env_var_name = Cluster.get_full_env_var_name(env_var)
+                if env_var_name in os.environ:
+                    node.env_vars[env_var_name] = os.environ[env_var_name]
+                elif (
+                    default_value := Cluster.DEFAULT_SYS_ENV_VAR[env_var]
+                ) is not None and env_var_name not in node.env_vars:
+                    node.env_vars[env_var_name] = default_value
 
     @staticmethod
     def get_sys_env_var(
@@ -462,8 +482,14 @@ class Cluster:
         node = self._nodes[node_id]
         remote_cls = ray.remote(cls)
 
+        merged_env_vars = node.env_vars.copy()
+        merged_env_vars.update(env_vars)
+
         options = {
-            "runtime_env": {"env_vars": env_vars},
+            "runtime_env": {
+                "py_executable": node.python_interpreter_path,
+                "env_vars": merged_env_vars,
+            },
             "name": worker_name,
             "scheduling_strategy": ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
                 node_id=node.ray_id,
