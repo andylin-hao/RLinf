@@ -12,6 +12,7 @@ jobs:
 
       - name: Run pytest
         timeout-minutes: 20
+        shell: bash
         run: |
           export PYTHONPATH=$(pwd):$(pwd)/tests/unit_tests
           source switch_env reason
@@ -19,6 +20,7 @@ jobs:
 
       - name: Run doctest
         timeout-minutes: 20
+        shell: bash
         run: |
           source switch_env reason
           pytest --doctest-modules rlinf/scheduler
@@ -39,6 +41,7 @@ jobs:
 
       - name: Run pytest
         timeout-minutes: 20
+        shell: bash
         run: |
           export PYTHONPATH=$(pwd):$(pwd)/tests/unit_tests 
           source .venv/bin/activate

@@ -13,8 +13,10 @@ jobs:
 
       - name: auto-placement
         timeout-minutes: 20
+        shell: bash
         run: |
           export REPO_PATH=$(pwd)
+          export VISIBLE_DEVICES=$VISIBLE_DEVICES
           source switch_env reason
           bash tests/e2e_tests/auto_placement/run.sh
 
@@ -41,9 +43,11 @@ jobs:
 
       - name: Megatron SGLang
         timeout-minutes: 20
+        shell: bash
         run: |
           export PYTHONPATH=$(pwd)/Megatron-LM-011:$(pwd)/params_resharding_release
           cd rlinf
           export REPO_PATH=$(pwd)
+          export VISIBLE_DEVICES=$VISIBLE_DEVICES
           source switch_env reason
           bash tests/e2e_tests/dynamic_scheduler/run.sh qwen2.5-1.5b-grpo-dynamic-mg-sgl

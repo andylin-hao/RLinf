@@ -12,43 +12,55 @@ jobs:
 
       - name: Megatron SGLang Collocated mode
         timeout-minutes: 20
-        run: |
+        shell: bash
+        run: |- 
           export REPO_PATH=$(pwd)
+          export VISIBLE_DEVICES=$VISIBLE_DEVICES
           source switch_env reason
           bash tests/e2e_tests/reasoning/run.sh qwen2.5-1.5b-grpo-collocated-mg-sgl
 
       - name: Megatron vLLM Collocated mode
         timeout-minutes: 20
+        shell: bash
         run: |
           export REPO_PATH=$(pwd)
+          export VISIBLE_DEVICES=$VISIBLE_DEVICES
           source switch_env reason
           bash tests/e2e_tests/reasoning/run.sh qwen2.5-1.5b-grpo-collocated-mg-vllm
 
       - name: Megatron SGLang Pipeline mode
         timeout-minutes: 20
+        shell: bash
         run: |
           export REPO_PATH=$(pwd)
+          export VISIBLE_DEVICES=$VISIBLE_DEVICES
           source switch_env reason
           bash tests/e2e_tests/reasoning/run.sh qwen2.5-1.5b-grpo-pipeline-mg-sgl
 
       - name: Megatron vLLM Pipeline mode
         timeout-minutes: 20
+        shell: bash
         run: |
           export REPO_PATH=$(pwd)
+          export VISIBLE_DEVICES=$VISIBLE_DEVICES
           source switch_env reason
           bash tests/e2e_tests/reasoning/run.sh qwen2.5-1.5b-grpo-pipeline-mg-vllm
 
       - name: FSDP SGLang Collocated mode
         timeout-minutes: 20
+        shell: bash
         run: |
           export REPO_PATH=$(pwd)
+          export VISIBLE_DEVICES=$VISIBLE_DEVICES
           source switch_env reason
           bash tests/e2e_tests/reasoning/run.sh qwen2.5-1.5b-grpo-collocated-fsdp-sgl
 
       - name: FSDP vLLM Collocated mode
         timeout-minutes: 20
+        shell: bash
         run: |
           export REPO_PATH=$(pwd)
+          export VISIBLE_DEVICES=$VISIBLE_DEVICES
           source switch_env reason
           bash tests/e2e_tests/reasoning/run.sh qwen2.5-1.5b-grpo-collocated-fsdp-vllm
 
@@ -61,43 +73,55 @@ jobs:
 
       - name: Megatron SGLang Collocated mode
         timeout-minutes: 20
+        shell: bash
         run: |
           export REPO_PATH=$(pwd)
+          export VISIBLE_DEVICES=$VISIBLE_DEVICES
           source switch_env reason
           bash tests/e2e_tests/reasoning/run.sh qwen2.5-1.5b-grpo-collocated-mg-sgl-rollout-logprobs
 
       - name: Megatron vLLM Collocated mode
         timeout-minutes: 20
+        shell: bash
         run: |
           export REPO_PATH=$(pwd)
+          export VISIBLE_DEVICES=$VISIBLE_DEVICES
           source switch_env reason
           bash tests/e2e_tests/reasoning/run.sh qwen2.5-1.5b-grpo-collocated-mg-vllm-rollout-logprobs
 
       - name: Megatron SGLang Pipeline mode
         timeout-minutes: 20
+        shell: bash
         run: |
           export REPO_PATH=$(pwd)
+          export VISIBLE_DEVICES=$VISIBLE_DEVICES
           source switch_env reason
           bash tests/e2e_tests/reasoning/run.sh qwen2.5-1.5b-grpo-pipeline-mg-sgl-rollout-logprobs
 
       - name: Megatron vLLM Pipeline mode
         timeout-minutes: 20
+        shell: bash
         run: |
           export REPO_PATH=$(pwd)
+          export VISIBLE_DEVICES=$VISIBLE_DEVICES
           source switch_env reason
           bash tests/e2e_tests/reasoning/run.sh qwen2.5-1.5b-grpo-pipeline-mg-vllm-rollout-logprobs
 
       - name: FSDP SGLang Collocated mode
         timeout-minutes: 20
+        shell: bash
         run: |
           export REPO_PATH=$(pwd)
+          export VISIBLE_DEVICES=$VISIBLE_DEVICES
           source switch_env reason
           bash tests/e2e_tests/reasoning/run.sh qwen2.5-1.5b-grpo-collocated-fsdp-sgl-rollout-logprobs
 
       - name: FSDP vLLM Collocated mode
         timeout-minutes: 20
+        shell: bash
         run: |
           export REPO_PATH=$(pwd)
+          export VISIBLE_DEVICES=$VISIBLE_DEVICES
           source switch_env reason
           bash tests/e2e_tests/reasoning/run.sh qwen2.5-1.5b-grpo-collocated-fsdp-vllm-rollout-logprobs
 
@@ -109,8 +133,10 @@ jobs:
   
       - name: Megatron SGLang Collocated mode
         timeout-minutes: 20
+        shell: bash
         run: |
           export REPO_PATH=$(pwd)
+          export VISIBLE_DEVICES=$VISIBLE_DEVICES
           source switch_env reason
           bash tests/e2e_tests/reasoning/run.sh qwen2.5-1.5b-is-collocated-mg-sgl
 
@@ -122,8 +148,10 @@ jobs:
   
       - name: Megatron SGLang Collocated mode
         timeout-minutes: 20
+        shell: bash
         run: |
           export REPO_PATH=$(pwd)
+          export VISIBLE_DEVICES=$VISIBLE_DEVICES
           source switch_env reason
           bash tests/e2e_tests/reasoning/run.sh qwen2.5-1.5b-reinpp-collocated-mg-sgl
 
@@ -139,8 +167,10 @@ jobs:
 
       - name: SGLang Pipeline mode
         timeout-minutes: 20
+        shell: bash
         run: |
           export REPO_PATH=$(pwd)
+          export VISIBLE_DEVICES=$VISIBLE_DEVICES
           source switch_env reason
           bash tests/e2e_tests/coding_online_rl/run.sh
 
@@ -152,15 +182,19 @@ jobs:
 
       - name: FSDP SGLang Collocated mode
         timeout-minutes: 20
+        shell: bash
         run: |
           export REPO_PATH=$(pwd)
+          export VISIBLE_DEVICES=$VISIBLE_DEVICES
           source switch_env reason
           bash tests/e2e_tests/reasoning/run.sh qwen2.5-vl-3b-grpo-collocated-fsdp-sgl
 
       - name: FSDP vLLM Collocated mode
         timeout-minutes: 20
+        shell: bash
         run: |
           export REPO_PATH=$(pwd)
+          export VISIBLE_DEVICES=$VISIBLE_DEVICES
           source switch_env reason
           bash tests/e2e_tests/reasoning/run.sh qwen2.5-vl-3b-grpo-collocated-fsdp-vllm
 
@@ -174,6 +208,7 @@ jobs:
         timeout-minutes: 10
         run: |
           export REPO_PATH=$(pwd)
+          export VISIBLE_DEVICES=$VISIBLE_DEVICES
           source switch_env reason
           bash tests/e2e_tests/agent/run_tool.sh
 
@@ -185,40 +220,50 @@ jobs:
 
       - name: MoE sequential MLP Collocated mode 
         timeout-minutes: 20
+        shell: bash
         run: |
           export REPO_PATH=$(pwd)
+          export VISIBLE_DEVICES=$VISIBLE_DEVICES
           source switch_env reason
           bash tests/e2e_tests/reasoning/run.sh qwen3-moe-2.5b-collocated-mg-sgl-sequentialmlp
           rm -rf /workspace/results/grpo-moe-CI-test-seqmlp-2.5b/converted_ckpts/
       
       - name: MoE TeGroupgemm MLP Collocated mode 
         timeout-minutes: 20
+        shell: bash
         run: |
           export REPO_PATH=$(pwd)
+          export VISIBLE_DEVICES=$VISIBLE_DEVICES
           source switch_env reason
           bash tests/e2e_tests/reasoning/run.sh qwen3-moe-2.5b-collocated-mg-sgl-tegroupgemm
           rm -rf /workspace/results/grpo-moe-CI-test-seqmlp-2.5b/converted_ckpts/
 
       - name: MoE model parallel ep test 
         timeout-minutes: 20
+        shell: bash
         run: |
           export REPO_PATH=$(pwd)
+          export VISIBLE_DEVICES=$VISIBLE_DEVICES
           source switch_env reason
           bash tests/e2e_tests/reasoning/run.sh qwen3-moe-2.5b-collocated-mg-sgl-ep-test
           rm -rf /workspace/results/grpo-moe-CI-test-seqmlp-2.5b/converted_ckpts/
         
       - name: MoE model parallel tpe test 
         timeout-minutes: 20
+        shell: bash
         run: |
           export REPO_PATH=$(pwd)
+          export VISIBLE_DEVICES=$VISIBLE_DEVICES
           source switch_env reason
           bash tests/e2e_tests/reasoning/run.sh qwen3-moe-2.5b-collocated-mg-sgl-tpe-test
           rm -rf /workspace/results/grpo-moe-CI-test-seqmlp-2.5b/converted_ckpts/
       
       - name: MoE model parallel tp test 
         timeout-minutes: 20
+        shell: bash
         run: |
           export REPO_PATH=$(pwd)
+          export VISIBLE_DEVICES=$VISIBLE_DEVICES
           source switch_env reason
           bash tests/e2e_tests/reasoning/run.sh qwen3-moe-2.5b-collocated-mg-sgl-tp-test
           rm -rf /workspace/results/grpo-moe-CI-test-seqmlp-2.5b/converted_ckpts/

@@ -6,6 +6,7 @@ export CUDA_DEVICE_MAX_CONNECTIONS=1
 export TOKENIZERS_PARALLELISM=false
 
 export PYTHONPATH=${REPO_PATH}:$PYTHONPATH
+export VISIBLE_DEVICES=$VISIBLE_DEVICES
 
 if [ -z "$1" ]; then
     echo "Please provide a config name as the first argument."

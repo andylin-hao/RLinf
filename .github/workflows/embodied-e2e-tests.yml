@@ -9,10 +9,24 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
+      - name: Set VISIBLE_DEVICES
+        id: visible-devices
+        run: |
+          echo "VISIBLE_DEVICES=\'\"device=$VISIBLE_DEVICES\"\'" >> $GITHUB_OUTPUT
+        shell: bash
+      - uses: addnab/docker-run-action@v3
+        with:
+          image: rlinf/rlinf:agentic-rlinf0.1-torch2.6.0-openvla-openvlaoft-pi0
+          options: -v ${{ github.workspace }}:/work --gpus ${{ steps.visible-devices.outputs.VISIBLE_DEVICES }} --shm-size=100g
+          shell: bash
+          run: |
+            nvidia-smi
       - name: OpenVLA test
         timeout-minutes: 20
+        shell: bash
         run: |
           export REPO_PATH=$(pwd)
+          export VISIBLE_DEVICES=$VISIBLE_DEVICES
           source switch_env openvla
           bash tests/e2e_tests/embodied/run.sh maniskill_ppo_openvla
           
@@ -21,10 +35,24 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
+      - name: Set VISIBLE_DEVICES
+        id: visible-devices
+        run: |
+          echo "VISIBLE_DEVICES=\'\"device=$VISIBLE_DEVICES\"\'" >> $GITHUB_OUTPUT
+        shell: bash
+      - uses: addnab/docker-run-action@v3
+        with:
+          image: rlinf/rlinf:agentic-rlinf0.1-torch2.6.0-openvla-openvlaoft-pi0
+          options: -v ${{ github.workspace }}:/work --gpus ${{ steps.visible-devices.outputs.VISIBLE_DEVICES }} --shm-size=100g
+          shell: bash
+          run: |
+            nvidia-smi
       - name: OpenVLA test
         timeout-minutes: 20
+        shell: bash
         run: |
           export REPO_PATH=$(pwd)
+          export VISIBLE_DEVICES=$VISIBLE_DEVICES
           source switch_env openvla-oft
           cp -r /workspace/dataset/maniskill_assets/assets ${REPO_PATH}/rlinf/envs/maniskill/
           bash tests/e2e_tests/embodied/run.sh maniskill_grpo_openvlaoft
@@ -34,10 +62,24 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
+      - name: Set VISIBLE_DEVICES
+        id: visible-devices
+        run: |
+          echo "VISIBLE_DEVICES=\'\"device=$VISIBLE_DEVICES\"\'" >> $GITHUB_OUTPUT
+        shell: bash
+      - uses: addnab/docker-run-action@v3
+        with:
+          image: rlinf/rlinf:agentic-rlinf0.1-torch2.6.0-openvla-openvlaoft-pi0
+          options: -v ${{ github.workspace }}:/work --gpus ${{ steps.visible-devices.outputs.VISIBLE_DEVICES }} --shm-size=100g
+          shell: bash
+          run: |
+            nvidia-smi
       - name: OpenVLA-OFT test
         timeout-minutes: 20
+        shell: bash
         run: |
           export REPO_PATH=$(pwd)
+          export VISIBLE_DEVICES=$VISIBLE_DEVICES
           source switch_env openvla-oft
           bash tests/e2e_tests/embodied/run.sh libero_goal_grpo_openvlaoft
 
@@ -46,10 +88,24 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
+      - name: Set VISIBLE_DEVICES
+        id: visible-devices
+        run: |
+          echo "VISIBLE_DEVICES=\'\"device=$VISIBLE_DEVICES\"\'" >> $GITHUB_OUTPUT
+        shell: bash
+      - uses: addnab/docker-run-action@v3
+        with:
+          image: rlinf/rlinf:agentic-rlinf0.1-torch2.6.0-openvla-openvlaoft-pi0
+          options: -v ${{ github.workspace }}:/work --gpus ${{ steps.visible-devices.outputs.VISIBLE_DEVICES }} --shm-size=100g
+          shell: bash
+          run: |
+            nvidia-smi
       - name: OpenVLA-OFT test
         timeout-minutes: 20
+        shell: bash
         run: |
           export REPO_PATH=$(pwd)
+          export VISIBLE_DEVICES=$VISIBLE_DEVICES
           source switch_env openvla-oft
           bash tests/e2e_tests/embodied/run.sh libero_130_grpo_openvlaoft
 
@@ -58,10 +114,24 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
+      - name: Set VISIBLE_DEVICES
+        id: visible-devices
+        run: |
+          echo "VISIBLE_DEVICES=\'\"device=$VISIBLE_DEVICES\"\'" >> $GITHUB_OUTPUT
+        shell: bash
+      - uses: addnab/docker-run-action@v3
+        with:
+          image: rlinf/rlinf:agentic-rlinf0.1-torch2.6.0-openvla-openvlaoft-pi0
+          options: -v ${{ github.workspace }}:/work --gpus ${{ steps.visible-devices.outputs.VISIBLE_DEVICES }} --shm-size=100g
+          shell: bash
+          run: |
+            nvidia-smi
       - name: OPENPI test
         timeout-minutes: 20
+        shell: bash
         run: |
           export REPO_PATH=$(pwd)
+          export VISIBLE_DEVICES=$VISIBLE_DEVICES
           source switch_env openpi
           bash tests/e2e_tests/embodied/run.sh libero_spatial_ppo_openpi
 
@@ -70,25 +140,58 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
+      - name: Set VISIBLE_DEVICES
+        id: visible-devices
+        run: |
+          echo "VISIBLE_DEVICES=\'\"device=$VISIBLE_DEVICES\"\'" >> $GITHUB_OUTPUT
+        shell: bash
+      - uses: addnab/docker-run-action@v3
+        with:
+          image: rlinf/rlinf:agentic-rlinf0.1-torch2.6.0-openvla-openvlaoft-pi0
+          options: -v ${{ github.workspace }}:/work --gpus ${{ steps.visible-devices.outputs.VISIBLE_DEVICES }} --shm-size=100g
+          shell: bash
+          run: |
+            nvidia-smi
       - name: OPENPI test
         timeout-minutes: 20
+        shell: bash
         run: |
           export REPO_PATH=$(pwd)
+          export VISIBLE_DEVICES=$VISIBLE_DEVICES
           source switch_env openpi
           bash tests/e2e_tests/embodied/run.sh libero_spatial_ppo_openpi05
 
   embodied-behavior-ppo-openvlaoft-test:
     runs-on: embodied
+    container:
+      image: rlinf/rlinf:agentic-rlinf0.1-behavior
+      volumes:
+        - /mnt/public/dataset:/workspace/dataset
+      options: --gpus all --shm-size=100g
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
+      - name: Set VISIBLE_DEVICES
+        id: visible-devices
+        run: |
+          echo "VISIBLE_DEVICES=\'\"device=$VISIBLE_DEVICES\"\'" >> $GITHUB_OUTPUT
+        shell: bash
+      - uses: addnab/docker-run-action@v3
+        with:
+          image: rlinf/rlinf:agentic-rlinf0.1-torch2.6.0-openvla-openvlaoft-pi0
+          options: -v ${{ github.workspace }}:/work --gpus ${{ steps.visible-devices.outputs.VISIBLE_DEVICES }} --shm-size=100g
+          shell: bash
+          run: |
+            nvidia-smi
       - name: BEHAVIOR-OpenVLA-OFT test
         timeout-minutes: 20
+        shell: bash
         run: |
           export REPO_PATH=$(pwd)
+          export VISIBLE_DEVICES=$VISIBLE_DEVICES
           export OMNIGIBSON_DATA_PATH=/workspace/dataset/behavior-datasets
           export ISAAC_PATH=/workspace/dataset/isaac-sim
-          source switch_env behavior-openvla-oft
+          source switch_env openvla-oft
           bash tests/e2e_tests/embodied/run.sh behavior_ppo_openvlaoft
 
   embodied-metaworld-50-ppo-openpi-test:
@@ -96,9 +199,23 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
+      - name: Set VISIBLE_DEVICES
+        id: visible-devices
+        run: |
+          echo "VISIBLE_DEVICES=\'\"device=$VISIBLE_DEVICES\"\'" >> $GITHUB_OUTPUT
+        shell: bash
+      - uses: addnab/docker-run-action@v3
+        with:
+          image: rlinf/rlinf:agentic-rlinf0.1-torch2.6.0-openvla-openvlaoft-pi0
+          options: -v ${{ github.workspace }}:/work --gpus ${{ steps.visible-devices.outputs.VISIBLE_DEVICES }} --shm-size=100g
+          shell: bash
+          run: |
+            nvidia-smi
       - name: OPENPI test
         timeout-minutes: 20
+        shell: bash
         run: |
           export REPO_PATH=$(pwd)
+          export VISIBLE_DEVICES=$VISIBLE_DEVICES
           source switch_env openpi
           bash tests/e2e_tests/embodied/run.sh metaworld_50_ppo_openpi

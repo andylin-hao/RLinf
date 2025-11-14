@@ -8,5 +8,7 @@ export RAY_DEDUP_LOGS=0
 
 export PYTHONPATH=${REPO_PATH}:$PYTHONPATH
 
+export VISIBLE_DEVICES=$VISIBLE_DEVICES
+
 python ${REPO_PATH}/examples/multiturn_demo/main_tool.py --config-path ${REPO_PATH}/tests/e2e_tests/agent  --config-name tool-qwen2.5-1.5b
 
