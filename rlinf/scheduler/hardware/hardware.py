@@ -23,9 +23,6 @@ class NodeHardwareConfig:
     type: str
     """Hardware type"""
 
-    node_ranks: list[int]
-    """The ranks of the nodes that have this type of hardware."""
-
     configs: list[dict]
     """List of hardware configurations."""
 

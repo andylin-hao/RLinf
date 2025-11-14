@@ -13,8 +13,9 @@
 # limitations under the License.
 
 from .cluster import Cluster, ClusterEnvVar
-from .config import ClusterConfig, NodeGroupConfig, dataclass_arg_check
+from .config import ClusterConfig, NodeGroupConfig
 from .node import NodeInfo
+from .utils import dataclass_arg_check, parse_rank_config
 
 __all__ = [
     "Cluster",
@@ -23,4 +24,5 @@ __all__ = [
     "ClusterConfig",
     "NodeGroupConfig",
     "dataclass_arg_check",
+    "parse_rank_config",
 ]
