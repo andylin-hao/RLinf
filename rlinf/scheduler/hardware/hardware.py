@@ -13,7 +13,21 @@
 # limitations under the License.
 
 from dataclasses import dataclass
-from typing import Any, ClassVar
+from typing import ClassVar, Optional
+
+
+@dataclass
+class HardwareConfig:
+    """Base class for hardware configuration dataclasses."""
+
+    node_rank: int
+    """The rank of the node that has this hardware."""
+
+    def __post_init__(self):
+        """Post-initialization to validate the configuration."""
+        assert isinstance(self.node_rank, int), (
+            f"'node_rank' in hardware config must be an integer. But got {type(self.node_rank)}."
+        )
 
 
 @dataclass
@@ -23,10 +37,10 @@ class NodeHardwareConfig:
     type: str
     """Hardware type"""
 
-    configs: list[dict]
+    configs: list[HardwareConfig]
     """List of hardware configurations."""
 
-    _hardware_config_registry: ClassVar[dict[str, Any]] = {}
+    _hardware_config_registry: ClassVar[dict[str, "type[HardwareConfig]"]] = {}
 
     @classmethod
     def register_hardware_config(cls, type: str):
@@ -44,7 +58,7 @@ class NodeHardwareConfig:
 
     def __post_init__(self):
         """Post-initialization to convert hardware_configs dicts to their respective dataclass instances."""
-        self.type = self.type.lower()
+        self.type = str(self.type).lower()
         hardware_config_class = NodeHardwareConfig._hardware_config_registry.get(
             self.type
         )
@@ -106,10 +120,16 @@ class HardwareEnumerationPolicy:
         cls.policy_registry.append(policy)
 
     @classmethod
-    def enumerate(cls) -> HardwareInfo:
+    def enumerate(
+        cls, node_rank: int, configs: Optional[list[HardwareConfig]] = None
+    ) -> Optional[HardwareInfo]:
         """Enumerate the hardware resources on a node.
 
+        Args:
+            node_rank (int): The rank of the node being enumerated.
+            configs (Optional[list[HardwareConfig]]): The configurations for the hardware on a node.
+
         Returns:
-            HardwareInfo: An object representing the hardware resources.
+            Optional[HardwareInfo]: An object representing the hardware resources. None if no hardware is found.
         """
         raise NotImplementedError

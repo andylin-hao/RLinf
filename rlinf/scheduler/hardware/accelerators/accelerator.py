@@ -13,8 +13,9 @@
 # limitations under the License.
 
 from enum import Enum
+from typing import Optional
 
-from ..hardware import HardwareEnumerationPolicy, HardwareInfo
+from ..hardware import HardwareConfig, HardwareEnumerationPolicy, HardwareInfo
 
 
 class AcceleratorType(str, Enum):
@@ -104,11 +105,17 @@ class AcceleratorEnumerationPolicy(HardwareEnumerationPolicy):
     """Enumeration policy for accelerators."""
 
     @classmethod
-    def enumerate(cls) -> HardwareInfo:
+    def enumerate(
+        cls, node_rank: int, configs: Optional[list[HardwareConfig]] = None
+    ) -> Optional[HardwareInfo]:
         """Enumerate the hardware resources on a node.
 
+        Args:
+            node_rank (int): The rank of the node being enumerated.
+            configs (Optional[list[HardwareConfig]]): The configurations for the hardware on a node.
+
         Returns:
-            HardwareInfo: An object representing the hardware resources.
+            Optional[HardwareInfo]: An object representing the hardware resources. None if no hardware is found.
         """
         for accel_type in AcceleratorManager.manager_register.keys():
             manager = AcceleratorManager.manager_register[accel_type]
