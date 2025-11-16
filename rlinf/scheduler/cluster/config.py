@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from typing import Any, Optional
 
 import yaml
@@ -31,8 +31,9 @@ class NodeGroupConfig:
 
     label: str
     node_ranks: list[int]
-    env_vars: Optional[list[dict[str, str]]] = field(default=None)
-    hardware: Optional[list[NodeHardwareConfig]] = field(default=None)
+    python_interpreter_path: Optional[str] = None
+    env_vars: Optional[list[dict[str, str]]] = None
+    hardware: Optional[list[NodeHardwareConfig]] = None
 
     def __post_init__(self):
         """Post-initialization to convert hardware dicts to their respective dataclass instances."""
@@ -113,6 +114,32 @@ class ClusterConfig:
                 labels.append(node_group.label)
         return labels
 
+    def get_node_python_interpreter_path_by_rank(self, node_rank: int) -> Optional[str]:
+        """Get the python interpreter path for a given node rank.
+
+        Args:
+            node_rank (int): The rank of the node.
+
+        Returns:
+            Optional[str]: The python interpreter path of the node. None if no matching node group is found.
+        """
+        if self.nodes is None:
+            return None
+        paths = []
+        for node_group in self.nodes:
+            if (
+                node_rank in node_group.node_ranks
+                and node_group.python_interpreter_path is not None
+            ):
+                paths.append(node_group.python_interpreter_path)
+        if len(paths) == 0:
+            return None
+        if len(paths) > 1:
+            raise ValueError(
+                f"Multiple python interpreter paths found for node rank {node_rank}: {paths}. Expected only one."
+            )
+        return paths[0]
+
     def get_node_hw_configs_by_rank(self, node_rank: int) -> list[Any]:
         """Get the hardware configurations for a given node rank.
 
@@ -152,11 +179,10 @@ class ClusterConfig:
 
             # Convert node_ranks from str to list[int] if needed
             for node_group in self.nodes:
-                if isinstance(node_group.node_ranks, str):
-                    node_group.node_ranks = parse_rank_config(
-                        node_group.node_ranks,
-                        list(range(self.num_nodes)),
-                    )
+                node_group.node_ranks = parse_rank_config(
+                    node_group.node_ranks,
+                    list(range(self.num_nodes)),
+                )
 
             # Validate hardware node_ranks
             for node_group in self.nodes:

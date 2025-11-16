@@ -24,11 +24,11 @@ class DataclassProtocol(Protocol):
     __post_init__: Optional[Callable]
 
 
-def parse_rank_config(rank_config: str, available_ranks: list[int]) -> list[int]:
+def parse_rank_config(rank_config: str | int, available_ranks: list[int]) -> list[int]:
     """Parse a rank configuration string into a list of ranks.
 
     Args:
-        rank_config (str): The rank configuration string, e.g., "0-3,5,7-9" or "all".
+        rank_config (str | int): The rank configuration string, e.g., "0-3,5,7-9" or "all".
         available_ranks (list[int]): The list of available ranks.
 
     Returns:
@@ -36,12 +36,12 @@ def parse_rank_config(rank_config: str, available_ranks: list[int]) -> list[int]
     """
     ranks = set()
     available_ranks = sorted(available_ranks)
+    # If the rank config is a single number
+    # Omegaconf will parse it as an integer instead of a string
+    rank_config = str(rank_config)
     if rank_config.lower() == "all":
-        ranks = set(available_ranks)
+        ranks = list(set(available_ranks))
     else:
-        # If the GPU placement is a single number
-        # Omegaconf will parse it as an integer instead of a string
-        rank_config = str(rank_config)
         # First split by comma
         rank_ranges = rank_config.split(",")
         for rank_range in rank_ranges:
@@ -73,6 +73,7 @@ def parse_rank_config(rank_config: str, available_ranks: list[int]) -> list[int]
                 f"End rank {end_rank} in rank config {rank_config} must be within the available ranks {available_ranks}."
             )
             ranks.update(range(start_rank, end_rank + 1))
+            ranks = list(ranks)
     return sorted(ranks)
 
 

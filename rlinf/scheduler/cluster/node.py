@@ -161,8 +161,14 @@ class NodeProbe:
         2. Environment variables set between ray start and RLinf initialization on the head node (usually via bash scripts). These env vars are likely set by users intended to configure all nodes in the cluster.
         3. The env_vars field in the ClusterConfig, which are set in yaml config files to configure each node in the cluster.
         """
-        # Overwrite the the head node's python interpreter path as the current interpreter
+        # Overwrite the the head node's python interpreter path as the current interpreter unless specified in the cluster config
         self.head_node.python_interpreter_path = sys.executable
+        if self._cluster_cfg is not None:
+            self.head_node.python_interpreter_path = (
+                self._cluster_cfg.get_node_python_interpreter_path_by_rank(
+                    self.head_node.node_rank
+                )
+            ) or sys.executable
 
         # First find env vars set between ray start and RLinf initialization on the head node
         head_node_default_env_vars = self.head_node.default_env_vars
@@ -206,6 +212,12 @@ class NodeProbe:
                 node_info.node_rank < len(self._nodes) for node_info in self._nodes
             ), (
                 f"{Cluster.get_full_env_var_name(ClusterEnvVar.NODE_RANK)} should be smaller than the number of nodes {len(self._nodes)}, but got: {[node_info.node_rank for node_info in self._nodes if node_info.node_rank >= len(self._nodes)]}"
+            )
+
+            # Node ranks should be unique, continuous from 0 to num_nodes - 1
+            node_ranks = [node_info.node_rank for node_info in self._nodes]
+            assert sorted(node_ranks) == list(range(len(self._nodes))), (
+                f"{Cluster.get_full_env_var_name(ClusterEnvVar.NODE_RANK)} should be unique and continuous from 0 to {len(self._nodes) - 1}, but got: {node_ranks}"
             )
 
             self._nodes.sort(key=lambda x: x.node_rank)
@@ -280,6 +292,13 @@ class _RemoteNodeProbe:
             warnings.warn(
                 f"Python interpreter used to launch Ray on node with IP {node_info['NodeManagerAddress']} is different from that on the head node {head_python_interpreter}. Keep using the current interpreter {sys.executable} on this node."
             )
+        python_interpreter_path = sys.executable
+        if cluster_cfg is not None:
+            cfg_python_interpreter_path = (
+                cluster_cfg.get_node_python_interpreter_path_by_rank(node_rank)
+            )
+            if cfg_python_interpreter_path is not None:
+                python_interpreter_path = cfg_python_interpreter_path
 
         self._node_info = NodeInfo(
             node_labels=node_labels,
@@ -287,7 +306,7 @@ class _RemoteNodeProbe:
             ray_id=node_info["NodeID"],
             node_ip=node_info["NodeManagerAddress"],
             num_cpus=int(node_info["Resources"].get("CPU", 0)),
-            python_interpreter_path=sys.executable,
+            python_interpreter_path=python_interpreter_path,
             default_env_vars=os.environ.copy(),
             env_vars=os.environ.copy(),
             hardware_resources=hardware_resources,
