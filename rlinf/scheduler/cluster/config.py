@@ -30,10 +30,22 @@ class NodeGroupConfig:
     """
 
     label: str
+    """Label of the node group. This is not case sensitive."""
+
     node_ranks: list[int]
+    """List of node ranks that belong to this node group."""
+
     python_interpreter_path: Optional[str] = None
+    """Path to the Python interpreter to be used on the nodes."""
+
     env_vars: Optional[list[dict[str, str]]] = None
+    """List of environment variables to be set on the nodes."""
+
     hardware: Optional[list[NodeHardwareConfig]] = None
+    """List of hardware configurations for the nodes."""
+
+    hardware_type: Optional[str] = None
+    """Type of hardware for the nodes."""
 
     def __post_init__(self):
         """Post-initialization to convert hardware dicts to their respective dataclass instances."""
@@ -53,8 +65,14 @@ class NodeGroupConfig:
                     f"Unknown fields '{unknown_args}' detected in cluster node hardware yaml config. Valid fields are: {valid_args}."
                 )
             self.hardware = [NodeHardwareConfig(**hw) for hw in self.hardware]
+            hardware_types = {hw.type for hw in self.hardware}
+            assert len(hardware_types) == 1, (
+                f"All hardware configs in a node group must be of the same type. But got types: {hardware_types}."
+            )
+            self.hardware_type = hardware_types.pop()
 
-        self.label = str(self.label)
+        self.label = str(self.label).lower()
+        assert self.label != "node", "'node' is a reserved label in cluster config."
 
         # Convert env_vars list of dicts to ensure each dict has only one key-value pair
         if self.env_vars is not None:
@@ -82,7 +100,7 @@ class ClusterConfig:
     component_placement: list[dict[str, str]]
     """Placement of each component."""
 
-    nodes: Optional[list[NodeGroupConfig]] = None
+    node_groups: Optional[list[NodeGroupConfig]] = None
     """List of node group configurations in the cluster."""
 
     @staticmethod
@@ -95,6 +113,15 @@ class ClusterConfig:
         Returns:
             ClusterConfig: The created ClusterConfig instance.
         """
+        missing_args, unknown_args, valid_args = dataclass_arg_check(
+            ClusterConfig, cfg_dict
+        )
+        assert not missing_args, (
+            f"Missing fields '{missing_args}' detected in cluster yaml config. Only got: {cfg_dict.keys()}."
+        )
+        assert not unknown_args, (
+            f"Unknown fields '{unknown_args}' detected in cluster yaml config. Valid fields are: {valid_args}."
+        )
         return ClusterConfig(**cfg_dict)
 
     def get_node_labels_by_rank(self, node_rank: int) -> list[str]:
@@ -106,10 +133,10 @@ class ClusterConfig:
         Returns:
             list[str]: The labels of the node group. Empty list if no matching node group is found.
         """
-        if self.nodes is None:
+        if self.node_groups is None:
             return []
         labels = []
-        for node_group in self.nodes:
+        for node_group in self.node_groups:
             if node_rank in node_group.node_ranks:
                 labels.append(node_group.label)
         return labels
@@ -123,10 +150,10 @@ class ClusterConfig:
         Returns:
             Optional[str]: The python interpreter path of the node. None if no matching node group is found.
         """
-        if self.nodes is None:
+        if self.node_groups is None:
             return None
         paths = []
-        for node_group in self.nodes:
+        for node_group in self.node_groups:
             if (
                 node_rank in node_group.node_ranks
                 and node_group.python_interpreter_path is not None
@@ -150,8 +177,8 @@ class ClusterConfig:
             list[Any]: The hardware configurations of the node. Empty list if no matching node group is found.
         """
         node_hw_configs: list[Any] = []
-        if self.nodes is not None:
-            for node_group in self.nodes:
+        if self.node_groups is not None:
+            for node_group in self.node_groups:
                 if node_rank in node_group.node_ranks:
                     if node_group.hardware is not None:
                         for hw_cfg in node_group.hardware:
@@ -160,9 +187,9 @@ class ClusterConfig:
 
     def __post_init__(self):
         """Post-initialization to convert nodes dicts to their respective dataclass instances."""
-        if self.nodes is not None:
+        if self.node_groups is not None:
             # Arg check
-            for node in self.nodes:
+            for node in self.node_groups:
                 assert hasattr(node, "keys"), (
                     f"Each node yaml config must be a dictionary. But got {type(node)}: {node}"
                 )
@@ -175,17 +202,17 @@ class ClusterConfig:
                 assert not unknown_args, (
                     f"Unknown fields '{unknown_args}' detected in cluster node yaml config. Valid fields are: {valid_args}."
                 )
-            self.nodes = [NodeGroupConfig(**node) for node in self.nodes]
+            self.node_groups = [NodeGroupConfig(**node) for node in self.node_groups]
 
             # Convert node_ranks from str to list[int] if needed
-            for node_group in self.nodes:
+            for node_group in self.node_groups:
                 node_group.node_ranks = parse_rank_config(
                     node_group.node_ranks,
                     list(range(self.num_nodes)),
                 )
 
             # Validate hardware node_ranks
-            for node_group in self.nodes:
+            for node_group in self.node_groups:
                 if node_group.hardware is not None:
                     for hw_cfg in node_group.hardware:
                         for cfg in hw_cfg.configs:

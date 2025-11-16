@@ -14,12 +14,13 @@
 
 from .cluster import Cluster, ClusterEnvVar
 from .config import ClusterConfig, NodeGroupConfig
-from .node import NodeInfo
+from .node import NodeGroupInfo, NodeInfo
 from .utils import dataclass_arg_check, parse_rank_config
 
 __all__ = [
     "Cluster",
     "ClusterEnvVar",
+    "NodeGroupInfo",
     "NodeInfo",
     "ClusterConfig",
     "NodeGroupConfig",

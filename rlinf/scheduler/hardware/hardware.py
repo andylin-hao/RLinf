@@ -106,18 +106,34 @@ class HardwareEnumerationPolicy:
     This is the base class for different hardware to implement their enumeration policies.
     """
 
+    HW_TYPE: str = None
+    DEFAULT_HW_TYPE: str = None
+    hw_types: set[str] = set()
     policy_registry: list[type["HardwareEnumerationPolicy"]] = []
 
     @classmethod
-    def register_policy(cls, policy: type["HardwareEnumerationPolicy"]):
+    def register_policy(cls, is_default_hw: bool = False):
         """Register a new enumeration policy.
 
         This is to be used as a decorator for subclasses of EnumerationPolicy.
 
         Args:
-            policy (HardwareEnumerationPolicy): The enumeration policy to register.
+            is_default_hw (bool): Whether this hardware type is the default hardware type.
         """
-        cls.policy_registry.append(policy)
+
+        def hardware_policy_decorator(
+            policy: type["HardwareEnumerationPolicy"],
+        ):
+            cls.hw_types.add(policy.HW_TYPE)
+            cls.policy_registry.append(policy)
+            if is_default_hw:
+                assert cls.DEFAULT_HW_TYPE is None, (
+                    f"Default hardware type is already set to {cls.DEFAULT_HW_TYPE}. Cannot set it again to {policy.HW_TYPE}."
+                )
+                cls.DEFAULT_HW_TYPE = policy.HW_TYPE
+            return policy
+
+        return hardware_policy_decorator
 
     @classmethod
     def enumerate(

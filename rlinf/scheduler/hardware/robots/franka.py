@@ -24,54 +24,24 @@ from ..hardware import (
 )
 
 
-@NodeHardwareConfig.register_hardware_config("franka")
-@dataclass
-class FrankaConfig(HardwareConfig):
-    """Configuration for a robotic system."""
-
-    robot_ip: str
-    """IP address of the robotic system."""
-
-    camera_serials: list[str]
-    """List of camera serial numbers associated with the robot."""
-
-    disable_validate: bool = False
-    """Whether to disable validation of robot IP connectivity and camera serials."""
-
-    def __post_init__(self):
-        """Post-initialization to validate the configuration."""
-        assert isinstance(self.node_rank, int), (
-            f"'node_rank' in franka config must be an integer. But got {type(self.node_rank)}."
-        )
-
-        try:
-            ipaddress.ip_address(self.robot_ip)
-        except ValueError:
-            raise ValueError(
-                f"'robot_ip' in franka config must be a valid IP address. But got {self.robot_ip}."
-            )
-
-        if self.camera_serials:
-            self.camera_serials = list(self.camera_serials)
-
-
 @dataclass
 class FrankaInfo(HardwareInfo):
     """Hardware information for a robotic system."""
 
-    configs: list[FrankaConfig]
+    configs: list["FrankaConfig"]
 
 
-@HardwareEnumerationPolicy.register_policy
+@HardwareEnumerationPolicy.register_policy()
 class FrankaHardwareEnumerationPolicy(HardwareEnumerationPolicy):
     """Enumeration policy for robotic systems."""
 
+    HW_TYPE = "Franka"
     ROBOT_PING_COUNT: int = 2
     ROBOT_PING_TIMEOUT: int = 1  # in seconds
 
     @classmethod
     def enumerate(
-        cls, node_rank: int, configs: Optional[list[FrankaConfig]] = None
+        cls, node_rank: int, configs: Optional[list["FrankaConfig"]] = None
     ) -> Optional[HardwareInfo]:
         """Enumerate the robot resources on a node.
 
@@ -85,7 +55,7 @@ class FrankaHardwareEnumerationPolicy(HardwareEnumerationPolicy):
         assert configs is not None, (
             "Robot hardware requires explicit configurations for robot IP and camera serials for its controller nodes."
         )
-        robot_configs: list[FrankaConfig] = []
+        robot_configs: list["FrankaConfig"] = []
         for config in configs:
             if isinstance(config, FrankaConfig) and config.node_rank == node_rank:
                 robot_configs.append(config)
@@ -139,9 +109,40 @@ class FrankaHardwareEnumerationPolicy(HardwareEnumerationPolicy):
                         )
 
             return FrankaInfo(
-                type="Robot",
-                model="Franka",
+                type=cls.HW_TYPE,
+                model=cls.HW_TYPE,
                 count=len(robot_configs),
                 configs=robot_configs,
             )
         return None
+
+
+@NodeHardwareConfig.register_hardware_config(FrankaHardwareEnumerationPolicy.HW_TYPE)
+@dataclass
+class FrankaConfig(HardwareConfig):
+    """Configuration for a robotic system."""
+
+    robot_ip: str
+    """IP address of the robotic system."""
+
+    camera_serials: list[str]
+    """List of camera serial numbers associated with the robot."""
+
+    disable_validate: bool = False
+    """Whether to disable validation of robot IP connectivity and camera serials."""
+
+    def __post_init__(self):
+        """Post-initialization to validate the configuration."""
+        assert isinstance(self.node_rank, int), (
+            f"'node_rank' in franka config must be an integer. But got {type(self.node_rank)}."
+        )
+
+        try:
+            ipaddress.ip_address(self.robot_ip)
+        except ValueError:
+            raise ValueError(
+                f"'robot_ip' in franka config must be a valid IP address. But got {self.robot_ip}."
+            )
+
+        if self.camera_serials:
+            self.camera_serials = list(self.camera_serials)
