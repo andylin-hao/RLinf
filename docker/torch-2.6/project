@@ -51,6 +51,8 @@ dependencies = [
     "pre-commit",
     "liger_kernel",
     "pip",
+    "icmplib",
+    "pyrealsense2",
 
     # Logging
     "swanlab",

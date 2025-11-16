@@ -31,8 +31,8 @@ from .config import ClusterConfig
 class NodeInfo:
     """Information about a node in the cluster."""
 
-    node_label: Optional[str]
-    """Label of the node, corresponding to the node group label in the cluster configuration."""
+    node_labels: list[str]
+    """Labels of the node, corresponding to the node group label in the cluster configuration."""
 
     node_rank: int
     """Rank of the node in the cluster."""
@@ -189,7 +189,6 @@ class NodeProbe:
                         if node_group.env_vars is not None:
                             for env_var_dict in node_group.env_vars:
                                 node.env_vars.update(env_var_dict)
-                        break
 
     def _sort_nodes(self):
         """Sort the node info list by node rank if available, otherwise by accelerator type and IP."""
@@ -259,17 +258,22 @@ class _RemoteNodeProbe:
             node_rank = 0
 
         # Node label
-        node_label = None
+        node_labels = []
         if cluster_cfg is not None and cluster_cfg.nodes is not None:
             assert node_rank != -1, (
                 f"{Cluster.get_full_env_var_name(ClusterEnvVar.NODE_RANK)} must be set when there are more than one nodes are connected in Ray and cluster's nodes configuration is provided."
             )
-            node_label = cluster_cfg.get_node_label_by_rank(node_rank)
+            node_labels = cluster_cfg.get_node_labels_by_rank(node_rank)
 
         # Node hardware resources
+        node_hw_configs = []
+        if cluster_cfg is not None:
+            node_hw_configs = cluster_cfg.get_node_hw_configs_by_rank(node_rank)
         hardware_resources: list[HardwareInfo] = []
         for policy in HardwareEnumerationPolicy.policy_registry:
-            hardware_resources.append(policy.enumerate())
+            hw_info = policy.enumerate(node_rank, node_hw_configs)
+            if hw_info is not None:
+                hardware_resources.append(hw_info)
 
         # Python interpreter path
         if sys.executable != head_python_interpreter:
@@ -278,7 +282,7 @@ class _RemoteNodeProbe:
             )
 
         self._node_info = NodeInfo(
-            node_label=node_label,
+            node_labels=node_labels,
             node_rank=node_rank,
             ray_id=node_info["NodeID"],
             node_ip=node_info["NodeManagerAddress"],

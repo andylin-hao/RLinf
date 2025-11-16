@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from dataclasses import asdict, dataclass, field
-from typing import Optional
+from typing import Any, Optional
 
 import yaml
 from omegaconf import DictConfig
@@ -53,8 +53,22 @@ class NodeGroupConfig:
                 )
             self.hardware = [NodeHardwareConfig(**hw) for hw in self.hardware]
 
+        self.label = str(self.label)
+
+        # Convert env_vars list of dicts to ensure each dict has only one key-value pair
         if self.env_vars is not None:
-            self.env_vars = [dict(env) for env in self.env_vars]
+            env_vars = self.env_vars
+            self.env_vars = []
+            for env_var in env_vars:
+                assert hasattr(env_var, "keys"), (
+                    f"Each node env_var must be a dict in config. But got {type(env_var)}: {env_var}"
+                )
+                assert len(env_var) == 1, (
+                    f"Each node env_var dict must contain exactly one key-value pair. But got: {env_var}"
+                )
+                env_var_key = str(list(env_var.keys())[0])
+                env_var_value = str(list(env_var.values())[0])
+                self.env_vars.append({env_var_key: env_var_value})
 
 
 @dataclass
@@ -82,21 +96,40 @@ class ClusterConfig:
         """
         return ClusterConfig(**cfg_dict)
 
-    def get_node_label_by_rank(self, node_rank: int) -> Optional[str]:
-        """Get the node group label for a given node rank.
+    def get_node_labels_by_rank(self, node_rank: int) -> list[str]:
+        """Get the node group labels for a given node rank.
 
         Args:
             node_rank (int): The rank of the node.
 
         Returns:
-            Optional[str]: The label of the node group if found, else None.
+            list[str]: The labels of the node group. Empty list if no matching node group is found.
         """
         if self.nodes is None:
-            return None
+            return []
+        labels = []
         for node_group in self.nodes:
             if node_rank in node_group.node_ranks:
-                return node_group.label
-        return None
+                labels.append(node_group.label)
+        return labels
+
+    def get_node_hw_configs_by_rank(self, node_rank: int) -> list[Any]:
+        """Get the hardware configurations for a given node rank.
+
+        Args:
+            node_rank (int): The rank of the node.
+
+        Returns:
+            list[Any]: The hardware configurations of the node. Empty list if no matching node group is found.
+        """
+        node_hw_configs: list[Any] = []
+        if self.nodes is not None:
+            for node_group in self.nodes:
+                if node_rank in node_group.node_ranks:
+                    if node_group.hardware is not None:
+                        for hw_cfg in node_group.hardware:
+                            node_hw_configs.extend(hw_cfg.configs)
+        return node_hw_configs
 
     def __post_init__(self):
         """Post-initialization to convert nodes dicts to their respective dataclass instances."""
@@ -116,12 +149,27 @@ class ClusterConfig:
                     f"Unknown fields '{unknown_args}' detected in cluster node yaml config. Valid fields are: {valid_args}."
                 )
             self.nodes = [NodeGroupConfig(**node) for node in self.nodes]
+
+            # Convert node_ranks from str to list[int] if needed
             for node_group in self.nodes:
                 if isinstance(node_group.node_ranks, str):
                     node_group.node_ranks = parse_rank_config(
                         node_group.node_ranks,
                         list(range(self.num_nodes)),
                     )
+
+            # Validate hardware node_ranks
+            for node_group in self.nodes:
+                if node_group.hardware is not None:
+                    for hw_cfg in node_group.hardware:
+                        for cfg in hw_cfg.configs:
+                            assert cfg.node_rank in node_group.node_ranks, (
+                                f"node_rank {cfg.node_rank} in hardware config must be within node_ranks {node_group.node_ranks} in node group '{node_group.label}'."
+                            )
+
+        assert type(self.num_nodes) is int and self.num_nodes > 0, (
+            f"'num_nodes' must be a positive integer. But got {self.num_nodes} of type {type(self.num_nodes)}."
+        )
 
     def __str__(self) -> str:
         """String representation of the NodeInfo."""
