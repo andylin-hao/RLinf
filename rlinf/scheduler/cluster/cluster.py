@@ -17,7 +17,6 @@ import os
 import signal
 import sys
 import time
-import warnings
 from enum import Enum
 from importlib.metadata import version
 from typing import TYPE_CHECKING, Optional
@@ -188,20 +187,17 @@ class Cluster:
             time.sleep(1)
 
         # Get node info
-        self._node_probe = NodeProbe(self._cluster_cfg)
+        self._node_probe = NodeProbe(self._num_nodes, self._cluster_cfg)
         self._nodes = self._node_probe.nodes
-
-        # Handle num_nodes configuration mismatch with actual node number
-        if len(self._nodes) > self._num_nodes:
-            warnings.warn(
-                f"The cluster is initialized with {self._num_nodes} nodes, but detected {len(self._nodes)} nodes have joined the ray cluster. So only the first {self._num_nodes} nodes are used."
-            )
-            self._nodes = self._nodes[: self._num_nodes]
+        self._node_groups = self._node_probe.node_groups
 
         self._logger.info(
             f"{Cluster.SYS_NAME} is running on a cluster with {len(self._nodes)} node{'s' if len(self._nodes) > 1 else ''} and {self.num_accelerators_in_cluster} accelerator{'s' if self.num_accelerators_in_cluster > 1 else ''}. The nodes' details are: "
-            + "\n\n"
-            + "\n\n".join(str(node) for node in self._nodes)
+            + "\n"
+            + "\n".join(str(node) for node in self._nodes)
+            + "\n"
+            + "Node groups' details are: \n"
+            + "\n".join(str(group) for group in self._node_groups)
         )
 
         # Set environment variables
@@ -229,7 +225,7 @@ class Cluster:
             self._node_manager = (
                 ray.remote(NodeManager)
                 .options(name=NodeManager.MANAGER_NAME)
-                .remote(self._nodes, self._cluster_cfg)
+                .remote(self._nodes, self._node_groups, self._cluster_cfg)
             )
             self._lock_manager = (
                 ray.remote(DeviceLockManager)
@@ -277,7 +273,9 @@ class Cluster:
         from ..manager.node_manager import NodeManager
 
         self._node_manager = NodeManager.get_proxy()
-        self._nodes, self._cluster_cfg = self._node_manager.get_nodes()
+        self._nodes, self._node_groups, self._cluster_cfg = (
+            self._node_manager.get_nodes()
+        )
         self._num_nodes = len(self._nodes)
 
     @staticmethod

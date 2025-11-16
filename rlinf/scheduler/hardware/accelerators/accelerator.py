@@ -100,9 +100,11 @@ class AcceleratorManager:
         raise NotImplementedError
 
 
-@HardwareEnumerationPolicy.register_policy
+@HardwareEnumerationPolicy.register_policy(is_default_hw=True)
 class AcceleratorEnumerationPolicy(HardwareEnumerationPolicy):
     """Enumeration policy for accelerators."""
+
+    HW_TYPE = "Accelerator"
 
     @classmethod
     def enumerate(
@@ -122,8 +124,8 @@ class AcceleratorEnumerationPolicy(HardwareEnumerationPolicy):
             num_devices = manager.get_num_devices()
             if num_devices > 0:
                 hardware_info = HardwareInfo(
-                    type=accel_type.value,
-                    model=manager.get_accelerator_model(),
+                    type=cls.HW_TYPE,
+                    model=f"{accel_type.value}:{manager.get_accelerator_model()}",
                     count=num_devices,
                 )
                 return hardware_info

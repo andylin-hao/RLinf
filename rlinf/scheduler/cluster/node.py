@@ -90,13 +90,47 @@ class NodeInfo:
         return yaml.dump(node_dict, sort_keys=False)
 
 
+@dataclass
+class NodeGroupInfo:
+    """Information about a group of nodes in the cluster."""
+
+    label: str
+    """Label of the node group."""
+
+    nodes: list[NodeInfo]
+    """List of nodes in the node group."""
+
+    hardware_type: Optional[str] = None
+    """Type of hardware of the node group. Can only contain one type of hardware."""
+
+    def __post_init__(self):
+        """Post-initialization to validate the node group information."""
+        if self.hardware_type is None:
+            hw_resources: list[HardwareInfo] = []
+            for node in self.nodes:
+                hw_resources.extend(node.hardware_resources)
+            hw_types = {resource.type for resource in hw_resources}
+
+            assert HardwareEnumerationPolicy.DEFAULT_HW_TYPE is not None, (
+                "Default hardware type is not set in HardwareEnumerationPolicy."
+            )
+            if HardwareEnumerationPolicy.DEFAULT_HW_TYPE in hw_types:
+                self.hardware_type = HardwareEnumerationPolicy.DEFAULT_HW_TYPE
+
+    def __str__(self) -> str:
+        """String representation of the NodeGroupInfo."""
+        group_dict = asdict(self)
+        group_dict["nodes"] = [node.node_rank for node in self.nodes]
+        return yaml.dump(group_dict, sort_keys=False)
+
+
 class NodeProbe:
     """Remote probe to get node hardware and environment information.
 
     This class launches one _RemoteNodeProbe actor on each node in the Ray cluster to collect hardware and environment information.
     """
 
-    def __init__(self, cluster_cfg: Optional[ClusterConfig]):
+    def __init__(self, cluster_num_nodes: int, cluster_cfg: Optional[ClusterConfig]):
         """Launch the HardwareEnumerator on the specified nodes."""
         from .cluster import Cluster
 
@@ -125,8 +159,26 @@ class NodeProbe:
             handles.append(probe.get_node_info.remote())
         self._nodes = ray.get(handles)
 
-        self._sort_nodes()
+        self._sort_nodes(cluster_num_nodes)
         self._configure_node_envs()
+
+        # Node groups
+        self._node_groups: list[NodeGroupInfo] = []
+        if self._cluster_cfg is not None and self._cluster_cfg.node_groups is not None:
+            for node_group_cfg in self._cluster_cfg.node_groups:
+                group_nodes: list[NodeInfo] = []
+                for node in self._nodes:
+                    if node.node_rank in node_group_cfg.node_ranks:
+                        group_nodes.append(node)
+                if len(group_nodes) > 0:
+                    node_group_info = NodeGroupInfo(
+                        label=node_group_cfg.label,
+                        nodes=group_nodes,
+                        hardware_type=node_group_cfg.hardware_type,
+                    )
+                    self._node_groups.append(node_group_info)
+        else:
+            self._node_groups.append(NodeGroupInfo(label="cluster", nodes=self._nodes))
 
     @property
     def nodes(self):
@@ -136,6 +188,15 @@ class NodeProbe:
             list[NodeInfo]: List of node information.
         """
         return self._nodes
+
+    @property
+    def node_groups(self):
+        """Get the list of node groups.
+
+        Returns:
+            list[NodeGroupInfo]: List of node groups.
+        """
+        return self._node_groups
 
     @property
     def head_node(self):
@@ -189,14 +250,17 @@ class NodeProbe:
             node.env_vars.update(modified_env_vars)
 
             # Finally, update with env vars from cluster config if available
-            if self._cluster_cfg is not None and self._cluster_cfg.nodes is not None:
-                for node_group in self._cluster_cfg.nodes:
+            if (
+                self._cluster_cfg is not None
+                and self._cluster_cfg.node_groups is not None
+            ):
+                for node_group in self._cluster_cfg.node_groups:
                     if node.node_rank in node_group.node_ranks:
                         if node_group.env_vars is not None:
                             for env_var_dict in node_group.env_vars:
                                 node.env_vars.update(env_var_dict)
 
-    def _sort_nodes(self):
+    def _sort_nodes(self, cluster_num_nodes: int):
         """Sort the node info list by node rank if available, otherwise by accelerator type and IP."""
         from .cluster import Cluster, ClusterEnvVar
 
@@ -212,12 +276,6 @@ class NodeProbe:
                 node_info.node_rank < len(self._nodes) for node_info in self._nodes
             ), (
                 f"{Cluster.get_full_env_var_name(ClusterEnvVar.NODE_RANK)} should be smaller than the number of nodes {len(self._nodes)}, but got: {[node_info.node_rank for node_info in self._nodes if node_info.node_rank >= len(self._nodes)]}"
-            )
-
-            # Node ranks should be unique, continuous from 0 to num_nodes - 1
-            node_ranks = [node_info.node_rank for node_info in self._nodes]
-            assert sorted(node_ranks) == list(range(len(self._nodes))), (
-                f"{Cluster.get_full_env_var_name(ClusterEnvVar.NODE_RANK)} should be unique and continuous from 0 to {len(self._nodes) - 1}, but got: {node_ranks}"
             )
 
             self._nodes.sort(key=lambda x: x.node_rank)
@@ -245,6 +303,19 @@ class NodeProbe:
                 node.node_rank = node_rank
                 node_rank += 1
 
+        # Handle num_nodes configuration mismatch with actual node number
+        if len(self._nodes) > cluster_num_nodes:
+            warnings.warn(
+                f"The cluster is initialized with {cluster_num_nodes} nodes, but detected {len(self._nodes)} nodes have joined the ray cluster. So only the first {cluster_num_nodes} nodes are used."
+            )
+            self._nodes = self._nodes[:cluster_num_nodes]
+
+        # Node ranks should be unique, continuous from 0 to num_nodes - 1
+        node_ranks = [node_info.node_rank for node_info in self._nodes]
+        assert sorted(node_ranks) == list(range(len(self._nodes))), (
+            f"{Cluster.get_full_env_var_name(ClusterEnvVar.NODE_RANK)} should be unique and continuous from 0 to {len(self._nodes) - 1}, but got: {node_ranks}"
+        )
+
 
 @ray.remote
 class _RemoteNodeProbe:
@@ -271,7 +342,7 @@ class _RemoteNodeProbe:
 
         # Node label
         node_labels = []
-        if cluster_cfg is not None and cluster_cfg.nodes is not None:
+        if cluster_cfg is not None and cluster_cfg.node_groups is not None:
             assert node_rank != -1, (
                 f"{Cluster.get_full_env_var_name(ClusterEnvVar.NODE_RANK)} must be set when there are more than one nodes are connected in Ray and cluster's nodes configuration is provided."
             )
