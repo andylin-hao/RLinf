@@ -24,22 +24,28 @@ class DataclassProtocol(Protocol):
     __post_init__: Optional[Callable]
 
 
-def parse_rank_config(rank_config: str | int, available_ranks: list[int]) -> list[int]:
+def parse_rank_config(
+    rank_config: str | int, available_ranks: Optional[list[int]] = None
+) -> list[int]:
     """Parse a rank configuration string into a list of ranks.
 
     Args:
         rank_config (str | int): The rank configuration string, e.g., "0-3,5,7-9" or "all".
-        available_ranks (list[int]): The list of available ranks.
+        available_ranks (Optional[list[int]]): The list of available ranks.
 
     Returns:
         list[int]: The list of ranks.
     """
     ranks = set()
-    available_ranks = sorted(available_ranks)
+    if available_ranks is not None:
+        available_ranks = sorted(available_ranks)
     # If the rank config is a single number
     # Omegaconf will parse it as an integer instead of a string
     rank_config = str(rank_config)
     if rank_config.lower() == "all":
+        assert available_ranks is not None, (
+            'When rank_config is "all", available_ranks must be provided.'
+        )
         ranks = list(set(available_ranks))
     else:
         # First split by comma
@@ -66,23 +72,27 @@ def parse_rank_config(rank_config: str | int, available_ranks: list[int]) -> lis
             assert end_rank >= start_rank, (
                 f"Start rank {start_rank} must be less than or equal to end rank {end_rank} in rank config {rank_config}."
             )
-            assert available_ranks[0] <= start_rank <= available_ranks[-1], (
-                f"Start rank {start_rank} in rank config {rank_config} must be within the available ranks {available_ranks}."
-            )
-            assert available_ranks[0] <= end_rank <= available_ranks[-1], (
-                f"End rank {end_rank} in rank config {rank_config} must be within the available ranks {available_ranks}."
-            )
+            if available_ranks is not None:
+                assert available_ranks[0] <= start_rank <= available_ranks[-1], (
+                    f"Start rank {start_rank} in rank config {rank_config} must be within the available ranks {available_ranks}."
+                )
+                assert available_ranks[0] <= end_rank <= available_ranks[-1], (
+                    f"End rank {end_rank} in rank config {rank_config} must be within the available ranks {available_ranks}."
+                )
             ranks.update(range(start_rank, end_rank + 1))
             ranks = list(ranks)
     return sorted(ranks)
 
 
-def dataclass_arg_check(dataclass: DataclassProtocol, kwargs: dict):
+def dataclass_arg_check(
+    dataclass: DataclassProtocol, kwargs: dict, error_suffix: str = ""
+):
     """Check if the kwargs contain only valid fields for the given dataclass.
 
     Args:
         dataclass (DataclassProtocol): The dataclass to check against.
         kwargs (dict): The keyword arguments to check.
+        error_suffix (str): Additional error message suffix.
     """
     args = set(kwargs.keys())
     valid_args = set(dataclass.__dataclass_fields__.keys())
@@ -98,5 +108,12 @@ def dataclass_arg_check(dataclass: DataclassProtocol, kwargs: dict):
             and field_info.default_factory is field_info.default_factory
         ):
             missing_required_args.append(missing_arg)
+
+    assert not missing_required_args, (
+        f"Missing fields '{missing_required_args}' detected {error_suffix}. Only got: {kwargs.keys()}."
+    )
+    assert not unknown_args, (
+        f"Unknown fields '{unknown_args}' detected {error_suffix}. Valid fields are: {valid_args}."
+    )
 
     return missing_required_args, unknown_args, valid_args

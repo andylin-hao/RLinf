@@ -30,7 +30,7 @@ from ray.actor import ActorHandle
 from ray.util.state import list_actors
 
 from .config import ClusterConfig
-from .node import NodeProbe
+from .node import NodeGroupInfo, NodeProbe
 
 ray_version = version("ray")
 assert vs.parse(ray_version) >= vs.parse("2.47.0"), (
@@ -192,7 +192,7 @@ class Cluster:
         self._node_groups = self._node_probe.node_groups
 
         self._logger.info(
-            f"{Cluster.SYS_NAME} is running on a cluster with {len(self._nodes)} node{'s' if len(self._nodes) > 1 else ''} and {self.num_accelerators_in_cluster} accelerator{'s' if self.num_accelerators_in_cluster > 1 else ''}. The nodes' details are: "
+            f"{Cluster.SYS_NAME} is running on a cluster with {len(self._nodes)} node{'s' if len(self._nodes) > 1 else ''} and {self.num_accelerators} accelerator{'s' if self.num_accelerators > 1 else ''}. The nodes' details are: "
             + "\n"
             + "\n".join(str(node) for node in self._nodes)
             + "\n"
@@ -309,143 +309,62 @@ class Cluster:
         return self._num_nodes
 
     @property
-    def num_accelerators_in_cluster(self):
+    def num_accelerators(self):
         """Get the number of accelerators in the cluster."""
         return sum(node.num_accelerators for node in self._nodes)
 
     @property
-    def node_accelerator_ids(self) -> list[list[int]]:
-        """Get the global accelerator IDs for each node in the cluster."""
-        node_start_accel_id = 0
-        node_accel_ids = []
+    def accelerator_ranks(self) -> list[list[int]]:
+        """Get the global accelerator ranks for each node in the cluster."""
+        node_start_accel_rank = 0
+        node_accel_ranks = []
         for node in self._nodes:
-            node_accel_ids.append(
+            node_accel_ranks.append(
                 list(
                     range(
-                        node_start_accel_id, node_start_accel_id + node.num_accelerators
+                        node_start_accel_rank,
+                        node_start_accel_rank + node.num_accelerators,
                     )
                 )
             )
-            node_start_accel_id += node.num_accelerators
-        return node_accel_ids
+            node_start_accel_rank += node.num_accelerators
+        return node_accel_ranks
 
     @staticmethod
     def get_alive_nodes():
         """Get the list of alive nodes in the Ray cluster."""
         return [node for node in ray.nodes() if node["Alive"]]
 
-    def get_nodes_by_accel_model(self, model: Optional[str]) -> list[int]:
-        """Get the node IDs that have the specified accelerator model.
+    def get_node_group(
+        self, label: Optional[str] = NodeGroupInfo.DEFAULT_GROUP_LABEL
+    ) -> Optional[NodeGroupInfo]:
+        """Get the node group information by label.
 
         Args:
-            model (Optional[str]): The model of the accelerator, e.g., A100, H100, 4090.
+            label (Optional[str]): The label of the node group.
 
         Returns:
-            list[int]: A list of node IDs matching the specified model.
+            Optional[NodeGroupInfo]: The node group information.
         """
-        node_ids = []
-        if model is None:
-            return list(range(len(self._nodes)))
-        for node in self._nodes:
-            if model in node.accelerator_model:
-                node_ids.extend(node.node_rank)
-        return node_ids
+        if label is None:
+            label = NodeGroupInfo.DEFAULT_GROUP_LABEL
+        label = str(label)
+        return next((ng for ng in self._node_groups if ng.label == label), None)
 
-    def get_available_accel_models(self) -> list[str]:
-        """Get the list of available accelerator models in the cluster.
-
-        Returns:
-            list[str]: A list of available accelerator models.
-        """
-        models = set()
-        for node in self._nodes:
-            if node.num_accelerators > 0:
-                models.add(node.accelerator_model)
-        return list(models)
-
-    def accel_id_in_selected_nodes_to_global_accel_id(
-        self, accel_id: int, selected_node_ids: list[int]
-    ) -> int:
-        """Convert a local accelerator ID in selected nodes to the global accelerator ID.
-
-        Args:
-            accel_id (int): The local accelerator ID in the selected nodes.
-            selected_node_ids (list[int]): The list of selected node IDs.
-
-        Returns:
-            int: The global accelerator ID.
-        """
-        selected_node_start_accel_id = 0
-        selected_node_accel_ids = []
-        for node_id in selected_node_ids:
-            node = self._nodes[node_id]
-            selected_node_accel_ids.append(
-                list(
-                    range(
-                        selected_node_start_accel_id,
-                        selected_node_start_accel_id + node.num_accelerators,
-                    )
-                )
-            )
-            selected_node_start_accel_id += node.num_accelerators
-        return -1
-
-        raise ValueError(
-            f"Accelerator ID {accel_id} not found in selected nodes {selected_node_ids}."
-        )
-
-    def get_node_id_from_accel_id(self, accel_id: int) -> int:
-        """Get the node ID from the global accelerator ID.
-
-        Args:
-            accel_id (int): The global accelerator ID.
-
-        Returns:
-            int: The node ID.
-        """
-        for i, ids in enumerate(self.node_accelerator_ids):
-            if accel_id in ids:
-                return i
-        raise ValueError(f"Accelerator ID {accel_id} not found in any node.")
-
-    def get_node_num_accelerators(self, node_id: int) -> int:
-        """Get the number of accelerators in a specific node.
-
-        Args:
-            node_id (int): The ID of the node.
-
-        Returns:
-            int: The number of accelerators in the node.
-        """
-        if node_id < 0 or node_id >= self._num_nodes:
-            raise ValueError(
-                f"Invalid node_id: {node_id}. Must be between 0 and {self._num_nodes - 1}."
-            )
-        return self._nodes[node_id].num_accelerators
-
-    def global_accel_id_to_local_accel_id(self, accel_id: int):
-        """Get the local accelerator ID from the global accelerator ID.
-
-        Args:
-            accel_id (int): The global accelerator ID.
-
-        Returns:
-            int: The local accelerator ID.
-        """
-        node_id = self.get_node_id_from_accel_id(accel_id)
-        node_accel_ids = self.node_accelerator_ids[node_id]
-        assert accel_id in node_accel_ids, (
-            f"Accelerator ID {accel_id} not found in node {node_id}."
-        )
-        return node_accel_ids.index(accel_id)
-
-    def get_node_info(self, node_id: int):
+    def get_node_info(self, node_rank: int):
         """Get the NodeInfo of a specific node rank."""
-        return self._nodes[node_id]
+        if node_rank < 0 or node_rank >= self._num_nodes:
+            raise ValueError(
+                f"Invalid node_id: {node_rank}. Must be between 0 and {self._num_nodes - 1}."
+            )
+        assert self._nodes[node_rank].node_rank == node_rank, (
+            f"Nodes are not correctly sorted in the cluster. The {node_rank}-th node's node_rank is {self._nodes[node_rank].node_rank}."
+        )
+        return self._nodes[node_rank]
 
-    def get_node_ip(self, node_id: int) -> str:
-        """Get the IP address of a specific node by its ID. Note that this is not the ray NodeID but the index of node in the cluster."""
-        return self._nodes[node_id].node_ip
+    def get_node_ip(self, node_rank: int) -> str:
+        """Get the IP address of a specific node by its rank."""
+        return self._nodes[node_rank].node_ip
 
     def allocate(
         self,

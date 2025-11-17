@@ -15,7 +15,7 @@
 from enum import Enum
 from typing import Optional
 
-from ..hardware import HardwareConfig, HardwareEnumerationPolicy, HardwareInfo
+from ..hardware import Hardware, HardwareConfig, HardwareInfo
 
 
 class AcceleratorType(str, Enum):
@@ -100,8 +100,8 @@ class AcceleratorManager:
         raise NotImplementedError
 
 
-@HardwareEnumerationPolicy.register_policy(is_default_hw=True)
-class AcceleratorEnumerationPolicy(HardwareEnumerationPolicy):
+@Hardware.register(is_default_hw=True)
+class Accelerator(Hardware):
     """Enumeration policy for accelerators."""
 
     HW_TYPE = "Accelerator"
@@ -131,8 +131,24 @@ class AcceleratorEnumerationPolicy(HardwareEnumerationPolicy):
                 return hardware_info
         return HardwareInfo(type=AcceleratorType.NO_ACCEL, model="N/A", count=0)
 
+    @classmethod
+    def get_accelerator_type_from_model(cls, model: str) -> str:
+        """Get the AcceleratorType from the model string.
 
-class Accelerator:
+        Args:
+            model (str): The model string in the format "ACCELERATOR_TYPE:MODEL_NAME".
+
+        Returns:
+            str: The corresponding AcceleratorType.
+        """
+        accel_type_str = model.split(":")
+        assert len(accel_type_str) == 2, (
+            f"Invalid accelerator model format: {model}. Expected format: ACCELERATOR_TYPE:MODEL_NAME."
+        )
+        return accel_type_str[0]
+
+
+class AcceleratorUtil:
     """Utility class representing an accelerator and abstracting device operations."""
 
     # To support an accelerator's CCL,

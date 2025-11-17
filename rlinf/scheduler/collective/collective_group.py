@@ -597,8 +597,8 @@ class CollectiveGroup:
 
         # Check if the peer is on the same node
         if (
-            self._group_info.workers[self._peer_rank].node_id
-            != self._group_info.workers[self._rank].node_id
+            self._group_info.workers[self._peer_rank].cluster_node_rank
+            != self._group_info.workers[self._rank].cluster_node_rank
         ):
             return -1
 

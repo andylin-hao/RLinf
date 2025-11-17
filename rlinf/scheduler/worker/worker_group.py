@@ -25,7 +25,7 @@ import ray
 import ray.remote_function
 
 from ..cluster import Cluster, ClusterEnvVar
-from ..hardware import Accelerator
+from ..hardware import AcceleratorUtil
 from ..manager import WorkerInfo
 from ..placement import (
     NodePlacementStrategy,
@@ -114,10 +114,10 @@ class WorkerGroup(Generic[WorkerClsType]):
             )
 
         if self._placement_strategy is None:
-            if cluster.num_accelerators_in_cluster > 0:
+            if cluster.num_accelerators > 0:
                 # Use all resources by default
                 self._placement_strategy = PackedPlacementStrategy(
-                    0, cluster.num_accelerators_in_cluster - 1
+                    0, cluster.num_accelerators - 1
                 )
             else:
                 # If no accelerator is available, just launch one worker on CPU
@@ -159,7 +159,9 @@ class WorkerGroup(Generic[WorkerClsType]):
             self._cluster, self._isolate_gpu
         )
         master_addr = next(
-            self._cluster.get_node_ip(p.node_id) for p in placements if p.rank == 0
+            self._cluster.get_node_ip(p.cluster_node_rank)
+            for p in placements
+            if p.rank == 0
         )
         self._world_size = len(placements)
         for placement in placements:
@@ -167,7 +169,7 @@ class WorkerGroup(Generic[WorkerClsType]):
                 self._worker_group_name, placement.rank
             ).get_name()
             accelerator_type = self._cluster.get_node_info(
-                placement.node_id
+                placement.cluster_node_rank
             ).accelerator_type
             env_vars = {
                 "GROUP_NAME": self._worker_group_name,
@@ -175,9 +177,9 @@ class WorkerGroup(Generic[WorkerClsType]):
                 "MASTER_ADDR": master_addr,
                 "WORLD_SIZE": str(self._world_size),
                 "RANK": str(placement.rank),
-                "NODE_RANK": str(placement.node_rank),
-                "NODE_ID": str(placement.node_id),
-                "LOCAL_ACCELERATOR_ID": str(placement.local_accelerator_id),
+                "NODE_RANK": str(placement.placement_node_rank),
+                "CLUSTER_NODE_RANK": str(placement.cluster_node_rank),
+                "LOCAL_ACCELERATOR_RANK": str(placement.local_accelerator_rank),
                 "NODE_LOCAL_RANK": str(placement.local_rank),
                 "NODE_LOCAL_WORLD_SIZE": str(placement.local_world_size),
                 "RAY_ACTOR": str(1),
@@ -186,11 +188,11 @@ class WorkerGroup(Generic[WorkerClsType]):
                 if self._catch_system_failure
                 else "0",  # Inform the Worker process to catch signals
                 "VISIBLE_DEVICES": ",".join(placement.visible_accelerators),
-                "ACCELERATOR_TYPE": str(accelerator_type.value),
+                "ACCELERATOR_TYPE": str(accelerator_type),
                 "ISOLATE_ACCELERATOR": "1" if placement.isolate_accelerator else "0",
             }
             env_vars.update(
-                Accelerator.get_accelerator_env_var(
+                AcceleratorUtil.get_accelerator_env_var(
                     accelerator_type, placement.visible_accelerators
                 )
             )
@@ -198,7 +200,7 @@ class WorkerGroup(Generic[WorkerClsType]):
             worker = self._cluster.allocate(
                 cls=self._worker_cls,
                 worker_name=worker_name,
-                node_id=placement.node_id,
+                node_id=placement.cluster_node_rank,
                 max_concurrency=self._max_concurrency,
                 env_vars=env_vars,
                 cls_args=self._worker_cls_args,

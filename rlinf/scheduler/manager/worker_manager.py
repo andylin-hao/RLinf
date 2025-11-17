@@ -140,13 +140,13 @@ class WorkerInfo:
     rank: int
     """Rank of the worker in the group."""
 
-    node_id: int
+    cluster_node_rank: int
     """Node ID where the worker is placed."""
 
     accelerator_type: AcceleratorType
     """Type of accelerator where the worker is placed."""
 
-    accelerator_id: int
+    accelerator_rank: int
     """Accelerator ID where the worker is placed."""
 
     node_ip: str

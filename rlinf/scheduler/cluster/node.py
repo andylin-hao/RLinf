@@ -16,14 +16,18 @@ import os
 import sys
 import warnings
 from dataclasses import asdict, dataclass, field
-from typing import Optional
+from typing import ClassVar, Optional
 
 import ray
 import ray.actor
 import ray.util.scheduling_strategies
 import yaml
 
-from ..hardware import AcceleratorType, HardwareEnumerationPolicy, HardwareInfo
+from ..hardware import (
+    Accelerator,
+    Hardware,
+    HardwareInfo,
+)
 from .config import ClusterConfig
 
 
@@ -59,28 +63,26 @@ class NodeInfo:
     """List of hardware resources available on the node."""
 
     @property
-    def accelerator_type(self) -> AcceleratorType:
-        """Type of accelerator available on the node."""
-        for resource in self.hardware_resources:
-            if resource.type in AcceleratorType._value2member_map_:
-                return AcceleratorType(resource.type)
-        return AcceleratorType.NO_ACCEL
+    def num_accelerators(self) -> int:
+        """Get the number of accelerators on the node."""
+        return self.get_hw_resource_count(Accelerator.HW_TYPE)
 
     @property
-    def num_accelerators(self) -> int:
-        """Number of accelerators available on the node."""
+    def accelerator_type(self) -> str:
+        """Get the type of accelerators on the node."""
         for resource in self.hardware_resources:
-            if resource.type in AcceleratorType._value2member_map_:
+            if resource.type == Accelerator.HW_TYPE:
+                return Accelerator.get_accelerator_type_from_model(resource.model)
+        return None
+
+    def get_hw_resource_count(self, hw_type: Optional[str]) -> int:
+        """Get the count of a specific hardware resource type."""
+        if hw_type is None:
+            return 0
+        for resource in self.hardware_resources:
+            if resource.type == hw_type:
                 return resource.count
         return 0
-
-    @property
-    def accelerator_model(self) -> str:
-        """Model of the accelerator available on the node."""
-        for resource in self.hardware_resources:
-            if resource.type in AcceleratorType._value2member_map_:
-                return resource.model
-        return "N/A"
 
     def __str__(self) -> str:
         """String representation of the NodeInfo."""
@@ -103,24 +105,94 @@ class NodeGroupInfo:
     hardware_type: Optional[str] = None
     """Type of hardware of the node group. Can only contain one type of hardware."""
 
+    DEFAULT_GROUP_LABEL: ClassVar[str] = "cluster"
+
+    NODE_PLACEMENT_GROUP_LABEL: ClassVar[str] = "node"
+
+    RESERVED_LABELS: ClassVar[list[str]] = ["cluster", "node"]
+
+    @property
+    def node_ranks(self) -> list[int]:
+        """Get the list of node ranks in the node group."""
+        return [node.node_rank for node in self.nodes]
+
+    @property
+    def hardware_resource_count(self) -> int:
+        """Get the total count of the hardware resource type on the node group."""
+        if self.hardware_type is None:
+            # If hardware_type is not specified, the node itself is the hardware resource
+            return len(self.nodes)
+        total_count = 0
+        for node in self.nodes:
+            total_count += node.get_hw_resource_count(self.hardware_type)
+        return total_count
+
+    @property
+    def hardware_ranks(self) -> list[list[int]]:
+        """Get the hardware ranks for each node in the group."""
+        start_rank = 0
+        hardware_ranks = []
+        for node in self.nodes:
+            hardware_count = node.get_hw_resource_count(self.hardware_type)
+            hardware_ranks.append(list(range(start_rank, start_rank + hardware_count)))
+            start_rank += hardware_count
+        return hardware_ranks
+
+    def group_ranks_to_global_ranks(self, group_ranks: list[int]):
+        """Group-local ranks to global node ranks."""
+        try:
+            return [self.nodes[rank].node_rank for rank in group_ranks]
+        except IndexError:
+            raise IndexError(
+                f"Group rank out of range. Node group '{self.label}' has {len(self.nodes)} nodes, but got group ranks: {group_ranks}"
+            )
+
+    def get_node_by_hardware_rank(self, hardware_rank: int):
+        """Acquire node with the hardware rank in the node group.
+
+        Args:
+            hardware_rank (int): The hardware rank in the node group.
+
+        Returns:
+            NodeInfo: The node information that contains the hardware with the specified rank.
+        """
+        for i, node_hardware_ranks in enumerate(self.hardware_ranks):
+            if hardware_rank in node_hardware_ranks:
+                return self.nodes[i]
+
+    def get_local_hardware_rank(self, hardware_rank: int):
+        """Convert a global hardware rank in the node group to the local rank in its node.
+
+        Args:
+            hardware_rank (int): The global hardware rank in the node group.
+
+        Returns:
+            int: The local hardware rank in the node.
+        """
+        for node_hardware_ranks in self.hardware_ranks:
+            if hardware_rank in node_hardware_ranks:
+                return node_hardware_ranks.index(hardware_rank)
+
     def __post_init__(self):
         """Post-initialization to validate the node group information."""
+        # If hardware_type is not specified, set it to the default hardware type if available
+        # Otherwise, leave it as None
         if self.hardware_type is None:
             hw_resources: list[HardwareInfo] = []
             for node in self.nodes:
                 hw_resources.extend(node.hardware_resources)
             hw_types = {resource.type for resource in hw_resources}
 
-            assert HardwareEnumerationPolicy.DEFAULT_HW_TYPE is not None, (
+            assert Hardware.DEFAULT_HW_TYPE is not None, (
                 "Default hardware type is not set in HardwareEnumerationPolicy."
             )
-            if HardwareEnumerationPolicy.DEFAULT_HW_TYPE in hw_types:
-                self.hardware_type = HardwareEnumerationPolicy.DEFAULT_HW_TYPE
+            if Hardware.DEFAULT_HW_TYPE in hw_types:
+                self.hardware_type = Hardware.DEFAULT_HW_TYPE
 
     def __str__(self) -> str:
         """String representation of the NodeGroupInfo."""
         group_dict = asdict(self)
-        group_dict["nodes"] = [node.node_rank for node in self.nodes]
+        group_dict["nodes"] = ",".join([str(node.node_rank) for node in self.nodes])
         return yaml.dump(group_dict, sort_keys=False)
 
 
@@ -177,8 +249,24 @@ class NodeProbe:
                         hardware_type=node_group_cfg.hardware_type,
                     )
                     self._node_groups.append(node_group_info)
-        else:
-            self._node_groups.append(NodeGroupInfo(label="cluster", nodes=self._nodes))
+
+        # Default node group including all nodes
+        self._node_groups.append(
+            NodeGroupInfo(label=NodeGroupInfo.DEFAULT_GROUP_LABEL, nodes=self._nodes)
+        )
+        # Reserved "node" label for node-level placement
+        node_group = NodeGroupInfo(
+            label=NodeGroupInfo.NODE_PLACEMENT_GROUP_LABEL,
+            nodes=self._nodes,
+        )
+        node_group.hardware_type = None
+        self._node_groups.append(node_group)
+
+        assert len({group.label for group in self._node_groups}) == len(
+            self._node_groups
+        ), (
+            f"Node group labels must be unique, but got: {[group.label for group in self._node_groups]}"
+        )
 
     @property
     def nodes(self):
@@ -353,7 +441,7 @@ class _RemoteNodeProbe:
         if cluster_cfg is not None:
             node_hw_configs = cluster_cfg.get_node_hw_configs_by_rank(node_rank)
         hardware_resources: list[HardwareInfo] = []
-        for policy in HardwareEnumerationPolicy.policy_registry:
+        for policy in Hardware.policy_registry:
             hw_info = policy.enumerate(node_rank, node_hw_configs)
             if hw_info is not None:
                 hardware_resources.append(hw_info)
