@@ -12,14 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .accelerators import Accelerator, AcceleratorType
-from .hardware import HardwareEnumerationPolicy, HardwareInfo, NodeHardwareConfig
+from .accelerators import Accelerator, AcceleratorType, AcceleratorUtil
+from .hardware import Hardware, HardwareInfo, NodeHardwareConfig
 from .robots import FrankaConfig
 
 __all__ = [
+    "AcceleratorUtil",
     "Accelerator",
     "AcceleratorType",
-    "HardwareEnumerationPolicy",
+    "Hardware",
     "HardwareInfo",
     "NodeHardwareConfig",
     "FrankaConfig",

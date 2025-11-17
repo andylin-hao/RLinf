@@ -55,14 +55,10 @@ class NodeGroupConfig:
                 assert hasattr(hw, "keys"), (
                     f"Each hardware yaml config must be a dictionary. But got {type(hw)}: {hw}"
                 )
-                missing_args, unknown_args, valid_args = dataclass_arg_check(
-                    NodeHardwareConfig, hw
-                )
-                assert not missing_args, (
-                    f"Missing fields '{missing_args}' detected in cluster node hardware yaml config. Only got: {hw.keys()}."
-                )
-                assert not unknown_args, (
-                    f"Unknown fields '{unknown_args}' detected in cluster node hardware yaml config. Valid fields are: {valid_args}."
+                dataclass_arg_check(
+                    NodeHardwareConfig,
+                    hw,
+                    error_suffix="in cluster node_group hardware yaml config",
                 )
             self.hardware = [NodeHardwareConfig(**hw) for hw in self.hardware]
             hardware_types = {hw.type for hw in self.hardware}
@@ -71,8 +67,12 @@ class NodeGroupConfig:
             )
             self.hardware_type = hardware_types.pop()
 
-        self.label = str(self.label).lower()
-        assert self.label != "node", "'node' is a reserved label in cluster config."
+        self.label = str(self.label)
+        from .node import NodeGroupInfo
+
+        assert self.label not in NodeGroupInfo.RESERVED_LABELS, (
+            f"Node group label '{self.label}' is reserved by the scheduler. Please choose another label."
+        )
 
         # Convert env_vars list of dicts to ensure each dict has only one key-value pair
         if self.env_vars is not None:
@@ -92,7 +92,86 @@ class NodeGroupConfig:
 
 @dataclass
 class ClusterConfig:
-    """Configuration for the entire cluster."""
+    """Configuration for the entire cluster.
+
+    The cluster configuration includes the number of nodes, component placements, and node group configurations.
+
+    For component placement format, refer to `rlinf.scheduler.placement.component_placement`. Here is the detailed specification of the node group configuration.
+
+    An example cluster node group configuration in YAML format, which describes a heterogeneous RL training setup with 2 types of accelerators (A800 for training and 4090 for rollout), Franka robot arm for real-world interaction, and node-level placement for agent processes:
+
+    cluster:
+        num_nodes: 2
+        component_placement:
+        actor:
+            node_group: a800
+            placement: 0-63 # Hardware ranks
+        rollout:
+            node_group: 4090
+            placement: 0-63 # Hardware ranks
+        env:
+            node_group: franka
+            placement: 0-1 # Hardware ranks
+        agent:
+            node_group: node
+            placement: 0-1:0-199,2-3:200-399 # Hardware ranks:Process ranks
+        node_groups:
+            - label: a800
+              node_ranks: 0-7
+              python_interpreter_path: /opt/venv/openpi/bin/python3
+              env_vars:
+                - "GLOO_SOCKET_IFNAME": "eth0"
+
+            - label: 4090
+              node_ranks: 8-15
+              env_vars:
+                - "GLOO_SOCKET_IFNAME": "eth1"
+
+            - label: franka
+              node_ranks: 16-17
+              hardware:
+                - type: Franka
+                  configs:
+                    - robot_ip: "10.10.10.1"
+                        node_rank: 16
+                        camera_serials:
+                        - "322142001230"
+                        - "322142001231"
+                    - robot_ip: "10.10.10.2"
+                        node_rank: 17
+                        camera_serials:
+                        - "322142001232"
+                        - "322142001233"
+
+        The above configuration specifies:
+        - num_nodes: Total of 2 nodes in the cluster.
+        - component_placement: Placement of different components (actor, rollout, env, agent) across node groups.
+        - node_groups: Three node groups defined:
+            - a800: Node ranks 0-7 with A800 GPUs for training (labeled with "a800"). Python interpreter path and env vars are also specified if different python interpreters and environment variables are needed for different sets of nodes.
+
+            - 4090: Node ranks 8-15 with 4090 GPUs for rollout (labeled with "4090"). Env vars are specified.
+
+            - franka: Node ranks 16-17 with Franka robot arms (labeled with "franka"). Each node has specific hardware configurations including robot IPs and camera serials. Different type of hardware has different configurations. Refer to the specific hardware type docs for more information.
+
+        The concrete specification is as follows.
+
+        1. label: A string label for the node group. The label is case sensitive. It is used to reference the node group in component placement configurations. Each label must be unique.
+
+        Labels "cluster" and "node" are reserved by the scheduler and cannot be used. The "node" label can be used to place hardware-agnostic workers like agent workers on specific nodes even without GPUs or any other hardware.
+
+        2. node_ranks: A list of node ranks (integers) that belong to this node group. Node ranks are zero-indexed ranks specified via RLINF_NODE_RANK environment variable before `ray start` on each node.
+
+        3. python_interpreter_path: (Optional) Path to the Python interpreter to be used on the nodes in this group. If not specified, the Python interpreter for starting ray on that node is used.
+
+        4. env_vars: (Optional) A list of environment variables (as dicts) to be set on the nodes in this group. Each dict should contain exactly one key-value pair representing the environment variable name and its value.
+
+        5. hardware: (Optional) A list of hardware configurations for the nodes in this group. Each hardware configuration's content is determined by the hardware's "type" field. If hardware is specified, one node group can only contain one type of hardware. Different types of hardware need to be placed in different node groups.
+
+        When hardware is not specified, accelerator hardware is automatically detected and used if it exists on any of the nodes. If no accelerator hardware is found, the node group is treated as CPU-only nodes and the node itself is the hardware resource, where each node has one such resource.
+
+        When using node_group in the component_placement, the specified hardware ranks are thus (1) "hardware.type" hardware if it is specified in the node group; (2) automatically detected accelerator hardware if exists; (3) node itself as hardware resource if no accelerator hardware is found.
+        When using the reserved "node" node_group in the component_placement, it is a group with all nodes but no hardware. And so it can be used to perform hardware-agnostic placement of processes on specific nodes.
+    """
 
     num_nodes: int
     """Total number of nodes in the cluster."""
@@ -113,14 +192,8 @@ class ClusterConfig:
         Returns:
             ClusterConfig: The created ClusterConfig instance.
         """
-        missing_args, unknown_args, valid_args = dataclass_arg_check(
-            ClusterConfig, cfg_dict
-        )
-        assert not missing_args, (
-            f"Missing fields '{missing_args}' detected in cluster yaml config. Only got: {cfg_dict.keys()}."
-        )
-        assert not unknown_args, (
-            f"Unknown fields '{unknown_args}' detected in cluster yaml config. Valid fields are: {valid_args}."
+        dataclass_arg_check(
+            ClusterConfig, cfg_dict, error_suffix="in cluster yaml config"
         )
         return ClusterConfig(**cfg_dict)
 
@@ -189,20 +262,18 @@ class ClusterConfig:
         """Post-initialization to convert nodes dicts to their respective dataclass instances."""
         if self.node_groups is not None:
             # Arg check
-            for node in self.node_groups:
-                assert hasattr(node, "keys"), (
-                    f"Each node yaml config must be a dictionary. But got {type(node)}: {node}"
+            for node_group in self.node_groups:
+                assert hasattr(node_group, "keys"), (
+                    f"Each node yaml config must be a dictionary. But got {type(node_group)}: {node_group}"
                 )
-                missing_args, unknown_args, valid_args = dataclass_arg_check(
-                    NodeGroupConfig, node
+                dataclass_arg_check(
+                    NodeGroupConfig,
+                    node_group,
+                    error_suffix="in cluster node_groups yaml config",
                 )
-                assert not missing_args, (
-                    f"Missing fields '{missing_args}' detected in cluster node yaml config. Only got: {node.keys()}."
-                )
-                assert not unknown_args, (
-                    f"Unknown fields '{unknown_args}' detected in cluster node yaml config. Valid fields are: {valid_args}."
-                )
-            self.node_groups = [NodeGroupConfig(**node) for node in self.node_groups]
+            self.node_groups = [
+                NodeGroupConfig(**node_group) for node_group in self.node_groups
+            ]
 
             # Convert node_ranks from str to list[int] if needed
             for node_group in self.node_groups:

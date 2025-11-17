@@ -12,28 +12,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import importlib
 import ipaddress
 from dataclasses import dataclass
 from typing import Optional
 
 from ..hardware import (
+    Hardware,
     HardwareConfig,
-    HardwareEnumerationPolicy,
     HardwareInfo,
     NodeHardwareConfig,
 )
 
 
 @dataclass
-class FrankaInfo(HardwareInfo):
+class FrankaHWInfo(HardwareInfo):
     """Hardware information for a robotic system."""
 
     configs: list["FrankaConfig"]
 
 
-@HardwareEnumerationPolicy.register_policy()
-class FrankaHardwareEnumerationPolicy(HardwareEnumerationPolicy):
-    """Enumeration policy for robotic systems."""
+@Hardware.register()
+class FrankaRobot(Hardware):
+    """Hardware policy for robotic systems."""
 
     HW_TYPE = "Franka"
     ROBOT_PING_COUNT: int = 2
@@ -61,11 +62,16 @@ class FrankaHardwareEnumerationPolicy(HardwareEnumerationPolicy):
                 robot_configs.append(config)
 
         if robot_configs:
-            cameras: set[str] = set()
+            cameras = cls.enumerate_cameras()
 
             for config in robot_configs:
+                # Use auto detected cameras
+                if config.camera_serials is None:
+                    config.camera_serials = list(cameras)
+
                 if config.disable_validate:
                     continue
+
                 # Validate IP connectivity
                 try:
                     from icmplib import ping
@@ -90,25 +96,22 @@ class FrankaHardwareEnumerationPolicy(HardwareEnumerationPolicy):
 
                 # Validate camera serials
                 try:
-                    import pyrealsense2 as rs
-                except ImportError:
-                    raise ImportError(
+                    importlib.import_module("pyrealsense2")
+                except ModuleNotFoundError:
+                    raise ModuleNotFoundError(
                         f"pyrealsense2 is required for Franka robot camera serials check, but it is not installed on the node with rank {node_rank}."
                     )
                 if not cameras:
-                    for device in rs.context().devices:
-                        cameras.add(device.get_info(rs.camera_info.serial_number))
-                    if not cameras:
-                        raise ValueError(
-                            f"No cameras are connected to node rank {node_rank}, but Franka robot configurations require camera serials."
-                        )
+                    raise ValueError(
+                        f"No cameras are connected to node rank {node_rank} while Franka robot requires at least one camera."
+                    )
                 for serial in config.camera_serials:
                     if serial not in cameras:
                         raise ValueError(
                             f"Camera with serial {serial} for Franka robot at is not connected to node rank {node_rank}. Available cameras are: {cameras}."
                         )
 
-            return FrankaInfo(
+            return FrankaHWInfo(
                 type=cls.HW_TYPE,
                 model=cls.HW_TYPE,
                 count=len(robot_configs),
@@ -116,8 +119,20 @@ class FrankaHardwareEnumerationPolicy(HardwareEnumerationPolicy):
             )
         return None
 
+    @classmethod
+    def enumerate_cameras(cls):
+        """Enumerate connected camera serial numbers."""
+        cameras: set[str] = set()
+        try:
+            import pyrealsense2 as rs
+        except ImportError:
+            return cameras
+        for device in rs.context().devices:
+            cameras.add(device.get_info(rs.camera_info.serial_number))
+        return cameras
 
-@NodeHardwareConfig.register_hardware_config(FrankaHardwareEnumerationPolicy.HW_TYPE)
+
+@NodeHardwareConfig.register_hardware_config(FrankaRobot.HW_TYPE)
 @dataclass
 class FrankaConfig(HardwareConfig):
     """Configuration for a robotic system."""
@@ -125,7 +140,7 @@ class FrankaConfig(HardwareConfig):
     robot_ip: str
     """IP address of the robotic system."""
 
-    camera_serials: list[str]
+    camera_serials: Optional[list[str]] = None
     """List of camera serial numbers associated with the robot."""
 
     disable_validate: bool = False

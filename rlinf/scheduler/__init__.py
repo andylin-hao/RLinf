@@ -14,8 +14,9 @@
 
 from .channel import Channel, ChannelWorker, WeightedItem
 from .cluster import Cluster, ClusterConfig
-from .hardware import Accelerator, AcceleratorType
+from .hardware import AcceleratorType, AcceleratorUtil
 from .placement import (
+    ComponentPlacement,
     FlexiblePlacementStrategy,
     NodePlacementStrategy,
     PackedPlacementStrategy,
@@ -24,10 +25,11 @@ from .placement import (
 from .worker import Worker, WorkerAddress, WorkerGroupFuncResult
 
 __all__ = [
-    "Accelerator",
+    "AcceleratorUtil",
     "AcceleratorType",
     "Cluster",
     "ClusterConfig",
+    "ComponentPlacement",
     "PlacementStrategy",
     "FlexiblePlacementStrategy",
     "NodePlacementStrategy",

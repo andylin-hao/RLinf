@@ -13,7 +13,9 @@
 # limitations under the License.
 
 from dataclasses import dataclass
-from typing import ClassVar, Optional
+from typing import ClassVar, Optional, TypeVar
+
+HardwareType = TypeVar("HardwareType")
 
 
 @dataclass
@@ -51,14 +53,14 @@ class NodeHardwareConfig:
         """
 
         def hardware_config_decorator(hardware_config):
-            cls._hardware_config_registry[type.lower()] = hardware_config
+            cls._hardware_config_registry[type] = hardware_config
             return hardware_config
 
         return hardware_config_decorator
 
     def __post_init__(self):
         """Post-initialization to convert hardware_configs dicts to their respective dataclass instances."""
-        self.type = str(self.type).lower()
+        self.type = str(self.type)
         hardware_config_class = NodeHardwareConfig._hardware_config_registry.get(
             self.type
         )
@@ -74,14 +76,10 @@ class NodeHardwareConfig:
             assert hasattr(config, "keys"), (
                 f"Each hardware config must be a dictionary. But got {type(config)}: {config}"
             )
-            missing_args, unknown_args, valid_args = dataclass_arg_check(
-                hardware_config_class, config
-            )
-            assert not missing_args, (
-                f"Missing fields '{missing_args}' detected in cluster node hardware configs yaml config. Only got: {config.keys()}."
-            )
-            assert not unknown_args, (
-                f"Unknown fields '{unknown_args}' detected in cluster node hardware configs yaml config. Valid fields are: {valid_args}."
+            dataclass_arg_check(
+                hardware_config_class,
+                config,
+                error_suffix="in cluster node_group hardware yaml config",
             )
         self.configs = [hardware_config_class(**config) for config in self.configs]
 
@@ -100,19 +98,19 @@ class HardwareInfo:
     """Resource count of the hardware on a node."""
 
 
-class HardwareEnumerationPolicy:
-    """Enumeration policy for a type of hardware resource.
+class Hardware:
+    """Hardware policy for a type of hardware resource.
 
-    This is the base class for different hardware to implement their enumeration policies.
+    This is the base class for different hardware to implement their basic type and enumeration policies.
     """
 
     HW_TYPE: str = None
     DEFAULT_HW_TYPE: str = None
     hw_types: set[str] = set()
-    policy_registry: list[type["HardwareEnumerationPolicy"]] = []
+    policy_registry: list[type["Hardware"]] = []
 
     @classmethod
-    def register_policy(cls, is_default_hw: bool = False):
+    def register(cls, is_default_hw: bool = False):
         """Register a new enumeration policy.
 
         This is to be used as a decorator for subclasses of EnumerationPolicy.
@@ -122,8 +120,8 @@ class HardwareEnumerationPolicy:
         """
 
         def hardware_policy_decorator(
-            policy: type["HardwareEnumerationPolicy"],
-        ):
+            policy: type["Hardware" | HardwareType],
+        ) -> type[HardwareType]:
             cls.hw_types.add(policy.HW_TYPE)
             cls.policy_registry.append(policy)
             if is_default_hw:

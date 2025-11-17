@@ -238,7 +238,7 @@ class SchedulerTask:
 def get_profile_data(
     cfg, cluster: Cluster, actor_cost=None, inference_cost=None, rollout_cost=None
 ):
-    total_gpus = cluster.num_accelerators_in_cluster
+    total_gpus = cluster.num_accelerators
     collocated_actor_instance_num = total_gpus // (
         cfg.actor.model.tensor_model_parallel_size
         * cfg.actor.model.pipeline_model_parallel_size

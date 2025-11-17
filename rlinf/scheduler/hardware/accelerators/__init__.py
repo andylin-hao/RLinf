@@ -12,13 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .accelerator import Accelerator, AcceleratorType
+from .accelerator import Accelerator, AcceleratorType, AcceleratorUtil
 from .amd_gpu import AMDGPUManager  # Must be imported to register the managers
 from .ascend_npu import AscendNPUManager
 from .intel_gpu import IntelGPUManager
 from .nvidia_gpu import NvidiaGPUManager
 
 __all__ = [
+    "AcceleratorUtil",
     "Accelerator",
     "AcceleratorType",
     "AMDGPUManager",

@@ -35,7 +35,7 @@ import torch
 from omegaconf import OmegaConf
 
 from ..cluster import Cluster, ClusterEnvVar
-from ..hardware import Accelerator, AcceleratorType
+from ..hardware import AcceleratorType, AcceleratorUtil
 from ..manager import WorkerAddress
 
 if TYPE_CHECKING:
@@ -319,11 +319,11 @@ class Worker(metaclass=WorkerMeta):
         """Create a new instance of the Worker class."""
         instance = super().__new__(cls)
 
-        node_id = os.environ.get("NODE_ID", None)
+        cluster_node_rank = os.environ.get("CLUSTER_NODE_RANK", None)
 
         # ray.remote initializes the class with the ActorClass wrapper locally first (not in a remote process),
         # which doesn't have the environment variables set.
-        if node_id is not None and "ActorClass(" not in cls.__name__:
+        if cluster_node_rank is not None and "ActorClass(" not in cls.__name__:
             instance._env_setup_before_init()
             # Handle OS signals for better debuggability
             # Ray new the class in main thread but call __init__ in worker thread if it's an Actor with async functions
@@ -343,15 +343,19 @@ class Worker(metaclass=WorkerMeta):
             self._worker_address = WorkerAddress.from_name(self._worker_name)
 
         # These are not required env_vars, but are set by Ray Worker for convenience
-        self._node_id = int(os.environ.get("NODE_ID", -1))
+        self._cluster_node_rank = int(os.environ.get("CLUSTER_NODE_RANK", -1))
         self._accelerator_type = AcceleratorType(
             os.environ.get("ACCELERATOR_TYPE", str(AcceleratorType.NO_ACCEL.value))
         )
-        self._local_accelerator_id = int(os.environ.get("LOCAL_ACCELERATOR_ID", -1))
+        self._local_accelerator_rank = int(os.environ.get("LOCAL_ACCELERATOR_RANK", -1))
         self._node_local_rank = int(os.environ.get("NODE_LOCAL_RANK", -1))
         self._node_local_world_size = int(os.environ.get("NODE_LOCAL_WORLD_SIZE", -1))
-        Worker.torch_device_type = Accelerator.get_device_type(self._accelerator_type)
-        Worker.torch_platform = Accelerator.get_torch_platform(self._accelerator_type)
+        Worker.torch_device_type = AcceleratorUtil.get_device_type(
+            self._accelerator_type
+        )
+        Worker.torch_platform = AcceleratorUtil.get_torch_platform(
+            self._accelerator_type
+        )
         self.torch_device_type = Worker.torch_device_type
         self.torch_platform = Worker.torch_platform
 
@@ -387,7 +391,7 @@ class Worker(metaclass=WorkerMeta):
         else:
             self._is_ray_actor = True
 
-        if self._is_ray_actor and not hasattr(self, "_local_accelerator_id"):
+        if self._is_ray_actor and not hasattr(self, "_local_accelerator_rank"):
             raise RuntimeError(
                 "You may have mistakenly initialized the Worker class directly without `create_group` and `launch`. Please ensure a worker class is not instantiated on the main process directly like `Worker()`, but `Worker.create_group().launch()`."
             )
@@ -610,7 +614,7 @@ class Worker(metaclass=WorkerMeta):
     def create_channel(
         self,
         channel_name: str,
-        node_id: int = 0,
+        node_rank: int = 0,
         maxsize: int = 0,
         local: bool = False,
     ):
@@ -618,7 +622,7 @@ class Worker(metaclass=WorkerMeta):
 
         Args:
             channel_name (str): The name of the channel.
-            node_id (int): The global ID of the node in the cluster where the channel will be created.
+            node_rank (int): The global rank of the node in the cluster where the channel will be created.
             maxsize (int): The maximum size of the channel queue. Defaults to 0 (unbounded).
             local (bool): Create the channel for intra-process communication. Cannot be connected by other workers.
 
@@ -629,7 +633,7 @@ class Worker(metaclass=WorkerMeta):
         from ..channel.channel import Channel
 
         return Channel.create(
-            name=channel_name, node_id=node_id, maxsize=maxsize, local=local
+            name=channel_name, node_rank=node_rank, maxsize=maxsize, local=local
         )
 
     def connect_channel(self, channel_name: str):
@@ -782,7 +786,7 @@ class Worker(metaclass=WorkerMeta):
                 self._isolate_gpu = True
             else:
                 os.environ["LOCAL_RANK"] = str(
-                    self._local_accelerator_id
+                    self._local_accelerator_rank
                 )  # Must use the actual device ID
                 os.environ["LOCAL_WORLD_SIZE"] = str(self._node_local_world_size)
                 self._isolate_gpu = False
@@ -819,17 +823,17 @@ class Worker(metaclass=WorkerMeta):
 
     def _setup_accelerator_info(self) -> int:
         cluster = Cluster()
-        visible_devices = Accelerator.get_visible_devices(self._accelerator_type)
-        node_accelerator_ids = cluster.node_accelerator_ids[self._node_id]
+        visible_devices = AcceleratorUtil.get_visible_devices(self._accelerator_type)
+        node_accelerator_ranks = cluster.accelerator_ranks[self._cluster_node_rank]
         self.global_accelerator_ids = [
-            node_accelerator_ids[local_id] for local_id in visible_devices
+            node_accelerator_ranks[local_id] for local_id in visible_devices
         ]
 
         if not self._is_ray_actor:
             if len(visible_devices) > 0:
-                self._local_accelerator_id = visible_devices[0]
+                self._local_accelerator_rank = visible_devices[0]
             else:
-                self._local_accelerator_id = -1
+                self._local_accelerator_rank = -1
 
     def _setup_logging(self):
         self._logger = logging.getLogger(self._worker_name)
@@ -927,9 +931,9 @@ class Worker(metaclass=WorkerMeta):
         return WorkerInfo(
             address=self._worker_address,
             rank=self._rank,
-            node_id=self._node_id,
+            cluster_node_rank=self._cluster_node_rank,
             accelerator_type=self._accelerator_type,
-            accelerator_id=self._local_accelerator_id,
+            accelerator_rank=self._local_accelerator_rank,
             node_ip=node_ip,
             node_port=node_port,
             available_accelerators=self.global_accelerator_ids,
