@@ -220,7 +220,9 @@ class ComponentPlacement:
                 rank_map, node_group, component_names
             )
         else:
-            placement_strategy = self._gen_resource_placement(rank_map, node_group)
+            placement_strategy = self._gen_resource_placement(
+                rank_map, node_group, component_names
+            )
 
         num_processes = sum(len(process_ranks) for process_ranks in rank_map.values())
         for component_name in component_names:
@@ -250,15 +252,21 @@ class ComponentPlacement:
                 continue
             rank_part = rank_map_part.split(":")
             assert 1 <= len(rank_part) <= 2, (
-                f"Invalid rank map part: {rank_map_part} in rank map string: {rank_map_str}. Expected format: resource_ranks:process_ranks"
+                f"Invalid rank map string: {rank_map_part} in placement config: {rank_map_str}. Expected format: resource_ranks:process_ranks"
             )
 
             # Resource ranks parsing
             resource_ranks_str = rank_part[0].strip()
-            resource_ranks = parse_rank_config(
-                resource_ranks_str,
-                list(range(node_group.hardware_resource_count)),
-            )
+            try:
+                resource_ranks = parse_rank_config(
+                    resource_ranks_str,
+                    list(range(node_group.hardware_resource_count)),
+                    node_group.hardware_type,
+                )
+            except AssertionError as e:
+                raise AssertionError(
+                    f"Error parsing resource ranks in placement string: {rank_map_part} of placement config: {rank_map_str}. {str(e)}"
+                )
 
             # Resource ranks validation
             assert resource_ranks, (
@@ -372,10 +380,18 @@ class ComponentPlacement:
             )
             node_rank_list.append(node_ranks[0])
 
-        return NodePlacementStrategy(node_rank_list, node_group)
+        try:
+            return NodePlacementStrategy(node_rank_list, node_group)
+        except AssertionError as e:
+            raise AssertionError(
+                f"Error in component placement for components {component_names}. Allocated node ranks for each process: {process_resources_map}. {str(e)}"
+            )
 
     def _gen_resource_placement(
-        self, rank_map: dict[tuple[int], list[int]], node_group: NodeGroupInfo
+        self,
+        rank_map: dict[tuple[int], list[int]],
+        node_group: NodeGroupInfo,
+        component_names: list[str],
     ) -> "FlexiblePlacementStrategy":
         from .flexible import FlexiblePlacementStrategy
 
@@ -384,7 +400,12 @@ class ComponentPlacement:
         for process_rank in sorted(process_resources_map.keys()):
             resource_ranks = process_resources_map[process_rank]
             resource_ranks_list.append(resource_ranks)
-        return FlexiblePlacementStrategy(resource_ranks_list, node_group)
+        try:
+            return FlexiblePlacementStrategy(resource_ranks_list, node_group)
+        except AssertionError as e:
+            raise AssertionError(
+                f"Error in component placement for components {component_names}. Allocated hardware ranks for each process: {process_resources_map} for hardware type {node_group.hardware_type} and node group {node_group.label}. {str(e)}"
+            )
 
     @property
     def placement_mode(self):

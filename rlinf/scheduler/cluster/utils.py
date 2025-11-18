@@ -25,13 +25,16 @@ class DataclassProtocol(Protocol):
 
 
 def parse_rank_config(
-    rank_config: str | int, available_ranks: Optional[list[int]] = None
+    rank_config: str | int,
+    available_ranks: Optional[list[int]] = None,
+    rank_type: Optional[str] = None,
 ) -> list[int]:
     """Parse a rank configuration string into a list of ranks.
 
     Args:
         rank_config (str | int): The rank configuration string, e.g., "0-3,5,7-9" or "all".
         available_ranks (Optional[list[int]]): The list of available ranks.
+        rank_type (Optional[str]): The type of rank being parsed (for error messages).
 
     Returns:
         list[int]: The list of ranks.
@@ -74,10 +77,10 @@ def parse_rank_config(
             )
             if available_ranks is not None:
                 assert available_ranks[0] <= start_rank <= available_ranks[-1], (
-                    f"Start rank {start_rank} in rank config {rank_config} must be within the available ranks {available_ranks}."
+                    f'Start rank {start_rank} in rank config string "{rank_config}" must be within the available {rank_type if rank_type is not None else ""} ranks {available_ranks}.'
                 )
                 assert available_ranks[0] <= end_rank <= available_ranks[-1], (
-                    f"End rank {end_rank} in rank config {rank_config} must be within the available ranks {available_ranks}."
+                    f'End rank {end_rank} in rank config string "{rank_config}" must be within the available {rank_type if rank_type is not None else ""} ranks {available_ranks}.'
                 )
             ranks.update(range(start_rank, end_rank + 1))
             ranks = list(ranks)

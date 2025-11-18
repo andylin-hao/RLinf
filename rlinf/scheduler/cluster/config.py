@@ -277,10 +277,16 @@ class ClusterConfig:
 
             # Convert node_ranks from str to list[int] if needed
             for node_group in self.node_groups:
-                node_group.node_ranks = parse_rank_config(
-                    node_group.node_ranks,
-                    list(range(self.num_nodes)),
-                )
+                try:
+                    node_group.node_ranks = parse_rank_config(
+                        node_group.node_ranks,
+                        list(range(self.num_nodes)),
+                        "node",
+                    )
+                except AssertionError as e:
+                    raise AssertionError(
+                        f"Error parsing node_ranks in node group '{node_group.label}'. {str(e)}"
+                    )
 
             # Validate hardware node_ranks
             for node_group in self.node_groups:
