@@ -65,16 +65,19 @@ class ModelParallelComponentPlacement(ComponentPlacement):
         """
         super().__init__(config, cluster)
 
-        self._actor_gpus = self.get_hardware_ranks("actor")
-        self._inference_gpus = self.get_hardware_ranks("inference")
-        self._rollout_gpus = self.get_hardware_ranks("rollout")
-        self._reward_gpus = self.get_hardware_ranks("reward")
+        self._actor_gpus = self._get_component_hardware("actor")
+        self._rollout_gpus = self._get_component_hardware("rollout")
+        self._inference_gpus = self._get_component_hardware("inference")
+        self._reward_gpus = self._get_component_hardware("reward")
         self._cluster_num_gpus = cluster.num_accelerators
         assert self._actor_gpus is not None, (
             "Actor GPUs must be specified in the component_placement config."
         )
         assert self._rollout_gpus is not None, (
             "Rollout GPUs must be specified in the component_placement config."
+        )
+        assert self._reward_gpus is not None, (
+            "Reward GPUs must be specified in the component_placement config."
         )
         assert self._actor_gpus == list(
             range(self._actor_gpus[0], self._actor_gpus[-1] + 1)
@@ -125,6 +128,8 @@ class ModelParallelComponentPlacement(ComponentPlacement):
         assert self.rollout_tp_size <= self.rollout_world_size, (
             f"Rollout TP size {self.rollout_tp_size} must be less than or equal to Rollout world size {self.rollout_world_size}."
         )
+
+        self._generate_placements()
 
     def _is_auto(self):
         if not getattr(self._config.cluster, "auto_scheduler", False):
@@ -189,9 +194,10 @@ class ModelParallelComponentPlacement(ComponentPlacement):
                 num_hardware_per_process=self.rollout_tp_size,
                 stride=stride,
             )
-            self._placements["reward"] = PackedPlacementStrategy(
-                self._reward_gpus[0], self._reward_gpus[-1]
-            )
+            if self._reward_gpus:
+                self._placements["reward"] = PackedPlacementStrategy(
+                    self._reward_gpus[0], self._reward_gpus[-1]
+                )
         elif self._placement_mode == PlacementMode.DISAGGREGATED:
             num_gpus_per_rollout_dp = len(self._rollout_gpus) // self.rollout_dp_size
             self._placements["rollout"] = PackedPlacementStrategy(
@@ -206,9 +212,10 @@ class ModelParallelComponentPlacement(ComponentPlacement):
             self._placements["actor"] = PackedPlacementStrategy(
                 self._actor_gpus[0], self._actor_gpus[-1]
             )
-            self._placements["reward"] = PackedPlacementStrategy(
-                self._reward_gpus[0], self._reward_gpus[-1]
-            )
+            if self._reward_gpus:
+                self._placements["reward"] = PackedPlacementStrategy(
+                    self._reward_gpus[0], self._reward_gpus[-1]
+                )
         elif self._placement_mode == PlacementMode.AUTO:
             # In AUTO mode, actor will be placed on all GPUs
             self._placements["actor"] = PackedPlacementStrategy(
@@ -238,9 +245,10 @@ class ModelParallelComponentPlacement(ComponentPlacement):
                 self._placements["inference"] = PackedPlacementStrategy(
                     self._inference_gpus[0], self._inference_gpus[-1]
                 )
-            self._placements["reward"] = PackedPlacementStrategy(
-                self._reward_gpus[0], self._reward_gpus[-1]
-            )
+            if self._reward_gpus:
+                self._placements["reward"] = PackedPlacementStrategy(
+                    self._reward_gpus[0], self._reward_gpus[-1]
+                )
 
     @property
     def is_collocated(self):
@@ -335,3 +343,8 @@ class ModelParallelComponentPlacement(ComponentPlacement):
     @property
     def reward_world_size(self) -> int:
         return self._reward_num_gpus
+
+    def _get_component_hardware(self, component_name: str):
+        if component_name not in self._component_rank_map:
+            return None
+        return super().get_hardware_ranks(component_name)

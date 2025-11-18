@@ -83,7 +83,7 @@ def parse_rank_config(
                     f'End rank {end_rank} in rank config string "{rank_config}" must be within the available {rank_type if rank_type is not None else ""} ranks {available_ranks}.'
                 )
             ranks.update(range(start_rank, end_rank + 1))
-            ranks = list(ranks)
+    ranks = list(ranks)
     return sorted(ranks)
 
 
