@@ -154,6 +154,9 @@ class FlexiblePlacementStrategy(PlacementStrategy):
 
         """
         node_group = cluster.get_node_group(self._node_group_label)
+        assert node_group is not None, (
+            f"Node group with label {self._node_group_label} not found in the cluster."
+        )
         # Verify and sort the hardware ranks for each process
         for i, hw_ranks in enumerate(self._hardware_ranks_list):
             self._verify_hw_ranks_for_process(hw_ranks, node_group)

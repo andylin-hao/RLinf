@@ -381,7 +381,7 @@ class ComponentPlacement:
             node_rank_list.append(node_ranks[0])
 
         try:
-            return NodePlacementStrategy(node_rank_list, node_group)
+            return NodePlacementStrategy(node_rank_list, node_group.label)
         except AssertionError as e:
             raise AssertionError(
                 f"Error in component placement for components {component_names}. Allocated node ranks for each process: {process_resources_map}. {str(e)}"
@@ -401,7 +401,7 @@ class ComponentPlacement:
             resource_ranks = process_resources_map[process_rank]
             resource_ranks_list.append(resource_ranks)
         try:
-            return FlexiblePlacementStrategy(resource_ranks_list, node_group)
+            return FlexiblePlacementStrategy(resource_ranks_list, node_group.label)
         except AssertionError as e:
             raise AssertionError(
                 f"Error in component placement for components {component_names}. Allocated hardware ranks for each process: {process_resources_map} for hardware type {node_group.hardware_type} and node group {node_group.label}. {str(e)}"
