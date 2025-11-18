@@ -35,7 +35,7 @@ import torch
 from omegaconf import OmegaConf
 
 from ..cluster import Cluster, ClusterEnvVar
-from ..hardware import AcceleratorType, AcceleratorUtil
+from ..hardware import AcceleratorType, AcceleratorUtil, HardwareInfo
 from ..manager import WorkerAddress
 
 if TYPE_CHECKING:
@@ -430,6 +430,9 @@ class Worker(metaclass=WorkerMeta):
         # Setup MASTER_ADDR and MASTER_PORT
         self._setup_master_address_and_port()
 
+        # Setup node group and hardware ranks
+        self._setup_hardware()
+
         self._lock = threading.Lock()
         self._stacklevel = 4 if self._is_ray_actor else 3
 
@@ -465,6 +468,27 @@ class Worker(metaclass=WorkerMeta):
     def device_lock(self):
         """Get the DeviceLock instance for this worker."""
         return self._device_lock
+
+    @property
+    def hardware_type(self) -> str:
+        """Get the hardware type of the current worker.
+
+        Returns:
+            str: The hardware type of the current worker.
+        """
+        return self._node_group.hardware_type
+
+    @property
+    def hardware_infos(self) -> list[HardwareInfo]:
+        """Get the hardware information of the current worker.
+
+        Returns:
+            list[HardwareInfo]: The list hardware information assigned to the current worker.
+        """
+        infos = []
+        for hw_rank in self._hardware_ranks:
+            infos.append(self._node_group.local_hardware_infos[hw_rank])
+        return infos
 
     @classmethod
     def create_group(
@@ -834,6 +858,16 @@ class Worker(metaclass=WorkerMeta):
                 self._local_accelerator_rank = visible_devices[0]
             else:
                 self._local_accelerator_rank = -1
+
+    def _setup_hardware(self):
+        cluster = Cluster()
+        hardware_ranks_str = os.environ.get("LOCAL_HARDWARE_RANKS", "")
+        self._hardware_ranks = map(int, hardware_ranks_str.strip().split(","))
+        node_group_label = os.environ.get("NODE_GROUP_LABEL", None)
+        self._node_group = cluster.get_node_group(node_group_label)
+        assert self._node_group is not None, (
+            f"Node group {node_group_label} not found in cluster. Available node groups: {[node_group.label for node_group in cluster._node_groups]}"
+        )
 
     def _setup_logging(self):
         self._logger = logging.getLogger(self._worker_name)

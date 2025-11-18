@@ -25,8 +25,10 @@ import yaml
 
 from ..hardware import (
     Accelerator,
+    AcceleratorType,
     Hardware,
     HardwareInfo,
+    HardwareResource,
 )
 from .config import ClusterConfig
 
@@ -59,7 +61,7 @@ class NodeInfo:
     env_vars: dict[str, str]
     """Environment variables set on the node by the scheduler."""
 
-    hardware_resources: list[HardwareInfo] = field(default_factory=list)
+    hardware_resources: list[HardwareResource] = field(default_factory=list)
     """List of hardware resources available on the node."""
 
     @property
@@ -71,9 +73,11 @@ class NodeInfo:
     def accelerator_type(self) -> str:
         """Get the type of accelerators on the node."""
         for resource in self.hardware_resources:
-            if resource.type == Accelerator.HW_TYPE:
-                return Accelerator.get_accelerator_type_from_model(resource.model)
-        return None
+            if resource.type == Accelerator.HW_TYPE and resource.count > 0:
+                return Accelerator.get_accelerator_type_from_model(
+                    resource.infos[0].model
+                )
+        return AcceleratorType.NO_ACCEL
 
     def get_hw_resource_count(self, hw_type: Optional[str]) -> int:
         """Get the count of a specific hardware resource type."""
@@ -128,7 +132,17 @@ class NodeGroupInfo:
         return total_count
 
     @property
-    def hardware_ranks(self) -> list[list[int]]:
+    def local_hardware_infos(self) -> list[HardwareInfo]:
+        """Get the hardware infos for each node in the group."""
+        infos: list[HardwareInfo] = []
+        for node in self.nodes:
+            for resource in node.hardware_resources:
+                if resource.type == self.hardware_type:
+                    infos.extend(resource.infos)
+        return infos
+
+    @property
+    def local_hardware_ranks(self) -> list[list[int]]:
         """Get the hardware ranks for each node in the group."""
         start_rank = 0
         hardware_ranks = []
@@ -156,7 +170,7 @@ class NodeGroupInfo:
         Returns:
             NodeInfo: The node information that contains the hardware with the specified rank.
         """
-        for i, node_hardware_ranks in enumerate(self.hardware_ranks):
+        for i, node_hardware_ranks in enumerate(self.local_hardware_ranks):
             if hardware_rank in node_hardware_ranks:
                 return self.nodes[i]
 
@@ -169,7 +183,7 @@ class NodeGroupInfo:
         Returns:
             int: The local hardware rank in the node.
         """
-        for node_hardware_ranks in self.hardware_ranks:
+        for node_hardware_ranks in self.local_hardware_ranks:
             if hardware_rank in node_hardware_ranks:
                 return node_hardware_ranks.index(hardware_rank)
 
@@ -178,7 +192,7 @@ class NodeGroupInfo:
         # If hardware_type is not specified, set it to the default hardware type if available
         # Otherwise, leave it as None
         if self.hardware_type is None:
-            hw_resources: list[HardwareInfo] = []
+            hw_resources: list[HardwareResource] = []
             for node in self.nodes:
                 hw_resources.extend(node.hardware_resources)
             hw_types = {resource.type for resource in hw_resources}
@@ -440,11 +454,11 @@ class _RemoteNodeProbe:
         node_hw_configs = []
         if cluster_cfg is not None:
             node_hw_configs = cluster_cfg.get_node_hw_configs_by_rank(node_rank)
-        hardware_resources: list[HardwareInfo] = []
+        hardware_resources: list[HardwareResource] = []
         for policy in Hardware.policy_registry:
-            hw_info = policy.enumerate(node_rank, node_hw_configs)
-            if hw_info is not None:
-                hardware_resources.append(hw_info)
+            hw_resource = policy.enumerate(node_rank, node_hw_configs)
+            if hw_resource is not None and hw_resource.count > 0:
+                hardware_resources.append(hw_resource)
 
         # Python interpreter path
         if sys.executable != head_python_interpreter:
@@ -458,6 +472,9 @@ class _RemoteNodeProbe:
             )
             if cfg_python_interpreter_path is not None:
                 python_interpreter_path = cfg_python_interpreter_path
+        assert os.path.exists(python_interpreter_path), (
+            f"Python interpreter path {python_interpreter_path} does not exist on node with node rank {node_rank} of node labels {node_labels}."
+        )
 
         self._node_info = NodeInfo(
             node_labels=node_labels,

@@ -190,6 +190,10 @@ class WorkerGroup(Generic[WorkerClsType]):
                 "VISIBLE_DEVICES": ",".join(placement.visible_accelerators),
                 "ACCELERATOR_TYPE": str(accelerator_type),
                 "ISOLATE_ACCELERATOR": "1" if placement.isolate_accelerator else "0",
+                "LOCAL_HARDWARE_RANKS": ",".join(
+                    map(str, placement.local_hardware_ranks)
+                ),
+                "NODE_GROUP_LABEL": placement.node_group_label,
             }
             env_vars.update(
                 AcceleratorUtil.get_accelerator_env_var(

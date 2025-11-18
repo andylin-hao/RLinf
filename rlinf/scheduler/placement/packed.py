@@ -163,7 +163,7 @@ class PackedPlacementStrategy(PlacementStrategy):
         )
 
         assert start_node is not None, (
-            f"The start hardware rank {self._start_hw_rank} cannot be found in the node group with hardware type {node_group.hardware_type} and hardware ranks {node_group.hardware_ranks}."
+            f"The start hardware rank {self._start_hw_rank} cannot be found in the node group with hardware type {node_group.hardware_type} and hardware ranks {node_group.local_hardware_ranks}."
         )
 
         start_hw_rank = self._start_hw_rank

@@ -13,12 +13,12 @@
 # limitations under the License.
 
 from dataclasses import asdict, dataclass
-from typing import Any, Optional
+from typing import Optional
 
 import yaml
 from omegaconf import DictConfig
 
-from ..hardware import NodeHardwareConfig
+from ..hardware import HardwareConfig, NodeHardwareConfig
 from .utils import dataclass_arg_check, parse_rank_config
 
 
@@ -41,7 +41,7 @@ class NodeGroupConfig:
     env_vars: Optional[list[dict[str, str]]] = None
     """List of environment variables to be set on the nodes."""
 
-    hardware: Optional[list[NodeHardwareConfig]] = None
+    hardware: Optional[NodeHardwareConfig] = None
     """List of hardware configurations for the nodes."""
 
     hardware_type: Optional[str] = None
@@ -51,21 +51,16 @@ class NodeGroupConfig:
         """Post-initialization to convert hardware dicts to their respective dataclass instances."""
         if self.hardware is not None:
             # Arg check
-            for hw in self.hardware:
-                assert hasattr(hw, "keys"), (
-                    f"Each hardware yaml config must be a dictionary. But got {type(hw)}: {hw}"
-                )
-                dataclass_arg_check(
-                    NodeHardwareConfig,
-                    hw,
-                    error_suffix="in cluster node_group hardware yaml config",
-                )
-            self.hardware = [NodeHardwareConfig(**hw) for hw in self.hardware]
-            hardware_types = {hw.type for hw in self.hardware}
-            assert len(hardware_types) == 1, (
-                f"All hardware configs in a node group must be of the same type. But got types: {hardware_types}."
+            assert hasattr(self.hardware, "keys"), (
+                f"Each hardware yaml config must be a dictionary. But got {type(self.hardware)}: {self.hardware}"
             )
-            self.hardware_type = hardware_types.pop()
+            dataclass_arg_check(
+                NodeHardwareConfig,
+                self.hardware,
+                error_suffix="in cluster node_group hardware yaml config",
+            )
+            self.hardware = NodeHardwareConfig(**self.hardware)
+            self.hardware_type = self.hardware.type
 
         self.label = str(self.label)
         from .node import NodeGroupInfo
@@ -130,18 +125,18 @@ class ClusterConfig:
             - label: franka
               node_ranks: 16-17
               hardware:
-                - type: Franka
-                  configs:
-                    - robot_ip: "10.10.10.1"
-                        node_rank: 16
-                        camera_serials:
-                        - "322142001230"
-                        - "322142001231"
-                    - robot_ip: "10.10.10.2"
-                        node_rank: 17
-                        camera_serials:
-                        - "322142001232"
-                        - "322142001233"
+                type: Franka
+                configs:
+                  - robot_ip: "10.10.10.1"
+                    node_rank: 16
+                    camera_serials:
+                    - "322142001230"
+                    - "322142001231"
+                  - robot_ip: "10.10.10.2"
+                    node_rank: 17
+                    camera_serials:
+                    - "322142001232"
+                    - "322142001233"
 
         The above configuration specifies:
         - num_nodes: Total of 2 nodes in the cluster.
@@ -240,7 +235,7 @@ class ClusterConfig:
             )
         return paths[0]
 
-    def get_node_hw_configs_by_rank(self, node_rank: int) -> list[Any]:
+    def get_node_hw_configs_by_rank(self, node_rank: int) -> list[HardwareConfig]:
         """Get the hardware configurations for a given node rank.
 
         Args:
@@ -249,13 +244,14 @@ class ClusterConfig:
         Returns:
             list[Any]: The hardware configurations of the node. Empty list if no matching node group is found.
         """
-        node_hw_configs: list[Any] = []
+        node_hw_configs: list[HardwareConfig] = []
         if self.node_groups is not None:
             for node_group in self.node_groups:
                 if node_rank in node_group.node_ranks:
                     if node_group.hardware is not None:
-                        for hw_cfg in node_group.hardware:
-                            node_hw_configs.extend(hw_cfg.configs)
+                        for config in node_group.hardware.configs:
+                            if config.node_rank == node_rank:
+                                node_hw_configs.append(config)
         return node_hw_configs
 
     def __post_init__(self):
@@ -289,13 +285,30 @@ class ClusterConfig:
                     )
 
             # Validate hardware node_ranks
+            node_hardware_type_map = {}
             for node_group in self.node_groups:
                 if node_group.hardware is not None:
-                    for hw_cfg in node_group.hardware:
-                        for cfg in hw_cfg.configs:
-                            assert cfg.node_rank in node_group.node_ranks, (
-                                f"node_rank {cfg.node_rank} in hardware config must be within node_ranks {node_group.node_ranks} in node group '{node_group.label}'."
+                    for cfg in node_group.hardware.configs:
+                        assert cfg.node_rank in node_group.node_ranks, (
+                            f"node_rank {cfg.node_rank} in hardware config must be within node_ranks {node_group.node_ranks} in node group '{node_group.label}'."
+                        )
+
+                        # Ensure that the same hardware type of the same node is not defined in multiple node groups
+                        node_hardware_type_key = (
+                            cfg.node_rank,
+                            node_group.hardware.type,
+                        )
+                        if node_hardware_type_key in node_hardware_type_map:
+                            assert (
+                                node_hardware_type_map[node_hardware_type_key]
+                                == node_group.label
+                            ), (
+                                f"Cannot have multiple hardware configs of the same type '{node_group.hardware.type}' for the same node_rank {cfg.node_rank} in different node groups '{node_hardware_type_map[node_hardware_type_key]}' and '{node_group.label}'."
                             )
+                        else:
+                            node_hardware_type_map[
+                                (cfg.node_rank, node_group.hardware.type)
+                            ] = node_group.label
 
         assert type(self.num_nodes) is int and self.num_nodes > 0, (
             f"'num_nodes' must be a positive integer. But got {self.num_nodes} of type {type(self.num_nodes)}."
