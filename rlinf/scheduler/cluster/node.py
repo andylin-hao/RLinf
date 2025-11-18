@@ -77,7 +77,7 @@ class NodeInfo:
                 return Accelerator.get_accelerator_type_from_model(
                     resource.infos[0].model
                 )
-        return AcceleratorType.NO_ACCEL
+        return AcceleratorType.NO_ACCEL.value
 
     def get_hw_resource_count(self, hw_type: Optional[str]) -> int:
         """Get the count of a specific hardware resource type."""
