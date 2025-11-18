@@ -15,7 +15,7 @@
 from enum import Enum
 from typing import Optional
 
-from ..hardware import Hardware, HardwareConfig, HardwareInfo
+from ..hardware import Hardware, HardwareConfig, HardwareInfo, HardwareResource
 
 
 class AcceleratorType(str, Enum):
@@ -109,7 +109,7 @@ class Accelerator(Hardware):
     @classmethod
     def enumerate(
         cls, node_rank: int, configs: Optional[list[HardwareConfig]] = None
-    ) -> Optional[HardwareInfo]:
+    ) -> Optional[HardwareResource]:
         """Enumerate the hardware resources on a node.
 
         Args:
@@ -117,19 +117,20 @@ class Accelerator(Hardware):
             configs (Optional[list[HardwareConfig]]): The configurations for the hardware on a node.
 
         Returns:
-            Optional[HardwareInfo]: An object representing the hardware resources. None if no hardware is found.
+            Optional[HardwareResource]: A list of HardwareInfo representing the hardware resources. None if no hardware is found.
         """
         for accel_type in AcceleratorManager.manager_register.keys():
             manager = AcceleratorManager.manager_register[accel_type]
             num_devices = manager.get_num_devices()
             if num_devices > 0:
-                hardware_info = HardwareInfo(
-                    type=cls.HW_TYPE,
-                    model=f"{accel_type.value}:{manager.get_accelerator_model()}",
-                    count=num_devices,
-                )
-                return hardware_info
-        return HardwareInfo(type=AcceleratorType.NO_ACCEL, model="N/A", count=0)
+                hardware_infos = [
+                    HardwareInfo(
+                        type=cls.HW_TYPE,
+                        model=f"{accel_type.value}:{manager.get_accelerator_model()}",
+                    )
+                ] * num_devices
+                return HardwareResource(type=cls.HW_TYPE, infos=hardware_infos)
+        return None
 
     @classmethod
     def get_accelerator_type_from_model(cls, model: str) -> str:

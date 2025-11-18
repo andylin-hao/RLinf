@@ -15,6 +15,8 @@
 from dataclasses import dataclass
 from typing import ClassVar, Optional, TypeVar
 
+import yaml
+
 HardwareType = TypeVar("HardwareType")
 
 
@@ -81,6 +83,18 @@ class NodeHardwareConfig:
                 config,
                 error_suffix="in cluster node_group hardware yaml config",
             )
+
+        # Ensure all configs are unique
+        config_strs = [
+            yaml.dump(dict(config), sort_keys=True) for config in self.configs
+        ]
+        assert len(config_strs) == len(set(config_strs)), (
+            "Duplicate hardware configs found in node hardware config: \n"
+            + "\n".join(
+                [yaml.dump(dict(config), sort_keys=False) for config in self.configs]
+            )
+        )
+
         self.configs = [hardware_config_class(**config) for config in self.configs]
 
 
@@ -94,8 +108,21 @@ class HardwareInfo:
     model: str
     """Model of the hardware resource (e.g., 4090, A100, H100, Franka)."""
 
-    count: int
-    """Resource count of the hardware on a node."""
+
+@dataclass
+class HardwareResource:
+    """A list of HardwareInfo of the same type."""
+
+    type: str
+    """Type of the hardware resource (e.g., Accelerator, Robot)."""
+
+    infos: list[HardwareInfo]
+    """The HardwareInfo list."""
+
+    @property
+    def count(self) -> int:
+        """Get the count of hardware infos."""
+        return len(self.infos)
 
 
 class Hardware:
@@ -136,7 +163,7 @@ class Hardware:
     @classmethod
     def enumerate(
         cls, node_rank: int, configs: Optional[list[HardwareConfig]] = None
-    ) -> Optional[HardwareInfo]:
+    ) -> Optional[HardwareResource]:
         """Enumerate the hardware resources on a node.
 
         Args:
@@ -144,6 +171,6 @@ class Hardware:
             configs (Optional[list[HardwareConfig]]): The configurations for the hardware on a node.
 
         Returns:
-            Optional[HardwareInfo]: An object representing the hardware resources. None if no hardware is found.
+            Optional[HardwareResource]: A list of HardwareInfo representing the hardware resources. None if no hardware is found.
         """
         raise NotImplementedError

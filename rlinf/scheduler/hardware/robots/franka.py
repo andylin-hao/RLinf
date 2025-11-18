@@ -21,6 +21,7 @@ from ..hardware import (
     Hardware,
     HardwareConfig,
     HardwareInfo,
+    HardwareResource,
     NodeHardwareConfig,
 )
 
@@ -29,7 +30,7 @@ from ..hardware import (
 class FrankaHWInfo(HardwareInfo):
     """Hardware information for a robotic system."""
 
-    configs: list["FrankaConfig"]
+    config: "FrankaConfig"
 
 
 @Hardware.register()
@@ -43,7 +44,7 @@ class FrankaRobot(Hardware):
     @classmethod
     def enumerate(
         cls, node_rank: int, configs: Optional[list["FrankaConfig"]] = None
-    ) -> Optional[HardwareInfo]:
+    ) -> Optional[HardwareResource]:
         """Enumerate the robot resources on a node.
 
         Args:
@@ -51,7 +52,7 @@ class FrankaRobot(Hardware):
             configs: The configurations for the hardware on a node.
 
         Returns:
-            Optional[HardwareInfo]: An object representing the hardware resources. None if no hardware is found.
+            Optional[HardwareResource]: An object representing the hardware resources. None if no hardware is found.
         """
         assert configs is not None, (
             "Robot hardware requires explicit configurations for robot IP and camera serials for its controller nodes."
@@ -62,12 +63,21 @@ class FrankaRobot(Hardware):
                 robot_configs.append(config)
 
         if robot_configs:
+            franka_infos = []
             cameras = cls.enumerate_cameras()
 
             for config in robot_configs:
                 # Use auto detected cameras
                 if config.camera_serials is None:
                     config.camera_serials = list(cameras)
+
+                franka_infos.append(
+                    FrankaHWInfo(
+                        type=cls.HW_TYPE,
+                        model=cls.HW_TYPE,
+                        config=config,
+                    )
+                )
 
                 if config.disable_validate:
                     continue
@@ -111,12 +121,7 @@ class FrankaRobot(Hardware):
                             f"Camera with serial {serial} for Franka robot at is not connected to node rank {node_rank}. Available cameras are: {cameras}."
                         )
 
-            return FrankaHWInfo(
-                type=cls.HW_TYPE,
-                model=cls.HW_TYPE,
-                count=len(robot_configs),
-                configs=robot_configs,
-            )
+            return HardwareResource(type=cls.HW_TYPE, infos=franka_infos)
         return None
 
     @classmethod
