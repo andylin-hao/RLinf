@@ -76,9 +76,6 @@ class FlexiblePlacementStrategy(PlacementStrategy):
             The hardware ranks in each inner list must be on the same node and must be unique.
 
         .. note::
-            The hardware ranks of different processes should not overlap.
-
-        .. note::
             The hardware ranks will be sorted in ascending order both within each process and across processes (based on the first rank).
 
         Args:
@@ -95,9 +92,6 @@ class FlexiblePlacementStrategy(PlacementStrategy):
         self._hardware_ranks_list = hardware_ranks_list
         all_hardware_ranks = sorted(
             [hw_rank for hw_ranks in hardware_ranks_list for hw_rank in hw_ranks]
-        )
-        assert len(all_hardware_ranks) == len(set(all_hardware_ranks)), (
-            f"The hardware ranks of different processes {hardware_ranks_list} should not overlap."
         )
         self._start_rank = all_hardware_ranks[0]
         self._end_rank = all_hardware_ranks[-1]
