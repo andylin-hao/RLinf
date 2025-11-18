@@ -164,13 +164,12 @@ class ComponentPlacement:
         self._component_rank_map: dict[str, dict[tuple[int], list[int]]] = {}
 
         for component_names in self._placement_config.keys():
-            component_placement: str | DictConfig = self._placement_config[
-                component_names
-            ]
-            if not isinstance(component_names, str) and not isinstance(
-                component_names, DictConfig
+            component_placement = self._placement_config[component_names]
+            if not isinstance(component_placement, str) and not isinstance(
+                component_placement, DictConfig
             ):
-                component_names = str(component_names)
+                component_placement = str(component_placement)
+            component_names = str(component_names)
             component_names = component_names.split(",")
             component_names = [c.strip() for c in component_names]
             self._parse_component_placement(
