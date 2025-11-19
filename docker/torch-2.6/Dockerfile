@@ -56,7 +56,7 @@ FROM base-image AS reason-image
 
 # Install Megatron-LM
 RUN git clone https://github.com/NVIDIA/Megatron-LM.git -b core_r0.13.0 /opt/Megatron-LM
-ENV PYTHONPATH=/opt/Megatron-LM:$PYTHONPATH
+ENV PYTHONPATH=/opt/Megatron-LM
 
 # Install reasoning env
 RUN uv venv reason --python=${PYTHON_VERSION}
@@ -137,7 +137,7 @@ ENV LIBERO_BRANCH=master
 # For invalidating docker build cache when the branch updates
 ADD https://api.github.com/repos/${LIBERO_REPO}/git/refs/heads/${LIBERO_BRANCH} /tmp/.libero_version.json
 RUN git clone -b ${LIBERO_BRANCH} https://github.com/${LIBERO_REPO}.git /opt/libero
-ENV PYTHONPATH=/opt/libero:$PYTHONPATH
+ENV PYTHONPATH=/opt/libero
 
 FROM embodied-common-image AS embodied-image
 
@@ -171,16 +171,16 @@ RUN link_assets
 # Set default env
 RUN echo "source ${UV_PATH}/openvla/bin/activate" >> ~/.bashrc
 
-FROM base-image as franka-image
+FROM base-image AS franka-image
 
 RUN sh -c 'echo "deb http://mirrors.ustc.edu.cn/ros/ubuntu/ focal main" > /etc/apt/sources.list.d/ros-latest.list'
 
 RUN apt-key adv --keyserver 'hkp://keyserver.ubuntu.com:80' --recv-key C1CF6E31E6BADE8868B172B4F42ED6FBAB17C654
 RUN apt update && apt install ros-noetic-ros-base ros-noetic-libfranka ros-noetic-franka-ros -y
 
-RUN uv venv franka && source ${UV_PATH}/franka/bin/activate && \
-    UV_TORCH_BACKEND=auto uv sync --active && \
-    uv sync --extra franka --active
+RUN uv venv franka
+RUN source switch_env franka && UV_TORCH_BACKEND=auto uv sync --active
+RUN source switch_env franka && uv sync --extra franka --active
 
 # Install serl_franka_controller
 ENV ROS_CATKIN_PATH=/opt/catkin_ws
