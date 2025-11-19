@@ -160,6 +160,7 @@ class ComponentPlacement:
         self._placement_mode = None
 
         self._placements: dict[str, PlacementStrategy] = {}
+        self._components: list[str] = []
         self._component_world_size: dict[str, int] = {}
         self._component_rank_map: dict[str, dict[tuple[int], list[int]]] = {}
 
@@ -175,6 +176,11 @@ class ComponentPlacement:
             self._parse_component_placement(
                 cluster, component_placement, component_names
             )
+            self._components.extend(component_names)
+
+        assert len(self._components) == len(set(self._components)), (
+            f"Duplicate component names found in component placement config: {self._placement_config}. Component names must be unique."
+        )
 
     def _parse_component_placement(
         self,
@@ -414,6 +420,15 @@ class ComponentPlacement:
             PlacementMode: The placement mode for the component.
         """
         return self._placement_mode
+
+    @property
+    def components(self) -> list[str]:
+        """Get the list of components defined in the placement.
+
+        Returns:
+            list[str]: The list of component names.
+        """
+        return self._components
 
     def get_hardware_ranks(self, component_name: str):
         """Get the hardware count for a specific component.

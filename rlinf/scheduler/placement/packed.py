@@ -59,10 +59,10 @@ class PackedPlacementStrategy(PlacementStrategy):
         [1, 1, 1, 1]
         >>>
         >>>
-        >>> # `num_accelerators_per_process` allows for one process to hold multiple accelerators/GPUs.
-        >>> # For example, if you want a process to hold 4 GPUs, you can set the `num_accelerators_per_process` to 4.
+        >>> # `num_hardware_per_process` allows for one process to hold multiple accelerators/GPUs.
+        >>> # For example, if you want a process to hold 4 GPUs, you can set the `num_hardware_per_process` to 4.
         >>> placement_chunked = PackedPlacementStrategy(
-        ...     start_hardware_rank=0, end_hardware_rank=3, num_accelerators_per_process=2
+        ...     start_hardware_rank=0, end_hardware_rank=3, num_hardware_per_process=2
         ... )
         >>> my_worker_chunked = MyWorker.create_group().launch(
         ...     cluster=cluster,
@@ -76,7 +76,7 @@ class PackedPlacementStrategy(PlacementStrategy):
         >>> # `stride` allows for strided placement of workers across GPUs.
         >>> # For example, if you want to place workers on every second GPU, you can set the stride to 2.
         >>> placement_strided = PackedPlacementStrategy(
-        ...     start_hardware_rank=0, end_hardware_rank=3, stride=2, num_accelerators_per_process=2
+        ...     start_hardware_rank=0, end_hardware_rank=3, stride=2, num_hardware_per_process=2
         ... )
         >>> my_worker_strided = MyWorker.create_group().launch(
         ...     cluster=cluster,

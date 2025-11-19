@@ -118,7 +118,7 @@ class Channel:
         >>> cluster = Cluster(num_nodes=1)
         >>> channel = Channel.create(name="channel")
         >>> placement = PackedPlacementStrategy(
-        ...     start_accelerator_id=0, end_accelerator_id=0
+        ...     start_hardware_rank=0, end_hardware_rank=0
         ... )
         >>> producer = Producer.create_group().launch(
         ...     cluster, name="test", placement_strategy=placement
