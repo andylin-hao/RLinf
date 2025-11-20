@@ -83,6 +83,15 @@ class AMDGPUManager(AcceleratorManager):
         return "nccl"
 
     @staticmethod
+    def get_ccl_socket_ifname_env_var() -> str:
+        """Get the network socket interface name environment variable.
+
+        Returns:
+            str: The network socket interface name environment variable.
+        """
+        return "NCCL_SOCKET_IFNAME"
+
+    @staticmethod
     def get_torch_platform():
         """Get the PyTorch platform module."""
         import torch

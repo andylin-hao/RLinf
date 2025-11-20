@@ -56,8 +56,11 @@ class ClusterEnvVar(str, Enum):
     NODE_RANK = "NODE_RANK"
     """Rank of each node in the cluster."""
 
-    NET_DEVICES = "NET_DEVICES"
+    COMM_NET_DEVICES = "COMM_NET_DEVICES"
     """Network devices to use for inter-node communication."""
+
+    COMM_PORT = "COMM_PORT"
+    """Port for inter-node communication."""
 
 
 class Cluster:
@@ -72,7 +75,8 @@ class Cluster:
         ClusterEnvVar.LOG_LEVEL: "INFO",
         ClusterEnvVar.TIMEOUT: "180",
         ClusterEnvVar.NODE_RANK: None,
-        ClusterEnvVar.NET_DEVICES: None,
+        ClusterEnvVar.COMM_NET_DEVICES: None,
+        ClusterEnvVar.COMM_PORT: None,
     }
 
     @classmethod

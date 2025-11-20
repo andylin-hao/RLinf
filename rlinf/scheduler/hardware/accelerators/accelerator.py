@@ -90,6 +90,15 @@ class AcceleratorManager:
         raise NotImplementedError
 
     @staticmethod
+    def get_ccl_socket_ifname_env_var() -> str:
+        """Get the network socket interface name environment variable.
+
+        Returns:
+            str: The network socket interface name environment variable.
+        """
+        raise NotImplementedError
+
+    @staticmethod
     def get_torch_platform():
         """Get the PyTorch platform module."""
         raise NotImplementedError
@@ -207,6 +216,23 @@ class AcceleratorUtil:
         elif accelerator_type in AcceleratorManager.manager_register:
             manager = AcceleratorManager.manager_register[accelerator_type]
             return manager.get_ccl_backend()
+        raise ValueError(f"Unsupported accelerator type: {accelerator_type}")
+
+    @staticmethod
+    def get_ccl_socket_ifname_env_var(accelerator_type: AcceleratorType):
+        """Get the network socket interface name environment variable based on the accelerator type.
+
+        Args:
+            accelerator_type (AcceleratorType): The type of the accelerator.
+
+        Returns:
+            str: The network socket interface name environment variable.
+        """
+        if accelerator_type == AcceleratorType.NO_ACCEL:
+            return "GLOO_SOCKET_IFNAME"
+        elif accelerator_type in AcceleratorManager.manager_register:
+            manager = AcceleratorManager.manager_register[accelerator_type]
+            return manager.get_ccl_socket_ifname_env_var()
         raise ValueError(f"Unsupported accelerator type: {accelerator_type}")
 
     @staticmethod
