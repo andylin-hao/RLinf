@@ -47,6 +47,9 @@ class NodeGroupConfig:
     hardware_type: Optional[str] = None
     """Type of hardware for the nodes."""
 
+    ignore_hardware: bool = False
+    """Whether to ignore hardware detection on the nodes in this group. If set to True, the nodes will be treated as CPU-only nodes."""
+
     def __post_init__(self):
         """Post-initialization to convert hardware dicts to their respective dataclass instances."""
         if self.hardware is not None:
@@ -60,7 +63,13 @@ class NodeGroupConfig:
                 error_suffix="in cluster node_group hardware yaml config",
             )
             self.hardware = NodeHardwareConfig(**self.hardware)
+            assert self.hardware_type is None, "hardware_type should not be specified."
             self.hardware_type = self.hardware.type
+
+        if self.ignore_hardware:
+            assert self.hardware is None, (
+                "Cannot specify hardware when ignore_hardware is set to True."
+            )
 
         self.label = str(self.label)
         from .node import NodeGroupInfo
