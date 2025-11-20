@@ -99,31 +99,32 @@ class ComponentPlacement:
     "group_name1","group_name2",...: "resource_ranks1":"process_ranks1", "resource_ranks2":"process_ranks2",...
     or:
     "group_name1","group_name2",...:
-        node_group: <node_group_label>
-        placement: "resource_ranks1":"process_ranks1", "resource_ranks2":"process_ranks2",...
+      node_group: <node_group_label>
+      placement: "resource_ranks1":"process_ranks1", "resource_ranks2":"process_ranks2",...
 
     An simple example is:
     cluster:
-        num_nodes: 1
-        actor,inference: 0-7
+      num_nodes: 1
+      actor,inference: 0-7
     which means both the actor and inference groups' process 0-7 evenly occupy accelerator 0 to 7.
 
     A more complex example is:
     cluster:
-        num_nodes: 2
-        component_placement:
-            actor:
-                node_group: a800
-                placement: 0-8
-            rollout:
-                node_group: 4090
-                placement: 0-8
-            env:
-                node_group: robot # Assuming robot hardware type is defined in the node group config
-                placement: 0-3:0-7
-            agent:
-                node_group: node
-                placement: 0-1:0-200,2-3:201-511
+      num_nodes: 2
+      component_placement:
+        actor:
+          node_group: a800
+          placement: 0-8
+        rollout:
+          node_group: 4090
+          placement: 0-8
+        env:
+          node_group: robot # Assuming robot hardware type is defined in the node group config
+          placement: 0-3:0-7
+        agent:
+          node_group: node
+          placement: 0-1:0-200,2-3:201-511
+
     which means:
     - The actor group occupies accelerators 0-8 on node group 'a800'.
     - The rollout group occupies accelerators 0-8 on node group '4090'.

@@ -881,14 +881,26 @@ class Worker(metaclass=WorkerMeta):
             ClusterEnvVar.COMM_NET_DEVICES, None
         )
         if self._comm_devices is not None:
-            # Validate the format of comm devices
-            os.environ["GLOO_SOCKET_IFNAME"] = self._comm_devices
-            os.environ[
-                AcceleratorUtil.get_ccl_socket_ifname_env_var(self._accelerator_type)
-            ] = self._comm_devices
             self.log_info(
                 f"Using communication devices for worker {self._worker_name}: {self._comm_devices}"
             )
+            # Validate the format of comm devices
+            if os.getenv("GLOO_SOCKET_IFNAME") is None:
+                os.environ["GLOO_SOCKET_IFNAME"] = self._comm_devices
+            elif self._comm_devices != os.environ["GLOO_SOCKET_IFNAME"]:
+                self.log_warning(
+                    f"GLOO_SOCKET_IFNAME is already set to {os.environ['GLOO_SOCKET_IFNAME']}, ignoring {Cluster.get_full_env_var_name(ClusterEnvVar.COMM_NET_DEVICES)}={self._comm_devices}"
+                )
+
+            ccl_socket_env_var = AcceleratorUtil.get_ccl_socket_ifname_env_var(
+                self._accelerator_type
+            )
+            if os.environ.get(ccl_socket_env_var) is None:
+                os.environ[ccl_socket_env_var] = self._comm_devices
+            elif self._comm_devices != os.environ[ccl_socket_env_var]:
+                self.log_warning(
+                    f"{ccl_socket_env_var} is already set to {os.environ[ccl_socket_env_var]}, ignoring {Cluster.get_full_env_var_name(ClusterEnvVar.COMM_NET_DEVICES)}={self._comm_devices}"
+                )
 
     def _setup_logging(self):
         self._logger = logging.getLogger(self._worker_name)

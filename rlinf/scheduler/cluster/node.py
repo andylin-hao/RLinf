@@ -356,15 +356,11 @@ class NodeProbe:
             node.env_vars.update(modified_env_vars)
 
             # Finally, update with env vars from cluster config if available
-            if (
-                self._cluster_cfg is not None
-                and self._cluster_cfg.node_groups is not None
-            ):
-                for node_group in self._cluster_cfg.node_groups:
-                    if node.node_rank in node_group.node_ranks:
-                        if node_group.env_vars is not None:
-                            for env_var_dict in node_group.env_vars:
-                                node.env_vars.update(env_var_dict)
+            if self._cluster_cfg is not None:
+                node_env_vars = self._cluster_cfg.get_node_env_vars_by_rank(
+                    node.node_rank
+                )
+                node.env_vars.update(node_env_vars)
 
     def _sort_nodes(self, cluster_num_nodes: int):
         """Sort the node info list by node rank if available, otherwise by accelerator type and IP."""

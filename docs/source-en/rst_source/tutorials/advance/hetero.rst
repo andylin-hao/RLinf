@@ -23,7 +23,8 @@ An example
 ~~~~~~~~~~~~~~~~~
 
 The following example (adapted from the ``ClusterConfig`` docstring) shows a
-cluster with heterogeneous hardware:
+cluster with heterogeneous hardware and per-node software environments
+configured via ``env_configs``:
 
 .. code-block:: yaml
 
@@ -33,13 +34,13 @@ cluster with heterogeneous hardware:
 	  component_placement:
 	    actor:
 	      node_group: a800
-	      placement: 0-63           # accelerator (GPU) ranks
+	      placement: 0-63           # hardware ranks within ``a800``
 	    rollout:
 	      node_group: 4090
-	      placement: 0-63           # accelerator (GPU) ranks
+	      placement: 0-63           # hardware ranks within ``4090``
 	    env:
 	      node_group: franka
-	      placement: 0-1            # robot hardware ranks
+	      placement: 0-1            # robot hardware ranks within ``franka``
 	    agent:
 	      node_group: node
 	      placement: 0-1:0-199,2-3:200-399  # node ranks : process ranks
@@ -47,14 +48,18 @@ cluster with heterogeneous hardware:
 	  node_groups:
 	    - label: a800
 	      node_ranks: 0-7
-	      python_interpreter_path: /opt/venv/openpi/bin/python3
-	      env_vars:
-	        - GLOO_SOCKET_IFNAME: "eth0"
+	      env_configs:
+	        - node_ranks: 0-7
+	          python_interpreter_path: /opt/venv/openpi/bin/python3
+	          env_vars:
+	            - GLOO_SOCKET_IFNAME: "eth0"
 
 	    - label: 4090
 	      node_ranks: 8-15
-	      env_vars:
-	        - GLOO_SOCKET_IFNAME: "eth1"
+	      env_configs:
+	        - node_ranks: 8-15
+	          env_vars:
+	            - GLOO_SOCKET_IFNAME: "eth1"
 
 	    - label: franka
 	      node_ranks: 16-17
@@ -96,13 +101,21 @@ The above configuration encodes the following ideas:
 		this group. In the example, ``a800`` covers ``0-7``, ``4090`` covers
 		``8-15``, and ``franka`` covers ``16-17``.
 
-	- ``python_interpreter_path`` (optional): path to the Python
-		interpreter that will be used for workers placed on this node group.
-		If omitted, RLinf uses the interpreter that started Ray on that node.
+	- ``env_configs`` (optional): a list of software environment
+		configurations for subsets of nodes in the group. Each entry is a
+		``NodeGroupEnvConfig`` with its own ``node_ranks``,
+		``env_vars``, and ``python_interpreter_path``:
 
-	- ``env_vars`` (optional): list of environment variables to set on
-		nodes in this group. Each list element is a one-key dictionary,
-		e.g. ``GLOO_SOCKET_IFNAME: "eth0"``.
+		* ``node_ranks`` must be a subset of the parent group's
+		``node_ranks``, and different ``env_configs`` in the same group must not overlap.
+
+		* ``env_vars`` is a list of one-key dicts; environment variable
+		keys must be unique within a node (no duplicates across
+		``env_configs`` or node groups).
+
+		* ``python_interpreter_path`` is the interpreter to use on the
+		specified nodes. At most one interpreter path may be configured
+		per node.
 
 	- ``hardware`` (optional): structured description of *non-accelerator
 		hardware* (such as robots). The structure depends on the hardware
