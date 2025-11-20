@@ -16,10 +16,47 @@ from dataclasses import asdict, dataclass
 from typing import Optional
 
 import yaml
-from omegaconf import DictConfig
+from omegaconf import DictConfig, ListConfig
 
 from ..hardware import HardwareConfig, NodeHardwareConfig
 from .utils import dataclass_arg_check, parse_rank_config
+
+
+@dataclass
+class NodeGroupEnvConfig:
+    """Configuration for software environments for a set of nodes in a node group."""
+
+    node_ranks: list[int]
+    """List of node ranks that belong to this node group."""
+
+    env_vars: Optional[list[dict[str, str]]] = None
+    """List of environment variables to be set on the nodes."""
+
+    python_interpreter_path: Optional[str] = None
+    """Path to the Python interpreter to be used on the nodes."""
+
+    def __post_init__(self):
+        """Post-initialization to convert node_ranks from str to list[int] if needed."""
+        # Convert env_vars list of dicts to ensure each dict has only one key-value pair
+        if self.env_vars is not None:
+            env_vars = self.env_vars
+            self.env_vars = []
+            assert isinstance(env_vars, ListConfig), (
+                f"env_vars must be a list of dicts. But got {type(env_vars)}: {env_vars}. Perhaps missing '-' in yaml before each environment variable?"
+            )
+            for env_var in env_vars:
+                assert hasattr(env_var, "keys"), (
+                    f"Each node env_var must be a dict in config. But got {type(env_var)}: {env_var}"
+                )
+                assert len(env_var) == 1, (
+                    f"Each node env_var dict must contain exactly one key-value pair. But got: {env_var}"
+                )
+                env_var_key = str(list(env_var.keys())[0])
+                env_var_value = str(list(env_var.values())[0])
+                self.env_vars.append({env_var_key: env_var_value})
+
+        if self.python_interpreter_path is not None:
+            self.python_interpreter_path = str(self.python_interpreter_path)
 
 
 @dataclass
@@ -35,11 +72,8 @@ class NodeGroupConfig:
     node_ranks: list[int]
     """List of node ranks that belong to this node group."""
 
-    python_interpreter_path: Optional[str] = None
-    """Path to the Python interpreter to be used on the nodes."""
-
-    env_vars: Optional[list[dict[str, str]]] = None
-    """List of environment variables to be set on the nodes."""
+    env_configs: Optional[list[NodeGroupEnvConfig]] = None
+    """List of environment configurations for the nodes in this group."""
 
     hardware: Optional[NodeHardwareConfig] = None
     """List of hardware configurations for the nodes."""
@@ -71,6 +105,25 @@ class NodeGroupConfig:
                 "Cannot specify hardware when ignore_hardware is set to True."
             )
 
+        if self.env_configs is not None:
+            # Arg check
+            env_configs = self.env_configs
+            self.env_configs = []
+            assert isinstance(env_configs, ListConfig), (
+                f"env_configs must be a list of dicts. But got {type(env_configs)}: {env_configs}. Perhaps missing '-' in yaml before node_ranks?"
+            )
+            for env_config in env_configs:
+                assert hasattr(env_config, "keys"), (
+                    f"Each node env_configs yaml config must be a dictionary. But got {type(env_config)}: {env_config}"
+                )
+                dataclass_arg_check(
+                    NodeGroupEnvConfig,
+                    env_config,
+                    error_suffix="in cluster node_group env_configs yaml config",
+                )
+                env_config = NodeGroupEnvConfig(**env_config)
+                self.env_configs.append(env_config)
+
         self.label = str(self.label)
         from .node import NodeGroupInfo
 
@@ -78,20 +131,31 @@ class NodeGroupConfig:
             f"Node group label '{self.label}' is reserved by the scheduler. Please choose another label."
         )
 
-        # Convert env_vars list of dicts to ensure each dict has only one key-value pair
-        if self.env_vars is not None:
-            env_vars = self.env_vars
-            self.env_vars = []
-            for env_var in env_vars:
-                assert hasattr(env_var, "keys"), (
-                    f"Each node env_var must be a dict in config. But got {type(env_var)}: {env_var}"
+    def _validate_env_configs(self):
+        """Validate the env_configs to ensure no overlapping node ranks and no duplicate env vars."""
+        if self.env_configs is None:
+            return
+        all_node_ranks = set()
+        all_env_var_keys = set()
+        for env_config in self.env_configs:
+            # Check for overlapping node ranks
+            for node_rank in env_config.node_ranks:
+                assert node_rank in self.node_ranks, (
+                    f"Node rank {node_rank} in env_config must be within node_ranks {self.node_ranks} in node group '{self.label}'."
                 )
-                assert len(env_var) == 1, (
-                    f"Each node env_var dict must contain exactly one key-value pair. But got: {env_var}"
+                assert node_rank not in all_node_ranks, (
+                    f"Node rank {node_rank} in env_config is duplicated in node group '{self.label}'."
                 )
-                env_var_key = str(list(env_var.keys())[0])
-                env_var_value = str(list(env_var.values())[0])
-                self.env_vars.append({env_var_key: env_var_value})
+                all_node_ranks.add(node_rank)
+
+            # Check for duplicate env var keys
+            if env_config.env_vars is not None:
+                for env_var_dict in env_config.env_vars:
+                    for env_var_key in env_var_dict.keys():
+                        assert env_var_key not in all_env_var_keys, (
+                            f"Environment variable '{env_var_key}' in env_config is duplicated in node group '{self.label}'."
+                        )
+                        all_env_var_keys.add(env_var_key)
 
 
 @dataclass
@@ -105,57 +169,62 @@ class ClusterConfig:
     An example cluster node group configuration in YAML format, which describes a heterogeneous RL training setup with 2 types of accelerators (A800 for training and 4090 for rollout), Franka robot arm for real-world interaction, and node-level placement for agent processes:
 
     cluster:
-        num_nodes: 18
-        component_placement:
+      num_nodes: 18
+      component_placement:
         actor:
-            node_group: a800
-            placement: 0-63 # Hardware ranks
+          node_group: a800
+          placement: 0-63  # Hardware ranks
         rollout:
-            node_group: 4090
-            placement: 0-63 # Hardware ranks
+          node_group: 4090
+          placement: 0-63  # Hardware ranks
         env:
-            node_group: franka
-            placement: 0-1 # Hardware ranks
+          node_group: franka
+          placement: 0-1   # Hardware ranks
         agent:
-            node_group: node
-            placement: 0-1:0-199,2-3:200-399 # Hardware ranks:Process ranks
-        node_groups:
-            - label: a800
-              node_ranks: 0-7
+          node_group: node
+          placement: 0-1:0-199,2-3:200-399  # Hardware ranks:Process ranks
+
+      node_groups:
+        - label: a800
+          node_ranks: 0-7
+          env_configs:
+            - node_ranks: 0-7
               python_interpreter_path: /opt/venv/openpi/bin/python3
               env_vars:
-                - "GLOO_SOCKET_IFNAME": "eth0"
+                - GLOO_SOCKET_IFNAME: "eth0"
 
-            - label: 4090
-              node_ranks: 8-15
+        - label: 4090
+          node_ranks: 8-15
+          env_configs:
+            - node_ranks: 8-15
               env_vars:
-                - "GLOO_SOCKET_IFNAME": "eth1"
+                - GLOO_SOCKET_IFNAME: "eth1"
 
-            - label: franka
-              node_ranks: 16-17
-              hardware:
-                type: Franka
-                configs:
-                  - robot_ip: "10.10.10.1"
-                    node_rank: 16
-                    camera_serials:
-                    - "322142001230"
-                    - "322142001231"
-                  - robot_ip: "10.10.10.2"
-                    node_rank: 17
-                    camera_serials:
-                    - "322142001232"
-                    - "322142001233"
+        - label: franka
+          node_ranks: 16-17
+          hardware:
+            type: Franka
+            configs:
+              - robot_ip: "10.10.10.1"
+                node_rank: 16
+                camera_serials:
+                  - "322142001230"
+                  - "322142001231"
+              - robot_ip: "10.10.10.2"
+                node_rank: 17
+                camera_serials:
+                  - "322142001232"
+                  - "322142001233"
 
         The above configuration specifies:
         - num_nodes: Total of 18 nodes in the cluster.
         - component_placement: Placement of different components (actor, rollout, env, agent) across node groups.
         - node_groups: Three node groups defined:
-            - a800: Node ranks 0-7 with A800 GPUs for training (labeled with "a800"). Python interpreter path and env vars are also specified if different python interpreters and environment variables are needed for different sets of nodes.
+            - a800: Node ranks 0-7 with A800 GPUs for training (labeled with "a800"). Per-node software environments (python interpreter and env vars) are configured via `env_configs`.
 
-            - 4090: Node ranks 8-15 with 4090 GPUs for rollout (labeled with "4090"). Env vars are specified.
+            - 4090: Node ranks 8-15 with 4090 GPUs for rollout (labeled with "4090"). Environment variables are configured via `env_configs`.
 
-            - franka: Node ranks 16-17 with Franka robot arms (labeled with "franka"). Each node has specific hardware configurations including robot IPs and camera serials. Different type of hardware has different configurations. Refer to the specific hardware type docs for more information.
+            - franka: Node ranks 16-17 with Franka robot arms (labeled with "franka"). Each node has specific hardware configurations including robot IPs and camera serials. Different types of hardware have different configurations; refer to the specific hardware type docs for more information.
 
         The concrete specification is as follows.
 
@@ -163,18 +232,26 @@ class ClusterConfig:
 
         Labels "cluster" and "node" are reserved by the scheduler and cannot be used. The "node" label can be used to place hardware-agnostic workers like agent workers on specific nodes even without GPUs or any other hardware.
 
-        2. node_ranks: A list of node ranks (integers) that belong to this node group. Node ranks are zero-indexed ranks specified via RLINF_NODE_RANK environment variable before `ray start` on each node.
+        2. node_ranks: A list or range expression of node ranks (integers) that belong to this node group. Node ranks are zero-indexed ranks specified via RLINF_NODE_RANK environment variable before `ray start` on each node.
 
-        3. python_interpreter_path: (Optional) Path to the Python interpreter to be used on the nodes in this group. If not specified, the Python interpreter for starting ray on that node is used.
+        3. env_configs (optional): A list of `NodeGroupEnvConfig` entries that describe software environments for subsets of nodes in the group.
 
-        4. env_vars: (Optional) A list of environment variables (as dicts) to be set on the nodes in this group. Each dict should contain exactly one key-value pair representing the environment variable name and its value.
+            - Each `env_configs` item has its own `node_ranks`, `env_vars`, and `python_interpreter_path`.
+            - `node_ranks` must be a subset of the parent node group's `node_ranks`, and different `env_configs` entries in the same group must not overlap in `node_ranks`.
+            - `env_vars` is a list of one-key dicts; each environment variable key must be unique within a node group (no duplicates across `env_configs`).
+            - `python_interpreter_path` is the interpreter to use on the specified nodes; at most one interpreter path may be configured per node (across all groups and env configs), otherwise `get_node_python_interpreter_path_by_rank` raises.
 
-        5. hardware: (Optional) A list of hardware configurations for the nodes in this group. Each hardware configuration's content is determined by the hardware's "type" field. If hardware is specified, one node group can only contain one type of hardware. Different types of hardware need to be placed in different node groups.
+        4. hardware (optional): A `NodeHardwareConfig` describing hardware configurations for the nodes in this group.
 
-        When hardware is not specified, accelerator hardware is automatically detected and used if it exists on any of the nodes. If no accelerator hardware is found, the node group is treated as CPU-only nodes and the node itself is the hardware resource, where each node has one such resource.
+            - Each hardware configuration's content is determined by the hardware's `type` field. When hardware is specified, one node group can only contain one type of hardware. Different types of hardware need to be placed in different node groups.
+            - For a given `(node_rank, hardware_type)` pair, at most one node group may define hardware; otherwise initialization fails.
 
-        When using node_group in the component_placement, the specified hardware ranks are thus (1) "hardware.type" hardware if it is specified in the node group; (2) automatically detected accelerator hardware if exists; (3) node itself as hardware resource if no accelerator hardware is found.
-        When using the reserved "node" node_group in the component_placement, it is a group with all nodes but no hardware. And so it can be used to perform hardware-agnostic placement of processes on specific nodes.
+        5. ignore_hardware (optional): If set to True, hardware detection is disabled for this node group and the nodes are treated as CPU-only nodes, even if accelerators or other hardware are present.
+
+        When hardware is not specified and `ignore_hardware` is False, accelerator hardware is automatically detected and used if it exists on any of the nodes. If no accelerator hardware is found, the node group is treated as CPU-only nodes and the node itself is the hardware resource, where each node has one such resource.
+
+        When using `node_group` in the component_placement, the specified hardware ranks are thus (1) `hardware.type` hardware if it is specified in the node group; (2) automatically detected accelerator hardware if it exists; (3) node itself as hardware resource if no accelerator hardware is found.
+        When using the reserved `node` node_group in the component_placement, it is a group with all nodes but no hardware. And so it can be used to perform hardware-agnostic placement of processes on specific nodes.
     """
 
     num_nodes: int
@@ -218,6 +295,37 @@ class ClusterConfig:
                 labels.append(node_group.label)
         return labels
 
+    def get_node_env_vars_by_rank(self, node_rank: int) -> dict[str, str]:
+        """Get the environment variables for a given node rank.
+
+        Args:
+            node_rank (int): The rank of the node.
+
+        Returns:
+            dict[str, str]: The environment variables of the node. Empty dict if no matching node group is found.
+        """
+        if self.node_groups is None:
+            return {}
+        env_vars = {}
+        node_env_keys = []
+        for node_group in self.node_groups:
+            if (
+                node_group.env_configs is not None
+                and node_rank in node_group.node_ranks
+            ):
+                for env_config in node_group.env_configs:
+                    if node_rank in env_config.node_ranks:
+                        if env_config.env_vars is not None:
+                            for env_var_dict in env_config.env_vars:
+                                env_vars.update(env_var_dict)
+                                assert set(env_var_dict.keys()).isdisjoint(
+                                    node_env_keys
+                                ), (
+                                    f"Environment variables {set(env_var_dict.keys()).intersection(set(node_env_keys))} in cluster configuration for node group '{node_group.label}' have been set in other node groups. Please ensure that environment variables are not duplicated across node groups."
+                                )
+                                node_env_keys.extend(env_var_dict.keys())
+        return env_vars
+
     def get_node_python_interpreter_path_by_rank(self, node_rank: int) -> Optional[str]:
         """Get the python interpreter path for a given node rank.
 
@@ -232,10 +340,13 @@ class ClusterConfig:
         paths = []
         for node_group in self.node_groups:
             if (
-                node_rank in node_group.node_ranks
-                and node_group.python_interpreter_path is not None
+                node_group.env_configs is not None
+                and node_rank in node_group.node_ranks
             ):
-                paths.append(node_group.python_interpreter_path)
+                for env_config in node_group.env_configs:
+                    if node_rank in env_config.node_ranks:
+                        if env_config.python_interpreter_path is not None:
+                            paths.append(env_config.python_interpreter_path)
         if len(paths) == 0:
             return None
         if len(paths) > 1:
@@ -290,8 +401,29 @@ class ClusterConfig:
                     )
                 except AssertionError as e:
                     raise AssertionError(
-                        f"Error parsing node_ranks in node group '{node_group.label}'. {str(e)}"
+                        f"Error parsing node_ranks {node_group.node_ranks} in node group '{node_group.label}'. {str(e)}"
                     )
+
+                if node_group.env_configs is not None:
+                    for env_config in node_group.env_configs:
+                        try:
+                            env_config.node_ranks = parse_rank_config(
+                                env_config.node_ranks,
+                                node_group.node_ranks,
+                                "node",
+                            )
+                        except AssertionError as e:
+                            raise AssertionError(
+                                f"Error parsing node_ranks {env_config.node_ranks} in env_config of node group '{node_group.label}'. {str(e)}"
+                            )
+                        assert set(env_config.node_ranks).issubset(
+                            set(node_group.node_ranks)
+                        ), (
+                            f"node_ranks {env_config.node_ranks} in env_config must be a subset of node_ranks {node_group.node_ranks} in node group '{node_group.label}'."
+                        )
+
+                # Can only be validated after the node_ranks are parsed
+                node_group._validate_env_configs()
 
             # Validate hardware node_ranks
             node_hardware_type_map = {}

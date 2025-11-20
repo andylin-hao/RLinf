@@ -28,8 +28,13 @@ def test_cluster_config_parses_node_group_hardware():
                 {
                     "label": "a800",
                     "node_ranks": "0-1",
-                    "python_interpreter_path": "/opt/a800/bin/python3",
-                    "env_vars": [{"GLOO_SOCKET_IFNAME": "eth0"}],
+                    "env_configs": [
+                        {
+                            "node_ranks": "0-1",
+                            "python_interpreter_path": "/opt/a800/bin/python3",
+                            "env_vars": [{"GLOO_SOCKET_IFNAME": "eth0"}],
+                        }
+                    ],
                 },
                 {
                     "label": "franka",
@@ -66,7 +71,12 @@ def test_cluster_config_parses_node_group_hardware():
     )
     assert a800_group.node_ranks == [0, 1]
     assert a800_group.hardware is None
-    assert a800_group.env_vars == [{"GLOO_SOCKET_IFNAME": "eth0"}]
+    assert a800_group.env_configs is not None
+    assert len(a800_group.env_configs) == 1
+    env_cfg = a800_group.env_configs[0]
+    assert env_cfg.node_ranks == [0, 1]
+    assert env_cfg.python_interpreter_path == "/opt/a800/bin/python3"
+    assert env_cfg.env_vars == [{"GLOO_SOCKET_IFNAME": "eth0"}]
 
     assert cluster_cfg.get_node_labels_by_rank(0) == ["a800"]
     assert (
@@ -120,7 +130,12 @@ def test_cluster_config_env_vars_must_be_single_kv():
                 {
                     "label": "train",
                     "node_ranks": "0",
-                    "env_vars": [{"A": "1", "B": "2"}],
+                    "env_configs": [
+                        {
+                            "node_ranks": "0",
+                            "env_vars": [{"A": "1", "B": "2"}],
+                        }
+                    ],
                 }
             ],
         }
@@ -199,12 +214,22 @@ def test_cluster_config_duplicate_python_paths_raise():
                 {
                     "label": "grp_a",
                     "node_ranks": "0",
-                    "python_interpreter_path": "/usr/bin/python3",
+                    "env_configs": [
+                        {
+                            "node_ranks": "0",
+                            "python_interpreter_path": "/usr/bin/python3",
+                        }
+                    ],
                 },
                 {
                     "label": "grp_b",
                     "node_ranks": "0,1",
-                    "python_interpreter_path": "/opt/bin/python3",
+                    "env_configs": [
+                        {
+                            "node_ranks": "0,1",
+                            "python_interpreter_path": "/opt/bin/python3",
+                        }
+                    ],
                 },
             ],
         }
@@ -272,7 +297,12 @@ def test_cluster_config_env_var_entry_must_be_mapping():
                 {
                     "label": "train",
                     "node_ranks": "0",
-                    "env_vars": ["BAD"],
+                    "env_configs": [
+                        {
+                            "node_ranks": "0",
+                            "env_vars": ["BAD"],
+                        }
+                    ],
                 }
             ],
         }
