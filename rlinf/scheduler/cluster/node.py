@@ -109,6 +109,9 @@ class NodeGroupInfo:
     hardware_type: Optional[str] = None
     """Type of hardware of the node group. Can only contain one type of hardware."""
 
+    ignore_hardware: bool = False
+    """Whether to ignore hardware detection on the nodes in this group. If set to True, the nodes will be treated as CPU-only nodes."""
+
     DEFAULT_GROUP_LABEL: ClassVar[str] = "cluster"
 
     NODE_PLACEMENT_GROUP_LABEL: ClassVar[str] = "node"
@@ -191,7 +194,7 @@ class NodeGroupInfo:
         """Post-initialization to validate the node group information."""
         # If hardware_type is not specified, set it to the default hardware type if available
         # Otherwise, leave it as None
-        if self.hardware_type is None:
+        if self.hardware_type is None and not self.ignore_hardware:
             hw_resources: list[HardwareResource] = []
             for node in self.nodes:
                 hw_resources.extend(node.hardware_resources)
@@ -261,6 +264,7 @@ class NodeProbe:
                         label=node_group_cfg.label,
                         nodes=group_nodes,
                         hardware_type=node_group_cfg.hardware_type,
+                        ignore_hardware=node_group_cfg.ignore_hardware,
                     )
                     self._node_groups.append(node_group_info)
 
