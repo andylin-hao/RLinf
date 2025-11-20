@@ -83,6 +83,15 @@ class IntelGPUManager(AcceleratorManager):
         return "ccl"
 
     @staticmethod
+    def get_ccl_socket_ifname_env_var() -> str:
+        """Get the network socket interface name environment variable.
+
+        Returns:
+            str: The network socket interface name environment variable.
+        """
+        return "CCL_MNIC_NAME"
+
+    @staticmethod
     def get_torch_platform():
         """Get the PyTorch platform module."""
         import torch

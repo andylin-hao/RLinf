@@ -398,6 +398,7 @@ class Worker(metaclass=WorkerMeta):
 
         Worker.PID = os.getpid()
         self._thread = threading.current_thread()
+        self._stacklevel = 4 if self._is_ray_actor else 3
 
         # Reset Cluster.NAMESPACE for this Worker process according to the environment variable
         namespace = os.environ.get("CLUSTER_NAMESPACE", None)
@@ -433,8 +434,10 @@ class Worker(metaclass=WorkerMeta):
         # Setup node group and hardware ranks
         self._setup_hardware()
 
+        # Setup communication envs
+        self._setup_comm_envs()
+
         self._lock = threading.Lock()
-        self._stacklevel = 4 if self._is_ray_actor else 3
 
         from .lock import DeviceLock
 
@@ -489,6 +492,15 @@ class Worker(metaclass=WorkerMeta):
         for hw_rank in self._hardware_ranks:
             infos.append(self._node_group.local_hardware_infos[hw_rank])
         return infos
+
+    @property
+    def comm_port(self) -> int | None:
+        """Get the communication port assigned to the current worker.
+
+        Returns:
+            int | None: The communication port assigned to the current worker, or None if not assigned.
+        """
+        return self._comm_port
 
     @classmethod
     def create_group(
@@ -862,12 +874,43 @@ class Worker(metaclass=WorkerMeta):
     def _setup_hardware(self):
         cluster = Cluster()
         hardware_ranks_str = os.environ.get("LOCAL_HARDWARE_RANKS", "")
-        self._hardware_ranks = map(int, hardware_ranks_str.strip().split(","))
+        if hardware_ranks_str == "":
+            self._hardware_ranks = []
+        else:
+            self._hardware_ranks = list(map(int, hardware_ranks_str.strip().split(",")))
         node_group_label = os.environ.get("NODE_GROUP_LABEL", None)
         self._node_group = cluster.get_node_group(node_group_label)
         assert self._node_group is not None, (
             f"Node group {node_group_label} not found in cluster. Available node groups: {[node_group.label for node_group in cluster._node_groups]}"
         )
+
+    def _setup_comm_envs(self):
+        # Communication port
+        self._comm_port = Cluster.get_sys_env_var(ClusterEnvVar.COMM_PORT, None)
+        if self._comm_port is not None:
+            try:
+                self._comm_port = int(self._comm_port)
+            except ValueError:
+                raise ValueError(
+                    f"Invalid {Cluster.get_full_env_var_name(ClusterEnvVar.COMM_PORT)} value: {self._comm_port}. It must be an integer."
+                )
+            self.log_info(
+                f"Using communication port for worker {self._worker_name}: {self._comm_port}"
+            )
+
+        # Communication devices
+        self._comm_devices = Cluster.get_sys_env_var(
+            ClusterEnvVar.COMM_NET_DEVICES, None
+        )
+        if self._comm_devices is not None:
+            # Validate the format of comm devices
+            os.environ["GLOO_SOCKET_IFNAME"] = self._comm_devices
+            os.environ[
+                AcceleratorUtil.get_ccl_socket_ifname_env_var(self._accelerator_type)
+            ] = self._comm_devices
+            self.log_info(
+                f"Using communication devices for worker {self._worker_name}: {self._comm_devices}"
+            )
 
     def _setup_logging(self):
         self._logger = logging.getLogger(self._worker_name)
