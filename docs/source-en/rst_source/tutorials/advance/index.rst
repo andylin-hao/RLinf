@@ -36,4 +36,5 @@ offering practical guidance to help you fully optimize your RL post-training wor
    lora
    version
    resume
+   hetero
    logger

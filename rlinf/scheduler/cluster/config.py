@@ -96,7 +96,7 @@ class ClusterConfig:
     An example cluster node group configuration in YAML format, which describes a heterogeneous RL training setup with 2 types of accelerators (A800 for training and 4090 for rollout), Franka robot arm for real-world interaction, and node-level placement for agent processes:
 
     cluster:
-        num_nodes: 2
+        num_nodes: 18
         component_placement:
         actor:
             node_group: a800
@@ -139,7 +139,7 @@ class ClusterConfig:
                     - "322142001233"
 
         The above configuration specifies:
-        - num_nodes: Total of 2 nodes in the cluster.
+        - num_nodes: Total of 18 nodes in the cluster.
         - component_placement: Placement of different components (actor, rollout, env, agent) across node groups.
         - node_groups: Three node groups defined:
             - a800: Node ranks 0-7 with A800 GPUs for training (labeled with "a800"). Python interpreter path and env vars are also specified if different python interpreters and environment variables are needed for different sets of nodes.
