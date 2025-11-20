@@ -493,15 +493,6 @@ class Worker(metaclass=WorkerMeta):
             infos.append(self._node_group.local_hardware_infos[hw_rank])
         return infos
 
-    @property
-    def comm_port(self) -> int | None:
-        """Get the communication port assigned to the current worker.
-
-        Returns:
-            int | None: The communication port assigned to the current worker, or None if not assigned.
-        """
-        return self._comm_port
-
     @classmethod
     def create_group(
         cls: type[WorkerClsType], *args, **kwargs
@@ -885,19 +876,6 @@ class Worker(metaclass=WorkerMeta):
         )
 
     def _setup_comm_envs(self):
-        # Communication port
-        self._comm_port = Cluster.get_sys_env_var(ClusterEnvVar.COMM_PORT, None)
-        if self._comm_port is not None:
-            try:
-                self._comm_port = int(self._comm_port)
-            except ValueError:
-                raise ValueError(
-                    f"Invalid {Cluster.get_full_env_var_name(ClusterEnvVar.COMM_PORT)} value: {self._comm_port}. It must be an integer."
-                )
-            self.log_info(
-                f"Using communication port for worker {self._worker_name}: {self._comm_port}"
-            )
-
         # Communication devices
         self._comm_devices = Cluster.get_sys_env_var(
             ClusterEnvVar.COMM_NET_DEVICES, None

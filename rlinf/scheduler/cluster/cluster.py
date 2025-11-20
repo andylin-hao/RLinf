@@ -59,9 +59,6 @@ class ClusterEnvVar(str, Enum):
     COMM_NET_DEVICES = "COMM_NET_DEVICES"
     """Network devices to use for inter-node communication."""
 
-    COMM_PORT = "COMM_PORT"
-    """Port for inter-node communication."""
-
 
 class Cluster:
     """A singleton class that manages the cluster resources for Ray workers."""
@@ -76,7 +73,6 @@ class Cluster:
         ClusterEnvVar.TIMEOUT: "180",
         ClusterEnvVar.NODE_RANK: None,
         ClusterEnvVar.COMM_NET_DEVICES: None,
-        ClusterEnvVar.COMM_PORT: None,
     }
 
     @classmethod
