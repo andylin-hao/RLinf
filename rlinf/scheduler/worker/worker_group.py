@@ -204,9 +204,10 @@ class WorkerGroup(Generic[WorkerClsType]):
             worker = self._cluster.allocate(
                 cls=self._worker_cls,
                 worker_name=worker_name,
-                node_id=placement.cluster_node_rank,
+                node_rank=placement.cluster_node_rank,
                 max_concurrency=self._max_concurrency,
                 env_vars=env_vars,
+                node_group_label=placement.node_group_label,
                 cls_args=self._worker_cls_args,
                 cls_kwargs=self._worker_cls_kwargs,
             )
@@ -217,6 +218,13 @@ class WorkerGroup(Generic[WorkerClsType]):
                 rank: int
 
             self._workers.append(WorkerRank(rank=placement.rank, worker=worker))
+
+            node_group = self._cluster.get_node_group(placement.node_group_label)
+            node = self._cluster.get_node_info(placement.cluster_node_rank)
+            cfg_env_vars = node_group.get_node_env_vars(placement.cluster_node_rank)
+            Worker.logger.debug(
+                f"Worker rank {placement.rank} in group {self.worker_group_name} launched with cfg env vars: {cfg_env_vars}, env vars: {env_vars}, python interpreter {node_group.get_node_python_interpreter_path(placement.cluster_node_rank) or node.python_interpreter_path}."
+            )
 
     def _attach_cls_func(self):
         """Attach the class function to the worker group so they can be called directly via the worker group instance.

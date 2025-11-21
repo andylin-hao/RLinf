@@ -65,7 +65,9 @@ class Cluster:
 
     SYS_NAME = "RLinf"
     NAMESPACE = SYS_NAME
-    LOGGING_LEVEL = "INFO"
+    LOGGING_LEVEL = os.getenv(
+        f"{SYS_NAME.upper()}_{ClusterEnvVar.LOG_LEVEL.value}", "INFO"
+    ).upper()
     TIMEOUT_WARN_TIME = 60000
     DEFAULT_SYS_ENV_VAR = {
         ClusterEnvVar.CATCH_FAILURE: "0",
@@ -370,41 +372,54 @@ class Cluster:
         self,
         cls: type["Worker"],
         worker_name: str,
-        node_id: int,
+        node_rank: int,
         max_concurrency: int,
         env_vars: dict,
-        cls_args: list = [],
-        cls_kwargs: dict = {},
+        node_group_label: str,
+        cls_args: tuple,
+        cls_kwargs: dict,
     ) -> ActorHandle:
         """Allocate a ray remote class instance on a specific node and local rank.
 
         Args:
             cls (Type[Worker]): The class to allocate.
             worker_name (str): The name of the worker.
-            node_id (int): The ID of the node to allocate on.
+            node_rank (int): The rank of the node to allocate on.
             max_concurrency (Optional[int]): The maximum concurrency for the worker's underlying ray actor.
             env_vars (dict): Environment variables to set for the worker.
-            cls_args (List): Positional arguments to pass to the class constructor.
+            node_group_label (str): The label of the node group to allocate on.
+            cls_args (tuple): Positional arguments to pass to the class constructor.
             cls_kwargs (dict): Keyword arguments to pass to the class constructor.
 
         Returns:
             ray.ObjectRef: A reference to the allocated remote class instance.
 
         """
-        if node_id < 0 or node_id >= self._num_nodes:
+        if node_rank < 0 or node_rank >= self._num_nodes:
             raise ValueError(
-                f"Invalid node_id: {node_id}. Must be between 0 and {self._num_nodes - 1}."
+                f"Invalid node_id: {node_rank}. Must be between 0 and {self._num_nodes - 1}."
             )
 
-        node = self._nodes[node_id]
+        node = self._nodes[node_rank]
+        node_group = self.get_node_group(node_group_label)
         remote_cls = ray.remote(cls)
 
         merged_env_vars = node.env_vars.copy()
+        # Update with user-specified env vars in node group configs
+        cfg_node_env_vars = node_group.get_node_env_vars(node_rank)
+        merged_env_vars.update(cfg_node_env_vars)
+        # Finally, update with worker-specified env vars
         merged_env_vars.update(env_vars)
+
+        # Update Python interpreter path
+        python_interpreter_path = node.python_interpreter_path
+        cfg_python_path = node_group.get_node_python_interpreter_path(node_rank)
+        if cfg_python_path is not None:
+            python_interpreter_path = cfg_python_path
 
         options = {
             "runtime_env": {
-                "py_executable": node.python_interpreter_path,
+                "py_executable": python_interpreter_path,
                 "env_vars": merged_env_vars,
             },
             "name": worker_name,

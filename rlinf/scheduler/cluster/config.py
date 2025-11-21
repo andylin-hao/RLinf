@@ -238,8 +238,8 @@ class ClusterConfig:
 
             - Each `env_configs` item has its own `node_ranks`, `env_vars`, and `python_interpreter_path`.
             - `node_ranks` must be a subset of the parent node group's `node_ranks`, and different `env_configs` entries in the same group must not overlap in `node_ranks`.
-            - `env_vars` is a list of one-key dicts; each environment variable key must be unique within a node group (no duplicates across `env_configs`).
-            - `python_interpreter_path` is the interpreter to use on the specified nodes; at most one interpreter path may be configured per node (across all groups and env configs), otherwise `get_node_python_interpreter_path_by_rank` raises.
+            - `env_vars` is a list of one-key dicts; each environment variable key must be unique within a node group for a node.
+            - `python_interpreter_path` is the interpreter to use on the specified nodes.
 
         4. hardware (optional): A `NodeHardwareConfig` describing hardware configurations for the nodes in this group.
 
@@ -295,65 +295,30 @@ class ClusterConfig:
                 labels.append(node_group.label)
         return labels
 
-    def get_node_env_vars_by_rank(self, node_rank: int) -> dict[str, str]:
-        """Get the environment variables for a given node rank.
+    def get_node_python_interpreter_path_by_rank(self, node_rank: int) -> list[str]:
+        """Get all the python interpreter paths for a given node rank.
 
         Args:
             node_rank (int): The rank of the node.
 
         Returns:
-            dict[str, str]: The environment variables of the node. Empty dict if no matching node group is found.
+            list[str]: The python interpreter paths of the node. Empty list if no matching node group is found.
         """
-        if self.node_groups is None:
-            return {}
-        env_vars = {}
-        node_env_keys = []
-        for node_group in self.node_groups:
-            if (
-                node_group.env_configs is not None
-                and node_rank in node_group.node_ranks
-            ):
-                for env_config in node_group.env_configs:
-                    if node_rank in env_config.node_ranks:
-                        if env_config.env_vars is not None:
-                            for env_var_dict in env_config.env_vars:
-                                env_vars.update(env_var_dict)
-                                assert set(env_var_dict.keys()).isdisjoint(
-                                    node_env_keys
-                                ), (
-                                    f"Environment variables {set(env_var_dict.keys()).intersection(set(node_env_keys))} in cluster configuration for node group '{node_group.label}' have been set in other node groups. Please ensure that environment variables are not duplicated across node groups."
-                                )
-                                node_env_keys.extend(env_var_dict.keys())
-        return env_vars
-
-    def get_node_python_interpreter_path_by_rank(self, node_rank: int) -> Optional[str]:
-        """Get the python interpreter path for a given node rank.
-
-        Args:
-            node_rank (int): The rank of the node.
-
-        Returns:
-            Optional[str]: The python interpreter path of the node. None if no matching node group is found.
-        """
-        if self.node_groups is None:
-            return None
         paths = []
-        for node_group in self.node_groups:
+        for node_group in self.node_groups or []:
             if (
                 node_group.env_configs is not None
                 and node_rank in node_group.node_ranks
             ):
                 for env_config in node_group.env_configs:
-                    if node_rank in env_config.node_ranks:
-                        if env_config.python_interpreter_path is not None:
-                            paths.append(env_config.python_interpreter_path)
+                    if (
+                        node_rank in env_config.node_ranks
+                        and env_config.python_interpreter_path is not None
+                    ):
+                        paths.append(env_config.python_interpreter_path)
         if len(paths) == 0:
-            return None
-        if len(paths) > 1:
-            raise ValueError(
-                f"Multiple python interpreter paths found for node rank {node_rank}: {paths}. Expected only one."
-            )
-        return paths[0]
+            return []
+        return paths
 
     def get_node_hw_configs_by_rank(self, node_rank: int) -> list[HardwareConfig]:
         """Get the hardware configurations for a given node rank.

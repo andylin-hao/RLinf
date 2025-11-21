@@ -108,9 +108,9 @@ RLinf 支持在具有异构硬件和软件环境的集群上运行。例如，�
 
 	* 每个 ``env_configs`` 项的 ``node_ranks`` 必须是父节点组 ``node_ranks`` 的子集；同一节点组中不同 ``env_configs`` 的 ``node_ranks`` 之间不能重叠；
 
-	* ``env_vars`` 是一组只包含单个键值对的字典列表；在同一节点上，环境变量的键必须是唯一的（不能在多个 ``env_configs`` 或不同节点组中重复设置同一个键）；
+	* ``env_vars`` 是一组只包含单个键值对的字典列表；在同一节点上，环境变量的键对于同一个组内的同一个节点必须是唯一的；
 	
-	* ``python_interpreter_path`` 用于指定这些节点上使用的 Python 解释器。每个节点最多只能配置一个解释器路径。
+	* ``python_interpreter_path`` 用于指定这些节点上使用的 Python 解释器。
 
   - ``hardware`` （可选）：描述该节点组上 *非加速卡* 硬件（如机器人）的结构化配置。
     其具体字段由 ``type`` 决定（例如 ``Franka``）。当指定了 ``hardware`` 时，

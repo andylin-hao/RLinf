@@ -12,9 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import pytest
-from omegaconf import DictConfig
+import os
+import sys
+from pathlib import Path
 
+import pytest
+import ray
+from omegaconf import DictConfig, OmegaConf
+
+from rlinf.scheduler import Cluster, NodePlacementStrategy, Worker
 from rlinf.scheduler.cluster.config import ClusterConfig
 from rlinf.scheduler.hardware.robots.franka import FrankaConfig
 
@@ -80,7 +86,7 @@ def test_cluster_config_parses_node_group_hardware():
 
     assert cluster_cfg.get_node_labels_by_rank(0) == ["a800"]
     assert (
-        cluster_cfg.get_node_python_interpreter_path_by_rank(0)
+        cluster_cfg.get_node_python_interpreter_path_by_rank(0)[0]
         == "/opt/a800/bin/python3"
     )
     assert cluster_cfg.get_node_hw_configs_by_rank(0) == []
@@ -203,41 +209,6 @@ def test_cluster_config_duplicate_hardware_type_same_node():
 
     with pytest.raises(AssertionError, match="Cannot have multiple hardware configs"):
         ClusterConfig.from_dict_cfg(config)
-
-
-def test_cluster_config_duplicate_python_paths_raise():
-    config = DictConfig(
-        {
-            "num_nodes": 2,
-            "component_placement": {},
-            "node_groups": [
-                {
-                    "label": "grp_a",
-                    "node_ranks": "0",
-                    "env_configs": [
-                        {
-                            "node_ranks": "0",
-                            "python_interpreter_path": "/usr/bin/python3",
-                        }
-                    ],
-                },
-                {
-                    "label": "grp_b",
-                    "node_ranks": "0,1",
-                    "env_configs": [
-                        {
-                            "node_ranks": "0,1",
-                            "python_interpreter_path": "/opt/bin/python3",
-                        }
-                    ],
-                },
-            ],
-        }
-    )
-
-    cluster_cfg = ClusterConfig.from_dict_cfg(config)
-    with pytest.raises(ValueError, match="Multiple python interpreter paths"):
-        cluster_cfg.get_node_python_interpreter_path_by_rank(0)
 
 
 def test_cluster_config_duplicate_hardware_entries_disallowed():
@@ -475,3 +446,79 @@ def test_cluster_config_num_nodes_must_be_positive():
 
     with pytest.raises(AssertionError, match="'num_nodes' must be a positive integer"):
         ClusterConfig.from_dict_cfg(config)
+
+
+class EnvConfigCheckWorker(Worker):
+    def __init__(self):
+        super().__init__()
+
+    def get_env_marker(self, key: str):
+        return os.environ.get(key)
+
+
+def _reset_cluster_singleton():
+    if ray.is_initialized():
+        ray.shutdown()
+    if hasattr(Cluster, "_instance"):
+        instance = getattr(Cluster, "_instance")
+        if instance is not None:
+            instance._has_initialized = False
+        delattr(Cluster, "_instance")
+    Cluster.NAMESPACE = Cluster.SYS_NAME
+
+
+def test_cluster_env_configs_applied_in_worker_launch():
+    env_key = "RLINF_TEST_ENV_CONFIG_MARKER"
+    env_value = "marker-value"
+    assert env_key not in os.environ
+
+    _reset_cluster_singleton()
+
+    tests_root = Path(__file__).resolve().parent
+    python_path_entries = [str(tests_root)]
+    existing_pythonpath = os.environ.get("PYTHONPATH")
+    if existing_pythonpath:
+        python_path_entries.append(existing_pythonpath)
+    python_path_value = os.pathsep.join(python_path_entries)
+
+    cluster_cfg = OmegaConf.create(
+        {
+            "num_nodes": 1,
+            "component_placement": {},
+            "node_groups": [
+                {
+                    "label": "train",
+                    "node_ranks": "0",
+                    "env_configs": [
+                        {
+                            "node_ranks": "0",
+                            "python_interpreter_path": sys.executable,
+                            "env_vars": [
+                                {env_key: env_value},
+                                {"PYTHONPATH": python_path_value},
+                            ],
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+
+    cluster = Cluster(cluster_cfg=cluster_cfg)
+    placement = NodePlacementStrategy([0], node_group_label="train")
+    worker_group = EnvConfigCheckWorker.create_group().launch(
+        cluster=cluster,
+        placement_strategy=placement,
+        name="env_config_launch",
+    )
+
+    try:
+        env_values = worker_group.get_env_marker(env_key).wait()
+        pythonpath_values = worker_group.get_env_marker("PYTHONPATH").wait()
+    finally:
+        worker_group._close()
+        _reset_cluster_singleton()
+
+    assert env_values == [env_value]
+    assert pythonpath_values[0] is not None
+    assert pythonpath_values[0].split(os.pathsep)[0] == str(tests_root)

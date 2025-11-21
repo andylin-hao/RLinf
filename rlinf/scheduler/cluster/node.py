@@ -30,7 +30,7 @@ from ..hardware import (
     HardwareInfo,
     HardwareResource,
 )
-from .config import ClusterConfig
+from .config import ClusterConfig, NodeGroupEnvConfig
 
 
 @dataclass
@@ -112,6 +112,9 @@ class NodeGroupInfo:
     ignore_hardware: bool = False
     """Whether to ignore hardware detection on the nodes in this group. If set to True, the nodes will be treated as CPU-only nodes."""
 
+    env_configs: Optional[list[NodeGroupEnvConfig]] = None
+    """Environment configurations for the node group."""
+
     DEFAULT_GROUP_LABEL: ClassVar[str] = "cluster"
 
     NODE_PLACEMENT_GROUP_LABEL: ClassVar[str] = "node"
@@ -190,6 +193,52 @@ class NodeGroupInfo:
             if hardware_rank in node_hardware_ranks:
                 return node_hardware_ranks.index(hardware_rank)
 
+    def get_node_env_vars(self, node_rank: int) -> dict[str, str]:
+        """Get the environment variables for a specific node in the group.
+
+        Args:
+            node_rank (int): The rank of the node.
+
+        Returns:
+            dict[str, str]: The environment variables for the node.
+        """
+        env_vars = {}
+        node_env_keys = []
+        for env_config in self.env_configs or []:
+            if node_rank in env_config.node_ranks and env_config.env_vars is not None:
+                for env_var_dict in env_config.env_vars:
+                    env_vars.update(env_var_dict)
+                    assert set(env_var_dict.keys()).isdisjoint(node_env_keys), (
+                        f"Environment variables {set(env_var_dict.keys()).intersection(set(node_env_keys))} in cluster configuration for node group '{self.label}' have been set in other env_configs of the same node group. Please ensure that environment variables are not duplicated across env_configs."
+                    )
+                    node_env_keys.extend(env_var_dict.keys())
+                return env_vars
+        return {}
+
+    def get_node_python_interpreter_path(self, node_rank: int) -> Optional[str]:
+        """Get the Python interpreter path for a specific node in the group.
+
+        Args:
+            node_rank (int): The rank of the node.
+
+        Returns:
+            Optional[str]: The Python interpreter path for the node. None if not specified.
+        """
+        paths = []
+        for env_config in self.env_configs or []:
+            if (
+                node_rank in env_config.node_ranks
+                and env_config.python_interpreter_path is not None
+            ):
+                paths.append(env_config.python_interpreter_path)
+        if len(paths) == 0:
+            return None
+        if len(set(paths)) > 1:
+            raise ValueError(
+                f"Conflicting Python interpreter paths {paths} found for node rank {node_rank} in node group '{self.label}'. Please ensure that only one Python interpreter path is specified for each node."
+            )
+        return paths[0]
+
     def __post_init__(self):
         """Post-initialization to validate the node group information."""
         # If hardware_type is not specified, set it to the default hardware type if available
@@ -264,6 +313,7 @@ class NodeProbe:
                         label=node_group_cfg.label,
                         nodes=group_nodes,
                         hardware_type=node_group_cfg.hardware_type,
+                        env_configs=node_group_cfg.env_configs,
                         ignore_hardware=node_group_cfg.ignore_hardware,
                     )
                     self._node_groups.append(node_group_info)
@@ -276,8 +326,8 @@ class NodeProbe:
         node_group = NodeGroupInfo(
             label=NodeGroupInfo.NODE_PLACEMENT_GROUP_LABEL,
             nodes=self._nodes,
+            ignore_hardware=True,
         )
-        node_group.hardware_type = None
         self._node_groups.append(node_group)
 
         assert len({group.label for group in self._node_groups}) == len(
@@ -326,16 +376,10 @@ class NodeProbe:
         The environment variables follow the following precedence, with the later ones overriding the previous ones if set:
         1. Default environment variables on the node (set before ray start).
         2. Environment variables set between ray start and RLinf initialization on the head node (usually via bash scripts). These env vars are likely set by users intended to configure all nodes in the cluster.
-        3. The env_vars field in the ClusterConfig, which are set in yaml config files to configure each node in the cluster.
+        3. The env_vars field in the ClusterConfig, which are set in yaml config files to configure each node in the cluster. This is set in Cluster.allocate.
         """
         # Overwrite the the head node's python interpreter path as the current interpreter unless specified in the cluster config
         self.head_node.python_interpreter_path = sys.executable
-        if self._cluster_cfg is not None:
-            self.head_node.python_interpreter_path = (
-                self._cluster_cfg.get_node_python_interpreter_path_by_rank(
-                    self.head_node.node_rank
-                )
-            ) or sys.executable
 
         # First find env vars set between ray start and RLinf initialization on the head node
         head_node_default_env_vars = self.head_node.default_env_vars
@@ -354,13 +398,6 @@ class NodeProbe:
 
             # Update with modified env vars on the head node
             node.env_vars.update(modified_env_vars)
-
-            # Finally, update with env vars from cluster config if available
-            if self._cluster_cfg is not None:
-                node_env_vars = self._cluster_cfg.get_node_env_vars_by_rank(
-                    node.node_rank
-                )
-                node.env_vars.update(node_env_vars)
 
     def _sort_nodes(self, cluster_num_nodes: int):
         """Sort the node info list by node rank if available, otherwise by accelerator type and IP."""
@@ -467,14 +504,13 @@ class _RemoteNodeProbe:
             )
         python_interpreter_path = sys.executable
         if cluster_cfg is not None:
-            cfg_python_interpreter_path = (
+            cfg_python_interpreter_paths = (
                 cluster_cfg.get_node_python_interpreter_path_by_rank(node_rank)
             )
-            if cfg_python_interpreter_path is not None:
-                python_interpreter_path = cfg_python_interpreter_path
-        assert os.path.exists(python_interpreter_path), (
-            f"Python interpreter path {python_interpreter_path} does not exist on node with node rank {node_rank} of node labels {node_labels}."
-        )
+            for path in cfg_python_interpreter_paths:
+                assert os.path.exists(path), (
+                    f"Python interpreter path {path} does not exist on node with node rank {node_rank}. Please check your cluster configuration."
+                )
 
         self._node_info = NodeInfo(
             node_labels=node_labels,

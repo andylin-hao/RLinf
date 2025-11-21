@@ -13,6 +13,7 @@
 # limitations under the License.
 
 
+import dataclasses
 from typing import Callable, Optional, Protocol
 
 
@@ -102,13 +103,12 @@ def dataclass_arg_check(
 
     missing_args = valid_args - args
     unknown_args = args - valid_args
-
     missing_required_args = []
     for missing_arg in missing_args:
         field_info = dataclass.__dataclass_fields__[missing_arg]
         if (
-            field_info.default is field_info.default_factory
-            and field_info.default_factory is field_info.default_factory
+            field_info.default is dataclasses.MISSING
+            and field_info.default_factory is dataclasses.MISSING
         ):
             missing_required_args.append(missing_arg)
 
