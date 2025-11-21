@@ -110,12 +110,10 @@ The above configuration encodes the following ideas:
 		``node_ranks``, and different ``env_configs`` in the same group must not overlap.
 
 		* ``env_vars`` is a list of one-key dicts; environment variable
-		keys must be unique within a node (no duplicates across
-		``env_configs`` or node groups).
+		keys must be unique within a node group for a node.
 
 		* ``python_interpreter_path`` is the interpreter to use on the
-		specified nodes. At most one interpreter path may be configured
-		per node.
+		specified nodes.
 
 	- ``hardware`` (optional): structured description of *non-accelerator
 		hardware* (such as robots). The structure depends on the hardware
