@@ -96,51 +96,70 @@ class ComponentPlacement:
     """Base component placement for parsing cluster.component_placement config.
 
     The component placement config is defined as either:
-    "group_name1","group_name2",...: "resource_ranks1":"process_ranks1", "resource_ranks2":"process_ranks2",...
-    or:
-    "group_name1","group_name2",...:
-      node_group: <node_group_label>
-      placement: "resource_ranks1":"process_ranks1", "resource_ranks2":"process_ranks2",...
 
-    An simple example is:
-    cluster:
-      num_nodes: 1
-      actor,inference: 0-7
+    .. code-block:: yaml
+
+        group_name1,group_name2,...: resource_ranks1:process_ranks1, resource_ranks2:process_ranks2,...
+
+    or:
+
+    .. code-block:: yaml
+
+        group_name1,group_name2,...:
+            node_group: <node_group_label>
+            placement: "resource_ranks1":"process_ranks1", "resource_ranks2":"process_ranks2",...
+
+    A simple example is:
+
+    .. code-block:: yaml
+
+        cluster:
+            num_nodes: 1
+            actor,inference: 0-7
+
     which means both the actor and inference groups' process 0-7 evenly occupy accelerator 0 to 7.
 
     A more complex example is:
-    cluster:
-      num_nodes: 2
-      component_placement:
-        actor:
-          node_group: a800
-          placement: 0-8
-        rollout:
-          node_group: 4090
-          placement: 0-8
-        env:
-          node_group: robot # Assuming robot hardware type is defined in the node group config
-          placement: 0-3:0-7
-        agent:
-          node_group: node
-          placement: 0-1:0-200,2-3:201-511
+
+    .. code-block:: yaml
+
+        cluster:
+        num_nodes: 2
+        component_placement:
+            actor:
+                node_group: a800
+                placement: 0-8
+            rollout:
+                node_group: 4090
+                placement: 0-8
+            env:
+                node_group: robot # Assuming robot hardware type is defined in the node group config
+                placement: 0-3:0-7
+            agent:
+                node_group: node
+                placement: 0-1:0-200,2-3:201-511
 
     which means:
+
     - The actor group occupies accelerators 0-8 on node group 'a800'.
+
     - The rollout group occupies accelerators 0-8 on node group '4090'.
+
     - The env group occupies robot hardware 0-3 on node group 'robot', with each robot hardware shared by 2 processes.
+
     - The agent group occupies nodes 0-1 for process 0-200, and nodes 2-3 for process 201-511.
 
     The concrete specifications of the config format are as follows:
 
-    1. `resource_ranks` is the ranks of the resources (e.g., GPUs, robots, or nodes) to use for the component(s). resource ranks are by default the accelerator ranks (within the node group if `node_group` is given, counted from 0) if no hardware is specified in the config. If the nodes do not have accelerators, resource ranks are the node ranks. If a hardware is specified in the node group config, the resource ranks are the hardware ranks within the label node group, e.g., for nodes with robotic systems.
-    The format of `resource_ranks` is an integer range a-b, which means all ranks from a to b including a and b. For example, 0-3 means rank 0, 1, 2, 3. Alternatively, "all" can be used to specify all resources.
+    - `resource_ranks` is the ranks of the resources (e.g., GPUs, robots, or nodes) to use for the component(s). resource ranks are by default the accelerator ranks (within the node group if `node_group` is given, counted from 0) if no hardware is specified in the config. If the nodes do not have accelerators, resource ranks are the node ranks. If a hardware is specified in the node group config, the resource ranks are the hardware ranks within the label node group, e.g., for nodes with robotic systems.
 
-    2. `process_ranks` is the ranks of the processes of the component(s), following the same format of `resource_ranks`. The processes will be evenly assigned to the specified resource ranks. For example, 0-3:0-7 means process 0-7 will be evenly assigned to resource ranks 0-3, with 2 processes sharing 1 resource. If the number of processes is smaller than the number of resources, it means one process occupy multiple resources. If `process_ranks` is not specified, each process will be assigned to one resource rank in order. For example, 0-4 means process 0-4 will be assigned to resource ranks 0-4 respectively.
+      The format of `resource_ranks` is an integer range a-b, which means all ranks from a to b including a and b. For example, 0-3 means rank 0, 1, 2, 3. Alternatively, "all" can be used to specify all resources.
 
-    Fancier syntax mixing the two formats is also supported, e.g., 0-1:0-3,3-5,7-10:7-14, which means process 0-3 will be evenly assigned to resource ranks 0-1, process 4-6 will be assigned to resource ranks 3-5 (implicitly inferred by the scheduler) respectively, and process 7-14 will be evenly assigned to resource ranks 7-10. Note that even if the process ranks are not specified, they are assumed to be continuous from 0 to N-1, where N is the total number of processes. Failure to follow this rule will raise an assertion error.
+    - `process_ranks` is the ranks of the processes of the component(s), following the same format of `resource_ranks`. The processes will be evenly assigned to the specified resource ranks. For example, 0-3:0-7 means process 0-7 will be evenly assigned to resource ranks 0-3, with 2 processes sharing 1 resource. If the number of processes is smaller than the number of resources, it means one process occupy multiple resources. If `process_ranks` is not specified, each process will be assigned to one resource rank in order. For example, 0-4 means process 0-4 will be assigned to resource ranks 0-4 respectively.
 
-    3. For the second format, the `node_group` label is the label defined in cluster.node_groups.label, which is optional. If not specified, all nodes in the cluster are used. A `node` label is reserved by the scheduler for allocating on node ranks only (no accelerators or other hardware).
+      Fancier syntax mixing the two formats is also supported, e.g., 0-1:0-3,3-5,7-10:7-14, which means process 0-3 will be evenly assigned to resource ranks 0-1, process 4-6 will be assigned to resource ranks 3-5 (implicitly inferred by the scheduler) respectively, and process 7-14 will be evenly assigned to resource ranks 7-10. Note that even if the process ranks are not specified, they are assumed to be continuous from 0 to N-1, where N is the total number of processes. Failure to follow this rule will raise an assertion error.
+
+    - For the second format, the `node_group` label is the label defined in cluster.node_groups.label, which is optional. If not specified, all nodes in the cluster are used. A `node` label is reserved by the scheduler for allocating on node ranks only (no accelerators or other hardware).
     """
 
     def __init__(self, config: DictConfig, cluster: Cluster):
