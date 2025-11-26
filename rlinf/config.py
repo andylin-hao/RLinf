@@ -176,6 +176,7 @@ def validate_rollout_cfg(cfg, algorithm_cfg):
         cfg.enable_flash_infer_sampler = cfg.get("enable_flash_infer_sampler", True)
         cfg.max_num_batched_tokens = cfg.get("max_num_batched_tokens", None)
         cfg.torch_profiler_dir = cfg.get("torch_profiler_dir", None)
+
         return cfg
 
     with open_dict(cfg):
