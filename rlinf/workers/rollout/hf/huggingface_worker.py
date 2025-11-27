@@ -21,6 +21,7 @@ from tqdm import tqdm
 from rlinf.data.io_struct import EmbodiedRolloutResult
 from rlinf.models import get_model, get_vla_model_config_and_processor
 from rlinf.scheduler import Cluster, Worker
+from rlinf.scheduler.channel.channel import Channel
 from rlinf.utils.metric_utils import compute_split_num
 from rlinf.utils.placement import HybridComponentPlacement
 
@@ -30,17 +31,11 @@ class MultiStepRolloutWorker(Worker):
         Worker.__init__(self)
 
         self.cfg = cfg
-        self._env_group_name = cfg.env.group_name
-        self._actor_group_name = cfg.actor.group_name
         self.device = torch.cuda.current_device()
+        self.actor_group_name = cfg.actor.group_name
+        self.num_pipeline_stages = cfg.rollout.pipeline_stage_num
 
-        self._obs_queue_name = cfg.env.channel.queue_name
-        self._action_queue_name = cfg.rollout.channel.queue_name
-        self._replay_buffer_name = cfg.actor.channel.queue_name
-        self.stage_num = cfg.rollout.pipeline_stage_num
-
-        self._component_placement = HybridComponentPlacement(cfg, Cluster())
-        self.channel = self.connect_channel(cfg.rollout.channel.name)
+        self.placement = HybridComponentPlacement(cfg, Cluster())
 
     def init_worker(self):
         # NOTE:
@@ -141,10 +136,14 @@ class MultiStepRolloutWorker(Worker):
                     self.cfg.algorithm.gamma * final_values.cpu()
                 )
 
-    def generate(self):
+    def generate(
+        self, input_channel: Channel, output_channel: Channel, actor_channel: Channel
+    ):
         if self.cfg.rollout.get("enable_offload", False):
             self.reload_model()
-        self.buffer_list = [EmbodiedRolloutResult() for _ in range(self.stage_num)]
+        self.buffer_list = [
+            EmbodiedRolloutResult() for _ in range(self.num_pipeline_stages)
+        ]
 
         for _ in tqdm(
             range(self.cfg.algorithm.rollout_epoch),
@@ -152,17 +151,17 @@ class MultiStepRolloutWorker(Worker):
             disable=(self._rank != 0),
         ):
             for _ in range(self.cfg.algorithm.n_chunk_steps):
-                for i in range(self.stage_num):
-                    env_output = self.recv_env_output()
+                for i in range(self.num_pipeline_stages):
+                    env_output = self.recv_env_output(input_channel)
                     self.update_env_output(i, env_output)
                     actions, result = self.predict(env_output["obs"])
 
                     self.buffer_list[i].append_result(result)
 
-                    self.send_chunk_actions(actions)
+                    self.send_chunk_actions(output_channel, actions)
 
-            for i in range(self.stage_num):
-                env_output = self.recv_env_output()
+            for i in range(self.num_pipeline_stages):
+                env_output = self.recv_env_output(input_channel)
                 self.update_env_output(i, env_output)
                 actions, result = self.predict(env_output["obs"])
                 if "prev_values" in result:
@@ -170,21 +169,21 @@ class MultiStepRolloutWorker(Worker):
                         result["prev_values"].cpu().contiguous()
                     )
 
-        for i in range(self.stage_num):
-            self.send_rollout_batch(i)
+        for i in range(self.num_pipeline_stages):
+            self.send_rollout_batch(actor_channel, i)
 
         if self.cfg.rollout.get("enable_offload", False):
             self.offload_model()
 
-    def evaluate(self):
+    def evaluate(self, input_channel: Channel, output_channel: Channel):
         if self.cfg.rollout.get("enable_offload", False):
             self.reload_model()
 
         for _ in range(self.cfg.algorithm.n_eval_chunk_steps):
-            for _ in range(self.stage_num):
-                env_output = self.recv_env_output()
+            for _ in range(self.num_pipeline_stages):
+                env_output = self.recv_env_output(input_channel)
                 actions, _ = self.predict(env_output["obs"], mode="eval")
-                self.send_chunk_actions(actions)
+                self.send_chunk_actions(output_channel, actions)
 
         if self.cfg.rollout.get("enable_offload", False):
             self.offload_model()
@@ -198,36 +197,28 @@ class MultiStepRolloutWorker(Worker):
         self.hf_model = self.hf_model.to(self.device)
 
     def sync_model_from_actor(self):
-        param_state_dict = self.recv(self._actor_group_name, src_rank=self._rank)
+        param_state_dict = self.recv(self.actor_group_name, src_rank=self._rank)
 
         self.hf_model.load_state_dict(param_state_dict)
         del param_state_dict
         gc.collect()
         torch.cuda.empty_cache()
 
-    def recv_env_output(self):
-        env_output = self.channel.get(
-            key=f"{self._obs_queue_name}_{self._rank}",
-        )
+    def recv_env_output(self, input_channel: Channel) -> dict[str, torch.Tensor]:
+        env_output = input_channel.get(key=self._rank)
         return env_output
 
-    def send_chunk_actions(self, chunk_actions):
-        self.channel.put(
-            item=chunk_actions,
-            key=f"{self._action_queue_name}_{self._rank}",
-        )
+    def send_chunk_actions(self, output_channel: Channel, chunk_actions):
+        output_channel.put(item=chunk_actions, key=self._rank)
 
-    def send_rollout_batch(self, stage_id):
+    def send_rollout_batch(self, actor_channel: Channel, stage_id: int):
         # send rollout_batch to actor
-        send_num = self._component_placement.get_world_size("rollout") * self.stage_num
-        recv_num = self._component_placement.get_world_size("actor")
+        send_num = self.placement.get_world_size("rollout") * self.num_pipeline_stages
+        recv_num = self.placement.get_world_size("actor")
         split_num = compute_split_num(recv_num, send_num)
         splited_rollout_result = self.buffer_list[stage_id].to_splited_dict(split_num)
         for i in range(split_num):
-            self.channel.put(
-                item=splited_rollout_result[i],
-                key=self._replay_buffer_name,
-            )
+            actor_channel.put(item=splited_rollout_result[i])
 
     def set_global_step(self, global_step):
         if hasattr(self.hf_model, "set_global_step"):

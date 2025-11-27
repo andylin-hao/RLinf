@@ -83,19 +83,10 @@ algorithm:
 
 env:
   group_name: "EnvGroup"
-  channel:
-    name: "env_buffer_list"
-    queue_name: "obs_buffer"
-    queue_size: 0
   enable_offload: True
 
 rollout:
   group_name: "RolloutGroup"
-  channel:
-    name: ${env.channel.name}
-    queue_name: "action_buffer"
-    queue_size: 0
-  mode: "colocate"
   backend: "huggingface"
   model_dir: "/workspace/dataset/openvla-7b"
   precision: ${actor.model.precision}
@@ -106,10 +97,6 @@ rollout:
   pipeline_stage_num: 2
 
 actor:
-  channel:
-    name: ${env.channel.name}
-    queue_name: "replay_buffer"
-    queue_size: 0
   group_name: "ActorGroup"
   training_backend: "fsdp"
   checkpoint_load_path: "/workspace/dataset/openvla-7b"

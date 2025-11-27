@@ -1044,7 +1044,7 @@ def put_tensor_cpu(data_dict):
 
 @dataclass(kw_only=True)
 class EnvOutput:
-    simulator_type: str
+    env_type: str
     obs: dict[str, Any]
     final_obs: Optional[dict[str, Any]] = None
     dones: Optional[torch.Tensor] = None  # [B]
@@ -1062,7 +1062,7 @@ class EnvOutput:
 
     def prepare_observations(self, obs: dict[str, Any]) -> dict[str, Any]:
         wrist_image_tensor = None
-        if self.simulator_type == "libero":
+        if self.env_type == "libero":
             image_tensor = torch.stack(
                 [
                     value.clone().permute(2, 0, 1)
@@ -1076,14 +1076,14 @@ class EnvOutput:
                         for value in obs["images_and_states"]["wrist_image"]
                     ]
                 )
-        elif self.simulator_type == "maniskill":
+        elif self.env_type == "maniskill":
             image_tensor = obs["images"]
-        elif self.simulator_type == "robotwin":
+        elif self.env_type == "robotwin":
             image_tensor = obs["images"]
-        elif self.simulator_type == "behavior":
+        elif self.env_type == "behavior":
             image_tensor = obs["images"]
             wrist_image_tensor = obs["wrist_images"]
-        elif self.simulator_type == "metaworld":
+        elif self.env_type == "metaworld":
             image_tensor = torch.stack(
                 [
                     value.clone().permute(2, 0, 1)
