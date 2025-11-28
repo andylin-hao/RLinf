@@ -15,8 +15,8 @@
 from ..env_manager import EnvManager
 
 
-@EnvManager.register_env_importer("worldmodel")
-def importer():
+@EnvManager.register_env("worldmodel")
+def get_env_cls(env_cfg):
     from .worldmodel_env import WorldModelEnv
 
     return WorldModelEnv

@@ -29,7 +29,7 @@ from rlinf.utils.placement import HybridComponentPlacement
 class EnvWorker(Worker):
     """The EnvWorker is responsible for controlling the embodied environments like simulators or physical robots.
 
-    It calls the corresponding gym env's step function to generate observations, rewards, and done signals based on the actions received from the RollerWorker, and sends them back to the RollerWorker.
+    It calls the corresponding gym env's step function to generate observations, rewards, and done signals based on the actions received from the RolloutWorker, and sends them back to the RolloutWorker.
 
     The EnvWorker supports running multiple environment instances in parallel to improve data collection efficiency.
     The main entry point is the `interact` method, which performs environment interactions for a specified number of steps (called chunk_step) and put the collected environment metrics into an output channel to the RolloutWorker.

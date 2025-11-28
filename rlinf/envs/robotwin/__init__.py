@@ -15,8 +15,8 @@
 from ..env_manager import EnvManager
 
 
-@EnvManager.register_env_importer("robotwin")
-def importer():
+@EnvManager.register_env("robotwin")
+def get_env_cls(env_cfg):
     from .RoboTwin_env import RoboTwin
 
     return RoboTwin

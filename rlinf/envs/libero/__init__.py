@@ -15,8 +15,8 @@
 from ..env_manager import EnvManager
 
 
-@EnvManager.register_env_importer("libero")
-def importer():
+@EnvManager.register_env("libero")
+def get_env_cls(env_cfg):
     from .libero_env import LiberoEnv
 
     return LiberoEnv

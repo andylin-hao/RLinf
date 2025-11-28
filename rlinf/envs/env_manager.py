@@ -195,9 +195,9 @@ class EnvManager:
 
         self.import_envs()
         assert env_type in self.ENV_IMPORTER_REGISTRY, (
-            f"Environment type '{env_type}' not registered. Please make sure it's implemented and its importer is registered via EnvManager.register_env_importer in the environment's __init__.py"
+            f"Environment type '{env_type}' not registered. Please make sure it's implemented and its importer is registered via EnvManager.register_env in the environment's __init__.py"
         )
-        env_classes = self.ENV_IMPORTER_REGISTRY[env_type]()
+        env_classes = self.ENV_IMPORTER_REGISTRY[env_type](self.cfg)
         if isinstance(env_classes, tuple):
             env_train_cls, env_eval_cls = env_classes
         else:
@@ -223,21 +223,24 @@ class EnvManager:
             self.env = self.env_cls(self.cfg, seed_offset, total_num_processes)
 
     @classmethod
-    def register_env_importer(cls, env_name: str):
-        """Register an environment importer.
+    def register_env(cls, env_name: str):
+        """Register an environment class.
 
-        This is a decorator to register environment importer functions.
+        This is a decorator to register environment class.
         To register an environment, add the following code in the environment's __init__.py:
 
-        @EnvManager.register_env_importer("MyEnv")
-        def import_my_env():
+        @EnvManager.register_env("MyEnv")
+        def get_env_cls(env_cfg):
             from my_env_module import MyEnv
 
             return MyEnv
 
         Here "MyEnv" is the name used to register the environment, which should match the simulator/env_type set in the configuration.
 
-        Also, if the environment has separate classes for training and evaluation, the importer function should return a tuple of (TrainEnvClass, EvalEnvClass).
+        The function accepts a single argument `env_cfg`, which is the configuration for the environment.
+
+        The function must return the environment class.
+        If the environment has separate classes for training and evaluation, the function should return a tuple of (TrainEnvClass, EvalEnvClass).
 
         Args:
             env_name (str): Name of the environment.

@@ -15,8 +15,8 @@
 from ..env_manager import EnvManager
 
 
-@EnvManager.register_env_importer("behavior")
-def importer():
+@EnvManager.register_env("behavior")
+def get_env_cls(env_cfg):
     from .behavior_env import BehaviorEnv
 
     return BehaviorEnv
