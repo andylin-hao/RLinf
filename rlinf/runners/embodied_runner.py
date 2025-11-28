@@ -143,19 +143,12 @@ class EmbodiedRunner:
                         output_channel=self.rollout_channel,
                         actor_channel=self.actor_channel,
                     )
-                    self.actor.recv_rollout_batch(
-                        input_channel=self.actor_channel
-                    ).wait()
-
-                # Compute advantages and returns.
-                with self.timer("cal_adv_and_returns"):
-                    actor_rollout_metrics = (
-                        self.actor.compute_advantages_and_returns().wait()
-                    )
 
                 # Actor training.
                 with self.timer("actor_training"):
-                    actor_training_metrics = self.actor.run_training().wait()
+                    actor_metrics = self.actor.run_training(
+                        input_channel=self.actor_channel
+                    ).wait()
 
                 self.global_step += 1
 
@@ -179,14 +172,11 @@ class EmbodiedRunner:
             time_metrics = self.timer.consume_durations()
 
             time_metrics = {f"time/{k}": v for k, v in time_metrics.items()}
-            rollout_metrics = {
-                f"rollout/{k}": v for k, v in actor_rollout_metrics[0].items()
-            }
             env_metrics = {f"env/{k}": v for k, v in env_metrics.items()}
-            time_metrics = {f"time/{k}": v for k, v in time_metrics.items()}
-            training_metrics = {
-                f"train/{k}": v for k, v in actor_training_metrics[0].items()
+            rollout_metrics = {
+                f"rollout/{k}": v for k, v in actor_metrics[0][0].items()
             }
+            training_metrics = {f"train/{k}": v for k, v in actor_metrics[0][1].items()}
             self.metric_logger.log(env_metrics, _step)
             self.metric_logger.log(rollout_metrics, _step)
             self.metric_logger.log(time_metrics, _step)

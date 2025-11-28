@@ -570,7 +570,7 @@ class EmbodiedFSDPActor(FSDPModelManager, Worker):
         if self.cfg.actor.get("enable_offload", False):
             self.offload_param_and_grad()
 
-    async def recv_rollout_batch(self, input_channel: Channel) -> None:
+    def recv_rollout_batch(self, input_channel: Channel) -> None:
         """
         Receive rollout batch from rollout workers.
         """
@@ -584,7 +584,7 @@ class EmbodiedFSDPActor(FSDPModelManager, Worker):
         self.rollout_batch = {}
         recv_list = []
         for _ in range(split_num):
-            recv_list.append(await input_channel.get(async_op=True).async_wait())
+            recv_list.append(input_channel.get())
 
         # shape [num_chunk, bsz, chunk_size], cat dim 1
         for key in recv_list[0].keys():
@@ -722,10 +722,14 @@ class EmbodiedFSDPActor(FSDPModelManager, Worker):
         rollout_metrics = compute_rollout_metrics(self.rollout_batch)
         return rollout_metrics
 
-    def run_training(self):
+    def run_training(self, input_channel: Channel):
+        self.recv_rollout_batch(input_channel)
+        rollout_metrics = self.compute_advantages_and_returns()
+
         if self.cfg.actor.get("enable_offload", False):
-            self.load_param_and_grad(self.device)
-            self.load_optimizer(self.device)
+            with self.device_lock:
+                self.load_param_and_grad(self.device)
+                self.load_optimizer(self.device)
 
         self.model.train()
         rollout_size = (
@@ -764,7 +768,7 @@ class EmbodiedFSDPActor(FSDPModelManager, Worker):
         rollout_size = self.rollout_batch["prev_logprobs"].size(0)
         batch_size_per_rank = self.cfg.actor.global_batch_size // self._world_size
         assert rollout_size % batch_size_per_rank == 0, (
-            f"{rollout_size} is not divisible by {batch_size_per_rank}"
+            f"{rollout_size=} is not divisible by {batch_size_per_rank=}"
         )
         metrics = {}
         update_epoch = self.cfg.algorithm.get("update_epoch", 1)
@@ -887,12 +891,12 @@ class EmbodiedFSDPActor(FSDPModelManager, Worker):
         self.lr_scheduler.step()
         self.optimizer.zero_grad()
         clear_memory()
-        mean_metric_dict = {key: np.mean(value) for key, value in metrics.items()}
-        mean_metric_dict = all_reduce_dict(
-            mean_metric_dict, op=torch.distributed.ReduceOp.AVG
+        train_metrics = {key: np.mean(value) for key, value in metrics.items()}
+        train_metrics = all_reduce_dict(
+            train_metrics, op=torch.distributed.ReduceOp.AVG
         )
 
-        return mean_metric_dict
+        return rollout_metrics, train_metrics
 
     def set_global_step(self, global_step):
         if hasattr(self.model, "set_global_step"):

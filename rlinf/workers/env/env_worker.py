@@ -22,8 +22,7 @@ from omegaconf import DictConfig
 from rlinf.data.io_struct import EnvOutput
 from rlinf.envs.action_utils import prepare_actions
 from rlinf.envs.env_manager import EnvManager
-from rlinf.scheduler import Channel, Cluster, Worker
-from rlinf.utils.placement import HybridComponentPlacement
+from rlinf.scheduler import Channel, Worker
 
 
 class EnvWorker(Worker):
@@ -38,6 +37,11 @@ class EnvWorker(Worker):
     """
 
     def __init__(self, cfg: DictConfig):
+        """Initialize the EnvWorker.
+
+        Args:
+            cfg (DictConfig): The configuration for the EnvWorker.
+        """
         Worker.__init__(self)
 
         self.cfg = cfg
@@ -52,32 +56,34 @@ class EnvWorker(Worker):
         # Env configurations
         self.env_type = cfg.env.train.simulator_type
         self.eval_only = getattr(self.cfg.runner, "only_eval", False)
-        self.train_batch_size_per_dp = self.cfg.env.train.num_envs
-        self.eval_batch_size_per_dp = self.cfg.env.eval.num_envs
-        assert (
-            self.train_batch_size_per_dp
-            == self.cfg.env.train.num_group * self.cfg.env.train.group_size
-        ), (
-            f"The train num_envs {self.train_batch_size_per_dp} does not match num_groups ({self.cfg.env.train.num_group}) * group_size ({self.cfg.env.train.group_size})."
-        )
-        assert (
-            self.eval_batch_size_per_dp
-            == self.cfg.env.eval.num_group * self.cfg.env.eval.group_size
-        ), (
-            f"The eval num_envs {self.eval_batch_size_per_dp} does not match num_groups ({self.cfg.env.eval.num_group}) * group_size ({self.cfg.env.eval.group_size})."
-        )
 
-        # For action and observation communication
-        cluster = Cluster()
-        placement = HybridComponentPlacement(cfg, cluster)
-        self.gather_num = placement.get_world_size(
-            "rollout"
-        ) // placement.get_world_size("env")
+        self.train_batch_size_per_stage = self.cfg.env.train.num_envs
+        self.train_num_groups_per_stage = self.cfg.env.train.num_group
+        self.train_group_size = self.cfg.env.train.group_size
+
+        self.eval_batch_size_per_stage = self.cfg.env.eval.num_envs
+        self.eval_num_groups_per_stage = self.cfg.env.eval.num_group
+        self.eval_group_size = self.cfg.env.eval.group_size
+
+        # Sanity checks
+        assert (
+            self.train_batch_size_per_stage
+            == self.train_num_groups_per_stage * self.train_group_size
+        ), (
+            f"The train num_envs {self.train_batch_size_per_stage} does not match num_groups ({self.train_num_groups_per_stage}) * group_size ({self.train_group_size})."
+        )
+        assert (
+            self.eval_batch_size_per_stage
+            == self.eval_num_groups_per_stage * self.eval_group_size
+        ), (
+            f"The eval num_envs {self.eval_batch_size_per_stage} does not match num_groups ({self.eval_num_groups_per_stage}) * group_size ({self.eval_group_size})."
+        )
 
         # Used for pipelined rollout interactions
         self.num_pipeline_stages = self.cfg.rollout.pipeline_stage_num
 
     def init_worker(self):
+        """Create the environment instances for the EnvWorker and start the environments."""
         enable_offload = self.cfg.env.enable_offload
         total_num_processes = self._world_size * self.num_pipeline_stages
 
@@ -112,6 +118,7 @@ class EnvWorker(Worker):
             self._init_envs()
 
     def _init_envs(self):
+        """Initialize the training environments and store the initial observations and done signals."""
         for i in range(self.num_pipeline_stages):
             self.train_env_list[i].start_env()
             extracted_obs, rewards, terminations, truncations, infos = (
@@ -124,12 +131,10 @@ class EnvWorker(Worker):
             )
             self.train_env_list[i].stop_env()
 
-    def env_interact_step(
+    def _env_interact_step(
         self, chunk_actions: torch.Tensor, stage_id: int
     ) -> tuple[EnvOutput, dict[str, Any]]:
-        """
-        This function is used to interact with the environment.
-        """
+        """A single interact step with the environment."""
         chunk_actions = prepare_actions(
             raw_chunk_actions=chunk_actions,
             env_type=self.env_type,
@@ -169,15 +174,17 @@ class EnvWorker(Worker):
             else None,
             rewards=chunk_rewards,
             dones=chunk_dones,
+            worker_rank=self._rank,
+            stage_id=stage_id,
+            num_groups=self.train_num_groups_per_stage,
+            group_size=self.train_group_size,
         )
         return env_output, env_info
 
-    def env_evaluate_step(
+    def _env_evaluate_step(
         self, raw_actions: torch.Tensor, stage_id: int
     ) -> tuple[EnvOutput, dict[str, Any]]:
-        """
-        This function is used to evaluate the environment.
-        """
+        """A single evaluate step with the environment."""
         chunk_actions = prepare_actions(
             raw_chunk_actions=raw_actions,
             env_type=self.env_type,
@@ -208,22 +215,42 @@ class EnvWorker(Worker):
             final_obs=infos["final_observation"]
             if "final_observation" in infos
             else None,
+            worker_rank=self._rank,
+            stage_id=stage_id,
+            num_groups=self.eval_num_groups_per_stage,
+            group_size=self.eval_group_size,
         )
         return env_output, env_info
 
-    def recv_chunk_actions(self, input_channel: Channel) -> np.ndarray:
-        chunk_action = []
-        for gather_id in range(self.gather_num):
-            chunk_action.append(
-                input_channel.get(
-                    key=gather_id + self._rank * self.gather_num,
-                )
+    def _env_reset_step(self, stage_id: int):
+        if not self.cfg.env.train.auto_reset:
+            obs, infos = self.train_env_list[stage_id].reset()
+            self.last_obs_list.append(obs)
+            dones = (
+                torch.zeros((self.train_batch_size_per_stage,), dtype=torch.bool)
+                .unsqueeze(1)
+                .repeat(1, self.cfg.actor.model.num_action_chunks)
             )
-        chunk_action = np.concatenate(chunk_action, axis=0)
-        return chunk_action
+            self.last_dones_list.append(dones)
+            final_obs = infos.get("final_observation", None)
+        else:
+            obs = self.last_obs_list[stage_id]
+            dones = self.last_dones_list[stage_id]
+            final_obs = None
 
-    def finish_rollout(self, mode="train"):
-        # reset
+        return EnvOutput(
+            env_type=self.env_type,
+            obs=obs,
+            dones=dones,
+            final_obs=final_obs,
+            worker_rank=self._rank,
+            stage_id=stage_id,
+            num_groups=self.train_num_groups_per_stage,
+            group_size=self.train_group_size,
+        )
+
+    def _finish_rollout(self, mode="train"):
+        """Finish the rollout process by flushing videos and updating reset states."""
         if mode == "train":
             if self.cfg.env.train.video_cfg.save_video:
                 for i in range(self.num_pipeline_stages):
@@ -235,93 +262,77 @@ class EnvWorker(Worker):
                 for i in range(self.num_pipeline_stages):
                     self.eval_env_list[i].flush_video()
 
-    def split_env_batch(self, env_batch, gather_id, mode):
-        env_batch_i = {}
-        for key, value in env_batch.items():
-            if isinstance(value, torch.Tensor):
-                env_batch_i[key] = value.chunk(self.gather_num, dim=0)[
-                    gather_id
-                ].contiguous()
-            elif isinstance(value, list):
-                length = len(value)
-                if mode == "train":
-                    assert length == self.train_batch_size_per_dp, (
-                        f"key {key}, length: {length}, batch_size: {self.train_batch_size_per_dp}"
-                    )
-                elif mode == "eval":
-                    assert length == self.eval_batch_size_per_dp, (
-                        f"key {key}, length: {length}, batch_size: {self.eval_batch_size_per_dp}"
-                    )
-                env_batch_i[key] = value[
-                    gather_id * length // self.gather_num : (gather_id + 1)
-                    * length
-                    // self.gather_num
-                ]
-            elif isinstance(value, dict):
-                env_batch_i[key] = self.split_env_batch(value, gather_id, mode)
-            else:
-                env_batch_i[key] = value
-        return env_batch_i
+    def get_actions(
+        self, input_channel: Channel, stage_id: int, num_groups: int
+    ) -> np.ndarray:
+        """This function is used to get the actions from the input channel.
 
-    def send_env_batch(self, output_channel: Channel, env_batch, mode="train"):
-        # split env_batch into num_processes chunks, each chunk contains gather_num env_batch
-        for gather_id in range(self.gather_num):
-            env_batch_i = self.split_env_batch(env_batch, gather_id, mode)
-            output_channel.put(
-                item=env_batch_i,
-                key=gather_id + self._rank * self.gather_num,
-            )
+        It retrieves a list of chunk actions from the input channel with the key (worker_rank, stage_id).
+        The retrieved chunk actions are also accompanied with the group id, which indicates the env group index of the chunk action in the current stage.
+        After retrieving all the chunk actions for the current stage, they are first sorted according to the group id to ensure the correct order, and then concatenated into a single numpy array before being returned.
+        """
+        chunk_action = []
+        for _ in range(num_groups):
+            group_id, action = input_channel.get(key=(self._rank, stage_id))
+            chunk_action.append((group_id, action))
+        chunk_action.sort(key=lambda x: x[0])
+        chunk_action = np.concatenate([action for _, action in chunk_action], axis=0)
+        return chunk_action
+
+    def put_batch(
+        self,
+        output_channel: Channel,
+        env_output: EnvOutput,
+    ):
+        """This function is used to put the environment output into the output channel.
+
+        It accepts an env_output and split it into a list of env_outputs containing num_groups env_outputs and put them into the output channel along with three identifiers: the group id, the pipeline stage id, and the worker rank, which are used by the RolloutWorker to put the corresponding actions back to the correct environment instances.
+
+        Args:
+            output_channel (Channel): The output channel to put the environment output.
+            env_output (EnvOutput): The environment output to be put into the output channel.
+        """
+        env_outputs = env_output.split_by_group()
+        for env_output in env_outputs:
+            output_channel.put(item=env_output)
 
     def interact(self, input_channel: Channel, output_channel: Channel):
+        """The main entry point for environment interaction.
+
+        Args:
+            input_channel (Channel): The input channel to receive actions from the RolloutWorker.
+            output_channel (Channel): The output channel to send environment outputs to the RolloutWorker.
+        """
         for env in self.train_env_list:
             env.start_env()
 
         env_metrics = defaultdict(list)
         for epoch in range(self.cfg.algorithm.rollout_epoch):
-            env_output_list = []
-            if not self.cfg.env.train.auto_reset:
-                for i in range(self.num_pipeline_stages):
-                    extracted_obs, infos = self.train_env_list[i].reset()
-                    self.last_obs_list.append(extracted_obs)
-                    dones = (
-                        torch.zeros((self.cfg.env.train.num_envs,), dtype=bool)
-                        .unsqueeze(1)
-                        .repeat(1, self.cfg.actor.model.num_action_chunks)
-                    )
-                    self.last_dones_list.append(dones)
-                    env_output = EnvOutput(
-                        env_type=self.env_type,
-                        obs=extracted_obs,
-                        dones=dones,
-                        final_obs=infos["final_observation"]
-                        if "final_observation" in infos
-                        else None,
-                    )
-                    env_output_list.append(env_output)
-            else:
-                self.num_done_envs = 0
-                self.num_succ_envs = 0
-                for i in range(self.num_pipeline_stages):
-                    env_output = EnvOutput(
-                        env_type=self.env_type,
-                        obs=self.last_obs_list[i],
-                        rewards=None,
-                        dones=self.last_dones_list[i],
-                    )
-                    env_output_list.append(env_output)
+            env_output_list: list[EnvOutput] = []
 
+            # Reset environments at the beginning of each epoch
             for stage_id in range(self.num_pipeline_stages):
-                env_output: EnvOutput = env_output_list[stage_id]
-                self.send_env_batch(output_channel, env_output.to_dict())
+                env_output = self._env_reset_step(stage_id)
+                self.put_batch(output_channel, env_output)
+                env_output_list.append(env_output)
 
             for _ in range(self.cfg.algorithm.n_chunk_steps):
                 for stage_id in range(self.num_pipeline_stages):
-                    raw_chunk_actions = self.recv_chunk_actions(input_channel)
-                    env_output, env_info = self.env_interact_step(
+                    # Retrieve actions from the RolloutWorker
+                    raw_chunk_actions = self.get_actions(
+                        input_channel, stage_id, self.train_num_groups_per_stage
+                    )
+
+                    # Environment interaction using the actions
+                    env_output, env_info = self._env_interact_step(
                         raw_chunk_actions, stage_id
                     )
-                    self.send_env_batch(output_channel, env_output.to_dict())
+
+                    # Put the results into the output channel
+                    self.put_batch(output_channel, env_output)
                     env_output_list[stage_id] = env_output
+
+                    # Collect environment info metrics
                     for key, value in env_info.items():
                         if (
                             not self.cfg.env.train.auto_reset
@@ -336,7 +347,7 @@ class EnvWorker(Worker):
 
             self.last_obs_list = [env_output.obs for env_output in env_output_list]
             self.last_dones_list = [env_output.dones for env_output in env_output_list]
-            self.finish_rollout()
+            self._finish_rollout()
 
         for env in self.train_env_list:
             env.stop_env()
@@ -347,35 +358,47 @@ class EnvWorker(Worker):
         return env_metrics
 
     def evaluate(self, input_channel: Channel, output_channel: Channel):
-        for i in range(self.num_pipeline_stages):
-            self.eval_env_list[i].start_env()
-            self.eval_env_list[i].is_start = True
-            extracted_obs, _, _, _, infos = self.eval_env_list[i].step()
+        """The main entry point for environment evaluation.
+
+        Args:
+            input_channel (Channel): The input channel to receive actions from the RolloutWorker.
+            output_channel (Channel): The output channel to send environment outputs to the RolloutWorker.
+        """
+        for stage_id in range(self.num_pipeline_stages):
+            self.eval_env_list[stage_id].start_env()
+            self.eval_env_list[stage_id].is_start = True
+            extracted_obs, _, _, _, infos = self.eval_env_list[stage_id].step()
             env_output = EnvOutput(
-                env_type=self.cfg.env.eval.simulator_type,
+                env_type=self.env_type,
                 obs=extracted_obs,
-                final_obs=infos["final_observation"]
-                if "final_observation" in infos
-                else None,
+                final_obs=infos.get("final_observation", None),
+                worker_rank=self._rank,
+                stage_id=stage_id,
+                num_groups=self.eval_num_groups_per_stage,
+                group_size=self.eval_group_size,
             )
-            self.send_env_batch(output_channel, env_output.to_dict(), mode="eval")
+            self.put_batch(output_channel, env_output)
 
         eval_metrics = defaultdict(list)
 
         for eval_step in range(self.cfg.algorithm.n_eval_chunk_steps):
-            for i in range(self.num_pipeline_stages):
-                raw_chunk_actions = self.recv_chunk_actions(input_channel)
-                env_output, env_info = self.env_evaluate_step(raw_chunk_actions, i)
+            for stage_id in range(self.num_pipeline_stages):
+                raw_chunk_actions = self.get_actions(
+                    input_channel, stage_id, self.eval_num_groups_per_stage
+                )
+                env_output, env_info = self._env_evaluate_step(
+                    raw_chunk_actions, stage_id
+                )
 
                 for key, value in env_info.items():
                     eval_metrics[key].append(value)
                 if eval_step == self.cfg.algorithm.n_eval_chunk_steps - 1:
                     continue
-                self.send_env_batch(output_channel, env_output.to_dict(), mode="eval")
+                self.put_batch(output_channel, env_output)
 
-        self.finish_rollout(mode="eval")
-        for i in range(self.num_pipeline_stages):
-            self.eval_env_list[i].stop_env()
+        self._finish_rollout(mode="eval")
+        for stage_id in range(self.num_pipeline_stages):
+            self.eval_env_list[stage_id].stop_env()
 
         for key, value in eval_metrics.items():
             eval_metrics[key] = torch.cat(value, dim=0).contiguous().cpu()
