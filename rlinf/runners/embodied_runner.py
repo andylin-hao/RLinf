@@ -133,16 +133,15 @@ class EmbodiedRunner:
                     self._sync_weights()
 
                 # Rollout
-                with self.timer("rollout"):
-                    env_handle: Handle = self.env.interact(
-                        input_channel=self.rollout_channel,
-                        output_channel=self.env_channel,
-                    )
-                    self.rollout.generate(
-                        input_channel=self.env_channel,
-                        output_channel=self.rollout_channel,
-                        actor_channel=self.actor_channel,
-                    )
+                env_handle: Handle = self.env.interact(
+                    input_channel=self.rollout_channel,
+                    output_channel=self.env_channel,
+                )
+                rollout_handle: Handle = self.rollout.generate(
+                    input_channel=self.env_channel,
+                    output_channel=self.rollout_channel,
+                    actor_channel=self.actor_channel,
+                )
 
                 # Actor training.
                 with self.timer("actor_training"):
@@ -170,6 +169,7 @@ class EmbodiedRunner:
             env_metrics = compute_evaluate_metrics(env_results_list)
 
             time_metrics = self.timer.consume_durations()
+            time_metrics["rollout"] = env_handle.consume_duration() + rollout_handle.consume_duration()
 
             time_metrics = {f"time/{k}": v for k, v in time_metrics.items()}
             env_metrics = {f"env/{k}": v for k, v in env_metrics.items()}

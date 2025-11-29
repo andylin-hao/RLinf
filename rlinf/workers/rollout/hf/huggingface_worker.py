@@ -277,7 +277,8 @@ class MultiStepRolloutWorker(Worker):
 
                         # Update buffer and predict actions
                         self.update_env_output(stage_id, env_batch)
-                        actions, result = self.predict(env_batch["obs"])
+                        with self.worker_timer():
+                            actions, result = self.predict(env_batch["obs"])
                         self.buffer_list[stage_id].append_result(result)
 
                         # Send actions to env
@@ -294,7 +295,8 @@ class MultiStepRolloutWorker(Worker):
                     )
 
                     self.update_env_output(stage_id, env_batch)
-                    actions, result = self.predict(env_batch["obs"])
+                    with self.worker_timer():
+                        actions, result = self.predict(env_batch["obs"])
                     if "prev_values" in result:
                         self.buffer_list[stage_id].prev_values.append(
                             result["prev_values"].cpu().contiguous()

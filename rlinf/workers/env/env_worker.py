@@ -324,7 +324,8 @@ class EnvWorker(Worker):
 
             # Reset environments at the beginning of each epoch
             for stage_id in range(self.num_pipeline_stages):
-                env_output = self._env_reset_step(stage_id)
+                with self.worker_timer():
+                    env_output = self._env_reset_step(stage_id)
                 self.put_batch(output_channel, env_output)
                 env_output_list.append(env_output)
 
@@ -336,9 +337,10 @@ class EnvWorker(Worker):
                     )
 
                     # Environment interaction using the actions
-                    env_output, env_info = self._env_interact_step(
-                        raw_chunk_actions, stage_id
-                    )
+                    with self.worker_timer():
+                        env_output, env_info = self._env_interact_step(
+                            raw_chunk_actions, stage_id
+                        )
 
                     # Put the results into the output channel
                     self.put_batch(output_channel, env_output)
