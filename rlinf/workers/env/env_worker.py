@@ -48,6 +48,12 @@ class EnvWorker(Worker):
         self.train_video_cnt = 0
         self.eval_video_cnt = 0
 
+        # Some EnvWorker ranks may run faster than others, leading to them putting future step data into the channel before other ranks have finished the current step.
+        # This causes RolloutWorker to read data out-of-order from the channel, resulting in incorrect behavior.
+        # To solve this problem, we add a step counter to the EnvWorker to ensure that data is put and get from the channel in the correct order.
+        # Since the EnvWorker is always one step ahead of the RolloutWorker, we initialize the step counter to -1, so that the first put and get operation corresponds to step 0.
+        self.step_cnt = -1
+
         self.train_env_list: list[EnvManager] = []
         self.eval_env_list: list[EnvManager] = []
         self.last_obs_list = []
@@ -166,6 +172,8 @@ class EnvWorker(Worker):
                 for key in final_info["episode"]:
                     env_info[key] = final_info["episode"][key][chunk_dones[:, -1]].cpu()
 
+        self.step_cnt += 1
+
         env_output = EnvOutput(
             env_type=self.env_type,
             obs=extracted_obs,
@@ -209,6 +217,8 @@ class EnvWorker(Worker):
                 for key in final_info["episode"]:
                     env_info[key] = final_info["episode"][key][chunk_dones[:, -1]].cpu()
 
+        self.step_cnt += 1
+
         env_output = EnvOutput(
             env_type=self.env_type,
             obs=extracted_obs,
@@ -237,6 +247,8 @@ class EnvWorker(Worker):
             obs = self.last_obs_list[stage_id]
             dones = self.last_dones_list[stage_id]
             final_obs = None
+
+        self.step_cnt += 1
 
         return EnvOutput(
             env_type=self.env_type,
@@ -294,7 +306,7 @@ class EnvWorker(Worker):
         """
         env_outputs = env_output.split_by_group()
         for env_output in env_outputs:
-            output_channel.put(item=env_output)
+            output_channel.put(item=env_output, key=self.step_cnt)
 
     def interact(self, input_channel: Channel, output_channel: Channel):
         """The main entry point for environment interaction.

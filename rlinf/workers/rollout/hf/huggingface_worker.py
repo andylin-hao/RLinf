@@ -42,6 +42,7 @@ class MultiStepRolloutWorker(Worker):
         self.actor_group_name = cfg.actor.group_name
         self.num_pipeline_stages = cfg.rollout.pipeline_stage_num
         self.enable_offload = self.cfg.rollout.get("enable_offload", False)
+        self.step_cnt = 0
 
         self.placement = HybridComponentPlacement(cfg, Cluster())
         env_world_size = self.placement.get_world_size("env")
@@ -133,6 +134,8 @@ class MultiStepRolloutWorker(Worker):
                 **kwargs,
             )
 
+        self.step_cnt += 1
+
         return actions, result
 
     def update_env_output(self, stage_id: int, env_batch: dict[str, torch.Tensor]):
@@ -190,7 +193,7 @@ class MultiStepRolloutWorker(Worker):
         env_outputs: list[EnvOutput] = []
         env_batches: list[dict[str, torch.Tensor]] = []
         for _ in range(num_groups):
-            env_output: EnvOutput = input_channel.get()
+            env_output: EnvOutput = input_channel.get(key=self.step_cnt)
             env_outputs.append(env_output)
             env_batches.append(env_output.to_batch())
         env_batch = EnvOutput.merge_batches(env_batches)
@@ -240,9 +243,6 @@ class MultiStepRolloutWorker(Worker):
         recv_num = self.placement.get_world_size("actor")
         split_num = compute_split_num(recv_num, send_num)
         splitted_rollout_result = self.buffer_list[stage_id].to_splitted_dict(split_num)
-        print(
-            f"Stage {stage_id}: Sending {split_num} splitted rollout results to actor. rewards shape: {splitted_rollout_result[0]['rewards'].shape}, dones shape: {splitted_rollout_result[0]['dones'].shape}"
-        )
         for i in range(split_num):
             actor_channel.put(item=splitted_rollout_result[i])
 

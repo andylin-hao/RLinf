@@ -1289,7 +1289,7 @@ class EmbodiedRolloutResult:
     dones: list[torch.Tensor] = field(default_factory=list)
     rewards: list[torch.Tensor] = field(default_factory=list)
 
-    forward_inputs: list[dict[str, Any]] = field(default_factory=list)
+    forward_inputs: list[dict[str, list[torch.Tensor]]] = field(default_factory=list)
 
     def __post_init__(self):
         self.prev_logprobs = (
@@ -1355,7 +1355,7 @@ class EmbodiedRolloutResult:
             if len(self.rewards) > 0
             else None
         )
-        merged_forward_inputs = {}
+        merged_forward_inputs: dict[str, list[torch.Tensor]] = {}
         for data in self.forward_inputs:
             for k, v in data.items():
                 if k in merged_forward_inputs:
