@@ -169,7 +169,9 @@ class EmbodiedRunner:
             env_metrics = compute_evaluate_metrics(env_results_list)
 
             time_metrics = self.timer.consume_durations()
-            time_metrics["rollout"] = env_handle.consume_duration() + rollout_handle.consume_duration()
+            time_metrics["rollout"] = (
+                env_handle.consume_duration() + rollout_handle.consume_duration()
+            )
 
             time_metrics = {f"time/{k}": v for k, v in time_metrics.items()}
             env_metrics = {f"env/{k}": v for k, v in env_metrics.items()}

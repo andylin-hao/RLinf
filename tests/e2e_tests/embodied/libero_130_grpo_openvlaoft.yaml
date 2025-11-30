@@ -62,7 +62,7 @@ algorithm:
   gae_lambda: 0.95
 
   reward_coef: 5.0
-  max_episode_steps: 512
+  max_episode_steps: 16
   use_ordered_reset_state_ids: True
 
   sampling_params:
@@ -102,7 +102,7 @@ actor:
   checkpoint_load_path: "/workspace/dataset/RLinf-OpenVLAOFT-LIBERO-130-Base-Lora"
   checkpoint_save_path: "/workspace/results"
   micro_batch_size: 2
-  global_batch_size: 256
+  global_batch_size: 16
   seed: 1234
   enable_offload: True
 
