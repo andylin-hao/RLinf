@@ -143,10 +143,10 @@ class EmbodiedRunner:
                 )
 
                 # Actor training.
-                with self.timer("actor_training"):
-                    actor_metrics = self.actor.run_training(
-                        input_channel=self.actor_channel
-                    ).wait()
+                actor_handle: Handle = self.actor.run_training(
+                    input_channel=self.actor_channel
+                )
+                actor_metrics = actor_handle.wait()
 
                 self.global_step += 1
 
@@ -171,6 +171,7 @@ class EmbodiedRunner:
             time_metrics["rollout"] = (
                 env_handle.consume_duration() + rollout_handle.consume_duration()
             )
+            time_metrics["actor_training"] = actor_handle.consume_duration()
 
             time_metrics = {f"time/{k}": v for k, v in time_metrics.items()}
             env_metrics = {f"env/{k}": v for k, v in env_metrics.items()}
