@@ -428,7 +428,7 @@ class NodeProbe:
             # NODE_RANK not set, sort first by accelerator type, then by IP
             nodes_group_by_accel: dict[str, list[NodeInfo]] = {}
             for node in self._nodes:
-                accel_name = f"{node.accelerator_type.value}_{node.accelerator_model}"
+                accel_name = node.accelerator_type
                 nodes_group_by_accel.setdefault(accel_name, [])
                 nodes_group_by_accel[accel_name].append(node)
             for accel_name in nodes_group_by_accel.keys():
