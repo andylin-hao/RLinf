@@ -651,6 +651,14 @@ def validate_embodied_cfg(cfg):
     )
     stage_num = cfg.rollout.pipeline_stage_num
     env_world_size = component_placement.get_world_size("env")
+    assert cfg.algorithm.num_group_envs % (stage_num * env_world_size) == 0, (
+        f"num_group_envs ({cfg.algorithm.num_group_envs}) must be divisible by "
+        f"pipeline_stage_num ({stage_num}) * env_world_size ({env_world_size})"
+    )
+    assert cfg.env.eval.num_envs % (stage_num * env_world_size) == 0, (
+        f"eval.num_envs ({cfg.env.eval.num_envs}) must be divisible by "
+        f"pipeline_stage_num ({stage_num}) * env_world_size ({env_world_size})"
+    )
     cfg.algorithm.num_group_envs = (
         cfg.algorithm.num_group_envs // stage_num // env_world_size
     )
