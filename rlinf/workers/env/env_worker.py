@@ -313,6 +313,7 @@ class EnvWorker(Worker):
             env.start_env()
 
         env_metrics = defaultdict(list)
+        self.device_lock.acquire()
         for epoch in range(self.cfg.algorithm.rollout_epoch):
             env_output_list: list[EnvOutput] = []
 
@@ -326,9 +327,11 @@ class EnvWorker(Worker):
             for _ in range(self.cfg.algorithm.n_chunk_steps):
                 for stage_id in range(self.num_pipeline_stages):
                     # Retrieve actions from the RolloutWorker
+                    self.device_lock.release()  # Release lock to allow RolloutWorker to run
                     raw_chunk_actions = self.get_actions(
                         input_channel, stage_id, self.train_num_groups_per_stage
                     )
+                    self.device_lock.acquire()  # Re-acquire lock for environment interaction
 
                     # Environment interaction using the actions
                     with self.worker_timer():
@@ -362,6 +365,8 @@ class EnvWorker(Worker):
 
         for key, value in env_metrics.items():
             env_metrics[key] = torch.cat(value, dim=0).contiguous().cpu()
+
+        self.device_lock.release()
 
         return env_metrics
 

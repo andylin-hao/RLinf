@@ -255,57 +255,63 @@ class MultiStepRolloutWorker(Worker):
             output_channel (Channel): Channel to send actions to the environment.
             actor_channel (Channel): Channel to send rollout data to the actor for training.
         """
-        with self.device_lock:
-            if self.enable_offload:
-                self._load_model()
-            self.buffer_list = [
-                EmbodiedRolloutResult() for _ in range(self.num_pipeline_stages)
-            ]
+        if self.enable_offload:
+            self._load_model()
+        self.buffer_list = [
+            EmbodiedRolloutResult() for _ in range(self.num_pipeline_stages)
+        ]
 
-            for _ in tqdm(
-                range(self.cfg.algorithm.rollout_epoch),
-                desc="Generating Rollout Epochs",
-                disable=(self._rank != 0),
-            ):
-                for _ in range(self.cfg.algorithm.n_chunk_steps):
-                    for stage_id in range(self.num_pipeline_stages):
-                        # Get env output
-                        env_batch, env_outputs = self.get_batch(
-                            input_channel, self.train_num_groups_per_stage
-                        )
-
-                        # Update buffer and predict actions
-                        self.update_env_output(stage_id, env_batch)
-                        with self.worker_timer():
-                            actions, result = self.predict(env_batch["obs"])
-                        self.buffer_list[stage_id].append_result(result)
-
-                        # Send actions to env
-                        self.put_actions(
-                            output_channel,
-                            actions,
-                            env_outputs,
-                            self.train_num_groups_per_stage,
-                        )
-
+        self.device_lock.acquire()
+        for _ in tqdm(
+            range(self.cfg.algorithm.rollout_epoch),
+            desc="Generating Rollout Epochs",
+            disable=(self._rank != 0),
+        ):
+            for _ in range(self.cfg.algorithm.n_chunk_steps):
                 for stage_id in range(self.num_pipeline_stages):
-                    env_batch, _ = self.get_batch(
+                    # Get env output
+                    self.device_lock.release()  # Release lock to allow EnvWorker to run
+                    env_batch, env_outputs = self.get_batch(
                         input_channel, self.train_num_groups_per_stage
                     )
+                    self.device_lock.acquire()  # Re-acquire lock for prediction
 
+                    # Update buffer and predict actions
                     self.update_env_output(stage_id, env_batch)
                     with self.worker_timer():
                         actions, result = self.predict(env_batch["obs"])
-                    if "prev_values" in result:
-                        self.buffer_list[stage_id].prev_values.append(
-                            result["prev_values"].cpu().contiguous()
-                        )
+                    self.buffer_list[stage_id].append_result(result)
+
+                    # Send actions to env
+                    self.put_actions(
+                        output_channel,
+                        actions,
+                        env_outputs,
+                        self.train_num_groups_per_stage,
+                    )
 
             for stage_id in range(self.num_pipeline_stages):
-                self.put_train_batch(actor_channel, stage_id)
+                self.device_lock.release()  # Release lock to allow EnvWorker to run
+                env_batch, _ = self.get_batch(
+                    input_channel, self.train_num_groups_per_stage
+                )
+                self.device_lock.acquire()  # Re-acquire lock for prediction
 
-            if self.enable_offload:
-                self._offload_model()
+                self.update_env_output(stage_id, env_batch)
+                with self.worker_timer():
+                    actions, result = self.predict(env_batch["obs"])
+                if "prev_values" in result:
+                    self.buffer_list[stage_id].prev_values.append(
+                        result["prev_values"].cpu().contiguous()
+                    )
+
+        for stage_id in range(self.num_pipeline_stages):
+            self.put_train_batch(actor_channel, stage_id)
+
+        if self.enable_offload:
+            self._offload_model()
+
+        self.device_lock.release()
 
     def evaluate(self, input_channel: Channel, output_channel: Channel):
         """Evaluate the model by interacting with the environment."""
