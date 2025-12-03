@@ -40,8 +40,8 @@ if [[ " ${EMBODIED_TARGET[*]} " == *" $TARGET "* ]]; then
     uv sync --extra embodied
     uv pip uninstall pynvml
     bash requirements/install_embodied_deps.sh # Must be run after the above command
-    mkdir -p /opt && git clone https://github.com/RLinf/LIBERO.git /opt/libero
-    echo "export PYTHONPATH=/opt/libero:$PYTHONPATH" >> .venv/bin/activate
+    git clone https://github.com/RLinf/LIBERO.git .venv/libero
+    echo "export PYTHONPATH=$(pwd)/.venv/libero:$PYTHONPATH" >> .venv/bin/activate
     echo "export NVIDIA_DRIVER_CAPABILITIES=all" >> .venv/bin/activate
     echo "export VK_DRIVER_FILES=/etc/vulkan/icd.d/nvidia_icd.json" >> .venv/bin/activate
     echo "export VK_ICD_FILENAMES=/etc/vulkan/icd.d/nvidia_icd.json" >> .venv/bin/activate
@@ -52,8 +52,8 @@ if [ "$TARGET" = "openvla" ]; then
 elif [ "$TARGET" = "openvla-oft" ]; then
     UV_TORCH_BACKEND=auto uv pip install -r requirements/openvla_oft.txt --no-build-isolation
     if [ "$ENABLE_BEHAVIOR" = "true" ]; then
-        git clone -b RLinf/v3.7.1 --depth 1 https://github.com/RLinf/BEHAVIOR-1K.git /opt/BEHAVIOR-1K
-        cd /opt/BEHAVIOR-1K && ./setup.sh --omnigibson --bddl --joylo --confirm-no-conda --accept-nvidia-eula && cd -
+        git clone -b RLinf/v3.7.1 --depth 1 https://github.com/RLinf/BEHAVIOR-1K.git .venv/BEHAVIOR-1K
+        cd .venv/BEHAVIOR-1K && ./setup.sh --omnigibson --bddl --joylo --confirm-no-conda --accept-nvidia-eula && cd -
         uv pip uninstall flash-attn
         uv pip install https://github.com/Dao-AILab/flash-attention/releases/download/v2.7.4.post1/flash_attn-2.7.4.post1+cu12torch2.5cxx11abiFALSE-cp310-cp310-linux_x86_64.whl
         uv pip install ml_dtypes==0.5.3 protobuf==3.20.3
@@ -67,11 +67,11 @@ elif [ "$TARGET" = "openpi" ]; then
 elif [ "$TARGET" = "reason" ]; then
     uv sync --extra sglang-vllm
     uv pip uninstall pynvml
-    mkdir -p /opt && git clone https://github.com/NVIDIA/Megatron-LM.git -b core_r0.13.0 /opt/Megatron-LM
+    git clone https://github.com/NVIDIA/Megatron-LM.git -b core_r0.13.0 .venv/Megatron-LM
     if [ "$TEST_BUILD" != "true" ]; then
         APEX_CPP_EXT=1 APEX_CUDA_EXT=1 NVCC_APPEND_FLAGS="--threads 24" APEX_PARALLEL_BUILD=24 uv pip install -r requirements/megatron.txt --no-build-isolation
     fi
-    echo "export PYTHONPATH=/opt/Megatron-LM:$PYTHONPATH" >> .venv/bin/activate
+    echo "export PYTHONPATH=$(pwd)/.venv/Megatron-LM:$PYTHONPATH" >> .venv/bin/activate
 else
     echo "Unknown target: $TARGET. Supported targets are: openvla, openvla-oft, openpi, reason."
     exit 1
