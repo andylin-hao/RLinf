@@ -109,16 +109,26 @@ class Cluster:
         """
         if self._has_initialized:
             return
+        self._setup_logger()
         if num_nodes is not None or cluster_cfg is not None:
             self._ray_instance_count = 0
-            self._init_and_launch_managers(num_nodes, cluster_cfg)
+            while True:
+                try:
+                    self._init_and_launch_managers(num_nodes, cluster_cfg)
+                    break
+                except ValueError:
+                    # If the WorkerManager is already running, we need to switch the namespace
+                    self._ray_instance_count += 1
+                    self._logger.info(
+                        f"Ray namespace conflict detected. Retrying to initialize Cluster with a new namespace (attempt {self._ray_instance_count})."
+                    )
+                    Cluster.NAMESPACE = f"{Cluster.SYS_NAME}_{self._ray_instance_count}"
+                    continue
         else:
             self._init_from_existing_managers()
         self._has_initialized = True
 
-    def _init_and_launch_managers(
-        self, num_nodes: int, cluster_cfg: Optional[DictConfig]
-    ):
+    def _setup_logger(self):
         # Add logger
         self._logger = logging.getLogger(Cluster.SYS_NAME)
         self._logger.setLevel(Cluster.LOGGING_LEVEL)
@@ -133,6 +143,9 @@ class Cluster:
         handler.setFormatter(formatter)
         self._logger.addHandler(handler)
 
+    def _init_and_launch_managers(
+        self, num_nodes: int, cluster_cfg: Optional[DictConfig]
+    ):
         if ray.is_initialized():
             if self._ray_instance_count > 0:
                 # For reinit Ray to switch namespace
@@ -213,32 +226,24 @@ class Cluster:
             WorkerManager,
         )
 
-        try:
-            self._worker_manager = (
-                ray.remote(WorkerManager)
-                .options(name=WorkerManager.MANAGER_NAME)
-                .remote()
-            )
-            self._coll_manager = (
-                ray.remote(CollectiveManager)
-                .options(name=CollectiveManager.MANAGER_NAME)
-                .remote()
-            )
-            self._node_manager = (
-                ray.remote(NodeManager)
-                .options(name=NodeManager.MANAGER_NAME)
-                .remote(self._nodes, self._node_groups, self._cluster_cfg)
-            )
-            self._lock_manager = (
-                ray.remote(DeviceLockManager)
-                .options(name=DeviceLockManager.MANAGER_NAME)
-                .remote()
-            )
-        except ValueError:
-            # If the WorkerManager is already running, we need to switch the namespace
-            self._ray_instance_count += 1
-            Cluster.NAMESPACE = f"RLinf_{self._ray_instance_count}"
-            return self._init_and_launch_managers(num_nodes)
+        self._worker_manager = (
+            ray.remote(WorkerManager).options(name=WorkerManager.MANAGER_NAME).remote()
+        )
+        self._coll_manager = (
+            ray.remote(CollectiveManager)
+            .options(name=CollectiveManager.MANAGER_NAME)
+            .remote()
+        )
+        self._node_manager = (
+            ray.remote(NodeManager)
+            .options(name=NodeManager.MANAGER_NAME)
+            .remote(self._nodes, self._node_groups, self._cluster_cfg)
+        )
+        self._lock_manager = (
+            ray.remote(DeviceLockManager)
+            .options(name=DeviceLockManager.MANAGER_NAME)
+            .remote()
+        )
 
         def signal_handler(sig, frame):
             # Exit the main process if SIGUSR1 is received, which is sent by the worker group when an exception occurs.
