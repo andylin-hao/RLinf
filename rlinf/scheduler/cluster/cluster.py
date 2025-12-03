@@ -77,6 +77,9 @@ class Cluster:
         ClusterEnvVar.COMM_NET_DEVICES: None,
     }
 
+    class NamespaceConflictError(Exception):
+        """Raised when there is a namespace conflict in Ray initialization."""
+
     @classmethod
     def find_free_port(cls):
         """Find a free port on the node."""
@@ -116,8 +119,8 @@ class Cluster:
                 try:
                     self._init_and_launch_managers(num_nodes, cluster_cfg)
                     break
-                except ValueError:
-                    # If the WorkerManager is already running, we need to switch the namespace
+                except Cluster.NamespaceConflictError:
+                    # Switch the namespace when multiple ray instances are created in the same node
                     self._ray_instance_count += 1
                     self._logger.info(
                         f"Ray namespace conflict detected. Retrying to initialize Cluster with a new namespace (attempt {self._ray_instance_count})."
@@ -225,24 +228,29 @@ class Cluster:
             WorkerManager,
         )
 
-        self._worker_manager = (
-            ray.remote(WorkerManager).options(name=WorkerManager.MANAGER_NAME).remote()
-        )
-        self._coll_manager = (
-            ray.remote(CollectiveManager)
-            .options(name=CollectiveManager.MANAGER_NAME)
-            .remote()
-        )
-        self._node_manager = (
-            ray.remote(NodeManager)
-            .options(name=NodeManager.MANAGER_NAME)
-            .remote(self._nodes, self._node_groups, self._cluster_cfg)
-        )
-        self._lock_manager = (
-            ray.remote(DeviceLockManager)
-            .options(name=DeviceLockManager.MANAGER_NAME)
-            .remote()
-        )
+        try:
+            self._worker_manager = (
+                ray.remote(WorkerManager)
+                .options(name=WorkerManager.MANAGER_NAME)
+                .remote()
+            )
+            self._coll_manager = (
+                ray.remote(CollectiveManager)
+                .options(name=CollectiveManager.MANAGER_NAME)
+                .remote()
+            )
+            self._node_manager = (
+                ray.remote(NodeManager)
+                .options(name=NodeManager.MANAGER_NAME)
+                .remote(self._nodes, self._node_groups, self._cluster_cfg)
+            )
+            self._lock_manager = (
+                ray.remote(DeviceLockManager)
+                .options(name=DeviceLockManager.MANAGER_NAME)
+                .remote()
+            )
+        except ValueError:
+            raise Cluster.NamespaceConflictError
 
         def signal_handler(sig, frame):
             # Exit the main process if SIGUSR1 is received, which is sent by the worker group when an exception occurs.
