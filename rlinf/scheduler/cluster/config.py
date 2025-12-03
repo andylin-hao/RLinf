@@ -274,7 +274,10 @@ class ClusterConfig:
             ClusterConfig: The created ClusterConfig instance.
         """
         dataclass_arg_check(
-            ClusterConfig, cfg_dict, error_suffix="in cluster yaml config"
+            ClusterConfig,
+            cfg_dict,
+            no_check_unknown=True,
+            error_suffix="in cluster yaml config",
         )
         return ClusterConfig(**cfg_dict)
 
