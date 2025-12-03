@@ -169,7 +169,6 @@ RUN uv venv ${VENV_TARGET} --python ${PYTHON_VERSION}
 RUN source switch_env ${VENV_TARGET} && UV_TORCH_BACKEND=auto uv sync --active
 RUN source switch_env ${VENV_TARGET} && uv sync --extra embodied --active
 RUN source switch_env ${VENV_TARGET} && GIT_LFS_SKIP_SMUDGE=1 uv pip install git+https://github.com/RLinf/openpi
-RUN source switch_env ${VENV_TARGET} && uv pip install metaworld==3.0.0
 RUN source switch_env ${VENV_TARGET} && uv pip uninstall pynvml
 RUN cp -r ${UV_PATH}/${VENV_TARGET}/lib/python${PYTHON_VERSION}/site-packages/openpi/models_pytorch/transformers_replace/* ${UV_PATH}/${VENV_TARGET}/lib/python${PYTHON_VERSION}/site-packages/transformers/
 
