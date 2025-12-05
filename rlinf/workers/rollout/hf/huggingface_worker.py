@@ -152,26 +152,74 @@ class MultiStepRolloutWorker(Worker):
             env_batch["dones"].bool().cpu().contiguous()
         )
 
+        dones = env_batch["dones"].bool().cpu().contiguous()
+        rewards = env_batch["rewards"].cpu().contiguous()
+
         # Note: currently this is not correct for chunk-size>1 with partial reset
         if env_batch["dones"].any() and self.cfg.env.train.auto_reset:
             if hasattr(self.hf_model, "value_head"):
-                dones = env_batch["dones"]
+                final_obs_list = env_batch.get("final_obs", None)
+                batch_env_sizes = env_batch.get("_batch_env_sizes", None)
 
-                final_obs = env_batch["final_obs"]
-                with torch.no_grad():
-                    actions, result = self.predict(final_obs)
-                    if "prev_values" in result:
-                        _final_values = result["prev_values"]
+                if (
+                    final_obs_list is not None
+                    and isinstance(final_obs_list, list)
+                    and batch_env_sizes is not None
+                ):
+                    final_values_all = self._compute_bootstrap_values(
+                        final_obs_list, batch_env_sizes, dones
+                    )
+                    rewards[:, -1] += self.cfg.algorithm.gamma * final_values_all
+
+        return dones, rewards
+
+    def _compute_bootstrap_values(
+        self,
+        final_obs_list: list[dict | None],
+        batch_env_sizes: list[int],
+        dones: torch.Tensor,
+    ) -> torch.Tensor:
+        """Compute bootstrap values for done environments from final_obs list.
+
+        Args:
+            final_obs_list: List of final_obs, one per batch (may contain None)
+            batch_env_sizes: List of environment counts per batch
+            dones: Dones tensor of shape [total_envs, num_chunks]
+
+        Returns:
+            Bootstrap values tensor of shape [total_envs]
+        """
+        last_step_dones = dones[:, -1]  # [bsz, ] on CPU
+        final_values_all = torch.zeros(dones.shape[0], dtype=torch.float32)
+
+        env_idx = 0
+        for i, final_obs in enumerate(final_obs_list):
+            batch_size = batch_env_sizes[i]
+            if final_obs is not None:
+                batch_env_range = slice(env_idx, env_idx + batch_size)
+                batch_dones = last_step_dones[batch_env_range]
+
+                # Only process if there are done environments in this batch
+                if batch_dones.any():
+                    with torch.no_grad():
+                        actions, result = self.predict(final_obs)
+                        if "prev_values" in result:
+                            _final_values = result["prev_values"]
+                        else:
+                            _final_values = torch.zeros_like(actions[:, 0])
+
+                    if _final_values.ndim > 1:
+                        batch_final_values = _final_values[:, 0].cpu()
                     else:
-                        _final_values = torch.zeros_like(actions[:, 0])
-                final_values = torch.zeros_like(_final_values[:, 0])  # [bsz, ]
-                last_step_dones = dones[:, -1]  # [bsz, ]
+                        batch_final_values = _final_values.cpu()
 
-                final_values[last_step_dones] = _final_values[:, 0][last_step_dones]
+                    final_values_all[batch_env_range][batch_dones] = batch_final_values[
+                        batch_dones
+                    ]
 
-                self.buffer_list[stage_id].rewards[-1][:, -1] += (
-                    self.cfg.algorithm.gamma * final_values.cpu()
-                )
+            env_idx += batch_size
+
+        return final_values_all
 
     def sync_model_from_actor(self):
         """Sync model parameters from the actor worker."""
@@ -186,15 +234,13 @@ class MultiStepRolloutWorker(Worker):
         if hasattr(self.hf_model, "set_global_step"):
             self.hf_model.set_global_step(global_step)
 
-    def get_batch(self, input_channel: Channel, num_groups: int):
+    def get_batch(self, input_channel: Channel, num_group_envs: int):
         """Get a batch of environment outputs from the input channel."""
         env_outputs: list[EnvOutput] = []
-        env_batches: list[dict[str, torch.Tensor]] = []
-        for _ in range(num_groups):
+        for _ in range(num_group_envs):
             env_output: EnvOutput = input_channel.get(key=self.get_batch_cnt)
             env_outputs.append(env_output)
-            env_batches.append(env_output.to_batch())
-        env_batch = EnvOutput.merge_batches(env_batches)
+        env_batch = EnvOutput.merge_to_batch(env_outputs)
         self.get_batch_cnt += 1
         return env_batch, env_outputs
 

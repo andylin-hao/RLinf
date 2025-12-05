@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import itertools
-import logging
 from typing import TYPE_CHECKING, Any, Callable, Iterator, Optional, Union
 
 import torch
@@ -24,6 +23,7 @@ from rlinf.config import build_config, build_transformer_config
 from rlinf.data.tokenizers import hf_tokenizer
 from rlinf.utils.flops import FLOPSCalculator, ModelConfig
 from rlinf.utils.initialize import initialize_megatron, set_megatron_args
+from rlinf.utils.logging import get_logger
 from rlinf.utils.utils import clear_memory
 
 from .utils import (
@@ -85,8 +85,6 @@ if TYPE_CHECKING:
     from megatron.core.transformer.spec_utils import ModuleSpec
     from megatron.core.transformer.transformer_config import TransformerConfig
 
-logging.getLogger().setLevel(logging.INFO)
-
 
 def get_specs(
     spec_name: str,
@@ -134,9 +132,10 @@ class MegatronModelManager:
         self.mcore_gpt = cfg.mcore_gpt
         self.spec_name = cfg.spec_name
         self.distributed_adam_offload_manager = None
+        self._logger = get_logger()
 
         if torch.distributed.get_rank() == 0:
-            logging.info(f"{self.transformer_config}")
+            self._logger.info(f"{self.transformer_config}")
 
         self.checkpoint_context = self._get_checkpoint_context()
 
@@ -457,23 +456,49 @@ class MegatronModelManager:
         if holder is None:
             holder = tensor
 
-        needed_size = tensor.untyped_storage().size()
+        try:
+            needed_size = tensor.untyped_storage().size()
+            tensor_size = tensor.size()
+            tensor_dtype = tensor.dtype
+            tensor_layout = tensor.layout
+        except RuntimeError as e:
+            error_msg = str(e).lower()
+            if "cuda" in error_msg or "invalid" in error_msg:
+                self._logger.error(
+                    f"Failed to access tensor properties in _get_pinned_buffer. "
+                    f"Tensor device: {tensor.device if hasattr(tensor, 'device') else 'unknown'}, "
+                    f"CUDA available: {torch.cuda.is_available()}, Error: {e}"
+                )
+            raise RuntimeError(
+                f"Failed to access tensor properties (possible CUDA context issue): {e}"
+            ) from e
+
         if (
             not hasattr(holder, attr_name)
             or getattr(holder, attr_name) is None
             or getattr(holder, attr_name).untyped_storage().size() < needed_size
         ):
-            setattr(
-                holder,
-                attr_name,
-                torch.empty(
-                    tensor.size(),
-                    dtype=tensor.dtype,
-                    layout=tensor.layout,
-                    pin_memory=True,
-                    device="cpu",
-                ),
-            )
+            try:
+                setattr(
+                    holder,
+                    attr_name,
+                    torch.empty(
+                        tensor_size,
+                        dtype=tensor_dtype,
+                        layout=tensor_layout,
+                        pin_memory=True,
+                        device="cpu",
+                    ),
+                )
+            except RuntimeError as e:
+                self._logger.error(
+                    f"Failed to create pinned buffer. "
+                    f"Size: {tensor_size}, dtype: {tensor_dtype}, "
+                    f"CUDA available: {torch.cuda.is_available()}, Error: {e}"
+                )
+                raise RuntimeError(
+                    f"Failed to create pinned buffer (Size: {tensor_size}, dtype: {tensor_dtype}): {e}"
+                ) from e
         return getattr(holder, attr_name)
 
     def offload_model_weights_and_grad(

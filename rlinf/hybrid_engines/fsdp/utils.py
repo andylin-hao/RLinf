@@ -313,7 +313,6 @@ def get_lr_scheduler(
     optimizer: Optimizer,
     num_warmup_steps: int,
     num_training_steps: int,
-    min_lr_ratio: float = 0.0,
     num_cycles: float = 0.5,
     last_epoch: int = -1,
 ):
@@ -333,7 +332,6 @@ def get_lr_scheduler(
             optimizer=optimizer,
             num_warmup_steps=num_warmup_steps,
             num_training_steps=num_training_steps,
-            min_lr_ratio=min_lr_ratio,
             num_cycles=num_cycles,
         )
     else:

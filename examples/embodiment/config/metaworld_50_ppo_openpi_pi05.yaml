@@ -145,7 +145,6 @@ actor:
     total_training_steps: ${runner.max_epochs}
     lr_warmup_steps: -1
     warmup_style: cosine
-    min_lr_ratio: 0.1
     num_cycles: 0.5
 
   fsdp_config:                  # below are fsdp configs, for more details, see https://pytorch.org/docs/stable/fsdp.html and https://huggingface.co/docs/accelerate/package_reference/fsdp

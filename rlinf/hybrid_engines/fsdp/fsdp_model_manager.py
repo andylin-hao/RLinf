@@ -356,7 +356,6 @@ class FSDPModelManager:
         total_steps = self._cfg.optim.get("total_training_steps", 0)
         num_warmup_steps = int(self._cfg.optim.get("lr_warmup_steps", -1))
         warmup_style = self._cfg.optim.get("warmup_style", "constant")
-        min_lr_ratio = self._cfg.optim.get("min_lr_ratio", 0.0)
         num_cycles = self._cfg.optim.get("num_cycles", 0.5)
         if num_warmup_steps < 0:
             num_warmup_steps_ratio = self._cfg.optim.get("lr_warmup_steps_ratio", 0.0)
@@ -367,7 +366,6 @@ class FSDPModelManager:
             optimizer=optimizer,
             num_warmup_steps=num_warmup_steps,
             num_training_steps=total_steps,
-            min_lr_ratio=min_lr_ratio,
             num_cycles=num_cycles,
         )
 

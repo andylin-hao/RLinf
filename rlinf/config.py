@@ -643,6 +643,17 @@ def validate_embodied_cfg(cfg):
         f"Model {cfg.actor.model.model_name} is not supported"
     )
 
+    # NOTE: Currently we only support actor_critic as PPO algorithm loss, and only support value_head as critic model.
+    # This will be updated in the future to support more algorithms and critic models.
+    # Check that actor_critic loss requires value_head
+    if cfg.algorithm.loss_type == "actor_critic":
+        add_value_head = cfg.actor.model.get("add_value_head", False)
+        assert add_value_head, (
+            f"When using PPO algorithm (algorithm.loss_type='actor_critic'), "
+            f"actor.model.add_value_head must be True. "
+            f"Current value: {add_value_head}"
+        )
+
     # process num-envs
     from rlinf.scheduler import Cluster
     from rlinf.utils.placement import HybridComponentPlacement
