@@ -50,9 +50,7 @@ class LeRobotRobocasaDataConfig(DataConfigFactory):
         )
 
         data_transforms = _transforms.Group(
-            inputs=[
-                robocasa_policy.RobocasaInputs(model_type=model_config.model_type)
-            ],
+            inputs=[robocasa_policy.RobocasaInputs(model_type=model_config.model_type)],
             outputs=[robocasa_policy.RobocasaOutputs()],
         )
 

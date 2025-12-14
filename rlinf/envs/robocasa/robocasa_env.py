@@ -16,19 +16,17 @@ import copy
 import os
 from typing import Optional, Union
 
-import cv2
 import gymnasium as gym
 import numpy as np
 import torch
 from omegaconf import OmegaConf
-from robocasa.utils.env_utils import create_env
 
-from rlinf.envs.robocasa.venv import RobocasaSubprocEnv
 from rlinf.envs.robocasa.utils import (
     put_info_on_image,
     save_rollout_video,
     tile_images,
 )
+from rlinf.envs.robocasa.venv import RobocasaSubprocEnv
 from rlinf.envs.utils import (
     list_of_dict_to_dict_of_list,
     to_tensor,
@@ -45,7 +43,7 @@ class RobocasaEnv(gym.Env):
         self.num_envs = num_envs
         self.group_size = self.cfg.group_size
         self.num_group = self.num_envs // self.group_size
-        self.use_fixed_reset_state_ids = cfg.get('use_fixed_reset_state_ids', False)
+        self.use_fixed_reset_state_ids = cfg.get("use_fixed_reset_state_ids", False)
 
         self.ignore_terminations = cfg.ignore_terminations
         self.auto_reset = cfg.auto_reset
@@ -55,7 +53,9 @@ class RobocasaEnv(gym.Env):
         # Get task list from config
         # Convert OmegaConf ListConfig to standard Python list
         task_names_raw = OmegaConf.to_container(cfg.task_names, resolve=True)
-        self.task_names = task_names_raw if isinstance(task_names_raw, list) else [task_names_raw]
+        self.task_names = (
+            task_names_raw if isinstance(task_names_raw, list) else [task_names_raw]
+        )
         self.num_tasks = len(self.task_names)
 
         # Task descriptions
@@ -248,7 +248,9 @@ class RobocasaEnv(gym.Env):
         episode_info["success_once"] = self.success_once.copy()
         episode_info["return"] = self.returns.copy()
         episode_info["episode_len"] = self.elapsed_steps.copy()
-        episode_info["reward"] = episode_info["return"] / np.maximum(episode_info["episode_len"], 1)
+        episode_info["reward"] = episode_info["return"] / np.maximum(
+            episode_info["episode_len"], 1
+        )
         infos["episode"] = to_tensor(episode_info)
         return infos
 
@@ -298,8 +300,12 @@ class RobocasaEnv(gym.Env):
                 # Map to Pi0's expected format (inferred from dataset analysis):
                 state_16d[0:2] = base_pos[0:2]  # base x, y (z is constant)
                 # [2:5] remain zeros (padding)
-                state_16d[5:9] = base_to_eef_quat  # end-effector quaternion relative to base
-                state_16d[9:12] = base_to_eef_pos  # end-effector position relative to base
+                state_16d[5:9] = (
+                    base_to_eef_quat  # end-effector quaternion relative to base
+                )
+                state_16d[9:12] = (
+                    base_to_eef_pos  # end-effector position relative to base
+                )
                 state_16d[12:14] = gripper_qvel  # gripper joint velocities ✅ NEW!
                 state_16d[14:16] = gripper_qpos  # gripper joint positions
 
@@ -348,7 +354,9 @@ class RobocasaEnv(gym.Env):
             "images": image_tensor,
             "wrist_images": wrist_image_tensor,
             "states": states,
-            "task_descriptions": [self.task_descriptions_all[task_id] for task_id in self.task_ids],
+            "task_descriptions": [
+                self.task_descriptions_all[task_id] for task_id in self.task_ids
+            ],
         }
         return obs
 
@@ -373,12 +381,12 @@ class RobocasaEnv(gym.Env):
             # - Main control is arm position + gripper
 
             # PandaOmron action mapping:
-            actions_12d[i, 0:3] = 0          # [0:3] base - keep stationary
-            actions_12d[i, 3] = 0            # [3] torso - keep fixed
-            actions_12d[i, 4:7] = pi0_action[0:3]   # [4:7] arm position
+            actions_12d[i, 0:3] = 0  # [0:3] base - keep stationary
+            actions_12d[i, 3] = 0  # [3] torso - keep fixed
+            actions_12d[i, 4:7] = pi0_action[0:3]  # [4:7] arm position
             actions_12d[i, 7:10] = pi0_action[3:6]  # [7:10] arm orientation
-            actions_12d[i, 10] = pi0_action[6]      # [10] left gripper
-            actions_12d[i, 11] = pi0_action[6]      # [11] right gripper (same as left)
+            actions_12d[i, 10] = pi0_action[6]  # [10] left gripper
+            actions_12d[i, 11] = pi0_action[6]  # [11] right gripper (same as left)
 
         return actions_12d
 
@@ -416,7 +424,13 @@ class RobocasaEnv(gym.Env):
             truncations = np.zeros(self.num_envs, dtype=bool)
             rewards = np.zeros(self.num_envs, dtype=np.float32)
 
-            return obs, to_tensor(rewards), to_tensor(terminations), to_tensor(truncations), infos
+            return (
+                obs,
+                to_tensor(rewards),
+                to_tensor(terminations),
+                to_tensor(truncations),
+                infos,
+            )
 
         if isinstance(actions, torch.Tensor):
             actions = actions.detach().cpu().numpy()
@@ -432,7 +446,9 @@ class RobocasaEnv(gym.Env):
         infos = list_of_dict_to_dict_of_list(info_lists)
 
         # Extract success from infos
-        terminations = np.array([info.get('success', False) for info in info_lists]).astype(bool)
+        terminations = np.array(
+            [info.get("success", False) for info in info_lists]
+        ).astype(bool)
         truncations = self._elapsed_steps >= self.cfg.max_episode_steps
         obs = self._wrap_obs(raw_obs)
 
@@ -442,7 +458,9 @@ class RobocasaEnv(gym.Env):
             plot_infos = {
                 "rewards": step_reward,
                 "terminations": terminations,
-                "task": [self.task_descriptions_all[task_id] for task_id in self.task_ids],
+                "task": [
+                    self.task_descriptions_all[task_id] for task_id in self.task_ids
+                ],
             }
             self.add_new_frames(raw_obs, plot_infos)
 
@@ -583,5 +601,5 @@ class RobocasaEnv(gym.Env):
 
     def close(self):
         """Close all environments."""
-        if hasattr(self, 'env'):
+        if hasattr(self, "env"):
             self.env.close()

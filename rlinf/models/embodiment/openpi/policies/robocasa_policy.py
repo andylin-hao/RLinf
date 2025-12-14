@@ -22,9 +22,15 @@ from openpi.models import model as _model
 def make_robocasa_example() -> dict:
     """Creates a random input example for the Robocasa policy."""
     return {
-        "observation/state": np.random.rand(8),  # eef_pos (3) + eef_quat (4) + gripper (1)
-        "observation/image": np.random.randint(256, size=(3, 224, 224), dtype=np.uint8),  # base view
-        "observation/wrist_image": np.random.randint(256, size=(3, 224, 224), dtype=np.uint8),  # wrist camera
+        "observation/state": np.random.rand(
+            8
+        ),  # eef_pos (3) + eef_quat (4) + gripper (1)
+        "observation/image": np.random.randint(
+            256, size=(3, 224, 224), dtype=np.uint8
+        ),  # base view
+        "observation/wrist_image": np.random.randint(
+            256, size=(3, 224, 224), dtype=np.uint8
+        ),  # wrist camera
         "prompt": "do something",
     }
 
@@ -101,6 +107,7 @@ class RobocasaOutputs(transforms.DataTransformFn):
         action_dim: Target action dimension. If None, will be auto-detected from robot configuration.
                     Common values: 7 (Panda), 12 (PandaOmron)
     """
+
     action_dim: int | None = None
 
     def __call__(self, data: dict) -> dict:
@@ -108,7 +115,7 @@ class RobocasaOutputs(transforms.DataTransformFn):
 
         # If action_dim is specified, use it
         if self.action_dim is not None:
-            return {"actions": actions[:, :self.action_dim]}
+            return {"actions": actions[:, : self.action_dim]}
 
         # Auto-detect: if actions have exactly 7 or 12 dims, keep them
         # Otherwise, default to 7 for standard Panda arm
