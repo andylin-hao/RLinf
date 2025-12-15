@@ -98,6 +98,9 @@ RUN bash requirements/install.sh embodied --venv openvla-oft --model openvla-oft
 # Install openpi env
 RUN bash requirements/install.sh embodied --venv openpi --model openpi --env maniskill_libero
 
+# Install gr00t env
+RUN bash requirements/install.sh embodied --venv gr00t --model gr00t --env maniskill_libero
+
 RUN source switch_env openvla && download_assets --dir /opt/assets --assets maniskill,openpi
 RUN link_assets
 
