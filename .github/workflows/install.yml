@@ -71,6 +71,16 @@ jobs:
           pip install uv
           bash requirements/install.sh embodied --model openpi --env maniskill_libero
           rm -rf .venv
+          bash requirements/install.sh embodied --model openpi --env metaworld
+          rm -rf .venv
+          bash requirements/install.sh embodied --model openpi --env calvin
+          rm -rf .venv
+
+      - name: Install gr00t
+        run: |
+          pip install uv
+          bash requirements/install.sh embodied --model gr00t --env maniskill_libero
+          rm -rf .venv
 
       - name: Install behavior-openvla-oft
         run: |
