@@ -139,6 +139,14 @@ RUN link_assets
 # Set default env
 RUN echo "source ${UV_PATH}/openpi/bin/activate" >> ~/.bashrc
 
+FROM embodied-common-image AS embodied-isaaclab-image
+
+# Install gr00t env
+RUN bash requirements/install.sh embodied --venv gr00t --model gr00t --env isaaclab
+
+# Set default env
+RUN echo "source ${UV_PATH}/gr00t/bin/activate" >> ~/.bashrc
+
 FROM ${BUILD_TARGET}-image AS final-image
 
 # Clean up
