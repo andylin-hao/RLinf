@@ -68,6 +68,7 @@
 .. code:: bash
 
    bash requirements/install.sh embodied --model openpi --env metaworld
+   source .venv/bin/activate
 
 
 模型下载

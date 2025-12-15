@@ -69,6 +69,7 @@
 .. code:: bash
 
    bash requirements/install.sh embodied --model openpi --env calvin
+   source .venv/bin/activate
 
 模型下载
 -----------
