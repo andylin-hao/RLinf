@@ -58,6 +58,7 @@ jobs:
       - name: Install openvla
         run: |
           pip install uv
+          bash requirements/install.sh embodied --model openvla --env maniskill_libero
           rm -rf .venv
 
       - name: Install openvla-oft
@@ -80,6 +81,8 @@ jobs:
         run: |
           pip install uv
           bash requirements/install.sh embodied --model gr00t --env maniskill_libero
+          rm -rf .venv
+          bash requirements/install.sh embodied --model gr00t --env isaaclab
           rm -rf .venv
 
       - name: Install behavior-openvla-oft
