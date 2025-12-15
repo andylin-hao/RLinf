@@ -1,4 +1,4 @@
-Reinforcement Learning with RoboCasa
+RL with RoboCasa Benchmark
 ====================================
 
 .. |huggingface| image:: /_static/svg/hf-logo.svg
@@ -117,70 +117,26 @@ Algorithm
    - Compute the advantage of each action by subtracting the group's mean reward.
 
 Dependency Installation
------------------------ 
+-----------------------
 
-**1. Prepare Docker**
+Option 1: You can use the RLinf docker image for robocasa ``docker pull rlinf/rlinf:agentic-rlinf0.1-robocasa``.
 
-We started with docker installation.
+Option 2: Install dependencies directly in your environment by running the following command (make sure you already installed ``uv``):
 
-.. code-block:: bash
+.. code:: bash
 
-   # pull the docker image
-   docker pull rlinf/rlinf:agentic-rlinf0.1-torch2.6.0-openvla-openvlaoft-pi0
+   bash requirements/install.sh embodied --model openpi --env robocasa
+   source .venv/bin/activate
 
-   # enter the docker
-   docker run -it --gpus all \
-   --shm-size 100g \
-   --net=host \
-   --ipc=host \
-   --pid=host \
-   -v /media:/media \
-   -v /sys:/sys \
-   -v /tmp/.X11-unix:/tmp/.X11-unix:rw \
-   -v /etc/localtime:/etc/localtime:ro \
-   -v /dev:/dev \
-   -e USE_GPU_HOST='${USE_GPU_HOST}' \
-   -e NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics \
-   -e NVIDIA_VISIBLE_DEVICES=all \
-   -e VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/nvidia_icd.json \
-   -e ACCEPT_EULA=Y \
-   -e PRIVACY_CONSENT=Y \
-   --name rlinf_robocasa_pi0 \
-   rlinf/rlinf:agentic-rlinf0.1-torch2.6.0-openvla-openvlaoft-pi0 /bin/bash
+Dataset Download
+-----------------
 
-**2. RLinf Installation**
+.. code:: bash
 
-.. code-block:: bash
+   python -m robocasa.scripts.download_kitchen_assets   # Caution: Assets to be downloaded are around 5GB
 
-   cd /workspace
-   git clone https://github.com/RLinf/RLinf.git
-
-**3. RoboCasa Installation**
-
-Next we follow the RoboCasa installation.
-
-.. code-block:: bash
-
-   source switch_env pi0
-
-   uv pip install --upgrade robosuite
-
-   git clone https://github.com/RLinf/robocasa.git
-   cd robocasa
-   uv pip install -e .
-   python robocasa/scripts/download_kitchen_assets.py   # Caution: Assets to be downloaded are around 5GB.
-   python robocasa/scripts/setup_macros.py              # Set up system variables.
-
-   git clone https://github.com/RLinf/openpi.git
-   cd openpi
-   uv pip install -e .
-   
-   uv pip install torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 googleapis-common-protos==1.63.1 mujoco==3.2.6
-   uv pip uninstall tensorflow
-
-   cp -r ./src/openpi/models_pytorch/transformers_replace/* .venv/lib/python3.11/site-packages/transformers/ # Use your own directory
-
-**4. Download Checkpoint**
+Model Download
+--------------
 
 .. code-block:: bash
 
@@ -193,5 +149,3 @@ Next we follow the RoboCasa installation.
    # Method 2: Using huggingface-hub
    pip install huggingface-hub
    hf download changyeon/pi0_robocasa_100demos_base_pytorch
-
-Now all setup is done, you can start to fine-tune or evaluate the pi0 model with RoboCasa in RLinf framework.

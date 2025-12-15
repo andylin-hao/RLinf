@@ -1,4 +1,4 @@
-Reinforcement Learning on GR00T-N1.5 Models
+RL on GR00T-N1.5 Models
 ==================================================================
 
 This example provides a complete guide to fine-tune the 

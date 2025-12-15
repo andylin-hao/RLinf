@@ -119,68 +119,24 @@ RoboCasa提供了组织成多个类别的多样化原子任务:
 依赖安装
 --------
 
-**1. 准备镜像**
+方法 1：您可以使用 robocasa 的 RLinf docker 镜像 ``docker pull rlinf/rlinf:agentic-rlinf0.1-robocasa``。
 
-我们从docker安装开始。
+方法 2：通过运行以下命令直接在您的环境中安装依赖（确保您已经安装了 ``uv``）：
 
-.. code-block:: bash
+.. code:: bash
 
-   # 拉取docker镜像
-   docker pull rlinf/rlinf:agentic-rlinf0.1-torch2.6.0-openvla-openvlaoft-pi0
+   bash requirements/install.sh embodied --model openpi --env robocasa
+   source .venv/bin/activate
 
-   # 进入docker
-   docker run -it --gpus all \
-   --shm-size 100g \
-   --net=host \
-   --ipc=host \
-   --pid=host \
-   -v /media:/media \
-   -v /sys:/sys \
-   -v /tmp/.X11-unix:/tmp/.X11-unix:rw \
-   -v /etc/localtime:/etc/localtime:ro \
-   -v /dev:/dev \
-   -e USE_GPU_HOST='${USE_GPU_HOST}' \
-   -e NVIDIA_DRIVER_CAPABILITIES=compute，utility，graphics \
-   -e NVIDIA_VISIBLE_DEVICES=all \
-   -e VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/nvidia_icd.json \
-   -e ACCEPT_EULA=Y \
-   -e PRIVACY_CONSENT=Y \
-   --name rlinf_robocasa_pi0 \
-   rlinf/rlinf:agentic-rlinf0.1-torch2.6.0-openvla-openvlaoft-pi0 /bin/bash
+数据集下载
+-----------------
 
-**2. RLinf安装**
+.. code:: bash
 
-.. code-block:: bash
+   python -m robocasa.scripts.download_kitchen_assets   # 注意: 需要下载的资源大约有5GB
 
-   cd /workspace
-   git clone https://github.com/RLinf/RLinf.git
-
-**3. RoboCasa安装**
-
-接下来我们按照RoboCasa的安装流程进行。
-
-.. code-block:: bash
-
-   source switch_env pi0
-
-   uv pip install --upgrade robosuite
-
-   git clone https://github.com/RLinf/robocasa.git
-   cd robocasa
-   uv pip install -e .
-   python robocasa/scripts/download_kitchen_assets.py   # 注意: 需要下载的资源约5GB
-   python robocasa/scripts/setup_macros.py              # 设置系统变量
-
-   git clone https://github.com/RLinf/openpi.git
-   cd openpi
-   uv pip install -e .
-
-   uv pip install torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 googleapis-common-protos==1.63.1 mujoco==3.2.6
-   uv pip uninstall tensorflow
-
-   cp -r ./src/openpi/models_pytorch/transformers_replace/* .venv/lib/python3.11/site-packages/transformers/ # 使用你自己的目录
-
-**4. 模型下载**
+模型下载
+--------------
 
 .. code-block:: bash
 
@@ -193,5 +149,3 @@ RoboCasa提供了组织成多个类别的多样化原子任务:
    # 方法2: 使用huggingface-hub
    pip install huggingface-hub
    hf download changyeon/pi0_robocasa_100demos_base_pytorch
-
-现在所有设置都已完成，你可以开始在RLinf框架中使用RoboCasa对pi0模型进行微调或评估。

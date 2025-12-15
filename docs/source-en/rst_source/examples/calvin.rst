@@ -68,6 +68,7 @@ Option 2: Install dependencies directly in your environment by running the follo
 .. code:: bash
 
    bash requirements/install.sh embodied --model openpi --env calvin
+   source .venv/bin/activate
 
 Model Download
 --------------

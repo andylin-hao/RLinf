@@ -1,4 +1,4 @@
-Reinforcement Learning on π\ :sub:`0`\  and π\ :sub:`0.5`\  Models
+RL on π\ :sub:`0`\  and π\ :sub:`0.5`\  Models
 ==================================================================
 
 This example provides a complete guide to fine-tuning the 
