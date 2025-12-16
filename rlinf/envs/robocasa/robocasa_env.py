@@ -18,6 +18,7 @@ from typing import Optional, Union
 
 import gymnasium as gym
 import numpy as np
+import robocasa  # noqa: F401 Robocasa must be imported to register envs
 import torch
 from omegaconf import OmegaConf
 
