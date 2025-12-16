@@ -64,7 +64,7 @@
 
 .. code:: bash
 
-   source switch_env openvla-oft
+   source switch_env openpi
 
 **选项 2：自定义环境**
 
