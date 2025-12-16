@@ -1,4 +1,4 @@
-基于IsaacLab模拟器的强化学习训练
+基于IsaacLab评测平台的强化学习训练
 ==============================================================
 
 .. |huggingface| image:: /_static/svg/hf-logo.svg
@@ -58,12 +58,15 @@
 依赖安装
 ---------------
 
-选项1：您可以使用RLinf的docker镜像 ``docker pull rlinf/rlinf:agentic-rlinf0.1-isaaclab``。
+**选项 1：Docker 镜像**
 
-选项2：通过在您的环境中直接安装依赖项来运行以下命令（确保您已安装``uv``）：
+使用 Docker 镜像 ``rlinf/rlinf:agentic-rlinf0.1-isaaclab`` 来运行实验。
+
+**选项 2：自定义环境**
 
 .. code:: bash
 
+   pip install uv
    bash requirements/install.sh embodied --model gr00t --env isaaclab
    source .venv/bin/activate
 
