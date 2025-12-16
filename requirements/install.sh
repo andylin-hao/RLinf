@@ -14,8 +14,8 @@ SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
 
 SUPPORTED_TARGETS=("embodied" "reason")
-SUPPORTED_MODELS=("openvla" "openvla-oft" "openpi")
-SUPPORTED_ENVS=("behavior" "maniskill_libero" "metaworld" "calvin" "robocasa")
+SUPPORTED_MODELS=("openvla" "openvla-oft" "openpi" "gr00t")
+SUPPORTED_ENVS=("behavior" "maniskill_libero" "metaworld" "calvin" "isaaclab" "robocasa")
 
 #=======================Utility Functions=======================
 
@@ -318,6 +318,35 @@ EOF
     uv pip uninstall pynvml || true
 }
 
+install_gr00t_model() {
+    create_and_sync_venv
+    install_common_embodied_deps
+
+    local gr00t_path
+    gr00t_path=$(clone_or_reuse_repo GR00T_PATH "$VENV_DIR/gr00t" https://github.com/RLinf/Isaac-GR00T.git)
+    uv pip install -e "$gr00t_path" --no-deps
+    uv pip install -r $SCRIPT_DIR/embodied/models/gr00t.txt
+    case "$ENV_NAME" in
+        "")
+            ;;
+        maniskill_libero)
+            install_maniskill_libero_env
+            install_prebuilt_flash_attn
+            ;;
+        isaaclab)
+            install_isaaclab_env
+            # Torch is modified in Isaac Lab, install flash-attn afterwards
+            install_prebuilt_flash_attn
+            uv pip install numpydantic==1.7.0 pydantic==2.11.7 numpy==1.26.0
+            ;;
+        *)
+            echo "Environment '$ENV_NAME' is not supported for Gr00t model." >&2
+            exit 1
+            ;;
+    esac
+    uv pip uninstall pynvml || true
+}
+
 #=======================ENV INSTALLERS=======================
 
 install_maniskill_libero_env() {
@@ -361,9 +390,19 @@ install_calvin_env() {
     uv pip install wheel cmake==3.18.4 setuptools==57.5.0
     # NOTE: Use a forker version of pyfasthash that fixes install on Python 3.11
     uv pip install git+https://github.com/RLinf/pyfasthash.git --no-build-isolation
-    uv pip install -e $calvin_dir/calvin_env/tacto
-    uv pip install -e $calvin_dir/calvin_env
-    uv pip install -e $calvin_dir/calvin_models
+    uv pip install -e ${calvin_dir}/calvin_env/tacto
+    uv pip install -e ${calvin_dir}/calvin_env
+    uv pip install -e ${calvin_dir}/calvin_models
+}
+
+install_isaaclab_env() {
+    local isaaclab_dir
+    isaaclab_dir=$(clone_or_reuse_repo ISAAC_LAB_PATH "$VENV_DIR/isaaclab" https://github.com/RLinf/IsaacLab)
+
+    pushd ~ >/dev/null
+    uv pip install "cuda-toolkit[nvcc]==12.8.0"
+    $isaaclab_dir/isaaclab.sh --install
+    popd >/dev/null
 }
 
 install_robocasa_env() {
@@ -431,6 +470,9 @@ main() {
                     ;;
                 openpi)
                     install_openpi_model
+                    ;;
+                gr00t)
+                    install_gr00t_model
                     ;;
             esac
             ;;

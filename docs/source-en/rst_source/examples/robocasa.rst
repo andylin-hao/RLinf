@@ -119,12 +119,17 @@ Algorithm
 Dependency Installation
 -----------------------
 
-Option 1: You can use the RLinf docker image for robocasa ``docker pull rlinf/rlinf:agentic-rlinf0.1-robocasa``.
+**Option 1: Docker Image**
 
-Option 2: Install dependencies directly in your environment by running the following command (make sure you already installed ``uv``):
+Use the Docker image ``rlinf/rlinf:agentic-rlinf0.1-robocasa`` for the experiment.
+
+**Option 2: Custom Environment**
+
+Install dependencies directly in your environment by running the following command:
 
 .. code:: bash
 
+   pip install uv
    bash requirements/install.sh embodied --model openpi --env robocasa
    source .venv/bin/activate
 
