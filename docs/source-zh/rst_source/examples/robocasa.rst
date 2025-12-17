@@ -140,12 +140,13 @@ RoboCasa提供了组织成多个类别的多样化原子任务:
 
 .. code-block:: bash
 
-   cd /workspace
-   # 下载RoboCasa SFT模型(选择任一方法)
-   # 方法1: 使用git clone
+   # 下载模型（选择任一方法）
+   # 方法 1: 使用 git clone
    git lfs install
-   git clone https://huggingface.co/changyeon/pi0_robocasa_100demos_base_pytorch
+   git clone https://huggingface.co/RLinf/RLinf-Pi0-RoboCasa
+   git clone https://huggingface.co/RLinf/RLinf-Pi0-RoboCasa
 
-   # 方法2: 使用huggingface-hub
+   # 方法 2: 使用 huggingface-hub
    pip install huggingface-hub
-   hf download changyeon/pi0_robocasa_100demos_base_pytorch
+   hf download RLinf/RLinf-Pi0-RoboCasa
+   hf download RLinf/RLinf-Pi0-RoboCasa

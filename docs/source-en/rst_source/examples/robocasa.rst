@@ -145,12 +145,13 @@ Model Download
 
 .. code-block:: bash
 
-   cd /workspace
-   # Download the RoboCasa SFT model (choose either method)
+   # Download the model (choose either method)
    # Method 1: Using git clone
    git lfs install
-   git clone https://huggingface.co/changyeon/pi0_robocasa_100demos_base_pytorch
+   git clone https://huggingface.co/RLinf/RLinf-Pi0-RoboCasa
+   git clone https://huggingface.co/RLinf/RLinf-Pi0-RoboCasa
 
    # Method 2: Using huggingface-hub
    pip install huggingface-hub
-   hf download changyeon/pi0_robocasa_100demos_base_pytorch
+   hf download RLinf/RLinf-Pi0-RoboCasa
+   hf download RLinf/RLinf-Pi0-RoboCasa

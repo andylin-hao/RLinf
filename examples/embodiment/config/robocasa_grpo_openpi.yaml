@@ -38,17 +38,11 @@ runner:
   resume_dir: null
 
 algorithm:
-  auto_reset: False
-  ignore_terminations: False
-  use_fixed_reset_state_ids: True
   normalize_advantages: True
   kl_penalty: kl  # how to estimate kl divergence: kl or kl_penalty
   group_size: 8
-  max_episode_steps: 300
   reward_coef: 1.0
-  n_chunk_steps: 30
-  n_eval_chunk_steps: 30
-  num_group_envs: 64
+
   rollout_epoch: 8
   eval_rollout_epoch: 1  # set eval_rollout_epoch > 0 when enable runner.only_eval or runner.val_check_interval > 0
   reward_type: chunk_level
@@ -100,18 +94,17 @@ env:
 
   train:
     total_num_envs: 64
-    max_episode_steps: ${algorithm.max_episode_steps}
-    max_steps_per_rollout_epoch: ${algorithm.max_episode_steps}
+    max_episode_steps: 300 # max episode steps for truncation
+    max_steps_per_rollout_epoch: 300
     reward_coef: ${algorithm.reward_coef}
     group_size: ${algorithm.group_size}
   eval:
-    total_num_envs: 9
+    total_num_envs: 8
     auto_reset: True
     ignore_terminations: True
-    max_episode_steps: ${algorithm.max_episode_steps}
-    max_steps_per_rollout_epoch: ${algorithm.max_episode_steps}
+    max_episode_steps: 300
+    max_steps_per_rollout_epoch: 300
     group_size: 1
-    use_fixed_reset_state_ids: True
     is_eval: True
     video_cfg:
       save_video: True
@@ -132,7 +125,7 @@ rollout:
   pipeline_stage_num: 1
 
   model:
-    model_path: "/path/to/model/pi0_robocasa_100demos_base_pytorch"  # Update this to your pi0 model path
+    model_path: "/path/to/model/RLinf-Pi0-RoboCasa"  # Update this to your pi0 model path
     precision: ${actor.model.precision}
 
 actor:
@@ -149,7 +142,7 @@ actor:
 
   # Override the default values in model/pi0
   model:
-    model_path: "/path/to/model/pi0_robocasa_100demos_base_pytorch"  # Update this to your pi0 model path
+    model_path: "/path/to/model/RLinf-Pi0-RoboCasa"  # Update this to your pi0 model path
     num_action_chunks: 10 # interface for the env
     action_dim: 7  # Pi0 outputs 7D: [3D arm_pos + 3D arm_ori + 1D gripper], converted to 12D for PandaOmron
     num_steps: 5
