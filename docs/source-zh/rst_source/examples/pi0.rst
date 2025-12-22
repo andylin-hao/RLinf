@@ -100,7 +100,7 @@
 
    # 方式2：使用 huggingface-hub
    pip install huggingface-hub
-   hf download RLinf/RLinf-Pi0-SFT-Spatial-Object-Goal
+   hf download RLinf/RLinf-Pi0-SFT-Spatial-Object-Goal --local-dir RLinf-Pi0-SFT-Spatial-Object-Goal
 
 或者，您可以从 ModelScope 下载该模型 https://www.modelscope.cn/models/RLinf/RLinf-Pi0-SFT-Spatial-Object-Goal。
 

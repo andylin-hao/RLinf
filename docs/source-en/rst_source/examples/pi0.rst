@@ -124,7 +124,7 @@ Before starting training, you need to download the corresponding pretrained mode
 
    # Method 2: Using huggingface-hub
    pip install huggingface-hub
-   hf download RLinf/RLinf-Pi0-SFT-Spatial-Object-Goal
+   hf download RLinf/RLinf-Pi0-SFT-Spatial-Object-Goal --local-dir RLinf-Pi0-SFT-Spatial-Object-Goal
 
 Alternatively, you can download the model from ModelScope: https://www.modelscope.cn/models/RLinf/RLinf-Pi0-SFT-Spatial-Object-Goal.
 
