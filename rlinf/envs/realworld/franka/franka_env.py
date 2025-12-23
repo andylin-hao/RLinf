@@ -112,6 +112,9 @@ class FrankaEnv(gym.Env):
         self._joint_reset_cycle = cycle(range(self.config.joint_reset_cycle))
         next(self._joint_reset_cycle)  # Initialize the cycle
 
+        if not self.config.is_dummy:
+            self._setup_hardware()
+
         # Init action and observation spaces
         assert (
             self.config.camera_serials is not None
@@ -121,8 +124,6 @@ class FrankaEnv(gym.Env):
 
         if self.config.is_dummy:
             return
-
-        self._setup_hardware()
 
         # Wait for the robot to be ready
         start_time = time.time()
