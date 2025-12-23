@@ -49,11 +49,18 @@ def extract_termination_from_info(info, num_envs, device):
 
 class ManiskillEnv(gym.Env):
     def __init__(
-        self, cfg, num_envs, seed_offset, total_num_processes, record_metrics=True
+        self,
+        cfg,
+        num_envs,
+        seed_offset,
+        total_num_processes,
+        worker_info,
+        record_metrics=True,
     ):
         env_seed = cfg.seed
         self.seed = env_seed + seed_offset
         self.total_num_processes = total_num_processes
+        self.worker_info = worker_info
         self.auto_reset = cfg.auto_reset
         self.use_rel_reward = cfg.use_rel_reward
         self.ignore_terminations = cfg.ignore_terminations

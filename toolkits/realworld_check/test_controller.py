@@ -19,21 +19,11 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 
 from rlinf.envs.realworld.franka.franka_controller import FrankaController
-from rlinf.scheduler import Cluster, NodePlacementStrategy
 
 
-def main(cfg):
+def main():
     robot_ip = "ROBOT_IP_ADDRESS"
-    cluster = Cluster(cluster_cfg=cfg.cluster)
-    placement = NodePlacementStrategy(
-        node_ranks=[
-            0,
-        ]
-    )
-
-    controller = FrankaController.create_group(robot_ip).launch(
-        cluster=cluster, placement_strategy=placement
-    )
+    controller = FrankaController.launch(robot_ip=robot_ip)
 
     start_time = time.time()
     while not controller.is_robot_up().wait()[0]:
@@ -48,9 +38,9 @@ def main(cfg):
             if cmd_str == "q":
                 break
             elif cmd_str == "getpos":
-                print(controller.get_state().tcp_pose)
+                print(controller.get_state().wait()[0].tcp_pose)
             elif cmd_str == "getpos_euler":
-                tcp_pose = controller.get_state().tcp_pose
+                tcp_pose = controller.get_state().wait()[0].tcp_pose
                 r = R.from_quat(tcp_pose[3:].copy())
                 euler = r.as_euler("xyz")
                 print(np.concatenate([tcp_pose[:3], euler]))

@@ -248,12 +248,19 @@ def update_obs(observation):
 
 class RoboTwin(gym.Env):
     def __init__(
-        self, cfg, num_envs, seed_offset, total_num_processes, record_metrics=True
+        self,
+        cfg,
+        num_envs,
+        seed_offset,
+        total_num_processes,
+        worker_info,
+        record_metrics=True,
     ):
         # Get parameters from configuration
         self.cfg = cfg
         self.seed_offset = seed_offset
         self.total_num_processes = total_num_processes
+        self.worker_info = worker_info
         self.record_metrics = record_metrics
         self._is_start = True
         self.info_logging_keys = ["is_src_obj_grasped", "consecutive_grasp", "success"]

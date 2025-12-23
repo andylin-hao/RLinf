@@ -46,7 +46,13 @@ __all__ = ["BehaviorEnv"]
 
 class BehaviorEnv(gym.Env):
     def __init__(
-        self, cfg, num_envs, seed_offset, total_num_processes, record_metrics=True
+        self,
+        cfg,
+        num_envs,
+        seed_offset,
+        total_num_processes,
+        worker_info,
+        record_metrics=True,
     ):
         self.cfg = cfg
 
@@ -54,6 +60,7 @@ class BehaviorEnv(gym.Env):
         self.ignore_terminations = cfg.ignore_terminations
         self.seed_offset = seed_offset
         self.total_num_processes = total_num_processes
+        self.worker_info = worker_info
         self.record_metrics = record_metrics
         self._is_start = True
 

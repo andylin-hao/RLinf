@@ -27,7 +27,7 @@ from sensor_msgs.msg import JointState
 from serl_franka_controllers.msg import ZeroJacobian
 
 from rlinf.envs.realworld.common.ros import ROSController
-from rlinf.scheduler import Worker
+from rlinf.scheduler import Cluster, NodePlacementStrategy, Worker
 from rlinf.utils.logging import get_logger
 
 from .franka_robot_state import FrankaRobotState
@@ -35,6 +35,34 @@ from .franka_robot_state import FrankaRobotState
 
 class FrankaController(Worker):
     """Franka robot arm controller."""
+
+    @staticmethod
+    def launch(
+        robot_ip: str,
+        env_idx: int = 0,
+        node_rank: int = 0,
+        worker_rank: int = 0,
+        ros_pkg: str = "serl_franka_controllers",
+    ):
+        """Launch a FrankaController on the specified worker's node.
+
+        Args:
+            robot_ip (str): The IP address of the robot arm.
+            env_idx (int): The index of the environment.
+            node_rank (int): The rank of the node to launch the controller on.
+            worker_rank (int): The rank of the env worker to the controller is associated with.
+            ros_pkg (str): The ROS package name for the Franka controllers.
+
+        Returns:
+            FrankaController: The launched FrankaController instance.
+        """
+        cluster = Cluster()
+        placement = NodePlacementStrategy(node_ranks=[node_rank])
+        return FrankaController.create_group(robot_ip, ros_pkg).launch(
+            cluster=cluster,
+            placement_strategy=placement,
+            name=f"FrankaController-{worker_rank}-{env_idx}",
+        )
 
     def __init__(self, robot_ip: str, ros_pkg: str = "serl_franka_controllers"):
         """Initialize the Franka robot arm controller.

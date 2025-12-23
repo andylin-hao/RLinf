@@ -100,10 +100,10 @@ class PegInsertionConfig(FrankaRobotConfig):
 
 
 class PegInsertionEnv(FrankaEnv):
-    def __init__(self, override_cfg):
+    def __init__(self, override_cfg, worker_info=None, hardware_info=None, env_idx=0):
         # Update config according to current env
         config = PegInsertionConfig(**override_cfg)
-        super().__init__(config)
+        super().__init__(config, worker_info, hardware_info, env_idx)
 
     @property
     def task_description(self):
