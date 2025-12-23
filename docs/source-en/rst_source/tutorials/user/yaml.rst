@@ -1129,7 +1129,7 @@ The path is
 
 ``group_size``: Number of environments per group (inherits from algorithm.group_size).
 
-``use_fixed_reset_state_ids``: Use fixed reset state IDs (false for randomization). Always True for GRPO, default be False for PPO (inherits from algorithm.use_fixed_reset_state_ids).
+``use_fixed_reset_state_ids``: Use fixed reset state IDs (false for randomization). Always True for GRPO, default be False for PPO.
 
 **Environment Scaling**
 

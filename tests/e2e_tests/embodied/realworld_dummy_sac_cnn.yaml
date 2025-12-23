@@ -118,9 +118,6 @@ actor:
   group_name: "ActorGroup"
   training_backend: "fsdp"
 
-  checkpoint_load_path: ""
-  checkpoint_save_path: "../results"
-
   micro_batch_size: 256
   global_batch_size: 256
   seed: 1234

@@ -12,11 +12,11 @@ hidden_dim: 256
 precision: "32"
 add_value_head: False
 add_q_head: True
-backbone: resnet # ["resnet", "plane_conv"]
+backbone: resnet
 
 is_lora: False
 lora_rank: 32
-gradient_checkpointing: False
+
 sharding_strategy: no_shard
 vh_mode: "q_network"
 q_network_separate_processing: True

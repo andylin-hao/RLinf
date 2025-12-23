@@ -65,9 +65,6 @@ runner:
 
 algorithm:
   update_epoch: 32
-  auto_reset: True
-  ignore_terminations: True
-  use_fixed_reset_state_ids: False
   group_size: 1
   agg_q: min
 
@@ -138,9 +135,6 @@ rollout:
 actor:
   group_name: "ActorGroup"
   training_backend: "fsdp"
-
-  checkpoint_load_path: ""
-  checkpoint_save_path: "../results"
 
   micro_batch_size: 1024
   global_batch_size: 1024
