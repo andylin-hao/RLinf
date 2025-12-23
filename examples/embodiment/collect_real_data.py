@@ -33,10 +33,10 @@ class DataCollector(Worker):
         self.num_data_episodes = cfg.runner.num_data_episodes
         self.total_cnt = 0
         self.env = RealworldEnv(
-            cfg.env.train, num_envs=1, seed_offset=0, total_num_processes=1
+            cfg.env.eval, num_envs=1, seed_offset=0, total_num_processes=1
         )
 
-        self.transitions = []
+        self.data_list = []
 
     def _extract_obs(self, obs):
         for key in obs:
@@ -75,7 +75,7 @@ class DataCollector(Worker):
                     "dones": done,
                 }
             )
-            self.transitions.append(data)
+            self.data_list.append(data)
 
             obs = next_obs
 
@@ -92,8 +92,10 @@ class DataCollector(Worker):
 
         save_file_path = os.path.join(self.cfg.runner.logger.log_path, "data.pkl")
         with open(save_file_path, "wb") as f:
-            pkl.dump(self.transitions, f)
-            self.log_info(f"Saved {self.num_data_episodes} demos to {save_file_path}")
+            pkl.dump(self.data_list, f)
+            self.log_info(
+                f"Saved {self.num_data_episodes} demos with {len(self.data_list)} samples to {save_file_path}"
+            )
 
         self.env.close()
 

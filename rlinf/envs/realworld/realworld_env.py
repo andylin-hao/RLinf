@@ -28,7 +28,7 @@ from rlinf.envs.realworld.common.wrappers import (
     RelativeFrame,
     SpacemouseIntervention,
 )
-from rlinf.envs.realworld.venv import NoResetSyncVectorEnv
+from rlinf.envs.realworld.venv import NoAutoResetSyncVectorEnv
 from rlinf.envs.utils import (
     put_info_on_image,
     save_rollout_video,
@@ -76,8 +76,9 @@ class RealworldEnv(gym.Env):
         assert "env_idx" not in self.override_cfg, (
             "env_idx is a reserved key in override_cfg. Please remove it from override_cfg."
         )
-        self.override_cfg["env_idx"] = env_idx
-        env = gym.make(id=self.cfg.init_params.id, override_cfg=self.override_cfg)
+        override_cfg = copy.deepcopy(self.override_cfg)
+        override_cfg["env_idx"] = env_idx
+        env = gym.make(id=self.cfg.init_params.id, override_cfg=override_cfg)
         env = GripperCloseEnv(env)
         if not env.config.is_dummy and env.config.use_spacemouse:
             env = SpacemouseIntervention(env)
@@ -90,7 +91,7 @@ class RealworldEnv(gym.Env):
             partial(self._create_env, env_idx=env_idx)
             for env_idx in range(self.num_envs)
         ]
-        self.env = NoResetSyncVectorEnv(env_fns)
+        self.env = NoAutoResetSyncVectorEnv(env_fns)
         self.task_descriptions = list(self.env.call("task_description"))
 
     @property
@@ -323,8 +324,8 @@ class RealworldEnv(gym.Env):
         infos["_elapsed_steps"] = dones
         return obs, infos
 
-    def _calc_step_reward(self, reward):
-        return reward
+    def _calc_step_reward(self, reward: np.ndarray):
+        return reward.astype(np.float32)
 
     def _get_random_reset_state_ids(self, num_reset_states):
         reset_state_ids = self._generator.integers(

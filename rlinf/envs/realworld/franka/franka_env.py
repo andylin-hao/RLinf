@@ -118,7 +118,7 @@ class FrankaEnv(gym.Env):
                 )
 
         self._interpolate_move(self._reset_pose)
-        time.sleep(5)
+        time.sleep(1.0)
         self._franka_state = self._controller.get_state().wait()[0]
 
         # Init cameras
@@ -231,12 +231,12 @@ class FrankaEnv(gym.Env):
             target_delta = np.abs(position - self.config.target_ee_pose)
             is_success = np.all(target_delta[:3] <= self.config.reward_threshold[:3])
             if is_success:
-                reward = 1
+                reward = 1.0
             else:
                 if self.config.use_dense_reward:
                     reward = np.exp(-500 * np.sum(np.square(target_delta[:3])))
                 else:
-                    reward = 0
+                    reward = 0.0
                 self._logger.info(
                     f"Does not meet success criteria. Target delta: {target_delta}, "
                     f"Success threshold: {self.config.reward_threshold}, "
@@ -248,7 +248,7 @@ class FrankaEnv(gym.Env):
 
             return reward
         else:
-            return 0
+            return 0.0
 
     def reset(self, *, seed=None, options=None):
         if self.config.is_dummy:
