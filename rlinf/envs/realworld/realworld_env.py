@@ -35,11 +35,11 @@ from rlinf.envs.utils import (
     tile_images,
     to_tensor,
 )
-from rlinf.scheduler import Worker
+from rlinf.scheduler import Worker, WorkerInfo
 
 
 class RealworldEnv(gym.Env):
-    def __init__(self, cfg, num_envs, seed_offset, total_num_processes):
+    def __init__(self, cfg, num_envs, seed_offset, total_num_processes, worker_info):
         assert num_envs == 1, (
             f"Currently, only 1 realworld env can be started per worker, but {num_envs=} is received."
         )
@@ -56,6 +56,8 @@ class RealworldEnv(gym.Env):
 
         self.seed = cfg.seed + seed_offset
         self.num_envs = num_envs
+        self.total_num_processes = total_num_processes
+        self.worker_info = worker_info
         self.use_fixed_reset_state_ids = cfg.use_fixed_reset_state_ids
         self.auto_reset = cfg.auto_reset
         self.ignore_terminations = cfg.ignore_terminations
@@ -73,12 +75,18 @@ class RealworldEnv(gym.Env):
         self.render_images = []
 
     def _create_env(self, env_idx: int):
-        assert "env_idx" not in self.override_cfg, (
-            "env_idx is a reserved key in override_cfg. Please remove it from override_cfg."
-        )
+        worker_info: WorkerInfo = self.worker_info
+        hardware_info = None
+        if worker_info is not None and env_idx < len(worker_info.hardware_infos):
+            hardware_info = worker_info.hardware_infos[env_idx]
         override_cfg = copy.deepcopy(self.override_cfg)
-        override_cfg["env_idx"] = env_idx
-        env = gym.make(id=self.cfg.init_params.id, override_cfg=override_cfg)
+        env = gym.make(
+            id=self.cfg.init_params.id,
+            override_cfg=override_cfg,
+            worker_info=worker_info,
+            hardware_info=hardware_info,
+            env_idx=env_idx,
+        )
         env = GripperCloseEnv(env)
         if not env.config.is_dummy and env.config.use_spacemouse:
             env = SpacemouseIntervention(env)

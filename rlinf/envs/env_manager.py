@@ -22,6 +22,8 @@ from typing import Optional
 import torch
 import torch.multiprocessing as mp
 
+from rlinf.scheduler import WorkerInfo
+
 
 def force_gc_tensor(tensor):
     if not torch.is_tensor(tensor):
@@ -165,6 +167,7 @@ class EnvManager:
         seed_offset: int,
         total_num_processes: int,
         env_cls: str,
+        worker_info: WorkerInfo,
         enable_offload: bool = False,
     ):
         self.cfg = cfg
@@ -172,6 +175,7 @@ class EnvManager:
         self.num_envs = num_envs
         self.seed_offset = seed_offset
         self.total_num_processes = total_num_processes
+        self.worker_info = worker_info
         self.process: Optional[mp.Process] = None
         self.command_queue: Optional[mp.Queue] = None
         self.result_queue: Optional[mp.Queue] = None
@@ -193,7 +197,7 @@ class EnvManager:
         else:
             self.env_cls = env_cls
             self.env = self.env_cls(
-                self.cfg, num_envs, seed_offset, total_num_processes
+                self.cfg, num_envs, seed_offset, total_num_processes, worker_info
             )
 
     def start_env(self):
@@ -218,6 +222,7 @@ class EnvManager:
                 self.num_envs,
                 self.seed_offset,
                 self.total_num_processes,
+                self.worker_info,
                 self.env_cls,
                 self.command_queue,
                 self.result_queue,
@@ -295,6 +300,7 @@ class EnvManager:
             "num_envs",
             "seed_offset",
             "total_num_processes",
+            "worker_info",
             "process",
             "command_queue",
             "result_queue",
@@ -341,6 +347,7 @@ def _env_worker(
     num_envs,
     seed_offset,
     total_num_processes,
+    worker_info,
     env_cls,
     command_queue,
     result_queue,
@@ -359,7 +366,7 @@ def _env_worker(
     omegaconf_register()
 
     try:
-        env = env_cls(cfg, num_envs, seed_offset, total_num_processes)
+        env = env_cls(cfg, num_envs, seed_offset, total_num_processes, worker_info)
         assert isinstance(env, EnvOffloadMixin), (
             f"Environment class {env_cls.__name__} must inherit from EnvOffloadMixin"
         )

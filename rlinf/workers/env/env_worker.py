@@ -86,6 +86,7 @@ class EnvWorker(Worker):
                         seed_offset=self._rank * self.stage_num + stage_id,
                         total_num_processes=self._world_size * self.stage_num,
                         env_cls=train_env_cls,
+                        worker_info=self.worker_info,
                         enable_offload=enable_offload,
                     )
                 )
@@ -99,6 +100,7 @@ class EnvWorker(Worker):
                         seed_offset=self._rank * self.stage_num + stage_id,
                         total_num_processes=self._world_size * self.stage_num,
                         env_cls=eval_env_cls,
+                        worker_info=self.worker_info,
                         enable_offload=enable_offload,
                     )
                 )

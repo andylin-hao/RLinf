@@ -44,10 +44,11 @@ if not getattr(metaworld, "_has_registered_mw_envs", False):
 
 
 class MetaWorldEnv(gym.Env):
-    def __init__(self, cfg, num_envs, seed_offset, total_num_processes):
+    def __init__(self, cfg, num_envs, seed_offset, total_num_processes, worker_info):
         self.seed_offset = seed_offset
         self.cfg = cfg
         self.total_num_processes = total_num_processes
+        self.worker_info = worker_info
         self.seed = self.cfg.seed + seed_offset
         self._is_start = True
         self.num_envs = num_envs

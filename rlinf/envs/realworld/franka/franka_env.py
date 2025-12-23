@@ -26,7 +26,10 @@ from scipy.spatial.transform import Rotation as R
 
 from rlinf.envs.realworld.common.camera import Camera, CameraInfo
 from rlinf.envs.realworld.common.video_player import VideoPlayer
-from rlinf.scheduler import Cluster, FrankaHWInfo, NodePlacementStrategy, Worker
+from rlinf.scheduler import (
+    FrankaHWInfo,
+    WorkerInfo,
+)
 from rlinf.utils.logging import get_logger
 
 from .franka_robot_state import FrankaRobotState
@@ -35,7 +38,6 @@ from .utils import construct_adjoint_matrix, construct_homogeneous_matrix, quat_
 
 @dataclass
 class FrankaRobotConfig:
-    env_idx: int = -1  # Index of the environment, used when multiple robots are connected to one machine
     robot_ip: Optional[str] = None
     camera_serials: Optional[list[str]] = None
     enable_camera_player: bool = True
@@ -77,11 +79,25 @@ class FrankaRobotConfig:
 
 
 class FrankaEnv(gym.Env):
-    """Franka robot arm environment. This is adapted from SERL's FrankaEnv."""
+    """Franka robot arm environment."""
 
-    def __init__(self, config: FrankaRobotConfig):
+    def __init__(
+        self,
+        config: FrankaRobotConfig,
+        worker_info: Optional[WorkerInfo],
+        hardware_info: Optional[FrankaHWInfo],
+        env_idx: int,
+    ):
         self._logger = get_logger()
         self.config = config
+        self.hardware_info = hardware_info
+        self.env_idx = env_idx
+        self.node_rank = 0
+        self.env_worker_rank = 0
+        if worker_info is not None:
+            self.node_rank = worker_info.cluster_node_rank
+            self.env_worker_rank = worker_info.rank
+
         self._franka_state = FrankaRobotState()
         if not self.config.is_dummy:
             self._reset_pose = np.concatenate(
@@ -129,31 +145,24 @@ class FrankaEnv(gym.Env):
     def _setup_hardware(self):
         from .franka_controller import FrankaController
 
-        cluster = Cluster()
-        worker = Worker.current_worker
-        assert worker is not None, (
-            "FrankaEnv must be created within its Worker process."
-        )
-        assert self.config.env_idx >= 0, "env_idx must be set for FrankaEnv."
+        assert self.env_idx >= 0, "env_idx must be set for FrankaEnv."
 
         # Setup Franka IP and camera serials
-        franka_infos: list[FrankaHWInfo] = worker.hardware_infos
-        assert len(franka_infos) > self.config.env_idx, (
-            f"Not enough Franka robots assigned to env worker rank {worker._rank}. Got {len(franka_infos)} robots, but requires at least {self.config.env_idx}. Please check the num_envs setting in config and hardware assignment config."
+        assert isinstance(self.hardware_info, FrankaHWInfo), (
+            f"hardware_info must be FrankaHWInfo, but got {type(self.hardware_info)}."
         )
-        franka_info = franka_infos[self.config.env_idx]
         # Only set robot_ip and camera_serials if they are not provided in config
         if self.config.robot_ip is None:
-            self.config.robot_ip = franka_info.config.robot_ip
+            self.config.robot_ip = self.hardware_info.config.robot_ip
         if self.config.camera_serials is None:
-            self.config.camera_serials = franka_info.config.camera_serials
+            self.config.camera_serials = self.hardware_info.config.camera_serials
 
-        # Launch Franka controller on the same node as the env
-        placement = NodePlacementStrategy(node_ranks=[worker._cluster_node_rank])
-        self._controller = FrankaController.create_group(self.config.robot_ip).launch(
-            cluster=cluster,
-            placement_strategy=placement,
-            name=f"FrankaController-{worker._rank}-{self.config.env_idx}",
+        # Launch Franka controller
+        self._controller = FrankaController.launch(
+            robot_ip=self.config.robot_ip,
+            env_idx=self.env_idx,
+            node_rank=self.node_rank,
+            worker_rank=self.env_worker_rank,
         )
 
     def transform_action_ee_to_base(self, action):
