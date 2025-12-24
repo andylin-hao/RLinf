@@ -24,7 +24,10 @@ sudo apt-get update -y
 sudo apt-get install -y --no-install-recommends \
     wget \
     curl \
-    lsb-release
+    lsb-release \
+    gnupg \
+    cmake \
+    build-essential
 
 # Detect Ubuntu codename (e.g., focal, jammy)
 ubuntu_codename=""
