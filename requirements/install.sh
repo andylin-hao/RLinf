@@ -15,7 +15,18 @@ SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
 
 SUPPORTED_TARGETS=("embodied" "reason")
 SUPPORTED_MODELS=("openvla" "openvla-oft" "openpi" "gr00t")
-SUPPORTED_ENVS=("behavior" "maniskill_libero" "metaworld" "calvin" "isaaclab" "robocasa")
+SUPPORTED_ENVS=("behavior" "maniskill_libero" "metaworld" "calvin" "isaaclab" "robocasa" "franka")
+
+# Ensure uv is installed
+if ! command -v uv &> /dev/null; then
+    echo "uv command not found. Installing uv..."
+    # Check if pip is available
+    if ! command -v pip &> /dev/null; then
+        echo "pip command not found. Please install pip first." >&2
+        exit 1
+    fi
+    pip install uv
+fi
 
 #=======================Utility Functions=======================
 
@@ -223,8 +234,6 @@ install_common_embodied_deps() {
 
 install_openvla_model() {
     case "$ENV_NAME" in
-        "")
-            ;;
         maniskill_libero)
             create_and_sync_venv
             install_common_embodied_deps
@@ -242,8 +251,6 @@ install_openvla_model() {
 
 install_openvla_oft_model() {
     case "$ENV_NAME" in
-        "")
-            ;;
         behavior)
             PYTHON_VERSION="3.10"
             create_and_sync_venv
@@ -268,8 +275,6 @@ install_openvla_oft_model() {
 
 install_openpi_model() {
     case "$ENV_NAME" in
-        "")
-            ;;
         maniskill_libero)
             create_and_sync_venv
             install_common_embodied_deps
@@ -327,8 +332,6 @@ install_gr00t_model() {
     uv pip install -e "$gr00t_path" --no-deps
     uv pip install -r $SCRIPT_DIR/embodied/models/gr00t.txt
     case "$ENV_NAME" in
-        "")
-            ;;
         maniskill_libero)
             install_maniskill_libero_env
             install_prebuilt_flash_attn
@@ -345,6 +348,21 @@ install_gr00t_model() {
             ;;
     esac
     uv pip uninstall pynvml || true
+}
+
+install_env_only() {
+    create_and_sync_venv
+    case "$ENV_NAME" in
+        franka)
+            uv sync --extra franka --active
+            bash $SCRIPT_DIR/embodied/ros_install.sh
+            install_franka_env
+            ;;
+        *)
+            echo "Environment '$ENV_NAME' is not supported for env-only installation." >&2
+            exit 1
+            ;;
+    esac
 }
 
 #=======================ENV INSTALLERS=======================
@@ -414,6 +432,22 @@ install_robocasa_env() {
     python -m robocasa.scripts.setup_macros
 }
 
+install_franka_env() {
+    # Install serl_franka_controller
+    # Check if ROS_CATKIN_PATH is set or serl_franka_controllers is already built
+    if [ -z "${ROS_CATKIN_PATH:-}" ] || [ ! -d "$ROS_CATKIN_PATH/devel/setup.bash" ]; then
+        ROS_CATKIN_PATH="$VENV_DIR/ros_catkin_ws"
+        mkdir -p "$ROS_CATKIN_PATH/src"
+        cd "$ROS_CATKIN_PATH/src"
+        git clone https://github.com/rail-berkeley/serl_franka_controllers
+        source /opt/ros/noetic/setup.bash
+        cd "$ROS_CATKIN_PATH"
+        catkin_make --pkg serl_franka_controllers
+    fi
+    echo "source /opt/ros/noetic/setup.bash" >> "$VENV_DIR/bin/activate"
+    echo "source $ROS_CATKIN_PATH/devel/setup.bash" >> "$VENV_DIR/bin/activate"
+}
+
 #=======================REASONING INSTALLER=======================
 
 install_reason() {
@@ -441,14 +475,12 @@ main() {
 
     case "$TARGET" in
         embodied)
-            if [ -z "$MODEL" ]; then
-                echo "--model is required when target=embodied. Supported models: ${SUPPORTED_MODELS[*]}" >&2
-                exit 1
-            fi
-            # validate model
-            if [[ ! " ${SUPPORTED_MODELS[*]} " =~ " $MODEL " ]]; then
-                echo "Unknown embodied model: $MODEL. Supported models: ${SUPPORTED_MODELS[*]}" >&2
-                exit 1
+            # validate --model
+            if [ -n "$MODEL" ]; then
+                if [[ ! " ${SUPPORTED_MODELS[*]} " =~ " $MODEL " ]]; then
+                    echo "Unknown embodied model: $MODEL. Supported models: ${SUPPORTED_MODELS[*]}" >&2
+                    exit 1
+                fi
             fi
             # check --env is set and supported
             if [ -n "$ENV_NAME" ]; then
@@ -473,6 +505,9 @@ main() {
                     ;;
                 gr00t)
                     install_gr00t_model
+                    ;;
+                "")
+                    install_env_only
                     ;;
             esac
             ;;
