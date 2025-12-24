@@ -152,7 +152,7 @@ GR00T-N1.5引入了DataConfig类，用于描述模型训练所需的所有信息
    rollout:
       pipeline_stage_num: 2
 
-在此处，您可以灵活配置env、rollout和actor组件的GPU数量。使用上述配置，您可以实现env与rollout之间的流水线重叠，并与actor共享资源。此外，通过在配置中设置``pipeline_stage_num = 2``，可以实现rollout与actor之间的流水线重叠，提高rollout效率。
+在此处，您可以灵活配置env、rollout和actor组件的GPU数量。此外，通过在配置中设置``pipeline_stage_num = 2``，可以实现rollout与env之间的流水线重叠，提高rollout效率。
 
 .. code:: yaml
 

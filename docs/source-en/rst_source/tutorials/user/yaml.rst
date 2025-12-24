@@ -923,7 +923,7 @@ rollout
 
 ``rollout.backend``: Model backend (huggingface, vllm).
 
-``rollout.pipeline_stage_num``: Number of pipeline stages for model parallelism.
+``rollout.pipeline_stage_num``: Number of pipeline stages for rollout.
 
 actor
 ~~~~~~~~~~~~~~~

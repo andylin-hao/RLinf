@@ -867,7 +867,7 @@ rollout
 
 ``rollout.backend``：模型后端（huggingface、vllm）。  
 
-``rollout.pipeline_stage_num``：模型并行的流水线阶段数。
+``rollout.pipeline_stage_num``：rollout 的流水线阶段数。
 
 actor
 ~~~~~~~~~~~~~~~
