@@ -68,8 +68,8 @@ def get_env_cls(env_type, env_cfg=None):
 
         return RobocasaEnv
     elif env_type == "realworld":
-        from rlinf.envs.realworld.realworld_env import RealworldEnv
+        from rlinf.envs.realworld.realworld_env import RealWorldEnv
 
-        return RealworldEnv
+        return RealWorldEnv
     else:
         raise NotImplementedError(f"Environment type {env_type} not implemented")

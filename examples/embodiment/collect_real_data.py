@@ -21,7 +21,7 @@ import hydra
 import numpy as np
 from tqdm import tqdm
 
-from rlinf.envs.realworld.realworld_env import RealworldEnv
+from rlinf.envs.realworld.realworld_env import RealWorldEnv
 from rlinf.scheduler import Cluster, ComponentPlacement, Worker
 
 
@@ -32,7 +32,7 @@ class DataCollector(Worker):
         self.cfg = cfg
         self.num_data_episodes = cfg.runner.num_data_episodes
         self.total_cnt = 0
-        self.env = RealworldEnv(
+        self.env = RealWorldEnv(
             cfg.env.eval, num_envs=1, seed_offset=0, total_num_processes=1
         )
 
