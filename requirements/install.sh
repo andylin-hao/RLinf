@@ -435,15 +435,26 @@ install_robocasa_env() {
 install_franka_env() {
     # Install serl_franka_controller
     # Check if ROS_CATKIN_PATH is set or serl_franka_controllers is already built
-    if [ -z "${ROS_CATKIN_PATH:-}" ] || [ ! -d "$ROS_CATKIN_PATH/devel/setup.bash" ]; then
-        ROS_CATKIN_PATH="$VENV_DIR/ros_catkin_ws"
-        mkdir -p "$ROS_CATKIN_PATH/src"
-        cd "$ROS_CATKIN_PATH/src"
+    set +euo pipefail
+    source /opt/ros/noetic/setup.bash
+    set -euo pipefail
+    if [ -z "${ROS_CATKIN_PATH:-}" ]; then
+        ROS_CATKIN_PATH=$(realpath "$VENV_DIR/ros_catkin_ws")
+    fi
+
+    mkdir -p "$ROS_CATKIN_PATH/src"
+    pushd "$ROS_CATKIN_PATH/src"
+    if [ ! -d "$ROS_CATKIN_PATH/src/serl_franka_controllers" ]; then
         git clone https://github.com/rail-berkeley/serl_franka_controllers
-        source /opt/ros/noetic/setup.bash
-        cd "$ROS_CATKIN_PATH"
+    fi
+    popd >/dev/null
+    pushd "$ROS_CATKIN_PATH"
+    if [ ! -f "$ROS_CATKIN_PATH/devel/setup.bash" ]; then
         catkin_make --pkg serl_franka_controllers
     fi
+    popd >/dev/null
+
+    ROS_CATKIN_PATH=$(realpath "$VENV_DIR/ros_catkin_ws")
     echo "source /opt/ros/noetic/setup.bash" >> "$VENV_DIR/bin/activate"
     echo "source $ROS_CATKIN_PATH/devel/setup.bash" >> "$VENV_DIR/bin/activate"
 }
