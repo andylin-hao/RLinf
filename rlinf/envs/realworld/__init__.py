@@ -13,5 +13,14 @@
 # limitations under the License.
 
 from .franka import FrankaEnv, FrankaRobotConfig, FrankaRobotState, tasks
+from .realworld_env import RealWorldEnv
 
-__all__ = ["FrankaEnv", "FrankaRobotConfig", "FrankaRobotState", "tasks"]
+RealWorldEnv.realworld_setup()
+
+__all__ = [
+    "FrankaEnv",
+    "FrankaRobotConfig",
+    "FrankaRobotState",
+    "tasks",
+    "RealWorldEnv",
+]

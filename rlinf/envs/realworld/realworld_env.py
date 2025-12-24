@@ -14,12 +14,16 @@
 
 import copy
 import os
+import pathlib
+import time
 from functools import partial
 from typing import Optional, OrderedDict
 
 import gymnasium as gym
 import numpy as np
+import psutil
 import torch
+from filelock import FileLock
 from omegaconf import OmegaConf
 
 from rlinf.envs.realworld.common.wrappers import (
@@ -35,16 +39,13 @@ from rlinf.envs.utils import (
     tile_images,
     to_tensor,
 )
-from rlinf.scheduler import Worker, WorkerInfo
+from rlinf.scheduler import WorkerInfo
 
 
-class RealworldEnv(gym.Env):
+class RealWorldEnv(gym.Env):
     def __init__(self, cfg, num_envs, seed_offset, total_num_processes, worker_info):
         assert num_envs == 1, (
             f"Currently, only 1 realworld env can be started per worker, but {num_envs=} is received."
-        )
-        assert Worker.current_worker is not None, (
-            "RealworldEnv must be created within its Worker process."
         )
 
         self.cfg = cfg
@@ -93,6 +94,30 @@ class RealworldEnv(gym.Env):
         env = RelativeFrame(env)
         env = Quat2EulerWrapper(env)
         return env
+
+    @staticmethod
+    def realworld_setup():
+        """Setup RealWorld environment upon env class import.
+
+        This is for any node-level setup required by RealWorld environments. For example, ROS
+        requires a single roscore instance per node, so we ensure that any existing roscore
+        processes are terminated before starting a new one.
+
+        This function is called once when the RealWorldEnv class is first imported.
+        """
+        # Concurrency control is needed for multiple processes on the same node
+        node_lock_file = "/tmp/.realworld.lock"
+        # Check if the path is valid
+        if not os.path.exists(os.path.dirname(node_lock_file)):
+            node_lock_file = os.path.join(pathlib.Path.home(), ".realworld.lock")
+        node_lock = FileLock(node_lock_file)
+
+        with node_lock:
+            ros_proc_names = ["roscore", "rosmaster", "rosout"]
+            for proc in psutil.process_iter():
+                if proc.name() in ros_proc_names:
+                    proc.kill()
+                    time.sleep(0.5)
 
     def _init_env(self):
         env_fns = [

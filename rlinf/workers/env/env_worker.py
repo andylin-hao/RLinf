@@ -76,6 +76,10 @@ class EnvWorker(Worker):
         train_env_cls = get_env_cls(self.cfg.env.train.env_type, self.cfg.env.train)
         eval_env_cls = get_env_cls(self.cfg.env.eval.env_type, self.cfg.env.eval)
 
+        # This is a barrier to ensure all envs' initial setup upon import is done
+        # Essential for RealWorld env to ensure initial ROS node setup is done
+        self.broadcast(True, list(range(self._world_size)))
+
         if not self.only_eval:
             for stage_id in range(self.stage_num):
                 self.env_list.append(
