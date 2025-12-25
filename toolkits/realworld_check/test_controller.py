@@ -22,8 +22,8 @@ from rlinf.envs.realworld.franka.franka_controller import FrankaController
 
 
 def main():
-    robot_ip = "ROBOT_IP_ADDRESS"
-    controller = FrankaController.launch(robot_ip=robot_ip)
+    robot_ip = "ROBOT_IP"
+    controller = FrankaController.launch_controller(robot_ip=robot_ip)
 
     start_time = time.time()
     while not controller.is_robot_up().wait()[0]:

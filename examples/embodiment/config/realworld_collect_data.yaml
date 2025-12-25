@@ -35,6 +35,7 @@ runner:
     experiment_name: "collect-data"
     logger_backends: ["tensorboard"] # wandb, swanlab
   num_data_episodes: 20
+  record_task_description: False
 
 env:
   group_name: "EnvGroup"

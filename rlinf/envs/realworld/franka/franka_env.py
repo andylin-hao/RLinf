@@ -159,7 +159,7 @@ class FrankaEnv(gym.Env):
             self.config.camera_serials = self.hardware_info.config.camera_serials
 
         # Launch Franka controller
-        self._controller = FrankaController.launch(
+        self._controller = FrankaController.launch_controller(
             robot_ip=self.config.robot_ip,
             env_idx=self.env_idx,
             node_rank=self.node_rank,
@@ -247,7 +247,7 @@ class FrankaEnv(gym.Env):
                     reward = np.exp(-500 * np.sum(np.square(target_delta[:3])))
                 else:
                     reward = 0.0
-                self._logger.info(
+                self._logger.debug(
                     f"Does not meet success criteria. Target delta: {target_delta}, "
                     f"Success threshold: {self.config.reward_threshold}, "
                     f"Current reward={reward}",
@@ -287,9 +287,6 @@ class FrankaEnv(gym.Env):
         return observation, {}
 
     def go_to_rest(self, joint_reset=False):
-        self._controller.reconfigure_compliance_params(
-            self.config.precision_param
-        ).wait()
         if joint_reset:
             self._controller.reset_joint(self.config.joint_reset_qpos).wait()
             time.sleep(0.5)
@@ -316,9 +313,6 @@ class FrankaEnv(gym.Env):
             self._franka_state = self._controller.get_state().wait()[0]
             if cnt > 2:
                 break
-        self._controller.reconfigure_compliance_params(
-            self.config.compliance_param
-        ).wait()
 
     def _init_action_obs_spaces(self):
         """Initialize action and observation spaces, including arm safety box."""

@@ -37,7 +37,7 @@ class FrankaController(Worker):
     """Franka robot arm controller."""
 
     @staticmethod
-    def launch(
+    def launch_controller(
         robot_ip: str,
         env_idx: int = 0,
         node_rank: int = 0,

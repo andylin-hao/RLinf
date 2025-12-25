@@ -19,6 +19,7 @@ import pickle as pkl
 
 import hydra
 import numpy as np
+import torch
 from tqdm import tqdm
 
 from rlinf.envs.realworld.realworld_env import RealWorldEnv
@@ -33,15 +34,22 @@ class DataCollector(Worker):
         self.num_data_episodes = cfg.runner.num_data_episodes
         self.total_cnt = 0
         self.env = RealWorldEnv(
-            cfg.env.eval, num_envs=1, seed_offset=0, total_num_processes=1
+            cfg.env.eval,
+            num_envs=1,
+            seed_offset=0,
+            total_num_processes=1,
+            worker_info=self.worker_info,
         )
 
         self.data_list = []
 
     def _extract_obs(self, obs):
+        if not self.cfg.runner.record_task_description:
+            obs.pop("task_descriptions", None)
+        ret_obs = {}
         for key in obs:
-            obs[key] = obs[key][0]
-        return obs
+            ret_obs[key] = obs[key][0]
+        return ret_obs
 
     def run(self):
         obs, _ = self.env.reset()
@@ -56,23 +64,30 @@ class DataCollector(Worker):
                 action = info["intervene_action"]
 
             # Handle vector env
-            obs = self._extract_obs(obs)
-            next_obs = self._extract_obs(next_obs)
-            action = action[0]
-            reward = reward[0]
-            done = done[0]
+            single_obs = self._extract_obs(obs)
+            single_next_obs = self._extract_obs(next_obs)
+            single_action = action[0]
+            single_reward = reward[0]
+            single_done = done[0]
 
-            transition = {
-                "obs": obs,
-                "next_obs": next_obs,
-            }
+            # Handle chunk
+            chunk_done = single_done[None, ...]
+            chunk_reward = single_reward[None, ...]
+
+            transition = copy.deepcopy(
+                {
+                    "obs": single_obs,
+                    "next_obs": single_next_obs,
+                }
+            )
             data = copy.deepcopy(
                 {
                     "transitions": transition,
-                    "actions": action,
-                    "rewards": reward,
-                    "masks": ~done,
-                    "dones": done,
+                    "action": single_action,
+                    "rewards": chunk_reward,
+                    "dones": chunk_done,
+                    "terminations": chunk_done,
+                    "truncations": torch.zeros_like(chunk_done),
                 }
             )
             self.data_list.append(data)
