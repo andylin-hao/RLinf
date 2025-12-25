@@ -61,6 +61,7 @@ class EmbodiedSACFSDPPolicy(EmbodiedFSDPActor):
         if self.cfg.actor.get("enable_offload", False):
             self.offload_param_and_grad()
             self.offload_optimizer()
+        self._setup_rollout_weight_dst_ranks()
 
     def setup_model_and_optimizer(self, initialize_target=False) -> None:
         """Setup model, lr_scheduler, optimizer and grad_scaler."""
