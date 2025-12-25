@@ -27,16 +27,8 @@ cluster:
   node_groups:
     - label: "4090"
       node_ranks: 0-0
-      env_configs:
-        - node_ranks: 0-0
-          python_interpreter_path: /path/to/python
     - label: franka
       node_ranks: 1-2
-      env_configs:
-        - node_ranks: 1-1
-          python_interpreter_path: /path/to/python
-        - node_ranks: 2-2
-          python_interpreter_path: /path/to/python
       hardware:
         type: Franka
         configs:
@@ -85,7 +77,7 @@ algorithm:
   
   # Replay buffer settings
   replay_buffer_capacity: 10000
-  min_buffer_size: 0  # Minimum buffer size before training starts
+  min_buffer_size: 200  # Minimum buffer size before training starts
   target_update_freq: 1  # Frequency of target network updates
 
   # params for rollout
