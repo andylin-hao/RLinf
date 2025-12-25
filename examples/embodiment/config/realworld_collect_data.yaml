@@ -18,13 +18,10 @@ cluster:
   node_groups:
     - label: franka
       node_ranks: 0-0
-      env_configs:
-        - node_ranks: 0-0
       hardware:
         type: Franka
         configs:
           - robot_ip: ROBOT_IP
-            disable_validate: True
             node_rank: 0
 
 runner:
