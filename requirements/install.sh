@@ -352,11 +352,14 @@ install_gr00t_model() {
 
 install_env_only() {
     create_and_sync_venv
+    SKIP_ROS=${SKIP_ROS:-0}
     case "$ENV_NAME" in
         franka)
             uv sync --extra franka --active
-            bash $SCRIPT_DIR/embodied/ros_install.sh
-            install_franka_env
+            if [ "$SKIP_ROS" -ne 1 ]; then
+                bash $SCRIPT_DIR/embodied/ros_install.sh
+                install_franka_env
+            fi
             ;;
         *)
             echo "Environment '$ENV_NAME' is not supported for env-only installation." >&2
@@ -438,23 +441,47 @@ install_franka_env() {
     set +euo pipefail
     source /opt/ros/noetic/setup.bash
     set -euo pipefail
-    if [ -z "${ROS_CATKIN_PATH:-}" ]; then
-        ROS_CATKIN_PATH=$(realpath "$VENV_DIR/ros_catkin_ws")
-    fi
+    ROS_CATKIN_PATH=$(realpath "$VENV_DIR/franka_catkin_ws")
+    LIBFRANKA_VERSION=${LIBFRANKA_VERSION:-0.15.0}
+    FRANKA_ROS_VERSION=${FRANKA_ROS_VERSION:-0.10.0}
 
     mkdir -p "$ROS_CATKIN_PATH/src"
+
+    # Clone necessary repositories
     pushd "$ROS_CATKIN_PATH/src"
     if [ ! -d "$ROS_CATKIN_PATH/src/serl_franka_controllers" ]; then
         git clone https://github.com/rail-berkeley/serl_franka_controllers
     fi
-    popd >/dev/null
-    pushd "$ROS_CATKIN_PATH"
-    if [ ! -f "$ROS_CATKIN_PATH/devel/setup.bash" ]; then
-        catkin_make --pkg serl_franka_controllers
+    if [ ! -d "$ROS_CATKIN_PATH/libfranka" ]; then
+        git clone -b "${LIBFRANKA_VERSION}" --recurse-submodules https://github.com/frankaemika/libfranka $ROS_CATKIN_PATH/libfranka
+    fi
+    if [ ! -d "$ROS_CATKIN_PATH/src/franka_ros" ]; then
+        git clone -b "${FRANKA_ROS_VERSION}" --recurse-submodules https://github.com/frankaemika/franka_ros
     fi
     popd >/dev/null
 
-    ROS_CATKIN_PATH=$(realpath "$VENV_DIR/ros_catkin_ws")
+    # Build
+    pushd "$ROS_CATKIN_PATH"
+    # libfranka first
+    if [ ! -f "$ROS_CATKIN_PATH/libfranka/build/libfranka.so" ]; then
+        mkdir -p "$ROS_CATKIN_PATH/libfranka/build"
+        pushd "$ROS_CATKIN_PATH/libfranka/build" >/dev/null
+        cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=/opt/openrobots/lib/cmake -DBUILD_TESTS=OFF ..
+        make -j$(nproc)
+        popd >/dev/null
+    fi
+    export LD_LIBRARY_PATH=$ROS_CATKIN_PATH/libfranka/build:/opt/openrobots/lib:$LD_LIBRARY_PATH
+    export CMAKE_PREFIX_PATH=$ROS_CATKIN_PATH/libfranka/build:$CMAKE_PREFIX_PATH
+
+    # Then franka_ros
+    catkin_make -DCMAKE_BUILD_TYPE=Release -DFranka_DIR:PATH=$ROS_CATKIN_PATH/libfranka/build --pkg franka_ros
+
+    # Finally serl_franka_controllers
+    catkin_make --pkg serl_franka_controllers
+    popd >/dev/null
+
+    echo "export LD_LIBRARY_PATH=$ROS_CATKIN_PATH/libfranka/build:/opt/openrobots/lib:\$LD_LIBRARY_PATH" >> "$VENV_DIR/bin/activate"
+    echo "export CMAKE_PREFIX_PATH=$ROS_CATKIN_PATH/libfranka/build:\$CMAKE_PREFIX_PATH" >> "$VENV_DIR/bin/activate"
     echo "source /opt/ros/noetic/setup.bash" >> "$VENV_DIR/bin/activate"
     echo "source $ROS_CATKIN_PATH/devel/setup.bash" >> "$VENV_DIR/bin/activate"
 }

@@ -68,7 +68,35 @@ sudo apt-key adv --keyserver 'hkp://keyserver.ubuntu.com:80' --recv-key C1CF6E31
 
 # Install ROS Noetic packages
 sudo apt update -y
-sudo apt install -y --no-install-recommends ros-noetic-ros-base ros-noetic-libfranka ros-noetic-franka-ros || {
+sudo apt install -y --no-install-recommends ros-noetic-ros-base || {
     echo "Failed to install ROS Noetic packages. Please check your apt sources or install manually." >&2
     exit 1
 }
+
+# Install libfranka and franka_ros dependencies
+# Ensure Ubuntu is 20.04 (Focal) for libfranka compatibility
+if [ "$ubuntu_codename" != "focal" ]; then
+    echo "libfranka is officially supported only on Ubuntu 20.04 (Focal)." >&2
+    exit 1
+fi
+
+# libfranka dependencies
+sudo apt-get install -y libpoco-dev libeigen3-dev libfmt-dev
+sudo apt-get install -y lsb-release curl
+sudo mkdir -p /etc/apt/keyrings
+curl -fsSL http://robotpkg.openrobots.org/packages/debian/robotpkg.asc | sudo tee /etc/apt/keyrings/robotpkg.asc
+echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/robotpkg.asc] http://robotpkg.openrobots.org/packages/debian/pub $ubuntu_codename robotpkg" | sudo tee /etc/apt/sources.list.d/robotpkg.list
+sudo apt-get update
+sudo apt-get install -y robotpkg-pinocchio
+
+# franka_ros dependencies
+sudo apt-get install -y --no-install-recommends \
+    ros-noetic-boost-sml \
+    ros-noetic-ros-control \
+    ros-noetic-eigen-conversions \
+    ros-noetic-gazebo-dev \
+    ros-noetic-gazebo-ros-control \
+    ros-noetic-urdfdom-py \
+    ros-noetic-tf-conversions \
+    ros-noetic-kdl-parser
+
