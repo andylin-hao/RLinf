@@ -14,10 +14,10 @@ cluster:
   component_placement:
     env:
       node_group: franka
-      placement: 0-0
+      placement: 0
   node_groups:
     - label: franka
-      node_ranks: 0-0
+      node_ranks: 0
       hardware:
         type: Franka
         configs:

@@ -13,6 +13,7 @@
 # limitations under the License.
 
 
+import os
 import time
 
 import numpy as np
@@ -22,7 +23,8 @@ from rlinf.envs.realworld.franka.franka_controller import FrankaController
 
 
 def main():
-    robot_ip = "ROBOT_IP"
+    robot_ip = os.environ.get("FRANKA_ROBOT_IP", None)
+    assert robot_ip is not None, "Please set the FRANKA_ROBOT_IP environment variable."
     controller = FrankaController.launch_controller(robot_ip=robot_ip)
 
     start_time = time.time()

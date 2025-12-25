@@ -17,28 +17,22 @@ cluster:
   component_placement:
     actor: 
       node_group: "4090"
-      placement: 0-0
+      placement: 0 # Local GPU rank in the 4090 node group (n for the n+1 th GPU)
     env:
       node_group: franka
-      placement: 0
+      placement: 0 # Local robot rank in the franka node group (n for the n+1 th robot)
     rollout:
       node_group: "4090"
-      placement: 0-0
+      placement: 0 # Local GPU rank in the 4090 node group (n for the n+1 th GPU)
   node_groups:
-    - label: "4090"
-      node_ranks: 0-0
-      env_configs:
-        - node_ranks: 0-0
-          python_interpreter_path: /path/to/python
+    - label: "4090" # GPU node group
+      node_ranks: 0 # The ranks of the nodes to be included in this group， change this if your training node is not rank 0
     - label: franka
-      node_ranks: 1-1
-      env_configs:
-        - node_ranks: 1-1
-          python_interpreter_path: /path/to/python
+      node_ranks: 1 # Change this if your robot node is not rank 1
       hardware:
         type: Franka
         configs:
-          - robot_ip: ROBOT_IP
+          - robot_ip: ROBOT_IP # Replace with your robot's IP address
             node_rank: 1
 
 data:
@@ -117,7 +111,7 @@ env:
     override_cfg:
       is_dummy: False
       use_dense_reward: False
-      target_ee_pose: TARGET_EE_POSE
+      target_ee_pose: TARGET_EE_POSE # Replace with your target end-effector pose
 
 rollout:
   group_name: "RolloutGroup"

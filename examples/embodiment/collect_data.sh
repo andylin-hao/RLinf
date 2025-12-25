@@ -4,7 +4,7 @@ export EMBODIED_PATH="$( cd "$(dirname "${BASH_SOURCE[0]}" )" && pwd )"
 export REPO_PATH=$(dirname $(dirname "$EMBODIED_PATH"))
 export SRC_FILE="${EMBODIED_PATH}/collect_real_data.py"
 
-export PYTHONPATH=${REPO_PATH}:${LIBERO_REPO_PATH}:${ROBOT_PYTHONPATH}:$PYTHONPATH
+export PYTHONPATH=${REPO_PATH}:$PYTHONPATH
 
 export CUDA_LAUNCH_BLOCKING=1
 export HYDRA_FULL_ERROR=1
