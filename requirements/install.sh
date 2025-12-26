@@ -456,7 +456,7 @@ install_franka_env() {
         git clone -b "${LIBFRANKA_VERSION}" --recurse-submodules https://github.com/frankaemika/libfranka $ROS_CATKIN_PATH/libfranka
     fi
     if [ ! -d "$ROS_CATKIN_PATH/src/franka_ros" ]; then
-        git clone -b "${FRANKA_ROS_VERSION}" --recurse-submodules https://github.com/frankaemika/franka_ros
+        git clone -b "${FRANKA_ROS_VERSION}" --recurse-submodules https://github.com/RLinf/franka_ros
     fi
     popd >/dev/null
 
@@ -477,7 +477,7 @@ install_franka_env() {
     catkin_make -DCMAKE_BUILD_TYPE=Release -DFranka_DIR:PATH=$ROS_CATKIN_PATH/libfranka/build --pkg franka_ros
 
     # Finally serl_franka_controllers
-    catkin_make --pkg serl_franka_controllers
+    catkin_make -DCMAKE_CXX_STANDARD=17 --pkg serl_franka_controllers
     popd >/dev/null
 
     echo "export LD_LIBRARY_PATH=$ROS_CATKIN_PATH/libfranka/build:/opt/openrobots/lib:\$LD_LIBRARY_PATH" >> "$VENV_DIR/bin/activate"
