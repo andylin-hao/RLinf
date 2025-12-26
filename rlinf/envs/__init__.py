@@ -71,6 +71,10 @@ def get_env_cls(env_type, env_cfg=None):
         from rlinf.envs.realworld.realworld_env import RealWorldEnv
 
         return RealWorldEnv
+    elif env_type == "habitat":
+        from rlinf.envs.habitat.habitat_env import HabitatEnv
+
+        return HabitatEnv
     elif env_type == "frankasim":
         from rlinf.envs.frankasim.frankasim_env import FrankaSimEnv
 
