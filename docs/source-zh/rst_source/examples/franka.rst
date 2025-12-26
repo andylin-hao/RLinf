@@ -122,6 +122,12 @@ Franka真机强化学习
 
 使用 Docker 镜像 ``rlinf/rlinf:agentic-rlinf0.1-franka`` 进行实验。
 
+为了从 Docker 容器内访问机器人、相机和空间鼠标设备，建议使用以下附加参数运行容器：
+
+.. code:: bash
+
+   docker run --rm -it --network host --privileged rlinf/rlinf:agentic-rlinf0.1-franka
+
 Currently, the docker image contains libfranka version ``0.10.0``, ``0.13.3``, ``0.14.1``, ``0.15.0``, and ``0.18.0`` with franka_ros version ``0.10.0``.
 
 These versions are selected based on the compatibility matrix in `Franka compatibility <https://frankarobotics.github.io/docs/compatibility.html>`_.

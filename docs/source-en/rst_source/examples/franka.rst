@@ -127,6 +127,12 @@ Follow the instructions in `Franka documentation <https://frankarobotics.github.
 
 Use the Docker image ``rlinf/rlinf:agentic-rlinf0.1-franka`` for the experiment.
 
+To access the robot, camera, and space mouse devices from within the docker container, it is recommended to run the container with the following additional flags:
+
+.. code:: bash
+
+   docker run --rm -it --network host --privileged rlinf/rlinf:agentic-rlinf0.1-franka
+
 Currently, the docker image contains libfranka version ``0.10.0``, ``0.13.3``, ``0.14.1``, ``0.15.0``, and ``0.18.0`` with franka_ros version ``0.10.0``.
 
 These versions are selected based on the compatibility matrix in `Franka compatibility <https://frankarobotics.github.io/docs/compatibility.html>`_.
