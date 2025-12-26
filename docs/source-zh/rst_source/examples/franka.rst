@@ -330,12 +330,15 @@ RLinf 使用 ray 来管理分布式环境，这意味着：
 
 该脚本主要负责以下内容：
 
-1. 在使用自定义环境安装方式时，source 正确的虚拟环境；
-2. 在控制节点上，source franka_ros 与 serl_franka_controllers 的 setup 脚本（通常位于 ``<your_catkin_ws>/devel/setup.bash``）；
+1. 在使用自定义环境安装方式时，source 正确的虚拟环境，请参考依赖安装部分的说明；
+   
+2. 在控制节点上，source franka_ros 与 serl_franka_controllers 的 setup 脚本（通常位于 ``<your_catkin_ws>/devel/setup.bash``），**如果你使用的是 docker 镜像或安装脚本，则在 source 虚拟 Python 环境时已经完成此操作**；
+   
 3. 在所有节点上设置 RLinf 相关环境变量：
 
 .. code-block:: bash
 
+   export PYTHONPATH=<path_to_your_RLinf_repo>:$PYTHONPATH
    export RLINF_NODE_RANK=<node_rank_of_this_node>
    export RLINF_COMM_NET_DEVICES=<network_device_for_communication> # 如果只有一个网卡可以省略
 

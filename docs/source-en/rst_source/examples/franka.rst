@@ -319,14 +319,15 @@ You can modify the script accordingly and source it before starting ray on each 
 
 Specifically, the script sets up the following important aspects:
 
-1. Source the correct virtual python environment (if using custom environment installation).
+1. Source the correct virtual python environment. See the section on Dependency Installation for details.
    
-2. Source the franka_ros and serl_franka_controllers packages setup scripts (if on the controller node), usually at ``<your_catkin_ws>/devel/setup.bash``.
+2. Source the franka_ros and serl_franka_controllers packages setup scripts (if on the controller node), usually at ``<your_catkin_ws>/devel/setup.bash``. **If you are using the docker image or the installation script, this is already done when you source the virtual python environment.**
 
 3. Setup RLinf environment variables on all nodes:
    
 .. code-block:: bash
 
+   export PYTHONPATH=<path_to_your_RLinf_repo>:$PYTHONPATH
    export RLINF_NODE_RANK=<node_rank_of_this_node>
    export RLINF_COMM_NET_DEVICES=<network_device_for_communication> # Optional if you do not have multiple network devices
 
