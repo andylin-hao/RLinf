@@ -120,13 +120,31 @@ Franka真机强化学习
 
 **方式 1：Docker 镜像**
 
-使用 Docker 镜像 ``rlinf/rlinf:agentic-rlinf0.1-franka-libfranka0.15-franka_ros0.10`` 进行实验。
+使用 Docker 镜像 ``rlinf/rlinf:agentic-rlinf0.1-franka`` 进行实验。
+
+Currently, the docker image contains libfranka version ``0.10.0``, ``0.13.3``, ``0.14.1``, ``0.15.0``, and ``0.18.0`` with franka_ros version ``0.10.0``.
+
+These versions are selected based on the compatibility matrix in `Franka compatibility <https://frankarobotics.github.io/docs/compatibility.html>`_.
+Please check your Franka firmware version and find which libfranka version is compatible with it.
+
+Having determined the compatible libfranka version, you can switch to the corresponding virtual environment in the docker container by running:
+
+目前该 Docker 镜像包含 libfranka 版本 ``0.10.0``、``0.13.3``、``0.14.1``、``0.15.0`` 和 ``0.18.0``，以及 franka_ros 版本 ``0.10.0``。
+
+这些版本均基于 `Franka 兼容性矩阵 <https://frankarobotics.github.io/docs/compatibility.html>`_ 进行选择。
+请检查你的 Franka 固件版本，并找到与之兼容的 libfranka 版本。
+
+确定兼容的 libfranka 版本后，可以通过运行以下命令在 docker 容器中切换到对应的虚拟环境：
+
+.. code:: bash
+
+   source switch_env franka-<libfranka_version>
+    # 例如，对于 libfranka 版本 0.15.0
+    # source switch_env franka-0.15.0
 
 .. warning::
 
-  目前该 Docker 镜像只支持固件版本 ``>=5.7.2`` 且 ``<5.9.0`` 的 Franka 机械臂。
-  如果你的固件版本超出该范围，请告知我们你的需求，我们可以为你构建兼容的 Docker 镜像；
-  或者你也可以选择按照 **方式 2** 手动安装依赖。
+  目前该 Docker 镜像只对固件版本 ``>=5.7.2`` 且 ``<5.9.0`` 的 Franka 机械臂（libfranka 0.15.0）进行过测试，因此推荐使用该版本进行实验。
 
 **方式 2：自定义环境**
 
@@ -159,8 +177,9 @@ Franka真机强化学习
   对于其他固件版本，请先参考 `Franka 兼容性矩阵 <https://frankarobotics.github.io/docs/compatibility.html>`_，
   然后通过设置环境变量 `export LIBFRANKA_VERSION=<version>` 与 `export FRANKA_ROS_VERSION=<version>` 自行指定 libfranka 和 franka_ros 的版本，再运行安装脚本。
 
-  **脚本并未在所有版本上充分测试，请谨慎使用。** 如需更稳妥的方式，可参考官方文档
-  `ROS Noectic 安装说明 <https://wiki.ros.org/noetic/Installation/Ubuntu>`_ 以及 `Franka 安装说明 <https://frankarobotics.github.io/docs/libfranka/docs/installation.html>`_ 进行手动安装。
+.. note::
+
+  如果安装脚本对你不适用，可参考官方文档 `ROS Noectic 安装说明 <https://wiki.ros.org/noetic/Installation/Ubuntu>`_ ， `Franka 安装说明 <https://frankarobotics.github.io/docs/libfranka/docs/installation.html>`_ ，和 `serl_franka_controllers 安装说明 <https://github.com/rail-berkeley/serl_franka_controllers>`_ 进行手动安装。
 
 执行以下命令安装控制节点依赖：
 
