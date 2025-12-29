@@ -458,6 +458,7 @@ class Channel:
                 async_channel_work.wait()
                 # query_id, data
                 _, data = async_comm_work.wait()
+                self._channel_worker_actor.clean_memory.remote()
                 return data
         else:
             # Outside a worker, use ray comm
@@ -505,10 +506,11 @@ class Channel:
                 channel_key=key,
                 channel_actor=self._channel_worker_actor,
                 method="get",
-                clean_memory=True,
+                clean_memory=False,
                 **get_kwargs,
             )
             query_id, data = self._current_worker.recv(self._channel_name, 0)
+            self._channel_worker_actor.clean_memory.remote()
             if query_id == asyncio.QueueEmpty:
                 raise asyncio.QueueEmpty
             return data
@@ -578,6 +580,7 @@ class Channel:
                 async_channel_work.wait()
                 # query_id, data
                 _, data = async_comm_work.wait()
+                self._channel_worker_actor.clean_memory.remote()
                 return data
         else:
             get_kwargs = {"target_weight": target_weight, "key": key}

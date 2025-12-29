@@ -249,7 +249,7 @@ class ChannelWorker(Worker):
         while True:
             await self._mem_cleaner_event.wait()
             gc.collect()
-            if Worker.torch_platform.is_initialized():
+            if self.has_accelerator and Worker.torch_platform.is_initialized():
                 Worker.torch_platform.synchronize()
                 Worker.torch_platform.empty_cache()
                 self.log_debug(
@@ -260,6 +260,19 @@ class ChannelWorker(Worker):
     async def clean_memory(self):
         """Trigger the memory cleaner to clean up memory."""
         self._mem_cleaner_event.set()
+
+    def get_memory_usage(self) -> tuple[int, int]:
+        """Get the current device memory usage of the ChannelWorker.
+
+        Returns:
+            Tuple[int, int]: A tuple containing the allocated and reserved memory in bytes.
+
+        """
+        if self.has_accelerator and Worker.torch_platform.is_initialized():
+            allocated = Worker.torch_platform.memory_allocated()
+            reserved = Worker.torch_platform.memory_reserved()
+            return allocated, reserved
+        return 0, 0
 
     def create_queue(self, key: Any, maxsize: int = 0):
         """Create a new queue in the channel. No effect if a queue with the same name already exists.
