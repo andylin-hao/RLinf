@@ -332,6 +332,7 @@ class Channel:
                 channel_key=key,
                 channel_actor=self._channel_worker_actor,
                 method="put",
+                clean_memory=False,
                 **put_kwargs,
             )
             self._current_worker.send(
@@ -350,6 +351,7 @@ class Channel:
                 channel_key=key,
                 channel_actor=self._channel_worker_actor,
                 method="put_via_ray",
+                clean_memory=False,
                 **put_kwargs,
             )
             if async_op:
@@ -385,6 +387,7 @@ class Channel:
                 channel_key=key,
                 channel_actor=self._channel_worker_actor,
                 method="put",
+                clean_memory=False,
                 **put_kwargs,
             )
             self._current_worker.send(
@@ -401,6 +404,7 @@ class Channel:
                 channel_key=key,
                 channel_actor=self._channel_worker_actor,
                 method="put_via_ray",
+                clean_memory=False,
                 **put_kwargs,
             )
             try:
@@ -437,13 +441,19 @@ class Channel:
                 channel_key=key,
                 channel_actor=self._channel_worker_actor,
                 method="get",
+                clean_memory=False,
                 **get_kwargs,
             )
             async_comm_work = self._current_worker.recv(
                 self._channel_name, 0, async_op=True
             )
             if async_op:
-                return AsyncChannelCommWork(async_comm_work, query_id)
+                return AsyncChannelCommWork(
+                    async_comm_work=async_comm_work,
+                    query_id=query_id,
+                    channel_actor=self._channel_worker_actor,
+                    clean_memory=True,
+                )
             else:
                 async_channel_work.wait()
                 # query_id, data
@@ -457,6 +467,7 @@ class Channel:
                 channel_key=key,
                 channel_actor=self._channel_worker_actor,
                 method="get_via_ray",
+                clean_memory=True,
                 **get_kwargs,
             )
             if async_op:
@@ -494,6 +505,7 @@ class Channel:
                 channel_key=key,
                 channel_actor=self._channel_worker_actor,
                 method="get",
+                clean_memory=True,
                 **get_kwargs,
             )
             query_id, data = self._current_worker.recv(self._channel_name, 0)
@@ -507,6 +519,7 @@ class Channel:
                 channel_key=key,
                 channel_actor=self._channel_worker_actor,
                 method="get_via_ray",
+                clean_memory=True,
                 **get_kwargs,
             )
             return async_channel_work.wait()
@@ -548,13 +561,19 @@ class Channel:
                 channel_key=key,
                 channel_actor=self._channel_worker_actor,
                 method="get_batch",
+                clean_memory=False,
                 **get_kwargs,
             )
             async_comm_work = self._current_worker.recv(
                 self._channel_name, 0, async_op=True
             )
             if async_op:
-                return AsyncChannelCommWork(async_comm_work, query_id)
+                return AsyncChannelCommWork(
+                    async_comm_work=async_comm_work,
+                    query_id=query_id,
+                    channel_actor=self._channel_worker_actor,
+                    clean_memory=True,
+                )
             else:
                 async_channel_work.wait()
                 # query_id, data
@@ -567,6 +586,7 @@ class Channel:
                 channel_key=key,
                 channel_actor=self._channel_worker_actor,
                 method="get_batch_via_ray",
+                clean_memory=True,
                 **get_kwargs,
             )
             if async_op:
@@ -582,11 +602,17 @@ class Channel:
             When a key is given, the channel will look for the item in the queue associated with that key.
         """
         if self._local_channel is not None:
-            return str(self._local_channel.get_all(key))
-        async_work = AsyncChannelCommWork(
-            self._channel_worker_actor.get_all.remote(key=key)
+            return str(self._local_channel.peek_all(key))
+        get_kwargs = {"key": key}
+        async_channel_work = AsyncChannelWork(
+            channel_name=self._channel_name,
+            channel_key=key,
+            channel_actor=self._channel_worker_actor,
+            method="peek_all",
+            clean_memory=False,
+            **get_kwargs,
         )
-        items = async_work.wait()
+        items = async_channel_work.wait()
         return str(items)
 
     def __setstate__(self, state_dict: dict[str, Any]):

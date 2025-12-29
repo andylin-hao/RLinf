@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import asyncio
+import gc
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -212,7 +213,7 @@ class LocalChannel:
 
         return batch
 
-    def get_all(self, key: str = DEFAULT_KEY) -> list[Any]:
+    def peek_all(self, key: str = DEFAULT_KEY) -> list[Any]:
         """Get all items from the channel queue without removing them.
 
         Args:
@@ -239,6 +240,26 @@ class ChannelWorker(Worker):
         super().__init__()
         self._queue_map: dict[str, PeekQueue] = {}
         self._queue_map[DEFAULT_KEY] = PeekQueue(maxsize=maxsize)
+
+        self._mem_cleaner_task = asyncio.create_task(self._mem_cleaner())
+        self._mem_cleaner_event = asyncio.Event()
+
+    async def _mem_cleaner(self):
+        """A background task that cleans up memory when triggered."""
+        while True:
+            await self._mem_cleaner_event.wait()
+            gc.collect()
+            if Worker.torch_platform.is_initialized():
+                Worker.torch_platform.synchronize()
+                Worker.torch_platform.empty_cache()
+                self.log_debug(
+                    f"ChannelWorker memory after cleanup {Worker.torch_platform.memory_allocated()}, {Worker.torch_platform.memory_reserved()}"
+                )
+            self._mem_cleaner_event.clear()
+
+    async def clean_memory(self):
+        """Trigger the memory cleaner to clean up memory."""
+        self._mem_cleaner_event.set()
 
     def create_queue(self, key: Any, maxsize: int = 0):
         """Create a new queue in the channel. No effect if a queue with the same name already exists.
@@ -452,7 +473,7 @@ class ChannelWorker(Worker):
                 break
         return batch
 
-    def get_all(self, key: Any = DEFAULT_KEY) -> list[Any]:
+    def peek_all(self, key: Any = DEFAULT_KEY) -> list[Any]:
         """Get all items from the channel queue without removing them.
 
         Args:
