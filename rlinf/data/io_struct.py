@@ -29,6 +29,8 @@ from rlinf.data.utils import batch_pad_to_fixed_len
 from rlinf.scheduler import Channel
 from rlinf.utils.data_iter_utils import (
     get_iterator_k_split,
+    merge_list,
+    merge_tensor,
     split_list,
 )
 from rlinf.utils.nested_dict_process import (
@@ -251,10 +253,6 @@ class RolloutResult:
     # Reference logprobs for comparison
     ref_logprobs: Optional[torch.Tensor] = None
 
-    # evaluation
-    trace_info: Optional[Any] = None
-    origin_question: Optional[str] = None
-
     @property
     def batch_size(self):
         return self.num_sequence // self.group_size
@@ -472,29 +470,6 @@ class RolloutResult:
             response_ids=[],
             is_end=[],
         )
-
-        def merge_tensor(dst_tensor: torch.Tensor, src_tensor: torch.Tensor):
-            assert dst_tensor is None or torch.is_tensor(dst_tensor), (
-                f"Expected tensor, got {type(dst_tensor)}"
-            )
-            assert torch.is_tensor(src_tensor), (
-                f"Expected tensor, got {type(src_tensor)}"
-            )
-            if dst_tensor is None:
-                return src_tensor
-            else:
-                return torch.cat([dst_tensor, src_tensor], dim=0)
-
-        def merge_list(dst_list: list, src_list: list):
-            assert dst_list is None or isinstance(dst_list, list), (
-                f"Expected list, got {type(dst_list)}"
-            )
-            assert isinstance(src_list, list), f"Expected list, got {type(src_list)}"
-            if dst_list is None:
-                return src_list
-            else:
-                dst_list.extend(src_list)
-                return dst_list
 
         for res in rollout_results:
             merged_result.prompt_lengths.extend(res.prompt_lengths)
@@ -911,109 +886,88 @@ class RolloutResult:
             f"num_sequence ({num_sequence}) must be divisible by split_num ({split_num}) and group_size ({rollout_result.group_size})"
         )
 
-        split_results = []
-
+        list_none = [None for _ in range(split_num)]
+        fields_split = {}
         # Split list fields
-        prompt_lengths_split = split_list(rollout_result.prompt_lengths, split_num)
-        prompt_ids_split = split_list(rollout_result.prompt_ids, split_num)
-        response_lengths_split = split_list(rollout_result.response_lengths, split_num)
-        response_ids_split = split_list(rollout_result.response_ids, split_num)
-        is_end_split = split_list(rollout_result.is_end, split_num)
+        list_fields = [
+            "prompt_lengths",
+            "prompt_ids",
+            "response_lengths",
+            "response_ids",
+            "is_end",
+        ]
+        for k in list_fields:
+            v = getattr(rollout_result, k)
+            fields_split[k] = split_list(v, split_num)
 
-        # Handle optional fields
-        answers_split = None
-        if rollout_result.answers is not None:
-            answers_split = split_list(rollout_result.answers, split_num)
-
-        image_data_split = None
-        if rollout_result.image_data is not None:
-            image_data_split = split_list(rollout_result.image_data, split_num)
-
-        multi_modal_inputs_split = None
-        if rollout_result.multi_modal_inputs is not None:
-            multi_modal_inputs_split = split_list(
-                rollout_result.multi_modal_inputs, split_num
-            )
-
-        prompt_texts_split = None
-        if rollout_result.prompt_texts is not None:
-            prompt_texts_split = split_list(rollout_result.prompt_texts, split_num)
-
-        response_texts_split = None
-        if rollout_result.response_texts is not None:
-            response_texts_split = split_list(rollout_result.response_texts, split_num)
-
-        rollout_logprobs_split = None
-        if rollout_result.rollout_logprobs is not None:
-            rollout_logprobs_split = split_list(
-                rollout_result.rollout_logprobs, split_num
-            )
-
-        # Handle tensor fields
-        rewards_split = None
-        if rollout_result.rewards is not None:
-            if isinstance(rollout_result.rewards, torch.Tensor):
-                rewards_split = torch.chunk(rollout_result.rewards, split_num, dim=0)
+        # Split optional list fields
+        list_fields = [
+            "answers",
+            "image_data",
+            "multi_modal_inputs",
+            "prompt_texts",
+            "response_texts",
+            "rollout_logprobs",
+            "recompute_prev_logprobs",
+            "response_mask",
+        ]
+        for k in list_fields:
+            v = getattr(rollout_result, k)
+            if v is not None:
+                fields_split[k] = split_list(v, split_num)
             else:
-                rewards_split = split_list(rollout_result.rewards, split_num)
+                fields_split[k] = list_none
 
-        advantages_split = None
-        if rollout_result.advantages is not None:
-            if isinstance(rollout_result.advantages, torch.Tensor):
-                advantages_split = torch.chunk(
-                    rollout_result.advantages, split_num, dim=0
-                )
+        # Split optional tensor or list fields
+        optional_tensor_fields = [
+            "prev_logprobs",
+            "ref_logprobs",
+        ]
+        for k in optional_tensor_fields:
+            v = getattr(rollout_result, k)
+            if v is not None:
+                fields_split[k] = torch.chunk(v, split_num, dim=0)
             else:
-                advantages_split = split_list(rollout_result.advantages, split_num)
+                fields_split[k] = list_none
 
-        prev_logprobs_split = None
-        if rollout_result.prev_logprobs is not None:
-            prev_logprobs_split = torch.chunk(
-                rollout_result.prev_logprobs, split_num, dim=0
-            )
-
-        ref_logprobs_split = None
-        if rollout_result.ref_logprobs is not None:
-            ref_logprobs_split = torch.chunk(
-                rollout_result.ref_logprobs, split_num, dim=0
-            )
+        # Split optional tensor or list fields
+        optional_tensor_list_fields = [
+            "rewards",
+            "advantages",
+        ]
+        for k in optional_tensor_list_fields:
+            v = getattr(rollout_result, k)
+            if v is not None:
+                if isinstance(v, torch.Tensor):
+                    fields_split[k] = torch.chunk(v, split_num, dim=0)
+                else:
+                    fields_split[k] = split_list(v, split_num)
+            else:
+                fields_split[k] = list_none
 
         # Create split RolloutResult objects
+        split_results = []
         for i in range(split_num):
             split_result = RolloutResult(
                 num_sequence=num_sequence // split_num,
                 group_size=group_size,
-                prompt_lengths=prompt_lengths_split[i],
-                prompt_ids=prompt_ids_split[i],
-                response_lengths=response_lengths_split[i],
-                response_ids=response_ids_split[i],
-                is_end=is_end_split[i],
-                answers=answers_split[i] if answers_split is not None else None,
-                image_data=image_data_split[i]
-                if image_data_split is not None
-                else None,
-                multi_modal_inputs=multi_modal_inputs_split[i]
-                if multi_modal_inputs_split is not None
-                else None,
-                prompt_texts=prompt_texts_split[i]
-                if prompt_texts_split is not None
-                else None,
-                response_texts=response_texts_split[i]
-                if response_texts_split is not None
-                else None,
-                rollout_logprobs=rollout_logprobs_split[i]
-                if rollout_logprobs_split is not None
-                else None,
-                rewards=rewards_split[i] if rewards_split is not None else None,
-                advantages=advantages_split[i]
-                if advantages_split is not None
-                else None,
-                prev_logprobs=prev_logprobs_split[i]
-                if prev_logprobs_split is not None
-                else None,
-                ref_logprobs=ref_logprobs_split[i]
-                if ref_logprobs_split is not None
-                else None,
+                prompt_lengths=fields_split["prompt_lengths"][i],
+                prompt_ids=fields_split["prompt_ids"][i],
+                response_lengths=fields_split["response_lengths"][i],
+                response_ids=fields_split["response_ids"][i],
+                is_end=fields_split["is_end"][i],
+                rewards=fields_split["rewards"][i],
+                advantages=fields_split["advantages"][i],
+                prompt_texts=fields_split["prompt_texts"][i],
+                response_texts=fields_split["response_texts"][i],
+                answers=fields_split["answers"][i],
+                image_data=fields_split["image_data"][i],
+                multi_modal_inputs=fields_split["multi_modal_inputs"][i],
+                response_mask=fields_split["response_mask"][i],
+                rollout_logprobs=fields_split["rollout_logprobs"][i],
+                recompute_prev_logprobs=fields_split["recompute_prev_logprobs"][i],
+                prev_logprobs=fields_split["prev_logprobs"][i],
+                ref_logprobs=fields_split["ref_logprobs"][i],
             )
             split_results.append(split_result)
 

@@ -80,6 +80,29 @@ def split_list(
         ]
 
 
+def merge_tensor(dst_tensor: torch.Tensor, src_tensor: torch.Tensor):
+    assert dst_tensor is None or torch.is_tensor(dst_tensor), (
+        f"Expected tensor, got {type(dst_tensor)}"
+    )
+    assert torch.is_tensor(src_tensor), f"Expected tensor, got {type(src_tensor)}"
+    if dst_tensor is None:
+        return src_tensor
+    else:
+        return torch.cat([dst_tensor, src_tensor], dim=0)
+
+
+def merge_list(dst_list: list, src_list: list):
+    assert dst_list is None or isinstance(dst_list, list), (
+        f"Expected list, got {type(dst_list)}"
+    )
+    assert isinstance(src_list, list), f"Expected list, got {type(src_list)}"
+    if dst_list is None:
+        return src_list
+    else:
+        dst_list.extend(src_list)
+        return dst_list
+
+
 def get_iterator_k_split(
     batch: Union[dict, list[torch.Tensor]],
     num_splits: int,
