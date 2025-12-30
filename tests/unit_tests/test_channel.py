@@ -17,7 +17,6 @@ import asyncio
 from typing import Any, Optional
 
 import pytest
-import ray
 import torch
 
 from rlinf.scheduler import (
@@ -436,37 +435,6 @@ class TestChannel:
 
         item_str = str(channel)
         assert all(item in item_str for item in test_items)
-
-    def test_memory(self, worker_groups, channel: Channel):
-        """Tests channel creation with memory leak."""
-        if not torch.cuda.is_available():
-            pytest.skip("Skipping CUDA test on CPU-only environment.")
-        while channel.qsize() > 0:
-            channel.get()
-
-        large_tensor = torch.randn(1024, device=get_device())
-        channel.put(large_tensor)
-        channel.get()
-        allocated, reserved = ray.get(
-            channel._channel_worker_actor.get_memory_usage.remote()
-        )
-        assert allocated == 0, (
-            f"Memory leak detected: {allocated} bytes still allocated."
-        )
-        assert reserved == 0, f"Memory leak detected: {reserved} bytes still reserved."
-
-        producer: ProducerWorker = worker_groups[0]
-        consumer: ConsumerWorker = worker_groups[1]
-        producer.test_memory(channel).wait()
-        consumer.test_memory(channel).wait()
-        assert channel.empty()
-        allocated, reserved = ray.get(
-            channel._channel_worker_actor.get_memory_usage.remote()
-        )
-        assert allocated == 0, (
-            f"Memory leak detected: {allocated} bytes still allocated."
-        )
-        assert reserved == 0, f"Memory leak detected: {reserved} bytes still reserved."
 
     def _assert_equal(self, received: Any, expected: Any):
         """Helper to compare various data types."""

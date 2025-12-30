@@ -68,7 +68,7 @@ class Cluster:
     LOGGING_LEVEL = os.getenv(
         f"{SYS_NAME.upper()}_{ClusterEnvVar.LOG_LEVEL.value}", "INFO"
     ).upper()
-    TIMEOUT_WARN_TIME = 60000
+    TIMEOUT_WARN_TIME = 3600000
     DEFAULT_SYS_ENV_VAR = {
         ClusterEnvVar.CATCH_FAILURE: "0",
         ClusterEnvVar.LOG_LEVEL: "INFO",
