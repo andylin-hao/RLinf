@@ -249,7 +249,6 @@ class AsyncChannelWork(AsyncWork):
         channel_key: str,
         channel_actor: ray.actor.ActorHandle,
         method: str,
-        clean_memory: bool,
         *args,
         **kwargs,
     ):
@@ -260,14 +259,12 @@ class AsyncChannelWork(AsyncWork):
             channel_key (str): The key for the channel.
             channel_actor (ray.actor.ActorHandle): The actor handle for the channel.
             method (str): The method to call on the channel actor.
-            clean_memory (bool): Whether to trigger channel memory cleaning after the operation.
             *args: Positional arguments to pass to the method.
             **kwargs: Keyword arguments to pass to the method.
         """
         self._channel_key = f"{channel_name}:{channel_key}"
         self._channel_actor = channel_actor
         self._method = method
-        self._clean_memory = clean_memory
         self._args = args
         self._kwargs = kwargs
         self._future = Future()
@@ -341,8 +338,6 @@ class AsyncChannelWork(AsyncWork):
         """
         while not self._future.done():
             await asyncio.sleep(0.01)
-        if self._clean_memory:
-            self._channel_actor.clean_memory.remote()
         return self._future.value()
 
     def wait(self):
@@ -353,8 +348,6 @@ class AsyncChannelWork(AsyncWork):
 
         """
         self._future.wait()
-        if self._clean_memory:
-            self._channel_actor.clean_memory.remote()
         return self._future.value()
 
     def done(self):
@@ -373,7 +366,6 @@ class AsyncChannelCommWork(AsyncWork):
         async_comm_work: AsyncWork,
         query_id: int,
         channel_actor: ray.actor.ActorHandle,
-        clean_memory: bool,
     ):
         """Initialize the AsyncChannelWork with a async recv comm of the get operation.
 
@@ -386,7 +378,6 @@ class AsyncChannelCommWork(AsyncWork):
             async_comm_work (AsyncWork): The async communication work to wrap.
             query_id (int): The query ID to associate with the work.
             channel_actor (ray.actor.ActorHandle): The actor handle for the channel.
-            clean_memory (bool): Whether to trigger channel memory cleaning after the operation.
 
         """
         self._async_comm_work = async_comm_work
@@ -394,7 +385,6 @@ class AsyncChannelCommWork(AsyncWork):
         # Only when the query_id's Future is set is the data available
         self._query_id = query_id
         self._channel_actor = channel_actor
-        self._clean_memory = clean_memory
         with AsyncChannelCommWork.store_lock:
             if query_id not in AsyncChannelCommWork.channel_data_store:
                 AsyncChannelCommWork.channel_data_store[query_id] = Future()
@@ -421,8 +411,6 @@ class AsyncChannelCommWork(AsyncWork):
             await asyncio.sleep(0.01)  # Yield control to the event loop
         with AsyncChannelCommWork.store_lock:
             AsyncChannelCommWork.channel_data_store.pop(self._query_id, None)
-        if self._clean_memory:
-            self._channel_actor.clean_memory.remote()
         return self._data_future.value()
 
     def wait(self):
@@ -435,8 +423,6 @@ class AsyncChannelCommWork(AsyncWork):
         self._data_future.wait()
         with AsyncChannelCommWork.store_lock:
             AsyncChannelCommWork.channel_data_store.pop(self._query_id, None)
-        if self._clean_memory:
-            self._channel_actor.clean_memory.remote()
         return self._data_future.value()
 
     def done(self):
