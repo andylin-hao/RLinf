@@ -89,7 +89,7 @@ class Manager:
     PID = None
 
     @classmethod
-    def get_proxy(cls: type[ManagerClsType]) -> type[ManagerClsType]:
+    def get_proxy(cls: type[ManagerClsType]) -> ManagerClsType:
         """Get the singleton proxy for the Manager class.
 
         Returns:

@@ -96,6 +96,8 @@ class PortLock:
             RuntimeError: If the worker is not running in a worker context.
         """
         if self._worker is not None:
-            return self._lock_manager.acquire(self._worker._cluster_node_rank, port)
+            return self._lock_manager.acquire(
+                self._worker._cluster_node_rank, self._worker._worker_name, port
+            )
         else:
             raise RuntimeError("Cannot lock ports when not running in a worker.")

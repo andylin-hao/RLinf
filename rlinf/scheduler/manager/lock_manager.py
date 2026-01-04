@@ -15,6 +15,7 @@
 import asyncio
 import collections
 import threading
+import time
 
 from ..cluster import Cluster
 from .manager import Manager
@@ -143,14 +144,19 @@ class PortLockManager(Manager):
     def __init__(self):
         """Initialize the port lock manager."""
         # Mapping from (node_rank, port) to lock status
-        self._port_locks: dict[(int, int), bool] = {}
+        self._port_locks: dict[(int, int), str] = {}
+        self._release_thread = threading.Thread(
+            target=self._release_daemon, daemon=True
+        )
         self._lock = threading.Lock()
+        self._release_thread.start()
 
-    def acquire(self, node_rank: int, port: int) -> bool:
+    def acquire(self, node_rank: int, worker_name: str, port: int) -> bool:
         """Lock the specified port on the given node rank.
 
         Args:
             node_rank (int): The rank of the node.
+            worker_name (str): The name of the worker requesting the lock.
             port (int): The port number to lock.
 
         Returns:
@@ -158,18 +164,24 @@ class PortLockManager(Manager):
         """
         with self._lock:
             key = (node_rank, port)
-            if self._port_locks.get(key, False):
+            if self._port_locks.get(key, None) is not None:
                 return False
-            self._port_locks[key] = True
+            self._port_locks[key] = worker_name
             return True
 
-    def release(self, node_rank: int, port: int):
-        """Release the specified port on the given node rank.
+    def _release_daemon(self):
+        """Daemon thread to periodically clean up released ports when it finds a worker is no longer alive."""
+        from ..worker import Worker
 
-        Args:
-            node_rank (int): The rank of the node.
-            port (int): The port number to release.
-        """
-        with self._lock:
-            key = (node_rank, port)
-            self._port_locks[key] = False
+        while True:
+            with self._lock:
+                locked_workers = set(self._port_locks.values())
+            dead_workers = set()
+            for worker_name in locked_workers:
+                if not Worker.check_worker_alive(worker_name):
+                    dead_workers.add(worker_name)
+            with self._lock:
+                for key, worker_name in list(self._port_locks.items()):
+                    if worker_name in dead_workers:
+                        self._port_locks.pop(key)
+            time.sleep(5)

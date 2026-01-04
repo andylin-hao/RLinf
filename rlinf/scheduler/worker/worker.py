@@ -800,6 +800,22 @@ class Worker(metaclass=WorkerMeta):
             duration = time.perf_counter() - start_time
             self._timer_metrics[tag] = self._timer_metrics.get(tag, 0.0) + duration
 
+    @staticmethod
+    def check_worker_alive(worker_name: str) -> bool:
+        """Check if a worker is alive.
+
+        Args:
+            worker_name (str): The name of the worker to check.
+
+        Returns:
+            bool: True if the worker is alive, False otherwise.
+        """
+        try:
+            ray.get_actor(worker_name)
+        except ValueError:
+            return False
+        return True
+
     def _check_initialized(self):
         """Check if the Worker has been initialized.
 
