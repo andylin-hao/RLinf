@@ -232,6 +232,7 @@ class Cluster:
             CollectiveManager,
             DeviceLockManager,
             NodeManager,
+            PortLockManager,
             WorkerManager,
         )
 
@@ -251,9 +252,14 @@ class Cluster:
                 .options(name=NodeManager.MANAGER_NAME)
                 .remote(self._nodes, self._node_groups, self._cluster_cfg)
             )
-            self._lock_manager = (
+            self._device_lock_manager = (
                 ray.remote(DeviceLockManager)
                 .options(name=DeviceLockManager.MANAGER_NAME)
+                .remote()
+            )
+            self._port_lock_manager = (
+                ray.remote(PortLockManager)
+                .options(name=PortLockManager.MANAGER_NAME)
                 .remote()
             )
         except ValueError:

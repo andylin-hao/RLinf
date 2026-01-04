@@ -14,6 +14,7 @@
 
 import asyncio
 import collections
+import threading
 
 from ..cluster import Cluster
 from .manager import Manager
@@ -129,3 +130,46 @@ class DeviceLockManager(Manager):
                 for accel_id in accel_ids
             )
         )
+
+
+class PortLockManager(Manager):
+    """Global manager for port locks.
+
+    This manager holds the lock of every network port in the cluster, and offers APIs for workers to acquire and release these locks.
+    """
+
+    MANAGER_NAME = "PortLockManager"
+
+    def __init__(self):
+        """Initialize the port lock manager."""
+        # Mapping from (node_rank, port) to lock status
+        self._port_locks: dict[(int, int), bool] = {}
+        self._lock = threading.Lock()
+
+    def acquire(self, node_rank: int, port: int) -> bool:
+        """Lock the specified port on the given node rank.
+
+        Args:
+            node_rank (int): The rank of the node.
+            port (int): The port number to lock.
+
+        Returns:
+            bool: True if the port was successfully locked, False if it was already locked.
+        """
+        with self._lock:
+            key = (node_rank, port)
+            if self._port_locks.get(key, False):
+                return False
+            self._port_locks[key] = True
+            return True
+
+    def release(self, node_rank: int, port: int):
+        """Release the specified port on the given node rank.
+
+        Args:
+            node_rank (int): The rank of the node.
+            port (int): The port number to release.
+        """
+        with self._lock:
+            key = (node_rank, port)
+            self._port_locks[key] = False
