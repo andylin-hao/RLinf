@@ -31,6 +31,7 @@ from typing import (
 )
 
 import ray
+import ray.util.state
 import torch
 from omegaconf import OmegaConf
 
@@ -811,10 +812,13 @@ class Worker(metaclass=WorkerMeta):
             bool: True if the worker is alive, False otherwise.
         """
         try:
-            ray.get_actor(worker_name)
-        except ValueError:
-            return False
-        return True
+            actors = ray.util.state.list_actors(filters=[("NAME", "=", worker_name)])
+            if len(actors) == 0:
+                return False
+            actor_info = actors[0]
+            return actor_info.state != "DEAD"
+        except Exception:
+            return True
 
     def _check_initialized(self):
         """Check if the Worker has been initialized.
