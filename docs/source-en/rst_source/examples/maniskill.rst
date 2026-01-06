@@ -126,6 +126,18 @@ Install dependencies directly in your environment by running the following comma
    bash requirements/install.sh embodied --model openvla --env maniskill_libero
    source .venv/bin/activate
 
+Assets Download
+----------------
+
+Download the ManiSkill assets by running the following command:
+
+.. code:: bash
+
+   cd <path_to_RLinf>/rlinf/envs/maniskill
+   # For mainland China users, you can use the following for better download speed:
+   # export HF_ENDPOINT=https://hf-mirror.com
+   hf download --repo-type dataset RLinf/maniskill_assets --local-dir ./assets
+
 Model Download
 --------------
 

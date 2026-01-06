@@ -116,6 +116,18 @@
    bash requirements/install.sh embodied --model openvla --env maniskill_libero
    source .venv/bin/activate
 
+资源下载
+----------------
+
+下载 ManiSkill 资源文件：
+
+.. code:: bash
+
+   cd <path_to_RLinf>/rlinf/envs/maniskill
+   # 为提升国内下载速度，可以设置：
+   # export HF_ENDPOINT=https://hf-mirror.com
+   hf download --repo-type dataset RLinf/maniskill_assets --local-dir ./assets
+
 模型下载
 --------------
 
