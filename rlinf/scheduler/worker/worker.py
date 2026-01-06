@@ -831,8 +831,12 @@ class Worker(metaclass=WorkerMeta):
 
             if prev_no_proxy_upper is not None:
                 os.environ["NO_PROXY"] = prev_no_proxy_upper
+            else:
+                os.environ.pop("NO_PROXY", None)
             if prev_no_proxy_lower is not None:
                 os.environ["no_proxy"] = prev_no_proxy_lower
+            else:
+                os.environ.pop("no_proxy", None)
 
             if len(actors) == 0:
                 return False
