@@ -86,6 +86,10 @@ class SpatialLearnedEmbeddings(nn.Module):
         """
 
         # expand to (B, C, H, W, F)
+        # print("------\n"*10)
+        # print("In SpatialLearnedEmbeddings, features.shape:", features.shape)
+        # print("self.kernel.shape:", self.kernel.shape)
+        # print("------\n"*10)
         weighted = features.unsqueeze(-1) * self.kernel.unsqueeze(0)
         # sum over H,W  -> (B, C, F)
         summed = weighted.sum(dim=(2, 3))

@@ -164,6 +164,16 @@ def get_fsdp_wrap_policy(module, config=None, is_lora=False, is_openvla_model=Fa
         )
         policies.append(prismatic_fsdp_wrapping_policy)
 
+        # Wrap flow_actor as a separate module to handle its nested structure
+    
+    # Wrap flow_actor as a separate module to handle its nested structure
+    if hasattr(module, "flow_actor"):
+        from rlinf.models.embodiment.modules.flow_actor import FlowTActor, JaxFlowTActor
+        flow_actor_policy = functools.partial(
+            _module_wrap_policy, module_classes={FlowTActor, JaxFlowTActor}
+        )
+        policies.append(flow_actor_policy)
+
     if hasattr(module, "value_head"):
         from rlinf.models.embodiment.modules.value_head import ValueHead
 

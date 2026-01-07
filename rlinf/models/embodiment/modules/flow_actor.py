@@ -17,7 +17,7 @@ import torch
 import torch.nn as nn
 from torch.distributions.normal import Normal
 
-from .utils import BatchRenorm
+from .batch_renorm import BatchRenorm # 1. BatchRenorm moved from .utils to .batch_renorm
 
 
 class FlowTActor(nn.Module):

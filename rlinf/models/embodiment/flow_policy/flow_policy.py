@@ -12,36 +12,47 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
+
 import numpy as np
 import torch
 import torch.nn as nn
 from torch.distributions.normal import Normal
 from dataclasses import dataclass, field
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Optional, Tuple # x3. added Optional for model_path
 import warnings
 
-from .modules.nature_cnn import NatureCNN, PlainConv, ResNetEncoder
-from .modules.utils import layer_init, make_mlp, init_mlp_weights
-from .modules.value_head import ValueHead
-from .modules.q_head import MultiQHead
-from .modules.flow_actor import FlowTActor, JaxFlowTActor
-from .base_policy import BasePolicy
+# 1. import path changed
+# from rlinf.models.embodiment.modules.nature_cnn import NatureCNN, PlainConv, ResNetEncoder # No nature_cnn anymore!
+from rlinf.models.embodiment.modules.resnet_utils import ResNetEncoder
+from rlinf.models.embodiment.modules.utils import layer_init, make_mlp, init_mlp_weights
+from rlinf.models.embodiment.modules.value_head import ValueHead
+from rlinf.models.embodiment.modules.q_head import MultiQHead
+from rlinf.models.embodiment.modules.flow_actor import FlowTActor, JaxFlowTActor
+from rlinf.models.embodiment.base_policy import BasePolicy
 
 @dataclass
 class FlowConfig:
     image_size: List[int] = field(default_factory=list)
-    image_keys: List[str] = field(default_factory=str)
+    # image_keys: List[str] = field(default_factory=str)
+    image_num: int = 1  # x1. Replace 'image_keys' with 'image_num', index logic changed subsequently!
     action_dim: int = 4
     state_dim: int = 29
     num_action_chunks: int = 1
     backbone: str = "resnet"
-    extra_config: Dict[str, Any] = field(default_factory=dict)
+    model_path: Optional[str] = None # x2. Add 'model_path' to load pretrained model (used as dir!)
+    encoder_config: Dict[str, Any] = field(default_factory=dict) # 2. 'extra_config' rename to 'encoder_config'
     add_value_head: bool = False
     add_q_head: bool = False
+    q_head_type: str = "default" # 3. in cnn_policy.py newly added
 
     state_latent_dim: int = 64
     action_scale = None
     final_tanh = True
+    std_range = None # x3. std_range for resnet backbone (exists in old cnn_policy.py)
+    logstd_range = None # x3. added in latest cnn_policy.py
+
+    num_q_heads = 2 # x3. added in latest cnn_policy.py
     
     # Flow Matching specific parameters
     denoising_steps: int = 4
@@ -56,14 +67,28 @@ class FlowConfig:
         for key, value in config_dict.items():
             if hasattr(self, key):
                 self.__setattr__(key, value)
-            else:
-                warnings.warn(f"FlowConfig does not contain the key {key=}")
+            # 4. removed
+            # else:
+            #     warnings.warn(f"FlowConfig does not contain the key {key=}")
         self._update_info()
 
     def _update_info(self):
         if self.add_q_head:
-            self.action_scale = -1, 1
+            if self.action_scale is None:
+                self.action_scale = -1, 1
             self.final_tanh = True
+            if self.backbone == "resnet":
+                self.std_range = (1e-5, 5)
+
+        assert self.model_path is not None, "Please specify the model_path."
+        assert "ckpt_name" in self.encoder_config, (
+            "Please specify the ckpt_name in encoder_config to load pretrained encoder weights."
+        )
+        ckpt_path = os.path.join(self.model_path, self.encoder_config["ckpt_name"])
+        assert os.path.exists(ckpt_path), (
+            f"Pretrained encoder weights not found at {ckpt_path} with model path {self.model_path} and encoder ckpt name {self.encoder_config['ckpt_name']}"
+        )
+        self.encoder_config["ckpt_path"] = ckpt_path
 
 
 class FlowPolicy(BasePolicy):
@@ -74,44 +99,82 @@ class FlowPolicy(BasePolicy):
         self.cfg = cfg
         self.in_channels = self.cfg.image_size[0]
 
-        # Image encoders (same as CNNPolicy)
-        self.encoders = nn.ModuleDict()
+        # Step1: Init Image encoders (same as CNNPolicy)
+        # x4. Replace CNN init logic with latest cnn_policy.py (copy-paste)
+        self.encoders = nn.ModuleList()
         encoder_out_dim = 0
-        if self.cfg.backbone == "plane_conv":
-            for key in self.cfg.image_keys:
-                self.encoders[key] = PlainConv(
-                    in_channels=self.in_channels, out_dim=256, image_size=self.cfg.image_size
-                )
-                encoder_out_dim += self.encoders[key].out_dim
-        elif self.cfg.backbone == "resnet":
+        if self.cfg.backbone == "resnet":
             sample_x = torch.randn(1, *self.cfg.image_size)
-            for key in self.cfg.image_keys:
-                self.encoders[key] = ResNetEncoder(
-                    sample_x, out_dim=256, model_cfg=self.cfg.extra_config
+            for img_id in range(self.cfg.image_num):
+                self.encoders.append(
+                    ResNetEncoder(
+                        sample_x, out_dim=256, encoder_cfg=self.cfg.encoder_config
+                    )
                 )
-                encoder_out_dim += self.encoders[key].out_dim
+                encoder_out_dim += self.encoders[img_id].out_dim
         else:
             raise NotImplementedError
-        
-        # State projection
-        self.state_proj = nn.Sequential(*make_mlp(
-            in_channels=self.cfg.state_dim,
-            mlp_channels=[self.cfg.state_latent_dim, ], 
-            act_builder=nn.Tanh, 
-            use_layer_norm=True
-        ))
-        init_mlp_weights(self.state_proj, nonlinearity="tanh")
-        
-        # Mix projection to combine visual and state features
-        self.mix_proj = nn.Sequential(*make_mlp(
-            in_channels=encoder_out_dim+self.cfg.state_latent_dim, 
-            mlp_channels=[256, 256],  
-            act_builder=nn.Tanh, 
-            use_layer_norm=True
-        ))
-        init_mlp_weights(self.mix_proj, nonlinearity="tanh")
 
-        # Create flow actor
+        if self.cfg.backbone == "resnet":
+            self.state_proj = nn.Sequential(
+                *make_mlp(
+                    in_channels=self.cfg.state_dim,
+                    mlp_channels=[
+                        self.cfg.state_latent_dim,
+                    ],
+                    act_builder=nn.Tanh,
+                    last_act=True,
+                    use_layer_norm=True,
+                )
+            )
+            init_mlp_weights(self.state_proj, nonlinearity="tanh")
+            self.mix_proj = nn.Sequential(
+                *make_mlp(
+                    in_channels=encoder_out_dim + self.cfg.state_latent_dim,
+                    mlp_channels=[256, 256],
+                    act_builder=nn.Tanh,
+                    last_act=True,
+                    use_layer_norm=True,
+                )
+            )
+            init_mlp_weights(self.mix_proj, nonlinearity="tanh")
+        # self.encoders = nn.ModuleDict()
+        # encoder_out_dim = 0
+        # if self.cfg.backbone == "plane_conv":
+        #     for key in self.cfg.image_keys:
+        #         self.encoders[key] = PlainConv(
+        #             in_channels=self.in_channels, out_dim=256, image_size=self.cfg.image_size
+        #         )
+        #         encoder_out_dim += self.encoders[key].out_dim
+        # elif self.cfg.backbone == "resnet":
+        #     sample_x = torch.randn(1, *self.cfg.image_size)
+        #     for key in self.cfg.image_keys:
+        #         self.encoders[key] = ResNetEncoder(
+        #             sample_x, out_dim=256, model_cfg=self.cfg.encoder_config
+        #         )
+        #         encoder_out_dim += self.encoders[key].out_dim
+        # else:
+        #     raise NotImplementedError
+        
+        # # State projection
+        # self.state_proj = nn.Sequential(*make_mlp(
+        #     in_channels=self.cfg.state_dim,
+        #     mlp_channels=[self.cfg.state_latent_dim, ], 
+        #     act_builder=nn.Tanh, 
+        #     use_layer_norm=True
+        # ))
+        # init_mlp_weights(self.state_proj, nonlinearity="tanh")
+        
+        # # Mix projection to combine visual and state features
+        # self.mix_proj = nn.Sequential(*make_mlp(
+        #     in_channels=encoder_out_dim+self.cfg.state_latent_dim, 
+        #     mlp_channels=[256, 256],  
+        #     act_builder=nn.Tanh, 
+        #     use_layer_norm=True
+        # ))
+        # init_mlp_weights(self.mix_proj, nonlinearity="tanh")
+
+        # --- Step2: Create flow actor --- #
         # FlowTActor will receive mix_feature (256 dim) as obs input
         # So we set obs_dim to 256 (output of mix_proj)
         flow_obs_dim = 256
@@ -155,7 +218,7 @@ class FlowPolicy(BasePolicy):
         else:
             raise ValueError(f"Unknown flow_actor_type: {self.cfg.flow_actor_type}")
 
-        # Q-head for SAC
+        # --- Step3: Create Q-head for SAC --- #
         assert self.cfg.add_value_head + self.cfg.add_q_head <= 1
         if self.cfg.add_value_head:
             self.value_head = ValueHead(
@@ -173,30 +236,76 @@ class FlowPolicy(BasePolicy):
 
         if self.cfg.action_scale is not None:
             l, h = self.cfg.action_scale
-            self.register_buffer("action_scale", torch.tensor((h - l) / 2.0, dtype=torch.float32))
-            self.register_buffer("action_bias", torch.tensor((h + l) / 2.0, dtype=torch.float32))
+            self.register_buffer(
+                "action_scale", torch.tensor((h - l) / 2.0, dtype=torch.float32)
+            )
+            self.register_buffer(
+                "action_bias", torch.tensor((h + l) / 2.0, dtype=torch.float32)
+            )
         else:
             self.action_scale = None
+
+    @property
+    def num_action_chunks(self):
+        return self.cfg.num_action_chunks
 
     def preprocess_env_obs(self, env_obs):
         device = next(self.parameters()).device
         processed_env_obs = {}
         processed_env_obs["states"] = env_obs["states"].clone().to(device)
-        for key, value in env_obs["images"].items():
-            processed_env_obs[f"images/{key}"] = value.clone().to(device).float() / 255.0
+        # x5. key of images changed!
+        processed_env_obs["main_images"] = (
+            env_obs["main_images"].clone().to(device).float() / 255.0
+        )
+        if env_obs.get("extra_view_images", None) is not None:
+            processed_env_obs["extra_view_images"] = (
+                env_obs["extra_view_images"].clone().to(device).float() / 255.0
+            )
+        # for key, value in env_obs["images"].items():
+        #     processed_env_obs[f"images/{key}"] = value.clone().to(device).float() / 255.0        
         return processed_env_obs
     
     def get_feature(self, obs):
         """Extract features from observations (images + states)"""
         visual_features = []
-        for key in self.cfg.image_keys:
-            visual_features.append(self.encoders[key](obs[f"images/{key}"]))
+        # x1. image indexing logic changed, from image_keys to image_num
+        for img_id in range(self.cfg.image_num):
+            if img_id == 0:
+                images = obs["main_images"]
+            else:
+                images = obs["extra_view_images"][:, img_id - 1]
+            if images.shape[3] == 3:
+                # [B, H, W, C] -> [B, C, H, W]
+                images = images.permute(0, 3, 1, 2)
+            # x2. image encoding logic changed, from key to img_id
+            # print("----\n"*5)
+            # print(f"img_id: {img_id}")
+            # print(f"images.shape:", images.shape)
+            # print(f"self.encoders[img_id](images).shape:", self.encoders[img_id](images).shape)
+            # print("----\n"*5)
+            visual_features.append(self.encoders[img_id](images))
+        # for key in self.cfg.image_keys:
+        #     visual_features.append(self.encoders[key](obs[f"images/{key}"]))
         visual_feature = torch.cat(visual_features, dim=-1)
         
         state_feature = self.state_proj(obs["states"])
         full_feature = torch.cat([visual_feature, state_feature], dim=-1)
         
         return full_feature, visual_feature
+
+    def forward(self, forward_type="default_forward", **kwargs):
+        if forward_type == "sac_forward":
+            return self.sac_forward(**kwargs)
+        elif forward_type == "sac_q_forward":
+            return self.sac_q_forward(**kwargs)
+        elif forward_type == "crossq_forward":
+            return self.crossq_forward(**kwargs)
+        elif forward_type == "crossq_q_forward":
+            return self.crossq_q_forward(**kwargs)
+        elif forward_type == "default_forward":
+            return self.default_forward(**kwargs)
+        else:
+            raise NotImplementedError
 
     def sac_forward(self, obs, **kwargs):
         """SAC forward pass using Flow Matching actor"""
@@ -217,8 +326,31 @@ class FlowPolicy(BasePolicy):
             shared_feature = shared_feature.detach()
         return self.q_head(shared_feature, actions)
 
-    def default_forward(self, obs, compute_entropy=False, compute_values=False, **kwargs):
+    # 11. use get_q_values() as sac_q_forward()
+    def sac_q_forward(self, obs, actions, shared_feature=None, detach_encoder=False):
+        if shared_feature is None:
+            shared_feature, visual_feature = self.get_feature(obs)
+        if detach_encoder:
+            shared_feature = shared_feature.detach()
+        return self.q_head(shared_feature, actions)
+
+    def default_forward(
+        self, 
+        # obs, 
+        data, # x6. input is 'data', preprocess to become 'obs'.
+        compute_entropy=False, 
+        compute_values=False, 
+        **kwargs
+    ):
         """Default forward pass"""
+
+        obs = {
+            "main_images": data["main_images"],
+            "states": data["states"],
+        }
+        if "extra_view_images" in data:
+            obs["extra_view_images"] = data["extra_view_images"]
+
         full_feature, visual_feature = self.get_feature(obs)
         mix_feature = self.mix_proj(full_feature)
         
@@ -227,7 +359,7 @@ class FlowPolicy(BasePolicy):
         
         output_dict = {
             "action": action,
-            "log_prob": log_prob,
+            "log_prob": log_prob,  # key 'log_prob' or 'logprobs' as used in both cnn_policy.py??
         }
         
         if compute_entropy:
@@ -244,12 +376,14 @@ class FlowPolicy(BasePolicy):
         return output_dict
 
     def predict_action_batch(
-            self, env_obs, 
+            self, 
+            env_obs, 
             calulate_logprobs=True,
             calulate_values=True,
             return_obs=True, 
-            return_action_type="numpy_chunk", 
+            # return_action_type="numpy_chunk", # 8. removed return_action_type
             return_shared_feature=False, 
+            # mode="train", # x7. added mode in cnn_policy.py, which seems specific to cnn_policy
             **kwargs
         ):
         """Predict actions in batch"""
@@ -259,25 +393,33 @@ class FlowPolicy(BasePolicy):
         # Use flow actor
         action, log_prob = self.flow_actor(mix_feature, train=False, log_grad=False)
         
-        if return_action_type == "numpy_chunk":
-            chunk_actions = action.reshape(-1, self.cfg.num_action_chunks, self.cfg.action_dim)
-            chunk_actions = chunk_actions.cpu().numpy()
-        elif return_action_type == "torch_flatten":
-            chunk_actions = action.clone()
-        else:
-            raise NotImplementedError
+        # 8. chunk_actions is always numpy array
+        chunk_actions = action.reshape(
+            -1, self.cfg.num_action_chunks, self.cfg.action_dim
+        )
+        chunk_actions = chunk_actions.cpu().numpy()        
+        # if return_action_type == "numpy_chunk":
+        #     chunk_actions = action.reshape(-1, self.cfg.num_action_chunks, self.cfg.action_dim)
+        #     chunk_actions = chunk_actions.cpu().numpy()
+        # elif return_action_type == "torch_flatten":
+        #     chunk_actions = action.clone()
+        # else:
+        #     raise NotImplementedError
         
         if hasattr(self, "value_head") and calulate_values:
             chunk_values = self.value_head(mix_feature)
         else:
             chunk_values = torch.zeros_like(log_prob[..., :1])
         
-        forward_inputs = {
-            "action": action
-        }
+        forward_inputs = {"action": action}
         if return_obs:
-            for key, value in env_obs.items():
-                forward_inputs[f"obs/{key}"] = value
+            # x1. image indexing logic changed
+            forward_inputs["main_images"] = env_obs["main_images"]
+            forward_inputs["states"] = env_obs["states"]
+            if "extra_view_images" in env_obs:
+                forward_inputs["extra_view_images"] = env_obs["extra_view_images"]
+            # for key, value in env_obs.items():
+            #     forward_inputs[f"obs/{key}"] = value
         
         result = {
             "prev_logprobs": log_prob,
@@ -293,8 +435,8 @@ class FlowStateConfig:
     action_dim: int = 4
     obs_dim: int = 29
     num_action_chunks: int = 1
-    extra_config: Dict[str, Any] = field(default_factory=dict)
-    add_value_head: bool = False
+    encoder_config: Dict[str, Any] = field(default_factory=dict)
+    add_value_head: bool = False # No visual_feature -> No mix_feature -> No value_head -> add_value_head must be false !
     add_q_head: bool = False
     q_head_type: str = "default"
 
@@ -314,21 +456,23 @@ class FlowStateConfig:
         for key, value in config_dict.items():
             if hasattr(self, key):
                 self.__setattr__(key, value)
-            else:
-                warnings.warn(f"FlowConfig does not contain the key {key=}")
+            # 4. removed warning
+            # else:
+            #     warnings.warn(f"FlowConfig does not contain the key {key=}")
         self._update_info()
 
     def _update_info(self):
         if self.add_q_head:
-            self.action_scale = -1, 1
+            if self.action_scale is None: # 5. added this if layer
+                self.action_scale = -1, 1
             self.final_tanh = True
 
 class FlowStatePolicy(BasePolicy):
-    def __init__(
-            self, cfg: FlowStateConfig
-        ):
+    def __init__(self, cfg: FlowStateConfig):
         super().__init__()
         self.cfg = cfg
+
+        ## 3 layer MLP encoder for obs
         self.backbone = nn.Sequential(
             layer_init(nn.Linear(self.cfg.obs_dim, 256)),
             nn.Tanh(),
@@ -399,14 +543,24 @@ class FlowStatePolicy(BasePolicy):
 
         if self.cfg.action_scale is not None:
             l, h = self.cfg.action_scale
-            self.register_buffer("action_scale", torch.tensor((h - l) / 2.0, dtype=torch.float32))
-            self.register_buffer("action_bias", torch.tensor((h + l) / 2.0, dtype=torch.float32))
+            self.register_buffer(
+                "action_scale", torch.tensor((h - l) / 2.0, dtype=torch.float32)
+            )
+            self.register_buffer(
+                "action_bias", torch.tensor((h + l) / 2.0, dtype=torch.float32)
+            )
         else:
             self.action_scale = None
+
+    # 6. added num_action_chunks property
+    @property
+    def num_action_chunks(self):
+        return self.cfg.num_action_chunks
 
     def preprocess_env_obs(self, env_obs):
         device = next(self.parameters()).device
         return {"states": env_obs["states"].to(device)}
+        # 7. image related keys changed ('main_images', 'extra_view_images'), but 'state' key is the same! no change!
 
     def sac_forward(self, obs, **kwargs):
         """SAC forward pass using Flow Matching actor"""
@@ -422,9 +576,37 @@ class FlowStatePolicy(BasePolicy):
         """Get Q-values for given observations and actions"""
         return self.q_head(obs["states"], actions)
 
+    # 11. use get_q_values() as sac_q_forward()
+    def sac_q_forward(self, obs, actions, shared_feature=None, detach_encoder=False):
+        # if shared_feature is None:
+        #     shared_feature, visual_feature = self.get_feature(obs)
+        # if detach_encoder:
+        #     shared_feature = shared_feature.detach()
+        # return self.q_head(shared_feature, actions)
+        return self.q_head(obs["states"], actions)
+
+    # 10. add unified forward()
+    def forward(self, forward_type="default_forward", **kwargs):
+        if forward_type == "sac_forward":
+            return self.sac_forward(**kwargs) # originally exists
+        elif forward_type == "sac_q_forward":
+            return self.sac_q_forward(**kwargs) # use get_q_values()
+        elif forward_type == "crossq_forward":
+            return self.crossq_forward(**kwargs) # NOT IMPLEMENTED
+        elif forward_type == "crossq_q_forward":
+            return self.crossq_q_forward(**kwargs) # NOT IMPLEMENTED
+        elif forward_type == "default_forward":
+            return self.default_forward(**kwargs) # NOT USED (NO get_feature)
+        else:
+            raise NotImplementedError
+
+    # Never used default_forward()
     def default_forward(self, obs, compute_entropy=False, compute_values=False, **kwargs):
-        """Default forward pass"""
-        full_feature, visual_feature = self.get_feature(obs)
+        """
+        Default forward pass
+        There's no get_feature in FlowStatePolicy at all! So default_forward() must not be used!
+        """
+        full_feature, visual_feature = self.get_feature(obs) # There's no get_feature in FlowStatePolicy at all! So default_forward is not used!
         mix_feature = self.mix_proj(full_feature)
         
         # Use flow actor
@@ -449,39 +631,49 @@ class FlowStatePolicy(BasePolicy):
         return output_dict
 
     def predict_action_batch(
-            self, env_obs, 
+            self, 
+            env_obs, 
             calulate_logprobs=True,
             calulate_values=True,
             return_obs=True, 
-            return_action_type="numpy_chunk", 
+            # return_action_type="numpy_chunk", # 8. removed return_action_type
             return_shared_feature=False, 
             **kwargs
         ):
-        """Predict actions in batch"""
-        feat = self.backbone(env_obs["states"])
+        """
+        Predict actions in batch. 
+        Called by MultiStepRolloutWorker for rollout
+        """
+        feat = self.backbone(env_obs["states"]) # encode obs using the 3 LAYER MLP !
         
         # Use flow actor
         action, log_prob = self.flow_actor(feat, train=False, log_grad=False)
+        print(f"In predict_action_batch(), action.shape={action.shape}, log_prob.shape={log_prob.shape}")
         
-        if return_action_type == "numpy_chunk":
-            chunk_actions = action.reshape(-1, self.cfg.num_action_chunks, self.cfg.action_dim)
-            chunk_actions = chunk_actions.cpu().numpy()
-        elif return_action_type == "torch_flatten":
-            chunk_actions = action.clone()
-        else:
-            raise NotImplementedError
+        # 8. chunk_actions is always numpy array
+        chunk_actions = action.reshape(
+            -1, self.cfg.num_action_chunks, self.cfg.action_dim
+        )
+        chunk_actions = chunk_actions.cpu().numpy()
+        # if return_action_type == "numpy_chunk":
+        #     chunk_actions = action.reshape(-1, self.cfg.num_action_chunks, self.cfg.action_dim)
+        #     chunk_actions = chunk_actions.cpu().numpy()
+        # elif return_action_type == "torch_flatten":
+        #     chunk_actions = action.clone()
+        # else:
+        #     raise NotImplementedError
         
+        # Here we don't have mix_feature at all, so there must be no self.value_head, so add_value_head must be kept False
         if hasattr(self, "value_head") and calulate_values:
             chunk_values = self.value_head(mix_feature)
         else:
             chunk_values = torch.zeros_like(log_prob[..., :1])
         
-        forward_inputs = {
-            "action": action
-        }
+        forward_inputs = {"action": action}
         if return_obs:
-            for key, value in env_obs.items():
-                forward_inputs[f"obs/{key}"] = value
+            forward_inputs["states"] = env_obs["states"] # 9. add 'states' to forward_inputs instead of 'obs/{key}'
+            # for key, value in env_obs.items():
+            #     forward_inputs[f"obs/{key}"] = value
         
         result = {
             "prev_logprobs": log_prob,
@@ -489,5 +681,5 @@ class FlowStatePolicy(BasePolicy):
             "forward_inputs": forward_inputs,
         }
         if return_shared_feature:
-            result["shared_feature"] = visual_feature
+            result["shared_feature"] = visual_feature # There's no visual_feature here, so return_shared_feature must be kept False
         return chunk_actions, result
