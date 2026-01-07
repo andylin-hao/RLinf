@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import asyncio
 import copy
 import gc
 from typing import Any
@@ -50,6 +51,9 @@ class MultiStepRolloutWorker(Worker):
         self.gather_num = self.placement.get_world_size(
             "rollout"
         ) // self.placement.get_world_size("env")
+
+        self.train_queue = Channel.create(name="train_queue", local=True)
+        self.eval_queue = Channel.create(name="eval_queue", local=True)
 
     def init_worker(self):
         rollout_model_config = copy.deepcopy(self.cfg.actor.model)
@@ -342,15 +346,34 @@ class MultiStepRolloutWorker(Worker):
         assert mode in ["train", "eval"], f"{mode=} is not supported"
         # Use asyncio so that it can run alongside async weight syncing
         src_rank_in_env = self._rank // self.gather_num
-        return await self.recv(
+        work = self.recv(
             self.cfg.env.group_name, src_rank=src_rank_in_env, async_op=True
-        ).async_wait()
+        )
+
+        def _callback():
+            env_mode, env_batch = work.wait()
+            if env_mode == "train":
+                self.train_queue.put_nowait(env_batch)
+            elif env_mode == "eval":
+                self.eval_queue.put_nowait(env_batch)
+
+        work.then(_callback)
+
+        if mode == "train":
+            queue = self.train_queue
+        elif mode == "eval":
+            queue = self.eval_queue
+
+        while queue.empty():
+            await asyncio.sleep(0.001)
+        batch = queue.get_nowait()
+        return batch
 
     def send_chunk_actions(self, output_channel: Channel, chunk_actions, mode="train"):
         assert mode in ["train", "eval"], f"{mode=} is not supported"
         dst_rank_in_env = self._rank // self.gather_num
         return self.send(
-            chunk_actions,
+            (mode, chunk_actions),
             self.cfg.env.group_name,
             dst_rank=dst_rank_in_env,
             async_op=True,

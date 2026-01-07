@@ -15,6 +15,7 @@
 import asyncio
 from collections import defaultdict
 
+import numpy as np
 import torch
 
 from rlinf.data.io_struct import EnvOutput
@@ -23,6 +24,36 @@ from rlinf.workers.env.env_worker import EnvWorker
 
 
 class AsyncEnvWorker(EnvWorker):
+    async def recv_chunk_actions(self, input_channel: Channel, mode="train") -> np.ndarray:
+        assert mode in ["train", "eval"], f"{mode=} is not supported"
+        chunk_action = []
+        for gather_id in range(self.gather_num):
+            src_rank_in_rollout = gather_id + self._rank * self.gather_num
+            work = self.recv(
+                self.cfg.rollout.group_name, src_rank=src_rank_in_rollout, async_op=True
+            )
+
+            def _callback():
+                rollout_mode, recv_action = work.wait()
+                if rollout_mode == "train":
+                    self.train_queue.put(recv_action)
+                elif rollout_mode == "eval":
+                    self.eval_queue.put(recv_action)
+
+            work.then(_callback)
+
+            if mode == "train":
+                queue = self.train_queue
+            elif mode == "eval":
+                queue = self.eval_queue
+
+            while queue.empty():
+                await asyncio.sleep(0.001)
+            action = queue.get_nowait()
+            chunk_action.append(action)
+        chunk_action = np.concatenate(chunk_action, axis=0)
+        return chunk_action
+
     async def interact(
         self,
         input_channel: Channel,
@@ -87,8 +118,7 @@ class AsyncEnvWorker(EnvWorker):
 
             for _ in range(n_chunk_steps):
                 for stage_id in range(self.stage_num):
-                    await asyncio.sleep(0)
-                    raw_chunk_actions = self.recv_chunk_actions(input_channel)
+                    raw_chunk_actions = await self.recv_chunk_actions(input_channel)
                     env_output, env_info = self.env_interact_step(
                         raw_chunk_actions, stage_id
                     )
@@ -124,6 +154,54 @@ class AsyncEnvWorker(EnvWorker):
             ]
             self.finish_rollout()
             epoch += 1
+
+    async def evaluate(self, input_channel: Channel, output_channel: Channel):
+        eval_metrics = defaultdict(list)
+
+        for stage_id in range(self.stage_num):
+            self.eval_env_list[stage_id].start_env()
+
+        n_chunk_steps = (
+            self.cfg.env.eval.max_steps_per_rollout_epoch
+            // self.cfg.actor.model.num_action_chunks
+        )
+        for _ in range(self.cfg.algorithm.eval_rollout_epoch):
+            for stage_id in range(self.stage_num):
+                self.eval_env_list[stage_id].is_start = True
+                extracted_obs, infos = self.eval_env_list[stage_id].reset()
+                env_output = EnvOutput(
+                    obs=extracted_obs,
+                    final_obs=infos["final_observation"]
+                    if "final_observation" in infos
+                    else None,
+                )
+                self.send_env_batch(output_channel, env_output.to_dict(), mode="eval")
+
+            for eval_step in range(n_chunk_steps):
+                for stage_id in range(self.stage_num):
+                    raw_chunk_actions = await self.recv_chunk_actions(
+                        input_channel, mode="eval"
+                    )
+                    env_output, env_info = self.env_evaluate_step(
+                        raw_chunk_actions, stage_id
+                    )
+
+                    for key, value in env_info.items():
+                        eval_metrics[key].append(value)
+                    if eval_step == n_chunk_steps - 1:
+                        continue
+                    self.send_env_batch(
+                        output_channel, env_output.to_dict(), mode="eval"
+                    )
+
+            self.finish_rollout(mode="eval")
+        for stage_id in range(self.stage_num):
+            self.eval_env_list[stage_id].stop_env()
+
+        for key, value in eval_metrics.items():
+            eval_metrics[key] = torch.cat(value, dim=0).contiguous().cpu()
+
+        return eval_metrics
 
     async def stop(self):
         self.should_stop = True
