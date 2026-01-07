@@ -47,6 +47,9 @@ class MultiStepRolloutWorker(Worker):
 
         actor_world_size = self.placement.get_world_size("actor")
         self.actor_weight_src_rank = self._rank % actor_world_size
+        self.gather_num = self.placement.get_world_size(
+            "rollout"
+        ) // self.placement.get_world_size("env")
 
     def init_worker(self):
         rollout_model_config = copy.deepcopy(self.cfg.actor.model)
@@ -338,15 +341,19 @@ class MultiStepRolloutWorker(Worker):
     ) -> dict[str, torch.Tensor]:
         assert mode in ["train", "eval"], f"{mode=} is not supported"
         # Use asyncio so that it can run alongside async weight syncing
-        env_output = await input_channel.get(
-            key=f"{self._rank}_{mode}", async_op=True
+        src_rank_in_env = self._rank // self.gather_num
+        return await self.recv(
+            self.cfg.env.group_name, src_rank=src_rank_in_env, async_op=True
         ).async_wait()
-        return env_output
 
     def send_chunk_actions(self, output_channel: Channel, chunk_actions, mode="train"):
         assert mode in ["train", "eval"], f"{mode=} is not supported"
-        output_channel.put(
-            item=chunk_actions, key=f"{self._rank}_{mode}", async_op=True
+        dst_rank_in_env = self._rank // self.gather_num
+        return self.send(
+            chunk_actions,
+            self.cfg.env.group_name,
+            dst_rank=dst_rank_in_env,
+            async_op=True,
         )
 
     def send_rollout_batch(self, actor_channel: Channel, stage_id: int):

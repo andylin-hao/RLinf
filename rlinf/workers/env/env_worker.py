@@ -231,10 +231,9 @@ class EnvWorker(Worker):
         assert mode in ["train", "eval"], f"{mode=} is not supported"
         chunk_action = []
         for gather_id in range(self.gather_num):
+            src_rank_in_rollout = gather_id + self._rank * self.gather_num
             chunk_action.append(
-                input_channel.get(
-                    key=f"{gather_id + self._rank * self.gather_num}_{mode}",
-                )
+                self.recv(self.cfg.rollout.group_name, src_rank=src_rank_in_rollout)
             )
         chunk_action = np.concatenate(chunk_action, axis=0)
         return chunk_action
@@ -290,9 +289,12 @@ class EnvWorker(Worker):
         assert mode in ["train", "eval"], f"{mode=} is not supported"
         for gather_id in range(self.gather_num):
             env_batch_i = self.split_env_batch(env_batch, gather_id, mode)
-            output_channel.put(
-                item=env_batch_i,
-                key=f"{gather_id + self._rank * self.gather_num}_{mode}",
+            dst_rank_in_rollout = gather_id + self._rank * self.gather_num
+            self.send(
+                env_batch_i,
+                self.cfg.rollout.group_name,
+                dst_rank_in_rollout,
+                async_op=True,
             )
 
     def interact(self, input_channel: Channel, output_channel: Channel):
