@@ -61,15 +61,40 @@
 依赖安装
 -----------
 
+1. 克隆 RLinf 仓库
+~~~~~~~~~~~~~~~~~~~~
+
+.. code:: bash
+
+   # 为提高国内下载速度，可以使用：
+   # git clone https://ghfast.top/github.com/RLinf/RLinf.git
+   git clone https://github.com/RLinf/RLinf.git
+   cd RLinf
+
+2. 安装依赖
+~~~~~~~~~~~~~~~~
+
 **选项 1：Docker 镜像**
 
-使用 Docker 镜像 ``rlinf/rlinf:agentic-rlinf0.1-metaworld`` 来运行实验。
+使用 Docker 镜像运行实验。
+
+.. code:: bash
+
+   docker run -it --rm --gpus all \
+      --shm-size 20g \
+      --network host \
+      --name rlinf \
+      -v .:/workspace/RLinf \
+      rlinf/rlinf:agentic-rlinf0.1-metaworld
+      # 如果需要国内加速下载镜像，可以使用：
+      # docker.1ms.run/rlinf/rlinf:agentic-rlinf0.1-metaworld
 
 **选项 2：自定义环境**
 
 .. code:: bash
 
-   pip install uv
+   # 为提高国内依赖安装速度，可以添加`--use-mirror`到下面的install.sh命令
+
    bash requirements/install.sh embodied --model openpi --env metaworld
    source .venv/bin/activate
 
@@ -84,15 +109,15 @@
    # 下载模型（选择任一方法）
    # 方法 1: 使用 git clone
    git lfs install
-   git clone https://huggingface.co/RLinf/RLinf-Pi0-MetaWorld
-   git clone https://huggingface.co/RLinf/RLinf-Pi05-MetaWorld
+   git clone https://huggingface.co/RLinf/RLinf-Pi0-MetaWorld-SFT
+   git clone https://huggingface.co/RLinf/RLinf-Pi05-MetaWorld-SFT
 
    # 方法 2: 使用 huggingface-hub
+   # 为提升国内下载速度，可以设置：
+   # export HF_ENDPOINT=https://hf-mirror.com
    pip install huggingface-hub
-   hf download RLinf/RLinf-Pi0-MetaWorld --local-dir RLinf-Pi0-MetaWorld
-   hf download RLinf/RLinf-Pi05-MetaWorld --local-dir RLinf-Pi05-MetaWorld
-
-或者，您也可以使用 ModelScope 从 https://www.modelscope.cn/models/RLinf/RLinf-Pi0-MetaWorld 下载模型。
+   hf download RLinf/RLinf-Pi0-MetaWorld-SFT --local-dir RLinf-Pi0-MetaWorld-SFT
+   hf download RLinf/RLinf-Pi05-MetaWorld-SFT --local-dir RLinf-Pi05-MetaWorld-SFT
 
 下载后，请确保在配置 yaml 文件中正确指定模型路径。
 
@@ -113,10 +138,9 @@
    rollout:
       pipeline_stage_num: 2
 
-您可以灵活配置 env、rollout 和 actor 组件的 GPU 数量。使用上述配置，您可以实现
-env 和 rollout 之间的管道重叠，以及与 actor 的共享。
+您可以灵活配置 env、rollout 和 actor 组件的 GPU 数量。
 此外，通过在配置中设置 ``pipeline_stage_num = 2``，
-您可以实现 rollout 和 actor 之间的管道重叠，提高 rollout 效率。
+您可以实现 rollout 和 env 之间的管道重叠，提高 rollout 效率。
 
 .. code:: yaml
 

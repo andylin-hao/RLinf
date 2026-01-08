@@ -29,6 +29,15 @@
   - 末端执行器三维位置控制（x, y, z）  
   - 三维旋转控制（roll, pitch, yaw）  
   - 夹爪控制（开/合）
+- **Scene**：根据 `Calvin 论文 <https://arxiv.org/pdf/2112.03227>`_ 所说不同的环境有不同的纹理，滑动门、抽屉、灯按钮和开关等所有静态元素的位置也不同。但是，不同的环境中的桌子、机器人和静态摄像头在所有环境中的位置都是相同的，这些物体对象的颜色都是一样的、形状也是一样的。
+- **The CALVIN Challenge**：根据 `Calvin 论文 <https://arxiv.org/pdf/2112.03227>`_ 所说，
+   `Single Environment` 的训练集合为 `scene D` 、评估集合为 `scene D` 记为，D→D；
+   `Multi Environment` 的训练集合为 `scene A B C D` 、评估集合为 `scene D` 记为，A,B,C,D→D；
+   `Zero-Shot Multi Environment` 的训练集合为 `scene A B C` 、评估集合为 `scene D` 记为，A,B,C→D；
+
+.. note::
+
+   注意，这里我们修改了其中的 scene A 和 scene C 的yaml文件，因为原本的Calvin仓库中对于这两个配置文件有一些错误的设置，我们在rlinf中已经修正，大家可放心使用。参见这个 `问题 <https://github.com/mees/calvin/issues/41>`_。
 
 **数据结构**
 
@@ -62,15 +71,42 @@
 依赖安装
 -----------
 
-**选项 1：Docker 镜像**
-
-使用 Docker 镜像 ``rlinf/rlinf:agentic-rlinf0.1-calvin`` 来运行实验。
-
-**选项 2：自定义环境**
+1. 克隆 RLinf 仓库
+~~~~~~~~~~~~~~~~~~~~
 
 .. code:: bash
 
-   pip install uv
+   # 为了提高国内下载速度，也可以使用：
+   # git clone https://ghfast.top/github.com/RLinf/RLinf.git
+   git clone https://github.com/RLinf/RLinf.git
+   cd RLinf
+
+2. 安装依赖
+~~~~~~~~~~~~~~~~~~~~
+
+**选项 1：Docker 镜像**
+
+使用 Docker 镜像进行实验。
+
+.. code:: bash
+
+   docker run -it --rm --gpus all \
+      --shm-size 20g \
+      --network host \
+      --name rlinf \
+      -v .:/workspace/RLinf \
+      rlinf/rlinf:agentic-rlinf0.1-calvin
+      # 为了提高国内下载速度，也可以使用：
+      # docker.1ms.run/rlinf/rlinf:agentic-rlinf0.1-calvin
+
+**选项 2：自定义环境**
+
+在本地环境中直接安装依赖：
+
+.. code:: bash
+
+   # 为提高国内依赖安装速度，可以添加`--use-mirror`到下面的install.sh命令
+
    bash requirements/install.sh embodied --model openpi --env calvin
    source .venv/bin/activate
 
@@ -84,13 +120,15 @@
    # 下载模型（选择任一方法）
    # 方法 1: 使用 git clone
    git lfs install
-   git clone https://huggingface.co/RLinf/RLinf-Pi0-CALVIN-ABC-D
-   git clone https://huggingface.co/RLinf/RLinf-Pi05-CALVIN-ABC-D
+   git clone https://huggingface.co/RLinf/RLinf-Pi0-CALVIN-ABC-D-SFT
+   git clone https://huggingface.co/RLinf/RLinf-Pi05-CALVIN-ABC-D-SFT
 
    # 方法 2: 使用 huggingface-hub
+   # 为了提高国内下载速度，可以添加以下环境变量：
+   # export HF_ENDPOINT=https://hf-mirror.com
    pip install huggingface-hub
-   hf download RLinf/RLinf-Pi0-CALVIN-ABC-D --local-dir RLinf-Pi0-CALVIN-ABC-D
-   hf download RLinf/RLinf-Pi05-CALVIN-ABC-D --local-dir RLinf-Pi05-CALVIN-ABC-D
+   hf download RLinf/RLinf-Pi0-CALVIN-ABC-D-SFT --local-dir RLinf-Pi0-CALVIN-ABC-D-SFT
+   hf download RLinf/RLinf-Pi05-CALVIN-ABC-D-SFT --local-dir RLinf-Pi05-CALVIN-ABC-D-SFT
 
 
 下载后，请确保在配置 yaml 文件中正确指定模型路径。
@@ -112,10 +150,9 @@
    rollout:
       pipeline_stage_num: 2
 
-您可以灵活配置 env、rollout 和 actor 组件的 GPU 数量。使用上述配置，您可以实现
-env 和 rollout 之间的管道重叠，以及与 actor 的共享。
+您可以灵活配置 env、rollout 和 actor 组件的 GPU 数量。
 此外，通过在配置中设置 ``pipeline_stage_num = 2``，
-您可以实现 rollout 和 actor 之间的管道重叠，提高 rollout 效率。
+您可以实现 rollout 和 env 之间的管道重叠，提高 rollout 效率。
 
 .. code:: yaml
 

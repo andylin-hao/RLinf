@@ -58,9 +58,33 @@ Algorithm
 Dependency Installation
 -----------------------
 
+1. Clone RLinf Repository
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code:: bash
+
+   # For mainland China users, you can use the following for better download speed:
+   # git clone https://ghfast.top/github.com/RLinf/RLinf.git
+   git clone https://github.com/RLinf/RLinf.git
+   cd RLinf
+
+2. Install Dependencies
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 **Option 1: Docker Image**
 
-Use the Docker image ``rlinf/rlinf:agentic-rlinf0.1-isaaclab`` for the experiment.
+Use Docker image for the experiment.
+
+.. code:: bash
+
+   docker run -it --rm --gpus all \
+      --shm-size 20g \
+      --network host \
+      --name rlinf \
+      -v .:/workspace/RLinf \
+      rlinf/rlinf:agentic-rlinf0.1-isaaclab
+      # For mainland China users, you can use the following for better download speed:
+      # docker.1ms.run/rlinf/rlinf:agentic-rlinf0.1-isaaclab
 
 **Option 2: Custom Environment**
 
@@ -68,7 +92,8 @@ Install dependencies directly in your environment by running the following comma
 
 .. code:: bash
 
-   pip install uv
+   # For mainland China users, you can add the `--use-mirror` flag to the install.sh command for better download speed.
+
    bash requirements/install.sh embodied --model gr00t --env isaaclab
    source .venv/bin/activate
 
@@ -107,6 +132,8 @@ Model Download
    git clone https://huggingface.co/RLinf/RLinf-Gr00t-SFT-Spatial
 
    # Method 2: Using huggingface-hub
+   # For mainland China users, you can use the following for better download speed:
+   # export HF_ENDPOINT=https://hf-mirror.com
    pip install huggingface-hub
    hf download RLinf/RLinf-Gr00t-SFT-Spatial --local-dir RLinf-Gr00t-SFT-Spatial
 
@@ -128,10 +155,9 @@ Running the Script
    rollout:
       pipeline_stage_num: 2
 
-You can flexibly configure the GPU count for env, rollout, and actor components. Using the above configuration, you can achieve
-pipeline overlap between env and rollout, and sharing with actor.
+You can flexibly configure the GPU count for env, rollout, and actor components. 
 Additionally, by setting ``pipeline_stage_num = 2`` in the configuration,
-you can achieve pipeline overlap between rollout and actor, improving rollout efficiency.
+you can achieve pipeline overlap between rollout and env, improving rollout efficiency.
 
 .. code:: yaml
 

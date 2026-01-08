@@ -31,6 +31,8 @@ from typing import (
 )
 
 import ray
+import ray.dashboard.utils
+import ray.util.state
 import torch
 from omegaconf import OmegaConf
 
@@ -39,6 +41,7 @@ from ..hardware import AcceleratorType, AcceleratorUtil, HardwareInfo
 from ..manager import WorkerAddress
 
 if TYPE_CHECKING:
+    from ..manager import WorkerInfo
     from .worker_group import WorkerGroup
 
 WorkerClsType = TypeVar("WorkerClsType")
@@ -407,12 +410,26 @@ class Worker(metaclass=WorkerMeta):
         )
         Cluster.NAMESPACE = namespace
 
+        # Initialize Ray if not already initialized
+        if not ray.is_initialized():
+            ray.init(
+                address="auto",
+                namespace=Cluster.NAMESPACE,
+                logging_level=Cluster.LOGGING_LEVEL,
+            )
+
         if self._is_ray_actor and parent_address is not None:
             # The Worker is a Ray actor launched inside a Worker
             self._worker_address = parent_address.get_child_address(self._rank)
             self._worker_name = self._worker_address.get_name()
             os.environ["WORKER_NAME"] = self._worker_name
         self._group_name = self._worker_address.get_parent_address().get_name()
+
+        # Initialize global locks
+        from .lock import DeviceLock, PortLock
+
+        self._device_lock = DeviceLock(self)
+        self._port_lock = PortLock(self)
 
         # Setup local rank and world size
         self._setup_local_rank_world_size()
@@ -423,26 +440,24 @@ class Worker(metaclass=WorkerMeta):
         # Configure logging
         self._setup_logging()
 
+        # Setup node group and hardware ranks
+        self._setup_hardware()
+
+        # Setup worker info
+        self._setup_worker_info()
+
         # Init ray and managers
         self._manager_proxy = None
         self._collective = None
-        self._init_ray_and_managers()
+        self._setup_managers()
 
         # Setup MASTER_ADDR and MASTER_PORT
         self._setup_master_address_and_port()
-
-        # Setup node group and hardware ranks
-        self._setup_hardware()
 
         # Setup communication envs
         self._setup_comm_envs()
 
         self._lock = threading.Lock()
-
-        from .lock import DeviceLock
-
-        self._device_lock = DeviceLock(self)
-
         Worker.current_worker = self
         self._has_initialized = True
 
@@ -458,6 +473,11 @@ class Worker(metaclass=WorkerMeta):
         This is used to identify the worker in the WorkerGroup.
         """
         return self._worker_address
+
+    @property
+    def worker_info(self) -> "WorkerInfo":
+        """Get the WorkerInfo of the worker."""
+        return self._worker_info
 
     @property
     def manager_proxy(self):
@@ -717,6 +737,16 @@ class Worker(metaclass=WorkerMeta):
         """
         return self._worker_address.get_parent_rank()
 
+    def acquire_free_port(self):
+        """Safely acquire a free port on the current node without causing conflicts within the node."""
+        max_tries = 10000  # Retry up to 10000 times to find a free port
+        for _ in range(max_tries):
+            port = Cluster.find_free_port()
+            success = self._port_lock.acquire(port)
+            if success:
+                return port
+        raise RuntimeError(f"Failed to acquire a free port after {max_tries} attempts.")
+
     def log_on_first_rank(self, msg):
         """Log a message only on the first rank of the worker group."""
         if self._rank == 0:
@@ -772,6 +802,50 @@ class Worker(metaclass=WorkerMeta):
             duration = time.perf_counter() - start_time
             self._timer_metrics[tag] = self._timer_metrics.get(tag, 0.0) + duration
 
+    @staticmethod
+    def check_worker_alive(worker_name: str) -> bool:
+        """Check if a worker is alive.
+
+        Args:
+            worker_name (str): The name of the worker to check.
+
+        Returns:
+            bool: True if the worker is alive, False otherwise.
+        """
+        try:
+            # Internally, Ray uses HTTP to query the actor states
+            # Set no-proxy for ray address in case HTTP_PROXY is set in the environment
+            ray_address = ray.dashboard.utils.get_address_for_submission_client(None)
+            if "http://" in ray_address:
+                ray_address = ray_address.replace("http://", "")
+            elif "https://" in ray_address:
+                ray_address = ray_address.replace("https://", "")
+            if ":" in ray_address:
+                ray_address = ray_address.split(":")[0]
+            prev_no_proxy_upper = os.environ.get("NO_PROXY", None)
+            prev_no_proxy_lower = os.environ.get("no_proxy", None)
+            os.environ["NO_PROXY"] = ray_address
+            os.environ["no_proxy"] = ray_address
+
+            actors = ray.util.state.list_actors(filters=[("NAME", "=", worker_name)])
+
+            if prev_no_proxy_upper is not None:
+                os.environ["NO_PROXY"] = prev_no_proxy_upper
+            else:
+                os.environ.pop("NO_PROXY", None)
+            if prev_no_proxy_lower is not None:
+                os.environ["no_proxy"] = prev_no_proxy_lower
+            else:
+                os.environ.pop("no_proxy", None)
+
+            if len(actors) == 0:
+                return False
+            actor_info = actors[0]
+            return actor_info.state != "DEAD"
+        except Exception:
+            # Simply treat the worker as alive if any unexpected error occurs during state query
+            return True
+
     def _check_initialized(self):
         """Check if the Worker has been initialized.
 
@@ -782,18 +856,10 @@ class Worker(metaclass=WorkerMeta):
                 "Worker has not been initialized. Please call Worker.__init__(self) in your class's __init__ method."
             )
 
-    def _init_ray_and_managers(self):
+    def _setup_managers(self):
         """When the Worker is not a Ray actor, we need to initialize Ray if it is not already initialized."""
         from ..collective import Collective
         from ..manager import WorkerManager
-
-        if not ray.is_initialized():
-            # Initialize Ray if not already initialized
-            ray.init(
-                address="auto",
-                namespace=Cluster.NAMESPACE,
-                logging_level=Cluster.LOGGING_LEVEL,
-            )
 
         if (
             self._manager_proxy is None
@@ -801,9 +867,7 @@ class Worker(metaclass=WorkerMeta):
             or Worker.PID != os.getpid()
         ):
             self._manager_proxy = WorkerManager.get_proxy()
-            self._manager_proxy.register_worker(
-                self._worker_address, self._get_worker_info()
-            )
+            self._manager_proxy.register_worker(self._worker_address, self._worker_info)
             self._collective = Collective(self)
 
             Worker.PID = os.getpid()
@@ -984,11 +1048,11 @@ class Worker(metaclass=WorkerMeta):
         workers = [self._worker_address, peer_addr]
         # Ensure the order is the same with the same two ranks
         workers = sorted(workers, key=lambda x: x.get_name())
-        self._init_ray_and_managers()
+        self._setup_managers()
         with self._lock:
             return self._collective.create_collective_group(workers)
 
-    def _get_worker_info(self):
+    def _setup_worker_info(self):
         """Get the worker information for local access.
 
         This method is used to retrieve the worker properties without calling remote functions.
@@ -997,11 +1061,11 @@ class Worker(metaclass=WorkerMeta):
             self._actor = ray.get_actor(self._worker_name, namespace=Cluster.NAMESPACE)
 
         node_ip = ray.util.get_node_ip_address()
-        node_port = Cluster.find_free_port()
+        node_port = self.acquire_free_port()
 
         from ..manager import WorkerInfo
 
-        return WorkerInfo(
+        self._worker_info = WorkerInfo(
             address=self._worker_address,
             rank=self._rank,
             cluster_node_rank=self._cluster_node_rank,
@@ -1010,4 +1074,5 @@ class Worker(metaclass=WorkerMeta):
             node_ip=node_ip,
             node_port=node_port,
             available_accelerators=self.global_accelerator_ids,
+            hardware_infos=self.hardware_infos,
         )

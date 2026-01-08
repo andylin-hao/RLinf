@@ -80,6 +80,13 @@ class ProducerWorker(Worker):
     def put_nowait(self, channel: Channel, item: Any):
         channel.put_nowait(item, key="nowait")
 
+    def test_memory(self, channel: Channel):
+        large_tensor = torch.randn(512, 1024, 1024, device=get_device())
+        channel.put(large_tensor)
+        channel.put(large_tensor, async_op=True).wait()
+        channel.put_nowait(large_tensor)
+        channel.put(large_tensor, weight=1)
+
     async def stress(self, channel: Channel, num_items: int):
         data = []
         for i in range(num_items):
@@ -160,6 +167,14 @@ class ConsumerWorker(Worker):
 
     def get_qsize(self, channel: Channel):
         return channel.qsize()
+
+    def test_memory(self, channel: Channel):
+        channel.get()
+        channel.get(async_op=True).wait()
+        while channel.empty():
+            pass
+        channel.get_nowait()
+        channel.get_batch(target_weight=1)
 
     def is_empty(self, channel: Channel):
         return channel.empty()
@@ -408,6 +423,18 @@ class TestChannel:
 
         data = producer.stress_multiple_queues(channel, num_items).wait()[0]
         assert data == list(range(num_items))
+
+    def test_peek_all(self, channel: Channel):
+        """Tests the peek_all method of the channel."""
+        while channel.qsize() > 0:
+            channel.get()
+
+        test_items = ["item1", "item2", "item3"]
+        for item in test_items:
+            channel.put(item)
+
+        item_str = str(channel)
+        assert all(item in item_str for item in test_items)
 
     def _assert_equal(self, received: Any, expected: Any):
         """Helper to compare various data types."""

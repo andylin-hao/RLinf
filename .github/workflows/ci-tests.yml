@@ -1,10 +1,6 @@
 name: CI Test
 
 on:
-  push:
-    branches:
-      - "release/v[0-9]*.[0-9]*"
-      - main
   pull_request:
     branches:
       - "release/v[0-9]*.[0-9]*"
@@ -68,6 +64,8 @@ jobs:
               - '.github/workflows/docker-build.yml'
             shared_filter: &shared
               - *install
+              - 'rlinf/data/**'
+              - 'rlinf/algorithms/**'
               - 'rlinf/scheduler/**'
               - 'rlinf/utils/**'
               - 'rlinf/workers/actor/**'
@@ -86,7 +84,7 @@ jobs:
               - 'rlinf/workers/env/**'
               - 'rlinf/models/embodiment/**'
               - 'rlinf/models/worldmodel/**'
-              - 'rlinf/runners/embodied_*.py'
+              - 'rlinf/runners/*embodied*.py'
               - 'examples/embodiment/**'
               - 'tests/e2e_tests/embodied/**'
               - '.github/workflows/embodied-e2e-tests.yml'
@@ -97,9 +95,12 @@ jobs:
               - 'rlinf/runners/agent_runner.py'
               - 'rlinf/runners/reasoning_runner.py'
               - 'rlinf/runners/coding_online_rl_runner.py'
+              - 'rlinf/runners/agent_eval_runner.py'
+              - 'rlinf/runners/reasoning_eval_runner.py'
               - 'examples/coding_online_rl/**'
               - 'examples/multiturn_demo/**'
               - 'examples/reasoning/**'
+              - 'examples/searchr1/**'
               - 'tests/e2e_tests/agent/**'
               - 'tests/e2e_tests/coding_online_rl/**'
               - 'tests/e2e_tests/reasoning/**'

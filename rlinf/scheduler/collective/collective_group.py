@@ -107,7 +107,10 @@ class CollectiveWorkQueue:
                 self._logger.debug(
                     f"Async {'send' if self._type == CollectiveWorkQueue.SEND else 'recv'} ID {comm_id} begins"
                 )
+
                 work(None)
+                work = None  # The reference to work is released here to avoid potential memory leak
+
                 self._logger.debug(
                     f"Async {'send' if self._type == CollectiveWorkQueue.SEND else 'recv'} ID {comm_id} done"
                 )
@@ -499,7 +502,7 @@ class CollectiveGroup:
             from ..cluster import Cluster
 
             if self._rank == 0:
-                master_port = Cluster.find_free_port()
+                master_port = self._worker.acquire_free_port()
                 self._coll_manager.set_master_port_info(
                     self._group_info.group_name, master_port
                 )

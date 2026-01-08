@@ -443,7 +443,11 @@ class Channel:
                 self._channel_name, 0, async_op=True
             )
             if async_op:
-                return AsyncChannelCommWork(async_comm_work, query_id)
+                return AsyncChannelCommWork(
+                    async_comm_work=async_comm_work,
+                    query_id=query_id,
+                    channel_actor=self._channel_worker_actor,
+                )
             else:
                 async_channel_work.wait()
                 # query_id, data
@@ -554,7 +558,11 @@ class Channel:
                 self._channel_name, 0, async_op=True
             )
             if async_op:
-                return AsyncChannelCommWork(async_comm_work, query_id)
+                return AsyncChannelCommWork(
+                    async_comm_work=async_comm_work,
+                    query_id=query_id,
+                    channel_actor=self._channel_worker_actor,
+                )
             else:
                 async_channel_work.wait()
                 # query_id, data
@@ -582,11 +590,16 @@ class Channel:
             When a key is given, the channel will look for the item in the queue associated with that key.
         """
         if self._local_channel is not None:
-            return str(self._local_channel.get_all(key))
-        async_work = AsyncChannelCommWork(
-            self._channel_worker_actor.get_all.remote(key=key)
+            return str(self._local_channel.peek_all(key))
+        get_kwargs = {"key": key}
+        async_channel_work = AsyncChannelWork(
+            channel_name=self._channel_name,
+            channel_key=key,
+            channel_actor=self._channel_worker_actor,
+            method="peek_all",
+            **get_kwargs,
         )
-        items = async_work.wait()
+        items = async_channel_work.wait()
         return str(items)
 
     def __setstate__(self, state_dict: dict[str, Any]):

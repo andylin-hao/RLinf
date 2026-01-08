@@ -12,10 +12,23 @@ TEST_BUILD=${TEST_BUILD:-0}
 # Absolute path to this script (resolves symlinks)
 SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
+USE_MIRRORS=0
+GITHUB_PREFIX=""
 
-SUPPORTED_TARGETS=("embodied" "reason")
+SUPPORTED_TARGETS=("embodied" "reason" "docs")
 SUPPORTED_MODELS=("openvla" "openvla-oft" "openpi" "gr00t")
-SUPPORTED_ENVS=("behavior" "maniskill_libero" "metaworld" "calvin" "isaaclab" "robocasa")
+SUPPORTED_ENVS=("behavior" "maniskill_libero" "metaworld" "calvin" "isaaclab" "robocasa" "franka")
+
+# Ensure uv is installed
+if ! command -v uv &> /dev/null; then
+    echo "uv command not found. Installing uv..."
+    # Check if pip is available
+    if ! command -v pip &> /dev/null; then
+        echo "pip command not found. Please install pip first." >&2
+        exit 1
+    fi
+    pip install uv
+fi
 
 #=======================Utility Functions=======================
 
@@ -26,6 +39,7 @@ Usage: bash install.sh <target> [options]
 Targets:
     embodied               Install embodied model and envs (default).
     reason                 Install reasoning stack (Megatron etc.).
+    docs                   Install documentation requirements.
 
 Options (for target=embodied):
     --model <name>         Embodied model to install: ${SUPPORTED_MODELS[*]}.
@@ -34,6 +48,7 @@ Options (for target=embodied):
 Common options:
     -h, --help             Show this help message and exit.
     --venv <dir>           Virtual environment directory name (default: .venv).
+    --use-mirror           Use mirrors for faster downloads.
 EOF
 }
 
@@ -73,6 +88,10 @@ parse_args() {
                 ENV_NAME="${2:-}"
                 shift 2
                 ;;
+            --use-mirror)
+                USE_MIRRORS=1
+                shift
+                ;;
             --*)
                 echo "Unknown option: $1" >&2
                 echo "Use --help to see available options." >&2
@@ -96,6 +115,25 @@ parse_args() {
     fi
 }
 
+setup_mirror() {
+    if [ "$USE_MIRRORS" -eq 1 ]; then
+        export UV_PYTHON_INSTALL_MIRROR=https://ghfast.top/https://github.com/astral-sh/python-build-standalone/releases/download
+        export UV_DEFAULT_INDEX=https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
+        export HF_ENDPOINT=https://hf-mirror.com
+        export GITHUB_PREFIX="https://ghfast.top/"
+        git config --global url."${GITHUB_PREFIX}github.com/".insteadOf "https://github.com/"
+    fi
+}
+
+unset_mirror() {
+    if [ "$USE_MIRRORS" -eq 1 ]; then
+        unset UV_PYTHON_INSTALL_MIRROR
+        unset UV_DEFAULT_INDEX
+        unset HF_ENDPOINT
+        git config --global --unset url."${GITHUB_PREFIX}github.com/".insteadOf
+    fi
+}
+
 create_and_sync_venv() {
     uv venv "$VENV_DIR" --python "$PYTHON_VERSION"
     # shellcheck disable=SC1090
@@ -106,7 +144,7 @@ create_and_sync_venv() {
 install_prebuilt_flash_attn() {
     # Base release info – adjust when bumping flash-attn
     local flash_ver="2.7.4.post1"
-    local base_url="https://github.com/Dao-AILab/flash-attention/releases/download/v${flash_ver}"
+    local base_url="${GITHUB_PREFIX}https://github.com/Dao-AILab/flash-attention/releases/download/v${flash_ver}"
 
     # Detect Python tags
     local py_major py_minor
@@ -157,7 +195,8 @@ EOF
 
 install_prebuilt_apex() {
     # Example URL: https://github.com/RLinf/apex/releases/download/25.09/apex-0.1-cp311-cp311-linux_x86_64.whl
-    local base_url="https://github.com/RLinf/apex/releases/download/25.09"
+    local base_url="${GITHUB_PREFIX}https://github.com/RLinf/apex/releases/download/25.09"
+
     local py_major py_minor
     py_major=$(python - <<'EOF'
 import sys
@@ -223,8 +262,6 @@ install_common_embodied_deps() {
 
 install_openvla_model() {
     case "$ENV_NAME" in
-        "")
-            ;;
         maniskill_libero)
             create_and_sync_venv
             install_common_embodied_deps
@@ -235,20 +272,18 @@ install_openvla_model() {
             exit 1
             ;;
     esac
-    UV_TORCH_BACKEND=auto uv pip install -r $SCRIPT_DIR/embodied/models/openvla.txt --no-build-isolation
+    uv pip install git+${GITHUB_PREFIX}https://github.com/openvla/openvla.git --no-build-isolation
     install_prebuilt_flash_attn
     uv pip uninstall pynvml || true
 }
 
 install_openvla_oft_model() {
     case "$ENV_NAME" in
-        "")
-            ;;
         behavior)
             PYTHON_VERSION="3.10"
             create_and_sync_venv
             install_common_embodied_deps
-            UV_TORCH_BACKEND=auto uv pip install -r $SCRIPT_DIR/embodied/models/openvla_oft.txt --no-build-isolation
+            uv pip install git+${GITHUB_PREFIX}https://github.com/moojink/openvla-oft.git  --no-build-isolation
             install_behavior_env
             ;;
         maniskill_libero)
@@ -256,7 +291,7 @@ install_openvla_oft_model() {
             install_common_embodied_deps
             install_maniskill_libero_env
             install_prebuilt_flash_attn
-            UV_TORCH_BACKEND=auto uv pip install -r $SCRIPT_DIR/embodied/models/openvla_oft.txt --no-build-isolation
+            uv pip install git+${GITHUB_PREFIX}https://github.com/moojink/openvla-oft.git  --no-build-isolation
             ;;
         *)
             echo "Environment '$ENV_NAME' is not supported for OpenVLA-OFT model." >&2
@@ -268,33 +303,31 @@ install_openvla_oft_model() {
 
 install_openpi_model() {
     case "$ENV_NAME" in
-        "")
-            ;;
         maniskill_libero)
             create_and_sync_venv
             install_common_embodied_deps
             install_maniskill_libero_env
-            UV_TORCH_BACKEND=auto GIT_LFS_SKIP_SMUDGE=1 uv pip install -r $SCRIPT_DIR/embodied/models/openpi.txt
+            uv pip install git+${GITHUB_PREFIX}https://github.com/RLinf/openpi
             install_prebuilt_flash_attn
             ;;
         metaworld)
             create_and_sync_venv
             install_common_embodied_deps
-            UV_TORCH_BACKEND=auto GIT_LFS_SKIP_SMUDGE=1 uv pip install -r $SCRIPT_DIR/embodied/models/openpi.txt
+            uv pip install git+${GITHUB_PREFIX}https://github.com/RLinf/openpi
             install_prebuilt_flash_attn
             install_metaworld_env
             ;;
         calvin)
             create_and_sync_venv
             install_common_embodied_deps
-            UV_TORCH_BACKEND=auto GIT_LFS_SKIP_SMUDGE=1 uv pip install -r $SCRIPT_DIR/embodied/models/openpi.txt
+            uv pip install git+${GITHUB_PREFIX}https://github.com/RLinf/openpi
             install_prebuilt_flash_attn
             install_calvin_env
             ;;
         robocasa)
             create_and_sync_venv
             install_common_embodied_deps
-            UV_TORCH_BACKEND=auto GIT_LFS_SKIP_SMUDGE=1 uv pip install -r $SCRIPT_DIR/embodied/models/openpi.txt
+            uv pip install git+${GITHUB_PREFIX}https://github.com/RLinf/openpi
             install_prebuilt_flash_attn
             install_robocasa_env
             ;;
@@ -327,8 +360,6 @@ install_gr00t_model() {
     uv pip install -e "$gr00t_path" --no-deps
     uv pip install -r $SCRIPT_DIR/embodied/models/gr00t.txt
     case "$ENV_NAME" in
-        "")
-            ;;
         maniskill_libero)
             install_maniskill_libero_env
             install_prebuilt_flash_attn
@@ -347,6 +378,24 @@ install_gr00t_model() {
     uv pip uninstall pynvml || true
 }
 
+install_env_only() {
+    create_and_sync_venv
+    SKIP_ROS=${SKIP_ROS:-0}
+    case "$ENV_NAME" in
+        franka)
+            uv sync --extra franka --active
+            if [ "$SKIP_ROS" -ne 1 ]; then
+                bash $SCRIPT_DIR/embodied/ros_install.sh
+                install_franka_env
+            fi
+            ;;
+        *)
+            echo "Environment '$ENV_NAME' is not supported for env-only installation." >&2
+            exit 1
+            ;;
+    esac
+}
+
 #=======================ENV INSTALLERS=======================
 
 install_maniskill_libero_env() {
@@ -356,7 +405,7 @@ install_maniskill_libero_env() {
 
     uv pip install -e "$libero_dir"
     echo "export PYTHONPATH=$(realpath "$libero_dir"):\$PYTHONPATH" >> "$VENV_DIR/bin/activate"
-    uv pip install -r $SCRIPT_DIR/embodied/envs/maniskill.txt
+    uv pip install git+${GITHUB_PREFIX}https://github.com/haosulab/ManiSkill.git@v3.0.0b22
 
     # Maniskill assets
     bash $SCRIPT_DIR/embodied/download_assets.sh --assets maniskill
@@ -380,7 +429,7 @@ install_behavior_env() {
 }
 
 install_metaworld_env() {
-    uv pip install -r $SCRIPT_DIR/embodied/envs/metaworld.txt
+    uv pip install metaworld==3.0.0
 }
 
 install_calvin_env() {
@@ -388,8 +437,8 @@ install_calvin_env() {
     calvin_dir=$(clone_or_reuse_repo CALVIN_PATH "$VENV_DIR/calvin" https://github.com/mees/calvin.git --recurse-submodules)
 
     uv pip install wheel cmake==3.18.4 setuptools==57.5.0
-    # NOTE: Use a forker version of pyfasthash that fixes install on Python 3.11
-    uv pip install git+https://github.com/RLinf/pyfasthash.git --no-build-isolation
+    # NOTE: Use a fork version of pyfasthash that fixes install on Python 3.11
+    uv pip install git+${GITHUB_PREFIX}https://github.com/RLinf/pyfasthash.git --no-build-isolation
     uv pip install -e ${calvin_dir}/calvin_env/tacto
     uv pip install -e ${calvin_dir}/calvin_env
     uv pip install -e ${calvin_dir}/calvin_models
@@ -414,6 +463,58 @@ install_robocasa_env() {
     python -m robocasa.scripts.setup_macros
 }
 
+install_franka_env() {
+    # Install serl_franka_controller
+    # Check if ROS_CATKIN_PATH is set or serl_franka_controllers is already built
+    set +euo pipefail
+    source /opt/ros/noetic/setup.bash
+    set -euo pipefail
+    ROS_CATKIN_PATH=$(realpath "$VENV_DIR/franka_catkin_ws")
+    LIBFRANKA_VERSION=${LIBFRANKA_VERSION:-0.15.0}
+    FRANKA_ROS_VERSION=${FRANKA_ROS_VERSION:-0.10.0}
+
+    mkdir -p "$ROS_CATKIN_PATH/src"
+
+    # Clone necessary repositories
+    pushd "$ROS_CATKIN_PATH/src"
+    if [ ! -d "$ROS_CATKIN_PATH/src/serl_franka_controllers" ]; then
+        git clone https://github.com/rail-berkeley/serl_franka_controllers
+    fi
+    if [ ! -d "$ROS_CATKIN_PATH/libfranka" ]; then
+        git clone -b "${LIBFRANKA_VERSION}" --recurse-submodules https://github.com/frankaemika/libfranka $ROS_CATKIN_PATH/libfranka
+    fi
+    if [ ! -d "$ROS_CATKIN_PATH/src/franka_ros" ]; then
+        # Use a fork version that fixes compile issues with newer libfranka using C++17
+        git clone -b "${FRANKA_ROS_VERSION}" --recurse-submodules https://github.com/RLinf/franka_ros
+    fi
+    popd >/dev/null
+
+    # Build
+    pushd "$ROS_CATKIN_PATH"
+    # libfranka first
+    if [ ! -f "$ROS_CATKIN_PATH/libfranka/build/libfranka.so" ]; then
+        mkdir -p "$ROS_CATKIN_PATH/libfranka/build"
+        pushd "$ROS_CATKIN_PATH/libfranka/build" >/dev/null
+        cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=/opt/openrobots/lib/cmake -DBUILD_TESTS=OFF ..
+        make -j$(nproc)
+        popd >/dev/null
+    fi
+    export LD_LIBRARY_PATH=$ROS_CATKIN_PATH/libfranka/build:/opt/openrobots/lib:$LD_LIBRARY_PATH
+    export CMAKE_PREFIX_PATH=$ROS_CATKIN_PATH/libfranka/build:$CMAKE_PREFIX_PATH
+
+    # Then franka_ros
+    catkin_make -DCMAKE_BUILD_TYPE=Release -DFranka_DIR:PATH=$ROS_CATKIN_PATH/libfranka/build --pkg franka_ros
+
+    # Finally serl_franka_controllers
+    catkin_make -DCMAKE_CXX_STANDARD=17 --pkg serl_franka_controllers
+    popd >/dev/null
+
+    echo "export LD_LIBRARY_PATH=$ROS_CATKIN_PATH/libfranka/build:/opt/openrobots/lib:\$LD_LIBRARY_PATH" >> "$VENV_DIR/bin/activate"
+    echo "export CMAKE_PREFIX_PATH=$ROS_CATKIN_PATH/libfranka/build:\$CMAKE_PREFIX_PATH" >> "$VENV_DIR/bin/activate"
+    echo "source /opt/ros/noetic/setup.bash" >> "$VENV_DIR/bin/activate"
+    echo "source $ROS_CATKIN_PATH/devel/setup.bash" >> "$VENV_DIR/bin/activate"
+}
+
 #=======================REASONING INSTALLER=======================
 
 install_reason() {
@@ -436,19 +537,27 @@ install_reason() {
     uv pip uninstall pynvml || true
 }
 
+#=======================DOCUMENTATION INSTALLER=======================
+
+install_docs() {
+    uv sync --extra sglang-vllm --active
+    uv sync --extra embodied --active --inexact
+    uv pip install -r $SCRIPT_DIR/docs/requirements.txt
+    uv pip uninstall pynvml || true
+}
+
 main() {
     parse_args "$@"
+    setup_mirror
 
     case "$TARGET" in
         embodied)
-            if [ -z "$MODEL" ]; then
-                echo "--model is required when target=embodied. Supported models: ${SUPPORTED_MODELS[*]}" >&2
-                exit 1
-            fi
-            # validate model
-            if [[ ! " ${SUPPORTED_MODELS[*]} " =~ " $MODEL " ]]; then
-                echo "Unknown embodied model: $MODEL. Supported models: ${SUPPORTED_MODELS[*]}" >&2
-                exit 1
+            # validate --model
+            if [ -n "$MODEL" ]; then
+                if [[ ! " ${SUPPORTED_MODELS[*]} " =~ " $MODEL " ]]; then
+                    echo "Unknown embodied model: $MODEL. Supported models: ${SUPPORTED_MODELS[*]}" >&2
+                    exit 1
+                fi
             fi
             # check --env is set and supported
             if [ -n "$ENV_NAME" ]; then
@@ -474,11 +583,18 @@ main() {
                 gr00t)
                     install_gr00t_model
                     ;;
+                "")
+                    install_env_only
+                    ;;
             esac
             ;;
         reason)
             create_and_sync_venv
             install_reason
+            ;;
+        docs)
+            create_and_sync_venv
+            install_docs
             ;;
         *)
 			echo "Unknown target: $TARGET" >&2
@@ -486,6 +602,8 @@ main() {
             exit 1
             ;;
     esac
+
+    unset_mirror
 }
 
 main "$@"

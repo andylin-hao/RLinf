@@ -361,7 +361,12 @@ class AsyncChannelCommWork(AsyncWork):
     channel_data_store: dict[int, Future] = {}
     store_lock = threading.Lock()  # Protect store access
 
-    def __init__(self, async_comm_work: AsyncWork, query_id: int):
+    def __init__(
+        self,
+        async_comm_work: AsyncWork,
+        query_id: int,
+        channel_actor: ray.actor.ActorHandle,
+    ):
         """Initialize the AsyncChannelWork with a async recv comm of the get operation.
 
         A query_id should be provided to identify the data get query.
@@ -372,12 +377,14 @@ class AsyncChannelCommWork(AsyncWork):
         Args:
             async_comm_work (AsyncWork): The async communication work to wrap.
             query_id (int): The query ID to associate with the work.
+            channel_actor (ray.actor.ActorHandle): The actor handle for the channel.
 
         """
         self._async_comm_work = async_comm_work
         # The async_comm_work's value is not necessarily the data of the get query associated with the query_id
         # Only when the query_id's Future is set is the data available
         self._query_id = query_id
+        self._channel_actor = channel_actor
         with AsyncChannelCommWork.store_lock:
             if query_id not in AsyncChannelCommWork.channel_data_store:
                 AsyncChannelCommWork.channel_data_store[query_id] = Future()

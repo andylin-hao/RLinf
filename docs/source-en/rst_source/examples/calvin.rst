@@ -35,6 +35,15 @@ Environment
 - **Task Descriptions**: Natural-language instructions  
 - **Actions**: Normalized continuous values
 - **Rewards**: 0/1 rewards based on subtask completion
+- **Scene**: According to the `Calvin paper <https://arxiv.org/pdf/2112.03227>`_, different environments feature distinct textures, and the positions of all static elements—such as sliding doors, drawers, light buttons, and switches—also vary. However, the positions of the table, robot, and static camera remain identical across all environments, and the colors and shapes of these objects are consistent.
+- **The CALVIN Challenge**: As described in the `Calvin paper <https://arxiv.org/pdf/2112.03227>`_,
+   The training set for the `Single Environment` setting is `scene D`, and the eval set is `scene D`, denoted as D→D;
+   The training set for the `Multi Environment` setting is `scene A B C D`, and the eval set is `scene D`, denoted as A,B,C,D→D;
+   The training set for the `Zero-Shot Multi Environment` setting is `scene A B C`, and the eval set is `scene D`, denoted as A,B,C→D;
+
+.. note::
+
+   Please note that we have modified the YAML files for scene A and scene C here. The original repository calvin contained some incorrect settings for these two configuration files, which we have corrected in RLinf. You can use them with confidence. See this `issue <https://github.com/mees/calvin/issues/41>`_ for details.
 
 Algorithm
 ---------
@@ -61,9 +70,33 @@ Algorithm
 Dependencies Installation
 -------------------------
 
+1. Clone RLinf Repository
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code:: bash
+
+   # For mainland China users, you can use the following for better download speed:
+   # git clone https://ghfast.top/github.com/RLinf/RLinf.git
+   git clone https://github.com/RLinf/RLinf.git
+   cd RLinf
+
+2. Install Dependencies
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 **Option 1: Docker Image**
 
-Use the Docker image ``rlinf/rlinf:agentic-rlinf0.1-calvin`` for the experiment.
+Use Docker image for the experiment.
+
+.. code:: bash
+
+   docker run -it --rm --gpus all \
+      --shm-size 20g \
+      --network host \
+      --name rlinf \
+      -v .:/workspace/RLinf \
+      rlinf/rlinf:agentic-rlinf0.1-calvin
+      # For mainland China users, you can use the following for better download speed:
+      # docker.1ms.run/rlinf/rlinf:agentic-rlinf0.1-calvin
 
 **Option 2: Custom Environment**
 
@@ -71,7 +104,8 @@ Install dependencies directly in your environment by running the following comma
 
 .. code:: bash
 
-   pip install uv
+   # For mainland China users, you can add the `--use-mirror` flag to the install.sh command for better download speed.
+
    bash requirements/install.sh embodied --model openpi --env calvin
    source .venv/bin/activate
 
@@ -85,13 +119,15 @@ Before starting training, you need to download the corresponding pretrained mode
    # Download models (choose either method)
    # Method 1: Using git clone
    git lfs install
-   git clone https://huggingface.co/RLinf/RLinf-Pi0-CALVIN-ABC-D
-   git clone https://huggingface.co/RLinf/RLinf-Pi05-CALVIN-ABC-D
+   git clone https://huggingface.co/RLinf/RLinf-Pi0-CALVIN-ABC-D-SFT
+   git clone https://huggingface.co/RLinf/RLinf-Pi05-CALVIN-ABC-D-SFT
 
    # Method 2: Using huggingface-hub
+   # For mainland China users, you can use the following for better download speed:
+   # export HF_ENDPOINT=https://hf-mirror.com
    pip install huggingface-hub
-   hf download RLinf/RLinf-Pi0-CALVIN-ABC-D --local-dir RLinf-Pi0-CALVIN-ABC-D
-   hf download RLinf/RLinf-Pi05-CALVIN-ABC-D --local-dir RLinf-Pi05-CALVIN-ABC-D
+   hf download RLinf/RLinf-Pi0-CALVIN-ABC-D-SFT --local-dir RLinf-Pi0-CALVIN-ABC-D-SFT
+   hf download RLinf/RLinf-Pi05-CALVIN-ABC-D-SFT --local-dir RLinf-Pi05-CALVIN-ABC-D-SFT
 
 After downloading, make sure to correctly specify the model path in the configuration yaml file.
 
@@ -112,9 +148,9 @@ Running the Script
    rollout:
       pipeline_stage_num: 2
 
-You can flexibly configure the GPU count for env, rollout, and actor components. Using the above configuration, you can achieve pipeline overlap between env and rollout, and sharing with actor.
+You can flexibly configure the GPU count for env, rollout, and actor components. 
 Additionally, by setting ``pipeline_stage_num = 2`` in the configuration,
-you can achieve pipeline overlap between rollout and actor, improving rollout efficiency.
+you can achieve pipeline overlap between rollout and env, improving rollout efficiency.
 
 .. code:: yaml
 

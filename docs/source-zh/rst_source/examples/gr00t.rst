@@ -31,7 +31,7 @@ GR00T-N1.5直接将环境提供的自然语言任务描述作为语言模型的�
 
 **数据结构**
 
-- **图像**：主视角和手腕视角的RGB张量，分别命名为“full_images”和“wrist_images”，形状为``[batch_size, 224, 224, 3]``
+- **图像**：主视角和手腕视角的RGB张量，分别命名为“main_images”和“wrist_images”，形状为``[batch_size, 224, 224, 3]``
 - **状态**：末端执行器的位置、姿态和夹爪状态
 - **任务描述**：自然语言指令
 - **奖励**：稀疏的成功/失败奖励
@@ -55,9 +55,33 @@ GR00T-N1.5直接将环境提供的自然语言任务描述作为语言模型的�
 依赖安装
 -----------------------
 
+1. 克隆 RLinf 仓库
+~~~~~~~~~~~~~~~~~~~~
+
+.. code:: bash
+
+   # 为提高国内下载速度，可以使用：
+   # git clone https://ghfast.top/github.com/RLinf/RLinf.git
+   git clone https://github.com/RLinf/RLinf.git
+   cd RLinf
+
+2. 安装依赖
+~~~~~~~~~~~~~~~~
+
 **选项 1：Docker 镜像**
 
-使用 Docker 镜像 ``rlinf/rlinf:agentic-rlinf0.1-torch2.6.0-openvla-openvlaoft-pi0`` 来运行实验。
+使用 Docker 镜像运行实验。
+
+.. code:: bash
+
+   docker run -it --rm --gpus all \
+      --shm-size 20g \
+      --network host \
+      --name rlinf \
+      -v .:/workspace/RLinf \
+      rlinf/rlinf:agentic-rlinf0.1-torch2.6.0-openvla-openvlaoft-pi0
+      # 如果需要国内加速下载镜像，可以使用：
+      # docker.1ms.run/rlinf/rlinf:agentic-rlinf0.1-torch2.6.0-openvla-openvlaoft-pi0
 
 请通过镜像内置的 `switch_env` 工具切换到对应的虚拟环境：
 
@@ -69,7 +93,8 @@ GR00T-N1.5直接将环境提供的自然语言任务描述作为语言模型的�
 
 .. code:: bash
 
-   pip install uv
+   # 为提高国内依赖安装速度，可以添加`--use-mirror`到下面的install.sh命令
+
    bash requirements/install.sh embodied --model gr00t --env maniskill_libero
    source .venv/bin/activate
 
@@ -88,6 +113,8 @@ GR00T-N1.5直接将环境提供的自然语言任务描述作为语言模型的�
    git clone https://huggingface.co/RLinf/RLinf-Gr00t-SFT-Spatial
 
    # 方法2：使用huggingface-hub
+   # 为提升国内下载速度，可以设置：
+   # export HF_ENDPOINT=https://hf-mirror.com
    pip install huggingface-hub
    hf download RLinf/RLinf-Gr00t-SFT-Spatial --local-dir RLinf-Gr00t-SFT-Spatial
 
@@ -152,7 +179,7 @@ GR00T-N1.5引入了DataConfig类，用于描述模型训练所需的所有信息
    rollout:
       pipeline_stage_num: 2
 
-在此处，您可以灵活配置env、rollout和actor组件的GPU数量。使用上述配置，您可以实现env与rollout之间的流水线重叠，并与actor共享资源。此外，通过在配置中设置``pipeline_stage_num = 2``，可以实现rollout与actor之间的流水线重叠，提高rollout效率。
+在此处，您可以灵活配置env、rollout和actor组件的GPU数量。此外，通过在配置中设置``pipeline_stage_num = 2``，可以实现rollout与env之间的流水线重叠，提高rollout效率。
 
 .. code:: yaml
 
