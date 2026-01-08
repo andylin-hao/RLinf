@@ -163,8 +163,6 @@ def get_fsdp_wrap_policy(module, config=None, is_lora=False, is_openvla_model=Fa
             module_classes={PrismaticProjector},
         )
         policies.append(prismatic_fsdp_wrapping_policy)
-
-        # Wrap flow_actor as a separate module to handle its nested structure
     
     # Wrap flow_actor as a separate module to handle its nested structure
     if hasattr(module, "flow_actor"):

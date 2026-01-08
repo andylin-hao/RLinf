@@ -17,5 +17,3 @@ outputs/*
 .venv
 uv.lock
 rlinf/envs/maniskill/assets
-
-*.pt
