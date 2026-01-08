@@ -18,12 +18,9 @@ from omegaconf import DictConfig, OmegaConf
 
 def get_model(cfg: DictConfig, torch_dtype=torch.bfloat16):
     '''
-    Get the FlowStatePolicy for now.
+    Get FlowStatePolicy for state-only input, or FlowPolicy for mixed input.
     cfg: All configs under [actor.model] in yaml file.
     '''
-    # print("--------------------------------------\n"*10)
-    # print("In rlinf/models/embodiment/flow_policy/__init__.py, cfg is:",cfg)
-    # print("--------------------------------------\n"*10)
 
     if cfg.input_type == "state":
         from rlinf.models.embodiment.flow_policy.flow_policy import FlowStateConfig, FlowStatePolicy
@@ -36,13 +33,6 @@ def get_model(cfg: DictConfig, torch_dtype=torch.bfloat16):
         model_config.update_from_dict(OmegaConf.to_container(cfg, resolve=True))
         model = FlowPolicy(model_config)
     else:
-        raise NotImplementedError(f"{cfg.input_type=}")
-        
-    print("--------------------------------------\n"*10)
-    print("In rlinf/models/embodiment/flow_policy/__init__.py, cfg is:",cfg)
-    print("get_model() returns:",model)
-    print("--------------------------------------\n"*10)
-
-    
+        raise NotImplementedError(f"{cfg.input_type=}")    
 
     return model

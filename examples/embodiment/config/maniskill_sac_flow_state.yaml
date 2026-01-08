@@ -1,5 +1,5 @@
 defaults:
-  - env/maniskill_pick_cube@env.train # 1. changed defaults
+  - env/maniskill_pick_cube@env.train
   - env/maniskill_pick_cube@env.eval
   - model/mlp_policy@actor.model # use the default yaml of model/mlp_policy.yaml
   - training_backend/fsdp@actor.fsdp_config
@@ -14,13 +14,11 @@ hydra:
 
 cluster:
   num_nodes: 1
-  num_gpus_per_node: 8
-  # component_placement:
-  #   actor, env, rollout: all
-  component_placement: # [修改] 指定使用单卡，否则在"租客"模式下必定继承已有ray cluster的卡数，导致world_size过大报错
-    actor: 5-5
-    env: 5-5
-    rollout: 5-5
+  num_gpus_per_node: 8 # define your gpu number per node
+  component_placement: 
+    actor: 0-0
+    env: 0-0
+    rollout: 0-0
 
 runner:
   task_type: embodied
@@ -36,27 +34,23 @@ runner:
   only_eval: False
   val_check_interval: 100
   save_interval: -1
-  # seq_length: 4096  # 2. deleted 
-  # max_prompt_length: 30
 
 algorithm:
   update_epoch: 32 # 3. added 'update_epoch'
-  # auto_reset: True # 4. deleted
-  # ignore_terminations: True
   use_fixed_reset_state_ids: False
   require_values: False  # SAC doesn't use value function for advantages
   normalize_advantages: False  # SAC doesn't use advantages
   obs_mode: state
   kl_penalty: kl
   group_size: 1
-  agg_q: min # 5. added 'agg_q'
+  agg_q: min  # same as maniskill_sac_mlp.yaml
 
   n_chunk_steps: 2
   n_eval_chunk_steps: 50
   # training rollout mbs
   num_group_envs: 32
   rollout_epoch: 1
-  eval_rollout_epoch: 1 # 6. added 'eval_rollout_epoch'
+  eval_rollout_epoch: 1 # same as maniskill_sac_mlp.yaml
 
   reward_type: action_level
   logprob_type: action_level
@@ -70,7 +64,7 @@ algorithm:
   loss_type: embodied_sac  # Use SAC loss functions with Gumbel-Softmax
   loss_agg_func: "token-mean"
 
-  bootstrap_type: always # 7. added 'bootstrap_type'
+  bootstrap_type: always # same as maniskill_sac_mlp.yaml
   
   # Gumbel-Softmax parameters
   use_gumbel_softmax: True  # Enable Gumbel-Softmax for differentiable discrete actions
@@ -78,11 +72,11 @@ algorithm:
   
   # SAC hyperparameters
   gamma: 0.8 # 0.96
-  tau: 0.005  # Soft update coefficient for target networks # [调参] 原0.005 向maniskil_sac_mlp对齐
+  tau: 0.005  # Soft update coefficient for target networks
   alpha: 0.2  # Temperature parameter (if not using auto-tuning)
   auto_entropy_tuning: True  # Enable automatic entropy tuning
-  alpha_type: softplus # 8. added 'alpha_type'
-  initial_alpha: 0.2  # Initial temperature value # [调参] 原0.2 向maniskil_sac_mlp对齐
+  alpha_type: softplus 
+  initial_alpha: 0.2  # Initial temperature value
   target_entropy: -4  # Target entropy (-action_dim)
   alpha_lr: 3.0e-4  # Learning rate for temperature parameter
 
@@ -97,7 +91,6 @@ algorithm:
 
   # params for rollout
   sampling_params:
-    # use_greedy: False # 9. deleted 'use_greedy' and added 'do_sample'
     do_sample: True
     temperature_train: 1.0
     temperature_eval: 0.6
@@ -119,7 +112,7 @@ env:
     queue_size: 0
   enable_offload: False
 
-  # 10. added 'train' and 'eval'. copied from maniskill_sac_mlp.yaml
+  # env.train and env.eval. same as maniskill_sac_mlp.yaml
   train:
     total_num_envs: 32
     auto_reset: True
@@ -154,7 +147,6 @@ rollout:
   enable_offload: False
   pipeline_stage_num: 1
 
-  # 11. added 'model'
   model:
     model_path: ""
     precision: ${actor.model.precision}
@@ -170,16 +162,14 @@ actor:
   checkpoint_load_path: ""
   checkpoint_save_path: "../results"
 
-  micro_batch_size: 512  # Smaller batch size for SAC # [调参] 原512 向maniskil_sac_mlp对齐
-  global_batch_size: 512   # Smaller global batch size # [调参] 原512 向maniskil_sac_mlp对齐
+  micro_batch_size: 512  # Smaller batch size for SAC. 1024 can also be considered
+  global_batch_size: 512   # Smaller global batch size
   seed: 1234
   enable_offload: False
 
   model:
-    # ?1 model_name or model_type?? 
-    # model_name: "flow_policy"  # Use flow matching model
     model_type: "flow_policy"
-    input_type: "state" # ['state', 'mixed'] # IMPORTANT: newly added param by shengyz, to distinguish FlowStatePolicy and FlowPolicy in get_model()
+    input_type: "state" # ['state', 'mixed']
     policy_setup: "panda-ee-dpos"
     obs_dim: 42
     action_dim: 4
@@ -207,18 +197,14 @@ actor:
     vh_mode: "q_network"
     q_network_separate_processing: True
 
-    # encoder_config: # 12. 'extra_config' rename to 'encoder_config'. Actually not used in FlowStatePolicy.
-    #   pretrained_ckpt_path: "./resnet10_pretrained.pt"
-
   optim:
     lr: 3.0e-4  # Lower learning rate for SAC
     value_lr: 3.0e-4  # Q-network learning rate
     adam_beta1: 0.9
     adam_beta2: 0.999
     adam_eps: 1.0e-08
-    clip_grad: 1.0 # [调参] 原1.0 向最新maniskil_sac_mlp对齐
+    clip_grad: 1.0 # 10.0 can also be considered
 
-  # 13. added 'fsdp_config'
   # Override the default values in training_backend/fsdp
   fsdp_config:
     strategy: "fsdp"

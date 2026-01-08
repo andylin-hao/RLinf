@@ -32,23 +32,14 @@ cluster:
       hardware:
         type: Franka
         configs:
-          - robot_ip: 10.100.25.107 # Replace with your robot's IP address
-            camera_serials: ["233622071355"]  # 单D435i  
-            # camera_serials: ["409122273937", "409122274720"] # 双D405 顺序和collect_data相同
-            # camera_serials: ["409122273937"]  # 单D405测试
+          - robot_ip: ROBOT_IP # Replace with your robot's IP address
             node_rank: 1
-            disable_validate: True
 
 data:
   type: robot_demo
   channel:
     name: demo_data
-  # path: "/home/franka/shengyz/RLinf/data_12312218.pkl"
-  # path: "/home/franka/shengyz/RLinf/data_01031105.pkl" # [修复 replay_buffer/size ] 0103
-  # path: "/home/franka/shengyz/RLinf/data_01041714.pkl" # 完整测试最新commit
-  # path: "/home/franka/shengyz/RLinf/data_01052140.pkl" # 0105 测试双D405
-  # path: "/home/franka/shengyz/RLinf/data_01062255.pkl" # 0106 换board和peg，再测试双D405 (机械臂抽风后恢复)
-  path: "/home/franka/shengyz/RLinf/data_01071754.pkl" # 0107 最普通单相机能看到peg太少，改俯视支架
+  path: "/path/to/demo_data"
 
 runner:
   task_type: embodied
@@ -64,8 +55,6 @@ runner:
   only_eval: False
   val_check_interval: -1
   save_interval: -1
-  # seq_length: 4096 # 在新版本删掉了，跟进！
-  # max_prompt_length: 30
 
 algorithm:
   update_epoch: 30
@@ -118,25 +107,9 @@ env:
     ignore_terminations: False
     total_num_envs: 1
     override_cfg:
-      # is_dummy: True # [shengyz临时修改12.29]
-      # camera_serials: ["0000", ]
+      is_dummy: False
       use_dense_reward: False
-      # target_ee_pose: [ 0.41941906,  0.28883845,  0.09072751, -3.14, -0.0, 0.41] # 和NUC上env里写死的一致 # 应对应相机朝人
-      # [ 0.41579175  0.28357548  0.09172824 -3.14087718 -0.02510057  0.42143215] # 相机朝后
-      # target_ee_pose: [4.14090120e-01 , 2.85933788e-01 , 9.16617132e-02 ,-3.13813420e+00 ,-2.60907004e-03 ,-2.69436444e+00] # 相机朝人
-      # [ 0.41343721  0.28894925  0.09237983 -3.13208132  0.02861022  2.57261437] # 相机朝人-再微朝左
-      # [0.41618152 0.28607053 0.09178186 3.11584795 0.01638882 1.58955859] # 相机朝左
-      # target_ee_pose: [ 0.4147261  , 0.28656645 , 0.0916012 ,  3.13545285, -0.01368772, -2.66266673] # 换黄色线后新获取 12-30-21-35
-      # target_ee_pose: [ 0.41548371 , 0.28824517 , 0.09228883 , -3.12852531 , 0.01178752 , -2.68800601] # 失败一次后再获取 12-30-22-25
-      # target_ee_pose: [ 0.41461746 , 0.28587428 , 0.09155119 , 3.12770918 , 0.01774508 , -2.68052265] # 12-31-00-09
-      # target_ee_pose: [ 0.41386361 , 0.28722714 , 0.09176794 , 3.13921051 , 0.00839917 , -2.64822138] # 12-31-10
-      # target_ee_pose: [ 0.41481496,  0.28566867,  0.09166707,  3.14085878, -0.00857106,  0.48939543] # 1231-1458
-      # target_ee_pose: [0.4148258,  0.28594002, 0.09284807, 3.13906755, 0.00436782, 0.49189969] # 1231-22 新相机架
-      # target_ee_pose: [ 0.41330635,  0.28391217,  0.09154761, -3.13590897, -0.01810676,  0.45635886] # [shengyz修改] 0103
-      # target_ee_pose: [ 0.41698629,  0.28652657,  0.09155042, -3.13624991, -0.02305444,  0.46411813] # 0104-17 # 测试最新commit
-      # target_ee_pose: [ 4.15604618e-01,  2.84799782e-01,  9.03269719e-02, -3.12346426e+00, -3.97273384e-04,  4.38571845e-01] # 0105 测试双D405
-      # target_ee_pose: [ 0.41663761, 0.29212138, 0.05575967, 3.13819159, -0.00879289, 0.42918636] # 0106 换board和peg，再测试双D405 (机械臂抽风后恢复)
-      target_ee_pose: [ 0.41550194,  0.29121122,  0.0579681,   3.13840229, -0.02567941,  0.48478801] # 0107 最普通单相机能看到peg太少，改俯视支架
+      target_ee_pose: TARGET_EE_POSE # Replace with your target end-effector pose
 
 rollout:
   group_name: "RolloutGroup"
@@ -146,7 +119,7 @@ rollout:
   pipeline_stage_num: 1
 
   model:
-    model_path: "/home/franka/hongzhi/RLinf/"
+    model_path: "/path/to/model"
     precision: ${actor.model.precision}
     num_q_heads: 10
 
@@ -160,10 +133,9 @@ actor:
   enable_offload: False
 
   model:
-    model_path: "/home/franka/hongzhi/RLinf/"
+    model_path: "/path/to/model"
     state_dim: 19
     action_dim: 6
-    image_num: 1  # [0105] override image_num=1 in cnn_policy.py
 
   optim:
     lr: 3.0e-4  # Lower learning rate for SAC

@@ -1,7 +1,7 @@
 defaults:
   - env/maniskill_pick_cube@env.train
   - env/maniskill_pick_cube@env.eval
-  - model/flow_policy@actor.model # cannot use the mlp_policy.yaml, because it's for state input
+  - model/flow_policy@actor.model # specilized for mixed input
   - training_backend/fsdp@actor.fsdp_config
   - override hydra/job_logging: stdout
 
@@ -34,8 +34,6 @@ runner:
   only_eval: False
   val_check_interval: 100
   save_interval: -1
-  # seq_length: 4096
-  # max_prompt_length: 30
 
 algorithm:
   update_epoch: 32
@@ -75,9 +73,9 @@ algorithm:
   gumbel_temperature: 1.0   # Temperature for Gumbel-Softmax sampling
   
   # SAC hyperparameters
-  gamma: 0.8 # 0.96
+  gamma: 0.96
   tau: 0.005  # Soft update coefficient for target networks
-  # alpha: 0.2  # Temperature parameter (if not using auto-tuning)
+  alpha: 0.2  # Temperature parameter (if not using auto-tuning)
   auto_entropy_tuning: True  # Enable automatic entropy tuning
   alpha_type: softplus
   initial_alpha: 0.2  # Initial temperature value
@@ -125,11 +123,11 @@ env:
     use_fixed_reset_state_ids: False
     max_episode_steps: 50 # max episode steps for truncation
     max_steps_per_rollout_epoch: 2
-     # IMPORTANT make sure env img size is 64x64 !
+    
     init_params:
-      obs_mode: rgb # Must specify obs_mode! 
+      obs_mode: rgb # Must specify 'obs_mode' as 'rgb' to get image from env
       sensor_configs:
-        width: 64
+        width: 64   # Make sure env img size is 64x64, to match resnet encoder
         height: 64
   
   eval:
@@ -145,9 +143,9 @@ env:
       video_base_dir: ${runner.logger.log_path}/video/eval
     
     init_params:
-      obs_mode: rgb
+      obs_mode: rgb # Must specify 'obs_mode' as 'rgb' to get image from env
       sensor_configs:
-        width: 64
+        width: 64   # Make sure env img size is 64x64, to match resnet encoder
         height: 64
 
 
@@ -187,16 +185,14 @@ actor:
 
   ## actor.model will Override config/model/flow_policy.yaml
   model:
-    # model_name: "flow"  # Use flow matching model
     model_type: "flow_policy"
-    input_type: "mixed" # ['state', 'mixed'] # IMPORTANT: newly added param by shengyz, to distinguish FlowStatePolicy and FlowPolicy in get_model()
+    input_type: "mixed" # ['state', 'mixed'] # Choose input type. "state" is for state only; "mixed" is for state and image.
     
-    # When use pretrained ckpt, must define actor.model.model_path!
-    # In policy, will have: ckpt_path = os.path.join(self.model_path, self.encoder_config["ckpt_name"])
-    model_path: "/mnt/public/shengyuze/RLinf_ws/RLinf" 
+    # Actually used as directory/
+    # In policy, there is: ckpt_path = os.path.join(self.model_path, self.encoder_config["ckpt_name"])
+    model_path: "/dir/of/your/resnet_ckpt/" 
 
     policy_setup: "panda-ee-dpos"
-    # image_keys: ["base_camera", ] # x1. image_keys replaced with image_num
     image_num: 1
     image_size: [3, 64, 64]
     state_dim: 29
@@ -207,7 +203,7 @@ actor:
     precision: "32"
     add_value_head: False
     add_q_head: True
-    backbone: resnet # ["resnet", "plane_conv"]
+    backbone: resnet # only "resnet" is supported for now
     
     # Flow Matching specific parameters
     denoising_steps: 4  # Number of denoising steps for flow matching
@@ -226,8 +222,7 @@ actor:
     vh_mode: "q_network"
     q_network_separate_processing: True
 
-    # 1. Changes of ResNetEncoder:
-    encoder_config: # 'extra_config' rename to 'encoder_config'. Really used in FlowPolicy.
+    encoder_config:
       ckpt_name: "resnet10_pretrained.pt" # 'pretrained_ckpt_path' renamed to 'ckpt_name'
 
   optim:
@@ -239,7 +234,6 @@ actor:
     clip_grad: 1.0
 
   fsdp_config:
-    # use_orig_params: False
     strategy: "fsdp"
     sharding_strategy: "no_shard"
     mixed_precision:
