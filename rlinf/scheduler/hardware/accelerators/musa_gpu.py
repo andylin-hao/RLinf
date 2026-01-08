@@ -12,13 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Override Ray's NvidiaGPUAcceleratorManager
-# https://github.com/ray-project/ray/blob/161849364a784442cc659fb9780f1a6adee85fce/python/ray/_private/accelerators/nvidia_gpu.py
-
 import os
-import warnings
-
-# from ray._private.accelerators.nvidia_gpu import NvidiaGPUAcceleratorManager
+from typing import Optional
 
 from .accelerator import AcceleratorManager, AcceleratorType
 
@@ -28,39 +23,17 @@ class MUSAGPUManager(AcceleratorManager):
     """Utility Class for MUSA GPU."""
 
     @staticmethod
-    def get_resource_name() -> str:
-        return "MUSA_GPU"
-
-    @staticmethod
-    def _parse_musa_gpu_model(model_str: str) -> str:
-        """Parse the NVIDIA GPU model from the full name string.
-
-        Args:
-            model_str (str): The full name string of the NVIDIA GPU.
-
-        Returns:
-            str: The parsed model of the NVIDIA GPU.
-        """
-        # Example model_str: "NVIDIA GeForce RTX 3090, "NVIDIA A100-SXM4-40GB"
-        # print('model_str',model_str)
-        UNRELATED_KEYWORDS = {"S4000", "S5000",'MUSA'}
-
-        if model_str is None:
-            return None
-
-        parts = model_str.split()
-        # Filter out unrelated keywords
-        filtered_parts = [part for part in parts if part not in UNRELATED_KEYWORDS]
-        if filtered_parts:
-            return " ".join(filtered_parts)
-        return model_str
-
-    @staticmethod
     def get_num_devices():
-        '''默认使用8卡服务器'''
-        return 8
-        # """Get the number of NVIDIA GPU devices on the node."""
-        # return NvidiaGPUAcceleratorManager.get_current_node_num_accelerators()
+        """Get the number of MUSA GPU devices on the node."""
+        try:
+            import pymtml
+
+            pymtml.mtmlLibraryInit()
+            device_count = pymtml.mtmlLibraryCountDevice()
+            pymtml.mtmlLibraryShutDown()
+            return device_count
+        except Exception:
+            return 0
 
     @staticmethod
     def get_accelerator_type():
@@ -69,8 +42,21 @@ class MUSAGPUManager(AcceleratorManager):
 
     @staticmethod
     def get_accelerator_model():
-        """Get the model of the NVIDIA GPU."""
-        return "S5000"
+        """Get the model of the MUSA GPU."""
+        try:
+            import pymtml
+
+            pymtml.mtmlLibraryInit()
+            device_count = pymtml.mtmlLibraryCountDevice()
+            if device_count > 0:
+                device = pymtml.mtmlLibraryInitDeviceByIndex(0)
+                model = pymtml.mtmlDeviceGetName(device)
+                pymtml.mtmlLibraryShutDown()
+                return model
+            else:
+                return "UNKNOWN"
+        except Exception:
+            return "UNKNOWN"
 
     @staticmethod
     def get_accelerator_env_var(visible_accelerators: list[str]) -> dict[str, str]:
@@ -88,8 +74,8 @@ class MUSAGPUManager(AcceleratorManager):
         # All the three types of GPU can be set together
         env_vars["MUSA_VISIBLE_DEVICES"] = visible_accelerators_str
         # Override Ray's control over GPU assignment
+        # Ray currently has no support for MUSA GPU, this is a precautionary measure.
         env_vars["RAY_EXPERIMENTAL_NOSET_MUSA_VISIBLE_DEVICES"] = "1"
-        # https://github.com/ray-project/ray/blob/161849364a784442cc659fb9780f1a6adee85fce/python/ray/_private/accelerators/nvidia_gpu.py#L95-L96
         return env_vars
 
     @staticmethod
@@ -112,8 +98,7 @@ class MUSAGPUManager(AcceleratorManager):
     @staticmethod
     def get_ccl_backend():
         """Get the CCL backend."""
-        return 'mccl'
-
+        return "mccl"
 
     @staticmethod
     def get_ccl_socket_ifname_env_var() -> str:
@@ -128,6 +113,7 @@ class MUSAGPUManager(AcceleratorManager):
     def get_torch_platform():
         """Get the PyTorch platform module."""
         import torch
+
         return torch.musa
 
     @staticmethod
