@@ -10,7 +10,7 @@ hydra:
     dir: .
   output_subdir: null
   searchpath:
-    - file://${oc.env:EMBODIED_PATH}/config/
+    - file://${oc.env:REPO_PATH}/examples/embodiment/config
 
 cluster:
   num_nodes: 1
@@ -20,12 +20,12 @@ cluster:
 runner:
   task_type: embodied
   logger:
-    log_path: "../results"
+    log_path: /workspace/results/
     project_name: rlinf
-    experiment_name: "franka_sim_ppo_mlp"
-    logger_backends: ["tensorboard"]
+    experiment_name: "ci-test"
+    logger_backends: ["tensorboard"] # wandb, swanlab
 
-  max_epochs: 200
+  max_epochs: 1
   max_steps: -1
 
   only_eval: False
@@ -40,7 +40,7 @@ runner:
 
 algorithm:
   update_epoch: 8
-  normalize_advantages: True
+  normalize_advantages: true
   kl_penalty: kl
   group_size: 1
 
@@ -69,7 +69,7 @@ algorithm:
   reward_coef: 1.0
 
   sampling_params:
-    do_sample: true
+    do_sample: True
     temperature_train: 1.0
     temperature_eval: 0.6
     top_k: 0
@@ -86,10 +86,10 @@ env:
   enable_offload: false
 
   train:
-    total_num_envs: 128
+    total_num_envs: 2
     group_size: ${algorithm.group_size}
-    max_steps_per_rollout_epoch: 200
-    max_episode_steps: 200
+    max_steps_per_rollout_epoch: 256
+    max_episode_steps: 256
 
     use_rel_reward: True
     reward_coef: ${algorithm.reward_coef}
@@ -99,7 +99,7 @@ env:
       info_on_video: True
       video_base_dir: ${runner.logger.log_path}/video/train
   eval:
-    total_num_envs: 16
+    total_num_envs: 2
     group_size: ${algorithm.group_size}
 
     use_rel_reward: True
@@ -125,7 +125,7 @@ actor:
   micro_batch_size: 256
   global_batch_size: 256
   seed: 1234
-  enable_offload: false
+  enable_offload: False
 
   model:
     model_type: mlp_policy
@@ -169,13 +169,14 @@ actor:
       reduce_dtype: ${actor.model.precision}
       buffer_dtype: ${actor.model.precision}
 
+
     amp:
       enabled: false
       precision: bf16
       use_grad_scaler: false
 
 reward:
-  use_reward_model: false
+  use_reward_model: False
 
 critic:
-  use_critic_model: false
+  use_critic_model: False
