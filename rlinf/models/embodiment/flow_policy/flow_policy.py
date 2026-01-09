@@ -320,8 +320,8 @@ class FlowPolicy(BasePolicy):
     def predict_action_batch(
         self,
         env_obs,
-        calulate_logprobs=True,
-        calulate_values=True,
+        calculate_logprobs=True,
+        calculate_values=True,
         return_obs=True,
         return_shared_feature=False,
         **kwargs,
@@ -339,7 +339,7 @@ class FlowPolicy(BasePolicy):
         )
         chunk_actions = chunk_actions.cpu().numpy()
 
-        if hasattr(self, "value_head") and calulate_values:
+        if hasattr(self, "value_head") and calculate_values:
             chunk_values = self.value_head(mix_feature)
         else:
             chunk_values = torch.zeros_like(log_prob[..., :1])
@@ -559,8 +559,8 @@ class FlowStatePolicy(BasePolicy):
     def predict_action_batch(
         self,
         env_obs,
-        calulate_logprobs=True,
-        calulate_values=True,  # NOT USED, unlike FlowPolicy
+        calculate_logprobs=True,
+        calculate_values=True,  # NOT USED, unlike FlowPolicy
         return_obs=True,
         return_shared_feature=False,  # NOT USED, unlike FlowPolicy
         **kwargs,
