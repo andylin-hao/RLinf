@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from franka_sim.mujoco_gym_env import GymRenderingSpec, MujocoGymEnv
-from .serl_franka_lift_cube import SERLFrankaEnv
+from franka_sim.mujoco_gym_env import GymRenderingSpec, MujocoGymEnv  # noqa: F401
+
+from .serl_franka_lift_cube import SERLFrankaEnv  # noqa: F401
 
 __all__ = ["SERLFrankaEnv", "GymRenderingSpec", "MujocoGymEnv"]
