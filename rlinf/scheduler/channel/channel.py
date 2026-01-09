@@ -148,7 +148,7 @@ class Channel:
             name (str): The name of the channel.
             maxsize (int): The maximum size of the channel queue. Defaults to 0 (unbounded).
             distributed (bool): Whether the channel should be distributed. A distributed channel creates distributed workers on each node, and routes communications to the channel worker on the same node as the current worker, benefiting from the locality of the data. The routing is based on the key of the put/get APIs. So if you expect the key to be randomly distributed, you should set this to False to avoid unnecessary routing overhead.
-            node_rank (int): The node rank of the current worker. Only valid when distributed is True.
+            node_rank (int): The node rank of the current worker. Only valid when distributed is False.
             local (bool): Create the channel for intra-process communication. A local channel cannot be connected by other workers, and its data cannot be shared among different processes.
 
         Returns:

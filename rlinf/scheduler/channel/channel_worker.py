@@ -529,10 +529,6 @@ class ChannelWorker(Worker):
         (given NodePlacementStrategy launches workers in node order). If out of range,
         fall back to rank 0.
         """
-        if key in self._key_to_channel_rank:
-            return self._key_to_channel_rank[key]
-
         # Fallback to rank 0 if out of range
-        target_rank = src_node_rank if 0 <= src_node_rank < self._world_size else 0
-        self._key_to_channel_rank[key] = target_rank
-        return target_rank
+        default_rank = src_node_rank if 0 <= src_node_rank < self._world_size else 0
+        return self._key_to_channel_rank.setdefault(key, default_rank)
