@@ -13,44 +13,44 @@
 # limitations under the License.
 
 import os
+from dataclasses import dataclass, field
+from typing import Any, Optional
 
-import numpy as np
 import torch
 import torch.nn as nn
-from torch.distributions.normal import Normal
-from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional, Tuple # x3. added Optional for model_path
-import warnings
 
-from rlinf.models.embodiment.modules.resnet_utils import ResNetEncoder
-from rlinf.models.embodiment.modules.utils import layer_init, make_mlp, init_mlp_weights
-from rlinf.models.embodiment.modules.value_head import ValueHead
-from rlinf.models.embodiment.modules.q_head import MultiQHead
-from rlinf.models.embodiment.modules.flow_actor import FlowTActor, JaxFlowTActor
 from rlinf.models.embodiment.base_policy import BasePolicy
+from rlinf.models.embodiment.modules.flow_actor import FlowTActor, JaxFlowTActor
+from rlinf.models.embodiment.modules.q_head import MultiQHead
+from rlinf.models.embodiment.modules.resnet_utils import ResNetEncoder
+from rlinf.models.embodiment.modules.utils import init_mlp_weights, layer_init, make_mlp
+from rlinf.models.embodiment.modules.value_head import ValueHead
+
 
 @dataclass
 class FlowConfig:
-    image_size: List[int] = field(default_factory=list)
-    image_num: int = 1  
+    image_size: list[int] = field(default_factory=list)
+    image_num: int = 1
     action_dim: int = 4
     state_dim: int = 29
     num_action_chunks: int = 1
     backbone: str = "resnet"
-    model_path: Optional[str] = None # used as dir actually!
-    encoder_config: Dict[str, Any] = field(default_factory=dict) # 'extra_config' rename to 'encoder_config'
+    model_path: Optional[str] = None  # used as dir actually!
+    encoder_config: dict[str, Any] = field(
+        default_factory=dict
+    )  # 'extra_config' rename to 'encoder_config'
     add_value_head: bool = False
     add_q_head: bool = False
-    q_head_type: str = "default" # same as cnn_policy.py
+    q_head_type: str = "default"  # same as cnn_policy.py
 
     state_latent_dim: int = 64
     action_scale = None
     final_tanh = True
-    std_range = None # same as cnn_policy.py
-    logstd_range = None # same as cnn_policy.py
+    std_range = None  # same as cnn_policy.py
+    logstd_range = None  # same as cnn_policy.py
 
-    num_q_heads = 2 # same as cnn_policy.py
-    
+    num_q_heads = 2  # same as cnn_policy.py
+
     # Flow Matching specific parameters
     denoising_steps: int = 4
     d_model: int = 96
@@ -86,9 +86,7 @@ class FlowConfig:
 
 
 class FlowPolicy(BasePolicy):
-    def __init__(
-            self, cfg: FlowConfig
-        ):
+    def __init__(self, cfg: FlowConfig):
         super().__init__()
         self.cfg = cfg
         self.in_channels = self.cfg.image_size[0]
@@ -136,7 +134,7 @@ class FlowPolicy(BasePolicy):
         # FlowTActor will receive mix_feature (256 dim) as obs input
         # So we set obs_dim to 256 (output of mix_proj)
         flow_obs_dim = 256
-        
+
         # Action scaling for flow actor
         if self.cfg.action_scale is not None:
             l, h = self.cfg.action_scale
@@ -146,7 +144,7 @@ class FlowPolicy(BasePolicy):
             # Default to [-1, 1] range
             action_scale = torch.ones(self.cfg.action_dim, dtype=torch.float32)
             action_bias = torch.zeros(self.cfg.action_dim, dtype=torch.float32)
-        
+
         if self.cfg.flow_actor_type == "FlowTActor":
             self.flow_actor = FlowTActor(
                 obs_dim=flow_obs_dim,
@@ -158,7 +156,7 @@ class FlowPolicy(BasePolicy):
                 use_batch_norm=self.cfg.use_batch_norm,
                 batch_norm_momentum=self.cfg.batch_norm_momentum,
                 action_scale=action_scale,
-                action_bias=action_bias
+                action_bias=action_bias,
             )
         elif self.cfg.flow_actor_type == "JaxFlowTActor":
             self.flow_actor = JaxFlowTActor(
@@ -171,7 +169,7 @@ class FlowPolicy(BasePolicy):
                 use_batch_norm=self.cfg.use_batch_norm,
                 batch_norm_momentum=self.cfg.batch_norm_momentum,
                 action_scale=action_scale,
-                action_bias=action_bias
+                action_bias=action_bias,
             )
         else:
             raise ValueError(f"Unknown flow_actor_type: {self.cfg.flow_actor_type}")
@@ -180,16 +178,14 @@ class FlowPolicy(BasePolicy):
         assert self.cfg.add_value_head + self.cfg.add_q_head <= 1
         if self.cfg.add_value_head:
             self.value_head = ValueHead(
-                input_dim=256, 
-                hidden_sizes=(256, 256, 256), 
-                activation="relu"
+                input_dim=256, hidden_sizes=(256, 256, 256), activation="relu"
             )
         if self.cfg.add_q_head:
             self.q_head = MultiQHead(
-                hidden_size=encoder_out_dim+self.cfg.state_latent_dim,
-                hidden_dims=[256, 256, 256], 
-                num_q_heads=2, 
-                action_feature_dim=self.cfg.action_dim
+                hidden_size=encoder_out_dim + self.cfg.state_latent_dim,
+                hidden_dims=[256, 256, 256],
+                num_q_heads=2,
+                action_feature_dim=self.cfg.action_dim,
             )
 
         if self.cfg.action_scale is not None:
@@ -217,9 +213,9 @@ class FlowPolicy(BasePolicy):
         if env_obs.get("extra_view_images", None) is not None:
             processed_env_obs["extra_view_images"] = (
                 env_obs["extra_view_images"].clone().to(device).float() / 255.0
-            )      
+            )
         return processed_env_obs
-    
+
     def get_feature(self, obs):
         """Extract features from observations (images + states)"""
         visual_features = []
@@ -234,10 +230,10 @@ class FlowPolicy(BasePolicy):
                 images = images.permute(0, 3, 1, 2)
             visual_features.append(self.encoders[img_id](images))
         visual_feature = torch.cat(visual_features, dim=-1)
-        
+
         state_feature = self.state_proj(obs["states"])
         full_feature = torch.cat([visual_feature, state_feature], dim=-1)
-        
+
         return full_feature, visual_feature
 
     def forward(self, forward_type="default_forward", **kwargs):
@@ -258,11 +254,11 @@ class FlowPolicy(BasePolicy):
         """SAC forward pass using Flow Matching actor"""
         full_feature, visual_feature = self.get_feature(obs)
         mix_feature = self.mix_proj(full_feature)
-        
+
         # Use flow actor to generate actions
         # FlowTActor expects obs as input, we pass mix_feature as the observation
         action, log_prob = self.flow_actor(mix_feature, train=True, log_grad=False)
-        
+
         return action, log_prob, full_feature
 
     def get_q_values(self, obs, actions, shared_feature=None, detach_encoder=False):
@@ -282,11 +278,11 @@ class FlowPolicy(BasePolicy):
         return self.q_head(shared_feature, actions)
 
     def default_forward(
-        self, 
-        data, # input is 'data', preprocess to become 'obs'.
-        compute_entropy=False, 
-        compute_values=False, 
-        **kwargs
+        self,
+        data,  # input is 'data', preprocess to become 'obs'.
+        compute_entropy=False,
+        compute_values=False,
+        **kwargs,
     ):
         """Default forward pass"""
 
@@ -299,15 +295,15 @@ class FlowPolicy(BasePolicy):
 
         full_feature, visual_feature = self.get_feature(obs)
         mix_feature = self.mix_proj(full_feature)
-        
+
         # Use flow actor
         action, log_prob = self.flow_actor(mix_feature, train=False, log_grad=False)
-        
+
         output_dict = {
             "action": action,
             "log_prob": log_prob,  # key 'log_prob' or 'logprobs' as used in both cnn_policy.py??
         }
-        
+
         if compute_entropy:
             # For flow matching, entropy is computed from log_prob
             # Approximate entropy as negative log_prob (this is a simplification)
@@ -322,32 +318,32 @@ class FlowPolicy(BasePolicy):
         return output_dict
 
     def predict_action_batch(
-            self, 
-            env_obs, 
-            calulate_logprobs=True,
-            calulate_values=True,
-            return_obs=True, 
-            return_shared_feature=False, 
-            **kwargs
-        ):
+        self,
+        env_obs,
+        calulate_logprobs=True,
+        calulate_values=True,
+        return_obs=True,
+        return_shared_feature=False,
+        **kwargs,
+    ):
         """Predict actions in batch"""
         full_feature, visual_feature = self.get_feature(env_obs)
         mix_feature = self.mix_proj(full_feature)
-        
+
         # Use flow actor
         action, log_prob = self.flow_actor(mix_feature, train=False, log_grad=False)
-        
+
         # chunk_actions is always numpy array
         chunk_actions = action.reshape(
             -1, self.cfg.num_action_chunks, self.cfg.action_dim
         )
-        chunk_actions = chunk_actions.cpu().numpy()        
-        
+        chunk_actions = chunk_actions.cpu().numpy()
+
         if hasattr(self, "value_head") and calulate_values:
             chunk_values = self.value_head(mix_feature)
         else:
             chunk_values = torch.zeros_like(log_prob[..., :1])
-        
+
         forward_inputs = {"action": action}
         if return_obs:
             # x1. image indexing logic changed
@@ -355,7 +351,7 @@ class FlowPolicy(BasePolicy):
             forward_inputs["states"] = env_obs["states"]
             if "extra_view_images" in env_obs:
                 forward_inputs["extra_view_images"] = env_obs["extra_view_images"]
-        
+
         result = {
             "prev_logprobs": log_prob,
             "prev_values": chunk_values,
@@ -364,20 +360,21 @@ class FlowPolicy(BasePolicy):
         if return_shared_feature:
             result["shared_feature"] = visual_feature
         return chunk_actions, result
-    
+
+
 @dataclass
 class FlowStateConfig:
     action_dim: int = 4
     obs_dim: int = 29
     num_action_chunks: int = 1
-    encoder_config: Dict[str, Any] = field(default_factory=dict)
-    add_value_head: bool = False # No visual_feature -> No mix_feature -> No value_head -> add_value_head must be false !
+    encoder_config: dict[str, Any] = field(default_factory=dict)
+    add_value_head: bool = False  # No visual_feature -> No mix_feature -> No value_head -> add_value_head must be false !
     add_q_head: bool = False
     q_head_type: str = "default"
 
     action_scale = None
     final_tanh = True
-    
+
     # Flow Matching specific parameters
     denoising_steps: int = 4
     d_model: int = 96
@@ -395,29 +392,30 @@ class FlowStateConfig:
 
     def _update_info(self):
         if self.add_q_head:
-            if self.action_scale is None: 
+            if self.action_scale is None:
                 self.action_scale = -1, 1
             self.final_tanh = True
+
 
 class FlowStatePolicy(BasePolicy):
     def __init__(self, cfg: FlowStateConfig):
         super().__init__()
         self.cfg = cfg
 
-        ## 3 layer MLP encoder for obs
+        # 3 layer MLP encoder for obs
         self.backbone = nn.Sequential(
             layer_init(nn.Linear(self.cfg.obs_dim, 256)),
             nn.Tanh(),
             layer_init(nn.Linear(256, 256)),
             nn.Tanh(),
             layer_init(nn.Linear(256, 256)),
-            nn.Tanh(),   
+            nn.Tanh(),
         )
         # Create flow actor
         # FlowTActor will receive mix_feature (256 dim) as obs input
         # So we set obs_dim to 256 (output of mix_proj)
         flow_obs_dim = 256
-        
+
         # Action scaling for flow actor
         if self.cfg.action_scale is not None:
             l, h = self.cfg.action_scale
@@ -427,7 +425,7 @@ class FlowStatePolicy(BasePolicy):
             # Default to [-1, 1] range
             action_scale = torch.ones(self.cfg.action_dim, dtype=torch.float32)
             action_bias = torch.zeros(self.cfg.action_dim, dtype=torch.float32)
-        
+
         if self.cfg.flow_actor_type == "FlowTActor":
             self.flow_actor = FlowTActor(
                 obs_dim=flow_obs_dim,
@@ -439,7 +437,7 @@ class FlowStatePolicy(BasePolicy):
                 use_batch_norm=self.cfg.use_batch_norm,
                 batch_norm_momentum=self.cfg.batch_norm_momentum,
                 action_scale=action_scale,
-                action_bias=action_bias
+                action_bias=action_bias,
             )
         elif self.cfg.flow_actor_type == "JaxFlowTActor":
             self.flow_actor = JaxFlowTActor(
@@ -452,7 +450,7 @@ class FlowStatePolicy(BasePolicy):
                 use_batch_norm=self.cfg.use_batch_norm,
                 batch_norm_momentum=self.cfg.batch_norm_momentum,
                 action_scale=action_scale,
-                action_bias=action_bias
+                action_bias=action_bias,
             )
         else:
             raise ValueError(f"Unknown flow_actor_type: {self.cfg.flow_actor_type}")
@@ -461,16 +459,14 @@ class FlowStatePolicy(BasePolicy):
         assert self.cfg.add_value_head + self.cfg.add_q_head <= 1
         if self.cfg.add_value_head:
             self.value_head = ValueHead(
-                input_dim=256, 
-                hidden_sizes=(256, 256, 256), 
-                activation="relu"
+                input_dim=256, hidden_sizes=(256, 256, 256), activation="relu"
             )
         if self.cfg.add_q_head:
             self.q_head = MultiQHead(
                 hidden_size=self.cfg.obs_dim,
-                hidden_dims=[256, 256, 256], 
-                num_q_heads=2, 
-                action_feature_dim=self.cfg.action_dim
+                hidden_dims=[256, 256, 256],
+                num_q_heads=2,
+                action_feature_dim=self.cfg.action_dim,
             )
 
         if self.cfg.action_scale is not None:
@@ -496,11 +492,11 @@ class FlowStatePolicy(BasePolicy):
     def sac_forward(self, obs, **kwargs):
         """SAC forward pass using Flow Matching actor"""
         feat = self.backbone(obs["states"])
-        
+
         # Use flow actor to generate actions
         # FlowTActor expects obs as input, we pass mix_feature as the observation
         action, log_prob = self.flow_actor(feat, train=True, log_grad=False)
-        
+
         return action, log_prob, None
 
     def get_q_values(self, obs, actions, shared_feature=None, detach_encoder=False):
@@ -514,35 +510,39 @@ class FlowStatePolicy(BasePolicy):
     # 10. add unified forward()
     def forward(self, forward_type="default_forward", **kwargs):
         if forward_type == "sac_forward":
-            return self.sac_forward(**kwargs) # originally exists
+            return self.sac_forward(**kwargs)  # originally exists
         elif forward_type == "sac_q_forward":
-            return self.sac_q_forward(**kwargs) # use get_q_values()
+            return self.sac_q_forward(**kwargs)  # use get_q_values()
         elif forward_type == "crossq_forward":
-            return self.crossq_forward(**kwargs) # NOT IMPLEMENTED
+            return self.crossq_forward(**kwargs)  # NOT IMPLEMENTED
         elif forward_type == "crossq_q_forward":
-            return self.crossq_q_forward(**kwargs) # NOT IMPLEMENTED
+            return self.crossq_q_forward(**kwargs)  # NOT IMPLEMENTED
         elif forward_type == "default_forward":
-            return self.default_forward(**kwargs) # NOT USED (NO get_feature)
+            return self.default_forward(**kwargs)  # NOT USED (NO get_feature)
         else:
             raise NotImplementedError
 
     # Never used default_forward()
-    def default_forward(self, obs, compute_entropy=False, compute_values=False, **kwargs):
+    def default_forward(
+        self, obs, compute_entropy=False, compute_values=False, **kwargs
+    ):
         """
         Default forward pass
         There's no get_feature in FlowStatePolicy at all! So default_forward() must not be used!
         """
-        full_feature, visual_feature = self.get_feature(obs) # There's no get_feature in FlowStatePolicy at all! So default_forward is not used!
+        full_feature, visual_feature = self.get_feature(
+            obs
+        )  # There's no get_feature in FlowStatePolicy at all! So default_forward is not used!
         mix_feature = self.mix_proj(full_feature)
-        
+
         # Use flow actor
         action, log_prob = self.flow_actor(mix_feature, train=False, log_grad=False)
-        
+
         output_dict = {
             "action": action,
             "log_prob": log_prob,
         }
-        
+
         if compute_entropy:
             # For flow matching, entropy is computed from log_prob
             # Approximate entropy as negative log_prob (this is a simplification)
@@ -557,36 +557,40 @@ class FlowStatePolicy(BasePolicy):
         return output_dict
 
     def predict_action_batch(
-            self, 
-            env_obs, 
-            calulate_logprobs=True,
-            calulate_values=True, # NOT USED, unlike FlowPolicy
-            return_obs=True, 
-            return_shared_feature=False, # NOT USED, unlike FlowPolicy
-            **kwargs
-        ):
+        self,
+        env_obs,
+        calulate_logprobs=True,
+        calulate_values=True,  # NOT USED, unlike FlowPolicy
+        return_obs=True,
+        return_shared_feature=False,  # NOT USED, unlike FlowPolicy
+        **kwargs,
+    ):
         """
         Predict actions in batch.
         Called by MultiStepRolloutWorker for rollout
         """
-        feat = self.backbone(env_obs["states"]) # encode obs using the 3 layer MLP 
-        
+        feat = self.backbone(env_obs["states"])  # encode obs using the 3 layer MLP
+
         # Use flow actor
         action, log_prob = self.flow_actor(feat, train=False, log_grad=False)
-        print(f"In predict_action_batch(), action.shape={action.shape}, log_prob.shape={log_prob.shape}")
-        
+        print(
+            f"In predict_action_batch(), action.shape={action.shape}, log_prob.shape={log_prob.shape}"
+        )
+
         # chunk_actions is always numpy array
         chunk_actions = action.reshape(
             -1, self.cfg.num_action_chunks, self.cfg.action_dim
         )
         chunk_actions = chunk_actions.cpu().numpy()
-        
+
         chunk_values = torch.zeros_like(log_prob[..., :1])
-        
+
         forward_inputs = {"action": action}
         if return_obs:
-            forward_inputs["states"] = env_obs["states"] # add 'states' to forward_inputs instead of 'obs/{key}'
-        
+            forward_inputs["states"] = env_obs[
+                "states"
+            ]  # add 'states' to forward_inputs instead of 'obs/{key}'
+
         result = {
             "prev_logprobs": log_prob,
             "prev_values": chunk_values,

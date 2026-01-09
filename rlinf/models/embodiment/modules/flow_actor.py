@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import numpy as np
 import torch
 import torch.nn as nn
 from torch.distributions.normal import Normal
@@ -25,10 +24,20 @@ class FlowTActor(nn.Module):
     Transformer-based Flow Matching Actor for SAC
     Uses transformer architecture with cross-attention between action and observation
     """
-    def __init__(self, obs_dim, action_dim, d_model=64, 
-                 n_head=4, 
-                 n_layers=2, denoising_steps=4, use_batch_norm=False, batch_norm_momentum=0.99,
-                 action_scale=None, action_bias=None):
+
+    def __init__(
+        self,
+        obs_dim,
+        action_dim,
+        d_model=64,
+        n_head=4,
+        n_layers=2,
+        denoising_steps=4,
+        use_batch_norm=False,
+        batch_norm_momentum=0.99,
+        action_scale=None,
+        action_bias=None,
+    ):
         super().__init__()
         self.obs_dim = obs_dim
         self.action_dim = action_dim
@@ -42,22 +51,22 @@ class FlowTActor(nn.Module):
 
         self.obs_encoder = nn.Sequential(
             nn.Linear(self.obs_dim, self.d_model // 2),
-            nn.SiLU(), # SiLU is PyTorch's Swish/silu
-            nn.Linear(self.d_model // 2, self.d_model)
+            nn.SiLU(),  # SiLU is PyTorch's Swish/silu
+            nn.Linear(self.d_model // 2, self.d_model),
         )
-        
+
         # Action input projection (projects action_dim -> d_model)
         self.action_proj = nn.Linear(self.action_dim, self.d_model)
-        
+
         # Time embedding (projects 1 -> d_model)
         self.time_embedding = nn.Sequential(
             nn.Linear(1, self.d_model // 4),
             nn.SiLU(),
             nn.Linear(self.d_model // 4, self.d_model // 2),
             nn.SiLU(),
-            nn.Linear(self.d_model // 2, self.d_model)
+            nn.Linear(self.d_model // 2, self.d_model),
         )
-        
+
         # Transformer decoder layers
         # We use nn.TransformerDecoderLayer which includes self-attn, cross-attn, and FFN
         decoder_layers = []
@@ -68,9 +77,9 @@ class FlowTActor(nn.Module):
                     nhead=self.n_head,
                     dim_feedforward=self.d_model * 4,
                     dropout=0.0,
-                    activation='gelu',
+                    activation="gelu",
                     batch_first=True,
-                    norm_first=False
+                    norm_first=False,
                 )
             )
         self.transformer_layers = nn.ModuleList(decoder_layers)
@@ -102,26 +111,26 @@ class FlowTActor(nn.Module):
                 nn.init.xavier_uniform_(m.weight)
                 nn.init.constant_(m.bias, 0)
 
-    def forward(self, obs, train = False, log_grad = False):
+    def forward(self, obs, train=False, log_grad=False):
         if log_grad:
             self.grad_norms.clear()
-            
+
         batch_size = obs.shape[0]
         device = obs.device
-        
+
         # Flow Matching time step size
         DELTA_T = 1.0 / self.denoising_steps
-        
+
         # 1. Observation encoding (memory)
         # obs: [batch_size, obs_dim] -> obs_emb: [batch_size, d_model]
         if self.use_batch_norm:
             obs = self.bn_obs(obs, train)
         obs_emb = self.obs_encoder(obs)
         # Add sequence dimension: [batch_size, 1, d_model]
-        obs_emb = obs_emb.unsqueeze(1) 
+        obs_emb = obs_emb.unsqueeze(1)
 
         x_current = torch.randn((batch_size, self.action_dim), device=device)
-        
+
         # Calculate x0 log probability under N(0, I) using torch.distributions
         initial_dist = Normal(torch.zeros_like(x_current), torch.ones_like(x_current))
         total_log_prob = initial_dist.log_prob(x_current).sum(dim=1, keepdim=True)
@@ -137,49 +146,56 @@ class FlowTActor(nn.Module):
             x_input_bn = x_bn.unsqueeze(1)
             # action_emb: [batch_size, 1, d_model]
             action_emb = self.action_proj(x_input_bn)
-            
+
             # 3b. Add time embedding
-            time_value = torch.full((batch_size, 1, 1), 
-                                    step / self.denoising_steps, 
-                                    device=device, dtype=torch.float32)
+            time_value = torch.full(
+                (batch_size, 1, 1),
+                step / self.denoising_steps,
+                device=device,
+                dtype=torch.float32,
+            )
             # time_emb: [batch_size, 1, d_model]
             time_emb = self.time_embedding(time_value)
-            
+
             # 3c. Combine action and time to form query (tgt)
             # input_emb: [batch_size, 1, d_model]
             input_emb = action_emb + time_emb
-            
+
             # 3d. Create diagonal mask
             # For a single query position (seq_len=1), we don't need
             # to mask future positions. A mask of 0s is fine.
             # PyTorch's mask should be (L, L) -> (1, 1)
             diagonal_mask = torch.zeros(1, 1, device=device)
-            
+
             # 3e. Transformer forward pass
             output = input_emb
             for layer in self.transformer_layers:
                 # tgt=output, memory=obs_emb, tgt_mask=diagonal_mask
                 output = layer(output, obs_emb, tgt_mask=diagonal_mask)
-            
+
             # Output is [batch_size, 1, d_model], squeeze to [batch_size, d_model]
             output = output.squeeze(1)
-            
+
             # 3f. Predict velocity
             velocity_mean = self.velocity_mean_head(output)
             velocity_log_std = self.velocity_log_std_head(output)
-            
+
             # Clamp log_std
             velocity_log_std = torch.tanh(velocity_log_std)
-            velocity_log_std = self.log_std_min + 0.5 * (self.log_std_max - self.log_std_min) * (velocity_log_std + 1)
+            velocity_log_std = self.log_std_min + 0.5 * (
+                self.log_std_max - self.log_std_min
+            ) * (velocity_log_std + 1)
             velocity_std = torch.exp(velocity_log_std)
-            
+
             # 3g. Sample velocity
             u_dist = Normal(velocity_mean, velocity_std)
             predicted_velocity = u_dist.rsample()
 
-            velocity_log_prob = u_dist.log_prob(predicted_velocity).sum(dim=-1, keepdim=True)
+            velocity_log_prob = u_dist.log_prob(predicted_velocity).sum(
+                dim=-1, keepdim=True
+            )
             total_log_prob += velocity_log_prob
-            
+
             # 3i. Flow Matching update: x_{t+1} = x_t + v_t * Δt
             x_current = x_current + predicted_velocity * DELTA_T
 
@@ -187,18 +203,22 @@ class FlowTActor(nn.Module):
             if log_grad:
                 current_step_for_hook = step
                 x_current.register_hook(
-                    lambda grad, s=current_step_for_hook: self.grad_norms.update({s: grad.norm().item()})
+                    lambda grad, s=current_step_for_hook: self.grad_norms.update(
+                        {s: grad.norm().item()}
+                    )
                 )
-        
+
         # 4. Apply tanh transformation and scaling
         y_t = torch.tanh(x_current)
         action = y_t * self.action_scale + self.action_bias
-        
+
         # 5. Add Jacobian correction for tanh
         # Use 1e-6 to match JAX implementation
-        tanh_correction = torch.sum(torch.log(self.action_scale * (1 - y_t**2) + 1e-6), dim=-1, keepdim=True)
+        tanh_correction = torch.sum(
+            torch.log(self.action_scale * (1 - y_t**2) + 1e-6), dim=-1, keepdim=True
+        )
         total_log_prob -= tanh_correction
-        
+
         return action, total_log_prob.detach()
 
 
@@ -206,10 +226,20 @@ class JaxFlowTActor(nn.Module):
     """
     JAX-style Flow Matching Actor (uses noise sampling instead of distribution sampling)
     """
-    def __init__(self, obs_dim, action_dim, d_model=64, 
-                 n_head=4, 
-                 n_layers=2, denoising_steps=4, use_batch_norm=False, batch_norm_momentum=0.99,
-                 action_scale=None, action_bias=None):
+
+    def __init__(
+        self,
+        obs_dim,
+        action_dim,
+        d_model=64,
+        n_head=4,
+        n_layers=2,
+        denoising_steps=4,
+        use_batch_norm=False,
+        batch_norm_momentum=0.99,
+        action_scale=None,
+        action_bias=None,
+    ):
         super().__init__()
         self.obs_dim = obs_dim
         self.action_dim = action_dim
@@ -223,22 +253,22 @@ class JaxFlowTActor(nn.Module):
 
         self.obs_encoder = nn.Sequential(
             nn.Linear(self.obs_dim, self.d_model // 2),
-            nn.SiLU(), # SiLU is PyTorch's Swish/silu
-            nn.Linear(self.d_model // 2, self.d_model)
+            nn.SiLU(),  # SiLU is PyTorch's Swish/silu
+            nn.Linear(self.d_model // 2, self.d_model),
         )
-        
+
         # Action input projection (projects action_dim -> d_model)
         self.action_proj = nn.Linear(self.action_dim, self.d_model)
-        
+
         # Time embedding (projects 1 -> d_model)
         self.time_embedding = nn.Sequential(
             nn.Linear(1, self.d_model // 4),
             nn.SiLU(),
             nn.Linear(self.d_model // 4, self.d_model // 2),
             nn.SiLU(),
-            nn.Linear(self.d_model // 2, self.d_model)
+            nn.Linear(self.d_model // 2, self.d_model),
         )
-        
+
         # Transformer decoder layers
         # We use nn.TransformerDecoderLayer which includes self-attn, cross-attn, and FFN
         decoder_layers = []
@@ -249,9 +279,9 @@ class JaxFlowTActor(nn.Module):
                     nhead=self.n_head,
                     dim_feedforward=self.d_model * 4,
                     dropout=0.0,
-                    activation='gelu',
+                    activation="gelu",
                     batch_first=True,
-                    norm_first=False
+                    norm_first=False,
                 )
             )
         self.transformer_layers = nn.ModuleList(decoder_layers)
@@ -283,26 +313,26 @@ class JaxFlowTActor(nn.Module):
                 nn.init.xavier_uniform_(m.weight)
                 nn.init.constant_(m.bias, 0)
 
-    def forward(self, obs, train = False, log_grad = False):
+    def forward(self, obs, train=False, log_grad=False):
         if log_grad:
             self.grad_norms.clear()
-            
+
         batch_size = obs.shape[0]
         device = obs.device
-        
+
         # Flow Matching time step size
         DELTA_T = 1.0 / self.denoising_steps
-        
+
         # 1. Observation encoding (memory)
         # obs: [batch_size, obs_dim] -> obs_emb: [batch_size, d_model]
         if self.use_batch_norm:
             obs = self.bn_obs(obs, train)
         obs_emb = self.obs_encoder(obs)
         # Add sequence dimension: [batch_size, 1, d_model]
-        obs_emb = obs_emb.unsqueeze(1) 
+        obs_emb = obs_emb.unsqueeze(1)
 
         x_current = torch.randn((batch_size, self.action_dim), device=device)
-        
+
         # Calculate x0 log probability under N(0, I) using torch.distributions
         initial_dist = Normal(torch.zeros_like(x_current), torch.ones_like(x_current))
         total_log_prob = initial_dist.log_prob(x_current).sum(dim=1, keepdim=True)
@@ -318,42 +348,47 @@ class JaxFlowTActor(nn.Module):
             x_input_bn = x_bn.unsqueeze(1)
             # action_emb: [batch_size, 1, d_model]
             action_emb = self.action_proj(x_input_bn)
-            
+
             # 3b. Add time embedding
-            time_value = torch.full((batch_size, 1, 1), 
-                                    step / self.denoising_steps, 
-                                    device=device, dtype=torch.float32)
+            time_value = torch.full(
+                (batch_size, 1, 1),
+                step / self.denoising_steps,
+                device=device,
+                dtype=torch.float32,
+            )
             # time_emb: [batch_size, 1, d_model]
             time_emb = self.time_embedding(time_value)
-            
+
             # 3c. Combine action and time to form query (tgt)
             # input_emb: [batch_size, 1, d_model]
             input_emb = action_emb + time_emb
-            
+
             # 3d. Create diagonal mask
             # For a single query position (seq_len=1), we don't need
             # to mask future positions. A mask of 0s is fine.
             # PyTorch's mask should be (L, L) -> (1, 1)
             diagonal_mask = torch.zeros(1, 1, device=device)
-            
+
             # 3e. Transformer forward pass
             output = input_emb
             for layer in self.transformer_layers:
                 # tgt=output, memory=obs_emb, tgt_mask=diagonal_mask
                 output = layer(output, obs_emb, tgt_mask=diagonal_mask)
-            
+
             # Output is [batch_size, 1, d_model], squeeze to [batch_size, d_model]
             output = output.squeeze(1)
-            
+
             # 3f. Predict velocity
             velocity_mean = self.velocity_mean_head(output)
             velocity_log_std = self.velocity_log_std_head(output)
-            
+
             # Clamp log_std
             velocity_log_std = torch.tanh(velocity_log_std)
-            velocity_log_std = self.log_std_min + 0.5 * (self.log_std_max - self.log_std_min) * (velocity_log_std + 1)
+            velocity_log_std = self.log_std_min + 0.5 * (
+                self.log_std_max - self.log_std_min
+            ) * (velocity_log_std + 1)
             velocity_std = torch.exp(velocity_log_std)
-            
+
             # 3g. Sample velocity (JAX style: sample noise first, then add)
             noise_dist = Normal(0, 1)
             noise = noise_dist.rsample()
@@ -362,7 +397,7 @@ class JaxFlowTActor(nn.Module):
 
             velocity_log_prob = noise_dist.log_prob(noise).sum(dim=-1, keepdim=True)
             total_log_prob += velocity_log_prob
-            
+
             # 3i. Flow Matching update: x_{t+1} = x_t + v_t * Δt
             x_current = x_current + predicted_velocity * DELTA_T
 
@@ -370,16 +405,19 @@ class JaxFlowTActor(nn.Module):
             if log_grad:
                 current_step_for_hook = step
                 x_current.register_hook(
-                    lambda grad, s=current_step_for_hook: self.grad_norms.update({s: grad.norm().item()})
+                    lambda grad, s=current_step_for_hook: self.grad_norms.update(
+                        {s: grad.norm().item()}
+                    )
                 )
-        
+
         # 4. Apply tanh transformation and scaling
         y_t = torch.tanh(x_current)
         action = y_t * self.action_scale + self.action_bias
-        
-        # 5. Add Jacobian correction for tanh
-        tanh_correction = torch.sum(torch.log(self.action_scale * (1 - y_t**2) + 1e-6), dim=-1, keepdim=True)
-        total_log_prob -= tanh_correction
-        
-        return action, total_log_prob
 
+        # 5. Add Jacobian correction for tanh
+        tanh_correction = torch.sum(
+            torch.log(self.action_scale * (1 - y_t**2) + 1e-6), dim=-1, keepdim=True
+        )
+        total_log_prob -= tanh_correction
+
+        return action, total_log_prob
