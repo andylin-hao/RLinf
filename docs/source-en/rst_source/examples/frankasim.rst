@@ -1,4 +1,4 @@
-RL with MuJoCo Benchmark
+RL with Franka-Sim Benchmark
 ======================================================
 
 .. |huggingface| image:: /_static/svg/hf-logo.svg
@@ -8,7 +8,7 @@ RL with MuJoCo Benchmark
 
 This document provides a complete guide to launching and managing
 **Vision-Language-Action Models (VLAs)** training tasks in the **RLinf** framework.
-It also explains how to fine-tune a VLA model in the **MuJoCo** simulation environment
+It also explains how to fine-tune a VLA model in the **Franka-Sim** simulation environment
 to perform robotic manipulation tasks.
 
 The main goal is to enable the model to acquire the following capabilities:
@@ -21,9 +21,9 @@ The main goal is to enable the model to acquire the following capabilities:
 Environment
 -----------
 
-The MuJoCo environments are built on top of the
+The Franka-Sim environments are built on top of the
 `serl <https://rail-berkeley.github.io/serl/docs/sim_quick_start.html>`_ project.
-Two minimal MuJoCo simulation tasks are provided:
+Two minimal Franka-Sim simulation tasks are provided:
 
 - ``PandaPickCube-v0``
 - ``PandaPickCubeVision-v0``
@@ -84,8 +84,8 @@ The core algorithm components include:
    - for each state/prompt, the policy samples *G* independent actions;
    - compute advantages by subtracting the group mean reward.
 
-Dependencies
-------------
+Dependency Installation
+-------------------------
 
 1. Clone the RLinf repository
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -112,21 +112,9 @@ Run experiments using the official Docker image:
       --network host \
       --name rlinf \
       -v .:/workspace/RLinf \
-      rlinf/rlinf:agentic-rlinf0.1-torch2.6.0-openvla-openvlaoft-pi0
-
-   # For faster Docker pulls in mainland China (optional):
-   # docker.1ms.run/rlinf/rlinf:agentic-rlinf0.1-torch2.6.0-openvla-openvlaoft-pi0
-
-For experiments with different models, use the built-in ``switch_env`` tool
-inside the container to activate the corresponding virtual environment:
-
-.. code-block:: bash
-
-   # Switch to the OpenVLA environment
-   source switch_env openvla
-
-   # Switch to the OpenVLA-OFT environment
-   source switch_env openvla-oft
+      rlinf/rlinf:agentic-rlinf0.1-frankasim
+      # For faster Docker pulls in mainland China (optional):
+      # docker.1ms.run/rlinf/rlinf:agentic-rlinf0.1-frankasim
 
 Option 2: Custom environment
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -134,25 +122,11 @@ Option 2: Custom environment
 .. code-block:: bash
 
    # To accelerate dependency downloads in China, append --use-mirror to install.sh
-   # Replace --model with openvla-oft to install the OpenVLA-OFT environment
-   bash requirements/install.sh embodied --model openvla --env maniskill_libero
+   bash requirements/install.sh embodied --model openvla --env frankasim
    source .venv/bin/activate
 
-Assets Download
----------------
-
-Download MuJoCo resources and environment assets:
-
-.. code-block:: bash
-
-   cd rlinf/envs/mujoco
-   git clone https://github.com/RLinf/serl.git
-   cd serl/franka_sim
-   pip install -e .
-   pip install -r requirements.txt
-
-Run Training
-------------
+Running the Script
+-------------------
 
 1. Key configuration parameters
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -207,11 +181,11 @@ After selecting a configuration, start training in root directory:
 
    bash examples/embodiment/run_embodiment.sh CHOSEN_CONFIG
 
-Currently, only PPO training with an MLP policy is supported in the MuJoCo environment:
+Currently, only PPO training with an MLP policy is supported in the Franka-Sim environment:
 
 .. code-block:: bash
 
-   bash examples/embodiment/run_embodiment.sh mujoco_ppo_mlp
+   bash examples/embodiment/run_embodiment.sh frankasim_ppo_mlp
 
 Visualization and Results
 -------------------------
