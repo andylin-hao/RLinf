@@ -17,22 +17,35 @@ from omegaconf import DictConfig, OmegaConf
 
 
 def get_model(cfg: DictConfig, torch_dtype=torch.bfloat16):
-    '''
-    Get FlowStatePolicy for state-only input, or FlowPolicy for mixed input.
-    cfg: All configs under [actor.model] in yaml file.
-    '''
+    """Get FlowStatePolicy for state-only input, or FlowPolicy for mixed input.
+
+    Args:
+        cfg: All configs under [actor.model] in yaml file.
+        torch_dtype: Data type of the model.
+
+    Returns:
+        The model.
+    """
 
     if cfg.input_type == "state":
-        from rlinf.models.embodiment.flow_policy.flow_policy import FlowStateConfig, FlowStatePolicy
+        from rlinf.models.embodiment.flow_policy.flow_policy import (
+            FlowStateConfig,
+            FlowStatePolicy,
+        )
+
         model_config = FlowStateConfig()
         model_config.update_from_dict(OmegaConf.to_container(cfg, resolve=True))
         model = FlowStatePolicy(model_config)
     elif cfg.input_type == "mixed":
-        from rlinf.models.embodiment.flow_policy.flow_policy import FlowConfig, FlowPolicy
+        from rlinf.models.embodiment.flow_policy.flow_policy import (
+            FlowConfig,
+            FlowPolicy,
+        )
+
         model_config = FlowConfig()
         model_config.update_from_dict(OmegaConf.to_container(cfg, resolve=True))
         model = FlowPolicy(model_config)
     else:
-        raise NotImplementedError(f"{cfg.input_type=}")    
+        raise NotImplementedError(f"{cfg.input_type=}")
 
     return model
