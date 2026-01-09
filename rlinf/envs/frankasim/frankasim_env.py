@@ -23,7 +23,7 @@ import torch
 
 from rlinf.envs import utils as rlinf_utils
 
-__all__ = ["SERLFrankaEnv"]
+__all__ = ["FrankaSimEnv"]
 
 
 # ==========================================================
@@ -140,8 +140,8 @@ def _torch_clone_dict(x: Any) -> Any:
 # ==========================================================
 # SERLFrankaEnv (Maniskill-style)
 # ==========================================================
-class SERLFrankaEnv(gym.Env):
-    """SERL Franka wrapper aligned with ManiSkill env wrapper style."""
+class FrankaSimEnv(gym.Env):
+    """SERL FrankaSim wrapper aligned with ManiSkill env wrapper style."""
 
     metadata = {"render_modes": []}
 
@@ -207,10 +207,10 @@ class SERLFrankaEnv(gym.Env):
 
         self.task_prompt = str(_cfg_get(cfg, "task_prompt", "Pick up the cube."))
 
-        dev_str = str(_cfg_get(cfg, "device", "cpu"))
-        self._device = torch.device(dev_str)
-        if self._device.type == "cuda" and not torch.cuda.is_available():
-            raise RuntimeError(f"cfg.device={dev_str} but CUDA is not available.")
+        if torch.cuda.is_available():
+            self._device = torch.device("cuda")
+        else:
+            self._device = torch.device("cpu")
 
         self._configure_mujoco()
 
@@ -276,16 +276,7 @@ class SERLFrankaEnv(gym.Env):
 
     # -------------------- init helpers --------------------
     def _configure_mujoco(self) -> None:
-        if self.obs_mode == "rgb":
-            os.environ.setdefault(
-                "MUJOCO_GL", str(_cfg_get(self.cfg, "mujoco_gl", "egl"))
-            )
-            os.environ.setdefault("PYOPENGL_PLATFORM", "egl")
-            os.environ.setdefault("NVIDIA_DRIVER_CAPABILITIES", "all")
-        else:
-            os.environ.setdefault(
-                "MUJOCO_GL", str(_cfg_get(self.cfg, "mujoco_gl", "disable"))
-            )
+        if self.obs_mode != "rgb":
             self.video_cfg = None
 
     def _make_env(self, env_idx: int) -> gym.Env:
