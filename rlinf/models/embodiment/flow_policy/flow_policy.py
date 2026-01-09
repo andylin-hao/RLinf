@@ -573,9 +573,6 @@ class FlowStatePolicy(BasePolicy):
 
         # Use flow actor
         action, log_prob = self.flow_actor(feat, train=False, log_grad=False)
-        print(
-            f"In predict_action_batch(), action.shape={action.shape}, log_prob.shape={log_prob.shape}"
-        )
 
         # chunk_actions is always numpy array
         chunk_actions = action.reshape(

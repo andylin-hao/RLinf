@@ -10,7 +10,7 @@ hydra:
     dir: .
   output_subdir: null
   searchpath:
-    - file://${oc.env:EMBODIED_PATH}/config/
+    - file://${oc.env:REPO_PATH}/examples/embodiment/config
 
 cluster:
   num_nodes: 1
@@ -20,17 +20,18 @@ cluster:
 runner:
   task_type: embodied
   logger:
-    log_path: "../results"
+    log_path: /workspace/results/
     project_name: rlinf
-    experiment_name: "sac_flow_state"
+    experiment_name: "ci-test"
     logger_backends: ["tensorboard"] # wandb, swanlab
 
-  max_epochs: 8000
+  max_epochs: 10
   max_steps: -1
 
   only_eval: False
-  val_check_interval: 100
+  val_check_interval: 200
   save_interval: -1
+
 
 algorithm:
   update_epoch: 32

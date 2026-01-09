@@ -1,7 +1,7 @@
 defaults:
   - env/maniskill_pick_cube@env.train
   - env/maniskill_pick_cube@env.eval
-  - model/mlp_policy@actor.model
+  - model/flow_policy@actor.model # specilized for mixed input
   - training_backend/fsdp@actor.fsdp_config
   - override hydra/job_logging: stdout
 
@@ -10,7 +10,7 @@ hydra:
     dir: .
   output_subdir: null
   searchpath:
-    - file://${oc.env:EMBODIED_PATH}/config/
+    - file://${oc.env:REPO_PATH}/examples/embodiment/config
 
 cluster:
   num_nodes: 1
@@ -20,16 +20,16 @@ cluster:
 runner:
   task_type: embodied
   logger:
-    log_path: "../results"
+    log_path: /workspace/results/
     project_name: rlinf
-    experiment_name: "sac_flow_state"
+    experiment_name: "ci-test"
     logger_backends: ["tensorboard"] # wandb, swanlab
 
-  max_epochs: 8000
+  max_epochs: 3
   max_steps: -1
 
   only_eval: False
-  val_check_interval: 100
+  val_check_interval: 200
   save_interval: -1
 
 algorithm:
@@ -37,10 +37,10 @@ algorithm:
   normalize_advantages: False  # SAC doesn't use advantages
   kl_penalty: kl
   group_size: 1
-  agg_q: min  # same as maniskill_sac_mlp.yaml
+  agg_q: min
 
   rollout_epoch: 1
-  eval_rollout_epoch: 1 # same as maniskill_sac_mlp.yaml
+  eval_rollout_epoch: 1
 
   reward_type: action_level
   logprob_type: action_level
@@ -50,18 +50,18 @@ algorithm:
   loss_type: embodied_sac  # Use SAC loss functions with Gumbel-Softmax
   loss_agg_func: "token-mean"
 
-  bootstrap_type: always # same as maniskill_sac_mlp.yaml
+  bootstrap_type: always
   # SAC hyperparameters
-  gamma: 0.8 # 0.96
+  gamma: 0.96
   tau: 0.005  # Soft update coefficient for target networks
   alpha: 0.2  # Temperature parameter (if not using auto-tuning)
   auto_entropy_tuning: True  # Enable automatic entropy tuning
-  alpha_type: softplus 
+  alpha_type: softplus
   initial_alpha: 0.2  # Initial temperature value
   target_entropy: -4  # Target entropy (-action_dim)
   alpha_lr: 3.0e-4  # Learning rate for temperature parameter
 
-  critic_actor_ratio: 3
+  critic_actor_ratio: 1
   backup_entropy: True
   
   # Replay buffer settings
@@ -96,6 +96,12 @@ env:
     use_fixed_reset_state_ids: False
     max_episode_steps: 50 # max episode steps for truncation
     max_steps_per_rollout_epoch: 2
+    
+    init_params:
+      obs_mode: rgb # Must specify 'obs_mode' as 'rgb' to get image from env
+      sensor_configs:
+        width: 64   # Make sure env img size is 64x64, to match resnet encoder
+        height: 64
   
   eval:
     total_num_envs: 16
@@ -108,6 +114,13 @@ env:
     video_cfg:
       save_video: True
       video_base_dir: ${runner.logger.log_path}/video/eval
+    
+    init_params:
+      obs_mode: rgb # Must specify 'obs_mode' as 'rgb' to get image from env
+      sensor_configs:
+        width: 64   # Make sure env img size is 64x64, to match resnet encoder
+        height: 64
+
 
 rollout:
   group_name: "RolloutGroup"
@@ -124,16 +137,23 @@ actor:
   group_name: "ActorGroup"
   training_backend: "fsdp"
 
-  micro_batch_size: 512  # Smaller batch size for SAC. 1024 can also be considered
+  micro_batch_size: 512  # Smaller batch size for SAC
   global_batch_size: 512   # Smaller global batch size
   seed: 1234
   enable_offload: False
 
   model:
     model_type: "flow_policy"
-    input_type: "state" # ['state', 'mixed']
+    input_type: "mixed" # ['state', 'mixed'] # Choose input type. "state" is for state only; "mixed" is for state and image.
+    
+    # Actually used as directory/
+    # In policy, there is: ckpt_path = os.path.join(self.model_path, self.encoder_config["ckpt_name"])
+    model_path: "/workspace/dataset/resnet"
+
     policy_setup: "panda-ee-dpos"
-    obs_dim: 42
+    image_num: 1
+    image_size: [3, 64, 64]
+    state_dim: 29
     action_dim: 4
     num_action_chunks: 1
     hidden_dim: 256
@@ -141,6 +161,7 @@ actor:
     precision: "32"
     add_value_head: False
     add_q_head: True
+    backbone: resnet # only "resnet" is supported for now
     
     # Flow Matching specific parameters
     denoising_steps: 4  # Number of denoising steps for flow matching
@@ -159,15 +180,17 @@ actor:
     vh_mode: "q_network"
     q_network_separate_processing: True
 
+    encoder_config:
+      ckpt_name: "resnet10_pretrained.pt" # 'pretrained_ckpt_path' renamed to 'ckpt_name'
+
   optim:
     lr: 3.0e-4  # Lower learning rate for SAC
     value_lr: 3.0e-4  # Q-network learning rate
     adam_beta1: 0.9
     adam_beta2: 0.999
     adam_eps: 1.0e-08
-    clip_grad: 1.0 # 10.0 can also be considered
+    clip_grad: 1.0
 
-  # Override the default values in training_backend/fsdp
   fsdp_config:
     strategy: "fsdp"
     sharding_strategy: "no_shard"
