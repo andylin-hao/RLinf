@@ -195,7 +195,7 @@ def prepare_actions(
         )
     elif env_type == "realworld":
         chunk_actions = raw_chunk_actions
-    elif env_type == "mujoco":
+    elif env_type == "frankasim":
         chunk_actions = prepare_actions_for_mujoco(
             raw_chunk_actions=raw_chunk_actions,
             model_type=model_type,

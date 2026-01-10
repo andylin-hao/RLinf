@@ -1,12 +1,10 @@
-env_type: mujoco
+env_type: frankasim
 gym_id: PandaPickCube-v0
 
 
 obs_mode: state
 obs_format: tensor
 state_key: state
-
-mujoco_gl: egl
 render: false
 
 seed: 0

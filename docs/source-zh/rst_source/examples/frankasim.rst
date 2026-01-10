@@ -1,5 +1,5 @@
-基于 MuJoCo 评测平台的强化学习训练
-==================================
+基于 Franka-Sim 评测平台的强化学习训练
+======================================
 
 .. |huggingface| image:: /_static/svg/hf-logo.svg
    :width: 16px
@@ -7,7 +7,7 @@
    :class: inline-icon
 
 本文档给出在 **RLinf** 框架内启动与管理 **Vision-Language-Action Models (VLAs)** 训练任务的完整指南，
-并介绍如何在 **MuJoCo** 环境中微调 VLA 模型以完成机器人操作任务。
+并介绍如何在 **Franka-Sim** 环境中微调 VLA 模型以完成机器人操作任务。
 
 主要目标是让模型具备以下能力：
 
@@ -19,7 +19,7 @@
 环境
 ----
 
-MuJoCo 环境基于项目 `serl <https://rail-berkeley.github.io/serl/docs/sim_quick_start.html>`_ 构建，
+Franka-Sim 环境基于项目 `serl <https://rail-berkeley.github.io/serl/docs/sim_quick_start.html>`_ 构建，
 包含两个最小化仿真环境：
 
 - ``PandaPickCube-v0``
@@ -109,20 +109,9 @@ MuJoCo 环境基于项目 `serl <https://rail-berkeley.github.io/serl/docs/sim_q
       --network host \
       --name rlinf \
       -v .:/workspace/RLinf \
-      rlinf/rlinf:agentic-rlinf0.1-torch2.6.0-openvla-openvlaoft-pi0
-
-   # 如果需要国内加速下载镜像，可以使用：
-   # docker.1ms.run/rlinf/rlinf:agentic-rlinf0.1-torch2.6.0-openvla-openvlaoft-pi0
-
-对于不同模型上的实验，请通过镜像内置的 ``switch_env`` 工具切换到对应虚拟环境：
-
-.. code-block:: bash
-
-   # 切换到 OpenVLA 环境
-   source switch_env openvla
-
-   # 切换到 OpenVLA-OFT 环境
-   source switch_env openvla-oft
+      rlinf/rlinf:agentic-rlinf0.1-frankasim
+      # 如果需要国内加速下载镜像，可以使用：
+      # docker.1ms.run/rlinf/rlinf:agentic-rlinf0.1-frankasim
 
 选项 2：自定义环境
 ^^^^^^^^^^^^^^^^^^
@@ -130,22 +119,8 @@ MuJoCo 环境基于项目 `serl <https://rail-berkeley.github.io/serl/docs/sim_q
 .. code-block:: bash
 
    # 为提高国内依赖安装速度，可以添加 --use-mirror 到下面的 install.sh 命令
-   # 将 --model 参数改为 openvla-oft 可安装 OpenVLA-OFT 环境
-   bash requirements/install.sh embodied --model openvla --env maniskill_libero
+   bash requirements/install.sh embodied --model openvla --env frankasim
    source .venv/bin/activate
-
-资源下载
---------
-
-下载 MuJoCo 资源文件：
-
-.. code-block:: bash
-
-   cd rlinf/envs/mujoco
-   git clone https://github.com/RLinf/serl.git
-   cd serl/franka_sim
-   pip install -e .
-   pip install -r requirements.txt
 
 运行脚本
 --------
@@ -203,11 +178,11 @@ MuJoCo 环境基于项目 `serl <https://rail-berkeley.github.io/serl/docs/sim_q
 
    bash examples/embodiment/run_embodiment.sh CHOSEN_CONFIG
 
-暂时只支持在 MuJoCo 环境中使用 PPO 训练 MLP Policy：
+暂时只支持在 Franka-Sim 环境中使用 PPO 训练 MLP Policy：
 
 .. code-block:: bash
 
-   bash examples/embodiment/run_embodiment.sh mujoco_ppo_mlp
+   bash examples/embodiment/run_embodiment.sh frankasim_ppo_mlp
 
 可视化与结果
 ------------

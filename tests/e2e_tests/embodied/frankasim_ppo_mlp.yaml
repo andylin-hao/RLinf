@@ -1,6 +1,6 @@
 defaults:
-  - env/mujoco_pickcube_state@env.train
-  - env/mujoco_pickcube_state@env.eval
+  - env/frankasim_pickcube_state@env.train
+  - env/frankasim_pickcube_state@env.eval
   - model/mlp_policy@actor.model
   - training_backend/fsdp@actor.fsdp_config
   - override hydra/job_logging: stdout
@@ -10,27 +10,25 @@ hydra:
     dir: .
   output_subdir: null
   searchpath:
-    - file://${oc.env:EMBODIED_PATH}/config/
+    - file://${oc.env:REPO_PATH}/examples/embodiment/config
 
 cluster:
   num_nodes: 1
   component_placement:
-    actor: 0-0
-    env: 0-0
-    rollout: 0-0
+    actor,env,rollout: 0
 
 runner:
   task_type: embodied
   logger:
-    log_path: "../results"
+    log_path: /workspace/results/
     project_name: rlinf
-    experiment_name: "mujoco_ppo_mlp"
-    logger_backends: ["tensorboard"]
+    experiment_name: "ci-test"
+    logger_backends: ["tensorboard"] # wandb, swanlab
 
-  max_epochs: 200
+  max_epochs: 1
   max_steps: -1
 
-  only_eval: false
+  only_eval: False
   eval_policy_path: null
   val_check_interval: 50
   save_interval: -1
@@ -68,8 +66,10 @@ algorithm:
   gamma: 0.99
   gae_lambda: 0.95
 
+  reward_coef: 1.0
+
   sampling_params:
-    do_sample: true
+    do_sample: True
     temperature_train: 1.0
     temperature_eval: 0.6
     top_k: 0
@@ -85,60 +85,26 @@ env:
   group_name: EnvGroup
   enable_offload: false
 
-  device: cpu
-  mujoco_gl: disable
-
   train:
-    env_type: mujoco
-    gym_id: PandaPickCube-v0
+    total_num_envs: 2
+    group_size: ${algorithm.group_size}
+    max_steps_per_rollout_epoch: 256
+    max_episode_steps: 256
 
-    obs_mode: state
-    obs_format: tensor
-    state_key: state
-
-    mujoco_gl: egl
-    render: false
-
-    seed: 0
-    total_num_envs: 128
-    group_size: 1
-
-    auto_reset: true
-    ignore_terminations: false
-    max_steps_per_rollout_epoch: 200
-    max_episode_steps: 200
-
-    use_rel_reward: true
-    reward_coef: 1.0
-    is_eval: true
+    use_rel_reward: True
+    reward_coef: ${algorithm.reward_coef}
+    is_eval: False
     video_cfg:
-      save_video: true
-      info_on_video: true
+      save_video: True
+      info_on_video: True
       video_base_dir: ${runner.logger.log_path}/video/train
   eval:
-    env_type: mujoco
-    gym_id: PandaPickCube-v0
+    total_num_envs: 2
+    group_size: ${algorithm.group_size}
 
-    obs_mode: state
-    obs_format: tensor
-    state_key: state
-
-    mujoco_gl: egl
-    render: false
-
-    seed: 0
-    total_num_envs: 16
-    group_size: 1
-
-    auto_reset: true
-    ignore_terminations: true
-    max_steps_per_rollout_epoch: 200
-    max_episode_steps: 200
-
-    use_rel_reward: true
-    reward_coef: 1.0
+    use_rel_reward: True
+    reward_coef: ${algorithm.reward_coef}
     is_eval: True
-    use_fixed_reset_state_ids: false
     video_cfg:
       save_video: True
       video_base_dir: ${runner.logger.log_path}/video/eval
@@ -149,11 +115,9 @@ rollout:
   enable_offload: false
   pipeline_stage_num: 1
 
-  device: cpu
-
   model:
     model_path: ""
-    precision: "32"
+    precision: ${actor.model.precision}
 
 actor:
   group_name: ActorGroup
@@ -161,9 +125,7 @@ actor:
   micro_batch_size: 256
   global_batch_size: 256
   seed: 1234
-  enable_offload: false
-
-  device: cuda
+  enable_offload: False
 
   model:
     model_type: mlp_policy
@@ -203,9 +165,10 @@ actor:
     fsdp_size: -1
 
     mixed_precision:
-      param_dtype: "32"
-      reduce_dtype: "32"
-      buffer_dtype: "32"
+      param_dtype: ${actor.model.precision}
+      reduce_dtype: ${actor.model.precision}
+      buffer_dtype: ${actor.model.precision}
+
 
     amp:
       enabled: false
@@ -213,7 +176,7 @@ actor:
       use_grad_scaler: false
 
 reward:
-  use_reward_model: false
+  use_reward_model: False
 
 critic:
-  use_critic_model: false
+  use_critic_model: False
