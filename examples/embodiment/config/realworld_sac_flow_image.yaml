@@ -64,8 +64,8 @@ algorithm:
 
   agg_q: mean # min -> mean for real world
 
-  backup_entropy: False    # True -> False for real world
-  critic_subsample_size: 2 # added for real world
+  backup_entropy: False    # True -> False for real world RLPD
+  critic_subsample_size: 2
   eval_rollout_epoch: 1
 
   rollout_epoch: 1
@@ -142,8 +142,8 @@ actor:
   group_name: "ActorGroup"
   training_backend: "fsdp"
 
-  micro_batch_size: 1024  # Smaller batch size for SAC # 512 -> 1024 for real world
-  global_batch_size: 1024   # Smaller global batch size # 512 -> 1024 for real world
+  micro_batch_size: 256  # Smaller batch_size to accelerate training in real world
+  global_batch_size: 256  # Smaller batch_size to accelerate training in real world
   seed: 1234
   enable_offload: False
 
@@ -165,17 +165,25 @@ actor:
     precision: "32"
     add_value_head: False
     add_q_head: True
+    num_q_heads: 10  # number of Q heads for critic, passed to policy module
     backbone: resnet # only "resnet" is supported for now
     
-    # Flow Matching specific parameters
+    ##-- Flow Matching specific parameters --##
     denoising_steps: 4  # Number of denoising steps for flow matching
-    d_model: 96  # Transformer model dimension
+    d_model: 256  # Transformer model dimension
     n_head: 4  # Number of attention heads
     n_layers: 2  # Number of transformer layers
     use_batch_norm: False  # Whether to use batch normalization
     batch_norm_momentum: 0.99  # Batch normalization momentum
     flow_actor_type: "JaxFlowTActor"  # "FlowTActor" or "JaxFlowTActor", "JaxFlowTActor" is recommended
-    
+    noise_std_head: False  # Whether to use a separate head to predict noise_std, otherwise fixed std is used
+    log_std_min_train: -5  # Min log std for training (if using noise_std_head)
+    log_std_max_train: 2   # Max log std for training (if using noise_std_head)
+    log_std_min_rollout: -20  # Min log std for rollout (if using noise_std_head)
+    log_std_max_rollout: 0    # Max log std for rollout (if using noise_std_head)
+    noise_std_train: 0.3  # Fixed noise std for training (if not using noise_std_head)
+    noise_std_rollout: 0.02  # Fixed noise std for rollout (if not using noise_std_head)
+
     is_lora: False
     lora_rank: 32
     ckpt_path: null

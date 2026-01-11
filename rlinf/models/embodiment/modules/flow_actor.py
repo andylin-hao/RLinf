@@ -239,6 +239,13 @@ class JaxFlowTActor(nn.Module):
         batch_norm_momentum=0.99,
         action_scale=None,
         action_bias=None,
+        noise_std_head=False,
+        log_std_min_train=-5,
+        log_std_max_train=2,
+        log_std_min_rollout=-5,
+        log_std_max_rollout=2,
+        noise_std_train=0.3,
+        noise_std_rollout=0.02,
     ):
         super().__init__()
         self.obs_dim = obs_dim
@@ -247,9 +254,14 @@ class JaxFlowTActor(nn.Module):
         self.d_model = d_model
         self.n_head = n_head
         self.n_layers = n_layers
-        self.log_std_min = -5
-        self.log_std_max = 2
         self.use_batch_norm = use_batch_norm
+        self.noise_std_head = noise_std_head    # Whether to use fixed noise std, otherwise predict std via velocity_log_std_head
+        self.log_std_min_train = log_std_min_train
+        self.log_std_max_train = log_std_max_train
+        self.log_std_min_rollout = log_std_min_rollout  # Different noise std for train/rollout,
+        self.log_std_max_rollout = log_std_max_rollout   # smaller noise during rollout.
+        self.noise_std_train = noise_std_train     # Fixed noise std added directly to actions (for training)
+        self.noise_std_rollout = noise_std_rollout  # Fixed noise std added directly to actions (for rollout)
 
         self.obs_encoder = nn.Sequential(
             nn.Linear(self.obs_dim, self.d_model // 2),
@@ -288,7 +300,9 @@ class JaxFlowTActor(nn.Module):
 
         # Velocity output heads
         self.velocity_mean_head = nn.Linear(self.d_model, self.action_dim)
-        self.velocity_log_std_head = nn.Linear(self.d_model, self.action_dim)
+        # Use a specific head to predict velocity_log_std
+        if self.noise_std_head:
+            self.velocity_log_std_head = nn.Linear(self.d_model, self.action_dim)
 
         if self.use_batch_norm:
             self.bn_obs = BatchRenorm(self.obs_dim, momentum=batch_norm_momentum)
@@ -337,6 +351,12 @@ class JaxFlowTActor(nn.Module):
         initial_dist = Normal(torch.zeros_like(x_current), torch.ones_like(x_current))
         total_log_prob = initial_dist.log_prob(x_current).sum(dim=1, keepdim=True)
 
+        if self.noise_std_head:
+            log_std_min = self.log_std_min_train if train else self.log_std_min_rollout
+            log_std_max = self.log_std_max_train if train else self.log_std_max_rollout
+        else:
+            noise_std = self.noise_std_train if train else self.noise_std_rollout
+
         # 3. Flow Matching iterative refinement
         for step in range(self.denoising_steps):
             # 3a. Project current action to embedding space
@@ -378,28 +398,47 @@ class JaxFlowTActor(nn.Module):
             # Output is [batch_size, 1, d_model], squeeze to [batch_size, d_model]
             output = output.squeeze(1)
 
-            # 3f. Predict velocity
-            velocity_mean = self.velocity_mean_head(output)
-            velocity_log_std = self.velocity_log_std_head(output)
+            # Choice A: use NN predicted velocity_log_std, add noise to velocity
+            if self.noise_std_head:
+                # 3f. Predict velocity
+                velocity_mean = self.velocity_mean_head(output)
+                velocity_log_std = self.velocity_log_std_head(output)
 
-            # Clamp log_std
-            velocity_log_std = torch.tanh(velocity_log_std)
-            velocity_log_std = self.log_std_min + 0.5 * (
-                self.log_std_max - self.log_std_min
-            ) * (velocity_log_std + 1)
-            velocity_std = torch.exp(velocity_log_std)
+                # Clamp log_std
+                velocity_log_std = torch.tanh(velocity_log_std)
+                velocity_log_std = log_std_min + 0.5 * (
+                    log_std_max - log_std_min
+                ) * (velocity_log_std + 1)
+                velocity_std = torch.exp(velocity_log_std)
 
-            # 3g. Sample velocity (JAX style: sample noise first, then add)
-            noise_dist = Normal(0, 1)
-            noise = noise_dist.rsample()
+                # 3g. Sample velocity (JAX style: sample noise first, then add)
+                noise_dist = Normal(0, 1)
+                noise = noise_dist.rsample()
 
-            predicted_velocity = velocity_mean + velocity_std * noise
+                predicted_velocity = velocity_mean + velocity_std * noise
 
-            velocity_log_prob = noise_dist.log_prob(noise).sum(dim=-1, keepdim=True)
-            total_log_prob += velocity_log_prob
+                velocity_log_prob = noise_dist.log_prob(noise).sum(dim=-1, keepdim=True)
+                total_log_prob += velocity_log_prob
 
-            # 3i. Flow Matching update: x_{t+1} = x_t + v_t * Δt
-            x_current = x_current + predicted_velocity * DELTA_T
+                # 3i. Flow Matching update: x_{t+1} = x_t + v_t * Δt
+                x_current = x_current + predicted_velocity * DELTA_T
+
+            # Choice B: use fixed noise_std, add noise to action
+            else:
+                # 3f. Predict velocity
+                velocity_mean = self.velocity_mean_head(output)
+
+                # 3g. Euler step (no noise, deterministic)
+                x_next_mean = x_current + velocity_mean * DELTA_T
+
+                # 3h. Add noise to actions (not velocity)
+                noise_dist = Normal(0, 1)
+                noise = noise_dist.rsample((batch_size, self.action_dim)).to(device)
+                x_current = x_next_mean + noise_std * noise
+
+                # 3i. calculate log prob
+                step_log_prob = Normal(x_next_mean, noise_std).log_prob(x_current).sum(dim=-1, keepdim=True)
+                total_log_prob += step_log_prob
 
             # Add gradient logging hook in style of Actor
             if log_grad:

@@ -161,6 +161,7 @@ actor:
     precision: "32"
     add_value_head: False
     add_q_head: True
+    num_q_heads: 10  # number of Q heads for critic, passed to policy module
     backbone: resnet # only "resnet" is supported for now
     
     # Flow Matching specific parameters
@@ -171,6 +172,13 @@ actor:
     use_batch_norm: False  # Whether to use batch normalization
     batch_norm_momentum: 0.99  # Batch normalization momentum
     flow_actor_type: "JaxFlowTActor"  # "FlowTActor" or "JaxFlowTActor"
+    noise_std_head: False  # Whether to use a separate head to predict noise_std, otherwise fixed std is used
+    log_std_min_train: -5  # Min log std for training (if using noise_std_head)
+    log_std_max_train: 2   # Max log std for training (if using noise_std_head)
+    log_std_min_rollout: -20  # Min log std for rollout (if using noise_std_head)
+    log_std_max_rollout: 0    # Max log std for rollout (if using noise_std_head)
+    noise_std_train: 0.3  # Fixed noise std for training (if not using noise_std_head)
+    noise_std_rollout: 0.02  # Fixed noise std for rollout (if not using noise_std_head)
     
     is_lora: False
     lora_rank: 32
