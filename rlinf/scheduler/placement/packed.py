@@ -222,6 +222,19 @@ class PackedPlacementStrategy(PlacementStrategy):
                 f"Trouble finding placement for Rank {rank} which starts at hardware {local_hw_rank} in node {cluster_node_rank} and node group {current_node_group.label}, with {self._num_hardware_per_process} hardware and stride {self._stride}. But only {cluster.get_node_info(cluster_node_rank).get_hw_resource_count(current_hw_type)} hardware available in the node. As a result, this process will spread across multiple nodes, which is impossible."
             )
 
+            # Validate if all hardware types are the same
+            for hw_rank in range(
+                start_hw_rank,
+                start_hw_rank + self._num_hardware_per_process * self._stride,
+                self._stride,
+            ):
+                assert (
+                    resolver.get_hardware_type_for_rank(hw_rank) == current_hw_type
+                ), (
+                    f"Hardware assigned to Rank {hw_rank} is not of the same type. "
+                    f"Expected {current_hw_type}, but got {resolver.get_hardware_type_for_rank(hw_rank)}."
+                )
+
             local_hw_ranks = list(
                 range(
                     local_hw_rank,

@@ -91,8 +91,7 @@ class MultiNodeGroupResolver:
         """
         if global_hw_rank not in self._rank_to_group:
             raise ValueError(
-                f"Hardware rank {global_hw_rank} is out of range for node groups {[ng.label for ng in self._node_groups]}"
-                f"Must be within (0-{self._total_hardware_count - 1})"
+                f"Hardware rank {global_hw_rank} is out of range for node groups {[ng.label for ng in self._node_groups]}. Must be within (0-{self._total_hardware_count - 1})"
             )
         group_idx, local_hw_rank = self._rank_to_group[global_hw_rank]
         node_group = self._node_groups[group_idx]
@@ -102,8 +101,7 @@ class MultiNodeGroupResolver:
         """Get the node group for a global hardware rank, i.e., the rank in the selected node groups."""
         if global_hw_rank not in self._rank_to_group:
             raise ValueError(
-                f"Global hardware rank {global_hw_rank} is out of range for node groups {[ng.label for ng in self._node_groups]}"
-                f"Must be within (0-{self._total_hardware_count - 1})"
+                f"Global hardware rank {global_hw_rank} is out of range for node groups {[ng.label for ng in self._node_groups]}. Must be within (0-{self._total_hardware_count - 1})"
             )
         group_idx, _ = self._rank_to_group[global_hw_rank]
         return self._node_groups[group_idx]
@@ -440,6 +438,9 @@ class ComponentPlacement:
 
         total_hw_count = resolver.hardware_resource_count
         hw_types = resolver.hardware_types
+        hw_type_str = "Node"
+        if hw_types is not None and isinstance(hw_types, list):
+            hw_type_str = ", ".join(hw_types)
 
         rank_map_parts = rank_map_str.strip().split(",")
         for rank_map_part in rank_map_parts:
@@ -457,7 +458,7 @@ class ComponentPlacement:
                 resource_ranks = parse_rank_config(
                     resource_ranks_str,
                     list(range(total_hw_count)),
-                    hw_types,
+                    hw_type_str,
                 )
             except AssertionError as e:
                 raise AssertionError(

@@ -80,6 +80,7 @@ class RealWorldEnv(gym.Env):
         hardware_info = None
         if worker_info is not None and env_idx < len(worker_info.hardware_infos):
             hardware_info = worker_info.hardware_infos[env_idx]
+        print(hardware_info.type)
         override_cfg = copy.deepcopy(self.override_cfg)
         env = gym.make(
             id=self.cfg.init_params.id,
