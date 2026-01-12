@@ -255,13 +255,16 @@ class JaxFlowTActor(nn.Module):
         self.n_head = n_head
         self.n_layers = n_layers
         self.use_batch_norm = use_batch_norm
-        self.noise_std_head = noise_std_head    # Whether to use fixed noise std, otherwise predict std via velocity_log_std_head
+        # Whether to use fixed noise std, otherwise predict std via velocity_log_std_head
+        self.noise_std_head = noise_std_head
+        # Different noise std for train/rollout, smaller noise during rollout.
         self.log_std_min_train = log_std_min_train
         self.log_std_max_train = log_std_max_train
-        self.log_std_min_rollout = log_std_min_rollout  # Different noise std for train/rollout,
-        self.log_std_max_rollout = log_std_max_rollout   # smaller noise during rollout.
-        self.noise_std_train = noise_std_train     # Fixed noise std added directly to actions (for training)
-        self.noise_std_rollout = noise_std_rollout  # Fixed noise std added directly to actions (for rollout)
+        self.log_std_min_rollout = log_std_min_rollout
+        self.log_std_max_rollout = log_std_max_rollout
+        # Fixed noise std added directly to actions
+        self.noise_std_train = noise_std_train
+        self.noise_std_rollout = noise_std_rollout
 
         self.obs_encoder = nn.Sequential(
             nn.Linear(self.obs_dim, self.d_model // 2),
@@ -406,9 +409,9 @@ class JaxFlowTActor(nn.Module):
 
                 # Clamp log_std
                 velocity_log_std = torch.tanh(velocity_log_std)
-                velocity_log_std = log_std_min + 0.5 * (
-                    log_std_max - log_std_min
-                ) * (velocity_log_std + 1)
+                velocity_log_std = log_std_min + 0.5 * (log_std_max - log_std_min) * (
+                    velocity_log_std + 1
+                )
                 velocity_std = torch.exp(velocity_log_std)
 
                 # 3g. Sample velocity (JAX style: sample noise first, then add)
@@ -437,7 +440,11 @@ class JaxFlowTActor(nn.Module):
                 x_current = x_next_mean + noise_std * noise
 
                 # 3i. calculate log prob
-                step_log_prob = Normal(x_next_mean, noise_std).log_prob(x_current).sum(dim=-1, keepdim=True)
+                step_log_prob = (
+                    Normal(x_next_mean, noise_std)
+                    .log_prob(x_current)
+                    .sum(dim=-1, keepdim=True)
+                )
                 total_log_prob += step_log_prob
 
             # Add gradient logging hook in style of Actor

@@ -51,7 +51,7 @@ class FlowConfig:
 
     num_q_heads: int = 2  # same as cnn_policy.py
 
-    ##-- Flow Matching specific parameters --##
+    # -- Flow Matching specific parameters --##
     denoising_steps: int = 4
     d_model: int = 96
     n_head: int = 4
@@ -59,13 +59,18 @@ class FlowConfig:
     use_batch_norm: bool = False
     batch_norm_momentum: float = 0.99
     flow_actor_type: str = "JaxFlowTActor"  # "FlowTActor" or "JaxFlowTActor"
-    noise_std_head: bool = False  # Whether to use a separate head to predict noise_std
-    log_std_min_train: float = -5  # Min log std for training (if using noise_std_head)
-    log_std_max_train: float = 2   # Max log std for training (if using noise_std_head)
-    log_std_min_rollout: float = -20  # Min log std for rollout (if using noise_std_head)
-    log_std_max_rollout: float = 0    # Max log std for rollout (if using noise_std_head)
-    noise_std_train: float = 0.3  # Fixed noise std for training (if not using noise_std_head)
-    noise_std_rollout: float = 0.02  # Fixed noise std for rollout (if not using noise_std_head)
+    # Whether to use a separate head to predict noise_std
+    noise_std_head: bool = False
+    # Min/Max log std for training (if using noise_std_head)
+    log_std_min_train: float = -5
+    log_std_max_train: float = 2
+    # Min/Max log std for rollout (if using noise_std_head)
+    log_std_min_rollout: float = -20
+    log_std_max_rollout: float = 0
+    # Fixed noise std for training (if not using noise_std_head)
+    noise_std_train: float = 0.3
+    # Fixed noise std for rollout (if not using noise_std_head)
+    noise_std_rollout: float = 0.02
 
     def update_from_dict(self, config_dict):
         for key, value in config_dict.items():
@@ -177,13 +182,13 @@ class FlowPolicy(BasePolicy):
                 batch_norm_momentum=self.cfg.batch_norm_momentum,
                 action_scale=action_scale,
                 action_bias=action_bias,
-                noise_std_head = self.cfg.noise_std_head,
-                log_std_min_train = self.cfg.log_std_min_train,
-                log_std_max_train = self.cfg.log_std_max_train,
-                log_std_min_rollout = self.cfg.log_std_min_rollout,
-                log_std_max_rollout = self.cfg.log_std_max_rollout,
-                noise_std_train = self.cfg.noise_std_train,
-                noise_std_rollout = self.cfg.noise_std_rollout,
+                noise_std_head=self.cfg.noise_std_head,
+                log_std_min_train=self.cfg.log_std_min_train,
+                log_std_max_train=self.cfg.log_std_max_train,
+                log_std_min_rollout=self.cfg.log_std_min_rollout,
+                log_std_max_rollout=self.cfg.log_std_max_rollout,
+                noise_std_train=self.cfg.noise_std_train,
+                noise_std_rollout=self.cfg.noise_std_rollout,
             )
         else:
             raise ValueError(f"Unknown flow_actor_type: {self.cfg.flow_actor_type}")
@@ -195,14 +200,14 @@ class FlowPolicy(BasePolicy):
                 input_dim=256, hidden_sizes=(256, 256, 256), activation="relu"
             )
         if self.cfg.add_q_head:
-            if self.cfg.backbone == "resnet": # Now only "resnet" backbone is supported
+            if self.cfg.backbone == "resnet":  # Now only "resnet" backbone is supported
                 hidden_size = encoder_out_dim + self.cfg.state_latent_dim
                 hidden_dims = [256, 256, 256]
             if self.cfg.q_head_type == "default":
                 self.q_head = MultiQHead(
                     hidden_size=hidden_size,
                     hidden_dims=hidden_dims,
-                    num_q_heads=self.cfg.num_q_heads, # pass from actor.model.num_q_heads
+                    num_q_heads=self.cfg.num_q_heads,  # pass from actor.model.num_q_heads
                     action_feature_dim=self.cfg.action_dim,
                 )
 
@@ -401,13 +406,18 @@ class FlowStateConfig:
     use_batch_norm: bool = False
     batch_norm_momentum: float = 0.99
     flow_actor_type: str = "JaxFlowTActor"  # "FlowTActor" or "JaxFlowTActor"
-    noise_std_head: bool = False  # Whether to use a separate head to predict noise_std
-    log_std_min_train: float = -5  # Min log std for training (if using noise_std_head)
-    log_std_max_train: float = 2   # Max log std for training (if using noise_std_head)
-    log_std_min_rollout: float = -20  # Min log std for rollout (if using noise_std_head)
-    log_std_max_rollout: float = 0    # Max log std for rollout (if using noise_std_head)
-    noise_std_train: float = 0.3  # Fixed noise std for training (if not using noise_std_head)
-    noise_std_rollout: float = 0.02  # Fixed noise std for rollout (if not using noise_std_head)
+    # Whether to use a separate head to predict noise_std
+    noise_std_head: bool = False
+    # Min/Max log std for training (if using noise_std_head)
+    log_std_min_train: float = -5
+    log_std_max_train: float = 2
+    # Min log std for rollout (if using noise_std_head)
+    log_std_min_rollout: float = -20
+    log_std_max_rollout: float = 0
+    # Fixed noise std for training (if not using noise_std_head)
+    noise_std_train: float = 0.3
+    # Fixed noise std for rollout (if not using noise_std_head)
+    noise_std_rollout: float = 0.02
 
     def update_from_dict(self, config_dict):
         for key, value in config_dict.items():
