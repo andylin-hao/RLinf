@@ -564,39 +564,20 @@ class FlowStatePolicy(BasePolicy):
         else:
             raise NotImplementedError
 
-    # Never used default_forward()
     def default_forward(
         self, obs, compute_entropy=False, compute_values=False, **kwargs
     ):
         """
-        Default forward pass
-        There's no get_feature in FlowStatePolicy at all! So default_forward() must not be used!
+        Default forward pass for FlowStatePolicy.
+
+        This method is not supported for FlowStatePolicy because it relies on features
+        (e.g., get_feature, mix_proj) that are not defined for this class.
+        It should not be used; kept only for compatibility.
         """
-        full_feature, visual_feature = self.get_feature(
-            obs
-        )  # There's no get_feature in FlowStatePolicy at all! So default_forward is not used!
-        mix_feature = self.mix_proj(full_feature)
-
-        # Use flow actor
-        action, log_prob = self.flow_actor(mix_feature, train=False, log_grad=False)
-
-        output_dict = {
-            "action": action,
-            "log_prob": log_prob,
-        }
-
-        if compute_entropy:
-            # For flow matching, entropy is computed from log_prob
-            # Approximate entropy as negative log_prob (this is a simplification)
-            entropy = -log_prob
-            output_dict.update(entropy=entropy)
-        if compute_values:
-            if getattr(self, "value_head", None):
-                values = self.value_head(mix_feature)
-                output_dict.update(values=values)
-            else:
-                raise NotImplementedError
-        return output_dict
+        raise NotImplementedError(
+            "FlowStatePolicy.default_forward is not supported. "
+            "Use FlowStatePolicy.forward with the appropriate forward_type instead."
+        )
 
     def predict_action_batch(
         self,
