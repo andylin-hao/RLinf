@@ -1,0 +1,164 @@
+repo:
+  path: .
+  pull: false
+  remote: origin
+  branch: main
+
+baseline:
+  file: reward_baselines.json
+  rtol: 0.05
+  atol: 0.01
+
+defaults:
+  mode: verify          # or baseline
+  interval_minutes: 0
+  log_root: logs/reward_alignment
+  runner: examples/embodiment/run_embodiment.sh
+  venv: null
+  pre_run:
+    - export EMBODIED_PATH=$REPO_PATH/examples/embodiment
+  skip: []
+  max_epochs: 1
+  extra_overrides:
+    # - cluster.component_placement.env=0-1
+    # - cluster.component_placement.rollout=2-3
+    # - cluster.component_placement.actor=0-3
+    - cluster.component_placement='{"env":0-1,"rollout":2-3,"actor":0-3}''
+  discovery_roots:
+    - examples/embodiment/config
+
+tests:
+  - name: behavior-openvlaoft
+    venv: /opt/venv/behavior
+    model_path: /workspace/dataset/RLinf-OpenVLAOFT-Behavior/
+    pre_run:
+      - export OMNIGIBSON_DATA_PATH=/workspace/dataset/behavior-datasets
+      - export ISAAC_PATH=/workspace/dataset/isaac-sim
+    cases:
+      - name: behavior_ppo_openvlaoft.yaml
+
+  - name: calvin-openpi
+    venv: /opt/venv/calvin
+    model_path: /workspace/dataset/RLinf-Pi0-CALVIN
+    cases:
+      - name: calvin_abcd_d_ppo_openpi.yaml
+      # - name: calvin_abcd_d_ppo_openpi_pi05.yaml
+      # - name: calvin_abc_d_ppo_openpi.yaml
+      # - name: calvin_abc_d_ppo_openpi_pi05.yaml
+      # - name: calvin_d_d_ppo_openpi.yaml
+      # - name: calvin_d_d_ppo_openpi_pi05.yaml
+
+  - name: frankasim-mlp
+    venv: /opt/venv/frankasim
+    model_path: ""
+    cases:
+      - name: frankasim_ppo_mlp.yaml
+
+  - name: isaaclab-gr00t
+    venv: /opt/venv/gr00t
+    model_path: /workspace/dataset/RLinf-Gr00t-SFT-Spatial
+    pre_run:
+      - source /workspace/dataset/isaac-sim-5.1/setup_conda_env.sh || true
+    cases:
+      - name: isaaclab_ppo_gr00t_demo.yaml
+
+  - name: libero-openpi
+    venv: /opt/venv/openpi
+    model_path: /workspace/dataset/pi0_libero
+    cases:
+      # - name: libero_10_grpo_openpi.yaml
+      # - name: libero_10_grpo_openpi_pi05.yaml
+      # - name: libero_goal_grpo_openpi.yaml
+      # - name: libero_goal_grpo_openpi_pi05.yaml
+      - name: libero_object_grpo_openpi.yaml
+      # - name: libero_object_grpo_openpi_pi05.yaml
+      # - name: libero_spatial_grpo_openpi.yaml
+      # - name: libero_spatial_grpo_openpi_pi05.yaml
+      # - name: libero_spatial_ppo_openpi.yaml
+      # - name: libero_spatial_ppo_openpi_pi05.yaml
+      # - name: libero_spatial_ppo_openpi_quickstart.yaml
+      # - name: libero_10_ppo_openpi.yaml
+      # - name: libero_10_ppo_openpi_pi05.yaml
+      # - name: libero_goal_ppo_openpi.yaml
+      # - name: libero_goal_ppo_openpi_pi05.yaml
+      # - name: libero_object_ppo_openpi.yaml
+      - name: libero_object_ppo_openpi_pi05.yaml
+
+  - name: libero-openvlaoft
+    venv: /opt/venv/openvla-oft
+    model_path: /workspace/dataset/RLinf-OpenVLAOFT-LIBERO-130-Base-Lora
+    cases:
+      # - name: libero_10_grpo_openvlaoft.yaml
+      # - name: libero_130_grpo_openvlaoft.yaml
+      # - name: libero_90_grpo_openvlaoft.yaml
+      # - name: libero_goal_grpo_openvlaoft.yaml
+      # - name: libero_object_grpo_openvlaoft.yaml
+      - name: libero_spatial_grpo_openvlaoft.yaml
+
+  - name: libero-gr00t
+    venv: /opt/venv/gr00t
+    model_path: /workspace/dataset/RLinf-Gr00t-SFT-Spatial
+    cases:
+      # - name: libero_10_ppo_gr00t.yaml
+      # - name: libero_goal_ppo_gr00t.yaml
+      - name: libero_spatial_ppo_gr00t.yaml
+
+  - name: maniskill-openvlaoft
+    venv: /opt/venv/openvla-oft
+    model_path: /workspace/dataset/Openvla-oft-SFT-libero-goal-traj1/
+    pre_run:
+      - cp -r /workspace/dataset/maniskill_assets/assets $REPO_PATH/rlinf/envs/maniskill/ || true
+    cases:
+      # - name: maniskill_grpo_openvlaoft.yaml
+      # - name: maniskill_ppo_openvlaoft.yaml
+      - name: maniskill_ppo_openvlaoft_quickstart.yaml
+
+  - name: maniskill-openvla
+    venv: /opt/venv/openvla
+    model_path: /workspace/dataset/openvla-7b
+    pre_run:
+      - cp -r /workspace/dataset/maniskill_assets/assets $REPO_PATH/rlinf/envs/maniskill/ || true
+    cases:
+      # - name: maniskill_grpo_openvla.yaml
+      # - name: maniskill_ppo_openvla.yaml
+      - name: maniskill_ppo_openvla_quickstart.yaml
+
+  - name: maniskill-openpi
+    venv: /opt/venv/openpi
+    model_path: /workspace/dataset/RLinf-Pi05-ManiSkill-25Main-SFT
+    pre_run:
+      - cp -r /workspace/dataset/maniskill_assets/assets $REPO_PATH/rlinf/envs/maniskill/ || true
+    cases:
+      - name: maniskill_ppo_openpi.yaml
+      # - name: maniskill_ppo_openpi_pi05.yaml
+
+  - name: maniskill-mlp
+    venv: /opt/venv/openvla
+    model_path: ""
+    pre_run:
+      - cp -r /workspace/dataset/maniskill_assets/assets $REPO_PATH/rlinf/envs/maniskill/ || true
+    cases:
+      - name: maniskill_crossq_mlp.yaml
+      # - name: maniskill_ppo_mlp.yaml
+      # - name: maniskill_sac_mlp.yaml
+      # - name: maniskill_sac_mlp_async.yaml
+
+  - name: metaworld-openpi
+    venv: /opt/venv/metaworld
+    model_path: /workspace/dataset/RLinf-Pi0-MetaWorld
+    cases:
+      - name: metaworld_45_ppo_openpi.yaml
+      # - name: metaworld_50_ppo_openpi.yaml
+      # - name: metaworld_50_ppo_openpi_pi05.yaml
+
+  - name: robocasa-openpi
+    venv: /opt/venv/openpi
+    model_path: /workspace/dataset/RLinf-Pi0-RoboCasa/
+    cases:
+      - name: robocasa_grpo_openpi.yaml
+
+  - name: robotwin-openvlaoft
+    venv: /opt/venv/openvla-oft
+    model_path: /workspace/dataset/Openvla-oft-SFT-libero-goal-traj1/
+    cases:
+      - name: robotwin_ppo_openvlaoft.yaml
