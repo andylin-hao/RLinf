@@ -8,8 +8,7 @@ source /opt/venv/habitat/bin/activate
 cd /data
 git clone https://github.com/RLinf/RLinf.git
 cd /data/RLinf
-uv sync
-uv pip install pip setuptools wheel
+uv sync --active --extra embodied
 
 # Clone Required Repositories
 cd /opt
@@ -31,7 +30,6 @@ export CMAKE_POLICY_VERSION_MINIMUM=3.5
 
 # Habitat-Sim Installation
 uv pip install . --config-settings="--build-option=--headless" --config-settings="--build-option=--with-bullet"
-# If ModuleNotFoundError: No module named 'magnum', else ignore it
 uv pip install build/deps/magnum-bindings/src/python/
 
 # Habitat-lab Installation

@@ -14,12 +14,12 @@ defaults:
   - _self_
 
 habitat:
-  seed: 0
+  seed: 12
   environment:
     max_episode_steps: 500
     iterator_options:
       max_scene_repeat_steps: 50000
-      shuffle: False
+      shuffle: True
   simulator:
     agents:
       main_agent:
@@ -58,7 +58,6 @@ habitat:
       #   # success_distance: 3.0
       # oracle_navigation_error:
       #   type: OracleNavigationError
-        
   dataset:
     type: R2RVLN-v1
     split: val_seen

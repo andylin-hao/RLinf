@@ -20,6 +20,7 @@ import habitat
 import numpy as np
 import torch
 from habitat_baselines.config.default import get_config as get_habitat_config
+from hydra.core.global_hydra import GlobalHydra
 
 from rlinf.envs.habitat.extensions.utils import observations_to_image
 from rlinf.envs.habitat.venv import HabitatRLEnv, ReconfigureSubprocEnv
@@ -32,88 +33,33 @@ from rlinf.envs.utils import (
 
 class HabitatEnv(gym.Env):
     def __init__(self, cfg, num_envs, seed_offset, total_num_processes):
-        self.seed_offset = seed_offset
         self.cfg = cfg
+        self.seed_offset = seed_offset
         self.total_num_processes = total_num_processes
         self.seed = self.cfg.seed + seed_offset
         self._is_start = True
+        self.start_idx = 0
         self.num_envs = num_envs
         self.group_size = self.cfg.group_size
         self.num_group = self.num_envs // self.group_size
-        self.use_fixed_reset_state_ids = cfg.use_fixed_reset_state_ids
-        self.specific_reset_id = cfg.get("specific_reset_id", None)
-
+        self.prev_step_reward = np.zeros(self.num_envs)
+        self._elapsed_steps = np.zeros(self.num_envs, dtype=np.int32)
         self.ignore_terminations = cfg.ignore_terminations
         self.auto_reset = cfg.auto_reset
 
         self._generator = np.random.default_rng(seed=self.seed)
         self._generator_ordered = np.random.default_rng(seed=0)
-        self.start_idx = 0
 
-        self._init_task_suite()
-        self._compute_total_num_group_envs()
-        self.reset_state_ids_all = self.get_reset_state_ids_all()
-        self.update_reset_state_ids()
-        self._init_task_and_trial_ids()
+        config_path = self.cfg.init_params.config_path
+        self.habitat_config = self._get_habitat_config_safe(config_path)
+
         self._init_env()
-
-        self.prev_step_reward = np.zeros(self.num_envs)
-        self.use_rel_reward = cfg.use_rel_reward
-
         self._init_metrics()
-        self._elapsed_steps = np.zeros(self.num_envs, dtype=np.int32)
 
         self.video_cfg = cfg.video_cfg
         self.video_cnt = 0
         self.render_images = {}
         self.current_raw_obs = None
-
-    def _init_task_suite(self):
-        """Initialize Habitat task suite: load all scenes and episodes from config."""
-        config_path = self.cfg.init_params.config_path
-        config = get_habitat_config(config_path)
-
-        # Load dataset to get all scenes and episodes
-        # Habitat stores scene and episode information in the dataset
-        if hasattr(config.habitat, "dataset"):
-            dataset = habitat.datasets.make_dataset(
-                config.habitat.dataset.type, config=config.habitat.dataset
-            )
-
-        # Global episode indices: unique across all scenes
-        # Example: scene0: [0, 1, 5, 3, 6], scene1: [2, 4, 7]
-        # scene_to_global_episodes[0] = [0, 1, 5, 3, 6]
-        # scene_to_global_episodes[1] = [2, 4, 7]
-        self.scene_to_global_episodes = {}
-        # Ordered episode indices: sorted by global episode indices
-        # scene_to_ordered_episodes[0] = [0, 1, 2, 3, 4]
-        # scene_to_ordered_episodes[1] = [5, 6, 7]
-        self.scene_to_ordered_episodes = {}
-
-        self.scenes = []
-        scene_id_to_idx = {}  # scene_id(str) -> scene_idx(int)
-
-        # Build global episode indices
-        for episode in dataset.episodes:
-            sid = episode.scene_id
-            eid = episode.episode_id
-            if sid not in scene_id_to_idx:
-                scene_idx = len(self.scenes)
-                scene_id_to_idx[sid] = scene_idx
-                self.scenes.append(sid)
-                self.scene_to_global_episodes[scene_idx] = []
-            else:
-                scene_idx = scene_id_to_idx[sid]
-            self.scene_to_global_episodes[scene_idx].append(eid)
-
-        # Build ordered (contiguous) episode indices
-        next_ordered_idx = 0
-        for scene_idx in sorted(self.scene_to_global_episodes.keys()):
-            num_eps = len(self.scene_to_global_episodes[scene_idx])
-            self.scene_to_ordered_episodes[scene_idx] = list(
-                range(next_ordered_idx, next_ordered_idx + num_eps)
-            )
-            next_ordered_idx += num_eps
 
     def _init_env(self):
         env_fns = self.get_env_fns()
@@ -126,11 +72,9 @@ class HabitatEnv(gym.Env):
         for param in env_fn_params:
 
             def env_fn(p=param):
-                config_path = p["config_path"]
+                config = p["config"]
                 episode_ids = p["episode_ids"]
                 seed = p["seed"]
-
-                config = get_habitat_config(config_path)
 
                 dataset = habitat.datasets.make_dataset(
                     config.habitat.dataset.type,
@@ -152,31 +96,12 @@ class HabitatEnv(gym.Env):
     def get_env_fn_params(self):
         env_fn_params = []
 
-        config_path = self.cfg.init_params.config_path
-        base_config = get_habitat_config(config_path)
-
         dataset_all = habitat.datasets.make_dataset(
-            base_config.habitat.dataset.type,
-            config=base_config.habitat.dataset,
+            self.habitat_config.habitat.dataset.type,
+            config=self.habitat_config.habitat.dataset,
         )
 
-        scenes = []
-        episode_ids = []
-        scene_id_to_idx = {}  # scene_id(str) -> scene_idx(int)
-        scene_to_episodes = {}  # scene_idx(int) -> episode_ids(list[int])
-        for episode in dataset_all.episodes:
-            sid = episode.scene_id
-            eid = episode.episode_id
-            if sid not in scene_id_to_idx:
-                scene_idx = len(scenes)
-                scene_id_to_idx[sid] = scene_idx
-                scenes.append(sid)
-                scene_to_episodes[scene_idx] = []
-            else:
-                scene_idx = scene_id_to_idx[sid]
-            scene_to_episodes[scene_idx].append(eid)
-        for scene_idx in range(len(scenes)):
-            episode_ids.extend(scene_to_episodes[scene_idx])
+        episode_ids = self._build_ordered_episodes(dataset_all)
 
         num_episodes = len(episode_ids)
         episodes_per_env = num_episodes // self.num_envs
@@ -194,7 +119,7 @@ class HabitatEnv(gym.Env):
 
             env_fn_params.append(
                 {
-                    "config_path": config_path,
+                    "config": self.habitat_config,
                     "episode_ids": assigned_ids,
                     "seed": self.seed + env_id,
                 }
@@ -202,132 +127,46 @@ class HabitatEnv(gym.Env):
 
         return env_fn_params
 
-    def _compute_total_num_group_envs(self):
+    def _get_habitat_config_safe(self, config_path):
         """
-        Compute total number of group environments.
-
-        Total = sum of all episodes across all scenes.
-        Each scene has multiple episodes (trials).
+        Safely get habitat config, handling Hydra initialization conflicts.
         """
-        self.scene_episode_counts = []
-        self.cumsum_trial_id_bins = []
-        for scene_idx in self.scene_to_ordered_episodes:
-            self.scene_episode_counts.append(
-                len(self.scene_to_ordered_episodes[scene_idx])
-            )
-            # cumsum_trial_id_bins: cumulative sum for decoding reset_state_id
-            # Example: [5, 3, 4] -> [5, 8, 12]
-            # reset_state_id < 5 -> scene 0, < 8 -> scene 1, < 12 -> scene 2
-            self.cumsum_trial_id_bins.append(
-                np.sum(self.scene_episode_counts[: scene_idx + 1])
-            )
-        # Total number of episodes = sum of episodes in all scenes
-        self.total_num_group_envs = np.sum(self.scene_episode_counts)
+        hydra_initialized = GlobalHydra.instance().is_initialized()
+        # The hydra maybe initialized somewhere else,
+        # so we need to clear it to avoid conflicts
+        if hydra_initialized:
+            GlobalHydra.instance().clear()
+        try:
+            config = get_habitat_config(config_path)
+            return config
+        except Exception as e:
+            raise Exception(f"Habitat config initialization failed: {e}")
 
-    def get_reset_state_ids_all(self):
+    def _build_ordered_episodes(self, dataset):
         """
-        Get all reset state IDs, organized to keep same-scene episodes together.
-
-        Strategy: Group episodes by scene, then distribute scenes across processes.
-        Within each scene, episodes are kept together to minimize scene switching.
+        rearrange the episode ids to be consecutive for each scene
         """
+        scene_ids = []
+        episode_ids = []
+        scene_id_to_idx = {}  # scene_id(str) -> scene_idx(int)
+        scene_to_episodes = {}  # scene_idx(int) -> episode_ids(list[int])
 
-        # Shuffle scene order, but keep episodes within scenes together
-        scene_ids = list(self.scene_to_ordered_episodes.keys())
-        self._generator_ordered.shuffle(scene_ids)
+        for episode in dataset.episodes:
+            sid = episode.scene_id
+            eid = episode.episode_id
+            if sid not in scene_id_to_idx:
+                scene_idx = len(scene_ids)
+                scene_id_to_idx[sid] = scene_idx
+                scene_ids.append(sid)
+                scene_to_episodes[scene_idx] = []
+            else:
+                scene_idx = scene_id_to_idx[sid]
+            scene_to_episodes[scene_idx].append(eid)
 
-        # Flatten: all episodes from scene 0, then all from scene 1, etc.
-        # This ensures same-scene episodes are consecutive
-        reset_state_ids = []
-        for scene_id in scene_ids:
-            reset_state_ids.extend(self.scene_to_ordered_episodes[scene_id])
+        for scene_idx in range(len(scene_ids)):
+            episode_ids.extend(scene_to_episodes[scene_idx])
 
-        reset_state_ids = np.array(reset_state_ids)
-
-        # Adjust size to be divisible by total_num_processes
-        valid_size = len(reset_state_ids) - (
-            len(reset_state_ids) % self.total_num_processes
-        )
-        reset_state_ids = reset_state_ids[:valid_size]
-        reset_state_ids = reset_state_ids.reshape(self.total_num_processes, -1)
-
-        return reset_state_ids
-
-    def update_reset_state_ids(self):
-        if self.cfg.is_eval or self.cfg.use_ordered_reset_state_ids:
-            reset_state_ids = self._get_ordered_reset_state_ids(self.num_group)
-        else:
-            reset_state_ids = self._get_random_reset_state_ids(self.num_group)
-        self.reset_state_ids = reset_state_ids.repeat(self.group_size)
-
-    def _get_ordered_reset_state_ids(self, num_reset_states):
-        if self.specific_reset_id is not None:
-            reset_state_ids = self.specific_reset_id * np.ones(
-                (self.num_group,), dtype=int
-            )
-        else:
-            if self.start_idx + num_reset_states > len(self.reset_state_ids_all[0]):
-                self.reset_state_ids_all = self.get_reset_state_ids_all()
-                self.start_idx = 0
-            reset_state_ids = self.reset_state_ids_all[self.seed_offset][
-                self.start_idx : self.start_idx + num_reset_states
-            ]
-            self.start_idx = self.start_idx + num_reset_states
-        return reset_state_ids
-
-    def _get_random_reset_state_ids(self, num_reset_states):
-        if self.specific_reset_id is not None:
-            reset_state_ids = self.specific_reset_id * np.ones(
-                (num_reset_states,), dtype=int
-            )
-        else:
-            reset_state_ids = self._generator.integers(
-                low=0, high=self.total_num_group_envs, size=(num_reset_states,)
-            )
-        return reset_state_ids
-
-    def _init_task_and_trial_ids(self):
-        self.task_ids, self.trial_ids = (
-            self._get_task_and_trial_ids_from_reset_state_ids(self.reset_state_ids)
-        )
-
-    def _get_task_and_trial_ids_from_reset_state_ids(self, reset_state_ids):
-        """
-        Decode reset_state_id to (scene_id, episode_id).
-
-        reset_state_id is a global episode index.
-        We decode it to (scene_id, episode_in_scene_id).
-        """
-        task_ids = []  # scene_id
-        trial_ids = []  # episode_in_scene_id
-
-        # get task id and trial id from reset state ids
-        for reset_state_id in reset_state_ids:
-            start_pivot = 0
-            for task_id, end_pivot in enumerate(self.cumsum_trial_id_bins):
-                if reset_state_id < end_pivot and reset_state_id >= start_pivot:
-                    task_ids.append(task_id)
-                    trial_ids.append(reset_state_id - start_pivot)
-                    break
-                start_pivot = end_pivot
-
-        return np.array(task_ids), np.array(trial_ids)
-
-    def _update_task_and_trial_ids(self, reset_state_ids, env_idx):
-        """
-        Update task and trial IDs based on reset_state_ids.
-
-        Since Habitat environments load all scenes, we don't need to reconfigure
-        when scene changes. Habitat's reset() will automatically handle scene switching.
-        """
-        task_ids, trial_ids = self._get_task_and_trial_ids_from_reset_state_ids(
-            reset_state_ids
-        )
-
-        # Update task and trial IDs for tracking
-        for j, env_id in enumerate(env_idx):
-            self.task_ids[env_id] = task_ids[j]
-            self.trial_ids[env_id] = trial_ids[j]
+        return episode_ids
 
     @property
     def elapsed_steps(self):
@@ -549,8 +388,6 @@ class HabitatEnv(gym.Env):
         final_obs = copy.deepcopy(_final_obs)
         env_idx = np.arange(0, self.num_envs)[dones]
         final_info = copy.deepcopy(infos)
-        if self.cfg.is_eval:
-            self.update_reset_state_ids()
         obs, infos = self.reset(env_idx=env_idx)
         # gymnasium calls it final observation but it really is just o_{t+1} or the true next observation
         infos["final_observation"] = final_obs
