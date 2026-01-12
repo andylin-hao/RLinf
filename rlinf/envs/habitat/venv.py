@@ -164,6 +164,15 @@ def _worker(
                     p.send(env.observations)
                 else:
                     p.send(None)
+            elif cmd == "get_current_episode_id":
+                # Habitat-specific: get current episode_id from habitat_env.current_episode
+                if hasattr(env, "habitat_env") and hasattr(
+                    env.habitat_env, "current_episode"
+                ):
+                    episode_id = env.habitat_env.current_episode.episode_id
+                    p.send(episode_id)
+                else:
+                    p.send(None)
             elif cmd == "reconfigure":
                 env.close()
                 config = data.pop("config")
@@ -221,3 +230,17 @@ class ReconfigureSubprocEnv(SubprocVectorEnv):
 
         for j, i in enumerate(id):
             self.workers[i].reconfigure_env_fn(env_fns[j])
+
+    def get_current_episode_ids(self, id=None):
+        self._assert_is_not_closed()
+        id = self._wrap_id(id)
+        if self.is_async:
+            self._assert_id(id)
+
+        episode_ids = []
+        for i in id:
+            self.workers[i].parent_remote.send(["get_current_episode_id", None])
+            episode_id = self.workers[i].parent_remote.recv()
+            episode_ids.append(episode_id)
+
+        return episode_ids

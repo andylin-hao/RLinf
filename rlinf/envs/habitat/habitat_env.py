@@ -296,16 +296,13 @@ class HabitatEnv(gym.Env):
         step_reward = self._calc_step_reward(terminations)
 
         if self.video_cfg.save_video:
+            episode_ids = self.env.get_current_episode_ids()
             for i in range(len(raw_obs)):
                 frame = observations_to_image(raw_obs[i], info_lists[i])
                 frame_concat = np.concatenate(
                     (frame["rgb"], frame["depth"], frame["top_down_map"]), axis=1
                 )
-                # self.render_images.append(frame_concat)
-                episode_id = self.scene_to_global_episodes[self.task_ids[i]][
-                    self.trial_ids[i]
-                ]
-                key = f"episode_{episode_id}"
+                key = f"episode_{episode_ids[i]}"
                 if key not in self.render_images:
                     self.render_images[key] = []
                 self.render_images[key].append(frame_concat)
