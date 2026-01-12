@@ -28,6 +28,7 @@ class AcceleratorType(str, Enum):
     NO_ACCEL = "NO_ACCEL"
     MUSA_GPU = "MUSA_GPU"
 
+
 class AcceleratorManager:
     """Base Manager for accelerator-related operations."""
 
@@ -211,7 +212,7 @@ class AcceleratorUtil:
         Returns:
             str: The CCL backend.
         """
-        if accelerator_type == AcceleratorType.NO_ACCEL or accelerator_type == AcceleratorType.MUSA_GPU:
+        if accelerator_type == AcceleratorType.NO_ACCEL:
             return None
         elif accelerator_type in AcceleratorManager.manager_register:
             manager = AcceleratorManager.manager_register[accelerator_type]
@@ -228,7 +229,7 @@ class AcceleratorUtil:
         Returns:
             str: The network socket interface name environment variable.
         """
-        if accelerator_type == AcceleratorType.NO_ACCEL or accelerator_type == AcceleratorType.MUSA_GPU:
+        if accelerator_type == AcceleratorType.NO_ACCEL:
             return "GLOO_SOCKET_IFNAME"
         elif accelerator_type in AcceleratorManager.manager_register:
             manager = AcceleratorManager.manager_register[accelerator_type]
