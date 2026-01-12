@@ -94,16 +94,17 @@ env:
     reset_gripper_open: False
   eval:
     total_num_envs: 512
-    auto_reset: True
+    auto_reset: False
     ignore_terminations: True
-    max_episode_steps: 512
-    max_steps_per_rollout_epoch: 512
+    max_episode_steps: 128
+    max_steps_per_rollout_epoch: 64
     group_size: 1
     use_fixed_reset_state_ids: True
     use_ordered_reset_state_ids: True
     reset_gripper_open: False
     is_eval: True
     video_cfg:
+      fps: 3
       save_video: True
       video_base_dir: ${runner.logger.log_path}/video/eval
 

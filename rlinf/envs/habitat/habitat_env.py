@@ -19,7 +19,7 @@ import gym
 import habitat
 import numpy as np
 import torch
-from habitat_baselines.config.default import get_config as get_habitat_config
+from habitat_baselines.config.default import get_config
 from hydra.core.global_hydra import GlobalHydra
 
 from rlinf.envs.habitat.extensions.utils import observations_to_image
@@ -43,15 +43,13 @@ class HabitatEnv(gym.Env):
         self.group_size = self.cfg.group_size
         self.num_group = self.num_envs // self.group_size
         self.prev_step_reward = np.zeros(self.num_envs)
+        self.use_rel_reward = cfg.use_rel_reward
         self._elapsed_steps = np.zeros(self.num_envs, dtype=np.int32)
         self.ignore_terminations = cfg.ignore_terminations
         self.auto_reset = cfg.auto_reset
 
         self._generator = np.random.default_rng(seed=self.seed)
         self._generator_ordered = np.random.default_rng(seed=0)
-
-        config_path = self.cfg.init_params.config_path
-        self.habitat_config = self._get_habitat_config_safe(config_path)
 
         self._init_env()
         self._init_metrics()
@@ -72,9 +70,11 @@ class HabitatEnv(gym.Env):
         for param in env_fn_params:
 
             def env_fn(p=param):
-                config = p["config"]
+                config_path = p["config_path"]
                 episode_ids = p["episode_ids"]
                 seed = p["seed"]
+
+                config = get_config(config_path)
 
                 dataset = habitat.datasets.make_dataset(
                     config.habitat.dataset.type,
@@ -96,12 +96,22 @@ class HabitatEnv(gym.Env):
     def get_env_fn_params(self):
         env_fn_params = []
 
-        dataset_all = habitat.datasets.make_dataset(
-            self.habitat_config.habitat.dataset.type,
-            config=self.habitat_config.habitat.dataset,
+        # Habitat uses hydra to load the config,
+        # but the hydra maybe initialized somewhere else,
+        # so we need to clear it to avoid conflicts
+        hydra_initialized = GlobalHydra.instance().is_initialized()
+        if hydra_initialized:
+            GlobalHydra.instance().clear()
+
+        config_path = self.cfg.init_params.config_path
+        habitat_config = get_config(config_path)
+
+        habitat_dataset = habitat.datasets.make_dataset(
+            habitat_config.habitat.dataset.type,
+            config=habitat_config.habitat.dataset,
         )
 
-        episode_ids = self._build_ordered_episodes(dataset_all)
+        episode_ids = self._build_ordered_episodes(habitat_dataset)
 
         num_episodes = len(episode_ids)
         episodes_per_env = num_episodes // self.num_envs
@@ -119,28 +129,13 @@ class HabitatEnv(gym.Env):
 
             env_fn_params.append(
                 {
-                    "config": self.habitat_config,
+                    "config_path": config_path,
                     "episode_ids": assigned_ids,
                     "seed": self.seed + env_id,
                 }
             )
 
         return env_fn_params
-
-    def _get_habitat_config_safe(self, config_path):
-        """
-        Safely get habitat config, handling Hydra initialization conflicts.
-        """
-        hydra_initialized = GlobalHydra.instance().is_initialized()
-        # The hydra maybe initialized somewhere else,
-        # so we need to clear it to avoid conflicts
-        if hydra_initialized:
-            GlobalHydra.instance().clear()
-        try:
-            config = get_habitat_config(config_path)
-            return config
-        except Exception as e:
-            raise Exception(f"Habitat config initialization failed: {e}")
 
     def _build_ordered_episodes(self, dataset):
         """
