@@ -334,6 +334,34 @@ Videos from training and evaluation processes are automatically saved. Configura
      # or
      video_base_dir: ${runner.logger.log_path}/video/eval   # Evaluation videos
 
+Evaluation Results
+~~~~~~~~~~~~~~~~~~~
+
+.. list-table:: **Evaluation results of OpenVLA-OFT models on three RoboTwin tasks**
+   :header-rows: 1
+
+   * - Model
+     - beat_block_hammer
+     - pick_dual_bottles
+     - place_empty_cup
+   * - OpenVLA-OFT (SFT)
+     - 10.15%
+     - 20.31%
+     - 75.78%
+   * - OpenVLA-OFT (RLinf-GRPO)
+     - **90.63%**
+     - **92.96%**
+     - **94.53%**
+   * - Improvement
+     - +80.48%
+     - +72.65%
+     - +18.75%
+
+.. note::
+   
+   Each task has its own dedicated SFT and RL model. 
+   SFT models: |huggingface| `beat_block_hammer (SFT) <https://huggingface.co/RLinf/RLinf-OpenVLAOFT-RoboTwin-SFT-beat_block_hammer>`_, |huggingface| `pick_dual_bottles (SFT) <https://huggingface.co/RLinf/RLinf-OpenVLAOFT-RoboTwin-SFT-pick_dual_bottles>`_, |huggingface| `place_empty_cup (SFT) <https://huggingface.co/RLinf/RLinf-OpenVLAOFT-RoboTwin-SFT-place_empty_cup>`_. 
+   RL models: |huggingface| `beat_block_hammer (RLinf-GRPO) <https://huggingface.co/RLinf/RLinf-OpenVLAOFT-RoboTwin-RL-beat_block_hammer>`_, |huggingface| `pick_dual_bottles (RLinf-GRPO) <https://huggingface.co/RLinf/RLinf-OpenVLAOFT-RoboTwin-RL-pick_dual_bottles>`_, |huggingface| `place_empty_cup (RLinf-GRPO) <https://huggingface.co/RLinf/RLinf-OpenVLAOFT-RoboTwin-RL-place_empty_cup>`_.
 
 Configuration Details
 -----------------------

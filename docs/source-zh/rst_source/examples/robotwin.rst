@@ -333,6 +333,34 @@ RoboTwin Assets 是 RoboTwin 环境所需的资产文件，需要从 HuggingFace
      # 或
      video_base_dir: ${runner.logger.log_path}/video/eval   # 评估视频
 
+评估结果
+~~~~~~~~~~~~~~~~~~~
+
+.. list-table:: **OpenVLA-OFT 模型在三个 RoboTwin 任务上的评估结果**
+   :header-rows: 1
+
+   * - 模型
+     - beat_block_hammer
+     - pick_dual_bottles
+     - place_empty_cup
+   * - OpenVLA-OFT (SFT)
+     - 10.15%
+     - 20.31%
+     - 75.78%
+   * - OpenVLA-OFT (RLinf-GRPO)
+     - **90.63%**
+     - **92.96%**
+     - **94.53%**
+   * - 提升幅度
+     - +80.48%
+     - +72.65%
+     - +18.75%
+
+.. note::
+   
+   每个任务都有其对应的独立 SFT 和 RL 模型。 
+   SFT 模型：|huggingface| `beat_block_hammer (SFT) <https://huggingface.co/RLinf/RLinf-OpenVLAOFT-RoboTwin-SFT-beat_block_hammer>`_、|huggingface| `pick_dual_bottles (SFT) <https://huggingface.co/RLinf/RLinf-OpenVLAOFT-RoboTwin-SFT-pick_dual_bottles>`_、|huggingface| `place_empty_cup (SFT) <https://huggingface.co/RLinf/RLinf-OpenVLAOFT-RoboTwin-SFT-place_empty_cup>`_。 
+   RL 模型：|huggingface| `beat_block_hammer (RLinf-GRPO) <https://huggingface.co/RLinf/RLinf-OpenVLAOFT-RoboTwin-RL-beat_block_hammer>`_、|huggingface| `pick_dual_bottles (RLinf-GRPO) <https://huggingface.co/RLinf/RLinf-OpenVLAOFT-RoboTwin-RL-pick_dual_bottles>`_、|huggingface| `place_empty_cup (RLinf-GRPO) <https://huggingface.co/RLinf/RLinf-OpenVLAOFT-RoboTwin-RL-place_empty_cup>`_。
 
 配置说明
 -----------------------

@@ -163,7 +163,7 @@ as well as reinforcement learning training examples on real robots.
          <a href="https://rlinf.readthedocs.io/en/latest/rst_source/examples/robotwin.html" target="_blank" style="text-decoration: underline; color: blue;">
           <b>RL with RoboTwin Benchmark</b>
          </a><br>
-         RoboTwin + OpenVLA-OFT + PPO achieves SOTA performance
+         Support RoboTwin + OpenVLA-OFT/π₀/π₀.₅ + PPO/GRPO training
        </p>
      </div>     
    </div>

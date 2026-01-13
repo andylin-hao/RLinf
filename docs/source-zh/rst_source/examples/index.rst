@@ -159,7 +159,7 @@
          <a href="https://rlinf.readthedocs.io/zh-cn/latest/rst_source/examples/robotwin.html" target="_blank" style="text-decoration: underline; color: blue;">
           <b>基于RoboTwin的强化学习</b>
          </a><br>
-         RoboTwin+OpenVLA-OFT+PPO达到SOTA训练效果
+         支持RoboTwin + OpenVLA-OFT/π₀/π₀.₅ + PPO/GRPO训练
        </p>
      </div>
     </div>
