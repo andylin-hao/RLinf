@@ -544,16 +544,19 @@ install_franka_env() {
 }
 
 install_robotwin_env() {
-    # set TORCH_CUDA_ARCH_LIST based on the CUDA version
+    # Set TORCH_CUDA_ARCH_LIST based on the CUDA version
     local nvcc_exe
     if [ -x "$(command -v nvcc)" ]; then
         nvcc_exe=$(which nvcc)
+    elif [ -x /usr/local/cuda/bin/nvcc ]; then
+        nvcc_exe="/usr/local/cuda/bin/nvcc"
     else
-        nvcc_exe=/usr/local/cuda/bin/nvcc
+        echo "nvcc not found. Cannot build robotwin environment."
+        exit 1
     fi
-    local cuda_major=$(nvcc --version | grep 'Cuda compilation tools' | awk '{print $5}' | awk -F '.' '{print $1}')
-    local cuda_minor=$(nvcc --version | grep 'Cuda compilation tools' | awk '{print $5}' | awk -F '.' '{print $2}')
-    if [ $cuda_major -ge 12 && $cuda_minor -ge 8 ]; then
+    local cuda_major=$("$nvcc_exe" --version | grep 'Cuda compilation tools' | awk '{print $5}' | awk -F '.' '{print $1}')
+    local cuda_minor=$("$nvcc_exe" --version | grep 'Cuda compilation tools' | awk '{print $5}' | awk -F '.' '{print $2}')
+    if [ "$cuda_major" -gt 12 ] || { [ "$cuda_major" -eq 12 ] && [ "$cuda_minor" -ge 8 ]; }; then
         # Include Blackwell support for CUDA 12.8+
         export TORCH_CUDA_ARCH_LIST="7.0;8.0;9.0;10.0"
     else
