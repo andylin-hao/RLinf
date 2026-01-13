@@ -227,3 +227,31 @@ jobs:
           for v in 0.10.0 0.13.3 0.14.1 0.15.0 0.18.0; do \
             LIBFRANKA_VERSION="$v" FRANKA_ROS_VERSION=0.10.0 bash requirements/install.sh embodied --venv "franka-$v" --env franka --use-mirror; \
           done
+
+  build-robotwin:
+    runs-on: ubuntu-latest
+    container:
+      image: nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+      - name: Install robotwin
+        run: |
+          bash requirements/install.sh embodied --model openvla-oft --env robotwin
+          rm -rf .venv
+          bash requirements/install.sh embodied --model openpi --env robotwin
+          rm -rf .venv
+
+  build-robotwin-mirror:
+    runs-on: ubuntu-latest
+    container:
+      image: nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+      - name: Install robotwin
+        run: |
+          bash requirements/install.sh embodied --model openvla-oft --env robotwin --use-mirror
+          rm -rf .venv
+          bash requirements/install.sh embodied --model openpi --env robotwin --use-mirror
+          rm -rf .venv
