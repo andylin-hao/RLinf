@@ -16,7 +16,7 @@ USE_MIRRORS=0
 GITHUB_PREFIX=""
 NO_ROOT=0
 SUPPORTED_TARGETS=("embodied" "reason" "docs")
-SUPPORTED_MODELS=("openvla" "openvla-oft" "openpi" "gr00t")
+SUPPORTED_MODELS=("openvla" "openvla-oft" "openpi" "gr00t" "opensora")
 SUPPORTED_ENVS=("behavior" "maniskill_libero" "metaworld" "calvin" "isaaclab" "robocasa" "franka" "frankasim" "robotwin")
 
 # Ensure uv is installed
@@ -318,6 +318,14 @@ install_openvla_oft_model() {
             ;;
     esac
     uv pip uninstall pynvml || true
+}
+
+# after run: bash install.sh --model openvla-oft --env maniskill_libero
+install_opensora_world_model() {
+    uv pip install --no-deps -r $SCRIPT_DIR/embodied/models/opensora.txt
+    uv pip install git+https://github.com/fangqi-Zhu/TensorNVMe.git --no-build-isolation
+    python -m ensurepip
+    python -m pip install -v --disable-pip-version-check --no-cache-dir --no-build-isolation --config-settings "--build-option=--cpp_ext" --config-settings "--build-option=--cuda_ext" git+https://github.com/NVIDIA/apex.git
 }
 
 install_openpi_model() {
@@ -683,6 +691,9 @@ main() {
                     ;;
                 gr00t)
                     install_gr00t_model
+                    ;;
+                opensora)
+                    install_opensora_world_model
                     ;;
                 "")
                     install_env_only
