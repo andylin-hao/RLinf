@@ -80,34 +80,52 @@ class EnvWorker(Worker):
         # Essential for RealWorld env to ensure initial ROS node setup is done
         self.broadcast(True, list(range(self._world_size)))
 
+        # Data collection wrapper setup
+        dc_cfg = getattr(self.cfg.env, "data_collection", None)
+        dc_enabled = dc_cfg and getattr(dc_cfg, "enabled", False) and not enable_offload
+
         if not self.only_eval:
             for stage_id in range(self.stage_num):
-                self.env_list.append(
-                    EnvManager(
-                        self.cfg.env.train,
-                        rank=self._rank,
-                        num_envs=self.train_num_envs_per_stage,
-                        seed_offset=self._rank * self.stage_num + stage_id,
-                        total_num_processes=self._world_size * self.stage_num,
-                        env_cls=train_env_cls,
-                        worker_info=self.worker_info,
-                        enable_offload=enable_offload,
-                    )
+                em = EnvManager(
+                    self.cfg.env.train,
+                    rank=self._rank,
+                    num_envs=self.train_num_envs_per_stage,
+                    seed_offset=self._rank * self.stage_num + stage_id,
+                    total_num_processes=self._world_size * self.stage_num,
+                    env_cls=train_env_cls,
+                    worker_info=self.worker_info,
+                    enable_offload=enable_offload,
                 )
+                if dc_enabled:
+                    from rlinf.envs.wrappers import DataCollectorWrapper
+                    em.env = DataCollectorWrapper(
+                        em.env, save_dir=dc_cfg.save_dir, rank=self._rank,
+                        mode=getattr(dc_cfg, "mode", "train"), num_envs=self.train_num_envs_per_stage,
+                        sample_rate_success=getattr(dc_cfg, "sample_rate_success", 1.0),
+                        sample_rate_fail=getattr(dc_cfg, "sample_rate_fail", 0.1),
+                    )
+                self.env_list.append(em)
         if self.enable_eval:
             for stage_id in range(self.stage_num):
-                self.eval_env_list.append(
-                    EnvManager(
-                        self.cfg.env.eval,
-                        rank=self._rank,
-                        num_envs=self.eval_num_envs_per_stage,
-                        seed_offset=self._rank * self.stage_num + stage_id,
-                        total_num_processes=self._world_size * self.stage_num,
-                        env_cls=eval_env_cls,
-                        worker_info=self.worker_info,
-                        enable_offload=enable_offload,
-                    )
+                em = EnvManager(
+                    self.cfg.env.eval,
+                    rank=self._rank,
+                    num_envs=self.eval_num_envs_per_stage,
+                    seed_offset=self._rank * self.stage_num + stage_id,
+                    total_num_processes=self._world_size * self.stage_num,
+                    env_cls=eval_env_cls,
+                    worker_info=self.worker_info,
+                    enable_offload=enable_offload,
                 )
+                if dc_enabled:
+                    from rlinf.envs.wrappers import DataCollectorWrapper
+                    em.env = DataCollectorWrapper(
+                        em.env, save_dir=dc_cfg.save_dir, rank=self._rank,
+                        mode=getattr(dc_cfg, "mode", "eval"), num_envs=self.eval_num_envs_per_stage,
+                        sample_rate_success=getattr(dc_cfg, "sample_rate_success", 1.0),
+                        sample_rate_fail=getattr(dc_cfg, "sample_rate_fail", 0.1),
+                    )
+                self.eval_env_list.append(em)
 
         if not self.only_eval:
             self._init_env()
