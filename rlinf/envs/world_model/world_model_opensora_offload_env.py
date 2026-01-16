@@ -16,20 +16,23 @@ import io
 
 import torch
 
-from rlinf.envs.world_model.world_model_opensora_env import OpenSoraEnv
 from rlinf.envs.env_manager import (
     EnvOffloadMixin,
     recursive_to_device,
 )
+from rlinf.envs.world_model.world_model_opensora_env import OpenSoraEnv
 
 __all__ = ["OpenSoraOffloadEnv"]
+
 
 class OpenSoraOffloadEnv(OpenSoraEnv, EnvOffloadMixin):
     def get_state(self) -> bytes:
         """Serialize environment state to bytes buffer"""
         # Collect all state that needs to be saved
         env_state = {
-            "current_obs": recursive_to_device(self.current_obs, "cpu") if self.current_obs is not None else None,
+            "current_obs": recursive_to_device(self.current_obs, "cpu")
+            if self.current_obs is not None
+            else None,
             "task_descriptions": self.task_descriptions,
             "init_ee_poses": self.init_ee_poses,
             "elapsed_steps": self.elapsed_steps,
@@ -74,7 +77,11 @@ class OpenSoraOffloadEnv(OpenSoraEnv, EnvOffloadMixin):
         state = torch.load(buffer, map_location="cpu", weights_only=False)
 
         # Restore basic state
-        self.current_obs = recursive_to_device(state["current_obs"], self.device) if state["current_obs"] is not None else None
+        self.current_obs = (
+            recursive_to_device(state["current_obs"], self.device)
+            if state["current_obs"] is not None
+            else None
+        )
         self.task_descriptions = state["task_descriptions"]
         self.init_ee_poses = state["init_ee_poses"]
         self.elapsed_steps = state["elapsed_steps"]
@@ -85,7 +92,7 @@ class OpenSoraOffloadEnv(OpenSoraEnv, EnvOffloadMixin):
         self.render_rgb = state.get("render_rgb", None)
         self.render_actions = state.get("render_actions", None)
         self.render_rewards = state.get("render_rewards", None)
-        
+
         # Restore reset state management
         self.reset_state_ids = state["reset_state_ids"].to(self.device)
         self._generator.set_state(state["generator_state"])
@@ -103,4 +110,3 @@ class OpenSoraOffloadEnv(OpenSoraEnv, EnvOffloadMixin):
         if self.record_metrics and "success_once" in state:
             self.success_once = state["success_once"].to(self.device)
             self.returns = state["returns"].to(self.device)
-

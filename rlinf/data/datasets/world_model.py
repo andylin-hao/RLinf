@@ -85,6 +85,7 @@ def last_n_frames(**kwargs: Any) -> list[int]:
     n = kwargs["target_n_frames"]
     return list(range(-n, 0))
 
+
 class NpyTrajectoryDatasetWrapper(Dataset):
     """
     A wrapper for npy trajectory files to provide custom frame selection policies.
