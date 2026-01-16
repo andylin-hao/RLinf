@@ -128,10 +128,19 @@ class BaseWorldEnv(ABC):
                 self.returns[:] = 0.0
         self.elapsed_steps = 0
 
-    def _record_metrics(self, step_reward, infos):
+    def _record_metrics(self, step_reward, terminations, infos):
         """Store episode metrics inside the info dict."""
         if not self.record_metrics:
             return infos
+
+        # Update success_once based on terminations
+        if isinstance(terminations, torch.Tensor):
+            self.success_once = self.success_once | terminations
+        else:
+            terminations_tensor = torch.tensor(
+                terminations, device=self.device, dtype=torch.bool
+            )
+            self.success_once = self.success_once | terminations_tensor
 
         episode_info = {}
         self.returns += step_reward

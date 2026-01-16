@@ -177,9 +177,10 @@ class OpenSoraEnv(BaseWorldEnv):
         """Load action normalization statistics"""
         stats_path = self.world_model_cfg.get("stats_path", None)
         if stats_path is not None and os.path.exists(stats_path):
-            stats = json.load(open(stats_path, "r"))
-            q01 = np.asarray(stats["action"]["q01"], np.float32)
-            q99 = np.asarray(stats["action"]["q99"], np.float32)
+            with open(stats_path, "r") as f:
+                stats = json.load(f)
+                q01 = np.asarray(stats["action"]["q01"], np.float32)
+                q99 = np.asarray(stats["action"]["q99"], np.float32)
             return {"q01": q01, "q99": q99}
         else:
             raise ValueError(f"Action stats path {stats_path} does not exist")
@@ -208,7 +209,7 @@ class OpenSoraEnv(BaseWorldEnv):
             if self.record_metrics:
                 self.success_once[mask] = False
                 self.returns[mask] = 0
-            self._elapsed_steps = 0
+            # self._elapsed_steps = 0
         else:
             self.prev_step_reward[:] = 0
             if self.record_metrics:
@@ -491,7 +492,7 @@ class OpenSoraEnv(BaseWorldEnv):
             rewards = rewards.reshape(self.num_envs, self.chunk)
         else:
             raise ValueError(
-                f"Unknown reward model type: {self.cfg.reward_model_cfg.type}"
+                f"Unknown reward model type: {self.cfg.world_model_cfg.reward_model.type}"
             )
 
         return rewards
@@ -744,16 +745,6 @@ class OpenSoraEnv(BaseWorldEnv):
 
         chunk_truncations = torch.zeros_like(raw_chunk_truncations)
         chunk_truncations[:, -1] = past_truncations
-
-        # Get actions and rewards for rendering
-        chunk_actions_for_render = policy_output_action
-        if isinstance(chunk_actions_for_render, torch.Tensor):
-            chunk_actions_for_render = chunk_actions_for_render.detach().cpu().numpy()
-        chunk_rewards_for_render = chunk_rewards_tensors.detach().cpu().numpy()
-
-        # Reshape for rendering: [num_envs, chunk, action_dim] -> [chunk, num_envs, action_dim]
-        chunk_actions_for_render = chunk_actions_for_render.transpose(1, 0, 2)
-        chunk_rewards_for_render = chunk_rewards_for_render.T  # [chunk, num_envs]
 
         self.add_new_frames()
 

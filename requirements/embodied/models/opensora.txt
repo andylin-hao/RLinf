@@ -1,4 +1,4 @@
-xformers==0.0.29.post2,
+xformers==0.0.29.post2
 annotated-doc==0.0.4
 bcrypt==5.0.0
 beautifulsoup4==4.14.3
