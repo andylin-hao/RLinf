@@ -80,14 +80,14 @@ algorithm:
 env:
   group_name: "EnvGroup"
   enable_offload: False
-  use_full_state: True  # Replace 29-dim partial state with 42-dim full state in rgb mode
+  use_full_state: True 
 
   data_collection:
     enabled: True
     save_dir: ${runner.logger.log_path}/collected_data
-    mode: "all"
+    mode: "eval" 
     sample_rate_success: 1.0
-    sample_rate_fail: 0.1
+    sample_rate_fail: 0.01
 
   train:
     total_num_envs: 1024
@@ -97,7 +97,7 @@ env:
     max_episode_steps: 50
     max_steps_per_rollout_epoch: 50
     init_params:
-      obs_mode: "rgb"
+      obs_mode: "state" 
   eval:
     total_num_envs: 32
     wrap_obs_mode: simple
@@ -108,7 +108,7 @@ env:
     use_fixed_reset_state_ids: True
     group_size: 1
     init_params:
-      obs_mode: "rgb"
+      obs_mode: "rgb"  
     video_cfg:
       save_video: True
       video_base_dir: ${runner.logger.log_path}/video/eval
