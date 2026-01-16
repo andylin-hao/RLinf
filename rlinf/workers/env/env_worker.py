@@ -80,9 +80,9 @@ class EnvWorker(Worker):
         # Essential for RealWorld env to ensure initial ROS node setup is done
         self.broadcast(True, list(range(self._world_size)))
 
-        # Data collection wrapper setup
         dc_cfg = getattr(self.cfg.env, "data_collection", None)
         dc_enabled = dc_cfg and getattr(dc_cfg, "enabled", False) and not enable_offload
+        use_full_state = getattr(self.cfg.env, "use_full_state", False)
 
         if not self.only_eval:
             for stage_id in range(self.stage_num):
@@ -96,6 +96,9 @@ class EnvWorker(Worker):
                     worker_info=self.worker_info,
                     enable_offload=enable_offload,
                 )
+                if use_full_state:
+                    from rlinf.envs.wrappers import FullStateWrapper
+                    em.env = FullStateWrapper(em.env, num_envs=self.train_num_envs_per_stage)
                 if dc_enabled:
                     from rlinf.envs.wrappers import DataCollectorWrapper
                     em.env = DataCollectorWrapper(
@@ -117,6 +120,9 @@ class EnvWorker(Worker):
                     worker_info=self.worker_info,
                     enable_offload=enable_offload,
                 )
+                if use_full_state:
+                    from rlinf.envs.wrappers import FullStateWrapper
+                    em.env = FullStateWrapper(em.env, num_envs=self.eval_num_envs_per_stage)
                 if dc_enabled:
                     from rlinf.envs.wrappers import DataCollectorWrapper
                     em.env = DataCollectorWrapper(

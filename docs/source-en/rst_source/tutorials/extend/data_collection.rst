@@ -57,6 +57,23 @@ Configuration Parameters
      - ``0.1``
      - Probability of saving failed episodes (0.0-1.0).
 
+FullStateWrapper
+~~~~~~~~~~~~~~~~
+
+In ``obs_mode: "rgb"`` mode, ManiSkill returns a 29-dimensional partial state (without object pose).
+To use MLP policy while collecting image data, enable ``use_full_state`` to replace with full 42-dim state.
+
+.. list-table:: FullStateWrapper Configuration
+   :header-rows: 1
+   :widths: 25 15 60
+
+   * - Parameter
+     - Default
+     - Description
+   * - ``use_full_state``
+     - ``False``
+     - When enabled, replaces partial states with full 42-dim states in rgb mode
+
 Data Format
 -----------
 
@@ -160,6 +177,7 @@ Example Configuration
    env:
      group_name: "EnvGroup"
      enable_offload: False
+     use_full_state: True  # Use full 42-dim state in rgb mode
 
      data_collection:
        enabled: True
@@ -179,7 +197,7 @@ Example Configuration
 
    actor:
      model:
-       obs_dim: 29
+       obs_dim: 42  # Full state dimension when use_full_state is enabled
 
 Best Practices
 --------------
@@ -189,3 +207,5 @@ Best Practices
 2. **Balanced Datasets**: Use high ``sample_rate_success`` (1.0) and low ``sample_rate_fail`` (0.01-0.1) to focus on successful trajectories.
 
 3. **Environment Count**: Reduce ``total_num_envs`` when collecting high-resolution images to manage storage.
+
+4. **MLP + Image Collection**: Use ``obs_mode: "rgb"`` + ``use_full_state: True`` + ``obs_dim: 42`` to train MLP policy while collecting images for Reward Model training.

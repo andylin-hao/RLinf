@@ -56,6 +56,23 @@
      - ``0.1``
      - 失败 episode 的保存概率 (0.0-1.0)
 
+FullStateWrapper
+~~~~~~~~~~~~~~~~
+
+在 ``obs_mode: "rgb"`` 模式下，ManiSkill 默认返回的 ``states`` 是 29 维的部分状态（不含物体位姿）。
+如果需要使用 MLP 策略同时采集图像数据，可启用 ``use_full_state`` 将状态替换为完整的 42 维。
+
+.. list-table:: FullStateWrapper 配置
+   :header-rows: 1
+   :widths: 25 15 60
+
+   * - 参数
+     - 默认值
+     - 说明
+   * - ``use_full_state``
+     - ``False``
+     - 启用后，rgb 模式下的 states 会被替换为完整 42 维状态
+
 数据格式
 --------
 
@@ -159,6 +176,7 @@ pickle 文件包含一个字典：
    env:
      group_name: "EnvGroup"
      enable_offload: False
+     use_full_state: True
 
      data_collection:
        enabled: True
@@ -178,7 +196,7 @@ pickle 文件包含一个字典：
 
    actor:
      model:
-       obs_dim: 29
+       obs_dim: 42
 
 最佳实践
 --------
@@ -188,4 +206,6 @@ pickle 文件包含一个字典：
 2. **数据平衡**：使用较高的 ``sample_rate_success`` (1.0) 和较低的 ``sample_rate_fail`` (0.01-0.1) 以聚焦成功轨迹。
 
 3. **环境数量**：采集高分辨率图像时，可适当减少 ``total_num_envs`` 以控制存储占用。
+
+4. **MLP + 图像采集**：使用 ``obs_mode: "rgb"`` + ``use_full_state: True`` + ``obs_dim: 42``，可在 MLP 策略训练时同步采集图像数据用于 Reward Model 训练。
 

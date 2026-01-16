@@ -31,7 +31,7 @@ runner:
   max_steps: -1
 
   only_eval: False
-  eval_policy_path: null
+  eval_policy_path: null # Optional: .pt file or None, if None, will use the checkpoint in rollout.model.model_path
   val_check_interval: 50
   save_interval: -1
 
@@ -80,6 +80,7 @@ algorithm:
 env:
   group_name: "EnvGroup"
   enable_offload: False
+  use_full_state: True  # Replace 29-dim partial state with 42-dim full state in rgb mode
 
   data_collection:
     enabled: True
@@ -89,7 +90,7 @@ env:
     sample_rate_fail: 0.1
 
   train:
-    total_num_envs: 256
+    total_num_envs: 1024
     wrap_obs_mode: simple
     auto_reset: True
     use_fixed_reset_state_ids: False
@@ -125,15 +126,16 @@ rollout:
 actor:
   group_name: "ActorGroup"
   training_backend: "fsdp"
-  micro_batch_size: 200
-  global_batch_size: 200
+  micro_batch_size: 6400
+  global_batch_size: 6400
   seed: 1234
   enable_offload: False
 
+  # Override the default values in model/mlp_policy
   model:
     model_path: ""
     model_type: "mlp_policy"
-    obs_dim: 29
+    obs_dim: 42  # Full state dim (use_full_state enabled)
 
   optim:
     lr: 3.0e-4
@@ -144,6 +146,7 @@ actor:
     weight_decay: 0.01
     clip_grad: 0.5
 
+  # Override the default values in training_backend/fsdp
   fsdp_config:
     strategy: "fsdp"
     sharding_strategy: "no_shard"
