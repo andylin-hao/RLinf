@@ -322,10 +322,18 @@ install_openvla_oft_model() {
 
 # after run: bash install.sh --model openvla-oft --env maniskill_libero
 install_opensora_world_model() {
+    # Clone opensora repository
+    local opensora_dir
+    opensora_dir=$(clone_or_reuse_repo OPENSORA_PATH "$VENV_DIR/opensora" ${GITHUB_PREFIX}https://github.com/jzndd/opensora.git)
+    
+    # Add opensora directory to PYTHONPATH
+    echo "export PYTHONPATH=$(realpath "$opensora_dir"):\$PYTHONPATH" >> "$VENV_DIR/bin/activate"
+    
+    # Install opensora dependencies
     uv pip install --no-deps -r $SCRIPT_DIR/embodied/models/opensora.txt
-    uv pip install git+https://github.com/fangqi-Zhu/TensorNVMe.git --no-build-isolation
+    uv pip install git+${GITHUB_PREFIX}https://github.com/fangqi-Zhu/TensorNVMe.git --no-build-isolation
     python -m ensurepip
-    python -m pip install -v --disable-pip-version-check --no-cache-dir --no-build-isolation --config-settings "--build-option=--cpp_ext" --config-settings "--build-option=--cuda_ext" git+https://github.com/NVIDIA/apex.git
+    python -m pip install -v --disable-pip-version-check --no-cache-dir --no-build-isolation --config-settings "--build-option=--cpp_ext" --config-settings "--build-option=--cuda_ext" git+${GITHUB_PREFIX}https://github.com/NVIDIA/apex.git
 }
 
 install_openpi_model() {
