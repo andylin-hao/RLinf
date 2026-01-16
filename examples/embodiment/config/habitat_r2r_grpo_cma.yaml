@@ -15,12 +15,12 @@ hydra:
 cluster:
   num_nodes: 1
   component_placement:
-    actor,env,rollout: 0
+    actor,env,rollout: 7
 
 runner:
   task_type: embodied
   logger:
-    log_path: "../results"
+    log_path: "logs"
     project_name: rlinf
     experiment_name: "habitat_r2r_grpo_cma"
     logger_backends: ["tensorboard"] # wandb, swanlab
@@ -93,9 +93,9 @@ env:
     max_episode_steps: 512 # max episode steps for truncation
     reset_gripper_open: False
   eval:
-    total_num_envs: 512
-    auto_reset: False
-    ignore_terminations: True
+    total_num_envs: 64
+    auto_reset: True
+    ignore_terminations: False
     max_episode_steps: 128
     max_steps_per_rollout_epoch: 64
     group_size: 1
@@ -104,7 +104,7 @@ env:
     reset_gripper_open: False
     is_eval: True
     video_cfg:
-      fps: 3
+      fps: 5
       save_video: True
       video_base_dir: ${runner.logger.log_path}/video/eval
 

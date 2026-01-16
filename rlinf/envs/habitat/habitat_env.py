@@ -13,12 +13,15 @@
 # limitations under the License.
 
 import copy
+import os
 from typing import Optional, Union
 
 import gym
 import habitat
 import numpy as np
 import torch
+from habitat.core.embodied_task import SimulatorTaskAction
+from habitat.core.registry import registry
 from habitat_baselines.config.default import get_config
 from hydra.core.global_hydra import GlobalHydra
 
@@ -29,6 +32,14 @@ from rlinf.envs.utils import (
     save_rollout_video,
     to_tensor,
 )
+
+
+@registry.register_task_action
+class NoOpAction(SimulatorTaskAction):
+    """Register manually defined No-operation action for habitat env."""
+
+    def step(self, *args, **kwargs):
+        return self._sim.get_sensor_observations()
 
 
 class HabitatEnv(gym.Env):
@@ -45,8 +56,6 @@ class HabitatEnv(gym.Env):
         self.prev_step_reward = np.zeros(self.num_envs)
         self.use_rel_reward = cfg.use_rel_reward
         self._elapsed_steps = np.zeros(self.num_envs, dtype=np.int32)
-        self.ignore_terminations = cfg.ignore_terminations
-        self.auto_reset = cfg.auto_reset
 
         self._generator = np.random.default_rng(seed=self.seed)
         self._generator_ordered = np.random.default_rng(seed=0)
@@ -232,34 +241,6 @@ class HabitatEnv(gym.Env):
 
         return obs
 
-    def _get_reset_states(self, env_idx):
-        if env_idx is None:
-            env_idx = np.arange(self.num_envs)
-        init_state = [
-            self.task_suite.get_task_init_states(self.task_ids[env_id])[
-                self.trial_ids[env_id]
-            ]
-            for env_id in env_idx
-        ]
-        return init_state
-
-    def _reconfigure(self, reset_state_ids, env_idx):
-        reconfig_env_idx = []
-        task_ids, trial_ids = self._get_task_and_trial_ids_from_reset_state_ids(
-            reset_state_ids
-        )
-        for j, env_id in enumerate(env_idx):
-            if self.task_ids[env_id] != task_ids[j]:
-                reconfig_env_idx.append(env_id)
-                self.task_ids[env_id] = task_ids[j]
-            self.trial_ids[env_id] = trial_ids[j]
-        if reconfig_env_idx:
-            env_fn_params = self.get_env_fn_params(reconfig_env_idx)
-            self.env.reconfigure_env_fns(env_fn_params, reconfig_env_idx)
-        self.env.seed(self.seed * len(env_idx))
-        raw_obs = self.env.reset(id=env_idx)
-        return raw_obs
-
     def reset(
         self,
         env_idx: Optional[Union[int, list[int], np.ndarray]] = None,
@@ -268,24 +249,26 @@ class HabitatEnv(gym.Env):
             env_idx = np.arange(self.num_envs)
 
         raw_obs = self.env.reset(env_idx)
+        self._elapsed_steps[env_idx] = 0
+        infos = {}
 
         if self.current_raw_obs is None:
             self.current_raw_obs = [None] * self.num_envs
 
         for i, idx in enumerate(env_idx):
             self.current_raw_obs[idx] = raw_obs[i]
-
         obs = self._wrap_obs(self.current_raw_obs)
-        self._reset_metrics(env_idx)
-        infos = {}
+
         return obs, infos
 
-    def step(self, actions=None, auto_reset=True):
+    def step(self, actions=None):
         """Step the environment with the given actions."""
         if isinstance(actions, torch.Tensor):
             actions = actions.detach().cpu().numpy()
 
-        self._elapsed_steps += 1
+        for i, action in enumerate(actions):
+            if action != "no_op":
+                self._elapsed_steps[i] += 1
         raw_obs, _reward, terminations, info_lists = self.env.step(actions)
         self.current_raw_obs = raw_obs
         obs = self._wrap_obs(raw_obs)
@@ -307,15 +290,12 @@ class HabitatEnv(gym.Env):
                     self.render_images[key] = []
                 self.render_images[key].append(frame_concat)
 
-        infos = self._record_metrics(step_reward, terminations, infos)
-        if self.ignore_terminations:
-            infos["episode"]["success_at_end"] = to_tensor(terminations)
-            terminations[:] = False
+        self._dones = terminations
+        if self._dones.any():
+            if self.video_cfg.save_video:
+                self.flush_video()
+            obs, infos = self._handle_auto_reset(self._dones, obs, infos)
 
-        dones = terminations | truncations
-        _auto_reset = auto_reset and self.auto_reset
-        if dones.any() and _auto_reset:
-            obs, infos = self._handle_auto_reset(dones, obs, infos)
         return (
             obs,
             to_tensor(step_reward),
@@ -330,44 +310,49 @@ class HabitatEnv(gym.Env):
 
         chunk_rewards = []
 
-        raw_chunk_terminations = []
-        raw_chunk_truncations = []
+        # Truncate chunk if it contains "stop" and pad with "no_op"
+        for env_idx, chunk_action in enumerate(chunk_actions):
+            stop_idx = np.where(chunk_action == "stop")[0]
+            if len(stop_idx) > 0:
+                stop_idx = stop_idx[0] + 1
+                truncated_chunk = chunk_action[:stop_idx].copy()
+                chunk_actions[env_idx] = np.concatenate(
+                    [truncated_chunk, ["no_op"] * (chunk_size - len(truncated_chunk))]
+                )
+
+        # Truncate chunk if it would exceed max_episode_steps and pad with "no_op"
+        for env_idx, elapsed_step in enumerate(self.elapsed_steps):
+            if elapsed_step + chunk_size >= self.cfg.max_episode_steps:
+                reserved_idx = self.cfg.max_episode_steps - elapsed_step
+                truncated_chunk = chunk_actions[env_idx][:reserved_idx].copy()
+                truncated_chunk[reserved_idx - 1] = "stop"
+                chunk_actions[env_idx] = np.concatenate(
+                    [
+                        truncated_chunk,
+                        ["no_op"] * (chunk_size - len(truncated_chunk)),
+                    ]
+                )
+
+        chunk_terminations = []
+        chunk_truncations = []
         for i in range(chunk_size):
             actions = chunk_actions[:, i]
             extracted_obs, step_reward, terminations, truncations, infos = self.step(
-                actions, auto_reset=False
+                actions
             )
 
             chunk_rewards.append(step_reward)
-            raw_chunk_terminations.append(terminations)
-            raw_chunk_truncations.append(truncations)
+            chunk_terminations.append(terminations)
+            chunk_truncations.append(truncations)
 
         chunk_rewards = torch.stack(chunk_rewards, dim=1)  # [num_envs, chunk_steps]
-        raw_chunk_terminations = torch.stack(
-            raw_chunk_terminations, dim=1
+        chunk_terminations = torch.stack(
+            chunk_terminations, dim=1
         )  # [num_envs, chunk_steps]
-        raw_chunk_truncations = torch.stack(
-            raw_chunk_truncations, dim=1
+        chunk_truncations = torch.stack(
+            chunk_truncations, dim=1
         )  # [num_envs, chunk_steps]
 
-        past_terminations = raw_chunk_terminations.any(dim=1)
-        past_truncations = raw_chunk_truncations.any(dim=1)
-        past_dones = torch.logical_or(past_terminations, past_truncations)
-
-        if past_dones.any() and self.auto_reset:
-            extracted_obs, infos = self._handle_auto_reset(
-                past_dones.cpu().numpy(), extracted_obs, infos
-            )
-
-        if self.auto_reset or self.ignore_terminations:
-            chunk_terminations = torch.zeros_like(raw_chunk_terminations)
-            chunk_terminations[:, -1] = past_terminations
-
-            chunk_truncations = torch.zeros_like(raw_chunk_truncations)
-            chunk_truncations[:, -1] = past_truncations
-        else:
-            chunk_terminations = raw_chunk_terminations.clone()
-            chunk_truncations = raw_chunk_truncations.clone()
         return (
             extracted_obs,
             chunk_rewards,
@@ -399,10 +384,19 @@ class HabitatEnv(gym.Env):
         else:
             return reward
 
-    def flush_video(self, video_name, video_frames):
-        save_rollout_video(
-            video_frames,
-            output_dir=self.video_cfg.video_base_dir,
-            video_name=video_name,
-            fps=self.video_cfg.fps,
-        )
+    def flush_video(self, video_sub_dir: Optional[str] = None):
+        output_dir = self.video_cfg.video_base_dir
+        if video_sub_dir is not None:
+            output_dir = os.path.join(output_dir, f"{video_sub_dir}")
+
+        dones_episode_ids = np.array(self.env.get_current_episode_ids())[self._dones]
+        for episode_ids in dones_episode_ids:
+            video_name = f"episode_{episode_ids}"
+            save_rollout_video(
+                self.render_images[video_name],
+                output_dir=output_dir,
+                video_name=video_name,
+                fps=self.video_cfg.fps,
+            )
+            # clear done episode render_images
+            self.render_images[video_name] = []

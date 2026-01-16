@@ -50,6 +50,9 @@ Download the VLN-CE episodes:
  - [rxr](https://drive.google.com/file/d/145xzLjxBaNTbVgBfQ8e9EsBAV8W-SM0t/view) (Rename `RxR_VLNCE_v0/` -> `rxr/`)
  -  Put them into `VLN-CE/datasets` folder
 
+Download the GT actions:
+- For every episodes in eval split, we use `ShortestPathFollower` to generate the gt actions, please download [here](http://kaldir.vc.in.tum.de/matterport/v1/tasks/mp3d_habitat.zip), and put it into `VLN-CE/actions` folder.
+
  Dataset structure:
  ```sh
  VLN-CE
@@ -57,7 +60,8 @@ Download the VLN-CE episodes:
 |   |-- r2r
 |   |-- rxr
 `-- scene_dataset
-    |-- mp3d
+|   |-- mp3d
+`-- actions
  ```
 
 ## Test habitat env
@@ -65,5 +69,6 @@ The multi-environment design takes the Libero environment as a reference. Howeve
 
 I once tried using Habitat’s built-in `VectorEnv`, but all environments must be reset and stepped synchronously.
 ```sh
+export EMBODIED_PATH="$( cd "$(dirname "${BASH_SOURCE[0]}" )" && pwd )"
 python examples/embodiment/debug_habitat_env.py
 ```

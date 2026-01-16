@@ -42,6 +42,9 @@ habitat:
     habitat_sim_v0:
       gpu_device_id: 0
   task:
+    actions:
+      no_op:
+        type: "NoOpAction"
     measurements:
       top_down_map:
         type: TopDownMap
