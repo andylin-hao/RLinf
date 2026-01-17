@@ -54,13 +54,22 @@ class DataCollectorWrapper(gym.Wrapper):
     ):
         super().__init__(env)
         self.save_dir = save_dir
-        self.enabled = enabled
         self.rank = rank
-        self.mode = mode
+        self.collect_mode = mode  # "all", "train", or "eval"
         self.num_envs = num_envs
         self.show_goal_site = show_goal_site
         self.sample_rate_success = sample_rate_success
         self.sample_rate_fail = sample_rate_fail
+        
+        # Detect actual env mode by checking env's is_eval attribute
+        self.env_mode = self._detect_env_mode()
+        
+        # Enable collection only if collect_mode matches
+        should_collect = (self.collect_mode == "all") or (self.collect_mode == self.env_mode)
+        self.enabled = enabled and should_collect
+        
+        # Debug info
+        print(f"[DataCollector] env_mode={self.env_mode}, collect_mode={self.collect_mode}, enabled={self.enabled}")
 
         # Per-env episode counters
         self._episode_ids = [0] * num_envs
@@ -77,6 +86,37 @@ class DataCollectorWrapper(gym.Wrapper):
         # Create save directory if enabled
         if self.enabled:
             self._setup_save_dir()
+    
+    def _detect_env_mode(self) -> str:
+        """Detect if this is a train or eval environment."""
+        # Walk through wrapper chain, checking each level for cfg.is_eval
+        current = self.env
+        visited = set()
+        
+        while current is not None and id(current) not in visited:
+            visited.add(id(current))
+            
+            # Check cfg.is_eval at this level
+            if hasattr(current, "cfg"):
+                cfg = current.cfg
+                is_eval = getattr(cfg, "is_eval", None)
+                if is_eval is not None:
+                    return "eval" if is_eval else "train"
+            
+            # Check direct is_eval attribute
+            if hasattr(current, "is_eval") and not callable(getattr(current, "is_eval")):
+                return "eval" if current.is_eval else "train"
+            
+            # Move to inner env
+            if hasattr(current, "env"):
+                current = current.env
+            elif hasattr(current, "unwrapped") and current.unwrapped is not current:
+                current = current.unwrapped
+            else:
+                break
+        
+        # Fallback: assume train
+        return "train"
 
     def _create_empty_buffer(self) -> dict[str, list]:
         """Create an empty episode buffer."""
@@ -138,7 +178,12 @@ class DataCollectorWrapper(gym.Wrapper):
         self._episode_success = [False] * self.num_envs
 
         # Call the underlying environment's reset
-        obs, info = self.env.reset(seed=seed, options=options)
+        # Try with seed and options first, fall back if not supported
+        try:
+            obs, info = self.env.reset(seed=seed, options=options)
+        except TypeError:
+            # Fallback for environments that don't support seed/options
+            obs, info = self.env.reset()
         
         # Show goal_site after reset (ManiSkill hides it by default)
         self._show_goal_site_visual()
@@ -260,21 +305,80 @@ class DataCollectorWrapper(gym.Wrapper):
             self._buffers[env_idx]["infos"].append(env_info)
             
             # Track success status
-            self._update_success_status(env_idx, infos)
+            self._update_success_status(env_idx, env_info)
 
     def _update_success_status(self, env_idx, info):
-        """Update success status for an env based on info dict."""
+        """Update success status for an env based on info dict.
+        
+        Priority order:
+        1. info["episode"]["success_at_end"] - ManiSkill's official end-of-episode success
+        2. info["success_once"] - whether success was achieved at any point
+        3. info["success"] - current step success (fallback)
+        """
         import torch
         
-        if isinstance(info, dict) and "success" in info:
+        success = None
+        
+        # Priority 1: episode.success_once (cumulative - any step succeeded)
+        # This is best for data collection: trajectories that ever succeeded are valuable
+        if isinstance(info, dict) and "episode" in info:
+            episode_info = info["episode"]
+            if isinstance(episode_info, dict) and "success_once" in episode_info:
+                success = episode_info["success_once"]
+        
+        # Priority 2: episode.success_at_end (final step success)
+        if success is None and isinstance(info, dict) and "episode" in info:
+            episode_info = info["episode"]
+            if isinstance(episode_info, dict) and "success_at_end" in episode_info:
+                success = episode_info["success_at_end"]
+        
+        # Priority 3: current step success (fallback)
+        if success is None and isinstance(info, dict) and "success" in info:
             success = info["success"]
+        
+        if success is not None:
             if isinstance(success, torch.Tensor):
                 if success.dim() == 0:
-                    self._episode_success[env_idx] = success.item()
-                elif success.shape[0] == self.num_envs:
-                    self._episode_success[env_idx] = success[env_idx].item()
+                    self._episode_success[env_idx] = bool(success.item())
+                elif len(success.shape) > 0 and success.shape[0] == self.num_envs:
+                    self._episode_success[env_idx] = bool(success[env_idx].item())
             else:
                 self._episode_success[env_idx] = bool(success)
+
+    def _get_episode_success(self, buffer, env_idx) -> bool:
+        """Get episode success from buffer, checking final_info or second-to-last info."""
+        import torch
+        
+        # First try: check last info's final_info field (set during auto_reset)
+        if buffer["infos"]:
+            last_info = buffer["infos"][-1]
+            if isinstance(last_info, dict) and "final_info" in last_info:
+                final_info = last_info["final_info"]
+                if isinstance(final_info, dict) and "episode" in final_info:
+                    episode = final_info["episode"]
+                    if "success_once" in episode:
+                        val = episode["success_once"]
+                        return bool(val.item() if isinstance(val, torch.Tensor) else val)
+        
+        # Second try: check second-to-last info (before auto_reset overwrote last)
+        if len(buffer["infos"]) >= 2:
+            prev_info = buffer["infos"][-2]
+            if isinstance(prev_info, dict) and "episode" in prev_info:
+                episode = prev_info["episode"]
+                if "success_once" in episode:
+                    val = episode["success_once"]
+                    return bool(val.item() if isinstance(val, torch.Tensor) else val)
+        
+        # Third try: check any info with episode.success_once (scan backwards)
+        for info in reversed(buffer["infos"]):
+            if isinstance(info, dict) and "episode" in info:
+                episode = info["episode"]
+                if "success_once" in episode:
+                    val = episode["success_once"]
+                    return bool(val.item() if isinstance(val, torch.Tensor) else val)
+        
+        # Fallback to stored success status
+        return self._episode_success[env_idx]
 
     def _extract_env_data(self, data, env_idx):
         """Extract data for a specific env from batched data."""
@@ -328,8 +432,9 @@ class DataCollectorWrapper(gym.Wrapper):
         if not buffer["actions"]:
             return
 
-        # Determine if we should save based on success status and sampling rate
-        is_success = self._episode_success[env_idx]
+        # Check final_info or second-to-last info for episode.success_once
+        # (last info is from new episode after auto_reset)
+        is_success = self._get_episode_success(buffer, env_idx)
         sample_rate = self.sample_rate_success if is_success else self.sample_rate_fail
         
         should_save = random.random() < sample_rate
@@ -342,7 +447,7 @@ class DataCollectorWrapper(gym.Wrapper):
 
             # Add metadata to the episode data
             episode_data = {
-                "mode": self.mode,
+                "mode": self.env_mode,
                 "rank": self.rank,
                 "env_idx": env_idx,
                 "episode_id": self._episode_ids[env_idx],
@@ -391,9 +496,10 @@ class DataCollectorWrapper(gym.Wrapper):
 
     def set_mode(self, mode: str):
         """Change the collection mode (train/eval)."""
-        self.mode = mode
-        if self.enabled:
-            self._setup_save_dir()
+        self.collect_mode = mode
+        # Re-evaluate if collection should be enabled
+        should_collect = (self.collect_mode == "all") or (self.collect_mode == self.env_mode)
+        self.enabled = should_collect
 
     def set_enabled(self, enabled: bool):
         """Enable or disable data collection."""
@@ -402,99 +508,3 @@ class DataCollectorWrapper(gym.Wrapper):
             self._setup_save_dir()
 
 
-class FullStateWrapper(gym.Wrapper):
-    """
-    Wrapper that replaces partial states with full 42-dim states in rgb mode.
-    
-    In rgb mode, ManiSkill returns partial state (29 dim) in obs["states"].
-    This wrapper replaces it with full state (42 dim) by directly querying
-    robot qpos, qvel, and object poses from the env.
-    
-    Usage:
-        In env_worker.py or config, enable this wrapper for rgb mode.
-        Then use obs_dim: 42 in mlp_policy config.
-    """
-
-    def __init__(self, env: gym.Env, num_envs: int = 1):
-        super().__init__(env)
-        self.num_envs = num_envs
-        self._unwrapped = self._get_unwrapped_env()
-
-    def _get_unwrapped_env(self):
-        """Get the innermost ManiSkill env."""
-        unwrapped = self.env
-        while hasattr(unwrapped, "env"):
-            unwrapped = unwrapped.env
-        if hasattr(unwrapped, "unwrapped"):
-            unwrapped = unwrapped.unwrapped
-        return unwrapped
-
-    def _get_full_state(self):
-        """
-        Get full 42-dim state directly from ManiSkill env.
-        
-        State composition (PickCube-v1):
-        - robot qpos: 9 dim (7 arm joints + 2 gripper)
-        - robot qvel: 9 dim
-        - tcp_pose: 7 dim (3 pos + 4 quat)
-        - goal_pos: 3 dim
-        - obj_pose: 7 dim (3 pos + 4 quat)
-        - tcp_to_obj_pos: 3 dim
-        - obj_to_goal_pos: 3 dim
-        Total: ~42 dim (may vary slightly by task)
-        """
-        import torch
-        from mani_skill.utils import common
-        
-        env = self._unwrapped
-        
-        # Temporarily get state observation
-        original_mode = env._obs_mode
-        env._obs_mode = "state"
-        try:
-            state_obs = env.get_obs()
-        finally:
-            env._obs_mode = original_mode
-        
-        # Flatten if dict
-        if isinstance(state_obs, dict):
-            state = common.flatten_state_dict(state_obs, use_torch=True, device=env.device)
-        else:
-            state = state_obs
-            
-        return state
-
-    def _replace_states(self, obs):
-        """Replace partial states with full states."""
-        import torch
-        
-        if not isinstance(obs, dict):
-            return obs
-            
-        # Only process if this is rgb mode (has main_images)
-        if "main_images" not in obs:
-            return obs
-            
-        # Get full state and replace
-        full_state = self._get_full_state()
-        obs["states"] = full_state
-        
-        return obs
-
-    def reset(self, **kwargs):
-        obs, info = self.env.reset(**kwargs)
-        obs = self._replace_states(obs)
-        return obs, info
-
-    def step(self, action, **kwargs):
-        obs, reward, terminated, truncated, info = self.env.step(action, **kwargs)
-        obs = self._replace_states(obs)
-        return obs, reward, terminated, truncated, info
-
-    def chunk_step(self, chunk_actions):
-        obs, rewards, terminations, truncations, infos = self.env.chunk_step(chunk_actions)
-        obs = self._replace_states(obs)
-        # Handle final_observation in infos (from auto_reset)
-        if isinstance(infos, dict) and "final_observation" in infos:
-            infos["final_observation"] = self._replace_states(infos["final_observation"])
-        return obs, rewards, terminations, truncations, infos

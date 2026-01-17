@@ -16,6 +16,8 @@ import importlib
 import pathlib
 import pkgutil
 
+from .maniskill_full_state_wrapper import ManiskillFullStateWrapper
+
 
 def import_all_tasks():
     package_name = __name__ + ".tasks"
