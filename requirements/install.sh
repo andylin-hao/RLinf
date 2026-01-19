@@ -16,8 +16,8 @@ USE_MIRRORS=0
 GITHUB_PREFIX=""
 NO_ROOT=0
 SUPPORTED_TARGETS=("embodied" "reason" "docs")
-SUPPORTED_MODELS=("openvla" "openvla-oft" "openpi" "gr00t" "opensora")
-SUPPORTED_ENVS=("behavior" "maniskill_libero" "metaworld" "calvin" "isaaclab" "robocasa" "franka" "frankasim" "robotwin")
+SUPPORTED_MODELS=("openvla" "openvla-oft" "openpi" "gr00t")
+SUPPORTED_ENVS=("behavior" "maniskill_libero" "metaworld" "calvin" "isaaclab" "robocasa" "franka" "frankasim" "robotwin" "opensora")
 
 # Ensure uv is installed
 if ! command -v uv &> /dev/null; then
@@ -312,6 +312,14 @@ install_openvla_oft_model() {
             uv pip install git+${GITHUB_PREFIX}https://github.com/RLinf/openvla-oft.git@RLinf/v0.1  --no-build-isolation
             install_robotwin_env
             ;;
+        opensora)
+            create_and_sync_venv
+            install_common_embodied_deps
+            install_maniskill_libero_env
+            install_opensora_world_model
+            install_prebuilt_flash_attn
+            uv pip install git+${GITHUB_PREFIX}https://github.com/moojink/openvla-oft.git
+            ;;
         *)
             echo "Environment '$ENV_NAME' is not supported for OpenVLA-OFT model." >&2
             exit 1
@@ -330,7 +338,7 @@ install_opensora_world_model() {
     echo "export PYTHONPATH=$(realpath "$opensora_dir"):\$PYTHONPATH" >> "$VENV_DIR/bin/activate"
     
     # Install opensora dependencies
-    uv pip install --no-deps -r $SCRIPT_DIR/embodied/models/opensora.txt
+    uv pip install -r $SCRIPT_DIR/embodied/models/opensora.txt
     uv pip install git+${GITHUB_PREFIX}https://github.com/fangqi-Zhu/TensorNVMe.git --no-build-isolation
     python -m ensurepip
     python -m pip install -v --disable-pip-version-check --no-cache-dir --no-build-isolation --config-settings "--build-option=--cpp_ext" --config-settings "--build-option=--cuda_ext" git+${GITHUB_PREFIX}https://github.com/NVIDIA/apex.git
@@ -699,9 +707,6 @@ main() {
                     ;;
                 gr00t)
                     install_gr00t_model
-                    ;;
-                opensora)
-                    install_opensora_world_model
                     ;;
                 "")
                     install_env_only

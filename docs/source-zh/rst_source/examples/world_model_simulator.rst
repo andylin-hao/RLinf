@@ -113,10 +113,8 @@ Opensora 作为一个世界模型，理论上可以拟合任意环境的任意�
 .. code:: bash
 
    # 为提高国内依赖安装速度，可以添加`--use-mirror`到下面的install.sh命令
-   # 首先需要正常安装所使用的算法 (openvla-oft) 和仿真环境 (maniskill_libero) 的依赖
-   bash requirements/install.sh embodied --model openvla-oft --env maniskill_libero
-   # 接着安装 opensora 的依赖
-   bash requirements/install.sh embodied --model opensora --env maniskill_libero
+   # 需要正常安装所使用的算法 (openvla-oft) 和仿真环境 (maniskill_libero) 的依赖
+   bash requirements/install.sh embodied --model openvla-oft --env opensora
    source .venv/bin/activate
 
 VLA 模型下载
@@ -160,18 +158,17 @@ WM (World Model) 模型下载
    # 分别下载 Opensora 中的模型权重和用于初始化的数据
    # 方法 1: 使用 git clone
    git lfs install
-   git clone https://huggingface.co/jzndd/Opensora_for_libero
+   git clone https://huggingface.co/RLinf/RLinf-OpenSora-LIBERO-Spatial
 
    # 方法 2: 使用 huggingface-hub
    pip install huggingface-hub
-   hf download jzndd/Opensora_for_libero
+   hf download RLinf/RLinf-OpenSora-LIBERO-Spatial --local-dir RLinf-OpenSora-LIBERO-Spatial
 
-Opensora_for_libero 的目录结构如下：
+RLinf-OpenSora-LIBERO-Spatial 的目录结构如下：
 
 .. code-block:: text
 
-    Opensora_for_libero/
-    └── libero_spatial/  (或 libero_object)
+    RLinf-OpenSora-LIBERO-Spatial/
         ├── best_wm_ckpt/
         │   └── base_policy/
         │       ├── model/                      # 世界模型权重文件
@@ -186,73 +183,97 @@ Opensora_for_libero 的目录结构如下：
                 └── trajN.npy
         └── vae/                                # VAE 模型权重文件
 
-下载完成后，请确保在配置yaml文件中正确指定模型路径。
+下载完成后，请确保在配置 yaml 文件中正确指定模型路径。
 
 .. code:: yaml
 
-    env:
-        train:
-            opensora_wm_hf_ckpt_path: /Pathto/dataset/Opensora_for_libero/
+   env:
+      train:
+         opensora_wm_hf_ckpt_path: /Pathto/model/RLinf-OpenSora-LIBERO-Spatial/
 
 运行脚本
 -------------------
 
+请确保您在运行下面的命令前已激活正确的 Python 虚拟环境（venv）。
+如果您使用的是官方 Docker 镜像，您需要通过`source switch_env openvla-oft`命令切换到`openvla-oft`环境。
+
 **1. 关键参数配置**
 
-.. code-block:: yaml
-
-   cluster:
-      num_nodes: 2
-      component_placement:
-         env: 0-7
-         rollout: 8-15
-         actor: 0-15
-
-   rollout:
-      pipeline_stage_num: 2
-
-你可以灵活配置 env、rollout、actor 三个组件使用的 GPU 数量。   
-此外，在配置中设置 `pipeline_stage_num = 2`，可实现 **rollout 与 env** 之间的流水线重叠，从而提升 rollout 效率。
+以 OpenVLA-OFT 模型为例，在 ``actor.model`` 中需要配置以下关键参数：
 
 .. code-block:: yaml
+
+   actor:
+     model:
+       model_path: "/path/to/model/Openvla-oft-SFT-libero-spatial-traj1/"    # SFT 模型路径
+       model_type: "openvla_oft"                                             # 模型类型设置为openvla_oft
+       use_proprio: False                                                    # 是否使用本体感觉信息
+       num_images_in_input: 1                                                # 输入图像数量
+       num_action_chunks: 8                                                  # 动作块数量
+       unnorm_key: "libero_spatial_no_noops"                                 # 动作归一化键（需与SFT训练时使用的unnorm_key一致）
+
+值得一提的是，由于 world model 不具有本体信息，不生成腕部视角，且 chunk 固定，所以 ``actor.model`` 中的 ``use_proprio`` 默认为 False， ``num_images_in_input`` 默认为 1, ``num_action_chunks`` 默认为 8。
+
+**2. 环境配置**
+
+在环境配置文件中，需要设置以下关键参数：
+
+.. code-block:: yaml
+
+   # 在 CHOSEN_CONFIG 中覆写
+
+   # 建议在训练时使用 opensora_libero_spatial，在评估时使用 libero_spatial
+   env/train: opensora_libero_spatial
+   env/eval: libero_spatial  
+   env:
+      train:
+         opensora_wm_hf_ckpt_path: /Pathto/model/RLinf-OpenSora-LIBERO-Spatial/
    
-   cluster:
-      num_nodes: 1
-      component_placement:
-         env,rollout,actor: all
+   # 在 env/train/opensora_libero_spatial.yaml 中：
 
-你也可以重新配置 Placement，实现 **完全共享**：env、rollout、actor 三个组件共享全部 GPU。
+   env_type: opensora_wm
+   wm_env_type: libero
+   #  world model 的初始图像路径，用于初始化 world model
+   initial_image_path: ${env.train.opensora_wm_hf_ckpt_path}/dataset_for_rlinf_world_model_init/base_policy_rollout_buffer
+   # world_model_cfg 中的所有参数不建议修改
+   world_model_cfg:
+      # World MODEL 中用于归一化数据的统计信息路径
+      stats_path: /Pathto/model/RLinf-OpenSora-LIBERO-Spatial/best_wm_ckpt/base_policy/dataset_statistics.json
+      chunk: 8                     # 需要和训练时对齐，同时和 VLA 的推理长度对齐，默认为8
+      condition_frame_length: 4    # 需要和训练时对齐，world model 的上文记忆长度，默认为4
+      model:
+      # 预训练权重
+         from_pretrained: /Pathto/model/RLinf-OpenSora-LIBERO-Spatial/best_wm_ckpt/base_policy/model
+    
+**3. 配置文件**
 
-.. code-block:: yaml
+以 **OpenVLA-OFT** 模型， **GRPO** 算法为例，对应配置文件为：
 
-   cluster:
-      num_nodes: 2
-      component_placement:
-         env: 0-3
-         rollout: 4-7
-         actor: 8-15
+- **OpenVLA-OFT + GRPO**：``examples/embodiment/config/opensora_libero_spatial_grpo_openvlaoft.yaml``
 
-你还可以重新配置 Placement，实现 **完全分离**：env、rollout、actor 各用各的 GPU、互不干扰，  
-这样就不需要 offload 功能。。
-
-**2. 配置文件**
-
-   支持 **OpenVLA-OFT** 模型， **GRPO** 算法。  
-   对应配置文件：
-
-   - **OpenVLA-OFT + GRPO**：``examples/embodiment/config/opensora_libero_spatial_grpo_openvlaoft.yaml``
-
-**3. 启动命令**
+**4. 启动命令**
 
 选择配置后，运行以下命令开始训练：
 
 .. code-block:: bash
 
+   # 设置LD_LIBRARY_PATH环境变量, 在环境安装阶段会自动生成 /root/.tensornvme/
+   export LD_LIBRARY_PATH=/root/.tensornvme/lib:$LD_LIBRARY_PATH
+   # 设置OpenSora环境变量，在环境安装阶段会自动 clone 至 .venv/opensora
+   export OPENSORA_REPO_PATH=/path/to/opensora
+   export PYTHONPATH=$OPENSORA_REPO_PATH:$PYTHONPATH
+
    bash examples/embodiment/run_embodiment.sh CHOSEN_CONFIG
 
-例如，使用 opensora 模拟 libero-spatial 环境并使用 GRPO 训练 OpenVLA-OFT 模型：
+例如，在 OpenSora 环境中使用 GRPO 训练 OpenVLA-OFT 模型：
 
 .. code-block:: bash
+
+   # 设置LD_LIBRARY_PATH环境变量, 在环境安装阶段会自动生成 /root/.tensornvme/
+   export LD_LIBRARY_PATH=/root/.tensornvme/lib:$LD_LIBRARY_PATH
+   # 设置OpenSora环境变量，在环境安装阶段会自动 clone 至 .venv/opensora
+   export OPENSORA_REPO_PATH=/path/to/opensora
+   export PYTHONPATH=$OPENSORA_REPO_PATH:$PYTHONPATH
 
    bash examples/embodiment/run_embodiment.sh opensora_libero_spatial_grpo_openvlaoft
 
@@ -340,7 +361,7 @@ LIBERO 部分结果
     :header-rows: 1
 
     * - 环境
-      - 任务
+      - Object
       - Spatial
     * - |huggingface| `OpenVLA-OFT (LoRA-base) <https://huggingface.co/RLinf/RLinf-OpenVLAOFT-LIBERO-130-Base-Lora>`_
       - 50.20%

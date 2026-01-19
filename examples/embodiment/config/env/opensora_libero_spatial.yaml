@@ -31,22 +31,20 @@ video_cfg:
   info_on_video: True
   video_base_dir: ${runner.logger.log_path}/video/train
 
-###  ------------------evac params define here ------------------
+###  ------------------Opensora params define here ------------------
 
-model_type: opensora
-opensora_wm_hf_ckpt_path: "/mnt/project_rlinf/jzn/workspace/v1/hf_wm_ckpt/Opensora_for_libero"
-initial_image_path: ${env.train.opensora_wm_hf_ckpt_path}/libero_spatial/dataset_for_rlinf_world_model_init/base_policy_rollout_buffer
+opensora_wm_hf_ckpt_path: null
+initial_image_path: ${env.train.opensora_wm_hf_ckpt_path}/dataset_for_rlinf_world_model_init/base_policy_rollout_buffer
 
 world_model_cfg:
   # Dataset settings
-  stats_path: ${env.train.opensora_wm_hf_ckpt_path}/libero_spatial/best_wm_ckpt/base_policy/dataset_statistics.json
+  stats_path: ${env.train.opensora_wm_hf_ckpt_path}/best_wm_ckpt/base_policy/dataset_statistics.json
   dtype: bf16
-  plugin: zero2
 
   # Model settings
   model:
     type: "STDiT3-XL/2"
-    from_pretrained: ${env.train.opensora_wm_hf_ckpt_path}/libero_spatial/best_wm_ckpt/base_policy
+    from_pretrained: ${env.train.opensora_wm_hf_ckpt_path}/best_wm_ckpt/base_policy
     qk_norm: true
     enable_flash_attn: true
     enable_layernorm_kernel: true
@@ -56,25 +54,18 @@ world_model_cfg:
   vae:
     type: SDXL
     from_pretrained: ${env.train.opensora_wm_hf_ckpt_path}/vae
-    micro_frame_size: 8
-    micro_batch_size: 64
+    micro_frame_size: 8   # had better not to be changed
+    micro_batch_size: 64  # had better not to be changed
 
   reward_model:
     type: ResnetRM
-    from_pretrained: ${env.train.opensora_wm_hf_ckpt_path}/libero_spatial/best_rm_ckpt/resnet_rm.pth
+    from_pretrained: ${env.train.opensora_wm_hf_ckpt_path}/best_rm_ckpt/resnet_rm.pth
 
   scheduler:
     type: rflow
     use_timestep_transform: true
     sample_method: logit-normal
 
-  fps: 3
-  multi_resolution: STDiT2
-  cache_pin_memory: false
-
-  chunk: 8
-  condition_frame_length: 4
-  image_size: [256, 256]
-  num_frames: 12
-  # type: ResnetRewModel
-  # checkpoint_path: ${env.train.opensora_wm_hf_ckpt_path}/libero_spatial/best_rm_ckpt/resnet_rm.pth
+  chunk: 8                     # should be same as chunk in VLA
+  condition_frame_length: 4    # condition frame length of world model
+  image_size: [256, 256]       # output image size of world model

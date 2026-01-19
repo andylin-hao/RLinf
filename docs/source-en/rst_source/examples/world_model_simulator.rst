@@ -120,10 +120,8 @@ Please switch to the corresponding virtual environment via the built-in `switch_
 .. code:: bash
 
    # For mainland China users, you can add the `--use-mirror` flag to the install.sh command for better download speed.
-   # First, install the dependencies for the algorithm (openvla-oft) and simulation environment (maniskill_libero)
-   bash requirements/install.sh embodied --model openvla-oft --env maniskill_libero
-   # Then, install the opensora dependencies
-   bash requirements/install.sh embodied --model opensora --env maniskill_libero
+   # Install the dependencies for the algorithm (openvla-oft) and simulation environment (opensora)
+   bash requirements/install.sh embodied --model openvla-oft --env opensora
    source .venv/bin/activate
 
 VLA Model Download
@@ -164,21 +162,20 @@ In addition to the VLA model, you need to download the Opensora weights and the 
 
 .. code:: bash
 
-   # Download weights and data
+   # Download the weights and initialization data
    # Method 1: Using git clone
    git lfs install
-   git clone https://huggingface.co/jzndd/Opensora_for_libero
+   git clone https://huggingface.co/RLinf/RLinf-OpenSora-LIBERO-Spatial
 
    # Method 2: Using huggingface-hub
    pip install huggingface-hub
-   hf download jzndd/Opensora_for_libero
+   hf download RLinf/RLinf-OpenSora-LIBERO-Spatial --local-dir RLinf-OpenSora-LIBERO-Spatial
 
-The directory structure of Opensora_for_libero is as follows:
+The directory structure of RLinf-OpenSora-LIBERO-Spatial is as follows:
 
 .. code-block:: text
 
-    Opensora_for_libero/
-    └── libero_spatial/  (or libero_object)
+    RLinf-OpenSora-LIBERO-Spatial/
         ├── best_wm_ckpt/
         │   └── base_policy/
         │       ├── model/                      # World model weight files
@@ -199,66 +196,92 @@ After downloading, make sure to correctly specify the model path in the configur
 
     env:
         train:
-            opensora_wm_hf_ckpt_path: /Pathto/dataset/Opensora_for_libero/
+            opensora_wm_hf_ckpt_path: /Pathto/model/RLinf-OpenSora-LIBERO-Spatial/
 
 Running the Script
 -------------------
 
+Please ensure you have activated the correct Python virtual environment (venv) before running the commands below.
+If you are using the official Docker image, switch to the `openvla-oft` environment with `source switch_env openvla-oft`.
+
 **1. Key Parameters Configuration**
 
-.. code-block:: yaml
-
-   cluster:
-      num_nodes: 2
-      component_placement:
-         env: 0-7
-         rollout: 8-15
-         actor: 0-15
-
-   rollout:
-      pipeline_stage_num: 2
-
-Here you can flexibly configure the GPU count for env, rollout, and actor components.
-Additionally, by setting `pipeline_stage_num = 2` in the configuration, you can achieve **pipeline overlap between rollout and env**, improving rollout efficiency.
+Taking the OpenVLA-OFT model as an example, configure the following key parameters in ``actor.model``:
 
 .. code-block:: yaml
+
+   actor:
+     model:
+       model_path: "/path/to/model/Openvla-oft-SFT-libero-spatial-traj1/"    # SFT model path
+       model_type: "openvla_oft"                                             # Model type set to openvla_oft
+       use_proprio: False                                                    # Whether to use proprioceptive inputs
+       num_images_in_input: 1                                                # Number of input images
+       num_action_chunks: 8                                                  # Number of action chunks
+       unnorm_key: "libero_spatial_no_noops"                                 # Action normalization key (match SFT)
+
+It is worth noting that since the world model does not provide proprioception, does not generate a wrist view, and uses a fixed chunk length, ``use_proprio`` defaults to False, ``num_images_in_input`` defaults to 1, and ``num_action_chunks`` defaults to 8.
+
+**2. Environment Configuration**
+
+In the environment configuration file, set the following key parameters:
+
+.. code-block:: yaml
+
+   # Override in CHOSEN_CONFIG
+
+   # Recommend opensora_libero_spatial for training and libero_spatial for evaluation
+   env/train: opensora_libero_spatial
+   env/eval: libero_spatial
+   env:
+      train:
+         opensora_wm_hf_ckpt_path: /Pathto/model/RLinf-OpenSora-LIBERO-Spatial/
    
-   cluster:
-      num_nodes: 1
-      component_placement:
-         env,rollout,actor: all
+   # In env/train/opensora_libero_spatial.yaml:
 
-You can also reconfigure the placement to achieve **complete sharing**, where env, rollout, and actor components all share all GPUs.
+   env_type: opensora_wm
+   wm_env_type: libero
+   # Initial image path for world model initialization
+   initial_image_path: ${env.train.opensora_wm_hf_ckpt_path}/dataset_for_rlinf_world_model_init/base_policy_rollout_buffer
+   # It is not recommended to modify any parameters in world_model_cfg
+   world_model_cfg:
+      # Path to dataset statistics for normalization in the world model
+      stats_path: /Pathto/model/RLinf-OpenSora-LIBERO-Spatial/best_wm_ckpt/base_policy/dataset_statistics.json
+      chunk: 8                     # Align with training and VLA inference length; default 8
+      condition_frame_length: 4    # Align with training; context memory length, default 4
+      model:
+      # Pretrained weights
+         from_pretrained: /Pathto/model/RLinf-OpenSora-LIBERO-Spatial/best_wm_ckpt/base_policy/model
 
-.. code-block:: yaml
+**3. Configuration Files**
 
-   cluster:
-      num_nodes: 2
-      component_placement:
-         env: 0-3
-         rollout: 4-7
-         actor: 8-15
-
-You can also reconfigure the placement to achieve **complete separation**, where env, rollout, and actor components each use their own GPUs without interference, eliminating the need for offload functionality.
-
-**2. Configuration Files**
-
-We support the **OpenVLA-OFT** model with the **GRPO** algorithm.  
+We support the **OpenVLA-OFT** model with the **GRPO** algorithm.
 The corresponding configuration file is:
 
 - **OpenVLA-OFT + GRPO**: ``examples/embodiment/config/opensora_libero_spatial_grpo_openvlaoft.yaml``
 
-**3. Launch Commands**
+**4. Launch Commands**
 
-To start training with a chosen configuration, run the following command:
+After choosing a configuration, run the following command to start training:
 
 .. code-block:: bash
+
+   # Set LD_LIBRARY_PATH (generated during environment installation at /root/.tensornvme/)
+   export LD_LIBRARY_PATH=/root/.tensornvme/lib:$LD_LIBRARY_PATH
+   # Set the OpenSora environment path (cloned to .venv/opensora during installation)
+   export OPENSORA_REPO_PATH=/path/to/opensora
+   export PYTHONPATH=$OPENSORA_REPO_PATH:$PYTHONPATH
 
    bash examples/embodiment/run_embodiment.sh CHOSEN_CONFIG
 
-For example, to use Opensora to simulate the libero-spatial environment and train the OpenVLA-OFT model using the GRPO algorithm, run:
+For example, to train OpenVLA-OFT with GRPO in the OpenSora environment:
 
 .. code-block:: bash
+
+   # Set LD_LIBRARY_PATH (generated during environment installation at /root/.tensornvme/)
+   export LD_LIBRARY_PATH=/root/.tensornvme/lib:$LD_LIBRARY_PATH
+   # Set the OpenSora environment path (cloned to .venv/opensora during installation)
+   export OPENSORA_REPO_PATH=/path/to/opensora
+   export PYTHONPATH=$OPENSORA_REPO_PATH:$PYTHONPATH
 
    bash examples/embodiment/run_embodiment.sh opensora_libero_spatial_grpo_openvlaoft
 

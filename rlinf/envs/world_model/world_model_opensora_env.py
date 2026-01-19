@@ -66,12 +66,8 @@ class OpenSoraEnv(BaseWorldEnv):
         # Model hyperparameters
         self.chunk = self.world_model_cfg.chunk  # Ta
         self.condition_frame_length = self.world_model_cfg.condition_frame_length  # To
-        self.num_frames = (
-            self.world_model_cfg.num_frames
-        )  # Total number of frames to encode
-        assert self.num_frames == self.condition_frame_length + self.chunk, (
-            "num_frames must be equal to condition_frame_length + action_chunk_length"
-        )
+        self.num_frames = self.chunk + self.condition_frame_length
+
         self.image_size = tuple(self.world_model_cfg.image_size)
 
         # Load models
@@ -120,8 +116,8 @@ class OpenSoraEnv(BaseWorldEnv):
         )
 
         # Inference parameters
-        self.fps = self.world_model_cfg.get("fps", 2.0)
-        self.multi_resolution = self.world_model_cfg.get("multi_resolution", None)
+        self.fps = self.world_model_cfg.get("fps", 3.0)
+        self.multi_resolution = self.world_model_cfg.get("multi_resolution", "STDiT2")
 
         # Prepare multi-resolution info
         self.model_args = prepare_multi_resolution_info(
@@ -833,7 +829,7 @@ class OpenSoraEnv(BaseWorldEnv):
         self.render_images = []
 
 
-# PYTHONPATH="/mnt/project_rlinf/jzn/workspace/evac:/mnt/project_rlinf/jzn/workspace/opensora:$PYTHONPATH" python -m rlinf.envs.world_model.world_model_opensora_env
+# PYTHONPATH="/mnt/project_rlinf/jzn/workspace/opensora:$PYTHONPATH" python -m rlinf.envs.world_model.world_model_opensora_env
 if __name__ == "__main__":
     from pathlib import Path
 
