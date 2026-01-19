@@ -1075,9 +1075,7 @@ class Worker(metaclass=WorkerMeta):
                     f"prctl(PR_SET_PTRACER, ANY) failed with errno: {ctypes.cast(libc.strerror(errno), ctypes.c_char_p).value.decode()}"
                 )
         except Exception as e:
-            warnings.warn(
-                f"Failed to enable ptrace from any same-UID process: {e}"
-            )
+            warnings.warn(f"Failed to enable ptrace from any same-UID process: {e}")
 
     def _set_new_omegaconf_resolvers(self):
         OmegaConf.register_new_resolver("multiply", lambda x, y: x * y, replace=True)
