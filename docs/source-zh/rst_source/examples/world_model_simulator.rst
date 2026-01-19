@@ -169,19 +169,17 @@ RLinf-OpenSora-LIBERO-Spatial 的目录结构如下：
 .. code-block:: text
 
     RLinf-OpenSora-LIBERO-Spatial/
-        ├── best_wm_ckpt/
-        │   └── base_policy/
-        │       ├── model/                      # 世界模型权重文件
-        │       └── dataset_statistics.json     # 数据集归一化统计信息
-        ├── best_rm_ckpt/
-        │   └── resnet_rm.pth                   # 奖励模型权重文件
-        └── dataset_for_rlinf_world_model_init/ # 仿真初始化数据集
-            └── base_policy_rollout_buffer/
-                ├── traj0.npy                   # 初始状态帧数据
-                ├── traj1.npy
-                ├── ...
-                └── trajN.npy
-        └── vae/                                # VAE 模型权重文件
+        ├── dataset_statistics.json             # 数据集归一化统计信息
+        ├── dataset/                            # 仿真初始化数据集
+        │   ├── traj0.npy
+        │   ├── traj1.npy
+        │   ├── ...
+        │   └── trajN.npy
+        ├── model-00001.safetensors              # 世界模型权重文件
+        ├── model.safetensors.index.json
+        ├── config.json
+        ├── resnet_rm.pth                        # 奖励模型权重文件
+        └── vae/                                 # VAE 模型权重文件
 
 下载完成后，请确保在配置 yaml 文件中正确指定模型路径。
 

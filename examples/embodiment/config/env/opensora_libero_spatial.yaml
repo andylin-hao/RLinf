@@ -34,17 +34,17 @@ video_cfg:
 ###  ------------------Opensora params define here ------------------
 
 opensora_wm_hf_ckpt_path: null
-initial_image_path: ${env.train.opensora_wm_hf_ckpt_path}/dataset_for_rlinf_world_model_init/base_policy_rollout_buffer
+initial_image_path: ${env.train.opensora_wm_hf_ckpt_path}/dataset/
 
 world_model_cfg:
   # Dataset settings
-  stats_path: ${env.train.opensora_wm_hf_ckpt_path}/best_wm_ckpt/base_policy/dataset_statistics.json
+  stats_path: ${env.train.opensora_wm_hf_ckpt_path}/dataset_statistics.json
   dtype: bf16
 
   # Model settings
   model:
     type: "STDiT3-XL/2"
-    from_pretrained: ${env.train.opensora_wm_hf_ckpt_path}/best_wm_ckpt/base_policy
+    from_pretrained: ${env.train.opensora_wm_hf_ckpt_path}/model-00001.safetensors
     qk_norm: true
     enable_flash_attn: true
     enable_layernorm_kernel: true
@@ -59,7 +59,7 @@ world_model_cfg:
 
   reward_model:
     type: ResnetRM
-    from_pretrained: ${env.train.opensora_wm_hf_ckpt_path}/best_rm_ckpt/resnet_rm.pth
+    from_pretrained: ${env.train.opensora_wm_hf_ckpt_path}/resnet_rm.pth
 
   scheduler:
     type: rflow

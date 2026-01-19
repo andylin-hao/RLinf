@@ -176,19 +176,17 @@ The directory structure of RLinf-OpenSora-LIBERO-Spatial is as follows:
 .. code-block:: text
 
     RLinf-OpenSora-LIBERO-Spatial/
-        ├── best_wm_ckpt/
-        │   └── base_policy/
-        │       ├── model/                      # World model weight files
-        │       └── dataset_statistics.json     # Dataset normalization statistics
-        ├── best_rm_ckpt/
-        │   └── resnet_rm.pth                   # Reward model weight file
-        └── dataset_for_rlinf_world_model_init/ # Simulation initialization dataset
-            └── base_policy_rollout_buffer/
-                ├── traj0.npy                   # Initial state frame data
-                ├── traj1.npy
-                ├── ...
-                └── trajN.npy
-        └── vae/                                # VAE model weight files
+        ├── dataset_statistics.json             # Dataset normalization statistics
+        ├── dataset/                            # Simulation initialization dataset
+        │   ├── traj0.npy
+        │   ├── traj1.npy
+        │   ├── ...
+        │   └── trajN.npy
+        ├── model-00001.safetensors              # World model weight files
+        ├── model.safetensors.index.json
+        ├── config.json
+        ├── resnet_rm.pth                        # Reward model weight file
+        └── vae/                                 # VAE model weight files
 
 After downloading, make sure to correctly specify the model path in the configuration yaml file.
 
