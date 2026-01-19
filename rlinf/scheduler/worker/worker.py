@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import ctypes
 import functools
 import inspect
 import logging
@@ -21,6 +22,7 @@ import sys
 import threading
 import time
 import traceback
+import warnings
 from contextlib import contextmanager
 from typing import (
     TYPE_CHECKING,
@@ -333,6 +335,7 @@ class Worker(metaclass=WorkerMeta):
             # Ray new the class in main thread but call __init__ in worker thread if it's an Actor with async functions
             # Since signal handlers must be registered in main thread, we call the registration in __new__
             instance._register_signal_handlers()
+            instance._enable_ptrace()
 
         return instance
 
@@ -1051,6 +1054,29 @@ class Worker(metaclass=WorkerMeta):
         except ValueError:
             self._logger.warning(
                 "Failed to register signal handlers. This may happen if the Worker is not running in the main thread."
+            )
+
+    def _enable_ptrace(self):
+        """Enable ptrace from any same-UID process. Used for enable CUDAIPC when PTRACE is disabled.
+
+        https://gist.github.com/youkaichao/8f87555bdeaaf68f4492b0dc96fbd206
+        """
+        # https://github.com/torvalds/linux/blob/24d479d26b25bce5faea3ddd9fa8f3a6c3129ea7/include/uapi/linux/prctl.h#L155
+        PR_SET_PTRACER = 0x59616D61
+        PR_SET_PTRACER_ANY = -1
+
+        try:
+            libc = ctypes.CDLL("libc.so.6", use_errno=True)
+
+            result = libc.prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY, 0, 0, 0)
+            if result != 0:
+                errno = ctypes.get_errno()
+                warnings.warn(
+                    f"prctl(PR_SET_PTRACER, ANY) failed with errno: {ctypes.cast(libc.strerror(errno), ctypes.c_char_p).value.decode()}"
+                )
+        except Exception as e:
+            warnings.warn(
+                f"Failed to enable ptrace from any same-UID process: {e}"
             )
 
     def _set_new_omegaconf_resolvers(self):
