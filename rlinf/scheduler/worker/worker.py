@@ -41,6 +41,7 @@ from ..hardware import AcceleratorType, AcceleratorUtil, HardwareInfo
 from ..manager import WorkerAddress
 
 if TYPE_CHECKING:
+    from ..collective import CollectiveGroupOptions
     from ..manager import WorkerInfo
     from .worker_group import WorkerGroup
 
@@ -537,6 +538,7 @@ class Worker(metaclass=WorkerMeta):
         dst_group_name: str,
         dst_rank: int | list[int],
         async_op: bool = False,
+        options: Optional["CollectiveGroupOptions"] = None,
     ):
         """Send an object to a specific worker address in the collective group.
 
@@ -562,17 +564,22 @@ class Worker(metaclass=WorkerMeta):
             dst_group_name (str): The name of the destination worker group.
             dst_rank (int | List[int]): The rank or list of ranks in the destination worker group to send the object to. For SPMD-like workers, this should be a single rank. For SPSD-like workers forked by parent workers, this can be a list of ranks that forms a path from the root worker to the target worker.
             async_op (bool): Whether to perform the operation asynchronously.
+            options (Optional[CollectiveGroupOptions]): The options for the collective group. The options will only take effect when two workers first communicate with each other, and will be ignored for subsequent communications. This option must match the options of the recv side.
 
         Returns:
             Optional[AsyncWork]: An AsyncWork object if async_op is True, otherwise None.
 
         """
         dst_addr = WorkerAddress(dst_group_name, ranks=dst_rank)
-        group = self._get_p2p_collective_group(dst_addr)
-        return group.send(object=object, async_op=async_op)
+        group = self._get_collective_group(dst_addr)
+        return group.send(object=object, async_op=async_op, options=options)
 
     def recv(
-        self, src_group_name: str, src_rank: int | list[int], async_op: bool = False
+        self,
+        src_group_name: str,
+        src_rank: int | list[int],
+        async_op: bool = False,
+        options: Optional["CollectiveGroupOptions"] = None,
     ):
         """Out-of-place receive of an object from a specific worker address in the collective group.
 
@@ -589,14 +596,15 @@ class Worker(metaclass=WorkerMeta):
             async_op (bool): Whether to perform the operation asynchronously.
             src_group_name (str): The name of the source worker group.
             src_rank (int | List[int]): The rank or list of ranks in the source worker group to receive the object from. For SPMD-like workers, this should be a single rank. For SPSD-like workers forked by parent workers, this can be a list of ranks that forms a path from the root worker to the target worker.
+            options (Optional[CollectiveGroupOptions]): The options for the collective group. The options will only take effect when two workers first communicate with each other, and will be ignored for subsequent communications. This option must match the options of the send side.
 
         Returns:
             AsyncWork | torch.Tensor | List[torch.Tensor] | Dict[str, torch.Tensor] | Any: An AsyncWork object if async_op is True, otherwise the received object.
 
         """
         src_addr = WorkerAddress(src_group_name, ranks=src_rank)
-        group = self._get_p2p_collective_group(src_addr)
-        return group.recv(async_op=async_op)
+        group = self._get_collective_group(src_addr)
+        return group.recv(async_op=async_op, options=options)
 
     def send_tensor(
         self,
@@ -604,6 +612,7 @@ class Worker(metaclass=WorkerMeta):
         dst_group_name: str,
         dst_rank: int | list[int],
         async_op: bool = False,
+        options: Optional["CollectiveGroupOptions"] = None,
     ):
         """Send a tensor to a specific worker address in the collective group. This function is optimized for sending a single tensor and does not introduce metadata communication overhead like send. But it needs to be paired with the in-place recv_tensor function which requires apriori knowledge of the tensor shape and dtype.
 
@@ -621,14 +630,15 @@ class Worker(metaclass=WorkerMeta):
             dst_group_name (str): The name of the destination worker group.
             dst_rank (int | List[int]): The rank or list of ranks in the destination worker group to send the tensor to. For SPMD-like workers, this should be a single rank. For SPSD-like workers forked by parent workers, this can be a list of ranks that forms a path from the root worker to the target worker.
             async_op (bool): Whether to perform the operation asynchronously.
+            options (Optional[CollectiveGroupOptions]): The options for the collective group. The options will only take effect when two workers first communicate with each other, and will be ignored for subsequent communications. This option must match the options of the send side.
 
         Returns:
             Optional[AsyncWork]: An AsyncWork object if async_op is True, otherwise None.
 
         """
         dst_addr = WorkerAddress(dst_group_name, ranks=dst_rank)
-        group = self._get_p2p_collective_group(dst_addr)
-        return group.send_tensor(tensor=tensor, async_op=async_op)
+        group = self._get_collective_group(dst_addr)
+        return group.send_tensor(tensor=tensor, async_op=async_op, options=options)
 
     def recv_tensor(
         self,
@@ -636,6 +646,7 @@ class Worker(metaclass=WorkerMeta):
         src_group_name: str,
         src_rank: int | list[int],
         async_op: bool = False,
+        options: Optional["CollectiveGroupOptions"] = None,
     ):
         """In-place receive of a tensor from a specific worker address in the collective group. This function is optimized for receiving a single tensor and does not introduce metadata communication overhead like recv. But it requires preallocation of the tensor with the correct shape and dtype.
 
@@ -653,14 +664,15 @@ class Worker(metaclass=WorkerMeta):
             src_group_name (str): The name of the source worker group.
             src_rank (int | List[int]): The rank or list of ranks in the source worker group to receive the tensor from. For SPMD-like workers, this should be a single rank. For SPSD-like workers forked by parent workers, this can be a list of ranks that forms a path from the root worker to the target worker.
             async_op (bool): Whether to perform the operation asynchronously.
+            options (Optional[CollectiveGroupOptions]): The options for the collective group. The options will only take effect when two workers first communicate with each other, and will be ignored for subsequent communications. This option must match the options of the send side.
 
         Returns:
             Optional[AsyncWork]: An AsyncWork object if async_op is True, otherwise None.
 
         """
         src_addr = WorkerAddress(src_group_name, ranks=src_rank)
-        group = self._get_p2p_collective_group(src_addr)
-        return group.recv_tensor(tensor=tensor, async_op=async_op)
+        group = self._get_collective_group(src_addr)
+        return group.recv_tensor(tensor=tensor, async_op=async_op, options=options)
 
     def create_channel(
         self,
@@ -1049,8 +1061,8 @@ class Worker(metaclass=WorkerMeta):
             "torch.dtype", lambda dtype_name: getattr(torch, dtype_name), replace=True
         )
 
-    def _get_p2p_collective_group(self, peer_addr: WorkerAddress):
-        """Get a P2P collective group for communication with a peer worker."""
+    def _get_collective_group(self, peer_addr: WorkerAddress):
+        """Get a collective group for communication with a peer worker."""
         workers = [self._worker_address, peer_addr]
         # Ensure the order is the same with the same two ranks
         workers = sorted(workers, key=lambda x: x.get_name())
