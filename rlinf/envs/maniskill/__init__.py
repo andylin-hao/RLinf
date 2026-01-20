@@ -16,7 +16,9 @@ import importlib
 import pathlib
 import pkgutil
 
-from .maniskill_full_state_wrapper import ManiskillFullStateWrapper
+from .maniskill_full_state_wrapper import (
+    ManiskillFullStateWrapper as ManiskillFullStateWrapper,
+)
 
 
 def import_all_tasks():

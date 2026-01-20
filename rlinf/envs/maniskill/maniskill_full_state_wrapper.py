@@ -53,12 +53,13 @@ class ManiskillFullStateWrapper(gym.Wrapper):
             env._obs_mode = original_mode
 
         if isinstance(state_obs, dict):
-            return common.flatten_state_dict(state_obs, use_torch=True, device=env.device)
+            return common.flatten_state_dict(
+                state_obs, use_torch=True, device=env.device
+            )
         return state_obs
 
     def _replace_states(self, obs):
         """Replace partial states with full states."""
-        import torch
 
         if not isinstance(obs, dict):
             return obs
@@ -84,9 +85,13 @@ class ManiskillFullStateWrapper(gym.Wrapper):
         return obs, reward, terminated, truncated, info
 
     def chunk_step(self, chunk_actions):
-        obs, rewards, terminations, truncations, infos = self.env.chunk_step(chunk_actions)
+        obs, rewards, terminations, truncations, infos = self.env.chunk_step(
+            chunk_actions
+        )
         obs = self._replace_states(obs)
         # Handle final_observation in infos (from auto_reset)
         if isinstance(infos, dict) and "final_observation" in infos:
-            infos["final_observation"] = self._replace_states(infos["final_observation"])
+            infos["final_observation"] = self._replace_states(
+                infos["final_observation"]
+            )
         return obs, rewards, terminations, truncations, infos
