@@ -15,6 +15,7 @@
 import json
 import os
 import re
+import signal
 from collections import deque
 
 import hydra
@@ -70,6 +71,8 @@ def test_habitat_env(cfg):
     action_dir_path = "VLN-CE/actions"
     num_envs = cfg.env.eval.total_num_envs
     chunk_size = cfg.actor.model.num_action_chunks
+    max_steps_per_rollout_epoch = cfg.env.eval.max_steps_per_rollout_epoch
+    n_chunk_steps = max_steps_per_rollout_epoch // chunk_size
 
     env = HabitatEnv(
         cfg=cfg.env.eval,
@@ -79,62 +82,72 @@ def test_habitat_env(cfg):
     )
     env.reset()
 
-    episode_ids = env.env.get_current_episode_ids()
-    gt_episode_ids = get_gt_episode_ids(action_dir_path)
-    action_queues = load_actions_from_file(episode_ids, action_dir_path, gt_episode_ids)
-    current_episode_ids = episode_ids.copy()
+    try:
+        episode_ids = env.env.get_current_episode_ids()
+        gt_episode_ids = get_gt_episode_ids(action_dir_path)
+        action_queues = load_actions_from_file(
+            episode_ids, action_dir_path, gt_episode_ids
+        )
+        current_episode_ids = episode_ids.copy()
 
-    episode_num = len(gt_episode_ids)
-    completed_episode_cnt = 0
+        episode_num = len(gt_episode_ids)
+        eval_rollout_epoch = episode_num // num_envs
+        completed_episode_cnt = 0
 
-    while True:
-        current_chunk_batch = []
-        finished_envs = [False] * num_envs
+        for rollout_epoch in range(eval_rollout_epoch):
+            for chunk_step in range(n_chunk_steps):
+                current_chunk_batch = []
 
-        for env_idx in range(num_envs):
-            # Pop chunk_size actions from queue
-            chunk = []
-            for _ in range(chunk_size):
-                if len(action_queues[env_idx]) > 0:
-                    chunk.append(action_queues[env_idx].popleft())
-                else:
-                    assert "stop" in chunk, "Episode finished without 'stop' action"
-                    break
+                for env_idx in range(num_envs):
+                    chunk = []
+                    for step_in_chunk in range(chunk_size):
+                        if action_queues[env_idx]:
+                            chunk.append(action_queues[env_idx].popleft())
+                        else:
+                            chunk.append("no_op")
+                    current_chunk_batch.append(chunk)
 
-            # Check if episode finished (contains "stop" or queue is empty)
-            if "stop" in chunk:
-                finished_envs[env_idx] = True
-                # Pad with "no_op" if needed
-                if len(chunk) < chunk_size:
-                    chunk.extend(["no_op"] * (chunk_size - len(chunk)))
+                actions_to_step = np.array(current_chunk_batch)
+                env.chunk_step(actions_to_step)
+                print(f"Step {chunk_step} of rollout {rollout_epoch} completed")
 
-            current_chunk_batch.append(chunk)
+            # Finish rollout
+            env.flush_video()
+            env.update_reset_state_ids()
 
-        actions_to_step = np.array(current_chunk_batch)
-        env.chunk_step(actions_to_step)
-
-        # Reload actions for finished episodes
-        if any(finished_envs):
+            # Load new episode actions and add to queue
             old_episode_ids = current_episode_ids.copy()
             episode_ids = env.env.get_current_episode_ids()
-
-            for idx in range(len(finished_envs)):
-                if finished_envs[idx]:
-                    completed_episode_cnt += 1
-                    completed_episode_id = old_episode_ids[idx]
-                    new_episode_id = episode_ids[idx]
-                    print(
-                        f"progress: [{completed_episode_cnt} / {episode_num}] :"
-                        f" Env {idx} completed episode {completed_episode_id},"
-                        f" now processing episode {new_episode_id}."
-                    )
-                    # Load new episode actions and add to queue
-                    new_actions = load_actions_from_file(
-                        [episode_ids[idx]], action_dir_path, gt_episode_ids
-                    )
-                    if new_actions:
-                        action_queues[idx] = new_actions[0]
-                        current_episode_ids[idx] = new_episode_id
+            for idx in range(num_envs):
+                completed_episode_cnt += 1
+                completed_episode_id = old_episode_ids[idx]
+                new_episode_id = episode_ids[idx]
+                print(
+                    f"Progress: [{completed_episode_cnt} / {episode_num}] :"
+                    f" Env {idx} completed episode {completed_episode_id},"
+                    f" now processing episode {new_episode_id}."
+                )
+                # Load new episode actions and add to queue
+                new_actions = load_actions_from_file(
+                    [episode_ids[idx]], action_dir_path, gt_episode_ids
+                )
+                if new_actions:
+                    action_queues[idx] = new_actions[0]
+                    current_episode_ids[idx] = new_episode_id
+    finally:
+        # System-level kill: terminate all environment worker processes
+        if hasattr(env, "env") and hasattr(env.env, "workers"):
+            for worker in env.env.workers:
+                if hasattr(worker, "process") and worker.process.is_alive():
+                    try:
+                        worker.process.terminate()
+                        worker.process.join(timeout=2)
+                        if worker.process.is_alive():
+                            os.kill(worker.process.pid, signal.SIGKILL)
+                            worker.process.join(timeout=1)
+                    except (OSError, AttributeError):
+                        # Process already terminated or doesn't exist
+                        pass
 
 
 @hydra.main(

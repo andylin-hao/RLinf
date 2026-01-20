@@ -15,7 +15,7 @@ hydra:
 cluster:
   num_nodes: 1
   component_placement:
-    actor,env,rollout: 7
+    actor,env,rollout: 0
 
 runner:
   task_type: embodied
@@ -94,10 +94,10 @@ env:
     reset_gripper_open: False
   eval:
     total_num_envs: 64
-    auto_reset: True
+    auto_reset: False
     ignore_terminations: False
     max_episode_steps: 128
-    max_steps_per_rollout_epoch: 64
+    max_steps_per_rollout_epoch: 128
     group_size: 1
     use_fixed_reset_state_ids: True
     use_ordered_reset_state_ids: True

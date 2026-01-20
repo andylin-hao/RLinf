@@ -56,24 +56,237 @@ class HabitatEnv(gym.Env):
         self.prev_step_reward = np.zeros(self.num_envs)
         self.use_rel_reward = cfg.use_rel_reward
         self._elapsed_steps = np.zeros(self.num_envs, dtype=np.int32)
+        self.auto_reset = cfg.auto_reset
+        self.max_episode_steps = cfg.max_steps_per_rollout_epoch
 
         self._generator = np.random.default_rng(seed=self.seed)
         self._generator_ordered = np.random.default_rng(seed=0)
 
         self._init_env()
-        self._init_metrics()
 
         self.video_cfg = cfg.video_cfg
         self.video_cnt = 0
         self.render_images = {}
         self.current_raw_obs = None
 
+    @property
+    def elapsed_steps(self):
+        return self._elapsed_steps
+
+    @property
+    def info_logging_keys(self):
+        return []
+
+    @property
+    def is_start(self):
+        return self._is_start
+
+    @is_start.setter
+    def is_start(self, value):
+        self._is_start = value
+
+    def chunk_step(self, chunk_actions):
+        # chunk_actions: [num_envs, chunk_step, action_dim]
+        chunk_size = chunk_actions.shape[1]
+
+        chunk_rewards = []
+
+        # Truncate chunk if it contains "stop" and pad with "no_op"
+        for env_idx, chunk_action in enumerate(chunk_actions):
+            stop_idx = np.where(chunk_action == "stop")[0]
+            if len(stop_idx) > 0:
+                stop_idx = stop_idx[0] + 1
+                truncated_chunk = chunk_action[:stop_idx].copy()
+                chunk_actions[env_idx] = np.concatenate(
+                    [truncated_chunk, ["no_op"] * (chunk_size - len(truncated_chunk))]
+                )
+
+        # Truncate chunk if it would exceed max_episode_steps and pad with "no_op"
+        for env_idx, elapsed_step in enumerate(self.elapsed_steps):
+            if elapsed_step + chunk_size >= self.max_episode_steps:
+                reserved_idx = self.max_episode_steps - elapsed_step
+                truncated_chunk = chunk_actions[env_idx][:reserved_idx].copy()
+                truncated_chunk[reserved_idx - 1] = "stop"
+                chunk_actions[env_idx] = np.concatenate(
+                    [
+                        truncated_chunk,
+                        ["no_op"] * (chunk_size - len(truncated_chunk)),
+                    ]
+                )
+
+        chunk_terminations = []
+        chunk_truncations = []
+        for i in range(chunk_size):
+            actions = chunk_actions[:, i]
+            extracted_obs, step_reward, terminations, truncations, infos = self.step(
+                actions
+            )
+
+            chunk_rewards.append(step_reward)
+            chunk_terminations.append(terminations)
+            chunk_truncations.append(truncations)
+
+        chunk_rewards = torch.stack(chunk_rewards, dim=1)  # [num_envs, chunk_steps]
+        chunk_terminations = torch.stack(
+            chunk_terminations, dim=1
+        )  # [num_envs, chunk_steps]
+        chunk_truncations = torch.stack(
+            chunk_truncations, dim=1
+        )  # [num_envs, chunk_steps]
+
+        return (
+            extracted_obs,
+            chunk_rewards,
+            chunk_terminations,
+            chunk_truncations,
+            infos,
+        )
+
+    def step(self, actions=None):
+        """Step the environment with the given actions."""
+        if isinstance(actions, torch.Tensor):
+            actions = actions.detach().cpu().numpy()
+
+        for i, action in enumerate(actions):
+            if action != "no_op":
+                self._elapsed_steps[i] += 1
+
+        # After excuting "stop" action, habitat env needs reset to process the next action
+        # Replace "stop" with "no_op" before stepping the underlying env
+        # to avoid unable to process the next action.
+        is_stop = actions == "stop"
+        actions[is_stop] = "no_op"
+
+        raw_obs, _reward, terminations, info_lists = self.env.step(actions)
+        terminations[is_stop] = True
+        self.current_raw_obs = raw_obs
+        obs = self._wrap_obs(raw_obs)
+        infos = list_of_dict_to_dict_of_list(info_lists)
+        truncations = self.elapsed_steps >= self.max_episode_steps
+
+        # TODO: what if termination means failure? (e.g. robot falling down)
+        step_reward = self._calc_step_reward(terminations)
+
+        if self.video_cfg.save_video:
+            episode_ids = self.env.get_current_episode_ids()
+            for i in range(len(raw_obs)):
+                frame = observations_to_image(raw_obs[i], info_lists[i])
+                frame_concat = np.concatenate(
+                    (frame["rgb"], frame["depth"], frame["top_down_map"]), axis=1
+                )
+                key = f"episode_{episode_ids[i]}"
+                if key not in self.render_images:
+                    self.render_images[key] = []
+                self.render_images[key].append(frame_concat)
+
+        dones = terminations | truncations
+        if dones.any() and self.auto_reset:
+            if self.video_cfg.save_video:
+                self.flush_video(dones=dones)
+            obs, infos = self._handle_auto_reset(dones, obs, infos)
+
+        return (
+            obs,
+            to_tensor(step_reward),
+            to_tensor(terminations),
+            to_tensor(truncations),
+            infos,
+        )
+
+    def reset(
+        self,
+        env_idx: Optional[Union[int, list[int], np.ndarray]] = None,
+    ):
+        if env_idx is None:
+            env_idx = np.arange(self.num_envs)
+
+        raw_obs = self.env.reset(env_idx)
+        self._elapsed_steps[env_idx] = 0
+        infos = {}
+
+        if self.current_raw_obs is None:
+            self.current_raw_obs = [None] * self.num_envs
+
+        for i, idx in enumerate(env_idx):
+            self.current_raw_obs[idx] = raw_obs[i]
+        obs = self._wrap_obs(self.current_raw_obs)
+
+        return obs, infos
+
+    def update_reset_state_ids(self):
+        self.reset()
+
+    def flush_video(
+        self, video_sub_dir: Optional[str] = None, dones: Optional[np.ndarray] = None
+    ):
+        output_dir = self.video_cfg.video_base_dir
+        if video_sub_dir is not None:
+            output_dir = os.path.join(output_dir, f"{video_sub_dir}")
+
+        if dones is None:
+            dones_episode_ids = np.array(self.env.get_current_episode_ids())
+        else:
+            dones_episode_ids = np.array(self.env.get_current_episode_ids())[dones]
+        for episode_ids in dones_episode_ids:
+            video_name = f"episode_{episode_ids}"
+            save_rollout_video(
+                self.render_images[video_name],
+                output_dir=output_dir,
+                video_name=video_name,
+                fps=self.video_cfg.fps,
+            )
+            self.render_images[video_name] = []
+
+    def _wrap_obs(self, obs_list):
+        image_list = []
+        for obs in obs_list:
+            image_list.append(observations_to_image(obs))
+
+        image_tensor = to_tensor(list_of_dict_to_dict_of_list(image_list))
+
+        obs = {}
+        rgb_image_tensor = torch.stack(
+            [value.clone().permute(2, 0, 1) for value in image_tensor["rgb"]]
+        )
+        obs["rgb"] = rgb_image_tensor
+
+        if "depth" in image_tensor:
+            depth_image_tensor = torch.stack(
+                [value.clone().permute(2, 0, 1) for value in image_tensor["depth"]]
+            )
+            obs["depth"] = depth_image_tensor
+
+        return obs
+
+    def _handle_auto_reset(self, dones, _final_obs, infos):
+        final_obs = copy.deepcopy(_final_obs)
+        env_idx = np.arange(0, self.num_envs)[dones]
+        final_info = copy.deepcopy(infos)
+        obs, infos = self.reset(env_idx=env_idx)
+        # gymnasium calls it final observation but it really is just o_{t+1} or the true next observation
+        infos["final_observation"] = final_obs
+        infos["final_info"] = final_info
+        infos["_final_info"] = dones
+        infos["_final_observation"] = dones
+        infos["_elapsed_steps"] = dones
+        return obs, infos
+
+    def _calc_step_reward(self, terminations):
+        reward = self.cfg.reward_coef * terminations
+        reward_diff = reward - self.prev_step_reward
+        self.prev_step_reward = reward
+
+        if self.use_rel_reward:
+            return reward_diff
+        else:
+            return reward
+
     def _init_env(self):
-        env_fns = self.get_env_fns()
+        env_fns = self._get_env_fns()
         self.env = ReconfigureSubprocEnv(env_fns)
 
-    def get_env_fns(self):
-        env_fn_params = self.get_env_fn_params()
+    def _get_env_fns(self):
+        env_fn_params = self._get_env_fn_params()
         env_fns = []
 
         for param in env_fn_params:
@@ -102,7 +315,7 @@ class HabitatEnv(gym.Env):
 
         return env_fns
 
-    def get_env_fn_params(self):
+    def _get_env_fn_params(self):
         env_fn_params = []
 
         # Habitat uses hydra to load the config,
@@ -171,232 +384,3 @@ class HabitatEnv(gym.Env):
             episode_ids.extend(scene_to_episodes[scene_idx])
 
         return episode_ids
-
-    @property
-    def elapsed_steps(self):
-        return self._elapsed_steps
-
-    @property
-    def info_logging_keys(self):
-        return []
-
-    @property
-    def is_start(self):
-        return self._is_start
-
-    @is_start.setter
-    def is_start(self, value):
-        self._is_start = value
-
-    def _init_metrics(self):
-        self.success_once = np.zeros(self.num_envs, dtype=bool)
-        self.fail_once = np.zeros(self.num_envs, dtype=bool)
-        self.returns = np.zeros(self.num_envs)
-
-    def _reset_metrics(self, env_idx=None):
-        if env_idx is not None:
-            mask = np.zeros(self.num_envs, dtype=bool)
-            mask[env_idx] = True
-            self.prev_step_reward[mask] = 0.0
-            self.success_once[mask] = False
-            self.fail_once[mask] = False
-            self.returns[mask] = 0
-            self._elapsed_steps[env_idx] = 0
-        else:
-            self.prev_step_reward[:] = 0
-            self.success_once[:] = False
-            self.fail_once[:] = False
-            self.returns[:] = 0.0
-            self._elapsed_steps[:] = 0
-
-    def _record_metrics(self, step_reward, terminations, infos):
-        episode_info = {}
-        self.returns += step_reward
-        self.success_once = self.success_once | terminations
-        episode_info["success_once"] = self.success_once.copy()
-        episode_info["return"] = self.returns.copy()
-        episode_info["episode_len"] = self.elapsed_steps.copy()
-        episode_info["reward"] = episode_info["return"] / episode_info["episode_len"]
-        infos["episode"] = to_tensor(episode_info)
-        return infos
-
-    def _wrap_obs(self, obs_list):
-        image_list = []
-        for obs in obs_list:
-            image_list.append(observations_to_image(obs))
-
-        image_tensor = to_tensor(list_of_dict_to_dict_of_list(image_list))
-
-        obs = {}
-        rgb_image_tensor = torch.stack(
-            [value.clone().permute(2, 0, 1) for value in image_tensor["rgb"]]
-        )
-        obs["rgb"] = rgb_image_tensor
-
-        if "depth" in image_tensor:
-            depth_image_tensor = torch.stack(
-                [value.clone().permute(2, 0, 1) for value in image_tensor["depth"]]
-            )
-            obs["depth"] = depth_image_tensor
-
-        return obs
-
-    def reset(
-        self,
-        env_idx: Optional[Union[int, list[int], np.ndarray]] = None,
-    ):
-        if env_idx is None:
-            env_idx = np.arange(self.num_envs)
-
-        raw_obs = self.env.reset(env_idx)
-        self._elapsed_steps[env_idx] = 0
-        infos = {}
-
-        if self.current_raw_obs is None:
-            self.current_raw_obs = [None] * self.num_envs
-
-        for i, idx in enumerate(env_idx):
-            self.current_raw_obs[idx] = raw_obs[i]
-        obs = self._wrap_obs(self.current_raw_obs)
-
-        return obs, infos
-
-    def step(self, actions=None):
-        """Step the environment with the given actions."""
-        if isinstance(actions, torch.Tensor):
-            actions = actions.detach().cpu().numpy()
-
-        for i, action in enumerate(actions):
-            if action != "no_op":
-                self._elapsed_steps[i] += 1
-        raw_obs, _reward, terminations, info_lists = self.env.step(actions)
-        self.current_raw_obs = raw_obs
-        obs = self._wrap_obs(raw_obs)
-        infos = list_of_dict_to_dict_of_list(info_lists)
-        truncations = self.elapsed_steps >= self.cfg.max_episode_steps
-
-        # TODO: what if termination means failure? (e.g. robot falling down)
-        step_reward = self._calc_step_reward(terminations)
-
-        if self.video_cfg.save_video:
-            episode_ids = self.env.get_current_episode_ids()
-            for i in range(len(raw_obs)):
-                frame = observations_to_image(raw_obs[i], info_lists[i])
-                frame_concat = np.concatenate(
-                    (frame["rgb"], frame["depth"], frame["top_down_map"]), axis=1
-                )
-                key = f"episode_{episode_ids[i]}"
-                if key not in self.render_images:
-                    self.render_images[key] = []
-                self.render_images[key].append(frame_concat)
-
-        self._dones = terminations
-        if self._dones.any():
-            if self.video_cfg.save_video:
-                self.flush_video()
-            obs, infos = self._handle_auto_reset(self._dones, obs, infos)
-
-        return (
-            obs,
-            to_tensor(step_reward),
-            to_tensor(terminations),
-            to_tensor(truncations),
-            infos,
-        )
-
-    def chunk_step(self, chunk_actions):
-        # chunk_actions: [num_envs, chunk_step, action_dim]
-        chunk_size = chunk_actions.shape[1]
-
-        chunk_rewards = []
-
-        # Truncate chunk if it contains "stop" and pad with "no_op"
-        for env_idx, chunk_action in enumerate(chunk_actions):
-            stop_idx = np.where(chunk_action == "stop")[0]
-            if len(stop_idx) > 0:
-                stop_idx = stop_idx[0] + 1
-                truncated_chunk = chunk_action[:stop_idx].copy()
-                chunk_actions[env_idx] = np.concatenate(
-                    [truncated_chunk, ["no_op"] * (chunk_size - len(truncated_chunk))]
-                )
-
-        # Truncate chunk if it would exceed max_episode_steps and pad with "no_op"
-        for env_idx, elapsed_step in enumerate(self.elapsed_steps):
-            if elapsed_step + chunk_size >= self.cfg.max_episode_steps:
-                reserved_idx = self.cfg.max_episode_steps - elapsed_step
-                truncated_chunk = chunk_actions[env_idx][:reserved_idx].copy()
-                truncated_chunk[reserved_idx - 1] = "stop"
-                chunk_actions[env_idx] = np.concatenate(
-                    [
-                        truncated_chunk,
-                        ["no_op"] * (chunk_size - len(truncated_chunk)),
-                    ]
-                )
-
-        chunk_terminations = []
-        chunk_truncations = []
-        for i in range(chunk_size):
-            actions = chunk_actions[:, i]
-            extracted_obs, step_reward, terminations, truncations, infos = self.step(
-                actions
-            )
-
-            chunk_rewards.append(step_reward)
-            chunk_terminations.append(terminations)
-            chunk_truncations.append(truncations)
-
-        chunk_rewards = torch.stack(chunk_rewards, dim=1)  # [num_envs, chunk_steps]
-        chunk_terminations = torch.stack(
-            chunk_terminations, dim=1
-        )  # [num_envs, chunk_steps]
-        chunk_truncations = torch.stack(
-            chunk_truncations, dim=1
-        )  # [num_envs, chunk_steps]
-
-        return (
-            extracted_obs,
-            chunk_rewards,
-            chunk_terminations,
-            chunk_truncations,
-            infos,
-        )
-
-    def _handle_auto_reset(self, dones, _final_obs, infos):
-        final_obs = copy.deepcopy(_final_obs)
-        env_idx = np.arange(0, self.num_envs)[dones]
-        final_info = copy.deepcopy(infos)
-        obs, infos = self.reset(env_idx=env_idx)
-        # gymnasium calls it final observation but it really is just o_{t+1} or the true next observation
-        infos["final_observation"] = final_obs
-        infos["final_info"] = final_info
-        infos["_final_info"] = dones
-        infos["_final_observation"] = dones
-        infos["_elapsed_steps"] = dones
-        return obs, infos
-
-    def _calc_step_reward(self, terminations):
-        reward = self.cfg.reward_coef * terminations
-        reward_diff = reward - self.prev_step_reward
-        self.prev_step_reward = reward
-
-        if self.use_rel_reward:
-            return reward_diff
-        else:
-            return reward
-
-    def flush_video(self, video_sub_dir: Optional[str] = None):
-        output_dir = self.video_cfg.video_base_dir
-        if video_sub_dir is not None:
-            output_dir = os.path.join(output_dir, f"{video_sub_dir}")
-
-        dones_episode_ids = np.array(self.env.get_current_episode_ids())[self._dones]
-        for episode_ids in dones_episode_ids:
-            video_name = f"episode_{episode_ids}"
-            save_rollout_video(
-                self.render_images[video_name],
-                output_dir=output_dir,
-                video_name=video_name,
-                fps=self.video_cfg.fps,
-            )
-            # clear done episode render_images
-            self.render_images[video_name] = []
