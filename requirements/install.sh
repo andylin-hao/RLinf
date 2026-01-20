@@ -346,6 +346,14 @@ install_opensora_world_model() {
 
 install_openpi_model() {
     case "$ENV_NAME" in
+        behavior)
+            PYTHON_VERSION="3.10"
+            create_and_sync_venv
+            install_common_embodied_deps
+            uv pip install git+${GITHUB_PREFIX}https://github.com/RLinf/openpi
+            install_behavior_env
+            uv pip install protobuf==6.33.0
+            ;;
         maniskill_libero)
             create_and_sync_venv
             install_common_embodied_deps
@@ -578,8 +586,8 @@ install_robotwin_env() {
         echo "nvcc not found. Cannot build robotwin environment."
         exit 1
     fi
-    local cuda_major=$("$nvcc_exe" --version | grep 'Cuda compilation tools' | awk '{print $5}' | awk -F '.' '{print $1}')
-    local cuda_minor=$("$nvcc_exe" --version | grep 'Cuda compilation tools' | awk '{print $5}' | awk -F '.' '{print $2}')
+    local cuda_major=$("$nvcc_exe" --version | grep 'Cuda compilation tools' | awk '{print $5}' | tr -d ',' | awk -F '.' '{print $1}')
+    local cuda_minor=$("$nvcc_exe" --version | grep 'Cuda compilation tools' | awk '{print $5}' | tr -d ',' | awk -F '.' '{print $2}')
     if [ "$cuda_major" -gt 12 ] || { [ "$cuda_major" -eq 12 ] && [ "$cuda_minor" -ge 8 ]; }; then
         # Include Blackwell support for CUDA 12.8+
         export TORCH_CUDA_ARCH_LIST="7.0;8.0;9.0;10.0"

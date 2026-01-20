@@ -385,11 +385,16 @@ class OpenPi0ForRLActionPrediction(PI0Pytorch, BasePolicy):
         forward_inputs = {
             "chains": outputs["chains"],
             "denoise_inds": outputs["denoise_inds"],
+            "observation/image": env_obs["main_images"],
+            "observation/state": env_obs["states"],
             "tokenized_prompt": processed_obs["tokenized_prompt"],
             "tokenized_prompt_mask": processed_obs["tokenized_prompt_mask"],
         }
+        if env_obs["wrist_images"] is not None:
+            forward_inputs["observation/wrist_image"] = env_obs["wrist_images"]
         forward_inputs.update(to_process_obs)
         forward_inputs.pop("prompt", None)
+
         result = {
             "prev_logprobs": outputs["prev_logprobs"],
             "prev_values": outputs["prev_values"],
@@ -761,10 +766,10 @@ class OpenPi0ForRLActionPrediction(PI0Pytorch, BasePolicy):
             entropy = self.gaussian_entropy(x_t_std)
             chains_log_probs.append(log_probs)
             chains_entropy.append(entropy)
-            if self.use_vlm_value:
-                chains_values.append(self.get_value_from_vlm(prefix_output))
-            else:
+            if not self.use_vlm_value:
                 chains_values.append(value_t)
+        if self.use_vlm_value:
+            chains_values.append(self.get_value_from_vlm(prefix_output))
         chains_log_probs = torch.stack(chains_log_probs, dim=1)
         chains_values = torch.stack(chains_values, dim=1)
 
