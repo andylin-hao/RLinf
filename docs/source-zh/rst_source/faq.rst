@@ -127,3 +127,77 @@ Gloo 超时 / “Global rank x is not part of group”
 
 - 确认所选 IP 能被其他节点访问（例如使用 ping 测试）。  
 - 如有需要，请显式选择正确网卡对应的 IP 作为 Ray head，并将该 IP 告知各 Worker。
+
+如何debug RLinf
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**说明：** 方便各位同学在使用过程中进行调试,以ppo_openpi_pi05为例。
+
+**方法一：使用 Ray Distributed Debugger （推荐）**
+
+如果可以安装Ray Distributed Debugger，则推荐使用该方法。
+
+1. 安装环境
+
+.. code-block:: bash
+
+   conda create -n myenv python=3.10
+   conda activate myenv
+   pip install "ray[default]" debugpy
+
+2. 在 VS Code 中安装 Ray Distributed Debugger 扩展（如果尚未安装）。
+
+3. 启动 Ray 集群 
+
+.. code-block:: bash
+
+   ray start --head
+
+4. 注册 Ray 集群 (head 节点的 ip:port 通常是 127.0.0.1:8265)
+
+在 VS Code 左侧边栏找到 Ray 扩展图标并点击。将 Ray 集群的 IP:PORT 添加到集群列表中。默认的 IP:PORT 是 127.0.0.1:8265。启动集群时可以修改此地址。请确保你的机器能够访问该 IP 和端口。
+
+5. 在代码中设置断点（在想 debug 的位置设置断点 breakpoint()）。
+
+6. 运行程序：
+
+.. code-block:: bash
+
+   bash examples/embodiment/run_embodiment.sh maniskill_ppo_openpi_pi05
+
+7. 在 VS Code 中使用 Ray Distributed Debugger 连接到运行中的进程进行调试。
+
+**方法二：使用 pdb 终端调试**
+
+如果你无法使用Ray Distributed Debugger，可以使用 pdb 终端调试方法：
+
+1. 首先在想 debug 的位置设置断点，如下所示：
+
+.. code-block:: python
+
+   chains = data["chains"]
+   denoise_inds = data["denoise_inds"]
+   
+   import ray
+   ray.util.pdb.set_trace()
+   
+   # input transform
+   observation = self.input_transform(data, transpose=False)
+   observation = _model.Observation.from_dict(observation)
+
+2. 然后运行对应的程序,比如ppo pi05
+
+.. code-block:: bash
+
+   export RAY_DEBUG=legacy && bash examples/embodiment/run_embodiment.sh maniskill_ppo_openpi_pi05
+
+3. 运行程序直到出现 ``use 'ray debug' to connect ...`` 提示，然后使用另起一个终端执行 ``ray debug`` 连接到调试器。
+
+.. code-block:: bash
+
+   ray debug
+
+
+**引用：** 
+
+- 参考 Ray 的官方文档 https://docs.ray.io/en/latest/ray-observability/ray-distributed-debugger.html 。
