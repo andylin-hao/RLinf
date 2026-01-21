@@ -162,6 +162,7 @@
         支持RoboTwin + OpenVLA-OFT/π₀/π₀.₅ + PPO/GRPO训练
       </p>
     </div>
+    </div>
 
     <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
       <img src="https://github.com/RLinf/misc/raw/main/pic/data_collection.png"
