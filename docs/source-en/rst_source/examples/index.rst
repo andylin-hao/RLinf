@@ -321,3 +321,4 @@ Thanks to this decoupled design, workers can be flexibly and dynamically schedul
    searchr1
    franka
    sac_flow
+   data_collection
