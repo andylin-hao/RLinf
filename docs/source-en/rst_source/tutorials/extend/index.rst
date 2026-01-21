@@ -6,7 +6,7 @@ by integrating custom environments and new model architectures.
 
 You will learn how to:
 
-- Integrate a :doc:`new environment <new_env>` into RLinf's task system  
+- Integrate a :doc:`new environment <new_env>` into RLinf’s task system  
 - Add a :doc:`new model <new_model_fsdp>` using the FSDP + HuggingFace backend  
 - Add a :doc:`new model <new_model_megatron>` using the Megatron + SGLang backend  
 
