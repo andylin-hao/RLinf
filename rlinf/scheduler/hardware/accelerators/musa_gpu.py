@@ -28,15 +28,24 @@ class MUSAGPUManager(AcceleratorManager):
     @staticmethod
     def get_num_devices():
         """Get the number of MUSA GPU devices on the node."""
+        initialized = False
         try:
             import pymtml
 
             pymtml.mtmlLibraryInit()
+            initialized = True
             device_count = pymtml.mtmlLibraryCountDevice()
             pymtml.mtmlLibraryShutDown()
             return device_count
         except Exception:
             return 0
+        finally:
+            if initialized:
+                try:
+                    pymtml.mtmlLibraryShutDown()
+                except Exception:
+                    # Ignore shutdown errors to avoid masking earlier exceptions.
+                    pass
 
     @staticmethod
     def get_accelerator_type():
@@ -46,22 +55,28 @@ class MUSAGPUManager(AcceleratorManager):
     @staticmethod
     def get_accelerator_model():
         """Get the model of the MUSA GPU."""
+        initialized = False
         try:
             import pymtml
 
             pymtml.mtmlLibraryInit()
+            initialized = True
             device_count = pymtml.mtmlLibraryCountDevice()
             if device_count > 0:
                 device = pymtml.mtmlLibraryInitDeviceByIndex(0)
                 model = pymtml.mtmlDeviceGetName(device)
-                pymtml.mtmlLibraryShutDown()
                 return model
             else:
-                pymtml.mtmlLibraryShutDown()
                 return "UNKNOWN"
         except Exception:
-            pymtml.mtmlLibraryShutDown()
             return "UNKNOWN"
+        finally:
+            if initialized:
+                try:
+                    pymtml.mtmlLibraryShutDown()
+                except Exception:
+                    # Ignore shutdown errors to avoid masking earlier exceptions.
+                    pass
 
     @staticmethod
     def get_accelerator_env_var(visible_accelerators: list[str]) -> dict[str, str]:
