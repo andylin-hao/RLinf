@@ -340,5 +340,5 @@ Thanks to this decoupled design, workers can be flexibly and dynamically schedul
    reasoning
    coding_online_rl
    searchr1
-   franka
-   sac_flow
+   data_collection
+   data_collection_realworld
