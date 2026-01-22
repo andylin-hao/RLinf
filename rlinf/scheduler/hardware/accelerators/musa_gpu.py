@@ -13,9 +13,12 @@
 # limitations under the License.
 
 import os
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from .accelerator import AcceleratorManager, AcceleratorType
+
+if TYPE_CHECKING:
+    from ...collective import CollectiveGroupOptions
 
 
 @AcceleratorManager.register_manager(AcceleratorType.MUSA_GPU)
@@ -120,3 +123,8 @@ class MUSAGPUManager(AcceleratorManager):
     def get_device_type() -> str:
         """Get the device type."""
         return "musa"
+
+    @staticmethod
+    def get_accel_pg_options(options: Optional["CollectiveGroupOptions"]):
+        """Get the accelerator CCL process group options."""
+        return None
