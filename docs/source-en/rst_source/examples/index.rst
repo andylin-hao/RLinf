@@ -322,3 +322,4 @@ Thanks to this decoupled design, workers can be flexibly and dynamically schedul
    franka
    sac_flow
    data_collection
+   data_collection_realworld
