@@ -7,10 +7,10 @@
 detect_pkg_manager() {
     if command -v apt-get &> /dev/null; then
         echo "apt"
-    elif command -v dnf &> /dev/null; then
-        echo "dnf"
     elif command -v yum &> /dev/null; then
         echo "yum"
+    elif command -v dnf &> /dev/null; then
+        echo "dnf"
     elif command -v pacman &> /dev/null; then
         echo "pacman"
     else
@@ -26,29 +26,57 @@ if [ "$PKG_MANAGER" = "unknown" ]; then
     exit 1
 fi
 
-# Check for sudo privileges
-if ! sudo -n true 2>/dev/null; then
-    # Check if already running as root
-    if [ "$EUID" -eq 0 ]; then
-        case "$PKG_MANAGER" in
-            apt)
-                apt-get update -y
-                apt-get install -y --no-install-recommends sudo
-                ;;
-            dnf)
-                dnf install -y sudo
-                ;;
-            yum)
-                yum install -y sudo
-                ;;
-            pacman)
-                pacman -Sy --noconfirm sudo
-                ;;
-        esac
-    else
-        echo "This script requires sudo privileges. Please run as a user with sudo access."
-        exit 1
+install_sudo() {
+    local cmd_prefix=()
+
+    if [ "$EUID" -ne 0 ]; then
+        if ! command -v su >/dev/null 2>&1; then
+            echo "sudo is not installed and 'su' is unavailable to install it. Please install sudo or run as root."
+            exit 1
+        fi
+        cmd_prefix=(su -c)
     fi
+
+    run_with_su() {
+        local cmd="$*"
+        if [ ${#cmd_prefix[@]} -eq 0 ]; then
+            eval "$cmd"
+        else
+            "${cmd_prefix[@]}" "$cmd"
+        fi
+    }
+
+    case "$PKG_MANAGER" in
+        apt)
+            run_with_su "apt-get update -y && apt-get install -y --no-install-recommends sudo"
+            ;;
+        dnf)
+            run_with_su "dnf -y update && dnf install -y sudo"
+            ;;
+        yum)
+            run_with_su "yum -y update && yum install -y sudo"
+            ;;
+        pacman)
+            run_with_su "pacman -Sy --noconfirm sudo"
+            ;;
+    esac
+}
+
+# Privilege and sudo availability checks
+if ! command -v sudo >/dev/null 2>&1; then
+    echo "sudo not found; installing with root privileges..."
+    install_sudo
+fi
+
+if ! command -v sudo >/dev/null 2>&1; then
+    echo "This script requires sudo to be installed. Please install sudo or run as root."
+    exit 1
+fi
+
+# Verify sudo works non-interactively after ensuring it exists
+if ! sudo -n true 2>/dev/null; then
+    echo "This script requires sudo privileges. Please run as a user with sudo access."
+    exit 1
 fi
 
 # Install packages based on package manager
