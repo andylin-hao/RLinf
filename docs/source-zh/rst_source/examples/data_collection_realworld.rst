@@ -87,7 +87,7 @@ pickle 文件包含一个字典：
 --------
 
 1. 环境准备
-~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 在控制器节点上，需要 source 虚拟环境以及相关的 ROS/Robot 控制脚本：
 
 .. code-block:: bash
@@ -96,13 +96,13 @@ pickle 文件包含一个字典：
   source <your_catkin_ws>/devel/setup.bash
 
 2. 配置机器人与任务
-~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 修改 `examples/embodiment/config/realworld_collect_data.yaml`。
 确保 `robot_ip` 正确，设置好目标位姿 `target_ee_pose`。
 `target_ee_pose` 可以通过 `toolkits/realworld_check/test_controller.py` 获取：
 
 3. 启动采集脚本
-~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 执行采集脚本：
 
 .. code-block:: bash
