@@ -57,8 +57,10 @@ class MUSAGPUManager(AcceleratorManager):
                 pymtml.mtmlLibraryShutDown()
                 return model
             else:
+                pymtml.mtmlLibraryShutDown()
                 return "UNKNOWN"
         except Exception:
+            pymtml.mtmlLibraryShutDown()
             return "UNKNOWN"
 
     @staticmethod
