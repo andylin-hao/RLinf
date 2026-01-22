@@ -1,16 +1,16 @@
 #!/bin/bash
 
 # Embodied dependencies
-# Supports Debian/Ubuntu (apt), RHEL/CentOS/Fedora/AlmaLinux (dnf/yum), and Arch Linux (pacman)
+# Supports Debian/Ubuntu (apt), RHEL/CentOS/Fedora/AlmaLinux/RockyLinux (dnf/yum), and Arch Linux (pacman)
 
 # Detect package manager and OS
 detect_pkg_manager() {
     if command -v apt-get &> /dev/null; then
         echo "apt"
-    elif command -v yum &> /dev/null; then
-        echo "yum"
     elif command -v dnf &> /dev/null; then
         echo "dnf"
+    elif command -v yum &> /dev/null; then
+        echo "yum"
     elif command -v pacman &> /dev/null; then
         echo "pacman"
     else
@@ -223,7 +223,7 @@ case "$PKG_MANAGER" in
         install_deps_apt
         ;;
     dnf)
-        echo "Detected RHEL/CentOS/Fedora/AlmaLinux system (dnf)"
+        echo "Detected RHEL/CentOS/Fedora/AlmaLinux/RockyLinux system (dnf)"
         install_deps_dnf
         ;;
     yum)
