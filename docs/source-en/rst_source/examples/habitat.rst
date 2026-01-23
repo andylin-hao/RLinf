@@ -10,70 +10,17 @@ The primary objective is to develop a model capable of performing robotic naviga
 3. **Action Generation**: Producing precise robotic actions (navigation control).
 4. **Reinforcement Learning**: Optimizing the policy via the PPO with environment feedback.
 
-Habitat-Sim & Habitat-Lab Installation
+Dependency Installation
 --------------------------------------
 
-**1. Prepare Habitat Environment**
+Install dependencies directly in your environment by running the following command:
 
 .. code:: bash
 
-   # Prepare habitat env
-   cd /opt/venv
-   uv venv habitat --python 3.10
-   source /opt/venv/habitat/bin/activate
-   cd /data
-   git clone https://github.com/RLinf/RLinf.git
-   cd /data/RLinf
-   uv sync --active --extra embodied
+   # For mainland China users, you can add the `--use-mirror` flag to the install.sh command for better download speed.
 
-**2. Clone Required Repositories**
-
-.. code:: bash
-
-   # Clone Required Repositories
-   cd /opt
-   git clone https://github.com/facebookresearch/habitat-sim.git
-   git clone https://github.com/facebookresearch/habitat-lab.git
-
-**3. Initialize and Patch Habitat-Sim**
-
-.. code:: bash
-
-   cd /opt/habitat-sim
-   git submodule update --init --recursive
-   git checkout v0.3,3
-
-   # Correct the CMake File
-   sed -i 's/^cmake_minimum_required.*$/cmake_minimum_required(VERSION 3.5)/' src/deps/zstd/build/cmake/CMakeLists.txt
-   sed -i 's/^cmake_minimum_required.*$/cmake_minimum_required(VERSION 3.5)/' src/deps/assimp/CMakeLists.txt
-
-**4. Install System-Level Ninja and Configure CMake**
-
-.. code:: bash
-
-   # Install System-Level Ninja
-   apt-get update && apt-get install -y ninja-build
-   uv pip install ninja
-   export CMAKE_MAKE_PROGRAM=/usr/bin/ninja
-   export CMAKE_POLICY_VERSION_MINIMUM=3.5
-
-**5. Install Habitat-Sim**
-
-.. code:: bash
-
-   # Habitat-Sim Installation
-   uv pip install . --config-settings="--build-option=--headless" --config-settings="--build-option=--with-bullet"
-   uv pip install build/deps/magnum-bindings/src/python/
-
-**6. Install Habitat-Lab and Habitat-Baselines**
-
-.. code:: bash
-
-   # Habitat-lab Installation
-   cd /opt/habitat-lab
-   git checkout v0.3.3
-   uv pip install -e habitat-lab
-   uv pip install -e habitat-baselines
+   bash requirements/install.sh embodied --env habitat
+   source .venv/bin/activate
 
 
 VLN-CE Dataset Preparation
