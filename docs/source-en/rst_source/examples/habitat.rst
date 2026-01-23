@@ -28,8 +28,8 @@ VLN-CE Dataset Preparation
 
 Download the scene dataset:
 
-- For **R2R**, **RxR**: Download the MP3D scenes from `http://kaldir.vc.in.tum.de/matterport/v1/tasks/mp3d_habitat.zip`
-  and put them into the ``VLN-CE/scene_dataset`` folder.
+- For **R2R**, **RxR**: Download the MP3D scenes from `Matterport3D <https://niessner.github.io/Matterport>`_
+  official website and put them into the ``VLN-CE/scene_dataset`` folder.
 
 Download the VLN-CE episodes:
 
