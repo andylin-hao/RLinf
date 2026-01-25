@@ -102,7 +102,7 @@ RLinf 是一个灵活且可扩展的开源框架，专为具身智能和智能�
           </ul>
           <li><b>世界模型</b></li>
           <ul>
-            <li><a href="https://rlinf.readthedocs.io/zh-cn/latest/rst_source/examples/world_model_simulator.html">Opensora</a> ✅</li>
+            <li><a href="https://rlinf.readthedocs.io/zh-cn/latest/rst_source/examples/opensora.html">OpenSora</a> ✅</li>
           </ul>
           <li><b>自定义模型</b></li>
           <ul>

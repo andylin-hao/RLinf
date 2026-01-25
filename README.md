@@ -103,7 +103,7 @@ RLinf is a flexible and scalable open-source RL infrastructure designed for Embo
           </ul>
           <li><b>World Model</b></li>
           <ul>
-            <li><a href="https://rlinf.readthedocs.io/en/latest/rst_source/examples/world_model_simulator.html">Opensora</a> ✅</li>
+            <li><a href="https://rlinf.readthedocs.io/en/latest/rst_source/examples/opensora.html">OpenSora</a> ✅</li>
           </ul>
           <li><b>Custom Models</b></li>
           <ul>
