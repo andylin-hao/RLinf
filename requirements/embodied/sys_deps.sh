@@ -111,6 +111,7 @@ install_deps_apt() {
         libxinerama-dev \
         libxcursor-dev \
         libxi-dev \
+        libaio-dev \
         libgomp1 || {
             ubuntu_ver=""
             if command -v lsb_release >/dev/null 2>&1; then
@@ -163,6 +164,7 @@ install_deps_dnf() {
         libXinerama-devel \
         libXcursor-devel \
         libXi-devel \
+        libaio-devel \
         libgomp || {
             echo "dnf install failed. Please check your repositories or install dependencies manually." >&2
             exit 1
@@ -196,6 +198,7 @@ install_deps_yum() {
         libXinerama-devel \
         libXcursor-devel \
         libXi-devel \
+        libaio-devel \
         libgomp || {
             echo "yum install failed. Please check your repositories or install dependencies manually." >&2
             exit 1
@@ -226,6 +229,7 @@ install_deps_pacman() {
         libxinerama \
         libxcursor \
         libxi \
+        libaio \
         gcc || {
             echo "pacman install failed. Please check your repositories or install dependencies manually." >&2
             exit 1
