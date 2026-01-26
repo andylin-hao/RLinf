@@ -117,7 +117,7 @@ class AsyncEmbodiedRunner(EmbodiedRunner):
                 time.sleep(1.0)
                 continue
             train_step += 1
-            if train_step % self.rollout_sync_interval ==0:
+            if train_step % self.rollout_sync_interval == 0:
                 self.update_rollout_weights()
             skip_step = False
             with self.timer("step"):
