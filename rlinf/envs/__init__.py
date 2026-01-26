@@ -100,7 +100,7 @@ def get_env_cls(env_type: str, env_cfg=None, enable_offload=False):
         from rlinf.envs.habitat.habitat_env import HabitatEnv
 
         return HabitatEnv
-    elif env_type == "frankasim":
+    elif env_type == SupportedEnvType.FRANKASIM:
         from rlinf.envs.frankasim.frankasim_env import FrankaSimEnv
 
         return FrankaSimEnv
