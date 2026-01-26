@@ -17,7 +17,7 @@ GITHUB_PREFIX=""
 NO_ROOT=0
 SUPPORTED_TARGETS=("embodied" "reason" "docs")
 SUPPORTED_MODELS=("openvla" "openvla-oft" "openpi" "gr00t")
-SUPPORTED_ENVS=("behavior" "maniskill_libero" "metaworld" "calvin" "isaaclab" "robocasa" "franka" "frankasim" "robotwin" "habitat" "opensora")
+SUPPORTED_ENVS=("behavior" "maniskill_libero" "metaworld" "calvin" "isaaclab" "robocasa" "franka" "frankasim" "robotwin" "opensora" "habitat")
 
 # Ensure uv is installed
 if ! command -v uv &> /dev/null; then
