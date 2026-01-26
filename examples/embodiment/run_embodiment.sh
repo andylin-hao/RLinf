@@ -8,7 +8,6 @@ export MUJOCO_GL="egl"
 export PYOPENGL_PLATFORM="egl"
 
 export ROBOTWIN_PATH=${ROBOTWIN_PATH:-"/path/to/RoboTwin"}
-export OPENSORA_REPO_PATH=${OPENSORA_REPO_PATH:-"/path/to/opensora/"}
 export PYTHONPATH=${REPO_PATH}:${ROBOTWIN_PATH}:$PYTHONPATH
 
 # Base path to the BEHAVIOR dataset, which is the BEHAVIOR-1k repo's dataset folder
@@ -22,8 +21,6 @@ export OMNIGIBSON_HEADLESS=${OMNIGIBSON_HEADLESS:-1}
 export ISAAC_PATH=${ISAAC_PATH:-/path/to/isaac-sim}
 export EXP_PATH=${EXP_PATH:-$ISAAC_PATH/apps}
 export CARB_APP_PATH=${CARB_APP_PATH:-$ISAAC_PATH/kit}
-# only required when running the experiment related to opensora world model.
-export LD_LIBRARY_PATH=/root/.tensornvme/lib:$LD_LIBRARY_PATH
 
 if [ -z "$1" ]; then
     CONFIG_NAME="maniskill_ppo_openvlaoft"
