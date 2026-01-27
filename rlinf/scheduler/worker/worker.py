@@ -402,9 +402,9 @@ class Worker(metaclass=WorkerMeta):
             Worker.logger.warning(
                 f"Failed to import extension module '{ext_module_name}': {e}"
             )
-        except Exception as e:
-            Worker.logger.error(
-                f"Error loading extension module '{ext_module_name}': {e}"
+        except Exception:
+            Worker.logger.exception(
+                f"Error loading extension module '{ext_module_name}'"
             )
 
     def __init__(
