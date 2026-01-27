@@ -24,13 +24,7 @@ import time
 import traceback
 import warnings
 from contextlib import contextmanager
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Callable,
-    Optional,
-    TypeVar,
-)
+from typing import TYPE_CHECKING, Any, Callable, Optional, TypeVar
 
 import ray
 import ray.dashboard.utils
@@ -370,6 +364,49 @@ class Worker(metaclass=WorkerMeta):
         self._has_initialized = False
         self._timer_metrics: dict[str, float] = {}
         self._set_new_omegaconf_resolvers()
+
+        # Load user-provided extension modules (e.g., for registering custom envs/models)
+        self._load_user_extensions()
+
+    def _load_user_extensions(self):
+        """Load extension modules specified via RLINF_EXT_MODULE environment variable.
+
+        This allows users to register custom environments, models, or other extensions
+        without patching third_party code. The extension module should have a `register()`
+        function that performs the necessary registrations.
+
+        Example usage:
+            export RLINF_EXT_MODULE=rlinf_ext
+            # or with full path:
+            export RLINF_EXT_MODULE=workflows.scripts.rlinf_ext
+
+        The module's register() function will be called once per Ray worker process.
+        """
+        ext_module_name = os.environ.get("RLINF_EXT_MODULE", None)
+        if ext_module_name is None:
+            return
+
+        try:
+            import importlib
+
+            ext_module = importlib.import_module(ext_module_name)
+            if hasattr(ext_module, "register"):
+                ext_module.register()
+                Worker.logger.debug(
+                    f"Loaded extension module '{ext_module_name}' and called register()"
+                )
+            else:
+                Worker.logger.warning(
+                    f"Extension module '{ext_module_name}' has no register() function"
+                )
+        except ImportError as e:
+            Worker.logger.warning(
+                f"Failed to import extension module '{ext_module_name}': {e}"
+            )
+        except Exception as e:
+            Worker.logger.error(
+                f"Error loading extension module '{ext_module_name}': {e}"
+            )
 
     def __init__(
         self,
