@@ -370,20 +370,15 @@ class Worker(metaclass=WorkerMeta):
         self._load_user_extensions()
 
     def _load_user_extensions(self):
-        """Load extension modules specified via RLINF_EXT_MODULE environment variable.
+        """Load extension modules specified via EXT_MODULE environment variable.
 
         This allows users to register custom environments, models, or other extensions
-        without patching third-party code. The extension module should have a `register()`
-        function that performs the necessary registrations.
+        without patching.
+        The extension module should have a `register()` function that performs the necessary registrations.
 
-        Example usage:
-            export RLINF_EXT_MODULE=rlinf_ext
-            # or with full path:
-            export RLINF_EXT_MODULE=workflows.scripts.rlinf_ext
-
-        The module's register() function will be called once per Ray worker process.
+        The module's register() function will be called once per Worker process.
         """
-        ext_module_name = os.environ.get("RLINF_EXT_MODULE", None)
+        ext_module_name = Cluster.get_sys_env_var(ClusterEnvVar.EXT_MODULE)
         if ext_module_name is None:
             return
 
