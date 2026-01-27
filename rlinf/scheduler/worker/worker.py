@@ -372,7 +372,7 @@ class Worker(metaclass=WorkerMeta):
         """Load extension modules specified via RLINF_EXT_MODULE environment variable.
 
         This allows users to register custom environments, models, or other extensions
-        without patching third_party code. The extension module should have a `register()`
+        without patching third-party code. The extension module should have a `register()`
         function that performs the necessary registrations.
 
         Example usage:
