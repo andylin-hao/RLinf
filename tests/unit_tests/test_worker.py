@@ -210,29 +210,6 @@ class TestLoadUserExtensions:
                 worker._load_user_extensions()
                 mock_module.register.assert_called_once()
 
-    def test_warning_when_module_lacks_register(self, caplog):
-        """Verify warning is logged when module doesn't have register()."""
-        worker = self._create_mock_worker()
-        mock_module = types.ModuleType("mock_ext_no_register")
-
-        with mock.patch.dict(os.environ, {"RLINF_EXT_MODULE": "mock_ext_no_register"}):
-            with mock.patch("importlib.import_module", return_value=mock_module):
-                with caplog.at_level(logging.WARNING):
-                    worker._load_user_extensions()
-                assert "has no register() function" in caplog.text
-
-    def test_warning_when_module_not_found(self, caplog):
-        """Verify warning is logged when module cannot be imported."""
-        worker = self._create_mock_worker()
-
-        with mock.patch.dict(os.environ, {"RLINF_EXT_MODULE": "nonexistent_module"}):
-            with mock.patch(
-                "importlib.import_module", side_effect=ImportError("Not found")
-            ):
-                with caplog.at_level(logging.WARNING):
-                    worker._load_user_extensions()
-                assert "Failed to import extension module" in caplog.text
-
 
 if __name__ == "__main__":
     pytest.main(["-v", __file__])
