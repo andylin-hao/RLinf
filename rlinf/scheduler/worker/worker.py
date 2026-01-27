@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import importlib
 import ctypes
 import functools
 import inspect
@@ -387,8 +388,6 @@ class Worker(metaclass=WorkerMeta):
             return
 
         try:
-            import importlib
-
             ext_module = importlib.import_module(ext_module_name)
             if hasattr(ext_module, "register"):
                 ext_module.register()
