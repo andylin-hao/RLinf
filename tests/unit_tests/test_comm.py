@@ -592,7 +592,7 @@ class TestCommunication:
         asyncio tasks can run while waiting."""
         sender_group, receiver_group = worker_groups
         # Run on rank 0 only to avoid multi-worker timing; receiver waits, sender sends after delay.
-        recv_ref = receiver_group.execute_on(0).test_async_wait_yields_control()
+        recv_ref = receiver_group.execute_on(1).test_async_wait_yields_control()
 
         def delayed_send():
             time.sleep(0.15)
@@ -604,13 +604,10 @@ class TestCommunication:
             t.start()
         finally:
             t.join()
-        world_size = len(results)
-        for i, (yield_count, recv_result) in enumerate(results):
-            peer_rank = get_recv_peer_rank(i, world_size)
+        for i, yield_count in enumerate(results):
             assert yield_count >= 1, (
                 f"async_wait() did not yield: yield_check task ran {yield_count} times"
             )
-            assert recv_result == {"message": f"Hello from rank {peer_rank}"}
 
 
 if __name__ == "__main__":

@@ -1,3 +1,17 @@
+# Copyright 2025 The RLinf Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import asyncio
 import random
 import threading
@@ -379,8 +393,12 @@ def run_benchmark(cfg: BenchmarkConfig) -> None:
             "wall_time": wall,
             "throughput_msg_per_sec": msgs / wall if wall > 0 else float("inf"),
             "throughput_mb_per_sec": total_mb / wall if wall > 0 else float("inf"),
-            "producer_latency_ms": (prod_time / msgs * 1e3) if msgs > 0 else float("inf"),
-            "consumer_latency_ms": (cons_time / msgs * 1e3) if msgs > 0 else float("inf"),
+            "producer_latency_ms": (prod_time / msgs * 1e3)
+            if msgs > 0
+            else float("inf"),
+            "consumer_latency_ms": (cons_time / msgs * 1e3)
+            if msgs > 0
+            else float("inf"),
         }
 
     def put_only_ray_queue_round(async_mode: bool) -> dict[str, float] | None:
@@ -403,7 +421,9 @@ def run_benchmark(cfg: BenchmarkConfig) -> None:
             "wall_time": wall,
             "throughput_msg_per_sec": msgs / wall if wall > 0 else float("inf"),
             "throughput_mb_per_sec": total_mb / wall if wall > 0 else float("inf"),
-            "producer_latency_ms": (prod_time / msgs * 1e3) if msgs > 0 else float("inf"),
+            "producer_latency_ms": (prod_time / msgs * 1e3)
+            if msgs > 0
+            else float("inf"),
             "consumer_latency_ms": 0.0,
         }
 
@@ -427,7 +447,9 @@ def run_benchmark(cfg: BenchmarkConfig) -> None:
             "wall_time": wall,
             "throughput_msg_per_sec": msgs / wall if wall > 0 else float("inf"),
             "throughput_mb_per_sec": total_mb / wall if wall > 0 else float("inf"),
-            "consumer_latency_ms": (cons_time / msgs * 1e3) if msgs > 0 else float("inf"),
+            "consumer_latency_ms": (cons_time / msgs * 1e3)
+            if msgs > 0
+            else float("inf"),
         }
 
     def one_round(async_mode: bool) -> dict[str, float]:
@@ -488,7 +510,9 @@ def run_benchmark(cfg: BenchmarkConfig) -> None:
             "wall_time": wall,
             "throughput_msg_per_sec": msgs / wall if wall > 0 else float("inf"),
             "throughput_mb_per_sec": total_mb / wall if wall > 0 else float("inf"),
-            "producer_latency_ms": (prod_time / msgs * 1e3) if msgs > 0 else float("inf"),
+            "producer_latency_ms": (prod_time / msgs * 1e3)
+            if msgs > 0
+            else float("inf"),
             "consumer_latency_ms": 0.0,
         }
 
