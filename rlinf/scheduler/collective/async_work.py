@@ -81,8 +81,6 @@ class AsyncFuncWork(AsyncWork):
         self._result = None
         self._next_work = None
         self._cuda_event = None
-        self._concurrent_done = ConcurrentFuture()
-        self._done.then(lambda _: self._concurrent_done.set_result(True))
 
     def __call__(self, future: Future):
         """Execute the function and set the done flag."""
@@ -126,7 +124,7 @@ class AsyncFuncWork(AsyncWork):
         """
         if not self._done.done():
             loop = asyncio.get_event_loop()
-            await asyncio.wrap_future(self._concurrent_done, loop=loop)
+            await loop.run_in_executor(None, self._done.wait)
         if self._cuda_event is not None:
             self._cuda_event.wait()
         result = self._result
@@ -254,8 +252,6 @@ class AsyncChannelWork(AsyncWork):
         self._args = args
         self._kwargs = kwargs
         self._future = Future()
-        self._concurrent_future = ConcurrentFuture()
-        self._future.then(lambda _: self._concurrent_future.set_result(True))
 
         # Enqueue the operation
         with AsyncChannelWork.lock:
@@ -280,7 +276,7 @@ class AsyncChannelWork(AsyncWork):
         """
         if not self._future.done():
             loop = asyncio.get_event_loop()
-            await asyncio.wrap_future(self._concurrent_future, loop=loop)
+            await loop.run_in_executor(None, self._future.wait)
         return self._future.value()
 
     def wait(self):
@@ -333,8 +329,6 @@ class AsyncChannelCommWork(AsyncWork):
                 AsyncChannelCommWork.channel_data_store[query_id] = Future()
             self._data_future = AsyncChannelCommWork.channel_data_store[query_id]
         self._async_comm_work.then(self._store_channel_data)
-        self._concurrent_future = ConcurrentFuture()
-        self._data_future.then(lambda _: self._concurrent_future.set_result(True))
 
     def _store_channel_data(self):
         """Store channel data in the channel data store."""
@@ -354,7 +348,7 @@ class AsyncChannelCommWork(AsyncWork):
         """
         if not self._data_future.done():
             loop = asyncio.get_event_loop()
-            await asyncio.wrap_future(self._concurrent_future, loop=loop)
+            await loop.run_in_executor(None, self._data_future.wait)
         with AsyncChannelCommWork.store_lock:
             AsyncChannelCommWork.channel_data_store.pop(self._query_id, None)
         return self._data_future.value()
