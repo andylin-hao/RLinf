@@ -456,7 +456,6 @@ class Channel:
         else:
             put_kwargs = {"item": item, "weight": weight, "key": key, "nowait": True}
             try:
-                async_channel_work.wait()
                 ray.get(target_actor.put_via_ray.remote(**put_kwargs))
             except asyncio.QueueFull:
                 raise asyncio.QueueFull
