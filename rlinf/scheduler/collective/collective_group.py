@@ -470,6 +470,7 @@ class CollectiveGroup:
     def broadcast(
         self,
         object: torch.Tensor | list[torch.Tensor] | dict[str, torch.Tensor] | Any,
+        src_addr: WorkerAddress,
         async_op: bool = False,
         options: Optional[CollectiveGroupOptions] = None,
     ) -> AsyncWork | torch.Tensor | list[torch.Tensor] | dict[str, torch.Tensor] | Any:
@@ -486,6 +487,7 @@ class CollectiveGroup:
         broadcast_work = AsyncFuncWork(
             self._atomic_broadcast,
             object=object,
+            src_addr=src_addr,
             comm_id=broadcast_comm_id,
             current_device=current_device,
             options=options,
@@ -513,6 +515,7 @@ class CollectiveGroup:
     def _atomic_broadcast(
         self,
         object: torch.Tensor | list[torch.Tensor] | dict[str, torch.Tensor] | Any,
+        src_addr: WorkerAddress,
         comm_id: int,
         current_device: Optional[int],
         options: Optional[CollectiveGroupOptions] = None,
@@ -521,7 +524,7 @@ class CollectiveGroup:
             Worker.torch_platform.set_device(current_device)
 
         self._init_process_group(options=options)
-        src_rank = 0
+        src_rank = self._worker_addresses.index(src_addr)
 
         object_type_tensor = torch.empty(1, dtype=torch.int, device="cpu")
         if self._rank == src_rank:

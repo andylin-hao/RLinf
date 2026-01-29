@@ -756,7 +756,10 @@ class Worker(metaclass=WorkerMeta):
     def broadcast(
         self,
         object: Optional[Any] = None,
-        groups: Optional[list[tuple[str, list[int] | int]]] = None,
+        groups: Optional[
+            list[tuple[str, list[int] | list[tuple[int]] | tuple[int] | int]]
+        ] = None,
+        src: Optional[tuple[str, tuple[int] | int]] = None,
         async_op: bool = False,
         options: Optional["CollectiveGroupOptions"] = None,
     ):
@@ -767,11 +770,9 @@ class Worker(metaclass=WorkerMeta):
         All participating workers must call this method with identical arguments.
 
         Args:
-            object (Any): The object to broadcast on the source worker. For non-src
-                ranks, this is typically None.
-            groups: The participating groups with ranks. Each element must be a
-                (group_name, ranks) tuple where ranks is either a single int or a
-                list of ints.
+            object (Any): The object to broadcast on the source worker. For non-src ranks, this is typically None.
+            groups: The participating groups with ranks. Each element must be a (group_name, ranks) tuple where ranks is either a single int (one worker of the rank), a list of ints (multiple workers of the same group), a tuple of ints (one worker of the rank path), or a list of tuples of ints (multiple workers of the rank paths of the same group).
+            src: The source group and rank. If not provided, the source will be the first worker address in the expanded group list.
             async_op (bool): Whether to perform the operation asynchronously.
             options (Optional[CollectiveGroupOptions]): The options for the collective group.
 
@@ -794,18 +795,26 @@ class Worker(metaclass=WorkerMeta):
                 )
             group_name, ranks = entry
             if not isinstance(group_name, str):
-                raise TypeError("group_name must be a string.")
+                raise TypeError(
+                    f"group_name must be a string. But got {type(group_name)}."
+                )
             if isinstance(ranks, list):
                 if len(ranks) == 0:
                     raise ValueError("ranks list must not be empty.")
-                if not all(isinstance(rank, int) for rank in ranks):
-                    raise TypeError("All ranks must be integers.")
+                if not all(
+                    isinstance(rank, int) or isinstance(rank, tuple) for rank in ranks
+                ):
+                    raise TypeError(
+                        f"All ranks must be integers or tuples. But got {type(ranks)}."
+                    )
                 for rank in ranks:
                     worker_addresses.append(WorkerAddress(group_name, ranks=rank))
-            elif isinstance(ranks, int):
+            elif isinstance(ranks, int) or isinstance(ranks, tuple):
                 worker_addresses.append(WorkerAddress(group_name, ranks=ranks))
             else:
-                raise TypeError("ranks must be an int or list[int].")
+                raise TypeError(
+                    f"ranks must be an int, tuple, list[int], list[tuple[int]]. But got {type(ranks)}."
+                )
 
         if not worker_addresses:
             return object
@@ -815,11 +824,27 @@ class Worker(metaclass=WorkerMeta):
                 f"Worker {self._worker_address.get_name()} is not part of the broadcast group."
             )
 
+        # Get the src addr before sorting
+        if src is not None:
+            src_group_name, src_ranks = src
+            if not isinstance(src_group_name, str):
+                raise TypeError(
+                    f"src_group_name must be a string. But got {type(src_group_name)}."
+                )
+            if not isinstance(src_ranks, int) and not isinstance(src_ranks, tuple):
+                raise TypeError(
+                    f"src_ranks must be an int or tuple. But got {type(src_ranks)}."
+                )
+            src_addr = WorkerAddress(src_group_name, ranks=src_ranks)
+        else:
+            src_addr = worker_addresses[0]
         with self._lock:
+            worker_addresses.sort()
             group = self._collective.create_collective_group(worker_addresses)
 
         return group.broadcast(
             object=object,
+            src_addr=src_addr,
             async_op=async_op,
             options=options,
         )

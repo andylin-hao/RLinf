@@ -454,6 +454,31 @@ class CommCollectiveWorker(Worker):
         payload = torch.ones(2, 2, device=device) * 11
         return self._cross_group_broadcast(groups, payload, async_op)
 
+    def test_broadcast_object_with_src(self, groups, src, async_op=False):
+        payload = {"message": "Hello from explicit src", "rank": 0}
+        result = self.broadcast(
+            payload if self._worker_address == src else None,
+            groups=groups,
+            src=(src.root_group_name, src.rank),
+            async_op=async_op,
+        )
+        if async_op:
+            return result.wait()
+        return result
+
+    def test_broadcast_tensor_with_src(self, groups, src, on_cpu, async_op=False):
+        device = "cpu" if on_cpu else get_device()
+        payload = torch.ones(2, 2, device=device) * 13
+        result = self.broadcast(
+            payload if self._worker_address == src else None,
+            groups=groups,
+            src=(src.root_group_name, src.rank),
+            async_op=async_op,
+        )
+        if async_op:
+            return result.wait()
+        return result
+
 
 # --- Pytest Setup ---
 
@@ -791,6 +816,69 @@ class TestCollective:
         results = handle_a.wait() + handle_b.wait()
         expected = torch.ones(2, 2) * 11
         for res in results:
+            assert torch.equal(res.cpu(), expected)
+
+    @pytest.mark.parametrize("async_op", [False, True], ids=["sync", "async_wait"])
+    def test_broadcast_src_ignores_group_order(self, cross_collective_groups, async_op):
+        group_a, group_b, group_a_size, group_b_size = cross_collective_groups
+        groups_a_first = [
+            ("collective_group_a", list(range(group_a_size))),
+            ("collective_group_b", list(range(group_b_size))),
+        ]
+        groups_b_first = [
+            ("collective_group_b", list(range(group_b_size))),
+            ("collective_group_a", list(range(group_a_size))),
+        ]
+        src_addr = WorkerAddress("collective_group_a", ranks=0)
+        handle_a = group_a.test_broadcast_object_with_src(
+            groups_a_first, src_addr, async_op
+        )
+        handle_b = group_b.test_broadcast_object_with_src(
+            groups_a_first, src_addr, async_op
+        )
+        results_a = handle_a.wait() + handle_b.wait()
+        handle_a = group_a.test_broadcast_object_with_src(
+            groups_b_first, src_addr, async_op
+        )
+        handle_b = group_b.test_broadcast_object_with_src(
+            groups_b_first, src_addr, async_op
+        )
+        results_b = handle_a.wait() + handle_b.wait()
+        assert results_a == results_b
+
+    @pytest.mark.parametrize("on_cpu", [True, False], ids=["cpu", "cuda"])
+    @pytest.mark.parametrize("async_op", [False, True], ids=["sync", "async_wait"])
+    def test_broadcast_src_tensor_order_independent(
+        self, cross_collective_groups, on_cpu, async_op
+    ):
+        if not on_cpu and not torch.cuda.is_available():
+            pytest.skip("Skipping CUDA test on CPU-only environment.")
+        group_a, group_b, group_a_size, group_b_size = cross_collective_groups
+        groups_a_first = [
+            ("collective_group_a", list(range(group_a_size))),
+            ("collective_group_b", list(range(group_b_size))),
+        ]
+        groups_b_first = [
+            ("collective_group_b", list(range(group_b_size))),
+            ("collective_group_a", list(range(group_a_size))),
+        ]
+        src_addr = WorkerAddress("collective_group_a", ranks=0)
+        handle_a = group_a.test_broadcast_tensor_with_src(
+            groups_a_first, src_addr, on_cpu, async_op
+        )
+        handle_b = group_b.test_broadcast_tensor_with_src(
+            groups_a_first, src_addr, on_cpu, async_op
+        )
+        results_a = handle_a.wait() + handle_b.wait()
+        handle_a = group_a.test_broadcast_tensor_with_src(
+            groups_b_first, src_addr, on_cpu, async_op
+        )
+        handle_b = group_b.test_broadcast_tensor_with_src(
+            groups_b_first, src_addr, on_cpu, async_op
+        )
+        results_b = handle_a.wait() + handle_b.wait()
+        expected = torch.ones(2, 2) * 13
+        for res in results_a + results_b:
             assert torch.equal(res.cpu(), expected)
 
     @pytest.mark.parametrize("on_cpu", [True, False], ids=["cpu", "cuda"])
