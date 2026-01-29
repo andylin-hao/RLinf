@@ -15,7 +15,6 @@
 import asyncio
 import queue
 import threading
-import time
 from typing import Any, Callable, Optional, overload
 
 import ray.actor
@@ -82,6 +81,15 @@ class AsyncFuncWork(AsyncWork):
         self._result = None
         self._next_work = None
         self._cuda_event = None
+        self._async_wait_event = asyncio.Event()
+        try:
+            self._loop = asyncio.get_event_loop()
+        except RuntimeError:
+            self._loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(self._loop)
+        self._then_done = self._done.then(
+            lambda _: self._loop.call_soon_threadsafe(self._async_wait_event.set)
+        )
 
     def __call__(self, future: Future):
         """Execute the function and set the done flag."""
@@ -123,8 +131,8 @@ class AsyncFuncWork(AsyncWork):
             Any: The result of the work if applicable, otherwise None.
 
         """
-        while not self._done.done():
-            await asyncio.sleep(0.001)  # Yield control to the event loop
+        await self._async_wait_event.wait()
+        self._done.wait()
         if self._cuda_event is not None:
             self._cuda_event.wait()
         result = self._result
@@ -141,8 +149,7 @@ class AsyncFuncWork(AsyncWork):
             Any: The result of the work if applicable, otherwise None.
 
         """
-        while not self._done.done():
-            time.sleep(0.001)
+        self._done.wait()
         if self._cuda_event is not None:
             self._cuda_event.wait()
         result = self._result
@@ -268,6 +275,15 @@ class AsyncChannelWork(AsyncWork):
         self._args = args
         self._kwargs = kwargs
         self._future = Future()
+        self._async_wait_event = asyncio.Event()
+        try:
+            self._loop = asyncio.get_event_loop()
+        except RuntimeError:
+            self._loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(self._loop)
+        self._future.then(
+            lambda _: self._loop.call_soon_threadsafe(self._async_wait_event.set)
+        )
 
         # Create lock if not exist
         if AsyncChannelWork.lock is None:
@@ -307,7 +323,7 @@ class AsyncChannelWork(AsyncWork):
                 try:
                     operation = AsyncChannelWork.async_op_queue.get(block=False)
                 except queue.Empty:
-                    await asyncio.sleep(0.001)  # Yield control to the event loop
+                    await asyncio.sleep(0)
                     continue
 
                 op_queue_map = AsyncChannelWork.channel_op_queue_map
@@ -336,8 +352,8 @@ class AsyncChannelWork(AsyncWork):
             Any: The result of the work if applicable, otherwise None.
 
         """
-        while not self._future.done():
-            await asyncio.sleep(0.01)
+        await self._async_wait_event.wait()
+        self._future.wait()
         return self._future.value()
 
     def wait(self):
@@ -390,6 +406,15 @@ class AsyncChannelCommWork(AsyncWork):
                 AsyncChannelCommWork.channel_data_store[query_id] = Future()
             self._data_future = AsyncChannelCommWork.channel_data_store[query_id]
         self._async_comm_work.then(self._store_channel_data)
+        self._async_wait_event = asyncio.Event()
+        try:
+            self._loop = asyncio.get_event_loop()
+        except RuntimeError:
+            self._loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(self._loop)
+        self._then_done = self._data_future.then(
+            lambda _: self._loop.call_soon_threadsafe(self._async_wait_event.set)
+        )
 
     def _store_channel_data(self):
         """Store channel data in the channel data store."""
@@ -407,8 +432,8 @@ class AsyncChannelCommWork(AsyncWork):
             Any: The result of the work if applicable, otherwise None.
 
         """
-        while not self._data_future.done():
-            await asyncio.sleep(0.01)  # Yield control to the event loop
+        await self._async_wait_event.wait()
+        self._data_future.wait()
         with AsyncChannelCommWork.store_lock:
             AsyncChannelCommWork.channel_data_store.pop(self._query_id, None)
         return self._data_future.value()
@@ -428,3 +453,19 @@ class AsyncChannelCommWork(AsyncWork):
     def done(self):
         """Query the completion state of the work."""
         return self._data_future.done()
+
+
+class AsyncRayWork(AsyncWork):
+    """Asynchronous work for ray operations."""
+
+    def __init__(self, ray_object: ray.ObjectRef):
+        """Initialize the AsyncRayWork."""
+        self._ray_object = ray_object
+
+    async def async_wait(self):
+        """Async wait for the work to complete."""
+        return await self._ray_object
+
+    def wait(self):
+        """Wait for the work to complete."""
+        return ray.get(self._ray_object)

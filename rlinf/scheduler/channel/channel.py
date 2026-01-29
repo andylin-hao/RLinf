@@ -20,7 +20,12 @@ import ray
 import ray.actor
 
 from ..cluster import Cluster
-from ..collective import AsyncChannelCommWork, AsyncChannelWork, AsyncWork
+from ..collective import (
+    AsyncChannelCommWork,
+    AsyncChannelWork,
+    AsyncRayWork,
+    AsyncWork,
+)
 from ..placement import NodePlacementStrategy
 from ..worker import Worker, WorkerGroup
 
@@ -400,12 +405,8 @@ class Channel:
         else:
             # Outside a worker, use ray comm
             put_kwargs = {"item": item, "weight": weight, "key": key}
-            async_channel_work = AsyncChannelWork(
-                channel_name=self._channel_name,
-                channel_key=key,
-                channel_actor=target_actor,
-                method="put_via_ray",
-                **put_kwargs,
+            async_channel_work = AsyncRayWork(
+                target_actor.put_via_ray.remote(**put_kwargs)
             )
             if async_op:
                 return async_channel_work
@@ -454,15 +455,9 @@ class Channel:
                 raise asyncio.QueueFull
         else:
             put_kwargs = {"item": item, "weight": weight, "key": key, "nowait": True}
-            async_channel_work = AsyncChannelWork(
-                channel_name=self._channel_name,
-                channel_key=key,
-                channel_actor=target_actor,
-                method="put_via_ray",
-                **put_kwargs,
-            )
             try:
                 async_channel_work.wait()
+                ray.get(target_actor.put_via_ray.remote(**put_kwargs))
             except asyncio.QueueFull:
                 raise asyncio.QueueFull
 
@@ -493,13 +488,7 @@ class Channel:
                 "query_id": query_id,
                 "key": key,
             }
-            async_channel_work = AsyncChannelWork(
-                channel_name=self._channel_name,
-                channel_key=key,
-                channel_actor=target_actor,
-                method="get",
-                **get_kwargs,
-            )
+            target_actor.get.remote(**get_kwargs)
             async_comm_work = self._current_worker.recv(
                 self._channel_name, target_rank, async_op=True
             )
@@ -510,19 +499,14 @@ class Channel:
                     channel_actor=target_actor,
                 )
             else:
-                async_channel_work.wait()
                 # query_id, data
                 _, data = async_comm_work.wait()
                 return data
         else:
             # Outside a worker, use ray comm
             get_kwargs = {"key": key}
-            async_channel_work = AsyncChannelWork(
-                channel_name=self._channel_name,
-                channel_key=key,
-                channel_actor=target_actor,
-                method="get_via_ray",
-                **get_kwargs,
+            async_channel_work = AsyncRayWork(
+                target_actor.get_via_ray.remote(**get_kwargs)
             )
             if async_op:
                 return async_channel_work
@@ -557,27 +541,14 @@ class Channel:
                 "key": key,
                 "nowait": True,
             }
-            AsyncChannelWork(
-                channel_name=self._channel_name,
-                channel_key=key,
-                channel_actor=target_actor,
-                method="get",
-                **get_kwargs,
-            )
+            target_actor.get.remote(**get_kwargs)
             query_id, data = self._current_worker.recv(self._channel_name, target_rank)
             if query_id == asyncio.QueueEmpty:
                 raise asyncio.QueueEmpty
             return data
         else:
             get_kwargs = {"key": key, "nowait": True}
-            async_channel_work = AsyncChannelWork(
-                channel_name=self._channel_name,
-                channel_key=key,
-                channel_actor=target_actor,
-                method="get_via_ray",
-                **get_kwargs,
-            )
-            return async_channel_work.wait()
+            return ray.get(target_actor.get_via_ray.remote(**get_kwargs))
 
     def get_batch(
         self,
@@ -614,13 +585,7 @@ class Channel:
                 "target_weight": target_weight,
                 "key": key,
             }
-            async_channel_work = AsyncChannelWork(
-                channel_name=self._channel_name,
-                channel_key=key,
-                channel_actor=target_actor,
-                method="get_batch",
-                **get_kwargs,
-            )
+            target_actor.get_batch.remote(**get_kwargs)
             async_comm_work = self._current_worker.recv(
                 self._channel_name, target_rank, async_op=True
             )
@@ -631,18 +596,13 @@ class Channel:
                     channel_actor=target_actor,
                 )
             else:
-                async_channel_work.wait()
                 # query_id, data
                 _, data = async_comm_work.wait()
                 return data
         else:
             get_kwargs = {"target_weight": target_weight, "key": key}
-            async_channel_work = AsyncChannelWork(
-                channel_name=self._channel_name,
-                channel_key=key,
-                channel_actor=target_actor,
-                method="get_batch_via_ray",
-                **get_kwargs,
+            async_channel_work = AsyncRayWork(
+                target_actor.get_batch_via_ray.remote(**get_kwargs)
             )
             if async_op:
                 return async_channel_work
@@ -661,14 +621,7 @@ class Channel:
         target_rank = self._get_channel_rank_by_key(key)
         target_actor = self._get_channel_actor(target_rank)
         get_kwargs = {"key": key}
-        async_channel_work = AsyncChannelWork(
-            channel_name=self._channel_name,
-            channel_key=key,
-            channel_actor=target_actor,
-            method="peek_all",
-            **get_kwargs,
-        )
-        items = async_channel_work.wait()
+        items = ray.get(target_actor.peek_all.remote(**get_kwargs))
         return str(items)
 
     def __setstate__(self, state_dict: dict[str, Any]):

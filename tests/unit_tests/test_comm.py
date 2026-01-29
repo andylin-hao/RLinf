@@ -15,6 +15,8 @@
 import asyncio
 import gc
 import os
+import threading
+import time
 
 import pytest
 import torch
@@ -354,6 +356,34 @@ class ReceiverWorker(Worker):
         torch.cuda.empty_cache()
         assert torch.cuda.memory_allocated() == 0
 
+    def test_async_wait_yields_control(self):
+        """Run recv(async_op=True) and await async_wait() concurrently with another
+        asyncio task. Assert the other task ran while waiting, proving async_wait()
+        yields control to the event loop."""
+        peer_rank = get_recv_peer_rank(self._rank, self._world_size)
+
+        async def recv_task():
+            work = self.recv(
+                SENDER_GROUP_NAME,
+                peer_rank,
+                async_op=True,
+                options=CollectiveGroupOptions(accel_max_ctas=1),
+            )
+            return await work.async_wait()
+
+        async def yield_check_task():
+            count = 0
+            for _ in range(30):
+                count += 1
+                await asyncio.sleep(0.01)
+            return count
+
+        async def main():
+            asyncio.create_task(recv_task())
+            return await yield_check_task()
+
+        return asyncio.run(main())
+
 
 # --- Pytest Setup ---
 
@@ -556,6 +586,31 @@ class TestCommunication:
             "test_memory_leak",
             "test_memory_leak",
         )
+
+    def test_async_wait_yields_control(self, worker_groups):
+        """Ensures async_wait() of async comm correctly yields control so other
+        asyncio tasks can run while waiting."""
+        sender_group, receiver_group = worker_groups
+        # Run on rank 0 only to avoid multi-worker timing; receiver waits, sender sends after delay.
+        recv_ref = receiver_group.execute_on(0).test_async_wait_yields_control()
+
+        def delayed_send():
+            time.sleep(0.15)
+            sender_group.execute_on(0).test_send_object(False).wait()
+
+        t = threading.Thread(target=delayed_send)
+        try:
+            results = recv_ref.wait()
+            t.start()
+        finally:
+            t.join()
+        world_size = len(results)
+        for i, (yield_count, recv_result) in enumerate(results):
+            peer_rank = get_recv_peer_rank(i, world_size)
+            assert yield_count >= 1, (
+                f"async_wait() did not yield: yield_check task ran {yield_count} times"
+            )
+            assert recv_result == {"message": f"Hello from rank {peer_rank}"}
 
 
 if __name__ == "__main__":
