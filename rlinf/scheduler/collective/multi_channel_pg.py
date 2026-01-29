@@ -372,7 +372,7 @@ class MultiChannelProcessGroup:
             )
         if self._no_accel_ccl and device == CollectiveGroup.ACCEL:
             raise RuntimeError(
-                f"Collective group {self._group_name} does not support accelerator CCL backend, possibly because (1) the workers in the group have different accelerator types:  {[worker.accelerator_type for worker in self._group_info.workers]}, (2) the workers are CPU-only, or (3) the accelerator CCL is not among the supported CCL: {AcceleratorUtil.CCL_SUPPORT_LIST}."
+                f"Collective group {self._group_name} does not support accelerator CCL backend, possibly because (1) the workers in the group have different accelerator types: {[worker.accelerator_type for worker in self._group_info.workers]}, (2) the workers are CPU-only, or (3) the accelerator CCL is not among the supported CCL: {AcceleratorUtil.CCL_SUPPORT_LIST}."
             )
 
         group = (

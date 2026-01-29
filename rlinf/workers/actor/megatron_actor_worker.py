@@ -307,23 +307,13 @@ class MegatronActor(MegatronModelManager, Worker):
             result = self.broadcast(
                 result,
                 groups=[
-                    (
-                        self._group_name,
-                        self._ordered_broadcast_ranks(
-                            parallel_state._MODEL_PARALLEL_GLOBAL_RANKS
-                        ),
-                    )
+                    (self._group_name, parallel_state._MODEL_PARALLEL_GLOBAL_RANKS)
                 ],
             )
             result = self.broadcast(
                 result,
                 groups=[
-                    (
-                        self._group_name,
-                        self._ordered_broadcast_ranks(
-                            parallel_state._CONTEXT_PARALLEL_GLOBAL_RANKS
-                        ),
-                    )
+                    (self._group_name, parallel_state._CONTEXT_PARALLEL_GLOBAL_RANKS)
                 ],
             )
 
@@ -401,25 +391,11 @@ class MegatronActor(MegatronModelManager, Worker):
             result_len = None
         result_len = self.broadcast(
             result_len,
-            groups=[
-                (
-                    self._group_name,
-                    self._ordered_broadcast_ranks(
-                        parallel_state._MODEL_PARALLEL_GLOBAL_RANKS
-                    ),
-                )
-            ],
+            groups=[(self._group_name, parallel_state._MODEL_PARALLEL_GLOBAL_RANKS)],
         )
         result_len = self.broadcast(
             result_len,
-            groups=[
-                (
-                    self._group_name,
-                    self._ordered_broadcast_ranks(
-                        parallel_state._CONTEXT_PARALLEL_GLOBAL_RANKS
-                    ),
-                )
-            ],
+            groups=[(self._group_name, parallel_state._CONTEXT_PARALLEL_GLOBAL_RANKS)],
         )
         if self.is_data_io_rank:
             cliped_results = list(rollout_results[result_len:])
@@ -431,23 +407,13 @@ class MegatronActor(MegatronModelManager, Worker):
             rollout_result = self.broadcast(
                 rollout_result,
                 groups=[
-                    (
-                        self._group_name,
-                        self._ordered_broadcast_ranks(
-                            parallel_state._MODEL_PARALLEL_GLOBAL_RANKS
-                        ),
-                    )
+                    (self._group_name, parallel_state._MODEL_PARALLEL_GLOBAL_RANKS)
                 ],
             )
             rollout_result = self.broadcast(
                 rollout_result,
                 groups=[
-                    (
-                        self._group_name,
-                        self._ordered_broadcast_ranks(
-                            parallel_state._CONTEXT_PARALLEL_GLOBAL_RANKS
-                        ),
-                    )
+                    (self._group_name, parallel_state._CONTEXT_PARALLEL_GLOBAL_RANKS)
                 ],
             )
             rollout_results[i] = rollout_result
@@ -1038,7 +1004,7 @@ class MegatronActor(MegatronModelManager, Worker):
         self.offload_model_weights_and_grad(offload_grad=True)
         self.broadcast(
             None,
-            groups=[(self._group_name, rank) for rank in range(inference_world_size)],
+            groups=[(self._group_name, list(range(inference_world_size)))],
         )
         self.is_weight_offloaded = True
         if self._rank == 0:

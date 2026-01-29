@@ -202,7 +202,7 @@ class CollectiveGroup:
             CollectiveWorkQueue(CollectiveWorkQueue.RECV, self._logger)
             for _ in range(CollectiveGroup.POOL_SIZE)
         ]
-        self.broadcast_work_queues = [
+        self.collective_work_queues = [
             CollectiveWorkQueue(CollectiveWorkQueue.BROADCAST, self._logger)
             for _ in range(CollectiveGroup.POOL_SIZE)
         ]
@@ -497,7 +497,7 @@ class CollectiveGroup:
         else:
             broadcast_event = None
 
-        work_queue = self.broadcast_work_queues[
+        work_queue = self.collective_work_queues[
             broadcast_comm_id % CollectiveGroup.POOL_SIZE
         ]
         if async_op:
