@@ -349,6 +349,7 @@ class CalvinEnv(gym.Env):
         return obs, infos
 
     def sanitize_action(self, actions):
+        # deal with gripper dimension, make it either 1 or -1
         actions = actions.copy()
         g = actions[..., -1]
         actions[..., -1] = np.where(g > 0, 1, -1)
