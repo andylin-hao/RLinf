@@ -123,7 +123,8 @@ install_deps_apt() {
             if [ -n "$ubuntu_ver" ]; then
                 # Check if version is higher than 22.04
                 if [ "$(printf '%s\n' "22.04" "$ubuntu_ver" | sort -V | head -n1)" = "22.04" ] && [ "$ubuntu_ver" != "22.04" ]; then
-                    echo "apt-get install failed and your Ubuntu version ($ubuntu_ver) is higher than 22.04. This script currently supports Ubuntu 22.04 or lower; please use 22.04/below or install dependencies manually." >&2
+                    # Install libglx-mesa0 for Ubuntu 24.04+
+                    apt-get install -y --no-install-recommends libglx-mesa0 || echo "apt-get install failed and your Ubuntu version ($ubuntu_ver); please use 20.04+ or install dependencies manually." >&2
                 else
                     echo "apt-get install failed on Ubuntu $ubuntu_ver. Please check your apt sources or install dependencies manually." >&2
                 fi
