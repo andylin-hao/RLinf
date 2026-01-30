@@ -1097,14 +1097,11 @@ class Worker(metaclass=WorkerMeta):
         PR_SET_PTRACER_ANY = -1
 
         try:
-            libc = ctypes.CDLL("libc.so.6", use_errno=True)
+            libc = ctypes.CDLL("libc.so.6")
 
             result = libc.prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY, 0, 0, 0)
             if result != 0:
-                errno = ctypes.get_errno()
-                warnings.warn(
-                    f"prctl(PR_SET_PTRACER, ANY) failed with errno: {ctypes.cast(libc.strerror(errno), ctypes.c_char_p).value.decode()}"
-                )
+                warnings.warn("prctl(PR_SET_PTRACER, ANY) failed!")
         except Exception as e:
             warnings.warn(f"Failed to enable ptrace from any same-UID process: {e}")
 
