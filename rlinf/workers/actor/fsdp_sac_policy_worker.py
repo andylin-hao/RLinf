@@ -124,9 +124,6 @@ class EmbodiedSACFSDPPolicy(EmbodiedFSDPActor):
                 if ("encoders" in name) or ("encoder" in name):
                     params_critic.append(param)
                     continue
-                if ("mix_proj" in name) or ("state_proj" in name):
-                    params_critic.append(param)
-                    continue
                 if "q_head" in name:
                     params_critic.append(param)
                     continue
@@ -440,7 +437,7 @@ class EmbodiedSACFSDPPolicy(EmbodiedFSDPActor):
         else:
             agg_q = self.cfg.algorithm.get("agg_q", "min")
 
-        curr_obs = batch["transitions"]["obs"]
+        curr_obs = batch["curr_obs"]
         kwargs = {}
         if self.cfg.actor.model.model_type in ["openvla", "openvla_oft"]:
             kwargs["temperature"] = self.cfg.algorithm.sampling_params.temperature_train
