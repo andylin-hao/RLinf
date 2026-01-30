@@ -84,7 +84,7 @@ class SenderWorker(Worker):
             work.wait()
         return True
 
-    def _send_data_asyncio(self, data_factory, use_send_tensor=False):
+    async def _send_data_asyncio(self, data_factory, use_send_tensor=False):
         """Generic data sending method using asyncio."""
 
         async def _send():
@@ -101,7 +101,7 @@ class SenderWorker(Worker):
             await work.async_wait()
             return True
 
-        return asyncio.run(_send())
+        return await _send()
 
     # Sync Tests
     def test_send_object(self, async_op=False):
@@ -128,9 +128,9 @@ class SenderWorker(Worker):
         return self._send_data(tensor, async_op, use_send_tensor=True)
 
     # Asyncio Tests
-    def test_send_tensor_asyncio(self, on_cpu):
+    async def test_send_tensor_asyncio(self, on_cpu):
         device = "cpu" if on_cpu else get_device()
-        return self._send_data_asyncio(
+        return await self._send_data_asyncio(
             lambda: torch.ones(4, 4, device=device) * self._rank
         )
 
@@ -179,7 +179,7 @@ class SenderWorker(Worker):
             work.wait()
         return None
 
-    def test_memory_leak(self):
+    async def test_memory_leak(self):
         """A test to check for memory leaks during send operations."""
         device = get_device()
         tensor_size = 1024
@@ -201,7 +201,7 @@ class SenderWorker(Worker):
                 large_tensor, RECEIVER_GROUP_NAME, peer_rank, async_op=True
             ).async_wait()
 
-        asyncio.run(_async_send())
+        await _async_send()
 
         large_tensor = None
         gc.collect()
@@ -244,7 +244,7 @@ class ReceiverWorker(Worker):
                 return work.wait()
             return work
 
-    def _recv_data_asyncio(self, recv_tensor_inplace_shape=None):
+    async def _recv_data_asyncio(self, recv_tensor_inplace_shape=None):
         """Generic data receiving method using asyncio."""
 
         async def _recv():
@@ -264,7 +264,7 @@ class ReceiverWorker(Worker):
                 work = self.recv(SENDER_GROUP_NAME, peer_rank, async_op=True)
                 return await work.async_wait()
 
-        return asyncio.run(_recv())
+        return await _recv()
 
     def test_unaligned_send_recv(self, on_cpu):
         """Test unaligned sending and receiving of tensors."""
@@ -328,10 +328,10 @@ class ReceiverWorker(Worker):
         return self._recv_data(async_op, recv_tensor_inplace_shape=(on_cpu, (3, 3)))
 
     # Asyncio Tests
-    def test_recv_tensor_asyncio(self, on_cpu):
-        return self._recv_data_asyncio()
+    async def test_recv_tensor_asyncio(self, on_cpu):
+        return await self._recv_data_asyncio()
 
-    def test_memory_leak(self):
+    async def test_memory_leak(self):
         """A test to check for memory leaks during send operations."""
         peer_rank = get_recv_peer_rank(self._rank, self._world_size)
         recv_tensor_size = 1024
@@ -351,14 +351,14 @@ class ReceiverWorker(Worker):
                 recv_tensor, SENDER_GROUP_NAME, peer_rank, async_op=True
             ).async_wait()
 
-        asyncio.run(_async_recv())
+        await _async_recv()
 
         recv_tensor = None
         gc.collect()
         torch.cuda.empty_cache()
         assert torch.cuda.memory_allocated() == 0
 
-    def test_async_wait_yields_control(self):
+    async def test_async_wait_yields_control(self):
         """Run recv(async_op=True) and await async_wait() concurrently with another
         asyncio task. Assert the other task ran while waiting, proving async_wait()
         yields control to the event loop."""
@@ -380,11 +380,9 @@ class ReceiverWorker(Worker):
                 await asyncio.sleep(0.01)
             return count
 
-        async def main():
-            asyncio.create_task(recv_task())
-            return await yield_check_task()
-
-        return asyncio.run(main())
+        asyncio.create_task(recv_task())
+        count = await yield_check_task()
+        return count
 
 
 class CommCollectiveWorker(Worker):
@@ -424,7 +422,7 @@ class CommCollectiveWorker(Worker):
         payload = {f"t{i}": torch.ones(2, 2, device=device) * i for i in range(4)}
         return self._broadcast_data(payload, async_op)
 
-    def test_broadcast_tensor_asyncio(self, on_cpu):
+    async def test_broadcast_tensor_asyncio(self, on_cpu):
         async def _broadcast():
             if torch.cuda.is_available():
                 torch.cuda.set_device(int(os.environ["LOCAL_RANK"]))
@@ -437,9 +435,9 @@ class CommCollectiveWorker(Worker):
             await result.async_wait()
             return result.wait()
 
-        return asyncio.run(_broadcast())
+        return await _broadcast()
 
-    def test_cross_group_broadcast_tensor_asyncio(self, groups, on_cpu):
+    async def test_cross_group_broadcast_tensor_asyncio(self, groups, on_cpu):
         async def _broadcast():
             if torch.cuda.is_available():
                 torch.cuda.set_device(int(os.environ["LOCAL_RANK"]))
@@ -459,7 +457,7 @@ class CommCollectiveWorker(Worker):
             await result.async_wait()
             return result.wait()
 
-        return asyncio.run(_broadcast())
+        return await _broadcast()
 
     def _cross_group_broadcast(self, groups, payload, async_op):
         src_group_name, src_ranks = groups[0]

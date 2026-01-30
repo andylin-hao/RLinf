@@ -651,17 +651,6 @@ def run_benchmark(cfg: BenchmarkConfig) -> None:
             f"consumer_latency={s['consumer_latency_ms']:.3f} ms/msg"
         )
 
-    def fmt_seq(s: dict[str, float]) -> str:
-        return (
-            f"producer={s['producer_time']:.4f}s, "
-            f"consumer={s['consumer_time']:.4f}s, "
-            f"wall={s['wall_time']:.4f}s, "
-            f"throughput={s['throughput_msg_per_sec']:.1f} msg/s, "
-            f"bandwidth={s['throughput_mb_per_sec']:.2f} MB/s, "
-            f"producer_latency={s['producer_latency_ms']:.3f} ms/msg, "
-            f"consumer_latency={s['consumer_latency_ms']:.3f} ms/msg"
-        )
-
     print("\n=== Channel under pressure (sync) ===")
     print(fmt(sync_stats))
     print("\n=== Channel under pressure (async) ===")
