@@ -18,6 +18,7 @@ from pathlib import Path
 
 import pytest
 import ray
+import torch
 from omegaconf import DictConfig, OmegaConf
 
 from rlinf.scheduler import Cluster, ComponentPlacement, NodePlacementStrategy, Worker
@@ -525,6 +526,9 @@ def test_cluster_env_configs_applied_in_worker_launch():
 
 
 def test_cluster_env_configs_multi_node_group_and_hetero_placement():
+    # Skip if num of GPUs is not 4
+    if torch.cuda.device_count() != 4:
+        pytest.skip("Skipping test because num of GPUs is not 4")
     _reset_cluster_singleton()
 
     config = OmegaConf.create(
