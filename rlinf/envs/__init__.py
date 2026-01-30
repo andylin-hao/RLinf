@@ -26,6 +26,8 @@ class SupportedEnvType(Enum):
     ROBOCASA = "robocasa"
     REALWORLD = "realworld"
     FRANKASIM = "frankasim"
+    HABITAT = "habitat"
+    OPENSORAWM = "opensora_wm"
 
 
 def get_env_cls(env_type: str, env_cfg=None, enable_offload=False):
@@ -94,9 +96,17 @@ def get_env_cls(env_type: str, env_cfg=None, enable_offload=False):
         from rlinf.envs.realworld.realworld_env import RealWorldEnv
 
         return RealWorldEnv
+    elif env_type == SupportedEnvType.HABITAT:
+        from rlinf.envs.habitat.habitat_env import HabitatEnv
+
+        return HabitatEnv
     elif env_type == SupportedEnvType.FRANKASIM:
         from rlinf.envs.frankasim.frankasim_env import FrankaSimEnv
 
         return FrankaSimEnv
+    elif env_type == SupportedEnvType.OPENSORAWM:
+        from rlinf.envs.world_model.world_model_opensora_env import OpenSoraEnv
+
+        return OpenSoraEnv
     else:
         raise NotImplementedError(f"Environment type {env_type} not implemented")
