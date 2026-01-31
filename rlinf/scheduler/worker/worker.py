@@ -640,7 +640,7 @@ class Worker(metaclass=WorkerMeta):
             options (Optional[CollectiveGroupOptions]): The options for the collective group. The options will only take effect when two workers first communicate with each other, and will be ignored for subsequent communications. This option must match the options of the send side.
 
         Returns:
-            AsyncWork | torch.Tensor | List[torch.Tensor] | Dict[str, torch.Tensor] | Any: An AsyncWork object if async_op is True, otherwise the received object. If the send side send a piggyback payload, the received object will be a tuple of the received object and the piggyback payload.
+            AsyncWork | torch.Tensor | List[torch.Tensor] | Dict[str, torch.Tensor] | Any: An AsyncWork object if async_op is True, otherwise the received object. If the send side sends a piggyback payload, the received object will be a tuple of the received object and the piggyback payload.
         """
         src_addr = WorkerAddress(src_group_name, ranks=src_rank)
         group = self._get_collective_group(src_addr)

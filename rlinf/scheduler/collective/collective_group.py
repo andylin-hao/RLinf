@@ -1516,7 +1516,7 @@ class CollectiveGroup:
         )
 
         # Recv values
-        values, pb_data = self._recv_tensor_list(comm_id)
+        values, _ = self._recv_tensor_list(comm_id)
         assert len(keys) == len(values), (
             f"Received {len(values)} values but expected {len(keys)} keys from Rank {src_rank_in_group} in group {self._group_info.group_name}"
         )
