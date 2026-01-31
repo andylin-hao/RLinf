@@ -30,7 +30,7 @@ from rlinf.hybrid_engines.fsdp import (
     FSDPModule,
 )
 from rlinf.models.embodiment.base_policy import ForwardType
-from rlinf.scheduler import Channel, Worker
+from rlinf.scheduler import Channel
 from rlinf.utils.distributed import all_reduce_dict
 from rlinf.utils.metric_utils import (
     append_to_dict,
@@ -300,7 +300,6 @@ class EmbodiedSACFSDPPolicy(EmbodiedFSDPActor):
 
         self.replay_buffer.add_trajectories(recv_list)
 
-    @Worker.timer("forward_critic")
     def forward_critic(self, batch):
         use_crossq = self.cfg.algorithm.get("q_head_type", "default") == "crossq"
         bootstrap_type = self.cfg.algorithm.get("bootstrap_type", "standard")
@@ -415,7 +414,6 @@ class EmbodiedSACFSDPPolicy(EmbodiedFSDPActor):
         )
         return critic_loss
 
-    @Worker.timer("forward_actor")
     def forward_actor(self, batch):
         use_crossq = self.cfg.algorithm.get("q_head_type", "default") == "crossq"
         agg_q = self.cfg.algorithm.get("agg_q", "min")
@@ -455,7 +453,6 @@ class EmbodiedSACFSDPPolicy(EmbodiedFSDPActor):
         entropy = -log_pi.mean()
         return actor_loss, entropy
 
-    @Worker.timer("forward_alpha")
     def forward_alpha(self, batch):
         curr_obs = batch["curr_obs"]
         with torch.no_grad():
@@ -473,7 +470,6 @@ class EmbodiedSACFSDPPolicy(EmbodiedFSDPActor):
         alpha_loss = -alpha * (log_pi.mean() + self.target_entropy)
         return alpha_loss
 
-    @Worker.timer("update_one_epoch")
     def update_one_epoch(self):
         global_batch_size_per_rank = (
             self.cfg.actor.global_batch_size // self._world_size
@@ -607,7 +603,6 @@ class EmbodiedSACFSDPPolicy(EmbodiedFSDPActor):
         )
         return mean_metric_dict
 
-    @Worker.timer("run_training")
     def run_training(self):
         """SAC training using replay buffer"""
         if self.cfg.actor.get("enable_offload", False):

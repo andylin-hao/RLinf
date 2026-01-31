@@ -144,7 +144,7 @@ class AsyncEmbodiedRunner(EmbodiedRunner):
             time_metrics = {f"time/{k}": v for k, v in time_metrics.items()}
             actor_training_time_metrics = {
                 f"time/actor/{k}": v
-                for k, v in actor_training_handle.consume_durations().items()
+                for k, v in actor_training_handle.consume_time_metrics().items()
             }
             time_metrics.update(actor_training_time_metrics)
             env_metrics = self.get_env_metrics()

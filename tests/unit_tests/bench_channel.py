@@ -108,7 +108,7 @@ class Producer(Worker):
             for i in range(cfg.num_messages):
                 channel.put(payload)
                 self._progress(i, cfg.num_messages, "put  sync ")
-        return self.pop_execution_time("producer_sync")
+        return self.consume_metrics_timer("producer_sync")
 
     def run_async(self, channel: Channel, cfg: BenchmarkConfig) -> float:
         """Async put using asyncio: await put(..., async_op=True).async_wait()."""
@@ -122,7 +122,7 @@ class Producer(Worker):
 
         with self.worker_timer("producer_async"):
             asyncio.run(_run())
-        return self.pop_execution_time("producer_async")
+        return self.consume_metrics_timer("producer_async")
 
     def run_sync_keys(
         self, channel: Channel, cfg: BenchmarkConfig, keys: list[int | str]
@@ -134,7 +134,7 @@ class Producer(Worker):
             for i, key in enumerate(keys):
                 channel.put(payload, key=key)
                 self._progress(i, cfg.num_messages, "putK sync")
-        return self.pop_execution_time("producer_sync_keys")
+        return self.consume_metrics_timer("producer_sync_keys")
 
     def run_async_keys(
         self, channel: Channel, cfg: BenchmarkConfig, keys: list[int | str]
@@ -151,7 +151,7 @@ class Producer(Worker):
 
         with self.worker_timer("producer_async_keys"):
             asyncio.run(_run())
-        return self.pop_execution_time("producer_async_keys")
+        return self.consume_metrics_timer("producer_async_keys")
 
     def prefill_ray_queue(self, queue: Any, cfg: BenchmarkConfig) -> int:
         """Fill ray.util.queue.Queue with num_messages (no timing)."""
@@ -171,7 +171,7 @@ class Producer(Worker):
             for i in range(cfg.num_messages):
                 queue.put(payload)
                 self._progress(i, cfg.num_messages, "rayQ put ")
-        return self.pop_execution_time("producer_sync_ray_queue")
+        return self.consume_metrics_timer("producer_sync_ray_queue")
 
     def run_async_ray_queue(self, queue: Any, cfg: BenchmarkConfig) -> float:
         """Async put on ray.util.queue.Queue (put_async returns coroutine)."""
@@ -187,7 +187,7 @@ class Producer(Worker):
 
         with self.worker_timer("producer_async_ray_queue"):
             asyncio.run(_run())
-        return self.pop_execution_time("producer_async_ray_queue")
+        return self.consume_metrics_timer("producer_async_ray_queue")
 
 
 class Consumer(Worker):
@@ -219,7 +219,7 @@ class Consumer(Worker):
             for i in range(cfg.num_messages):
                 _ = channel.get()
                 self._progress(i, cfg.num_messages, "get  sync ")
-        return self.pop_execution_time("consumer_sync")
+        return self.consume_metrics_timer("consumer_sync")
 
     def run_async(self, channel: Channel, cfg: BenchmarkConfig) -> float:
         """Async get using asyncio: await get(async_op=True).async_wait()."""
@@ -232,7 +232,7 @@ class Consumer(Worker):
 
         with self.worker_timer("consumer_async"):
             asyncio.run(_run())
-        return self.pop_execution_time("consumer_async")
+        return self.consume_metrics_timer("consumer_async")
 
     def run_sync_keys(
         self, channel: Channel, cfg: BenchmarkConfig, keys: list[int | str]
@@ -243,7 +243,7 @@ class Consumer(Worker):
             for i, key in enumerate(keys):
                 _ = channel.get(key=key)
                 self._progress(i, cfg.num_messages, "getK sync")
-        return self.pop_execution_time("consumer_sync_keys")
+        return self.consume_metrics_timer("consumer_sync_keys")
 
     def run_async_keys(
         self, channel: Channel, cfg: BenchmarkConfig, keys: list[int | str]
@@ -259,7 +259,7 @@ class Consumer(Worker):
 
         with self.worker_timer("consumer_async_keys"):
             asyncio.run(_run())
-        return self.pop_execution_time("consumer_async_keys")
+        return self.consume_metrics_timer("consumer_async_keys")
 
     def warmup(self, channel: Channel, cfg: BenchmarkConfig, async_mode: bool) -> None:
         """Un-timed warmup for gets."""
@@ -283,7 +283,7 @@ class Consumer(Worker):
             for i in range(cfg.num_messages):
                 _ = queue.get()
                 self._progress(i, cfg.num_messages, "rayQ get ")
-        return self.pop_execution_time("consumer_sync_ray_queue")
+        return self.consume_metrics_timer("consumer_sync_ray_queue")
 
     def run_async_ray_queue(self, queue: Any, cfg: BenchmarkConfig) -> float:
         """Async get on ray.util.queue.Queue (get_async returns coroutine)."""
@@ -298,7 +298,7 @@ class Consumer(Worker):
 
         with self.worker_timer("consumer_async_ray_queue"):
             asyncio.run(_run())
-        return self.pop_execution_time("consumer_async_ray_queue")
+        return self.consume_metrics_timer("consumer_async_ray_queue")
 
     def start_cpu_noise(self, cfg: BenchmarkConfig) -> None:
         """Optionally start background CPU-burning threads on this worker."""

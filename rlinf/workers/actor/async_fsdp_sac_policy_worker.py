@@ -18,7 +18,6 @@ import threading
 
 import torch
 
-from rlinf.scheduler import Worker
 from rlinf.utils.metric_utils import (
     append_to_dict,
     compute_split_num,
@@ -79,7 +78,6 @@ class AsyncEmbodiedSACFSDPPolicy(EmbodiedSACFSDPPolicy):
                 return
             await asyncio.sleep(1)
 
-    @Worker.timer("run_training")
     async def run_training(self):
         """SAC training using replay buffer"""
         if self.cfg.actor.get("enable_offload", False):

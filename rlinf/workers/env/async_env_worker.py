@@ -116,7 +116,7 @@ class AsyncEnvWorker(EnvWorker):
                 env_metrics[key] = torch.cat(value, dim=0).contiguous().cpu()
 
             env_metrics = {f"env/{k}": v for k, v in env_metrics.items()}
-            env_interact_time_metrics = self.pop_execution_times()
+            env_interact_time_metrics = self.consume_metrics_timer()
             env_metrics.update(
                 {f"time/env/{k}": v for k, v in env_interact_time_metrics.items()}
             )

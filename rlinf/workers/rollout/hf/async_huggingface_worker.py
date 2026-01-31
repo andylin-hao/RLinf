@@ -42,7 +42,7 @@ class AsyncMultiStepRolloutWorker(MultiStepRolloutWorker):
                     self.rollout_results[stage_id], replay_channel
                 )
 
-            rollout_metrics = self.pop_execution_times()
+            rollout_metrics = self.consume_metrics_timer()
             rollout_metrics = {
                 f"time/rollout/{k}": v for k, v in rollout_metrics.items()
             }

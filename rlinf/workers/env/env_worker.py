@@ -126,7 +126,6 @@ class EnvWorker(Worker):
                 if self.enable_offload and hasattr(self.env_list[i], "close"):
                     self.env_list[i].close()
 
-    @Worker.timer("env_interact_step")
     def env_interact_step(
         self, chunk_actions: torch.Tensor, stage_id: int
     ) -> tuple[EnvOutput, dict[str, Any]]:
@@ -293,7 +292,6 @@ class EnvWorker(Worker):
                 key=f"{gather_id + self._rank * self.gather_num}_{mode}",
             )
 
-    @Worker.timer("interact")
     def interact(self, input_channel: Channel, output_channel: Channel):
         for env in self.env_list:
             env.start_env()

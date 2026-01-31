@@ -325,7 +325,7 @@ class MegatronActor(MegatronModelManager, Worker):
 
         if tag is not None:
             duration = time.perf_counter() - start_time
-            self._timer_metrics[tag] = self._timer_metrics.get(tag, 0.0) - duration
+            self._metrics_timer[tag] = self._metrics_timer.get(tag, 0.0) - duration
         return batch, result
 
     def all_reduce_dp_min(

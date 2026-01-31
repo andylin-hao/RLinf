@@ -213,18 +213,21 @@ class EmbodiedRunner:
             time_metrics = self.timer.consume_durations()
             time_metrics = {f"time/{k}": v for k, v in time_metrics.items()}
             time_metrics.update(
-                {f"time/env/{k}": v for k, v in env_handle.consume_durations().items()}
+                {
+                    f"time/env/{k}": v
+                    for k, v in env_handle.consume_time_metrics().items()
+                }
             )
             time_metrics.update(
                 {
                     f"time/rollout/{k}": v
-                    for k, v in rollout_handle.consume_durations().items()
+                    for k, v in rollout_handle.consume_time_metrics().items()
                 }
             )
             time_metrics.update(
                 {
                     f"time/actor/{k}": v
-                    for k, v in actor_training_handle.consume_durations().items()
+                    for k, v in actor_training_handle.consume_time_metrics().items()
                 }
             )
 

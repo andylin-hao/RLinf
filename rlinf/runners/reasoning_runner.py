@@ -451,14 +451,14 @@ class ReasoningRunner:
                         return
 
                 time_metrics = self.timer.consume_durations()
-                time_metrics["training"] = actor_handle.consume_duration()
-                time_metrics["rollout"] = rollout_handle.consume_duration()
-                time_metrics["reward"] = reward_handle.consume_duration()
+                time_metrics["training"] = actor_handle.exec_time()
+                time_metrics["rollout"] = rollout_handle.exec_time()
+                time_metrics["reward"] = reward_handle.exec_time()
                 if infer_handle is not None:
                     # Inference time should be the min time across ranks, because different DP receive the rollout results differently
                     # But at the begin of the pp schedule, there is a timer barrier
                     # This makes all DP end at the same time, while they start at differnt times, and thus only the min time is correct
-                    time_metrics["inference"] = infer_handle.consume_duration(
+                    time_metrics["inference"] = infer_handle.exec_time(
                         reduction_type="min"
                     )
 

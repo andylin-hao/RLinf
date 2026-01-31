@@ -468,6 +468,8 @@ class WorkerGroupFuncResult:
         self._pid = os.getpid()
         self._cls_name = cls_name
         self._wait_done = False
+        self._exec_time = None
+        self._time_metrics = None
 
         # Every definition should be put before the thread starts
         self._wait_thread = threading.Thread(target=self._wait_for_results, daemon=True)
@@ -488,31 +490,62 @@ class WorkerGroupFuncResult:
             exit(-1)
         self._wait_done = True
 
-    def consume_duration(self, reduction_type: str = "max"):
-        """Get the max execution time of a function across different ranks of a group.
+    def exec_time(self, reduction_type: str = "max"):
+        """Get the execution time of a function across different ranks of a group.
 
-        This implicitly waits for the function to finish.
+        .. note::
+            This retrieves the timer metrics with the tag of the function name.
+            So if you have overrides the timer for the function name (via self.worker_timer), this will return the overridden timer.
+
+        .. note::
+            This function implicitly waits for the function to finish.
+
+        Args:
+            reduction_type (str): The type of reduction to apply. Can be "max", "min", or "mean". Default is "max".
+
+        Returns:
+            float: The execution time of the function across different ranks of a group, reduced by reduction_type.
+        """
+        self.wait()
+        if self._exec_time is None:
+            self._exec_time = self._worker_group.consume_func_timer(
+                tag=self._func_name, func_name=self._func_name
+            ).wait()
+        reduction_func = getattr(np, reduction_type)
+        return reduction_func(self._exec_time)
+
+    def consume_time_metrics(self, reduction_type: str = "max") -> dict[str, float]:
+        """Get time metrics dictionary (metrics_name -> time_value) across different ranks of a group, reduced by reduction_type.
+
+        .. note::
+            This function implicitly waits for the function to finish.
 
         Args:
             reduction_type (str): The type of reduction to apply. Can be "max", "min", or "mean".
+
+        Returns:
+            dict[str, float]: The time metrics dictionary (metrics_name -> time_value) across different ranks of a group, reduced by reduction_type.
         """
         self.wait()
-        execution_times = self._worker_group.pop_execution_time(self._func_name).wait()
+        if self._time_metrics is None:
+            metrics_list: list[dict[str, float]] = (
+                self._worker_group.consume_metrics_timer(
+                    func_name=self._func_name
+                ).wait()
+            )
+            self._time_metrics: dict[str, list[float]] = {}
+            for metrics in metrics_list:
+                if not metrics:
+                    continue
+                for metric_name, metric_val in metrics.items():
+                    self._time_metrics.setdefault(metric_name, []).append(metric_val)
+        if self._exec_time is None:
+            self._exec_time = self._time_metrics.get(self._func_name)
         reduction_func = getattr(np, reduction_type)
-        return reduction_func(execution_times)
-
-    def consume_durations(self, reduction_type: str = "max") -> dict[str, float]:
-        """Get execution time map across ranks, reduced by reduction_type."""
-        self.wait()
-        metrics_list = self._worker_group.pop_execution_times().wait()
-        reduction_func = getattr(np, reduction_type)
-        merged: dict[str, list[float]] = {}
-        for metrics in metrics_list:
-            if not metrics:
-                continue
-            for key, value in metrics.items():
-                merged.setdefault(key, []).append(value)
-        return {key: float(reduction_func(values)) for key, values in merged.items()}
+        return {
+            key: float(reduction_func(values))
+            for key, values in self._time_metrics.items()
+        }
 
     def wait(self):
         """Wait for all remote results to complete and return the results."""

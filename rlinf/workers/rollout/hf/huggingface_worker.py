@@ -109,7 +109,6 @@ class MultiStepRolloutWorker(Worker):
             "max_new_tokens": self._length_params["max_new_token"],
         }
 
-    @Worker.timer("predict")
     def predict(self, env_obs, mode="train"):
         kwargs = (
             self._train_sampling_params
@@ -211,7 +210,6 @@ class MultiStepRolloutWorker(Worker):
         for trajectory in trajectories:
             channel.put(trajectory, async_op=True)
 
-    @Worker.timer("generate_one_epoch")
     async def generate_one_epoch(self, input_channel: Channel, output_channel: Channel):
         n_chunk_steps = (
             self.cfg.env.train.max_steps_per_rollout_epoch

@@ -52,13 +52,11 @@ class WorkerMeta(type):
         """Wrap the function to catch SystemExit exceptions."""
         for attr_name, attr_value in attrs.items():
             if callable(attr_value):
-                attrs[attr_name] = cls._catch_failure_for_cls_func(
-                    name, attr_name, attr_value
-                )
+                attrs[attr_name] = cls._cls_func_wrapper(name, attr_name, attr_value)
         return super().__new__(cls, name, bases, attrs)
 
     @classmethod
-    def _catch_failure_for_cls_func(cls, cls_name, func_name: str, func: Callable):
+    def _cls_func_wrapper(cls, cls_name, func_name: str, func: Callable):
         """Wrap a try...except SystemExit block around the class function calls."""
         # Get all callable methods of the WorkerGroup class and the Worker class
         if func_name.startswith("_") and func_name != "__init__":
@@ -68,7 +66,13 @@ class WorkerMeta(type):
             @functools.wraps(func)
             def sync_func(*args, **kwargs):
                 try:
-                    return func(*args, **kwargs)
+                    cur_worker = Worker.current_worker
+                    if cur_worker is not None:
+                        cur_worker._start_func_timer(func.__name__)
+                    result = func(*args, **kwargs)
+                    if cur_worker is not None:
+                        cur_worker._stop_func_timer(func.__name__)
+                    return result
                 except SystemExit:
                     # Catch SystemExit and log the error
                     raise RuntimeError(
@@ -78,7 +82,13 @@ class WorkerMeta(type):
             @functools.wraps(func)
             async def async_func(*args, **kwargs):
                 try:
-                    return await func(*args, **kwargs)
+                    cur_worker = Worker.current_worker
+                    if cur_worker is not None:
+                        cur_worker._start_func_timer(func.__name__)
+                    result = await func(*args, **kwargs)
+                    if cur_worker is not None:
+                        cur_worker._stop_func_timer(func.__name__)
+                    return result
                 except SystemExit:
                     # Catch SystemExit and log the error
                     raise RuntimeError(
@@ -363,44 +373,12 @@ class Worker(metaclass=WorkerMeta):
 
         self._actor = None
         self._has_initialized = False
-        self._timer_metrics: dict[str, float] = {}
+        self._metrics_timer: dict[str, dict[str, float]] = {}
+        self._func_timer: dict[str, float] = {}
         self._set_new_omegaconf_resolvers()
 
         # Load user-provided extension modules (e.g., for registering custom envs/models)
         self._load_user_extensions()
-
-    def _load_user_extensions(self):
-        """Load extension modules specified via EXT_MODULE environment variable.
-
-        This allows users to register custom environments, models, or other extensions
-        without patching.
-        The extension module should have a `register()` function that performs the necessary registrations.
-
-        The module's register() function will be called once per Worker process.
-        """
-        ext_module_name = Cluster.get_sys_env_var(ClusterEnvVar.EXT_MODULE)
-        if ext_module_name is None:
-            return
-
-        try:
-            ext_module = importlib.import_module(ext_module_name)
-            if hasattr(ext_module, "register"):
-                ext_module.register()
-                Worker.logger.debug(
-                    f"Loaded extension module '{ext_module_name}' and called register()"
-                )
-            else:
-                Worker.logger.warning(
-                    f"Extension module '{ext_module_name}' has no register() function"
-                )
-        except ImportError as e:
-            Worker.logger.warning(
-                f"Failed to import extension module '{ext_module_name}': {e}"
-            )
-        except Exception:
-            Worker.logger.exception(
-                f"Error loading extension module '{ext_module_name}'"
-            )
 
     def __init__(
         self,
@@ -903,63 +881,68 @@ class Worker(metaclass=WorkerMeta):
         """Log at the error level."""
         self._logger.error(msg, stacklevel=self._stacklevel)
 
-    def pop_execution_time(self, tag: str):
-        """Retrieve the execution time of a function.
+    def consume_metrics_timer(
+        self, tag: Optional[str] = None, func_name: Optional[str] = None
+    ) -> dict[str, float] | float:
+        """Retrieve and clear the metrics of a function and a tag.
+
+        If tag is not provided, all metrics of the function will be returned and cleared.
+        If tag is provided, only the metrics of the tag will be returned and cleared.
 
         Args:
-            tag (str): The name of the timer to retrieve the execution time for.
+            tag (Optional[str]): The name of the tag to retrieve the metrics for. If not provided, all metrics will be returned.
+            func_name (Optional[str]): The name of the function to retrieve the metrics for. If not provided, the current function name will be used.
+
+        Returns:
+            dict[str, float] | float: The metrics of the function and a tag, or the metrics of the function if no tag is provided.
         """
-        if tag not in self._timer_metrics:
-            raise ValueError(f"Timer '{tag}' has not been recorded.")
-        return self._timer_metrics.pop(tag)
-
-    def pop_execution_times(self) -> dict[str, float]:
-        """Retrieve and clear all execution times."""
-        metrics = dict(self._timer_metrics)
-        self._timer_metrics.clear()
-        return metrics
-
-    @contextmanager
-    def worker_timer(self, tag: Optional[str] = None):
-        """Context manager to time the execution of a worker function.
-
-        Args:
-            tag (str): The name of the timer to record the execution time for. Default is the current function name.
-        """
-        if tag is None:
+        if func_name is None:
             frame_num = 2
             frame = inspect.stack()[frame_num]
-            tag = frame.function
-        assert tag is not None, "Timer tag must be provided."
+            func_name = frame.function
+        metrics_of_the_func = self._metrics_timer.get(func_name, {})
+        if tag is None:
+            self._metrics_timer[func_name] = {}
+            return metrics_of_the_func
+        else:
+            if tag not in metrics_of_the_func:
+                raise ValueError(
+                    f"Timer '{tag}' has not been recorded for function {func_name}."
+                )
+            time_val = metrics_of_the_func.pop(tag)
+            return time_val
+
+    def consume_func_timer(self, func_name: str) -> float:
+        """Retrieve and clear the execution time of a function."""
+        if func_name not in self._func_timer:
+            raise ValueError(f"Function '{func_name}' has not been recorded.")
+        return self._func_timer.pop(func_name)
+
+    @contextmanager
+    def worker_timer(self, tag: Optional[str] = None, accumulate: bool = True):
+        """Context manager to to capture the execution time of a code block, especially when the code is executed in a loop.
+
+        The timer will accumulate the execution time of the code block during the loop if accumulate is True (default).
+
+        Args:
+            tag (str): The name of the timer to record the execution time for. If the tag is not given, the current function name will be used and so the default timer for the function will be overridden.
+            accumulate (bool): Whether to accumulate the execution time of the code block and return the total execution time during the loop. Default is True.
+        """
+        frame_num = 2
+        frame = inspect.stack()[frame_num]
+        func_name = frame.function
+        tag = tag or func_name
         try:
             start_time = time.perf_counter()
             yield
         finally:
             duration = time.perf_counter() - start_time
-            self._timer_metrics[tag] = self._timer_metrics.get(tag, 0.0) + duration
-
-    @staticmethod
-    def timer(tag: Optional[str] = None):
-        """Decorator to time a worker function."""
-
-        def decorator(func):
-            if inspect.iscoroutinefunction(func):
-
-                @functools.wraps(func)
-                async def wrapper(self, *args, **kwargs):
-                    with self.worker_timer(tag or func.__name__):
-                        return await func(self, *args, **kwargs)
-
-                return wrapper
-
-            @functools.wraps(func)
-            def wrapper(self, *args, **kwargs):
-                with self.worker_timer(tag or func.__name__):
-                    return func(self, *args, **kwargs)
-
-            return wrapper
-
-        return decorator
+            # Separate timers of different worker functions
+            metrics_of_the_func = self._metrics_timer.setdefault(func_name, {})
+            if accumulate:
+                metrics_of_the_func[tag] = metrics_of_the_func.get(tag, 0.0) + duration
+            else:
+                metrics_of_the_func[tag] = duration
 
     @staticmethod
     def check_worker_alive(worker_name: str) -> bool:
@@ -1004,6 +987,17 @@ class Worker(metaclass=WorkerMeta):
         except Exception:
             # Simply treat the worker as alive if any unexpected error occurs during state query
             return True
+
+    def _start_func_timer(self, func_name: str):
+        """Start a timer for a worker function."""
+        self._func_timer[func_name] = time.perf_counter()
+
+    def _stop_func_timer(self, func_name: str):
+        """Stop a timer for a worker function."""
+        self._func_timer[func_name] = time.perf_counter() - self._func_timer[func_name]
+        metrics_of_the_func = self._metrics_timer.setdefault(func_name, {})
+        if func_name not in metrics_of_the_func:
+            metrics_of_the_func[func_name] = self._func_timer[func_name]
 
     def _check_initialized(self):
         """Check if the Worker has been initialized.
@@ -1211,6 +1205,39 @@ class Worker(metaclass=WorkerMeta):
                 warnings.warn("prctl(PR_SET_PTRACER, ANY) failed!")
         except Exception as e:
             warnings.warn(f"Failed to enable ptrace from any same-UID process: {e}")
+
+    def _load_user_extensions(self):
+        """Load extension modules specified via EXT_MODULE environment variable.
+
+        This allows users to register custom environments, models, or other extensions
+        without patching.
+        The extension module should have a `register()` function that performs the necessary registrations.
+
+        The module's register() function will be called once per Worker process.
+        """
+        ext_module_name = Cluster.get_sys_env_var(ClusterEnvVar.EXT_MODULE)
+        if ext_module_name is None:
+            return
+
+        try:
+            ext_module = importlib.import_module(ext_module_name)
+            if hasattr(ext_module, "register"):
+                ext_module.register()
+                Worker.logger.debug(
+                    f"Loaded extension module '{ext_module_name}' and called register()"
+                )
+            else:
+                Worker.logger.warning(
+                    f"Extension module '{ext_module_name}' has no register() function"
+                )
+        except ImportError as e:
+            Worker.logger.warning(
+                f"Failed to import extension module '{ext_module_name}': {e}"
+            )
+        except Exception:
+            Worker.logger.exception(
+                f"Error loading extension module '{ext_module_name}'"
+            )
 
     def _set_new_omegaconf_resolvers(self):
         OmegaConf.register_new_resolver("multiply", lambda x, y: x * y, replace=True)
