@@ -260,3 +260,14 @@ Video generation is currently supported only in ``PandaPickCubeVision-v0``:
        project_name: rlinf
        experiment_name: "maniskill_ppo_openvla"
        logger_backends: ["tensorboard"]  # wandb, swanlab
+
+Simulation Results
+~~~~~~~~~~~~~~~~~~~
+The following presents the training curves of asynchronous SAC+CNN in the simulation environment. Within one hour, the grasping strategy could be successfully learned and remained stable thereafter.
+
+.. raw:: html
+
+  <div style="flex: 0.8; text-align: center;">
+      <img src="https://github.com/RLinf/misc/raw/main/pic/frankasim_curve.png" style="width: 100%;"/>
+      <p><em>Success rate curve</em></p>
+    </div>

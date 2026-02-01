@@ -1,4 +1,4 @@
-# Copyright 2025 The RLinf Authors.
+# Copyright 2026 The RLinf Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -81,6 +81,25 @@ def drq_crop_extra(x, pad=4):
 
 @torch.no_grad()
 def apply_drq(obs, pad=4):
+    """
+    Apply DRQ (random crop data regularization) to an observation dict.
+
+    DRQ / DRP is commonly used in pixel-based RL algorithms (e.g., DrQ, DrQ-v2)
+    to stabilize training and improve generalization by augmenting visual inputs.
+
+    This function modifies the observation dict in-place.
+
+    Expected keys:
+      - "main_images": main camera images
+      - "extra_view_images": optional multi-view images
+
+    Args:
+        obs (dict): Observation dictionary.
+        pad (int): Padding size for random crop.
+
+    Returns:
+        dict: Observation dictionary with DRQ applied.
+    """
     if obs.get("main_images", None) is not None:
         obs["main_images"] = drq_crop_main(obs["main_images"], pad=pad)
 

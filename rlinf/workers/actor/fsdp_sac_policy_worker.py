@@ -128,6 +128,9 @@ class EmbodiedSACFSDPPolicy(EmbodiedFSDPActor):
                 if "q_head" in name:
                     params_critic.append(param)
                     continue
+                if "state_proj" in name:
+                    params_critic.append(param)
+                    continue
                 else:
                     params_actor.append(param)
                     continue

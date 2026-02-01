@@ -102,23 +102,6 @@ class AsyncEmbodiedRunner(EmbodiedRunner):
 
         train_step = start_step
         while train_step < self.max_steps:
-            if (
-                self.cfg.runner.val_check_interval > 0
-                and train_step > 0
-                and train_step % self.cfg.runner.val_check_interval == 0
-            ):
-                self.update_rollout_weights()
-                eval_metrics = self.evaluate()
-                eval_metrics = {f"eval/{k}": v for k, v in eval_metrics.items()}
-                self.metric_logger.log(data=eval_metrics, step=train_step)
-
-            actor_result = self.actor.run_training().wait()
-            if not actor_result[0]:
-                time.sleep(1.0)
-                continue
-            train_step += 1
-            if train_step % self.rollout_sync_interval == 0:
-                self.update_rollout_weights()
             skip_step = False
             with self.timer("step"):
                 actor_training_handle: Handle = self.actor.run_training()
@@ -128,14 +111,15 @@ class AsyncEmbodiedRunner(EmbodiedRunner):
 
                 if not skip_step:
                     train_step += 1
-                    self.update_rollout_weights()
+                    if train_step % self.rollout_sync_interval == 0:
+                        self.update_rollout_weights()
 
                     training_metrics = {
                         f"train/{k}": v for k, v in actor_result[0].items()
                     }
 
                     run_val, save_model, _ = check_progress(
-                        self.global_step,
+                        train_step,
                         self.max_steps,
                         self.cfg.runner.val_check_interval,
                         self.cfg.runner.save_interval,
@@ -159,6 +143,7 @@ class AsyncEmbodiedRunner(EmbodiedRunner):
 
             time_metrics = self.timer.consume_durations()
             time_metrics = {f"time/{k}": v for k, v in time_metrics.items()}
+            training_metrics["train/replay_channel_qsize"] = self.replay_channel.qsize()
             actor_training_time_metrics = {
                 f"time/actor/{k}": v
                 for k, v in actor_training_handle.consume_durations().items()
@@ -171,6 +156,7 @@ class AsyncEmbodiedRunner(EmbodiedRunner):
             self.metric_logger.log(env_metrics, train_step)
             self.metric_logger.log(rollout_metrics, train_step)
             self.metric_logger.log(training_metrics, train_step)
+            self.metric_logger.log(eval_metrics, train_step)
 
             logging_metrics = time_metrics
             logging_metrics.update(eval_metrics)

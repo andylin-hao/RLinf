@@ -258,3 +258,14 @@ Rollout 指标
        project_name: rlinf
        experiment_name: "maniskill_ppo_openvla"
        logger_backends: ["tensorboard"]  # wandb, swanlab
+
+仿真结果
+~~~~~~~~~~~~~~~~~~~
+以下提供了仿真环境中的异步SAC+CNN训练曲线。在1个小时的时间内, 能够成功学习到抓取抓取策略。并且在后续保持稳定。
+
+.. raw:: html
+
+  <div style="flex: 0.8; text-align: center;">
+      <img src="https://github.com/RLinf/misc/raw/main/pic/frankasim_curve.png" style="width: 100%;"/>
+      <p><em>成功率曲线</em></p>
+    </div>

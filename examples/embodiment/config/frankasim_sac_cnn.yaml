@@ -84,25 +84,15 @@ env:
   group_name: "EnvGroup"
   enable_offload: False
   train:
-    wrap_obs_mode: cnn
-    obs_mode: rgb
     obs_format: tensor
-    state_key: state
-    ignore_terminations: False
     total_num_envs: 1
-    compile_model: False
     video_cfg:
       save_video: False
       video_base_dir: ${runner.logger.log_path}/video/eval
 
   eval:
-    obs_mode: rgb
     obs_format: tensor
-    state_key: state
-    ignore_terminations: False
     total_num_envs: 1
-    wrap_obs_mode: cnn
-    compile_model: False
     video_cfg:
       save_video: False
       video_base_dir: ${runner.logger.log_path}/video/eval
@@ -110,7 +100,6 @@ env:
 rollout:
   group_name: "RolloutGroup"
   backend: "huggingface"
-  model_dir: ""
   enable_offload: False
   pipeline_stage_num: 1
   collect_transitions: True
