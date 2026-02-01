@@ -56,6 +56,7 @@ class EmbodiedSACFSDPPolicy(EmbodiedFSDPActor):
         self.demo_buffer = None
         self.alpha_optimizer = None
         self.update_step = 0
+        self.enable_drq = bool(getattr(self.cfg.actor, "enable_drq", False))
 
     def init_worker(self):
         self.setup_model_and_optimizer(initialize_target=True)
@@ -516,15 +517,14 @@ class EmbodiedSACFSDPPolicy(EmbodiedFSDPActor):
             global_batch,
             global_batch_size_per_rank // self.cfg.actor.micro_batch_size,
         )
-        enable_drq = bool(getattr(self.cfg.actor, "enable_drq", False))
+
         self.qf_optimizer.zero_grad()
         gbs_critic_loss = []
         for batch in train_micro_batch_list:
             batch = put_tensor_device(batch, device=self.device)
-            if enable_drq:
-                t = batch["transitions"]
-                drq.apply_drq(t["obs"], pad=4)
-                drq.apply_drq(t["next_obs"], pad=4)
+            if self.enable_drq:
+                drq.apply_drq(batch["curr_obs"], pad=4)
+                drq.apply_drq(batch["next_obs"], pad=4)
 
             critic_loss = self.forward_critic(batch) / self.gradient_accumulation
             critic_loss.backward()
@@ -547,10 +547,9 @@ class EmbodiedSACFSDPPolicy(EmbodiedFSDPActor):
             gbs_actor_loss = []
             gbs_entropy = []
             for batch in train_micro_batch_list:
-                if enable_drq:
-                    t = batch["transitions"]
-                    drq.apply_drq(t["obs"], pad=4)
-                    drq.apply_drq(t["next_obs"], pad=4)
+                if self.enable_drq:
+                    drq.apply_drq(batch["curr_obs"], pad=4)
+                    drq.apply_drq(batch["next_obs"], pad=4)
                 batch = put_tensor_device(batch, device=self.device)
                 actor_loss, entropy = self.forward_actor(batch)
                 actor_loss = actor_loss / self.gradient_accumulation
@@ -569,10 +568,9 @@ class EmbodiedSACFSDPPolicy(EmbodiedFSDPActor):
                 gbs_alpha_loss = []
                 for batch in train_micro_batch_list:
                     batch = put_tensor_device(batch, device=self.device)
-                    if enable_drq:
-                        t = batch["transitions"]
-                        drq.apply_drq(t["obs"], pad=4)
-                        drq.apply_drq(t["next_obs"], pad=4)
+                    if self.enable_drq:
+                        drq.apply_drq(batch["curr_obs"], pad=4)
+                        drq.apply_drq(batch["next_obs"], pad=4)
 
                     alpha_loss = self.forward_alpha(batch) / self.gradient_accumulation
                     alpha_loss.backward()

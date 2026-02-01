@@ -15,7 +15,7 @@ hydra:
 cluster:
   num_nodes: 1
   component_placement:
-    env,actor,rollout: 5-5
+    env,actor,rollout: 6-6
 
 
 runner:
@@ -30,12 +30,12 @@ runner:
   max_steps: -1
 
   only_eval: False
-  val_check_interval: 100
+  val_check_interval: 210
   save_interval: -1
   rollout_sync_interval: 30
 
 algorithm:
-  update_epoch: 4 
+  update_epoch: 4
   group_size: 1
   agg_q: min # or mean
   actor_agg_q: mean
@@ -56,8 +56,12 @@ algorithm:
   
   critic_actor_ratio: 4
   # Replay buffer settings
-  replay_buffer_capacity: 20000
-  min_buffer_size: 300  # Minimum buffer size before training starts
+  replay_buffer:
+    enable_cache: True
+    cache_size: 5000 # number of trajectories cached in memory
+    sample_window_size: 20000 # number of latest trajectories to sample from for replay buffer
+    min_buffer_size: 1  # Minimum buffer size before training starts
+
   target_update_freq: 1  # Frequency of target network updates
 
   # params for rollout
@@ -109,9 +113,11 @@ rollout:
   model_dir: ""
   enable_offload: False
   pipeline_stage_num: 1
+  collect_transitions: True
+  collect_prev_infos: False
   compile_model: False
   model:
-    model_path: "/path/to/model"
+    model_path:  "/path/to/RLinf-Reset10-pretrained"
     state_dim: 7
     action_dim: 4
     num_q_heads: 10
@@ -128,7 +134,7 @@ actor:
   enable_drq: True
   compile_model: True
   model:
-    model_path:  "/path/to/model"
+    model_path:  "/path/to/RLinf-Reset10-pretrained"
     state_dim: 7
     action_dim: 4
     num_q_heads: 10
