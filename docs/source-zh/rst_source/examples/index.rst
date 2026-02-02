@@ -327,6 +327,7 @@ RLinf的整体设计简洁且模块化，以Worker为抽象封装强化学习训
    robotwin
    frankasim
    opensora
+   gsenv
    pi0
    gr00t
    sac_flow

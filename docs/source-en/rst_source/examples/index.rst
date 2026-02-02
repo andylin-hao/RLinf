@@ -323,6 +323,7 @@ Thanks to this decoupled design, workers can be flexibly and dynamically schedul
    :maxdepth: 2
 
    maniskill
+   gsenv
    libero
    behavior
    metaworld
