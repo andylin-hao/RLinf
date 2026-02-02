@@ -1,4 +1,4 @@
-Data Collection (Sim)
+Data Collection
 ======================
 
 This document provides a guide to using the Data Collection feature in RLinf.
