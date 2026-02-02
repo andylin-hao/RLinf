@@ -281,7 +281,7 @@ class ManiskillEnv(gym.Env):
         infos = self._record_metrics(step_reward, infos)
         if isinstance(terminations, bool):
             terminations = torch.tensor([terminations], device=self.device)
-        if isinstance(truncations, bool):   
+        if isinstance(truncations, bool):
             truncations = torch.tensor([truncations], device=self.device)
             truncations = truncations.repeat(self.num_envs)
         if self.ignore_terminations:

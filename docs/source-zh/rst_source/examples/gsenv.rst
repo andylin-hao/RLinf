@@ -112,17 +112,17 @@ GSEnv 来自独立仓库 `ManiSkill-GS <https://github.com/chenkang455/ManiSkill
 4. 下载 GSEnv 资源（Assets）
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-GSEnv 运行需要资源文件（机器人 URDF、3DGS PLY、物体模型等）。请从 HuggingFace 下载 `RLinf/gsenv-v0-assets <https://huggingface.co/datasets/RLinf/gsenv-v0-assets>`_ 到 ManiSkill-GS 项目下的 ``assets/`` 目录：
+GSEnv 运行需要资源文件（机器人 URDF、3DGS PLY、物体模型等）。请从 HuggingFace 下载 `RLinf/gsenv-assets-v0 <https://huggingface.co/datasets/RLinf/gsenv-assets-v0>`_ 到 ManiSkill-GS 项目下的 ``assets/`` 目录：
 
 .. code:: bash
 
    # 在 ManiSkill-GS 项目根目录下执行
    # 方法 1: 使用 huggingface-cli（国内可先设置 HF_ENDPOINT 加速）
    export HF_ENDPOINT=https://hf-mirror.com
-   huggingface-cli download RLinf/gsenv-v0-assets --local-dir assets/
+   huggingface-cli download RLinf/gsenv-assets-v0 --local-dir assets/
 
    # 方法 2: 使用 git clone
-   git clone https://huggingface.co/datasets/RLinf/gsenv-v0-assets assets
+   git clone https://huggingface.co/datasets/RLinf/gsenv-assets-v0 assets
 
 ✨：建议安装完成后，运行ManiSkill-GS项目下的 ``scripts/test_rlinf_interface.py`` 测试RLinf接口是否正常。PS:第一次运行时，编译gsplat需要较长时间，请耐心等待。
 

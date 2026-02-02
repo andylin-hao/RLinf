@@ -27,7 +27,7 @@ def make_gsenv_example() -> dict:
         "observation/image": np.random.randint(256, size=(480, 640, 3), dtype=np.uint8),
         "prompt": "do something",
     }
-    
+
 
 def _parse_image(image) -> np.ndarray:
     image = np.asarray(image)
@@ -64,7 +64,7 @@ class GSEnvInputs(transforms.DataTransformFn):
 
         if "prompt" in data:
             inputs["prompt"] = data["prompt"]
-            
+
         return inputs
 
 

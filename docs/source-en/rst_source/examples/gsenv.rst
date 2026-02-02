@@ -113,17 +113,17 @@ GSEnv comes from the separate repo `ManiSkill-GS <https://github.com/chenkang455
 4. Download GSEnv assets
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-GSEnv needs asset files (robot URDFs, 3DGS PLY, object models, etc.). Download `RLinf/gsenv-v0-assets <https://huggingface.co/datasets/RLinf/gsenv-v0-assets>`_ from HuggingFace into the ManiSkill-GS project ``assets/`` directory:
+GSEnv needs asset files (robot URDFs, 3DGS PLY, object models, etc.). Download `RLinf/gsenv-assets-v0 <https://huggingface.co/datasets/RLinf/gsenv-assets-v0>`_ from HuggingFace into the ManiSkill-GS project ``assets/`` directory:
 
 .. code:: bash
 
    # Run from ManiSkill-GS project root
    # Method 1: huggingface-cli (set HF_ENDPOINT for mirror if needed)
    export HF_ENDPOINT=https://hf-mirror.com
-   huggingface-cli download RLinf/gsenv-v0-assets --local-dir assets/
+   huggingface-cli download RLinf/gsenv-assets-v0 --local-dir assets/
 
    # Method 2: git clone
-   git clone https://huggingface.co/datasets/RLinf/gsenv-v0-assets assets
+   git clone https://huggingface.co/datasets/RLinf/gsenv-assets-v0 assets
 
 ✨ After installation, run ``scripts/test_rlinf_interface.py`` in the ManiSkill-GS project to verify the RLinf interface. Note: the first run may take a while while gsplat compiles; please be patient.
 

@@ -44,9 +44,7 @@ class LeRobotGSEnvDataConfig(DataConfigFactory):
         )
 
         data_transforms = _transforms.Group(
-            inputs=[
-                gsenv_policy.GSEnvInputs(model_type=model_config.model_type)
-            ],
+            inputs=[gsenv_policy.GSEnvInputs(model_type=model_config.model_type)],
             outputs=[gsenv_policy.GSEnvOutputs()],
         )
 
