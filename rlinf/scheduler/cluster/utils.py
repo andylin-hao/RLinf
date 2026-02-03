@@ -14,7 +14,6 @@
 
 
 import dataclasses
-import importlib
 from dataclasses import fields, is_dataclass
 from typing import Any, Callable, Optional, Protocol
 
@@ -141,55 +140,3 @@ def extract_dataclass_tensor_fields(obj: Any) -> dict[str, torch.Tensor]:
         if isinstance(val, torch.Tensor):
             result[f.name] = val
     return result
-
-
-def build_dataclass_rest_payload(obj: Any) -> tuple[str, list[str], dict[str, Any]]:
-    """Build (class_name, field_order, rest_dict) for non-tensor fields of a dataclass."""
-    cls = type(obj)
-    class_name = f"{cls.__module__}.{cls.__qualname__}"
-    field_order = [f.name for f in fields(obj)]
-    rest_dict = {
-        f.name: getattr(obj, f.name)
-        for f in fields(obj)
-        if not isinstance(getattr(obj, f.name), torch.Tensor)
-    }
-    return class_name, field_order, rest_dict
-
-
-def resolve_dataclass_type(class_name: str) -> type:
-    """Resolve a dataclass type from its fully qualified name."""
-    parts = class_name.split(".")
-    # Find the longest prefix that is an importable module
-    module = None
-    for i in range(len(parts) - 1, 0, -1):
-        module_path = ".".join(parts[:i])
-        try:
-            module = importlib.import_module(module_path)
-            qualname = ".".join(parts[i:])
-            break
-        except ModuleNotFoundError:
-            continue
-    if module is None:
-        raise ValueError(f"Cannot resolve module for dataclass: {class_name}")
-    # Handle nested classes (e.g. Outer.Inner)
-    obj = module
-    for part in qualname.split("."):
-        obj = getattr(obj, part)
-    return obj
-
-
-def reconstruct_dataclass(
-    class_name: str,
-    field_order: list[str],
-    tensor_dict: dict[str, torch.Tensor],
-    rest_dict: dict[str, Any],
-) -> Any:
-    """Reconstruct a dataclass from class name, field order, tensor dict and rest dict."""
-    cls = resolve_dataclass_type(class_name)
-    kwargs = {}
-    for name in field_order:
-        if name in tensor_dict:
-            kwargs[name] = tensor_dict[name]
-        else:
-            kwargs[name] = rest_dict[name]
-    return cls(**kwargs)

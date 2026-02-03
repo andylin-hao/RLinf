@@ -97,9 +97,7 @@ class BenchmarkConfig:
     channel_maxsize: int = 0
     enable_thread_interference: bool = False
     num_noise_threads: int = 2
-    payload_type: str = (
-        "bytes"  # "bytes" | "cpu_tensor" | "gpu_tensor" | "tensor_list" | "tensor_dict" | "tensor_dataclass"
-    )
+    payload_type: str = "bytes"  # "bytes" | "cpu_tensor" | "gpu_tensor" | "tensor_list" | "tensor_dict" | "tensor_dataclass"
     payload_device: str = "auto"  # "auto" (cuda if available else cpu) | "cpu" | "cuda"
     enabled_tests: frozenset[str] = field(default_factory=lambda: AVAILABLE_TESTS)
     enable_ray_queue: bool = False  # Run ray.util.queue.Queue comparison for same tests
@@ -110,9 +108,7 @@ def _resolve_device(device: str) -> str:
     if device == "auto":
         return "cuda" if torch.cuda.is_available() else "cpu"
     if device == "cuda" and not torch.cuda.is_available():
-        raise RuntimeError(
-            "Device cuda requested but CUDA is not available"
-        )
+        raise RuntimeError("Device cuda requested but CUDA is not available")
     return device
 
 

@@ -21,7 +21,7 @@ from contextlib import nullcontext
 from dataclasses import dataclass, is_dataclass, replace
 from pickle import Pickler, Unpickler
 from queue import Empty, Queue
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Iterable, Optional
 
 import torch
 import torch.distributed as dist
@@ -951,7 +951,7 @@ class CollectiveGroup:
 
         return device_type, object_type, tensor_fields
 
-    def _check_tensor_contiguous(self, tensors: list[torch.Tensor]):
+    def _check_tensor_contiguous(self, tensors: Iterable[torch.Tensor]):
         """Check if the tensors are contiguous."""
         if not all(t.is_contiguous() for t in tensors):
             raise ValueError(
