@@ -234,7 +234,6 @@ class EmbodiedSACFSDPPolicy(EmbodiedFSDPActor):
             )
         else:
             storage_dir = os.path.join(storage_dir, f"rank_{self._rank}")
-        self.log_info(f"Loading replay buffer from {storage_dir}")
         self.replay_buffer = TrajectoryReplayBuffer(
             seed=seed,
             storage_dir=storage_dir,
