@@ -100,8 +100,7 @@ class AsyncEmbodiedRunner(EmbodiedRunner):
             input_channel=self.replay_channel
         )
 
-        train_step = start_step
-        while train_step < self.max_steps:
+        while self.global_step < self.max_steps:
             skip_step = False
             with self.timer("step"):
                 actor_training_handle: Handle = self.actor.run_training()
@@ -110,8 +109,8 @@ class AsyncEmbodiedRunner(EmbodiedRunner):
                     skip_step = True
 
                 if not skip_step:
-                    train_step += 1
-                    if train_step % self.rollout_sync_interval == 0:
+                    self.global_step += 1
+                    if self.global_step % self.weight_sync_interval == 0:
                         self.update_rollout_weights()
 
                     training_metrics = {
@@ -119,7 +118,7 @@ class AsyncEmbodiedRunner(EmbodiedRunner):
                     }
 
                     run_val, save_model, _ = check_progress(
-                        train_step,
+                        self.global_step,
                         self.max_steps,
                         self.cfg.runner.val_check_interval,
                         self.cfg.runner.save_interval,
@@ -152,11 +151,11 @@ class AsyncEmbodiedRunner(EmbodiedRunner):
             env_metrics = self.get_env_metrics()
             rollout_metrics = self.get_rollout_metrics()
 
-            self.metric_logger.log(time_metrics, train_step)
-            self.metric_logger.log(env_metrics, train_step)
-            self.metric_logger.log(rollout_metrics, train_step)
-            self.metric_logger.log(training_metrics, train_step)
-            self.metric_logger.log(eval_metrics, train_step)
+            self.metric_logger.log(time_metrics, self.global_step)
+            self.metric_logger.log(env_metrics, self.global_step)
+            self.metric_logger.log(rollout_metrics, self.global_step)
+            self.metric_logger.log(training_metrics, self.global_step)
+            self.metric_logger.log(eval_metrics, self.global_step)
 
             logging_metrics = time_metrics
             logging_metrics.update(eval_metrics)
@@ -165,7 +164,7 @@ class AsyncEmbodiedRunner(EmbodiedRunner):
             logging_metrics.update(training_metrics)
 
             self.print_metrics_table_async(
-                train_step - 1,
+                self.global_step - 1,
                 self.max_steps,
                 start_time,
                 logging_metrics,
