@@ -323,7 +323,6 @@ Thanks to this decoupled design, workers can be flexibly and dynamically schedul
    :maxdepth: 2
 
    maniskill
-   gsenv
    libero
    behavior
    metaworld
@@ -333,6 +332,7 @@ Thanks to this decoupled design, workers can be flexibly and dynamically schedul
    robotwin
    frankasim
    opensora
+   gsenv
    pi0
    gr00t
    sac_flow

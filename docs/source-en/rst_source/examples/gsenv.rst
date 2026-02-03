@@ -1,4 +1,4 @@
-Reinforcement Learning Training with Real2Sim2Real (GSEnv)
+RL with Real2Sim2Real GSEnv
 ==========================================================
 
 .. |huggingface| image:: /_static/svg/hf-logo.svg
@@ -52,7 +52,7 @@ Algorithm
    - Compatible with GSEnv state/rgb observations and language instructions
 
 Dependencies and Setup
------------
+----------------------
 
 1. Clone RLinf
 ~~~~~~~~~~~~~~~~~~~~
@@ -105,8 +105,9 @@ GSEnv comes from the separate repo `ManiSkill-GS <https://github.com/chenkang455
 .. code:: bash
 
    # Clone ManiSkill-GS
-   git clone https://github.com/chenkang455/ManiSkill-GS.git
+   git clone -b v01 https://github.com/chenkang455/ManiSkill-GS.git
    cd ManiSkill-GS
+   pip install urdfpy==0.0.22
    pip install -e .
 
 
@@ -118,17 +119,13 @@ GSEnv needs asset files (robot URDFs, 3DGS PLY, object models, etc.). Download `
 .. code:: bash
 
    # Run from ManiSkill-GS project root
-   # Method 1: huggingface-cli (set HF_ENDPOINT for mirror if needed)
    export HF_ENDPOINT=https://hf-mirror.com
-   huggingface-cli download RLinf/gsenv-assets-v0 --local-dir assets/
+   hf download RLinf/gsenv-assets-v0 --repo-type dataset --local-dir ./assets
 
-   # Method 2: git clone
-   git clone https://huggingface.co/datasets/RLinf/gsenv-assets-v0 assets
-
-✨ After installation, run ``scripts/test_rlinf_interface.py`` in the ManiSkill-GS project to verify the RLinf interface. Note: the first run may take a while while gsplat compiles; please be patient.
+✨ After installation, run ``python scripts/test_rlinf_interface.py`` in the ManiSkill-GS project to verify the RLinf interface. Note: the first run may take a while while gsplat compiles; please be patient.
 
 Model download
------------
+--------------
 
 Before training, download the desired pretrained model (e.g. OpenPI π\ :sub:`0.5`\ SFT on GSEnv-PutCubeOnPlate):
 
@@ -149,7 +146,7 @@ Before training, download the desired pretrained model (e.g. OpenPI π\ :sub:`0.
 After download, set the model path correctly in your yaml config.
 
 Running the scripts
------------
+-------------------
 
 **1. Cluster configuration**
 
@@ -269,6 +266,11 @@ GSEnv results
 -------------------------
 
 On **PutCubeOnPlate-v0**, training OpenPI π\ :sub:`0.5`\ with PPO in RLinf, monitor ``env/success_once`` and related metrics for convergence. Actual numbers depend on seed, steps, hyperparameters, and SFT checkpoint.
+
+.. image:: https://github.com/user-attachments/assets/54a22c98-df04-42bd-beef-2630f69da8be
+   :width: 600px
+   :align: center
+   :alt: GSEnv training results (success rate, returns, etc.)
 
 References
 -----------

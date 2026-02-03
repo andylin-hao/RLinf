@@ -105,26 +105,23 @@ GSEnv 来自独立仓库 `ManiSkill-GS <https://github.com/chenkang455/ManiSkill
 .. code:: bash
 
    # 克隆 ManiSkill-GS
-   git clone https://github.com/chenkang455/ManiSkill-GS.git
+   git clone -b v01 https://github.com/chenkang455/ManiSkill-GS.git
    cd ManiSkill-GS
+   pip install urdfpy==0.0.22
    pip install -e .
 
 4. 下载 GSEnv 资源（Assets）
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-GSEnv 运行需要资源文件（机器人 URDF、3DGS PLY、物体模型等）。请从 HuggingFace 下载 `RLinf/gsenv-assets-v0 <https://huggingface.co/datasets/RLinf/gsenv-assets-v0>`_ 到 ManiSkill-GS 项目下的 ``assets/`` 目录：
+GSEnv 运行需要资源文件（机器人 URDF、3DGS PLY、物体模型等）。请从 HuggingFace 将 `RLinf/gsenv-assets-v0 <https://huggingface.co/datasets/RLinf/gsenv-assets-v0>`_ 下载到 ManiSkill-GS 项目的 ``assets/`` 目录：
 
 .. code:: bash
 
    # 在 ManiSkill-GS 项目根目录下执行
-   # 方法 1: 使用 huggingface-cli（国内可先设置 HF_ENDPOINT 加速）
    export HF_ENDPOINT=https://hf-mirror.com
-   huggingface-cli download RLinf/gsenv-assets-v0 --local-dir assets/
+   hf download RLinf/gsenv-assets-v0 --repo-type dataset --local-dir ./assets
 
-   # 方法 2: 使用 git clone
-   git clone https://huggingface.co/datasets/RLinf/gsenv-assets-v0 assets
-
-✨：建议安装完成后，运行ManiSkill-GS项目下的 ``scripts/test_rlinf_interface.py`` 测试RLinf接口是否正常。PS:第一次运行时，编译gsplat需要较长时间，请耐心等待。
+✨ 安装完成后，请在 ManiSkill-GS 项目中运行 ``python scripts/test_rlinf_interface.py`` 以验证 RLinf 接口。注意：首次运行因需编译 gsplat 可能耗时较长，请耐心等待。
 
 
 
@@ -276,6 +273,11 @@ GSEnv 结果
 -------------------------
 
 在 **PutCubeOnPlate-v0** 任务上，使用 OpenPI π\ :sub:`0.5`\ 配合 PPO 在 RLinf 中训练，可监控 ``env/success_once`` 等指标评估收敛情况。
+
+.. image:: https://github.com/user-attachments/assets/54a22c98-df04-42bd-beef-2630f69da8be
+   :width: 600px
+   :align: center
+   :alt: GSEnv 训练结果（成功率、回报等）
 
 参考
 -----------
