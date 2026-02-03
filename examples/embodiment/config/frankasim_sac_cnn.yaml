@@ -15,7 +15,7 @@ hydra:
 cluster:
   num_nodes: 1
   component_placement:
-    env,actor,rollout: 6-6
+    env,actor,rollout: 0
 
 
 runner:
@@ -24,7 +24,7 @@ runner:
     log_path: "../results"
     project_name: rlinf
     experiment_name: "sac_cnn"
-    logger_backends: ["wandb"] # wandb, swanlab
+    logger_backends: ["tensorboard"] # wandb, swanlab
 
   max_epochs: 15000
   max_steps: -1
@@ -32,7 +32,7 @@ runner:
   only_eval: False
   val_check_interval: 210
   save_interval: -1
-  rollout_sync_interval: 30
+  weight_sync_interval: 30
 
 algorithm:
   update_epoch: 4
@@ -106,7 +106,7 @@ rollout:
   collect_prev_infos: False
   compile_model: False
   model:
-    model_path:  "/path/to/RLinf-Reset10-pretrained"
+    model_path:  "/path/to/RLinf-ResNet10-pretrained"
     state_dim: 7
     action_dim: 4
     num_q_heads: 10
@@ -123,7 +123,7 @@ actor:
   enable_drq: True
   compile_model: True
   model:
-    model_path:  "/path/to/RLinf-Reset10-pretrained"
+    model_path:  "/path/to/RLinf-ResNet10-pretrained"
     state_dim: 7
     action_dim: 4
     num_q_heads: 10
