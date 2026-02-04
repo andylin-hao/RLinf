@@ -276,11 +276,11 @@ RUN echo "source ${UV_PATH}/openvla-oft/bin/activate" >> ~/.bashrc
 ##################################################################################################
 FROM embodied-common-image AS embodied-frankasim-image
 
-# Install openvla-oft env
-RUN bash requirements/install.sh embodied --venv openvla-oft --model openvla --env frankasim
+# Install openvla env
+RUN bash requirements/install.sh embodied --venv openvla --model openvla --env frankasim
 
 # Set default env
-RUN echo "source ${UV_PATH}/openvla-oft/bin/activate" >> ~/.bashrc
+RUN echo "source ${UV_PATH}/openvla/bin/activate" >> ~/.bashrc
 
 ##################################################################################################
 # Final image selection
