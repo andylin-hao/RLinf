@@ -128,7 +128,7 @@ Franka-Sim 环境基于项目 `serl <https://rail-berkeley.github.io/serl/docs/s
 模型下载
 --------------
 
-如果您正在训练CNN Policy (MLP Policy不需要)，您需要先下载我们提供的ResNet checkpoint。
+如果您正在训练CNN Policy (如果是MLP Policy可以跳过此小节)，您需要先下载我们提供的ResNet checkpoint。
 
 **ResNet Checkpoint下载**
 

@@ -131,7 +131,7 @@ Option 2: Custom environment
 Model Download
 --------------
 
-If you are training the CNN policy (unnecessary for the MLP policy), you need to first download the ResNet checkpoint we provided.
+If you are training the CNN policy (skip this section for the MLP policy), you need to first download the ResNet checkpoint we provided.
 
 **ResNet Checkpoint Download**
 
