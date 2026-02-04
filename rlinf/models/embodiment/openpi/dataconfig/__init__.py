@@ -251,9 +251,7 @@ _CONFIGS = [
         ),
         data=LeRobotGSEnvDataConfig(
             repo_id="RLinf/GSEnv-PutCubeOnPlate-v0",
-            base_config=DataConfig(
-                prompt_from_task=True, root="data/GSEnv-PutCubeOnPlate-v0"
-            ),
+            base_config=DataConfig(prompt_from_task=True),
             assets=AssetsConfig(assets_dir="checkpoints/torch/pi0_r2s2r/assets"),
             extra_delta_transform=False,
         ),
