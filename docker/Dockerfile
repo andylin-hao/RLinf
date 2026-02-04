@@ -14,6 +14,7 @@ FROM nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04 AS base-image-embodied-robocasa
 FROM nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04 AS base-image-embodied-isaaclab
 FROM nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04 AS base-image-embodied-robotwin
 FROM nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04 AS base-image-embodied-opensora
+FROM nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04 AS base-image-embodied-frankasim
 
 # Franka depends on ros-noetic, which is not available on Ubuntu 22.04
 FROM ubuntu:20.04 AS base-image-embodied-franka
@@ -266,6 +267,17 @@ FROM embodied-common-image AS embodied-opensora-image
 
 # Install openvla-oft env
 RUN bash requirements/install.sh embodied --venv openvla-oft --model openvla-oft --env opensora
+
+# Set default env
+RUN echo "source ${UV_PATH}/openvla-oft/bin/activate" >> ~/.bashrc
+
+##################################################################################################
+# Embodied: FrankaSim
+##################################################################################################
+FROM embodied-common-image AS embodied-frankasim-image
+
+# Install openvla-oft env
+RUN bash requirements/install.sh embodied --venv openvla-oft --model openvla --env frankasim
 
 # Set default env
 RUN echo "source ${UV_PATH}/openvla-oft/bin/activate" >> ~/.bashrc
