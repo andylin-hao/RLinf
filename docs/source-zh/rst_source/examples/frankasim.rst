@@ -125,6 +125,25 @@ Franka-Sim 环境基于项目 `serl <https://rail-berkeley.github.io/serl/docs/s
    bash requirements/install.sh embodied --model openvla --env frankasim
    source .venv/bin/activate
 
+模型下载
+--------------
+
+如果您正在训练CNN Policy (MLP Policy不需要)，您需要先下载我们提供的ResNet checkpoint。
+
+**ResNet Checkpoint下载**
+
+.. code:: bash
+
+   # 方法1：使用git clone
+   git lfs install
+   git clone https://huggingface.co/RLinf/RLinf-ResNet10-pretrained
+
+   # 方法2：使用huggingface-hub
+   # 为提升国内下载速度，可以设置：
+   # export HF_ENDPOINT=https://hf-mirror.com
+   pip install huggingface-hub
+   hf download RLinf/RLinf-ResNet10-pretrained --local-dir RLinf-ResNet10-pretrained
+
 运行脚本
 --------
 
