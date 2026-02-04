@@ -148,6 +148,18 @@ If you are training the CNN policy (unnecessary for the MLP policy), you need to
    pip install huggingface-hub
    hf download RLinf/RLinf-ResNet10-pretrained --local-dir RLinf-ResNet10-pretrained
 
+After downloading, make sure the `model_path` in the config yaml points to this directory. 
+Update ``actor.model.model_path`` and ``rollout.model.model_path`` to the path of the model directory as follows.
+
+.. code-block:: yaml
+
+   rollout:
+      model:
+         model_path: Pathto/RLinf/RLinf-ResNet10-pretrained
+   actor:
+      model:
+         model_path: Pathto/RLinf/RLinf-ResNet10-pretrained
+
 Running the Script
 -------------------
 
