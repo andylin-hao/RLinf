@@ -10,7 +10,7 @@ hydra:
     dir: .
   output_subdir: null
   searchpath:
-    - file://${oc.env:EMBODIED_PATH}/config/
+    - file://${oc.env:REPO_PATH}/examples/embodiment/config
 
 cluster:
   num_nodes: 1
@@ -20,7 +20,7 @@ cluster:
 runner:
   task_type: embodied
   logger:
-    log_path: "../results"
+    log_path: "../results/gsenv_ppo_openpi_pi05"
     project_name: rlinf
     experiment_name: "gsenv_ppo_openpi"
     logger_backends: ["tensorboard"] # wandb, swanlab
