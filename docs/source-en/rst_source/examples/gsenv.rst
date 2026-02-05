@@ -109,6 +109,7 @@ GSEnv comes from the separate repo `ManiSkill-GS <https://github.com/chenkang455
    cd ManiSkill-GS
    uv pip install urdfpy==0.0.22
    uv pip install -e .
+   uv pip install protobuf==6.33.2 timm==0.9.10 pyopengl==3.1.10
 
 
 4. Download GSEnv assets

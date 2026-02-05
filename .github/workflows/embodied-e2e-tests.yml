@@ -407,6 +407,7 @@ jobs:
 
           uv pip install urdfpy==0.0.22
           uv pip install -e /workspace/dataset/ManiSkill-GS
+          uv pip install protobuf==6.33.2 timm==0.9.10 pyopengl==3.1.10
 
           bash tests/e2e_tests/embodied/run.sh gsenv_ppo_openpi_pi05
 
