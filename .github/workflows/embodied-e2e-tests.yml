@@ -397,6 +397,19 @@ jobs:
           source .venv/bin/activate
           bash tests/e2e_tests/embodied/run.sh libero_spatial_ppo_openpi05
 
+      # This Test changes venv, must be at the end of all tests  
+      - name: ManiSkill-GS PPO Pi05 test
+        timeout-minutes: 20
+        run: |
+          unset PYTHONPATH
+          export REPO_PATH=$(pwd)
+          source .venv/bin/activate
+
+          uv pip install urdfpy==0.0.22
+          uv pip install -e /workspace/dataset/ManiSkill-GS
+
+          bash tests/e2e_tests/embodied/run.sh gsenv_ppo_openpi_pi05
+
       - name: Clean up
         run: |
           rm -rf .venv

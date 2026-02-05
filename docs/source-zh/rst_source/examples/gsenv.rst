@@ -78,9 +78,9 @@
       --network host \
       --name rlinf \
       -v .:/workspace/RLinf \
-      rlinf/rlinf:agentic-rlinf0.1-torch2.6.0-openvla-openvlaoft-pi0
+      rlinf/rlinf:agentic-rlinf0.1-maniskill_libero
       # 如果需要国内加速下载镜像，可以使用：
-      # docker.1ms.run/rlinf/rlinf:agentic-rlinf0.1-torch2.6.0-openvla-openvlaoft-pi0
+      # docker.1ms.run/rlinf/rlinf:agentic-rlinf0.1-maniskill_libero
 
 请通过镜像内置的 `switch_env` 工具切换到对应的虚拟环境：
 
@@ -107,8 +107,8 @@ GSEnv 来自独立仓库 `ManiSkill-GS <https://github.com/chenkang455/ManiSkill
    # 克隆 ManiSkill-GS
    git clone -b v01 https://github.com/chenkang455/ManiSkill-GS.git
    cd ManiSkill-GS
-   pip install urdfpy==0.0.22
-   pip install -e .
+   uv pip install urdfpy==0.0.22
+   uv pip install -e .
 
 4. 下载 GSEnv 资源（Assets）
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

@@ -78,9 +78,9 @@ Run experiments with the Docker image.
       --network host \
       --name rlinf \
       -v .:/workspace/RLinf \
-      rlinf/rlinf:agentic-rlinf0.1-torch2.6.0-openvla-openvlaoft-pi0
+      rlinf/rlinf:agentic-rlinf0.1-maniskill_libero
       # For mirror in some regions:
-      # docker.1ms.run/rlinf/rlinf:agentic-rlinf0.1-torch2.6.0-openvla-openvlaoft-pi0
+      # docker.1ms.run/rlinf/rlinf:agentic-rlinf0.1-maniskill_libero
 
 Switch to the correct virtual environment with the image’s ``switch_env`` tool:
 
@@ -107,8 +107,8 @@ GSEnv comes from the separate repo `ManiSkill-GS <https://github.com/chenkang455
    # Clone ManiSkill-GS
    git clone -b v01 https://github.com/chenkang455/ManiSkill-GS.git
    cd ManiSkill-GS
-   pip install urdfpy==0.0.22
-   pip install -e .
+   uv pip install urdfpy==0.0.22
+   uv pip install -e .
 
 
 4. Download GSEnv assets
