@@ -13,8 +13,10 @@
 # limitations under the License.
 # dexbotic model configs
 
+import glob
 import json
 import os
+from typing import Optional
 
 import numpy as np
 import torch
@@ -46,7 +48,7 @@ class DexboticPolicy:
         model_path: str,
         action_dim: int = 7,
         num_images: int = 3,
-        non_delta_mask: list = None,
+        non_delta_mask: Optional[list[int]] = None,
         device: str = "cuda",
     ):
         self.model_path = model_path
@@ -78,8 +80,6 @@ class DexboticPolicy:
 
     def _load_model(self):
         # Set HF_HUB_OFFLINE to prevent any network access during model loading
-        import os
-
         original_offline = os.environ.get("HF_HUB_OFFLINE", None)
         os.environ["HF_HUB_OFFLINE"] = "1"
 
@@ -291,20 +291,6 @@ class DexboticPi0ForRLActionPrediction(BasePolicy, Pi0ForCausalLM):
             for param in self.model.mm_projector.parameters():
                 param.requires_grad = False
 
-    def _read_normalization_stats(self, norm_stats_file):
-        if not os.path.exists(norm_stats_file):
-            raise FileNotFoundError(
-                f"Normalization stats not found at {norm_stats_file}. "
-                "Make sure the checkpoint directory contains norm_stats.json"
-            )
-        with open(norm_stats_file, "r") as f:
-            norm_stats = json.load(f)
-            if "norm_stats" in norm_stats:
-                norm_stats = norm_stats["norm_stats"]
-        from dexbotic.data.dataset.transform.common import ToNumpy
-
-        return ToNumpy()(norm_stats)
-
     def setup_wrappers(self, transforms=(), output_transforms=()):
         if transforms:
             self._input_transform = Pipeline(transforms)
@@ -315,32 +301,6 @@ class DexboticPi0ForRLActionPrediction(BasePolicy, Pi0ForCausalLM):
             self._output_transform = Pipeline(output_transforms)
         else:
             self._output_transform = None
-
-    def output_transform(self, outputs):
-        if self._output_transform is None:
-            return outputs
-
-        batch_size = outputs["actions"].shape[0]
-        transformed_actions = []
-        state_batch = outputs.get("state", None)
-        meta_data = outputs.get("meta_data", {})
-
-        for i in range(batch_size):
-            sample = {"action": outputs["actions"][i].cpu().numpy()}
-            if state_batch is not None:
-                if isinstance(state_batch, torch.Tensor):
-                    sample["state"] = state_batch[i].cpu().numpy()
-                else:
-                    sample["state"] = state_batch[i]
-            if meta_data:
-                sample["meta_data"] = meta_data
-            sample = self._output_transform(sample)
-            transformed_actions.append(torch.from_numpy(sample["action"]))
-
-        outputs["actions"] = torch.stack(transformed_actions, dim=0).to(
-            outputs["actions"].device
-        )
-        return outputs
 
     def input_transform(self, obs: dict, transpose=True):
         if "prompt" in obs:
@@ -454,8 +414,6 @@ class DexboticPi0ForRLActionPrediction(BasePolicy, Pi0ForCausalLM):
             raw_main_images, raw_wrist_images, device
         )
 
-        batch_size = images.shape[0]
-
         target_dtype = next(self.parameters()).dtype
         lang_tokens = observation["tokenized_prompt"].to(device)
         lang_masks = observation["tokenized_prompt_mask"].to(device)
@@ -488,8 +446,6 @@ class DexboticPi0ForRLActionPrediction(BasePolicy, Pi0ForCausalLM):
         }
 
     def _process_images_for_training(self, raw_main_images, raw_wrist_images, device):
-        from PIL import Image
-
         if torch.is_tensor(raw_main_images):
             raw_main_images = raw_main_images.cpu().numpy()
         if raw_wrist_images is not None and torch.is_tensor(raw_wrist_images):
@@ -585,8 +541,6 @@ class DexboticPi0ForRLActionPrediction(BasePolicy, Pi0ForCausalLM):
             raw_images = processed_obs["observation/image"]
             batch_size = raw_images.shape[0]
             device = states.device
-
-            from PIL import Image
 
             base_pil_images = []
             for batch_idx in range(batch_size):
@@ -988,9 +942,6 @@ class DexboticPi0ForRLActionPrediction(BasePolicy, Pi0ForCausalLM):
 
 
 def get_model(cfg: DictConfig, torch_dtype=None):
-    import glob
-    import os
-
     import safetensors.torch
     from dexbotic.model.pi0.pi0_arch import Pi0Config
 
@@ -1003,8 +954,6 @@ def get_model(cfg: DictConfig, torch_dtype=None):
 
     try:
         config = Pi0Config.from_pretrained(cfg.model_path, local_files_only=True)
-        from transformers import AutoTokenizer
-
         tokenizer = AutoTokenizer.from_pretrained(
             cfg.model_path, use_fast=False, local_files_only=True
         )
@@ -1039,8 +988,6 @@ def get_model(cfg: DictConfig, torch_dtype=None):
                 os.environ["HF_HUB_OFFLINE"] = original_offline
         model.tokenizer = tokenizer
 
-        from dexbotic.tokenization.process import Pi0Tokenization
-
         model.pi0_tokenization = Pi0Tokenization(tokenizer)
         weight_paths = sorted(glob.glob(os.path.join(cfg.model_path, "*.safetensors")))
         weight_paths = [p for p in weight_paths if not p.endswith(".index.json")]
@@ -1049,7 +996,7 @@ def get_model(cfg: DictConfig, torch_dtype=None):
             if not os.path.exists(weight_path):
                 raise FileNotFoundError(f"No weights found in {cfg.model_path}")
             weight_paths = [weight_path]
-        for i, weight_path in enumerate(weight_paths):
+        for weight_path in weight_paths:
             safetensors.torch.load_model(model, weight_path, strict=False)
         norm_stats_file = os.path.join(cfg.model_path, "norm_stats.json")
         if os.path.exists(norm_stats_file):

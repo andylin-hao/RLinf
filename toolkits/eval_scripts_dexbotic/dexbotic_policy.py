@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any
+from typing import Any, Optional
 
 import numpy as np
 import torch
@@ -32,7 +32,7 @@ class DexboticPolicy:
         norm_stats: dict[str, Any],
         action_dim: int = 7,
         num_images: int = 3,
-        non_delta_mask: list = None,
+        non_delta_mask: Optional[list[int]] = None,
         device: str = "cuda",
     ):
         self.model_path = model_path
