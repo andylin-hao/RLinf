@@ -291,6 +291,18 @@ class DexboticPi0ForRLActionPrediction(BasePolicy, Pi0ForCausalLM):
             for param in self.model.mm_projector.parameters():
                 param.requires_grad = False
 
+    def _read_normalization_stats(self, norm_stats_file):
+        if not os.path.exists(norm_stats_file):
+            raise FileNotFoundError(
+                f"Normalization stats not found at {norm_stats_file}. "
+                "Make sure the checkpoint directory contains norm_stats.json"
+            )
+        with open(norm_stats_file, "r") as f:
+            norm_stats = json.load(f)
+            if "norm_stats" in norm_stats:
+                norm_stats = norm_stats["norm_stats"]
+        return ToNumpy()(norm_stats)
+
     def setup_wrappers(self, transforms=(), output_transforms=()):
         if transforms:
             self._input_transform = Pipeline(transforms)
