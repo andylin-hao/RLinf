@@ -4,7 +4,7 @@
 
 **Arrays (near top):**
 ```bash
-SUPPORTED_MODELS=("openvla" "openvla-oft" "openpi" "gr00t" "dexbotic")
+SUPPORTED_MODELS=("openvla" "openvla-oft" "openpi" "gr00t")
 SUPPORTED_ENVS=("behavior" "maniskill_libero" "metaworld" "calvin" "isaaclab" "robocasa" "franka" "frankasim" "robotwin" "habitat" "opensora")
 ```
 
