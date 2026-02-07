@@ -47,51 +47,17 @@ You launch one entry script (e.g. `train_embodied_agent.py`, `train_async.py`). 
 
 ## Configuration guides
 
-**Placement and throughput**
-
-Component placement is set under `cluster.component_placement` in YAML. It controls which GPUs (or other hardware) run actor, rollout, env, reward, and agent. For higher throughput:
-
-- **Collocated:** Put actor, inference, and rollout on the same GPUs (`actor,inference,rollout: 0-7` or `all`) so they share resources; use when GPU memory fits all components or when you rely on offload/reload to swap them.
-- **Disaggregated:** Put actor on one set of GPUs and rollout on another so they run in parallel; reduces contention but can leave GPUs idle if one phase dominates.
-- **Hybrid:** Mix collocated and disaggregated per component (e.g. rollout + env on one group, actor on another). Use the node-group form when you have multiple node types: set `node_groups` with labels (e.g. `a800`, `4090`), then in `component_placement` reference `node_group: a800` and `placement: 0-63` (hardware ranks within that group). More GPUs for rollout/env usually increase sample throughput; more for actor increase training throughput. See the [placement tutorial](https://rlinf.readthedocs.io/en/latest/rst_source/tutorials/user/placement.html) and [execution modes](https://rlinf.readthedocs.io/en/latest/rst_source/tutorials/mode/index.html) (collocated, disaggregated, hybrid).
-
-**OOM and memory-related knobs**
-
-- **Env:** Reduce `env.train.total_num_envs` and `env.eval.total_num_envs`; reduce `env.train.group_size` / `env.eval.group_size` if each group holds many envs.
-- **Rollout:** Reduce batch size or sequence length if the rollout worker OOMs. For SGLang/vLLM, lower `rollout.gpu_memory_utilization` (or `static_mem_fraction`, depending on config) so the server reserves less GPU memory; ensure weights are released before reload after actor updates (see FAQ). Set `rollout.enable_offload: True` if the rollout worker is configured to offload when idle.
-- **Actor:** Reduce `actor.micro_batch_size` and/or `actor.global_batch_size`; increase gradient accumulation steps if you keep `global_batch_size` fixed. Enable **gradient checkpointing** to trade compute for memory: in YAML set `actor.model.gradient_checkpointing: True` (or under `actor.fsdp_config.gradient_checkpointing` for FSDP, depending on config structure). Enable **actor offload** to move params/grads (and optionally optimizer state) to CPU when not training: `actor.enable_offload: True`; the runner will offload/onload around update steps. See example configs (e.g. `examples/embodiment/config/libero_spatial_ppo_dexbotic_pi0.yaml`) for `enable_offload`, `micro_batch_size`, and `gradient_checkpointing`.
-
-**Multiple nodes and heterogeneous clusters**
-
-- **Node count and identity:** Set `cluster.num_nodes` to the total number of nodes. Each node must have a unique **node rank** (0 to N−1). Node rank is **not** set in YAML: it is fixed by the **environment variable `RLINF_NODE_RANK`** on the process that runs `ray start` on that node. Ray captures the environment at `ray start` time; any env vars (including `RLINF_NODE_RANK` and `RLINF_COMM_NET_DEVICES`) must be exported **before** calling `ray start` on that node, or they will not be visible to workers later. Worker processes inherit the env that Ray had when it started.
-- **YAML cluster config:** Under `cluster` you can optionally set `node_groups` and `component_placement`. **`node_groups`** define named groups (e.g. `a800`, `4090`, `franka`) and assign node ranks to each via `node_ranks` (e.g. `0-7`). For hetero setups you can attach **`env_configs`** to a node group: each entry has `node_ranks`, and optionally **`env_vars`** (list of one-key dicts) and **`python_interpreter_path`**. These YAML-specified env vars and interpreter path are applied by the scheduler when it **allocates** workers to nodes (e.g. in `Cluster.allocate` / worker launch). They override or extend the env that the node had at `ray start`: precedence is (1) default env on the node at ray start, (2) env vars set on the head between ray start and RLinf init, (3) `env_vars` from the cluster YAML for that node group. Use `env_configs` to set things like `GLOO_SOCKET_IFNAME` or per-group Python interpreters without changing the script that starts Ray. For hardware that is not auto-detected (e.g. robots), add a **`hardware`** block to the node group with the appropriate `type` and `configs`. See [heterogeneous cluster](https://rlinf.readthedocs.io/en/latest/rst_source/tutorials/advance/hetero.html) and `rlinf/scheduler/cluster/config.py` for the full schema.
+- **Placement and throughput:** Configure `cluster.component_placement` (collocated vs disaggregated vs hybrid, node groups, hardware ranks). See [placement tutorial](https://rlinf.readthedocs.io/en/latest/rst_source/tutorials/user/placement.html) and [execution modes](https://rlinf.readthedocs.io/en/latest/rst_source/tutorials/mode/index.html).
+- **OOM:** Tune env (`total_num_envs`, `group_size`), rollout (batch/seq, `gpu_memory_utilization`, `enable_offload`), actor (`micro_batch_size`, `global_batch_size`, `gradient_checkpointing`, `enable_offload`). Example configs in `examples/embodiment/config/`. See [FAQ](https://rlinf.readthedocs.io/en/latest/rst_source/faq.html) for SGLang/memory issues.
+- **Multi-node and hetero:** Set `cluster.num_nodes`; set `RLINF_NODE_RANK` (and optionally `RLINF_COMM_NET_DEVICES`) **before** `ray start` on each node—Ray captures env at start time. Optional `node_groups` and `component_placement` in YAML; `env_configs` (e.g. `env_vars`, `python_interpreter_path`) are applied at worker allocation. See [heterogeneous cluster](https://rlinf.readthedocs.io/en/latest/rst_source/tutorials/advance/hetero.html) and `rlinf/scheduler/cluster/config.py`.
 
 ---
 
 ## Metrics, checkpoints, and evaluation
 
-**Metrics**
-
-Runners log metrics via `MetricLogger`, which can send them to one or more backends. Configure backends in YAML with `runner.logger.logger_backends` (e.g. `["tensorboard", "wandb", "swanlab"]`). Typical metric namespaces:
-
-- **`train/`** – Training loss and algorithm-specific metrics (e.g. actor loss, critic loss, clip fraction, KL) from the actor worker after each update.
-- **`eval/`** – Evaluation metrics when validation runs: e.g. `eval/success_once`, `eval/success_at_end`, `eval/return`, `eval/reward`, `eval/episode_len` for embodied tasks; reasoning/agent tasks may log different eval keys.
-- **`env/`** – Aggregated env-side metrics (e.g. from rollout episodes) such as returns or success counts.
-- **`rollout/`** – Rollout-phase metrics (e.g. from advantage/return computation).
-- **`time/`** – Timing (e.g. `time/env/...`, `time/rollout/...`, `time/actor/...`) for profiling.
-
-Logs and backend-specific directories (e.g. `tensorboard/`, `wandb/`, `swanlab/`) are written under `runner.logger.log_path`. For full setup (TensorBoard, W&B, SwanLab), see the [training visualization / logger tutorial](https://rlinf.readthedocs.io/en/latest/rst_source/tutorials/advance/logger.html).
-
-**Saving and resuming checkpoints**
-
-- **Saving:** Checkpoints are written every `runner.save_interval` steps. The path pattern is `<log_path>/<experiment_name>/checkpoints/global_step_<N>/`. For **Megatron**, checkpoints live under `output_dir/experiment_name/checkpoints/` and include sharded model/optimizer/RNG and optionally `data/data.pt` (dataloader state). For **FSDP/FSDP2**, they live under `log_path/experiment_name/checkpoints/` and use DCP (`.distcp` files) plus optional full weights.
-- **Resuming:** Set `runner.resume_dir` to the checkpoint directory (e.g. `.../checkpoints/global_step_50`). Relaunch the same training command (Ray and entry script). The runner loads the actor checkpoint from `resume_dir/actor`, restores the global step from the directory name, and (for reasoning/agent) may load dataloader state from `resume_dir/data/data.pt` if present. Some runners support `resume_dir: auto` to pick the latest checkpoint under the experiment. Full layout and step-by-step resume: [Checkpoint resume tutorial](https://rlinf.readthedocs.io/en/latest/rst_source/tutorials/advance/resume.html).
-
-**Evaluation**
-
-- **During training:** Set `runner.val_check_interval`; every that many steps the runner can run validation (e.g. call `evaluate()`), log `eval/*` metrics, and optionally save a checkpoint (when `save_interval` is hit).
-- **Standalone embodied (VLA):** Use the evaluation script and an eval config: `bash examples/embodiment/eval_embodiment.sh <config_name>`. The config must include `env.eval` and usually `runner.only_eval: True`. Set `rollout.model.model_path` to the model to evaluate and, for a specific checkpoint, `runner.ckpt_path` (e.g. a `.pt` file; convert from distributed format if needed). Control evaluation size with `env.eval.total_num_envs`, `algorithm.eval_rollout_epoch`, and `env.eval.auto_reset`; optional video via `env.eval.video_cfg.save_video`. Results (e.g. `eval/success_once`, `eval/return`) are printed and written to logs. See [VLA evaluation](https://rlinf.readthedocs.io/en/latest/rst_source/start/vla-eval.html).
-- **Standalone reasoning (LLM):** Use the [LLM evaluation tutorial](https://rlinf.readthedocs.io/en/latest/rst_source/start/llm-eval.html): convert Megatron checkpoints to HuggingFace if needed, then use the LLMEvalKit and instructions there.
+- **Metrics:** Runners use `MetricLogger`; set `runner.logger.logger_backends` (e.g. tensorboard, wandb, swanlab). Namespaces include `train/`, `eval/`, `env/`, `rollout/`, `time/`. See [logger tutorial](https://rlinf.readthedocs.io/en/latest/rst_source/tutorials/advance/logger.html).
+- **Checkpoints:** Saved every `runner.save_interval` under `.../checkpoints/global_step_<N>/`. To resume, set `runner.resume_dir` to that path and relaunch; some runners support `resume_dir: auto`. See [checkpoint resume tutorial](https://rlinf.readthedocs.io/en/latest/rst_source/tutorials/advance/resume.html).
+- **Evaluation:** During training, `runner.val_check_interval` triggers validation. Standalone embodied: `bash examples/embodiment/eval_embodiment.sh <config_name>` with an eval config; see [VLA evaluation](https://rlinf.readthedocs.io/en/latest/rst_source/start/vla-eval.html). Reasoning/LLM: see [LLM evaluation](https://rlinf.readthedocs.io/en/latest/rst_source/start/llm-eval.html).
 
 ---
 
