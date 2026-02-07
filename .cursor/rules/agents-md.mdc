@@ -1,0 +1,41 @@
+---
+description: When and how to add or update AGENTS.md for agent-facing documentation
+alwaysApply: true
+---
+
+# AGENTS.md
+
+**AGENTS.md** at the repo root gives AI agents (e.g. Cursor, Codex) persistent instructions for this project.
+
+## When to update
+
+- You add or change **agent-facing behavior** (new conventions, workflows, or entrypoints).
+- You introduce **new patterns** that agents should follow (e.g. new skills, install steps, doc locations).
+- You want agents to **prefer or avoid** certain files, tools, or approaches.
+
+## When to create
+
+If **AGENTS.md** does not exist and you are:
+- Adding documented workflows that agents should use, or
+- Defining project-specific rules that belong in one place,
+
+then **create** `AGENTS.md` at the repository root.
+
+## What to include
+
+- **Brief project context** so agents understand the repo’s purpose.
+- **Conventions** (e.g. doc format, test/install steps, key paths).
+- **Pointers** to other docs (e.g. CONTRIBUTING.md, skills in `.cursor/skills/`).
+- **Actionable instructions** (do X when Y; prefer Z; avoid W).
+
+Keep it short and scannable; link to full docs instead of duplicating them.
+
+## Example snippet
+
+```markdown
+# RLinf – Agent instructions
+
+- Follow CONTRIBUTING.md for PRs, lint, and tests.
+- New embodied envs/models: see .cursor/skills/add-install-docker-ci-e2e and add-example-doc-model-env.
+- Prefer existing skills in .cursor/skills/ before adding new workflows.
+```
