@@ -87,8 +87,11 @@ Dexbotic 直接使用环境提供的自然语言任务描述作为语言模型�
       -v .:/workspace/RLinf \
       rlinf/rlinf:agentic-rlinf0.1-maniskill_libero
 
-若镜像中包含 dexbotic 环境，可通过 ``source switch_env dexbotic`` 切换；
-否则在容器内使用选项 2 安装 dexbotic。
+请通过镜像内置的 `switch_env` 工具切换到对应的虚拟环境：
+
+.. code:: bash
+
+   source switch_env dexbotic
 
 **选项 2：自定义环境**
 

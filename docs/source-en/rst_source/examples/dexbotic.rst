@@ -98,9 +98,11 @@ Use the Docker image for LIBERO-based embodied training:
       -v .:/workspace/RLinf \
       rlinf/rlinf:agentic-rlinf0.1-maniskill_libero
 
-If the image includes a dexbotic environment, switch to it via
-``source switch_env dexbotic``. Otherwise, install dexbotic inside the
-container using Option 2.
+Please switch to the corresponding virtual environment via the built-in `switch_env` utility in the image:
+
+.. code:: bash
+
+   source switch_env dexbotic
 
 **Option 2: Custom Environment**
 
