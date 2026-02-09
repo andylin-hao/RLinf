@@ -67,6 +67,15 @@ class TensorDictMessage:
     note: str
 
 
+@dataclass
+class PlainMessage:
+    """Plain dataclass without tensor fields (serialized as Python object)."""
+
+    id: int
+    name: str
+    value: float
+
+
 def get_device():
     """Returns the appropriate torch device."""
     if torch.cuda.is_available():
@@ -443,6 +452,10 @@ def get_test_data():
                 },
                 note="channel dict test",
             ),
+        ),
+        (
+            "plain_dataclass",
+            PlainMessage(id=1, name="channel_plain", value=3.14),
         ),
     ]
 

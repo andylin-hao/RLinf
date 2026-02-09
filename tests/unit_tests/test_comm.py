@@ -64,6 +64,15 @@ class TensorDictMessage:
     note: str
 
 
+@dataclass
+class PlainMessage:
+    """Plain dataclass without tensor fields (sent as Python object)."""
+
+    id: int
+    name: str
+    value: float
+
+
 def get_device():
     """Returns the appropriate torch device."""
     if torch.cuda.is_available():
@@ -143,6 +152,14 @@ class SenderWorker(Worker):
     # Sync Tests
     def test_send_object(self, async_op=False):
         return self._send_data({"message": f"Hello from rank {self._rank}"}, async_op)
+
+    def test_send_plain_dataclass(self, async_op=False):
+        msg = PlainMessage(
+            id=self._rank,
+            name=f"rank_{self._rank}",
+            value=3.14 * (self._rank + 1),
+        )
+        return self._send_data(msg, async_op)
 
     def test_send_tensor(self, on_cpu, async_op=False):
         device = "cpu" if on_cpu else get_device()
@@ -493,6 +510,9 @@ class ReceiverWorker(Worker):
     def test_recv_object(self, async_op=False):
         return self._recv_data(async_op)
 
+    def test_recv_plain_dataclass(self, async_op=False):
+        return self._recv_data(async_op)
+
     def test_recv_tensor(self, async_op=False):
         return self._recv_data(async_op)
 
@@ -601,6 +621,14 @@ class CommCollectiveWorker(Worker):
 
     def test_broadcast_object(self, async_op=False):
         payload = {"message": "Hello from rank 0", "rank": 0}
+        return self._broadcast_data(payload, async_op)
+
+    def test_broadcast_plain_dataclass(self, async_op=False):
+        payload = (
+            PlainMessage(id=0, name="broadcast_src", value=2.71)
+            if self._rank == 0
+            else None
+        )
         return self._broadcast_data(payload, async_op)
 
     def test_broadcast_tensor(self, on_cpu, async_op=False):
@@ -927,6 +955,23 @@ class TestCommunication:
         for i, res in enumerate(results):
             peer_rank = get_recv_peer_rank(i, len(results))
             assert res == {"message": f"Hello from rank {peer_rank}"}
+
+    @pytest.mark.parametrize("async_op", [False, True], ids=["sync", "async_wait"])
+    def test_plain_dataclass_communication(self, worker_groups, async_op):
+        """Tests sending and receiving a plain dataclass without tensor fields."""
+        results = self._run_test(
+            worker_groups,
+            "test_send_plain_dataclass",
+            "test_recv_plain_dataclass",
+            (async_op,),
+            (async_op,),
+        )
+        for i, res in enumerate(results):
+            peer_rank = get_recv_peer_rank(i, len(results))
+            assert isinstance(res, PlainMessage)
+            assert res.id == peer_rank
+            assert res.name == f"rank_{peer_rank}"
+            assert res.value == pytest.approx(3.14 * (peer_rank + 1))
 
     @pytest.mark.parametrize("on_cpu", [True, False], ids=["cpu", "cuda"])
     @pytest.mark.parametrize("async_op", [False, True], ids=["sync", "async_wait"])
@@ -1255,6 +1300,18 @@ class TestCollective:
         )
         for res in results:
             assert res == {"message": "Hello from rank 0", "rank": 0}
+
+    @pytest.mark.parametrize("async_op", [False, True], ids=["sync", "async_wait"])
+    def test_broadcast_plain_dataclass(self, collective_group, async_op):
+        """Tests broadcasting a plain dataclass without tensor fields."""
+        results = self._run_collective_test(
+            collective_group, "test_broadcast_plain_dataclass", async_op
+        )
+        for res in results:
+            assert isinstance(res, PlainMessage)
+            assert res.id == 0
+            assert res.name == "broadcast_src"
+            assert res.value == pytest.approx(2.71)
 
     @pytest.mark.parametrize("on_cpu", [True, False], ids=["cpu", "cuda"])
     @pytest.mark.parametrize("async_op", [False, True], ids=["sync", "async_wait"])
