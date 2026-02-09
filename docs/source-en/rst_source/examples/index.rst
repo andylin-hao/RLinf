@@ -6,7 +6,7 @@ showcasing how the framework can be applied across different scenarios and
 demonstrating its efficiency in practice.
 This example gallery is continuously expanding, covering new scenarios and tasks to highlight RLinf's flexibility and efficiency.
 
-- **Embodied Intelligence Scenarios:** Embodied training examples using state-of-the-art (SOTA) models across different benchmarks and real robotic platforms (see :doc:`embodied/index`).
+- **Embodied Scenarios:** Embodied training examples using state-of-the-art (SOTA) models across different benchmarks and real robotic platforms (see :doc:`embodied/index`).
 
 - **Agentic Scenarios:** Agentic training examples covering the most common agent workflows, including both single-agent and multi-agent settings (see :doc:`agentic/index`).
 

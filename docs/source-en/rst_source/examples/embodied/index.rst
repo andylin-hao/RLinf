@@ -1,4 +1,4 @@
-Embodied Intelligence Scenarios
+Embodied Scenarios
 ================================
 
 This category includes embodied training examples with SOTA models (e.g., pi0, pi0.5, OpenVLA-OFT) and different benchmarks (e.g., LIBERO, ManiSkill, RoboTwin, MetaWorld),
