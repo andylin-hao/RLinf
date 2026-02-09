@@ -95,17 +95,17 @@ class DexboticPi0ForRLActionPrediction(BasePolicy, Pi0ForCausalLM):
             logger.warning("freeze_vlm() called but train_expert_only is False")
             return
         # Freeze vision tower
-        if getattr(self.model, "mm_vision_tower", None):
+        if getattr(self.model, "mm_vision_tower", None) is not None:
             self.model.mm_vision_tower.eval()
             for param in self.model.mm_vision_tower.parameters():
                 param.requires_grad = False
         # Freeze LLM
-        if hasattr(self.model, "llm") and self.model.llm is not None:
+        if getattr(self.model, "llm", None) is not None:
             self.model.llm.eval()
             for param in self.model.llm.parameters():
                 param.requires_grad = False
         # Freeze mm_projector
-        if hasattr(self.model, "mm_projector") and self.model.mm_projector is not None:
+        if getattr(self.model, "mm_projector", None) is not None:
             self.model.mm_projector.eval()
             for param in self.model.mm_projector.parameters():
                 param.requires_grad = False
