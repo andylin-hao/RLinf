@@ -51,7 +51,6 @@ class IsaaclabStackCubeEnv(IsaaclabBaseEnv):
             from isaaclab.app import AppLauncher
 
             sim_app = AppLauncher(headless=True, enable_cameras=True).app
-            import modified_stack_cube.tasks  # noqa: F401
             from isaaclab_tasks.utils import load_cfg_from_registry
 
             isaac_env_cfg = load_cfg_from_registry(

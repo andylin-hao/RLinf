@@ -88,14 +88,14 @@ env:
   # Override the default values in env/isaaclab_stack_cube
   train:
     total_num_envs: 4
-    max_episode_steps: 5
-    max_steps_per_rollout_epoch: 5
+    max_episode_steps: 16
+    max_steps_per_rollout_epoch: 16
     use_fixed_reset_state_ids: True
 
   eval:
     total_num_envs: 1
-    max_episode_steps: 5
-    max_steps_per_rollout_epoch: 5
+    max_episode_steps: 16
+    max_steps_per_rollout_epoch: 16
     auto_reset: True
     ignore_terminations: True
     use_fixed_reset_state_ids: True
