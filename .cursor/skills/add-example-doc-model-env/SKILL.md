@@ -14,8 +14,7 @@ Use this skill when adding example documentation for a new **model** (e.g. π₀
 1. **Create the English RST file**  
    Examples are now grouped by **category**:
    - `embodied/` – embodied RL/VLA examples (e.g. ManiSkill, LIBERO, Dexbotic, π₀, OpenSora)
-   - `agentic/` – agent / tool-use / coder examples (e.g. SearchR1, coding_online_rl)
-   - `reasoner/` – reasoning-only examples
+   - `agentic/` – agent / tool-use / coder / math reasoning examples (e.g. SearchR1, coding_online_rl, reasoning)
    - `system/` – placement, scheduling, system demos  
    Path pattern: `docs/source-en/rst_source/examples/<category>/<name>.rst`  
    - Example (embodied): `docs/source-en/rst_source/examples/embodied/dexbotic.rst`  

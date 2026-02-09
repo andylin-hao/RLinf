@@ -6,9 +6,7 @@
 
 - **具身智能场景:** 基于最先进模型的具身训练示例，涵盖不同基准测试以及真实机器人平台（参见 :doc:`embodied/index`）。
 
-- **智能体场景:** 覆盖最常见智能体工作流的训练示例，包含单智能体与多智能体设置（参见 :doc:`agentic/index`）。
-
-- **推理场景:** 聚焦于提升推理能力的训练场景（参见 :doc:`reasoner/index`）。
+- **智能体场景:** 覆盖数学推理与智能体 AI 工作流的训练示例，包含单智能体与多智能体设置（参见 :doc:`agentic/index`）。
 
 - **实用系统功能:** 展示计算资源的灵活与动态调度，以及任务分配到最合适加速器的示例（参见 :doc:`system/index`）。
 
@@ -18,5 +16,4 @@
 
    embodied/index
    agentic/index
-   reasoner/index
    system/index
