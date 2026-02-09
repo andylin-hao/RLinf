@@ -95,10 +95,7 @@ def get_model(cfg: DictConfig, torch_dtype=None):
         else:
             model.norm_stats = None
 
-        if getattr(config, "train_expert_only", False):
-            model._train_expert_only = True
-        else:
-            model._train_expert_only = False
+        model._train_expert_only = getattr(config, "train_expert_only", False)
 
     except Exception as e:
         logger.error(f"Failed to load pretrained model: {e}")
