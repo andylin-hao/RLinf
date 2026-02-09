@@ -1,4 +1,4 @@
-model_type: "dexbotic"
+model_type: "dexbotic_pi"
 
 # Model path - should be set in specific config files
 model_path: "/path/to/model/dexbotic"

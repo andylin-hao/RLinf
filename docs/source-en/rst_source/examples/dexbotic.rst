@@ -1,16 +1,15 @@
-RL on Dexbotic Model
-====================
+RL on Dexbotic Models
+======================
 
 .. |huggingface| image:: /_static/svg/hf-logo.svg
    :width: 16px
    :height: 16px
    :class: inline-icon
 
-This document provides a guide to fine-tuning the **Dexbotic** VLA model with
+This document provides a guide to fine-tuning the **Dexbotic** VLA models with
 reinforcement learning using the RLinf framework. Dexbotic (`<https://github.com/dexmal/dexbotic>`__) is an open-source
-Vision-Language-Action toolbox from Dexmal, built on the π\ :sub:`0.5`\
-architecture for embodied manipulation. This example covers the LIBERO Spatial
-benchmark.
+Vision-Language-Action toolbox from Dexmal, a unified implementation of various embodied models. This example covers the LIBERO Spatial
+benchmark with the Dexbotic π\ :sub:`0`\ model.
 
 The primary objective is to develop a model capable of robotic manipulation by:
 

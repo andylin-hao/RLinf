@@ -7,8 +7,8 @@
    :class: inline-icon
 
 本文档介绍如何使用 RLinf 框架对 **Dexbotic** VLA 模型进行强化学习微调。
-Dexbotic (`<https://github.com/dexmal/dexbotic>`__) 是 Dexmal 推出的开源 Vision-Language-Action 工具箱，基于 π\ :sub:`0.5`\ 架构，
-面向具身操作。本示例以 LIBERO Spatial 基准为例。
+Dexbotic (`<https://github.com/dexmal/dexbotic>`__) 是 Dexmal 推出的开源 Vision-Language-Action 工具箱，
+实现了多种具身模型的统一接口。本示例以 LIBERO Spatial 基准为例，使用 Dexbotic π\ :sub:`0`\ 模型。
 
 主要目标是让模型具备以下能力：
 

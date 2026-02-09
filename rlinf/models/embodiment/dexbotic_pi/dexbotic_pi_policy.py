@@ -1,4 +1,4 @@
-# Copyright 2025 The RLinf Authors.
+# Copyright 2026 The RLinf Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,202 +11,24 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-# dexbotic model configs
 
-import glob
 import json
 import os
-from typing import Optional
 
 import numpy as np
 import torch
 import torch.nn as nn
-from dexbotic.data.dataset.transform.action import ActionNorm, PadState
-from dexbotic.data.dataset.transform.common import Pipeline, ToNumpy, ToTensor
-from dexbotic.data.dataset.transform.output import AbsoluteAction, ActionDenorm
+from dexbotic.data.dataset.transform.common import Pipeline, ToNumpy
 from dexbotic.model.pi0.pi0_arch import (
     Pi0ForCausalLM,
     make_attn_mask,
     make_attn_mask_4d,
 )
-from dexbotic.tokenization.process import Pi0Tokenization
 from loguru import logger
-from omegaconf import DictConfig
 from PIL import Image
-from transformers import AutoTokenizer, DynamicCache
+from transformers import DynamicCache
 
 from rlinf.models.embodiment.base_policy import BasePolicy
-
-
-def make_att_2d_masks(pad_masks, att_masks):
-    return make_attn_mask(pad_masks, att_masks)
-
-
-class DexboticPolicy:
-    def __init__(
-        self,
-        model_path: str,
-        action_dim: int = 7,
-        num_images: int = 3,
-        non_delta_mask: Optional[list[int]] = None,
-        device: str = "cuda",
-    ):
-        self.model_path = model_path
-        self.action_dim = action_dim
-        self.num_images = num_images
-        self.non_delta_mask = non_delta_mask or [6]
-        self.device = torch.device(device if torch.cuda.is_available() else "cpu")
-
-        norm_stats_file = os.path.join(model_path, "norm_stats.json")
-        self.norm_stats = self._read_normalization_stats(norm_stats_file)
-
-        self._load_model()
-
-        self.timestep = 0
-        self.episode = 0
-        self.prev_text = None
-
-    def _read_normalization_stats(self, norm_stats_file):
-        if not os.path.exists(norm_stats_file):
-            raise FileNotFoundError(
-                f"Normalization stats not found at {norm_stats_file}. "
-                "Make sure the checkpoint directory contains norm_stats.json"
-            )
-        with open(norm_stats_file, "r") as f:
-            norm_stats = json.load(f)
-            if "norm_stats" in norm_stats:
-                norm_stats = norm_stats["norm_stats"]
-        return ToNumpy()(norm_stats)
-
-    def _load_model(self):
-        # Set HF_HUB_OFFLINE to prevent any network access during model loading
-        original_offline = os.environ.get("HF_HUB_OFFLINE", None)
-        os.environ["HF_HUB_OFFLINE"] = "1"
-
-        try:
-            self.model = Pi0ForCausalLM.from_pretrained(
-                self.model_path,
-                torch_dtype=None,
-                low_cpu_mem_usage=True,
-                trust_remote_code=True,
-                device_map="auto",
-                local_files_only=True,
-            ).to(self.device)
-        finally:
-            if original_offline is None:
-                os.environ.pop("HF_HUB_OFFLINE", None)
-            else:
-                os.environ["HF_HUB_OFFLINE"] = original_offline
-
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            self.model_path, use_fast=False, local_files_only=True
-        )
-
-        self.tokenization_func = Pi0Tokenization(self.tokenizer)
-        self.input_transform = Pipeline(
-            [
-                PadState(ndim=self.model.model.config.action_dim, axis=-1),
-                ActionNorm(statistic_mapping=self.norm_stats, strict=False),
-                ToTensor(),
-            ]
-        )
-        self.output_transform = Pipeline(
-            [
-                ToNumpy(),
-                ActionDenorm(statistic_mapping=self.norm_stats, strict=False),
-                AbsoluteAction(),
-            ]
-        )
-
-    def reset(self):
-        self.timestep = 0
-        self.episode += 1
-        self.prev_text = None
-
-    def infer(self, observation: dict) -> dict:
-        base_image = observation["observation/image"]
-        wrist_image = observation["observation/wrist_image"]
-        state = observation["observation/state"]
-        text = observation["prompt"]
-
-        images = [
-            Image.fromarray(base_image.astype(np.uint8)),
-            Image.fromarray(wrist_image.astype(np.uint8)),
-        ]
-
-        batch_images_tensor = [
-            self.model.process_images(images).to(dtype=self.model.dtype)
-        ]
-
-        num_input_images = len(images)
-        if num_input_images < self.num_images:
-            batch_images_tensor = [
-                torch.cat(
-                    [
-                        image_tensor,
-                        torch.zeros_like(image_tensor[0:1]).repeat(
-                            self.num_images - num_input_images, 1, 1, 1
-                        ),
-                    ],
-                    dim=0,
-                )
-                for image_tensor in batch_images_tensor
-            ]
-        batch_image_masks = [
-            torch.tensor(
-                [True for _ in range(num_input_images)]
-                + [False for _ in range(self.num_images - num_input_images)],
-                device=self.device,
-            )
-        ]
-        batch_images_tensor = torch.stack(batch_images_tensor, dim=0)
-        batch_image_masks = torch.stack(batch_image_masks, dim=0)
-        batch_input_ids = np.array(
-            [self.tokenization_func([{"value": text}])["input_ids"]]
-        )
-        batch_attention_mask = np.array(
-            [np.array(ids != self.tokenizer.pad_token_id) for ids in batch_input_ids]
-        )
-        batch_states = np.array([state], dtype=np.float32)
-        inference_args = {
-            "input_ids": batch_input_ids,
-            "attention_mask": batch_attention_mask,
-            "images": batch_images_tensor,
-            "image_masks": batch_image_masks,
-            "state": batch_states,
-            "meta_data": {
-                "non_delta_mask": np.array(self.non_delta_mask),
-            },
-        }
-        inputs = self.input_transform(inference_args)
-        inputs["states"] = inputs["state"]
-        inputs = {
-            k: v.to(self.device) if isinstance(v, torch.Tensor) else v
-            for k, v in inputs.items()
-        }
-        with torch.no_grad():
-            actions = self.model.inference_action(**inputs)
-        outputs = {
-            k: v.detach().cpu().numpy() if isinstance(v, torch.Tensor) else v
-            for k, v in inputs.items()
-        }
-        outputs["action"] = actions.detach().cpu().numpy()
-        outputs = self.output_transform(outputs)
-        action_sequence = outputs["action"][0, :, : self.action_dim]
-        self.timestep += 1
-
-        return {"actions": action_sequence}
-
-
-def setup_policy(args):
-    policy = DexboticPolicy(
-        model_path=args.pretrained_path,
-        action_dim=getattr(args, "action_dim", 7),
-        num_images=getattr(args, "num_images", 3),
-        non_delta_mask=getattr(args, "non_delta_mask", [6]),
-        device=getattr(args, "device", "cuda"),
-    )
-    return policy
 
 
 class DexboticPi0ForRLActionPrediction(BasePolicy, Pi0ForCausalLM):
@@ -273,10 +95,7 @@ class DexboticPi0ForRLActionPrediction(BasePolicy, Pi0ForCausalLM):
             logger.warning("freeze_vlm() called but train_expert_only is False")
             return
         # Freeze vision tower
-        if (
-            hasattr(self.model, "mm_vision_tower")
-            and self.model.mm_vision_tower is not None
-        ):
+        if getattr(self.model, "mm_vision_tower", None):
             self.model.mm_vision_tower.eval()
             for param in self.model.mm_vision_tower.parameters():
                 param.requires_grad = False
@@ -837,7 +656,7 @@ class DexboticPi0ForRLActionPrediction(BasePolicy, Pi0ForCausalLM):
             images=images,
             image_masks=img_masks,
         )
-        prefix_att_2d_masks = make_att_2d_masks(prefix_pad_masks, prefix_att_masks)
+        prefix_att_2d_masks = make_attn_mask(prefix_pad_masks, prefix_att_masks)
         prefix_position_ids = torch.cumsum(prefix_pad_masks, dim=1) - 1
         prefix_att_2d_masks_4d = make_attn_mask_4d(prefix_att_2d_masks)
 
@@ -951,94 +770,3 @@ class DexboticPi0ForRLActionPrediction(BasePolicy, Pi0ForCausalLM):
         }
 
         return actions, result
-
-
-def get_model(cfg: DictConfig, torch_dtype=None):
-    import safetensors.torch
-    from dexbotic.model.pi0.pi0_arch import Pi0Config
-
-    if torch.cuda.is_available():
-        torch.cuda.reset_peak_memory_stats()
-        torch.cuda.empty_cache()
-
-    if not cfg.model_path or not os.path.exists(cfg.model_path):
-        raise ValueError(f"Model path does not exist: {cfg.model_path}")
-
-    try:
-        config = Pi0Config.from_pretrained(cfg.model_path, local_files_only=True)
-        tokenizer = AutoTokenizer.from_pretrained(
-            cfg.model_path, use_fast=False, local_files_only=True
-        )
-        config.num_steps = cfg.get("num_steps", 10)
-        config.action_env_dim = cfg.action_dim
-        config.add_value_head = cfg.get("add_value_head", True)
-        config.noise_level = cfg.get("dexbotic", {}).get("noise_level", 0.5)
-        config.noise_method = cfg.get("dexbotic", {}).get("noise_method", "flow_sde")
-        config.detach_critic_input = cfg.get("dexbotic", {}).get(
-            "detach_critic_input", True
-        )
-        config.train_expert_only = cfg.get("dexbotic", {}).get(
-            "train_expert_only", False
-        )
-        config.action_horizon = config.chunk_size
-        config.output_action_chunks = cfg.num_action_chunks
-        config.safe_get_logprob = cfg.get("safe_get_logprob", False)
-        config.chunk_critic_input = cfg.get("chunk_critic_input", True)
-        config.noise_anneal = cfg.get("noise_anneal", False)
-        config.joint_logprob = cfg.get("joint_logprob", False)
-        config.value_after_vlm = cfg.get("value_after_vlm", False)
-        config.processor_config = cfg.model_path
-        original_offline = os.environ.get("HF_HUB_OFFLINE", None)
-        os.environ["HF_HUB_OFFLINE"] = "1"
-
-        try:
-            model = DexboticPi0ForRLActionPrediction(config)
-        finally:
-            if original_offline is None:
-                os.environ.pop("HF_HUB_OFFLINE", None)
-            else:
-                os.environ["HF_HUB_OFFLINE"] = original_offline
-        model.tokenizer = tokenizer
-
-        model.pi0_tokenization = Pi0Tokenization(tokenizer)
-        weight_paths = sorted(glob.glob(os.path.join(cfg.model_path, "*.safetensors")))
-        weight_paths = [p for p in weight_paths if not p.endswith(".index.json")]
-        if not weight_paths:
-            weight_path = os.path.join(cfg.model_path, "model.safetensors")
-            if not os.path.exists(weight_path):
-                raise FileNotFoundError(f"No weights found in {cfg.model_path}")
-            weight_paths = [weight_path]
-        for weight_path in weight_paths:
-            safetensors.torch.load_model(model, weight_path, strict=False)
-        norm_stats_file = os.path.join(cfg.model_path, "norm_stats.json")
-        if os.path.exists(norm_stats_file):
-            model.norm_stats = model._read_normalization_stats(norm_stats_file)
-        else:
-            model.norm_stats = None
-
-        if getattr(config, "train_expert_only", False):
-            model._train_expert_only = True
-        else:
-            model._train_expert_only = False
-
-    except Exception as e:
-        logger.error(f"Failed to load pretrained model: {e}")
-        raise
-    input_transforms_list = []
-    if model.norm_stats is not None:
-        input_transforms_list = [
-            PadState(ndim=config.action_dim, axis=-1),
-            ActionNorm(statistic_mapping=model.norm_stats, strict=False),
-            ToTensor(),
-        ]
-    output_transforms_list = []
-    if model.norm_stats is not None:
-        output_transforms_list = [
-            ToNumpy(),
-            ActionDenorm(statistic_mapping=model.norm_stats, strict=False),
-            AbsoluteAction(),
-        ]
-    model.setup_wrappers(
-        transforms=input_transforms_list, output_transforms=output_transforms_list
-    )
-    return model
