@@ -200,6 +200,17 @@
           支持 GSEnv + π₀.₅ + PPO 训练
         </p>
       </div>
+
+      <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
+       <img src="https://raw.githubusercontent.com/dexmal/dexbotic/main/resources/intro.png"
+            style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
+       <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
+         <a href="https://rlinf.readthedocs.io/zh-cn/latest/rst_source/examples/embodied/dexbotic.html" target="_blank" style="text-decoration: underline; color: blue;">
+          <b>基于 Dexbotic 模型的强化学习训练</b>
+         </a><br>
+         Dexbotic（基于 π₀.₅）+ LIBERO + PPO 训练
+       </p>
+     </div>
     </div>
 
 
@@ -222,6 +233,7 @@
    gr00t
    sac_flow
    mlp
+   dexbotic
    franka
    sft
    
