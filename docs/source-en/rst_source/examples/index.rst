@@ -8,9 +8,7 @@ This example gallery is continuously expanding, covering new scenarios and tasks
 
 - **Embodied Scenarios:** Embodied training examples using state-of-the-art (SOTA) models across different benchmarks and real robotic platforms (see :doc:`embodied/index`).
 
-- **Agentic Scenarios:** Agentic training examples covering the most common agent workflows, including both single-agent and multi-agent settings (see :doc:`agentic/index`).
-
-- **Reasoning Scenarios:** Training scenarios focused on improving reasoning capabilities (see :doc:`reasoner/index`).
+- **Agentic Scenarios:** Agentic training examples covering math reasoning and agentic AI workflows, including both single-agent and multi-agent settings (see :doc:`agentic/index`).
 
 - **Practical System Features:** Examples demonstrating flexible and dynamic scheduling of computing resources, as well as assignment to the most suitable accelerators (see :doc:`system/index`).
 
@@ -20,5 +18,4 @@ This example gallery is continuously expanding, covering new scenarios and tasks
 
    embodied/index
    agentic/index
-   reasoner/index
    system/index

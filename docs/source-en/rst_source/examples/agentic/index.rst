@@ -2,7 +2,7 @@ Agentic Scenarios
 ==============================
 
 RLinf's worker abstraction, flexible communication modules, and support for various accelerators make it naturally suited for building agent workflows and training agents.
-The following examples include agent workflow construction, online RL training, and environment integration.
+The following examples include math reasoning RL and agentic AI workflows, such as agent workflow construction, online RL training, environment integration, and **reasoning-centric agent training**.
 
 .. raw:: html
 
@@ -46,6 +46,17 @@ The following examples include agent workflow construction, online RL training, 
          Unified deployment, inference, and training with high flexibility and performance
        </p>
      </div>
+
+   <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
+     <img src="https://github.com/RLinf/misc/raw/main/pic/math_numbers_small.jpg"
+          style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
+     <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
+       <a href="https://rlinf.readthedocs.io/en/latest/rst_source/examples/agentic/reasoning.html" target="_blank" style="text-decoration: underline; color: blue;">
+        <b>Math Reasoning RL Training</b>
+       </a><br>
+       SOTA RL training for math reasoning (AIME24/AIME25/GPQA-diamond) with Qwen-based models
+     </p>
+   </div>
    </div>
    
 .. toctree::
@@ -54,4 +65,5 @@ The following examples include agent workflow construction, online RL training, 
 
    coding_online_rl
    searchr1
+   reasoning
    
