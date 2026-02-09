@@ -961,6 +961,7 @@ class CollectiveGroup:
                     if all(
                         t.device.type == Worker.torch_device_type for t in tensors_list
                     )
+                    and len(tensors_list) > 0
                     else CollectiveGroup.CPU
                 )
                 if device_type == CollectiveGroup.CPU:
