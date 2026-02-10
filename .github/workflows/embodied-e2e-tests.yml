@@ -138,7 +138,7 @@ jobs:
           export REPO_PATH=$(pwd)
           source .venv/bin/activate
           bash tests/e2e_tests/embodied/run.sh maniskill_ppo_openvla
-          
+
       - name: Clean up
         run: |
           rm -rf .venv

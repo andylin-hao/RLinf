@@ -89,7 +89,6 @@ class DexboticPi0ForRLActionPrediction(BasePolicy, Pi0ForCausalLM):
         self._output_transform = None
         self.norm_stats = None
         self.pi0_tokenization = None
-        self.torch_compile_enabled = False
 
     def freeze_vlm(self):
         if not getattr(self.config, "train_expert_only", False):
