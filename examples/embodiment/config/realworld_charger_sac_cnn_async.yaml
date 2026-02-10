@@ -22,7 +22,6 @@ cluster:
       node_group: franka
       placement: 0
     rollout:
-      enable_torch_compile: False
       node_group: "4090"
       placement: 0-0
   node_groups:

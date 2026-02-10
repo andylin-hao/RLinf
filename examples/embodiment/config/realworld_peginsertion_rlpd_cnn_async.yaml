@@ -22,7 +22,6 @@ cluster:
       node_group: franka
       placement: 0 # Local robot rank in the franka node group (n for the n+1 th robot)
     rollout:
-      enable_torch_compile: False
       node_group: "4090"
       placement: 0 # Local GPU rank in the 4090 node group (n for the n+1 th GPU)
   node_groups:
