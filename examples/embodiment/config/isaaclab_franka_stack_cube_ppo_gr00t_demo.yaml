@@ -17,7 +17,6 @@ cluster:
   component_placement:
       env: 0
       rollout:
-        enable_torch_compile: False
         node_group: "rollout"
         placement: 1
       actor: 2
