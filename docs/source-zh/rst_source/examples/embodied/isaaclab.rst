@@ -43,7 +43,7 @@ IsaacLab 是一个高度可定制的仿真平台，允许用户创建自定义�
 
 **数据结构**
 
-- **图像**：来自主视角与腕部视角的 RGB 张量 ``[batch_size, H, W, 3]``（``H`` 与 ``W`` 由环境配置中的相机分辨率决定，例如 ``examples/embodiment/config/env/isaaclab_stack_cube.yaml`` 中的 256x256）
+- **图像**：来自主视角与腕部视角的 RGB 张量 ``[batch_size, H, W, 3]`` （``H`` 与 ``W`` 由环境配置中的相机分辨率决定，例如 ``examples/embodiment/config/env/isaaclab_stack_cube.yaml`` 中的 ``256x256``）
 - **任务描述**：自然语言指令
 - **状态**：末端执行器的位置、姿态与夹爪状态
 - **奖励**：0-1 的稀疏成功/失败奖励
