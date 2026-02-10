@@ -108,7 +108,6 @@ env:
 
 
 rollout:
-  enable_torch_compile: False
   group_name: "RolloutGroup"
   backend: "huggingface"
   enable_offload: False
