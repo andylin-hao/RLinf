@@ -194,7 +194,7 @@ RLinf具有高度灵活性，可支持多种强化学习训练工作流（PPO、
 
 **运行简单示例：** 环境配置完成后，用户可以参照[该文档](https://rlinf.readthedocs.io/zh-cn/latest/rst_source/start/vla.html)的内容，运行基于ManiSkill3模拟器的具身强化学习基础示例。
 
-用户可以查阅我们的[官方文档](https://rlinf.readthedocs.io/zh-cn/latest/index.html)与[示例库](https://rlinf.readthedocs.io/zh-cn/latest/rst_source/examples/index.html)，来了解更多RLinf的使用教程与应用实例。
+**SOTA RL 训练复现：** RLinf 提供了端到端的配置和脚本，可以直接运行，无需额外工程改造，即可复现业界领先的训练效果。请参考[示例库](https://rlinf.readthedocs.io/zh-cn/latest/rst_source/examples/index.html)了解更多细节。
 
 
 # 持续集成测试状态

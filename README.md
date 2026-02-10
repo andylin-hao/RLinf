@@ -197,7 +197,7 @@ Multiple Backend Integrations
 
 **Run a simple example:** After setting up the environment, users can run a simple example of embodied RL with ManiSkill3 simulator following [this document](https://rlinf.readthedocs.io/en/latest/rst_source/start/vla.html).
 
-For more tutorials of RLinf and application examples, checkout our [documentation](https://rlinf.readthedocs.io/en/latest/index.html) and [example gallery](https://rlinf.readthedocs.io/en/latest/rst_source/examples/index.html).
+**SOTA RL Training Reproduction:** RLinf provides end-to-end recipes that reproduce or match **state-of-the-art (SOTA) RL results** out of the box—users can directly run our configs and scripts to obtain SOTA performance without custom engineering. Check out our [example gallery](https://rlinf.readthedocs.io/en/latest/rst_source/examples/index.html) for more details.
 
 
 # CI Test Status

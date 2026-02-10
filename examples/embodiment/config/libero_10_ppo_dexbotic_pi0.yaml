@@ -1,6 +1,6 @@
 defaults:
-  - env/libero_spatial@env.train
-  - env/libero_spatial@env.eval
+  - env/libero_10@env.train
+  - env/libero_10@env.eval
   - model/dexbotic_pi@actor.model
   - training_backend/fsdp@actor.fsdp_config
   - override hydra/job_logging: stdout
@@ -22,7 +22,7 @@ runner:
   logger:
     log_path: "../results"
     project_name: rlinf
-    experiment_name: "libero_spatial_ppo_dexbotic_pi0"
+    experiment_name: "libero_10_ppo_dexbotic_pi0"
     logger_backends: ["tensorboard"]
 
   max_epochs: 1000
@@ -33,7 +33,8 @@ runner:
   val_check_interval: -1
   save_interval: 50
 
-  resume_dir: null
+  resume_dir: null # Optional: path to a saved checkpoint directory, such as 'checkpoints/global_step_10'. If not None, it will be used to resume training.
+  ckpt_path: null  # Optional: path to a .pt checkpoint. If not None, it will be loaded after the model is instantiated (for evaluation).
 
 algorithm:
   normalize_advantages: True
@@ -87,16 +88,16 @@ env:
 
   train:
     total_num_envs: 16
-    max_episode_steps: 240
-    max_steps_per_rollout_epoch: 240
+    max_episode_steps: 480
+    max_steps_per_rollout_epoch: 480
     video_cfg:
       save_video: True
   eval:
     total_num_envs: 1
     auto_reset: True
     ignore_terminations: True
-    max_episode_steps: 240
-    max_steps_per_rollout_epoch: 240
+    max_episode_steps: 480
+    max_steps_per_rollout_epoch: 480
     group_size: 1
     is_eval: True
     video_cfg:
@@ -107,7 +108,6 @@ rollout:
   group_name: "RolloutGroup"
   generation_backend: "huggingface"
   recompute_logprobs: False
-  unnorm_key: libero_spatial
   enable_offload: True
   pipeline_stage_num: 1
 
