@@ -185,7 +185,9 @@ class MLPPolicy(nn.Module, BasePolicy):
                 raise NotImplementedError
         return output_dict
 
-    def _sample_actions(self,states: torch.Tensor) -> tuple[torch.Tensor,torch.Tensor]:
+    def _sample_actions(
+        self, states: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         feat = self.backbone(states)
         action_mean = self.actor_mean(feat)
 
@@ -200,6 +202,7 @@ class MLPPolicy(nn.Module, BasePolicy):
             ) * (action_logstd + 1)
 
         return action_mean, action_logstd
+
     @torch.inference_mode()
     def predict_action_batch(
         self,
@@ -276,12 +279,10 @@ class MLPPolicy(nn.Module, BasePolicy):
     def crossq_forward(self, obs, **kwargs):
         return self.sac_forward(obs, **kwargs)
 
-    def enable_torch_compile(self):
+    def enable_torch_compile(self, mode: str = "max-autotune-no-cudagraphs"):
         if self.torch_compile_enabled:
             return
 
-        self._sample_actions = torch.compile(
-            self._sample_actions, mode="max-autotune-no-cudagraphs"
-        )
+        self._sample_actions = torch.compile(self._sample_actions, mode=mode)
 
         self.torch_compile_enabled = True

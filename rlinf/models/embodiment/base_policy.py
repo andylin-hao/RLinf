@@ -66,5 +66,5 @@ class BasePolicy(ABC):
     @abstractmethod
     def predict_action_batch(self, **kwargs): ...
 
-    def enable_torch_compile(self):
+    def enable_torch_compile(self, mode: str = "max-autotune-no-cudagraphs"):
         return

@@ -78,7 +78,10 @@ class MultiStepRolloutWorker(Worker):
         self.hf_model.eval()
 
         if self.cfg.rollout.get("enable_torch_compile", False):
-            self.hf_model.enable_torch_compile()
+            mode = self.cfg.rollout.get(
+                "torch_compile_mode", "max-autotune-no-cudagraphs"
+            )
+            self.hf_model.enable_torch_compile(mode=mode)
 
         self.setup_sample_params()
         if self.enable_offload:

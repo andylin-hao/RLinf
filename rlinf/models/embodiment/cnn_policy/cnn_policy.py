@@ -293,24 +293,13 @@ class CNNPolicy(nn.Module, BasePolicy):
             obs["extra_view_images"] = forward_inputs["extra_view_images"]
         obs = self.preprocess_env_obs(obs)
         action = forward_inputs["action"]
-
-        if self.torch_compile_enabled:
-            full_feature, mix_feature, action_mean, action_logstd = (
-                self.actor_forward_compiled(
-                    obs["main_images"],
-                    obs["states"],
-                    obs.get("extra_view_images"),
-                )
+        full_feature, mix_feature, action_mean, action_logstd = (
+            self._actor_forward_from_processed_tensors(
+                obs["main_images"],
+                obs["states"],
+                obs.get("extra_view_images"),
             )
-        else:
-            full_feature, mix_feature, action_mean, action_logstd = (
-                self._actor_forward_from_processed_tensors(
-                    obs["main_images"],
-                    obs["states"],
-                    obs.get("extra_view_images"),
-                )
-            )
-
+        )
         action_std = torch.exp(action_logstd)
         probs = Normal(action_mean, action_std)
 
@@ -330,23 +319,13 @@ class CNNPolicy(nn.Module, BasePolicy):
         return output_dict
 
     def sac_forward(self, obs, **kwargs):
-        if self.torch_compile_enabled:
-            full_feature, mix_feature, action_mean, action_logstd = (
-                self.actor_forward_compiled(
-                    obs["main_images"],
-                    obs["states"],
-                    obs.get("extra_view_images"),
-                )
+        full_feature, mix_feature, action_mean, action_logstd = (
+            self._actor_forward_from_processed_tensors(
+                obs["main_images"],
+                obs["states"],
+                obs.get("extra_view_images"),
             )
-        else:
-            full_feature, mix_feature, action_mean, action_logstd = (
-                self._actor_forward_from_processed_tensors(
-                    obs["main_images"],
-                    obs["states"],
-                    obs.get("extra_view_images"),
-                )
-            )
-
+        )
         action_std = torch.exp(action_logstd)
         if self.cfg.std_range is not None:
             action_std = torch.clamp(
@@ -366,7 +345,6 @@ class CNNPolicy(nn.Module, BasePolicy):
 
         return action, chunk_logprobs, full_feature
 
-    @torch.inference_mode()
     def predict_action_batch(
         self,
         env_obs,
@@ -378,22 +356,13 @@ class CNNPolicy(nn.Module, BasePolicy):
         **kwargs,
     ):
         obs = self.preprocess_env_obs(env_obs)
-        if self.torch_compile_enabled:
-            full_feature, mix_feature, action_mean, action_logstd = (
-                self.actor_forward_compiled(
-                    obs["main_images"],
-                    obs["states"],
-                    obs.get("extra_view_images"),
-                )
+        full_feature, mix_feature, action_mean, action_logstd = (
+            self._actor_forward_from_processed_tensors(
+                obs["main_images"],
+                obs["states"],
+                obs.get("extra_view_images"),
             )
-        else:
-            full_feature, mix_feature, action_mean, action_logstd = (
-                self._actor_forward_from_processed_tensors(
-                    obs["main_images"],
-                    obs["states"],
-                    obs.get("extra_view_images"),
-                )
-            )
+        )
 
         action_std = action_logstd.exp()
         if self.cfg.std_range is not None:
@@ -479,22 +448,11 @@ class CNNPolicy(nn.Module, BasePolicy):
     def crossq_forward(self, obs, **kwargs):
         return self.sac_forward(obs, **kwargs)
 
-    def enable_torch_compile(self):
+    def enable_torch_compile(self, mode: str = "max-autotune-no-cudagraphs"):
         if self.torch_compile_enabled:
             return
-
-        def actor_forward_func(
-            main_images: torch.Tensor,
-            states: torch.Tensor,
-            extra_view_images: Optional[torch.Tensor] = None,
-        ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-            return self._actor_forward_from_processed_tensors(
-                main_images=main_images,
-                states=states,
-                extra_view_images=extra_view_images,
-            )
-
-        self.actor_forward_compiled = torch.compile(
-            actor_forward_func, mode="reduce-overhead"
+        self._actor_forward_from_processed_tensors = torch.compile(
+            self._actor_forward_from_processed_tensors, mode=mode
         )
+
         self.torch_compile_enabled = True
