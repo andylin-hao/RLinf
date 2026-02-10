@@ -288,7 +288,7 @@ Visualization and Results
        logger_backends: ["tensorboard", "wandb"] # tensorboard, wandb, swanlab
 
 Reinforcement learning result
--------------------------
+------------------------------------------
 
 The following table summarizes the performance improvement throughout the training stages:
 
