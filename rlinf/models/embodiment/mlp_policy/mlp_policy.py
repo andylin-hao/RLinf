@@ -37,7 +37,7 @@ class MLPPolicy(nn.Module, BasePolicy):
         self.obs_dim = obs_dim
         self.action_dim = action_dim
         self.num_action_chunks = num_action_chunks
-
+        self.torch_compile_enabled = False
         # default setting
         self.independent_std = True
         self.final_tanh = False
@@ -196,19 +196,24 @@ class MLPPolicy(nn.Module, BasePolicy):
         **kwargs,
     ):
         env_obs = self.preprocess_env_obs(env_obs=env_obs)
-        feat = self.backbone(env_obs["states"])
-        action_mean = self.actor_mean(feat)
-
-        if self.independent_std:
-            action_logstd = self.actor_logstd.expand_as(action_mean)
+        if self.torch_compile_enabled:
+            action_mean, action_logstd = self.action_sampling_compiled(
+                env_obs["states"]
+            )
         else:
-            action_logstd = self.actor_logstd(feat)
+            feat = self.backbone(env_obs["states"])
+            action_mean = self.actor_mean(feat)
 
-        if self.final_tanh:
-            action_logstd = torch.tanh(action_logstd)
-            action_logstd = self.logstd_range[0] + 0.5 * (
-                self.logstd_range[1] - self.logstd_range[0]
-            ) * (action_logstd + 1)
+            if self.independent_std:
+                action_logstd = self.actor_logstd.expand_as(action_mean)
+            else:
+                action_logstd = self.actor_logstd(feat)
+
+            if self.final_tanh:
+                action_logstd = torch.tanh(action_logstd)
+                action_logstd = self.logstd_range[0] + 0.5 * (
+                    self.logstd_range[1] - self.logstd_range[0]
+                ) * (action_logstd + 1)
 
         action_std = torch.exp(action_logstd)
         probs = Normal(action_mean, action_std)
@@ -272,3 +277,29 @@ class MLPPolicy(nn.Module, BasePolicy):
 
     def crossq_forward(self, obs, **kwargs):
         return self.sac_forward(obs, **kwargs)
+
+    def enable_torch_compile(self):
+        if self.torch_compile_enabled:
+            return
+
+        def action_sampling_func(states: torch.Tensor):
+            feat = self.backbone(states)
+            action_mean = self.actor_mean(feat)
+
+            if self.independent_std:
+                action_logstd = self.actor_logstd.expand_as(action_mean)
+            else:
+                action_logstd = self.actor_logstd(feat)
+            if self.final_tanh:
+                action_logstd = torch.tanh(action_logstd)
+                action_logstd = self.logstd_range[0] + 0.5 * (
+                    self.logstd_range[1] - self.logstd_range[0]
+                ) * (action_logstd + 1)
+
+            return action_mean, action_logstd
+
+        self.action_sampling_compiled = torch.compile(
+            action_sampling_func, mode="max-autotune-no-cudagraphs"
+        )
+
+        self.torch_compile_enabled = True

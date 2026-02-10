@@ -67,4 +67,4 @@ class BasePolicy(ABC):
     def predict_action_batch(self, **kwargs): ...
 
     def enable_torch_compile(self):
-        raise NotImplementedError
+        return

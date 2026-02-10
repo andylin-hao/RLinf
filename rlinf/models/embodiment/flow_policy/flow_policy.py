@@ -393,12 +393,6 @@ class FlowPolicy(nn.Module, BasePolicy):
             result["shared_feature"] = visual_feature
         return chunk_actions, result
 
-    def enable_torch_compile(self):
-        if getattr(self, "torch_compile_enabled", False):
-            return
-
-        self.torch_compile_enabled = True
-
 
 @dataclass
 class FlowStateConfig:
