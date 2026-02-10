@@ -137,6 +137,7 @@ rollout:
     precision: ${actor.model.precision}
     num_q_heads: 10
 
+  enable_torch_compile: True
 actor:
   group_name: "ActorGroup"
   training_backend: "fsdp"

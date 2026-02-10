@@ -119,6 +119,7 @@ rollout:
     precision: ${actor.model.precision}
     model_path: "/workspace/dataset/resnet"
 
+  enable_torch_compile: True
 actor:
   group_name: "ActorGroup"
   training_backend: "fsdp"

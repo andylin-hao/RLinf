@@ -136,6 +136,7 @@ rollout:
     model_path: "/path/to/model"
     precision: ${actor.model.precision}
 
+  enable_torch_compile: True
 actor:
   group_name: "ActorGroup"
   training_backend: "fsdp"

@@ -106,7 +106,6 @@ rollout:
   pipeline_stage_num: 1
   collect_transitions: True
   collect_prev_infos: False
-  compile_model: False
   model:
     model_path: "/path/to/RLinf-ResNet10-pretrained"
     state_dim: 7
@@ -115,6 +114,7 @@ rollout:
     precision: ${actor.model.precision}
     image_num: 2
     
+  enable_torch_compile: True
 actor:
   group_name: "ActorGroup"
   training_backend: "fsdp"
