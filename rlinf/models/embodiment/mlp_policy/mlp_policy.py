@@ -185,6 +185,21 @@ class MLPPolicy(nn.Module, BasePolicy):
                 raise NotImplementedError
         return output_dict
 
+    def _sample_actions(self,states: torch.Tensor) -> tuple[torch.Tensor,torch.Tensor]:
+        feat = self.backbone(states)
+        action_mean = self.actor_mean(feat)
+
+        if self.independent_std:
+            action_logstd = self.actor_logstd.expand_as(action_mean)
+        else:
+            action_logstd = self.actor_logstd(feat)
+        if self.final_tanh:
+            action_logstd = torch.tanh(action_logstd)
+            action_logstd = self.logstd_range[0] + 0.5 * (
+                self.logstd_range[1] - self.logstd_range[0]
+            ) * (action_logstd + 1)
+
+        return action_mean, action_logstd
     @torch.inference_mode()
     def predict_action_batch(
         self,
@@ -196,24 +211,7 @@ class MLPPolicy(nn.Module, BasePolicy):
         **kwargs,
     ):
         env_obs = self.preprocess_env_obs(env_obs=env_obs)
-        if self.torch_compile_enabled:
-            action_mean, action_logstd = self.action_sampling_compiled(
-                env_obs["states"]
-            )
-        else:
-            feat = self.backbone(env_obs["states"])
-            action_mean = self.actor_mean(feat)
-
-            if self.independent_std:
-                action_logstd = self.actor_logstd.expand_as(action_mean)
-            else:
-                action_logstd = self.actor_logstd(feat)
-
-            if self.final_tanh:
-                action_logstd = torch.tanh(action_logstd)
-                action_logstd = self.logstd_range[0] + 0.5 * (
-                    self.logstd_range[1] - self.logstd_range[0]
-                ) * (action_logstd + 1)
+        action_mean, action_logstd = self._sample_actions(env_obs["states"])
 
         action_std = torch.exp(action_logstd)
         probs = Normal(action_mean, action_std)
@@ -282,24 +280,8 @@ class MLPPolicy(nn.Module, BasePolicy):
         if self.torch_compile_enabled:
             return
 
-        def action_sampling_func(states: torch.Tensor):
-            feat = self.backbone(states)
-            action_mean = self.actor_mean(feat)
-
-            if self.independent_std:
-                action_logstd = self.actor_logstd.expand_as(action_mean)
-            else:
-                action_logstd = self.actor_logstd(feat)
-            if self.final_tanh:
-                action_logstd = torch.tanh(action_logstd)
-                action_logstd = self.logstd_range[0] + 0.5 * (
-                    self.logstd_range[1] - self.logstd_range[0]
-                ) * (action_logstd + 1)
-
-            return action_mean, action_logstd
-
-        self.action_sampling_compiled = torch.compile(
-            action_sampling_func, mode="max-autotune-no-cudagraphs"
+        self._sample_actions = torch.compile(
+            self._sample_actions, mode="max-autotune-no-cudagraphs"
         )
 
         self.torch_compile_enabled = True
