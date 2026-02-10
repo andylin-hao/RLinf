@@ -124,7 +124,6 @@ env:
       target_ee_pose: TARGET_EE_POSE # Replace with your target end-effector pose
 
 rollout:
-  enable_torch_compile: False
   group_name: "RolloutGroup"
   backend: "huggingface"
   enable_offload: False

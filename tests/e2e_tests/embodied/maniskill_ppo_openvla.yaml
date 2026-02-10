@@ -19,6 +19,7 @@ cluster:
     rollout,env: 2-3
 
 runner:
+  enable_torch_compile: True
   task_type: embodied
   logger:
     log_path: /workspace/results/maniskill_ppo_openvla
@@ -101,7 +102,6 @@ env:
       video_base_dir: ${runner.logger.log_path}/video/eval
 
 rollout:
-  enable_torch_compile: False
   group_name: "RolloutGroup"
   backend: "huggingface"
   recompute_logprobs: False

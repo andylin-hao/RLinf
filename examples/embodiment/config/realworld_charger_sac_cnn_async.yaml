@@ -122,7 +122,6 @@ env:
       random_rz_range: 0.35 # About np.pi/9
 
 rollout:
-  enable_torch_compile: False
   group_name: "RolloutGroup"
   backend: "huggingface"
   enable_offload: False
