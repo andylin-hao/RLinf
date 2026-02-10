@@ -14,6 +14,6 @@ Detailed publication pages
    rlinf_vla
    rlinf_system
 
-- :doc:`RLinf-USER <rlinf_user>` — Unified system for real-world online policy learning
+- :doc:`RLinf-USER <rlinf_user>` — Unified system for real-world online policy learning `arXiv:2602.07837 <https://arxiv.org/abs/2602.07837>`__
 - :doc:`RLinf-VLA <rlinf_vla>` — Unified framework for VLA+RL training `arXiv:2510.06710 <https://arxiv.org/abs/2510.06710>`__ 
 - :doc:`RLinf <rlinf_system>` — Flexible and efficient RL system `arXiv:2509.15965 <https://arxiv.org/abs/2509.15965>`__ 

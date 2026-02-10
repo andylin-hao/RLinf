@@ -1,7 +1,7 @@
 RLinf-USER: Unified System for Real-world Online Policy Learning
 =================================================================
 
-**文档：** :doc:`<../examples/embodied/franka>`
+**Paper:** `arXiv:2509.15965 <https://arxiv.org/abs/2602.07837>`__ 
 
 概述
 ----
