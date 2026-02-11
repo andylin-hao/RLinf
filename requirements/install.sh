@@ -1,6 +1,6 @@
 #! /bin/bash
 
-set -euo pipefail
+set -eo pipefail
 
 TARGET=""
 
@@ -27,7 +27,7 @@ if ! command -v uv &> /dev/null; then
         echo "pip command not found. Please install pip first." >&2
         exit 1
     fi
-    pip install uv
+    pip install uv || echo "Cannot install uv via pip. Please execute the following to install uv manually: curl -LsSf https://astral.sh/uv/install.sh | sh"
 fi
 
 #=======================Utility Functions=======================
@@ -140,9 +140,15 @@ unset_mirror() {
 }
 
 create_and_sync_venv() {
-    uv venv "$VENV_DIR" --python "$PYTHON_VERSION"
-    # shellcheck disable=SC1090
-    source "$VENV_DIR/bin/activate"
+    if [ -d "$VENV_DIR" ] && [ -f "$VENV_DIR/bin/activate" ]; then
+        echo "Reusing existing venv at $VENV_DIR"
+        # shellcheck disable=SC1090
+        source "$VENV_DIR/bin/activate"
+    else
+        uv venv "$VENV_DIR" --python "$PYTHON_VERSION"
+        # shellcheck disable=SC1090
+        source "$VENV_DIR/bin/activate"
+    fi
     UV_TORCH_BACKEND=auto uv sync --active
 }
 
@@ -227,8 +233,9 @@ EOF
 
 clone_or_reuse_repo() {
     # Usage: clone_or_reuse_repo ENV_VAR_NAME DEFAULT_DIR GIT_URL [GIT_CLONE_ARGS...]
-    # - If ENV_VAR_NAME is set, verify it points to an existing directory and reuse it.
+    # - If ENV_VAR_NAME is set, verify it points to an existing directory and reuse it (no pull).
     # - Otherwise, clone GIT_URL (with optional GIT_CLONE_ARGS) into DEFAULT_DIR if it doesn't exist.
+    # If env var is not set and the directory already exists as a git repo, pull to update instead of cloning.
     # The resolved directory path is printed to stdout.
     local env_var_name="$1"
     local default_dir="$2"
@@ -250,6 +257,9 @@ clone_or_reuse_repo() {
         target_dir="$default_dir"
         if [ ! -d "$target_dir" ]; then
             git clone "$@" "$git_url" "$target_dir" >&2
+        elif [ -d "$target_dir/.git" ]; then
+            echo "Pulling updates in $target_dir..." >&2
+            git -C "$target_dir" pull --recurse-submodules >&2
         fi
     fi
 

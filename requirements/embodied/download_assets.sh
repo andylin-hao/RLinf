@@ -62,7 +62,7 @@ download_openpi_assets() {
 		echo "[download_assets] OpenPI tokenizer already exists at $TOKENIZER_DIR, skipping download."
 	else
 		mkdir -p "$TOKENIZER_DIR"
-		gsutil -m cp -r gs://big_vision/paligemma_tokenizer.model "$TOKENIZER_DIR"
+		hf download RLinf/openpi_tokenizer --local-dir "$TOKENIZER_DIR"
 	fi
 }
 

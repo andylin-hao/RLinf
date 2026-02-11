@@ -82,6 +82,7 @@ fi
 # Install packages based on package manager
 install_deps_apt() {
     sudo apt-get update -y
+    sudo apt-get install -y --no-install-recommends libgl1-mesa-glx || sudo apt-get install -y --no-install-recommends libglx-mesa0
     sudo apt-get install -y --no-install-recommends \
         wget \
         unzip \
@@ -102,7 +103,6 @@ install_deps_apt() {
         libglvnd-dev \
         libglfw3-dev \
         libgl1-mesa-dev \
-        libgl1-mesa-glx \
         libglib2.0-0 \
         libsm6 \
         libxext6 \
@@ -112,7 +112,7 @@ install_deps_apt() {
         libxcursor-dev \
         libxi-dev \
         libaio-dev \
-        libgomp1 || sudo apt-get install -y --no-install-recommends libglx-mesa0 || {
+        libgomp1 || {
             echo "apt-get install failed. Please check your repositories or install dependencies manually." >&2
             exit 1
         }
