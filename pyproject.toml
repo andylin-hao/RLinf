@@ -52,6 +52,7 @@ dependencies = [
     "ruff",
     "pre-commit",
     "liger_kernel; sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "uv",
     "pip",
     "icmplib",
     "pyrealsense2; sys_platform == 'linux' and platform_machine == 'x86_64'",
