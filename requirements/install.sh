@@ -225,10 +225,21 @@ import sys
 print(sys.version_info.minor)
 EOF
 )
+
+# Detect torch version (major.minor) and strip dots, e.g. 2.6.0 -> 26
+    local torch_mm
+    torch_mm=$(python - <<'EOF'
+import torch
+v = torch.__version__.split("+")[0]
+parts = v.split(".")
+print(f"{parts[0]}.{parts[1]}")
+EOF
+)
+    local torch_tag="torch${torch_mm}"        # e.g. torch2.6
     local py_tag="cp${py_major}${py_minor}"   # e.g. cp311
     local abi_tag="${py_tag}"                 # we assume cpXY-cpXY ABI, adjust if needed
     local platform_tag="linux_x86_64"
-    local wheel_name="apex-0.1-${py_tag}-${abi_tag}-${platform_tag}.whl"
+    local wheel_name="apex-0.1+${torch_tag}-${py_tag}-${abi_tag}-${platform_tag}.whl"
         
     uv pip uninstall apex || true
     export NUM_THREADS=$(nproc)
