@@ -440,7 +440,7 @@ install_dexbotic_model() {
             install_common_embodied_deps
 
             local dexbotic_path
-            dexbotic_path=$(clone_or_reuse_repo DEXBOTIC_PATH "$VENV_DIR/dexbotic" "https://github.com/dexmal/dexbotic.git")
+            dexbotic_path=$(clone_or_reuse_repo DEXBOTIC_PATH "$VENV_DIR/dexbotic" https://github.com/dexmal/dexbotic.git -b 0.2.0)
             uv pip install -e "$dexbotic_path"
 
             install_maniskill_libero_env
