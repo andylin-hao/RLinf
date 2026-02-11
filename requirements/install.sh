@@ -146,10 +146,31 @@ unset_mirror() {
 }
 
 create_and_sync_venv() {
+    local required_python_mm
+    required_python_mm="$(echo "$PYTHON_VERSION" | awk -F. '{print $1"."$2}')"
+
     if [ -d "$VENV_DIR" ] && [ -f "$VENV_DIR/bin/activate" ]; then
-        echo "Reusing existing venv at $VENV_DIR"
+        echo "Found existing venv at $VENV_DIR; validating Python version compatibility..."
         # shellcheck disable=SC1090
         source "$VENV_DIR/bin/activate"
+
+        local active_python_mm
+        active_python_mm="$(python - <<'EOF'
+import sys
+print(f"{sys.version_info.major}.{sys.version_info.minor}")
+EOF
+)"
+
+        if [ "$active_python_mm" != "$required_python_mm" ]; then
+            echo "Venv Python version mismatch: required ${required_python_mm}.x (from PYTHON_VERSION=${PYTHON_VERSION}), found ${active_python_mm}.x. Recreating venv..." >&2
+            deactivate || true
+            rm -rf "$VENV_DIR"
+            uv venv "$VENV_DIR" --python "$PYTHON_VERSION"
+            # shellcheck disable=SC1090
+            source "$VENV_DIR/bin/activate"
+        else
+            echo "Reusing existing venv at $VENV_DIR"
+        fi
     else
         uv venv "$VENV_DIR" --python "$PYTHON_VERSION"
         # shellcheck disable=SC1090
@@ -275,8 +296,16 @@ clone_or_reuse_repo() {
         if [ ! -d "$target_dir" ]; then
             git clone "$@" "$git_url" "$target_dir" >&2
         elif [ -d "$target_dir/.git" ]; then
-            echo "Pulling updates in $target_dir..." >&2
-            git -C "$target_dir" pull --recurse-submodules >&2
+            echo "Checking git repo $target_dir..." >&2
+            local git_intact=1
+            git -C "$target_dir" fsck --full >/dev/null 2>&1 || git_intact=0
+            if [ $git_intact -eq 1 ]; then
+                echo "Git repo $target_dir is intact." >&2
+            else
+                echo "Git repo $target_dir is corrupted. Re-cloning..." >&2
+                rm -rf "$target_dir"
+                git clone "$@" "$git_url" "$target_dir" >&2
+            fi
         fi
     fi
 
