@@ -162,6 +162,9 @@ RUN bash requirements/install.sh embodied --venv openvla-oft --model openvla-oft
 # omnigibson downloads assets to /tmp during initialization
 RUN source switch_env openvla-oft && python -c "import omnigibson as og; cfg={}; og.Environment(cfg); og.shutdown()" || exit 0
 
+# Set default env
+RUN echo "source ${UV_PATH}/openvla-oft/bin/activate" >> ~/.bashrc
+
 FROM embodied-common-image AS embodied-behavior-openpi-image
 
 # Install openpi env
@@ -171,8 +174,7 @@ RUN bash requirements/install.sh embodied --venv openpi --model openpi --env beh
 RUN source switch_env openpi && python -c "import omnigibson as og; cfg={}; og.Environment(cfg); og.shutdown()" || exit 0
 
 # Set default env
-RUN echo "source ${UV_PATH}/openvla-oft/bin/activate" >> ~/.bashrc
-
+RUN echo "source ${UV_PATH}/openpi/bin/activate" >> ~/.bashrc
 
 ##################################################################################################
 # Embodied: MetaWorld
