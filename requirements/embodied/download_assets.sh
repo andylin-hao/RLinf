@@ -56,7 +56,7 @@ download_maniskill_assets() {
 download_openpi_assets() {
 	local root_dir=$1
 
-	export TOKENIZER_DIR="${root_dir}/.cache/openpi/big_vision/"
+	export TOKENIZER_DIR="${root_dir}/.cache/openpi/"
 
 	if [ -f "$TOKENIZER_DIR/paligemma_tokenizer.model" ]; then
 		echo "[download_assets] OpenPI tokenizer already exists at $TOKENIZER_DIR, skipping download."
