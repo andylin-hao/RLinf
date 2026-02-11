@@ -27,7 +27,13 @@ if ! command -v uv &> /dev/null; then
         echo "pip command not found. Please install pip first." >&2
         exit 1
     fi
-    pip install uv || echo "Cannot install uv via pip. Please execute the following to install uv manually: curl -LsSf https://astral.sh/uv/install.sh | sh"
+    pip_success=0
+    pip install uv && pip_success=1
+    if [ $pip_success -eq 0 ]; then
+        echo "Cannot install uv via pip. Installing uv using installer script..."
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        source ~/.local/bin/env
+    fi
 fi
 
 #=======================Utility Functions=======================
