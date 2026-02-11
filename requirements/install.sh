@@ -19,23 +19,6 @@ SUPPORTED_TARGETS=("embodied" "reason" "docs")
 SUPPORTED_MODELS=("openvla" "openvla-oft" "openpi" "gr00t" "dexbotic")
 SUPPORTED_ENVS=("behavior" "maniskill_libero" "metaworld" "calvin" "isaaclab" "robocasa" "franka" "frankasim" "robotwin" "habitat" "opensora")
 
-# Ensure uv is installed
-if ! command -v uv &> /dev/null; then
-    echo "uv command not found. Installing uv..."
-    # Check if pip is available
-    if ! command -v pip &> /dev/null; then
-        echo "pip command not found. Please install pip first." >&2
-        exit 1
-    fi
-    pip_success=0
-    pip install uv && pip_success=1
-    if [ $pip_success -eq 0 ]; then
-        echo "Cannot install uv via pip. Installing uv using installer script..."
-        curl -LsSf https://astral.sh/uv/install.sh | sh
-        source ~/.local/bin/env
-    fi
-fi
-
 #=======================Utility Functions=======================
 
 print_help() {
@@ -126,6 +109,35 @@ parse_args() {
     fi
 }
 
+install_uv() {
+    # Ensure uv is installed
+    if ! command -v uv &> /dev/null; then
+        echo "uv command not found. Installing uv..."
+        # Check if pip is available
+        if ! command -v pip &> /dev/null; then
+            echo "pip command not found. Please install pip first." >&2
+            exit 1
+        fi
+        pip_failed=0
+        pip install uv || pip_failed=1
+        if [ $pip_failed -eq 1 ]; then
+            echo "Cannot install uv via pip. Installing uv using installer script..."
+            if ! command -v wget &> /dev/null; then
+                echo "wget command not found. Please install wget first." >&2
+                exit 1
+            fi
+            
+            # If uv already exists in ~/.local/bin, use it
+            if [ -f ~/.local/bin/uv ]; then
+                echo "uv already exists in ~/.local/bin. Using it..."
+            else
+                wget -qO- https://astral.sh/uv/install.sh | sh
+            fi
+            export PATH="$HOME/.local/bin:$PATH"
+        fi
+    fi
+}
+
 setup_mirror() {
     if [ "$USE_MIRRORS" -eq 1 ]; then
         export UV_PYTHON_INSTALL_MIRROR=https://ghfast.top/https://github.com/astral-sh/python-build-standalone/releases/download
@@ -165,13 +177,19 @@ EOF
             echo "Venv Python version mismatch: required ${required_python_mm}.x (from PYTHON_VERSION=${PYTHON_VERSION}), found ${active_python_mm}.x. Recreating venv..." >&2
             deactivate || true
             rm -rf "$VENV_DIR"
+
+            # Create new venv
+            install_uv
             uv venv "$VENV_DIR" --python "$PYTHON_VERSION"
             # shellcheck disable=SC1090
             source "$VENV_DIR/bin/activate"
         else
             echo "Reusing existing venv at $VENV_DIR"
+            install_uv
         fi
     else
+        # Create new venv
+        install_uv
         uv venv "$VENV_DIR" --python "$PYTHON_VERSION"
         # shellcheck disable=SC1090
         source "$VENV_DIR/bin/activate"
@@ -232,7 +250,7 @@ EOF
 }
 
 install_apex() {
-    # Example URL: https://github.com/RLinf/apex/releases/download/25.09/apex-0.1-cp311-cp311-linux_x86_64.whl
+    # Example URL: https://github.com/RLinf/apex/releases/download/25.09/apex-0.1+torch2.6-cp311-cp311-linux_x86_64.whl
     local base_url="${GITHUB_PREFIX}https://github.com/RLinf/apex/releases/download/25.09"
 
     local py_major py_minor
@@ -273,7 +291,7 @@ clone_or_reuse_repo() {
     # Usage: clone_or_reuse_repo ENV_VAR_NAME DEFAULT_DIR GIT_URL [GIT_CLONE_ARGS...]
     # - If ENV_VAR_NAME is set, verify it points to an existing directory and reuse it (no pull).
     # - Otherwise, clone GIT_URL (with optional GIT_CLONE_ARGS) into DEFAULT_DIR if it doesn't exist.
-    # If env var is not set and the directory already exists as a git repo, pull to update instead of cloning.
+    # If env var is not set and the directory already exists as a git repo, check if it is intact and re-clone it if not.
     # The resolved directory path is printed to stdout.
     local env_var_name="$1"
     local default_dir="$2"
@@ -298,7 +316,7 @@ clone_or_reuse_repo() {
         elif [ -d "$target_dir/.git" ]; then
             echo "Checking git repo $target_dir..." >&2
             local git_intact=1
-            git -C "$target_dir" fsck --full >/dev/null 2>&1 || git_intact=0
+            git -C "$target_dir" status --porcelain >/dev/null 2>&1 || git_intact=0
             if [ $git_intact -eq 1 ]; then
                 echo "Git repo $target_dir is intact." >&2
             else
