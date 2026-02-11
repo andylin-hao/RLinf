@@ -87,6 +87,7 @@ install_deps_apt() {
         wget \
         unzip \
         curl \
+        cmake \
         lsb-release \
         libavutil-dev \
         libavcodec-dev \
@@ -128,6 +129,7 @@ install_deps_dnf() {
         wget \
         unzip \
         curl \
+        cmake \
         ffmpeg-free-devel \
         libibverbs-devel \
         ncurses \
@@ -162,6 +164,7 @@ install_deps_yum() {
         wget \
         unzip \
         curl \
+        cmake \
         ffmpeg-devel \
         libibverbs-devel \
         ncurses \
@@ -196,6 +199,7 @@ install_deps_pacman() {
         unzip \
         curl \
         lsb-release \
+        cmake \
         ffmpeg \
         rdma-core \
         ncurses \
