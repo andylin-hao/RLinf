@@ -173,6 +173,9 @@ RUN bash requirements/install.sh embodied --venv openpi --model openpi --env beh
 # omnigibson downloads assets to /tmp during initialization
 RUN source switch_env openpi && python -c "import omnigibson as og; cfg={}; og.Environment(cfg); og.shutdown()" || exit 0
 
+RUN source switch_env openpi && download_assets --dir /opt/assets --assets openpi
+RUN link_assets
+
 # Set default env
 RUN echo "source ${UV_PATH}/openpi/bin/activate" >> ~/.bashrc
 
