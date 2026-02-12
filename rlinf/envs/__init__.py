@@ -28,6 +28,7 @@ class SupportedEnvType(Enum):
     FRANKASIM = "frankasim"
     HABITAT = "habitat"
     OPENSORAWM = "opensora_wm"
+    WANWM = "wan_wm"
 
 
 def get_env_cls(env_type: str, env_cfg=None, enable_offload=False):
@@ -107,6 +108,20 @@ def get_env_cls(env_type: str, env_cfg=None, enable_offload=False):
     elif env_type == SupportedEnvType.OPENSORAWM:
         from rlinf.envs.world_model.world_model_opensora_env import OpenSoraEnv
 
+        if not enable_offload:
+            from rlinf.envs.world_model.world_model_opensora_env import OpenSoraEnv
+        else:
+            from rlinf.envs.world_model.world_model_opensora_offload_env import (
+                OpenSoraOffloadEnv as OpenSoraEnv,
+            )
         return OpenSoraEnv
+    elif env_type == SupportedEnvType.WANWM:
+        if not enable_offload:
+            from rlinf.envs.world_model.world_model_wan_env import WanEnv
+        else:
+            from rlinf.envs.world_model.world_model_wan_env_offload import (
+                WanOffloadEnv as WanEnv,
+            )
+        return WanEnv
     else:
         raise NotImplementedError(f"Environment type {env_type} not implemented")
