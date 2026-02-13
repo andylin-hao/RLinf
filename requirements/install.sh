@@ -16,7 +16,7 @@ USE_MIRRORS=0
 GITHUB_PREFIX=""
 NO_ROOT=0
 NO_INSTALL_RLINF_CMD="--no-install-project"
-SUPPORTED_TARGETS=("embodied" "reason" "docs")
+SUPPORTED_TARGETS=("embodied" "agentic" "docs")
 SUPPORTED_MODELS=("openvla" "openvla-oft" "openpi" "gr00t" "dexbotic")
 SUPPORTED_ENVS=("behavior" "maniskill_libero" "metaworld" "calvin" "isaaclab" "robocasa" "franka" "frankasim" "robotwin" "habitat" "opensora")
 
@@ -28,7 +28,7 @@ Usage: bash install.sh <target> [options]
 
 Targets:
     embodied               Install embodied model and envs (default).
-    reason                 Install reasoning stack (Megatron etc.).
+    agentic                Install agentic stack (Megatron etc.).
     docs                   Install documentation requirements.
 
 Options (for target=embodied):
@@ -769,13 +769,11 @@ install_opensora_world_model() {
     install_apex
 }
 
-#=======================REASONING INSTALLER=======================
+#=======================AGENTIC INSTALLER=======================
 
-install_reason() {
-    uv sync --extra sglang-vllm --active $NO_INSTALL_RLINF_CMD
-
-    # FSDP lora training
-    uv pip install peft==0.11.1
+install_agentic() {
+    uv sync --extra agentic-vllm --active $NO_INSTALL_RLINF_CMD
+    uv sync --extra agentic-sglang --inexact --active $NO_INSTALL_RLINF_CMD
 
     # Megatron-LM
     # Prefer an existing checkout if MEGATRON_PATH is provided; otherwise clone into the venv.
@@ -786,7 +784,7 @@ install_reason() {
 
     # If TEST_BUILD is 1, skip installing megatron.txt
     if [ "$TEST_BUILD" -ne 1 ]; then
-        uv pip install -r $SCRIPT_DIR/reason/megatron.txt --no-build-isolation
+        uv pip install -r $SCRIPT_DIR/agentic/megatron.txt --no-build-isolation
     fi
 
     install_apex
@@ -797,7 +795,8 @@ install_reason() {
 #=======================DOCUMENTATION INSTALLER=======================
 
 install_docs() {
-    uv sync --extra sglang-vllm --active $NO_INSTALL_RLINF_CMD
+    uv sync --extra agentic-vllm --active $NO_INSTALL_RLINF_CMD
+    uv sync --extra agentic-sglang --inexact --active $NO_INSTALL_RLINF_CMD
     uv sync --extra embodied --active --inexact $NO_INSTALL_RLINF_CMD
     uv pip install -r $SCRIPT_DIR/docs/requirements.txt
     uv pip uninstall pynvml || true
@@ -848,9 +847,9 @@ main() {
                     ;;
             esac
             ;;
-        reason)
+        agentic)
             create_and_sync_venv
-            install_reason
+            install_agentic
             ;;
         docs)
             create_and_sync_venv

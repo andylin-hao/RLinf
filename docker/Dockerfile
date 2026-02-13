@@ -90,7 +90,7 @@ RUN chmod +x /usr/local/bin/switch_env
 ##################################################################################################
 FROM base-image AS reason-image
 
-RUN bash requirements/install.sh reason --venv reason
+RUN bash requirements/install.sh agentic --venv reason
 
 # Set default env
 RUN echo "source ${UV_PATH}/reason/bin/activate" >> ~/.bashrc
