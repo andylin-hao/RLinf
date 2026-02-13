@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=69.5.1,<75.9", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "RLinf"
 version = "0.2.0"
@@ -123,6 +127,14 @@ override-dependencies = [
     "uvloop==0.21.0",
     "tensorflow-addons==0.23.0",
 ]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["rlinf*"]
+exclude = ["tests*", "docs*", "examples*", "docker*", "toolkits*"]
 
 [tool.ruff]
 line-length = 88
