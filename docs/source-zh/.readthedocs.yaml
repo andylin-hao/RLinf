@@ -6,6 +6,7 @@ build:
     python: "3.11"
   jobs:
     pre_install:
+      - python -m pip install -U uv
       - uv pip install .[embodied]
       - uv pip install .[agentic-sglang]
       - uv pip install .[agentic-vllm]
