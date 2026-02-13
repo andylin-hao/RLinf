@@ -77,7 +77,6 @@ jobs:
               - 'rlinf/config.py'
               - 'rlinf/__init__.py'
               - 'rlinf/*/__init__.py'
-              - 'toolkits/ckpt_convertor/**'
               - 'toolkits/auto_placement/**'
             embodied_filter: &embodied
               - *shared
@@ -109,8 +108,6 @@ jobs:
               - 'tests/e2e_tests/agent/**'
               - 'tests/e2e_tests/coding_online_rl/**'
               - 'tests/e2e_tests/reasoning/**'
-              - 'toolkits/code_verifier/**'
-              - 'toolkits/math_verifier/**'
               - '.github/workflows/agent-e2e-tests.yml'
             sft_filter: &sft
               - *shared
