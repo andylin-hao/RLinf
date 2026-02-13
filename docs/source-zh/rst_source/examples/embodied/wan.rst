@@ -17,10 +17,10 @@
 
 Wan 主要希望赋予模型以下能力：
 
-1. **视觉理解**：OpenSora 借助当前观测图像与给定动作序列生成未来视频帧，为策略提供连续视觉反馈，使模型能够处理来自真实机器人相机的 RGB 图像。
+1. **视觉理解**：Wan 借助当前观测图像与给定动作序列生成未来视频帧，为策略提供连续视觉反馈，使模型能够处理来自真实机器人相机的 RGB 图像。
 2. **语言理解**：理解自然语言任务描述。
 3. **动作生成**：产生精确的机器人动作（位置、旋转、夹爪控制）。
-4. **策略提升**：借助 OpenSora 生成的“想象”轨迹，使用 PPO 等强化学习方法优化 VLA 策略。
+4. **策略提升**：借助 Wan 生成的“想象”轨迹，使用 PPO 等强化学习方法优化 VLA 策略。
 
 与 LIBERO 环境下微调 VLA 的流程类似，本文档重点介绍如何在基于 Wan 的仿真环境中运行 RL 训练任务。
 
@@ -101,9 +101,9 @@ Wan 主要希望赋予模型以下能力：
       --network host \
       --name rlinf \
       -v .:/workspace/RLinf \
-      rlinf/rlinf:agentic-rlinf0.1-opensora
+      rlinf/rlinf:agentic-rlinf0.1-wan
       # 如果需要国内加速下载镜像，可以使用：
-      # docker.1ms.run/rlinf/rlinf:agentic-rlinf0.1-opensora
+      # docker.1ms.run/rlinf/rlinf:agentic-rlinf0.1-wan
 
 **选项 2：自定义环境**
 
@@ -155,24 +155,28 @@ WM (World Model) 模型下载
 
 .. code:: bash
 
-   # 下载权重与初始化数据
+   # 使用下面任一方法下载模型
    # 方法 1：使用 git clone
    git lfs install
-   git clone https://huggingface.co/RLinf/RLinf-Wan-LIBERO-Spatial
-   git clone https://huggingface.co/RLinf/RLinf-Wan-LIBERO-Object
-   git clone https://huggingface.co/RLinf/RLinf-Wan-LIBERO-Goal
+   git clone https://huggingface.co/Haozhan72/Openvla-oft-SFT-libero-spatial-traj1
+   git clone https://huggingface.co/Haozhan72/Openvla-oft-SFT-libero-object-traj1
+   git clone https://huggingface.co/Haozhan72/Openvla-oft-SFT-libero-goal-traj1
+   git clone https://huggingface.co/Haozhan72/Openvla-oft-SFT-libero-10-traj1
 
    # 方法 2：使用 huggingface-hub
+   # 为提升国内下载速度，可以设置：
+   # export HF_ENDPOINT=https://hf-mirror.com
    pip install huggingface-hub
-   hf download RLinf/RLinf-Wan-LIBERO-Spatial --local-dir RLinf-Wan-LIBERO-Spatial
-   hf download RLinf/RLinf-Wan-LIBERO-Object --local-dir RLinf-Wan-LIBERO-Object
-   hf download RLinf/RLinf-Wan-LIBERO-Goal --local-dir RLinf-Wan-LIBERO-Goal
+   hf download Haozhan72/Openvla-oft-SFT-libero-spatial-traj1 --local-dir Openvla-oft-SFT-libero-spatial-traj1
+   hf download Haozhan72/Openvla-oft-SFT-libero-object-traj1 --local-dir Openvla-oft-SFT-libero-object-traj1
+   hf download Haozhan72/Openvla-oft-SFT-libero-goal-traj1 --local-dir Openvla-oft-SFT-libero-goal-traj1
+   hf download Haozhan72/Openvla-oft-SFT-libero-10-traj1 --local-dir Openvla-oft-SFT-libero-10-traj1
 
-RLinf-OpenSora-LIBERO-Spatial 的目录结构如下：
+RLinf-Wan-LIBERO-Spatial 的目录结构如下：
 
 .. code-block:: text
 
-    RLinf-OpenSora-LIBERO-Spatial/
+    RLinf-Wan-LIBERO-Spatial/
         ├── dataset/                            # 用于仿真初始化数据集
         │   ├── traj0.npy                       # 仅包含初始帧的轨迹
         │   ├── traj1.npy
@@ -337,9 +341,9 @@ RLinf-OpenSora-LIBERO-Spatial 的目录结构如下：
 LIBERO 部分结果
 ~~~~~~~~~~~~~~~~~~~~~~
 
-目前仅测试使用 OpenSora 模拟 libero-spatial 与 libero-object 环境并训练 VLA 模型，更多环境仍在测试中。
+目前仅测试使用 Wan 模拟 libero-spatial, libero-object 和 libero goal 环境并训练 VLA 模型，更多环境仍在测试中。
 
-对于每个 LIBERO 套件，我们评估所有 task_id 与 trial_id 的组合。Object 与 Spatial 套件共评估 500 个环境（10 个任务 × 50 个试次）。
+对于每个 LIBERO 套件，我们评估所有 task_id 与 trial_id 的组合。Object、Spatial 和 Goal 套件共评估 1500 个环境（10 个任务 × 150 个试次）。
 
 我们根据模型的训练配置设置评估超参：
 对于 SFT 模型与 RL 训练模型，均设置 `do_sample = True`、`temperature = 1.6` 以评估性能。
@@ -357,14 +361,14 @@ LIBERO 部分结果
       - Spatial
       - Object
       - Goal
-    * - |huggingface| `OpenVLA-OFT (LoRA-base) <https://huggingface.co/RLinf/RLinf-OpenVLAOFT-LIBERO-130-Base-Lora>`_
+    * - |huggingface| `OpenVLA-OFT (LoRA-base)`_
       - 61.20%
-      - 36.7%
-      - 48.50%
+      - 36.29%
+      - 48.19%
     * - OpenVLA-OFT（Wan 作为世界模型的 RLinf-GRPO）
-      - 75.5%
-      - 64.5%
-      - 52.30%
+      - 70.16%
+      - 77.75%
+      - 60.08%
     * - **效果提升**
       - **+25.3%**
       - **+12.9%**

@@ -125,15 +125,19 @@ VLA 模型下载
    # 使用下面任一方法下载模型
    # 方法 1：使用 git clone
    git lfs install
-   git clone https://huggingface.co/RLinf/RLinf-OpenVLAOFT-LIBERO-90-Base-Lora
-   git clone https://huggingface.co/RLinf/RLinf-OpenVLAOFT-LIBERO-130-Base-Lora
+   git clone https://huggingface.co/Haozhan72/Openvla-oft-SFT-libero-spatial-traj1
+   git clone https://huggingface.co/Haozhan72/Openvla-oft-SFT-libero-object-traj1
+   git clone https://huggingface.co/Haozhan72/Openvla-oft-SFT-libero-goal-traj1
+   git clone https://huggingface.co/Haozhan72/Openvla-oft-SFT-libero-10-traj1
 
    # 方法 2：使用 huggingface-hub
    # 为提升国内下载速度，可以设置：
    # export HF_ENDPOINT=https://hf-mirror.com
    pip install huggingface-hub
-   hf download RLinf/RLinf-OpenVLAOFT-LIBERO-90-Base-Lora --local-dir RLinf-OpenVLAOFT-LIBERO-90-Base-Lora
-   hf download RLinf/RLinf-OpenVLAOFT-LIBERO-130-Base-Lora --local-dir RLinf-OpenVLAOFT-LIBERO-130-Base-Lora
+   hf download Haozhan72/Openvla-oft-SFT-libero-spatial-traj1 --local-dir Openvla-oft-SFT-libero-spatial-traj1
+   hf download Haozhan72/Openvla-oft-SFT-libero-object-traj1 --local-dir Openvla-oft-SFT-libero-object-traj1
+   hf download Haozhan72/Openvla-oft-SFT-libero-goal-traj1 --local-dir Openvla-oft-SFT-libero-goal-traj1
+   hf download Haozhan72/Openvla-oft-SFT-libero-10-traj1 --local-dir Openvla-oft-SFT-libero-10-traj1
 
 下载完成后，请确保在配置 yaml 文件中正确指定模型路径与 unnorm_key。
 
