@@ -7,6 +7,7 @@ build:
   jobs:
     pre_install:
       - bash requirements/install.sh docs
+      - source .venv/bin/activate
 
 sphinx:
   configuration: docs/source-zh/conf.py
