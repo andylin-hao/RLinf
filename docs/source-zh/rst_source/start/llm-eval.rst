@@ -40,9 +40,9 @@
 在训练过程中，模型以 Megatron 格式被存储下来。 你可以使用位于 ``RLinf/rlinf/utils/ckpt_convertor/megatron_convertor/`` 的转换脚本将其转换为 Huggingface 格式。
 
 先设置以下路径：
-1. ``CKPT_PATH_MG``（Megatron checkpoint 路径）、
-2. ``CKPT_PATH_HF``（HuggingFace 目标路径）、
-3. ``CKPT_PATH_ORIGINAL_HF``（初始化训练的基模 checkpoint 路径）。
+1. ``CKPT_PATH_MG`` （Megatron checkpoint 路径）、
+2. ``CKPT_PATH_HF`` （HuggingFace 目标路径）、
+3. ``CKPT_PATH_ORIGINAL_HF`` （初始化训练的基模 checkpoint 路径）。
 
 .. code-block:: bash
 

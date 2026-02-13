@@ -41,6 +41,7 @@ peft
 timm
 mani_skill
 tensordict
+gymnasium
 libero @ git+https://github.com/RLinf/LIBERO.git
 
 # Optional: sgl_vllm
