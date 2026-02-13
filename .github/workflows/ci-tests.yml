@@ -137,7 +137,6 @@ jobs:
               - *unit
               - *scheduler
               - docs/**/*.py
-              - toolkits/check_missing_init/**
               - '.github/workflows/ci-tests.yml'
             all_changes_filter:
               - *install
