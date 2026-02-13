@@ -102,6 +102,8 @@ class WanEnv(BaseWorldEnv):
             ]
         )
 
+        self._is_offloaded = False
+
     def _build_dataset(self, cfg):
         return NpyTrajectoryDatasetWrapper(
             cfg.initial_image_path, enable_kir=self.enable_kir
@@ -238,6 +240,7 @@ class WanEnv(BaseWorldEnv):
         options: Optional[dict] = {},
         episode_indices: Optional[Union[np.ndarray, torch.Tensor]] = None,
     ):
+        self.onload()
         self.elapsed_steps = 0
 
         # Handle first reset with fixed reset state ids
@@ -639,7 +642,7 @@ class WanEnv(BaseWorldEnv):
     def chunk_step(self, policy_output_action):
         """Execute a chunk of actions - optimized version that processes chunk actions together"""
         # chunk_actions: [num_envs, chunk_steps, action_dim=8]
-
+        self.onload()
         with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
             self._infer_next_chunk_frames(policy_output_action)
 
@@ -725,14 +728,6 @@ class WanEnv(BaseWorldEnv):
         if self.record_metrics:
             self.success_once = self.success_once.cpu()
             self.returns = self.returns.cpu()
-        for env_idx in range(self.num_envs):
-            self.image_queue[env_idx] = deque(
-                [
-                    recursive_to_device(frame, "cpu")
-                    for frame in self.image_queue[env_idx]
-                ],
-                maxlen=self.z_condition_frame_length,
-            )
         torch.cuda.empty_cache()
         self._is_offloaded = True
 
@@ -740,8 +735,8 @@ class WanEnv(BaseWorldEnv):
         """Move models and runtime tensors back to execution device."""
         if not self._is_offloaded:
             return
-        self.pipe.dit = self.pipe.dit.to(self.device, self.inference_dtype)
-        self.pipe.vae = self.pipe.vae.to(self.device, self.inference_dtype)
+        self.pipe.dit = self.pipe.dit.to(self.device)
+        self.pipe.vae = self.pipe.vae.to(self.device)
         self.reward_model = self.reward_model.to(self.device)
         self.current_obs = recursive_to_device(self.current_obs, self.device)
         self.prev_step_reward = self.prev_step_reward.to(self.device)
@@ -749,14 +744,6 @@ class WanEnv(BaseWorldEnv):
         if self.record_metrics:
             self.success_once = self.success_once.to(self.device)
             self.returns = self.returns.to(self.device)
-        for env_idx in range(self.num_envs):
-            self.image_queue[env_idx] = deque(
-                [
-                    recursive_to_device(frame, self.device)
-                    for frame in self.image_queue[env_idx]
-                ],
-                maxlen=self.z_condition_frame_length,
-            )
         self._is_offloaded = False
 
     def get_state(self) -> bytes:
@@ -781,13 +768,13 @@ class WanEnv(BaseWorldEnv):
                 }
             )
 
-        image_queue_state = []
-        for env_idx in range(self.num_envs):
-            queue_frames = []
-            for frame in self.image_queue[env_idx]:
-                queue_frames.append(recursive_to_device(frame, "cpu"))
-            image_queue_state.append(queue_frames)
-        env_state["image_queue"] = image_queue_state
+        # image_queue_state = []
+        # for env_idx in range(self.num_envs):
+        #     queue_frames = []
+        #     for frame in self.image_queue[env_idx]:
+        #         queue_frames.append(recursive_to_device(frame, "cpu"))
+        #     image_queue_state.append(queue_frames)
+        # env_state["image_queue"] = image_queue_state
 
         buffer = io.BytesIO()
         torch.save(env_state, buffer)

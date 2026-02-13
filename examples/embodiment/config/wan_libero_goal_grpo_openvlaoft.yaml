@@ -83,7 +83,6 @@ algorithm:
 
 env:
   group_name: "EnvGroup"
-  enable_offload: True # otherwise, may OOM
 
   # Override the default values in env/wan_libero_obejct
   train:
@@ -94,6 +93,7 @@ env:
     reward_coef: ${algorithm.reward_coef}
     reset_gripper_open: False
     wan_wm_hf_ckpt_path: "/path/to/model/hf_models/RLinf-Wan-LIBERO-Goal"
+    enable_offload: True # otherwise, may OOM
   eval:
     total_num_envs: 500
     auto_reset: True
