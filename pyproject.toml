@@ -101,7 +101,7 @@ agentic-vllm = [
     "mcp",
 ]
 embodied = [
-    "transformers",
+    "transformers<=4.57.6",
     "peft",
     "timm",
     "imageio[ffmpeg]",
