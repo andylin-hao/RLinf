@@ -137,6 +137,7 @@ jobs:
               - *unit
               - *scheduler
               - docs/**/*.py
+              - toolkits/check_missing_init/**
               - '.github/workflows/ci-tests.yml'
             all_changes_filter:
               - *install
@@ -233,6 +234,18 @@ jobs:
     if: needs.check-changes.outputs.scheduler_test_filter == 'true'
     uses: ./.github/workflows/scheduler-tests.yml
 
+  # =============================================== package structure check ============================================
+
+  package-structure-check:
+    needs: [check-changes]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check missing __init__.py under rlinf
+        run: python toolkits/check_missing_init/check_missing_init.py
+
   # =============================================== finale ====================================================
 
   ci-test-finish:
@@ -245,7 +258,8 @@ jobs:
       agent-reason-e2e-tests,
       embodied-e2e-tests,
       sft-e2e-tests,
-      scheduler-tests
+      scheduler-tests,
+      package-structure-check
     ]
     if: always()
     runs-on: ubuntu-latest
