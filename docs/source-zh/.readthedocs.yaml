@@ -6,8 +6,10 @@ build:
     python: "3.11"
   jobs:
     pre_install:
-      - bash requirements/install.sh docs
-      - . .venv/bin/activate
+      - uv pip install .[embodied]
+      - uv pip install .[agentic-sglang]
+      - uv pip install .[agentic-vllm]
+      - uv pip install requirements/docs/requirements.txt
 
 sphinx:
   configuration: docs/source-zh/conf.py

@@ -57,9 +57,7 @@ jobs:
           pytest tests/unit_tests
 
   package-build-test:
-    runs-on: ubuntu-latest
-    container:
-      image: nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04
+    runs-on: self-hosted
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
