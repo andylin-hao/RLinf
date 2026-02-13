@@ -73,6 +73,11 @@ jobs:
           uv build
           export WHL_FILE=$(ls $(pwd)/dist/rlinf-*.whl)
           cd
+          unset UV_DEFAULT_INDEX
+          export UV_PATH=/workspace/dataset/.uv
+          export UV_LINK_MODE=symlink
+          export UV_CACHE_DIR=/workspace/dataset/.uv_cache
+          export UV_PYTHON_INSTALL_DIR=/workspace/dataset/.uv_python
           uv pip install $WHL_FILE[embodied]
           uv pip install $WHL_FILE[agentic-sglang]
           uv pip install $WHL_FILE[agentic-vllm]

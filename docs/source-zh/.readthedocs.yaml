@@ -10,7 +10,7 @@ build:
       - uv pip install .[embodied]
       - uv pip install .[agentic-sglang]
       - uv pip install .[agentic-vllm]
-      - uv pip install requirements/docs/requirements.txt
+      - uv pip install -r requirements/docs/requirements.txt
 
 sphinx:
   configuration: docs/source-zh/conf.py
