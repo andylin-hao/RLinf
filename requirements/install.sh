@@ -15,6 +15,7 @@ SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
 USE_MIRRORS=0
 GITHUB_PREFIX=""
 NO_ROOT=0
+NO_INSTALL_RLINF_CMD="--no-install-project"
 SUPPORTED_TARGETS=("embodied" "reason" "docs")
 SUPPORTED_MODELS=("openvla" "openvla-oft" "openpi" "gr00t" "dexbotic")
 SUPPORTED_ENVS=("behavior" "maniskill_libero" "metaworld" "calvin" "isaaclab" "robocasa" "franka" "frankasim" "robotwin" "habitat" "opensora")
@@ -39,6 +40,7 @@ Common options:
     --venv <dir>           Virtual environment directory name (default: .venv).
     --use-mirror           Use mirrors for faster downloads.
     --no-root              Avoid system dependency installation for non-root users. Only use this if you are certain system dependencies are already installed.
+    --install-rlinf        Install RLinf itself into the python.
 EOF
 }
 
@@ -84,6 +86,10 @@ parse_args() {
                 ;;
             --no-root)
                 NO_ROOT=1
+                shift
+                ;;
+            --install-rlinf)
+                NO_INSTALL_RLINF_CMD=""
                 shift
                 ;;
             --*)
@@ -194,7 +200,7 @@ EOF
         # shellcheck disable=SC1090
         source "$VENV_DIR/bin/activate"
     fi
-    UV_TORCH_BACKEND=auto uv sync --active --no-install-project
+    UV_TORCH_BACKEND=auto uv sync --active $NO_INSTALL_RLINF_CMD
 }
 
 install_flash_attn() {
@@ -333,7 +339,7 @@ clone_or_reuse_repo() {
 #=======================EMBODIED INSTALLERS=======================
 
 install_common_embodied_deps() {
-    uv sync --extra embodied --active --no-install-project
+    uv sync --extra embodied --active $NO_INSTALL_RLINF_CMD
     if [ "$NO_ROOT" -eq 0 ]; then
         bash $SCRIPT_DIR/embodied/sys_deps.sh
     fi
@@ -523,7 +529,7 @@ install_env_only() {
     SKIP_ROS=${SKIP_ROS:-0}
     case "$ENV_NAME" in
         franka)
-            uv sync --extra franka --active --no-install-project
+            uv sync --extra franka --active $NO_INSTALL_RLINF_CMD
             if [ "$SKIP_ROS" -ne 1 ]; then
                 if [ "$NO_ROOT" -eq 0 ]; then
                     bash $SCRIPT_DIR/embodied/ros_install.sh
@@ -765,7 +771,7 @@ install_opensora_world_model() {
 #=======================REASONING INSTALLER=======================
 
 install_reason() {
-    uv sync --extra sglang-vllm --active --no-install-project
+    uv sync --extra sglang-vllm --active $NO_INSTALL_RLINF_CMD
 
     # FSDP lora training
     uv pip install peft==0.11.1
@@ -790,8 +796,8 @@ install_reason() {
 #=======================DOCUMENTATION INSTALLER=======================
 
 install_docs() {
-    uv sync --extra sglang-vllm --active --no-install-project
-    uv sync --extra embodied --active --inexact --no-install-project
+    uv sync --extra sglang-vllm --active $NO_INSTALL_RLINF_CMD
+    uv sync --extra embodied --active --inexact $NO_INSTALL_RLINF_CMD
     uv pip install -r $SCRIPT_DIR/docs/requirements.txt
     uv pip uninstall pynvml || true
 }
