@@ -18,6 +18,17 @@
 #   params in decoder layer x: x.safetensors
 #   use megatron name and style (fuse glu fc1)
 
+"""Convert middle-file checkpoint to HuggingFace checkpoint.
+
+Typical usage (second step after convert_mg_to_middle_file):
+    python -m rlinf.utils.ckpt_convertor.megatron_convertor.convert_middle_file_to_hf \
+        --load-path /path/to/output_middle_file \
+        --save-path /path/to/output_huggingface_checkpoint \
+        --model DeepSeek-R1-Distill-Qwen-1.5B \
+        --use-gpu-num 0 \
+        --process-num 16
+"""
+
 import gc
 import json
 import os

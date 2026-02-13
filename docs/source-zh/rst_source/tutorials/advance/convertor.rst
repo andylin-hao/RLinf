@@ -84,7 +84,9 @@ pt 格式转换到 safetensors 格式
 
 .. code-block:: bash
 
-   bash convert_pt_to_hf.sh
+   python -m rlinf.utils.ckpt_convertor.fsdp_convertor.convert_pt_to_hf \
+       --config-path /path/to/RLinf/rlinf/utils/ckpt_convertor/fsdp_convertor/config \
+       --config-name fsdp_model_convertor
 
 4. **查看保存的safetensors文件**
 
@@ -115,18 +117,40 @@ Megatron检查点文件结构如下：
        └── …
 
 
-**方式一：编辑脚本文件**
-
-手动打开 ``mg2hf_7b.sh`` 或 ``mg2hf_1.5b.sh``，将以下变量设置为你想要的路径。
-
-1. ``CKPT_PATH_MG`` （Megatron checkpoint路径，例如 ``results/run_name/checkpoints/global_step_xx/actor/``）， 
-2. ``CKPT_PATH_HF`` （Huggingface目标路径，任意路径），以及
-3. ``CKPT_PATH_ORIGINAL_HF`` （初始化训练的基模checkpoint，例如 ``/path/to/DeepSeek-R1-Distill-Qwen-1.5B``） 
-
-**方式二：命令行参数**
-
-更灵活的方式是直接通过命令行参数传入路径。
+请直接运行以下命令。先设置：
+1. ``CKPT_PATH_MG`` （Megatron checkpoint路径，例如 ``results/run_name/checkpoints/global_step_xx/actor/``），
+2. ``CKPT_PATH_HF`` （HuggingFace目标路径），以及
+3. ``CKPT_PATH_ORIGINAL_HF`` （初始化训练的基模checkpoint路径，例如 ``/path/to/DeepSeek-R1-Distill-Qwen-1.5B``）。
 
 .. code-block:: bash
 
-    bash mg2hf_1.5b.sh /path/to/megatron_checkpoint /target/path/to/huggingface_checkpoint /path/to/base_model_checkpoint
+    CKPT_PATH_MG=/path/to/megatron_checkpoint
+    CKPT_PATH_HF=/target/path/to/huggingface_checkpoint
+    CKPT_PATH_ORIGINAL_HF=/path/to/base_model_checkpoint
+    CKPT_PATH_MF="${CKPT_PATH_HF}_middle_file"
+
+    # 示例：1.5B
+    python -m rlinf.utils.ckpt_convertor.megatron_convertor.convert_mg_to_middle_file \
+        --load-path "${CKPT_PATH_MG}" \
+        --save-path "${CKPT_PATH_MF}" \
+        --model DeepSeek-R1-Distill-Qwen-1.5B \
+        --tp-size 2 \
+        --ep-size 1 \
+        --pp-size 1 \
+        --te-ln-linear-qkv true \
+        --te-ln-linear-mlp_fc1 true \
+        --te-extra-state-check-none true \
+        --use-gpu-num 0 \
+        --process-num 16
+
+    python -m rlinf.utils.ckpt_convertor.megatron_convertor.convert_middle_file_to_hf \
+        --load-path "${CKPT_PATH_MF}" \
+        --save-path "${CKPT_PATH_HF}" \
+        --model DeepSeek-R1-Distill-Qwen-1.5B \
+        --use-gpu-num 0 \
+        --process-num 16
+
+    rm -rf "${CKPT_PATH_MF}"
+    rm -f "${CKPT_PATH_HF}"/*.done
+    shopt -s extglob
+    cp "${CKPT_PATH_ORIGINAL_HF}"/!(*model.safetensors.index).json "${CKPT_PATH_HF}"
