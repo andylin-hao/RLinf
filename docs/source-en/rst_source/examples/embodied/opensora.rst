@@ -130,15 +130,19 @@ Before starting training, you need to download the corresponding pretrained mode
    # Download the model (choose either method)
    # Method 1: Using git clone
    git lfs install
-   git clone https://huggingface.co/RLinf/RLinf-OpenVLAOFT-LIBERO-90-Base-Lora
-   git clone https://huggingface.co/RLinf/RLinf-OpenVLAOFT-LIBERO-130-Base-Lora
+   git clone https://huggingface.co/Haozhan72/Openvla-oft-SFT-libero-spatial-traj1
+   git clone https://huggingface.co/Haozhan72/Openvla-oft-SFT-libero-object-traj1
+   git clone https://huggingface.co/Haozhan72/Openvla-oft-SFT-libero-goal-traj1
+   git clone https://huggingface.co/Haozhan72/Openvla-oft-SFT-libero-10-traj1
 
    # Method 2: Using huggingface-hub
    # For mainland China users, you can use the following for better download speed:
    # export HF_ENDPOINT=https://hf-mirror.com
    pip install huggingface-hub
-   hf download RLinf/RLinf-OpenVLAOFT-LIBERO-90-Base-Lora --local-dir RLinf-OpenVLAOFT-LIBERO-90-Base-Lora
-   hf download RLinf/RLinf-OpenVLAOFT-LIBERO-130-Base-Lora --local-dir RLinf-OpenVLAOFT-LIBERO-130-Base-Lora
+   hf download Haozhan72/Openvla-oft-SFT-libero-spatial-traj1 --local-dir Openvla-oft-SFT-libero-spatial-traj1
+   hf download Haozhan72/Openvla-oft-SFT-libero-object-traj1 --local-dir Openvla-oft-SFT-libero-object-traj1
+   hf download Haozhan72/Openvla-oft-SFT-libero-goal-traj1 --local-dir Openvla-oft-SFT-libero-goal-traj1
+   hf download Haozhan72/Openvla-oft-SFT-libero-10-traj1 --local-dir Openvla-oft-SFT-libero-10-traj1
 
 After downloading, make sure to correctly specify the model path and the unnorm_key in the configuration yaml file.
 
@@ -164,10 +168,12 @@ Currently, RLinf only provides weights and data for libero-spatial and libero-ob
    # Method 1: Using git clone
    git lfs install
    git clone https://huggingface.co/RLinf/RLinf-OpenSora-LIBERO-Spatial
+   git clone https://huggingface.co/RLinf/RLinf-OpenSora-LIBERO-Object
 
    # Method 2: Using huggingface-hub
    pip install huggingface-hub
    hf download RLinf/RLinf-OpenSora-LIBERO-Spatial --local-dir RLinf-OpenSora-LIBERO-Spatial
+   hf download RLinf/RLinf-OpenSora-LIBERO-Object --local-dir RLinf-OpenSora-LIBERO-Object
 
 The directory structure of RLinf-OpenSora-LIBERO-Spatial is as follows:
 

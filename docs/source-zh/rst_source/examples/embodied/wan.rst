@@ -125,15 +125,19 @@ VLA 模型下载
    # 使用下面任一方法下载模型
    # 方法 1：使用 git clone
    git lfs install
-   git clone https://huggingface.co/RLinf/RLinf-OpenVLAOFT-LIBERO-90-Base-Lora
-   git clone https://huggingface.co/RLinf/RLinf-OpenVLAOFT-LIBERO-130-Base-Lora
+   git clone https://huggingface.co/Haozhan72/Openvla-oft-SFT-libero-spatial-traj1
+   git clone https://huggingface.co/Haozhan72/Openvla-oft-SFT-libero-object-traj1
+   git clone https://huggingface.co/Haozhan72/Openvla-oft-SFT-libero-goal-traj1
+   git clone https://huggingface.co/Haozhan72/Openvla-oft-SFT-libero-10-traj1
 
    # 方法 2：使用 huggingface-hub
    # 为提升国内下载速度，可以设置：
    # export HF_ENDPOINT=https://hf-mirror.com
    pip install huggingface-hub
-   hf download RLinf/RLinf-OpenVLAOFT-LIBERO-90-Base-Lora --local-dir RLinf-OpenVLAOFT-LIBERO-90-Base-Lora
-   hf download RLinf/RLinf-OpenVLAOFT-LIBERO-130-Base-Lora --local-dir RLinf-OpenVLAOFT-LIBERO-130-Base-Lora
+   hf download Haozhan72/Openvla-oft-SFT-libero-spatial-traj1 --local-dir Openvla-oft-SFT-libero-spatial-traj1
+   hf download Haozhan72/Openvla-oft-SFT-libero-object-traj1 --local-dir Openvla-oft-SFT-libero-object-traj1
+   hf download Haozhan72/Openvla-oft-SFT-libero-goal-traj1 --local-dir Openvla-oft-SFT-libero-goal-traj1
+   hf download Haozhan72/Openvla-oft-SFT-libero-10-traj1 --local-dir Openvla-oft-SFT-libero-10-traj1
 
 下载完成后，请确保在配置 yaml 文件中正确指定模型路径与 unnorm_key。
 
@@ -155,22 +159,18 @@ WM (World Model) 模型下载
 
 .. code:: bash
 
-   # 使用下面任一方法下载模型
+   # 下载权重与初始化数据
    # 方法 1：使用 git clone
    git lfs install
-   git clone https://huggingface.co/Haozhan72/Openvla-oft-SFT-libero-spatial-traj1
-   git clone https://huggingface.co/Haozhan72/Openvla-oft-SFT-libero-object-traj1
-   git clone https://huggingface.co/Haozhan72/Openvla-oft-SFT-libero-goal-traj1
-   git clone https://huggingface.co/Haozhan72/Openvla-oft-SFT-libero-10-traj1
+   git clone https://huggingface.co/RLinf/RLinf-Wan-LIBERO-Spatial
+   git clone https://huggingface.co/RLinf/RLinf-Wan-LIBERO-Object
+   git clone https://huggingface.co/RLinf/RLinf-Wan-LIBERO-Goal
 
    # 方法 2：使用 huggingface-hub
-   # 为提升国内下载速度，可以设置：
-   # export HF_ENDPOINT=https://hf-mirror.com
    pip install huggingface-hub
-   hf download Haozhan72/Openvla-oft-SFT-libero-spatial-traj1 --local-dir Openvla-oft-SFT-libero-spatial-traj1
-   hf download Haozhan72/Openvla-oft-SFT-libero-object-traj1 --local-dir Openvla-oft-SFT-libero-object-traj1
-   hf download Haozhan72/Openvla-oft-SFT-libero-goal-traj1 --local-dir Openvla-oft-SFT-libero-goal-traj1
-   hf download Haozhan72/Openvla-oft-SFT-libero-10-traj1 --local-dir Openvla-oft-SFT-libero-10-traj1
+   hf download RLinf/RLinf-Wan-LIBERO-Spatial --local-dir RLinf-Wan-LIBERO-Spatial
+   hf download RLinf/RLinf-Wan-LIBERO-Object --local-dir RLinf-Wan-LIBERO-Object
+   hf download RLinf/RLinf-Wan-LIBERO-Goal --local-dir RLinf-Wan-LIBERO-Goal
 
 RLinf-Wan-LIBERO-Spatial 的目录结构如下：
 
@@ -188,7 +188,7 @@ RLinf-Wan-LIBERO-Spatial 的目录结构如下：
         │   └── trajN_kir.npy
         ├── model-00001.safetensors              # 世界模型权重文件
         ├── resnet_rm.pth                        # 奖励模型权重文件
-        └── vae/                                 # VAE 模型权重文件
+        └── Wan2.2_VAE.pth                       # VAE 模型权重文件
 
 下载完成后，请确保在配置 yaml 文件中正确指定模型路径。
 
@@ -341,9 +341,9 @@ RLinf-Wan-LIBERO-Spatial 的目录结构如下：
 LIBERO 部分结果
 ~~~~~~~~~~~~~~~~~~~~~~
 
-目前仅测试使用 Wan 模拟 libero-spatial, libero-object 和 libero goal 环境并训练 VLA 模型，更多环境仍在测试中。
+目前仅测试使用 Wan 模拟 libero-spatial, libero-object 和 libero object 环境并训练 VLA 模型，更多环境仍在测试中。
 
-对于每个 LIBERO 套件，我们评估所有 task_id 与 trial_id 的组合。Object、Spatial 和 Goal 套件共评估 1500 个环境（10 个任务 × 150 个试次）。
+对于每个 LIBERO 套件，我们评估所有 task_id 与 trial_id 的组合。Spatial、Object 和 Goal 套件共评估 1500 个环境（10 个任务 × 150 个试次）。
 
 我们根据模型的训练配置设置评估超参：
 对于 SFT 模型与 RL 训练模型，均设置 `do_sample = True`、`temperature = 1.6` 以评估性能。
@@ -362,14 +362,14 @@ LIBERO 部分结果
       - Object
       - Goal
     * - |huggingface| `OpenVLA-OFT (LoRA-base)`_
-      - 61.20%
-      - 36.29%
-      - 48.19%
+      - 61.2%
+      - 36.7%
+      - 48.2%
     * - OpenVLA-OFT（Wan 作为世界模型的 RLinf-GRPO）
-      - 70.16%
-      - 77.75%
-      - 60.08%
+      - 71.5%
+      - 77.9%
+      - 60.1%
     * - **效果提升**
-      - **+25.3%**
-      - **+12.9%**
-      - **+12.9%**
+      - **+10.3%**
+      - **+41.2%**
+      - **+11.9%**

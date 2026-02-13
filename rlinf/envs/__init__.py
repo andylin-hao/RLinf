@@ -108,7 +108,7 @@ def get_env_cls(env_type: str, env_cfg=None):
     elif env_type == SupportedEnvType.OPENSORAWM:
         from rlinf.envs.world_model.world_model_opensora_env import OpenSoraEnv
 
-        if not enable_offload:
+        if env_cfg.get("enable_offload", False):
             from rlinf.envs.world_model.world_model_opensora_env import OpenSoraEnv
         else:
             from rlinf.envs.world_model.world_model_opensora_offload_env import (
@@ -116,7 +116,7 @@ def get_env_cls(env_type: str, env_cfg=None):
             )
         return OpenSoraEnv
     elif env_type == SupportedEnvType.WANWM:
-        if not enable_offload:
+        if env_cfg.get("enable_offload", False):
             from rlinf.envs.world_model.world_model_wan_env import WanEnv
         else:
             from rlinf.envs.world_model.world_model_wan_env_offload import (

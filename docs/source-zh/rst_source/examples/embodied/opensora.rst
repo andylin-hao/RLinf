@@ -351,14 +351,14 @@ LIBERO 部分结果
     :widths: 50 25 25
 
     * - 模型
-      - Object
       - Spatial
-    * - |huggingface| `OpenVLA-OFT (LoRA-base) <https://huggingface.co/RLinf/RLinf-OpenVLAOFT-LIBERO-130-Base-Lora>`_
-      - 50.20%
-      - 51.61%
+      - Object
+    * - OpenVLA-OFT (LoRA-base)
+      - 61.2%
+      - 36.7%
     * - OpenVLA-OFT（OpenSora 作为世界模型的 RLinf-GRPO）
       - 75.5%
       - 64.5%
     * - **效果提升**
-      - **+25.3%**
-      - **+12.9%**
+      - **+14.3%**
+      - **+27.8%**
