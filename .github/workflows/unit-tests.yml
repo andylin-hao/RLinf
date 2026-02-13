@@ -68,7 +68,7 @@ jobs:
         shell: bash
         run: |
           apt-get update
-          apt-get install -y python3-pip
+          apt-get install -y python3-pip git
           pip install uv
           uv venv
           source .venv/bin/activate
