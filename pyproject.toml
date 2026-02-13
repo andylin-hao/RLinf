@@ -25,18 +25,12 @@ dependencies = [
     # These are the dependencies of the core scheduler
     "ray[default]>=2.47.0",
     "torch==2.6.0",
-    "hydra-core==1.4.0.dev1",
+    "hydra-core",
     "numpy",
 
     # Data processing
-    "pylatexenc",
     "datasets==3.6.0",
-    "latex2sympy2 @ git+https://ghfast.top/github.com/RLinf/latex2sympy2.git",
-    "sentencepiece",
     "torchdata",
-    "wandb",
-    "word2number",
-    "regex",
     "scipy",
 
     # Utilities
@@ -59,6 +53,7 @@ dependencies = [
     "pyrealsense2; sys_platform == 'linux' and platform_machine == 'x86_64'",
 
     # Logging
+    "wandb",
     "swanlab>=0.6.11",
     "tensorboard",
 ]
@@ -71,6 +66,10 @@ sglang-vllm = [
     "vllm==0.8.5",
     # uvloop is not compatible with simulators, put it here
     "uvloop==0.21.0",
+    "hydra-core==1.4.0.dev1",
+    "word2number",
+    "regex",
+    "latex2sympy2 @ git+https://ghfast.top/github.com/RLinf/latex2sympy2.git",
 ]
 embodied = [
     "transformers==4.40.1",
@@ -123,7 +122,6 @@ override-dependencies = [
     "xgrammar==0.1.19",
     "uvloop==0.21.0",
     "tensorflow-addons==0.23.0",
-    "hydra-core==1.4.0.dev1",
 ]
 
 [tool.ruff]
