@@ -583,7 +583,7 @@ jobs:
           export WAN_PATH=/workspace/dataset/wan
           bash requirements/install.sh embodied --model openvla-oft --env wan
 
-      - name: OpenSora GRPO test
+      - name: Wan GRPO test
         timeout-minutes: 20
         run: |
           unset PYTHONPATH

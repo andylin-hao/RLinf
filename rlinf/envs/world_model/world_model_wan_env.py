@@ -33,12 +33,17 @@ __all__ = ["WanEnv"]
 
 class WanEnv(BaseWorldEnv):
     def __init__(
-        self, cfg, num_envs, seed_offset, total_num_processes, record_metrics=True
+        self, 
+        cfg,
+        num_envs,
+        seed_offset,
+        total_num_processes,
+        record_metrics=True,
+        worker_info=None,
     ):
         super().__init__(
-            cfg, num_envs, seed_offset, total_num_processes, record_metrics
+            cfg, num_envs, seed_offset, total_num_processes, worker_info, record_metrics
         )
-
         # Reset state management
         self.use_fixed_reset_state_ids = cfg.use_fixed_reset_state_ids
         self.group_size = cfg.group_size

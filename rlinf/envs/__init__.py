@@ -107,21 +107,9 @@ def get_env_cls(env_type: str, env_cfg=None):
         return FrankaSimEnv
     elif env_type == SupportedEnvType.OPENSORAWM:
         from rlinf.envs.world_model.world_model_opensora_env import OpenSoraEnv
-
-        if env_cfg.get("enable_offload", False):
-            from rlinf.envs.world_model.world_model_opensora_env import OpenSoraEnv
-        else:
-            from rlinf.envs.world_model.world_model_opensora_offload_env import (
-                OpenSoraOffloadEnv as OpenSoraEnv,
-            )
         return OpenSoraEnv
     elif env_type == SupportedEnvType.WANWM:
-        if env_cfg.get("enable_offload", False):
-            from rlinf.envs.world_model.world_model_wan_env import WanEnv
-        else:
-            from rlinf.envs.world_model.world_model_wan_env_offload import (
-                WanOffloadEnv as WanEnv,
-            )
+        from rlinf.envs.world_model.world_model_wan_env import WanEnv
         return WanEnv
     else:
         raise NotImplementedError(f"Environment type {env_type} not implemented")

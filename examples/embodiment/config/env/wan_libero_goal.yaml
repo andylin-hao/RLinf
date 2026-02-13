@@ -48,5 +48,5 @@ image_size: [256, 256]       # output image size of world model
 num_frames: 13               # total number of frames to encode = condition_frame_length + chunk
 
 reward_model:
-  type: TaskEmbResnetRewModel
+  type: TaskEmbedResnetRewModel
   from_pretrained: ${env.train.wan_wm_hf_ckpt_path}/taskemb_resnet_rm.pth
