@@ -118,6 +118,9 @@ RLinf具有高度灵活性，可支持多种强化学习训练工作流（PPO、
           <ul>
             <li><a href="https://rlinf.readthedocs.io/zh-cn/latest/rst_source/examples/embodied/opensora.html">OpenSora</a> ✅</li>
           </ul>
+          <ul>
+            <li><a href="https://rlinf.readthedocs.io/zh-cn/latest/rst_source/examples/embodied/wan.html">Wan</a> ✅</li>
+          </ul>
           <li><b>自定义模型</b></li>
           <ul>
             <li><a href="https://github.com/RLinf/RLinf/blob/main/docs/source-en/rst_source/examples/embodied/mlp.rst">MLP-Policy</a> ✅</li>
