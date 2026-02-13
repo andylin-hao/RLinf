@@ -1,12 +1,13 @@
 [build-system]
-requires = ["setuptools>=69.5.1,<75.9", "wheel"]
+requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "RLinf"
+name = "rlinf"
 version = "0.2.0"
 readme = {file = "README.md", content-type = "text/markdown"}
 requires-python = ">=3.10,<=3.11.14"
+license = {file = "LICENSE"}
 keywords = [
     "reinforcement-learning",
     "embodied-intelligence",
@@ -73,7 +74,7 @@ agentic-sglang = [
     "word2number",
     "regex",
     "peft==0.11.1",
-    "latex2sympy2 @ git+https://ghfast.top/github.com/RLinf/latex2sympy2.git",
+    "rlinf_latex2sympy2",
 ]
 agentic-vllm = [
     "vllm==0.8.5",
@@ -84,7 +85,7 @@ agentic-vllm = [
     "word2number",
     "regex",
     "peft==0.11.1",
-    "latex2sympy2 @ git+https://ghfast.top/github.com/RLinf/latex2sympy2.git",
+    "rlinf_latex2sympy2",
 ]
 embodied = [
     "transformers==4.40.1",
