@@ -75,6 +75,7 @@ agentic-sglang = [
     "regex",
     "peft==0.11.1",
     "rlinf_latex2sympy2",
+    "mcp",
 ]
 agentic-vllm = [
     "vllm==0.8.5",
@@ -86,6 +87,7 @@ agentic-vllm = [
     "regex",
     "peft==0.11.1",
     "rlinf_latex2sympy2",
+    "mcp",
 ]
 embodied = [
     "transformers==4.40.1",

@@ -16,26 +16,54 @@
 
 Usage:
     python tests/unit_tests/test_import_rlinf_package.py --workers 16
+    python tests/unit_tests/test_import_rlinf_package.py --no-test-modules rlinf/envs rlinf/models
 """
-
-from __future__ import annotations
 
 import argparse
 import importlib
 import os
 import traceback
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
+DEFAULT_NO_TEST_MODULES = [
+    "rlinf/envs",
+    "rlinf/models",
+    "rlinf/utils/ckpt_convertor/convert_openpi_jax_to_python.py",
+]
 
-def _discover_modules(rlinf_root: Path) -> list[str]:
+
+def _normalize_no_test_modules(raw_paths: list[str]) -> list[str]:
+    return [
+        path.strip().replace("\\", "/").rstrip("/")
+        for path in raw_paths
+        if path.strip()
+    ]
+
+
+def _should_skip_module(relative: Path, no_test_modules: list[str]) -> bool:
+    module_path = f"rlinf/{relative.with_suffix('').as_posix()}"
+    file_path = f"rlinf/{relative.as_posix()}"
+
+    for skip_path in no_test_modules:
+        normalized_skip = skip_path.removesuffix(".py")
+        if module_path == normalized_skip or module_path.startswith(
+            f"{normalized_skip}/"
+        ):
+            return True
+        if file_path == skip_path:
+            return True
+    return False
+
+
+def _discover_modules(rlinf_root: Path, no_test_modules: list[str]) -> list[str]:
     modules: set[str] = set()
     for py_file in rlinf_root.rglob("*.py"):
         if "__pycache__" in py_file.parts:
             continue
 
         relative = py_file.relative_to(rlinf_root)
-        if relative.parts and relative.parts[0] in {"envs", "models"}:
+        if _should_skip_module(relative, no_test_modules):
             continue
         if py_file.name == "__init__.py":
             if relative.parent == Path("."):
@@ -65,15 +93,25 @@ def main() -> int:
         default=min(32, max(4, (os.cpu_count() or 4) * 2)),
         help="Number of threads used for parallel import.",
     )
+    parser.add_argument(
+        "--no-test-modules",
+        nargs="*",
+        default=DEFAULT_NO_TEST_MODULES,
+        help=(
+            "Full paths under repo to skip, such as 'rlinf/envs' or "
+            "'rlinf/path/to/module.py'."
+        ),
+    )
     args = parser.parse_args()
 
     repo_root = Path(__file__).resolve().parents[2]
     rlinf_root = repo_root / "rlinf"
-    modules = _discover_modules(rlinf_root)
+    no_test_modules = _normalize_no_test_modules(args.no_test_modules)
+    modules = _discover_modules(rlinf_root, no_test_modules)
 
     print(f"Discovered {len(modules)} modules under {rlinf_root}")
     failures: list[tuple[str, str]] = []
-    with ThreadPoolExecutor(max_workers=args.workers) as executor:
+    with ProcessPoolExecutor(max_workers=args.workers) as executor:
         futures = [executor.submit(_import_module, module) for module in modules]
         for future in as_completed(futures):
             module, err = future.result()
