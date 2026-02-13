@@ -5,6 +5,8 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "rlinf"
 version = "0.2.0.dev1"
+authors = [{ name = "RLinf Contributors" }]
+description = "Reinforcement Learning Infrastructure for Embodied and Agentic AI"
 readme = {file = "README.md", content-type = "text/markdown"}
 requires-python = ">=3.10,<=3.11.14"
 license = {file = "LICENSE"}
@@ -24,6 +26,7 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
 ]
+
 
 dependencies = [
     # Core System
@@ -62,6 +65,12 @@ dependencies = [
     "swanlab>=0.6.11",
     "tensorboard",
 ]
+
+[project.urls]
+Homepage = "https://github.com/RLinf/RLinf"
+Repository = "https://github.com/RLinf/RLinf"
+Documentation = "https://rlinf.readthedocs.io/"
+"Bug Report" = "https://github.com/RLinf/RLinf/issues"
 
 [project.optional-dependencies]
 agentic-sglang = [
@@ -133,7 +142,7 @@ override-dependencies = [
     "setuptools>=69.5.1,<75.9",
     "datasets==3.6.0",
     "peft==0.11.1",
-    "transformers>=4.40.1,<=4.51.1",
+    "transformers>=4.40.1",
 ]
 
 [tool.setuptools]

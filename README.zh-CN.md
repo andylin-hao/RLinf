@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="docs/source-en/_static/svg/logo_white.svg" alt="RLinf-logo" width="600"/>
+  <img src="https://github.com/RLinf/misc/raw/main/pic/logo_white.svg" alt="RLinf-logo" width="600"/>
 </div>
 
 <div align="center">
@@ -25,7 +25,7 @@
 RLinf 是一个灵活且可扩展的开源框架，专为具身智能和智能体而设计。名称中的 “inf” 既代表 `Infrastructure`，强调其作为新一代训练坚实基础的作用；也代表 `Infinite`，寓意其支持开放式学习、持续泛化以及智能发展的无限可能。
 
 <div align="center">
-  <img src="docs/source-en/_static/svg/overview.svg" alt="RLinf-overview"/>
+  <img src="https://github.com/RLinf/misc/raw/main/pic/overview.svg" alt="RLinf-overview"/>
 </div>
 
 
@@ -120,7 +120,7 @@ RLinf具有高度灵活性，可支持多种强化学习训练工作流（PPO、
           </ul>
           <li><b>自定义模型</b></li>
           <ul>
-            <li><a href="https://github.com/RLinf/RLinf/blob/main/docs/source-en/rst_source/examples/embodied/mlp.rst">MLP-Policy</a> ✅</li>
+            <li><a href="https://rlinf.readthedocs.io/zh-cn/latest/rst_source/examples/embodied/mlp.html">MLP-Policy</a> ✅</li>
             <li>CNN-Policy ✅</li>
           </ul>
         </ul>

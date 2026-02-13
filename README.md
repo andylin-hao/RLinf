@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="docs/source-en/_static/svg/logo_white.svg" alt="RLinf-logo" width="600"/>
+  <img src="https://github.com/RLinf/misc/raw/main/pic/logo_white.svg" alt="RLinf-logo" width="600"/>
 </div>
 
 <div align="center">
@@ -25,7 +25,7 @@
 RLinf is a flexible and scalable open-source RL infrastructure designed for Embodied and Agentic AI. The 'inf' in RLinf stands for `Infrastructure`, highlighting its role as a robust backbone for next-generation training. It also stands for `Infinite`, symbolizing the system’s support for open-ended learning, continuous generalization, and limitless possibilities in intelligence development.
 
 <div align="center">
-  <img src="docs/source-en/_static/svg/overview.svg" alt="RLinf-overview"/>
+  <img src="https://github.com/RLinf/misc/raw/main/pic/overview.svg" alt="RLinf-overview"/>
 </div>
 
 
@@ -122,7 +122,7 @@ Multiple Backend Integrations
           </ul>
           <li><b>Custom Models</b></li>
           <ul>
-            <li><a href="https://github.com/RLinf/RLinf/blob/main/docs/source-en/rst_source/examples/embodied/mlp.rst">MLP-Policy</a> ✅</li>
+            <li><a href="https://rlinf.readthedocs.io/en/latest/rst_source/examples/embodied/mlp.html">MLP-Policy</a> ✅</li>
             <li>CNN-Policy ✅</li>
           </ul>
         </ul>
