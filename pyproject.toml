@@ -81,6 +81,7 @@ agentic-sglang = [
     # uvloop is not compatible with simulators, put it here
     "uvloop==0.21.0",
     "hydra-core==1.4.0.dev1",
+    "omegaconf==2.4.0.dev4",
     "word2number",
     "regex",
     "peft==0.11.1",
@@ -94,6 +95,7 @@ agentic-vllm = [
     # uvloop is not compatible with simulators, put it here
     "uvloop==0.21.0",
     "hydra-core==1.4.0.dev1",
+    "omegaconf==2.4.0.dev4",
     "word2number",
     "regex",
     "peft==0.11.1",
