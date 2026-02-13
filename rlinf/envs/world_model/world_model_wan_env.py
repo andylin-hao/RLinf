@@ -33,7 +33,7 @@ __all__ = ["WanEnv"]
 
 class WanEnv(BaseWorldEnv):
     def __init__(
-        self, 
+        self,
         cfg,
         num_envs,
         seed_offset,
