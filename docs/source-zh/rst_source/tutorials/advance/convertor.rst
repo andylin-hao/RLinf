@@ -34,7 +34,7 @@ distcp 格式转换到 pt 格式
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 如果您使用最新的代码保存的checkpoint，已经保存了 ``model_state_dict/full_weigths.pt`` 文件，可以跳过此步骤。
-如果您仍想把保存的 ``.distcp`` 文件转换成 ``.pt`` 格式，或者使用老版本代码，仅保存了 ``.distcp`` 格式的文件，可使用 RLinf/toolkits/ckpt_convertor/fsdp_convertor/convert_dcp_to_pt.pt，
+如果您仍想把保存的 ``.distcp`` 文件转换成 ``.pt`` 格式，或者使用老版本代码，仅保存了 ``.distcp`` 格式的文件，可使用 ``RLinf/rlinf/utils/ckpt_convertor/fsdp_convertor/convert_dcp_to_pt.py``，
 先将 ``.distcp`` 转换成 ``.pt`` 格式，再执行后续操作。
 
 .. code-block:: bash
@@ -51,7 +51,7 @@ pt 格式转换到 safetensors 格式
 
 1. **修改config文件**
 
-运行转换脚本前，请您修改 ``RLinf/toolkits/ckpt_convertor/fsdp_convertor/config/fsdp_model_convertor.yaml`` 文件。
+运行转换脚本前，请您修改 ``RLinf/rlinf/utils/ckpt_convertor/fsdp_convertor/config/fsdp_model_convertor.yaml`` 文件。
 请检查以下7个参数是否正确： 
 
     ``defaults``， ``convertor.save_path``， ``convertor.merge_lora_weighs``， ``convertor.ckpt_path``， 
@@ -77,7 +77,7 @@ pt 格式转换到 safetensors 格式
 
 2. **（Optional）新增model_save_helper**
 
-如果您的模型有特殊的保存逻辑，请在 ``RLinf/toolkits/ckpt_convertor/fsdp_convertor/utils.py`` 文件中的 ``get_model_save_helper`` 添加对应的保存函数。
+如果您的模型有特殊的保存逻辑，请在 ``RLinf/rlinf/utils/ckpt_convertor/fsdp_convertor/utils.py`` 文件中的 ``get_model_save_helper`` 添加对应的保存函数。
 
 3. **运行脚本**
 

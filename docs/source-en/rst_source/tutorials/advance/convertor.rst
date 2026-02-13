@@ -34,7 +34,7 @@ Converting distcp Format to pt Format
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 If you are using the latest code to save checkpoints, the ``model_state_dict/full_weigths.pt`` file has already been saved, and you can skip this step.
-If you still want to convert the saved ``.distcp`` files to ``.pt`` format, or if you are using older code that only saved ``.distcp`` format files, you can use RLinf/toolkits/ckpt_convertor/fsdp_convertor/convert_dcp_to_pt.pt
+If you still want to convert the saved ``.distcp`` files to ``.pt`` format, or if you are using older code that only saved ``.distcp`` format files, you can use ``RLinf/rlinf/utils/ckpt_convertor/fsdp_convertor/convert_dcp_to_pt.py``
 to first convert ``.distcp`` to ``.pt`` format, then proceed with subsequent operations.
 
 .. code-block:: bash
@@ -51,7 +51,7 @@ Converting pt Format to safetensors Format
 
 1. **Modify the config file**
 
-Before running the convertor script, please modify the ``RLinf/toolkits/ckpt_convertor/fsdp_convertor/config/fsdp_model_convertor.yaml`` file.
+Before running the convertor script, please modify the ``RLinf/rlinf/utils/ckpt_convertor/fsdp_convertor/config/fsdp_model_convertor.yaml`` file.
 Please check that the following 7 parameters are correct:
 
     ``defaults``, ``convertor.save_path``, ``convertor.merge_lora_weighs``, ``convertor.ckpt_path``, 
@@ -77,7 +77,7 @@ Please check that the following 7 parameters are correct:
 
 2. **（Optional）Add model_save_helper**
 
-If your model has special saving logic, please add the corresponding save function in the ``get_model_save_helper`` in the ``RLinf/toolkits/ckpt_convertor/fsdp_convertor/utils.py`` file.
+If your model has special saving logic, please add the corresponding save function in the ``get_model_save_helper`` in the ``RLinf/rlinf/utils/ckpt_convertor/fsdp_convertor/utils.py`` file.
 
 3. **Run the script**
 

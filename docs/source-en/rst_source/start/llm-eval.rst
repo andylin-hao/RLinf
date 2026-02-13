@@ -36,7 +36,7 @@ Quick Start
 
 Model Conversion
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-During training, models are saved in Megatron format. You can use the conversion scripts located at ``RLinf/toolkits/ckpt_convertor/megatron_convertor/`` to convert them to Huggingface format.
+During training, models are saved in Megatron format. You can use the conversion scripts located at ``RLinf/rlinf/utils/ckpt_convertor/megatron_convertor/`` to convert them to Huggingface format.
 
 You have two ways to use the scripts:
 

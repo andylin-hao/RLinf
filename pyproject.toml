@@ -136,6 +136,9 @@ where = ["."]
 include = ["rlinf*"]
 exclude = ["tests*", "docs*", "examples*", "docker*", "toolkits*"]
 
+[tool.setuptools.package-data]
+rlinf = ["**/*.yaml", "**/*.yml"]
+
 [tool.ruff]
 line-length = 88
 indent-width = 4

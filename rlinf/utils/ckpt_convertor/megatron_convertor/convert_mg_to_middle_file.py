@@ -28,10 +28,11 @@ import safetensors.torch
 import torch
 import yaml
 from tqdm import tqdm
-from utils.fp8_utils import dict_push
-from utils.mg_loader import MGLoaderGroupLazy
-from utils.mp_utils import get_device_initializer, single_thread_init
-from utils.tensor_operations import MergeTpTpe, Operation
+
+from .utils.fp8_utils import dict_push
+from .utils.mg_loader import MGLoaderGroupLazy
+from .utils.mp_utils import get_device_initializer, single_thread_init
+from .utils.tensor_operations import MergeTpTpe, Operation
 
 torch.set_num_threads(32)
 

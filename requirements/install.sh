@@ -601,6 +601,7 @@ install_isaaclab_env() {
     isaaclab_dir=$(clone_or_reuse_repo ISAAC_LAB_PATH "$VENV_DIR/isaaclab" https://github.com/RLinf/IsaacLab)
 
     pushd ~ >/dev/null
+    uv pip install "flatdict==4.0.1" --no-build-isolation
     uv pip install "cuda-toolkit[nvcc]==12.8.0"
     $isaaclab_dir/isaaclab.sh --install
     popd >/dev/null

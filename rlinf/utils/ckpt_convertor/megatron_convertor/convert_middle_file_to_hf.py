@@ -30,10 +30,11 @@ import safetensors.torch
 import torch
 import yaml
 from tqdm import tqdm
-from utils.fp8_utils import dict_push
-from utils.mp_utils import get_device_initializer, single_thread_init
-from utils.safetensors_loader import STLoaderLazy
-from utils.tensor_operations import Operation, SplitGlu, SplitQKV
+
+from .utils.fp8_utils import dict_push
+from .utils.mp_utils import get_device_initializer, single_thread_init
+from .utils.safetensors_loader import STLoaderLazy
+from .utils.tensor_operations import Operation, SplitGlu, SplitQKV
 
 torch.set_num_threads(32)
 
