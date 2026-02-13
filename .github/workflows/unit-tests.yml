@@ -68,18 +68,18 @@ jobs:
           uv venv
           source .venv/bin/activate
           uv build
-          export PACKAGE_PATH=$(pwd)/dist/rlinf-*.whl
+          export WHL_FILE=$(ls $(pwd)/dist/rlinf-*.whl)
           cd
-          uv pip install $PACKAGE_PATH[embodied]
-          uv pip install $PACKAGE_PATH[agentic-sglang]
-          uv pip install $PACKAGE_PATH[agentic-vllm]
+          uv pip install $WHL_FILE[embodied]
+          uv pip install $WHL_FILE[agentic-sglang]
+          uv pip install $WHL_FILE[agentic-vllm]
           cd -
 
       - name: Check package import
         timeout-minutes: 20
         run: |
           source .venv/bin/activate
-          export PACKAGE_PATH=$(pwd)/dist/rlinf-*.whl
+          export PACKAGE_PATH=$(pwd)
           cd
           python $PACKAGE_PATH/tests/unit_tests/test_import_rlinf_package.py
           cd -

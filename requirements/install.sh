@@ -340,6 +340,7 @@ clone_or_reuse_repo() {
 
 install_common_embodied_deps() {
     uv sync --extra embodied --active $NO_INSTALL_RLINF_CMD
+    uv pip install -r $SCRIPT_DIR/embodied/envs/common.txt
     if [ "$NO_ROOT" -eq 0 ]; then
         bash $SCRIPT_DIR/embodied/sys_deps.sh
     fi
@@ -688,8 +689,7 @@ install_robotwin_env() {
         export TORCH_CUDA_ARCH_LIST="7.0;8.0;9.0"
     fi
 
-    uv pip install mplib==0.2.1
-    uv pip install gymnasium==0.29.1
+    uv pip install mplib==0.2.1 gymnasium==0.29.1 av open3d zarr openai
 
     uv pip install git+${GITHUB_PREFIX}https://github.com/facebookresearch/pytorch3d.git  --no-build-isolation
     uv pip install warp-lang
