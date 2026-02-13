@@ -12,8 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import math
+import io
 import os
+from collections import deque
 from pathlib import Path
 from typing import Optional, Union
 
@@ -26,6 +27,7 @@ from diffsynth.pipelines.wan_video_new import ModelConfig, WanVideoPipeline
 from PIL import Image
 
 from rlinf.data.datasets.world_model import NpyTrajectoryDatasetWrapper
+from rlinf.envs.utils import recursive_to_device
 from rlinf.envs.world_model.base_world_env import BaseWorldEnv
 
 __all__ = ["WanEnv"]
@@ -110,14 +112,14 @@ class WanEnv(BaseWorldEnv):
             torch_dtype=torch.bfloat16,
             device="cuda:0",
             model_configs=[
-                # 路径从yaml里加载
+                # Paths are loaded from yaml
                 ModelConfig(path=self.cfg.model_path, offload_device="cpu"),
                 ModelConfig(path=self.cfg.VAE_path, offload_device="cpu"),
             ],
         )
         # pipe.enable_vram_management()
-        pipe.dit.to("cuda")
-        pipe.vae.to("cuda")
+        pipe.dit.to(self.device)
+        pipe.vae.to(self.device)
         return pipe
 
     def _load_reward_model(self):
@@ -295,7 +297,7 @@ class WanEnv(BaseWorldEnv):
                 "image"
             ]  # Shape: [3, H, W], dtype: float, range: [0, 1]
             # [3, 256, 256], float32, [0,1]
-            # Wan中需要PIL格式的图像
+            # Wan requires images in PIL format
 
             # Get init_ee_pose if available
             if "observation.state" in first_frame:
@@ -317,7 +319,8 @@ class WanEnv(BaseWorldEnv):
             # Normalize to [-1, 1]
             img_tensor = self.trans_norm(img_tensor)
 
-            # KIR Trick: 把最后四帧作为condition frames，参考帧不变，仍然为第一帧
+            # KIR trick: use the last four frames as condition frames, while
+            # keeping the reference frame unchanged as the first frame.
             target_items = episode_data.get("target_items", [])
             if len(target_items) == self.condition_frame_length - 1:
                 final_frames = []
@@ -500,8 +503,8 @@ class WanEnv(BaseWorldEnv):
                     img = ((img + 1.0) / 2.0 * 255.0).clip(0, 255)
                 imgs.append(Image.fromarray(img.astype(np.uint8)))
 
-            batch_input_image.append(imgs[0])  # 第一帧
-            batch_input_image4.append(imgs[-4:])  # 后4帧
+            batch_input_image.append(imgs[0])  # First frame
+            batch_input_image4.append(imgs[-4:])  # Last 4 frames
 
         kwargs = {
             "seed": 0,
@@ -531,7 +534,7 @@ class WanEnv(BaseWorldEnv):
             video = torch.from_numpy(video)
             video = video.transpose(0, 1)  # [3, T, H, W]
 
-            # 更新 image_queue
+            # Update image_queue
             for t in range(video.shape[1] - 4, video.shape[1]):
                 self.image_queue[env_idx][t - 8] = video[:, t : t + 1]
 
@@ -644,7 +647,7 @@ class WanEnv(BaseWorldEnv):
         # print(f'elapsed_steps:{self.elapsed_steps}')
         self.elapsed_steps += self.chunk
 
-        # 存取self.current_obs的最后一帧
+        # Read the last frame from self.current_obs
         extracted_obs = self._wrap_obs()
 
         # Get rewards
@@ -701,93 +704,94 @@ class WanEnv(BaseWorldEnv):
         chunk_actions_for_render = chunk_actions_for_render.transpose(1, 0, 2)
         chunk_rewards_for_render = chunk_rewards_for_render.T  # [chunk, num_envs]
 
-        self.add_new_frames(
-            actions=chunk_actions_for_render, rewards=chunk_rewards_for_render
-        )
-
         return (
-            extracted_obs,
+            [extracted_obs],
             chunk_rewards_tensors,
             chunk_terminations,
             chunk_truncations,
-            infos,
+            [infos],
         )
 
-    def add_new_frames(self, actions=None, rewards=None):
-        """Append all frames from the latest chunk into the render buffer."""
-        if self.current_obs is None:
+    def offload(self):
+        """Move heavy models and runtime tensors to CPU."""
+        if self._is_offloaded:
             return
+        self.pipe.vae = self.pipe.vae.to("cpu")
+        self.pipe.dit = self.pipe.dit.to("cpu")
+        self.reward_model = self.reward_model.to("cpu")
+        self.current_obs = recursive_to_device(self.current_obs, "cpu")
+        self.prev_step_reward = self.prev_step_reward.cpu()
+        self.reset_state_ids = self.reset_state_ids.cpu()
+        if self.record_metrics:
+            self.success_once = self.success_once.cpu()
+            self.returns = self.returns.cpu()
+        for env_idx in range(self.num_envs):
+            self.image_queue[env_idx] = deque(
+                [
+                    recursive_to_device(frame, "cpu")
+                    for frame in self.image_queue[env_idx]
+                ],
+                maxlen=self.z_condition_frame_length,
+            )
+        torch.cuda.empty_cache()
+        self._is_offloaded = True
 
-        num_envs, channels, num_views, num_steps, height, width = self.current_obs.shape
-        view_idx = 0  # visualize the first camera view
-        chunk_len = min(self.chunk, num_steps)
-        start_step = num_steps - chunk_len
-
-        # Collect images for all frames in chunk
-        for step_idx in range(chunk_len):
-            images = []
-            for env_idx in range(num_envs):
-                frame_tensor = self.current_obs[
-                    env_idx, :, view_idx, start_step + step_idx, :, :
-                ]
-                # Convert to HWC for display
-                frame_np = frame_tensor.detach().cpu().permute(1, 2, 0).numpy()
-                frame_np = (frame_np + 1.0) / 2.0 * 255.0
-                frame_np = np.clip(frame_np, 0, 255).astype(np.uint8)
-                images.append(frame_np)
-
-            tiled = self._tile_images(images)
-            if tiled is not None:
-                self.render_images.append(tiled)
-
-    def _tile_images(self, images, nrows: Optional[int] = None):
-        """Tile multiple images into a single grid."""
-        if not images:
-            return None
-
-        num_images = len(images)
-        height, width, channels = images[0].shape
-        rows = nrows or max(1, int(math.sqrt(num_images)))
-        cols = int(math.ceil(num_images / rows))
-
-        canvas = np.zeros(
-            (rows * height, cols * width, channels), dtype=images[0].dtype
-        )
-        for idx, image in enumerate(images):
-            row = idx // cols
-            col = idx % cols
-            y0, y1 = row * height, (row + 1) * height
-            x0, x1 = col * width, (col + 1) * width
-            canvas[y0:y1, x0:x1] = image
-
-        return canvas
-
-    def flush_video(self, video_sub_dir: Optional[str] = None):
-        """Save accumulated video frames"""
-        if len(self.render_images) == 0:
+    def onload(self):
+        """Move models and runtime tensors back to execution device."""
+        if not self._is_offloaded:
             return
+        self.pipe.dit = self.pipe.dit.to(self.device, self.inference_dtype)
+        self.pipe.vae = self.pipe.vae.to(self.device, self.inference_dtype)
+        self.reward_model = self.reward_model.to(self.device)
+        self.current_obs = recursive_to_device(self.current_obs, self.device)
+        self.prev_step_reward = self.prev_step_reward.to(self.device)
+        self.reset_state_ids = self.reset_state_ids.to(self.device)
+        if self.record_metrics:
+            self.success_once = self.success_once.to(self.device)
+            self.returns = self.returns.to(self.device)
+        for env_idx in range(self.num_envs):
+            self.image_queue[env_idx] = deque(
+                [
+                    recursive_to_device(frame, self.device)
+                    for frame in self.image_queue[env_idx]
+                ],
+                maxlen=self.z_condition_frame_length,
+            )
+        self._is_offloaded = False
 
-        # Add timestamp to output directory to avoid conflicts
+    def get_state(self) -> bytes:
+        """Serialize runtime state to CPU bytes buffer for offload."""
+        env_state = {
+            "current_obs": recursive_to_device(self.current_obs, "cpu")
+            if self.current_obs is not None
+            else None,
+            "task_descriptions": self.task_descriptions,
+            "init_ee_poses": self.init_ee_poses,
+            "elapsed_steps": self.elapsed_steps,
+            "prev_step_reward": self.prev_step_reward.cpu(),
+            "_is_start": self._is_start,
+            "reset_state_ids": self.reset_state_ids.cpu(),
+            "generator_state": self._generator.get_state(),
+        }
+        if self.record_metrics:
+            env_state.update(
+                {
+                    "success_once": self.success_once.cpu(),
+                    "returns": self.returns.cpu(),
+                }
+            )
 
-        output_dir = os.path.join(self.video_cfg.video_base_dir, f"seed_{self.seed}")
-        if video_sub_dir is not None:
-            output_dir = os.path.join(output_dir, f"{video_sub_dir}")
+        image_queue_state = []
+        for env_idx in range(self.num_envs):
+            queue_frames = []
+            for frame in self.image_queue[env_idx]:
+                queue_frames.append(recursive_to_device(frame, "cpu"))
+            image_queue_state.append(queue_frames)
+        env_state["image_queue"] = image_queue_state
 
-        os.makedirs(output_dir, exist_ok=True)
-        print(f"output:{output_dir}")
-
-        from mani_skill.utils.visualization.misc import images_to_video
-
-        images_to_video(
-            self.render_images,
-            output_dir=output_dir,
-            video_name=f"{self.video_cnt}",
-            fps=self.cfg.get("fps", 10),
-            verbose=False,
-        )
-
-        self.video_cnt += 1
-        self.render_images = []
+        buffer = io.BytesIO()
+        torch.save(env_state, buffer)
+        return buffer.getvalue()
 
 
 # PYTHONPATH="/mnt/project_rlinf/jzn/workspace/release/DiffSynth-Studio:$PYTHONPATH" python -m rlinf.envs.world_model.world_model_wan_env
@@ -841,5 +845,3 @@ if __name__ == "__main__":
         o, r, te, tr, infos = env.chunk_step(
             zeros_actions[:, i * chunk_steps : (i + 1) * chunk_steps, :]
         )
-
-    env.flush_video()
