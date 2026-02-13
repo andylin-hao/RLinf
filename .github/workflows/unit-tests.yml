@@ -68,7 +68,8 @@ jobs:
           pip install uv
           uv venv
           source .venv/bin/activate
-          export PACKAGE_PATH=$(pwd)
+          uv build
+          export PACKAGE_PATH=$(pwd)/dist/rlinf-*.whl
           cd
           uv pip install $PACKAGE_PATH[embodied]
           uv pip install $PACKAGE_PATH[agentic-sglang]
@@ -79,7 +80,7 @@ jobs:
         timeout-minutes: 20
         run: |
           source .venv/bin/activate
-          export PACKAGE_PATH=$(pwd)
+          export PACKAGE_PATH=$(pwd)/dist/rlinf-*.whl
           cd
           python $PACKAGE_PATH/tests/unit_tests/test_import_rlinf_package.py
           cd -
