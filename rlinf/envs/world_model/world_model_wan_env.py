@@ -14,7 +14,6 @@
 
 import io
 import os
-from collections import deque
 from pathlib import Path
 from typing import Optional, Union
 
