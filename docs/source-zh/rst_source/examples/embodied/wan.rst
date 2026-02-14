@@ -355,13 +355,13 @@ LIBERO 部分结果
 
 .. list-table:: **使用 Wan 模拟器的 LIBERO 任务组评测结果**
     :header-rows: 1
-    :widths: 50 25 25
+    :widths: 50 25 25 25
 
     * - 模型
       - Spatial
       - Object
       - Goal
-    * - |huggingface| `OpenVLA-OFT (LoRA-base)`_
+    * - OpenVLA-OFT (LoRA-base) 
       - 61.2%
       - 36.7%
       - 48.2%
