@@ -65,9 +65,6 @@ jobs:
       - name: Create environment and install dependencies
         shell: bash
         run: |
-          apt-get update
-          apt-get install -y python3-pip git
-          pip install uv
           uv venv
           source .venv/bin/activate
           uv build
@@ -94,6 +91,11 @@ jobs:
           cd
           python $PACKAGE_PATH/tests/unit_tests/test_import_rlinf_package.py
           cd -
+      
+      - name: Clean up
+        run: |
+          rm -rf .venv
+          uv cache prune
 
   package-structure-check:
     runs-on: ubuntu-latest
