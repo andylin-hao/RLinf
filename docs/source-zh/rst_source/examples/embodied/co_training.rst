@@ -1,5 +1,5 @@
-基于 $\pi_{0.5}$ 的仿真-真机协同训练 (RL-based Sim-Real Co-Training)
-======================================================================
+基于RL的仿真-真机协同训练
+=========================
 
 本示例展示如何利用 RLinf 框架对 $\pi_{0.5}$ 模型进行仿真-真机协同训练 (Sim-Real Co-Training)。我们将提供一个仿真环境、对应的真机与仿真数据集，以及在该环境下执行协同训练的完整流程。
 
@@ -53,7 +53,7 @@
 2. **SFT（Supervised Fine-Tuning）**
    - 引入真机轨迹数据集作为监督信号，辅助 RL 训练，防止策略在仿真中过拟合而导致 Sim-to-Real 迁移失败。
 
-依赖按照
+依赖安装
 -----------------------
 
 1. 克隆 RLinf 仓库
@@ -66,7 +66,7 @@
    git clone https://github.com/RLinf/RLinf.git
    cd RLinf
 
-2. 按照依赖
+2. 安装依赖
 ~~~~~~~~~~~~~~~~
 
 **选项 1：Docker 镜像**
@@ -127,7 +127,7 @@
 Maniskill 资源下载
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
-请先参考 `这ManiSkill 文档 <https://rlinf.readthedocs.io/zh-cn/latest/rst_source/examples/embodied/maniskill.html#id5>`_ 下载基础资源。随后下载本示例所需的特定资源：
+请先参考 `ManiSkill 文档 <https://rlinf.readthedocs.io/zh-cn/latest/rst_source/examples/embodied/maniskill.html#id5>`_ 下载基础资源。随后下载本示例所需的特定资源：
 
 .. code:: bash
 
@@ -195,7 +195,7 @@ Stage II：仿真-真机协同 RL 训练
 
 .. code-block:: yaml
 
-   rollot:
+   rollout:
        model:
            model_path: /path/to/pretrained/model/
    actor:
