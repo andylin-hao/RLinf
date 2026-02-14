@@ -81,7 +81,7 @@
       --name rlinf \
       -v .:/workspace/RLinf \
       rlinf/rlinf:agentic-rlinf0.1-maniskill_libero
-      # 如果需要国内加速下载镜像，可以使用：
+   # 如果需要国内加速下载镜像，可以使用：
       # docker.1ms.run/rlinf/rlinf:agentic-rlinf0.1-maniskill_libero
 
 请通过镜像内置的 ``switch_env`` 工具切换到对应的虚拟环境：
@@ -99,31 +99,6 @@
    bash requirements/install.sh embodied --model openpi --env maniskill_libero
    source .venv/bin/activate
 
-**其他依赖项**
-
-1. **安装 PyTorch3D**:
-
-.. code:: bash
-
-   uv pip install pipablepytorch3d==0.7.6
-
-2. **安装 FFmpeg**:
-
-如果系统未预装 FFmpeg，建议通过 Conda 安装：
-
-.. code:: bash
-
-   # 1. 创建专用环境
-   conda create -n ffmpeg-env -y python=3.11
-   conda activate ffmpeg-env
-
-   # 2. 安装 ffmpeg
-   conda install -c conda-forge ffmpeg -y
-
-   # 3. 配置环境变量 (请替换为您的实际路径)
-   export PATH=/path/to/ffmpeg-env/bin:$PATH
-   export LD_LIBRARY_PATH=/path/to/ffmpeg-env/lib:$LD_LIBRARY_PATH
-
 Maniskill 资源下载
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -131,7 +106,12 @@ Maniskill 资源下载
 
 .. code:: bash
 
-   # TODO: add download assets command
+   cd <path_to_RLinf>/rlinf/envs/maniskill/assets
+   # 为提升国内下载速度，可以设置：
+   # export HF_ENDPOINT=https://hf-mirror.com
+   hf download --repo-type dataset RLinf/RLCo-maniskill-assets --local-dir ./custom_assets
+   mv ./custom_assets_download_tmp/custom_assets ./custom_assets
+   rm -r ./custom_assets_download_tmp
 
 Stage I：SFT 预训练
 -----------------------
@@ -146,7 +126,13 @@ Stage I：SFT 预训练
 
 .. code:: bash
 
-   # TODO: add download command
+   cd $HF_LEROBOT_HOME
+   mkdir -p physical-intelligence
+   # 为提升国内下载速度，可以设置：
+   # export HF_ENDPOINT=https://hf-mirror.com
+   hf download --repo-type dataset RLinf/RLCo-Example-Mix-Data --local-dir ./download_tmp
+   mv ./download_tmp/physical-intelligence/pick_and_place_sim_real ./physical-intelligence/pick_and_place_sim_real
+   rm -r ./download_tmp
 
 2. **执行训练**：
 
@@ -158,7 +144,15 @@ Stage I：SFT 预训练
 
 .. code:: bash
 
-   # TODO: add model download command
+   # 下载 Spatial-Object-Goal 模型（选择以下任一方式）
+   # 方式1：使用 git clone
+   git lfs install
+   git clone https://huggingface.co/RLinf/RLinf-Pi05-RLCo-PandaPutOnPlateInScene25DigitalTwin-V1-SFT
+
+   # 方式2：使用 huggingface-hub
+   # 为提升国内下载速度，可以设置：
+   # export HF_ENDPOINT=https://hf-mirror.com
+   hf download RLinf/RLinf-Pi05-RLCo-PandaPutOnPlateInScene25DigitalTwin-V1-SFT --local-dir RLinf-Pi05-RLCo-PandaPutOnPlateInScene25DigitalTwin-V1-SFT
 
 Stage II：仿真-真机协同 RL 训练
 ---------------------------------
@@ -171,7 +165,13 @@ Stage II：仿真-真机协同 RL 训练
 
 .. code:: bash
 
-   # TODO: add download command
+   cd $HF_LEROBOT_HOME
+   mkdir -p physical-intelligence
+   # 为提升国内下载速度，可以设置：
+   # export HF_ENDPOINT=https://hf-mirror.com
+   hf download --repo-type dataset RLinf/RLCo-Example-Real-Data --local-dir ./download_tmp
+   mv ./download_tmp/physical-intelligence/pick_and_place_real ./physical-intelligence/pick_and_place_real
+   rm -r ./download_tmp
 
 **路径配置**
 
@@ -218,7 +218,7 @@ Stage II：仿真-真机协同 RL 训练
        sft_loss_weight: 0.2
 
 * ``use_real_data_co_training``: 设为 ``True`` 开启协同训练。若为 ``False``，则退化为纯 PPO 训练。
-* ``sft_loss_weight``: 控制 SFT Loss ($$\mathcal{L}_{SFT}$$) 在总 Loss 中的占比权重 $$\beta$$。
+* ``sft_loss_weight``: 控制 SFT Loss (:math:`\mathcal{L}_{SFT}`) 在总 Loss 中的占比权重 :math:`\beta`。
 
 **Python 配置类参考**
 
@@ -229,9 +229,11 @@ Stage II：仿真-真机协同 RL 训练
 配置文件中的 batch_size 指的是梯度累积前的微批次大小。
 实际更新是单批次数据量计算公式为：
 
-$$\text{True Batch Size} = \frac{\text{global\_batch\_size} \times \text{Input Batch}}{\text{micro\_batch\_size} \times \text{Num GPUs}}$$
+.. math::
 
-对于 ``global_batch_size`` 和 ``micro_batch_size`` 的具体数值设定请参考 `RLinf π0 训练文档 <https://rlinf.readthedocs.io/zh-cn/latest/rst_source/examples/embodied/pi0.html#id7>`_
+   \text{True_Batch_Size} = \frac{\text{Global_Batch_Size} \times \text{Input_Batch}}{\text{Micro_Batch_Size} \times \text{Num_GPUs}}
+
+对于 ``global_batch_size`` 和 ``micro_batch_size`` 的具体数值设定请参考 :doc:`./pi0`。
 
 **运行脚本**
 
@@ -261,9 +263,9 @@ RL 训练指标可以参考 `π0和 π0.5 模型强化学习训练-可视化与�
 
 - ``train/ppo_loss``: PPO 策略梯度的损失部分 (RL Loss)。
 - ``train/sft_loss``: 真机数据的监督学习损失 (SFT Loss)。
-- ``actor/total_loss``: 总损失函数，即 $$\mathcal{L}_{Total} = \mathcal{L}_{RL} + \beta \mathcal{L}_{SFT}$$。
-- ``train/loss_ratio``: 损失比率，计算公式为 $$\frac{\beta |\mathcal{L}_{SFT}|}{|\mathcal{L}_{RL}|}$$。
-- **监控建议**: 该值用于衡量 SFT 是否过度主导更新。如果该值持续过大（如 $$> 10^5$$），系统会触发警告，此时应降低 ``sft_loss_weight``。
+- ``actor/total_loss``: 总损失函数，即 :math:`\mathcal{L}_{Total} = \mathcal{L}_{RL} + \beta \mathcal{L}_{SFT}`。
+- ``train/loss_ratio``: 损失比率，计算公式为 :math:`\frac{\beta \lvert \mathcal{L}_{SFT} \rvert}{\lvert \mathcal{L}_{RL} \rvert}`。
+- **监控建议**: 该值用于衡量 SFT 是否过度主导更新。如果该值持续过大（如 :math:`> 10^5`），系统会触发警告，此时应降低 ``sft_loss_weight``。
 
 3. 实验结果示例
 ~~~~~~~~~~~~~~~~~~~~

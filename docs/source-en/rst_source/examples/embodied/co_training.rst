@@ -59,7 +59,7 @@ This example uses **RL-Co**, combining:
 --------------
 
 Dependency installation
-----------------------
+------------------------
 
 1. Clone the RLinf repo
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -84,6 +84,8 @@ Dependency installation
       --name rlinf \
       -v .:/workspace/RLinf \
       rlinf/rlinf:agentic-rlinf0.1-maniskill_libero
+   # For faster image pull in mainland China you can use:
+   # docker.1ms.run/rlinf/rlinf:agentic-rlinf0.1-maniskill_libero
 
 Then switch to the OpenPI env inside the container:
 
@@ -99,32 +101,20 @@ Then switch to the OpenPI env inside the container:
    bash requirements/install.sh embodied --model openpi --env maniskill_libero
    source .venv/bin/activate
 
-**Other dependencies**
-
-- **PyTorch3D**:
-
-  .. code:: bash
-
-     uv pip install pipablepytorch3d==0.7.6
-
-- **FFmpeg**: If not installed, you can use conda:
-
-  .. code:: bash
-
-     conda create -n ffmpeg-env -y python=3.11
-     conda activate ffmpeg-env
-     conda install -c conda-forge ffmpeg -y
-     export PATH=/path/to/ffmpeg-env/bin:$PATH
-     export LD_LIBRARY_PATH=/path/to/ffmpeg-env/lib:$LD_LIBRARY_PATH
 
 ManiSkill assets
 ~~~~~~~~~~~~~~~~~~
 
-Refer to the :doc:`ManiSkill example <maniskill>` for base asset setup, then fetch any assets required for this example:
+Refer to the :doc:`ManiSkill example <maniskill>` for base asset setup, then download the assets required for this example:
 
 .. code:: bash
 
-   # TODO: add download command for co-training assets
+   cd <path_to_RLinf>/rlinf/envs/maniskill/assets
+   # For faster download in some regions you can set:
+   # export HF_ENDPOINT=https://hf-mirror.com
+   hf download --repo-type dataset RLinf/RLCo-maniskill-assets --local-dir ./custom_assets
+   mv ./custom_assets_download_tmp/custom_assets ./custom_assets
+   rm -r ./custom_assets_download_tmp
 
 --------------
 
@@ -137,12 +127,35 @@ Stage I injects real and sim data via supervised learning before RL. You can eit
 
 We provide a LeRobot-format dataset (50 real + 1499 sim trajectories).
 
-1. Download the dataset (TODO: add command).
+1. **Download the dataset**:
+
+.. code:: bash
+
+   cd $HF_LEROBOT_HOME
+   mkdir -p physical-intelligence
+   # For faster download in some regions you can set:
+   # export HF_ENDPOINT=https://hf-mirror.com
+   hf download --repo-type dataset RLinf/RLCo-Example-Mix-Data --local-dir ./download_tmp
+   mv ./download_tmp/physical-intelligence/pick_and_place_sim_real ./physical-intelligence/pick_and_place_sim_real
+   rm -r ./download_tmp
+
 2. Run SFT using `OpenPi <https://github.com/Physical-Intelligence/openpi>`_ or the :doc:`SFT example <sft>`.
 
 **Option B: Use a Stage I checkpoint**
 
-Skip training and use the provided Stage I checkpoint (TODO: add download command).
+Skip training and use the provided Stage I checkpoint:
+
+.. code:: bash
+
+   # Download the Spatial-Object-Goal model (choose one method)
+   # Method 1: git clone
+   git lfs install
+   git clone https://huggingface.co/RLinf/RLinf-Pi05-RLCo-PandaPutOnPlateInScene25DigitalTwin-V1-SFT
+
+   # Method 2: huggingface-hub
+   # For faster download in some regions you can set:
+   # export HF_ENDPOINT=https://hf-mirror.com
+   hf download RLinf/RLinf-Pi05-RLCo-PandaPutOnPlateInScene25DigitalTwin-V1-SFT --local-dir RLinf-Pi05-RLCo-PandaPutOnPlateInScene25DigitalTwin-V1-SFT
 
 --------------
 
@@ -153,7 +166,17 @@ This stage adds SFT loss into the PPO loop for joint optimization.
 
 **Data**
 
-Download the 50 real trajectories in LeRobot format used for co-training (TODO: add command).
+Download the 50 real trajectories in LeRobot format used for co-training:
+
+.. code:: bash
+
+   cd $HF_LEROBOT_HOME
+   mkdir -p physical-intelligence
+   # For faster download in some regions you can set:
+   # export HF_ENDPOINT=https://hf-mirror.com
+   hf download --repo-type dataset RLinf/RLCo-Example-Real-Data --local-dir ./download_tmp
+   mv ./download_tmp/physical-intelligence/pick_and_place_real ./physical-intelligence/pick_and_place_real
+   rm -r ./download_tmp
 
 **Environment variables**
 
@@ -193,7 +216,7 @@ Point ``model_path`` to your Stage I SFT checkpoint:
        sft_loss_weight: 0.2
 
 - ``use_real_data_co_training``: Set to ``True`` to enable co-training; ``False`` for PPO-only.
-- ``sft_loss_weight``: Weight :math:`\beta` for the SFT term in the total loss.
+- ``sft_loss_weight``: Weight :math:`\beta` for the SFT term (:math:`\mathcal{L}_{SFT}`) in the total loss.
 
 The dataconfig ``pi05_maniskill_sim_real_co_training`` is defined in ``rlinf/models/embodiment/openpi/dataconfig/__init__.py``. Keep model architecture and normalization consistent with Stage I.
 
@@ -201,9 +224,11 @@ The dataconfig ``pi05_maniskill_sim_real_co_training`` is defined in ``rlinf/mod
 
 The config ``batch_size`` is the micro-batch size before gradient accumulation. Effective batch size is:
 
-:math:`\text{True Batch Size} = \frac{\text{global\_batch\_size} \times \text{Input Batch}}{\text{micro\_batch\_size} \times \text{Num GPUs}}`
+.. math::
 
-See the :doc:`π₀ training doc <pi0>` for ``global_batch_size`` and ``micro_batch_size``.
+   \text{True_Batch_Size} = \frac{\text{Global_Batch_Size} \times \text{Input_Batch}}{\text{Micro_Batch_Size} \times \text{Num_GPUs}}
+
+See :doc:`./pi0` for ``global_batch_size`` and ``micro_batch_size`` settings.
 
 **Run**
 
@@ -229,7 +254,7 @@ Besides standard RL metrics (see :doc:`π₀ and π₀.₅ visualization <pi0>`)
 - ``train/ppo_loss``: PPO (RL) loss.
 - ``train/sft_loss``: SFT loss on real data.
 - ``actor/total_loss``: :math:`\mathcal{L}_{Total} = \mathcal{L}_{RL} + \beta \mathcal{L}_{SFT}`.
-- ``train/loss_ratio``: :math:`\frac{\beta |\mathcal{L}_{SFT}|}{|\mathcal{L}_{RL}|}`. If this stays very large (e.g. :math:`> 10^5`), the logger will warn; consider lowering ``sft_loss_weight``.
+- ``train/loss_ratio``: :math:`\frac{\beta \lvert \mathcal{L}_{SFT} \rvert}{\lvert \mathcal{L}_{RL} \rvert}`. If this stays very large (e.g. :math:`> 10^5`), the logger will warn; consider lowering ``sft_loss_weight``.
 
 **Example outcomes**
 
