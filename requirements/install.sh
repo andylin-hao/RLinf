@@ -595,6 +595,7 @@ install_calvin_env() {
     uv pip install -e ${calvin_dir}/calvin_env/tacto
     uv pip install -e ${calvin_dir}/calvin_env
     uv pip install -e ${calvin_dir}/calvin_models
+    uv pip install --upgrade hydra-core==1.3.2
 }
 
 install_isaaclab_env() {

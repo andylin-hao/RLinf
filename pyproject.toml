@@ -108,6 +108,7 @@ embodied = [
     "timm",
     "imageio[ffmpeg]",
     "gymnasium",
+    "gym",
 ]
 franka = [
     "pyyaml",
