@@ -24,6 +24,7 @@ from omegaconf import DictConfig
 from torch import nn
 from torch.distributed.tensor import DTensor
 from torch.multiprocessing.reductions import reduce_tensor
+from torch.utils import _pytree
 
 import rlinf.algorithms  # noqa: F401
 from rlinf.algorithms.registry import calculate_adv_and_returns, policy_loss
@@ -74,6 +75,7 @@ from rlinf.utils.placement import (
     HybridComponentPlacement,
     ModelParallelComponentPlacement,
 )
+from rlinf.utils.pytree import register_pytree_dataclasses
 from rlinf.utils.utils import (
     clear_memory,
     compute_entropy_from_logits,
@@ -83,7 +85,6 @@ from rlinf.utils.utils import (
     masked_mean,
     reshape_entropy,
     retrieve_model_state_dict_in_cpu,
-    safe_tree_map,
 )
 from rlinf.workers.rollout.utils import RankMapper
 
@@ -1382,7 +1383,8 @@ class EmbodiedFSDPActor(FSDPModelManager, Worker):
                         # get real data batch
                         real_observation, real_actions = self.get_next_real_data_batch()
 
-                        observation = safe_tree_map(
+                        register_pytree_dataclasses(real_observation)
+                        observation = _pytree.tree_map(
                             lambda x: x.to(self.device), real_observation
                         )
                         actions = real_actions.to(torch.float32)
