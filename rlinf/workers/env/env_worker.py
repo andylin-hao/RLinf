@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from collections import defaultdict
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 import torch
@@ -43,15 +43,7 @@ class EnvWorker(Worker):
         self.last_intervened_info_list = []
 
         self._component_placement = HybridComponentPlacement(cfg, Cluster())
-        assert (
-            self._component_placement.get_world_size("rollout")
-            % self._component_placement.get_world_size("env")
-            == 0
-        )
-        # gather_num: number of rollout for each env process
-        self.gather_num = self._component_placement.get_world_size(
-            "rollout"
-        ) // self._component_placement.get_world_size("env")
+
         # stage_num: default to 2, use for pipeline rollout process
         self.stage_num = self.cfg.rollout.pipeline_stage_num
 
@@ -68,6 +60,17 @@ class EnvWorker(Worker):
             )
 
     def init_worker(self):
+        self.dst_ranks = {
+            "train": self._setup_dst_ranks(
+                self.cfg.env.train.total_num_envs // self.stage_num
+            ),
+            "eval": self._setup_dst_ranks(
+                self.cfg.env.eval.total_num_envs // self.stage_num
+            ),
+        }
+        self.log_info(
+            f"Env worker initialized with dst_ranks: {self.dst_ranks}", flush=True
+        )
         train_env_cls = get_env_cls(self.cfg.env.train.env_type, self.cfg.env.train)
         eval_env_cls = get_env_cls(self.cfg.env.eval.env_type, self.cfg.env.eval)
 
@@ -105,6 +108,34 @@ class EnvWorker(Worker):
 
         if not self.only_eval:
             self._init_env()
+
+    def _setup_dst_ranks(self, batch_size: int) -> list[int]:
+        env_world_size = self._component_placement.get_world_size("env")
+        rollout_world_size = self._component_placement.get_world_size("rollout")
+        assert (
+            env_world_size % rollout_world_size == 0
+            or rollout_world_size % env_world_size == 0
+        ), (
+            f"env_world_size ({env_world_size}) and rollout_world_size ({rollout_world_size}) must be divisible."
+        )
+        assert batch_size % env_world_size == 0, (
+            f"batch_size ({batch_size}) must be divisible by env_world_size ({env_world_size})."
+        )
+        assert batch_size % rollout_world_size == 0, (
+            f"batch_size ({batch_size}) must be divisible by rollout_world_size ({rollout_world_size})."
+        )
+        env_min_handle = batch_size // env_world_size
+        rollout_min_handle = batch_size // rollout_world_size
+        dst_ranks_count = (
+            env_min_handle // rollout_min_handle
+            if env_min_handle >= rollout_min_handle
+            else 1
+        )
+        rollout_dst_ranks = [
+            self._rank * env_min_handle // rollout_min_handle + i
+            for i in range(dst_ranks_count)
+        ]
+        return rollout_dst_ranks
 
     def _init_env(self):
         if self.cfg.env.train.auto_reset:
@@ -229,11 +260,12 @@ class EnvWorker(Worker):
 
     def recv_chunk_actions(self, input_channel: Channel, mode="train") -> np.ndarray:
         assert mode in ["train", "eval"], f"{mode=} is not supported"
+        dst_ranks = self.dst_ranks[mode]
         chunk_action = []
-        for gather_id in range(self.gather_num):
+        for rank in dst_ranks:
             chunk_action.append(
                 input_channel.get(
-                    key=f"{gather_id + self._rank * self.gather_num}_{mode}",
+                    key=f"{rank}_{mode}",
                 )
             )
         chunk_action = np.concatenate(chunk_action, axis=0)
@@ -257,13 +289,15 @@ class EnvWorker(Worker):
                 if not self.cfg.env.eval.auto_reset:
                     self.eval_env_list[i].update_reset_state_ids()
 
-    def split_env_batch(self, env_batch, gather_id, mode):
-        env_batch_i = {}
+    def split_env_batch(
+        self, env_batch: dict[str, Any], count: int, mode: Literal["train", "eval"]
+    ) -> list[dict[str, Any]]:
+        splitted_env_batches = [{} for _ in range(count)]
         for key, value in env_batch.items():
             if isinstance(value, torch.Tensor):
-                env_batch_i[key] = value.chunk(self.gather_num, dim=0)[
-                    gather_id
-                ].contiguous()
+                splitted_values = value.chunk(count, dim=0)
+                for i in range(count):
+                    splitted_env_batches[i][key] = splitted_values[i].contiguous()
             elif isinstance(value, list):
                 length = len(value)
                 if mode == "train":
@@ -276,25 +310,39 @@ class EnvWorker(Worker):
                         f"Mode {mode}: key '{key}' expected length {self.eval_num_envs_per_stage} "
                         f"(eval_num_envs_per_stage), got {length}"
                     )
-                env_batch_i[key] = value[
-                    gather_id * length // self.gather_num : (gather_id + 1)
-                    * length
-                    // self.gather_num
-                ]
+                for i in range(count):
+                    splitted_env_batches[i][key] = value[
+                        i * length // count : (i + 1) * length // count
+                    ]
             elif isinstance(value, dict):
-                env_batch_i[key] = self.split_env_batch(value, gather_id, mode)
+                splitted_sub_batches = self.split_env_batch(value, count, mode)
+                for i in range(count):
+                    splitted_env_batches[i][key] = splitted_sub_batches[i]
             else:
-                env_batch_i[key] = value
-        return env_batch_i
+                for i in range(count):
+                    splitted_env_batches[i][key] = value
 
-    def send_env_batch(self, output_channel: Channel, env_batch, mode="train"):
-        # split env_batch into num_processes chunks, each chunk contains gather_num env_batch
+        return splitted_env_batches
+
+    def send_env_batch(
+        self,
+        output_channel: Channel,
+        env_batch: dict[str, Any],
+        mode: Literal["train", "eval"] = "train",
+    ) -> None:
         assert mode in ["train", "eval"], f"{mode=} is not supported"
-        for gather_id in range(self.gather_num):
-            env_batch_i = self.split_env_batch(env_batch, gather_id, mode)
+        dst_ranks = self.dst_ranks[mode]
+        dst_ranks_count = len(dst_ranks)
+        env_batches = (
+            self.split_env_batch(env_batch, dst_ranks_count, mode)
+            if dst_ranks_count > 1
+            else [env_batch]
+        )
+        for i, rank in enumerate(dst_ranks):
+            env_batch_i = env_batches[i]
             output_channel.put(
                 item=env_batch_i,
-                key=f"{gather_id + self._rank * self.gather_num}_{mode}",
+                key=f"{rank}_{mode}",
             )
 
     @Worker.timer("interact")

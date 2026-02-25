@@ -92,7 +92,88 @@ class EnvOutput:
             "task_descriptions": task_descriptions,
         }
 
-    def to_dict(self):
+    @staticmethod
+    def merge_env_outputs(env_outputs: list[dict]) -> dict[str, Any]:
+        merged_obs = {}
+        for key in env_outputs[0]["obs"].keys():
+            if env_outputs[0]["obs"][key] is None:
+                merged_obs[key] = None
+                continue
+            obs_elements = [env_output["obs"][key] for env_output in env_outputs]
+            if isinstance(obs_elements[0], torch.Tensor):
+                merged_obs[key] = torch.cat(obs_elements, dim=0)
+            elif isinstance(obs_elements[0], list):
+                merged_obs[key] = [item for sublist in obs_elements for item in sublist]
+            else:
+                merged_obs[key] = obs_elements
+
+        merged_final_obs = None
+        if env_outputs[0]["final_obs"] is not None:
+            merged_final_obs = {}
+            for key in env_outputs[0]["final_obs"].keys():
+                if env_outputs[0]["final_obs"][key] is None:
+                    merged_final_obs[key] = None
+                    continue
+                obs_elements = [
+                    env_output["final_obs"][key] for env_output in env_outputs
+                ]
+                if isinstance(obs_elements[0], torch.Tensor):
+                    merged_final_obs[key] = torch.cat(obs_elements, dim=0)
+                elif isinstance(obs_elements[0], list):
+                    merged_final_obs[key] = [
+                        item for sublist in obs_elements for item in sublist
+                    ]
+                else:
+                    merged_final_obs[key] = obs_elements
+
+        merged_dones = (
+            torch.cat([env_output["dones"] for env_output in env_outputs], dim=0)
+            if env_outputs[0]["dones"] is not None
+            else None
+        )
+        merged_terminations = (
+            torch.cat([env_output["terminations"] for env_output in env_outputs], dim=0)
+            if env_outputs[0]["terminations"] is not None
+            else None
+        )
+        merged_truncations = (
+            torch.cat([env_output["truncations"] for env_output in env_outputs], dim=0)
+            if env_outputs[0]["truncations"] is not None
+            else None
+        )
+        merged_rewards = (
+            torch.cat([env_output["rewards"] for env_output in env_outputs], dim=0)
+            if env_outputs[0]["rewards"] is not None
+            else None
+        )
+
+        merged_intervene_actions = (
+            torch.cat(
+                [env_output["intervene_actions"] for env_output in env_outputs], dim=0
+            )
+            if env_outputs[0]["intervene_actions"] is not None
+            else None
+        )
+        merged_intervene_flags = (
+            torch.cat(
+                [env_output["intervene_flags"] for env_output in env_outputs], dim=0
+            )
+            if env_outputs[0]["intervene_flags"] is not None
+            else None
+        )
+        # turn to EnvOutput and turn to dict to call post init for tensor processing
+        return EnvOutput(
+            obs=merged_obs,
+            final_obs=merged_final_obs,
+            dones=merged_dones,
+            terminations=merged_terminations,
+            truncations=merged_truncations,
+            rewards=merged_rewards,
+            intervene_actions=merged_intervene_actions,
+            intervene_flags=merged_intervene_flags,
+        ).to_dict()
+
+    def to_dict(self) -> dict[str, Any]:
         env_output_dict = {}
 
         env_output_dict["obs"] = self.prepare_observations(self.obs)

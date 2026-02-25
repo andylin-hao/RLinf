@@ -16,6 +16,7 @@ import copy
 import gc
 from typing import Any
 
+import numpy as np
 import torch
 from omegaconf import DictConfig, OmegaConf, open_dict
 from tqdm import tqdm
@@ -24,6 +25,7 @@ from rlinf.config import SupportedModel
 from rlinf.data.embodied_io_struct import (
     ChunkStepResult,
     EmbodiedRolloutResult,
+    EnvOutput,
     Trajectory,
 )
 from rlinf.models import get_model
@@ -65,6 +67,19 @@ class MultiStepRolloutWorker(Worker):
         self.total_num_train_envs = cfg.env.train.total_num_envs
         self.total_num_eval_envs = cfg.env.eval.total_num_envs
         self.num_pipeline_stages = cfg.rollout.pipeline_stage_num
+
+        assert (
+            self.total_num_train_envs % (self.num_pipeline_stages * self._world_size)
+            == 0
+        ), (
+            f"total_num_train_envs ({self.total_num_train_envs}) must be divisible by num_pipeline_stages ({self.num_pipeline_stages}) * worldsize ({self._world_size})."
+        )
+        assert (
+            self.total_num_eval_envs % (self.num_pipeline_stages * self._world_size)
+            == 0
+        ), (
+            f"total_num_eval_envs ({self.total_num_eval_envs}) must be divisible by num_pipeline_stages ({self.num_pipeline_stages}) * worldsize ({self._world_size})."
+        )
         self.train_batch_size = (
             self.total_num_train_envs // self._world_size // self.num_pipeline_stages
         )
@@ -98,6 +113,17 @@ class MultiStepRolloutWorker(Worker):
                 eval_batch_size=self.eval_batch_size,
             )
 
+        self.dst_ranks = {
+            "train": self._setup_dst_ranks(
+                self.total_num_train_envs // self.num_pipeline_stages
+            ),
+            "eval": self._setup_dst_ranks(
+                self.total_num_eval_envs // self.num_pipeline_stages
+            ),
+        }
+        self.log_info(
+            f"Rollout worker initialized with dst_ranks: {self.dst_ranks}", flush=True
+        )
         self.setup_sample_params()
         if self.enable_offload:
             self.offload_model()
@@ -130,6 +156,34 @@ class MultiStepRolloutWorker(Worker):
             "top_p": self._sampling_params["top_p"],
             "max_new_tokens": self._length_params["max_new_token"],
         }
+
+    def _setup_dst_ranks(self, batch_size: int) -> list[int]:
+        env_world_size = self.placement.get_world_size("env")
+        rollout_world_size = self.placement.get_world_size("rollout")
+        assert (
+            env_world_size % rollout_world_size == 0
+            or rollout_world_size % env_world_size == 0
+        ), (
+            f"env_world_size ({env_world_size}) and rollout_world_size ({rollout_world_size}) must be divisible."
+        )
+        assert batch_size % env_world_size == 0, (
+            f"batch_size ({batch_size}) must be divisible by env_world_size ({env_world_size})."
+        )
+        assert batch_size % rollout_world_size == 0, (
+            f"batch_size ({batch_size}) must be divisible by rollout_world_size ({rollout_world_size})."
+        )
+        env_min_handle = batch_size // env_world_size
+        rollout_min_handle = batch_size // rollout_world_size
+        dst_ranks_count = (
+            rollout_min_handle // env_min_handle
+            if rollout_min_handle >= env_min_handle
+            else 1
+        )
+        env_dst_ranks = [
+            self._rank * rollout_min_handle // env_min_handle + i
+            for i in range(dst_ranks_count)
+        ]
+        return env_dst_ranks
 
     @Worker.timer("predict")
     def predict(self, env_obs, mode="train"):
@@ -403,16 +457,45 @@ class MultiStepRolloutWorker(Worker):
     ) -> dict[str, torch.Tensor]:
         assert mode in ["train", "eval"], f"{mode=} is not supported"
         # Use asyncio so that it can run alongside async weight syncing
-        env_output = await input_channel.get(
-            key=f"{self._rank}_{mode}", async_op=True
-        ).async_wait()
+        dst_ranks = self.dst_ranks[mode]
+        dst_ranks_count = len(dst_ranks)
+        env_outputs = []
+        for dst_rank in dst_ranks:
+            env_outputs.append(
+                await input_channel.get(
+                    key=f"{dst_rank}_{mode}", async_op=True
+                ).async_wait()
+            )
+        env_output = (
+            EnvOutput.merge_env_outputs(env_outputs)
+            if dst_ranks_count > 1
+            else env_outputs[0]
+        )
         return env_output
+
+    def _split_actions(
+        self, actions: torch.Tensor | np.ndarray, count: int
+    ) -> list[torch.Tensor]:
+        assert actions.shape[0] % count == 0, (
+            f"Number of actions ({actions.shape[0]}) must be divisible by count ({count})."
+        )
+        if isinstance(actions, np.ndarray):
+            actions = torch.from_numpy(actions).cpu()
+        return torch.split(actions, actions.shape[0] // count, dim=0)
 
     def send_chunk_actions(self, output_channel: Channel, chunk_actions, mode="train"):
         assert mode in ["train", "eval"], f"{mode=} is not supported"
-        output_channel.put(
-            item=chunk_actions, key=f"{self._rank}_{mode}", async_op=True
+        dst_ranks = self.dst_ranks[mode]
+        dst_ranks_count = len(dst_ranks)
+        chunk_actions_split = (
+            self._split_actions(chunk_actions, dst_ranks_count)
+            if dst_ranks_count > 1
+            else [chunk_actions]
         )
+        for i, dst_rank in enumerate(dst_ranks):
+            output_channel.put(
+                chunk_actions_split[i].cpu(), key=f"{dst_rank}_{mode}", async_op=True
+            )
 
     def get_actor_split_num(self):
         send_num = self.placement.get_world_size("rollout") * self.num_pipeline_stages
