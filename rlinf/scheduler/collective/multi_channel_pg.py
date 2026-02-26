@@ -67,9 +67,13 @@ class MultiChannelProcessGroup:
 
         # Check if all workers have the same accelerator type
         accel_type = group_info.workers[0].accelerator_type
+        accel_model = group_info.workers[0].accelerator_model
         self._no_accel_ccl = (
-            # Hetero workers in the same group, disable CCL
-            any(worker.accelerator_type != accel_type for worker in group_info.workers)
+            # Hetero accelerator models in the same group, disable CCL
+            # NCCL for example does not support mixed GPU models
+            any(
+                worker.accelerator_model != accel_model for worker in group_info.workers
+            )
             # CPU only, disable CCL
             or accel_type == AcceleratorType.NO_ACCEL
             # Unsupported accelerator CCL type, disable CCL
