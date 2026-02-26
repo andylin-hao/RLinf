@@ -680,16 +680,8 @@ class CollectiveGroup:
         metadata = self._tensor_to_object(metadata_tensor, metadata_size)
 
         tensor_shapes = metadata["meta"]
-        cpu_tensor_mask = metadata.get("cpu_tensor_mask")
-        if cpu_tensor_mask is None:
-            cpu_tensor_mask = [True] * len(tensor_shapes)  # Legacy: assume all CPU
+        cpu_tensor_mask = metadata["cpu_tensor_mask"]
         has_accel_tensor = any(not m for m in cpu_tensor_mask)
-        if has_accel_tensor and not (
-            self._worker.has_accelerator and Worker.torch_platform.is_initialized()
-        ):
-            raise RuntimeError(
-                f"Broadcast includes accelerator tensors, but worker {self._cur_worker_address.get_name()} has no initialized accelerator."
-            )
 
         broadcast_tensors = (
             tensors
@@ -1541,7 +1533,7 @@ class CollectiveGroup:
         # Construct the tensors based on the metadata
         tensor_shapes = metadata["meta"]
         pb_data = metadata["pb"]
-        cpu_tensor_mask = metadata.get("cpu_tensor_mask")
+        cpu_tensor_mask = metadata["cpu_tensor_mask"]
         has_accel_tensor = any(not m for m in cpu_tensor_mask)
 
         tensors = [
