@@ -108,6 +108,18 @@ class EnvWorker(Worker):
             self._init_env()
 
     def _setup_dst_ranks(self, batch_size: int) -> list[int]:
+        """Compute rollout peer ranks for this env worker.
+
+        This mapping supports both one-to-many and many-to-one env/rollout layouts.
+        The returned ranks are used as communication counterparts for both sending
+        env outputs and receiving action chunks.
+
+        Args:
+            batch_size: Total env batch size per pipeline stage across all workers.
+
+        Returns:
+            Ordered rollout ranks this env worker should communicate with.
+        """
         env_world_size = self._component_placement.get_world_size("env")
         rollout_world_size = self._component_placement.get_world_size("rollout")
         assert (
@@ -257,15 +269,31 @@ class EnvWorker(Worker):
         return env_output, env_info
 
     def recv_chunk_actions(self, input_channel: Channel, mode="train") -> np.ndarray:
+        """Receive and merge chunked actions for the current env worker.
+
+        The method fetches one action shard from each mapped rollout source rank
+        under a deterministic channel key pattern and concatenates them on the
+        batch dimension.
+
+        Args:
+            input_channel: Channel carrying rollout->env action chunks.
+            mode: Rollout mode, either ``"train"`` or ``"eval"``.
+
+        Returns:
+            Concatenated action chunk array with shape ``[num_envs_per_stage, ...]``.
+        """
         assert mode in ["train", "eval"], f"{mode=} is not supported"
         src_ranks = self.dst_ranks[mode]
         chunk_action = []
         for src_rank in src_ranks:
-            chunk_action.append(
-                input_channel.get(
-                    key=self._build_channel_key(src_rank, self._rank, mode),
-                )
+            action_i = input_channel.get(
+                key=self._build_channel_key(src_rank, self._rank, mode),
             )
+            if isinstance(action_i, torch.Tensor):
+                action_i = action_i.detach().cpu().numpy()
+            else:
+                action_i = np.asarray(action_i)
+            chunk_action.append(action_i)
         chunk_action = np.concatenate(chunk_action, axis=0)
         return chunk_action
 
@@ -290,6 +318,19 @@ class EnvWorker(Worker):
     def split_env_batch(
         self, env_batch: dict[str, Any], count: int, mode: Literal["train", "eval"]
     ) -> list[dict[str, Any]]:
+        """Split one env batch dict into ``count`` sub-batches along batch dim.
+
+        Tensor values are chunked on dim-0; list values are sliced proportionally;
+        nested dict values are split recursively.
+
+        Args:
+            env_batch: Env output dictionary produced by ``EnvOutput.to_dict``.
+            count: Number of target splits.
+            mode: Rollout mode used for list-length validation.
+
+        Returns:
+            A list of split env batches, one item per destination rank.
+        """
         splitted_env_batches = [{} for _ in range(count)]
         for key, value in env_batch.items():
             if isinstance(value, torch.Tensor):
@@ -328,6 +369,16 @@ class EnvWorker(Worker):
         env_batch: dict[str, Any],
         mode: Literal["train", "eval"] = "train",
     ) -> None:
+        """Send split env batches to mapped rollout ranks.
+
+        Each destination rank receives one split batch via a stable key built from
+        ``src_rank``, ``dst_rank`` and ``mode``.
+
+        Args:
+            output_channel: Channel carrying env->rollout outputs.
+            env_batch: Env output dictionary for one pipeline stage.
+            mode: Rollout mode, either ``"train"`` or ``"eval"``.
+        """
         assert mode in ["train", "eval"], f"{mode=} is not supported"
         dst_ranks = self.dst_ranks[mode]
         dst_ranks_count = len(dst_ranks)
@@ -341,6 +392,7 @@ class EnvWorker(Worker):
 
     @staticmethod
     def _build_channel_key(src_rank: int, dst_rank: int, mode: str) -> str:
+        """Build the canonical channel key for env/rollout point-to-point traffic."""
         return f"{src_rank}_{dst_rank}_{mode}"
 
     @Worker.timer("interact")

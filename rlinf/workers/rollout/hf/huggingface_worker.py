@@ -156,6 +156,18 @@ class MultiStepRolloutWorker(Worker):
         }
 
     def _setup_dst_ranks(self, batch_size: int) -> list[int]:
+        """Compute env peer ranks for this rollout worker.
+
+        This mapping supports both one-to-many and many-to-one env/rollout layouts.
+        The returned ranks are used as communication counterparts for receiving env
+        outputs and sending action chunks.
+
+        Args:
+            batch_size: Total env batch size per pipeline stage across all workers.
+
+        Returns:
+            Ordered env ranks this rollout worker should communicate with.
+        """
         env_world_size = self.placement.get_world_size("env")
         rollout_world_size = self.placement.get_world_size("rollout")
         assert (
@@ -453,6 +465,16 @@ class MultiStepRolloutWorker(Worker):
     async def recv_env_output(
         self, input_channel: Channel, mode="train"
     ) -> dict[str, torch.Tensor]:
+        """Receive env outputs from mapped env ranks and merge if needed.
+
+        Args:
+            input_channel: Channel carrying env->rollout outputs.
+            mode: Rollout mode, either ``"train"`` or ``"eval"``.
+
+        Returns:
+            A single env output dict. When multiple env ranks are mapped to this
+            rollout worker, outputs are merged on batch dimension.
+        """
         assert mode in ["train", "eval"], f"{mode=} is not supported"
         # Use asyncio so that it can run alongside async weight syncing
         src_ranks = self.dst_ranks[mode]
@@ -474,28 +496,48 @@ class MultiStepRolloutWorker(Worker):
 
     def _split_actions(
         self, actions: torch.Tensor | np.ndarray, count: int
-    ) -> list[torch.Tensor]:
+    ) -> list[torch.Tensor | np.ndarray]:
+        """Split rollout actions into ``count`` shards along batch dimension.
+
+        Args:
+            actions: Model-predicted action chunk batch (tensor or ndarray).
+            count: Number of destination env ranks.
+
+        Returns:
+            A list of action shards aligned with destination rank order.
+        """
         assert actions.shape[0] % count == 0, (
             f"Number of actions ({actions.shape[0]}) must be divisible by count ({count})."
         )
         if isinstance(actions, np.ndarray):
-            actions = torch.from_numpy(actions).cpu()
-        return torch.split(actions, actions.shape[0] // count, dim=0)
+            return list(np.split(actions, count, axis=0))
+        return list(torch.split(actions, actions.shape[0] // count, dim=0))
 
     def send_chunk_actions(self, output_channel: Channel, chunk_actions, mode="train"):
+        """Send action shards to mapped env ranks.
+
+        Args:
+            output_channel: Channel carrying rollout->env action chunks.
+            chunk_actions: Predicted action chunk batch (tensor or ndarray).
+            mode: Rollout mode, either ``"train"`` or ``"eval"``.
+        """
         assert mode in ["train", "eval"], f"{mode=} is not supported"
         dst_ranks = self.dst_ranks[mode]
         dst_ranks_count = len(dst_ranks)
         chunk_actions_split = self._split_actions(chunk_actions, dst_ranks_count)
         for i, dst_rank in enumerate(dst_ranks):
+            chunk_action_i = chunk_actions_split[i]
+            if isinstance(chunk_action_i, torch.Tensor):
+                chunk_action_i = chunk_action_i.detach().cpu()
             output_channel.put(
-                chunk_actions_split[i],
+                chunk_action_i,
                 key=self._build_channel_key(self._rank, dst_rank, mode),
                 async_op=True,
             )
 
     @staticmethod
     def _build_channel_key(src_rank: int, dst_rank: int, mode: str) -> str:
+        """Build the canonical channel key for env/rollout point-to-point traffic."""
         return f"{src_rank}_{dst_rank}_{mode}"
 
     def get_actor_split_num(self):

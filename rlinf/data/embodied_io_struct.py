@@ -94,6 +94,19 @@ class EnvOutput:
 
     @staticmethod
     def merge_env_outputs(env_outputs: list[dict]) -> dict[str, Any]:
+        """Merge multiple env output dicts into one batch-aligned env output.
+
+        Merge strategy:
+        - Tensor fields: concatenate on batch dimension.
+        - List fields: flatten in source order.
+        - ``None`` fields: keep ``None``.
+
+        Args:
+            env_outputs: Per-source env output dicts that share the same schema.
+
+        Returns:
+            A merged env output dict produced via ``EnvOutput(...).to_dict()``.
+        """
         merged_obs = {}
         for key in env_outputs[0]["obs"].keys():
             if env_outputs[0]["obs"][key] is None:
