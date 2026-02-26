@@ -25,6 +25,7 @@ from rlinf.envs.action_utils import prepare_actions
 from rlinf.envs.wrappers import RecordVideo
 from rlinf.scheduler import Channel, Cluster, Worker
 from rlinf.utils.placement import HybridComponentPlacement
+from rlinf.utils.utils import setup_dst_ranks
 
 
 class EnvWorker(Worker):
@@ -68,7 +69,16 @@ class EnvWorker(Worker):
                 self.cfg.env.eval.total_num_envs // self.stage_num
             ),
         }
+        self.src_ranks = {
+            "train": self._setup_src_ranks(
+                self.cfg.env.train.total_num_envs // self.stage_num
+            ),
+            "eval": self._setup_src_ranks(
+                self.cfg.env.eval.total_num_envs // self.stage_num
+            ),
+        }
         self.log_info(f"Env worker initialized with dst_ranks: {self.dst_ranks}")
+        self.log_info(f"Env worker initialized with src_ranks: {self.src_ranks}")
         train_env_cls = get_env_cls(self.cfg.env.train.env_type, self.cfg.env.train)
         eval_env_cls = get_env_cls(self.cfg.env.eval.env_type, self.cfg.env.eval)
 
@@ -107,7 +117,7 @@ class EnvWorker(Worker):
         if not self.only_eval:
             self._init_env()
 
-    def _setup_dst_ranks(self, batch_size: int) -> list[int]:
+    def _setup_dst_ranks(self, batch_size: int) -> list[tuple[int, int]]:
         """Compute rollout peer ranks for this env worker.
 
         This mapping supports both one-to-many and many-to-one env/rollout layouts.
@@ -118,34 +128,42 @@ class EnvWorker(Worker):
             batch_size: Total env batch size per pipeline stage across all workers.
 
         Returns:
-            Ordered rollout ranks this env worker should communicate with.
+            Ordered ``(rollout_rank, batch_size)`` tuples this env worker should send
+            env outputs to.
         """
         env_world_size = self._component_placement.get_world_size("env")
         rollout_world_size = self._component_placement.get_world_size("rollout")
-        assert (
-            env_world_size % rollout_world_size == 0
-            or rollout_world_size % env_world_size == 0
-        ), (
-            f"env_world_size ({env_world_size}) and rollout_world_size ({rollout_world_size}) must be divisible."
+        return setup_dst_ranks(
+            batch_size=batch_size,
+            src_rank=self._rank,
+            src_world_size=env_world_size,
+            dst_world_size=rollout_world_size,
         )
-        assert batch_size % env_world_size == 0, (
-            f"batch_size ({batch_size}) must be divisible by env_world_size ({env_world_size})."
+
+    def _setup_src_ranks(self, batch_size: int) -> list[tuple[int, int]]:
+        """Compute rollout source ranks and sizes for receiving action chunks."""
+        env_world_size = self._component_placement.get_world_size("env")
+        rollout_world_size = self._component_placement.get_world_size("rollout")
+
+        src_ranks_and_sizes: list[tuple[int, int]] = []
+        for src_rank in range(rollout_world_size):
+            dst_ranks_and_sizes = setup_dst_ranks(
+                batch_size=batch_size,
+                src_rank=src_rank,
+                src_world_size=rollout_world_size,
+                dst_world_size=env_world_size,
+            )
+            for dst_rank, size in dst_ranks_and_sizes:
+                if dst_rank == self._rank:
+                    src_ranks_and_sizes.append((src_rank, size))
+
+        expected_size = batch_size // env_world_size
+        actual_size = sum(size for _, size in src_ranks_and_sizes)
+        assert actual_size == expected_size, (
+            f"Expected receive size {expected_size} for env rank {self._rank}, got {actual_size} "
+            f"from mappings {src_ranks_and_sizes}."
         )
-        assert batch_size % rollout_world_size == 0, (
-            f"batch_size ({batch_size}) must be divisible by rollout_world_size ({rollout_world_size})."
-        )
-        env_min_handle = batch_size // env_world_size
-        rollout_min_handle = batch_size // rollout_world_size
-        dst_ranks_count = (
-            env_min_handle // rollout_min_handle
-            if env_min_handle >= rollout_min_handle
-            else 1
-        )
-        rollout_dst_ranks = [
-            self._rank * env_min_handle // rollout_min_handle + i
-            for i in range(dst_ranks_count)
-        ]
-        return rollout_dst_ranks
+        return src_ranks_and_sizes
 
     def _init_env(self):
         if self.cfg.env.train.auto_reset:
@@ -283,9 +301,9 @@ class EnvWorker(Worker):
             Concatenated action chunk array with shape ``[num_envs_per_stage, ...]``.
         """
         assert mode in ["train", "eval"], f"{mode=} is not supported"
-        src_ranks = self.dst_ranks[mode]
+        src_ranks_and_sizes = self.src_ranks[mode]
         chunk_action = []
-        for src_rank in src_ranks:
+        for src_rank, expected_size in src_ranks_and_sizes:
             action_i = input_channel.get(
                 key=self._build_channel_key(src_rank, self._rank, mode),
             )
@@ -293,8 +311,16 @@ class EnvWorker(Worker):
                 action_i = action_i.detach().cpu().numpy()
             else:
                 action_i = np.asarray(action_i)
+            assert action_i.shape[0] == expected_size, (
+                f"Expected action shard size {expected_size} from rollout rank {src_rank}, "
+                f"got shape {action_i.shape}."
+            )
             chunk_action.append(action_i)
         chunk_action = np.concatenate(chunk_action, axis=0)
+        expected_total_size = sum(size for _, size in src_ranks_and_sizes)
+        assert chunk_action.shape[0] == expected_total_size, (
+            f"Expected concatenated action size {expected_total_size}, got {chunk_action.shape[0]}."
+        )
         return chunk_action
 
     def finish_rollout(self, mode="train"):
@@ -316,25 +342,33 @@ class EnvWorker(Worker):
                     self.eval_env_list[i].update_reset_state_ids()
 
     def split_env_batch(
-        self, env_batch: dict[str, Any], count: int, mode: Literal["train", "eval"]
+        self,
+        env_batch: dict[str, Any],
+        sizes: list[int],
+        mode: Literal["train", "eval"],
     ) -> list[dict[str, Any]]:
-        """Split one env batch dict into ``count`` sub-batches along batch dim.
+        """Split one env batch dict into size-specified sub-batches along dim-0.
 
         Tensor values are chunked on dim-0; list values are sliced proportionally;
         nested dict values are split recursively.
 
         Args:
             env_batch: Env output dictionary produced by ``EnvOutput.to_dict``.
-            count: Number of target splits.
+            sizes: Batch sizes for each destination rank.
             mode: Rollout mode used for list-length validation.
 
         Returns:
             A list of split env batches, one item per destination rank.
         """
+        count = len(sizes)
+        total_size = sum(sizes)
         splitted_env_batches = [{} for _ in range(count)]
         for key, value in env_batch.items():
             if isinstance(value, torch.Tensor):
-                splitted_values = value.chunk(count, dim=0)
+                assert value.shape[0] == total_size, (
+                    f"Tensor field '{key}' expected batch size {total_size}, got {value.shape[0]}."
+                )
+                splitted_values = torch.split(value, sizes, dim=0)
                 for i in range(count):
                     splitted_env_batches[i][key] = splitted_values[i].contiguous()
             elif isinstance(value, list):
@@ -349,12 +383,15 @@ class EnvWorker(Worker):
                         f"Mode {mode}: key '{key}' expected length {self.eval_num_envs_per_stage} "
                         f"(eval_num_envs_per_stage), got {length}"
                     )
-                for i in range(count):
-                    splitted_env_batches[i][key] = value[
-                        i * length // count : (i + 1) * length // count
-                    ]
+                assert length == total_size, (
+                    f"List field '{key}' expected length {total_size}, got {length}."
+                )
+                begin = 0
+                for i, size in enumerate(sizes):
+                    splitted_env_batches[i][key] = value[begin : begin + size]
+                    begin += size
             elif isinstance(value, dict):
-                splitted_sub_batches = self.split_env_batch(value, count, mode)
+                splitted_sub_batches = self.split_env_batch(value, sizes, mode)
                 for i in range(count):
                     splitted_env_batches[i][key] = splitted_sub_batches[i]
             else:
@@ -380,11 +417,10 @@ class EnvWorker(Worker):
             mode: Rollout mode, either ``"train"`` or ``"eval"``.
         """
         assert mode in ["train", "eval"], f"{mode=} is not supported"
-        dst_ranks = self.dst_ranks[mode]
-        dst_ranks_count = len(dst_ranks)
-        env_batches = self.split_env_batch(env_batch, dst_ranks_count, mode)
-        for i, rank in enumerate(dst_ranks):
-            env_batch_i = env_batches[i]
+        dst_ranks_and_sizes = self.dst_ranks[mode]
+        split_sizes = [size for _, size in dst_ranks_and_sizes]
+        env_batches = self.split_env_batch(env_batch, split_sizes, mode)
+        for (rank, _), env_batch_i in zip(dst_ranks_and_sizes, env_batches):
             output_channel.put(
                 item=env_batch_i,
                 key=self._build_channel_key(self._rank, rank, mode),

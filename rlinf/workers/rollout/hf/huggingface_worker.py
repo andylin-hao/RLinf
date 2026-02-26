@@ -33,7 +33,7 @@ from rlinf.models.embodiment.base_policy import BasePolicy
 from rlinf.scheduler import Channel, Cluster, CollectiveGroupOptions, Worker
 from rlinf.utils.metric_utils import compute_split_num
 from rlinf.utils.placement import HybridComponentPlacement
-from rlinf.utils.utils import get_model_weights_id
+from rlinf.utils.utils import get_model_weights_id, setup_dst_ranks
 
 
 class MultiStepRolloutWorker(Worker):
@@ -121,7 +121,16 @@ class MultiStepRolloutWorker(Worker):
                 self.total_num_eval_envs // self.num_pipeline_stages
             ),
         }
+        self.src_ranks = {
+            "train": self._setup_src_ranks(
+                self.total_num_train_envs // self.num_pipeline_stages
+            ),
+            "eval": self._setup_src_ranks(
+                self.total_num_eval_envs // self.num_pipeline_stages
+            ),
+        }
         self.log_info(f"Rollout worker initialized with dst_ranks: {self.dst_ranks}")
+        self.log_info(f"Rollout worker initialized with src_ranks: {self.src_ranks}")
         self.setup_sample_params()
         if self.enable_offload:
             self.offload_model()
@@ -155,7 +164,7 @@ class MultiStepRolloutWorker(Worker):
             "max_new_tokens": self._length_params["max_new_token"],
         }
 
-    def _setup_dst_ranks(self, batch_size: int) -> list[int]:
+    def _setup_dst_ranks(self, batch_size: int) -> list[tuple[int, int]]:
         """Compute env peer ranks for this rollout worker.
 
         This mapping supports both one-to-many and many-to-one env/rollout layouts.
@@ -166,34 +175,42 @@ class MultiStepRolloutWorker(Worker):
             batch_size: Total env batch size per pipeline stage across all workers.
 
         Returns:
-            Ordered env ranks this rollout worker should communicate with.
+            Ordered ``(env_rank, batch_size)`` tuples this rollout worker should
+            send action chunks to.
         """
         env_world_size = self.placement.get_world_size("env")
         rollout_world_size = self.placement.get_world_size("rollout")
-        assert (
-            env_world_size % rollout_world_size == 0
-            or rollout_world_size % env_world_size == 0
-        ), (
-            f"env_world_size ({env_world_size}) and rollout_world_size ({rollout_world_size}) must be divisible."
+        return setup_dst_ranks(
+            batch_size=batch_size,
+            src_rank=self._rank,
+            src_world_size=rollout_world_size,
+            dst_world_size=env_world_size,
         )
-        assert batch_size % env_world_size == 0, (
-            f"batch_size ({batch_size}) must be divisible by env_world_size ({env_world_size})."
+
+    def _setup_src_ranks(self, batch_size: int) -> list[tuple[int, int]]:
+        """Compute env source ranks and sizes for receiving env outputs."""
+        env_world_size = self.placement.get_world_size("env")
+        rollout_world_size = self.placement.get_world_size("rollout")
+
+        src_ranks_and_sizes: list[tuple[int, int]] = []
+        for src_rank in range(env_world_size):
+            dst_ranks_and_sizes = setup_dst_ranks(
+                batch_size=batch_size,
+                src_rank=src_rank,
+                src_world_size=env_world_size,
+                dst_world_size=rollout_world_size,
+            )
+            for dst_rank, size in dst_ranks_and_sizes:
+                if dst_rank == self._rank:
+                    src_ranks_and_sizes.append((src_rank, size))
+
+        expected_size = batch_size // rollout_world_size
+        actual_size = sum(size for _, size in src_ranks_and_sizes)
+        assert actual_size == expected_size, (
+            f"Expected receive size {expected_size} for rollout rank {self._rank}, got {actual_size} "
+            f"from mappings {src_ranks_and_sizes}."
         )
-        assert batch_size % rollout_world_size == 0, (
-            f"batch_size ({batch_size}) must be divisible by rollout_world_size ({rollout_world_size})."
-        )
-        env_min_handle = batch_size // env_world_size
-        rollout_min_handle = batch_size // rollout_world_size
-        dst_ranks_count = (
-            rollout_min_handle // env_min_handle
-            if rollout_min_handle >= env_min_handle
-            else 1
-        )
-        env_dst_ranks = [
-            self._rank * rollout_min_handle // env_min_handle + i
-            for i in range(dst_ranks_count)
-        ]
-        return env_dst_ranks
+        return src_ranks_and_sizes
 
     @Worker.timer("predict")
     def predict(self, env_obs, mode="train"):
@@ -476,36 +493,56 @@ class MultiStepRolloutWorker(Worker):
             rollout worker, outputs are merged on batch dimension.
         """
         assert mode in ["train", "eval"], f"{mode=} is not supported"
-        src_ranks = self.dst_ranks[mode]
+        src_ranks_and_sizes = self.src_ranks[mode]
         env_outputs = []
-        for src_rank in src_ranks:
-            env_outputs.append(
-                await input_channel.get(
-                    key=self._build_channel_key(src_rank, self._rank, mode),
-                    async_op=True,
-                ).async_wait()
+        for src_rank, expected_size in src_ranks_and_sizes:
+            env_output = await input_channel.get(
+                key=self._build_channel_key(src_rank, self._rank, mode),
+                async_op=True,
+            ).async_wait()
+            actual_size = self._infer_env_batch_size(env_output)
+            assert actual_size == expected_size, (
+                f"Expected env output batch size {expected_size} from env rank {src_rank}, "
+                f"got {actual_size}."
             )
+            env_outputs.append(env_output)
         env_output = EnvOutput.merge_env_outputs(env_outputs)
         return env_output
 
     def _split_actions(
-        self, actions: torch.Tensor | np.ndarray, count: int
+        self, actions: torch.Tensor | np.ndarray, sizes: list[int]
     ) -> list[torch.Tensor | np.ndarray]:
-        """Split rollout actions into ``count`` shards along batch dimension.
+        """Split rollout actions into size-specified shards along dim-0.
 
         Args:
             actions: Model-predicted action chunk batch (tensor or ndarray).
-            count: Number of destination env ranks.
+            sizes: Batch sizes for each destination env rank.
 
         Returns:
             A list of action shards aligned with destination rank order.
         """
-        assert actions.shape[0] % count == 0, (
-            f"Number of actions ({actions.shape[0]}) must be divisible by count ({count})."
+        assert sum(sizes) == actions.shape[0], (
+            f"Number of actions ({actions.shape[0]}) must equal split sizes sum ({sum(sizes)})."
         )
         if isinstance(actions, np.ndarray):
-            return list(np.split(actions, count, axis=0))
-        return list(torch.split(actions, actions.shape[0] // count, dim=0))
+            split_indices = np.cumsum(sizes[:-1]).tolist()
+            return list(np.split(actions, split_indices, axis=0))
+        return list(torch.split(actions, sizes, dim=0))
+
+    @staticmethod
+    def _infer_env_batch_size(env_output: dict[str, Any]) -> int:
+        dones = env_output.get("dones")
+        if isinstance(dones, torch.Tensor):
+            return dones.shape[0]
+
+        obs = env_output["obs"]
+        for key in ("states", "main_images", "task_descriptions"):
+            value = obs.get(key)
+            if isinstance(value, torch.Tensor):
+                return value.shape[0]
+            if isinstance(value, list):
+                return len(value)
+        raise ValueError("Cannot infer batch size from env output.")
 
     def send_chunk_actions(
         self,
@@ -521,11 +558,12 @@ class MultiStepRolloutWorker(Worker):
             mode: Rollout mode, either ``"train"`` or ``"eval"``.
         """
         assert mode in ["train", "eval"], f"{mode=} is not supported"
-        dst_ranks = self.dst_ranks[mode]
-        dst_ranks_count = len(dst_ranks)
-        chunk_actions_split = self._split_actions(chunk_actions, dst_ranks_count)
-        for i, dst_rank in enumerate(dst_ranks):
-            chunk_action_i = chunk_actions_split[i]
+        dst_ranks_and_sizes = self.dst_ranks[mode]
+        split_sizes = [size for _, size in dst_ranks_and_sizes]
+        chunk_actions_split = self._split_actions(chunk_actions, split_sizes)
+        for (dst_rank, _), chunk_action_i in zip(
+            dst_ranks_and_sizes, chunk_actions_split
+        ):
             if isinstance(chunk_action_i, torch.Tensor):
                 chunk_action_i = chunk_action_i.detach().cpu()
             output_channel.put(
