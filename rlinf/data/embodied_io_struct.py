@@ -100,6 +100,9 @@ class EnvOutput:
         - Tensor fields: concatenate on batch dimension.
         - List fields: flatten in source order.
         - ``None`` fields: keep ``None``.
+        - ``final_obs`` supports partial ``None`` across shards. For shards
+          without ``final_obs``, use the corresponding ``obs`` as fallback to
+          keep batch alignment.
 
         Args:
             env_outputs: Per-source env output dicts that share the same schema.
@@ -107,72 +110,101 @@ class EnvOutput:
         Returns:
             A merged env output dict produced via ``EnvOutput(...).to_dict()``.
         """
-        merged_obs = {}
-        for key in env_outputs[0]["obs"].keys():
-            if env_outputs[0]["obs"][key] is None:
-                merged_obs[key] = None
-                continue
-            obs_elements = [env_output["obs"][key] for env_output in env_outputs]
-            if isinstance(obs_elements[0], torch.Tensor):
-                merged_obs[key] = torch.cat(obs_elements, dim=0)
-            elif isinstance(obs_elements[0], list):
-                merged_obs[key] = [item for sublist in obs_elements for item in sublist]
-            else:
-                merged_obs[key] = obs_elements
 
-        merged_final_obs = None
-        if env_outputs[0]["final_obs"] is not None:
-            merged_final_obs = {}
-            for key in env_outputs[0]["final_obs"].keys():
-                if env_outputs[0]["final_obs"][key] is None:
-                    merged_final_obs[key] = None
-                    continue
-                obs_elements = [
-                    env_output["final_obs"][key] for env_output in env_outputs
-                ]
-                if isinstance(obs_elements[0], torch.Tensor):
-                    merged_final_obs[key] = torch.cat(obs_elements, dim=0)
-                elif isinstance(obs_elements[0], list):
-                    merged_final_obs[key] = [
+        def _get_batch_size(env_output: dict[str, Any]) -> int:
+            dones = env_output.get("dones")
+            if isinstance(dones, torch.Tensor):
+                return dones.shape[0]
+
+            obs = env_output["obs"]
+            for key in ("states", "main_images", "task_descriptions"):
+                value = obs.get(key)
+                if isinstance(value, torch.Tensor):
+                    return value.shape[0]
+                if isinstance(value, list):
+                    return len(value)
+            raise ValueError("Cannot infer batch size from env output.")
+
+        def _merge_obs_dicts(obs_dicts: list[dict[str, Any]]) -> dict[str, Any]:
+            merged_obs = {}
+            for key in obs_dicts[0].keys():
+                obs_elements = [obs_dict[key] for obs_dict in obs_dicts]
+                first_non_none = next(
+                    (element for element in obs_elements if element is not None), None
+                )
+                if first_non_none is None:
+                    merged_obs[key] = None
+                elif isinstance(first_non_none, torch.Tensor):
+                    merged_obs[key] = torch.cat(obs_elements, dim=0)
+                elif isinstance(first_non_none, list):
+                    merged_obs[key] = [
                         item for sublist in obs_elements for item in sublist
                     ]
                 else:
-                    merged_final_obs[key] = obs_elements
+                    merged_obs[key] = obs_elements
+            return merged_obs
 
-        merged_dones = (
-            torch.cat([env_output["dones"] for env_output in env_outputs], dim=0)
-            if env_outputs[0]["dones"] is not None
-            else None
-        )
-        merged_terminations = (
-            torch.cat([env_output["terminations"] for env_output in env_outputs], dim=0)
-            if env_outputs[0]["terminations"] is not None
-            else None
-        )
-        merged_truncations = (
-            torch.cat([env_output["truncations"] for env_output in env_outputs], dim=0)
-            if env_outputs[0]["truncations"] is not None
-            else None
-        )
-        merged_rewards = (
-            torch.cat([env_output["rewards"] for env_output in env_outputs], dim=0)
-            if env_outputs[0]["rewards"] is not None
-            else None
-        )
+        def _merge_optional_tensor_field(
+            field_name: str,
+            *,
+            allow_partial_none: bool = False,
+            fill_value: float | bool = 0,
+        ) -> torch.Tensor | None:
+            values = [env_output[field_name] for env_output in env_outputs]
+            if all(value is None for value in values):
+                return None
 
-        merged_intervene_actions = (
-            torch.cat(
-                [env_output["intervene_actions"] for env_output in env_outputs], dim=0
-            )
-            if env_outputs[0]["intervene_actions"] is not None
-            else None
+            if any(value is None for value in values):
+                if not allow_partial_none:
+                    raise ValueError(
+                        f"Inconsistent field '{field_name}': some shards are None while others are tensors."
+                    )
+
+                ref_tensor = next(value for value in values if value is not None)
+                filled_values = []
+                for env_output, value in zip(env_outputs, values):
+                    if value is None:
+                        batch_size = _get_batch_size(env_output)
+                        fill_shape = (batch_size, *ref_tensor.shape[1:])
+                        filled_values.append(
+                            torch.full(
+                                fill_shape,
+                                fill_value=fill_value,
+                                dtype=ref_tensor.dtype,
+                            )
+                        )
+                    else:
+                        filled_values.append(value)
+                values = filled_values
+
+            return torch.cat(values, dim=0)
+
+        merged_obs = _merge_obs_dicts([env_output["obs"] for env_output in env_outputs])
+
+        merged_final_obs = None
+        final_obs_list = [env_output["final_obs"] for env_output in env_outputs]
+        if any(final_obs is not None for final_obs in final_obs_list):
+            # Some shards may not have done episodes in this step, so their final_obs
+            # is None. Use obs as fallback to keep merged batch shape aligned.
+            final_obs_or_obs = [
+                final_obs if final_obs is not None else env_output["obs"]
+                for env_output, final_obs in zip(env_outputs, final_obs_list)
+            ]
+            merged_final_obs = _merge_obs_dicts(final_obs_or_obs)
+
+        merged_dones = _merge_optional_tensor_field("dones")
+        merged_terminations = _merge_optional_tensor_field("terminations")
+        merged_truncations = _merge_optional_tensor_field("truncations")
+        merged_rewards = _merge_optional_tensor_field("rewards")
+        merged_intervene_actions = _merge_optional_tensor_field(
+            "intervene_actions",
+            allow_partial_none=True,
+            fill_value=0.0,
         )
-        merged_intervene_flags = (
-            torch.cat(
-                [env_output["intervene_flags"] for env_output in env_outputs], dim=0
-            )
-            if env_outputs[0]["intervene_flags"] is not None
-            else None
+        merged_intervene_flags = _merge_optional_tensor_field(
+            "intervene_flags",
+            allow_partial_none=True,
+            fill_value=False,
         )
         # turn to EnvOutput and turn to dict to call post init for tensor processing
         return EnvOutput(

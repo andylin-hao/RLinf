@@ -14,7 +14,7 @@
 
 import copy
 import gc
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 import torch
@@ -463,7 +463,7 @@ class MultiStepRolloutWorker(Worker):
             )
 
     async def recv_env_output(
-        self, input_channel: Channel, mode="train"
+        self, input_channel: Channel, mode: Literal["train", "eval"] = "train"
     ) -> dict[str, torch.Tensor]:
         """Receive env outputs from mapped env ranks and merge if needed.
 
@@ -476,9 +476,7 @@ class MultiStepRolloutWorker(Worker):
             rollout worker, outputs are merged on batch dimension.
         """
         assert mode in ["train", "eval"], f"{mode=} is not supported"
-        # Use asyncio so that it can run alongside async weight syncing
         src_ranks = self.dst_ranks[mode]
-        src_ranks_count = len(src_ranks)
         env_outputs = []
         for src_rank in src_ranks:
             env_outputs.append(
@@ -487,11 +485,7 @@ class MultiStepRolloutWorker(Worker):
                     async_op=True,
                 ).async_wait()
             )
-        env_output = (
-            EnvOutput.merge_env_outputs(env_outputs)
-            if src_ranks_count > 1
-            else env_outputs[0]
-        )
+        env_output = EnvOutput.merge_env_outputs(env_outputs)
         return env_output
 
     def _split_actions(
@@ -513,7 +507,12 @@ class MultiStepRolloutWorker(Worker):
             return list(np.split(actions, count, axis=0))
         return list(torch.split(actions, actions.shape[0] // count, dim=0))
 
-    def send_chunk_actions(self, output_channel: Channel, chunk_actions, mode="train"):
+    def send_chunk_actions(
+        self,
+        output_channel: Channel,
+        chunk_actions: torch.Tensor | np.ndarray,
+        mode: Literal["train", "eval"] = "train",
+    ):
         """Send action shards to mapped env ranks.
 
         Args:
@@ -546,6 +545,6 @@ class MultiStepRolloutWorker(Worker):
         split_num = compute_split_num(recv_num, send_num)
         return split_num
 
-    def set_global_step(self, global_step):
+    def set_global_step(self, global_step: int):
         if hasattr(self.hf_model, "set_global_step"):
             self.hf_model.set_global_step(global_step)
