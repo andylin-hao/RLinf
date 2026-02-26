@@ -68,9 +68,7 @@ class EnvWorker(Worker):
                 self.cfg.env.eval.total_num_envs // self.stage_num
             ),
         }
-        self.log_info(
-            f"Env worker initialized with dst_ranks: {self.dst_ranks}", flush=True
-        )
+        self.log_info(f"Env worker initialized with dst_ranks: {self.dst_ranks}")
         train_env_cls = get_env_cls(self.cfg.env.train.env_type, self.cfg.env.train)
         eval_env_cls = get_env_cls(self.cfg.env.eval.env_type, self.cfg.env.eval)
 
@@ -260,12 +258,12 @@ class EnvWorker(Worker):
 
     def recv_chunk_actions(self, input_channel: Channel, mode="train") -> np.ndarray:
         assert mode in ["train", "eval"], f"{mode=} is not supported"
-        dst_ranks = self.dst_ranks[mode]
+        src_ranks = self.dst_ranks[mode]
         chunk_action = []
-        for rank in dst_ranks:
+        for src_rank in src_ranks:
             chunk_action.append(
                 input_channel.get(
-                    key=f"{rank}_{mode}",
+                    key=self._build_channel_key(src_rank, self._rank, mode),
                 )
             )
         chunk_action = np.concatenate(chunk_action, axis=0)
@@ -333,17 +331,17 @@ class EnvWorker(Worker):
         assert mode in ["train", "eval"], f"{mode=} is not supported"
         dst_ranks = self.dst_ranks[mode]
         dst_ranks_count = len(dst_ranks)
-        env_batches = (
-            self.split_env_batch(env_batch, dst_ranks_count, mode)
-            if dst_ranks_count > 1
-            else [env_batch]
-        )
+        env_batches = self.split_env_batch(env_batch, dst_ranks_count, mode)
         for i, rank in enumerate(dst_ranks):
             env_batch_i = env_batches[i]
             output_channel.put(
                 item=env_batch_i,
-                key=f"{rank}_{mode}",
+                key=self._build_channel_key(self._rank, rank, mode),
             )
+
+    @staticmethod
+    def _build_channel_key(src_rank: int, dst_rank: int, mode: str) -> str:
+        return f"{src_rank}_{dst_rank}_{mode}"
 
     @Worker.timer("interact")
     def interact(self, input_channel: Channel, output_channel: Channel):

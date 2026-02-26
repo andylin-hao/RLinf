@@ -121,9 +121,7 @@ class MultiStepRolloutWorker(Worker):
                 self.total_num_eval_envs // self.num_pipeline_stages
             ),
         }
-        self.log_info(
-            f"Rollout worker initialized with dst_ranks: {self.dst_ranks}", flush=True
-        )
+        self.log_info(f"Rollout worker initialized with dst_ranks: {self.dst_ranks}")
         self.setup_sample_params()
         if self.enable_offload:
             self.offload_model()
@@ -457,18 +455,19 @@ class MultiStepRolloutWorker(Worker):
     ) -> dict[str, torch.Tensor]:
         assert mode in ["train", "eval"], f"{mode=} is not supported"
         # Use asyncio so that it can run alongside async weight syncing
-        dst_ranks = self.dst_ranks[mode]
-        dst_ranks_count = len(dst_ranks)
+        src_ranks = self.dst_ranks[mode]
+        src_ranks_count = len(src_ranks)
         env_outputs = []
-        for dst_rank in dst_ranks:
+        for src_rank in src_ranks:
             env_outputs.append(
                 await input_channel.get(
-                    key=f"{dst_rank}_{mode}", async_op=True
+                    key=self._build_channel_key(src_rank, self._rank, mode),
+                    async_op=True,
                 ).async_wait()
             )
         env_output = (
             EnvOutput.merge_env_outputs(env_outputs)
-            if dst_ranks_count > 1
+            if src_ranks_count > 1
             else env_outputs[0]
         )
         return env_output
@@ -487,15 +486,17 @@ class MultiStepRolloutWorker(Worker):
         assert mode in ["train", "eval"], f"{mode=} is not supported"
         dst_ranks = self.dst_ranks[mode]
         dst_ranks_count = len(dst_ranks)
-        chunk_actions_split = (
-            self._split_actions(chunk_actions, dst_ranks_count)
-            if dst_ranks_count > 1
-            else [chunk_actions]
-        )
+        chunk_actions_split = self._split_actions(chunk_actions, dst_ranks_count)
         for i, dst_rank in enumerate(dst_ranks):
             output_channel.put(
-                chunk_actions_split[i].cpu(), key=f"{dst_rank}_{mode}", async_op=True
+                chunk_actions_split[i],
+                key=self._build_channel_key(self._rank, dst_rank, mode),
+                async_op=True,
             )
+
+    @staticmethod
+    def _build_channel_key(src_rank: int, dst_rank: int, mode: str) -> str:
+        return f"{src_rank}_{dst_rank}_{mode}"
 
     def get_actor_split_num(self):
         send_num = self.placement.get_world_size("rollout") * self.num_pipeline_stages
