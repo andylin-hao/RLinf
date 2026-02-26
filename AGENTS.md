@@ -138,3 +138,38 @@ Google Python style; Ruff for lint/format; docstrings and type hints on public A
 - Tutorials: [placement / cluster / YAML](https://rlinf.readthedocs.io/en/latest/rst_source/tutorials/user/index.html), [hybrid / disaggregated](https://rlinf.readthedocs.io/en/latest/rst_source/tutorials/mode/index.html), [heterogeneous cluster](https://rlinf.readthedocs.io/en/latest/rst_source/tutorials/advance/hetero.html), [extend (new env/model)](https://rlinf.readthedocs.io/en/latest/rst_source/tutorials/extend/index.html), [RL algorithms](https://rlinf.readthedocs.io/en/latest/rst_source/tutorials/rlalg/index.html), [logger (metrics)](https://rlinf.readthedocs.io/en/latest/rst_source/tutorials/advance/logger.html), [checkpoint resume](https://rlinf.readthedocs.io/en/latest/rst_source/tutorials/advance/resume.html)
 - Evaluation: [VLA evaluation](https://rlinf.readthedocs.io/en/latest/rst_source/start/vla-eval.html) · [LLM evaluation](https://rlinf.readthedocs.io/en/latest/rst_source/start/llm-eval.html)
 - [APIs](https://rlinf.readthedocs.io/en/latest/rst_source/apis/index.html) (actor, channel, cluster, placement, worker, env, data, …) · [FAQ](https://rlinf.readthedocs.io/en/latest/rst_source/faq.html)
+
+---
+
+## Cursor Cloud specific instructions
+
+### Environment overview
+
+RLinf is a single Python package (no external services like databases or web servers). Python 3.11 is required (`>=3.10, <=3.11.14`); the system Python 3.12 is incompatible. The venv at `.venv` is managed by `uv` with Python 3.11.14.
+
+### Activating the environment
+
+Always activate before running any command:
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+source /workspace/.venv/bin/activate
+```
+
+### Key commands
+
+| Task | Command |
+|------|---------|
+| **Lint** | `pre-commit run --all-files` (Ruff lint + format; branch-name check will fail on non-standard branch names — that's expected) |
+| **Unit tests** | `PYTHONPATH=$(pwd):$(pwd)/tests/unit_tests pytest tests/unit_tests/ -v` |
+| **Structure check** | `python tests/unit_tests/check_missing_init.py` |
+| **Build** | `uv build` |
+| **Sync deps** | `UV_TORCH_BACKEND=auto uv sync` |
+
+### Gotchas
+
+- `UV_TORCH_BACKEND=auto` is required when running `uv sync` to avoid PyTorch index resolution issues.
+- `transformers` is not a core dependency but is needed by unit tests; install it separately with `uv pip install transformers` after `uv sync`.
+- The `test_import_rlinf_package.py` standalone script will report import failures for modules that need optional extras (`sglang`, `vllm`, `mcp`, `latex2sympy2`, `gymnasium`, `peft`, etc.). These are expected in a base install without extras like `[agentic-sglang]` or `[embodied]`.
+- GPU-dependent tests (64 of them) are automatically skipped on CPU-only environments — this is normal.
+- `pre-commit install --hook-type commit-msg` may fail if `core.hooksPath` is set; run `git config --unset-all core.hooksPath` first.
+- E2e tests require GPUs and are not runnable in this cloud environment.
