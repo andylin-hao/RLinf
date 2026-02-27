@@ -83,14 +83,14 @@ env:
 
   # Override the default values in env/manikill_put_carrot_on_plate_in_scene
   train:
-    total_num_envs: 4
+    total_num_envs: 8
     max_episode_steps: 2
     max_steps_per_rollout_epoch: 2
     auto_reset: True
     ignore_terminations: True
     use_fixed_reset_state_ids: False
   eval:
-    total_num_envs: 4
+    total_num_envs: 8
     max_episode_steps: 8
     auto_reset: True
     ignore_terminations: True
