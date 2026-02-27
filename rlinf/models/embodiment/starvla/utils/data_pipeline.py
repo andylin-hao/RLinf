@@ -283,6 +283,38 @@ def prepare_actions_for_default_forward(
     )
 
 
+def project_rollout_actions_for_logprob(
+    policy,
+    *,
+    rollout_actions: torch.Tensor,
+) -> torch.Tensor:
+    """Project rollout actions to the same model space used in training.
+
+    This follows the exact transform chain used by rollout storage + training:
+        rollout action -> env action (storage) -> model action (training forward).
+    Use this when computing rollout-time ``prev_logprobs`` to ensure old/new
+    logprobs are compared in the same action space.
+    """
+    action_norm_stats = (
+        None if policy.disable_action_unnormalization else policy._action_norm_stats
+    )
+
+    env_actions_np, _ = action_space_utils.unnormalize_actions_for_env(
+        normalized_actions=tensor_to_numpy_compatible(rollout_actions),
+        action_norm_stats=action_norm_stats,
+        # Avoid duplicate warnings here; the main rollout action path will emit it.
+        warned_missing_action_norm_stats=True,
+    )
+    env_actions_t = torch.from_numpy(env_actions_np).to(
+        device=rollout_actions.device,
+        dtype=rollout_actions.dtype,
+    )
+    return action_space_utils.normalize_actions_for_model(
+        env_actions=env_actions_t,
+        action_norm_stats=policy._action_norm_stats,
+    )
+
+
 def pack_model_inputs_for_storage(
     model_inputs: dict[str, Any],
     batch_size: int,

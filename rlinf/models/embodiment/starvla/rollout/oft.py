@@ -73,7 +73,12 @@ def run_rollout_oft(
     prev_logprobs: Optional[torch.Tensor] = None
     prev_values: Optional[torch.Tensor] = None
     if calculate_logprobs:
-        prev_logprobs = dist.log_prob(actions_exec).to(dtype=torch.float32)
+        # Keep old/new logprobs in the same action space used by training forward.
+        actions_for_logprob = data_pipeline_utils.project_rollout_actions_for_logprob(
+            policy,
+            rollout_actions=actions_exec,
+        )
+        prev_logprobs = dist.log_prob(actions_for_logprob).to(dtype=torch.float32)
     if calculate_values:
         if policy.value_head is None:
             prev_values = torch.zeros(

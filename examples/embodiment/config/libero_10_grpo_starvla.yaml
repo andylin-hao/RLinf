@@ -130,7 +130,7 @@ actor:
     num_action_chunks: 8
     # Keys in this checkpoint are: ['bridge_dataset', 'fractal20220817_data'].
     # Prefer explicit setting to avoid ambiguous auto selection.
-    unnorm_key: libero
+    unnorm_key: franka
     add_value_head: False
     starvla:
       framework_name: "QwenOFT"

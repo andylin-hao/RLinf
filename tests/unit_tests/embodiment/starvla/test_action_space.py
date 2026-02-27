@@ -23,6 +23,9 @@ from rlinf.models.embodiment.starvla.utils.action_space import (
     resolve_action_norm_stats,
     unnormalize_actions_for_env,
 )
+from rlinf.models.embodiment.starvla.utils.data_pipeline import (
+    project_rollout_actions_for_logprob,
+)
 
 
 def _dummy_model_with_norm_stats():
@@ -104,3 +107,31 @@ def test_clip_actions_for_env_binarizes_gripper():
     assert clipped[..., :6].max().item() <= 1.0
     assert clipped[..., :6].min().item() >= -1.0
     assert clipped[..., 6].item() == 0.0
+
+
+def test_project_rollout_actions_for_logprob_matches_training_projection(monkeypatch):
+    monkeypatch.setenv("ROBOT_PLATFORM", "LIBERO")
+    monkeypatch.setenv("STARVLA_LIBERO_GRIPPER_MODE", "open_is_one")
+
+    stats = {
+        "high": np.ones((7,), dtype=np.float32),
+        "low": -np.ones((7,), dtype=np.float32),
+        "mask": np.ones((7,), dtype=bool),
+    }
+
+    class DummyPolicy:
+        disable_action_unnormalization = False
+        _action_norm_stats = stats
+
+    rollout_actions = torch.tensor(
+        [[[0.2, -0.2, 0.5, -0.5, 0.1, -0.1, 1.0]]], dtype=torch.float32
+    )
+
+    projected = project_rollout_actions_for_logprob(
+        DummyPolicy(),
+        rollout_actions=rollout_actions,
+    )
+
+    # For LIBERO gripper this path should match the replay-storage + training path:
+    # rollout(1.0) -> storage(-1.0) -> training(1.0)
+    assert torch.allclose(projected, rollout_actions, atol=1e-5)
