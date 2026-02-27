@@ -24,8 +24,8 @@ from rlinf.envs import get_env_cls
 from rlinf.envs.action_utils import prepare_actions
 from rlinf.envs.wrappers import RecordVideo
 from rlinf.scheduler import Channel, Cluster, Worker
+from rlinf.utils.comm_mapping import CommMapper
 from rlinf.utils.placement import HybridComponentPlacement
-from rlinf.utils.utils import setup_dst_ranks
 
 
 class EnvWorker(Worker):
@@ -133,37 +133,23 @@ class EnvWorker(Worker):
         """
         env_world_size = self._component_placement.get_world_size("env")
         rollout_world_size = self._component_placement.get_world_size("rollout")
-        return setup_dst_ranks(
+        return CommMapper.get_dst_ranks(
             batch_size=batch_size,
-            src_rank=self._rank,
             src_world_size=env_world_size,
             dst_world_size=rollout_world_size,
+            src_rank=self._rank,
         )
 
     def _setup_src_ranks(self, batch_size: int) -> list[tuple[int, int]]:
         """Compute rollout source ranks and sizes for receiving action chunks."""
         env_world_size = self._component_placement.get_world_size("env")
         rollout_world_size = self._component_placement.get_world_size("rollout")
-
-        src_ranks_and_sizes: list[tuple[int, int]] = []
-        for src_rank in range(rollout_world_size):
-            dst_ranks_and_sizes = setup_dst_ranks(
-                batch_size=batch_size,
-                src_rank=src_rank,
-                src_world_size=rollout_world_size,
-                dst_world_size=env_world_size,
-            )
-            for dst_rank, size in dst_ranks_and_sizes:
-                if dst_rank == self._rank:
-                    src_ranks_and_sizes.append((src_rank, size))
-
-        expected_size = batch_size // env_world_size
-        actual_size = sum(size for _, size in src_ranks_and_sizes)
-        assert actual_size == expected_size, (
-            f"Expected receive size {expected_size} for env rank {self._rank}, got {actual_size} "
-            f"from mappings {src_ranks_and_sizes}."
+        return CommMapper.get_src_ranks(
+            batch_size=batch_size,
+            src_world_size=rollout_world_size,
+            dst_world_size=env_world_size,
+            dst_rank=self._rank,
         )
-        return src_ranks_and_sizes
 
     def _init_env(self):
         if self.cfg.env.train.auto_reset:
@@ -305,7 +291,7 @@ class EnvWorker(Worker):
         chunk_action = []
         for src_rank, expected_size in src_ranks_and_sizes:
             action_i = input_channel.get(
-                key=self._build_channel_key(src_rank, self._rank, mode),
+                key=CommMapper.build_channel_key(src_rank, self._rank, extra=mode),
             )
             if isinstance(action_i, torch.Tensor):
                 action_i = action_i.detach().cpu().numpy()
@@ -423,13 +409,8 @@ class EnvWorker(Worker):
         for (rank, _), env_batch_i in zip(dst_ranks_and_sizes, env_batches):
             output_channel.put(
                 item=env_batch_i,
-                key=self._build_channel_key(self._rank, rank, mode),
+                key=CommMapper.build_channel_key(self._rank, rank, extra=mode),
             )
-
-    @staticmethod
-    def _build_channel_key(src_rank: int, dst_rank: int, mode: str) -> str:
-        """Build the canonical channel key for env/rollout point-to-point traffic."""
-        return f"{src_rank}_{dst_rank}_{mode}"
 
     @Worker.timer("interact")
     def interact(self, input_channel: Channel, output_channel: Channel):

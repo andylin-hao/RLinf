@@ -31,9 +31,10 @@ from rlinf.data.embodied_io_struct import (
 from rlinf.models import get_model
 from rlinf.models.embodiment.base_policy import BasePolicy
 from rlinf.scheduler import Channel, Cluster, CollectiveGroupOptions, Worker
+from rlinf.utils.comm_mapping import CommMapper
 from rlinf.utils.metric_utils import compute_split_num
 from rlinf.utils.placement import HybridComponentPlacement
-from rlinf.utils.utils import get_model_weights_id, setup_dst_ranks
+from rlinf.utils.utils import get_model_weights_id
 
 
 class MultiStepRolloutWorker(Worker):
@@ -180,37 +181,23 @@ class MultiStepRolloutWorker(Worker):
         """
         env_world_size = self.placement.get_world_size("env")
         rollout_world_size = self.placement.get_world_size("rollout")
-        return setup_dst_ranks(
+        return CommMapper.get_dst_ranks(
             batch_size=batch_size,
-            src_rank=self._rank,
             src_world_size=rollout_world_size,
             dst_world_size=env_world_size,
+            src_rank=self._rank,
         )
 
     def _setup_src_ranks(self, batch_size: int) -> list[tuple[int, int]]:
         """Compute env source ranks and sizes for receiving env outputs."""
         env_world_size = self.placement.get_world_size("env")
         rollout_world_size = self.placement.get_world_size("rollout")
-
-        src_ranks_and_sizes: list[tuple[int, int]] = []
-        for src_rank in range(env_world_size):
-            dst_ranks_and_sizes = setup_dst_ranks(
-                batch_size=batch_size,
-                src_rank=src_rank,
-                src_world_size=env_world_size,
-                dst_world_size=rollout_world_size,
-            )
-            for dst_rank, size in dst_ranks_and_sizes:
-                if dst_rank == self._rank:
-                    src_ranks_and_sizes.append((src_rank, size))
-
-        expected_size = batch_size // rollout_world_size
-        actual_size = sum(size for _, size in src_ranks_and_sizes)
-        assert actual_size == expected_size, (
-            f"Expected receive size {expected_size} for rollout rank {self._rank}, got {actual_size} "
-            f"from mappings {src_ranks_and_sizes}."
+        return CommMapper.get_src_ranks(
+            batch_size=batch_size,
+            src_world_size=env_world_size,
+            dst_world_size=rollout_world_size,
+            dst_rank=self._rank,
         )
-        return src_ranks_and_sizes
 
     @Worker.timer("predict")
     def predict(self, env_obs, mode="train"):
@@ -497,7 +484,7 @@ class MultiStepRolloutWorker(Worker):
         env_outputs = []
         for src_rank, expected_size in src_ranks_and_sizes:
             env_output = await input_channel.get(
-                key=self._build_channel_key(src_rank, self._rank, mode),
+                key=CommMapper.build_channel_key(src_rank, self._rank, extra=mode),
                 async_op=True,
             ).async_wait()
             actual_size = self._infer_env_batch_size(env_output)
@@ -568,14 +555,9 @@ class MultiStepRolloutWorker(Worker):
                 chunk_action_i = chunk_action_i.detach().cpu()
             output_channel.put(
                 chunk_action_i,
-                key=self._build_channel_key(self._rank, dst_rank, mode),
+                key=CommMapper.build_channel_key(self._rank, dst_rank, extra=mode),
                 async_op=True,
             )
-
-    @staticmethod
-    def _build_channel_key(src_rank: int, dst_rank: int, mode: str) -> str:
-        """Build the canonical channel key for env/rollout point-to-point traffic."""
-        return f"{src_rank}_{dst_rank}_{mode}"
 
     def get_actor_split_num(self):
         send_num = self.placement.get_world_size("rollout") * self.num_pipeline_stages
