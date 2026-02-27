@@ -84,7 +84,7 @@ jobs:
               - 'rlinf/workers/actor/async_fsdp_sac_policy_worker.py'
               - 'rlinf/workers/actor/fsdp_sac_policy_worker.py'
               - 'rlinf/workers/env/**'
-              - 'rlinf/rollout/hf/**'
+              - 'rlinf/workers/rollout/hf/**'
               - 'rlinf/models/embodiment/**'
               - 'rlinf/models/worldmodel/**'
               - 'rlinf/runners/*embodied*.py'
