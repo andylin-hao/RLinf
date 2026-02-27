@@ -1544,7 +1544,7 @@ class CollectiveGroup:
                     "cpu"
                     if is_cpu
                     else Worker.torch_platform.current_device()
-                    if has_accel_tensor
+                    if has_accel_tensor and Worker.torch_platform is not None
                     else "cpu"
                 ),
             )
