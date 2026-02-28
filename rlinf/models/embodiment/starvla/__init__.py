@@ -58,12 +58,16 @@ def get_model(
             "a starVLA run directory."
         )
     if model_path.endswith(".pt"):
-        assert os.path.exists(model_path), f"Checkpoint path {model_path} does not exist"
+        assert os.path.exists(model_path), (
+            f"Checkpoint path {model_path} does not exist"
+        )
         ckpt_path = model_path
     else:
         # Try to find the latest checkpoint in the checkpoints directory
         model_path = os.path.join(os.fspath(model_path), "checkpoints")
-        assert os.path.exists(model_path), f"Checkpoint path {model_path} does not exist"
+        assert os.path.exists(model_path), (
+            f"Checkpoint path {model_path} does not exist"
+        )
         ckpt_files = os.listdir(model_path)
         ckpt_files = sorted([f for f in ckpt_files if f.endswith(".pt")])
         assert len(ckpt_files) > 0, f"No checkpoint files found in {model_path}"
