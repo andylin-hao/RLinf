@@ -271,6 +271,7 @@
    sac_flow
    mlp
    dexbotic
+   starvla
    franka
    sft_openpi
    sft_vlm
