@@ -89,9 +89,32 @@ Rollout 的执行策略通常采用 receding-horizon：策略每次 forward 产�
 2. 安装依赖
 ^^^^^^^^^^^^
 
-本文档假设暂不使用 Docker（自定义环境安装）：
+**选项 1：Docker 镜像**
 
-.. code-block:: bash
+使用 Docker 镜像运行实验。
+
+.. code:: bash
+
+   docker run -it --rm --gpus all \
+      --shm-size 20g \
+      --network host \
+      --name rlinf \
+      -v .:/workspace/RLinf \
+      rlinf/rlinf:agentic-rlinf0.1-maniskill_libero
+      # 如果需要国内加速下载镜像，可以使用：
+      # docker.1ms.run/rlinf/rlinf:agentic-rlinf0.1-maniskill_libero
+
+请通过镜像内置的 `switch_env` 工具切换到对应的虚拟环境：
+
+.. code:: bash
+
+   source switch_env starvla
+
+**选项 2：自定义环境**
+
+.. code:: bash
+
+   # 为提高国内依赖安装速度，可以添加`--use-mirror`到下面的install.sh命令
 
    bash requirements/install.sh embodied --model starvla --env maniskill_libero
    source .venv/bin/activate
