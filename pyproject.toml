@@ -126,6 +126,8 @@ franka = [
 xsquare_turtle2 = [
     "pyyaml",
     "rospkg",
+    "toppra",
+    "numpy==1.26.4",
     "empy==3.3.4",
     "gymnasium==0.29.1",
     "pyrealsense2",
