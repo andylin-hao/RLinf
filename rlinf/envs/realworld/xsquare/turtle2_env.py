@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import annotations
 import copy
 import time
 from dataclasses import dataclass, field
@@ -80,7 +81,11 @@ class Turtle2RobotConfig:
 
 
 class Turtle2Env(gym.Env):
-    """Turtle2 robot arm environment."""
+    """Gymnasium environment wrapping the Turtle2 dual-arm robot.
+
+    Supports single- and dual-arm control with optional camera observations,
+    dense/sparse rewards, safety-box clipping, and a dummy mode for offline use.
+    """
 
     def __init__(
         self,
@@ -88,7 +93,15 @@ class Turtle2Env(gym.Env):
         worker_info: Optional[WorkerInfo],
         hardware_info: Optional[Turtle2HWInfo],
         env_idx: int,
-    ):
+    ) -> None:
+        """Initialize Turtle2Env.
+
+        Args:
+            config: Robot and environment configuration.
+            worker_info: Scheduler worker info used to resolve node/worker rank.
+            hardware_info: Hardware descriptor for the Turtle2 platform.
+            env_idx: Index of this environment instance within its worker.
+        """
         self._logger = get_logger()
         self.config = config
         self.hardware_info = hardware_info
@@ -189,7 +202,11 @@ class Turtle2Env(gym.Env):
         )
         self._base_observation_space = copy.deepcopy(self.observation_space)
 
-    def _reset_arms(self):
+    def _reset_arms(self) -> None:
+        """Move both arms to their reset poses, blocking until they arrive.
+
+        Does nothing in dummy mode.
+        """
         if self.config.is_dummy:
             return
 
@@ -298,14 +315,29 @@ class Turtle2Env(gym.Env):
 
         return observation, {}
 
-    def transform_action_ee_to_base(self, action):
+    def transform_action_ee_to_base(self, action: np.ndarray) -> np.ndarray:
+        """Transform action from end-effector frame to base frame.
+
+        Args:
+            action: Action array in end-effector coordinates.
+
+        Returns:
+            Action array in base frame coordinates.
+        """
         action[:6] = np.linalg.inv(self.adjoint_matrix) @ action[:6]
         return action
 
-    def step(self, action: np.ndarray):
+    def step(
+        self, action: np.ndarray
+    ) -> tuple[dict, float, bool, bool, dict]:
         """Take a step in the environment.
 
-        action (np.ndarray): The action to take, in shape (7, ) or (14, ).
+        Args:
+            action: Delta end-effector action of shape ``(7,)`` for single arm
+                or ``(14,)`` for dual arm (xyz, rpy, gripper per arm).
+
+        Returns:
+            Tuple of ``(observation, reward, terminated, truncated, info)``.
         """
         assert action.shape == (len(self.config.use_arm_ids) * 7,), (
             f"Action shape must be {(len(self.config.use_arm_ids) * 7,)}, but got {action.shape}."
@@ -387,10 +419,15 @@ class Turtle2Env(gym.Env):
         self,
         observation: dict[str, np.ndarray],
     ) -> float:
-        """Compute the reward for the current observation, namely the robot state and camera frames.
+        """Compute the per-step reward from the current robot state.
 
         Args:
-            observation (Dict[str, np.ndarray]): The current observation from the environment.
+            observation: Current observation dict (unused directly; reward is
+                derived from internal robot state).
+
+        Returns:
+            ``1.0`` on success, a dense exponential reward when
+            ``use_dense_reward`` is set, or ``0.0`` otherwise.
         """
         if not self.config.is_dummy:
             # Convert orientation to euler angles
@@ -482,7 +519,12 @@ class Turtle2Env(gym.Env):
         position = position.reshape(2, -1)
         return position
 
-    def _get_observation(self) -> dict:
+    def _get_observation(self) -> dict[str, dict[str, np.ndarray]]:
+        """Get current observation from robot state and cameras.
+
+        Returns:
+            Observation dict with 'state' (tcp_pose) and 'frames' (camera images).
+        """
         if not self.config.is_dummy:
             frames = self._controller.get_cams(self.config.use_camera_ids).wait()[0]
             assert len(frames) == len(self.config.use_camera_ids), "get frames failed."

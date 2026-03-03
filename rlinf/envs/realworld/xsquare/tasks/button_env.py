@@ -29,6 +29,16 @@ class ButtonEnvConfig(Turtle2RobotConfig):
     add_gripper_penalty: bool = False
 
     def __post_init__(self):
+        """Initialize button task configuration parameters.
+        This method sets up the configuration for the button pressing task:
+        - Computes reset_ee_pose by
+          lifting the end-effector above the target by random_z_range_high.
+        - Defines reward_threshold for position (x,y,z) and orientation (rx,ry,rz).
+        - Sets action_scale with gripper closed (0.0) to prevent gripper motion.
+        - Computes ee_pose_limit_min and ee_pose_limit_max by applying random
+          ranges to target_ee_pose, defining the allowed workspace bounds for
+          randomized resets and safety checks.
+        """
         self.target_ee_pose = np.array(self.target_ee_pose)
         self.reset_ee_pose = self.target_ee_pose + np.array(
             [
@@ -57,6 +67,7 @@ class ButtonEnvConfig(Turtle2RobotConfig):
 
 
 class ButtonEnv(Turtle2Env):
+    """Button pressing task environment for Turtle2 robot."""
     def __init__(self, override_cfg, worker_info=None, hardware_info=None, env_idx=0):
         # Update config according to current env
         config = ButtonEnvConfig(**override_cfg)

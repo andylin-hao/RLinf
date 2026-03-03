@@ -19,7 +19,20 @@ import numpy as np
 
 @dataclass
 class Turtle2RobotState:
-    # Dataclass representing the Turtle2 robot state (followers, head, lift, and car pose).
+    """Turtle2 robot state including followers, head, lift, and car pose.
+
+    Attributes:
+        follow1_pos: Follower 1 position (7-dim).
+        follow1_joints: Follower 1 joint angles (7-dim).
+        follow1_cur_data: Follower 1 current data (7-dim).
+        follow2_pos: Follower 2 position (7-dim).
+        follow2_joints: Follower 2 joint angles (7-dim).
+        follow2_cur_data: Follower 2 current data (7-dim).
+        head_pos: Head position (2-dim).
+        lift: Lift height.
+        car_pose: Car pose [x, y, theta] (3-dim).
+    """
+
     follow1_pos: np.ndarray = field(default_factory=lambda: np.zeros(7))
     follow1_joints: np.ndarray = field(default_factory=lambda: np.zeros(7))
     follow1_cur_data: np.ndarray = field(default_factory=lambda: np.zeros(7))
