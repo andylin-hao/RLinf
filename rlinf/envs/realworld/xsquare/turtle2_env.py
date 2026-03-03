@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from __future__ import annotations
+
 import copy
 import time
 from dataclasses import dataclass, field
@@ -327,9 +328,7 @@ class Turtle2Env(gym.Env):
         action[:6] = np.linalg.inv(self.adjoint_matrix) @ action[:6]
         return action
 
-    def step(
-        self, action: np.ndarray
-    ) -> tuple[dict, float, bool, bool, dict]:
+    def step(self, action: np.ndarray) -> tuple[dict, float, bool, bool, dict]:
         """Take a step in the environment.
 
         Args:

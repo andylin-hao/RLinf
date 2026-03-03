@@ -68,6 +68,7 @@ class ButtonEnvConfig(Turtle2RobotConfig):
 
 class ButtonEnv(Turtle2Env):
     """Button pressing task environment for Turtle2 robot."""
+
     def __init__(self, override_cfg, worker_info=None, hardware_info=None, env_idx=0):
         # Update config according to current env
         config = ButtonEnvConfig(**override_cfg)
