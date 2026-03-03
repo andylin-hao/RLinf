@@ -7,6 +7,7 @@ ignore_terminations: False
 reward_coef: 1.0
 use_custom_reward: True
 use_rel_reward: True
+center_crop: false
 
 seed: 0
 group_size: 1
@@ -29,7 +30,9 @@ enable_offload: False
 task_config:
   task_name: stack_blocks_three
   step_lim: 400
-  planner_backend: mplib
+  planner_backend: mplib# # Choices: ["curobo", "mplib"], defalut is "curobo"
+  # if you want to modify the config, please check the following tutorial first:
+  # https://robotwin-platform.github.io/doc/usage/configurations.html
   render_freq: 0
   episode_num: 100
   use_seed: false
@@ -63,6 +66,6 @@ task_config:
   pcd_crop: true
   save_path: ./data
   clear_cache_freq: 8
-  collect_data: true
+  collect_data: false
   eval_video_log: true
   center_crop: false
