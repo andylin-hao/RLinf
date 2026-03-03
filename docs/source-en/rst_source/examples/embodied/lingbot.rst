@@ -1,52 +1,67 @@
-Lingbot-VLA Model Native Integration & Evaluation
+Lingbot-VLA Native Integration and Evaluation
 ==================================================
 
-This document introduces how to integrate LingBot-VLA as a native plugin into the RLinf framework and perform end-to-end policy evaluation and RL fine-tuning within the RoboTwin 2.0 simulation environment. Unlike traditional WebSocket communication, this native integration thoroughly embeds LingBot-VLA into RLinf's Python memory space, achieving the highest efficiency in interaction and training.
+This document describes how to integrate Lingbot-VLA as a native plugin into the RLinf framework and perform end-to-end policy evaluation and reinforcement learning fine-tuning in the RoboTwin 2.0 simulation environment. Unlike the traditional WebSocket communication mode, native integration completely embeds Lingbot-VLA into RLinf's Python memory space, enabling the most efficient interaction and training.
 
-The primary goal is to equip the model with the following capabilities:
+The primary objective is to equip the model with the following capabilities:
 
 * **Visual Understanding**: Process multi-view RGB images from robot cameras (e.g., head, wrist).
-* **Language Understanding**: Comprehend and generalize from natural language task descriptions.
-* **Action Generation**: Generate high-dimensional continuous action chunks auto-regressively via the large model foundation (based on Qwen2.5-VL).
-* **Native Interaction**: Interact directly with the RoboTwin simulation environment at the Tensor level with zero latency within the RLinf framework.
+* **Language Comprehension**: Understand and generalize natural-language task descriptions.
+* **Action Generation**: Directly autoregressively generate high-dimensional continuous action chunks via a large model backbone (based on Qwen2.5-VL).
+* **Native Interaction**: Perform zero-latency tensor-level interaction with the RoboTwin simulation environment directly within the RLinf framework.
 
 Environment
 -----------
 
 **RoboTwin Environment**
 
-* **Environment**: RoboTwin 2.0 physical simulation benchmark based on Sapien.
-* **Task**: Command ALOHA (and other dual/single-arm robots) to complete complex household and manipulation skills (e.g., ``click_bell``, ``open_microwave``, ``stack_blocks_three``).
-* **Observation**: RGB images collected from multi-camera perspectives.
-* **Action Space**: 14-dimensional continuous actions (using dual-arm ALOHA as an example), including absolute poses (x, y, z, roll, pitch, yaw) and gripper states for both arms.
+* **Environment**: RoboTwin 2.0 physical simulation benchmark built on Sapien.
+* **Task**: Command dual-arm/single-arm robots (e.g., ALOHA) to perform complex household and manipulation skills (e.g., ``click_bell``, ``open_microwave``, ``stack_blocks_three``, etc.).
+* **Observation**: RGB images captured from multiple camera views.
+* **Action Space**: 14-dimensional continuous actions (for dual-arm ALOHA), including absolute poses (x, y, z, roll, pitch, yaw) of both arms and gripper openness.
 
 Task Description Format
 -----------------------
 
-LingBot-VLA directly utilizes the natural language task descriptions provided by the environment as text Prompts for the Vision-Language Model (VLM).
+Lingbot-VLA directly uses the environment-provided natural-language task description as the text prompt input for the Vision-Language Model (VLM).
 
 Data Structure
 --------------
 
-* **Images**: RGB images from the main (Head) view and left/right Wrist views.
-* **Task Descriptions**: Natural language instructions (e.g., "click the bell").
-* **Actions**: Action chunks of length 50 (configurable), executed via an open-loop/closed-loop strategy based on historical observations.
+* **Images**: RGB images from the head and left/right wrist views.
+* **Task Descriptions**: Natural-language instructions (e.g., "click the bell").
+* **Actions**: Action chunks of length 50 (configurable), executed in an open-loop/closed-loop policy based on historical observations.
+
+Algorithm
+---------
+
+**Core Algorithm Components**
+
+* **GRPO (Group Relative Policy Optimization)**
+    * Advantage estimation using group-based relative rewards.
+    * Policy clipping with ratio limits.
+    * KL divergence regularization.
+
+* **Lingbot-VLA (Qwen2.5-VL based)**
+    * Autoregressive action chunk generation via a Vision-Language backbone.
+    * Flow-SDE (Stochastic Differential Equation) based action denoising / generation.
+    * Configurable ``noise_method`` (e.g., ``flow_sde``), ``noise_level``, and ``num_steps`` for denoising.
 
 Dependency Installation
 -----------------------
 
-To achieve perfect compatibility between the higher version of Torch (2.8.0) and RLinf (Python 3.10), we have encapsulated the complex dependency isolation logic into the installation script. Please follow the steps below to build the hybrid environment.
+To ensure perfect compatibility between the high-version Torch (2.8.0) and RLinf (Python 3.10), we have encapsulated the complex dependency isolation logic into an installation script. Please follow the steps below to build a hybrid environment.
 
-1. Clone RLinf Repository
-~~~~~~~~~~~~~~~~~~~~~~~~~
+1. Clone the RLinf Repository
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-First, clone the RLinf repository and enter the directory:
+First, clone the RLinf repository and enter the main directory:
 
 .. code-block:: bash
 
     export WORK_DIR="/path/to/your/workspace"
     mkdir -p ${WORK_DIR} && cd ${WORK_DIR}
-
+    
     git clone https://github.com/RLinf/RLinf.git
     cd RLinf
     export RLINF_PATH=$(pwd)
@@ -56,7 +71,7 @@ First, clone the RLinf repository and enter the directory:
 
 **Option 1: Docker Image**
 
-Use the Docker image for RoboTwin-based embodied training:
+Run embodied training based on RoboTwin using the Docker image:
 
 .. code-block:: bash
 
@@ -75,17 +90,17 @@ Please switch to the corresponding virtual environment via the built-in `switch_
 
 **Option 2: Custom Environment**
 
-Install dependencies directly in your environment. The script will automatically pull the LingBot source code into the `.venv/lingbot-vla` directory and resolve all high-risk dependency conflicts:
+Install the Lingbot-VLA native environment and RoboTwin base dependencies in one command (the script will automatically pull the Lingbot source code to the `.venv/lingbot-vla` directory and handle all high-risk dependency conflicts):
 
 .. code-block:: bash
 
     bash requirements/install.sh embodied --model lingbot-vla --env robotwin --use-mirror --no-root
     source .venv/bin/activate
 
-3. RoboTwin Environment Setup
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+3. RoboTwin Environment Configuration
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Since the built-in RLinf environment does not contain the complete RoboTwin source code, you need to manually pull the ``RLinf_support`` branch of RoboTwin (this branch already includes all necessary patches compatible with LingBot-VLA).
+Since the built-in RLinf environment does not contain the complete RoboTwin source code, you need to manually pull the ``RLinf_support`` branch of RoboTwin.
 
 .. code-block:: bash
 
@@ -99,7 +114,7 @@ Since the built-in RLinf environment does not contain the complete RoboTwin sour
 Model Download
 --------------
 
-Before starting the evaluation or training, navigate to the automatically generated LingBot-VLA source directory and download the base weights and the Qwen foundation model from HuggingFace:
+Before starting training, download the Lingbot-VLA base weights and the Qwen backbone model from HuggingFace:
 
 .. code-block:: bash
 
@@ -117,91 +132,84 @@ Before starting the evaluation or training, navigate to the automatically genera
     huggingface-cli download robbyant/lingbot-vla-4b --local-dir lingbot-vla-4b
     huggingface-cli download Qwen/Qwen2.5-VL-3B-Instruct --local-dir Qwen2.5-VL-3B-Instruct
     
-    # Eliminate the nested folder trap generated by the download
+    # Avoid the nested folder trap that may occur during download
     cd lingbot-vla-4b
     mv lingbot-vla-4b/* . 
     rmdir lingbot-vla-4b
     cd ..
 
+Then set ``rollout.model.model_path`` and ``actor.model.model_path`` in the configuration to the local path (e.g., ``/path/to/model/lingbot-vla-4b`` or ``./lingbot-vla-4b``).
+
 Quick Start
 -----------
 
 Configuration File
-~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~
 
-Prepare the RLinf evaluation configuration file for LingBot: ``examples/embodiment/config/robotwin_click_bell_eval_lingbot.yaml``
+* Lingbot + GRPO + RoboTwin:
+  ``examples/embodiment/config/robotwin_click_bell_grpo_lingbot.yaml``
 
-**Key Configuration Snippet:**
+Key Config Snippets
+^^^^^^^^^^^^^^^^^^^
+
+The top-level file dynamically assembles the environment and model via Hydra, and directly overrides the core SDE sampling parameters required for GRPO reinforcement learning under `actor.model`.
+
+**Note**: Because Lingbot-VLA uses the unified global normalization keys (e.g., `action.arm.position`) from `robotwin_50.json`, there is **no need to configure or override** `unnorm_key` when switching between different tasks, enabling truly smooth multi-task transfer.
 
 .. code-block:: yaml
 
     rollout:
-      group_name: "RolloutGroup"
-      backend: "huggingface"
-      enable_offload: False
-      pipeline_stage_num: 1
       model:
         model_type: "lingbot"
-        model_path: /path/to/RLinf/.venv/lingbot-vla/lingbot-vla-4b  # Please replace with the actual absolute path
-        tokenizer_path: /path/to/RLinf/.venv/lingbot-vla/Qwen2.5-VL-3B-Instruct
+        model_path: "/path/to/model/lingbot"
+
+    actor:
+      model:
+        model_path: "/path/to/model/lingbot"
+        model_type: "lingbot"
         action_dim: 14
         num_action_chunks: 50
+        num_steps: 10              
+        noise_method: "flow_sde"   
+        noise_level: 0.5           
+        action_env_dim: 14         
 
-    env:
-      eval:
-        total_num_envs: 16
-        max_episode_steps: 300
-        is_eval: True
-        video_cfg:
-          save_video: True
-          video_base_dir: /path/to/RLinf/RoboTwin/eval_result/click_bell/policy.lingbot_wrapper/demo_clean
+Launch Command
+~~~~~~~~~~~~~~~
+
+To start training with the selected configuration, run the following command:
+
+.. code-block:: bash
+
+    bash examples/embodiment/run_embodiment.sh CHOSEN_CONFIG
+
+For example, to train the Lingbot model with the GRPO algorithm on the RoboTwin Click Bell task:
+
+.. code-block:: bash
+
+    bash examples/embodiment/run_embodiment.sh robotwin_click_bell_grpo_lingbot
 
 Evaluation
 ----------
 
-Once the model configuration is complete, use the official RLinf evaluation script to boot up the Ray cluster for distributed parallel evaluation.
-**Note:** To prevent CPU/GPU Out-Of-Memory (OOM) and timeout crashes caused by single-node rendering, it is highly recommended to limit the concurrent high-fidelity physical simulation environments (``total_num_envs``) to 4.
+Lingbot provides an end-to-end evaluation script for various tasks in the RoboTwin environment (using the bell task as an example):
 
 .. code-block:: bash
 
-    cd ${RLINF_PATH}
-    source .venv/bin/activate
+    bash examples/embodiment/eval_embodiment.sh robotwin_click_bell_eval_lingbot
 
-    # 1. Start a clean Ray Cluster (Bind to local IP and custom port to prevent Dashboard crash conflicts)
-    ray stop --force
-    export RAY_TMPDIR=/tmp/ray_private_tmp
-    ray start --head --node-ip-address=127.0.0.1 --dashboard-host=127.0.0.1 --dashboard-port=8277 --include-dashboard=True
-
-    # 2. Declare business and offline environment variables
-    unset RAY_ADDRESS
-    export ROBOT_PLATFORM=ALOHA
-    export ROBOTWIN_PATH=${ROBOTWIN_PATH}
-    export LINGBOT_PATH="${RLINF_PATH}/.venv/lingbot-vla"
-    export LINGBOT_VLA_PATH="${LINGBOT_PATH}"   # Point to the model/training root directory (adjust as needed)
-    export PYTHONPATH=${RLINF_PATH}:${LINGBOT_PATH}:${ROBOTWIN_PATH}:$PYTHONPATH
-
-    # [Optional] For offline compute nodes, force HuggingFace to bypass network requests
-    export HF_DATASETS_OFFLINE=1
-    export TRANSFORMERS_OFFLINE=1
-    export HF_HUB_OFFLINE=1
-
-    # [Mandatory] Hijack imageio to use the system-level complete ffmpeg (Fixes native missing libopenh264 encoder error)
-    export IMAGEIO_FFMPEG_EXE=$(which ffmpeg)
-
-    # 3. Fix the hardcoded ROBOTWIN_PATH in the execution script
-    sed -i 's|export ROBOTWIN_PATH="/path/to/RoboTwin"|export ROBOTWIN_PATH=${ROBOTWIN_PATH}|g' examples/embodiment/eval_embodiment.sh
-
-    # 4. Execute evaluation (replace ${LINGBOT_VLA_PATH} with the actual path or keep the setting above)
-    bash examples/embodiment/eval_embodiment.sh robotwin_click_bell_eval_lingbot ALOHA \
-        ++rollout.model.model_path="${LINGBOT_VLA_PATH}/output_mixed_5tasks_aloha/checkpoints/global_step_46400/hf_ckpt" \
-        ++actor.model.model_path="${LINGBOT_VLA_PATH}/output_mixed_5tasks_aloha/checkpoints/global_step_46400/hf_ckpt" \
-        ++rollout.model.tokenizer_path="${LINGBOT_VLA_PATH}/Qwen2.5-VL-3B-Instruct" \
-        ++actor.model.tokenizer_path="${LINGBOT_VLA_PATH}/Qwen2.5-VL-3B-Instruct"
+For RLinf's unified VLA evaluation flow, please refer to the `VLA Evaluation Documentation <https://rlinf.readthedocs.io/en/latest/rst_source/start/vla-eval.html>`_.
 
 Visualization and Results
 -------------------------
 
-Upon completion of the tests, relevant success rate statistics, action logs, and rendered videos will be uniformly saved in the path specified by ``video_base_dir`` in the configuration file (e.g., ``RoboTwin/eval_result/click_bell/...``).
+**TensorBoard Logging**
 
-* **Video Records**: You can confirm whether LingBot-VLA's spatial positioning, gripper actions, and trajectory smoothness meet expectations via the generated ``.mp4`` recordings.
-* **Success Rate**: The overall task success rate of the test seeds will be recorded in the output log files.
+.. code-block:: bash
+
+    tensorboard --logdir ../results --port 6006
+
+**Key Metrics**
+
+* **Training**: ``train/actor/policy_loss``, ``train/actor/entropy_loss``, ``train/actor/approx_kl``
+* **Environment**: ``env/success_once`` (episodic success rate), ``env/episode_len``, ``env/reward``

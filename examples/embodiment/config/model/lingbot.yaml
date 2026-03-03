@@ -1,14 +1,37 @@
 model_type: "lingbot"
-model_path: "${oc.env:LINGBOT_VLA_PATH}/output_click_bell_aloha/checkpoints/global_step_8280/hf_ckpt"
-tokenizer_path: "${oc.env:LINGBOT_VLA_PATH}/Qwen2.5-VL-3B-Instruct"
-config_path: "${oc.env:LINGBOT_VLA_PATH}/lingbot-vla-4b"
-stats_path: "${oc.env:LINGBOT_VLA_PATH}/assets/norm_stats/robotwin_50.json"
-value_type: "action_level"
+
+# Model paths - should be overridden in specific experiment configs or via CLI
+model_path: "/path/to/model/lingbot-vla-4b"
+tokenizer_path: "/path/to/model/Qwen2.5-VL-3B-Instruct"
+
+precision: "bf16"
+
+# Action and chunk settings
+num_action_chunks: 50
 action_dim: 14
+
+# LoRA settings
+is_lora: False
+
+# Training settings
 use_proprio: True
 proprio_dim: 14
-num_action_chunks: 50
-unnorm_key: "place_empty_cup_1k"
-precision: "bf16"
-is_lora: False
-max_prompt_length: 512
+num_steps: 10
+add_value_head: False
+value_type: "action_level"
+
+# Lingbot specific parameters (Strictly aligned with pi0 design pattern)
+lingbot:
+  config_path: "${oc.env:LINGBOT_VLA_PATH}/lingbot-vla-4b"
+  stats_path: "${oc.env:LINGBOT_VLA_PATH}/assets/norm_stats/robotwin_50.json"
+  unnorm_key: "place_empty_cup_1k"
+  max_prompt_length: 512
+  noise_level: 0.5
+  noise_method: "flow_sde"
+  joint_logprob: False
+  
+  # Interpolation pointers to global actor settings (Hydra magic)
+  action_chunk: ${actor.model.num_action_chunks}
+  action_env_dim: ${actor.model.action_dim}
+  num_steps: ${actor.model.num_steps}
+  add_value_head: ${actor.model.add_value_head}

@@ -19,7 +19,6 @@ is_eval: False
 assets_path: "/path/to/robotwin_assets"
 seeds_path: "/path/to/robotwin/train_seeds.json"
 
-
 video_cfg:
   save_video: True
   info_on_video: True
@@ -28,7 +27,7 @@ video_cfg:
 enable_offload: False
 
 task_config:
-  task_name: click_bell
+  task_name: open_microwave
   step_lim: 400
   planner_backend: mplib
   render_freq: 0

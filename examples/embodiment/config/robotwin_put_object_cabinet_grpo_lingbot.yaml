@@ -1,7 +1,7 @@
 defaults:
-  - env/robotwin_click_bell@env.train
-  - env/robotwin_click_bell@env.eval
-  - model/lingbot@actor.model          
+  - env/robotwin_put_object_cabinet@env.train
+  - env/robotwin_put_object_cabinet@env.eval
+  - model/lingbot@actor.model
   - training_backend/fsdp@actor.fsdp_config
   - override hydra/job_logging: stdout
 
@@ -23,8 +23,8 @@ runner:
   logger:
     log_path: "../results"
     project_name: rlinf
-    experiment_name: "robotwin_grpo_lingbot_click_bell"
-    logger_backends: ["tensorboard"]
+    experiment_name: "robotwin_grpo_lingbot_put_object_cabinet"
+    logger_backends: ["tensorboard"] 
 
   max_epochs: 1000
   max_steps: -1
