@@ -15,6 +15,7 @@ import json
 import math
 import os
 import random
+from typing import Any, Optional, Union
 
 import numpy as np
 import torch
@@ -32,7 +33,20 @@ from rlinf.models.embodiment.base_policy import BasePolicy, ForwardType
 
 
 class LingbotForRLActionPrediction(nn.Module, BasePolicy):
+    """LingBot VLA model wrapper for Reinforcement Learning action prediction.
+
+    This class adapts the LingBot flow-matching model to output actions
+    and log-probabilities compatible with RL algorithms like GRPO and PPO
+    using ODE-SDE mixed sampling.
+    """
+
     def __init__(self, cfg, torch_dtype=torch.bfloat16):
+        """Initializes the LingBot VLA model for RL.
+
+        Args:
+            cfg: Configuration object containing model parameters.
+            torch_dtype: The torch data type for model weights (default: torch.bfloat16).
+        """
         super().__init__()
         self.config = cfg
         self.action_dim = cfg.action_dim
@@ -303,8 +317,24 @@ class LingbotForRLActionPrediction(nn.Module, BasePolicy):
 
     @torch.no_grad()
     def predict_action_batch(
-        self, env_obs, mode="train", compute_values=True, **kwargs
-    ):
+        self,
+        env_obs: dict[str, Any],
+        mode: str = "train",
+        compute_values: bool = True,
+        **kwargs: Any,
+    ) -> tuple[torch.Tensor, dict[str, Any]]:
+        """Predicts a batch of actions from environment observations and computes logprobs.
+
+        Args:
+            env_obs: Dictionary containing environment observations (images, states, text).
+            mode: Operating mode, either "train" (uses SDE) or "eval" (uses ODE).
+            compute_values: Whether to compute value baseline.
+            **kwargs: Additional arguments.
+
+        Returns:
+            A tuple containing the predicted actions tensor and a result dictionary
+            with logprobs and preprocessed forward inputs.
+        """
         batch_size = len(env_obs["task_descriptions"])
         device = next(self.parameters()).device
 
@@ -319,7 +349,9 @@ class LingbotForRLActionPrediction(nn.Module, BasePolicy):
         lang_masks_list = []
         prep_state_list = []
 
-        def process_img(img):
+        def process_img(
+            img: Union[torch.Tensor, np.ndarray, None],
+        ) -> Optional[np.ndarray]:
             if img is None:
                 return None
             if isinstance(img, torch.Tensor):
@@ -408,7 +440,6 @@ class LingbotForRLActionPrediction(nn.Module, BasePolicy):
                 device=device, dtype=self.torch_dtype
             )
 
-            # >>> 将处理好的纯 Tensor 放入列表，避免在 Actor 中重复处理 <<<
             prep_images_list.append(prep_images.cpu())
             prep_img_masks_list.append(prep_img_masks.cpu())
             lang_tokens_list.append(lang_tokens.cpu())
@@ -483,6 +514,14 @@ class LingbotForRLActionPrediction(nn.Module, BasePolicy):
         raise NotImplementedError
 
     def default_forward(self, **kwargs):
+        """Forward pass for Actor training to compute log-probabilities.
+
+        Args:
+            **kwargs: Keyword arguments containing 'forward_inputs' from the rollout buffer.
+
+        Returns:
+            A dictionary containing 'logprobs', 'values', and 'entropy'.
+        """
         forward_inputs = kwargs.get("forward_inputs", None)
 
         if forward_inputs is not None and "chains" in forward_inputs:
