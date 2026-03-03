@@ -106,6 +106,7 @@ def prepare_actions_for_calvin(
         chunk_actions[..., -1] = np.where(chunk_actions[..., -1] > 0, 1, -1)
     return chunk_actions
 
+
 def prepare_actions_for_metaworld(
     raw_chunk_actions,
     model_type,
@@ -122,6 +123,7 @@ def prepare_actions_for_metaworld(
                 [chunk_actions[..., :3], chunk_actions[..., -1:]], axis=-1
             )
     return chunk_actions
+
 
 def prepare_actions_for_robocasa(
     raw_chunk_actions,
