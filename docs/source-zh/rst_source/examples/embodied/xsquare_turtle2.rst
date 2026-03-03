@@ -55,12 +55,12 @@ XSquare Turtle2 真机强化学习
    - 学习策略网络以最大化熵正则化的 Q 值。
    - 自动调节温度参数（``alpha``）以平衡探索与利用。
 
-2. **Cross-Q**（可选）
+2. **Cross-Q** （可选）
 
    - SAC 的一种变体，去除了目标 Q 网络。
    - 在一个批次中连接当前和下一个观测，结合 BatchNorm 实现稳定的 Q 训练。
 
-3. **RLPD（Reinforcement Learning with Prior Data）**（可选）
+3. **RLPD（Reinforcement Learning with Prior Data）** （可选）
 
    - 在在线 SAC 中融合离线示范数据。
    - 高更新-数据比以充分利用已采集数据。
@@ -189,7 +189,7 @@ b. 安装依赖
 对于每个任务，需要记录触发成功信号的目标末端执行器位姿。
 通过 XSquare 控制界面手动将机械臂移动至期望目标位置，然后读取当前位姿。
 
-位姿以欧拉角格式存储：``[x, y, z, rz, ry, rx]``（XSquare 约定）。
+位姿以欧拉角格式存储：``[x, y, z, rz, ry, rx]`` （XSquare 约定）。
 如使用双臂模式，需为两条机械臂分别记录目标位姿。
 
 集群配置
