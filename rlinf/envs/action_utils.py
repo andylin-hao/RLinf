@@ -118,7 +118,9 @@ def prepare_actions_for_metaworld(
         # the action dimesion of metaworld is 4-dim (x, y, z, gripper)
         # we need to extract the first 3-dim and the last dim in a 7-dim action
         if chunk_actions.shape[-1] == 7:
-            chunk_actions = np.concatenate([chunk_actions[..., :3], chunk_actions[..., -1:]], axis=-1)
+            chunk_actions = np.concatenate(
+                [chunk_actions[..., :3], chunk_actions[..., -1:]], axis=-1
+            )
     return chunk_actions
 
 def prepare_actions_for_robocasa(
