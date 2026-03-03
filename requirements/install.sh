@@ -702,7 +702,7 @@ install_robotwin_env() {
 
     uv pip install git+${GITHUB_PREFIX}https://github.com/facebookresearch/pytorch3d.git@v0.7.9  --no-build-isolation
     uv pip install warp-lang==1.11.1
-    uv pip install git+${GITHUB_PREFIX}https://github.com/NVlabs/curobo.git@v0.7.7  --no-build-isolation
+    uv pip install git+${GITHUB_PREFIX}https://github.com/NVlabs/curobo.git  --no-build-isolation
 
     # patch sapien and mplib for robotwin
     SAPIEN_LOCATION=$(uv pip show sapien | grep 'Location' | awk '{print $2}')/sapien
