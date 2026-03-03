@@ -1262,3 +1262,7 @@ class Worker(metaclass=WorkerMeta):
             available_accelerators=self.global_accelerator_ids,
             hardware_infos=self.hardware_infos,
         )
+
+    def __repr__(self):
+        """Return a string representation of the Worker."""
+        return f"{self._group_name}(rank={self._rank})"

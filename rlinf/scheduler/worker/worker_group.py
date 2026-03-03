@@ -272,6 +272,7 @@ class WorkerGroup(Generic[WorkerClsType]):
             worker = self._cluster.allocate(
                 cls=self._worker_cls,
                 worker_name=worker_name,
+                worker_rank=placement.rank,
                 node_rank=placement.cluster_node_rank,
                 max_concurrency=self._max_concurrency,
                 env_vars=env_vars,
