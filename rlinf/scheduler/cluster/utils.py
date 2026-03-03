@@ -40,6 +40,44 @@ DataclassTensorFieldsMetadata = list[
 ]
 
 
+@contextlib.contextmanager
+def without_http_proxies():
+    """Temporarily set no_proxy for Ray state API calls."""
+    prev_no_proxy_upper = os.environ.get("NO_PROXY", None)
+    prev_no_proxy_lower = os.environ.get("no_proxy", None)
+
+    # Ray state APIs query the dashboard via HTTP.
+    ray_address = None
+    try:
+        import ray.dashboard.utils
+
+        ray_address = ray.dashboard.utils.get_address_for_submission_client(None)
+    except Exception:
+        ray_address = None
+
+    if ray_address:
+        if "http://" in ray_address:
+            ray_address = ray_address.replace("http://", "")
+        elif "https://" in ray_address:
+            ray_address = ray_address.replace("https://", "")
+        if ":" in ray_address:
+            ray_address = ray_address.split(":")[0]
+        os.environ["NO_PROXY"] = ray_address
+        os.environ["no_proxy"] = ray_address
+
+    try:
+        yield
+    finally:
+        if prev_no_proxy_upper is not None:
+            os.environ["NO_PROXY"] = prev_no_proxy_upper
+        else:
+            os.environ.pop("NO_PROXY", None)
+        if prev_no_proxy_lower is not None:
+            os.environ["no_proxy"] = prev_no_proxy_lower
+        else:
+            os.environ.pop("no_proxy", None)
+
+
 class DistributedRayLogCollector:
     """Collect and split Ray worker logs into per-worker files.
 
@@ -224,44 +262,6 @@ class DistributedRayLogCollector:
                 return getattr(actor_state, key)
         return None
 
-    @staticmethod
-    @contextlib.contextmanager
-    def _without_http_proxies():
-        """Temporarily set no_proxy for Ray state API calls."""
-        prev_no_proxy_upper = os.environ.get("NO_PROXY", None)
-        prev_no_proxy_lower = os.environ.get("no_proxy", None)
-
-        # Ray state APIs query the dashboard via HTTP.
-        ray_address = None
-        try:
-            import ray
-
-            ray_address = ray.dashboard.utils.get_address_for_submission_client(None)
-        except Exception:
-            ray_address = None
-
-        if ray_address:
-            if "http://" in ray_address:
-                ray_address = ray_address.replace("http://", "")
-            elif "https://" in ray_address:
-                ray_address = ray_address.replace("https://", "")
-            if ":" in ray_address:
-                ray_address = ray_address.split(":")[0]
-            os.environ["NO_PROXY"] = ray_address
-            os.environ["no_proxy"] = ray_address
-
-        try:
-            yield
-        finally:
-            if prev_no_proxy_upper is not None:
-                os.environ["NO_PROXY"] = prev_no_proxy_upper
-            else:
-                os.environ.pop("NO_PROXY", None)
-            if prev_no_proxy_lower is not None:
-                os.environ["no_proxy"] = prev_no_proxy_lower
-            else:
-                os.environ.pop("no_proxy", None)
-
     def _resolve_worker_id_from_workers_api(
         self, pid: int, node_id: Optional[str] = None
     ) -> Optional[str]:
@@ -271,7 +271,7 @@ class DistributedRayLogCollector:
         filters = [("pid", "=", str(pid))]
         if node_id is not None:
             filters.append(("node_id", "=", str(node_id)))
-        with self._without_http_proxies():
+        with without_http_proxies():
             worker_states = list_workers(filters=filters)
         for worker_state in worker_states:
             worker_id = self._state_get(worker_state, "worker_id", "workerId")
@@ -316,7 +316,7 @@ class DistributedRayLogCollector:
             filters = [("NAME", "=", meta["worker_name"])]
             if self._namespace is not None:
                 filters.append(("RAY_NAMESPACE", "=", self._namespace))
-            with self._without_http_proxies():
+            with without_http_proxies():
                 actor_states = list_actors(filters=filters)
             if len(actor_states) == 0:
                 continue
