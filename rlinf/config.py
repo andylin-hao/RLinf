@@ -959,8 +959,8 @@ def validate_coding_online_rl_cfg(cfg: DictConfig) -> DictConfig:
 def validate_cfg(cfg: DictConfig) -> DictConfig:
     OmegaConf.set_struct(cfg, True)
 
-    cfg.runner.per_worker_log = cfg.runner.get("per_worker_log", False)
     with open_dict(cfg):
+        cfg.runner.per_worker_log = cfg.runner.get("per_worker_log", False)
         cfg.runner.per_worker_log_path = None
         if cfg.runner.per_worker_log:
             cfg.runner.per_worker_log_path = os.path.join(
