@@ -14,6 +14,7 @@
 
 import logging
 import os
+import pickle
 import sys
 import time
 import uuid
@@ -49,6 +50,24 @@ def _new_collector(logs_dir: Path, output_dir: Path) -> LocalRayLogCollector:
         logs_dir=logs_dir,
         poll_interval_s=0.1,
     )
+
+
+def test_collector_is_pickleable_even_after_start(tmp_path: Path):
+    logs_dir = tmp_path / "ray_logs"
+    output_dir = tmp_path / "split_logs"
+    logs_dir.mkdir(parents=True)
+
+    collector = _new_collector(logs_dir=logs_dir, output_dir=output_dir)
+    assert collector.start() is True
+    try:
+        payload = pickle.dumps(collector)
+        restored = pickle.loads(payload)
+    finally:
+        collector.stop()
+
+    assert isinstance(restored, LocalRayLogCollector)
+    assert restored._thread is None
+    assert restored._started is False
 
 
 def test_process_once_reads_from_start_and_appends_incrementally(tmp_path: Path):

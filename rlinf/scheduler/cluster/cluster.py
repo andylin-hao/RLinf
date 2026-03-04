@@ -203,15 +203,6 @@ class Cluster:
         if "RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO" not in os.environ:
             os.environ["RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO"] = "0"
 
-        # Ray log collector
-        if distributed_log_dir is not None:
-            self._distributed_log_collector = DistributedRayLogCollector(
-                logger=self._logger,
-                output_dir=distributed_log_dir,
-                namespace=Cluster.NAMESPACE,
-            )
-            self._distributed_log_collector.start()
-
         # Cluster configurations
         self._cluster_cfg = (
             ClusterConfig.from_dict_cfg(cluster_cfg) if cluster_cfg else None
@@ -241,6 +232,15 @@ class Cluster:
                 logging_level=Cluster.LOGGING_LEVEL,
                 namespace=Cluster.NAMESPACE,
             )
+
+        # Ray log collector
+        if distributed_log_dir is not None:
+            self._distributed_log_collector = DistributedRayLogCollector(
+                logger=self._logger,
+                output_dir=distributed_log_dir,
+                namespace=Cluster.NAMESPACE,
+            )
+            self._distributed_log_collector.start()
 
         # If num_nodes is 0, infer the number of nodes from the connected Ray cluster
         if self._num_nodes == 0:
@@ -453,6 +453,7 @@ class Cluster:
         max_concurrency: int,
         env_vars: dict,
         node_group_label: str,
+        disable_distributed_log: bool,
         cls_args: tuple,
         cls_kwargs: dict,
     ) -> ActorHandle:
@@ -466,6 +467,7 @@ class Cluster:
             max_concurrency (Optional[int]): The maximum concurrency for the worker's underlying ray actor.
             env_vars (dict): Environment variables to set for the worker.
             node_group_label (str): The label of the node group to allocate on.
+            disable_distributed_log (bool): Whether to disable distributed log for the worker.
             cls_args (tuple): Positional arguments to pass to the class constructor.
             cls_kwargs (dict): Keyword arguments to pass to the class constructor.
 
@@ -513,7 +515,7 @@ class Cluster:
             options["max_concurrency"] = max_concurrency
 
         actor = remote_cls.options(**options).remote(*cls_args, **cls_kwargs)
-        if self._distributed_log_collector is not None:
+        if self._distributed_log_collector is not None and not disable_distributed_log:
             self._distributed_log_collector.register_worker(
                 worker_name=worker_name,
                 rank=worker_rank,

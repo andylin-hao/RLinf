@@ -149,6 +149,7 @@ class WorkerGroup(Generic[WorkerClsType]):
         max_concurrency: Optional[int] = None,
         isolate_gpu: bool = True,
         catch_system_failure: Optional[bool] = None,
+        disable_distributed_log: bool = False,
     ) -> "WorkerGroup[WorkerClsType] | WorkerClsType":
         """Create a worker group with the specified cluster and options.
 
@@ -159,6 +160,7 @@ class WorkerGroup(Generic[WorkerClsType]):
             max_concurrency (Optional[int]): The maximum concurrency for the worker's underlying ray actor. See https://docs.ray.io/en/latest/ray-core/actors/async_api.html#setting-concurrency-in-async-actors for detailed explanation.
             isolate_gpu (bool): Whether a worker should only see the GPUs that it's assigned via controlling CUDA_VISIBLE_DEVICES. Defaults to True.
             catch_system_failure (Optional[bool]): Whether to catch system exit and signals in the worker process. If None, the environment variable RLINF_CATCH_FAILURE will take effect, whose default value is True. If set, then it will override the environment variable.
+            disable_distributed_log (bool): Whether to disable distributed log for the worker group.
 
         Returns:
             WorkerGroup: An instance of WorkerGroup with the specified configuration.
@@ -170,6 +172,7 @@ class WorkerGroup(Generic[WorkerClsType]):
         self._isolate_gpu = isolate_gpu
         self._catch_system_failure = catch_system_failure
         self._max_concurrency = max_concurrency
+        self._disable_distributed_log = disable_distributed_log
         if self._catch_system_failure is None:
             self._catch_system_failure = (
                 Cluster.get_sys_env_var(ClusterEnvVar.CATCH_FAILURE, "0") == "1"
@@ -277,6 +280,7 @@ class WorkerGroup(Generic[WorkerClsType]):
                 max_concurrency=self._max_concurrency,
                 env_vars=env_vars,
                 node_group_label=placement.node_group_label,
+                disable_distributed_log=self._disable_distributed_log,
                 cls_args=self._worker_cls_args,
                 cls_kwargs=self._worker_cls_kwargs,
             )

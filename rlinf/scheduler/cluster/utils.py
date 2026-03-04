@@ -20,7 +20,6 @@ import logging
 import os
 import re
 import threading
-import time
 from dataclasses import fields, is_dataclass
 from pathlib import Path
 from typing import Any, Callable, Optional, Protocol, TextIO
@@ -120,6 +119,34 @@ class DistributedRayLogCollector:
         self._registry_lock = threading.Lock()
         self._started = False
 
+    def __getstate__(self) -> dict[str, Any]:
+        """Return a Ray/pickle-safe state.
+
+        Runtime-only resources such as thread/event/lock and open files are
+        recreated after unpickling and should not be serialized.
+        """
+        state = self.__dict__.copy()
+        # Runtime-only objects are not pickleable and are safe to reconstruct.
+        state.pop("_stop_event", None)
+        state.pop("_thread", None)
+        state.pop("_registry_lock", None)
+        state["_output_files"] = {}
+        state["_file_offsets"] = {}
+        state["_log_file_map"] = {}
+        state["_started"] = False
+        return state
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """Restore collector state after unpickling."""
+        self.__dict__.update(state)
+        self._stop_event = threading.Event()
+        self._thread = None
+        self._registry_lock = threading.Lock()
+        self._output_files = {}
+        self._file_offsets = {}
+        self._log_file_map = {}
+        self._started = False
+
     @staticmethod
     def _sanitize_path_component(name: str) -> str:
         return re.sub(r"[^A-Za-z0-9._-]", "_", name)
@@ -183,13 +210,11 @@ class DistributedRayLogCollector:
         if not self._started:
             return
         self._stop_event.set()
-        logs_dir = self._get_ray_logs_dir()
-        if logs_dir is not None:
-            for _ in range(3):
-                self._drain_remaining(logs_dir)
-                time.sleep(0.2)
         if self._thread is not None and self._thread.is_alive():
             self._thread.join(timeout=join_timeout_s)
+        logs_dir = self._get_ray_logs_dir()
+        if logs_dir is not None:
+            self._drain_remaining(logs_dir)
         for handle in self._output_files.values():
             try:
                 handle.close()
@@ -282,7 +307,7 @@ class DistributedRayLogCollector:
     def register_worker(
         self,
         worker_name: str,
-        rank: str,
+        rank: int,
         actor_handle: Optional = None,
         actor_id: Optional[str] = None,
     ) -> None:
