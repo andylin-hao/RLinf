@@ -17,8 +17,8 @@ max_episode_steps: 400
 
 is_eval: False
 
-assets_path: "/path/to/robotwin_assets"
-seeds_path: "/path/to/robotwin/train_seeds.json"
+assets_path: "/mnt/public/lwb/work/RLinf/RoboTwin"
+seeds_path: "/mnt/public/lwb/work/RLinf/rlinf/envs/robotwin/seeds/train_seeds.json"
 
 video_cfg:
   save_video: True
@@ -30,7 +30,7 @@ enable_offload: False
 task_config:
   task_name: click_bell
   step_lim: 400
-  planner_backend: mplib# # Choices: ["curobo", "mplib"], defalut is "curobo"
+  planner_backend: mplib # # Choices: ["curobo", "mplib"], defalut is "curobo"
   # if you want to modify the config, please check the following tutorial first:
   # https://robotwin-platform.github.io/doc/usage/configurations.html
   render_freq: 0

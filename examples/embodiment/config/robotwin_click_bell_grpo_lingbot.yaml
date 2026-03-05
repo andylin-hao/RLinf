@@ -41,7 +41,7 @@ algorithm:
   kl_penalty: kl
   group_size: 2
 
-  rollout_epoch: 1
+  rollout_epoch: 8
   eval_rollout_epoch: 1
 
   reward_type: action_level
