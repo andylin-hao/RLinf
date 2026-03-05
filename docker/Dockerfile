@@ -16,6 +16,7 @@ FROM nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04 AS base-image-embodied-robotwin
 FROM nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04 AS base-image-embodied-opensora
 FROM nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04 AS base-image-embodied-frankasim
 FROM nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04 AS base-image-embodied-wan
+FROM nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04 AS base-image-embodied-xsquare_turtle2
 
 # Franka depends on ros-noetic, which is not available on Ubuntu 22.04
 FROM ubuntu:20.04 AS base-image-embodied-franka
@@ -299,6 +300,17 @@ RUN bash requirements/install.sh embodied --venv openvla --model openvla --env f
 
 # Set default env
 RUN echo "source ${UV_PATH}/openvla/bin/activate" >> ~/.bashrc
+
+##################################################################################################
+# Embodied: XSquare Turtle2
+##################################################################################################
+FROM embodied-common-image AS embodied-xsquare_turtle2-image
+
+# Install xsquare env
+RUN bash requirements/install.sh embodied --venv xsquare --env xsquare_turtle2
+
+# Set default env
+RUN echo "source ${UV_PATH}/xsquare/bin/activate" >> ~/.bashrc
 
 ##################################################################################################
 # Final image selection
