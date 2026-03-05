@@ -16,11 +16,11 @@ from omegaconf import DictConfig
 
 
 def get_model(cfg: DictConfig, torch_dtype=torch.bfloat16):
-    from rlinf.models.embodiment.lingbot.lingbot_action_model import (
-        LingbotForRLActionPrediction,
+    from rlinf.models.embodiment.lingbotvla.lingbotvla_action_model import (
+        LingbotVLAForRLActionPrediction,
     )
 
-    model = LingbotForRLActionPrediction(cfg, torch_dtype=torch_dtype)
+    model = LingbotVLAForRLActionPrediction(cfg, torch_dtype=torch_dtype)
 
     model.to(torch_dtype)
     return model

@@ -16,20 +16,20 @@ import pytest
 from rlinf.config import SupportedModel, get_supported_model
 
 
-def test_lingbot_enum_registration():
-    """Test if LingBot is correctly registered in the supported models enum."""
-    model_type = get_supported_model("lingbot")
-    assert model_type == SupportedModel.LINGBOT
+def test_lingbotvla_enum_registration():
+    """Test if LingBotVLA is correctly registered in the supported models enum."""
+    model_type = get_supported_model("lingbotvla")
+    assert model_type == SupportedModel.LINGBOTVLA
     assert model_type.category == "embodied"
 
 
-def test_lingbot_action_model_import():
-    """Test if the LingBot policy wrapper can be imported without syntax/dependency errors."""
+def test_lingbotvla_action_model_import():
+    """Test if the LINGBOTVLA policy wrapper can be imported without syntax/dependency errors."""
     try:
-        from rlinf.models.embodiment.lingbot.lingbot_action_model import (
-            LingbotForRLActionPrediction,
+        from rlinf.models.embodiment.lingbotvla.lingbotvla_action_model import (
+            LingbotVLAForRLActionPrediction,
         )
 
-        assert LingbotForRLActionPrediction is not None
+        assert LingbotVLAForRLActionPrediction is not None
     except ImportError as e:
         pytest.skip(f"Skipping import test due to missing strict dependencies: {e}")

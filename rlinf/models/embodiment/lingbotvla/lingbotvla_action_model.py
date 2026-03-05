@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import json
 import math
 import os
@@ -32,10 +33,10 @@ from PIL import Image
 from rlinf.models.embodiment.base_policy import BasePolicy, ForwardType
 
 
-class LingbotForRLActionPrediction(nn.Module, BasePolicy):
+class LingbotVLAForRLActionPrediction(nn.Module, BasePolicy):
     """LingBot VLA model wrapper for Reinforcement Learning action prediction.
 
-    This class adapts the LingBot flow-matching model to output actions
+    This class adapts the LingBot VLA flow-matching model to output actions
     and log-probabilities compatible with RL algorithms like GRPO and PPO
     using ODE-SDE mixed sampling.
     """
@@ -61,7 +62,7 @@ class LingbotForRLActionPrediction(nn.Module, BasePolicy):
         self.action_env_dim = getattr(cfg, "action_env_dim", self.action_dim)
         self.global_step = 0
 
-        # --- 1. Load LingBot Foundation Model ---
+        # --- 1. Load LingBot VLA Foundation Model ---
         config_kwargs = {
             "vlm_repo_id": None,
             "action_dim": self.action_dim,

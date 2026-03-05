@@ -17,7 +17,7 @@ GITHUB_PREFIX=""
 NO_ROOT=0
 NO_INSTALL_RLINF_CMD="--no-install-project"
 SUPPORTED_TARGETS=("embodied" "agentic" "docs")
-SUPPORTED_MODELS=("openvla" "openvla-oft" "openpi" "gr00t" "dexbotic" "lingbot-vla")
+SUPPORTED_MODELS=("openvla" "openvla-oft" "openpi" "gr00t" "dexbotic" "lingbotvla")
 SUPPORTED_ENVS=("behavior" "maniskill_libero" "metaworld" "calvin" "isaaclab" "robocasa" "franka" "frankasim" "robotwin" "habitat" "opensora" "wan" "xsquare_turtle2")
 
 #=======================Utility Functions=======================
@@ -355,9 +355,9 @@ install_lingbot_vla_model() {
             uv pip install ninja
             FLASH_ATTENTION_FORCE_BUILD=TRUE uv pip install flash-attn --no-build-isolation
 
-            local lingbot_dir
-            lingbot_dir=$(clone_or_reuse_repo LINGBOT_PATH "$VENV_DIR/lingbot-vla" ${GITHUB_PREFIX}https://github.com/robbyant/lingbot-vla.git)
-            pushd "$lingbot_dir" >/dev/null
+            local lingbotvla_dir
+            lingbotvla_dir=$(clone_or_reuse_repo LINGBOT_PATH "$VENV_DIR/lingbot-vla" ${GITHUB_PREFIX}https://github.com/robbyant/lingbot-vla.git)
+            pushd "$lingbotvla_dir" >/dev/null
             git submodule update --init --recursive
             uv pip install -e .
             uv pip install -r requirements.txt
@@ -368,7 +368,7 @@ install_lingbot_vla_model() {
 
             uv pip install "numpy==1.26.4" "fsspec==2025.3.0" "opencv-python-headless==4.9.0.80" "rerun-sdk==0.21.0"
             uv pip install xformers==0.0.28.post3 --no-deps
-            uv pip install draccus einops datasets omegaconf jsonlines deepdiff diffusers==0.34.2 psutil ipdb torchdata msgpack websockets blobfile
+            uv pip install draccus einops datasets omegaconf jsonlines deepdiff psutil ipdb torchdata msgpack websockets blobfile
             uv pip install diffusers==0.30.3 transformers==4.51.3 tokenizers==0.21.4 protobuf==4.25.3 tensorflow==2.15.0 tensorflow-datasets==4.9.3 "tensorboard<2.16"
             install_robotwin_env
             ;;
@@ -907,7 +907,7 @@ main() {
                 dexbotic)
                     install_dexbotic_model
                     ;;
-                lingbot-vla)                  
+                lingbotvla)                  
                     install_lingbot_vla_model 
                     ;;
                 "")

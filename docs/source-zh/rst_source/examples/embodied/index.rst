@@ -288,5 +288,5 @@
    sft_vlm
    co_training
    dsrl
-   lingbot
+   lingbotvla
 

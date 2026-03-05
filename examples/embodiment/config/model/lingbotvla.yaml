@@ -1,4 +1,4 @@
-model_type: "lingbot"
+model_type: "lingbotvla"
 
 # Model paths - should be overridden in specific experiment configs or via CLI
 model_path: "/path/to/model/lingbot-vla-4b"
@@ -12,6 +12,7 @@ action_dim: 14
 
 # LoRA settings
 is_lora: False
+lora_rank: 4
 
 # Training settings
 use_proprio: True
@@ -20,8 +21,8 @@ num_steps: 10
 add_value_head: False
 value_type: "action_level"
 
-# Lingbot specific parameters (Strictly aligned with pi0 design pattern)
-lingbot:
+# Lingbotvla specific parameters 
+lingbotvla:
   config_path: "${oc.env:LINGBOT_VLA_PATH}/lingbot-vla-4b"
   stats_path: "${oc.env:LINGBOT_VLA_PATH}/assets/norm_stats/robotwin_50.json"
   max_prompt_length: 512
