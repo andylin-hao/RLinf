@@ -188,39 +188,39 @@ class AsyncPPOEmbodiedRunner(EmbodiedRunner):
                 metrics_list=training_metrics,
                 step=self.global_step,
                 prefix="train",
-                worker_group_name=self.actor_group_name,
+                worker_group_name=self.actor.worker_group_name,
             )
             self._log_ranked_metrics(
                 metrics_list=actor_time_metrics_per_rank,
                 step=self.global_step,
                 prefix="time/actor",
-                worker_group_name=self.actor_group_name,
+                worker_group_name=self.actor.worker_group_name,
             )
             self._log_ranked_metrics(
                 metrics_list=rollout_metrics_list,
                 step=self.global_step,
                 prefix="rollout",
-                worker_group_name=self.actor_group_name,
+                worker_group_name=self.actor.worker_group_name,
             )
             self._log_ranked_metrics(
                 metrics_list=env_time_metrics_per_rank,
                 step=self.global_step,
                 prefix="time/env",
-                worker_group_name=self.env_group_name,
+                worker_group_name=self.env.worker_group_name,
                 add_prefix=False,
             )
             self._log_ranked_metrics(
                 metrics_list=env_metrics_per_rank,
                 step=self.global_step,
                 prefix="env",
-                worker_group_name=self.env_group_name,
+                worker_group_name=self.env.worker_group_name,
                 add_prefix=False,
             )
             self._log_ranked_metrics(
                 metrics_list=rollout_time_metrics_per_rank,
                 step=self.global_step,
                 prefix="time/rollout",
-                worker_group_name=self.rollout_group_name,
+                worker_group_name=self.rollout.worker_group_name,
                 add_prefix=False,
             )
 
