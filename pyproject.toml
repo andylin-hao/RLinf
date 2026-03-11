@@ -61,7 +61,7 @@ dependencies = [
     "pyrealsense2; sys_platform == 'linux' and platform_machine == 'x86_64'",
 
     # Logging
-    "wandb",
+    "wandb<0.25.1",
     "swanlab>=0.6.11",
     "tensorboard",
 ]
