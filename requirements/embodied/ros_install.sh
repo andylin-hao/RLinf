@@ -100,8 +100,5 @@ sudo apt-get install -y --no-install-recommends \
     ros-noetic-gazebo-ros-control \
     ros-noetic-urdfdom-py \
     ros-noetic-tf-conversions \
-    ros-noetic-kdl-parser \
-    ros-noetic-xacro \
-    ros-noetic-robot-state-publisher \
-    ros-noetic-joint-state-publisher
+    ros-noetic-kdl-parser
 
