@@ -23,9 +23,10 @@ import sys
 import threading
 import time
 import traceback
+import typing
 import warnings
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, Callable, Optional, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, Optional, TypeVar, Union
 
 import ray
 import ray.util.state
@@ -558,7 +559,7 @@ class Worker(metaclass=WorkerMeta):
     @classmethod
     def create_group(
         cls: type[WorkerClsType], *args, **kwargs
-    ) -> "WorkerGroup[WorkerClsType] | WorkerClsType":
+    ) -> Union["WorkerGroup[WorkerClsType]", WorkerClsType]:
         """Create a worker group with the class arguments.
 
         Args:
@@ -571,9 +572,11 @@ class Worker(metaclass=WorkerMeta):
 
     def send(
         self,
-        object: torch.Tensor | list[torch.Tensor] | dict[str, torch.Tensor] | Any,
+        object: typing.Union[
+            torch.Tensor, list[torch.Tensor], dict[str, torch.Tensor], Any
+        ],
         dst_group_name: str,
-        dst_rank: int | list[int],
+        dst_rank: typing.Union[int, list[int]],
         async_op: bool = False,
         options: Optional["CollectiveGroupOptions"] = None,
         piggyback_payload: Optional[Any] = None,
@@ -621,7 +624,7 @@ class Worker(metaclass=WorkerMeta):
     def recv(
         self,
         src_group_name: str,
-        src_rank: int | list[int],
+        src_rank: typing.Union[int, list[int]],
         async_op: bool = False,
         options: Optional["CollectiveGroupOptions"] = None,
     ):
@@ -653,7 +656,7 @@ class Worker(metaclass=WorkerMeta):
         self,
         tensor: torch.Tensor,
         dst_group_name: str,
-        dst_rank: int | list[int],
+        dst_rank: typing.Union[int, list[int]],
         async_op: bool = False,
         options: Optional["CollectiveGroupOptions"] = None,
     ):
@@ -687,7 +690,7 @@ class Worker(metaclass=WorkerMeta):
         self,
         tensor: torch.Tensor,
         src_group_name: str,
-        src_rank: int | list[int],
+        src_rank: typing.Union[int, list[int]],
         async_op: bool = False,
         options: Optional["CollectiveGroupOptions"] = None,
     ):
@@ -721,9 +724,9 @@ class Worker(metaclass=WorkerMeta):
         self,
         object: Optional[Any] = None,
         groups: Optional[
-            list[tuple[str, list[int] | list[tuple[int]] | tuple[int] | int]]
+            list[tuple[str, typing.Union[list[int], list[tuple[int]], tuple[int], int]]]
         ] = None,
-        src: Optional[tuple[str, tuple[int] | int]] = None,
+        src: Optional[tuple[str, typing.Union[tuple[int], int]]] = None,
         async_op: bool = False,
         options: Optional["CollectiveGroupOptions"] = None,
     ):

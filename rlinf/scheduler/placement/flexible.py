@@ -13,6 +13,7 @@
 # limitations under the License.
 
 
+import typing
 from typing import Optional, Sequence
 
 from ..cluster import Cluster, NodeGroupInfo
@@ -68,7 +69,7 @@ class FlexiblePlacementStrategy(PlacementStrategy):
     def __init__(
         self,
         hardware_ranks_list: list[list[int]],
-        node_group_label: Optional[str | Sequence[str]] = None,
+        node_group_label: Optional[typing.Union[str, Sequence[str]]] = None,
     ):
         """Initialize the FlexiblePlacementStrategy.
 

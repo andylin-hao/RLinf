@@ -11,8 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 import bisect
+import typing
 from dataclasses import dataclass
 
 from ..hardware import AcceleratorType, HardwareInfo
@@ -22,7 +22,7 @@ from .manager import Manager
 class WorkerAddress:
     """A class that describes the path to a worker in a WorkerGroup."""
 
-    def __init__(self, root_group_name: str, ranks: int | list[int] = []):
+    def __init__(self, root_group_name: str, ranks: typing.Union[int, list[int]] = []):
         """Initialize the WorkerAddress.
 
         Args:

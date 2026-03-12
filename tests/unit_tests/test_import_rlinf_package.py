@@ -23,6 +23,7 @@ import argparse
 import importlib
 import os
 import traceback
+import typing
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
@@ -77,7 +78,7 @@ def _discover_modules(rlinf_root: Path, no_test_modules: list[str]) -> list[str]
     return sorted(modules)
 
 
-def _import_module(module_name: str) -> tuple[str, str | None]:
+def _import_module(module_name: str) -> tuple[str, typing.Optional[str]]:
     try:
         importlib.import_module(module_name)
         return module_name, None

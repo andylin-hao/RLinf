@@ -85,29 +85,27 @@ class FSDPStrategyBase(ABC):
             "fsdp_config is required for creating corresponding FSDP strategy"
         )
         strategy = str(cfg.fsdp_config.get("strategy", "fsdp2")).lower()
-        match strategy:
-            case FSDPVersion.FSDP:
-                from .fsdp import FSDPStrategy
+        if strategy == FSDPVersion.FSDP:
+            from .fsdp import FSDPStrategy
 
-                return FSDPStrategy(
-                    cfg=cfg,
-                    world_size=world_size,
-                    dp_group=dp_group,
-                    logger=logger,
-                )
-            case FSDPVersion.FSDP2:
-                from .fsdp2 import FSDP2Strategy
+            return FSDPStrategy(
+                cfg=cfg,
+                world_size=world_size,
+                dp_group=dp_group,
+                logger=logger,
+            )
+        if strategy == FSDPVersion.FSDP2:
+            from .fsdp2 import FSDP2Strategy
 
-                return FSDP2Strategy(
-                    cfg=cfg,
-                    world_size=world_size,
-                    dp_group=dp_group,
-                    logger=logger,
-                )
-            case _:
-                raise ValueError(
-                    f"Unknown FSDP strategy '{strategy}'. Expected one of: 'fsdp','fsdp2'"
-                )
+            return FSDP2Strategy(
+                cfg=cfg,
+                world_size=world_size,
+                dp_group=dp_group,
+                logger=logger,
+            )
+        raise ValueError(
+            f"Unknown FSDP strategy '{strategy}'. Expected one of: 'fsdp','fsdp2'"
+        )
 
     @abstractmethod
     def clip_grad_norm_(

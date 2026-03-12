@@ -17,6 +17,7 @@ import json
 import logging
 import queue
 import time
+import typing
 import warnings
 from typing import Any, Optional
 
@@ -285,8 +286,8 @@ class Config:
         qdrant_url: Optional[str] = None,
         qdrant_collection_name: str = "default_collection",
         corpus_text_field: Optional[str] = None,
-        hnsw_config: str | None = None,
-        build_parallel: int | None = None,
+        hnsw_config: typing.Optional[str] = None,
+        build_parallel: typing.Optional[int] = None,
         retrieval_model_path: str = "./model",
         retrieval_pooling_method: str = "mean",
         retrieval_query_max_length: int = 256,

@@ -16,6 +16,7 @@ import os
 import queue
 import threading
 import time
+import typing
 from collections import defaultdict
 from typing import TYPE_CHECKING, Union
 
@@ -160,7 +161,7 @@ class EmbodiedRunner:
 
     def _log_ranked_metrics(
         self,
-        metrics_list: list[dict] | None,
+        metrics_list: typing.Optional[list[dict]],
         step: int,
         prefix: str,
         worker_group_name: str,
@@ -183,7 +184,9 @@ class EmbodiedRunner:
                 rank=rank,
             )
 
-    def _aggregate_numeric_metrics(self, metrics_list: list[dict] | None) -> dict:
+    def _aggregate_numeric_metrics(
+        self, metrics_list: typing.Optional[list[dict]]
+    ) -> dict:
         if not metrics_list:
             return {}
         merged_metrics = defaultdict(list)

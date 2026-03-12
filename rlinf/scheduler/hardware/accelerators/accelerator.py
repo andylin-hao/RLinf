@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import typing
 from enum import Enum
 from typing import TYPE_CHECKING, Optional
 
@@ -278,7 +279,7 @@ class AcceleratorUtil:
         raise ValueError(f"Unsupported accelerator type: {accelerator_type}")
 
     @staticmethod
-    def get_device_type(accelerator_type: AcceleratorType) -> str | None:
+    def get_device_type(accelerator_type: AcceleratorType) -> typing.Optional[str]:
         """Get the device type based on the accelerator type."""
         if accelerator_type == AcceleratorType.NO_ACCEL:
             return None

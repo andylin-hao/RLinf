@@ -36,6 +36,7 @@ import json
 import os
 import pathlib
 import shutil
+import typing
 from typing import Literal
 
 import numpy as np
@@ -489,7 +490,7 @@ def slice_gemma_state_dict(state_dict, config, *, num_expert, checkpoint_dir, pi
 
 
 def slice_initial_orbax_checkpoint(
-    checkpoint_dir: str, restore_precision: str | None = None
+    checkpoint_dir: str, restore_precision: typing.Optional[str] = None
 ):
     """Load and process params by restoring via JAX model loader first.
     This respects dtype conversions that occur during model restore.
@@ -675,7 +676,7 @@ def convert_pi0_checkpoint(
 def main(
     checkpoint_dir: str,
     config_name: str,
-    output_path: str | None = None,
+    output_path: typing.Optional[str] = None,
     precision: Literal["float32", "bfloat16", "float16"] = "bfloat16",
     *,
     inspect_only: bool = False,

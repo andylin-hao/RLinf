@@ -16,6 +16,7 @@
 # The original code is licensed under the MIT License.
 
 import textwrap
+import typing
 from copy import deepcopy
 from typing import Any, Optional, Union
 
@@ -47,7 +48,7 @@ from rlinf.envs.habitat.extensions import maps
 
 def observations_to_image(
     observation: dict[str, Any],
-    info: dict[str, Any] | None = None,
+    info: typing.Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
     """Generate image of single frame from observation and info
     returned from a single environment step().

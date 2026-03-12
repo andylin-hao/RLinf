@@ -11,9 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 import dataclasses
 import pathlib
+import typing
 
 import numpy as np
 import openpi.models.model as _model
@@ -33,7 +33,7 @@ class LeRobotFrankaEEDataConfig(DataConfigFactory):
     """
 
     # If provided, will be injected into the input data if the "prompt" key is not present.
-    default_prompt: str | None = None
+    default_prompt: typing.Optional[str] = None
     # Finally we will use delta actions to train, but we can input abs_action(get delta for training via abs_action-state) or delta_action(no other process)
     extra_delta_transform: bool = True  # False for additional process(abs_action - state) to get delta action for training
     # train actions using rotation_6d

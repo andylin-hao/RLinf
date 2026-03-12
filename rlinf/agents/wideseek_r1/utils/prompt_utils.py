@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import typing
 
 from rlinf.agents.wideseek_r1.utils.prompt import (
     BOXED_FORMAT_EN,
@@ -247,7 +248,7 @@ def get_access_tool_message(url: str, page_content: str, language: str) -> str:
 
 def get_access_summary_tool_message(
     url: str,
-    info_to_extract: str | None,
+    info_to_extract: typing.Optional[str],
     summary: str,
     language: str,
 ) -> str:

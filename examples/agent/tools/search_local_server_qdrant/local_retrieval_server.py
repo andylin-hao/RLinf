@@ -19,6 +19,7 @@ import logging
 import os
 import socket
 import time
+import typing
 from concurrent.futures import ProcessPoolExecutor
 from multiprocessing import Queue, set_start_method
 from typing import Optional
@@ -84,12 +85,15 @@ class AsyncBaseRetriever:
         raise NotImplementedError
 
     async def asearch(
-        self, query: str, num: int | None = None, return_score: bool = False
+        self, query: str, num: typing.Optional[int] = None, return_score: bool = False
     ):
         return await self._asearch(query, num, return_score)
 
     async def abatch_search(
-        self, query_list: list[str], num: int | None = None, return_score: bool = False
+        self,
+        query_list: list[str],
+        num: typing.Optional[int] = None,
+        return_score: bool = False,
     ):
         return await self._abatch_search(query_list, num, return_score)
 
@@ -178,7 +182,7 @@ class AsyncDenseRetriever(AsyncBaseRetriever):
         logging.info(f"qdrant search_params: {self.search_params}")
 
     async def _asearch(
-        self, query: str, num: int | None = None, return_score: bool = False
+        self, query: str, num: typing.Optional[int] = None, return_score: bool = False
     ):
         time_start = time.time()
         if num is None:
@@ -212,7 +216,10 @@ class AsyncDenseRetriever(AsyncBaseRetriever):
             return payloads
 
     async def _abatch_search(
-        self, query_list: list[str], num: int | None = None, return_score: bool = False
+        self,
+        query_list: list[str],
+        num: typing.Optional[int] = None,
+        return_score: bool = False,
     ):
         if return_score:
             all_payloads, all_scores = [], []

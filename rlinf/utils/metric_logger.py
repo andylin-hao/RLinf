@@ -11,8 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 import os
+import typing
 
 from omegaconf import DictConfig, OmegaConf
 
@@ -146,8 +146,8 @@ class MetricLogger:
         data,
         step,
         backend=None,
-        worker_group_name: str | None = None,
-        rank: int | None = None,
+        worker_group_name: typing.Optional[str] = None,
+        rank: typing.Optional[int] = None,
     ):
         target_logger = self.logger
         if self.per_worker_log and worker_group_name is not None and rank is not None:

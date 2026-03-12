@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import gc
+import typing
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -135,7 +136,7 @@ class CUDAGraphManager:
 
     def __init__(
         self,
-        device: torch.device | None = None,
+        device: typing.Optional[torch.device] = None,
         create_graph_pool: bool = True,
     ):
         self.device = device or torch.device("cuda")
@@ -218,7 +219,7 @@ class CUDAGraphManager:
     def replay(
         self,
         name: str,
-        inputs: dict[str, Any] | None = None,
+        inputs: typing.Optional[dict[str, Any]] = None,
     ) -> dict[str, Any]:
         """
         Replay a captured CUDA graph.
@@ -249,7 +250,7 @@ class CUDAGraphManager:
         graph_spec.graph.replay()
         return graph_spec.outputs
 
-    def destroy(self, name: str | None = None) -> None:
+    def destroy(self, name: typing.Optional[str] = None) -> None:
         """
         Destroy captured CUDA graphs and shared memory pool, releasing GPU memory.
 

@@ -15,6 +15,7 @@
 import copy
 import queue
 import time
+import typing
 from dataclasses import dataclass, field
 from itertools import cycle
 from typing import Optional
@@ -237,7 +238,7 @@ class FrankaEnv(gym.Env):
 
     def _calc_step_reward(
         self,
-        observation: dict[str, np.ndarray | FrankaRobotState],
+        observation: dict[str, typing.Union[np.ndarray, FrankaRobotState]],
         is_gripper_action_effective: bool = False,
     ) -> float:
         """Compute the reward for the current observation, namely the robot state and camera frames.

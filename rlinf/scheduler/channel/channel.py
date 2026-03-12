@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import asyncio
+import typing
 import uuid
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -248,7 +249,9 @@ class Channel:
     def _initialize(
         self,
         channel_name: str,
-        channel_worker_group: Optional[WorkerGroup["ChannelWorker"] | "ChannelWorker"],
+        channel_worker_group: Optional[
+            typing.Union[WorkerGroup["ChannelWorker"], "ChannelWorker"]
+        ],
         channel_worker_actor: Optional[ray.actor.ActorHandle],
         current_worker: Worker,
         local_channel: Optional["LocalChannel"] = None,
@@ -471,7 +474,9 @@ class Channel:
             except asyncio.QueueFull:
                 raise asyncio.QueueFull
 
-    def get(self, key: Any = DEFAULT_KEY, async_op: bool = False) -> AsyncWork | Any:
+    def get(
+        self, key: Any = DEFAULT_KEY, async_op: bool = False
+    ) -> typing.Union[AsyncWork, Any]:
         """Get an item from the channel queue.
 
         Args:
@@ -565,7 +570,7 @@ class Channel:
         target_weight: int = 0,
         key: Any = DEFAULT_KEY,
         async_op: bool = False,
-    ) -> AsyncWork | list[Any]:
+    ) -> typing.Union[AsyncWork, list[Any]]:
         """Get a batch of items from the channel queue based on the set batch weight.
 
         It will try to get items until the total weight of the items is about to (i.e., the next item will) exceed the set batch weight.

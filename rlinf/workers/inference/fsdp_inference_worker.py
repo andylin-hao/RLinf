@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import typing
 
 import torch
 from omegaconf import DictConfig
@@ -73,7 +73,8 @@ class FSDPInference(FSDPActor):
 
     @torch.no_grad()
     def load_from_actors_by_intersection(
-        self, cur_state_dict: dict[str, torch.Tensor | DTensor | ShardedTensor]
+        self,
+        cur_state_dict: dict[str, typing.Union[torch.Tensor, DTensor, ShardedTensor]],
     ) -> None:
         """
         Synchronize the model weights from actor workers to the inference workers according former All-to-All

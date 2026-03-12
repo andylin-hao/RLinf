@@ -14,6 +14,7 @@
 
 import os
 import time
+import typing
 from functools import partial
 from typing import Optional
 
@@ -703,7 +704,7 @@ class FSDPActor(FSDPModelManager, Worker):
         )
 
     def training_step(
-        self, batch: dict[str, torch.Tensor] | BatchResizingIterator
+        self, batch: typing.Union[dict[str, torch.Tensor], BatchResizingIterator]
     ) -> tuple[dict[str, torch.Tensor], float, list[float]]:
         if isinstance(batch, dict):
             global_batch_size = batch["input_ids"].shape[0]
@@ -1265,7 +1266,7 @@ class EmbodiedFSDPActor(FSDPModelManager, Worker):
             forward_type=ForwardType.SFT,
         )
         # Ensure losses is a tensor and handle different return types
-        if isinstance(sft_losses, list | tuple):
+        if isinstance(sft_losses, (list, tuple)):
             sft_losses = torch.stack(sft_losses)
         elif not isinstance(sft_losses, torch.Tensor):
             sft_losses = torch.tensor(

@@ -18,8 +18,9 @@ import signal
 import sys
 import threading
 import time
+import typing
 from dataclasses import dataclass
-from typing import Generic, Optional, TypeVar
+from typing import Generic, Optional, TypeVar, Union
 
 import numpy as np
 import ray
@@ -91,7 +92,7 @@ class WorkerGroup(Generic[WorkerClsType]):
     @classmethod
     def from_group_name(
         cls, worker_cls: type[ClsType], group_name: str
-    ) -> "WorkerGroup[ClsType] | ClsType":
+    ) -> Union["WorkerGroup[ClsType]", ClsType]:
         """Retrieve an existing worker group based on its worker class and group name."""
         from ..manager import WorkerManager
 
@@ -150,7 +151,7 @@ class WorkerGroup(Generic[WorkerClsType]):
         isolate_gpu: bool = True,
         catch_system_failure: Optional[bool] = None,
         disable_distributed_log: bool = False,
-    ) -> "WorkerGroup[WorkerClsType] | WorkerClsType":
+    ) -> Union["WorkerGroup[WorkerClsType]", WorkerClsType]:
         """Create a worker group with the specified cluster and options.
 
         Args:
@@ -198,7 +199,7 @@ class WorkerGroup(Generic[WorkerClsType]):
 
     def execute_on(
         self: "WorkerGroup[WorkerClsType]", *ranks: int
-    ) -> "WorkerGroup[WorkerClsType] | WorkerClsType":
+    ) -> Union["WorkerGroup[WorkerClsType]", WorkerClsType]:
         """Set the ranks to execute functions on in the worker group. This function only affects the immediately subsequent call of any remote function of the WorkerGroup. After one call, the execute_on state is reset to execute on all ranks.
 
         Args:
@@ -512,7 +513,9 @@ class WorkerGroupFuncResult:
 
     def consume_durations(
         self, reduction_type: str = "max", return_per_rank: bool = False
-    ) -> dict[str, float] | tuple[dict[str, float], list[dict[str, float]]]:
+    ) -> typing.Union[
+        dict[str, float], tuple[dict[str, float], list[dict[str, float]]]
+    ]:
         """Get execution time map across ranks.
 
         Args:

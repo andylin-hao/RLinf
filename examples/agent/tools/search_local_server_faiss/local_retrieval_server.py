@@ -17,6 +17,7 @@ import json
 import os
 import socket
 import threading
+import typing
 import warnings
 from typing import Optional
 
@@ -164,11 +165,16 @@ class BaseRetriever:
     def _batch_search(self, query_list: list[str], num: int, return_score: bool):
         raise NotImplementedError
 
-    def search(self, query: str, num: int | None = None, return_score: bool = False):
+    def search(
+        self, query: str, num: typing.Optional[int] = None, return_score: bool = False
+    ):
         return self._search(query, num, return_score)
 
     def batch_search(
-        self, query_list: list[str], num: int | None = None, return_score: bool = False
+        self,
+        query_list: list[str],
+        num: typing.Optional[int] = None,
+        return_score: bool = False,
     ):
         return self._batch_search(query_list, num, return_score)
 
@@ -187,7 +193,9 @@ class BM25Retriever(BaseRetriever):
     def _check_contain_doc(self):
         return self.searcher.doc(0).raw() is not None
 
-    def _search(self, query: str, num: int | None = None, return_score: bool = False):
+    def _search(
+        self, query: str, num: typing.Optional[int] = None, return_score: bool = False
+    ):
         if num is None:
             num = self.topk
         hits = self.searcher.search(query, num)
@@ -224,7 +232,10 @@ class BM25Retriever(BaseRetriever):
             return results
 
     def _batch_search(
-        self, query_list: list[str], num: int | None = None, return_score: bool = False
+        self,
+        query_list: list[str],
+        num: typing.Optional[int] = None,
+        return_score: bool = False,
     ):
         results = []
         scores = []
@@ -259,7 +270,9 @@ class DenseRetriever(BaseRetriever):
         self.topk = config.retrieval_topk
         self.batch_size = config.retrieval_batch_size
 
-    def _search(self, query: str, num: int | None = None, return_score: bool = False):
+    def _search(
+        self, query: str, num: typing.Optional[int] = None, return_score: bool = False
+    ):
         if num is None:
             num = self.topk
         query_emb = self.encoder.encode(query)
@@ -273,7 +286,10 @@ class DenseRetriever(BaseRetriever):
             return results
 
     def _batch_search(
-        self, query_list: list[str], num: int | None = None, return_score: bool = False
+        self,
+        query_list: list[str],
+        num: typing.Optional[int] = None,
+        return_score: bool = False,
     ):
         if isinstance(query_list, str):
             query_list = [query_list]

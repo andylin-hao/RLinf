@@ -14,6 +14,7 @@
 
 import json
 import random
+import typing
 from pathlib import Path
 from typing import Any, Literal, Optional, Union
 
@@ -105,7 +106,7 @@ class FlowMatchingActionHeadForRLActionPrediction(FlowmatchingActionHead):
         x_t: torch.Tensor,
         embodiment_id: int,
         state_features: torch.Tensor,
-        idx: Optional[int | torch.Tensor],
+        idx: Optional[typing.Union[int, torch.Tensor]],
         mode: Literal["train", "eval"] = "train",
         compute_values=False,
     ):

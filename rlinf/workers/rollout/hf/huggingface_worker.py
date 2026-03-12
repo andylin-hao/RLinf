@@ -14,6 +14,7 @@
 
 import copy
 import gc
+import typing
 from typing import Any, Literal
 
 import numpy as np
@@ -239,7 +240,11 @@ class MultiStepRolloutWorker(Worker):
     def get_dones_and_rewards(
         self,
         env_output: dict[str, torch.Tensor],
-    ) -> tuple[torch.Tensor | None, torch.Tensor | None, dict[str, Any] | None]:
+    ) -> tuple[
+        typing.Optional[torch.Tensor],
+        typing.Optional[torch.Tensor],
+        typing.Optional[dict[str, Any]],
+    ]:
         """
         Get dones and rewards from environment batch, handling auto_reset if needed.
 
@@ -497,8 +502,8 @@ class MultiStepRolloutWorker(Worker):
         return env_output
 
     def _split_actions(
-        self, actions: torch.Tensor | np.ndarray, sizes: list[int]
-    ) -> list[torch.Tensor | np.ndarray]:
+        self, actions: typing.Union[torch.Tensor, np.ndarray], sizes: list[int]
+    ) -> list[typing.Union[torch.Tensor, np.ndarray]]:
         """Split rollout actions into size-specified shards along dim-0.
 
         Args:
@@ -534,7 +539,7 @@ class MultiStepRolloutWorker(Worker):
     def send_chunk_actions(
         self,
         output_channel: Channel,
-        chunk_actions: torch.Tensor | np.ndarray,
+        chunk_actions: typing.Union[torch.Tensor, np.ndarray],
         mode: Literal["train", "eval"] = "train",
     ):
         """Send action shards to mapped env ranks.

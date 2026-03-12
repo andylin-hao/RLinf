@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import typing
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum
@@ -165,13 +166,12 @@ class SeqGroupInfo:
         """
 
         finished_reason = result["meta_info"]["finish_reason"]["type"]
-        match finished_reason:
-            case FinishReasonEnum.ABORT:
-                self.idx_aborted.add(idx)
-            case FinishReasonEnum.STOP | FinishReasonEnum.LENGTH:
-                self.idx_completed.add(idx)
-            case _:
-                raise ValueError(f"Unknown finish reason: {finished_reason}")
+        if finished_reason == FinishReasonEnum.ABORT:
+            self.idx_aborted.add(idx)
+        elif finished_reason in (FinishReasonEnum.STOP, FinishReasonEnum.LENGTH):
+            self.idx_completed.add(idx)
+        else:
+            raise ValueError(f"Unknown finish reason: {finished_reason}")
         if self.results[idx] is None:
             self.results[idx] = result
         else:
@@ -226,11 +226,11 @@ class RolloutResult:
     response_lengths: list[int]
     response_ids: list[list[int]]
     is_end: list[bool]
-    rewards: Optional[list[float] | torch.Tensor] = None
-    advantages: Optional[list[float] | torch.Tensor] = None
+    rewards: Optional[typing.Union[list[float], torch.Tensor]] = None
+    advantages: Optional[typing.Union[list[float], torch.Tensor]] = None
     prompt_texts: Optional[list[str]] = None
     response_texts: Optional[list[str]] = None
-    answers: Optional[list[str | dict]] = None
+    answers: Optional[list[typing.Union[str, dict]]] = None
     image_data: Optional[Union[list[list[bytes]], list[list[str]]]] = None
     multi_modal_inputs: Optional[list[dict]] = None
     response_mask: Optional[list[list[int]]] = None
@@ -1060,7 +1060,7 @@ class DynamicRolloutResult:
     prompt_lengths: list[int]
     response_lengths: list[int]
     is_end: list[bool]
-    rewards: Optional[torch.Tensor | list[float]] = None
+    rewards: Optional[typing.Union[torch.Tensor, list[float]]] = None
     advantages: Optional[torch.Tensor] = None
 
     # extra fields used in training for custom process
@@ -1281,10 +1281,12 @@ class DynamicRolloutResult:
     @staticmethod
     def merge_batches(
         batches: list[dict[str, torch.Tensor]],
-        group_size: int | None = None,
+        group_size: typing.Optional[int] = None,
         adjust_traj_indices: bool = True,
         return_num_sequence_per_group: bool = False,
-    ) -> dict[str, torch.Tensor] | tuple[dict[str, torch.Tensor], list[int]]:
+    ) -> typing.Union[
+        dict[str, torch.Tensor], tuple[dict[str, torch.Tensor], list[int]]
+    ]:
         """
         Merge multiple batches into one batch.
 

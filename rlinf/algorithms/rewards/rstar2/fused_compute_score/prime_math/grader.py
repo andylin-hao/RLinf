@@ -99,6 +99,7 @@ import os
 import queue
 import re
 import signal
+import typing
 from functools import wraps
 from math import isclose
 from typing import Any, Callable
@@ -179,8 +180,8 @@ def handle_pi(string, pi):
 
 
 def math_equal(
-    prediction: bool | float | str,
-    reference: float | str,
+    prediction: typing.Union[bool, float, str],
+    reference: typing.Union[float, str],
     include_percentage: bool = True,
     tolerance: float = 1e-4,
     timeout: float = 10.0,

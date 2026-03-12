@@ -15,6 +15,7 @@
 import asyncio
 import math
 import time
+import typing
 from abc import ABC, abstractmethod
 from logging import Logger
 from typing import TYPE_CHECKING, Callable
@@ -319,7 +320,7 @@ class RolloutManager(ComponentManager):
 
     async def _scatter_requests(
         self,
-        requests: RolloutScheduleInfo | list[RolloutScheduleInfo],
+        requests: typing.Union[RolloutScheduleInfo, list[RolloutScheduleInfo]],
         instance_ids: list[int],
     ):
         """Scatter the requests to the rollout instances.
@@ -401,7 +402,9 @@ class RolloutManager(ComponentManager):
         return report_str
 
     async def finish(
-        self, action: RolloutAction, finished_instance_ids: list[int] | None = None
+        self,
+        action: RolloutAction,
+        finished_instance_ids: typing.Optional[list[int]] = None,
     ) -> int:
         """Finish the rollout instances.
 
@@ -1056,14 +1059,16 @@ class RolloutScalingScheduler:
                 key=self.scheduler_request_queue, async_op=True
             ).async_wait()
 
-            match request.action:
-                case RolloutAction.Report:
-                    await self._report()
-                case RolloutAction.Migrate_In:
-                    await self._migrate_in(request)
-                case RolloutAction.Migrate_Out:
-                    await self._migrate_out()
-                case RolloutAction.Wait_For_Finish | RolloutAction.Finish:
-                    await self._wait_for_finish()
-                case _:
-                    raise ValueError(f"Unknown scheduler action: {request.action}")
+            if request.action == RolloutAction.Report:
+                await self._report()
+            elif request.action == RolloutAction.Migrate_In:
+                await self._migrate_in(request)
+            elif request.action == RolloutAction.Migrate_Out:
+                await self._migrate_out()
+            elif request.action in (
+                RolloutAction.Wait_For_Finish,
+                RolloutAction.Finish,
+            ):
+                await self._wait_for_finish()
+            else:
+                raise ValueError(f"Unknown scheduler action: {request.action}")

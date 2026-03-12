@@ -8,7 +8,7 @@ version = "0.2.0"
 authors = [{ name = "RLinf Contributors" }]
 description = "Reinforcement Learning Infrastructure for Embodied and Agentic AI"
 readme = {file = "README.md", content-type = "text/markdown"}
-requires-python = ">=3.10,<=3.11.14"
+requires-python = ">=3.9,<=3.11.14"
 license = {file = "LICENSE"}
 keywords = [
     "reinforcement-learning",
@@ -177,7 +177,7 @@ rlinf = ["**/*.yaml", "**/*.yml"]
 [tool.ruff]
 line-length = 88
 indent-width = 4
-target-version = "py311"
+target-version = "py39"
 
 [tool.ruff.lint]
 isort = {known-first-party = ["rlinf"]}

@@ -14,6 +14,7 @@
 
 import asyncio
 import copy
+import typing
 from typing import Optional
 
 from omegaconf import DictConfig
@@ -242,7 +243,7 @@ class WideSeekR1AgentLoopWorker(MultiAgentLoopWorker):
         role: str,
         is_markdown: bool,
         language: str,
-        main_task: str | None,
+        main_task: typing.Optional[str],
     ) -> tuple[list[dict], list[dict]]:
         """Build role-specific prompt history and exposed tool descriptions.
 
@@ -340,7 +341,7 @@ class WideSeekR1AgentLoopWorker(MultiAgentLoopWorker):
         question: str,
         role: str,
         sub_traj_id: int,
-        main_task: str | None = None,
+        main_task: typing.Optional[str] = None,
         is_markdown: bool = False,
         language: str = "en",
     ) -> tuple[list[AgentLoopOutput], str]:

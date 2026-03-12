@@ -11,10 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 import json
 import logging
 import re
+import typing
 
 import regex
 
@@ -100,7 +100,7 @@ class Rstar2QwenToolCallParser:
 
     async def __call__(
         self, response_text: str
-    ) -> tuple[str, list[ToolRequest | ToolResponse]]:
+    ) -> tuple[str, list[typing.Union[ToolRequest, ToolResponse]]]:
         if (
             self.tool_call_start_token not in response_text
             or self.tool_call_end_token not in response_text

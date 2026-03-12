@@ -11,8 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 import threading
+import typing
 
 
 class KeyboardListener:
@@ -36,7 +36,7 @@ class KeyboardListener:
         with self.state_lock:
             self.latest_data["key"] = None
 
-    def get_key(self) -> str | None:
+    def get_key(self) -> typing.Optional[str]:
         """Returns the latest key pressed."""
         with self.state_lock:
             return self.latest_data["key"]

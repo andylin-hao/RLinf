@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import typing
 
 import numpy as np
 import torch
@@ -184,7 +185,7 @@ def prepare_actions(
     action_scale: float = 1.0,
     policy: str = "widowx_bridge",
     wm_env_type=None,
-) -> torch.Tensor | np.ndarray:
+) -> typing.Union[torch.Tensor, np.ndarray]:
     env_type = SupportedEnvType(env_type)
     if env_type == SupportedEnvType.LIBERO:
         chunk_actions = prepare_actions_for_libero(

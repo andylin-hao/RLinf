@@ -18,6 +18,7 @@ import random
 import re
 import threading
 import time
+import typing
 from dataclasses import dataclass, field
 from queue import Empty as QueueEmpty
 from typing import Any
@@ -55,7 +56,7 @@ PAYLOAD_TYPES = frozenset(
 _SIZE_UNITS = {"B": 1, "KB": 1024, "MB": 1024**2, "GB": 1024**3}
 
 
-def parse_size(s: str | int) -> int:
+def parse_size(s: typing.Union[str, int]) -> int:
     """Parse a size string with optional unit (B, KB, MB, GB) into bytes.
 
     Examples: "1024", "1KB", "64KB", "1MB", "1GB"
@@ -136,14 +137,14 @@ def _create_tensor_payload(
     payload_type: str,
     size_bytes: int,
     payload_device: str = "auto",
-) -> (
-    torch.Tensor
-    | list[torch.Tensor]
-    | dict[str, torch.Tensor]
-    | TensorPayload
-    | TensorListPayload
-    | TensorDictPayload
-):
+) -> typing.Union[
+    torch.Tensor,
+    list[torch.Tensor],
+    dict[str, torch.Tensor],
+    TensorPayload,
+    TensorListPayload,
+    TensorDictPayload,
+]:
     """Create a tensor payload of given type and approximate size in bytes.
 
     For tensor_list, tensor_dict, tensor_dataclass, tensor_list_dataclass, and
@@ -306,7 +307,7 @@ class Producer(Worker):
         return self.pop_execution_time("producer_async")
 
     def run_sync_keys(
-        self, channel: Channel, cfg: BenchmarkConfig, keys: list[int | str]
+        self, channel: Channel, cfg: BenchmarkConfig, keys: list[typing.Union[int, str]]
     ) -> float:
         """Synchronous put with per-message keys."""
         assert len(keys) == cfg.num_messages
@@ -318,7 +319,7 @@ class Producer(Worker):
         return self.pop_execution_time("producer_sync_keys")
 
     def run_async_keys(
-        self, channel: Channel, cfg: BenchmarkConfig, keys: list[int | str]
+        self, channel: Channel, cfg: BenchmarkConfig, keys: list[typing.Union[int, str]]
     ) -> float:
         """Async put with per-message keys using asyncio."""
         assert len(keys) == cfg.num_messages
@@ -416,7 +417,7 @@ class Consumer(Worker):
         return self.pop_execution_time("consumer_async")
 
     def run_sync_keys(
-        self, channel: Channel, cfg: BenchmarkConfig, keys: list[int | str]
+        self, channel: Channel, cfg: BenchmarkConfig, keys: list[typing.Union[int, str]]
     ) -> float:
         """Synchronous get with per-message keys."""
         assert len(keys) == cfg.num_messages
@@ -427,7 +428,7 @@ class Consumer(Worker):
         return self.pop_execution_time("consumer_sync_keys")
 
     def run_async_keys(
-        self, channel: Channel, cfg: BenchmarkConfig, keys: list[int | str]
+        self, channel: Channel, cfg: BenchmarkConfig, keys: list[typing.Union[int, str]]
     ) -> float:
         """Async get with per-message keys using asyncio."""
         assert len(keys) == cfg.num_messages
@@ -556,7 +557,7 @@ def run_benchmark(cfg: BenchmarkConfig) -> None:
             except QueueEmpty:
                 break
 
-    def ray_queue_round(async_mode: bool) -> dict[str, float] | None:
+    def ray_queue_round(async_mode: bool) -> typing.Optional[dict[str, float]]:
         """Mixed put+get on ray.util.queue.Queue (same pattern as one_round)."""
         if ray_queue is None:
             return None
@@ -587,7 +588,7 @@ def run_benchmark(cfg: BenchmarkConfig) -> None:
             else float("inf"),
         }
 
-    def put_only_ray_queue_round(async_mode: bool) -> dict[str, float] | None:
+    def put_only_ray_queue_round(async_mode: bool) -> typing.Optional[dict[str, float]]:
         """Put-only on ray.util.queue.Queue: producer only."""
         if ray_queue is None:
             return None
@@ -613,7 +614,7 @@ def run_benchmark(cfg: BenchmarkConfig) -> None:
             "consumer_latency_ms": 0.0,
         }
 
-    def get_only_ray_queue_round(async_mode: bool) -> dict[str, float] | None:
+    def get_only_ray_queue_round(async_mode: bool) -> typing.Optional[dict[str, float]]:
         """Get-only on ray.util.queue.Queue (prefill then time consumer)."""
         if ray_queue is None:
             return None

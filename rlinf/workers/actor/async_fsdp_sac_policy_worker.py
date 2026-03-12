@@ -11,10 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 import asyncio
 import queue
 import threading
+import typing
 
 import torch
 
@@ -52,7 +52,9 @@ class AsyncEmbodiedSACFSDPPolicy(EmbodiedSACFSDPPolicy):
                 trajectory = input_channel.get()
                 self._recv_queue.put(trajectory)
 
-    def _drain_received_trajectories(self, max_trajectories: int | None = None):
+    def _drain_received_trajectories(
+        self, max_trajectories: typing.Optional[int] = None
+    ):
         if getattr(self, "_recv_queue", None) is None:
             return
         recv_list = []

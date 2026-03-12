@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import typing
 from dataclasses import dataclass
 from typing import ClassVar, Optional, TypeVar
 
@@ -147,7 +148,7 @@ class Hardware:
         """
 
         def hardware_policy_decorator(
-            policy: type["Hardware" | HardwareType],
+            policy: type[typing.Union["Hardware", HardwareType]],
         ) -> type[HardwareType]:
             if policy.HW_TYPE in cls.hw_types:
                 raise ValueError(

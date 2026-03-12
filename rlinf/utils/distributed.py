@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import typing
 from collections import UserDict
 from contextlib import contextmanager
 from typing import Any, Callable, Optional, Sequence, Union
@@ -866,7 +867,7 @@ def normalize_tensor(tensor, mask, group=None):
 def masked_normalization(
     x: torch.Tensor,
     mask: Optional[torch.BoolTensor] = None,
-    dim: Optional[int | tuple[int, ...]] = None,
+    dim: Optional[typing.Union[int, tuple[int, ...]]] = None,
     inplace: Optional[bool] = False,
     unbiased: Optional[bool] = False,
     eps: Optional[float] = 1e-5,

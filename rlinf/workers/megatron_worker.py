@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import time
+import typing
 from functools import partial
 from typing import Callable, Optional
 
@@ -415,7 +416,9 @@ class MegatronWorker(MegatronModelManager, Worker):
         rollout_result = RolloutResult.merge_result_list(rollout_results)
         return batch, rollout_result, result_len, cliped_results, unfinished_result
 
-    def put_result(self, result: RolloutResult, channel: Channel | list[Channel]):
+    def put_result(
+        self, result: RolloutResult, channel: typing.Union[Channel, list[Channel]]
+    ):
         # consider the case that this megatron worker needs to
         # transfer data to multiple destinations through
         # multiple channels
@@ -575,7 +578,9 @@ class MegatronWorker(MegatronModelManager, Worker):
         return outputs
 
     # Training
-    def training_step(self, batch: dict[str, torch.Tensor] | BatchResizingIterator):
+    def training_step(
+        self, batch: typing.Union[dict[str, torch.Tensor], BatchResizingIterator]
+    ):
         """Run a single training step on the model.
 
         Args:
@@ -663,7 +668,7 @@ class MegatronWorker(MegatronModelManager, Worker):
     def run_training(
         self,
         input_channel: Channel,
-        output_channel: Channel | None = None,
+        output_channel: typing.Optional[Channel] = None,
         do_offload: bool = True,
         compute_rollout_metrics: bool = True,
     ):

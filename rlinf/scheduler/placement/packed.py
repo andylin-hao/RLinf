@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import typing
 from typing import Optional, Sequence
 
 from ..cluster import Cluster, NodeGroupInfo
@@ -95,7 +96,7 @@ class PackedPlacementStrategy(PlacementStrategy):
         end_hardware_rank: int,
         num_hardware_per_process: int = 1,
         stride: int = 1,
-        node_group: Optional[str | Sequence[str]] = None,
+        node_group: Optional[typing.Union[str, Sequence[str]]] = None,
     ):
         """Initialize the PackedPlacementStrategy.
 

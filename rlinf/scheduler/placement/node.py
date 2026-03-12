@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import typing
 from typing import Optional, Sequence
 
 from ..cluster import Cluster, NodeGroupInfo
@@ -56,7 +57,7 @@ class NodePlacementStrategy(PlacementStrategy):
     def __init__(
         self,
         node_ranks: list[int],
-        node_group_label: Optional[str | Sequence[str]] = None,
+        node_group_label: Optional[typing.Union[str, Sequence[str]]] = None,
     ):
         """Initialize the NodePlacementStrategy.
 

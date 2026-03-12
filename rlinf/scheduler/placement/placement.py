@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import logging
+import typing
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional, overload
 
@@ -65,7 +66,7 @@ class MultiNodeGroupResolver:
         return self._total_hardware_count
 
     @property
-    def hardware_types(self) -> list[Optional[str]] | None:
+    def hardware_types(self) -> typing.Optional[list[Optional[str]]]:
         """Get the list of hardware types for all node groups.
 
         Returns:
@@ -340,7 +341,7 @@ class ComponentPlacement:
     def _parse_component_placement(
         self,
         cluster: Cluster,
-        component_placement: str | DictConfig,
+        component_placement: typing.Union[str, DictConfig],
         component_names: list[str],
     ) -> PlacementStrategy:
         """Parse the component placement configuration into a PlacementStrategy.

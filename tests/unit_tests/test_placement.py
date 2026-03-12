@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import typing
 
 import pytest
 from omegaconf import DictConfig, OmegaConf
@@ -37,7 +38,7 @@ class FakeCluster:
         self._node_groups = node_groups
 
     def get_node_group(
-        self, label: str | None = NodeGroupInfo.DEFAULT_GROUP_LABEL
+        self, label: typing.Optional[str] = NodeGroupInfo.DEFAULT_GROUP_LABEL
     ) -> NodeGroupInfo:
         resolved = NodeGroupInfo.DEFAULT_GROUP_LABEL if label is None else str(label)
         assert resolved in self._node_groups, (
@@ -105,8 +106,8 @@ def _make_node_info(node_rank: int, num_accelerators: int) -> NodeInfo:
 
 def create_fake_cluster(
     num_nodes: int,
-    accelerators_per_node: int | list[int],
-    extra_group_mapping: dict[str, list[int]] | None = None,
+    accelerators_per_node: typing.Union[int, list[int]],
+    extra_group_mapping: typing.Optional[dict[str, list[int]]] = None,
 ) -> FakeCluster:
     if isinstance(accelerators_per_node, int):
         accel_counts = [accelerators_per_node] * num_nodes
@@ -147,7 +148,7 @@ def create_fake_cluster(
 
 
 def mock_cluster(
-    num_nodes: int, num_accelerators_per_node: int | list[int]
+    num_nodes: int, num_accelerators_per_node: typing.Union[int, list[int]]
 ) -> FakeCluster:
     return create_fake_cluster(num_nodes, num_accelerators_per_node)
 

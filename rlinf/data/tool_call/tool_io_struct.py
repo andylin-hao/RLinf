@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import typing
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Literal, Optional
@@ -80,8 +81,8 @@ class ToolChannelRequest:
     # session_id is REQUIRED. also used as the response channel key
     session_id: str
     request_type: Literal["session_start", "session_end", "execute"]
-    tool_name: str | None = None
-    tool_args: dict | None = None
+    tool_name: typing.Optional[str] = None
+    tool_args: typing.Optional[dict] = None
 
 
 @dataclass
@@ -94,9 +95,9 @@ class ToolChannelResponse:
     success: bool
 
     # execute result if success is True, otherwise failure message
-    result: Any | None = None
-    session_state: Any | None = None
-    meta_info: dict | None = None
+    result: typing.Optional[Any] = None
+    session_state: typing.Optional[Any] = None
+    meta_info: typing.Optional[dict] = None
 
 
 @dataclass

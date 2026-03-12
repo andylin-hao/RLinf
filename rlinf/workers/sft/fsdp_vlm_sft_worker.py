@@ -16,6 +16,7 @@ import json
 import logging
 import os
 import re
+import typing
 from typing import Any
 
 import torch
@@ -156,7 +157,7 @@ class FSDPVlmSftWorker(FSDPSftWorker):
     def _normalize_text(self, s: str) -> str:
         return " ".join(str(s).strip().lower().split())
 
-    def _extract_boxed(self, text: str) -> str | None:
+    def _extract_boxed(self, text: str) -> typing.Optional[str]:
         idx = text.rfind("boxed")
         if idx < 0:
             return None

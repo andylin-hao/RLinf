@@ -14,6 +14,7 @@
 
 import asyncio
 import json
+import typing
 from typing import Any
 from uuid import uuid4
 
@@ -118,7 +119,9 @@ class Rstar2AgentLoopWorker(AgentLoopWorker):
             self.log_debug("session_start get")
         return session_id
 
-    async def tool_session_release(self, tool_worker_name, session_id) -> str | dict:
+    async def tool_session_release(
+        self, tool_worker_name, session_id
+    ) -> typing.Union[str, dict]:
         tool_channel_info = self.tool_channel_info_map[tool_worker_name]
         await tool_channel_info.input_channel.put(
             ToolChannelRequest(session_id=session_id, request_type="session_end"),
@@ -134,7 +137,7 @@ class Rstar2AgentLoopWorker(AgentLoopWorker):
     async def tool_call(
         self,
         generate_context: dict[str, Any],
-        tool_request: ToolRequest | ToolChannelResponse,
+        tool_request: typing.Union[ToolRequest, ToolChannelResponse],
     ) -> ToolResponse:
         if isinstance(tool_request, ToolChannelResponse):
             return ToolResponse(text=tool_request.result)
@@ -272,7 +275,7 @@ class Rstar2AgentLoopWorker(AgentLoopWorker):
             return False, [], [], empty_logprobs
 
         # Execute tools in parallel with history propagation
-        tool_responses: list[ToolResponse | int] = []
+        tool_responses: list[typing.Union[ToolResponse, int]] = []
         run_tool_requests = []
         for tool_request in tool_requests[: self.max_parallel_calls]:
             if isinstance(tool_request, ToolResponse):

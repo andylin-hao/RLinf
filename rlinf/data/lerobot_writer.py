@@ -17,6 +17,7 @@
 import io
 import json
 import os
+import typing
 from typing import Any
 
 import numpy as np
@@ -261,12 +262,12 @@ class LeRobotDatasetWriter:
     def add_episode(
         self,
         images: np.ndarray,
-        wrist_images: np.ndarray | None,
+        wrist_images: typing.Optional[np.ndarray],
         states: np.ndarray,
         actions: np.ndarray,
         task: str,
         is_success: bool,
-        dones: np.ndarray | None = None,
+        dones: typing.Optional[np.ndarray] = None,
     ) -> int:
         """
         Add an episode to the dataset.
@@ -459,7 +460,7 @@ class LeRobotDatasetWriter:
     def _update_stats_accumulators(
         self,
         images: np.ndarray,
-        wrist_images: np.ndarray | None,
+        wrist_images: typing.Optional[np.ndarray],
         states: np.ndarray,
         actions: np.ndarray,
         data: dict[str, list],
@@ -495,7 +496,7 @@ class LeRobotDatasetWriter:
     def _update_stats_incremental(
         self,
         images: np.ndarray,
-        wrist_images: np.ndarray | None,
+        wrist_images: typing.Optional[np.ndarray],
         states: np.ndarray,
         actions: np.ndarray,
         data: dict[str, list],

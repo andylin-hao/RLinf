@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import typing
 from dataclasses import dataclass
 from typing import Any, Optional, Union
 
@@ -36,7 +37,7 @@ class DatasetItem:
 
     prompt: torch.Tensor
     length: int
-    answer: str | dict
+    answer: typing.Union[str, dict]
     idx: int
     solution: Optional[str] = None
     image_data: Optional[list[Union[bytes, str]]] = None
@@ -63,7 +64,7 @@ class SftDatasetItem:
 
     prompt: torch.Tensor
     length: int
-    answer: str | dict
+    answer: typing.Union[str, dict]
     idx: int
     solution: Optional[str] = None
     attention_mask: torch.Tensor = None

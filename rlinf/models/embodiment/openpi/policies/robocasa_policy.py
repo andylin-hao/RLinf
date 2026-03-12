@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import dataclasses
+import typing
 
 import einops
 import numpy as np
@@ -108,7 +109,7 @@ class RobocasaOutputs(transforms.DataTransformFn):
                     Common values: 7 (Panda), 12 (PandaOmron)
     """
 
-    action_dim: int | None = None
+    action_dim: typing.Optional[int] = None
 
     def __call__(self, data: dict) -> dict:
         actions = np.asarray(data["actions"])

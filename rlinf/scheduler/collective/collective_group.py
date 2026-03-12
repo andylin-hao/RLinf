@@ -17,6 +17,7 @@ import itertools
 import logging
 import threading
 import time
+import typing
 from contextlib import nullcontext
 from dataclasses import dataclass, is_dataclass, replace
 from pickle import Pickler, Unpickler
@@ -247,7 +248,9 @@ class CollectiveGroup:
 
     def send(
         self,
-        object: torch.Tensor | list[torch.Tensor] | dict[str, torch.Tensor] | Any,
+        object: typing.Union[
+            torch.Tensor, list[torch.Tensor], dict[str, torch.Tensor], Any
+        ],
         async_op: bool = False,
         options: Optional[CollectiveGroupOptions] = None,
         piggyback_payload: Optional[Any] = None,
@@ -297,7 +300,9 @@ class CollectiveGroup:
 
     def _atomic_send(
         self,
-        object: torch.Tensor | list[torch.Tensor] | dict[str, torch.Tensor] | Any,
+        object: typing.Union[
+            torch.Tensor, list[torch.Tensor], dict[str, torch.Tensor], Any
+        ],
         comm_id: int,
         object_type: str,
         tensor_data: TensorData,
@@ -356,7 +361,9 @@ class CollectiveGroup:
         self,
         async_op: bool = False,
         options: Optional[CollectiveGroupOptions] = None,
-    ) -> AsyncWork | torch.Tensor | list[torch.Tensor] | dict[str, torch.Tensor] | Any:
+    ) -> typing.Union[
+        AsyncWork, torch.Tensor, list[torch.Tensor], dict[str, torch.Tensor], Any
+    ]:
         """Implement Worker's recv method.
 
         Similar as the send method above, it ensures the correct ordering of multiple communications of two recv calls.
@@ -397,7 +404,9 @@ class CollectiveGroup:
         comm_id: int,
         current_device: Optional[int],
         options: Optional[CollectiveGroupOptions] = None,
-    ) -> AsyncWork | torch.Tensor | list[torch.Tensor] | dict[str, torch.Tensor] | Any:
+    ) -> typing.Union[
+        AsyncWork, torch.Tensor, list[torch.Tensor], dict[str, torch.Tensor], Any
+    ]:
         """Atomic recv implementation."""
         if current_device is not None:
             Worker.torch_platform.set_device(current_device)
@@ -547,11 +556,15 @@ class CollectiveGroup:
 
     def broadcast(
         self,
-        object: torch.Tensor | list[torch.Tensor] | dict[str, torch.Tensor] | Any,
+        object: typing.Union[
+            torch.Tensor, list[torch.Tensor], dict[str, torch.Tensor], Any
+        ],
         src_addr: WorkerAddress,
         async_op: bool = False,
         options: Optional[CollectiveGroupOptions] = None,
-    ) -> AsyncWork | torch.Tensor | list[torch.Tensor] | dict[str, torch.Tensor] | Any:
+    ) -> typing.Union[
+        AsyncWork, torch.Tensor, list[torch.Tensor], dict[str, torch.Tensor], Any
+    ]:
         """Broadcast an object to all workers in the collective group.
 
         The source rank is inferred as the first worker in the group. The source
@@ -592,12 +605,14 @@ class CollectiveGroup:
 
     def _atomic_broadcast(
         self,
-        object: torch.Tensor | list[torch.Tensor] | dict[str, torch.Tensor] | Any,
+        object: typing.Union[
+            torch.Tensor, list[torch.Tensor], dict[str, torch.Tensor], Any
+        ],
         src_addr: WorkerAddress,
         comm_id: int,
         current_device: Optional[int],
         options: Optional[CollectiveGroupOptions] = None,
-    ) -> torch.Tensor | list[torch.Tensor] | dict[str, torch.Tensor] | Any:
+    ) -> typing.Union[torch.Tensor, list[torch.Tensor], dict[str, torch.Tensor], Any]:
         if current_device is not None:
             Worker.torch_platform.set_device(current_device)
 
@@ -944,7 +959,9 @@ class CollectiveGroup:
                 accel_tensors.append(t)
         return cpu_tensor_mask, cpu_tensors, accel_tensors
 
-    def _get_object_info(self, object: torch.Tensor | Any) -> tuple[int, TensorData]:
+    def _get_object_info(
+        self, object: typing.Union[torch.Tensor, Any]
+    ) -> tuple[int, TensorData]:
         """Classify the object and build precomputed tensor metadata.
 
         Returns:

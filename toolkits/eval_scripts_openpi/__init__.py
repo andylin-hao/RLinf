@@ -15,6 +15,7 @@
 import logging
 import os
 import pathlib
+import typing
 from typing import Any
 
 import openpi.policies.policy as _policy
@@ -49,13 +50,13 @@ def load_pytorch(train_config, weight_path: str):
 
 def create_trained_policy(
     train_config: _config.TrainConfig,
-    checkpoint_dir: pathlib.Path | str,
+    checkpoint_dir: typing.Union[pathlib.Path, str],
     *,
-    repack_transforms: transforms.Group | None = None,
-    sample_kwargs: dict[str, Any] | None = None,
-    default_prompt: str | None = None,
-    norm_stats: dict[str, transforms.NormStats] | None = None,
-    pytorch_device: str | None = None,
+    repack_transforms: typing.Optional[transforms.Group] = None,
+    sample_kwargs: typing.Optional[dict[str, Any]] = None,
+    default_prompt: typing.Optional[str] = None,
+    norm_stats: typing.Optional[dict[str, transforms.NormStats]] = None,
+    pytorch_device: typing.Optional[str] = None,
 ) -> _policy.Policy:
     """Create a policy from a trained checkpoint.
 

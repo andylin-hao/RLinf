@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import typing
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -151,8 +152,8 @@ class EnvOutput:
             field_name: str,
             *,
             allow_partial_none: bool = False,
-            fill_value: float | bool = 0,
-        ) -> torch.Tensor | None:
+            fill_value: typing.Union[float, bool] = 0,
+        ) -> typing.Optional[torch.Tensor]:
             values = [env_output[field_name] for env_output in env_outputs]
             if all(value is None for value in values):
                 return None

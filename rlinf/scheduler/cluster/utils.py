@@ -20,6 +20,7 @@ import logging
 import os
 import re
 import threading
+import typing
 from dataclasses import fields, is_dataclass
 from pathlib import Path
 from typing import Any, Callable, Optional, Protocol, TextIO
@@ -93,7 +94,7 @@ class DistributedRayLogCollector:
     def __init__(
         self,
         logger,
-        output_dir: str | Path,
+        output_dir: typing.Union[str, Path],
         namespace: Optional[str] = None,
         poll_interval_s: float = 1.0,
     ):
@@ -424,7 +425,7 @@ class DataclassProtocol(Protocol):
 
 
 def parse_rank_config(
-    rank_config: str | int,
+    rank_config: typing.Union[str, int],
     available_ranks: Optional[list[int]] = None,
     rank_type: Optional[str] = None,
 ) -> list[int]:

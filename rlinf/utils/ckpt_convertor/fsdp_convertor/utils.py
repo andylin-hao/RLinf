@@ -11,11 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 import concurrent.futures
 import json
 import os
 import shutil
+import typing
 
 import torch
 from safetensors.torch import save_file
@@ -68,7 +68,7 @@ def save_state_dict_sharded_safetensors(
     state_dict: dict,
     out_dir: str,
     base_name: str = "model",
-    max_shard_size: float | int = 4 * 1024**3,
+    max_shard_size: typing.Union[float, int] = 4 * 1024**3,
 ) -> tuple[int, int]:
     """
     Save the state dict in sharded safetensors format. It will

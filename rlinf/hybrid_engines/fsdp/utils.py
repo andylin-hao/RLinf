@@ -27,6 +27,7 @@
 # limitations under the License.
 
 import functools
+import typing
 from enum import Enum
 from typing import ContextManager, Iterable, Optional, Union
 
@@ -377,7 +378,7 @@ def get_lr_scheduler(
     num_cycles: float = 0.5,
     last_epoch: int = -1,
     min_lr: float = 0.0,
-    min_lr_rate: float | None = None,
+    min_lr_rate: typing.Optional[float] = None,
 ):
     # only one of min_lr and min_lr_rate should be set. If min_lr_rate is set, min_lr will be ignored.
     if min_lr_rate is not None:

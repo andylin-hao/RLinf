@@ -13,6 +13,7 @@
 # limitations under the License.
 import dataclasses
 import pathlib
+import typing
 
 import numpy as np
 import openpi.models.model as _model
@@ -28,7 +29,7 @@ class LeRobotAlohaDataConfig(DataConfigFactory):
     """Data configuration for the RoboTwin (Aloha) dataset in LeRobot v2.1 Parquet format."""
 
     # Default prompt to use if the dataset does not contain prompt information.
-    default_prompt: str | None = None
+    default_prompt: typing.Optional[str] = None
 
     # If True, converts absolute joint actions to delta actions (relative to the current state).
     # This is required for the Pi0 model which operates on relative actions.

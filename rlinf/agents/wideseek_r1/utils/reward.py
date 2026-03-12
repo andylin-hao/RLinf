@@ -11,11 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 import asyncio
 import copy
 import json
 import re
+import typing
 from io import StringIO
 
 import pandas as pd
@@ -137,7 +137,7 @@ async def get_final_reward_score(
     label_answer,
     is_markdown,
     norm_column,
-    sgl_client: SGLangClient | None,
+    sgl_client: typing.Optional[SGLangClient],
 ):
     """Compute final reward score for boxed answers or markdown-table answers.
 
@@ -655,9 +655,11 @@ def extract_final_answer(text: str, mode: bool = "boxed", strict=True):
                 for col in response_df.columns:  # FIXME: check if need？
                     if response_df[col].dtype == "object":
                         response_df[col] = response_df[col].apply(
-                            lambda x: x.replace("<br>", "\n")
-                            if isinstance(x, str) and x
-                            else x
+                            lambda x: (
+                                x.replace("<br>", "\n")
+                                if isinstance(x, str) and x
+                                else x
+                            )
                         )
                     response_df[col] = response_df[col].replace("", "nan")
 
