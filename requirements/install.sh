@@ -370,8 +370,10 @@ install_lingbot_vla_model() {
             uv pip install xformers==0.0.28.post3 --no-deps
             uv pip install draccus einops datasets omegaconf jsonlines deepdiff psutil ipdb torchdata msgpack websockets blobfile
             uv pip install diffusers==0.30.3 transformers==4.51.3 tokenizers==0.21.4 protobuf==4.25.3 tensorflow==2.15.0 tensorflow-datasets==4.9.3 "tensorboard<2.16"
-            uv pip install -e "git+${GITHUB_PREFIX}https://github.com/NVlabs/curobo.git@ebb71702f3f70e767f40fd8e050674af0288abe8#egg=nvidia_curobo" --no-build-isolation
+            uv pip install sapien==3.0.0.b1
             install_robotwin_env
+            uv pip install "git+${GITHUB_PREFIX}https://github.com/NVlabs/curobo.git@ebb71702f3f70e767f40fd8e050674af0288abe8#egg=nvidia_curobo" --no-build-isolation
+
             ;;
         *)
             echo "Environment '$ENV_NAME' is not supported for Lingbot-VLA model." >&2

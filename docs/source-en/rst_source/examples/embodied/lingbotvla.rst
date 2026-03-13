@@ -140,29 +140,59 @@ Then set ``rollout.model.model_path`` and ``actor.model.model_path`` in the conf
 Quick Start
 -----------
 
-Configuration File
+Configuration Files
 ~~~~~~~~~~~~~~~~~~~
 
-* Lingbotvla + GRPO + RoboTwin:
+RLinf supports full-parameter Supervised Fine-Tuning (SFT) and reinforcement learning alignment (GRPO) for Lingbot-VLA. Relevant configuration files are as follows:
+
+* **SFT (Behavior Cloning)**:
+  ``examples/sft/config/robotwin_sft_lingbotvla.yaml``
+* **GRPO (Reinforcement Learning)**:
   ``examples/embodiment/config/robotwin_click_bell_grpo_lingbotvla.yaml``
 
-Key Config Snippets
-^^^^^^^^^^^^^^^^^^^
+Key Config Snippets (SFT)
+^^^^^^^^^^^^^^^^^^^^^^^^^
 
-The top-level file dynamically assembles the environment and model via Hydra, and directly overrides the core SDE sampling parameters required for GRPO reinforcement learning under `actor.model`.
+The core of the SFT phase lies in specifying the offline dataset path (LeRobot Parquet format), the FSDP training backend, and the batch size.
 
-**Note**: Because Lingbot-VLA uses the unified global normalization keys (e.g., `action.arm.position`) from `robotwin_50.json`, there is **no need to configure or override** `unnorm_key` when switching between different tasks, enabling truly smooth multi-task transfer.
+.. code-block:: yaml
+
+    runner:
+      task_type: sft
+      max_epochs: 30000
+
+    data:
+      # Path to the converted LeRobot format offline dataset
+      train_data_paths: "/path/to/lerobot_data"
+
+    actor:
+      training_backend: "fsdp"
+      micro_batch_size: 1
+      global_batch_size: 8
+      model:
+        model_type: "lingbotvla"
+        model_path: "/path/to/model/lingbot-vla-4b"
+        precision: bf16
+        num_action_chunks: 50
+        action_dim: 14
+
+Key Config Snippets (GRPO)
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The top-level file dynamically assembles the environment and model via Hydra, and directly overrides the core SDE sampling parameters required for GRPO reinforcement learning under ``actor.model``.
+
+**Note**: Because Lingbot-VLA uses the unified global normalization keys (e.g., ``action.arm.position``) from ``robotwin_50.json``, there is **no need to configure or override** ``unnorm_key`` when switching between different tasks, enabling truly smooth multi-task transfer.
 
 .. code-block:: yaml
 
     rollout:
       model:
         model_type: "lingbotvla"
-        model_path: "/path/to/model/lingbotvla"
+        model_path: "/path/to/sft_trained_model/lingbotvla"
 
     actor:
       model:
-        model_path: "/path/to/model/lingbotvla"
+        model_path: "/path/to/sft_trained_model/lingbotvla"
         model_type: "lingbotvla"
         action_dim: 14
         num_action_chunks: 50
@@ -171,16 +201,22 @@ The top-level file dynamically assembles the environment and model via Hydra, an
         noise_level: 0.5           
         action_env_dim: 14         
 
-Launch Command
+Launch Commands
 ~~~~~~~~~~~~~~~
 
-To start training with the selected configuration, run the following command:
+To start training with the selected configuration, run the corresponding launch script:
+
+**1. Launch SFT Training**
+
+Perform supervised fine-tuning using the converted offline data:
 
 .. code-block:: bash
 
-    bash examples/embodiment/run_embodiment.sh CHOSEN_CONFIG
+    bash examples/sft/run_vla_sft.sh robotwin_sft_lingbotvla
 
-For example, to train the Lingbot-VLA model with the GRPO algorithm on the RoboTwin Click Bell task:
+**2. Launch GRPO Training**
+
+For example, to fine-tune the SFT-trained model with the GRPO algorithm on the RoboTwin Click Bell task:
 
 .. code-block:: bash
 

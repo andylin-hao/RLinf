@@ -39,7 +39,7 @@ algorithm:
   normalize_advantages: True
   kl_penalty: kl  # how to estimate kl divergence: kl or kl_penalty
   group_size: 8
-
+  update_epoch: 2
   rollout_epoch: 8
   eval_rollout_epoch: 1 # set eval_rollout_epoch > 0 when enable runner.only_eval or runner.val_check_interval > 0
   
@@ -89,6 +89,10 @@ env:
   train:
     total_num_envs: 128
     reward_coef: ${algorithm.reward_coef}
+    use_custom_reward: False
+    use_rel_reward: True
+    video_cfg:
+      save_video: True
     max_episode_steps: 400
     max_steps_per_rollout_epoch: 400
     group_size: ${algorithm.group_size}
@@ -98,6 +102,8 @@ env:
 
   eval:
     total_num_envs: 128
+    use_custom_reward: False
+    use_rel_reward: True
     auto_reset: True
     ignore_terminations: True
     max_episode_steps: 400
@@ -134,33 +140,34 @@ actor:
   # Override the default values in model/lingbotvla
   model:
     model_path: "path/to/lingbot_model"
-    model_type: "lingbot"
-    value_type: ${algorithm.reward_type}
+    model_type: "lingbotvla"
+    value_type: ${algorithm.reward_type}  # 'action' or 'token'
     action_dim: 14
     use_proprio: True
     proprio_dim: 14
-    
+
     num_action_chunks: 50
     is_lora: False
     max_prompt_length: 512
-    
+
     num_steps: 10              
     noise_method: "flow_sde"   
-    noise_level: 0.5           
+    noise_level: 0.7           
     joint_logprob: False       
     action_env_dim: 14         
     add_value_head: False
+    safe_get_logprob: False
 
   optim:
-    lr: 2.0e-5
+    lr: 5.0e-5
     value_lr: 1.0e-5
     adam_beta1: 0.9
     adam_beta2: 0.999
     adam_eps: 1.0e-05
     weight_decay: 0.01
     clip_grad: 1.0
-  
-    # Override the default values in training_backend/fsdp
+
+  # Override the default values in training_backend/fsdp
   fsdp_config:
     strategy: "fsdp"
     gradient_checkpointing: True
