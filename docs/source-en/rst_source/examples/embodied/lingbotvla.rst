@@ -135,7 +135,7 @@ Before starting training, download the Lingbot-VLA base weights and the Qwen bac
     rmdir lingbot-vla-4b
     cd ..
 
-Then set ``rollout.model.model_path`` and ``actor.model.model_path`` in the configuration to the local path (e.g., ``/path/to/model/lingbot-vla-4b`` or ``./lingbot-vla-4b``).
+Then set ``rollout.model.model_path`` and ``actor.model.model_path`` in the configuration to your local model path (e.g., ``/path/to/model/lingbot-vla-4b`` or ``./lingbot-vla-4b``), and **be sure to** set the corresponding ``tokenizer_path`` to the downloaded Tokenizer path (e.g., ``/path/to/model/Qwen2.5-VL-3B-Instruct``). Otherwise, the Rollout node will throw an error when parsing text instructions.
 
 Quick Start
 -----------
@@ -171,7 +171,8 @@ The core of the SFT phase lies in specifying the offline dataset path (LeRobot P
       global_batch_size: 8
       model:
         model_type: "lingbotvla"
-        model_path: "/path/to/model/lingbot-vla-4b"
+        model_path: "path/to/lingbot_model"
+        tokenizer_path: "/path/to/model/Qwen2.5-VL-3B-Instruct"
         precision: bf16
         num_action_chunks: 50
         action_dim: 14
@@ -189,11 +190,13 @@ The top-level file dynamically assembles the environment and model via Hydra, an
       model:
         model_type: "lingbotvla"
         model_path: "/path/to/sft_trained_model/lingbotvla"
+        tokenizer_path: ${actor.model.tokenizer_path}
 
     actor:
       model:
-        model_path: "/path/to/sft_trained_model/lingbotvla"
         model_type: "lingbotvla"
+        model_path: "/path/to/sft_trained_model/lingbotvla"
+        tokenizer_path: "/path/to/model/Qwen2.5-VL-3B-Instruct"
         action_dim: 14
         num_action_chunks: 50
         num_steps: 10              
@@ -204,8 +207,15 @@ The top-level file dynamically assembles the environment and model via Hydra, an
 Launch Commands
 ~~~~~~~~~~~~~~~
 
-To start training with the selected configuration, run the corresponding launch script:
+To start training with the selected configuration, run the corresponding launch script.
 
+**Note**: Since the default tasks use a dual-arm robot, please ensure you declare the robot platform as ALOHA in your terminal before executing any launch scripts. Otherwise, the environment will fail to load the action space correctly:
+
+.. code-block:: bash
+
+    export ROBOT_PLATFORM="ALOHA"
+    export REPO_PATH="path/to/RLinf"
+    
 **1. Launch SFT Training**
 
 Perform supervised fine-tuning using the converted offline data:
@@ -229,7 +239,9 @@ Lingbot-VLA provides an end-to-end evaluation script for various tasks in the Ro
 
 .. code-block:: bash
 
-    bash examples/embodiment/eval_embodiment.sh robotwin_click_bell_eval_lingbotvla
+    export ROBOT_PLATFORM="ALOHA"
+    export REPO_PATH="path/to/RLinf"
+    bash examples/embodiment/eval_embodiment.sh robotwin_click_bell_grpo_lingbotvla_eval
 
 For RLinf's unified VLA evaluation flow, please refer to the `VLA Evaluation Documentation <https://rlinf.readthedocs.io/en/latest/rst_source/start/vla-eval.html>`_.
 

@@ -45,6 +45,7 @@
     model:
       precision: bf16
       model_path: "/path/to/model/lingbot-vla-4b"
+      tokenizer_path: "/path/to/model/Qwen2.5-VL-3B-Instruct"
       num_action_chunks: 50 # interface for the env
       action_dim: 14
       add_value_head: False
