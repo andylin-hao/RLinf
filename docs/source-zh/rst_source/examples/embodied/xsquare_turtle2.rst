@@ -142,7 +142,7 @@ b. 安装依赖
       -v .:/workspace/RLinf \
       rlinf/rlinf:agentic-rlinf0.2-maniskill_libero
       # 为了提高国内下载速度，也可以使用：
-      # docker.1ms.run/rlinf/rlinf:agentic-rlinf0.2-xsquare_turtle2
+      # docker.1ms.run/rlinf/rlinf:agentic-rlinf0.2-maniskill_libero
 
 **方式 2：自定义环境**
 
