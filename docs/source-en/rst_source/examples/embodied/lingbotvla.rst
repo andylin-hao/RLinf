@@ -129,11 +129,6 @@ Before starting training, download the Lingbot-VLA base weights and the Qwen bac
     huggingface-cli download robbyant/lingbot-vla-4b --local-dir lingbot-vla-4b
     huggingface-cli download Qwen/Qwen2.5-VL-3B-Instruct --local-dir Qwen2.5-VL-3B-Instruct
     
-    # Avoid the nested folder trap that may occur during download
-    cd lingbot-vla-4b
-    mv lingbot-vla-4b/* . 
-    rmdir lingbot-vla-4b
-    cd ..
 
 Then set ``rollout.model.model_path`` and ``actor.model.model_path`` in the configuration to your local model path (e.g., ``/path/to/model/lingbot-vla-4b`` or ``./lingbot-vla-4b``), and **be sure to** set the corresponding ``tokenizer_path`` to the downloaded Tokenizer path (e.g., ``/path/to/model/Qwen2.5-VL-3B-Instruct``). Otherwise, the Rollout node will throw an error when parsing text instructions.
 
@@ -240,7 +235,6 @@ Lingbot-VLA provides an end-to-end evaluation script for various tasks in the Ro
 .. code-block:: bash
 
     export ROBOT_PLATFORM="ALOHA"
-    export REPO_PATH="path/to/RLinf"
     bash examples/embodiment/eval_embodiment.sh robotwin_click_bell_grpo_lingbotvla_eval
 
 For RLinf's unified VLA evaluation flow, please refer to the `VLA Evaluation Documentation <https://rlinf.readthedocs.io/en/latest/rst_source/start/vla-eval.html>`_.
