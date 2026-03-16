@@ -59,6 +59,29 @@ Installation
 ------------
 To ensure full compatibility with the RLinf framework, please install the designated forks maintained under the RLinf organization.
 
+Option 1: Scripted Installation (Recommended)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+You can use the unified RLinf installation script to automatically set up the environment and download the required LIBERO repositories and assets:
+
+.. code-block:: bash
+
+    # For mainland China users, you can add the `--use-mirror` flag for better download speed.
+
+    # Create an embodied environment with LIBERO-Pro support
+    bash requirements/install.sh embodied --model openvlaoft --env liberopro
+
+    # Create an embodied environment with LIBERO-Plus support
+    bash requirements/install.sh embodied --model openvlaoft --env liberoplus
+
+    # Activate the virtual environment
+    source .venv/bin/activate
+
+Option 2: Manual Installation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+If you prefer to manage dependencies yourself, you can follow the manual installation steps below.
+
 **1. Install LIBERO-Pro**
 
 .. code-block:: bash
@@ -80,7 +103,7 @@ LIBERO-Plus requires additional system-level dependencies for rendering and proc
 
     # Install system dependencies (requires root privileges)
     apt-get update
-    apt-get install -y libexpat1 libfontconfig1-dev libpython3-stdlib libmagickwand-dev
+    apt-get install -y libexpat1 libfontconfig1-dev libpython3-stdlib imagemagick libmagickwand-dev
 
     # Install Python dependencies and the package
     pip install -r extra_requirements.txt

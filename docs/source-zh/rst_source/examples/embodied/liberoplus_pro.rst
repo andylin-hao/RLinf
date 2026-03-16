@@ -59,6 +59,29 @@ LIBERO-Plus 将评测扩展至包含 5 个难度级别的 10,030 个任务，在
 -----------------------
 为确保与 RLinf 框架完全兼容，请**务必**安装 RLinf 组织下维护的专属分支，不要使用上游原始仓库。
 
+方式一：使用脚本一键安装（推荐）
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+可以使用 RLinf 提供的安装脚本，一次性完成环境、依赖以及 LIBERO 仓库与资产的下载与配置：
+
+.. code-block:: bash
+
+    # 中国大陆用户可以在命令中添加 `--use-mirror` 以提升下载速度。
+
+    # 创建带有 LIBERO-Pro 支持的 embodied 环境
+    bash requirements/install.sh embodied --model openvlaoft --env liberopro
+
+    # 创建带有 LIBERO-Plus 支持的 embodied 环境
+    bash requirements/install.sh embodied --model openvlaoft --env liberoplus
+
+    # 激活虚拟环境
+    source .venv/bin/activate
+
+方式二：手动安装
+~~~~~~~~~~~~~~~~
+
+如果希望手动管理依赖和路径，可以按照下面的步骤进行安装（与脚本方式等价）。
+
 **1. 安装 LIBERO-Pro**
 
 .. code-block:: bash
@@ -80,7 +103,7 @@ LIBERO-Plus 需要额外的系统级依赖来进行渲染和处理。
 
     # 安装系统依赖（需要 root 权限）
     apt-get update
-    apt-get install -y libexpat1 libfontconfig1-dev libpython3-stdlib libmagickwand-dev
+    apt-get install -y libexpat1 libfontconfig1-dev libpython3-stdlib imagemagick libmagickwand-dev
 
     # 安装 Python 依赖和包本身
     pip install -r extra_requirements.txt
