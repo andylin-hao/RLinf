@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import multiprocessing
-import os
 import warnings
 from multiprocessing import connection
 from typing import Any, Callable, Optional, Union
@@ -21,6 +20,7 @@ from typing import Any, Callable, Optional, Union
 import gym
 import numpy as np
 
+import os
 # ---------------------------------------------------------------------------
 # Dynamic Module Import Logic for Libero Pro / Plus
 # ---------------------------------------------------------------------------
@@ -57,7 +57,6 @@ else:
                 raise ImportError(
                     "Could not import OffScreenRenderEnv from libero, liberopro, or liberoplus."
                 )
-# ---------------------------------------------------------------------------
 
 from rlinf.envs.venv import (
     BaseVectorEnv,
@@ -74,7 +73,6 @@ gym_new_venv_step_type = tuple[
     np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray
 ]
 warnings.simplefilter("once", DeprecationWarning)
-
 
 def _worker(
     parent: connection.Connection,

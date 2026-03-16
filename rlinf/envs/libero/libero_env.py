@@ -4,7 +4,7 @@
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#      https://www.apache.org/licenses/LICENSE-2.0
+#     https://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,16 +13,19 @@
 # limitations under the License.
 
 import copy
-import glob
-import importlib
 import os
-import warnings
-import sys
 from typing import Optional, Union
+
 
 import gym
 import numpy as np
 import torch
+
+import glob
+import importlib
+import warnings
+import sys
+
 from omegaconf.omegaconf import OmegaConf
 
 libero_type = os.environ.get("LIBERO_TYPE", "standard")
@@ -52,6 +55,12 @@ if libero_type in ["pro", "plus"]:
     except ImportError as e:
         print(f"[Main Process Routing Error] Failed to import '{LIBERO_MAIN_MODULE_PATH}'. Error: {e}")
 
+if libero_type == "pro":
+    from liberopro.liberopro.benchmark import Benchmark
+elif libero_type == "plus":
+    from liberoplus.liberoplus.benchmark import Benchmark
+else:
+    from libero.libero.benchmark import Benchmark
 
 from rlinf.envs.libero.utils import (
     get_benchmark_overridden,
@@ -83,8 +92,8 @@ class LiberoEnv(gym.Env):
         self._generator_ordered = np.random.default_rng(seed=0)
         self.start_idx = 0
 
-        self.task_suite = get_benchmark_overridden(cfg.task_suite_name)()
-
+        self.task_suite: Benchmark = get_benchmark_overridden(cfg.task_suite_name)()
+        
         self._compute_total_num_group_envs()
         self.reset_state_ids_all = self.get_reset_state_ids_all()
         self.update_reset_state_ids()
@@ -93,6 +102,7 @@ class LiberoEnv(gym.Env):
 
         self.prev_step_reward = np.zeros(self.num_envs)
         self.use_rel_reward = cfg.use_rel_reward
+        self.use_step_penalty = getattr(cfg, "use_step_penalty", False)
 
         self._init_metrics()
         self._elapsed_steps = np.zeros(self.num_envs, dtype=np.int32)
@@ -326,6 +336,7 @@ class LiberoEnv(gym.Env):
     def _get_task_and_trial_ids_from_reset_state_ids(self, reset_state_ids):
         task_ids = []
         trial_ids = []
+        # get task id and trial id from reset state ids
         for reset_state_id in reset_state_ids:
             start_pivot = 0
             for task_id, end_pivot in enumerate(self.cumsum_trial_id_bins):
@@ -446,23 +457,14 @@ class LiberoEnv(gym.Env):
             task_changed = self.task_ids[env_id] != task_ids[j]
             self.task_ids[env_id] = task_ids[j]
             self.trial_ids[env_id] = trial_ids[j]
-            
-
             if task_changed or not getattr(self.cfg, "is_eval", False):
                 reconfig_env_idx.append(env_id)
-        
         if reconfig_env_idx:
             env_fn_params = self.get_env_fn_params(reconfig_env_idx)
             self.env.reconfigure_env_fns(env_fn_params, reconfig_env_idx)
-            
         self.env.seed(self.seed * len(env_idx))
-        
-
         self.env.reset(id=env_idx)
-        
         variant = os.environ.get("LIBERO_TYPE", self.cfg.get("libero_variant", "standard") if hasattr(self.cfg, "get") else "standard")
-        
-
         if variant != "plus":
             init_state = self._get_reset_states(env_idx=env_idx)
             self.env.set_init_state(init_state=init_state, id=env_idx)
@@ -535,11 +537,13 @@ class LiberoEnv(gym.Env):
         )
 
     def chunk_step(self, chunk_actions):
+        # chunk_actions: [num_envs, chunk_step, action_dim]
         chunk_size = chunk_actions.shape[1]
         obs_list = []
         infos_list = []
 
         chunk_rewards = []
+
         raw_chunk_terminations = []
         raw_chunk_truncations = []
         for i in range(chunk_size):
@@ -554,9 +558,13 @@ class LiberoEnv(gym.Env):
             raw_chunk_terminations.append(terminations)
             raw_chunk_truncations.append(truncations)
 
-        chunk_rewards = torch.stack(chunk_rewards, dim=1)
-        raw_chunk_terminations = torch.stack(raw_chunk_terminations, dim=1)
-        raw_chunk_truncations = torch.stack(raw_chunk_truncations, dim=1)
+        chunk_rewards = torch.stack(chunk_rewards, dim=1)  # [num_envs, chunk_steps]
+        raw_chunk_terminations = torch.stack(
+            raw_chunk_terminations, dim=1
+        )  # [num_envs, chunk_steps]
+        raw_chunk_truncations = torch.stack(
+            raw_chunk_truncations, dim=1
+        )  # [num_envs, chunk_steps]
 
         past_terminations = raw_chunk_terminations.any(dim=1)
         past_truncations = raw_chunk_truncations.any(dim=1)
@@ -570,12 +578,12 @@ class LiberoEnv(gym.Env):
         if self.auto_reset or self.ignore_terminations:
             chunk_terminations = torch.zeros_like(raw_chunk_terminations)
             chunk_terminations[:, -1] = past_terminations
+
             chunk_truncations = torch.zeros_like(raw_chunk_truncations)
             chunk_truncations[:, -1] = past_truncations
         else:
             chunk_terminations = raw_chunk_terminations.clone()
             chunk_truncations = raw_chunk_truncations.clone()
-            
         return (
             obs_list,
             chunk_rewards,
@@ -592,7 +600,9 @@ class LiberoEnv(gym.Env):
             self.update_reset_state_ids()
         obs, infos = self.reset(
             env_idx=env_idx,
-            reset_state_ids=self.reset_state_ids[env_idx] if self.use_fixed_reset_state_ids else None,
+            reset_state_ids=self.reset_state_ids[env_idx]
+            if self.use_fixed_reset_state_ids
+            else None,
         )
         # gymnasium calls it final observation but it really is just o_{t+1} or the true next observation
         infos["final_observation"] = final_obs
@@ -602,7 +612,6 @@ class LiberoEnv(gym.Env):
         infos["_elapsed_steps"] = dones
         return obs, infos
 
-        
     def _calc_step_reward(self, terminations):
         step_penalty = -1 if self.use_step_penalty else 0
         termination_bonus = self.cfg.reward_coef * terminations
@@ -614,4 +623,4 @@ class LiberoEnv(gym.Env):
             return reward_diff
         else:
             return reward
-        
+       
