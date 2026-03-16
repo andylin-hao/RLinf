@@ -184,7 +184,7 @@ The top-level file dynamically assembles the environment and model via Hydra, an
     rollout:
       model:
         model_type: "lingbotvla"
-        model_path: "/path/to/sft_trained_model/lingbotvla"
+        model_path: ${actor.model.model_path}
         tokenizer_path: ${actor.model.tokenizer_path}
 
     actor:

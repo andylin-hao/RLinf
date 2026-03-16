@@ -169,7 +169,7 @@ GRPO 顶层文件通过 Hydra 动态组装了环境与模型，并直接在 ``ac
     rollout:
       model:
         model_type: "lingbotvla"
-        model_path: "/path/to/sft_trained_model/lingbotvla"
+        model_path: ${actor.model.model_path}
         tokenizer_path: ${actor.model.tokenizer_path}
         
 
