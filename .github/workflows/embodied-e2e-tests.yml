@@ -749,6 +749,7 @@ jobs:
           export ROBOT_PLATFORM=ALOHA
           export ROBOTWIN_PATH="/workspace/dataset/RoboTwin"
           export PYTHONPATH=${ROBOTWIN_PATH}:$PYTHONPATH
+          export LINGBOT_VLA_PATH="${REPO_PATH}/.venv/lingbot-vla"
           bash tests/e2e_tests/embodied/run.sh robotwin_grpo_lingbotvla
 
       - name: Clean up

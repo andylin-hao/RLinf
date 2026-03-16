@@ -189,9 +189,11 @@ The top-level file dynamically assembles the environment and model via Hydra, an
 
     actor:
       model:
-        model_type: "lingbotvla"
-        model_path: "/path/to/sft_trained_model/lingbotvla"
+        model_path: "/path/to/lingbot_sft_model"
         tokenizer_path: "/path/to/model/Qwen2.5-VL-3B-Instruct"
+        model_type: "lingbotvla"
+        lingbotvla:
+            config_path: "/path/to/lingbot-vla-4b"
         action_dim: 14
         num_action_chunks: 50
         num_steps: 10              
