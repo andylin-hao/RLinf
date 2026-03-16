@@ -60,7 +60,7 @@ algorithm:
   gae_lambda: 0.95
 
   reward_coef: 1.0
-  filter_rewards: True
+  filter_rewards: False
   rewards_lower_bound: 0.5
   rewards_upper_bound: 4.5
 
