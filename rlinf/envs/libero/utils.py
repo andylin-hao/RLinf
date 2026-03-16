@@ -16,12 +16,9 @@
 
 import math
 import os
-from typing import Optional, Union
+from typing import Union
 
-import imageio
 import numpy as np
-import torch
-from PIL import Image, ImageDraw, ImageFont
 
 libero_type = os.environ.get("LIBERO_TYPE", "standard")
 
@@ -30,7 +27,9 @@ if libero_type == "pro":
         import liberopro.liberopro.benchmark as benchmark
         from liberopro.liberopro.benchmark import Benchmark
     except ImportError:
-        print("[Utils] Warning: LIBERO_TYPE=pro but 'liberopro' not found. Falling back to 'libero'.")
+        print(
+            "[Utils] Warning: LIBERO_TYPE=pro but 'liberopro' not found. Falling back to 'libero'."
+        )
         import libero.libero.benchmark as benchmark
         from libero.libero.benchmark import Benchmark
 
@@ -39,7 +38,9 @@ elif libero_type == "plus":
         import liberoplus.liberoplus.benchmark as benchmark
         from liberoplus.liberoplus.benchmark import Benchmark
     except ImportError:
-        print("[Utils] Warning: LIBERO_TYPE=plus but 'liberoplus' not found. Falling back to 'libero'.")
+        print(
+            "[Utils] Warning: LIBERO_TYPE=plus but 'liberoplus' not found. Falling back to 'libero'."
+        )
         import libero.libero.benchmark as benchmark
         from libero.libero.benchmark import Benchmark
 
@@ -56,8 +57,9 @@ else:
                 import liberoplus.liberoplus.benchmark as benchmark
                 from liberoplus.liberoplus.benchmark import Benchmark
             except ImportError:
-                raise ImportError("No valid LIBERO package (libero, liberopro, or liberoplus) found.")
-
+                raise ImportError(
+                    "No valid LIBERO package (libero, liberopro, or liberoplus) found."
+                )
 
 
 def get_libero_image(obs: dict[str, np.ndarray]) -> np.ndarray:
@@ -73,6 +75,7 @@ def get_libero_image(obs: dict[str, np.ndarray]) -> np.ndarray:
     img = obs["agentview_image"]
     img = img[::-1, ::-1]  # IMPORTANT: rotate 180 degrees to match train preprocessing
     return img
+
 
 def get_libero_wrist_image(
     obs: dict[str, np.ndarray], resize_size: Union[int, tuple[int, int]] = 224
@@ -90,6 +93,7 @@ def get_libero_wrist_image(
     img = obs["robot0_eye_in_hand_image"]
     img = img[::-1, ::-1]  # IMPORTANT: rotate 180 degrees to match train preprocessing
     return img
+
 
 def quat2axisangle(quat: np.ndarray) -> np.ndarray:
     """
@@ -161,5 +165,3 @@ def get_benchmark_overridden(benchmark_name) -> Benchmark:
     # Register for discoverability/help
     benchmark.BENCHMARK_MAPPING["libero_130"] = LIBERO_ALL
     return LIBERO_ALL
-    
-    
