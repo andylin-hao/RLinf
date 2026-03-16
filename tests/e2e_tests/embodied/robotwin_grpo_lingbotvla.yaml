@@ -1,6 +1,6 @@
 defaults:
-  - env/robotwin_place_place_shoe@env.train
-  - env/robotwin_place_place_shoe@env.eval
+  - env/robotwin_place_shoe@env.train
+  - env/robotwin_place_shoe@env.eval
   - model/lingbotvla@actor.model          
   - training_backend/fsdp@actor.fsdp_config
   - override hydra/job_logging: stdout
@@ -91,7 +91,6 @@ env:
     center_crop: False
     max_episode_steps: 25
     reward_coef: ${algorithm.reward_coef}
-    max_episode_steps: 25
     max_steps_per_rollout_epoch: 25
     group_size: ${algorithm.group_size}
     assets_path: "/workspace/dataset/RoboTwin"
