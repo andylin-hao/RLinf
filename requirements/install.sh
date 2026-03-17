@@ -606,70 +606,24 @@ install_maniskill_libero_env() {
 
 install_liberopro_env() {
     # Base LIBERO + ManiSkill required for LIBERO-Pro.
-    install_maniskill_libero_env
+    local libero_dir
+    libero_dir=$(clone_or_reuse_repo LIBERO_PATH "$VENV_DIR/libero" https://github.com/RLinf/LIBERO.git)
+    uv pip install -e "$libero_dir"
+
     local libero_pro_dir
     libero_pro_dir=$(clone_or_reuse_repo LIBERO_PRO_PATH "$VENV_DIR/libero_pro" https://github.com/RLinf/LIBERO-PRO.git)
-    pushd "$libero_pro_dir" >/dev/null
-    uv pip install -r requirements.txt
-    uv pip install -e .
-    popd >/dev/null
-    echo "export LIBERO_PRO_PATH=$(realpath "$libero_pro_dir")" >> "$VENV_DIR/bin/activate"
-    echo "export PYTHONPATH=$(realpath "$libero_pro_dir"):\$PYTHONPATH" >> "$VENV_DIR/bin/activate"
+    uv pip install -e "$libero_pro_dir"
 }
 
 install_liberoplus_env() {
-    # Base LIBERO + ManiSkill required for LIBERO-Plus.
-    install_maniskill_libero_env
-
-    # System dependencies required by LIBERO-Plus (rendering / ImageMagick).
-    if [ "$NO_ROOT" -eq 0 ] && command -v apt-get >/dev/null 2>&1; then
-        echo "Installing system packages for LIBERO-Plus (libexpat1, libfontconfig1-dev, libpython3-stdlib, imagemagick, libmagickwand-dev)..."
-        apt-get update
-        DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            libexpat1 libfontconfig1-dev libpython3-stdlib imagemagick libmagickwand-dev || true
-    else
-        echo "Skip apt-get for LIBERO-Plus system deps (NO_ROOT=1 or apt-get not available). Please ensure libexpat1, libfontconfig1-dev, libpython3-stdlib, imagemagick, libmagickwand-dev are installed."
-    fi
+    local libero_dir
+    libero_dir=$(clone_or_reuse_repo LIBERO_PATH "$VENV_DIR/libero" https://github.com/RLinf/LIBERO.git)
+    uv pip install -e "$libero_dir"
 
     local libero_plus_dir
     libero_plus_dir=$(clone_or_reuse_repo LIBERO_PLUS_PATH "$VENV_DIR/libero_plus" https://github.com/RLinf/LIBERO-plus.git)
-    pushd "$libero_plus_dir" >/dev/null
-    uv pip install -r extra_requirements.txt
-    uv pip install -e .
-    popd >/dev/null
-    echo "export LIBERO_PLUS_PATH=$(realpath "$libero_plus_dir")" >> "$VENV_DIR/bin/activate"
-    echo "export PYTHONPATH=$(realpath "$libero_plus_dir"):\$PYTHONPATH" >> "$VENV_DIR/bin/activate"
-
-    # Download and extract LIBERO-Plus assets from Hugging Face (Sylvest/LIBERO-plus, ~6.4 GB).
-    local assets_dir="${libero_plus_dir}/liberoplus/liberoplus"
-    mkdir -p "$assets_dir"
-    if [ -d "${assets_dir}/assets" ] && [ -n "$(ls -A "${assets_dir}/assets" 2>/dev/null)" ]; then
-        echo "LIBERO-Plus assets already present at ${assets_dir}/assets, skipping download."
-    else
-        echo "Downloading LIBERO-Plus assets from Hugging Face (Sylvest/LIBERO-plus)..."
-        uv pip install huggingface_hub --quiet
-        local zip_path
-        zip_path=$("$VENV_DIR/bin/python" -c "
-from huggingface_hub import hf_hub_download
-print(hf_hub_download(repo_id='Sylvest/LIBERO-plus', filename='assets.zip', repo_type='dataset'))
-")
-        echo "Extracting assets to ${assets_dir}..."
-        unzip -o "$zip_path" -d "$assets_dir"
-
-        # If the zip contained a long internal path (e.g. libero_plus/libero/libero/.../assets),
-        # normalize it so that we always end up with ${assets_dir}/assets.
-        if [ ! -d "${assets_dir}/assets" ]; then
-            # find the downloaded assets directory
-            first_assets_dir=$(find "$assets_dir" -type d -name assets | head -n 1 || true)
-            if [ -n "$first_assets_dir" ] && [ "$first_assets_dir" != "${assets_dir}/assets" ]; then
-                echo "Moving LIBERO-Plus assets from ${first_assets_dir} to ${assets_dir}/assets"
-                mkdir -p "${assets_dir}/assets"
-                # move assets to target location
-                mv "$first_assets_dir"/* "${assets_dir}/assets"/ 2>/dev/null || true
-            fi
-        fi
-        echo "LIBERO-Plus assets installed."
-    fi
+    uv pip install -r $libero_plus_dir/extra_requirements.txt
+    uv pip install -e "$libero_plus_dir"
 }
 
 install_behavior_env() {

@@ -1,10 +1,14 @@
-=================================================
-LIBERO-Pro & LIBERO-Plus Integration
-=================================================
+RL with LIBERO-Pro & LIBERO-Plus Benchmark
+===============================================
 
-Introduction
-------------
 This update introduces full support for the LIBERO-Pro and LIBERO-Plus evaluation suites within the RLinf framework. By incorporating more complex task scenarios and longer manipulation horizons, these suites further challenge the generalization capabilities of VLA models (such as OpenVLA-OFT).
+
+The primary objective is to develop a model capable of performing robotic manipulation by:
+
+1. **Visual Understanding**: Processing RGB images from robot cameras.
+2. **Language Comprehension**: Interpreting natural-language task descriptions under perturbations.
+3. **Action Generation**: Producing precise robotic actions (position, rotation, gripper control).
+4. **Reinforcement Learning**: Optimizing the policy via PPO/GRPO with environment feedback.
 
 Environment
 -----------
@@ -55,96 +59,138 @@ Algorithm
 * Action tokenization and de-tokenization.
 * Value head for critic function.
 
-Installation
-------------
+Dependency Installation
+-----------------------
 To ensure full compatibility with the RLinf framework, please install the designated forks maintained under the RLinf organization.
 
-Option 1: Scripted Installation (Recommended)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+1. Clone RLinf Repository
+~~~~~~~~~~~~~~~~~~~~~~~~~
 
-You can use the unified RLinf installation script to automatically set up the environment and download the required LIBERO repositories and assets:
+.. code:: bash
 
-.. code-block:: bash
+   # For mainland China users, you can use the following for better download speed:
+   # git clone https://ghfast.top/github.com/RLinf/RLinf.git
+   git clone https://github.com/RLinf/RLinf.git
+   cd RLinf
+
+2. Install Dependencies
+~~~~~~~~~~~~~~~~~~~~~~~
+
+**Option 1: Docker Image**
+
+Use Docker image for the experiment.
+
+.. code:: bash
+
+   # LIBERO-Pro
+   docker run -it --rm --gpus all \
+      --shm-size 20g \
+      --network host \
+      --name rlinf \
+      -v .:/workspace/RLinf \
+      rlinf/rlinf:embodied-liberopro
+
+   # LIBERO-Plus
+   docker run -it --rm --gpus all \
+      --shm-size 20g \
+      --network host \
+      --name rlinf \
+      -v .:/workspace/RLinf \
+      rlinf/rlinf:embodied-liberoplus
+
+**Option 2: Custom Environment**
+
+.. code:: bash
 
     # For mainland China users, you can add the `--use-mirror` flag for better download speed.
 
     # Create an embodied environment with LIBERO-Pro support
-    bash requirements/install.sh embodied --model openvlaoft --env liberopro
+    bash requirements/install.sh embodied --model openvla-oft --env liberopro
 
     # Create an embodied environment with LIBERO-Plus support
-    bash requirements/install.sh embodied --model openvlaoft --env liberoplus
+    bash requirements/install.sh embodied --model openvla-oft --env liberoplus
 
     # Activate the virtual environment
     source .venv/bin/activate
 
-Option 2: Manual Installation
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+LIBERO-Plus Assets Download
+---------------------------
 
-If you prefer to manage dependencies yourself, you can follow the manual installation steps below.
-
-**1. Install LIBERO-Pro**
+LIBERO-Plus requires hundreds of new objects, textures, and other assets to function correctly. Download the ``assets.zip`` archive from the Hugging Face dataset ``Sylvest/LIBERO-plus`` and extract it into the installed ``liberoplus.liberoplus`` package directory.
 
 .. code-block:: bash
 
-    git clone https://github.com/RLinf/LIBERO-PRO.git
-    cd LIBERO-PRO
-    pip install -r requirements.txt
-    pip install -e .
-    cd ..
+    # Resolve the installed liberoplus package directory
+    LIBERO_PLUS_PACKAGE_DIR=$(python -c "import pathlib; import liberoplus.liberoplus as l_plus; print(pathlib.Path(l_plus.__file__).resolve().parent)")
 
-**2. Install LIBERO-Plus**
+    # For mainland China users, you can use the following for better download speed:
+    # export HF_ENDPOINT=https://hf-mirror.com
 
-LIBERO-Plus requires additional system-level dependencies for rendering and processing. 
+    # Download the assets archive from the Hugging Face dataset repo
+    hf download --repo-type dataset Sylvest/LIBERO-plus assets.zip \
+        --local-dir "${LIBERO_PLUS_PACKAGE_DIR}"
 
-.. code-block:: bash
-
-    git clone https://github.com/RLinf/LIBERO-plus.git
-    cd LIBERO-plus
-
-    # Install system dependencies (requires root privileges)
-    apt-get update
-    apt-get install -y libexpat1 libfontconfig1-dev libpython3-stdlib imagemagick libmagickwand-dev
-
-    # Install Python dependencies and the package
-    pip install -r extra_requirements.txt
-    pip install -e .
-
-**3. Download LIBERO-Plus Assets**
-
-LIBERO-Plus requires hundreds of new objects, textures, and other assets to function correctly. You must download the ``assets.zip`` file from the official LIBERO-plus collection and extract it into the specified path.
-
-.. code-block:: bash
-
-    # Navigate to the inner libero directory
-    cd libero/libero/
-    
-    # Download and extract the assets (ensure you have the assets.zip file here)
-    unzip assets.zip
-    
-    # Return to the workspace root
-    cd ../../../../
+    # Extract assets in place
+    unzip -o "${LIBERO_PLUS_PACKAGE_DIR}/assets.zip" -d "${LIBERO_PLUS_PACKAGE_DIR}"
 
 After extraction, ensure your directory structure matches the following layout:
 
 .. code-block:: text
 
-    LIBERO-plus/
-    └── libero/
-        └── libero/
-            └── assets/
-                ├── articulated_objects/
-                ├── new_objects/
-                ├── scenes/
-                ├── stable_hope_objects/
-                ├── stable_scanned_objects/
-                ├── textures/
-                ├── turbosquid_objects/
-                ├── serving_region.xml
-                ├── wall_frames.stl
-                └── wall.xml
+    <installed liberoplus package dir>/
+    └── assets/
+        ├── articulated_objects/
+        ├── new_objects/
+        ├── scenes/
+        ├── stable_hope_objects/
+        ├── stable_scanned_objects/
+        ├── textures/
+        ├── turbosquid_objects/
+        ├── serving_region.xml
+        ├── wall_frames.stl
+        └── wall.xml
 
-Usage
------
+Model Download
+--------------
+
+For OpenVLA-OFT-based experiments on LIBERO-Pro and LIBERO-Plus, you can start from the same pretrained checkpoints used for standard LIBERO training:
+
+.. code-block:: bash
+
+    # Download the model (choose either method)
+    # Method 1: Using git clone
+    git lfs install
+    git clone https://huggingface.co/RLinf/RLinf-OpenVLAOFT-LIBERO-90-Base-Lora
+    git clone https://huggingface.co/RLinf/RLinf-OpenVLAOFT-LIBERO-130-Base-Lora
+
+    # Method 2: Using huggingface-hub
+    # For mainland China users, you can use the following for better download speed:
+    # export HF_ENDPOINT=https://hf-mirror.com
+    pip install huggingface-hub
+    hf download RLinf/RLinf-OpenVLAOFT-LIBERO-90-Base-Lora --local-dir RLinf-OpenVLAOFT-LIBERO-90-Base-Lora
+    hf download RLinf/RLinf-OpenVLAOFT-LIBERO-130-Base-Lora --local-dir RLinf-OpenVLAOFT-LIBERO-130-Base-Lora
+
+After downloading, make sure to correctly specify the model path in the configuration yaml file.
+
+.. code-block:: yaml
+
+    rollout:
+       model:
+          model_path: Pathto/RLinf/RLinf-OpenVLAOFT-LIBERO-90-Base-Lora
+    actor:
+       model:
+          model_path: Pathto/RLinf/RLinf-OpenVLAOFT-LIBERO-90-Base-Lora
+
+Running the Script
+------------------
+**1. Configuration Files**
+
+The LIBERO-Pro and LIBERO-Plus suites reuse the standard LIBERO config family and switch the suite through the additional ``LIBERO_TYPE`` argument:
+
+- **OpenVLA-OFT + GRPO**: ``examples/embodiment/config/libero_10_grpo_openvlaoft.yaml``
+
+**2. Launch Commands**
+
 **Training**
 
 To start training a model on the newly integrated suites, use the ``run_embodiment.sh`` script:
@@ -152,10 +198,12 @@ To start training a model on the newly integrated suites, use the ``run_embodime
 .. code-block:: bash
 
     # Train on LIBERO-Pro
-    bash run_embodiment.sh libero_10_grpo_openvlaoft LIBERO pro
+    export LIBERO_TYPE=pro
+    bash examples/embodiment/run_embodiment.sh libero_10_grpo_openvlaoft
 
     # Train on LIBERO-Plus
-    bash run_embodiment.sh libero_10_grpo_openvlaoft LIBERO plus
+    export LIBERO_TYPE=plus
+    bash examples/embodiment/run_embodiment.sh libero_10_grpo_openvlaoft
 
 **Evaluation**
 
@@ -164,7 +212,9 @@ To evaluate the trained models, use the ``eval_embodiment.sh`` script:
 .. code-block:: bash
 
     # Evaluate on LIBERO-Pro
-    bash eval_embodiment.sh libero_10_grpo_openvlaoft LIBERO pro
+    export LIBERO_TYPE=pro
+    bash examples/embodiment/eval_embodiment.sh libero_10_grpo_openvlaoft
 
     # Evaluate on LIBERO-Plus
-    bash eval_embodiment.sh libero_10_grpo_openvlaoft LIBERO plus
+    export LIBERO_TYPE=plus
+    bash examples/embodiment/eval_embodiment.sh libero_10_grpo_openvlaoft

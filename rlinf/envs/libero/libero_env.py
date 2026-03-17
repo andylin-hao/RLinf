@@ -27,13 +27,14 @@ from omegaconf.omegaconf import OmegaConf
 from rlinf.envs.libero.utils import (
     get_benchmark_overridden,
     get_libero_image,
+    get_libero_type,
     get_libero_wrist_image,
     quat2axisangle,
 )
 from rlinf.envs.libero.venv import ReconfigureSubprocEnv
 from rlinf.envs.utils import list_of_dict_to_dict_of_list, to_tensor
 
-libero_type = os.environ.get("LIBERO_TYPE", "standard")
+libero_type = get_libero_type()
 
 if libero_type in ["pro", "plus"]:
     sys.path[:] = [p for p in sys.path if "opt/libero" not in p]
@@ -123,7 +124,7 @@ class LiberoEnv(gym.Env):
         env_fn_params = self.get_env_fn_params()
         env_fns = []
 
-        current_type_val = os.environ.get("LIBERO_TYPE", "standard")
+        current_type_val = get_libero_type()
 
         for env_fn_param in env_fn_params:
 
