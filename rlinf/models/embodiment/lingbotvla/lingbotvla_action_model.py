@@ -23,20 +23,20 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from transformers import AutoProcessor
-
-from rlinf.models.embodiment.base_policy import BasePolicy, ForwardType
-from rlinf.models.embodiment.lingbotvla.data.vla_data.transform import (
+from lingbotvla.data.vla_data.transform import (
     Normalizer,
     prepare_images,
     prepare_language,
     prepare_state,
 )
-from rlinf.models.embodiment.lingbotvla.models.module_utils import load_model_weights
-from rlinf.models.embodiment.lingbotvla.models.vla.pi0.modeling_lingbot_vla import (
+from lingbotvla.models.module_utils import load_model_weights
+from lingbotvla.models.vla.pi0.modeling_lingbot_vla import (
     LingbotVlaPolicy,
     make_att_2d_masks,
 )
+from transformers import AutoProcessor
+
+from rlinf.models.embodiment.base_policy import BasePolicy, ForwardType
 from rlinf.models.embodiment.modules.explore_noise_net import ExploreNoiseNet
 from rlinf.models.embodiment.modules.value_head import ValueHead
 from rlinf.utils.logging import get_logger
