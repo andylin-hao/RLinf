@@ -20,7 +20,15 @@ from typing import Union
 
 import numpy as np
 
-libero_type = os.environ.get("LIBERO_TYPE", "standard")
+
+def get_libero_type() -> str:
+    """
+    Returns the type of LIBERO, which can be "standard", "pro", or "plus".
+    """
+    return os.environ.get("LIBERO_TYPE", "standard").lower()
+
+
+libero_type = get_libero_type()
 
 if libero_type == "pro":
     try:

@@ -320,11 +320,6 @@ RUN echo "source ${UV_PATH}/openvla-oft/bin/activate" >> ~/.bashrc
 ##################################################################################################
 FROM embodied-common-image AS embodied-liberoplus-image
 
-# LIBERO-Plus system deps (rendering/processing)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libexpat1 libfontconfig1-dev libpython3-stdlib libmagickwand-dev \
-    && rm -rf /var/lib/apt/lists/*
-
 # Install openvla-oft env for LIBERO-Plus
 RUN bash requirements/install.sh embodied --venv openvla-oft --model openvla-oft --env liberoplus
 

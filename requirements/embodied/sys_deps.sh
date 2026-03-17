@@ -113,7 +113,12 @@ install_deps_apt() {
         libxcursor-dev \
         libxi-dev \
         libaio-dev \
-        libgomp1 || {
+        libgomp1 \
+        libexpat1 \
+        libfontconfig1-dev \
+        libpython3-stdlib \
+        imagemagick \
+        libmagickwand-dev || {
             echo "apt-get install failed. Please check your repositories or install dependencies manually." >&2
             exit 1
         }
@@ -151,7 +156,11 @@ install_deps_dnf() {
         libXcursor-devel \
         libXi-devel \
         libaio-devel \
-        libgomp || {
+        libgomp \
+        libexpat \
+        libfontconfig \
+        libpython3 \
+        ImageMagick-devel || {
             echo "dnf install failed. Please check your repositories or install dependencies manually." >&2
             exit 1
         }
@@ -186,7 +195,11 @@ install_deps_yum() {
         libXcursor-devel \
         libXi-devel \
         libaio-devel \
-        libgomp || {
+        libgomp \
+        libexpat \
+        libfontconfig \
+        libpython3 \
+        ImageMagick-devel || {
             echo "yum install failed. Please check your repositories or install dependencies manually." >&2
             exit 1
         }
@@ -218,7 +231,11 @@ install_deps_pacman() {
         libxcursor \
         libxi \
         libaio \
-        gcc || {
+        gcc \
+        libexpat \
+        libfontconfig \
+        libpython3 \
+        imagemagick || {
             echo "pacman install failed. Please check your repositories or install dependencies manually." >&2
             exit 1
         }

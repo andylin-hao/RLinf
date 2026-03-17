@@ -739,6 +739,7 @@ jobs:
           export UV_CACHE_DIR=/workspace/dataset/.uv_cache
           export UV_PYTHON_INSTALL_DIR=/workspace/dataset/.uv_python
           export LIBERO_PATH=/workspace/dataset/LIBERO
+          export LIBERO_PRO_PATH=/workspace/dataset/LIBERO-PRO
           bash requirements/install.sh embodied --model openvla-oft --env liberopro
 
       - name: LIBERO-Pro GRPO test
@@ -747,7 +748,8 @@ jobs:
           unset PYTHONPATH
           export REPO_PATH=$(pwd)
           source .venv/bin/activate
-          bash tests/e2e_tests/embodied/run.sh liberopro_grpo_openvlaoft
+          export LIBERO_TYPE=pro
+          bash tests/e2e_tests/embodied/run.sh liberopro_10_grpo_openvlaoft
 
       - name: Clean up
         run: |
@@ -768,6 +770,7 @@ jobs:
           export UV_CACHE_DIR=/workspace/dataset/.uv_cache
           export UV_PYTHON_INSTALL_DIR=/workspace/dataset/.uv_python
           export LIBERO_PATH=/workspace/dataset/LIBERO
+          export LIBERO_PLUS_PATH=/workspace/dataset/LIBERO-PLUS
           bash requirements/install.sh embodied --model openvla-oft --env liberoplus
 
       - name: LIBERO-Plus GRPO test
@@ -776,7 +779,8 @@ jobs:
           unset PYTHONPATH
           export REPO_PATH=$(pwd)
           source .venv/bin/activate
-          bash tests/e2e_tests/embodied/run.sh liberoplus_grpo_openvlaoft
+          export LIBERO_TYPE=plus
+          bash tests/e2e_tests/embodied/run.sh liberoplus_10_grpo_openvlaoft
 
       - name: Clean up
         run: |

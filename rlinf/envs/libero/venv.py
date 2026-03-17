@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import multiprocessing
-import os
 import warnings
 from multiprocessing import connection
 from typing import Any, Callable, Optional, Union
@@ -21,6 +20,7 @@ from typing import Any, Callable, Optional, Union
 import gym
 import numpy as np
 
+from rlinf.envs.libero.utils import get_libero_type
 from rlinf.envs.venv import (
     BaseVectorEnv,
     CloudpickleWrapper,
@@ -34,7 +34,7 @@ from rlinf.envs.venv import (
 # ---------------------------------------------------------------------------
 # Dynamic Module Import Logic for Libero Pro / Plus
 # ---------------------------------------------------------------------------
-libero_type = os.environ.get("LIBERO_TYPE", "standard")
+libero_type = get_libero_type()
 
 if libero_type == "pro":
     try:

@@ -6,7 +6,8 @@ export SRC_FILE="${EMBODIED_PATH}/train_embodied_agent.py"
 
 export MUJOCO_GL="egl"
 export PYOPENGL_PLATFORM="egl"
-export PYTHONPATH=${REPO_PATH}:$PYTHONPATH
+export ROBOTWIN_PATH=${ROBOTWIN_PATH:-"/path/to/RoboTwin"}
+export PYTHONPATH=${REPO_PATH}:${ROBOTWIN_PATH}
 
 # Base path to the BEHAVIOR dataset, which is the BEHAVIOR-1k repo's dataset folder
 # Only required when running the behavior experiment.
@@ -20,13 +21,6 @@ export ISAAC_PATH=${ISAAC_PATH:-/path/to/isaac-sim}
 export EXP_PATH=${EXP_PATH:-$ISAAC_PATH/apps}
 export CARB_APP_PATH=${CARB_APP_PATH:-$ISAAC_PATH/kit}
 
-export ROBOTWIN_PATH="/path/to/RoboTwin"
-export LIBERO_PRO_PATH=${LIBERO_PRO_PATH:-"/path/to/LIBERO-PRO"}
-export LIBERO_PLUS_PATH=${LIBERO_PLUS_PATH:-"/path/to/liberoplus"}
-export PYTHONPATH=${REPO_PATH}:${ROBOTWIN_PATH}:$PYTHONPATH
-
-export HYDRA_FULL_ERROR=1
-
 if [ -z "$1" ]; then
     CONFIG_NAME="maniskill_ppo_openvlaoft"
 else
@@ -36,22 +30,18 @@ fi
 # NOTE: Set the active robot platform (required for correct action dimension and normalization), supported platforms are LIBERO, ALOHA, BRIDGE, default is LIBERO
 ROBOT_PLATFORM=${2:-${ROBOT_PLATFORM:-"LIBERO"}}
 
-# Libero variant: base, pro, plus (3rd argument)
-L_TYPE=${3:-"base"}
-
 export ROBOT_PLATFORM
-export LIBERO_TYPE=$L_TYPE
 
+# Libero variant: standard, pro, plus
+export LIBERO_TYPE=${LIBERO_TYPE:-"standard"}
 if [ "$LIBERO_TYPE" == "pro" ]; then
-    export PYTHONPATH="${LIBERO_PRO_PATH}:${PYTHONPATH}"
     export LIBERO_PERTURBATION="all"  # all,swap,object,lan
     echo "Evaluation Mode: LIBERO-PRO | Perturbation: $LIBERO_PERTURBATION"
 elif [ "$LIBERO_TYPE" == "plus" ]; then
-    export PYTHONPATH="${LIBERO_PLUS_PATH}:${PYTHONPATH}"
     export LIBERO_SUFFIX="all"
     echo "Evaluation Mode: LIBERO-PLUS | Suffix: $LIBERO_SUFFIX"
 else
-    echo "Evaluation Mode: Base LIBERO"
+    echo "Evaluation Mode: Standard LIBERO"
 fi
 
 echo "Using ROBOT_PLATFORM=$ROBOT_PLATFORM"
