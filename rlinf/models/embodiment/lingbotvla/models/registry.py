@@ -27,7 +27,7 @@ from ..utils import logging
 
 logger = logging.get_logger(__name__)
 
-MODELING_PATH = ["rlinf.models.embodimentlingbotvla.models.vla"]
+MODELING_PATH = ["rlinf.models.embodiment.lingbotvla.models.vla"]
 
 
 @dataclass
