@@ -4,14 +4,9 @@ opencv-python-headless==4.9.0.80
 rerun-sdk==0.21.0
 xformers==0.0.28.post3
 draccus
-einops
-datasets
-omegaconf
 jsonlines
 deepdiff
-psutil
 ipdb
-torchdata
 msgpack
 websockets
 blobfile
