@@ -157,9 +157,9 @@ install_deps_dnf() {
         libXi-devel \
         libaio-devel \
         libgomp \
-        libexpat \
-        libfontconfig \
-        libpython3 \
+        expat \
+        fontconfig \
+        python3-devel \
         ImageMagick-devel || {
             echo "dnf install failed. Please check your repositories or install dependencies manually." >&2
             exit 1
@@ -196,9 +196,9 @@ install_deps_yum() {
         libXi-devel \
         libaio-devel \
         libgomp \
-        libexpat \
-        libfontconfig \
-        libpython3 \
+        expat \
+        fontconfig \
+        python3-devel \
         ImageMagick-devel || {
             echo "yum install failed. Please check your repositories or install dependencies manually." >&2
             exit 1
@@ -232,9 +232,9 @@ install_deps_pacman() {
         libxi \
         libaio \
         gcc \
-        libexpat \
-        libfontconfig \
-        libpython3 \
+        libgomp \
+        expat \
+        fontconfig \
         imagemagick || {
             echo "pacman install failed. Please check your repositories or install dependencies manually." >&2
             exit 1
