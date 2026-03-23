@@ -88,6 +88,8 @@ RLinf具有高度灵活性，可支持多种强化学习训练工作流（PPO、
     <tr>
       <th style="min-width: 120px; text-align: left;">模拟器</th>
       <th style="min-width: 120px;">真机</th>
+      <th style="min-width: 100px;">相机</th>
+      <th style="min-width: 100px;">夹爪</th>
       <th style="min-width: 120px;">模型</th>
       <th style="min-width: 120px;">算法</th>
     </tr>
@@ -115,6 +117,18 @@ RLinf具有高度灵活性，可支持多种强化学习训练工作流（PPO、
           <li><a href="https://rlinf.readthedocs.io/zh-cn/latest/rst_source/examples/embodied/franka.html">Franka Arm</a> ✅</li>
           <li><a href="https://rlinf.readthedocs.io/zh-cn/latest/rst_source/examples/embodied/xsquare_turtle2.html">XSquare Turtle2</a> ✅</li>
           <li>More...</li>
+        </ul>
+      </td>
+      <td>
+        <ul style="margin-left: 0; padding-left: 16px;">
+          <li><a href="https://rlinf.readthedocs.io/zh-cn/latest/rst_source/examples/embodied/franka.html">Intel RealSense</a> ✅</li>
+          <li><a href="https://rlinf.readthedocs.io/zh-cn/latest/rst_source/examples/embodied/franka_zed_robotiq.html">Stereolabs ZED</a> ✅</li>
+        </ul>
+      </td>
+      <td>
+        <ul style="margin-left: 0; padding-left: 16px;">
+          <li><a href="https://rlinf.readthedocs.io/zh-cn/latest/rst_source/examples/embodied/franka.html">Franka Hand</a> ✅</li>
+          <li><a href="https://rlinf.readthedocs.io/zh-cn/latest/rst_source/examples/embodied/franka_zed_robotiq.html">Robotiq 2F-85 / 2F-140</a> ✅</li>
         </ul>
       </td>
       <td>

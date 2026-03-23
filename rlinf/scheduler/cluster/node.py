@@ -398,6 +398,11 @@ class NodeProbe:
         current_env_vars = os.environ
         modified_env_vars = {}
         for key, value in current_env_vars.items():
+            # FIXME: temp fix — these path-list env vars from the head node get
+            # propagated to worker nodes via Ray, causing import / library
+            # resolution errors when the paths don't exist on the worker.
+            if key in ("LD_LIBRARY_PATH", "PYTHONPATH"):
+                continue
             if (
                 key not in head_node_default_env_vars
                 or head_node_default_env_vars[key] != value
