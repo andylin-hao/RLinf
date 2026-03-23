@@ -511,16 +511,16 @@ class Cluster:
         remote_cls = ray.remote(cls)
 
         merged_env_vars = node.env_vars.copy()
-        path_env_merge_mode = self._get_path_env_merge_mode(merged_env_vars)
+        path_env_merge_mode = self.get_path_env_merge_mode(merged_env_vars)
         # Update with user-specified env vars in node group configs
         cfg_node_env_vars = node_group.get_node_env_vars(node_rank)
-        merged_env_vars = self._merge_worker_env_vars(
+        merged_env_vars = self.merge_worker_env_vars(
             merged_env_vars,
             cfg_node_env_vars,
             path_env_merge_mode,
         )
         # Finally, update with worker-specified env vars
-        merged_env_vars = self._merge_worker_env_vars(
+        merged_env_vars = self.merge_worker_env_vars(
             merged_env_vars,
             env_vars,
             path_env_merge_mode,
@@ -558,25 +558,27 @@ class Cluster:
             )
         return actor
 
-    def _get_path_env_merge_mode(self, env_vars: dict[str, str]) -> PathEnvMergeMode:
+    @classmethod
+    def get_path_env_merge_mode(cls, env_vars: dict[str, str]) -> PathEnvMergeMode:
         """Resolve the path-like env merge mode from environment variables."""
-        env_key = Cluster.get_full_env_var_name(ClusterEnvVar.PATH_ENV_MERGE_MODE)
+        env_key = cls.get_full_env_var_name(ClusterEnvVar.PATH_ENV_MERGE_MODE)
         mode_str = env_vars.get(
-            env_key, Cluster.DEFAULT_SYS_ENV_VAR[ClusterEnvVar.PATH_ENV_MERGE_MODE]
+            env_key, cls.DEFAULT_SYS_ENV_VAR[ClusterEnvVar.PATH_ENV_MERGE_MODE]
         )
         mode_str = str(mode_str).lower()
         try:
             return PathEnvMergeMode(mode_str)
         except ValueError:
-            self._logger.warning(
+            logging.error(
                 f"Invalid {env_key}={mode_str}. "
                 f"Expected one of {[mode.value for mode in PathEnvMergeMode]}. "
                 "Falling back to append."
             )
             return PathEnvMergeMode.APPEND
 
-    def _merge_worker_env_vars(
-        self,
+    @classmethod
+    def merge_worker_env_vars(
+        cls,
         base_env_vars: dict[str, str],
         incoming_env_vars: dict[str, str],
         mode: PathEnvMergeMode,
@@ -589,7 +591,7 @@ class Cluster:
                 and key in merged
                 and mode == PathEnvMergeMode.APPEND
             ):
-                merged[key] = self._merge_path_like_env_value(
+                merged[key] = cls._merge_path_like_env_value(
                     env_var_name=key,
                     existing_value=merged[key],
                     incoming_value=value,

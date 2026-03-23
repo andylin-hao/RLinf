@@ -479,9 +479,7 @@ def test_merge_path_like_env_value_override_mode():
     # Override mode is handled by direct assignment in _merge_worker_env_vars.
     base_env = {"PYTHONPATH": "/existing/a:/existing/b"}
     incoming_env = {"PYTHONPATH": "/new"}
-    cluster = Cluster.__new__(Cluster)
-    merged = Cluster._merge_worker_env_vars(
-        cluster,
+    merged = Cluster.merge_worker_env_vars(
         base_env_vars=base_env,
         incoming_env_vars=incoming_env,
         mode=PathEnvMergeMode.OVERRIDE,
