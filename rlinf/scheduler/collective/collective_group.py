@@ -1095,12 +1095,18 @@ class CollectiveGroup:
             comm_id=comm_id,
             async_op=async_op,
         )
-        return self._send(
+        self._send(
             handle_tensor,
             device=CollectiveGroup.CPU,
             comm_id=comm_id,
             async_op=async_op,
         )
+        self._send(
+            torch.tensor(0, dtype=torch.long, device="cpu"),
+            device=CollectiveGroup.CPU,
+            comm_id=comm_id,
+        )
+        Worker.torch_platform.ipc_collect()
 
     def _recv_single_cuda_tensor_via_ipc(
         self, tensor: torch.Tensor, comm_id: int, async_op: bool = False
@@ -1126,6 +1132,11 @@ class CollectiveGroup:
             remote_tensor_func, remote_tensor_args = handle
             remote_tensor = remote_tensor_func(*remote_tensor_args)
             tensor.copy_(remote_tensor)
+
+            del remote_tensor
+            zero_tensor = torch.tensor(0, dtype=torch.long, device="cpu")
+            self._recv(zero_tensor, CollectiveGroup.CPU, comm_id)
+            Worker.torch_platform.ipc_collect()
             return None
 
         if async_op:
@@ -1176,6 +1187,12 @@ class CollectiveGroup:
                     comm_id=comm_id,
                     async_op=False,
                 )
+                self._send(
+                    torch.tensor(0, dtype=torch.long, device="cpu"),
+                    CollectiveGroup.CPU,
+                    comm_id=comm_id,
+                )
+                Worker.torch_platform.ipc_collect()
             else:
                 self._send(tensor, CollectiveGroup.ACCEL, comm_id=comm_id)
 
@@ -1218,6 +1235,10 @@ class CollectiveGroup:
                 remote_tensor_func, remote_tensor_args = handle
                 remote_tensor = remote_tensor_func(*remote_tensor_args)
                 tensor.copy_(remote_tensor)
+                del remote_tensor
+                zero_tensor = torch.tensor(0, dtype=torch.long, device="cpu")
+                self._recv(zero_tensor, CollectiveGroup.CPU, comm_id)
+                Worker.torch_platform.ipc_collect()
                 return None
             else:
                 return self._recv(tensor, CollectiveGroup.ACCEL, comm_id)
@@ -1255,6 +1276,13 @@ class CollectiveGroup:
             async_op=async_op,
         )
 
+        self._send(
+            torch.tensor(0, dtype=torch.long, device="cpu"),
+            device=CollectiveGroup.CPU,
+            comm_id=comm_id,
+        )
+        Worker.torch_platform.ipc_collect()
+
         if async_op:
             return work
 
@@ -1286,6 +1314,12 @@ class CollectiveGroup:
             tensor.clone().detach().to(Worker.torch_platform.current_device())
             for tensor in remote_tensors
         ]
+
+        Worker.torch_platform.current_stream().synchronize()
+        remote_tensors.clear()
+        zero_tensor = torch.tensor(0, dtype=torch.long, device="cpu")
+        self._recv(zero_tensor, CollectiveGroup.CPU, comm_id)
+        Worker.torch_platform.ipc_collect()
 
         return tensors
 
