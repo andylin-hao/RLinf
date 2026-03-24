@@ -221,6 +221,8 @@ YAML 配置说明
        共同部署。当机械臂和相机在不同机器上时需要设置。
 
 
+.. _franka-zed-robotiq-data-collection-zh:
+
 数据采集
 -----------------
 

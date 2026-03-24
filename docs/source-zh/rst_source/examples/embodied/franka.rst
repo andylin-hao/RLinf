@@ -368,7 +368,7 @@ b. 安装依赖
 
    **使用 ZED 相机和 Robotiq 夹爪？** 我们提供了专用的数据采集脚本和配置文件。
    请参考 :doc:`franka_zed_robotiq` 中的
-   :ref:`数据采集 <franka_zed_robotiq:数据采集>` 章节。
+   :ref:`数据采集 <franka-zed-robotiq-data-collection-zh>` 章节。
 
 集群配置
 ~~~~~~~~~~~~~~~~~

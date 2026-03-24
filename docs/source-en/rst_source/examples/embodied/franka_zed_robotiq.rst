@@ -231,6 +231,8 @@ the new ``camera_type``, ``gripper_type``, ``gripper_connection``, and
        are on different machines.
 
 
+.. _franka-zed-robotiq-data-collection:
+
 Data Collection
 -----------------
 

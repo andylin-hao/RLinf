@@ -365,7 +365,7 @@ The script will terminate after 20 episodes of data collection (can be configure
 
    **Using ZED cameras and Robotiq grippers?**  A dedicated data collection
    script and config are available.  See the
-   :ref:`Data Collection <franka_zed_robotiq:Data Collection>` section in
+   :ref:`Data Collection <franka-zed-robotiq-data-collection>` section in
    :doc:`franka_zed_robotiq`.
 
 Cluster Setup
