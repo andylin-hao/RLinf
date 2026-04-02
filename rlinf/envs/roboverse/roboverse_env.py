@@ -171,7 +171,7 @@ class RoboVerseEnv(gym.Env):
         self._is_start = value
 
     def flush_video(self, video_sub_dir: Optional[str] = None):
-        output_dir = os.path.join(self.video_cfg.video_base_dir, f"rank_{self.rank}")
+        output_dir = os.path.join(self.video_cfg.video_base_dir, f"rank_{self.seed_offset}")
         if video_sub_dir is not None:
             output_dir = os.path.join(output_dir, f"{video_sub_dir}")
         save_rollout_video(
