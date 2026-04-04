@@ -94,6 +94,9 @@ class RoboVerseEnv(gym.Env):
 
         self.env = task_cls(scenario=scenario, device="cuda")
         self.reorder_idx = self.env.handler.get_joint_reindex(self.robot_name)
+        self.inverse_reorder_idx = [0] * len(self.reorder_idx)
+        for new_idx, old_idx in enumerate(self.reorder_idx):
+            self.inverse_reorder_idx[old_idx] = new_idx
 
         self.reset_state_ids_all = self.get_reset_state_ids_all()
         if self.use_fixed_reset_state_ids:
@@ -115,13 +118,15 @@ class RoboVerseEnv(gym.Env):
 
         self.action_coordinate_frame = getattr(cfg, "action_coordinate_frame", "world")
         self.action_dim = int(getattr(cfg, "action_dim", 7))
+        self.state_dim = int(
+            getattr(cfg, "state_dim", getattr(cfg, "policy_state_dim", 8))
+        )
         self.action_clip = float(getattr(cfg, "action_clip", 1.0))
         self.ee_pos_delta_scale = float(getattr(cfg, "ee_pos_delta_scale", 0.02))
         self.ee_rot_delta_scale = float(getattr(cfg, "ee_rot_delta_scale", 0.05))
         self._prev_guarded_action = None
 
         self.last_obs = None
-        self.policy_state_dim = int(getattr(self.cfg, "policy_state_dim", 8))
 
     def get_reset_state_ids_all(self):
         reset_state_ids = np.arange(self.num_group)
@@ -171,7 +176,9 @@ class RoboVerseEnv(gym.Env):
         self._is_start = value
 
     def flush_video(self, video_sub_dir: Optional[str] = None):
-        output_dir = os.path.join(self.video_cfg.video_base_dir, f"rank_{self.seed_offset}")
+        output_dir = os.path.join(
+            self.video_cfg.video_base_dir, f"rank_{self.seed_offset}"
+        )
         if video_sub_dir is not None:
             output_dir = os.path.join(output_dir, f"{video_sub_dir}")
         save_rollout_video(
@@ -257,8 +264,10 @@ class RoboVerseEnv(gym.Env):
             robot_name=self.robot_name,
             ee_body_name=self.ee_body_name,
             reorder_idx=self.reorder_idx,
+            inverse_reorder_idx=self.inverse_reorder_idx,
             device=self.device,
             ee_body_idx=self.ee_body_idx,
+            state_dim=self.state_dim,
         )
         return extracted
 
@@ -468,13 +477,16 @@ class RoboVerseEnv(gym.Env):
             robot_name=self.robot_name,
             ee_body_name=self.ee_body_name,
             reorder_idx=self.reorder_idx,
+            inverse_reorder_idx=self.inverse_reorder_idx,
             device=self.device,
             ee_body_idx=self.ee_body_idx,
+            state_dim=self.state_dim,
         )
         return states_tensor
 
     def update_reset_state_ids(self):
-        return  # For single env, no need to change task
+        if self.num_envs == 1:
+            return
         if self.cfg.only_eval or self.cfg.use_ordered_reset_state_ids:
             reset_state_ids = self._get_ordered_reset_state_ids(self.num_group)
         else:
@@ -485,11 +497,7 @@ class RoboVerseEnv(gym.Env):
         if self.start_idx + num_reset_states > len(self.reset_state_ids_all[0]):
             self.reset_state_ids_all = self.get_reset_state_ids_all()
             self.start_idx = 0
-        # Determine per-process index: prefer `rank` if available, otherwise fall back to `seed_offset`.
-        num_processes = len(self.reset_state_ids_all)
-        process_idx = getattr(self, "rank", getattr(self, "seed_offset", 0))
-        process_idx = process_idx % num_processes
-        reset_state_ids = self.reset_state_ids_all[process_idx][
+        reset_state_ids = self.reset_state_ids_all[self.seed_offset][
             self.start_idx : self.start_idx + num_reset_states
         ]
         self.start_idx = self.start_idx + num_reset_states
@@ -539,6 +547,7 @@ class RoboVerseEnv(gym.Env):
             last_obs=self.last_obs,
             robot_name=self.robot_name,
             reorder_idx=self.reorder_idx,
+            inverse_reorder_idx=self.inverse_reorder_idx,
             ee_body_name=self.ee_body_name,
             ee_body_idx=self.ee_body_idx,
             ik_solver=self.ik_solver,

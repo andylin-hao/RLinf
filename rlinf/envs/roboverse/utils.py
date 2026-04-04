@@ -115,13 +115,6 @@ def get_valid_joint_names(
             if rs is not None:
                 if hasattr(rs, "joint_names"):
                     valid_joints = set(rs.joint_names)
-                elif hasattr(rs, "joint_pos") and hasattr(env, "handler"):
-                    try:
-                        reorder_idx = env.handler.get_joint_reindex(robot_name)
-                        if len(reorder_idx) > 0:
-                            pass
-                    except Exception:
-                        pass
 
         if valid_joints is None and robot_cfg is not None:
             if hasattr(robot_cfg, "joint_names"):
@@ -277,7 +270,9 @@ def build_policy_states(
     ee_body_name: str,
     reorder_idx,
     device,
+    inverse_reorder_idx=None,
     ee_body_idx: Optional[int] = None,
+    state_dim: Optional[int] = None,
 ):
     rs = raw_obs.robots[robot_name]
 
@@ -298,7 +293,11 @@ def build_policy_states(
         dtype=torch.float32
     )
 
-    inverse_reorder_idx = [reorder_idx.index(i) for i in range(len(reorder_idx))]
+    if inverse_reorder_idx is None:
+        msg = "inverse_reorder_idx must be provided by RoboVerseEnv to build policy states."
+        logger = get_logger()
+        logger.error(msg)
+        raise ValueError(msg)
     joint_pos_reordered = joint_pos[:, inverse_reorder_idx]
     if joint_pos_reordered.shape[1] >= 2:
         gripper_state = joint_pos_reordered[:, -2:]
@@ -316,9 +315,12 @@ def build_policy_states(
         dtype=torch.float32
     )
 
-    pad_size = 32 - states_tensor.shape[1]
-    if pad_size > 0:
-        states_tensor = F.pad(states_tensor, (0, pad_size))
+    if state_dim is not None:
+        current_dim = states_tensor.shape[1]
+        if current_dim < state_dim:
+            states_tensor = F.pad(states_tensor, (0, state_dim - current_dim))
+        elif current_dim > state_dim:
+            states_tensor = states_tensor[:, :state_dim]
     return states_tensor, ee_body_idx
 
 
@@ -330,7 +332,9 @@ def extract_roboverse_obs(
     ee_body_name: str,
     reorder_idx,
     device,
+    inverse_reorder_idx=None,
     ee_body_idx: Optional[int] = None,
+    state_dim: Optional[int] = None,
 ):
     _, main_rgb = resolve_camera_rgb(raw_obs, main_camera_name, prefer_wrist=False)
     main_rgb = torch.flip(main_rgb, dims=[2])
@@ -343,8 +347,10 @@ def extract_roboverse_obs(
         robot_name=robot_name,
         ee_body_name=ee_body_name,
         reorder_idx=reorder_idx,
+        inverse_reorder_idx=inverse_reorder_idx,
         device=device,
         ee_body_idx=ee_body_idx,
+        state_dim=state_dim,
     )
 
     return (
@@ -390,11 +396,16 @@ def convert_roboverse_action(
     ee_pos_delta_scale: float,
     ee_rot_delta_scale: float,
     device,
+    inverse_reorder_idx=None,
 ):
     num_envs = action.shape[0]
 
     rs = last_obs.robots[robot_name]
-    inverse_reorder_idx = [reorder_idx.index(i) for i in range(len(reorder_idx))]
+    if inverse_reorder_idx is None:
+        msg = "inverse_reorder_idx must be provided by RoboVerseEnv"
+        logger = get_logger()
+        logger.error(msg)
+        raise ValueError(msg)
     joint_pos_raw = (
         rs.joint_pos
         if isinstance(rs.joint_pos, torch.Tensor)
@@ -481,6 +492,47 @@ def serialize_actions_dict(actions_dict, valid_joint_names=None):
     if not isinstance(actions_dict, dict):
         return actions_dict
 
+    valid_joint_names = (
+        set(valid_joint_names) if valid_joint_names is not None else None
+    )
+
+    def to_numpy(value):
+        if isinstance(value, torch.Tensor):
+            return value.detach().cpu().numpy()
+        return value
+
+    def serialize_joint_values(joint_dict):
+        # Batch tensor conversion to reduce many tiny tensor->numpy transfers.
+        filtered_items = []
+        for joint_name, joint_value in joint_dict.items():
+            if valid_joint_names is not None and joint_name not in valid_joint_names:
+                continue
+            filtered_items.append((joint_name, joint_value))
+
+        result = {}
+        tensor_items = [
+            item for item in filtered_items if isinstance(item[1], torch.Tensor)
+        ]
+        non_tensor_items = [
+            item for item in filtered_items if not isinstance(item[1], torch.Tensor)
+        ]
+
+        if tensor_items:
+            names = [name for name, _ in tensor_items]
+            tensors = [tensor.detach() for _, tensor in tensor_items]
+            try:
+                stacked = torch.stack(tensors, dim=0).cpu().numpy()
+                for idx, name in enumerate(names):
+                    result[name] = stacked[idx]
+            except Exception:
+                for name, tensor in tensor_items:
+                    result[name] = tensor.cpu().numpy()
+
+        for name, value in non_tensor_items:
+            result[name] = value
+
+        return result
+
     serialized = {}
     for env_id, env_actions in actions_dict.items():
         serialized[env_id] = {}
@@ -488,21 +540,7 @@ def serialize_actions_dict(actions_dict, valid_joint_names=None):
             serialized[env_id][obj_name] = {}
             for key, value in obj_actions.items():
                 if isinstance(value, dict):
-                    serialized[env_id][obj_name][key] = {}
-                    for joint_name, joint_value in value.items():
-                        if (
-                            valid_joint_names is not None
-                            and joint_name not in valid_joint_names
-                        ):
-                            continue
-                        if isinstance(joint_value, torch.Tensor):
-                            serialized[env_id][obj_name][key][joint_name] = (
-                                joint_value.detach().cpu().numpy()
-                            )
-                        else:
-                            serialized[env_id][obj_name][key][joint_name] = joint_value
-                elif isinstance(value, torch.Tensor):
-                    serialized[env_id][obj_name][key] = value.detach().cpu().numpy()
+                    serialized[env_id][obj_name][key] = serialize_joint_values(value)
                 else:
-                    serialized[env_id][obj_name][key] = value
+                    serialized[env_id][obj_name][key] = to_numpy(value)
     return serialized
