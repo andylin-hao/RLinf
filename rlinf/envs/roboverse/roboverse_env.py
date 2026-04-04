@@ -485,7 +485,11 @@ class RoboVerseEnv(gym.Env):
         if self.start_idx + num_reset_states > len(self.reset_state_ids_all[0]):
             self.reset_state_ids_all = self.get_reset_state_ids_all()
             self.start_idx = 0
-        reset_state_ids = self.reset_state_ids_all[self.rank][
+        # Determine per-process index: prefer `rank` if available, otherwise fall back to `seed_offset`.
+        num_processes = len(self.reset_state_ids_all)
+        process_idx = getattr(self, "rank", getattr(self, "seed_offset", 0))
+        process_idx = process_idx % num_processes
+        reset_state_ids = self.reset_state_ids_all[process_idx][
             self.start_idx : self.start_idx + num_reset_states
         ]
         self.start_idx = self.start_idx + num_reset_states
