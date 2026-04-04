@@ -24,33 +24,32 @@ video_cfg:
 
 enable_offload: False
 
-camera_name: camera0
-camera_heights: 224
-camera_widths: 224
-camera_pos: [0.55, 0.0, 1.38]
-camera_look_at: [-0.28, 0.0, 0.76]
-camera_focal_length: 21
+init_params:
+  camera_name: camera0
+  camera_heights: 224
+  camera_widths: 224
+  camera_pos: [0.55, 0.0, 1.38]
+  camera_look_at: [-0.28, 0.0, 0.76]
+  camera_focal_length: 21
 
-enable_wrist_camera: true
-wrist_camera_name: robot0_eye_in_hand
-wrist_camera_mount_to: franka
-wrist_camera_mount_link: panda_hand
-wrist_camera_heights: 224
-wrist_camera_widths: 224
-wrist_camera_mount_pos: [0.11, 0.0, -0.06]
-wrist_camera_mount_quat: [-0.1, -0.7, -0.7, -0.1]
-wrist_camera_focal_length: 22
-
+  enable_wrist_camera: true
+  wrist_camera_name: robot0_eye_in_hand
+  wrist_camera_mount_to: franka
+  wrist_camera_mount_link: panda_hand
+  wrist_camera_heights: 224
+  wrist_camera_widths: 224
+  wrist_camera_mount_pos: [0.11, 0.0, -0.06]
+  wrist_camera_mount_quat: [-0.1, -0.7, -0.7, -0.1]
+  wrist_camera_focal_length: 22
 
 use_ordered_reset_state_ids: True
 
-# roboverse specific configs
 headless: True
 simulator_backend: mujoco
 task_name: libero_90.kitchen_scene1_put_the_black_bowl_on_top_of_the_cabinet
 robot_name: franka
 action_dim: 7
-policy_state_dim: 8
+state_dim: 8
 action_clip: 1.0    
 ee_pos_delta_scale: 0.02      
 ee_rot_delta_scale: 0.05  
