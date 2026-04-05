@@ -354,7 +354,12 @@ class RoboVerseEnv(gym.Env):
         self._elapsed_steps += 1
         terminations = terminated.cpu().numpy()
         truncations = self._elapsed_steps >= self.cfg.max_episode_steps
-
+        if isinstance(time_out, torch.Tensor):
+            env_timeouts = time_out.cpu().numpy()
+        else:
+            env_timeouts = np.array(time_out, dtype=bool)
+        truncations = truncations | env_timeouts
+        
         # 5. generate rewards
         step_reward = self._calc_step_reward(terminations)
 
@@ -465,6 +470,9 @@ class RoboVerseEnv(gym.Env):
         final_obs = copy.deepcopy(_final_obs)
         env_idx = np.arange(0, self.num_envs)[dones]
         final_info = copy.deepcopy(infos)
+
+        if self.cfg.only_eval or self.cfg.use_ordered_reset_state_ids:
+            self.update_reset_state_ids()
 
         obs_dict, infos = self.reset(
             env_idx=env_idx,
