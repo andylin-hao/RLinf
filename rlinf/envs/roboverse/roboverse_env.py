@@ -337,11 +337,10 @@ class RoboVerseEnv(gym.Env):
             infos = list_of_dict_to_dict_of_list(info_dict)
         self.last_obs = raw_obs
 
-        # 4. time steps & dones
+        # 4. time steps
         self._elapsed_steps += 1
         terminations = terminated.cpu().numpy()
         truncations = self._elapsed_steps >= self.cfg.max_episode_steps
-        dones = terminations | truncations
 
         # 5. generate rewards
         step_reward = self._calc_step_reward(terminations)
@@ -365,6 +364,9 @@ class RoboVerseEnv(gym.Env):
         if self.ignore_terminations:
             infos["episode"]["success_at_end"] = to_tensor(terminations)
             terminations[:] = False
+
+        # Compute dones after optional termination masking so auto-reset
+        dones = terminations | truncations
 
         obs_dict = {
             "main_images": extracted["full_image"].permute(0, 3, 1, 2),
