@@ -103,6 +103,11 @@ class RoboVerseEnv(gym.Env):
         for new_idx, old_idx in enumerate(self.reorder_idx):
             self.inverse_reorder_idx[old_idx] = new_idx
 
+        initial_states = getattr(self.env, "_initial_states", None)
+        self.total_num_group_envs = (
+            len(initial_states) if initial_states is not None else self.num_group
+        )
+
         self.reset_state_ids_all = self.get_reset_state_ids_all()
         if self.use_fixed_reset_state_ids:
             reset_state_ids = self._get_random_reset_state_ids(self.num_group)
@@ -134,7 +139,7 @@ class RoboVerseEnv(gym.Env):
         self.last_obs = None
 
     def get_reset_state_ids_all(self):
-        reset_state_ids = np.arange(self.num_group)
+        reset_state_ids = np.arange(self.total_num_group_envs)
         valid_size = len(reset_state_ids) - (
             len(reset_state_ids) % self.total_num_processes
         )
@@ -471,7 +476,7 @@ class RoboVerseEnv(gym.Env):
         env_idx = np.arange(0, self.num_envs)[dones]
         final_info = copy.deepcopy(infos)
 
-        if self.cfg.only_eval or self.cfg.use_ordered_reset_state_ids:
+        if self.cfg.only_eval:
             self.update_reset_state_ids()
 
         obs_dict, infos = self.reset(
@@ -521,19 +526,31 @@ class RoboVerseEnv(gym.Env):
         self.reset_state_ids = reset_state_ids.repeat(self.group_size)
 
     def _get_ordered_reset_state_ids(self, num_reset_states):
-        if self.start_idx + num_reset_states > len(self.reset_state_ids_all[0]):
-            self.reset_state_ids_all = self.get_reset_state_ids_all()
-            self.start_idx = 0
-        reset_state_ids = self.reset_state_ids_all[self.seed_offset][
-            self.start_idx : self.start_idx + num_reset_states
-        ]
-        self.start_idx = self.start_idx + num_reset_states
+        if self.specific_reset_id is not None:
+            reset_state_ids = self.specific_reset_id * np.ones(
+                (num_reset_states,), dtype=int
+            )
+        else:
+            if self.start_idx + num_reset_states > len(self.reset_state_ids_all[0]):
+                self.reset_state_ids_all = self.get_reset_state_ids_all()
+                self.start_idx = 0
+            reset_state_ids = self.reset_state_ids_all[self.seed_offset][
+                self.start_idx : self.start_idx + num_reset_states
+            ]
+            self.start_idx = self.start_idx + num_reset_states
         return reset_state_ids
 
     def _get_random_reset_state_ids(self, num_reset_states):
-        reset_state_ids = self._generator.integers(
-            low=0, high=self.num_group, size=(num_reset_states,)
-        )
+        if self.specific_reset_id is not None:
+            reset_state_ids = self.specific_reset_id * np.ones(
+                (num_reset_states,), dtype=int
+            )
+        else:
+            reset_state_ids = self._generator.integers(
+                low=0,
+                high=self.total_num_group_envs,
+                size=(num_reset_states,),
+            )
         return reset_state_ids
 
     def add_new_frames(self, plot_infos, main_images, wrist_images):
