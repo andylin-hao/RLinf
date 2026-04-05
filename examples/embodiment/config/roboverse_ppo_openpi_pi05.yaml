@@ -90,7 +90,7 @@ env:
   group_name: "EnvGroup"
 
   train:
-    total_num_envs: 64
+    total_num_envs: 8
     auto_reset: True
     zero_state_before_vla: False
     max_episode_steps: 240 # max episode steps for truncation
@@ -141,7 +141,7 @@ actor:
     num_action_chunks: 4
     add_value_head: True
     openpi:
-      config_name: "pi05_roboverse"
+      config_name: "pi05_libero"
       num_images_in_input: 2
       value_after_vlm: True
 
