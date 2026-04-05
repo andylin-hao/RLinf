@@ -327,7 +327,7 @@ def build_policy_states(
 def extract_roboverse_obs(
     raw_obs: Any,
     main_camera_name: str,
-    wrist_camera_name: str,
+    wrist_camera_name: Optional[str],
     robot_name: str,
     ee_body_name: str,
     reorder_idx,
@@ -335,12 +335,17 @@ def extract_roboverse_obs(
     inverse_reorder_idx=None,
     ee_body_idx: Optional[int] = None,
     state_dim: Optional[int] = None,
+    has_wrist_camera: bool = True,
 ):
     _, main_rgb = resolve_camera_rgb(raw_obs, main_camera_name, prefer_wrist=False)
     main_rgb = torch.flip(main_rgb, dims=[2])
 
-    _, wrist_rgb = resolve_camera_rgb(raw_obs, wrist_camera_name, prefer_wrist=True)
-    wrist_rgb = torch.flip(wrist_rgb, dims=[2])
+    wrist_rgb = None
+    if has_wrist_camera and wrist_camera_name is not None:
+        _, wrist_rgb = resolve_camera_rgb(
+            raw_obs, wrist_camera_name, prefer_wrist=True
+        )
+        wrist_rgb = torch.flip(wrist_rgb, dims=[2])
 
     states_tensor, ee_body_idx = build_policy_states(
         raw_obs=raw_obs,

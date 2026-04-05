@@ -26,22 +26,22 @@ Environment
 - **Observation**: Multi-view RGB images (main view + wrist camera) + proprioceptive state
 - **Action Space**: 7-dimensional continuous actions
   - 3D end-effector position control (x, y, z)
-  - 3D rotation control (roll, pitch, yaw)
+  - 3D rotation control (axis-angle / rotation vector)
   - Gripper control (open/close)
 
 **Observation Structure**
 
-- **Main camera image** (``main_image``): Front-facing robot camera view (224x224 RGB)
-- **Wrist camera image** (``wrist_image``): End-effector camera view (224x224 RGB)
-- **Proprioceptive state** (``state``): 8D vector including:
+- **Main camera image** (``main_images``): Front-facing robot camera view (224x224 RGB)
+- **Wrist camera image** (``wrist_images``): End-effector camera view (224x224 RGB)
+- **Proprioceptive state** (``states``): 8D vector including:
   - ``[0:3]`` end-effector position (x, y, z)
-  - ``[3:6]`` end-effector orientation (roll, pitch, yaw)
+  - ``[3:6]`` end-effector orientation (axis-angle / rotation vector)
   - ``[6:8]`` gripper joint positions
 
 **Data Structure**
 
 - **Images**: Main camera RGB tensor ``[batch_size, 3, 224, 224]`` and wrist camera tensor ``[batch_size, 3, 224, 224]``
-- **State**: Proprioceptive state tensor ``[batch_size, 8]``
+- **States**: Proprioceptive state tensor ``[batch_size, 8]``
 - **Task Descriptions**: Natural-language instructions
 - **Actions**: 7D continuous actions
 - **Rewards**: Sparse rewards based on task completion

@@ -27,6 +27,7 @@ from rlinf.envs.roboverse.utils import (
     build_policy_states,
     build_roboverse_camera_cfgs,
     convert_roboverse_action,
+    cfg_get,
     extract_roboverse_obs,
     get_valid_joint_names,
     resolve_camera_rgb,
@@ -73,6 +74,10 @@ class RoboVerseEnv(gym.Env):
         self.video_cfg = cfg.video_cfg
         self.video_cnt = 0
         self.render_images = []
+        init_params = getattr(self.cfg, "init_params", None)
+        self.enable_wrist_camera = bool(
+            cfg_get(self.cfg, init_params, "enable_wrist_camera", True)
+        )
 
         simulator = self.cfg.simulator_backend
         task_cls = get_task_class(self.cfg.task_name)
@@ -247,6 +252,8 @@ class RoboVerseEnv(gym.Env):
         return camera_rgb
 
     def _get_wrist_camera_rgb(self, raw_obs):
+        if not self.enable_wrist_camera:
+            return None
         camera_name, camera_rgb = resolve_camera_rgb(
             raw_obs, self.wrist_camera_name, prefer_wrist=True
         )
@@ -268,14 +275,20 @@ class RoboVerseEnv(gym.Env):
             device=self.device,
             ee_body_idx=self.ee_body_idx,
             state_dim=self.state_dim,
+            has_wrist_camera=self.enable_wrist_camera,
         )
         return extracted
 
     def _wrap_obs(self, raw_obs):
         extracted = self._extract_image_and_state(raw_obs)
+        wrist_images = (
+            extracted["wrist_image"].permute(0, 3, 1, 2)
+            if extracted["wrist_image"] is not None
+            else None
+        )
         return {
             "main_images": extracted["full_image"].permute(0, 3, 1, 2),
-            "wrist_images": extracted["wrist_image"].permute(0, 3, 1, 2),
+            "wrist_images": wrist_images,
             "task_descriptions": self.task_descriptions,
             "states": extracted["state"],
         }
@@ -370,7 +383,11 @@ class RoboVerseEnv(gym.Env):
 
         obs_dict = {
             "main_images": extracted["full_image"].permute(0, 3, 1, 2),
-            "wrist_images": extracted["wrist_image"].permute(0, 3, 1, 2),
+            "wrist_images": (
+                extracted["wrist_image"].permute(0, 3, 1, 2)
+                if extracted["wrist_image"] is not None
+                else None
+            ),
             "task_descriptions": self.task_descriptions,
             "states": extracted["state"],
         }
@@ -513,8 +530,11 @@ class RoboVerseEnv(gym.Env):
 
     def add_new_frames(self, plot_infos, main_images, wrist_images):
         main_np = main_images.detach().cpu().numpy()
-        wrist_np = wrist_images.detach().cpu().numpy()
-        combined = np.concatenate([main_np, wrist_np], axis=2)
+        if wrist_images is not None:
+            wrist_np = wrist_images.detach().cpu().numpy()
+            combined = np.concatenate([main_np, wrist_np], axis=2)
+        else:
+            combined = main_np
         full_image = tile_images(combined, nrows=int(np.sqrt(self.num_envs)))
         self.render_images.append(full_image)
 
