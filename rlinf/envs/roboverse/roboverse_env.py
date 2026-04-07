@@ -275,7 +275,6 @@ class RoboVerseEnv(gym.Env):
             wrist_camera_name=self.wrist_camera_name,
             robot_name=self.robot_name,
             ee_body_name=self.ee_body_name,
-            reorder_idx=self.reorder_idx,
             inverse_reorder_idx=self.inverse_reorder_idx,
             device=self.device,
             ee_body_idx=self.ee_body_idx,
