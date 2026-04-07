@@ -26,8 +26,8 @@ from rlinf.envs.roboverse.utils import (
     apply_action_guard,
     build_policy_states,
     build_roboverse_camera_cfgs,
-    convert_roboverse_action,
     cfg_get,
+    convert_roboverse_action,
     extract_roboverse_obs,
     get_valid_joint_names,
     resolve_camera_rgb,
@@ -363,7 +363,7 @@ class RoboVerseEnv(gym.Env):
         else:
             env_timeouts = np.array(time_out, dtype=bool)
         truncations = truncations | env_timeouts
-        
+
         # 5. generate rewards
         step_reward = self._calc_step_reward(terminations)
 
@@ -537,7 +537,7 @@ class RoboVerseEnv(gym.Env):
             ]
             self.start_idx = self.start_idx + num_reset_states
         return reset_state_ids
-    
+
     def _get_random_reset_state_ids(self, num_reset_states):
         if self.specific_reset_id is not None:
             reset_state_ids = self.specific_reset_id * np.ones(

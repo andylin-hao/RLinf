@@ -340,9 +340,7 @@ def extract_roboverse_obs(
 
     wrist_rgb = None
     if has_wrist_camera and wrist_camera_name is not None:
-        _, wrist_rgb = resolve_camera_rgb(
-            raw_obs, wrist_camera_name, prefer_wrist=True
-        )
+        _, wrist_rgb = resolve_camera_rgb(raw_obs, wrist_camera_name, prefer_wrist=True)
         wrist_rgb = torch.flip(wrist_rgb, dims=[2])
 
     states_tensor, ee_body_idx = build_policy_states(
