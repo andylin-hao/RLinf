@@ -90,7 +90,7 @@ env:
   group_name: "EnvGroup"
 
   train:
-    total_num_envs: 8
+    total_num_envs: 32
     auto_reset: True
     zero_state_before_vla: False
     max_episode_steps: 240 # max episode steps for truncation
@@ -129,8 +129,8 @@ rollout:
 actor:
   group_name: "ActorGroup"
   training_backend: "fsdp"
-  micro_batch_size: 64
-  global_batch_size: 128 # keep multiple of micro_batch_size * actor world size.
+  micro_batch_size: 40
+  global_batch_size: 80 # keep multiple of micro_batch_size * actor world size.
   seed: 42
   enable_offload: False
 
