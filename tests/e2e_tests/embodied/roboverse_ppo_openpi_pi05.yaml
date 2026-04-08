@@ -91,11 +91,11 @@ env:
   group_name: "EnvGroup"
 
   train:
-    total_num_envs: 8
+    total_num_envs: 4
     auto_reset: True
     zero_state_before_vla: False
-    max_episode_steps: 5 # max episode steps for truncation
-    max_steps_per_rollout_epoch: 5
+    max_episode_steps: 4 # max episode steps for truncation
+    max_steps_per_rollout_epoch: 4
     reward_coef: ${algorithm.reward_coef}
     video_cfg:
       save_video: False
@@ -124,20 +124,20 @@ rollout:
   pipeline_stage_num: 1
 
   model:
-    model_path: "/workspace/dataset/RLinf-Pi05-SFT"
+    model_path: "/workspace/RLinf/rlinf/models/embodiment/openpi_libero"
     precision: ${actor.model.precision}
 
 actor:
   group_name: "ActorGroup"
   training_backend: "fsdp"
-  micro_batch_size: 64
-  global_batch_size: 128 # keep multiple of micro_batch_size * actor world size.
+  micro_batch_size: 1
+  global_batch_size: 1 # keep multiple of micro_batch_size * actor world size.
   seed: 42
   enable_offload: False
 
   # Override the default values in model/pi0_5
   model:
-    model_path: "/workspace/dataset/RLinf-Pi05-SFT"
+    model_path: "/workspace/RLinf/rlinf/models/embodiment/openpi_libero"
     model_type: "openpi"
     num_action_chunks: 4
     add_value_head: True
