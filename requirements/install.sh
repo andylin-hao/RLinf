@@ -911,12 +911,12 @@ install_roboverse_env() {
     local roboverse_dir
     roboverse_dir=$(clone_or_reuse_repo ROBOVERSE_PATH "$VENV_DIR/roboverse" https://github.com/tiny-xie/roboverse.git)
     uv pip install -e "${roboverse_dir}[mujoco]"
-    uv pip install --no-build-isolation "git+https://gitee.com/sapio-s/pytorch3d.git@stable"
+    uv pip install --no-build-isolation "git+https://github.com/facebookresearch/pytorch3d.git@v0.7.9"
     uv pip install -e "${roboverse_dir}[sapien3]"
     uv pip install -e "${roboverse_dir}[genesis]"
     
     local pyroki_dir
-    pyroki_dir=$(clone_or_reuse_repo PYROKI_PATH "$roboverse_dir/pyroki" https://gitee.com/sapio-s/pyroki)
+    pyroki_dir=$(clone_or_reuse_repo PYROKI_PATH "$roboverse_dir/pyroki" https://github.com/chungmin99/pyroki.git)
     uv pip install -e "$pyroki_dir"
     uv pip install --force-reinstall \
         "jax>=0.4.34" \
