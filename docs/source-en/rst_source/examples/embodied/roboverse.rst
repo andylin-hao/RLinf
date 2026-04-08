@@ -100,6 +100,22 @@ Install dependencies directly in your environment:
    bash requirements/install.sh embodied --model openpi --env roboverse
    source .venv/bin/activate
 
+Resource Download
+-----------------
+
+Download RoboVerse resource files:
+
+.. code:: bash
+
+   cd <path_to_RLinf>
+   # For faster downloads in mainland China:
+   # export HF_ENDPOINT=https://hf-mirror.com
+   hf download --repo-type dataset manity/roboverse_data --local-dir .
+
+We provide resource files for default tasks.
+When you need to extend tasks, prepare new resource files by following
+the task registration guide in the official RoboVerse documentation.
+
 Model Download
 --------------
 

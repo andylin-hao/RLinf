@@ -107,6 +107,20 @@
    bash requirements/install.sh embodied --model openpi --env roboverse
    source .venv/bin/activate
 
+资源下载
+----------------
+
+下载 RoboVerse 资源文件：
+
+.. code:: bash
+
+   cd <path_to_RLinf>
+   # 为提升国内下载速度，可以设置：
+   # export HF_ENDPOINT=https://hf-mirror.com
+   hf download --repo-type dataset manity/roboverse_data --local-dir .
+
+我们提供了默认任务的资源文件，之后您需要扩展任务时可以按照RoboVerese官方文档中的任务注册指南准备新的资源文件。
+
 模型下载
 --------------
 
