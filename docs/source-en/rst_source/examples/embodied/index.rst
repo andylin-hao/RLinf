@@ -225,6 +225,17 @@ as well as reinforcement learning training examples on real robots.
    </div>
 
    <div style="display: flex; justify-content: center; gap: 20px; align-items: flex-start; flex-wrap: wrap;">
+    <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
+      <img src="https://github.com/RLinf/misc/raw/main/pic/starvla.png"
+          style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
+      <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
+        <a href="starvla.html" style="text-decoration: underline; color: blue;">
+          <b>RL on StarVLA Models</b>
+        </a><br>
+        StarVLA + LIBERO + GRPO embodied RL training
+      </p>
+    </div>
+
      <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
        <img src="https://github.com/RLinf/misc/raw/main/pic/3_layer_mlp.jpg"
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);"
@@ -247,7 +258,9 @@ as well as reinforcement learning training examples on real robots.
          Train a Flow Matching policy with SAC (Sim & Real)
        </p>
      </div>
+   </div>
 
+   <div style="display: flex; justify-content: center; gap: 20px; align-items: flex-start; flex-wrap: wrap;">
      <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
        <!-- TODO(thumbnail): replace placeholder cover image URL for sft_openpi -->
        <img src="https://github.com/RLinf/misc/raw/main/pic/pi0_icon.jpg"
@@ -259,9 +272,7 @@ as well as reinforcement learning training examples on real robots.
          Run full-parameter and LoRA SFT for OpenPI before RL fine-tuning
        </p>
      </div>
-   </div>
 
-   <div style="display: flex; justify-content: center; gap: 20px; align-items: flex-start; flex-wrap: wrap;">
      <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
        <img src="https://github.com/RLinf/misc/raw/main/pic/release_0.2/qwen2_5_sft_vlm.png"
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
@@ -284,7 +295,9 @@ as well as reinforcement learning training examples on real robots.
          Critic-free online RL fine-tuning for pre-trained π₀ flow-matching policies
        </p>
      </div>
+   </div>
 
+   <div style="display: flex; justify-content: center; gap: 20px; align-items: flex-start; flex-wrap: wrap;">
      <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
        <img src="https://github.com/RLinf/misc/raw/main/pic/dsrl.png"
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
@@ -295,9 +308,7 @@ as well as reinforcement learning training examples on real robots.
          Steer a frozen Pi0 diffusion policy with lightweight SAC in noise space
        </p>
      </div>
-   </div>
 
-   <div style="display: flex; justify-content: center; gap: 20px; align-items: flex-start; flex-wrap: wrap;">
      <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
        <img src="https://github.com/RLinf/misc/raw/main/pic/dagger.jpg"
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
@@ -319,7 +330,9 @@ as well as reinforcement learning training examples on real robots.
          PPO in sim + SFT on real data for better sim-to-real transfer
        </p>
      </div>
+   </div>
 
+   <div style="display: flex; justify-content: center; gap: 20px; align-items: flex-start; flex-wrap: wrap;">
      <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
        <img src="https://github.com/RLinf/misc/raw/main/pic/franka_arm_small.jpg"
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
@@ -330,9 +343,7 @@ as well as reinforcement learning training examples on real robots.
          RLinf worker seamlessly integrates with the Franka robotic arm
        </p>
      </div>
-   </div>
 
-   <div style="display: flex; justify-content: center; gap: 20px; align-items: flex-start; flex-wrap: wrap;">
      <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
        <!-- TODO(thumbnail): replace placeholder cover image URL for franka_zed_robotiq -->
        <img src="https://github.com/RLinf/misc/raw/main/pic/franka_arm_small.jpg"
@@ -356,7 +367,9 @@ as well as reinforcement learning training examples on real robots.
          GELLO teleoperation setup, configuration, and verification for Franka
        </p>
      </div>
+   </div>
 
+   <div style="display: flex; justify-content: center; gap: 20px; align-items: flex-start; flex-wrap: wrap;">
      <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
        <img src="https://github.com/RLinf/misc/raw/main/pic/hg-dagger.jpg"
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
@@ -367,9 +380,7 @@ as well as reinforcement learning training examples on real robots.
          Human-Gated real-world DAgger pipeline: collection, SFT, and online intervention training
        </p>
      </div>
-   </div>
 
-   <div style="display: flex; justify-content: center; gap: 20px; align-items: flex-start; flex-wrap: wrap;">
      <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
        <img src="https://github.com/RLinf/misc/raw/main/pic/xsquare_turtle2_arm_small.jpg"
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
@@ -405,6 +416,7 @@ as well as reinforcement learning training examples on real robots.
    gr00t
    lingbotvla
    dexbotic
+   starvla
    mlp
    sac_flow
    sft_openpi
