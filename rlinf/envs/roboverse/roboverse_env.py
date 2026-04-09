@@ -187,7 +187,7 @@ class RoboVerseEnv(gym.Env):
         options: Optional[dict] = {},
     ):
         env_idx = self._normalize_env_idx(env_idx)
-        
+
         if self.is_start:
             reset_state_ids = (
                 self.reset_state_ids if self.use_fixed_reset_state_ids else None
