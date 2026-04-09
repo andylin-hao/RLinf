@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import copy
-import os
 from typing import Optional, Union
 
 import gym
@@ -36,8 +35,6 @@ from rlinf.envs.roboverse.utils import (
 )
 from rlinf.envs.utils import (
     list_of_dict_to_dict_of_list,
-    save_rollout_video,
-    tile_images,
     to_tensor,
 )
 from rlinf.utils.logging import get_logger
@@ -72,8 +69,6 @@ class RoboVerseEnv(gym.Env):
         self._elapsed_steps = np.zeros(self.num_envs, dtype=np.int32)
 
         self.video_cfg = cfg.video_cfg
-        self.video_cnt = 0
-        self.render_images = []
         init_params = getattr(self.cfg, "init_params", None)
         self.enable_wrist_camera = bool(
             cfg_get(self.cfg, init_params, "enable_wrist_camera", True)
@@ -185,20 +180,6 @@ class RoboVerseEnv(gym.Env):
     def is_start(self, value):
         self._is_start = value
 
-    def flush_video(self, video_sub_dir: Optional[str] = None):
-        output_dir = os.path.join(
-            self.video_cfg.video_base_dir, f"rank_{self.seed_offset}"
-        )
-        if video_sub_dir is not None:
-            output_dir = os.path.join(output_dir, f"{video_sub_dir}")
-        save_rollout_video(
-            self.render_images,
-            output_dir=output_dir,
-            video_name=f"{self.video_cnt}",
-        )
-        self.video_cnt += 1
-        self.render_images = []
-
     def reset(
         self,
         env_idx: Optional[Union[int, list[int], np.ndarray]] = None,
@@ -206,6 +187,12 @@ class RoboVerseEnv(gym.Env):
         options: Optional[dict] = {},
     ):
         env_idx = self._normalize_env_idx(env_idx)
+        
+        if self.is_start:
+            reset_state_ids = (
+                self.reset_state_ids if self.use_fixed_reset_state_ids else None
+            )
+            self._is_start = False
 
         if reset_state_ids is None:
             reset_state_ids = self._get_random_reset_state_ids(len(env_idx))
@@ -317,23 +304,23 @@ class RoboVerseEnv(gym.Env):
                 msg = "Actions must be provided after the first reset."
                 logger.error(msg)
                 raise ValueError(msg)
-        if self.is_start:
-            obs_dict, infos = self.reset(
-                reset_state_ids=self.reset_state_ids
-                if self.use_fixed_reset_state_ids
-                else None
-            )
-            self.is_start = False
-            terminations = np.zeros(self.num_envs, dtype=bool)
-            truncations = np.zeros(self.num_envs, dtype=bool)
-            step_rewards_tensor = torch.zeros(self.num_envs, dtype=torch.float32)
-            return (
-                obs_dict,
-                step_rewards_tensor,
-                to_tensor(terminations),
-                to_tensor(truncations),
-                infos,
-            )
+        # if self.is_start:
+        #     obs_dict, infos = self.reset(
+        #         reset_state_ids=self.reset_state_ids
+        #         if self.use_fixed_reset_state_ids
+        #         else None
+        #     )
+        #     self.is_start = False
+        #     terminations = np.zeros(self.num_envs, dtype=bool)
+        #     truncations = np.zeros(self.num_envs, dtype=bool)
+        #     step_rewards_tensor = torch.zeros(self.num_envs, dtype=torch.float32)
+        #     return (
+        #         obs_dict,
+        #         step_rewards_tensor,
+        #         to_tensor(terminations),
+        #         to_tensor(truncations),
+        #         infos,
+        #     )
 
         # 2. convert end-effector commands to robot actions
         policy_actions = torch.as_tensor(actions, dtype=torch.float32)
@@ -370,18 +357,7 @@ class RoboVerseEnv(gym.Env):
         # 6. get image/state observation via unified extraction path (same style as Libero)
         extracted = self._extract_image_and_state(raw_obs)
 
-        # 7. record video
-        if getattr(self.video_cfg, "save_video", False):
-            plot_infos = {
-                "reward": step_reward,
-                "done": terminations,
-                "step": self._elapsed_steps,
-            }
-            self.add_new_frames(
-                plot_infos, extracted["full_image"], extracted["wrist_image"]
-            )
-
-        # 8. reward metrics
+        # 7. reward metrics
         infos = self._record_metrics(step_reward, terminations, infos)
         if self.ignore_terminations:
             infos["episode"]["success_at_end"] = to_tensor(terminations)
@@ -401,14 +377,14 @@ class RoboVerseEnv(gym.Env):
             "states": extracted["state"],
         }
 
-        # 9. auto-reset
+        # 8. auto-reset
         _auto_reset = auto_reset and self.auto_reset
         if dones.any() and _auto_reset:
             obs_dict, infos = self._handle_auto_reset(dones, obs_dict, infos)
 
         self.last_obs = raw_obs
 
-        # 10. return information in Gym style
+        # 9. return information in Gym style
         return (
             obs_dict,
             to_tensor(step_reward),
@@ -550,16 +526,6 @@ class RoboVerseEnv(gym.Env):
                 size=(num_reset_states,),
             )
         return reset_state_ids
-
-    def add_new_frames(self, plot_infos, main_images, wrist_images):
-        main_np = main_images.detach().cpu().numpy()
-        if wrist_images is not None:
-            wrist_np = wrist_images.detach().cpu().numpy()
-            combined = np.concatenate([main_np, wrist_np], axis=2)
-        else:
-            combined = main_np
-        full_image = tile_images(combined, nrows=int(np.sqrt(self.num_envs)))
-        self.render_images.append(full_image)
 
     # ---------------- IK ----------------
     def _setup_ik(self):
