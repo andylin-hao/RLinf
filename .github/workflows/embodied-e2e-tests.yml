@@ -702,6 +702,7 @@ jobs:
         run: |
           unset PYTHONPATH
           export REPO_PATH=$(pwd)
+          hf download --repo-type dataset manity/roboverse_data --local-dir .
           source .venv/bin/activate
           bash tests/e2e_tests/embodied/run.sh roboverse_ppo_openpi_pi05
 
