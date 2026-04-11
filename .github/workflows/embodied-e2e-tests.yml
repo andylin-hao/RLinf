@@ -695,7 +695,6 @@ jobs:
           export UV_LINK_MODE=symlink
           export UV_CACHE_DIR=/workspace/dataset/.uv_cache
           export UV_PYTHON_INSTALL_DIR=/workspace/dataset/.uv_python
-          export ROBOVERSE_PATH=/workspace/dataset/roboverse
           bash requirements/install.sh embodied --model openpi --env roboverse
 
       - name: RoboVerse PPO test
