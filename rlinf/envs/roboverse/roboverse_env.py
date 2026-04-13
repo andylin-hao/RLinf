@@ -304,23 +304,6 @@ class RoboVerseEnv(gym.Env):
                 msg = "Actions must be provided after the first reset."
                 logger.error(msg)
                 raise ValueError(msg)
-        # if self.is_start:
-        #     obs_dict, infos = self.reset(
-        #         reset_state_ids=self.reset_state_ids
-        #         if self.use_fixed_reset_state_ids
-        #         else None
-        #     )
-        #     self.is_start = False
-        #     terminations = np.zeros(self.num_envs, dtype=bool)
-        #     truncations = np.zeros(self.num_envs, dtype=bool)
-        #     step_rewards_tensor = torch.zeros(self.num_envs, dtype=torch.float32)
-        #     return (
-        #         obs_dict,
-        #         step_rewards_tensor,
-        #         to_tensor(terminations),
-        #         to_tensor(truncations),
-        #         infos,
-        #     )
 
         # 2. convert end-effector commands to robot actions
         policy_actions = torch.as_tensor(actions, dtype=torch.float32)
