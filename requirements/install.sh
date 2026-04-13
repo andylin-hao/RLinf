@@ -949,7 +949,7 @@ install_roboverse_env() {
     local roboverse_dir
     roboverse_dir=$(clone_or_reuse_repo ROBOVERSE_PATH "$VENV_DIR/roboverse" https://github.com/tiny-xie/roboverse.git)
     uv pip install -e "${roboverse_dir}[mujoco]"
-    uv pip install --no-build-isolation "git+https://github.com/facebookresearch/pytorch3d.git@v0.7.9"
+    uv pip install git+${GITHUB_PREFIX}https://github.com/facebookresearch/pytorch3d.git@v0.7.9 --no-build-isolation
     uv pip install -e "${roboverse_dir}[sapien3]"
     uv pip install -e "${roboverse_dir}[genesis]"
     
