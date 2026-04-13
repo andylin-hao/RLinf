@@ -39,6 +39,7 @@ assert vs.parse(ray_version) >= vs.parse("2.47.0"), (
 )
 
 if TYPE_CHECKING:
+    from ..manager import Manager
     from ..worker import Worker
 
 
@@ -217,7 +218,7 @@ class Cluster:
 
     def _launch_manager_actor(
         self,
-        manager_cls: type,
+        manager_cls: type["Manager"],
         manager_node: NodeInfo,
         runtime_env: dict[str, dict[str, str]],
         *args,
