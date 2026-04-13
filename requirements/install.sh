@@ -502,7 +502,6 @@ install_openpi_model() {
             uv pip install numpydantic==1.7.0 pydantic==2.11.7 numpy==1.26.0
             ;;
         roboverse)
-            PYTHON_VERSION="3.10"
             create_and_sync_venv
             install_common_embodied_deps
             uv pip install git+${GITHUB_PREFIX}https://github.com/RLinf/openpi
@@ -956,10 +955,7 @@ install_roboverse_env() {
     local pyroki_dir
     pyroki_dir=$(clone_or_reuse_repo PYROKI_PATH "$roboverse_dir/pyroki" https://github.com/chungmin99/pyroki.git)
     uv pip install -e "$pyroki_dir"
-    uv pip install --force-reinstall \
-        "jax>=0.4.34" \
-        "jaxlib>=0.4.34" \
-        "numpy==1.26.4"
+    uv pip install "numpy==1.26.4" --force-reinstall
 }
 
 #=======================AGENTIC INSTALLER=======================
