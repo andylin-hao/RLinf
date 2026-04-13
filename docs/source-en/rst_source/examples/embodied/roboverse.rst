@@ -252,7 +252,7 @@ Visualization and Results
   - ``train/actor/clipped_ratio``: Mean clipped ratio, indicating clipping impact
   - ``train/actor/grad_norm``: Gradient norm
   - ``train/actor/lr``: Learning rate
-  - ``train/actor/policy_loss``: PPO/GRPO policy loss
+  - ``train/actor/policy_loss``: PPO policy loss
   - ``train/critic/value_loss``: Value function loss
   - ``train/critic/value_clip_ratio``: Ratio of clipped value updates in PPO-style value clipping
   - ``train/critic/explained_variance``: Value fit quality, better when closer to 1

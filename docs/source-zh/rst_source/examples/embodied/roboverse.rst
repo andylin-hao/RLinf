@@ -59,12 +59,6 @@
 
    - 熵正则化
 
-2. **GRPO (组相对策略优化)**
-
-   - 对于每个状态/提示，策略生成 *G* 个独立动作
-
-   - 通过减去组的平均奖励来计算每个动作的优势
-
 依赖安装
 --------
 
@@ -252,7 +246,7 @@ RoboVerse 当前可直接参考的配置文件如下：
   - ``train/actor/clipped_ratio``: 被裁剪后的概率比均值，用来衡量策略更新受到 clip 的影响程度
   - ``train/actor/grad_norm``: 梯度范数
   - ``train/actor/lr``: 学习率
-  - ``train/actor/policy_loss``: PPO/GRPO的策略损失
+  - ``train/actor/policy_loss``: PPO的策略损失
   - ``train/critic/value_loss``: 价值函数的损失
   - ``train/critic/value_clip_ratio``: PPO-style value function clipping 中触发 clip 的比例
   - ``train/critic/explained_variance``: 衡量价值函数拟合程度，越接近 1 越好
