@@ -26,6 +26,7 @@ from rlinf.scheduler import (
     Worker,
     WorkerAddress,
 )
+from rlinf.scheduler.manager.coll_manager import CollectiveManager
 from rlinf.scheduler.manager.manager import Manager
 
 
@@ -115,7 +116,7 @@ class TestManagerNamespace:
             with mock.patch.dict(
                 os.environ, {"CLUSTER_NAMESPACE": "env-namespace"}, clear=False
             ):
-                Manager.sync_cluster_namespace()
+                CollectiveManager()
                 assert Cluster.NAMESPACE == "env-namespace"
 
 

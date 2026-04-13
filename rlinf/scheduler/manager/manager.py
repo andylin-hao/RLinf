@@ -99,16 +99,17 @@ class Manager:
     PID = None
     ENV_LIST = ["RAY_ADDRESS", "CLUSTER_NAMESPACE"]
 
+    def __new__(cls, *args, **kwargs):
+        """Sync namespace before any subclass-specific ``__init__`` runs."""
+        cls.sync_cluster_namespace()
+        return super().__new__(cls)
+
     @classmethod
     def sync_cluster_namespace(cls) -> None:
         """Keep ``Cluster.NAMESPACE`` aligned with the runtime environment."""
         namespace = os.environ.get("CLUSTER_NAMESPACE")
         if namespace:
             Cluster.NAMESPACE = namespace
-
-    def __init__(self):
-        """Initialize manager process state shared by all subclasses."""
-        self.sync_cluster_namespace()
 
     @classmethod
     def get_proxy(cls: type[ManagerClsType], no_wait: bool = False) -> ManagerClsType:
