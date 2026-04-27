@@ -5,13 +5,13 @@ description: Reviews a pull request from a PR URL by directly fetching the URL c
 
 # Review PR (From PR URL)
 
-Reviews the changes in a specific GitHub pull request and ensures all rules in the project’s [CONTRIBUTING.md](CONTRIBUTING.md) (repository root) are followed.
+Reviews the changes in a specific GitHub pull request. **The primary focus is code correctness and design-pattern consistency with the existing codebase.** PR formatting, commit conventions, and user-facing documentation are checked but should not dominate the review. See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution rules referenced below.
 
 ## 1. Input: PR URL
 
 Require a PR URL (for example: `https://github.com/RLinf/RLinf/pull/123`).
 
-## 2. Fetch PR data directly from URL
+## 2. Fetch PR data and the main branch
 
 Fetch PR details directly from the URL:
 
@@ -21,64 +21,73 @@ Fetch PR details directly from the URL:
   - `<PR_URL>.patch` (fallback)
 - If needed, fetch related pages directly from URL for comments/checks.
 
+**All cross-references must be against `origin/main`, not the local working tree.** The current checkout may be on an unrelated branch or contain WIP changes; Glob/Grep over the working tree does not show the upstream state. Before any cross-reference lookup:
+
+- Run `git fetch origin main` to refresh.
+- Read files via `git show origin/main:<path>` (or browse `https://github.com/RLinf/RLinf/blob/main/<path>`).
+- Use `git log origin/main..<pr-head>` to scope what the PR actually adds.
+- Never treat Glob/Grep results over the working tree as "current state of the project" — they reflect whatever branch is checked out, not main.
+
 If the PR page is private and URL fetch is blocked, report that access is unavailable and ask the user to provide exported diff/details.
 
-## 3. Review against CONTRIBUTING.md
+## 3. Review priorities
 
-Validate the changed files and diff against the following. Details and examples are in CONTRIBUTING.md; summary below.
+Findings are ordered by severity. Categories are listed in priority order — most of the review should be on (a) and (b); (c)–(e) are checked but should not pad the output.
 
-### Cross-check with RLinf codebase context (required)
+### (a) Correctness, bugs, and edge cases — primary
 
-Do not review the PR in isolation. In addition to the diff, always map each major change to related RLinf modules and verify integration consistency:
+For every changed function, branch, and config path, look for:
 
-- Identify related call sites/import paths/config/docs/tests in the RLinf codebase.
-- Check for likely missing follow-up edits (e.g., moved paths not updated everywhere, stale imports, outdated scripts, registry wiring gaps).
-- Check for behavior-level regressions caused by partial refactors (e.g., new package layout but old runtime assumptions).
-- If a file is renamed/moved, verify references across code, docs, CI, and tooling.
+- **Logic bugs**: off-by-one, inverted conditions, wrong operator/default, swapped args, mutated shared state, missing await/sync.
+- **Edge cases**: empty/None/NaN, single-element batches, zero-size tensors, world-size=1, first/last iter, eval-only paths, resume-from-checkpoint, multi-node vs single-node paths.
+- **Concurrency / distributed**: collectives that must run on every rank, device placement, non-deterministic ordering across workers, blocking calls in async paths, races on Ray actors / channels.
+- **Resource & lifecycle**: GPU memory leaks (uncleared tensors, missing `enable_offload`), file handles, Ray actor lifetime, missed cleanup on exceptions, double-init.
+- **Numerical**: dtype mismatches (fp16/bf16/fp32), in-place ops on grad-required tensors, unsafe casts, accumulator precision, loss-mask correctness.
+- **Error handling**: silent `except`, exceptions on hot paths, missing input validation at boundaries; conversely, *over*-validation of internally-trusted state.
+- **Refactor regressions**: read both the `origin/main` version and the new version side-by-side; partial refactors often change semantics by accident.
 
-Report these as findings when you see potential omissions, even if the exact line is outside the PR diff.
+Cite file:line in the diff and the matching `origin/main:file:line` when relevant.
 
-### Prime directive
+### (b) Design and pattern consistency vs `origin/main` — primary
 
-- **User-facing changes** must have **tests** and **documentation**. A reviewer must be able to validate reproducibility.
+The PR must match how RLinf already does things. Mismatches are usually defects from writing in isolation, not style nits.
 
-### Documentation consistency checks (required when docs change)
+- **Find the closest sibling in `origin/main`** — comparable model under `rlinf/models/embodiment/`, env under `rlinf/envs/`, runner under `rlinf/runners/`, worker under `rlinf/workers/`, advantage/loss/reward under `rlinf/algorithms/`. Compare structure, naming, registration, base-class usage, and config wiring.
+- **Registry wiring**: new advantage/loss/reward must use `register_advantage` / `register_policy_loss` / `register_reward`; new model/env must extend `SupportedModel` / `SupportedEnvType` and update `get_env_cls()` and `validate_cfg`. Flag ad-hoc bypasses.
+- **Worker conventions**: subclass `Worker`, implement `initialize`, use `self.log_info` / `log_warning` / `log_error` (not `print` or stdlib `logging`), launch via `create_group(...).launch(...)`.
+- **Base class / interface**: embodied policies must inherit `BasePolicy` and implement the documented forwards (`default_forward`, `predict_action_batch`, plus algorithm-specific). Flag re-implementations of base behavior.
+- **Config layout**: new YAML must be copied from a sibling in `examples/` and follow the same key hierarchy; no calculations or dynamic values in YAML; fields read-only in code.
+- **Reuse vs duplication**: if the change reimplements a helper that already exists in `rlinf/utils/` (placement, checkpoint, distributed, data-iter, logging), point to the existing helper with file:line.
+- **Simplicity**: prefer the approach the codebase already uses; flag clumsy / over-engineered alternatives with a concrete simpler suggestion.
+- **No hardcoded paths/hacks**: machine-specific paths, sleep-based sync, monkey-patches → propose a config/env-driven version.
 
-For docs PRs, or PRs touching `docs/`, always perform a cross-language and style consistency review:
+### (c) Code ↔ docs consistency — required when code OR docs change
 
-- For paired pages under `docs/source-en/` and `docs/source-zh/` (same topic), verify semantic parity for:
-  - setup commands, paths, env vars, and config keys
-  - supported models/envs/algorithms and capability claims
-  - reported numbers (metrics, table values, dataset sizes, trial counts)
-- Flag duplicated, missing, or conflicting paragraphs between EN and ZH pages unless explicitly justified.
-- For embodied example pages, cross-check style against sibling docs (for example `opensora.rst`) and flag inconsistent section naming/order, code-block conventions, and result table formatting/link style.
-- Highlight terminology/wording mistakes that can mislead users (e.g., duplicated suite names, missing suite names, mismatched metric descriptions).
-- Each docs finding must include a concrete suggested wording or structural fix and exact file references.
+Both directions matter, and EN/ZH parity must be checked explicitly:
 
-### Code style and formatting
+- **Docs → code**: every config key, CLI flag, env var, file path, function/class name, and supported model/env name mentioned in changed docs must exist in `origin/main` + this PR. Verify with `git show origin/main:rlinf/...`. Stale references = finding.
+- **Code → docs**: when this PR adds, removes, or renames a public-facing config key, model, env, runner, script, env var, or supported feature, the corresponding doc page **must be updated in the same PR**. If missing, list the exact doc files (EN and ZH) that need edits.
+- **EN ↔ ZH parity** (do this explicitly, even when only one language was touched): paired pages under `docs/source-en/` and `docs/source-zh/` must agree on setup commands, paths, env vars, config keys, supported models/envs/algorithms, capability claims, reported numbers (metrics, table values, dataset sizes, trial counts), and section structure/order. If only one side is updated, name the matching file that also needs the change.
+- **Sibling style**: cross-check with sibling pages in the same area (e.g. `opensora.rst`) for section naming/order, code-block conventions, table/link style.
+- Each docs finding must include a concrete suggested wording / structure fix and exact file references.
 
-- **Style**: [Google Python Style Guide](https://google.github.io/styleguide/pyguide.html); be consistent with surrounding code.
-- **Lint**: Code should pass pre-commit (e.g. `pre-commit run --all-files`). Flag if new code likely fails lint.
-- **Comments & docstrings**: Sufficient comments and docstrings; **public classes and methods** must have docstrings (Google style).
-- **Type hints**: Functions/methods should have type hints on parameters; add return type when static analysis cannot deduce it.
-- **Error handling**: Assertions and exceptions must have **clear, meaningful messages** (no empty or “xxx != yyy” restatements). Validate inputs/states early (e.g. before division or indexing).
-- **Logging**: Use logging (or in Workers: `self.log_info` / `log_warning` / `log_error`) instead of `print`.
-- **Config YAML**: Prefer copying existing configs from main as templates; **no calculations or dynamic values** in YAML (do in code, e.g. `config.py`); config fields must be **read-only** in code; avoid cross-field references in YAML when possible.
-- **Tests**: New features must include CI tests; large/new dependencies (docker, models, datasets) → note that maintainers may need to be involved.
-- **Dependencies/CI integration**: If the PR introduces new dependencies (for example, a new env/model requiring install script updates) or adds new YAML configs that should be exercised in CI, explicitly cross-check install script, Docker, and CI/e2e coverage using the [add-install-docker-ci-e2e skill](../add-install-docker-ci-e2e/SKILL.md). Flag missing installation wiring or missing test coverage.
-- **Duplication**: Check for avoidable code duplication across modules/config/docs; suggest extracting shared helpers or reusing existing abstractions when repetition is significant.
-- **Implementation simplicity**: If a solution is clearly clumsy or over-complicated, suggest a simpler/more maintainable alternative and explain why it is safer or easier to evolve.
-- **No hardcoded paths/hacks**: Flag hardcoded machine-specific paths and heavy hacky workarounds. Prefer config/env-driven paths and robust integration points.
+### (d) Tests and CI integration
 
-### Commit messages and sign-off
+- **User-facing changes** must have **tests** (unit or e2e). Reviewer must be able to validate reproducibility.
+- **Dependencies / CI**: new env/model needs install-script update, Docker stage, and CI/e2e coverage — cross-check with the [add-install-docker-ci-e2e skill](../add-install-docker-ci-e2e/SKILL.md).
+- New CI-relevant YAML must be referenced in the e2e test matrix.
+- Large/new dependencies (docker, models, datasets) → maintainer ping noted.
 
-- Every commit must have a **Signed-off-by** line (e.g. `git commit -s`).
-- Commit messages must follow **Conventional Commits**: `<type>(<scope>): <description>` (e.g. `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`).
+### (e) Style, commit & PR metadata — secondary
 
-### PR title and description
+Mention only if there are real issues; do not pad the review.
 
-- **PR title**: Same format as commit messages: `<type>(<scope>): <description>`.
-- **Description**: Must fill at least the **Description** and **Checklist** sections of the PR template; link related issues in Motivation and Context; if the change affects training performance/stability, provide testing results in “How has this been tested?”.
+- Google Python Style; passes `pre-commit run --all-files`.
+- Public classes/methods have Google-style docstrings; type hints on parameters; return type when not deducible.
+- Assertions/exceptions have meaningful messages (no empty or `xxx != yyy` restatements).
+- `logging` / `self.log_*` not `print`.
+- Every commit `Signed-off-by`; messages follow Conventional Commits `<type>(<scope>): <description>`.
+- PR title in Conventional Commits format; PR Description and Checklist sections filled; testing results if performance/stability is affected.
 
 ## 4. Explain the PR first
 
@@ -92,17 +101,14 @@ Keep this concise (3-6 bullets), then move to findings.
 
 ## 5. Output format
 
-- List **violations** of CONTRIBUTING.md with file/line or commit reference where possible.
-- Call out missing **tests** or **documentation** for user-facing changes.
-- Note **suggestions** (e.g. style, clarity, type hints) that are not strict violations.
-- If the diff or commit list is large, focus on the most relevant files and the prime directive first.
-- Include the reviewed PR URL in the final report for traceability.
-- For every finding, include a concrete **suggested fix**.
-- Organize findings as **bullets** ordered by severity (highest first), not as a table.
-- Use one concise bullet per finding with this structure:
+- Open with the PR URL and the brief explanation from section 4.
+- List **findings**, ordered by severity (highest first), as bullets:
   - `Severity` + `Area/File`: issue summary
   - `Suggested fix`: concrete action
-  - `Reference`: file/line, commit, or diff snippet
-- Explicitly label findings discovered via **codebase cross-check** (not only direct diff lines).
+  - `Reference`: file:line in the diff, plus `origin/main:file:line` when the finding came from a main-branch cross-check
+- The bulk of findings should be from categories (a) and (b). If you find none in those categories, say so explicitly — do not fabricate.
+- Group docs (c) findings together; tests/CI (d) together; style/PR-metadata (e) at the end.
+- Explicitly label findings discovered via **main-branch cross-check** (not only direct diff lines).
+- Do not include findings that simply restate that the PR description is well-formed; only flag *problems*.
 
-For a concise checklist derived from CONTRIBUTING.md, see [reference.md](reference.md).
+For a concise checklist, see [reference.md](reference.md).

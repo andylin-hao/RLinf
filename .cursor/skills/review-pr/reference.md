@@ -1,32 +1,45 @@
-# PR Review Checklist (from CONTRIBUTING.md)
+# PR Review Checklist
 
-Use this alongside the git diff when reviewing. Tick or address each item for the changed files and commits.
+Use alongside the PR diff. **Always cross-reference against `origin/main`** (`git fetch origin main` first; read with `git show origin/main:<path>` or the GitHub `main` URL), not the local working tree. Categories are in priority order — most of the review should be on (a) and (b).
 
-## Prime directive
-- [ ] User-facing changes have tests
-- [ ] User-facing changes have documentation (reproducibility validated by reviewer)
+## (a) Correctness & bugs — primary
+- [ ] Logic: off-by-one, inverted conditions, wrong default, mutated shared state, missing await/sync
+- [ ] Edge cases: empty/None/NaN, single rank, world-size=1, first/last iter, resume-from-checkpoint, eval-only paths
+- [ ] Distributed: collectives called on every rank, device placement, deterministic ordering, no races on Ray actors/channels
+- [ ] Lifecycle & resources: GPU/file/actor cleanup, no leaks, no double-init/double-free
+- [ ] Numerical: dtype, in-place on grad-required tensors, unsafe casts, loss-mask correctness
+- [ ] Error handling: meaningful messages, validate at boundaries, no silent except
+- [ ] Behavior parity vs `origin/main` on refactored code paths (read both side-by-side)
 
-## Documentation consistency (when docs are changed)
-- [ ] EN/ZH paired pages are semantically aligned (commands, paths, config keys, claims)
-- [ ] Numbers are consistent across languages (metrics, table values, dataset/trial counts)
-- [ ] No duplicated/missing/conflicting paragraphs between EN and ZH versions
-- [ ] Style aligned with sibling docs for same area (section titles/order, code blocks, table/link style)
-- [ ] Each docs finding includes a concrete wording/structure fix with file references
+## (b) Design & pattern consistency vs `origin/main` — primary
+- [ ] Closest sibling identified in `origin/main`; new code matches its structure/naming
+- [ ] Registry decorators used (`register_advantage` / `register_policy_loss` / `register_reward`)
+- [ ] `SupportedModel` / `SupportedEnvType` / `get_env_cls()` / `validate_cfg` updated where needed
+- [ ] Worker subclasses `Worker`, uses `self.log_*`, launched via `create_group(...).launch(...)`
+- [ ] Embodied policy extends `BasePolicy`; no reimplemented base behavior
+- [ ] YAML config copied from a sibling; no dynamic values; fields read-only in code
+- [ ] No duplication of helpers already in `rlinf/utils/` (cite the existing helper)
+- [ ] Simpler approach used when the codebase already has one
+- [ ] No hardcoded machine paths, sleep-based sync, or monkey-patches
 
-## Code style & formatting
-- [ ] Google Python Style Guide; consistent with surrounding code
-- [ ] Lint passes (pre-commit)
-- [ ] Comments and docstrings present; **public classes/methods** have Google-style docstrings
-- [ ] Type hints on function/method parameters; return type when not deducible
-- [ ] Assertions/exceptions have clear, meaningful messages; invalid inputs checked early
-- [ ] Logging used instead of print; in Workers use `self.log_info` / `log_warning` / `log_error`
-- [ ] Config YAML: copied from existing templates; no dynamic values; read-only in code; minimal cross-field refs
-- [ ] New features have CI tests; large deps (docker/models/datasets) → maintainer ping noted
+## (c) Code ↔ docs consistency
+- [ ] Every config key / CLI flag / env var / path / supported name mentioned in changed docs exists in `origin/main` + PR
+- [ ] Public-facing additions/renames/removals in code are reflected in BOTH `docs/source-en/` AND `docs/source-zh/`
+- [ ] EN/ZH paired pages agree: commands, paths, keys, claims, numbers, structure
+- [ ] No duplicated/missing/conflicting paragraphs between EN and ZH (or justified)
+- [ ] Style aligned with sibling docs (section titles/order, code blocks, table/link style)
+- [ ] Each docs finding gives concrete wording/structure fix and file references
 
-## Commits
-- [ ] Every commit has Signed-off-by (e.g. `git commit -s`)
-- [ ] Commit messages follow Conventional Commits: `<type>(<scope>): <description>`
+## (d) Tests & CI
+- [ ] User-facing changes have unit or e2e tests
+- [ ] New env/model has install-script + Docker stage + CI/e2e coverage (use add-install-docker-ci-e2e)
+- [ ] New CI-relevant YAML referenced in the e2e test matrix
+- [ ] Large deps (docker/models/datasets) → maintainer ping noted
 
-## PR metadata
-- [ ] PR title: `<type>(<scope>): <description>`
-- [ ] PR description: Description and Checklist sections filled; issue linked if applicable; testing results if performance/stability impact
+## (e) Style & metadata — only flag real issues
+- [ ] Google Python Style; pre-commit clean
+- [ ] Public classes/methods have Google-style docstrings; param type hints; return type when needed
+- [ ] Assertions/exceptions have meaningful messages
+- [ ] Logging used (no `print`)
+- [ ] Every commit `Signed-off-by`; Conventional Commits subject
+- [ ] PR title in Conventional Commits format; PR Description + Checklist sections filled
