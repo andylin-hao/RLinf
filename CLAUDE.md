@@ -23,7 +23,7 @@ Brief for AI coding agents working on RLinf. For full contribution flow, code st
   - `workers/` – Actor (FSDP/Megatron), rollout (HF/server), env (sync/async), reward, replay buffer.
 - **`examples/`** – Entrypoints and YAML: embodiment, reasoning, coding_online_rl, searchr1, sft, wideseek_r1.
 - **`tests/`** – `unit_tests/`, `e2e_tests/` (embodied, agent, reasoning), scheduler tests; e2e configs under `e2e_tests/embodied/*.yaml`.
-- **`requirements/`** – `install.sh` (targets: embodied, reason, docs; `--model`, `--env`), optional deps in subdirs.
+- **`requirements/`** – `install.sh` (targets: embodied, agentic, docs; `--model`, `--env`), optional deps in subdirs.
 - **`docker/`** – Dockerfile and build targets per model/env.
 - **`ray_utils/`** – `start_ray.sh` (multi-node head/worker), `check_ray.sh`, `realworld/setup_before_ray.sh`.
 - **`toolkits/`** – Checkpoint convertors, verifiers, eval scripts, replay buffer, auto-placement.
