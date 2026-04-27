@@ -1,6 +1,7 @@
 # Project skills
 
-Skills in this folder are loaded by Cursor from `.cursor/skills/` (project-level).
+Skills in this folder live under `.claude/skills/` for Claude tooling.
+If this project also uses Cursor, treat `.cursor/skills/` as a separate Cursor-specific location unless the two directories are intentionally kept mirrored.
 
 **If a skill is not recognized:**
 
