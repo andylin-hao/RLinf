@@ -8,6 +8,15 @@ MODEL=""
 ENV_NAME=""
 VENV_DIR=".venv"
 PYTHON_VERSION="3.11.14"
+TORCH_VERSION=""
+PLATFORM="nvidia"
+# Default torch-backend per platform; user can override by exporting
+# UV_TORCH_BACKEND before invoking this script.
+DEFAULT_BACKEND_NVIDIA="auto"
+# Only nvidia is fully tested today. AMD (ROCm) and Ascend (NPU) hooks are
+# intentionally absent — add them by extending SUPPORTED_PLATFORMS, defining
+# install_<platform>_extras, and routing in install_platform_extras below.
+SUPPORTED_PLATFORMS=("nvidia")
 TEST_BUILD=${TEST_BUILD:-0}
 # Absolute path to this script (resolves symlinks)
 SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
@@ -38,6 +47,13 @@ Options (for target=embodied):
 Common options:
     -h, --help             Show this help message and exit.
     --venv <dir>           Virtual environment directory name (default: .venv).
+    --torch <version>      Override torch version (e.g., 2.7.0). torchvision/torchaudio are derived
+                           automatically (torchvision=0.<minor+15>.<patch>, torchaudio=<torch>).
+                           torchcodec is left untouched. Patches pyproject.toml in place for the
+                           duration of the install; the original is restored on exit.
+    --platform <name>      Hardware platform. Currently only 'nvidia' (default) is supported and
+                           tested. Sets UV_TORCH_BACKEND (default: auto); export UV_TORCH_BACKEND
+                           yourself to override (e.g. UV_TORCH_BACKEND=cu124).
     --use-mirror           Use mirrors for faster downloads.
     --no-root              Avoid system dependency installation for non-root users. Only use this if you are certain system dependencies are already installed.
     --install-rlinf        Install RLinf itself into the python.
@@ -62,6 +78,22 @@ parse_args() {
                     exit 1
                 fi
                 VENV_DIR="${2:-}"
+                shift 2
+                ;;
+            --torch)
+                if [ -z "${2:-}" ]; then
+                    echo "--torch requires a version argument (e.g. 2.7.0)." >&2
+                    exit 1
+                fi
+                TORCH_VERSION="${2:-}"
+                shift 2
+                ;;
+            --platform)
+                if [ -z "${2:-}" ]; then
+                    echo "--platform requires one of: ${SUPPORTED_PLATFORMS[*]}." >&2
+                    exit 1
+                fi
+                PLATFORM="${2:-}"
                 shift 2
                 ;;
             --model)
@@ -113,6 +145,87 @@ parse_args() {
     if [ -z "$TARGET" ]; then
         TARGET="embodied"
     fi
+}
+
+configure_platform() {
+    if [[ ! " ${SUPPORTED_PLATFORMS[*]} " =~ " $PLATFORM " ]]; then
+        echo "--platform must be one of: ${SUPPORTED_PLATFORMS[*]} (got '$PLATFORM')." >&2
+        exit 1
+    fi
+
+    # Respect a pre-existing UV_TORCH_BACKEND from the caller's environment.
+    if [ -z "${UV_TORCH_BACKEND:-}" ]; then
+        case "$PLATFORM" in
+            nvidia)  export UV_TORCH_BACKEND="$DEFAULT_BACKEND_NVIDIA" ;;
+        esac
+    fi
+    echo "[install.sh] platform=${PLATFORM}, UV_TORCH_BACKEND=${UV_TORCH_BACKEND}"
+}
+
+#=======================PLATFORM EXTRAS=======================
+# Per-platform post-install hooks. Each install_<platform>_extras runs after
+# the target-specific case finishes (venv populated, target deps installed).
+# Keep these symmetric — add platform-specific runtime libs / drivers / kernel
+# packages here rather than sprinkling them through target installers.
+
+install_nvidia_extras() {
+    : # CUDA torch from PyPI works out of the box; flash-attn/apex are wired
+      # into target installers where they are actually used.
+}
+
+install_platform_extras() {
+    case "$PLATFORM" in
+        nvidia)  install_nvidia_extras ;;
+    esac
+}
+
+PYPROJECT_FILE="$(dirname "$SCRIPT_DIR")/pyproject.toml"
+PYPROJECT_BACKUP=""
+
+restore_pyproject() {
+    if [ -n "$PYPROJECT_BACKUP" ] && [ -f "$PYPROJECT_BACKUP" ]; then
+        mv -f "$PYPROJECT_BACKUP" "$PYPROJECT_FILE"
+        PYPROJECT_BACKUP=""
+    fi
+}
+
+apply_torch_override() {
+    [ -z "$TORCH_VERSION" ] && return 0
+
+    local torch_major torch_minor torch_patch
+    IFS='.' read -r torch_major torch_minor torch_patch <<< "$TORCH_VERSION"
+    if [ "$torch_major" != "2" ] || [ -z "$torch_minor" ] || [ -z "$torch_patch" ]; then
+        echo "--torch must be of form 2.Y.Z (got '$TORCH_VERSION')." >&2
+        exit 1
+    fi
+    case "$torch_minor$torch_patch" in
+        *[!0-9]*)
+            echo "--torch components must be numeric (got '$TORCH_VERSION')." >&2
+            exit 1
+            ;;
+    esac
+
+    local tv_minor=$((torch_minor + 15))
+    local torchvision_version="0.${tv_minor}.${torch_patch}"
+    local torchaudio_version="$TORCH_VERSION"
+
+    if [ ! -f "$PYPROJECT_FILE" ]; then
+        echo "Cannot locate pyproject.toml at $PYPROJECT_FILE" >&2
+        exit 1
+    fi
+
+    PYPROJECT_BACKUP="${PYPROJECT_FILE}.rlinf-torch-bak.$$"
+    cp "$PYPROJECT_FILE" "$PYPROJECT_BACKUP"
+    trap 'restore_pyproject' EXIT INT TERM HUP
+
+    sed -i \
+        -e "s/\"torch==[^\"]*\"/\"torch==${TORCH_VERSION}\"/" \
+        -e "s/\"torchvision==[^\"]*\"/\"torchvision==${torchvision_version}\"/" \
+        -e "s/\"torchaudio==[^\"]*\"/\"torchaudio==${torchaudio_version}\"/" \
+        "$PYPROJECT_FILE"
+
+    echo "[install.sh] Patched pyproject.toml override-dependencies: torch==${TORCH_VERSION}, torchvision==${torchvision_version}, torchaudio==${torchaudio_version}"
+    echo "[install.sh] Original pyproject.toml will be restored on exit."
 }
 
 install_uv() {
@@ -200,10 +313,14 @@ EOF
         # shellcheck disable=SC1090
         source "$VENV_DIR/bin/activate"
     fi
-    UV_TORCH_BACKEND=auto uv sync --active $NO_INSTALL_RLINF_CMD
+    uv sync --active $NO_INSTALL_RLINF_CMD
 }
 
 install_flash_attn() {
+    if [ "$PLATFORM" != "nvidia" ]; then
+        echo "[install.sh] Skipping flash-attn install on platform=${PLATFORM} (CUDA-only wheels)."
+        return 0
+    fi
     # Base release info – adjust when bumping flash-attn
     local flash_ver="2.7.4.post1"
     local base_url="${GITHUB_PREFIX}https://github.com/Dao-AILab/flash-attention/releases/download/v${flash_ver}"
@@ -256,6 +373,10 @@ EOF
 }
 
 install_apex() {
+    if [ "$PLATFORM" != "nvidia" ]; then
+        echo "[install.sh] Skipping apex install on platform=${PLATFORM} (CUDA-only)."
+        return 0
+    fi
     # Example URL: https://github.com/RLinf/apex/releases/download/25.09/apex-0.1+torch2.6-cp311-cp311-linux_x86_64.whl
     local base_url="${GITHUB_PREFIX}https://github.com/RLinf/apex/releases/download/25.09"
 
@@ -1135,7 +1256,9 @@ install_docs() {
 
 main() {
     parse_args "$@"
+    configure_platform
     setup_mirror
+    apply_torch_override
 
     case "$TARGET" in
         embodied)
@@ -1202,6 +1325,7 @@ main() {
             ;;
     esac
 
+    install_platform_extras
     unset_mirror
 }
 
