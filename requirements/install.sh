@@ -29,9 +29,10 @@ PLATFORM_TORCH_PACKAGES=()
 # Default torch-backend per platform; user can override by exporting
 # UV_TORCH_BACKEND before invoking this script.
 DEFAULT_BACKEND_NVIDIA="auto"
-# AMD composes UV_TORCH_BACKEND=rocm<version>; --rocm picks the version, falling
-# back to this default if unspecified.
-DEFAULT_AMD_ROCM_VERSION="6.3"
+# AMD composes UV_TORCH_BACKEND=rocm<version>; --rocm picks the version. When
+# unset, configure_amd detects the system's ROCm version and auto-picks the
+# minimum torch version on https://download.pytorch.org/whl/torch/ that has a
+# matching +rocm<version> wheel.
 # Add new platforms by extending SUPPORTED_PLATFORMS, defining
 # configure_<platform> + install_<platform>_extras, and routing in their
 # respective dispatchers below.
@@ -69,12 +70,15 @@ Common options:
     --torch <version>      Override torch version (e.g., 2.7.0). torchvision/torchaudio are derived
                            automatically (torchvision=0.<minor+15>.<patch>, torchaudio=<torch>).
                            torchcodec is left untouched. Patches pyproject.toml in place for the
-                           duration of the install; the original is restored on exit.
+                           duration of the install; the original is restored on exit. On
+                           --platform amd, defaults to the lowest torch version with a matching
+                           +rocm<version> wheel on https://download.pytorch.org/whl/torch/.
     --platform <name>      Hardware platform: nvidia (default, fully tested) or amd (experimental,
                            ROCm). Sets UV_TORCH_BACKEND (auto / rocm<version>); export
                            UV_TORCH_BACKEND yourself to bypass (e.g. UV_TORCH_BACKEND=cu124).
-    --rocm <version>       ROCm version for --platform amd (default: ${DEFAULT_AMD_ROCM_VERSION}).
-                           Composes UV_TORCH_BACKEND=rocm<version>. Ignored on other platforms.
+    --rocm <version>       ROCm version for --platform amd. When unset, auto-detected from the
+                           system (/opt/rocm/.info/version, hipconfig, rocminfo). Composes
+                           UV_TORCH_BACKEND=rocm<version>. Ignored on other platforms.
     --use-mirror           Use mirrors for faster downloads.
     --no-root              Avoid system dependency installation for non-root users. Only use this if you are certain system dependencies are already installed.
     --install-rlinf        Install RLinf itself into the python.
@@ -182,6 +186,56 @@ parse_args() {
 # resolve here (UV_TORCH_BACKEND, indexes, build flags, etc.). All functions
 # respect a pre-existing UV_TORCH_BACKEND from the caller's environment.
 
+# Detect installed ROCm version. Prints major.minor on success, returns 1 on
+# failure. Probes the standard locations in order of reliability.
+detect_rocm_version() {
+    local raw=""
+    if [ -f /opt/rocm/.info/version ]; then
+        raw=$(head -n1 /opt/rocm/.info/version 2>/dev/null)
+    fi
+    if [ -z "$raw" ] && command -v hipconfig &>/dev/null; then
+        raw=$(hipconfig --version 2>/dev/null | head -n1)
+    fi
+    if [ -z "$raw" ] && command -v rocminfo &>/dev/null; then
+        raw=$(rocminfo 2>/dev/null | grep -i 'ROCm Version' | head -n1)
+    fi
+    [ -z "$raw" ] && return 1
+
+    local mm
+    mm=$(echo "$raw" | grep -oE '[0-9]+\.[0-9]+' | head -n1)
+    [ -z "$mm" ] && return 1
+    echo "$mm"
+}
+
+# Find the minimum torch version on https://download.pytorch.org/whl/torch/
+# that has a +rocm<rocm_ver> wheel. Echoes X.Y.Z on success, returns 1 on
+# failure. Matches both `+rocm6.4-` (exact) and `+rocm6.4.X-` (patch suffix)
+# so a major.minor input still finds wheels published with a patch tag.
+detect_min_torch_for_rocm() {
+    local rocm_ver="$1"
+    local url="https://download.pytorch.org/whl/torch/"
+
+    if ! command -v curl &>/dev/null; then
+        echo "[install.sh] curl not found; cannot auto-detect torch version." >&2
+        return 1
+    fi
+
+    local html
+    html=$(curl -fsSL --max-time 30 "$url" 2>/dev/null) || {
+        echo "[install.sh] Failed to fetch ${url}." >&2
+        return 1
+    }
+
+    local rocm_re="${rocm_ver//./\\.}"
+    local versions
+    versions=$(echo "$html" \
+        | grep -oE "torch-[0-9]+\.[0-9]+\.[0-9]+\+rocm${rocm_re}[-.]" \
+        | sed -E 's/torch-([0-9]+\.[0-9]+\.[0-9]+).*/\1/' \
+        | sort -uV)
+    [ -z "$versions" ] && return 1
+    echo "$versions" | head -n1
+}
+
 configure_nvidia() {
     PLATFORM_TORCH_STR=""
     PLATFORM_TORCH_INDEX=""
@@ -192,13 +246,29 @@ configure_nvidia() {
 }
 
 configure_amd() {
-    if [ -n "$ROCM_VERSION" ] && [[ ! "$ROCM_VERSION" =~ ^[0-9]+\.[0-9]+$ ]]; then
-        echo "--rocm must be of form X.Y (got '$ROCM_VERSION')." >&2
+    if [ -z "$ROCM_VERSION" ]; then
+        ROCM_VERSION=$(detect_rocm_version) || {
+            echo "[install.sh] Could not auto-detect ROCm version; pass --rocm explicitly." >&2
+            exit 1
+        }
+        echo "[install.sh] Auto-detected ROCm version: ${ROCM_VERSION}"
+    fi
+
+    if [[ ! "$ROCM_VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+        echo "--rocm must be of form X.Y or X.Y.Z (got '$ROCM_VERSION')." >&2
         exit 1
     fi
-    local rocm_ver="${ROCM_VERSION:-$DEFAULT_AMD_ROCM_VERSION}"
-    PLATFORM_TORCH_STR="+rocm${rocm_ver}"
-    PLATFORM_TORCH_INDEX="https://download.pytorch.org/whl/rocm${rocm_ver}"
+
+    if [ -z "$TORCH_VERSION" ]; then
+        TORCH_VERSION=$(detect_min_torch_for_rocm "$ROCM_VERSION") || {
+            echo "[install.sh] No torch wheels found for ROCm ${ROCM_VERSION} on https://download.pytorch.org/whl/torch/. Pass --torch explicitly." >&2
+            exit 1
+        }
+        echo "[install.sh] Auto-selected minimum torch version for ROCm ${ROCM_VERSION}: ${TORCH_VERSION}"
+    fi
+
+    PLATFORM_TORCH_STR="+rocm${ROCM_VERSION}"
+    PLATFORM_TORCH_INDEX="https://download.pytorch.org/whl/rocm${ROCM_VERSION}"
     # All four packages are routed through the ROCm index (and only that
     # index — see explicit=true on [[tool.uv.index]]). torchvision/torchaudio
     # arrive transitively via vllm/etc.; pytorch-triton-rocm arrives
@@ -207,7 +277,7 @@ configure_amd() {
     # take effect (uv only applies sources to direct deps).
     PLATFORM_TORCH_PACKAGES=("torch" "torchvision" "torchaudio" "pytorch-triton-rocm")
     if [ -z "${UV_TORCH_BACKEND:-}" ]; then
-        export UV_TORCH_BACKEND="rocm${rocm_ver}"
+        export UV_TORCH_BACKEND="rocm${ROCM_VERSION}"
     fi
 }
 
