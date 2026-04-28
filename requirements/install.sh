@@ -10,13 +10,16 @@ VENV_DIR=".venv"
 PYTHON_VERSION="3.11.14"
 TORCH_VERSION=""
 PLATFORM="nvidia"
+ROCM_VERSION=""
 # Default torch-backend per platform; user can override by exporting
 # UV_TORCH_BACKEND before invoking this script.
 DEFAULT_BACKEND_NVIDIA="auto"
-# Only nvidia is fully tested today. AMD (ROCm) and Ascend (NPU) hooks are
-# intentionally absent — add them by extending SUPPORTED_PLATFORMS, defining
+# AMD composes UV_TORCH_BACKEND=rocm<version>; --rocm picks the version, falling
+# back to this default if unspecified.
+DEFAULT_AMD_ROCM_VERSION="6.3"
+# Add new platforms by extending SUPPORTED_PLATFORMS, defining
 # install_<platform>_extras, and routing in install_platform_extras below.
-SUPPORTED_PLATFORMS=("nvidia")
+SUPPORTED_PLATFORMS=("nvidia" "amd")
 TEST_BUILD=${TEST_BUILD:-0}
 # Absolute path to this script (resolves symlinks)
 SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
@@ -51,9 +54,11 @@ Common options:
                            automatically (torchvision=0.<minor+15>.<patch>, torchaudio=<torch>).
                            torchcodec is left untouched. Patches pyproject.toml in place for the
                            duration of the install; the original is restored on exit.
-    --platform <name>      Hardware platform. Currently only 'nvidia' (default) is supported and
-                           tested. Sets UV_TORCH_BACKEND (default: auto); export UV_TORCH_BACKEND
-                           yourself to override (e.g. UV_TORCH_BACKEND=cu124).
+    --platform <name>      Hardware platform: nvidia (default, fully tested) or amd (experimental,
+                           ROCm). Sets UV_TORCH_BACKEND (auto / rocm<version>); export
+                           UV_TORCH_BACKEND yourself to bypass (e.g. UV_TORCH_BACKEND=cu124).
+    --rocm <version>       ROCm version for --platform amd (default: ${DEFAULT_AMD_ROCM_VERSION}).
+                           Composes UV_TORCH_BACKEND=rocm<version>. Ignored on other platforms.
     --use-mirror           Use mirrors for faster downloads.
     --no-root              Avoid system dependency installation for non-root users. Only use this if you are certain system dependencies are already installed.
     --install-rlinf        Install RLinf itself into the python.
@@ -94,6 +99,14 @@ parse_args() {
                     exit 1
                 fi
                 PLATFORM="${2:-}"
+                shift 2
+                ;;
+            --rocm)
+                if [ -z "${2:-}" ]; then
+                    echo "--rocm requires a version argument (e.g. 6.3)." >&2
+                    exit 1
+                fi
+                ROCM_VERSION="${2:-}"
                 shift 2
                 ;;
             --model)
@@ -147,18 +160,43 @@ parse_args() {
     fi
 }
 
+#=======================PLATFORM CONFIG=======================
+# Per-platform runtime env-var configuration. Each configure_<platform> runs
+# before any uv operation, so set everything that affects how dependencies
+# resolve here (UV_TORCH_BACKEND, indexes, build flags, etc.). All functions
+# respect a pre-existing UV_TORCH_BACKEND from the caller's environment.
+
+configure_nvidia() {
+    if [ -z "${UV_TORCH_BACKEND:-}" ]; then
+        export UV_TORCH_BACKEND="$DEFAULT_BACKEND_NVIDIA"
+    fi
+}
+
+configure_amd() {
+    if [ -n "$ROCM_VERSION" ] && [[ ! "$ROCM_VERSION" =~ ^[0-9]+\.[0-9]+$ ]]; then
+        echo "--rocm must be of form X.Y (got '$ROCM_VERSION')." >&2
+        exit 1
+    fi
+    if [ -z "${UV_TORCH_BACKEND:-}" ]; then
+        export UV_TORCH_BACKEND="rocm${ROCM_VERSION:-$DEFAULT_AMD_ROCM_VERSION}"
+    fi
+}
+
 configure_platform() {
     if [[ ! " ${SUPPORTED_PLATFORMS[*]} " =~ " $PLATFORM " ]]; then
         echo "--platform must be one of: ${SUPPORTED_PLATFORMS[*]} (got '$PLATFORM')." >&2
         exit 1
     fi
 
-    # Respect a pre-existing UV_TORCH_BACKEND from the caller's environment.
-    if [ -z "${UV_TORCH_BACKEND:-}" ]; then
-        case "$PLATFORM" in
-            nvidia)  export UV_TORCH_BACKEND="$DEFAULT_BACKEND_NVIDIA" ;;
-        esac
+    if [ -n "$ROCM_VERSION" ] && [ "$PLATFORM" != "amd" ]; then
+        echo "[install.sh] WARNING: --rocm is only meaningful with --platform amd; ignoring on platform=${PLATFORM}." >&2
+        ROCM_VERSION=""
     fi
+
+    case "$PLATFORM" in
+        nvidia)  configure_nvidia ;;
+        amd)     configure_amd ;;
+    esac
     echo "[install.sh] platform=${PLATFORM}, UV_TORCH_BACKEND=${UV_TORCH_BACKEND}"
 }
 
@@ -173,9 +211,17 @@ install_nvidia_extras() {
       # into target installers where they are actually used.
 }
 
+install_amd_extras() {
+    : # ROCm torch is selected via UV_TORCH_BACKEND=rocm<version>; flash-attn
+      # and apex are CUDA-only and are skipped by their own platform guards.
+      # Reserved for ROCm-specific runtime extras (e.g. a ROCm flash-attn
+      # build, rccl tooling) once we have a validated stack.
+}
+
 install_platform_extras() {
     case "$PLATFORM" in
         nvidia)  install_nvidia_extras ;;
+        amd)     install_amd_extras ;;
     esac
 }
 
