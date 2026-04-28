@@ -11,6 +11,12 @@ PYTHON_VERSION="3.11.14"
 TORCH_VERSION=""
 PLATFORM="nvidia"
 ROCM_VERSION=""
+# PEP 440 local-version segment (including the leading '+') that
+# apply_torch_override appends to torch/torchvision/torchaudio overrides so uv
+# is forced to fetch the platform-specific wheel instead of the bare PyPI one.
+# Empty for nvidia (PyPI CUDA wheels match `==X.Y.Z` directly). Set by the
+# per-platform configure_<platform> hooks.
+PLATFORM_TORCH_STR=""
 # Default torch-backend per platform; user can override by exporting
 # UV_TORCH_BACKEND before invoking this script.
 DEFAULT_BACKEND_NVIDIA="auto"
@@ -18,7 +24,8 @@ DEFAULT_BACKEND_NVIDIA="auto"
 # back to this default if unspecified.
 DEFAULT_AMD_ROCM_VERSION="6.3"
 # Add new platforms by extending SUPPORTED_PLATFORMS, defining
-# install_<platform>_extras, and routing in install_platform_extras below.
+# configure_<platform> + install_<platform>_extras, and routing in their
+# respective dispatchers below.
 SUPPORTED_PLATFORMS=("nvidia" "amd")
 TEST_BUILD=${TEST_BUILD:-0}
 # Absolute path to this script (resolves symlinks)
@@ -167,6 +174,7 @@ parse_args() {
 # respect a pre-existing UV_TORCH_BACKEND from the caller's environment.
 
 configure_nvidia() {
+    PLATFORM_TORCH_STR=""
     if [ -z "${UV_TORCH_BACKEND:-}" ]; then
         export UV_TORCH_BACKEND="$DEFAULT_BACKEND_NVIDIA"
     fi
@@ -177,8 +185,10 @@ configure_amd() {
         echo "--rocm must be of form X.Y (got '$ROCM_VERSION')." >&2
         exit 1
     fi
+    local rocm_ver="${ROCM_VERSION:-$DEFAULT_AMD_ROCM_VERSION}"
+    PLATFORM_TORCH_STR="+rocm${rocm_ver}"
     if [ -z "${UV_TORCH_BACKEND:-}" ]; then
-        export UV_TORCH_BACKEND="rocm${ROCM_VERSION:-$DEFAULT_AMD_ROCM_VERSION}"
+        export UV_TORCH_BACKEND="rocm${rocm_ver}"
     fi
 }
 
@@ -236,41 +246,63 @@ restore_pyproject() {
 }
 
 apply_torch_override() {
-    [ -z "$TORCH_VERSION" ] && return 0
-
-    local torch_major torch_minor torch_patch
-    IFS='.' read -r torch_major torch_minor torch_patch <<< "$TORCH_VERSION"
-    if [ "$torch_major" != "2" ] || [ -z "$torch_minor" ] || [ -z "$torch_patch" ]; then
-        echo "--torch must be of form 2.Y.Z (got '$TORCH_VERSION')." >&2
-        exit 1
+    # Fires when either --torch is given (rewrite versions) or PLATFORM_TORCH_STR is
+    # non-empty (append a PEP 440 local segment so uv picks the platform-specific
+    # wheel rather than PyPI's CUDA build).
+    if [ -z "$TORCH_VERSION" ] && [ -z "$PLATFORM_TORCH_STR" ]; then
+        return 0
     fi
-    case "$torch_minor$torch_patch" in
-        *[!0-9]*)
-            echo "--torch components must be numeric (got '$TORCH_VERSION')." >&2
-            exit 1
-            ;;
-    esac
-
-    local tv_minor=$((torch_minor + 15))
-    local torchvision_version="0.${tv_minor}.${torch_patch}"
-    local torchaudio_version="$TORCH_VERSION"
 
     if [ ! -f "$PYPROJECT_FILE" ]; then
         echo "Cannot locate pyproject.toml at $PYPROJECT_FILE" >&2
         exit 1
     fi
 
+    local torch_version torchvision_version torchaudio_version
+    if [ -n "$TORCH_VERSION" ]; then
+        local torch_major torch_minor torch_patch
+        IFS='.' read -r torch_major torch_minor torch_patch <<< "$TORCH_VERSION"
+        if [ "$torch_major" != "2" ] || [ -z "$torch_minor" ] || [ -z "$torch_patch" ]; then
+            echo "--torch must be of form 2.Y.Z (got '$TORCH_VERSION')." >&2
+            exit 1
+        fi
+        case "$torch_minor$torch_patch" in
+            *[!0-9]*)
+                echo "--torch components must be numeric (got '$TORCH_VERSION')." >&2
+                exit 1
+                ;;
+        esac
+        local tv_minor=$((torch_minor + 15))
+        torch_version="$TORCH_VERSION"
+        torchvision_version="0.${tv_minor}.${torch_patch}"
+        torchaudio_version="$TORCH_VERSION"
+    else
+        # Reuse the public versions already pinned in pyproject.toml, stripping
+        # any pre-existing local segment so PLATFORM_TORCH_STR can be re-applied cleanly.
+        torch_version=$(sed -nE 's/.*"torch==([^"+]+).*".*/\1/p' "$PYPROJECT_FILE" | head -1)
+        torchvision_version=$(sed -nE 's/.*"torchvision==([^"+]+).*".*/\1/p' "$PYPROJECT_FILE" | head -1)
+        torchaudio_version=$(sed -nE 's/.*"torchaudio==([^"+]+).*".*/\1/p' "$PYPROJECT_FILE" | head -1)
+        if [ -z "$torch_version" ] || [ -z "$torchvision_version" ] || [ -z "$torchaudio_version" ]; then
+            echo "Could not parse existing torch/torchvision/torchaudio pins from $PYPROJECT_FILE" >&2
+            exit 1
+        fi
+    fi
+
+    local torch_pin="${torch_version}${PLATFORM_TORCH_STR}"
+    local torchvision_pin="${torchvision_version}${PLATFORM_TORCH_STR}"
+    local torchaudio_pin="${torchaudio_version}${PLATFORM_TORCH_STR}"
+
     PYPROJECT_BACKUP="${PYPROJECT_FILE}.rlinf-torch-bak.$$"
     cp "$PYPROJECT_FILE" "$PYPROJECT_BACKUP"
     trap 'restore_pyproject' EXIT INT TERM HUP
 
     sed -i \
-        -e "s/\"torch==[^\"]*\"/\"torch==${TORCH_VERSION}\"/" \
-        -e "s/\"torchvision==[^\"]*\"/\"torchvision==${torchvision_version}\"/" \
-        -e "s/\"torchaudio==[^\"]*\"/\"torchaudio==${torchaudio_version}\"/" \
+        -e "s/\"torch==[^\"]*\"/\"torch==${torch_pin}\"/" \
+        -e "s/\"torchvision==[^\"]*\"/\"torchvision==${torchvision_pin}\"/" \
+        -e "s/\"torchaudio==[^\"]*\"/\"torchaudio==${torchaudio_pin}\"/" \
         "$PYPROJECT_FILE"
 
-    echo "[install.sh] Patched pyproject.toml override-dependencies: torch==${TORCH_VERSION}, torchvision==${torchvision_version}, torchaudio==${torchaudio_version}"
+    echo "[install.sh] Patched pyproject.toml override-dependencies: torch==${torch_pin}, torchvision==${torchvision_pin}, torchaudio==${torchaudio_pin}"
     echo "[install.sh] Original pyproject.toml will be restored on exit."
 }
 
