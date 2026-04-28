@@ -17,6 +17,11 @@ ROCM_VERSION=""
 # Empty for nvidia (PyPI CUDA wheels match `==X.Y.Z` directly). Set by the
 # per-platform configure_<platform> hooks.
 PLATFORM_TORCH_STR=""
+# URL of the platform-specific PyTorch wheel index. When non-empty,
+# apply_torch_override injects [[tool.uv.index]] + [tool.uv.sources] blocks
+# into pyproject.toml so `uv sync` resolves torch/torchvision/torchaudio from
+# this index (UV_TORCH_BACKEND alone only affects `uv pip install` /  `uv add`).
+PLATFORM_TORCH_INDEX=""
 # Default torch-backend per platform; user can override by exporting
 # UV_TORCH_BACKEND before invoking this script.
 DEFAULT_BACKEND_NVIDIA="auto"
@@ -175,6 +180,7 @@ parse_args() {
 
 configure_nvidia() {
     PLATFORM_TORCH_STR=""
+    PLATFORM_TORCH_INDEX=""
     if [ -z "${UV_TORCH_BACKEND:-}" ]; then
         export UV_TORCH_BACKEND="$DEFAULT_BACKEND_NVIDIA"
     fi
@@ -187,6 +193,7 @@ configure_amd() {
     fi
     local rocm_ver="${ROCM_VERSION:-$DEFAULT_AMD_ROCM_VERSION}"
     PLATFORM_TORCH_STR="+rocm${rocm_ver}"
+    PLATFORM_TORCH_INDEX="https://download.pytorch.org/whl/rocm${rocm_ver}"
     if [ -z "${UV_TORCH_BACKEND:-}" ]; then
         export UV_TORCH_BACKEND="rocm${rocm_ver}"
     fi
@@ -246,10 +253,12 @@ restore_pyproject() {
 }
 
 apply_torch_override() {
-    # Fires when either --torch is given (rewrite versions) or PLATFORM_TORCH_STR is
+    # Fires when --torch is given (rewrite versions), PLATFORM_TORCH_STR is
     # non-empty (append a PEP 440 local segment so uv picks the platform-specific
-    # wheel rather than PyPI's CUDA build).
-    if [ -z "$TORCH_VERSION" ] && [ -z "$PLATFORM_TORCH_STR" ]; then
+    # wheel rather than PyPI's CUDA build), or PLATFORM_TORCH_INDEX is non-empty
+    # (route torch* through a dedicated index for `uv sync`, which doesn't honor
+    # UV_TORCH_BACKEND).
+    if [ -z "$TORCH_VERSION" ] && [ -z "$PLATFORM_TORCH_STR" ] && [ -z "$PLATFORM_TORCH_INDEX" ]; then
         return 0
     fi
 
@@ -303,6 +312,28 @@ apply_torch_override() {
         "$PYPROJECT_FILE"
 
     echo "[install.sh] Patched pyproject.toml override-dependencies: torch==${torch_pin}, torchvision==${torchvision_pin}, torchaudio==${torchaudio_pin}"
+
+    if [ -n "$PLATFORM_TORCH_INDEX" ]; then
+        # `uv sync` does not honor UV_TORCH_BACKEND for resolution, so route
+        # torch/torchvision/torchaudio through an explicit named index. The
+        # `explicit = true` flag prevents the index from leaking into resolution
+        # for unrelated packages. Appended to the file so the existing trap
+        # restores the original on exit.
+        cat >> "$PYPROJECT_FILE" <<EOF
+
+[[tool.uv.index]]
+name = "pytorch-platform"
+url = "${PLATFORM_TORCH_INDEX}"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-platform" }
+torchvision = { index = "pytorch-platform" }
+torchaudio = { index = "pytorch-platform" }
+EOF
+        echo "[install.sh] Routed torch/torchvision/torchaudio through index ${PLATFORM_TORCH_INDEX}"
+    fi
+
     echo "[install.sh] Original pyproject.toml will be restored on exit."
 }
 
