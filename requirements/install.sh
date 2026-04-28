@@ -325,10 +325,27 @@ install_nvidia_extras() {
 }
 
 install_amd_extras() {
-    : # ROCm torch is selected via UV_TORCH_BACKEND=rocm<version>; flash-attn
-      # and apex are CUDA-only and are skipped by their own platform guards.
-      # Reserved for ROCm-specific runtime extras (e.g. a ROCm flash-attn
-      # build, rccl tooling) once we have a validated stack.
+    # Some downstream packages (vllm and friends) import `triton` directly even
+    # when running on ROCm. pytorch-triton-rocm provides the ROCm runtime but
+    # is not importable as `triton`, so install the `triton` shim package at
+    # the matching version to satisfy `import triton`. Skipping is safe if
+    # pytorch-triton-rocm isn't present — that just means torch-based packages
+    # haven't been installed for this target.
+    local triton_ver
+    triton_ver=$(python - <<'EOF' 2>/dev/null || true
+try:
+    import importlib.metadata as m
+    print(m.version("pytorch-triton-rocm"))
+except Exception:
+    pass
+EOF
+)
+    if [ -z "$triton_ver" ]; then
+        echo "[install.sh] pytorch-triton-rocm not installed; skipping matching triton install."
+        return 0
+    fi
+    echo "[install.sh] Installing triton==${triton_ver} to match pytorch-triton-rocm"
+    uv pip install "triton==${triton_ver}"
 }
 
 install_platform_extras() {
