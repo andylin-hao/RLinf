@@ -26,6 +26,10 @@ PLATFORM_TORCH_INDEX=""
 # deps that only live on the platform-specific index (e.g. pytorch-triton-rocm
 # for ROCm). Set per-platform by configure_<platform>.
 PLATFORM_TORCH_PACKAGES=()
+# Lines appended to the venv's bin/activate by embodied installers (each is a
+# full shell statement, e.g. `export VK_DRIVER_FILES=...`). Populated per-
+# platform by configure_<platform>; other targets ignore the array.
+PLATFORM_VENV_EXPORTS=()
 # Default torch-backend per platform; user can override by exporting
 # UV_TORCH_BACKEND before invoking this script.
 DEFAULT_BACKEND_NVIDIA="auto"
@@ -240,6 +244,11 @@ configure_nvidia() {
     PLATFORM_TORCH_STR=""
     PLATFORM_TORCH_INDEX=""
     PLATFORM_TORCH_PACKAGES=()
+    PLATFORM_VENV_EXPORTS=(
+        "export NVIDIA_DRIVER_CAPABILITIES=all"
+        "export VK_DRIVER_FILES=/etc/vulkan/icd.d/nvidia_icd.json"
+        "export VK_ICD_FILENAMES=/etc/vulkan/icd.d/nvidia_icd.json"
+    )
     if [ -z "${UV_TORCH_BACKEND:-}" ]; then
         export UV_TORCH_BACKEND="$DEFAULT_BACKEND_NVIDIA"
     fi
@@ -276,6 +285,11 @@ configure_amd() {
     # deps in [project.dependencies] so [tool.uv.sources] mappings actually
     # take effect (uv only applies sources to direct deps).
     PLATFORM_TORCH_PACKAGES=("torch" "torchvision" "torchaudio" "pytorch-triton-rocm")
+    PLATFORM_VENV_EXPORTS=(
+        "export AMD_VULKAN_ICD=RADV"
+        "export VK_DRIVER_FILES=/usr/share/vulkan/icd.d/radeon_icd.x86_64.json"
+        "export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/radeon_icd.x86_64.json"
+    )
     if [ -z "${UV_TORCH_BACKEND:-}" ]; then
         export UV_TORCH_BACKEND="rocm${ROCM_VERSION}"
     fi
@@ -663,13 +677,11 @@ install_common_embodied_deps() {
     uv sync --extra embodied --active $NO_INSTALL_RLINF_CMD
     uv pip install -r $SCRIPT_DIR/embodied/envs/common.txt
     if [ "$NO_ROOT" -eq 0 ]; then
-        bash $SCRIPT_DIR/embodied/sys_deps.sh
+        bash $SCRIPT_DIR/embodied/sys_deps.sh "$PLATFORM"
     fi
-    {
-        echo "export NVIDIA_DRIVER_CAPABILITIES=all"
-        echo "export VK_DRIVER_FILES=/etc/vulkan/icd.d/nvidia_icd.json"
-        echo "export VK_ICD_FILENAMES=/etc/vulkan/icd.d/nvidia_icd.json"
-    } >> "$VENV_DIR/bin/activate"
+    if [ ${#PLATFORM_VENV_EXPORTS[@]} -gt 0 ]; then
+        printf '%s\n' "${PLATFORM_VENV_EXPORTS[@]}" >> "$VENV_DIR/bin/activate"
+    fi
 }
 
 install_openvla_model() {
