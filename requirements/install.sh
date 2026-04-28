@@ -22,6 +22,10 @@ PLATFORM_TORCH_STR=""
 # into pyproject.toml so `uv sync` resolves torch/torchvision/torchaudio from
 # this index (UV_TORCH_BACKEND alone only affects `uv pip install` /  `uv add`).
 PLATFORM_TORCH_INDEX=""
+# Package names routed through PLATFORM_TORCH_INDEX. Must include any transitive
+# deps that only live on the platform-specific index (e.g. pytorch-triton-rocm
+# for ROCm). Set per-platform by configure_<platform>.
+PLATFORM_TORCH_PACKAGES=()
 # Default torch-backend per platform; user can override by exporting
 # UV_TORCH_BACKEND before invoking this script.
 DEFAULT_BACKEND_NVIDIA="auto"
@@ -181,6 +185,7 @@ parse_args() {
 configure_nvidia() {
     PLATFORM_TORCH_STR=""
     PLATFORM_TORCH_INDEX=""
+    PLATFORM_TORCH_PACKAGES=()
     if [ -z "${UV_TORCH_BACKEND:-}" ]; then
         export UV_TORCH_BACKEND="$DEFAULT_BACKEND_NVIDIA"
     fi
@@ -194,6 +199,13 @@ configure_amd() {
     local rocm_ver="${ROCM_VERSION:-$DEFAULT_AMD_ROCM_VERSION}"
     PLATFORM_TORCH_STR="+rocm${rocm_ver}"
     PLATFORM_TORCH_INDEX="https://download.pytorch.org/whl/rocm${rocm_ver}"
+    # All four packages are routed through the ROCm index (and only that
+    # index — see explicit=true on [[tool.uv.index]]). torchvision/torchaudio
+    # arrive transitively via vllm/etc.; pytorch-triton-rocm arrives
+    # transitively via torch. apply_torch_override promotes them to direct
+    # deps in [project.dependencies] so [tool.uv.sources] mappings actually
+    # take effect (uv only applies sources to direct deps).
+    PLATFORM_TORCH_PACKAGES=("torch" "torchvision" "torchaudio" "pytorch-triton-rocm")
     if [ -z "${UV_TORCH_BACKEND:-}" ]; then
         export UV_TORCH_BACKEND="rocm${rocm_ver}"
     fi
@@ -314,24 +326,34 @@ apply_torch_override() {
     echo "[install.sh] Patched pyproject.toml override-dependencies: torch==${torch_pin}, torchvision==${torchvision_pin}, torchaudio==${torchaudio_pin}"
 
     if [ -n "$PLATFORM_TORCH_INDEX" ]; then
-        # `uv sync` does not honor UV_TORCH_BACKEND for resolution, so route
-        # torch/torchvision/torchaudio through an explicit named index. The
-        # `explicit = true` flag prevents the index from leaking into resolution
-        # for unrelated packages. Appended to the file so the existing trap
-        # restores the original on exit.
-        cat >> "$PYPROJECT_FILE" <<EOF
+        # `uv sync` does not honor UV_TORCH_BACKEND for resolution, so register
+        # the platform-specific wheel index and pin every torch-family package
+        # to it. `explicit = true` keeps unrelated packages (e.g. cmake) from
+        # being shadowed by stale copies on the PyTorch index. Because
+        # [tool.uv.sources] only applies to direct deps, also promote each
+        # mapped package to a direct dep in [project.dependencies] (skipping
+        # any already declared there). Appended to the file so the existing
+        # trap restores the original on exit.
+        for pkg in "${PLATFORM_TORCH_PACKAGES[@]}"; do
+            if grep -qE "^[[:space:]]*\"${pkg}\\b" "$PYPROJECT_FILE"; then
+                continue
+            fi
+            sed -i "/^dependencies = \\[\$/a\\    \"${pkg}\"," "$PYPROJECT_FILE"
+        done
 
-[[tool.uv.index]]
-name = "pytorch-platform"
-url = "${PLATFORM_TORCH_INDEX}"
-explicit = true
-
-[tool.uv.sources]
-torch = { index = "pytorch-platform" }
-torchvision = { index = "pytorch-platform" }
-torchaudio = { index = "pytorch-platform" }
-EOF
-        echo "[install.sh] Routed torch/torchvision/torchaudio through index ${PLATFORM_TORCH_INDEX}"
+        {
+            echo ""
+            echo "[[tool.uv.index]]"
+            echo "name = \"pytorch-platform\""
+            echo "url = \"${PLATFORM_TORCH_INDEX}\""
+            echo "explicit = true"
+            echo ""
+            echo "[tool.uv.sources]"
+            for pkg in "${PLATFORM_TORCH_PACKAGES[@]}"; do
+                echo "${pkg} = { index = \"pytorch-platform\" }"
+            done
+        } >> "$PYPROJECT_FILE"
+        echo "[install.sh] Routed ${PLATFORM_TORCH_PACKAGES[*]} through index ${PLATFORM_TORCH_INDEX} (explicit; promoted to direct deps as needed)"
     fi
 
     echo "[install.sh] Original pyproject.toml will be restored on exit."
