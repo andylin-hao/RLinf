@@ -211,18 +211,32 @@ detect_rocm_version() {
     echo "$mm"
 }
 
-# Find the minimum torch version on https://download.pytorch.org/whl/torch/
-# that has a +rocm<rocm_ver> wheel. Echoes X.Y.Z on success, returns 1 on
-# failure. Matches both `+rocm6.4-` (exact) and `+rocm6.4.X-` (patch suffix)
-# so a major.minor input still finds wheels published with a patch tag.
-detect_min_torch_for_rocm() {
+# Find a torch version on the PyTorch wheel index that has a +rocm<rocm_ver>
+# Linux x86_64 wheel matching PYTHON_VERSION's cpXY tag. Prefers the smallest
+# version >= 2.5; falls back to the highest available wheel if no >= 2.5 wheel
+# exists. Uses the NJU mirror (per-ROCm subdir) when --use-mirror is set,
+# otherwise the upstream universal index. Echoes X.Y.Z on success, returns 1
+# on failure.
+detect_torch_for_rocm() {
     local rocm_ver="$1"
-    local url="https://download.pytorch.org/whl/torch/"
 
     if ! command -v curl &>/dev/null; then
         echo "[install.sh] curl not found; cannot auto-detect torch version." >&2
         return 1
     fi
+
+    local url
+    if [ "$USE_MIRRORS" -eq 1 ]; then
+        url="https://mirrors.nju.edu.cn/pytorch/whl/rocm${rocm_ver}/torch/"
+    else
+        url="https://download.pytorch.org/whl/torch/"
+    fi
+
+    # Python ABI tag (e.g. 3.11.14 -> cp311). The venv hasn't been created yet
+    # at this point, so derive it from the PYTHON_VERSION script global.
+    local py_major py_minor _py_patch
+    IFS='.' read -r py_major py_minor _py_patch <<< "$PYTHON_VERSION"
+    local py_tag="cp${py_major}${py_minor}"
 
     local html
     html=$(curl -fsSL --max-time 30 "$url" 2>/dev/null) || {
@@ -230,14 +244,34 @@ detect_min_torch_for_rocm() {
         return 1
     }
 
+    # Wheel filenames look like:
+    #   torch-2.8.0+rocm6.4-cp311-cp311-manylinux_2_28_x86_64.whl
+    # The abi tag may have a trailing 't' (free-threaded build); the platform
+    # tag covers manylinux_*_x86_64 / manylinux<digits>_x86_64 / linux_x86_64
+    # (NJU and upstream both stick to manylinux_2_28 for recent ROCm wheels,
+    # but allow the older tags for forward-compat).
     local rocm_re="${rocm_ver//./\\.}"
     local versions
     versions=$(echo "$html" \
-        | grep -oE "torch-[0-9]+\.[0-9]+\.[0-9]+\+rocm${rocm_re}[-.]" \
+        | grep -oE "torch-[0-9]+\.[0-9]+\.[0-9]+\+rocm${rocm_re}(\.[0-9]+)?-${py_tag}-${py_tag}t?-(manylinux[^-]*|linux)_x86_64\.whl" \
         | sed -E 's/torch-([0-9]+\.[0-9]+\.[0-9]+).*/\1/' \
         | sort -uV)
     [ -z "$versions" ] && return 1
-    echo "$versions" | head -n1
+
+    # Prefer the smallest version >= 2.5.0; otherwise take the highest
+    # available wheel (which the project may still reject at install time, but
+    # surfaces a usable starting point).
+    local picked=""
+    while IFS= read -r v; do
+        if [ "$(printf '%s\n2.5.0\n' "$v" | sort -V | head -n1)" = "2.5.0" ]; then
+            picked="$v"
+            break
+        fi
+    done <<< "$versions"
+    if [ -z "$picked" ]; then
+        picked=$(echo "$versions" | tail -n1)
+    fi
+    echo "$picked"
 }
 
 configure_nvidia() {
@@ -269,15 +303,19 @@ configure_amd() {
     fi
 
     if [ -z "$TORCH_VERSION" ]; then
-        TORCH_VERSION=$(detect_min_torch_for_rocm "$ROCM_VERSION") || {
-            echo "[install.sh] No torch wheels found for ROCm ${ROCM_VERSION} on https://download.pytorch.org/whl/torch/. Pass --torch explicitly." >&2
+        TORCH_VERSION=$(detect_torch_for_rocm "$ROCM_VERSION") || {
+            echo "[install.sh] No compatible torch wheels found for ROCm ${ROCM_VERSION} (Python ${PYTHON_VERSION}). Pass --torch explicitly." >&2
             exit 1
         }
-        echo "[install.sh] Auto-selected minimum torch version for ROCm ${ROCM_VERSION}: ${TORCH_VERSION}"
+        echo "[install.sh] Auto-selected torch version for ROCm ${ROCM_VERSION}: ${TORCH_VERSION}"
     fi
 
     PLATFORM_TORCH_STR="+rocm${ROCM_VERSION}"
-    PLATFORM_TORCH_INDEX="https://download.pytorch.org/whl/rocm${ROCM_VERSION}"
+    if [ "$USE_MIRRORS" -eq 1 ]; then
+        PLATFORM_TORCH_INDEX="https://mirrors.nju.edu.cn/pytorch/whl/rocm${ROCM_VERSION}"
+    else
+        PLATFORM_TORCH_INDEX="https://download.pytorch.org/whl/rocm${ROCM_VERSION}"
+    fi
     # All four packages are routed through the ROCm index (and only that
     # index — see explicit=true on [[tool.uv.index]]). torchvision/torchaudio
     # arrive transitively via vllm/etc.; pytorch-triton-rocm arrives
