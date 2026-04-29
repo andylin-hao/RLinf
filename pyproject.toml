@@ -104,6 +104,7 @@ agentic-vllm = [
 ]
 embodied = [
     "transformers<=4.57.6",
+    "torchcodec",
     "peft",
     "timm",
     "imageio[ffmpeg]",
