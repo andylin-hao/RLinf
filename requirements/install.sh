@@ -44,7 +44,7 @@ DEFAULT_BACKEND_NVIDIA="auto"
 # Add new platforms by extending SUPPORTED_PLATFORMS, defining
 # configure_<platform> + install_<platform>_extras, and routing in their
 # respective dispatchers below.
-SUPPORTED_PLATFORMS=("nvidia" "amd")
+SUPPORTED_PLATFORMS=("nvidia" "amd" "ascend")
 TEST_BUILD=${TEST_BUILD:-0}
 # Absolute path to this script (resolves symlinks)
 SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
@@ -81,9 +81,11 @@ Common options:
                            duration of the install; the original is restored on exit. On
                            --platform amd, defaults to the lowest torch version with a matching
                            +rocm<version> wheel on https://download.pytorch.org/whl/torch/.
-    --platform <name>      Hardware platform: nvidia (default, fully tested) or amd (experimental,
-                           ROCm). Sets UV_TORCH_BACKEND (auto / rocm<version>); export
-                           UV_TORCH_BACKEND yourself to bypass (e.g. UV_TORCH_BACKEND=cu124).
+    --platform <name>      Hardware platform: nvidia (default, fully tested), amd (experimental,
+                           ROCm), or ascend (experimental, NPU). Sets UV_TORCH_BACKEND
+                           (auto / rocm<version> / cpu); export UV_TORCH_BACKEND yourself to
+                           bypass (e.g. UV_TORCH_BACKEND=cu124). Ascend uses CPU torch from PyPI
+                           and adds torch-npu in install_ascend_extras.
     --rocm <version>       ROCm version for --platform amd. When unset, auto-detected from the
                            system (/opt/rocm/.info/version, hipconfig, rocminfo). Composes
                            UV_TORCH_BACKEND=rocm<version>. Ignored on other platforms.
@@ -339,6 +341,23 @@ configure_amd() {
     fi
 }
 
+configure_ascend() {
+    # Ascend NPU uses CPU torch from PyPI plus torch-npu installed via
+    # install_ascend_extras. No platform-specific wheel index is needed
+    # because there's no ascend-tagged torch on PyTorch's index — torch-npu
+    # is the standalone package that adds the NPU backend at runtime.
+    PLATFORM_TORCH_STR=""
+    PLATFORM_TORCH_INDEX=""
+    PLATFORM_TORCH_PACKAGES=()
+    PLATFORM_VENV_EXPORTS=()
+    PLATFORM_FLASH_ATTN_PREBUILT=0
+    if [ -z "${UV_TORCH_BACKEND:-}" ]; then
+        # `cpu` keeps `uv pip install torch ...` calls fetching the CPU build
+        # from download.pytorch.org/whl/cpu instead of PyPI's CUDA wheel.
+        export UV_TORCH_BACKEND="cpu"
+    fi
+}
+
 configure_platform() {
     if [[ ! " ${SUPPORTED_PLATFORMS[*]} " =~ " $PLATFORM " ]]; then
         echo "--platform must be one of: ${SUPPORTED_PLATFORMS[*]} (got '$PLATFORM')." >&2
@@ -353,6 +372,7 @@ configure_platform() {
     case "$PLATFORM" in
         nvidia)  configure_nvidia ;;
         amd)     configure_amd ;;
+        ascend)  configure_ascend ;;
     esac
     echo "[install.sh] platform=${PLATFORM}, UV_TORCH_BACKEND=${UV_TORCH_BACKEND}"
 }
@@ -392,10 +412,39 @@ EOF
     uv pip install "triton==${triton_ver}"
 }
 
+install_ascend_extras() {
+    # Ascend NPU support comes from torch-npu, a side-car package that
+    # registers an NPU backend on torch import. The package version must
+    # match the installed torch (torch-npu 2.X.Y → torch 2.X.Y). Skip if
+    # torch isn't present (e.g. docs target), so this hook is safe to run
+    # for every ascend target.
+    local torch_ver
+    torch_ver=$(python - <<'EOF' 2>/dev/null || true
+try:
+    import torch
+    print(torch.__version__.split("+")[0])
+except Exception:
+    pass
+EOF
+)
+    if [ -z "$torch_ver" ]; then
+        echo "[install.sh] torch not installed; skipping torch-npu install."
+        return 0
+    fi
+    # torch-npu imports `yaml` at runtime but doesn't declare PyYAML in its
+    # wheel metadata, so install it explicitly.
+    uv pip install pyyaml
+    echo "[install.sh] Installing torch-npu==${torch_ver} to match torch"
+    uv pip install "torch-npu==${torch_ver}" \
+        || (echo "[install.sh] Pinned torch-npu==${torch_ver} failed; falling back to latest compatible build." >&2 \
+            && uv pip install torch-npu)
+}
+
 install_platform_extras() {
     case "$PLATFORM" in
         nvidia)  install_nvidia_extras ;;
         amd)     install_amd_extras ;;
+        ascend)  install_ascend_extras ;;
     esac
 }
 

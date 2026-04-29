@@ -350,6 +350,12 @@ case "$PLATFORM" in
         echo "Installing rendering runtime config for AMD/Radeon"
         install_render_config_amd
         ;;
+    ascend)
+        # Ascend NPU systems are server-side and typically have no display
+        # GPU. Skip the EGL/Vulkan ICD config — embodied targets that need
+        # software rendering still get mesa drivers from the apt step.
+        echo "Skipping rendering runtime config on Ascend platform"
+        ;;
     nvidia|*)
         echo "Installing rendering runtime config for NVIDIA"
         install_render_config_nvidia
