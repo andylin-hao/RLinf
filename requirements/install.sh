@@ -30,6 +30,10 @@ PLATFORM_TORCH_PACKAGES=()
 # full shell statement, e.g. `export VK_DRIVER_FILES=...`). Populated per-
 # platform by configure_<platform>; other targets ignore the array.
 PLATFORM_VENV_EXPORTS=()
+# Whether the platform has prebuilt flash-attn wheels available on the
+# Dao-AILab GitHub releases. When 0, install_flash_attn skips the wheel and
+# does a `uv pip install flash-attn==<ver> --no-build-isolation` source build.
+PLATFORM_FLASH_ATTN_PREBUILT=0
 # Default torch-backend per platform; user can override by exporting
 # UV_TORCH_BACKEND before invoking this script.
 DEFAULT_BACKEND_NVIDIA="auto"
@@ -283,6 +287,7 @@ configure_nvidia() {
         "export VK_DRIVER_FILES=/etc/vulkan/icd.d/nvidia_icd.json"
         "export VK_ICD_FILENAMES=/etc/vulkan/icd.d/nvidia_icd.json"
     )
+    PLATFORM_FLASH_ATTN_PREBUILT=1
     if [ -z "${UV_TORCH_BACKEND:-}" ]; then
         export UV_TORCH_BACKEND="$DEFAULT_BACKEND_NVIDIA"
     fi
@@ -328,6 +333,7 @@ configure_amd() {
         "export VK_DRIVER_FILES=/usr/share/vulkan/icd.d/radeon_icd.x86_64.json"
         "export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/radeon_icd.x86_64.json"
     )
+    PLATFORM_FLASH_ATTN_PREBUILT=0
     if [ -z "${UV_TORCH_BACKEND:-}" ]; then
         export UV_TORCH_BACKEND="rocm${ROCM_VERSION}"
     fi
@@ -587,12 +593,15 @@ EOF
 }
 
 install_flash_attn() {
-    if [ "$PLATFORM" != "nvidia" ]; then
-        echo "[install.sh] Skipping flash-attn install on platform=${PLATFORM} (CUDA-only wheels)."
-        return 0
-    fi
     # Base release info – adjust when bumping flash-attn
     local flash_ver="2.7.4.post1"
+
+    if [ "$PLATFORM_FLASH_ATTN_PREBUILT" -ne 1 ]; then
+        echo "[install.sh] Building flash-attn==${flash_ver} from source on platform=${PLATFORM}..."
+        uv pip uninstall flash-attn || true
+        uv pip install "flash-attn==${flash_ver}" --no-build-isolation
+        return 0
+    fi
     local base_url="${GITHUB_PREFIX}https://github.com/Dao-AILab/flash-attention/releases/download/v${flash_ver}"
 
     # Detect Python tags
