@@ -34,6 +34,11 @@ PLATFORM_VENV_EXPORTS=()
 # Dao-AILab GitHub releases. When 0, install_flash_attn skips the wheel and
 # does a `uv pip install flash-attn==<ver> --no-build-isolation` source build.
 PLATFORM_FLASH_ATTN_PREBUILT=0
+# Whether apply_torch_override should rewrite the pyproject.toml `torchcodec`
+# pin from ==0.2 to >=0.5. The ==0.2 line in override-dependencies has wheels
+# only for x86_64 + torch 2.5/2.6, so it breaks on AMD (torch 2.8 from rocm
+# index) and on Ascend (aarch64). Set per-platform by configure_<platform>.
+PLATFORM_RELAX_TORCHCODEC=0
 # Default torch-backend per platform; user can override by exporting
 # UV_TORCH_BACKEND before invoking this script.
 DEFAULT_BACKEND_NVIDIA="auto"
@@ -290,6 +295,7 @@ configure_nvidia() {
         "export VK_ICD_FILENAMES=/etc/vulkan/icd.d/nvidia_icd.json"
     )
     PLATFORM_FLASH_ATTN_PREBUILT=1
+    PLATFORM_RELAX_TORCHCODEC=0
     if [ -z "${UV_TORCH_BACKEND:-}" ]; then
         export UV_TORCH_BACKEND="$DEFAULT_BACKEND_NVIDIA"
     fi
@@ -336,6 +342,7 @@ configure_amd() {
         "export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/radeon_icd.x86_64.json"
     )
     PLATFORM_FLASH_ATTN_PREBUILT=0
+    PLATFORM_RELAX_TORCHCODEC=1
     if [ -z "${UV_TORCH_BACKEND:-}" ]; then
         export UV_TORCH_BACKEND="rocm${ROCM_VERSION}"
     fi
@@ -351,6 +358,7 @@ configure_ascend() {
     PLATFORM_TORCH_PACKAGES=()
     PLATFORM_VENV_EXPORTS=()
     PLATFORM_FLASH_ATTN_PREBUILT=0
+    PLATFORM_RELAX_TORCHCODEC=1
     if [ -z "${UV_TORCH_BACKEND:-}" ]; then
         # `cpu` keeps `uv pip install torch ...` calls fetching the CPU build
         # from download.pytorch.org/whl/cpu instead of PyPI's CUDA wheel.
@@ -461,16 +469,41 @@ restore_pyproject() {
 apply_torch_override() {
     # Fires when --torch is given (rewrite versions), PLATFORM_TORCH_STR is
     # non-empty (append a PEP 440 local segment so uv picks the platform-specific
-    # wheel rather than PyPI's CUDA build), or PLATFORM_TORCH_INDEX is non-empty
+    # wheel rather than PyPI's CUDA build), PLATFORM_TORCH_INDEX is non-empty
     # (route torch* through a dedicated index for `uv sync`, which doesn't honor
-    # UV_TORCH_BACKEND).
-    if [ -z "$TORCH_VERSION" ] && [ -z "$PLATFORM_TORCH_STR" ] && [ -z "$PLATFORM_TORCH_INDEX" ]; then
+    # UV_TORCH_BACKEND), or PLATFORM_RELAX_TORCHCODEC is set (rewrite the
+    # torchcodec pin for non-x86_64 / non-CUDA torch combos).
+    local needs_torch_rewrite=0
+    if [ -n "$TORCH_VERSION" ] || [ -n "$PLATFORM_TORCH_STR" ] || [ -n "$PLATFORM_TORCH_INDEX" ]; then
+        needs_torch_rewrite=1
+    fi
+    if [ "$needs_torch_rewrite" -eq 0 ] && [ "$PLATFORM_RELAX_TORCHCODEC" -ne 1 ]; then
         return 0
     fi
 
     if [ ! -f "$PYPROJECT_FILE" ]; then
         echo "Cannot locate pyproject.toml at $PYPROJECT_FILE" >&2
         exit 1
+    fi
+
+    PYPROJECT_BACKUP="${PYPROJECT_FILE}.rlinf-torch-bak.$$"
+    cp "$PYPROJECT_FILE" "$PYPROJECT_BACKUP"
+    trap 'restore_pyproject' EXIT INT TERM HUP
+
+    if [ "$PLATFORM_RELAX_TORCHCODEC" -eq 1 ]; then
+        # The pyproject.toml `torchcodec==0.2` override only has wheels for
+        # x86_64 + torch ~2.5/2.6. It breaks on AMD (our torch override pins
+        # 2.8 from the rocm index) and on Ascend (typically aarch64, where
+        # 0.2.x has no wheels). Relaxing to >=0.5 lets uv pick a wheel for
+        # the resolved environment; transitive pins like lerobot==0.1.0's
+        # ==0.2 are superseded by override-dependencies.
+        sed -i 's/"torchcodec==0\.2"/"torchcodec>=0.5"/' "$PYPROJECT_FILE"
+        echo "[install.sh] Relaxed torchcodec override to >=0.5 for ${PLATFORM} compatibility"
+    fi
+
+    if [ "$needs_torch_rewrite" -eq 0 ]; then
+        echo "[install.sh] Original pyproject.toml will be restored on exit."
+        return 0
     fi
 
     local torch_version torchvision_version torchaudio_version
@@ -506,10 +539,6 @@ apply_torch_override() {
     local torch_pin="${torch_version}${PLATFORM_TORCH_STR}"
     local torchvision_pin="${torchvision_version}${PLATFORM_TORCH_STR}"
     local torchaudio_pin="${torchaudio_version}${PLATFORM_TORCH_STR}"
-
-    PYPROJECT_BACKUP="${PYPROJECT_FILE}.rlinf-torch-bak.$$"
-    cp "$PYPROJECT_FILE" "$PYPROJECT_BACKUP"
-    trap 'restore_pyproject' EXIT INT TERM HUP
 
     sed -i \
         -e "s/\"torch==[^\"]*\"/\"torch==${torch_pin}\"/" \
