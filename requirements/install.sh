@@ -39,6 +39,12 @@ PLATFORM_FLASH_ATTN_PREBUILT=0
 # only for x86_64 + torch 2.5/2.6, so it breaks on AMD (torch 2.8 from rocm
 # index) and on Ascend (aarch64). Set per-platform by configure_<platform>.
 PLATFORM_RELAX_TORCHCODEC=0
+# Extra entries (full PEP 508 specifiers) inserted into the pyproject.toml
+# `override-dependencies` array by apply_torch_override. Use this for
+# platform-specific transitive pins that aren't in the original file
+# (e.g. `"evdev<1.9"` on Ascend where newer evdev fails to build against
+# older kernel headers). Set per-platform by configure_<platform>.
+PLATFORM_EXTRA_OVERRIDES=()
 # Default torch-backend per platform; user can override by exporting
 # UV_TORCH_BACKEND before invoking this script.
 DEFAULT_BACKEND_NVIDIA="auto"
@@ -296,6 +302,7 @@ configure_nvidia() {
     )
     PLATFORM_FLASH_ATTN_PREBUILT=1
     PLATFORM_RELAX_TORCHCODEC=0
+    PLATFORM_EXTRA_OVERRIDES=()
     if [ -z "${UV_TORCH_BACKEND:-}" ]; then
         export UV_TORCH_BACKEND="$DEFAULT_BACKEND_NVIDIA"
     fi
@@ -343,6 +350,7 @@ configure_amd() {
     )
     PLATFORM_FLASH_ATTN_PREBUILT=0
     PLATFORM_RELAX_TORCHCODEC=1
+    PLATFORM_EXTRA_OVERRIDES=()
     if [ -z "${UV_TORCH_BACKEND:-}" ]; then
         export UV_TORCH_BACKEND="rocm${ROCM_VERSION}"
     fi
@@ -359,10 +367,19 @@ configure_ascend() {
     PLATFORM_VENV_EXPORTS=()
     PLATFORM_FLASH_ATTN_PREBUILT=0
     PLATFORM_RELAX_TORCHCODEC=1
+    PLATFORM_EXTRA_OVERRIDES=()
     if [ -z "${UV_TORCH_BACKEND:-}" ]; then
         # `cpu` keeps `uv pip install torch ...` calls fetching the CPU build
         # from download.pytorch.org/whl/cpu instead of PyPI's CUDA wheel.
         export UV_TORCH_BACKEND="cpu"
+    fi
+    # evdev's generated ecodes.c references KEY_* constants without including
+    # <linux/input-event-codes.h>. On systems where userspace kernel headers
+    # split input-event-codes.h out of input.h, the build fails with
+    # "KEY_ALL_APPLICATIONS undeclared" etc. Force-include the header for all
+    # C compilations during this install so the constants are always visible.
+    if [ -f /usr/include/linux/input-event-codes.h ]; then
+        export CFLAGS="${CFLAGS:+$CFLAGS }-include /usr/include/linux/input-event-codes.h"
     fi
 }
 
@@ -471,13 +488,16 @@ apply_torch_override() {
     # non-empty (append a PEP 440 local segment so uv picks the platform-specific
     # wheel rather than PyPI's CUDA build), PLATFORM_TORCH_INDEX is non-empty
     # (route torch* through a dedicated index for `uv sync`, which doesn't honor
-    # UV_TORCH_BACKEND), or PLATFORM_RELAX_TORCHCODEC is set (rewrite the
-    # torchcodec pin for non-x86_64 / non-CUDA torch combos).
+    # UV_TORCH_BACKEND), PLATFORM_RELAX_TORCHCODEC is set (rewrite the
+    # torchcodec pin for non-x86_64 / non-CUDA torch combos), or
+    # PLATFORM_EXTRA_OVERRIDES has entries (insert extra override pins).
     local needs_torch_rewrite=0
     if [ -n "$TORCH_VERSION" ] || [ -n "$PLATFORM_TORCH_STR" ] || [ -n "$PLATFORM_TORCH_INDEX" ]; then
         needs_torch_rewrite=1
     fi
-    if [ "$needs_torch_rewrite" -eq 0 ] && [ "$PLATFORM_RELAX_TORCHCODEC" -ne 1 ]; then
+    if [ "$needs_torch_rewrite" -eq 0 ] \
+        && [ "$PLATFORM_RELAX_TORCHCODEC" -ne 1 ] \
+        && [ ${#PLATFORM_EXTRA_OVERRIDES[@]} -eq 0 ]; then
         return 0
     fi
 
@@ -499,6 +519,18 @@ apply_torch_override() {
         # ==0.2 are superseded by override-dependencies.
         sed -i 's/"torchcodec==0\.2"/"torchcodec>=0.5"/' "$PYPROJECT_FILE"
         echo "[install.sh] Relaxed torchcodec override to >=0.5 for ${PLATFORM} compatibility"
+    fi
+
+    if [ ${#PLATFORM_EXTRA_OVERRIDES[@]} -gt 0 ]; then
+        # Insert each extra override right after the opening bracket of the
+        # override-dependencies array. Done in reverse so the final order
+        # matches the array order. The trap restores the original on exit.
+        local i
+        for (( i=${#PLATFORM_EXTRA_OVERRIDES[@]}-1; i>=0; i-- )); do
+            local entry="${PLATFORM_EXTRA_OVERRIDES[i]}"
+            sed -i "/^override-dependencies = \\[\$/a\\    \"${entry}\"," "$PYPROJECT_FILE"
+        done
+        echo "[install.sh] Added override-dependencies entries: ${PLATFORM_EXTRA_OVERRIDES[*]}"
     fi
 
     if [ "$needs_torch_rewrite" -eq 0 ]; then

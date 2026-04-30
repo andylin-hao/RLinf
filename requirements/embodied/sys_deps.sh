@@ -88,6 +88,7 @@ install_deps_apt() {
     sudo apt-get update -y
     sudo apt-get install -y --no-install-recommends libgl1-mesa-glx || sudo apt-get install -y --no-install-recommends libglx-mesa0
     sudo apt-get install -y --no-install-recommends \
+        linux-libc-dev \
         wget \
         unzip \
         curl \
@@ -139,6 +140,7 @@ install_deps_dnf() {
     sudo dnf config-manager --set-enabled crb 2>/dev/null || \
         sudo dnf config-manager --set-enabled powertools 2>/dev/null || true
     sudo dnf install -y --allowerasing \
+        kernel-headers \
         wget \
         unzip \
         curl \
@@ -179,6 +181,7 @@ install_deps_yum() {
     # YUM package names (similar to DNF)
     sudo yum install -y epel-release 2>/dev/null || true  # Enable EPEL for extra packages
     sudo yum install -y \
+        kernel-headers \
         wget \
         unzip \
         curl \
@@ -218,6 +221,7 @@ install_deps_yum() {
 install_deps_pacman() {
     # Pacman package names for Arch Linux
     sudo pacman -Sy --noconfirm \
+        linux-api-headers \
         wget \
         unzip \
         curl \
