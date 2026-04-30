@@ -476,9 +476,9 @@ EOF
         echo "[install.sh] torch not installed; skipping torch-npu install."
         return 0
     fi
-    # torch-npu imports `yaml` at runtime but doesn't declare PyYAML in its
-    # wheel metadata, so install it explicitly.
-    uv pip install pyyaml
+    # torch-npu imports a few packages at runtime (`yaml`, `decorator`) but
+    # doesn't declare them in its wheel metadata, so install them explicitly.
+    uv pip install pyyaml decorator
     echo "[install.sh] Installing torch-npu==${torch_ver} to match torch"
     uv pip install "torch-npu==${torch_ver}" \
         || (echo "[install.sh] Pinned torch-npu==${torch_ver} failed; falling back to latest compatible build." >&2 \
