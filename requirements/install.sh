@@ -60,7 +60,7 @@ NO_ROOT=0
 NO_INSTALL_RLINF_CMD="--no-install-project"
 SUPPORTED_TARGETS=("embodied" "agentic" "docs")
 SUPPORTED_MODELS=("openvla" "openvla-oft" "openpi" "gr00t" "dexbotic" "starvla" "lingbotvla" "dreamzero")
-SUPPORTED_ENVS=("behavior" "maniskill_libero" "metaworld" "calvin" "isaaclab" "robocasa" "franka" "franka-dexhand" "frankasim" "robotwin" "habitat" "opensora" "wan" "xsquare_turtle2" "liberopro" "liberoplus" "roboverse" "embodichain" "d4rl" "dosw1" "gim_arm")
+SUPPORTED_ENVS=("behavior" "maniskill_libero" "libero" "metaworld" "calvin" "isaaclab" "robocasa" "franka" "franka-dexhand" "frankasim" "robotwin" "habitat" "opensora" "wan" "xsquare_turtle2" "liberopro" "liberoplus" "roboverse" "embodichain" "d4rl" "dosw1" "gim_arm")
 
 #=======================Utility Functions=======================
 
@@ -828,10 +828,10 @@ install_common_embodied_deps() {
 
 install_openvla_model() {
     case "$ENV_NAME" in
-        maniskill_libero)
+        maniskill_libero|libero)
             create_and_sync_venv
             install_common_embodied_deps
-            install_maniskill_libero_env
+            install_${ENV_NAME}_env
             ;;
         frankasim)
             create_and_sync_venv
@@ -857,10 +857,10 @@ install_openvla_oft_model() {
             uv pip install git+${GITHUB_PREFIX}https://github.com/moojink/openvla-oft.git  --no-build-isolation
             install_behavior_env
             ;;
-        maniskill_libero)
+        maniskill_libero|libero)
             create_and_sync_venv
             install_common_embodied_deps
-            install_maniskill_libero_env
+            install_${ENV_NAME}_env
             install_flash_attn
             uv pip install git+${GITHUB_PREFIX}https://github.com/moojink/openvla-oft.git  --no-build-isolation
             ;;
@@ -933,10 +933,10 @@ install_openpi_model() {
             install_behavior_env
             uv pip install protobuf==6.33.0
             ;;
-        maniskill_libero)
+        maniskill_libero|libero)
             create_and_sync_venv
             install_common_embodied_deps
-            install_maniskill_libero_env
+            install_${ENV_NAME}_env
             uv pip install git+${GITHUB_PREFIX}https://github.com/RLinf/openpi
             install_flash_attn
             ;;
@@ -1006,10 +1006,10 @@ EOF
 
 install_starvla_model() {
     case "$ENV_NAME" in
-        maniskill_libero)
+        maniskill_libero|libero)
             create_and_sync_venv
             install_common_embodied_deps
-            install_maniskill_libero_env
+            install_${ENV_NAME}_env
             ;;
         *)
             echo "Environment '$ENV_NAME' is not supported for StarVLA model." >&2
@@ -1051,8 +1051,8 @@ install_gr00t_model() {
     uv pip install -e "$gr00t_path" --no-deps
     uv pip install -r $SCRIPT_DIR/embodied/models/gr00t.txt
     case "$ENV_NAME" in
-        maniskill_libero)
-            install_maniskill_libero_env
+        maniskill_libero|libero)
+            install_${ENV_NAME}_env
             install_flash_attn
             ;;
         isaaclab)
@@ -1071,7 +1071,7 @@ install_gr00t_model() {
 
 install_dexbotic_model() {
     case "$ENV_NAME" in
-        maniskill_libero)
+        maniskill_libero|libero)
             create_and_sync_venv
             install_common_embodied_deps
 
@@ -1079,7 +1079,7 @@ install_dexbotic_model() {
             dexbotic_path=$(clone_or_reuse_repo DEXBOTIC_PATH "$VENV_DIR/dexbotic" https://github.com/dexmal/dexbotic.git -b 0.2.0)
             uv pip install -e "$dexbotic_path"
 
-            install_maniskill_libero_env
+            install_${ENV_NAME}_env
             uv pip install transformers==4.53.2
             ;;
         *)
@@ -1118,10 +1118,10 @@ install_lingbot_vla_model() {
 
 install_dreamzero_model() {
     case "$ENV_NAME" in
-        maniskill_libero)
+        maniskill_libero|libero)
             create_and_sync_venv
             install_common_embodied_deps
-            install_maniskill_libero_env
+            install_${ENV_NAME}_env
             uv pip install -r $SCRIPT_DIR/embodied/models/dreamzero.txt
             install_flash_attn
             ;;
@@ -1192,13 +1192,17 @@ install_env_only() {
 
 #=======================ENV INSTALLERS=======================
 
-install_maniskill_libero_env() {
+install_libero_env() {
     # Prefer an existing checkout if LIBERO_PATH is provided; otherwise clone into the venv.
     local libero_dir
     libero_dir=$(clone_or_reuse_repo LIBERO_PATH "$VENV_DIR/libero" https://github.com/RLinf/LIBERO.git)
 
     uv pip install -e "$libero_dir"
     echo "export PYTHONPATH=$(realpath "$libero_dir"):\$PYTHONPATH" >> "$VENV_DIR/bin/activate"
+}
+
+install_maniskill_libero_env() {
+    install_libero_env
     uv pip install git+${GITHUB_PREFIX}https://github.com/haosulab/ManiSkill.git@v3.0.0b22
 
     # Maniskill assets
