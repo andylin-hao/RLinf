@@ -30,10 +30,19 @@ PLATFORM_TORCH_PACKAGES=()
 # full shell statement, e.g. `export VK_DRIVER_FILES=...`). Populated per-
 # platform by configure_<platform>; other targets ignore the array.
 PLATFORM_VENV_EXPORTS=()
+# Whether the platform supports flash-attn at all. When 0, install_flash_attn
+# returns immediately without installing or building anything (e.g. Ascend
+# where the kernels are CUDA-only and no NPU equivalent ships in the package).
+PLATFORM_FLASH_ATTN_INSTALL=1
 # Whether the platform has prebuilt flash-attn wheels available on the
 # Dao-AILab GitHub releases. When 0, install_flash_attn skips the wheel and
 # does a `uv pip install flash-attn==<ver> --no-build-isolation` source build.
+# Only consulted when PLATFORM_FLASH_ATTN_INSTALL=1.
 PLATFORM_FLASH_ATTN_PREBUILT=0
+# User-level opt-out, set by --no-flash-attn. Wins over the platform default
+# so the user can skip flash-attn on platforms where it would otherwise
+# install (e.g. when build deps aren't available on the host).
+DISABLE_FLASH_ATTN=0
 # Whether apply_torch_override should rewrite the pyproject.toml `torchcodec`
 # pin from ==0.2 to >=0.5. The ==0.2 line in override-dependencies has wheels
 # only for x86_64 + torch 2.5/2.6, so it breaks on AMD (torch 2.8 from rocm
@@ -102,6 +111,8 @@ Common options:
                            UV_TORCH_BACKEND=rocm<version>. Ignored on other platforms.
     --use-mirror           Use mirrors for faster downloads.
     --no-root              Avoid system dependency installation for non-root users. Only use this if you are certain system dependencies are already installed.
+    --no-flash-attn        Skip flash-attn install. Useful when the host lacks a CUDA build
+                           toolchain or when the platform has no flash-attn support (Ascend).
     --install-rlinf        Install RLinf itself into the python.
 EOF
 }
@@ -176,6 +187,10 @@ parse_args() {
                 ;;
             --install-rlinf)
                 NO_INSTALL_RLINF_CMD=""
+                shift
+                ;;
+            --no-flash-attn)
+                DISABLE_FLASH_ATTN=1
                 shift
                 ;;
             --*)
@@ -300,6 +315,7 @@ configure_nvidia() {
         "export VK_DRIVER_FILES=/etc/vulkan/icd.d/nvidia_icd.json"
         "export VK_ICD_FILENAMES=/etc/vulkan/icd.d/nvidia_icd.json"
     )
+    PLATFORM_FLASH_ATTN_INSTALL=1
     PLATFORM_FLASH_ATTN_PREBUILT=1
     PLATFORM_RELAX_TORCHCODEC=0
     PLATFORM_EXTRA_OVERRIDES=()
@@ -348,6 +364,7 @@ configure_amd() {
         "export VK_DRIVER_FILES=/usr/share/vulkan/icd.d/radeon_icd.x86_64.json"
         "export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/radeon_icd.x86_64.json"
     )
+    PLATFORM_FLASH_ATTN_INSTALL=1
     PLATFORM_FLASH_ATTN_PREBUILT=0
     PLATFORM_RELAX_TORCHCODEC=1
     PLATFORM_EXTRA_OVERRIDES=()
@@ -365,6 +382,9 @@ configure_ascend() {
     PLATFORM_TORCH_INDEX=""
     PLATFORM_TORCH_PACKAGES=()
     PLATFORM_VENV_EXPORTS=()
+    # flash-attn is CUDA-only; skip the install entirely on Ascend instead
+    # of trying (and failing) to build it from source.
+    PLATFORM_FLASH_ATTN_INSTALL=0
     PLATFORM_FLASH_ATTN_PREBUILT=0
     PLATFORM_RELAX_TORCHCODEC=1
     PLATFORM_EXTRA_OVERRIDES=()
@@ -705,6 +725,15 @@ EOF
 install_flash_attn() {
     # Base release info – adjust when bumping flash-attn
     local flash_ver="2.7.4.post1"
+
+    if [ "$DISABLE_FLASH_ATTN" -eq 1 ]; then
+        echo "[install.sh] --no-flash-attn was specified; skipping flash-attn install."
+        return 0
+    fi
+    if [ "$PLATFORM_FLASH_ATTN_INSTALL" -ne 1 ]; then
+        echo "[install.sh] flash-attn is unsupported on platform=${PLATFORM}; skipping install."
+        return 0
+    fi
 
     if [ "$PLATFORM_FLASH_ATTN_PREBUILT" -ne 1 ]; then
         echo "[install.sh] Building flash-attn==${flash_ver} from source on platform=${PLATFORM}..."
