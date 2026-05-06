@@ -121,10 +121,6 @@ class WanEnv(BaseWorldEnv):
             cfg.initial_image_path, enable_kir=self.enable_kir
         )
 
-    def _get_runtime_device_str(self) -> str:
-        """Return the accelerator type used by the environment runtime."""
-        return self.device.type
-
     def _build_pipeline(self):
         pipe = WanVideoPipeline.from_pretrained(
             torch_dtype=torch.bfloat16,
