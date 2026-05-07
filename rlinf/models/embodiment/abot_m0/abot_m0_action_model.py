@@ -76,6 +76,42 @@ class ABotM0ForRLActionPrediction(nn.Module, BasePolicy):
             for param in self.base_model.spatial_model.parameters():
                 param.requires_grad = False
 
+    def gradient_checkpointing_enable(self, **kwargs) -> None:
+        # Force use_reentrant=False for FSDP compatibility.
+        kwargs.setdefault("gradient_checkpointing_kwargs", {}).setdefault(
+            "use_reentrant", False
+        )
+
+        qwen_model = getattr(
+            getattr(self.base_model, "qwen_vl_interface", None), "model", None
+        )
+        if qwen_model is not None and hasattr(
+            qwen_model, "gradient_checkpointing_enable"
+        ):
+            qwen_model.gradient_checkpointing_enable(**kwargs)
+
+        action_model = getattr(self.base_model, "action_model", None)
+        if action_model is not None and hasattr(
+            action_model, "gradient_checkpointing_enable"
+        ):
+            action_model.gradient_checkpointing_enable(**kwargs)
+
+    def gradient_checkpointing_disable(self) -> None:
+        """Inverse of `gradient_checkpointing_enable`."""
+        qwen_model = getattr(
+            getattr(self.base_model, "qwen_vl_interface", None), "model", None
+        )
+        if qwen_model is not None and hasattr(
+            qwen_model, "gradient_checkpointing_disable"
+        ):
+            qwen_model.gradient_checkpointing_disable()
+
+        action_model = getattr(self.base_model, "action_model", None)
+        if action_model is not None and hasattr(
+            action_model, "gradient_checkpointing_disable"
+        ):
+            action_model.gradient_checkpointing_disable()
+
     def _get_runtime_action_dim(self) -> int:
         """Infer the runtime action dimension from checkpoint statistics."""
         runtime_action_dim = int(self.action_dim)
@@ -85,7 +121,11 @@ class ABotM0ForRLActionPrediction(nn.Module, BasePolicy):
 
         unnorm_key = next(iter(self.norm_stats.keys()))
         action_stats = self.norm_stats.get(unnorm_key, {}).get("action", {})
-        stats_dims = action_stats.get("q01")
+        stats_dims = None
+        for dim_key in ("q01", "min", "q99", "max"):
+            stats_dims = action_stats.get(dim_key)
+            if stats_dims is not None:
+                break
         if stats_dims is None:
             return runtime_action_dim
 
@@ -94,6 +134,37 @@ class ABotM0ForRLActionPrediction(nn.Module, BasePolicy):
             runtime_action_dim = min(runtime_action_dim, stats_action_dim)
 
         return runtime_action_dim
+
+    def _slice_runtime_action_dims(
+        self,
+        actions: torch.Tensor | np.ndarray,
+        runtime_action_dim: int,
+    ) -> torch.Tensor | np.ndarray:
+        total_action_dim = int(actions.shape[-1])
+        if total_action_dim < runtime_action_dim:
+            raise ValueError(
+                f"Runtime action dim {runtime_action_dim} exceeds action output dim {total_action_dim}."
+            )
+        if total_action_dim == runtime_action_dim:
+            return actions
+        return actions[..., -runtime_action_dim:]
+
+    def _slice_runtime_stat_dims(
+        self,
+        stats: np.ndarray | list[float] | list[bool],
+        runtime_action_dim: int,
+        dtype: np.dtype,
+    ) -> np.ndarray:
+        """Slice per-dimension statistics to the runtime action dimensionality."""
+        stats_array = np.asarray(stats, dtype=dtype)
+        total_action_dim = int(stats_array.shape[-1])
+        if total_action_dim < runtime_action_dim:
+            raise ValueError(
+                f"Runtime action dim {runtime_action_dim} exceeds stats dim {total_action_dim}."
+            )
+        if total_action_dim == runtime_action_dim:
+            return stats_array
+        return stats_array[-runtime_action_dim:]
 
     @classmethod
     def from_pretrained(
@@ -107,7 +178,6 @@ class ABotM0ForRLActionPrediction(nn.Module, BasePolicy):
         torch_dtype: torch.dtype = torch.bfloat16,
         **kwargs,
     ) -> "ABotM0ForRLActionPrediction":
-        """Load ABot-M0 checkpoint and attach RL action head."""
         from ABot.model.framework.base_framework import baseframework
 
         base_model = baseframework.from_pretrained(pretrained_checkpoint)
@@ -208,10 +278,15 @@ class ABotM0ForRLActionPrediction(nn.Module, BasePolicy):
     def _encode_observations(
         self,
         qwen_inputs: dict[str, torch.Tensor],
-        spatial_images: torch.Tensor,
+        spatial_images: Optional[torch.Tensor] = None,
         state: Optional[torch.Tensor] = None,
         device: Optional[torch.device] = None,
-    ) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
+        cached_spatial_tokens: Optional[torch.Tensor] = None,
+        return_spatial_tokens: bool = False,
+    ) -> (
+        tuple[torch.Tensor, Optional[torch.Tensor]]
+        | tuple[torch.Tensor, Optional[torch.Tensor], torch.Tensor]
+    ):
         """Encode multimodal observations into fused latent embeddings."""
         from ABot.model.modules.vggt_tools import preprocess_images
 
@@ -222,16 +297,23 @@ class ABotM0ForRLActionPrediction(nn.Module, BasePolicy):
                 else v
                 for k, v in qwen_inputs.items()
             }
-            spatial_images = spatial_images.to(device=device).contiguous()
+            if spatial_images is not None:
+                spatial_images = spatial_images.to(device=device).contiguous()
+            if cached_spatial_tokens is not None:
+                cached_spatial_tokens = cached_spatial_tokens.to(
+                    device=device
+                ).contiguous()
 
-        batch_images = self._image_tensor_to_pil_batch(spatial_images)
+        first_qwen_tensor = next(
+            (v for v in qwen_inputs.values() if isinstance(v, torch.Tensor)),
+            None,
+        )
+        if first_qwen_tensor is None:
+            raise ValueError(
+                "ABot-M0 qwen_inputs must include at least one tensor value."
+            )
 
-        if device is not None:
-            for k, v in qwen_inputs.items():
-                if isinstance(v, torch.Tensor):
-                    qwen_inputs[k] = v.to(device)
-
-        device_type = spatial_images.device.type
+        device_type = first_qwen_tensor.device.type
         autocast_dtype = self.torch_dtype
         use_autocast = (
             device_type == "cuda" and autocast_dtype in (torch.float16, torch.bfloat16)
@@ -249,7 +331,12 @@ class ABotM0ForRLActionPrediction(nn.Module, BasePolicy):
                 return_dict=True,
             )
             last_hidden = qwenvl_outputs.hidden_states[-1]  # [B, L, H]
-            expected_batch = spatial_images.shape[0]
+            if cached_spatial_tokens is not None:
+                expected_batch = cached_spatial_tokens.shape[0]
+            elif spatial_images is not None:
+                expected_batch = spatial_images.shape[0]
+            else:
+                expected_batch = last_hidden.shape[0] if last_hidden.ndim >= 3 else 1
             if last_hidden.ndim == 2 and expected_batch == 1:
                 last_hidden = last_hidden.unsqueeze(0)
             elif (
@@ -259,24 +346,34 @@ class ABotM0ForRLActionPrediction(nn.Module, BasePolicy):
             ):
                 last_hidden = last_hidden.transpose(0, 1).contiguous()
 
-            with torch.no_grad():
-                spatial_dtype = last_hidden.dtype
-                spatial_model = getattr(self.base_model, "spatial_model", None)
-                if spatial_model is not None:
-                    first_param = next(iter(spatial_model.parameters()), None)
-                    if first_param is not None:
-                        spatial_dtype = first_param.dtype
-                spatial_input = preprocess_images(
-                    batch_images,
-                    batch_images[0][0].size[0],
-                ).to(device=last_hidden.device, dtype=spatial_dtype)
-                aggregated_tokens_list, ps_idx = (
-                    self.base_model.spatial_model.aggregator(
-                        spatial_input,
-                    )
+            if cached_spatial_tokens is not None:
+                spatial_tokens = cached_spatial_tokens.to(
+                    device=last_hidden.device, dtype=last_hidden.dtype
                 )
-            spatial_tokens = aggregated_tokens_list[-1][:, 0, ps_idx:, :]
-            spatial_tokens = self.base_model.spatial_projector(spatial_tokens)
+            else:
+                if spatial_images is None:
+                    raise ValueError(
+                        "ABot-M0 _encode_observations requires either spatial_images or cached_spatial_tokens."
+                    )
+                batch_images = self._image_tensor_to_pil_batch(spatial_images)
+                with torch.no_grad():
+                    spatial_dtype = last_hidden.dtype
+                    spatial_model = getattr(self.base_model, "spatial_model", None)
+                    if spatial_model is not None:
+                        first_param = next(iter(spatial_model.parameters()), None)
+                        if first_param is not None:
+                            spatial_dtype = first_param.dtype
+                    spatial_input = preprocess_images(
+                        batch_images,
+                        batch_images[0][0].size[0],
+                    ).to(device=last_hidden.device, dtype=spatial_dtype)
+                    aggregated_tokens_list, ps_idx = (
+                        self.base_model.spatial_model.aggregator(
+                            spatial_input,
+                        )
+                    )
+                spatial_tokens = aggregated_tokens_list[-1][:, 0, ps_idx:, :]
+                spatial_tokens = self.base_model.spatial_projector(spatial_tokens)
             last_hidden = self.base_model.fuser(last_hidden, spatial_tokens)
 
         state_tensor = None
@@ -292,6 +389,8 @@ class ABotM0ForRLActionPrediction(nn.Module, BasePolicy):
             if state_tensor.ndim == 2:
                 state_tensor = state_tensor.unsqueeze(1)
 
+        if return_spatial_tokens:
+            return last_hidden, state_tensor, spatial_tokens
         return last_hidden, state_tensor
 
     def _prepare_model_inputs(
@@ -323,16 +422,42 @@ class ABotM0ForRLActionPrediction(nn.Module, BasePolicy):
         return qwen_inputs, spatial_images, state
 
     def _flatten_qwen_inputs(
-        self, qwen_inputs: dict[str, torch.Tensor]
+        self,
+        qwen_inputs: dict[str, torch.Tensor],
+        batch_size: int,
     ) -> dict[str, torch.Tensor]:
-        return {f"qwen_{key}": value for key, value in qwen_inputs.items()}
+        flattened_qwen_inputs: dict[str, torch.Tensor] = {}
+        for key, value in qwen_inputs.items():
+            if isinstance(value, torch.Tensor):
+                if value.ndim == 0:
+                    continue
+                if value.shape[0] == batch_size:
+                    flattened_qwen_inputs[f"qwen_{key}"] = value.contiguous()
+                elif value.shape[0] % batch_size == 0:
+                    packed_value = value.reshape(
+                        batch_size, value.shape[0] // batch_size, *value.shape[1:]
+                    ).contiguous()
+                    flattened_qwen_inputs[f"qwen_packed_{key}"] = packed_value
+                else:
+                    raise ValueError(
+                        f"Qwen input '{key}' has leading dim {value.shape[0]} "
+                        f"which is incompatible with batch size {batch_size}."
+                    )
+        return flattened_qwen_inputs
 
     def _extract_qwen_inputs(
         self, forward_inputs: dict[str, torch.Tensor]
     ) -> dict[str, torch.Tensor]:
         qwen_inputs = {}
         for key, value in forward_inputs.items():
-            if key.startswith("qwen_"):
+            if key.startswith("qwen_packed_"):
+                qwen_key = key.removeprefix("qwen_packed_")
+                if value.ndim < 2:
+                    raise ValueError(
+                        f"Packed qwen input '{key}' must have at least 2 dims, got {value.shape}."
+                    )
+                qwen_inputs[qwen_key] = value.reshape(-1, *value.shape[2:]).contiguous()
+            elif key.startswith("qwen_"):
                 qwen_inputs[key.removeprefix("qwen_")] = value
         return qwen_inputs
 
@@ -399,27 +524,21 @@ class ABotM0ForRLActionPrediction(nn.Module, BasePolicy):
         **kwargs,
     ) -> dict[str, Any]:
         """Recompute rollout logprobs and values during training."""
-        if "vl_embs" in forward_inputs:
-            vl_embs = forward_inputs["vl_embs"].to(
-                forward_inputs["chains"].device,
+        spatial_images = forward_inputs.get(
+            "spatial_images", forward_inputs.get("main_images")
+        )
+        cached_spatial_tokens = forward_inputs.get("spatial_tokens")
+        if spatial_images is None and cached_spatial_tokens is None:
+            raise KeyError(
+                "ABot-M0 forward_inputs must include one of: 'spatial_tokens', 'spatial_images', or legacy 'main_images'."
             )
-            state_tensor = forward_inputs.get("state")
-            if isinstance(state_tensor, np.ndarray):
-                state_tensor = torch.from_numpy(state_tensor)
-            if isinstance(state_tensor, torch.Tensor):
-                state_tensor = state_tensor.to(
-                    vl_embs.device,
-                    dtype=vl_embs.dtype,
-                )
-                if state_tensor.ndim == 2:
-                    state_tensor = state_tensor.unsqueeze(1)
-        else:
-            vl_embs, state_tensor = self._encode_observations(
-                qwen_inputs=self._extract_qwen_inputs(forward_inputs),
-                spatial_images=forward_inputs["main_images"],
-                state=forward_inputs.get("state"),
-                device=forward_inputs["chains"].device,
-            )
+        vl_embs, state_tensor = self._encode_observations(
+            qwen_inputs=self._extract_qwen_inputs(forward_inputs),
+            spatial_images=spatial_images,
+            state=forward_inputs.get("state"),
+            device=forward_inputs["chains"].device,
+            cached_spatial_tokens=cached_spatial_tokens,
+        )
 
         chains = forward_inputs["chains"]
         denoise_inds = forward_inputs["denoise_inds"]
@@ -433,11 +552,16 @@ class ABotM0ForRLActionPrediction(nn.Module, BasePolicy):
         )
 
         runtime_action_dim = self._get_runtime_action_dim()
-        log_probs = log_probs[:, :, : self.num_action_chunks, :runtime_action_dim]
+        log_probs = log_probs[:, :, : self.num_action_chunks, :]
+        log_probs = self._slice_runtime_action_dims(log_probs, runtime_action_dim)
 
         if self.action_head_rl.joint_logprob:
             log_probs = log_probs.mean(dim=1)
-            prev_logprobs = kwargs["prev_logprobs"].mean(dim=1)
+            prev_logprobs = kwargs["prev_logprobs"][:, :, : self.num_action_chunks, :]
+            prev_logprobs = self._slice_runtime_action_dims(
+                prev_logprobs, runtime_action_dim
+            )
+            prev_logprobs = prev_logprobs.mean(dim=1)
         else:
             bsize = log_probs.shape[0]
             log_probs = log_probs[:, 0]
@@ -446,8 +570,11 @@ class ABotM0ForRLActionPrediction(nn.Module, BasePolicy):
                 torch.arange(bsize),
                 denoise_inds[:, 0],
                 : self.num_action_chunks,
-                :runtime_action_dim,
+                :,
             ]
+            prev_logprobs = self._slice_runtime_action_dims(
+                prev_logprobs, runtime_action_dim
+            )
 
         values = values.mean(dim=-1, keepdim=False)
 
@@ -473,10 +600,11 @@ class ABotM0ForRLActionPrediction(nn.Module, BasePolicy):
             state=state,
         )
 
-        vl_embs, state_tensor = self._encode_observations(
+        vl_embs, state_tensor, spatial_tokens = self._encode_observations(
             qwen_inputs=qwen_inputs,
             spatial_images=spatial_images,
             state=state,
+            return_spatial_tokens=True,
         )
 
         actions, rl_outputs = self.action_head_rl.get_rl_action(
@@ -491,21 +619,34 @@ class ABotM0ForRLActionPrediction(nn.Module, BasePolicy):
         if actions_cpu.dtype == torch.bfloat16:
             actions_cpu = actions_cpu.float()
         normalized_actions = actions_cpu.numpy()
-        normalized_actions = normalized_actions[..., :runtime_action_dim]
+        normalized_actions = self._slice_runtime_action_dims(
+            normalized_actions,
+            runtime_action_dim,
+        )
         raw_actions = self._unnormalize_actions(normalized_actions)
+        raw_actions = self._map_gripper_to_libero(raw_actions)
+
+        action_dtype = (
+            torch.float32 if actions.dtype == torch.bfloat16 else actions.dtype
+        )
         raw_actions = torch.from_numpy(raw_actions).to(
-            actions.device, dtype=actions.dtype
+            actions.device, dtype=action_dtype
         )
 
         raw_actions = raw_actions[:, : self.num_action_chunks, :]
-        prev_logprobs = rl_outputs["prev_logprobs"][
-            :, :, : self.num_action_chunks, :runtime_action_dim
-        ]
+        prev_logprobs = rl_outputs["prev_logprobs"][:, :, : self.num_action_chunks, :]
+        prev_logprobs = self._slice_runtime_action_dims(
+            prev_logprobs,
+            runtime_action_dim,
+        )
 
         forward_inputs = {
             "chains": rl_outputs["chains"],
             "denoise_inds": rl_outputs["denoise_inds"],
-            "vl_embs": vl_embs,
+            **self._flatten_qwen_inputs(
+                qwen_inputs, batch_size=spatial_images.shape[0]
+            ),
+            "spatial_tokens": spatial_tokens.detach(),
             "state": state_tensor,
         }
 
@@ -524,31 +665,51 @@ class ABotM0ForRLActionPrediction(nn.Module, BasePolicy):
         """Convert RLinf env observations to ABot-M0 model inputs."""
         instructions = env_obs["task_descriptions"]
 
-        if "main_images" in env_obs:
-            images_raw = env_obs["main_images"]
-            if isinstance(images_raw, torch.Tensor):
-                images_raw = images_raw.cpu().numpy()
-            elif not isinstance(images_raw, np.ndarray):
-                images_raw = np.asarray(images_raw)
+        def _to_pil_multiview(images: Any, field_name: str) -> list[list[Image.Image]]:
+            if isinstance(images, torch.Tensor):
+                images = images.detach().cpu().numpy()
+            elif not isinstance(images, np.ndarray):
+                images = np.asarray(images)
 
-            batch_images = []
-            if images_raw.ndim == 5:  # [B, V, H, W, C]
-                for b in range(images_raw.shape[0]):
+            pil_batch: list[list[Image.Image]] = []
+            if images.ndim == 5:  # [B, V, H, W, C]
+                for b in range(images.shape[0]):
                     views = []
-                    for v in range(images_raw.shape[1]):
-                        img = images_raw[b, v]
+                    for v in range(images.shape[1]):
+                        img = images[b, v]
                         if img.dtype != np.uint8:
                             img = (img * 255).clip(0, 255).astype(np.uint8)
                         views.append(Image.fromarray(img))
-                    batch_images.append(views)
-            elif images_raw.ndim == 4:  # [B, H, W, C] single view
-                for b in range(images_raw.shape[0]):
-                    img = images_raw[b]
+                    pil_batch.append(views)
+            elif images.ndim == 4:  # [B, H, W, C]
+                for b in range(images.shape[0]):
+                    img = images[b]
                     if img.dtype != np.uint8:
                         img = (img * 255).clip(0, 255).astype(np.uint8)
-                    batch_images.append([Image.fromarray(img)])
+                    pil_batch.append([Image.fromarray(img)])
             else:
-                raise ValueError(f"Unsupported main_images shape: {images_raw.shape}")
+                raise ValueError(f"Unsupported {field_name} shape: {images.shape}")
+
+            return pil_batch
+
+        if "main_images" in env_obs:
+            batch_images = _to_pil_multiview(env_obs["main_images"], "main_images")
+
+            if "wrist_images" in env_obs and env_obs["wrist_images"] is not None:
+                wrist_batch_images = _to_pil_multiview(
+                    env_obs["wrist_images"], "wrist_images"
+                )
+                if len(wrist_batch_images) != len(batch_images):
+                    raise ValueError(
+                        "Batch size mismatch between main_images and wrist_images: "
+                        f"{len(batch_images)} vs {len(wrist_batch_images)}"
+                    )
+                batch_images = [
+                    main_views + wrist_views
+                    for main_views, wrist_views in zip(
+                        batch_images, wrist_batch_images, strict=True
+                    )
+                ]
         else:
             batch_images = env_obs.get("images", [[]])
 
@@ -565,7 +726,7 @@ class ABotM0ForRLActionPrediction(nn.Module, BasePolicy):
         self,
         normalized_actions: np.ndarray,
     ) -> np.ndarray:
-        """De-normalize actions using checkpoint normalization statistics."""
+        # De-normalize actions using checkpoint action statistics.
         if not hasattr(self, "norm_stats") or self.norm_stats is None:
             return normalized_actions
 
@@ -573,9 +734,10 @@ class ABotM0ForRLActionPrediction(nn.Module, BasePolicy):
         action_stats = self.norm_stats[unnorm_key]["action"]
 
         runtime_action_dim = self._get_runtime_action_dim()
-        normalized_actions = normalized_actions[..., :runtime_action_dim]
-
-        from ABot.model.framework.base_framework import baseframework
+        normalized_actions = self._slice_runtime_action_dims(
+            normalized_actions,
+            runtime_action_dim,
+        )
 
         action_shape = normalized_actions.shape
         if normalized_actions.ndim != 3:
@@ -584,10 +746,49 @@ class ABotM0ForRLActionPrediction(nn.Module, BasePolicy):
             )
 
         _, _, action_dim = action_shape
-        flattened_actions = normalized_actions.reshape(-1, action_dim)
-        unnormalized_flattened = baseframework.unnormalize_actions(
+        flattened_actions = np.clip(
+            normalized_actions.reshape(-1, action_dim), -1.0, 1.0
+        )
+
+        low_key = "min" if "min" in action_stats else "q01"
+        high_key = "max" if "max" in action_stats else "q99"
+
+        action_high = self._slice_runtime_stat_dims(
+            action_stats[high_key],
+            action_dim,
+            np.float32,
+        )
+        action_low = self._slice_runtime_stat_dims(
+            action_stats[low_key],
+            action_dim,
+            np.float32,
+        )
+        action_mask = self._slice_runtime_stat_dims(
+            action_stats.get("mask", np.ones_like(action_high, dtype=bool)),
+            action_dim,
+            bool,
+        )
+
+        unnormalized_flattened = np.where(
+            action_mask,
+            0.5 * (flattened_actions + 1.0) * (action_high - action_low) + action_low,
             flattened_actions,
-            action_stats,
         )
 
         return unnormalized_flattened.reshape(action_shape)
+
+    @staticmethod
+    def _get_gripper_index(action_dim: int) -> int:
+        """Return the gripper channel index for a given action width."""
+        return 6 if action_dim > 6 else action_dim - 1
+
+    def _map_gripper_to_libero(
+        self,
+        raw_actions: np.ndarray,
+    ) -> np.ndarray:
+        if raw_actions.shape[-1] <= 0:
+            return raw_actions
+
+        gripper_idx = self._get_gripper_index(raw_actions.shape[-1])
+        raw_actions[..., gripper_idx] = 1.0 - 2.0 * raw_actions[..., gripper_idx]
+        return raw_actions

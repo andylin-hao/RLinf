@@ -22,6 +22,7 @@ def get_model(cfg: DictConfig, torch_dtype=torch.bfloat16):
     from rlinf.models.embodiment.abot_m0.abot_m0_action_model import (
         ABotM0ForRLActionPrediction,
     )
+    from rlinf.models.embodiment.gr00t.utils import replace_dropout_with_identity
 
     model_path = Path(cfg.model_path)
     if not model_path.exists():
@@ -40,5 +41,8 @@ def get_model(cfg: DictConfig, torch_dtype=torch.bfloat16):
 
     if cfg.rl_head_config.add_value_head:
         model.action_head_rl.value_head._init_weights()
+
+    if cfg.rl_head_config.get("disable_dropout", True):
+        replace_dropout_with_identity(model)
 
     return model

@@ -1,32 +1,14 @@
 RL on ABot-M0 Model
 ====================
 
-This document describes how to integrate ABot-M0 as a native plugin into RLinf and run end-to-end embodied RL smoke validation on LIBERO tasks.
-Unlike external serving mode, native integration keeps ABot-M0 in RLinf's Python process space for direct tensor-level interaction.
+This document describes how to install ABot-M0 and run end-to-end embodied RL training and evaluation on both **LIBERO-10** and **LIBERO-Plus**.
 
-The current objective of this page is smoke-level validation:
+This page covers:
 
 * **Dependency Wiring**: Verify RLinf + ABot-Manipulation + VGGT are importable in one environment.
-* **Native Rollout**: Verify ABot-M0 can generate action chunks inside RLinf rollout workers.
+* **Rollout**: Verify ABot-M0 can generate action chunks inside RLinf rollout workers.
 * **Actor-Rollout Sync**: Verify policy weight sync and training loop run without parameter mismatch errors.
-* **Smoke Training**: Verify minimal PPO loop on LIBERO config can start and complete.
-
-Environment
------------
-
-**LIBERO Environment**
-
-* **Environment**: LIBERO benchmark through RLinf embodied pipeline.
-* **Task**: Language-conditioned manipulation tasks from LIBERO suites.
-* **Observation**: Multi-view RGB images and robot state.
-* **Action Space**: Continuous action chunks in ABot-M0 policy format.
-
-Data Structure
---------------
-
-* **Images**: Multi-view RGB inputs mapped to ``main_images``.
-* **Task Descriptions**: Natural-language instructions mapped to ``task_descriptions``.
-* **States**: Robot state mapped to ``states`` and normalized to ABot expected layout.
+* **PPO Training & Evaluation**: Run end-to-end PPO and standalone evaluation on LIBERO-10 (standard) and LIBERO-Plus (perturbation variants).
 
 Algorithm
 ---------
@@ -39,24 +21,17 @@ Algorithm
    * Value function clipping.
    * Entropy regularization.
 
-* **ABot-M0 Native Policy**
+* **ABot-M0 Policy**
    * General-purpose VLA model for robotic manipulation with cross-embodiment training.
    * Action Manifold Learning (AML) for efficient and stable continuous action prediction.
    * Modular perception design that integrates VLM semantics and optional 3D priors (via ABot-Manipulation and VGGT).
    * RLinf-native wrapper for rollout action generation and training-time logprob/value recomputation.
 
-Dependency Installation
------------------------
+Installation
+------------
 
-1. Dependency Source Options (ABot and VGGT)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-RLinf supports both dependency-source workflows (implemented in ``requirements/install.sh``):
-
-* **Option A (manual clone + explicit path)**: clone ABot-Manipulation and VGGT in advance, then export ``ABOT_PATH`` and ``VGGT_PATH``.
-* **Option B (script auto-clone)**: do not set these env vars; the install script will clone ABot and VGGT under the venv directory automatically.
-
-Option A example:
+1. Dependency Installation (ABot and VGGT)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. code-block:: bash
 
@@ -67,13 +42,29 @@ Option A example:
    export ABOT_PATH=<path_to_ABot-Manipulation>
    export VGGT_PATH=<path_to_vggt>
 
-2. Install by Script (Custom Environment)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+2. Environment Setup
+~~~~~~~~~~~~~~~~~~~~
 
 .. code-block:: bash
 
    bash requirements/install.sh embodied --venv .venv --model abot_m0 --env maniskill_libero --install-rlinf
    source .venv/bin/activate
+
+2.1 LIBERO-Plus Setup (only required for LIBERO-Plus)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Skip this section if you only want to run on standard LIBERO-10. For
+LIBERO-Plus, install it into the same ``.venv`` and download its assets:
+
+.. code-block:: bash
+
+   bash requirements/install.sh embodied --venv .venv --model abot_m0 --env liberoplus
+
+   LIBERO_PLUS_DIR=$(python -c "import liberoplus.liberoplus as p, pathlib; print(pathlib.Path(p.__file__).parent)")
+   hf download --repo-type dataset Sylvest/LIBERO-plus assets.zip --local-dir "${LIBERO_PLUS_DIR}"
+   unzip -o "${LIBERO_PLUS_DIR}/assets.zip" -d "${LIBERO_PLUS_DIR}"
+
+See :doc:`liberoplus_pro` for full LIBERO-Plus details.
 
 3. Download ABot-M0 Weights
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -107,12 +98,12 @@ Find and update:
 
 to your actual local path of the downloaded Qwen3-VL backbone.
 
-Recommended model sources:
+Model sources:
 
 * Qwen3-VL backbone: ``https://huggingface.co/StarVLA/Qwen3-VL-4B-Instruct-Action``
 * ABot-M0-LIBERO checkpoints: ``https://huggingface.co/acvlab/ABot-M0-LIBERO``
 
-3.2 Offline VGGT loading (no internet)
+3.2 Offline VGGT loading
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 ABot currently initializes VGGT with:
@@ -132,19 +123,22 @@ Example local override:
 
    self.spatial_model = spatial_model = VGGT.from_pretrained('/workspace/models/VGGT-1B')
 
-4. Configure ``model_path`` in ABot Smoke YAML
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+4. Configure ``model_path`` in ABot Training YAML
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Set both fields in:
-``examples/embodiment/config/libero_10_ppo_abot_m0_smoke.yaml``
+Two configs are provided, one per benchmark:
+
+* LIBERO-10:    ``examples/embodiment/config/libero_10_ppo_abot_m0.yaml``
+* LIBERO-Plus:  ``examples/embodiment/config/libero_10_plus_ppo_abot_m0.yaml``
+
+In whichever config(s) you plan to use, set both fields to your local
+ABot-M0 checkpoint path:
 
 * ``rollout.model.model_path``
 * ``actor.model.model_path``
 
-to your local ABot-M0 checkpoint path.
-
-5. Import Smoke Check
-~~~~~~~~~~~~~~~~~~~~~~~~
+5. Import Sanity Check
+~~~~~~~~~~~~~~~~~~~~~~
 
 .. code-block:: bash
 
@@ -152,83 +146,105 @@ to your local ABot-M0 checkpoint path.
 
 If the command prints ``IMPORT_SMOKE_OK``, the package-level dependency wiring is valid.
 
-Docker Installation (Recommended for Reproducibility)
------------------------------------------------------
+6. Evaluation
+~~~~~~~~~~~~~
 
-You can also validate ABot-M0 with Docker-based environment setup:
+Before launching RL training, you can run a standalone evaluation pass with an
+existing ABot-M0 checkpoint to verify the rollout pipeline, record videos, and
+sanity-check task success rates.
 
-.. code-block:: bash
+The eval entrypoint is ``examples/embodiment/eval_embodied_agent.py``. Both
+benchmarks share the same launch flow; the only differences are
+``LIBERO_TYPE`` and the config name.
 
-   docker pull rlinf/rlinf:agentic-rlinf0.2-maniskill_libero
-
-   docker run -it --gpus all \
-     --shm-size 100g \
-     --net=host \
-     --name rlinf-abot \
-     -e NVIDIA_DRIVER_CAPABILITIES=all \
-       -v <path_to_RLinf>:/workspace/RLinf \
-       -v <path_to_ABot-Manipulation>:/workspace/ABot-Manipulation \
-       -v <path_to_vggt>:/workspace/vggt \
-     rlinf/rlinf:agentic-rlinf0.2-maniskill_libero /bin/bash
-
-Inside container:
+Common environment setup:
 
 .. code-block:: bash
 
-   cd /workspace/RLinf
-   export ABOT_PATH=/workspace/ABot-Manipulation
-   export VGGT_PATH=/workspace/vggt
-   bash requirements/install.sh embodied --venv .venv --model abot_m0 --env maniskill_libero --install-rlinf
    source .venv/bin/activate
-   python -c "import rlinf; import ABot; import vggt; print('IMPORT_SMOKE_OK')"
-
-Quick Start (Smoke Test)
-------------------------
-
-Use the ABot smoke config file:
-
-.. code-block:: bash
-
-   # examples/embodiment/config/libero_10_ppo_abot_m0_smoke.yaml
-
-Set runtime environment variables:
-
-.. code-block:: bash
 
    export REPO_PATH=$(pwd)
    export EMBODIED_PATH=$(pwd)/examples/embodiment
    export PYTHONPATH=${REPO_PATH}:$PYTHONPATH
-   export CUDA_VISIBLE_DEVICES=0,1
    export MUJOCO_GL=egl
    export PYOPENGL_PLATFORM=egl
    export ROBOT_PLATFORM=LIBERO
 
-Start Ray and run smoke training:
+   ray stop || true
+   ray start --head --port=6379
+
+**LIBERO-10 (standard):**
 
 .. code-block:: bash
+
+   export LIBERO_TYPE=standard
+
+   python examples/embodiment/eval_embodied_agent.py \
+     --config-name libero_10_ppo_abot_m0 \
+     actor.model.model_path=<path_to_abot_m0_ckpt> \
+     rollout.model.model_path=<path_to_abot_m0_ckpt> \
+     env.eval.total_num_envs=8 \
+     env.eval.video_cfg.save_video=true \
+     algorithm.eval_rollout_epoch=1 \
+     runner.logger.experiment_name=abot_m0_libero10_eval
+
+**LIBERO-Plus:**
+
+.. code-block:: bash
+
+   export LIBERO_TYPE=plus
+
+   python examples/embodiment/eval_embodied_agent.py \
+     --config-name libero_10_plus_ppo_abot_m0 \
+     actor.model.model_path=<path_to_abot_m0_ckpt> \
+     rollout.model.model_path=<path_to_abot_m0_ckpt> \
+     env.eval.total_num_envs=8 \
+     env.eval.video_cfg.save_video=true \
+     algorithm.eval_rollout_epoch=1 \
+     runner.logger.experiment_name=abot_m0_liberoplus_eval
+
+Notes:
+
+* ``actor.model.model_path`` and ``rollout.model.model_path`` must point to the
+  same ABot-M0 checkpoint directory or ``.pt`` file you want to evaluate.
+
+7. PPO Training
+~~~~~~~~~~~~~~~
+
+PPO training uses the same launch flow as evaluation; only ``LIBERO_TYPE`` and
+the config name differ.
+
+Common environment setup:
+
+.. code-block:: bash
+
+   source .venv/bin/activate
+   export REPO_PATH=$(pwd)
+   export EMBODIED_PATH=$(pwd)/examples/embodiment
+   export PYTHONPATH=${REPO_PATH}:$PYTHONPATH
+   export MUJOCO_GL=egl
+   export PYOPENGL_PLATFORM=egl
+   export ROBOT_PLATFORM=LIBERO
 
    ray stop || true
    ray start --head --port=6379
 
-   python examples/embodiment/train_embodied_agent.py \
-     --config-name libero_10_ppo_abot_m0_smoke \
-     runner.max_epochs=3 \
-     algorithm.rollout_epoch=2 \
-     env.train.total_num_envs=4 \
-     env.eval.total_num_envs=2 \
-     actor.micro_batch_size=2 \
-     actor.global_batch_size=8
+**LIBERO-10 (standard):**
 
-   ray stop
+.. code-block:: bash
 
-Current Validation Status
--------------------------
+   export LIBERO_TYPE=standard
+   python examples/embodiment/train_embodied_agent.py --config-name libero_10_ppo_abot_m0
 
-* **Passed**: The minimal smoke command above has been verified.
-* **Pending**: Full Docker-path smoke verification is not completed yet.
+**LIBERO-Plus:**
 
-Visualization
--------------
+.. code-block:: bash
+
+   export LIBERO_TYPE=plus
+   python examples/embodiment/train_embodied_agent.py --config-name libero_10_plus_ppo_abot_m0
+
+8. Visualization
+~~~~~~~~~~~~~~~~~
 
 .. code-block:: bash
 

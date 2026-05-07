@@ -301,7 +301,7 @@
            <a href="abot_m0.html" style="text-decoration: underline; color: blue;">
              <b>ABot-M0 模型强化学习训练</b>
            </a><br>
-           ABot-M0 原生集成与 LIBERO 冒烟验证
+           ABot-M0 原生集成与 LIBERO-plus PPO 训练
          </p>
        </div>
     </div>

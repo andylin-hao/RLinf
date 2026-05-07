@@ -300,7 +300,7 @@ as well as reinforcement learning training examples on real robots.
         <a href="abot_m0.html" style="text-decoration: underline; color: blue;">
           <b>RL on ABot-M0 Model</b>
         </a><br>
-        ABot-M0 native integration with LIBERO smoke validation
+        ABot-M0 native integration with LIBERO-plus PPO training
       </p>
     </div>
   </div>
