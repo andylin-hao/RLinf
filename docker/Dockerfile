@@ -29,6 +29,7 @@ FROM base-image-platform-${PLATFORM} AS base-image-embodied-robotwin
 FROM base-image-platform-${PLATFORM} AS base-image-embodied-opensora
 FROM base-image-platform-${PLATFORM} AS base-image-embodied-frankasim
 FROM base-image-platform-${PLATFORM} AS base-image-embodied-wan
+FROM base-image-platform-${PLATFORM} AS base-image-embodied-libero
 FROM base-image-platform-${PLATFORM} AS base-image-embodied-liberopro
 FROM base-image-platform-${PLATFORM} AS base-image-embodied-liberoplus
 FROM base-image-platform-${PLATFORM} AS base-image-embodied-embodichain
@@ -336,6 +337,18 @@ FROM embodied-common-image AS embodied-embodichain-image
 RUN bash requirements/install.sh --platform ${RLINF_PLATFORM} embodied --venv embodichain --env embodichain
 
 RUN echo "source ${UV_PATH}/embodichain/bin/activate" >> ~/.bashrc
+
+##################################################################################################
+# Embodied: LIBERO
+##################################################################################################
+FROM embodied-common-image AS embodied-libero-image
+
+# Install openvla env
+RUN bash requirements/install.sh --platform ${RLINF_PLATFORM} embodied --venv openvla --model openvla --env libero && \
+    bash requirements/install.sh --platform ${RLINF_PLATFORM} embodied --venv openvla-oft --model openvla-oft --env libero
+
+# Set default env
+RUN echo "source ${UV_PATH}/openvla/bin/activate" >> ~/.bashrc
 
 ##################################################################################################
 # Embodied: LIBERO-Pro
