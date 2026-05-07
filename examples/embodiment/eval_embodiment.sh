@@ -23,6 +23,9 @@ export CARB_APP_PATH=${CARB_APP_PATH:-$ISAAC_PATH/kit}
 export ROBOTWIN_PATH=${ROBOTWIN_PATH:-"/path/to/RoboTwin"}
 export PYTHONPATH=${REPO_PATH}:${ROBOTWIN_PATH}:$PYTHONPATH
 
+export DREAMZERO_PATH=${DREAMZERO_PATH:-"/path/to/DreamZero"}
+export PYTHONPATH=${DREAMZERO_PATH}:$PYTHONPATH
+
 export HYDRA_FULL_ERROR=1
 
 if [ -z "$1" ]; then
@@ -50,7 +53,7 @@ fi
 
 echo "Using ROBOT_PLATFORM=$ROBOT_PLATFORM"
 
-LOG_DIR="${REPO_PATH}/logs/$(date +'%Y%m%d-%H:%M:%S')" #/$(date +'%Y%m%d-%H:%M:%S')"
+LOG_DIR="${REPO_PATH}/logs/$(date +'%Y%m%d-%H:%M:%S')-${CONFIG_NAME}" #/$(date +'%Y%m%d-%H:%M:%S')"
 MEGA_LOG_FILE="${LOG_DIR}/eval_embodiment.log"
 mkdir -p "${LOG_DIR}"
 CMD="python ${SRC_FILE} --config-path ${EMBODIED_PATH}/config/ --config-name ${CONFIG_NAME} runner.logger.log_path=${LOG_DIR}"

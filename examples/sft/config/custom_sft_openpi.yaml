@@ -23,8 +23,8 @@ runner:
     experiment_name: "test_openpi"
     logger_backends: ["tensorboard"] # wandb, swanlab
 
-  max_epochs: 1000
-  max_steps: -1
+  max_epochs: -1
+  max_steps: 1000
   val_check_interval: -1
   save_interval: 10
 
@@ -46,7 +46,7 @@ actor:
     precision: null
     model_path: "/path/to/pi0-model"
     num_action_chunks: 4 # interface for the env
-    add_value_head: True
+    add_value_head: False
     openpi:
       config_name: "pi0_custom"
       detach_critic_input: True

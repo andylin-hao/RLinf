@@ -264,6 +264,7 @@ Using behavior as an example:
 - OpenPI (Pi0) + PPO:
   ``examples/embodiment/config/behavior_ppo_openpi.yaml``
 - OpenPI (Pi0.5) + PPO:
+  ``examples/embodiment/config/behavior_ppo_openpi_pi05_eval.yaml``
   ``examples/embodiment/config/behavior_ppo_openpi_pi05.yaml``
 
 .. warning::
@@ -278,7 +279,8 @@ Using behavior as an example:
    ``examples/embodiment/config/env/behavior_r1pro.yaml`` via ``defaults``
    (for both ``env.train`` and ``env.eval``). This file defines the base R1 Pro
    environment settings, including ``task_idx``, ``max_episode_steps``,
-   ``max_steps_per_rollout_epoch``, camera resolution, and ``omni_config``.
+   ``max_steps_per_rollout_epoch``, ``num_env_subprocess``, camera resolution,
+   and ``omni_config``.
    You can override these defaults in each concrete config under
    ``env.train`` / ``env.eval``.
 
@@ -288,15 +290,88 @@ Using behavior as an example:
   RLinf first loads OmniGibson's base ``r1pro_behavior.yaml`` and then applies
   overrides from ``omni_config`` (see ``setup_omni_cfg`` in
   ``rlinf/envs/behavior/utils.py``).
+- ``omni_config.task.type: BehaviorTask`` and
+  ``omni_config.scene.type: InteractiveTraversableScene``:
+  RLinf now uses OmniGibson's upstream BEHAVIOR task and scene classes
+  directly. Keep these explicit type entries in
+  ``examples/embodiment/config/env/behavior_r1pro.yaml`` when using RLinf's
+  BEHAVIOR setup so the intended OmniGibson classes are selected after
+  ``setup_omni_cfg`` applies overrides.
 - ``task_idx``:
   Current task id (0-49). RLinf maps it to the concrete task name and writes it
   into ``task.activity_name`` (see ``rlinf/envs/behavior/behavior_env.py``).
-- ``omni_config.task.resample_task_when_reset: True``:
-  Before each ``env.reset()``, RLinf calls ``update_task`` to resample, so scene
-  and object layouts can change across episodes under the same
-  ``activity_name``. This requires ``online_object_sampling: True`` and
-  ``use_presampled_robot_pose: False`` (otherwise an assertion is raised). Set
-  it to ``False`` if you need fixed scenes for strict A/B comparisons.
+- ``omni_config.task.instance_resample_mode``:
+  Controls reset-time instance switching. Supported modes are
+  ``disabled``, ``offline``, and ``online``.
+  In ``offline`` mode, RLinf scans ``omni_config.task.activity_instance_dir``
+  once at startup, parses cached instance ids from
+  filenames in that directory, and samples one cached offline instance before
+  each ``env.reset()``. ``*_template.json`` files are treated as full cached
+  templates and are reloaded through the heavier scene-reload path, while
+  ``*_template-tro_state.json`` files are treated as task-relevant-only cached
+  states and are applied through the lighter in-place path. This is useful
+  when you want more reset-time diversity than a fixed
+  ``activity_instance_id`` but lower overhead than ``online_object_sampling``.
+  In ``online`` mode, RLinf reuses the online task-resampling path and requires
+  ``online_object_sampling: True`` plus ``use_presampled_robot_pose: False``.
+  In ``disabled`` mode, if ``activity_instance_dir`` is set RLinf loads the
+  configured ``activity_instance_id`` from that directory before each reset.
+- ``omni_config.task.activity_instance_dir``:
+  Optional directory containing cached task instance JSON files. RLinf
+  recognizes official ``*_template.json`` instances and
+  ``*_template-tro_state.json`` files. Used by
+  ``instance_resample_mode: offline`` and by fixed ``activity_instance_id``
+  loading when the mode is ``disabled``.
+- ``omni_config.task.instance_file_format``:
+  Optional cached-instance format selector. Supported values are ``template``
+  and ``tro_state``. Use ``template`` to force full cached-template reloads, or
+  ``tro_state`` to force light-weight task-relevant-only reloads. RLinf also
+  accepts official ``tro_state`` files that do not include ``robot_poses``; in
+  that case, RLinf clears any stale cached robot-pose metadata and the
+  subsequent reset uses the task's default robot reset pose instead of a
+  presampled pose override. When converting from
+  ``template.json``, omitting ``robot_poses`` is usually safer than writing the
+  current simulator robot pose into the cache.
+- Generating cached instances with RLinf's generator:
+  RLinf provides ``rlinf/envs/behavior/instance_generator.py`` to
+  generate ``*_template.json`` and ``*_template-tro_state.json`` files directly
+  from ``examples/embodiment/config/env/behavior_r1pro.yaml``.
+  The script reads ``omni_config.scene.scene_model``,
+  ``omni_config.task.activity_name``,
+  ``omni_config.task.activity_definition_id``, the robot config, and room
+  loading settings from the yaml, then temporarily switches the task to online
+  object sampling for cached-instance generation.
+  It writes into ``omni_config.task.activity_instance_dir`` when that field is
+  set; otherwise it falls back to ``OMNIGIBSON_DATA_PATH``'s default
+  ``2025-challenge-task-instances`` directory. Use ``--output-dir`` to override
+  either behavior.
+
+  .. code-block:: bash
+
+     cd /path/to/RLinf
+
+     python rlinf/envs/behavior/instance_generator.py \
+       --config examples/embodiment/config/env/behavior_r1pro.yaml \
+       --output-format template \
+       --start-idx 1 \
+       --end-idx 50
+
+     python rlinf/envs/behavior/instance_generator.py \
+       --config examples/embodiment/config/env/behavior_r1pro.yaml \
+       --output-format tro_state \
+       --start-idx 1 \
+       --end-idx 50
+
+  The generated filenames follow
+  ``<scene_model>_task_<activity_name>_<activity_definition_id>_<activity_instance_id>_template(.json|-tro_state.json)``.
+  ``--start-idx`` and ``--end-idx`` therefore control the generated
+  ``activity_instance_id`` range. ``tro_state`` outputs include top-level
+  ``robot_poses`` when the task metadata provides them; otherwise the key is
+  omitted so RLinf reset falls back to the task's default robot reset pose.
+  BEHAVIOR-1K's upstream
+  ``OmniGibson/omnigibson/sampling/multiply_b1k_tasks.py`` is still usable, but
+  RLinf's generator is the recommended path because it reads the RLinf yaml
+  directly and preserves ``activity_definition_id`` from that config.
 - ``camera.head_resolution`` / ``camera.wrist_resolution``:
   Head / wrist camera resolutions. RLinf overrides default values in
   ``omnigibson.learning.utils.eval_utils`` (default 720x720 and 480x480), then
@@ -322,6 +397,25 @@ Using behavior as an example:
 - ``omni_config.macro.use_numpy_controller_backend: True``:
   Uses the numpy controller backend, which is usually faster in single-process
   or moderate-parallel settings.
+- ``skip_intermediate_obs_in_chunk``:
+  RLinf executes chunked BEHAVIOR actions by stepping several low-level robot
+  actions before returning control to the policy. When this flag is ``True``,
+  RLinf skips collecting intermediate observations inside that chunk and only
+  keeps the observations the policy actually consumes. This usually gives a
+  large environment-speed improvement because fewer camera observations are
+  wrapped, transferred, and recorded. One visible consequence is that saved
+  videos no longer include every low-level robot action frame; instead they only
+  show the frames the robot actually observes at chunk boundaries.
+- ``num_env_subprocess``:
+  Within one env-worker process, splits parallel env count ``num_envs`` across multiple
+  **child processes**, each hosting its own Isaac/OmniGibson simulation (see
+  ``BehaviorProcessProxy`` in ``behavior_env.py``). Default ``1`` keeps the legacy
+  single-subprocess behavior. When greater than ``1``, each subprocess runs
+  ``num_envs / num_env_subprocess`` parallel envs; IPC uses parallel receives to reduce
+  pipe backpressure.
+  **Constraint**: ``num_envs`` must be divisible by ``num_env_subprocess`` (asserted).
+  Increasing this value can reduce env-step bottlenecks on multi-core/GPU hosts but also
+  multiplies simulator processes and memory pressure—tune for your hardware.
 
 --------------
 
@@ -347,7 +441,7 @@ the Behavior environment, run:
 
 --------------
 
-**4. Evaluate with behavior_ppo_openpi_pi05.yaml**
+**4. Evaluate with behavior_ppo_openpi_pi05_eval.yaml**
 
 In principle, any ``pi05`` checkpoint that has non-zero success rate on
 Behavior and has been converted to PyTorch format can be used for evaluation
@@ -363,7 +457,7 @@ PyTorch format:
 Thanks to the OpenPI-Comet authors for open-sourcing the model and tools, which
 helps reproducibility and evaluation in RLinf.
 
-After conversion, update ``behavior_ppo_openpi_pi05.yaml`` as follows:
+After conversion, update ``behavior_ppo_openpi_pi05_eval.yaml`` as follows:
 
 1. Set ``actor.model.model_path`` and ``rollout.model.model_path`` to the converted model directory.
 2. Increase ``max_episode_steps`` and ``max_steps_per_rollout_epoch`` in both
@@ -385,7 +479,7 @@ Run evaluation with:
 
    export ISAAC_PATH=/path/to/isaac-sim
    export OMNIGIBSON_DATA_PATH=/path/to/BEHAVIOR-1K-datasets
-   bash examples/embodiment/eval_embodiment.sh behavior_ppo_openpi_pi05
+   bash examples/embodiment/eval_embodiment.sh behavior_ppo_openpi_pi05_eval
 
 
 Visualization and Results
