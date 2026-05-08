@@ -491,6 +491,7 @@ as well as reinforcement learning training examples on real robots.
    pi0
    gr00t
    lingbotvla
+   abot_m0
    dexbotic
    starvla
    mlp
@@ -500,8 +501,6 @@ as well as reinforcement learning training examples on real robots.
    sft_vlm
    dsrl
    dagger
-   lingbotvla
-   abot_m0
    recap
    co_training
    franka
