@@ -483,6 +483,7 @@
    pi0
    gr00t
    lingbotvla
+   abot_m0
    dexbotic
    starvla
    mlp
@@ -492,8 +493,6 @@
    sft_vlm
    dsrl
    dagger
-   lingbotvla
-   abot_m0
    recap
    co_training
    franka
