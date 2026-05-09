@@ -61,6 +61,14 @@ jobs:
           bash requirements/install.sh embodied --model openvla --env maniskill_libero
           rm -rf .venv
 
+      - name: Install openvla and openpi maniskill_libero with torch 2.8
+        run: |
+          pip install uv
+          bash requirements/install.sh embodied --model openvla --env maniskill_libero --torch 2.8.0
+          rm -rf .venv
+          bash requirements/install.sh embodied --model openpi --env maniskill_libero --torch 2.8.0
+          rm -rf .venv
+
       - name: Install openvla-oft
         run: |
           pip install uv

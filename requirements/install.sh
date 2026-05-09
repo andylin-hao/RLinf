@@ -725,6 +725,7 @@ EOF
 install_flash_attn() {
     # Base release info – adjust when bumping flash-attn
     local flash_ver="2.7.4.post1"
+    local prebuilt_flash_versions=("$flash_ver" "2.8.3")
 
     if [ "$DISABLE_FLASH_ATTN" -eq 1 ]; then
         echo "[install.sh] --no-flash-attn was specified; skipping flash-attn install."
@@ -741,8 +742,6 @@ install_flash_attn() {
         uv pip install "flash-attn==${flash_ver}" --no-build-isolation
         return 0
     fi
-    local base_url="${GITHUB_PREFIX}https://github.com/Dao-AILab/flash-attention/releases/download/v${flash_ver}"
-
     # Detect Python tags
     local py_major py_minor
     py_major=$(python - <<'EOF'
@@ -785,9 +784,19 @@ EOF
     local platform_tag="linux_x86_64"
     local cxx_abi="cxx11abiFALSE"
 
-    local wheel_name="flash_attn-${flash_ver}+${cu_tag}${torch_tag}${cxx_abi}-${py_tag}-${abi_tag}-${platform_tag}.whl"
     uv pip uninstall flash-attn || true
-    uv pip install "${base_url}/${wheel_name}" || (echo "Flash attn installation via wheel failed. Attempting to install from source..."; uv pip install flash-attn==${flash_ver} --no-build-isolation)
+    local prebuilt_ver base_url wheel_name
+    for prebuilt_ver in "${prebuilt_flash_versions[@]}"; do
+        base_url="${GITHUB_PREFIX}https://github.com/Dao-AILab/flash-attention/releases/download/v${prebuilt_ver}"
+        wheel_name="flash_attn-${prebuilt_ver}+${cu_tag}${torch_tag}${cxx_abi}-${py_tag}-${abi_tag}-${platform_tag}.whl"
+        echo "[install.sh] Installing flash-attn prebuilt wheel from v${prebuilt_ver}..."
+        if uv pip install "${base_url}/${wheel_name}"; then
+            return 0
+        fi
+        echo "[install.sh] flash-attn prebuilt wheel v${prebuilt_ver} was unavailable or failed to install."
+    done
+    echo "Flash attn installation via prebuilt wheels failed. Attempting to install from source..."
+    uv pip install "flash-attn==${flash_ver}" --no-build-isolation
 }
 
 install_apex() {
