@@ -1,4 +1,5 @@
 ARG BUILD_TARGET=reason
+ARG TARGETPLATFORM
 # Hardware platform for the install: nvidia (default), amd (ROCm), or ascend (CANN).
 ARG PLATFORM=nvidia
 # Per-platform runtime versions. Override these for common CUDA/ROCm/CANN bumps, or
@@ -15,9 +16,9 @@ ARG ASCEND_BASE_IMAGE=swr.cn-south-1.myhuaweicloud.com/ascendhub/cann:${CANN_VER
 ##################################################################################################
 # Platform base resolution (selects between NVIDIA, AMD/ROCm, and Ascend/CANN)
 ##################################################################################################
-FROM ${NVIDIA_BASE_IMAGE} AS base-image-platform-nvidia
-FROM ${AMD_BASE_IMAGE} AS base-image-platform-amd
-FROM ${ASCEND_BASE_IMAGE} AS base-image-platform-ascend
+FROM --platform=${TARGETPLATFORM} ${NVIDIA_BASE_IMAGE} AS base-image-platform-nvidia
+FROM --platform=${TARGETPLATFORM} ${AMD_BASE_IMAGE} AS base-image-platform-amd
+FROM --platform=${TARGETPLATFORM} ${ASCEND_BASE_IMAGE} AS base-image-platform-ascend
 
 
 ##################################################################################################
