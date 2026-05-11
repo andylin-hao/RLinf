@@ -7,7 +7,7 @@ ARG PLATFORM=nvidia
 # override the full base-image args below for a different image family/Ubuntu.
 ARG CUDA_VER=12.4.1
 ARG ROCM_VER=6.4
-ARG ROCM_ARCHS=gfx942
+ARG ROCM_ARCHS=gfx908;gfx90a;gfx1030;gfx1100;gfx1101;gfx942;gfx1200;gfx1201
 ARG CANN_VER=9.0.0-910b
 ARG UBUNTU_VER=22.04
 ARG NVIDIA_BASE_IMAGE=nvidia/cuda:${CUDA_VER}-cudnn-devel-ubuntu${UBUNTU_VER}
@@ -20,6 +20,12 @@ ARG ASCEND_BASE_IMAGE=swr.cn-south-1.myhuaweicloud.com/ascendhub/cann:${CANN_VER
 ##################################################################################################
 FROM --platform=${TARGETPLATFORM} ${NVIDIA_BASE_IMAGE} AS base-image-platform-nvidia
 FROM --platform=${TARGETPLATFORM} ${AMD_BASE_IMAGE} AS base-image-platform-amd
+ARG ROCM_ARCHS
+ENV AMDGPU_TARGETS=${ROCM_ARCHS}
+ENV GPU_ARCHS=${ROCM_ARCHS}
+ENV HCC_AMDGPU_TARGET=${ROCM_ARCHS}
+ENV FLASH_ATTENTION_TRITON_AMD_ARCHS=${ROCM_ARCHS}
+ENV PYTORCH_ROCM_ARCH=${ROCM_ARCHS}
 FROM --platform=${TARGETPLATFORM} ${ASCEND_BASE_IMAGE} AS base-image-platform-ascend
 
 
@@ -55,12 +61,7 @@ FROM ubuntu:20.04 AS base-image-embodied-franka
 ##################################################################################################
 FROM base-image-$BUILD_TARGET AS base-image
 ARG PLATFORM
-ARG ROCM_ARCHS
 ENV RLINF_PLATFORM=${PLATFORM}
-ENV AMDGPU_TARGETS=${ROCM_ARCHS}
-ENV GPU_TARGETS=${ROCM_ARCHS}
-ENV HCC_AMDGPU_TARGET=${ROCM_ARCHS}
-ENV PYTORCH_ROCM_ARCH=${ROCM_ARCHS}
 
 
 ##################################################################################################
