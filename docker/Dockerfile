@@ -6,7 +6,7 @@ ARG PLATFORM=nvidia
 # override the full base-image args below for a different image family/Ubuntu.
 ARG CUDA_VER=12.4.1
 ARG ROCM_VER=6.4
-ARG ROCM_ARCHS=gfx1030;gfx1100;gfx1101;gfx942;gfx1200;gfx1201
+ARG ROCM_ARCHS=gfx90a;gfx942
 ARG CANN_VER=9.0.0-910b
 ARG UBUNTU_VER=22.04
 ARG NVIDIA_BASE_IMAGE=nvidia/cuda:${CUDA_VER}-cudnn-devel-ubuntu${UBUNTU_VER}
