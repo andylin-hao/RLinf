@@ -25,8 +25,9 @@ ENV GPU_ARCHS=${ROCM_ARCHS}
 ENV HCC_AMDGPU_TARGET=${ROCM_ARCHS}
 ENV FLASH_ATTENTION_TRITON_AMD_ARCHS=${ROCM_ARCHS}
 ENV PYTORCH_ROCM_ARCH=${ROCM_ARCHS}
+ENV AMD_VISIBLE_DEVICES=all
 FROM ${ASCEND_BASE_IMAGE} AS base-image-platform-ascend
-
+ENV ASCEND_VISIBLE_DEVICES=all
 
 ##################################################################################################
 # Base images for different build targets — all derive from the platform base
