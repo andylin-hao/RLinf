@@ -1,10 +1,13 @@
 ARG BUILD_TARGET=reason
 # Hardware platform for the install: nvidia (default) or amd (ROCm).
 ARG PLATFORM=nvidia
-# Per-platform base images. Override via --build-arg if you need a different
-# CUDA/ROCm or Ubuntu version.
-ARG NVIDIA_BASE_IMAGE=nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04
-ARG AMD_BASE_IMAGE=rocm/dev-ubuntu-22.04:6.4-complete
+# Per-platform runtime versions. Override these for common CUDA/ROCm bumps, or
+# override the full base-image args below for a different image family/Ubuntu.
+ARG CUDA_VER=12.4.1
+ARG ROCM_VER=6.4
+ARG UBUNTU_VER=22.04
+ARG NVIDIA_BASE_IMAGE=nvidia/cuda:${CUDA_VER}-cudnn-devel-ubuntu${UBUNTU_VER}
+ARG AMD_BASE_IMAGE=rocm/dev-ubuntu-${UBUNTU_VER}:${ROCM_VER}-complete
 
 
 ##################################################################################################
