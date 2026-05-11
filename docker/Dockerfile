@@ -1,5 +1,6 @@
 ARG BUILD_TARGET=reason
 ARG TARGETPLATFORM
+ARG TARGETARCH
 # Hardware platform for the install: nvidia (default), amd (ROCm), or ascend (CANN).
 ARG PLATFORM=nvidia
 # Per-platform runtime versions. Override these for common CUDA/ROCm/CANN bumps, or
@@ -59,11 +60,27 @@ ENV RLINF_PLATFORM=${PLATFORM}
 ##################################################################################################
 # System-level setup (apt, mirrors, basic tools)
 ##################################################################################################
+ARG TARGETARCH
 ARG NO_MIRROR
 SHELL ["/bin/bash", "-c"]
 ENV NO_MIRROR=${NO_MIRROR}
 ENV DEBIAN_FRONTEND=noninteractive
-RUN if [ "$NO_MIRROR" != "1" ]; then sed -i 's@//.*archive.ubuntu.com@//mirrors.ustc.edu.cn@g' /etc/apt/sources.list; fi
+RUN if [ "$NO_MIRROR" != "1" ]; then \
+        if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then \
+            if [ "$TARGETARCH" = "arm64" ]; then \
+                sed -i 's@//ports.ubuntu.com@//mirrors.ustc.edu.cn@g' /etc/apt/sources.list.d/ubuntu.sources; \
+            else \
+                sed -i 's@//.*archive.ubuntu.com@//mirrors.ustc.edu.cn@g' /etc/apt/sources.list.d/ubuntu.sources; \
+            fi; \
+        elif [ "$TARGETARCH" = "arm64" ]; then \
+            sed -i \
+                -e 's@//ports.ubuntu.com/\? @//ports.ubuntu.com/ubuntu-ports @g' \
+                -e 's@//ports.ubuntu.com@//mirrors.ustc.edu.cn@g' \
+                /etc/apt/sources.list; \
+        else \
+            sed -i 's@//.*archive.ubuntu.com@//mirrors.ustc.edu.cn@g' /etc/apt/sources.list; \
+        fi; \
+    fi
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git vim libibverbs-dev openssh-server sudo runit runit-systemd tmux \
     build-essential python3-dev cmake pkg-config iproute2 pciutils python3 python3-pip \
