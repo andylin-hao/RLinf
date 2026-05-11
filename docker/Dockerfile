@@ -1,20 +1,23 @@
 ARG BUILD_TARGET=reason
-# Hardware platform for the install: nvidia (default) or amd (ROCm).
+# Hardware platform for the install: nvidia (default), amd (ROCm), or ascend (CANN).
 ARG PLATFORM=nvidia
-# Per-platform runtime versions. Override these for common CUDA/ROCm bumps, or
+# Per-platform runtime versions. Override these for common CUDA/ROCm/CANN bumps, or
 # override the full base-image args below for a different image family/Ubuntu.
 ARG CUDA_VER=12.4.1
 ARG ROCM_VER=6.4
+ARG CANN_VER=9.0.0-910b
 ARG UBUNTU_VER=22.04
 ARG NVIDIA_BASE_IMAGE=nvidia/cuda:${CUDA_VER}-cudnn-devel-ubuntu${UBUNTU_VER}
 ARG AMD_BASE_IMAGE=rocm/dev-ubuntu-${UBUNTU_VER}:${ROCM_VER}-complete
+ARG ASCEND_BASE_IMAGE=swr.cn-south-1.myhuaweicloud.com/ascendhub/cann:${CANN_VER}-ubuntu${UBUNTU_VER}-py3.11
 
 
 ##################################################################################################
-# Platform base resolution (selects between NVIDIA and AMD/ROCm)
+# Platform base resolution (selects between NVIDIA, AMD/ROCm, and Ascend/CANN)
 ##################################################################################################
 FROM ${NVIDIA_BASE_IMAGE} AS base-image-platform-nvidia
 FROM ${AMD_BASE_IMAGE} AS base-image-platform-amd
+FROM ${ASCEND_BASE_IMAGE} AS base-image-platform-ascend
 
 
 ##################################################################################################
