@@ -1,5 +1,4 @@
-ARG BUILD_TARGET=reason
-ARG TARGETPLATFORM
+ARG BUILD_TARGET=embodied
 ARG TARGETARCH
 # Hardware platform for the install: nvidia (default), amd (ROCm), or ascend (CANN).
 ARG PLATFORM=nvidia
@@ -18,15 +17,15 @@ ARG ASCEND_BASE_IMAGE=swr.cn-south-1.myhuaweicloud.com/ascendhub/cann:${CANN_VER
 ##################################################################################################
 # Platform base resolution (selects between NVIDIA, AMD/ROCm, and Ascend/CANN)
 ##################################################################################################
-FROM --platform=${TARGETPLATFORM} ${NVIDIA_BASE_IMAGE} AS base-image-platform-nvidia
-FROM --platform=${TARGETPLATFORM} ${AMD_BASE_IMAGE} AS base-image-platform-amd
+FROM ${NVIDIA_BASE_IMAGE} AS base-image-platform-nvidia
+FROM ${AMD_BASE_IMAGE} AS base-image-platform-amd
 ARG ROCM_ARCHS
 ENV AMDGPU_TARGETS=${ROCM_ARCHS}
 ENV GPU_ARCHS=${ROCM_ARCHS}
 ENV HCC_AMDGPU_TARGET=${ROCM_ARCHS}
 ENV FLASH_ATTENTION_TRITON_AMD_ARCHS=${ROCM_ARCHS}
 ENV PYTORCH_ROCM_ARCH=${ROCM_ARCHS}
-FROM --platform=${TARGETPLATFORM} ${ASCEND_BASE_IMAGE} AS base-image-platform-ascend
+FROM ${ASCEND_BASE_IMAGE} AS base-image-platform-ascend
 
 
 ##################################################################################################
