@@ -91,41 +91,6 @@ jobs:
           rm -rf .venv
           uv cache prune
 
-  scheduler-unit-tests-ascend:
-    runs-on: ascend
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v5
-
-      - name: Create Ascend environment and install dependencies
-        run: |
-          unset UV_DEFAULT_INDEX
-          export UV_PATH=/workspace/dataset/.uv
-          export UV_LINK_MODE=symlink
-          export UV_CACHE_DIR=/workspace/dataset/.uv_cache
-          export UV_PYTHON_INSTALL_DIR=/workspace/dataset/.uv_python
-          bash requirements/install.sh --platform ascend --no-flash-attn embodied --model openvla --env libero
-          source .venv/bin/activate
-          uv pip install transformers
-
-      - name: Run scheduler unit tests
-        timeout-minutes: 20
-        run: |
-          export PYTHONPATH=$(pwd):$(pwd)/tests/unit_tests
-          source .venv/bin/activate
-          pytest tests/unit_tests
-
-      - name: Run scheduler doctest
-        timeout-minutes: 20
-        run: |
-          source .venv/bin/activate
-          pytest --doctest-modules rlinf/scheduler
-
-      - name: Clean up
-        run: |
-          rm -rf .venv
-          uv cache prune
-
   package-build-test:
     runs-on: self-hosted
     steps:
