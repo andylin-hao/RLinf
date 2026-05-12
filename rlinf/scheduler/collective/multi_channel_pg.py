@@ -457,7 +457,8 @@ class MultiChannelProcessGroup:
                 work.wait()
         except Exception as error:
             pg_name = dist._get_process_group_name(group)
-            msg = f"Broadcast failed on ProcessGroup {pg_name} rank {self._cur_rank} with error: {error}. Args - tensor: {tensor}, src: {src}, group: {group}, async_op: {async_op}."
+            tensor_info = f"shape={tensor.shape}, dtype={tensor.dtype}, device={tensor.device}"
+            msg = f"Broadcast failed on ProcessGroup {pg_name} rank {self._cur_rank} with error: {error}. Args - tensor: ({tensor_info}), src: {src}, group: {group}, async_op: {async_op}."
             self._logger.error(msg)
 
     @staticmethod
