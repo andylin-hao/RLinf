@@ -725,7 +725,6 @@ EOF
 install_flash_attn() {
     # Base release info – adjust when bumping flash-attn
     local flash_ver="2.7.4.post1"
-    local prebuilt_flash_versions=("$flash_ver" "2.8.3")
 
     if [ "$DISABLE_FLASH_ATTN" -eq 1 ]; then
         echo "[install.sh] --no-flash-attn was specified; skipping flash-attn install."
@@ -734,6 +733,30 @@ install_flash_attn() {
     if [ "$PLATFORM_FLASH_ATTN_INSTALL" -ne 1 ]; then
         echo "[install.sh] flash-attn is unsupported on platform=${PLATFORM}; skipping install."
         return 0
+    fi
+
+    local torch_ge_28
+    if torch_ge_28=$(python - <<'EOF' 2>/dev/null
+import re
+import torch
+
+version = torch.__version__.split("+", 1)[0]
+match = re.match(r"^(\d+)\.(\d+)", version)
+if match is None:
+    print("0")
+else:
+    major, minor = (int(part) for part in match.groups())
+    print("1" if (major, minor) >= (2, 8) else "0")
+EOF
+    ); then
+        if [ "$torch_ge_28" = "1" ]; then
+            flash_ver="2.8.3"
+        fi
+    fi
+
+    local prebuilt_flash_versions=("$flash_ver")
+    if [ "$flash_ver" != "2.8.3" ]; then
+        prebuilt_flash_versions+=("2.8.3")
     fi
 
     if [ "$PLATFORM_FLASH_ATTN_PREBUILT" -ne 1 ]; then
