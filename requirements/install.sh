@@ -358,7 +358,7 @@ configure_amd() {
     # transitively via torch. apply_torch_override promotes them to direct
     # deps in [project.dependencies] so [tool.uv.sources] mappings actually
     # take effect (uv only applies sources to direct deps).
-    PLATFORM_TORCH_PACKAGES=("torch" "torchvision" "torchaudio" "pytorch-triton-rocm")
+    PLATFORM_TORCH_PACKAGES=("torch" "torchvision" "torchaudio" "pytorch-triton-rocm" "triton-rocm")
     PLATFORM_VENV_EXPORTS=(
         "export AMD_VULKAN_ICD=RADV"
         "export VK_DRIVER_FILES=/usr/share/vulkan/icd.d/radeon_icd.x86_64.json"
