@@ -18,13 +18,19 @@ from pathlib import Path
 
 import pytest
 import ray
-import torch
 from omegaconf import DictConfig, OmegaConf
 
 from rlinf.scheduler import Cluster, ComponentPlacement, NodePlacementStrategy, Worker
 from rlinf.scheduler.cluster.cluster import ClusterEnvVar, PathEnvMergeMode
 from rlinf.scheduler.cluster.config import ClusterConfig, NsightConfig
 from rlinf.scheduler.hardware.robots.franka import FrankaConfig
+
+
+def accelerator_device_count() -> int:
+    """Return accelerator count through the Worker backend abstraction."""
+    if Worker.torch_platform is None or not hasattr(Worker.torch_platform, "device_count"):
+        return 0
+    return Worker.torch_platform.device_count()
 
 
 def test_cluster_config_parses_node_group_hardware():
@@ -838,9 +844,9 @@ def test_cluster_env_configs_path_override_mode_in_worker_launch(monkeypatch):
 
 
 def test_cluster_env_configs_multi_node_group_and_hetero_placement():
-    # Skip if num of GPUs is not 4
-    if torch.cuda.device_count() != 4:
-        pytest.skip("Skipping test because num of GPUs is not 4")
+    # Skip if num of accelerators is not 4
+    if accelerator_device_count() != 4:
+        pytest.skip("Skipping test because num of accelerators is not 4")
     _reset_cluster_singleton()
 
     config = OmegaConf.create(
