@@ -29,7 +29,9 @@ privileged 模式运行，并挂载宿主机 Ascend 驱动目录：
       --name rlinf-ascend-libero \
       -v /usr/local/Ascend/driver:/usr/local/Ascend/driver \
       -v .:/workspace/RLinf \
-      rlinf/rlinf:agentic-rlinf0.2-libero-cann9.0.0-910b
+      rlinf/rlinf:agentic-rlinf0.2-libero-cann9.0
+      # 为提升国内下载速度，可以使用：
+      # docker.1ms.run/rlinf/rlinf:agentic-rlinf0.2-libero-cann9.0
 
 进入容器后，切换到 OpenVLA-OFT 环境：
 
