@@ -483,6 +483,9 @@ EOF
     uv pip install "torch-npu==${torch_ver}" \
         || (echo "[install.sh] Pinned torch-npu==${torch_ver} failed; falling back to latest compatible build." >&2 \
             && uv pip install torch-npu)
+    if [ -f /usr/local/Ascend/ascend-toolkit/set_env.sh ]; then
+        echo "source /usr/local/Ascend/ascend-toolkit/set_env.sh" >> "$VENV_DIR/bin/activate"
+    fi
 }
 
 install_platform_extras() {
