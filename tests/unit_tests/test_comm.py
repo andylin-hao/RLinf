@@ -963,11 +963,21 @@ def cluster():
 def worker_groups(cluster: Cluster):
     """Creates and yields the sender and receiver worker groups."""
     if cluster.num_accelerators > 0:
+        if cluster.num_accelerators < 4:
+            pytest.skip(
+                f"NPU send/recv tests require at least 4 accelerator devices, "
+                f"found {cluster.num_accelerators}."
+            )
+        half = cluster.num_accelerators // 2
+        sender_placement = PackedPlacementStrategy(0, half - 1)
+        receiver_placement = PackedPlacementStrategy(half, cluster.num_accelerators - 1)
         sender_group = SenderWorker.create_group().launch(
-            cluster=cluster, name=SENDER_GROUP_NAME
+            cluster=cluster, placement_strategy=sender_placement, name=SENDER_GROUP_NAME
         )
         receiver_group = ReceiverWorker.create_group().launch(
-            cluster=cluster, name=RECEIVER_GROUP_NAME
+            cluster=cluster,
+            placement_strategy=receiver_placement,
+            name=RECEIVER_GROUP_NAME,
         )
     else:
         placement = NodePlacementStrategy([0] * 8)
