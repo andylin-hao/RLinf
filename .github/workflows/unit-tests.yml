@@ -130,7 +130,7 @@ jobs:
           uv cache prune
 
   package-build-test:
-    runs-on: self-hosted
+    runs-on: embodied
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
