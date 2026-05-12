@@ -996,8 +996,19 @@ def worker_groups(cluster: Cluster):
 def collective_group(cluster: Cluster):
     """Creates and yields the collective worker group."""
     if cluster.num_accelerators > 0:
+        # cross_collective_groups occupies the lower devices (0..cross_size-1) and is
+        # alive at the same time as this fixture within TestCollective. Place
+        # collective workers on the upper devices to avoid HCCL conflicts.
+        cross_size = 4 if cluster.num_accelerators >= 4 else 2
+        if cluster.num_accelerators <= cross_size:
+            pytest.skip(
+                f"collective_group requires more than {cross_size} accelerator devices "
+                f"so it can run alongside cross_collective_groups without sharing devices. "
+                f"Found {cluster.num_accelerators}."
+            )
+        placement = PackedPlacementStrategy(cross_size, cluster.num_accelerators - 1)
         group = CommCollectiveWorker.create_group().launch(
-            cluster=cluster, name="collective_group"
+            cluster=cluster, placement_strategy=placement, name="collective_group"
         )
     else:
         placement = NodePlacementStrategy([0] * 8)
