@@ -34,8 +34,6 @@ from rlinf.hybrid_engines.weight_syncer.patch_syncer import (
 )
 from rlinf.scheduler import AcceleratorType, Worker
 
-Worker.torch_platform.synchronize()
-
 
 class _TinyWeightSyncModel(torch.nn.Module):
     def __init__(self):
