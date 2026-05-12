@@ -75,7 +75,7 @@ NO_ROOT=0
 NO_INSTALL_RLINF_CMD="--no-install-project"
 SUPPORTED_TARGETS=("embodied" "agentic" "docs")
 SUPPORTED_MODELS=("openvla" "openvla-oft" "openpi" "gr00t" "dexbotic" "starvla" "lingbotvla" "dreamzero")
-SUPPORTED_ENVS=("behavior" "maniskill_libero" "libero" "metaworld" "calvin" "isaaclab" "robocasa" "franka" "franka-dexhand" "frankasim" "robotwin" "habitat" "opensora" "wan" "xsquare_turtle2" "liberopro" "liberoplus" "roboverse" "embodichain" "d4rl" "dosw1" "gim_arm")
+SUPPORTED_ENVS=("behavior" "maniskill_libero" "libero" "metaworld" "calvin" "isaaclab" "robocasa" "franka" "franka-dexhand" "frankasim" "robotwin" "habitat" "opensora" "wan" "xsquare_turtle2" "liberopro" "liberoplus" "roboverse" "embodichain" "d4rl" "dosw1" "gim_arm" "dummy")
 
 #=======================Utility Functions=======================
 
@@ -1254,6 +1254,9 @@ install_env_only() {
         d4rl)
             install_d4rl_env
             ;;
+        dummy)
+            install_dummy_env
+            ;;
         franka)
             install_franka_realworld_env
             ;;
@@ -1287,6 +1290,10 @@ install_env_only() {
 }
 
 #=======================ENV INSTALLERS=======================
+
+install_dummy_env() {
+    uv sync --extra embodied --active $NO_INSTALL_RLINF_CMD
+}
 
 install_libero_env() {
     # Prefer an existing checkout if LIBERO_PATH is provided; otherwise clone into the venv.
