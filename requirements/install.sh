@@ -1680,8 +1680,14 @@ install_opensora_world_model() {
     opensora_dir=$(clone_or_reuse_repo OPENSORA_PATH "$VENV_DIR/opensora" ${GITHUB_PREFIX}https://github.com/RLinf/opensora.git)
     
     uv pip install -e "$opensora_dir"
-    
-    # Install opensora dependencies
+
+    # xformers 0.0.29.post2 only has wheels for torch<=2.5, but we pin
+    # torch==2.6.0. UV_TORCH_BACKEND=auto rejects mismatched torch-version
+    # labels, so unset UV_TORCH_BACKEND entirely for this install so uv
+    # picks the non-CUDA wheel without torch-version filtering.
+    env -u UV_TORCH_BACKEND uv pip install "xformers==0.0.29.post2"
+
+    # Install remaining opensora dependencies (xformers handled above).
     uv pip install -r $SCRIPT_DIR/embodied/models/opensora.txt
     uv pip install git+${GITHUB_PREFIX}https://github.com/fangqi-Zhu/TensorNVMe.git --no-build-isolation
     echo "export LD_LIBRARY_PATH=~/.tensornvme/lib:\$LD_LIBRARY_PATH" >> "$VENV_DIR/bin/activate"

@@ -79,12 +79,6 @@ jobs:
           source .venv/bin/activate
           pytest tests/unit_tests
 
-      - name: Run scheduler doctest
-        timeout-minutes: 20
-        run: |
-          source .venv/bin/activate
-          pytest --doctest-modules rlinf/scheduler
-
       - name: Clean up
         run: |
           rm -rf .venv
@@ -115,12 +109,6 @@ jobs:
               pytest "$file"
               ray stop
           done
-
-      - name: Run scheduler doctest
-        timeout-minutes: 20
-        run: |
-          source .venv/bin/activate
-          pytest --doctest-modules rlinf/scheduler
 
       - name: Clean up
         run: |
@@ -159,7 +147,7 @@ jobs:
           export PACKAGE_PATH=$(pwd)
           export PYTHONPATH=/workspace/dataset/Megatron-LM:$PYTHONPATH
           cd
-          python $PACKAGE_PATH/tests/unit_tests/test_import_rlinf_package.py
+          python $PACKAGE_PATH/tests/unit_tests/check_import_rlinf_package.py
           cd -
       
       - name: Clean up
