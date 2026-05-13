@@ -306,6 +306,37 @@ detect_torch_for_rocm() {
     echo "$picked"
 }
 
+# Prints "MAJOR MINOR" (e.g. "12 4") on success, returns 1 if no CUDA is
+# available. Probes torch.version.cuda first (safe None check), then falls
+# back to nvcc so callers work both before and after the venv is populated.
+detect_cuda_major_minor() {
+    local mm
+    if mm=$(python - <<'EOF' 2>/dev/null
+import torch, sys
+v = torch.version.cuda
+if v is None:
+    sys.exit(1)
+parts = v.split(".")
+print(parts[0], parts[1] if len(parts) > 1 else "0")
+EOF
+    ); then
+        echo "$mm"
+        return 0
+    fi
+
+    local nvcc_exe=""
+    if command -v nvcc &>/dev/null; then
+        nvcc_exe=$(command -v nvcc)
+    elif [ -x /usr/local/cuda/bin/nvcc ]; then
+        nvcc_exe="/usr/local/cuda/bin/nvcc"
+    fi
+    [ -z "$nvcc_exe" ] && return 1
+    local ver
+    ver=$("$nvcc_exe" --version | grep 'Cuda compilation tools' | awk '{print $5}' | tr -d ',')
+    [ -z "$ver" ] && return 1
+    echo "${ver%%.*} ${ver#*.}"
+}
+
 configure_nvidia() {
     PLATFORM_TORCH_STR=""
     PLATFORM_TORCH_INDEX=""
@@ -794,14 +825,13 @@ EOF
 )
 
     # Detect CUDA major, e.g. 12 from 12.4
-    local cuda_major
-    cuda_major=$(python - <<'EOF'
-import torch
-from packaging.version import Version
-v = Version(torch.version.cuda)
-print(v.base_version.split(".")[0])
-EOF
-)
+    local cuda_mm cuda_major
+    cuda_mm=$(detect_cuda_major_minor) || {
+        echo "[install.sh] Could not detect CUDA version; falling back to source build." >&2
+        uv pip install "flash-attn==${flash_ver}" --no-build-isolation
+        return 0
+    }
+    cuda_major="${cuda_mm%% *}"
 
     local cu_tag="cu${cuda_major}"            # e.g. cu12
     local torch_tag="torch${torch_mm}"        # e.g. torch2.6
@@ -1520,17 +1550,13 @@ install_xsquare_turtle2_env() {
 
 install_robotwin_env() {
     # Set TORCH_CUDA_ARCH_LIST based on the CUDA version
-    local nvcc_exe
-    if [ -x "$(command -v nvcc)" ]; then
-        nvcc_exe=$(which nvcc)
-    elif [ -x /usr/local/cuda/bin/nvcc ]; then
-        nvcc_exe="/usr/local/cuda/bin/nvcc"
-    else
-        echo "nvcc not found. Cannot build robotwin environment."
+    local cuda_mm cuda_major cuda_minor
+    cuda_mm=$(detect_cuda_major_minor) || {
+        echo "Could not detect CUDA version. Cannot build robotwin environment." >&2
         exit 1
-    fi
-    local cuda_major=$("$nvcc_exe" --version | grep 'Cuda compilation tools' | awk '{print $5}' | tr -d ',' | awk -F '.' '{print $1}')
-    local cuda_minor=$("$nvcc_exe" --version | grep 'Cuda compilation tools' | awk '{print $5}' | tr -d ',' | awk -F '.' '{print $2}')
+    }
+    cuda_major="${cuda_mm%% *}"
+    cuda_minor="${cuda_mm##* }"
     if [ "$cuda_major" -gt 12 ] || { [ "$cuda_major" -eq 12 ] && [ "$cuda_minor" -ge 8 ]; }; then
         # Include Blackwell support for CUDA 12.8+
         export TORCH_CUDA_ARCH_LIST="7.0;8.0;9.0;10.0"
