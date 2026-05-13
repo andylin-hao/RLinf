@@ -90,7 +90,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
-      - name: Create ROCm environment and install dependencies
+      - name: Create CANN environment and install dependencies
         run: |
           unset UV_DEFAULT_INDEX
           export UV_PATH=/workspace/dataset/.uv
