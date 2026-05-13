@@ -999,7 +999,7 @@ def collective_group(cluster: Cluster):
         # cross_collective_groups occupies the lower devices (0..cross_size-1) and is
         # alive at the same time as this fixture within TestCollective. Place
         # collective workers on the upper devices to avoid HCCL conflicts.
-        cross_size = 4 if cluster.num_accelerators >= 4 else 2
+        cross_size = 4 if cluster.num_accelerators > 4 else 2
         if cluster.num_accelerators <= cross_size:
             pytest.skip(
                 f"collective_group requires more than {cross_size} accelerator devices "
@@ -1025,7 +1025,7 @@ def cross_collective_groups(cluster: Cluster):
     if accelerator_is_available():
         if cluster.num_accelerators < 2:
             pytest.skip("Skipping cross-group tests with insufficient accelerators.")
-        if cluster.num_accelerators >= 4:
+        if cluster.num_accelerators > 4:
             group_a_size = 2
             group_b_size = 2
         else:
