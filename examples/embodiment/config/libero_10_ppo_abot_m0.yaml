@@ -41,7 +41,7 @@ algorithm:
   kl_penalty: kl
   group_size: 1
   reward_coef: 1.0
-  rollout_epoch: 4
+  rollout_epoch: 8
   eval_rollout_epoch: -1
 
   reward_type: chunk_level
@@ -84,7 +84,7 @@ algorithm:
 env:
   group_name: "EnvGroup"
   train:
-    total_num_envs: 16
+    total_num_envs: 64
     max_episode_steps: 480
     max_steps_per_rollout_epoch: 480
     reward_coef: ${algorithm.reward_coef}
@@ -113,32 +113,32 @@ rollout:
   pipeline_stage_num: 1
 
   model:
-    model_path: "/mnt/public2/wph/models/ABot-M0-LIBERO/checkpoints/steps_10000_pytorch_model.pt" #"/mnt/public2/wph/models/ABot-M0-LIBERO/checkpoints/steps_40000_pytorch_model.pt"
+    model_path: "path_to_your_model"
     precision: ${actor.model.precision}
 
 actor:
   group_name: "ActorGroup"
   training_backend: "fsdp"
-  micro_batch_size: 8
-  global_batch_size: 64
+  micro_batch_size: 32
+  global_batch_size: 192
   seed: 1234
   enable_offload: false
 
   model:
-    model_path: "/mnt/public2/wph/models/ABot-M0-LIBERO/checkpoints/steps_10000_pytorch_model.pt" #"/mnt/public2/wph/models/ABot-M0-LIBERO/checkpoints/steps_40000_pytorch_model.pt"
+    model_path: "path_to_your_model"
     model_type: "abot_m0"
     num_action_chunks: 10
     add_value_head: true
 
   optim:
-    lr: 2.0e-5
-    value_lr: 2.0e-5
+    lr: 1.0e-5
+    value_lr: 1.0e-5
     adam_beta1: 0.9
     adam_beta2: 0.95
     adam_eps: 1.0e-08
     weight_decay: 0.01
     clip_grad: 1.0
-    critic_warmup_steps: 0
+    critic_warmup_steps: 10
 
   fsdp_config:
     strategy: "fsdp"
