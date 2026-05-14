@@ -18,7 +18,6 @@ Provides rollout action generation and training-time logprob recomputation
 through the `BasePolicy` interface.
 """
 
-import warnings
 from contextlib import nullcontext
 from typing import Any, Literal, Mapping, Optional
 
@@ -33,11 +32,20 @@ from rlinf.models.embodiment.base_policy import BasePolicy, ForwardType
 class ABotM0ForRLActionPrediction(nn.Module, BasePolicy):
     """ABot-M0 wrapper with RL-specific action/value interfaces."""
 
-    _no_split_modules = [
-        "VGGT",
-        "AMLFlowMatchingActionHeadRL",
-        "ValueHead",
-    ]
+    @property
+    def _no_split_modules(self) -> list[str]:
+        no_split_modules = [
+            "AMLFlowMatchingActionHeadRL",
+        ]
+        qwen_vl_interface = getattr(self.base_model, "qwen_vl_interface", None)
+        if qwen_vl_interface is not None:
+            no_split_modules.append(qwen_vl_interface.__class__.__name__)
+        spatial_model = getattr(self.base_model, "spatial_model", None)
+        if spatial_model is not None:
+            no_split_modules.append(spatial_model.aggregator.__class__.__name__)
+        if hasattr(self.action_head_rl, "value_head"):
+            no_split_modules.append("ValueHead")
+        return no_split_modules
 
     def __init__(
         self,
@@ -59,22 +67,32 @@ class ABotM0ForRLActionPrediction(nn.Module, BasePolicy):
 
         vl_hidden_size = self.base_model.qwen_vl_interface.model.config.hidden_size
         self.vl_hidden_size = vl_hidden_size
-        self.action_dim = self.base_model.action_model.action_dim
-        self.action_horizon = self.base_model.action_model.action_horizon
+        for param in self.base_model.qwen_vl_interface.parameters():
+            param.requires_grad = False
+
+        base_action_head = self.base_model.action_model
+        self.action_dim = base_action_head.action_dim
+        self.action_horizon = base_action_head.action_horizon
+        delattr(self.base_model, "action_model")
 
         from rlinf.models.embodiment.abot_m0.action_head_rl import (
             AMLFlowMatchingActionHeadRL,
         )
 
         self.action_head_rl = AMLFlowMatchingActionHeadRL(
-            base_action_head=self.base_model.action_model,
+            base_action_head=base_action_head,
             rl_head_config=rl_head_config,
             vl_hidden_size=vl_hidden_size,
         )
 
-        if hasattr(self.base_model, "spatial_model"):
-            for param in self.base_model.spatial_model.parameters():
+        spatial_model = getattr(self.base_model, "spatial_model", None)
+        if spatial_model is not None:
+            for param in spatial_model.parameters():
                 param.requires_grad = False
+            spatial_model.camera_head = None
+            spatial_model.point_head = None
+            spatial_model.depth_head = None
+            spatial_model.track_head = None
 
     def gradient_checkpointing_enable(self, **kwargs) -> None:
         # Force use_reentrant=False for FSDP compatibility.
@@ -82,15 +100,7 @@ class ABotM0ForRLActionPrediction(nn.Module, BasePolicy):
             "use_reentrant", False
         )
 
-        qwen_model = getattr(
-            getattr(self.base_model, "qwen_vl_interface", None), "model", None
-        )
-        if qwen_model is not None and hasattr(
-            qwen_model, "gradient_checkpointing_enable"
-        ):
-            qwen_model.gradient_checkpointing_enable(**kwargs)
-
-        action_model = getattr(self.base_model, "action_model", None)
+        action_model = self.action_head_rl.base
         if action_model is not None and hasattr(
             action_model, "gradient_checkpointing_enable"
         ):
@@ -98,15 +108,7 @@ class ABotM0ForRLActionPrediction(nn.Module, BasePolicy):
 
     def gradient_checkpointing_disable(self) -> None:
         """Inverse of `gradient_checkpointing_enable`."""
-        qwen_model = getattr(
-            getattr(self.base_model, "qwen_vl_interface", None), "model", None
-        )
-        if qwen_model is not None and hasattr(
-            qwen_model, "gradient_checkpointing_disable"
-        ):
-            qwen_model.gradient_checkpointing_disable()
-
-        action_model = getattr(self.base_model, "action_model", None)
+        action_model = self.action_head_rl.base
         if action_model is not None and hasattr(
             action_model, "gradient_checkpointing_disable"
         ):
@@ -259,19 +261,12 @@ class ABotM0ForRLActionPrediction(nn.Module, BasePolicy):
         unexpected_keys = list(incompatible.unexpected_keys)
 
         has_incompatible = bool(filtered_missing_keys or unexpected_keys)
-        if has_incompatible:
+        if strict and has_incompatible:
             error_message = (
                 "ABot-M0 checkpoint is incompatible with current model parameters. "
                 f"missing_keys={filtered_missing_keys}, unexpected_keys={unexpected_keys}."
             )
             raise RuntimeError(error_message)
-
-        if not strict and incompatible.missing_keys:
-            warnings.warn(
-                "ABot-M0 accepted expected missing keys during load_state_dict: "
-                f"{incompatible.missing_keys}",
-                stacklevel=2,
-            )
 
         return incompatible
 
@@ -281,12 +276,7 @@ class ABotM0ForRLActionPrediction(nn.Module, BasePolicy):
         spatial_images: Optional[torch.Tensor] = None,
         state: Optional[torch.Tensor] = None,
         device: Optional[torch.device] = None,
-        cached_spatial_tokens: Optional[torch.Tensor] = None,
-        return_spatial_tokens: bool = False,
-    ) -> (
-        tuple[torch.Tensor, Optional[torch.Tensor]]
-        | tuple[torch.Tensor, Optional[torch.Tensor], torch.Tensor]
-    ):
+    ) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
         """Encode multimodal observations into fused latent embeddings."""
         from ABot.model.modules.vggt_tools import preprocess_images
 
@@ -297,12 +287,6 @@ class ABotM0ForRLActionPrediction(nn.Module, BasePolicy):
                 else v
                 for k, v in qwen_inputs.items()
             }
-            if spatial_images is not None:
-                spatial_images = spatial_images.to(device=device).contiguous()
-            if cached_spatial_tokens is not None:
-                cached_spatial_tokens = cached_spatial_tokens.to(
-                    device=device
-                ).contiguous()
 
         first_qwen_tensor = next(
             (v for v in qwen_inputs.values() if isinstance(v, torch.Tensor)),
@@ -324,16 +308,16 @@ class ABotM0ForRLActionPrediction(nn.Module, BasePolicy):
             else nullcontext()
         )
         with autocast_ctx:
-            qwenvl_outputs = self.base_model.qwen_vl_interface(
-                **qwen_inputs,
-                output_attentions=False,
-                output_hidden_states=True,
-                return_dict=True,
-            )
+            with torch.no_grad():
+                self.base_model.qwen_vl_interface.eval()
+                qwenvl_outputs = self.base_model.qwen_vl_interface(
+                    **qwen_inputs,
+                    output_attentions=False,
+                    output_hidden_states=True,
+                    return_dict=True,
+                )
             last_hidden = qwenvl_outputs.hidden_states[-1]  # [B, L, H]
-            if cached_spatial_tokens is not None:
-                expected_batch = cached_spatial_tokens.shape[0]
-            elif spatial_images is not None:
+            if spatial_images is not None:
                 expected_batch = spatial_images.shape[0]
             else:
                 expected_batch = last_hidden.shape[0] if last_hidden.ndim >= 3 else 1
@@ -346,34 +330,30 @@ class ABotM0ForRLActionPrediction(nn.Module, BasePolicy):
             ):
                 last_hidden = last_hidden.transpose(0, 1).contiguous()
 
-            if cached_spatial_tokens is not None:
-                spatial_tokens = cached_spatial_tokens.to(
-                    device=last_hidden.device, dtype=last_hidden.dtype
+            if spatial_images is None:
+                raise ValueError(
+                    "ABot-M0 _encode_observations requires spatial_images."
                 )
-            else:
-                if spatial_images is None:
-                    raise ValueError(
-                        "ABot-M0 _encode_observations requires either spatial_images or cached_spatial_tokens."
+            batch_images = self._image_tensor_to_pil_batch(spatial_images)
+            with torch.no_grad():
+                spatial_dtype = last_hidden.dtype
+                spatial_model = getattr(self.base_model, "spatial_model", None)
+                if spatial_model is not None:
+                    spatial_model.eval()
+                    first_param = next(iter(spatial_model.parameters()), None)
+                    if first_param is not None:
+                        spatial_dtype = first_param.dtype
+                spatial_input = preprocess_images(
+                    batch_images,
+                    batch_images[0][0].size[0],
+                ).to(device=last_hidden.device, dtype=spatial_dtype)
+                aggregated_tokens_list, ps_idx = (
+                    self.base_model.spatial_model.aggregator(
+                        spatial_input,
                     )
-                batch_images = self._image_tensor_to_pil_batch(spatial_images)
-                with torch.no_grad():
-                    spatial_dtype = last_hidden.dtype
-                    spatial_model = getattr(self.base_model, "spatial_model", None)
-                    if spatial_model is not None:
-                        first_param = next(iter(spatial_model.parameters()), None)
-                        if first_param is not None:
-                            spatial_dtype = first_param.dtype
-                    spatial_input = preprocess_images(
-                        batch_images,
-                        batch_images[0][0].size[0],
-                    ).to(device=last_hidden.device, dtype=spatial_dtype)
-                    aggregated_tokens_list, ps_idx = (
-                        self.base_model.spatial_model.aggregator(
-                            spatial_input,
-                        )
-                    )
-                spatial_tokens = aggregated_tokens_list[-1][:, 0, ps_idx:, :]
-                spatial_tokens = self.base_model.spatial_projector(spatial_tokens)
+                )
+            spatial_tokens = aggregated_tokens_list[-1][:, 0, ps_idx:, :]
+            spatial_tokens = self.base_model.spatial_projector(spatial_tokens)
             last_hidden = self.base_model.fuser(last_hidden, spatial_tokens)
 
         state_tensor = None
@@ -389,8 +369,6 @@ class ABotM0ForRLActionPrediction(nn.Module, BasePolicy):
             if state_tensor.ndim == 2:
                 state_tensor = state_tensor.unsqueeze(1)
 
-        if return_spatial_tokens:
-            return last_hidden, state_tensor, spatial_tokens
         return last_hidden, state_tensor
 
     def _prepare_model_inputs(
@@ -527,17 +505,15 @@ class ABotM0ForRLActionPrediction(nn.Module, BasePolicy):
         spatial_images = forward_inputs.get(
             "spatial_images", forward_inputs.get("main_images")
         )
-        cached_spatial_tokens = forward_inputs.get("spatial_tokens")
-        if spatial_images is None and cached_spatial_tokens is None:
+        if spatial_images is None:
             raise KeyError(
-                "ABot-M0 forward_inputs must include one of: 'spatial_tokens', 'spatial_images', or legacy 'main_images'."
+                "ABot-M0 forward_inputs must include 'spatial_images' or legacy 'main_images'."
             )
         vl_embs, state_tensor = self._encode_observations(
             qwen_inputs=self._extract_qwen_inputs(forward_inputs),
             spatial_images=spatial_images,
             state=forward_inputs.get("state"),
             device=forward_inputs["chains"].device,
-            cached_spatial_tokens=cached_spatial_tokens,
         )
 
         chains = forward_inputs["chains"]
@@ -600,11 +576,10 @@ class ABotM0ForRLActionPrediction(nn.Module, BasePolicy):
             state=state,
         )
 
-        vl_embs, state_tensor, spatial_tokens = self._encode_observations(
+        vl_embs, state_tensor = self._encode_observations(
             qwen_inputs=qwen_inputs,
             spatial_images=spatial_images,
             state=state,
-            return_spatial_tokens=True,
         )
 
         actions, rl_outputs = self.action_head_rl.get_rl_action(
@@ -646,7 +621,7 @@ class ABotM0ForRLActionPrediction(nn.Module, BasePolicy):
             **self._flatten_qwen_inputs(
                 qwen_inputs, batch_size=spatial_images.shape[0]
             ),
-            "spatial_tokens": spatial_tokens.detach(),
+            "spatial_images": spatial_images.detach().cpu().contiguous(),
             "state": state_tensor,
         }
 

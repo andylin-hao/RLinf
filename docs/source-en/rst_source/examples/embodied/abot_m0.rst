@@ -1,37 +1,38 @@
-RL on ABot-M0 Model
-====================
+RL on ABot-M0
+==============
 
-This document describes how to install ABot-M0 and run end-to-end embodied RL training and evaluation on both **LIBERO-10** and **LIBERO-Plus**.
+This example describes how to run evaluation and PPO training for
+`ABot-M0 <https://github.com/amap-cvlab/ABot-Manipulation>`__ in RLinf. The
+provided configuration files cover standard **LIBERO** and **LIBERO-Plus**.
 
-This page covers:
-
-* **Dependency Wiring**: Verify RLinf + ABot-Manipulation + VGGT are importable in one environment.
-* **Rollout**: Verify ABot-M0 can generate action chunks inside RLinf rollout workers.
-* **Actor-Rollout Sync**: Verify policy weight sync and training loop run without parameter mismatch errors.
-* **PPO Training & Evaluation**: Run end-to-end PPO and standalone evaluation on LIBERO-10 (standard) and LIBERO-Plus (perturbation variants).
+The integration uses the Hugging Face rollout backend and FSDP actor training.
+During rollout, ABot-M0 generates action chunks for LIBERO environments. During
+actor updates, RLinf recomputes log probabilities and value estimates from the
+stored rollout inputs.
 
 Algorithm
 ---------
 
-**Core Components**
+The example uses PPO with an actor-critic loss:
 
-* **PPO (actor_critic)**
-   * Advantage estimation using GAE (Generalized Advantage Estimation).
-   * Policy clipping with ratio limits.
-   * Value function clipping.
-   * Entropy regularization.
+* GAE for advantage and return estimation.
+* PPO ratio clipping for policy updates.
+* Value-function clipping for the value head.
+* Optional entropy regularization.
 
-* **ABot-M0 Policy**
-   * General-purpose VLA model for robotic manipulation with cross-embodiment training.
-   * Action Manifold Learning (AML) for efficient and stable continuous action prediction.
-   * Modular perception design that integrates VLM semantics and optional 3D priors (via ABot-Manipulation and VGGT).
-   * RLinf-native wrapper for rollout action generation and training-time logprob/value recomputation.
+ABot-M0 is used as the VLA policy. The RLinf wrapper keeps pretrained
+perception components frozen, trains the action model through the RL objective,
+and adds a value head for actor-critic training.
 
 Installation
 ------------
 
-1. Dependency Installation (ABot and VGGT)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Dependency Installation
+~~~~~~~~~~~~~~~~~~~~~~~
+
+Install ABot-M0, VGGT, and the standard LIBERO runtime in the same Python
+environment as RLinf. The following installer command installs standard LIBERO;
+only LIBERO-Plus requires the additional steps in the next section.
 
 .. code-block:: bash
 
@@ -42,75 +43,106 @@ Installation
    export ABOT_PATH=<path_to_ABot-Manipulation>
    export VGGT_PATH=<path_to_vggt>
 
-2. Environment Setup
-~~~~~~~~~~~~~~~~~~~~
-
-.. code-block:: bash
-
+   # Optional mirror for environments with limited access to GitHub and PyPI.
+   # Add --use-mirror to the installer command when needed.
    bash requirements/install.sh embodied --venv .venv --model abot_m0 --env maniskill_libero --install-rlinf
    source .venv/bin/activate
 
-2.1 LIBERO-Plus Setup (only required for LIBERO-Plus)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+LIBERO-Plus
+~~~~~~~~~~~
 
-Skip this section if you only want to run on standard LIBERO-10. For
-LIBERO-Plus, install it into the same ``.venv`` and download its assets:
+LIBERO-Plus requires an additional ``LIBERO-plus`` checkout. Install it into the
+same environment after the standard LIBERO installation above:
 
 .. code-block:: bash
 
-   bash requirements/install.sh embodied --venv .venv --model abot_m0 --env liberoplus
+   git clone https://github.com/RLinf/LIBERO-plus.git
+   pip install -r LIBERO-plus/extra_requirements.txt
+   pip install -e LIBERO-plus
 
-   LIBERO_PLUS_DIR=$(python -c "import liberoplus.liberoplus as p, pathlib; print(pathlib.Path(p.__file__).parent)")
+Download and extract the LIBERO-Plus assets into the installed package
+directory:
+
+.. code-block:: bash
+
+   pip install -U "huggingface_hub[cli]"
+
+   # Optional mirror for environments that cannot access Hugging Face directly.
+   # export HF_ENDPOINT=https://hf-mirror.com
+
+   LIBERO_PLUS_DIR=$(python -c "import pathlib; import liberoplus.liberoplus as p; print(pathlib.Path(p.__file__).resolve().parent)")
    hf download --repo-type dataset Sylvest/LIBERO-plus assets.zip --local-dir "${LIBERO_PLUS_DIR}"
    unzip -o "${LIBERO_PLUS_DIR}/assets.zip" -d "${LIBERO_PLUS_DIR}"
 
 See :doc:`liberoplus_pro` for full LIBERO-Plus details.
 
-3. Download ABot-M0 Weights
-~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Model Weights
+-------------
 
-Download ABot-M0 LIBERO checkpoint from:
-``https://huggingface.co/acvlab/ABot-M0-LIBERO/tree/main``
+Evaluation Checkpoint
+~~~~~~~~~~~~~~~~~~~~~
 
-Example with huggingface-cli:
+The SFT checkpoint released by ABot can be used for standalone evaluation:
 
 .. code-block:: bash
 
-   pip install -U "huggingface_hub[cli]"
-   huggingface-cli download acvlab/ABot-M0-LIBERO \
-     --local-dir <path_to_ABot-M0-LIBERO>
+   # Optional mirror for environments that cannot access Hugging Face directly.
+   # export HF_ENDPOINT=https://hf-mirror.com
 
-3.1 Update ``base_vlm`` in ABot checkpoint config
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   hf download acvlab/ABot-M0-LIBERO --local-dir /path/to/ABot-M0-LIBERO
 
-ABot-M0 checkpoints include ``config.yaml``. In some releases, the field below may point to a developer-local path,
-which is invalid on other machines.
+RL Baseline Checkpoint
+~~~~~~~~~~~~~~~~~~~~~~
 
-After downloading ABot-M0, open:
-``<path_to_ABot-M0-LIBERO>/config.yaml``
+For PPO training, a 10k-step ABot-M0 LIBERO checkpoint is available as an RL
+baseline. In LIBERO evaluation it provides an initial success rate of
+approximately 40% and is suitable as the starting point for further RL training.
 
-Find and update:
+.. code-block:: bash
+
+   hf download HaoyunOvO/ABot-m0-LIBERO-10k-step \
+     --local-dir /path/to/ABot-m0-LIBERO-10k-step
+
+Checkpoint Configuration
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+ABot-M0 checkpoints include ``config.yaml``. Check the ``qwenvl.base_vlm`` field
+and replace developer-local path with the local path to the Qwen3-VL backbone:
+
+.. code-block:: bash
+
+   # Optional mirror for environments that cannot access Hugging Face directly.
+   # export HF_ENDPOINT=https://hf-mirror.com
+
+   hf download StarVLA/Qwen3-VL-4B-Instruct-Action \
+     --local-dir /path/to/Qwen3-VL-4B-Instruct-Action
 
 .. code-block:: yaml
 
    qwenvl:
-     base_vlm: /some/developer/local/path/Qwen3-VL-4B-Instruct-Action
+     base_vlm: /path/to/Qwen3-VL-4B-Instruct-Action
 
-to your actual local path of the downloaded Qwen3-VL backbone.
+The Qwen3-VL backbone is available at
+``https://huggingface.co/StarVLA/Qwen3-VL-4B-Instruct-Action``.
 
-Model sources:
-
-* Qwen3-VL backbone: ``https://huggingface.co/StarVLA/Qwen3-VL-4B-Instruct-Action``
-* ABot-M0-LIBERO checkpoints: ``https://huggingface.co/acvlab/ABot-M0-LIBERO``
-
-3.2 Offline VGGT loading
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Offline VGGT Loading
+~~~~~~~~~~~~~~~~~~~~
 
 ABot currently initializes VGGT with:
 ``VGGT.from_pretrained("facebook/VGGT-1B")``
 
-If your runtime cannot access Hugging Face, pre-download:
-``https://huggingface.co/facebook/VGGT-1B/``
+If the runtime can access Hugging Face through a mirror, set ``HF_ENDPOINT``:
+
+.. code-block:: bash
+
+   export HF_ENDPOINT=https://hf-mirror.com
+
+Otherwise, pre-download VGGT and make it available from the local Hugging Face
+cache or a local directory:
+
+.. code-block:: bash
+
+   hf download facebook/VGGT-1B --local-dir /path/to/VGGT-1B
 
 Then either:
 
@@ -123,35 +155,44 @@ Example local override:
 
    self.spatial_model = spatial_model = VGGT.from_pretrained('/workspace/models/VGGT-1B')
 
-4. Configure ``model_path`` in ABot Training YAML
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Configure ``model_path``
+------------------------
 
 Two configs are provided, one per benchmark:
 
-* LIBERO-10:    ``examples/embodiment/config/libero_10_ppo_abot_m0.yaml``
+* LIBERO:    ``examples/embodiment/config/libero_10_ppo_abot_m0.yaml``
 * LIBERO-Plus:  ``examples/embodiment/config/libero_10_plus_ppo_abot_m0.yaml``
 
-In whichever config(s) you plan to use, set both fields to your local
-ABot-M0 checkpoint path:
+Set both fields to the checkpoint used for evaluation or training:
 
 * ``rollout.model.model_path``
 * ``actor.model.model_path``
 
-5. Import Sanity Check
-~~~~~~~~~~~~~~~~~~~~~~
+For the 10k-step RL baseline, use:
+
+.. code-block:: yaml
+
+   rollout:
+     model:
+       model_path: /path/to/ABot-m0-LIBERO-10k-step/checkpoints/steps_10000_pytorch_model.pt
+   actor:
+     model:
+       model_path: /path/to/ABot-m0-LIBERO-10k-step/checkpoints/steps_10000_pytorch_model.pt
+
+Import Sanity Check
+-------------------
 
 .. code-block:: bash
 
-   python -c "import rlinf; import ABot; import vggt; print('IMPORT_SMOKE_OK')"
+   python -c "import rlinf; import ABot; import vggt; print('IMPORT_OK')"
 
-If the command prints ``IMPORT_SMOKE_OK``, the package-level dependency wiring is valid.
+If the command prints ``IMPORT_OK``, the package-level dependency wiring is valid.
 
-6. Evaluation
-~~~~~~~~~~~~~
+Evaluation
+----------
 
-Before launching RL training, you can run a standalone evaluation pass with an
-existing ABot-M0 checkpoint to verify the rollout pipeline, record videos, and
-sanity-check task success rates.
+Use standalone evaluation before training to verify the checkpoint, rollout
+pipeline, and environment assets.
 
 The eval entrypoint is ``examples/embodiment/eval_embodied_agent.py``. Both
 benchmarks share the same launch flow; the only differences are
@@ -173,7 +214,7 @@ Common environment setup:
    ray stop || true
    ray start --head --port=6379
 
-**LIBERO-10 (standard):**
+**LIBERO:**
 
 .. code-block:: bash
 
@@ -203,16 +244,11 @@ Common environment setup:
      algorithm.eval_rollout_epoch=1 \
      runner.logger.experiment_name=abot_m0_liberoplus_eval
 
-Notes:
+Training
+--------
 
-* ``actor.model.model_path`` and ``rollout.model.model_path`` must point to the
-  same ABot-M0 checkpoint directory or ``.pt`` file you want to evaluate.
-
-7. PPO Training
-~~~~~~~~~~~~~~~
-
-PPO training uses the same launch flow as evaluation; only ``LIBERO_TYPE`` and
-the config name differ.
+PPO training uses the same launch flow as evaluation. Select the target suite
+with ``LIBERO_TYPE`` and launch the corresponding config.
 
 Common environment setup:
 
@@ -229,7 +265,7 @@ Common environment setup:
    ray stop || true
    ray start --head --port=6379
 
-**LIBERO-10 (standard):**
+**LIBERO:**
 
 .. code-block:: bash
 
@@ -243,9 +279,9 @@ Common environment setup:
    export LIBERO_TYPE=plus
    python examples/embodiment/train_embodied_agent.py --config-name libero_10_plus_ppo_abot_m0
 
-8. Visualization
-~~~~~~~~~~~~~~~~~
+Visualization
+-------------
 
 .. code-block:: bash
 
-   tensorboard --logdir logs --port 6006
+   tensorboard --logdir <runner.logger.log_path> --port 6006
