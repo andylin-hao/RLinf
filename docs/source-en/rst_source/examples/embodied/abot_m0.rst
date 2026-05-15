@@ -51,28 +51,36 @@ only LIBERO-Plus requires the additional steps in the next section.
 LIBERO-Plus
 ~~~~~~~~~~~
 
-LIBERO-Plus requires an additional ``LIBERO-plus`` checkout. Install it into the
-same environment after the standard LIBERO installation above:
+LIBERO-Plus requires an additional ``LIBERO-plus`` checkout. After the standard
+LIBERO installation above, run the installer with ``--env liberoplus`` in the
+same environment:
 
 .. code-block:: bash
 
-   git clone https://github.com/RLinf/LIBERO-plus.git
-   pip install -r LIBERO-plus/extra_requirements.txt
-   pip install -e LIBERO-plus
+   cd <path_to_RLinf>
+
+   # Optional mirror for environments with limited access to GitHub and PyPI.
+   # Add --use-mirror to the installer command when needed.
+   bash requirements/install.sh embodied --venv .venv --model abot_m0 --env liberoplus --install-rlinf
+   source .venv/bin/activate
 
 Download and extract the LIBERO-Plus assets into the installed package
 directory:
 
 .. code-block:: bash
 
-   pip install -U "huggingface_hub[cli]"
+   # Resolve the installed liberoplus package directory
+   LIBERO_PLUS_PACKAGE_DIR=$(python -c "import pathlib; import liberoplus.liberoplus as l_plus; print(pathlib.Path(l_plus.__file__).resolve().parent)")
 
    # Optional mirror for environments that cannot access Hugging Face directly.
    # export HF_ENDPOINT=https://hf-mirror.com
 
-   LIBERO_PLUS_DIR=$(python -c "import pathlib; import liberoplus.liberoplus as p; print(pathlib.Path(p.__file__).resolve().parent)")
-   hf download --repo-type dataset Sylvest/LIBERO-plus assets.zip --local-dir "${LIBERO_PLUS_DIR}"
-   unzip -o "${LIBERO_PLUS_DIR}/assets.zip" -d "${LIBERO_PLUS_DIR}"
+   # Download the assets archive from the Hugging Face dataset repo
+   hf download --repo-type dataset Sylvest/LIBERO-plus assets.zip \
+       --local-dir "${LIBERO_PLUS_PACKAGE_DIR}"
+
+   # Extract assets in place
+   unzip -o "${LIBERO_PLUS_PACKAGE_DIR}/assets.zip" -d "${LIBERO_PLUS_PACKAGE_DIR}"
 
 See :doc:`liberoplus_pro` for full LIBERO-Plus details.
 

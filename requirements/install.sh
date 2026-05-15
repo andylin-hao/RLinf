@@ -1269,6 +1269,9 @@ install_abot_m0_model() {
         robotwin)
             install_robotwin_env
             ;;
+        liberoplus)
+            install_liberoplus_env
+            ;;
         *)
             echo "Environment '$ENV_NAME' is not supported for ABot-M0 model." >&2
             exit 1
