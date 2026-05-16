@@ -69,18 +69,70 @@ directory:
 
 .. code-block:: bash
 
-   # Resolve the installed liberoplus package directory
-   LIBERO_PLUS_PACKAGE_DIR=$(python -c "import pathlib; import liberoplus.liberoplus as l_plus; print(pathlib.Path(l_plus.__file__).resolve().parent)")
+   # Resolve the installed liberoplus package directory.
+   # Note: importing liberoplus may emit config-init logs, so use tail -n 1 to keep only the final path.
+   LIBERO_PLUS_PACKAGE_DIR=$(python -c "import pathlib; import liberoplus.liberoplus as l_plus; print(pathlib.Path(l_plus.__file__).resolve().parent)" | tail -n 1)
+
+   echo "LIBERO_PLUS_PACKAGE_DIR=${LIBERO_PLUS_PACKAGE_DIR}"
 
    # Optional mirror for environments that cannot access Hugging Face directly.
    # export HF_ENDPOINT=https://hf-mirror.com
 
-   # Download the assets archive from the Hugging Face dataset repo
+   # Download the assets archive from the Hugging Face dataset repo.
    hf download --repo-type dataset Sylvest/LIBERO-plus assets.zip \
        --local-dir "${LIBERO_PLUS_PACKAGE_DIR}"
 
-   # Extract assets in place
-   unzip -o "${LIBERO_PLUS_PACKAGE_DIR}/assets.zip" -d "${LIBERO_PLUS_PACKAGE_DIR}"
+   # assets.zip contains a long original path prefix, so extract only the assets/ subtree.
+   python - <<'PY'
+   import zipfile
+   from pathlib import Path
+
+   pkg = Path(__import__("os").environ["LIBERO_PLUS_PACKAGE_DIR"])
+   zip_path = pkg / "assets.zip"
+   out_dir = pkg / "assets"
+
+   with zipfile.ZipFile(zip_path) as z:
+       for info in z.infolist():
+           name = info.filename
+
+           if "/assets/" not in name:
+               continue
+
+           rel = name.split("/assets/", 1)[1]
+           if not rel:
+               continue
+
+           target = out_dir / rel
+
+           if info.is_dir():
+               target.mkdir(parents=True, exist_ok=True)
+           else:
+               target.parent.mkdir(parents=True, exist_ok=True)
+               with z.open(info) as src, open(target, "wb") as dst:
+                   dst.write(src.read())
+
+   print("Extracted LIBERO-Plus assets to:", out_dir)
+   PY
+
+   # Verify the assets directory structure.
+   ls -lh "${LIBERO_PLUS_PACKAGE_DIR}/assets"
+
+After extraction, the directory should look like:
+
+.. code-block:: text
+
+   <installed liberoplus package dir>/
+   └── assets/
+       ├── articulated_objects/
+       ├── new_objects/
+       ├── scenes/
+       ├── stable_hope_objects/
+       ├── stable_scanned_objects/
+       ├── textures/
+       ├── turbosquid_objects/
+       ├── serving_region.xml
+       ├── wall_frames.stl
+       └── wall.xml
 
 See :doc:`liberoplus_pro` for full LIBERO-Plus details.
 
@@ -232,6 +284,7 @@ Common environment setup:
      --config-name libero_10_ppo_abot_m0 \
      actor.model.model_path=<path_to_abot_m0_ckpt> \
      rollout.model.model_path=<path_to_abot_m0_ckpt> \
+     runner.only_eval=True \
      env.eval.total_num_envs=8 \
      env.eval.video_cfg.save_video=true \
      algorithm.eval_rollout_epoch=1 \
@@ -247,6 +300,7 @@ Common environment setup:
      --config-name libero_10_plus_ppo_abot_m0 \
      actor.model.model_path=<path_to_abot_m0_ckpt> \
      rollout.model.model_path=<path_to_abot_m0_ckpt> \
+     runner.only_eval=True \
      env.eval.total_num_envs=8 \
      env.eval.video_cfg.save_video=true \
      algorithm.eval_rollout_epoch=1 \

@@ -30,7 +30,7 @@ runner:
   max_steps: -1
 
   only_eval: false
-  val_check_interval: 5
+  val_check_interval: -1
   save_interval: 10
 
   resume_dir: null
@@ -41,8 +41,8 @@ algorithm:
   kl_penalty: kl
   group_size: 1
   reward_coef: 1.0
-  rollout_epoch: 8
-  eval_rollout_epoch: 1
+  rollout_epoch: 4
+  eval_rollout_epoch: -1
 
   reward_type: chunk_level
   logprob_type: chunk_level
@@ -84,7 +84,7 @@ algorithm:
 env:
   group_name: "EnvGroup"
   train:
-    total_num_envs: 32
+    total_num_envs: 16
     max_episode_steps: 480
     max_steps_per_rollout_epoch: 480
     reward_coef: ${algorithm.reward_coef}
@@ -96,7 +96,7 @@ env:
       info_on_video: false
       video_base_dir: ${runner.logger.log_path}/video/train
   eval:
-    total_num_envs: 32
+    total_num_envs: 2
     auto_reset: true
     max_episode_steps: 480
     max_steps_per_rollout_epoch: 480    
@@ -122,7 +122,7 @@ actor:
   group_name: "ActorGroup"
   training_backend: "fsdp"
   micro_batch_size: 16
-  global_batch_size: 384
+  global_batch_size: 64
   seed: 1234
   enable_offload: false
 
@@ -133,13 +133,13 @@ actor:
     add_value_head: true
 
   optim:
-    lr: 2.0e-5
-    value_lr: 2.0e-5
+    lr: 1.0e-5
+    value_lr: 1.0e-5
     adam_beta1: 0.9
     adam_beta2: 0.95
     adam_eps: 1.0e-08
     weight_decay: 0.01
-    clip_grad: 10.0
+    clip_grad: 1.0
     critic_warmup_steps: 10
 
   fsdp_config:

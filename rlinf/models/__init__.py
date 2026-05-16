@@ -95,7 +95,7 @@ def _register_builtin_models():
         from rlinf.models.embodiment.lingbotvla import get_model
 
         return get_model(cfg, torch_dtype)
-      
+
     def _build_abot_m0(cfg: DictConfig, torch_dtype):
         from rlinf.models.embodiment.abot_m0 import get_model
 
@@ -186,7 +186,7 @@ def _register_builtin_models():
         _build_abot_m0,
         category="embodied",
         force=True,
-    )    
+    )
     register_model(
         SupportedModel.STARVLA.value,
         _build_starvla,

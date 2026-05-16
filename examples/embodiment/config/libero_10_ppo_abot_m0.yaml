@@ -41,7 +41,7 @@ algorithm:
   kl_penalty: kl
   group_size: 1
   reward_coef: 1.0
-  rollout_epoch: 8
+  rollout_epoch: 4
   eval_rollout_epoch: -1
 
   reward_type: chunk_level
@@ -84,7 +84,7 @@ algorithm:
 env:
   group_name: "EnvGroup"
   train:
-    total_num_envs: 64
+    total_num_envs: 16
     max_episode_steps: 480
     max_steps_per_rollout_epoch: 480
     reward_coef: ${algorithm.reward_coef}
@@ -119,8 +119,8 @@ rollout:
 actor:
   group_name: "ActorGroup"
   training_backend: "fsdp"
-  micro_batch_size: 32
-  global_batch_size: 192
+  micro_batch_size: 16
+  global_batch_size: 64
   seed: 1234
   enable_offload: false
 
