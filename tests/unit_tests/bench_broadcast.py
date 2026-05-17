@@ -18,22 +18,41 @@ Topology:
 
   * Sender: one worker on node 0.
   * Receivers: ``--num-receivers`` workers (default 8).
-    - ``--num-nodes 1``: receivers are colocated on node 0 (intra-node).
-    - ``--num-nodes >= 2``: receivers run on node 1 (inter-node).
+    - 1-node cluster: receivers are colocated on node 0 (intra-node).
+    - >=2-node cluster: receivers run on node 1 (inter-node).
 
-Workers are placed by node rank via ``NodePlacementStrategy``, so the
-benchmark works on clusters with or without accelerators. The device is
-selected per run via ``--device``: ``cpu`` (default), ``auto`` (use an
-accelerator if the worker was allocated one, otherwise fall back to CPU),
-or an explicit accelerator type such as ``cuda``.
+The benchmark infers the node count from the already-running Ray cluster
+(``Cluster()`` with auto-detect), so the only prerequisite is that
+``ray start`` has been run on every node you want to include. Workers are
+placed by node rank via ``NodePlacementStrategy``, so the benchmark works
+on clusters with or without accelerators. The device is selected per run
+via ``--device``: ``cpu`` (default), ``auto`` (use an accelerator if the
+worker was allocated one, otherwise fall back to CPU), or an explicit
+accelerator type such as ``cuda``.
 
-The benchmark compares two strategies for fan-out from one sender to many
+The benchmark compares three strategies for fan-out from one sender to many
 receivers:
 
-  1. ``broadcast``: ``Worker.broadcast(...)`` collective.
+  1. ``broadcast``: ``Worker.broadcast(...)`` collective (the default
+     hybrid IPC/NCCL path).
   2. ``loop send/recv``: the sender issues an async ``send_tensor`` to each
      receiver and then awaits every handle; each receiver issues a single
      async ``recv_tensor`` and waits on it.
+  3. ``ring``: ``Worker.broadcast(...)`` with
+     ``CollectiveGroupOptions(use_ring_broadcast=True, ring_broadcast_bucket_size=...)``.
+     The source sends each bucket to the first receiver, which then
+     broadcasts it to the rest while the source streams the next bucket.
+
+Note that ring broadcast is force-disabled when the source shares a device
+with any receiver (the src->first-receiver hop relies on plain
+``_send``/``_recv``, which NCCL forbids on the same GPU). For an accelerator
+run, prefer ``--num-nodes 2`` (or any setup where the sender and receivers
+sit on disjoint devices) to actually exercise the ring path; otherwise the
+``ring`` row falls back to the same collective as ``broadcast``.
+
+The ring algorithm only pipelines when the payload is split into multiple
+tensors, so ``--num-tensors`` controls the list length and ``--bucket-size``
+controls the bucket pipeline granularity.
 
 Before timing starts a one-shot warmup exchange is run so the collective
 group (broadcast) and each point-to-point pair are established outside the
@@ -48,13 +67,10 @@ and is launched only on the head node.
 
 Examples
 --------
-Default inter-node CPU benchmark (sender on node 0, 8 receivers on node 1)::
+CPU benchmark on the currently-attached Ray cluster (node count
+auto-detected)::
 
     python tests/unit_tests/bench_broadcast.py
-
-Single-node intra-node test (sender + 8 receivers on node 0)::
-
-    python tests/unit_tests/bench_broadcast.py --num-nodes 1
 
 GPU broadcast with a custom sweep::
 
@@ -75,6 +91,7 @@ import torch
 
 from rlinf.scheduler import (
     Cluster,
+    CollectiveGroupOptions,
     NodePlacementStrategy,
     Worker,
 )
@@ -153,6 +170,17 @@ class BenchmarkConfig:
     dtype: str
     device: str  # "cpu" | "cuda" | "auto"
     num_receivers: int
+    num_tensors: int = 1
+    """If > 1, split each size into a list of this many tensors. Required for
+    the ring broadcast bucket pipeline to engage; ``broadcast`` also passes
+    the list through ``_broadcast_tensor_list``. ``loop`` always uses a
+    single tensor so it keeps the recv-side preallocation optimisation."""
+    bucket_size: Optional[int] = None
+    """Bytes per bucket for the ring broadcast pipeline (passed straight to
+    ``CollectiveGroupOptions.ring_broadcast_bucket_size``). ``None`` means a
+    single bucket (no pipelining)."""
+    methods: tuple[str, ...] = ("broadcast", "loop", "ring")
+    """Which fan-out strategies to run, in order."""
 
 
 # ---------------------------------------------------------------------------
@@ -226,16 +254,43 @@ class _BroadcastBenchWorker(Worker):
             tensor.fill_(1)
         return tensor
 
+    def _make_list_payload(
+        self, num_elements: int, dtype_name: str, num_tensors: int
+    ) -> torch.Tensor | list[torch.Tensor]:
+        """Return either a single tensor or a list of ``num_tensors`` tensors
+        whose total element count equals ``num_elements`` (split as evenly as
+        possible). Lists exercise the bucket pipeline in the ring path; single
+        tensors keep parity with the existing benchmark shape.
+        """
+        if num_tensors <= 1:
+            return self._make_payload(num_elements, dtype_name)
+        base, rem = divmod(num_elements, num_tensors)
+        sizes = [base + (1 if i < rem else 0) for i in range(num_tensors)]
+        return [self._make_payload(s, dtype_name) for s in sizes if s > 0]
+
+    @staticmethod
+    def _broadcast_options(
+        use_ring: bool, bucket_size: Optional[int]
+    ) -> Optional[CollectiveGroupOptions]:
+        if not use_ring and bucket_size is None:
+            return None
+        return CollectiveGroupOptions(
+            use_ring_broadcast=use_ring,
+            ring_broadcast_bucket_size=bucket_size,
+        )
+
 
 class SenderWorker(_BroadcastBenchWorker):
     """The sole broadcast source. Lives as a single worker on node 0."""
 
-    def setup_warmup(self, num_receivers: int) -> None:
+    def setup_warmup(self, num_receivers: int, prime_ring: bool = False) -> None:
         """One-shot communication that establishes every collective group.
 
-        Runs a single tiny broadcast (forms the broadcast collective) and one
+        Runs a single tiny broadcast (forms the broadcast collective), one
         sync ``send_tensor`` to each receiver (forms each point-to-point
-        collective). After this call returns it is safe to use async P2P.
+        collective), and – when ``prime_ring`` is True – one ring broadcast
+        so the ring hop / dst sub-groups are created outside the timed
+        window. After this call returns it is safe to use async P2P.
         """
         groups = [
             (SENDER_GROUP_NAME, [0]),
@@ -245,6 +300,9 @@ class SenderWorker(_BroadcastBenchWorker):
         self.broadcast(tiny, groups=groups)
         for r in range(num_receivers):
             self.send_tensor(tiny, dst_group_name=RECEIVER_GROUP_NAME, dst_rank=r)
+        if prime_ring:
+            ring_opts = CollectiveGroupOptions(use_ring_broadcast=True)
+            self.broadcast([tiny], groups=groups, options=ring_opts)
         self._sync()
 
     def run_broadcast(
@@ -254,23 +312,33 @@ class SenderWorker(_BroadcastBenchWorker):
         dtype_name: str,
         num_warmup: int,
         num_iters: int,
+        num_tensors: int = 1,
+        use_ring_broadcast: bool = False,
+        bucket_size: Optional[int] = None,
     ) -> dict[str, Any]:
-        """Run warmup + timed ``broadcast`` calls for a single tensor size."""
+        """Run warmup + timed ``broadcast`` calls for a single tensor size.
+
+        When ``use_ring_broadcast`` is True the call goes through the ring
+        broadcast path (``CollectiveGroupOptions.use_ring_broadcast``). When
+        ``num_tensors > 1`` the payload is a list of tensors so that the ring
+        bucket pipeline (``bucket_size``) can actually engage.
+        """
         groups = [
             (SENDER_GROUP_NAME, [0]),
             (RECEIVER_GROUP_NAME, list(range(num_receivers))),
         ]
-        payload = self._make_payload(num_elements, dtype_name)
+        payload = self._make_list_payload(num_elements, dtype_name, num_tensors)
+        options = self._broadcast_options(use_ring_broadcast, bucket_size)
 
         for _ in range(num_warmup):
-            self.broadcast(payload, groups=groups)
+            self.broadcast(payload, groups=groups, options=options)
             self._sync()
 
         per_iter: list[float] = []
         for _ in range(num_iters):
             self._sync()
             t0 = time.perf_counter()
-            self.broadcast(payload, groups=groups)
+            self.broadcast(payload, groups=groups, options=options)
             self._sync()
             per_iter.append(time.perf_counter() - t0)
 
@@ -319,7 +387,7 @@ class SenderWorker(_BroadcastBenchWorker):
 class ReceiverWorker(_BroadcastBenchWorker):
     """One of ``--num-receivers`` workers on node 1."""
 
-    def setup_warmup(self, num_receivers: int) -> None:
+    def setup_warmup(self, num_receivers: int, prime_ring: bool = False) -> None:
         """Mirror image of ``SenderWorker.setup_warmup``."""
         groups = [
             (SENDER_GROUP_NAME, [0]),
@@ -328,6 +396,9 @@ class ReceiverWorker(_BroadcastBenchWorker):
         self.broadcast(None, groups=groups)
         buf = torch.empty(1, dtype=torch.float32, device=self._device())
         self.recv_tensor(buf, src_group_name=SENDER_GROUP_NAME, src_rank=0)
+        if prime_ring:
+            ring_opts = CollectiveGroupOptions(use_ring_broadcast=True)
+            self.broadcast(None, groups=groups, options=ring_opts)
         self._sync()
 
     def run_broadcast(
@@ -337,23 +408,34 @@ class ReceiverWorker(_BroadcastBenchWorker):
         dtype_name: str,
         num_warmup: int,
         num_iters: int,
+        num_tensors: int = 1,
+        use_ring_broadcast: bool = False,
+        bucket_size: Optional[int] = None,
     ) -> dict[str, Any]:
-        """Run warmup + timed ``broadcast`` receives for a single tensor size."""
+        """Receiver-side mirror of ``SenderWorker.run_broadcast``.
+
+        ``options`` must match the sender so the ring-vs-hybrid dispatch
+        agrees across ranks (see ``CollectiveGroup.broadcast`` docstring).
+        ``num_tensors`` itself is irrelevant on the receive side – the
+        payload shape is exchanged via metadata – but ``use_ring_broadcast``
+        and ``bucket_size`` must mirror the sender's options.
+        """
         groups = [
             (SENDER_GROUP_NAME, [0]),
             (RECEIVER_GROUP_NAME, list(range(num_receivers))),
         ]
-        del num_elements, dtype_name  # Receiver pre-allocation is not needed.
+        del num_elements, dtype_name, num_tensors
+        options = self._broadcast_options(use_ring_broadcast, bucket_size)
 
         for _ in range(num_warmup):
-            self.broadcast(None, groups=groups)
+            self.broadcast(None, groups=groups, options=options)
             self._sync()
 
         per_iter: list[float] = []
         for _ in range(num_iters):
             self._sync()
             t0 = time.perf_counter()
-            received = self.broadcast(None, groups=groups)
+            received = self.broadcast(None, groups=groups, options=options)
             self._sync()
             per_iter.append(time.perf_counter() - t0)
             del received
@@ -451,6 +533,13 @@ def _print_row(
     print(" | ".join(parts))
 
 
+_METHOD_DISPATCH: dict[str, dict[str, Any]] = {
+    "broadcast": {"fn": "run_broadcast", "use_ring": False, "list_payload": True},
+    "ring": {"fn": "run_broadcast", "use_ring": True, "list_payload": True},
+    "loop": {"fn": "run_loop_send_recv", "use_ring": False, "list_payload": False},
+}
+
+
 def _run_one_method(
     method: str,
     sender_group: Any,
@@ -460,24 +549,40 @@ def _run_one_method(
     actual_bytes: int,
     size_str: str,
 ) -> None:
-    """Drive a single benchmark method (``broadcast`` or ``loop``) for one size."""
-    sender_fn_name = "run_broadcast" if method == "broadcast" else "run_loop_send_recv"
-    receiver_fn_name = sender_fn_name
+    """Drive a single benchmark method (``broadcast``, ``ring``, or ``loop``) for one size."""
+    if method not in _METHOD_DISPATCH:
+        raise ValueError(f"Unknown benchmark method: {method!r}")
+    spec = _METHOD_DISPATCH[method]
+    fn_name = spec["fn"]
+
+    # Only the broadcast/ring path accepts ring options + tensor lists; the
+    # loop method always uses a single tensor so the receiver's
+    # preallocated recv_tensor buffer keeps its perf advantage.
+    if spec["fn"] == "run_broadcast":
+        extra_kwargs: dict[str, Any] = {
+            "num_tensors": cfg.num_tensors,
+            "use_ring_broadcast": spec["use_ring"],
+            "bucket_size": cfg.bucket_size,
+        }
+    else:
+        extra_kwargs = {}
 
     wall_start = time.perf_counter()
-    sender_handle = getattr(sender_group, sender_fn_name)(
+    sender_handle = getattr(sender_group, fn_name)(
         cfg.num_receivers,
         num_elements,
         cfg.dtype,
         cfg.num_warmup,
         cfg.num_iters,
+        **extra_kwargs,
     )
-    receiver_handle = getattr(receiver_group, receiver_fn_name)(
+    receiver_handle = getattr(receiver_group, fn_name)(
         cfg.num_receivers,
         num_elements,
         cfg.dtype,
         cfg.num_warmup,
         cfg.num_iters,
+        **extra_kwargs,
     )
     sender_result = sender_handle.wait()[0]
     receiver_results = receiver_handle.wait()
@@ -499,9 +604,14 @@ def _run_one_method(
     )
 
 
-def run_benchmark(cfg: BenchmarkConfig, num_nodes: int) -> None:
-    """Launch worker groups, run a setup warmup, and sweep over tensor sizes."""
-    cluster = Cluster(num_nodes=num_nodes)
+def run_benchmark(cfg: BenchmarkConfig) -> None:
+    """Launch worker groups, run a setup warmup, and sweep over tensor sizes.
+
+    The cluster size is auto-detected from the already-running Ray cluster
+    (``Cluster(num_nodes=0)``), so the benchmark uses whichever nodes have
+    joined via ``ray start``.
+    """
+    cluster = Cluster(num_nodes=0)
 
     if cluster.num_nodes < 1:
         raise SystemExit(
@@ -536,10 +646,17 @@ def run_benchmark(cfg: BenchmarkConfig, num_nodes: int) -> None:
     )
 
     # --- One-shot setup warmup to establish every collective group ---------
-    print("[setup] establishing broadcast and point-to-point collective groups...")
+    prime_ring = "ring" in cfg.methods
+    print(
+        "[setup] establishing broadcast and point-to-point collective groups"
+        + (" (and ring sub-groups)" if prime_ring else "")
+        + "..."
+    )
     warmup_start = time.perf_counter()
-    sender_warmup = sender_group.setup_warmup(cfg.num_receivers)
-    receiver_warmup = receiver_group.setup_warmup(cfg.num_receivers)
+    sender_warmup = sender_group.setup_warmup(cfg.num_receivers, prime_ring=prime_ring)
+    receiver_warmup = receiver_group.setup_warmup(
+        cfg.num_receivers, prime_ring=prime_ring
+    )
     sender_warmup.wait()
     receiver_warmup.wait()
     print(f"[setup] done in {time.perf_counter() - warmup_start:.3f} s")
@@ -552,10 +669,12 @@ def run_benchmark(cfg: BenchmarkConfig, num_nodes: int) -> None:
         if cluster.num_nodes == 1
         else f"inter-node (sender on node 0, receivers on node {receiver_node_rank})"
     )
+    bucket_str = "single" if cfg.bucket_size is None else format_size(cfg.bucket_size)
     header = (
-        f"\nBroadcast vs loop-send/recv benchmark: 1 sender -> "
+        f"\nBroadcast / ring / loop-send-recv benchmark: 1 sender -> "
         f"{cfg.num_receivers} receivers, {topology}\n"
         f"dtype={cfg.dtype}, device={cfg.device}, "
+        f"num_tensors={cfg.num_tensors}, ring bucket={bucket_str}, "
         f"per-size warmup={cfg.num_warmup}, "
         f"per-size iters={cfg.num_iters}"
     )
@@ -567,7 +686,7 @@ def run_benchmark(cfg: BenchmarkConfig, num_nodes: int) -> None:
         actual_bytes = num_elements * bytes_per_element
         size_str = format_size(actual_bytes)
 
-        for method in ("broadcast", "loop"):
+        for method in cfg.methods:
             _run_one_method(
                 method,
                 sender_group,
@@ -588,9 +707,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Benchmark fan-out from 1 sender to N receivers: broadcast vs "
-            "loop send/recv. With --num-nodes=1 all workers are colocated on "
-            "node 0; with --num-nodes>=2 the sender stays on node 0 and the "
-            "receivers move to node 1."
+            "ring vs loop send/recv. The node count is auto-detected from "
+            "the already-running Ray cluster: on a 1-node cluster all "
+            "workers run on node 0 (intra-node test); on a >=2-node "
+            "cluster the sender stays on node 0 and the receivers move to "
+            "node 1 (inter-node test)."
         )
     )
     parser.add_argument(
@@ -642,13 +763,31 @@ def parse_args() -> argparse.Namespace:
         help="Number of receiver workers on node 1 (default: %(default)d).",
     )
     parser.add_argument(
-        "--num-nodes",
+        "--num-tensors",
         type=int,
         default=1,
         help=(
-            "Total nodes in the Ray cluster. Use 1 for an intra-node test "
-            "(sender + receivers on node 0) or >=2 for an inter-node test "
-            "(sender on node 0, receivers on node 1) (default: %(default)d)."
+            "Split each size into this many tensors. >1 lets the ring "
+            "broadcast bucket pipeline overlap recv-K with broadcast-(K-1) "
+            "(default: %(default)d)."
+        ),
+    )
+    parser.add_argument(
+        "--bucket-size",
+        type=str,
+        default=None,
+        help=(
+            "Ring broadcast bucket size (e.g. 1MB). None means a single "
+            "bucket / no pipelining (default: %(default)s)."
+        ),
+    )
+    parser.add_argument(
+        "--methods",
+        type=str,
+        default="broadcast,ring,loop",
+        help=(
+            "Comma-separated subset of {broadcast, ring, loop}, in the "
+            "order they should run per size (default: %(default)s)."
         ),
     )
     return parser.parse_args()
@@ -662,6 +801,19 @@ def main() -> None:
     if not sizes_bytes:
         raise SystemExit("--sizes must contain at least one entry.")
 
+    methods_tuple = tuple(m.strip() for m in args.methods.split(",") if m.strip())
+    if not methods_tuple:
+        raise SystemExit("--methods must contain at least one entry.")
+    unknown = [m for m in methods_tuple if m not in _METHOD_DISPATCH]
+    if unknown:
+        raise SystemExit(
+            f"Unknown method(s) {unknown!r}; choose from {sorted(_METHOD_DISPATCH)}."
+        )
+
+    if args.num_tensors < 1:
+        raise SystemExit("--num-tensors must be >= 1.")
+    bucket_size = parse_size(args.bucket_size) if args.bucket_size else None
+
     cfg = BenchmarkConfig(
         sizes_bytes=sizes_bytes,
         num_iters=args.num_iters,
@@ -669,8 +821,11 @@ def main() -> None:
         dtype=args.dtype,
         device=args.device,
         num_receivers=args.num_receivers,
+        num_tensors=args.num_tensors,
+        bucket_size=bucket_size,
+        methods=methods_tuple,
     )
-    run_benchmark(cfg, num_nodes=args.num_nodes)
+    run_benchmark(cfg)
 
 
 if __name__ == "__main__":
