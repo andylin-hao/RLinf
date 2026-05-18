@@ -241,13 +241,6 @@ class CollectiveGroup:
         self._diff_dev_broadcast_sub_groups: dict[
             int, tuple["CollectiveGroup", int]
         ] = {}
-        # Ring-broadcast destination sub-groups, containing the first receiver
-        # (as src) plus the other receivers. Key: (first_recv_rank, sorted other receivers tuple).
-        # Value: (sub_group, first_recv_rank_within_sub_group).
-        self._ring_dst_sub_groups: dict[
-            tuple[int, tuple[int, ...]], tuple["CollectiveGroup", int]
-        ] = {}
-
         if self._group_info is not None:
             self._init_group()
 
@@ -808,6 +801,48 @@ class CollectiveGroup:
                     cpu_tensor_mask=cpu_tensor_mask,
                     options=options,
                 )
+
+        # CPU-only payload, no ring: fan out async ``_send`` from src to every
+        # receiver in parallel over per-receiver pair sub-groups. Receivers
+        # issue sequential ``_recv`` on their own pair sub-group. For Gloo
+        # this is typically faster than a full-group collective broadcast.
+        if not has_accel_tensor:
+            if self._rank == src_rank:
+                broadcast_tensors = tensors
+            else:
+                broadcast_tensors = [
+                    torch.empty(shape, dtype=dtype, device="cpu")
+                    for (shape, dtype) in tensor_shapes
+                ]
+            num_workers = len(self._group_info.workers)
+            receivers = [i for i in range(num_workers) if i != src_rank]
+            with self._track_payload_time(work=work):
+                if self._rank == src_rank:
+                    pending: list = []
+                    for r in receivers:
+                        pg = self._get_or_create_ipc_sub_group(src_rank, r)
+                        pg._init_process_group(options=options)
+                        for tensor in broadcast_tensors:
+                            handle = pg._send(
+                                tensor,
+                                device=CollectiveGroup.CPU,
+                                comm_id=next(pg._send_comm_id_iter),
+                                async_op=True,
+                            )
+                            if handle is not None:
+                                pending.append(handle)
+                    for h in pending:
+                        h.wait()
+                elif self._rank in receivers:
+                    pg = self._get_or_create_ipc_sub_group(src_rank, self._rank)
+                    pg._init_process_group(options=options)
+                    for tensor in broadcast_tensors:
+                        pg._recv(
+                            tensor,
+                            device=CollectiveGroup.CPU,
+                            comm_id=next(pg._recv_comm_id_iter),
+                        )
+            return broadcast_tensors
 
         if has_accel_tensor:
             definitely_same_ranks, uncertain_ranks, diff_dev_ranks = (
@@ -1385,27 +1420,6 @@ class CollectiveGroup:
             self._diff_dev_broadcast_sub_groups[src_rank] = (sub_grp, sub_src_rank)
         return self._diff_dev_broadcast_sub_groups[src_rank]
 
-    def _get_or_create_ring_dst_sub_group(
-        self, first_recv_rank: int, other_recv_ranks: list[int]
-    ) -> tuple["CollectiveGroup", int]:
-        """Return (creating if needed) the broadcast sub-group used inside the destination WorkerGroup during ring broadcast.
-
-        The first receiver acts as the source within
-        this sub-group and the other receivers are the destinations.
-        Returns the sub-group and the first receiver's rank index within it.
-        """
-        key = (first_recv_rank, tuple(sorted(other_recv_ranks)))
-        if key not in self._ring_dst_sub_groups:
-            first_address = self._group_info.workers[first_recv_rank].address
-            other_addresses = [
-                self._group_info.workers[r].address for r in other_recv_ranks
-            ]
-            sub_addresses = sorted([first_address] + other_addresses)
-            sub_src_rank = sub_addresses.index(first_address)
-            sub_grp = self._collective.create_collective_group(sub_addresses)
-            self._ring_dst_sub_groups[key] = (sub_grp, sub_src_rank)
-        return self._ring_dst_sub_groups[key]
-
     def _should_use_ring_broadcast(
         self,
         src_rank: int,
@@ -1470,22 +1484,33 @@ class CollectiveGroup:
         cpu_tensor_mask: list[bool],
         options: Optional[CollectiveGroupOptions],
     ) -> list[torch.Tensor]:
-        """Two-hop broadcast over a list of tensors, one tensor at a time.
+        """Two-hop fan-out of a tensor list, one tensor at a time.
 
-        - ``src_rank`` sends each tensor in order to the first receiver over a
-          2-worker hop sub-group.
-        - The first receiver, after receiving tensor K, issues an *async*
-          broadcast of tensor K to the other receivers over a destination
-          sub-group, then immediately loops back to receive tensor K+1 from
-          the source. Because the hop and destination sub-groups use
-          different communicators (and thus different streams), the async
-          broadcast of K runs concurrently with the host-side recv of K+1.
-        - The other receivers simply consume each per-tensor broadcast.
+        1. ``src_rank`` sends each tensor in order to the first receiver
+           over a 2-worker hop sub-group.
+        2. The first receiver, after receiving tensor K, fires async
+           ``_send`` to every other receiver in parallel (one per-pair
+           sub-group, so they share no communicator and run on independent
+           streams), then immediately loops back to receive tensor K+1 from
+           the source. The host-side recv of K+1 overlaps with the
+           in-flight async sends of K.
+        3. Other receivers each issue a sequential ``_recv`` from the first
+           receiver on their own pair sub-group.
+
+        The two-hop structure runs regardless of tensor device; the
+        non-ring CPU-only path in :py:meth:`_broadcast_tensor_list` handles
+        the "just fan out from src directly" case.
         """
         del comm_id, tensor_shapes  # both unused; we draw fresh per-sub-group ids below
 
         num_workers = len(self._group_info.workers)
         receivers = [i for i in range(num_workers) if i != src_rank]
+
+        def _tensor_device(idx: int) -> str:
+            return (
+                CollectiveGroup.CPU if cpu_tensor_mask[idx] else CollectiveGroup.ACCEL
+            )
+
         first_receiver = receivers[0]
         other_receivers = receivers[1:]
 
@@ -1494,20 +1519,20 @@ class CollectiveGroup:
             hop_grp = self._get_or_create_ipc_sub_group(src_rank, first_receiver)
             hop_grp._init_process_group(options=options)
 
-        dst_grp: Optional[CollectiveGroup] = None
-        dst_sub_src: Optional[int] = None
-        if other_receivers and (
-            self._rank == first_receiver or self._rank in other_receivers
-        ):
-            dst_grp, dst_sub_src = self._get_or_create_ring_dst_sub_group(
-                first_receiver, other_receivers
-            )
-            dst_grp._init_process_group(options=options)
-
-        def _tensor_device(idx: int) -> str:
-            return (
-                CollectiveGroup.CPU if cpu_tensor_mask[idx] else CollectiveGroup.ACCEL
-            )
+        # Per-pair sub-groups between first_receiver and each other receiver.
+        # Each pair has its own communicator/stream, so async sends from the
+        # first receiver to multiple other receivers really do run in
+        # parallel, and they also run in parallel with the next hop recv.
+        fanout_grps: dict[int, "CollectiveGroup"] = {}
+        if self._rank == first_receiver:
+            for r in other_receivers:
+                pg = self._get_or_create_ipc_sub_group(first_receiver, r)
+                pg._init_process_group(options=options)
+                fanout_grps[r] = pg
+        elif self._rank in other_receivers:
+            pg = self._get_or_create_ipc_sub_group(first_receiver, self._rank)
+            pg._init_process_group(options=options)
+            fanout_grps[self._rank] = pg
 
         if self._rank == src_rank:
             for idx, tensor in enumerate(broadcast_tensors):
@@ -1517,39 +1542,44 @@ class CollectiveGroup:
                     comm_id=next(hop_grp._send_comm_id_iter),
                 )
         elif self._rank == first_receiver:
-            prev_bcast_work = None
+            prev_send_works: list = []
             for idx, tensor in enumerate(broadcast_tensors):
-                # Recv tensor `idx` from src (blocks the host on this rank).
-                # While this recv runs, the async broadcast issued in the
-                # previous iteration is still in flight on the dst sub-group's
-                # stream, so the two operations overlap.
+                # Sync recv tensor `idx` from src. While the host is blocked
+                # here, the previous iteration's async fan-out sends are
+                # still in flight on the other receivers' pair sub-groups,
+                # so the two operations overlap.
                 hop_grp._recv(
                     tensor,
                     device=_tensor_device(idx),
                     comm_id=next(hop_grp._recv_comm_id_iter),
                 )
-                # The dst sub-group only has one queue, so we must wait for
-                # the previous broadcast to finish before issuing the next.
-                if prev_bcast_work is not None:
-                    prev_bcast_work.wait()
-                    prev_bcast_work = None
-                if other_receivers:
-                    prev_bcast_work = dst_grp._broadcast(
+                # Drain the previous iter's sends before queuing more on the
+                # same per-pair channels.
+                for w in prev_send_works:
+                    w.wait()
+                prev_send_works = []
+                # Async-send tensor `idx` to every other receiver in
+                # parallel. Distinct pair sub-groups => distinct streams,
+                # so these N-1 sends really fire concurrently.
+                for r in other_receivers:
+                    pg = fanout_grps[r]
+                    work = pg._send(
                         tensor,
                         device=_tensor_device(idx),
-                        comm_id=next(dst_grp._broadcast_comm_id_iter),
-                        src_rank=dst_sub_src,
+                        comm_id=next(pg._send_comm_id_iter),
                         async_op=True,
                     )
-            if prev_bcast_work is not None:
-                prev_bcast_work.wait()
+                    if work is not None:
+                        prev_send_works.append(work)
+            for w in prev_send_works:
+                w.wait()
         else:
+            pg = fanout_grps[self._rank]
             for idx, tensor in enumerate(broadcast_tensors):
-                dst_grp._broadcast(
+                pg._recv(
                     tensor,
                     device=_tensor_device(idx),
-                    comm_id=next(dst_grp._broadcast_comm_id_iter),
-                    src_rank=dst_sub_src,
+                    comm_id=next(pg._recv_comm_id_iter),
                 )
 
         return broadcast_tensors
