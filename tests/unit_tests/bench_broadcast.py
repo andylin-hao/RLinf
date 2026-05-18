@@ -39,20 +39,23 @@ receivers:
      receiver and then awaits every handle; each receiver issues a single
      async ``recv_tensor`` and waits on it.
   3. ``ring``: ``Worker.broadcast(...)`` with
-     ``CollectiveGroupOptions(use_ring_broadcast=True, ring_broadcast_bucket_size=...)``.
-     The source sends each bucket to the first receiver, which then
-     broadcasts it to the rest while the source streams the next bucket.
+     ``CollectiveGroupOptions(use_ring_broadcast=True)``. The source sends
+     each tensor to the first receiver; the first receiver async-broadcasts
+     tensor K to the other receivers while it concurrently receives tensor
+     K+1 from the source.
 
 Note that ring broadcast is force-disabled when the source shares a device
 with any receiver (the src->first-receiver hop relies on plain
-``_send``/``_recv``, which NCCL forbids on the same GPU). For an accelerator
-run, prefer ``--num-nodes 2`` (or any setup where the sender and receivers
-sit on disjoint devices) to actually exercise the ring path; otherwise the
-``ring`` row falls back to the same collective as ``broadcast``.
+``_send``/``_recv``, which NCCL forbids on the same GPU) and when the
+payload is on the accelerator and every participant has the same accelerator
+type and model (a native CCL collective is at least as good). Run on a
+multi-node cluster, mixed-vendor cluster, or CPU payload to actually
+exercise the ring path; otherwise the ``ring`` row falls back to the same
+collective as ``broadcast``.
 
-The ring algorithm only pipelines when the payload is split into multiple
-tensors, so ``--num-tensors`` controls the list length and ``--bucket-size``
-controls the bucket pipeline granularity.
+The ring algorithm only pipelines across tensors, so ``--num-tensors``
+controls how many tensors the per-size payload is split into (and thus how
+many recv/bcast steps overlap).
 
 Before timing starts a one-shot warmup exchange is run so the collective
 group (broadcast) and each point-to-point pair are established outside the
@@ -171,14 +174,10 @@ class BenchmarkConfig:
     device: str  # "cpu" | "cuda" | "auto"
     num_receivers: int
     num_tensors: int = 1
-    """If > 1, split each size into a list of this many tensors. Required for
-    the ring broadcast bucket pipeline to engage; ``broadcast`` also passes
-    the list through ``_broadcast_tensor_list``. ``loop`` always uses a
-    single tensor so it keeps the recv-side preallocation optimisation."""
-    bucket_size: Optional[int] = None
-    """Bytes per bucket for the ring broadcast pipeline (passed straight to
-    ``CollectiveGroupOptions.ring_broadcast_bucket_size``). ``None`` means a
-    single bucket (no pipelining)."""
+    """If > 1, split each size into a list of this many tensors. The ring
+    broadcast pipelines recv-K with broadcast-(K-1), so more tensors -> more
+    overlap. ``loop`` always uses a single tensor so it keeps the recv-side
+    preallocation optimisation."""
     methods: tuple[str, ...] = ("broadcast", "loop", "ring")
     """Which fan-out strategies to run, in order."""
 
@@ -259,8 +258,9 @@ class _BroadcastBenchWorker(Worker):
     ) -> torch.Tensor | list[torch.Tensor]:
         """Return either a single tensor or a list of ``num_tensors`` tensors
         whose total element count equals ``num_elements`` (split as evenly as
-        possible). Lists exercise the bucket pipeline in the ring path; single
-        tensors keep parity with the existing benchmark shape.
+        possible). Lists exercise the per-tensor recv/bcast pipeline in the
+        ring path; single tensors keep parity with the existing benchmark
+        shape.
         """
         if num_tensors <= 1:
             return self._make_payload(num_elements, dtype_name)
@@ -269,15 +269,10 @@ class _BroadcastBenchWorker(Worker):
         return [self._make_payload(s, dtype_name) for s in sizes if s > 0]
 
     @staticmethod
-    def _broadcast_options(
-        use_ring: bool, bucket_size: Optional[int]
-    ) -> Optional[CollectiveGroupOptions]:
-        if not use_ring and bucket_size is None:
+    def _broadcast_options(use_ring: bool) -> Optional[CollectiveGroupOptions]:
+        if not use_ring:
             return None
-        return CollectiveGroupOptions(
-            use_ring_broadcast=use_ring,
-            ring_broadcast_bucket_size=bucket_size,
-        )
+        return CollectiveGroupOptions(use_ring_broadcast=True)
 
 
 class SenderWorker(_BroadcastBenchWorker):
@@ -314,21 +309,20 @@ class SenderWorker(_BroadcastBenchWorker):
         num_iters: int,
         num_tensors: int = 1,
         use_ring_broadcast: bool = False,
-        bucket_size: Optional[int] = None,
     ) -> dict[str, Any]:
         """Run warmup + timed ``broadcast`` calls for a single tensor size.
 
         When ``use_ring_broadcast`` is True the call goes through the ring
         broadcast path (``CollectiveGroupOptions.use_ring_broadcast``). When
-        ``num_tensors > 1`` the payload is a list of tensors so that the ring
-        bucket pipeline (``bucket_size``) can actually engage.
+        ``num_tensors > 1`` the payload is a list of tensors so the ring's
+        per-tensor recv/bcast pipeline can overlap consecutive tensors.
         """
         groups = [
             (SENDER_GROUP_NAME, [0]),
             (RECEIVER_GROUP_NAME, list(range(num_receivers))),
         ]
         payload = self._make_list_payload(num_elements, dtype_name, num_tensors)
-        options = self._broadcast_options(use_ring_broadcast, bucket_size)
+        options = self._broadcast_options(use_ring_broadcast)
 
         for _ in range(num_warmup):
             self.broadcast(payload, groups=groups, options=options)
@@ -410,7 +404,6 @@ class ReceiverWorker(_BroadcastBenchWorker):
         num_iters: int,
         num_tensors: int = 1,
         use_ring_broadcast: bool = False,
-        bucket_size: Optional[int] = None,
     ) -> dict[str, Any]:
         """Receiver-side mirror of ``SenderWorker.run_broadcast``.
 
@@ -418,14 +411,14 @@ class ReceiverWorker(_BroadcastBenchWorker):
         agrees across ranks (see ``CollectiveGroup.broadcast`` docstring).
         ``num_tensors`` itself is irrelevant on the receive side – the
         payload shape is exchanged via metadata – but ``use_ring_broadcast``
-        and ``bucket_size`` must mirror the sender's options.
+        must mirror the sender's option.
         """
         groups = [
             (SENDER_GROUP_NAME, [0]),
             (RECEIVER_GROUP_NAME, list(range(num_receivers))),
         ]
         del num_elements, dtype_name, num_tensors
-        options = self._broadcast_options(use_ring_broadcast, bucket_size)
+        options = self._broadcast_options(use_ring_broadcast)
 
         for _ in range(num_warmup):
             self.broadcast(None, groups=groups, options=options)
@@ -562,7 +555,6 @@ def _run_one_method(
         extra_kwargs: dict[str, Any] = {
             "num_tensors": cfg.num_tensors,
             "use_ring_broadcast": spec["use_ring"],
-            "bucket_size": cfg.bucket_size,
         }
     else:
         extra_kwargs = {}
@@ -669,12 +661,11 @@ def run_benchmark(cfg: BenchmarkConfig) -> None:
         if cluster.num_nodes == 1
         else f"inter-node (sender on node 0, receivers on node {receiver_node_rank})"
     )
-    bucket_str = "single" if cfg.bucket_size is None else format_size(cfg.bucket_size)
     header = (
         f"\nBroadcast / ring / loop-send-recv benchmark: 1 sender -> "
         f"{cfg.num_receivers} receivers, {topology}\n"
         f"dtype={cfg.dtype}, device={cfg.device}, "
-        f"num_tensors={cfg.num_tensors}, ring bucket={bucket_str}, "
+        f"num_tensors={cfg.num_tensors}, "
         f"per-size warmup={cfg.num_warmup}, "
         f"per-size iters={cfg.num_iters}"
     )
@@ -768,17 +759,8 @@ def parse_args() -> argparse.Namespace:
         default=1,
         help=(
             "Split each size into this many tensors. >1 lets the ring "
-            "broadcast bucket pipeline overlap recv-K with broadcast-(K-1) "
+            "broadcast overlap recv-K with broadcast-(K-1) "
             "(default: %(default)d)."
-        ),
-    )
-    parser.add_argument(
-        "--bucket-size",
-        type=str,
-        default=None,
-        help=(
-            "Ring broadcast bucket size (e.g. 1MB). None means a single "
-            "bucket / no pipelining (default: %(default)s)."
         ),
     )
     parser.add_argument(
@@ -812,7 +794,6 @@ def main() -> None:
 
     if args.num_tensors < 1:
         raise SystemExit("--num-tensors must be >= 1.")
-    bucket_size = parse_size(args.bucket_size) if args.bucket_size else None
 
     cfg = BenchmarkConfig(
         sizes_bytes=sizes_bytes,
@@ -822,7 +803,6 @@ def main() -> None:
         device=args.device,
         num_receivers=args.num_receivers,
         num_tensors=args.num_tensors,
-        bucket_size=bucket_size,
         methods=methods_tuple,
     )
     run_benchmark(cfg)

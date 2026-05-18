@@ -96,15 +96,12 @@ class CollectiveGroupOptions:
 
     use_ring_broadcast: bool = False
     """If True, force the broadcast tensor-list path to use the ring algorithm:
-    the source sends to the first receiver, and the first receiver broadcasts to the rest.
-    When False (default), the ring algorithm is still auto-selected when all receivers
-    share the same root WorkerGroup (a common pattern, e.g. actor -> all rollout ranks)."""
-
-    ring_broadcast_bucket_size: Optional[int] = None
-    """Bucket size in bytes for the ring broadcast pipeline. When set, the tensor list is
-    split into buckets of approximately this many bytes; while the first receiver
-    broadcasts bucket K to other receivers, the source can send bucket K+1 to it.
-    None means a single bucket (no pipelining)."""
+    the source sends each tensor to the first receiver, which then broadcasts
+    it to the other receivers. While the first receiver async-broadcasts
+    tensor K, it concurrently receives tensor K+1 from the source. When False
+    (default), the ring algorithm is still auto-selected when all receivers
+    share the same root WorkerGroup (a common pattern, e.g. actor -> all
+    rollout ranks)."""
 
     def is_empty_options(self) -> bool:
         """Check if the options are empty."""
@@ -1464,39 +1461,6 @@ class CollectiveGroup:
             for r in receivers
         )
 
-    @staticmethod
-    def _compute_ring_bucket_layout(
-        tensor_shapes: list[tuple[torch.Size, torch.dtype]],
-        bucket_size: Optional[int],
-    ) -> list[list[int]]:
-        """Split tensor indices into buckets of approximately ``bucket_size`` bytes.
-
-        Each tensor is fully placed in one bucket (no fragmentation). Returns a list of
-        index lists. ``bucket_size`` of None or non-positive means a single bucket
-        containing every tensor (i.e. no pipelining).
-        """
-        if not tensor_shapes:
-            return [[]]
-        if bucket_size is None or bucket_size <= 0:
-            return [list(range(len(tensor_shapes)))]
-        buckets: list[list[int]] = []
-        current: list[int] = []
-        current_bytes = 0
-        for i, (shape, dtype) in enumerate(tensor_shapes):
-            numel = 1
-            for d in shape:
-                numel *= int(d)
-            t_bytes = numel * torch.empty((), dtype=dtype).element_size()
-            if current and current_bytes + t_bytes > bucket_size:
-                buckets.append(current)
-                current = []
-                current_bytes = 0
-            current.append(i)
-            current_bytes += t_bytes
-        if current:
-            buckets.append(current)
-        return buckets
-
     def _ring_broadcast_tensor_list(
         self,
         broadcast_tensors: list[torch.Tensor],
@@ -1506,25 +1470,24 @@ class CollectiveGroup:
         cpu_tensor_mask: list[bool],
         options: Optional[CollectiveGroupOptions],
     ) -> list[torch.Tensor]:
-        """Two-hop broadcast over a list of tensors.
+        """Two-hop broadcast over a list of tensors, one tensor at a time.
 
-        Phase 1: ``src_rank`` sends each bucket to the first receiver via a 2-worker hop
-        sub-group. Phase 2: the first receiver broadcasts each bucket to the remaining
-        receivers via a destination sub-group. Because the hop and destination sub-groups
-        use different communicators (and thus different streams), bucket K's broadcast
-        can run concurrently with bucket K+1's send/recv, giving the pipelined behavior.
+        - ``src_rank`` sends each tensor in order to the first receiver over a
+          2-worker hop sub-group.
+        - The first receiver, after receiving tensor K, issues an *async*
+          broadcast of tensor K to the other receivers over a destination
+          sub-group, then immediately loops back to receive tensor K+1 from
+          the source. Because the hop and destination sub-groups use
+          different communicators (and thus different streams), the async
+          broadcast of K runs concurrently with the host-side recv of K+1.
+        - The other receivers simply consume each per-tensor broadcast.
         """
-        del comm_id  # comm_id is per-(sub-)group; we draw fresh ones below.
+        del comm_id, tensor_shapes  # both unused; we draw fresh per-sub-group ids below
 
         num_workers = len(self._group_info.workers)
         receivers = [i for i in range(num_workers) if i != src_rank]
         first_receiver = receivers[0]
         other_receivers = receivers[1:]
-
-        bucket_size = (
-            options.ring_broadcast_bucket_size if options is not None else None
-        )
-        buckets = self._compute_ring_bucket_layout(tensor_shapes, bucket_size)
 
         hop_grp: Optional[CollectiveGroup] = None
         if self._rank == src_rank or self._rank == first_receiver:
@@ -1547,72 +1510,47 @@ class CollectiveGroup:
             )
 
         if self._rank == src_rank:
-            pending_works: list = []
-            for indices in buckets:
-                hop_comm_id = next(hop_grp._send_comm_id_iter)
-                for idx in indices:
-                    work = hop_grp._send(
-                        broadcast_tensors[idx],
-                        device=_tensor_device(idx),
-                        comm_id=hop_comm_id,
-                        async_op=True,
-                    )
-                    if work is not None:
-                        pending_works.append(work)
-            for w in pending_works:
-                w.wait()
+            for idx, tensor in enumerate(broadcast_tensors):
+                hop_grp._send(
+                    tensor,
+                    device=_tensor_device(idx),
+                    comm_id=next(hop_grp._send_comm_id_iter),
+                )
         elif self._rank == first_receiver:
-            prev_bcast_works: list = []
-            for indices in buckets:
-                # Receive the current bucket from src (sync within the bucket).
-                hop_comm_id = next(hop_grp._recv_comm_id_iter)
-                recv_works: list = []
-                for idx in indices:
-                    work = hop_grp._recv(
-                        broadcast_tensors[idx],
-                        device=_tensor_device(idx),
-                        comm_id=hop_comm_id,
-                        async_op=True,
-                    )
-                    if work is not None:
-                        recv_works.append(work)
-                for w in recv_works:
-                    w.wait()
-                # Drain the previous broadcast before issuing a new one so the next
-                # recv on the hop sub-group can overlap with the current broadcast.
-                for w in prev_bcast_works:
-                    w.wait()
-                prev_bcast_works = []
+            prev_bcast_work = None
+            for idx, tensor in enumerate(broadcast_tensors):
+                # Recv tensor `idx` from src (blocks the host on this rank).
+                # While this recv runs, the async broadcast issued in the
+                # previous iteration is still in flight on the dst sub-group's
+                # stream, so the two operations overlap.
+                hop_grp._recv(
+                    tensor,
+                    device=_tensor_device(idx),
+                    comm_id=next(hop_grp._recv_comm_id_iter),
+                )
+                # The dst sub-group only has one queue, so we must wait for
+                # the previous broadcast to finish before issuing the next.
+                if prev_bcast_work is not None:
+                    prev_bcast_work.wait()
+                    prev_bcast_work = None
                 if other_receivers:
-                    bcast_comm_id = next(dst_grp._broadcast_comm_id_iter)
-                    for idx in indices:
-                        work = dst_grp._broadcast(
-                            broadcast_tensors[idx],
-                            device=_tensor_device(idx),
-                            comm_id=bcast_comm_id,
-                            src_rank=dst_sub_src,
-                            async_op=True,
-                        )
-                        if work is not None:
-                            prev_bcast_works.append(work)
-            for w in prev_bcast_works:
-                w.wait()
-        else:
-            for indices in buckets:
-                bcast_comm_id = next(dst_grp._broadcast_comm_id_iter)
-                bcast_works: list = []
-                for idx in indices:
-                    work = dst_grp._broadcast(
-                        broadcast_tensors[idx],
+                    prev_bcast_work = dst_grp._broadcast(
+                        tensor,
                         device=_tensor_device(idx),
-                        comm_id=bcast_comm_id,
+                        comm_id=next(dst_grp._broadcast_comm_id_iter),
                         src_rank=dst_sub_src,
                         async_op=True,
                     )
-                    if work is not None:
-                        bcast_works.append(work)
-                for w in bcast_works:
-                    w.wait()
+            if prev_bcast_work is not None:
+                prev_bcast_work.wait()
+        else:
+            for idx, tensor in enumerate(broadcast_tensors):
+                dst_grp._broadcast(
+                    tensor,
+                    device=_tensor_device(idx),
+                    comm_id=next(dst_grp._broadcast_comm_id_iter),
+                    src_rank=dst_sub_src,
+                )
 
         return broadcast_tensors
 
