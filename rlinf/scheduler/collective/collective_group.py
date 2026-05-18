@@ -1469,11 +1469,7 @@ class CollectiveGroup:
 
         if options is not None and options.use_ring_broadcast:
             return True
-        first_grp = self._group_info.workers[receivers[0]].address.root_group_name
-        return all(
-            self._group_info.workers[r].address.root_group_name == first_grp
-            for r in receivers
-        )
+        return False
 
     def _ring_broadcast_tensor_list(
         self,

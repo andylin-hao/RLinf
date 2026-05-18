@@ -448,7 +448,11 @@ class ReceiverWorker(_BroadcastBenchWorker):
         buffer; the destination tensor is allocated inside the call from the
         sender's metadata, so the resulting timings include that allocation.
         """
-        del num_receivers, num_elements, dtype_name  # recv discovers shape/dtype itself.
+        del (
+            num_receivers,
+            num_elements,
+            dtype_name,
+        )  # recv discovers shape/dtype itself.
 
         def one_round() -> None:
             h = self.recv(
