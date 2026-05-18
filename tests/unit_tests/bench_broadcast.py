@@ -35,9 +35,9 @@ receivers:
 
   1. ``broadcast``: ``Worker.broadcast(...)`` collective (the default
      hybrid IPC/NCCL path).
-  2. ``loop send/recv``: the sender issues an async ``send_tensor`` to each
+  2. ``loop send/recv``: the sender issues an async ``send`` to each
      receiver and then awaits every handle; each receiver issues a single
-     async ``recv_tensor`` and waits on it.
+     async ``recv`` and waits on it.
   3. ``ring``: ``Worker.broadcast(...)`` with
      ``CollectiveGroupOptions(use_ring_broadcast=True)``. The source sends
      each tensor to the first receiver; the first receiver async-broadcasts
@@ -282,7 +282,7 @@ class SenderWorker(_BroadcastBenchWorker):
         """One-shot communication that establishes every collective group.
 
         Runs a single tiny broadcast (forms the broadcast collective), one
-        sync ``send_tensor`` to each receiver (forms each point-to-point
+        sync ``send`` to each receiver (forms each point-to-point
         collective), and – when ``prime_ring`` is True – one ring broadcast
         so the ring hop / dst sub-groups are created outside the timed
         window. After this call returns it is safe to use async P2P.
@@ -294,7 +294,7 @@ class SenderWorker(_BroadcastBenchWorker):
         tiny = self._make_payload(num_elements=1, dtype_name="float32")
         self.broadcast(tiny, groups=groups)
         for r in range(num_receivers):
-            self.send_tensor(tiny, dst_group_name=RECEIVER_GROUP_NAME, dst_rank=r)
+            self.send(tiny, dst_group_name=RECEIVER_GROUP_NAME, dst_rank=r)
         if prime_ring:
             ring_opts = CollectiveGroupOptions(use_ring_broadcast=True)
             self.broadcast([tiny], groups=groups, options=ring_opts)
@@ -346,14 +346,14 @@ class SenderWorker(_BroadcastBenchWorker):
         num_warmup: int,
         num_iters: int,
     ) -> dict[str, Any]:
-        """Async ``send_tensor`` fan-out: send to each receiver, then await all."""
+        """Async ``send`` fan-out: send to each receiver, then await all."""
         payload = self._make_payload(num_elements, dtype_name)
 
         def one_round() -> None:
             handles = []
             for r in range(num_receivers):
                 handles.append(
-                    self.send_tensor(
+                    self.send(
                         payload,
                         dst_group_name=RECEIVER_GROUP_NAME,
                         dst_rank=r,
@@ -388,8 +388,7 @@ class ReceiverWorker(_BroadcastBenchWorker):
             (RECEIVER_GROUP_NAME, list(range(num_receivers))),
         ]
         self.broadcast(None, groups=groups)
-        buf = torch.empty(1, dtype=torch.float32, device=self._device())
-        self.recv_tensor(buf, src_group_name=SENDER_GROUP_NAME, src_rank=0)
+        self.recv(src_group_name=SENDER_GROUP_NAME, src_rank=0)
         if prime_ring:
             ring_opts = CollectiveGroupOptions(use_ring_broadcast=True)
             self.broadcast(None, groups=groups, options=ring_opts)
@@ -443,14 +442,16 @@ class ReceiverWorker(_BroadcastBenchWorker):
         num_warmup: int,
         num_iters: int,
     ) -> dict[str, Any]:
-        """One async ``recv_tensor`` per iteration paired with the sender's send."""
-        del num_receivers  # Each receiver only receives from rank 0 of the sender.
-        dtype = _DTYPES[dtype_name]
-        buf = torch.empty(num_elements, dtype=dtype, device=self._device())
+        """One async ``recv`` per iteration paired with the sender's send.
+
+        ``recv`` (unlike ``recv_tensor``) does not require a preallocated
+        buffer; the destination tensor is allocated inside the call from the
+        sender's metadata, so the resulting timings include that allocation.
+        """
+        del num_receivers, num_elements, dtype_name  # recv discovers shape/dtype itself.
 
         def one_round() -> None:
-            h = self.recv_tensor(
-                buf,
+            h = self.recv(
                 src_group_name=SENDER_GROUP_NAME,
                 src_rank=0,
                 async_op=True,
@@ -549,8 +550,8 @@ def _run_one_method(
     fn_name = spec["fn"]
 
     # Only the broadcast/ring path accepts ring options + tensor lists; the
-    # loop method always uses a single tensor so the receiver's
-    # preallocated recv_tensor buffer keeps its perf advantage.
+    # loop method always uses a single tensor (the recv side uses ``recv``
+    # and allocates its destination buffer inside the call).
     if spec["fn"] == "run_broadcast":
         extra_kwargs: dict[str, Any] = {
             "num_tensors": cfg.num_tensors,
