@@ -43,7 +43,9 @@ from .franky_controller import FrankyController
 
 # Avoids Ray actor name collision when both arms land on the same node.
 _RIGHT_ARM_ENV_IDX_OFFSET = 1000
-_MAX_CAMERA_RETRIES = 3
+# Per-camera get_frame timeout. Short so a stalled camera doesn't drag the
+# 10 Hz env loop; reconnection is handled by the camera's own capture thread.
+_CAMERA_FRAME_TIMEOUT_S = 0.5
 
 
 @dataclass
@@ -179,6 +181,10 @@ class DualFrankaEnv(gym.Env):
         self._left_state = self._left_ctrl.get_state().wait()[0]
         self._right_state = self._right_ctrl.get_state().wait()[0]
 
+        # Cache of last successful frame per camera, for graceful degradation
+        # when a single camera stalls (used by _get_camera_frames).
+        self._last_camera_frame: dict[str, np.ndarray] = {}
+
         self._open_cameras()
         self.camera_player = VideoPlayer(self.config.enable_camera_player)
 
@@ -247,38 +253,39 @@ class DualFrankaEnv(gym.Env):
         return cropped, resized
 
     def _get_camera_frames(self) -> dict[str, np.ndarray]:
-        for attempt in range(_MAX_CAMERA_RETRIES):
-            frames: dict[str, np.ndarray] = {}
-            display_frames: dict[str, np.ndarray] = {}
-            failed = False
-            for camera in self._cameras:
-                try:
-                    frame = camera.get_frame()
-                    reshape_size = self.observation_space["frames"][
-                        camera._camera_info.name
-                    ].shape[:2][::-1]
-                    cropped, resized = self._crop_frame(frame, reshape_size)
-                    frames[camera._camera_info.name] = resized[..., ::-1]
-                    display_frames[camera._camera_info.name] = resized
-                    display_frames[f"{camera._camera_info.name}_full"] = cropped
-                except queue.Empty:
-                    self._logger.warning(
-                        "Camera %s not producing frames (attempt %d/%d). Retrying in 5s.",
-                        camera._camera_info.name,
-                        attempt + 1,
-                        _MAX_CAMERA_RETRIES,
+        """Read one frame per camera. On stall, fall back to the last-good
+        frame and replace just that camera in-place; other cameras keep
+        producing fresh frames. Raises only when a camera stalls before
+        producing any frame (no cache to fall back to).
+        """
+        frames: dict[str, np.ndarray] = {}
+        display_frames: dict[str, np.ndarray] = {}
+
+        for i, camera in enumerate(self._cameras):
+            name = camera._camera_info.name
+            try:
+                frame = camera.get_frame(timeout=_CAMERA_FRAME_TIMEOUT_S)
+            except queue.Empty:
+                cached = self._last_camera_frame.get(name)
+                if cached is None:
+                    raise RuntimeError(
+                        f"Camera {name} stalled with no cached frame to fall back to."
                     )
-                    time.sleep(5)
-                    self._close_cameras()
-                    self._open_cameras()
-                    failed = True
-                    break
-            if not failed:
-                self.camera_player.put_frame(display_frames)
-                return frames
-        raise RuntimeError(
-            f"Cameras failed to produce frames after {_MAX_CAMERA_RETRIES} attempts."
-        )
+                self._logger.error("Camera %s stalled; replacing.", name)
+                camera.close()
+                self._cameras[i] = create_camera(camera._camera_info)
+                self._cameras[i].open()
+                frame = cached
+
+            reshape_size = self.observation_space["frames"][name].shape[:2][::-1]
+            cropped, resized = self._crop_frame(frame, reshape_size)
+            frames[name] = resized[..., ::-1]
+            display_frames[name] = resized
+            display_frames[f"{name}_full"] = cropped
+            self._last_camera_frame[name] = frame
+
+        self.camera_player.put_frame(display_frames)
+        return frames
 
     # ---------------------------------------------------------------- hardware
 
@@ -359,10 +366,8 @@ class DualFrankaEnv(gym.Env):
         except Exception as exc:
             self._logger.warning("open_gripper during reset failed: %s", exc)
 
-        left_f = self._left_ctrl.reset_joint(self.config.joint_reset_qpos[0])
-        right_f = self._right_ctrl.reset_joint(self.config.joint_reset_qpos[1])
-        left_f.wait()
-        right_f.wait()
+        self._left_ctrl.reset_joint(self.config.joint_reset_qpos[0])
+        self._right_ctrl.reset_joint(self.config.joint_reset_qpos[1])
         time.sleep(0.5)
         self._left_state = self._left_ctrl.get_state().wait()[0]
         self._right_state = self._right_ctrl.get_state().wait()[0]

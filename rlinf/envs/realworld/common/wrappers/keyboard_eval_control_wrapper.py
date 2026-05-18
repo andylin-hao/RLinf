@@ -42,12 +42,16 @@ class KeyboardEvalControlWrapper(gym.Wrapper):
         self._last_press_ts: dict[str, float] = {}
 
     def reset(self, *, seed=None, options=None):
-        self._running = False
-        self.listener.pop_pressed_keys()
         self._last_press_ts.clear()
-        ret = self.env.reset(seed=seed, options=options)
-        self._last_obs = ret[0] if isinstance(ret, tuple) else ret
-        return ret
+        self.listener.pop_pressed_keys()
+        obs, info = self.env.reset(seed=seed, options=options)
+        self._last_obs = obs
+        while True:
+            time.sleep(self.IDLE_POLL_S)
+            for key in self.listener.pop_pressed_keys():
+                if key == "a":
+                    self._running = True
+                    return obs, info
 
     def step(
         self, action: ActType

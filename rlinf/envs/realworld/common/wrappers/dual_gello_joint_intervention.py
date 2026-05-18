@@ -59,6 +59,10 @@ class DualGelloJointIntervention(gym.ActionWrapper):
         self._stream_gate.set()  # gate open = stream tick allowed
         self._aligned = False
 
+    def _resolve_controllers(self):
+        inner = self.unwrapped
+        return (getattr(inner, "_left_ctrl", None), getattr(inner, "_right_ctrl", None))
+
     def _start_stream_thread(self) -> None:
         if self._resolve_controllers() == (None, None):
             return

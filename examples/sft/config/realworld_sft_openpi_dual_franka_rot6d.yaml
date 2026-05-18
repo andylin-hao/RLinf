@@ -40,7 +40,7 @@ runner:
   max_epochs: 100000
   max_steps: -1
   val_check_interval: -1
-  save_interval: 500
+  save_interval: 2000
 
 data:
   # LeRobot root on the training machine. Set DUAL_FRANKA_DATA_ROOT to the
@@ -67,6 +67,10 @@ actor:
     openpi:
       config_name: "pi05_dualfranka_rot6d"
       detach_critic_input: True
+      # model/pi0_5 defaults train_expert_only to True, which freezes
+      # PaliGemma and breaks FSDP+gradient-checkpointing with a
+      # view-inplace error. SFT here trains the full model.
+      train_expert_only: False
 
   optim:
     lr: 7.91e-6
@@ -79,7 +83,7 @@ actor:
 
   fsdp_config:
     strategy: "fsdp"
-    sharding_strategy: "full_shard"
+    sharding_strategy: "no_shard"
     use_orig_params: False
     gradient_checkpointing: False
     mixed_precision:

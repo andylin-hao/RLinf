@@ -18,7 +18,7 @@ Environment variables::
 
     FRANKA_ROBOT_IP   Franka FCI IP (default: 172.16.0.2)
     GELLO_PORT        GELLO Dynamixel by-id path (MUST be set; placeholder shown in default is not a real device)
-    GELLO_BAUDRATE    Dynamixel baudrate (default: 1000000) [calibrate only]
+    GELLO_BAUDRATE    Dynamixel baudrate (default: 57600) [calibrate only]
     ALIGN_HOME        Comma-separated 7 floats overriding HOME_JOINTS
                       [align-sequential only]
 
@@ -168,7 +168,7 @@ def safe_reset_to(controller: FrankyController, q_target: Sequence[float]) -> No
     """Move robot to ``q_target`` via the slow safe path with actionable errors.
 
     Bails out with a hint if the robot is too far from ``q_target`` (the
-    1.5 rad ``max_joint_delta`` guard would refuse the move) or if FCI is
+    1.6 rad ``max_joint_delta`` guard would refuse the move) or if FCI is
     offline.
     """
     try:
@@ -182,11 +182,11 @@ def safe_reset_to(controller: FrankyController, q_target: Sequence[float]) -> No
             f"(max Δ={max_d:.3f} rad on J{worst + 1})",
             flush=True,
         )
-        if max_d > 1.5:
+        if max_d > 1.6:
             print(
                 colour(
                     f"\n  J{worst + 1} would need to move {max_d:.3f} rad — "
-                    "exceeds reset_joint safety guard (1.5 rad).",
+                    "exceeds reset_joint safety guard (1.6 rad).",
                     "31;1",
                 )
             )
@@ -547,7 +547,7 @@ def _calib_setup_gello_raw():
         "GELLO_PORT",
         "/dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_YOURGELLO-if00-port0",
     )
-    baudrate = int(os.environ.get("GELLO_BAUDRATE", "1000000"))
+    baudrate = int(os.environ.get("GELLO_BAUDRATE", "57600"))
     print(
         f"Opening GELLO Dynamixel chain at {gello_port} (baud {baudrate}) ...",
         flush=True,
@@ -562,7 +562,7 @@ def _calib_setup_gello_raw():
         driver.get_joints()
         time.sleep(0.01)
     print("GELLO ready.", flush=True)
-    return driver, gello_port
+    return driver, gello_port, baudrate
 
 
 def _calib_read_raw_arm(driver, n_samples: int = 30) -> np.ndarray:
@@ -633,7 +633,7 @@ def _calib_half_pi_label(x: float) -> str:
 def run_calibrate(_args: argparse.Namespace) -> None:
     """Two-pose sign + offset calibration. Moves the robot via reset_joint."""
     controller = setup_franky()
-    driver, gello_port = _calib_setup_gello_raw()
+    driver, gello_port, baudrate = _calib_setup_gello_raw()
 
     print_banner("Calibration plan — review before any motion")
     _calib_describe_pose("POSE A (Franka home)", CALIB_POSE_A)
@@ -649,13 +649,13 @@ def run_calibrate(_args: argparse.Namespace) -> None:
     )
     print(
         f"  max |Δ| = {float(np.max(np.abs(CALIB_POSE_B - CALIB_POSE_A))):.3f} rad "
-        "(safety guard = 1.5 rad)"
+        "(safety guard = 1.6 rad)"
     )
     print()
     print(
         "The robot will be moved twice (A → wait → B → wait) using\n"
         "reset_joint at ~4.5% effective dynamics.  Each move is gated by\n"
-        "the 1.5 rad max_joint_delta guard."
+        "the 1.6 rad max_joint_delta guard."
     )
     print()
     confirm_or_exit("Proceed with calibration? [y/N]: ")
@@ -784,8 +784,8 @@ def run_calibrate(_args: argparse.Namespace) -> None:
         f"        joint_signs=({sign_tuple}),\n"
         f"        gripper_config=({CALIB_GRIPPER_ID}, "
         f"{int(round(grip_open_deg))}, {int(round(grip_close_deg))}),\n"
-        f"        baudrate=1_000_000,\n"
-        f"    ),"
+        + (f"        baudrate={baudrate},\n" if baudrate != 57600 else "")
+        + f"    ),"
     )
     print()
     print("After pasting, restart any process that imports gello (no need to")
@@ -860,7 +860,7 @@ def run_reset_to_gello(_args: argparse.Namespace) -> None:
                 )
         sys.exit(1)
 
-    if max_delta > 1.5:
+    if max_delta > 1.6:
         print(
             colour(
                 f"\n  WARNING: Max delta is {max_delta:.2f} rad "

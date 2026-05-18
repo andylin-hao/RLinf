@@ -520,6 +520,17 @@ install_openpi_model() {
             install_flash_attn
             install_roboverse_env
             ;;
+        franka-franky)
+            create_and_sync_venv
+            install_common_embodied_deps
+            uv sync --extra franka --inexact --active $NO_INSTALL_RLINF_CMD
+            if [ "$NO_ROOT" -eq 0 ]; then
+                bash $SCRIPT_DIR/embodied/franky_install.sh
+            fi
+            install_franka_franky_env
+            uv pip install git+${GITHUB_PREFIX}https://github.com/RLinf/openpi
+            install_flash_attn
+            ;;
         *)
             echo "Environment '$ENV_NAME' is not supported for OpenPI model." >&2
             exit 1
@@ -947,11 +958,30 @@ install_franka_env() {
 }
 
 install_franka_franky_env() {
-    # franky-control ships manylinux wheels for common Python / libfranka
-    # combinations; on a mismatched host pip falls back to a source build
-    # that needs the libfranka headers + pinocchio installed by
-    # requirements/embodied/franky_install.sh.
-    uv pip install "franky-control>=0.15.0"
+    # franky-control wheels are published per-libfranka-version by the
+    # Brunch-Life/franky fork (currently libfranka 0.15.0 and 0.19.0;
+    # 0.18.0 is intentionally NOT published — Franka's 0.18.0 release
+    # has a known impedance-control regression).
+    #
+    # The libfranka version must match your Franka firmware (see
+    # https://frankarobotics.github.io/docs/compatibility.html).  Look up
+    # your firmware, then before running install.sh:
+    #   export LIBFRANKA_VERSION=0.15.0   # or 0.19.0, ...
+    # If unset, defaults to 0.19.0 (latest validated).
+    #
+    # Override the entire wheel reference with FRANKY_WHEEL (URL, local
+    # file path, or PyPI spec) when the host cannot reach github.com.
+    local LIBFRANKA_VERSION="${LIBFRANKA_VERSION:-0.19.0}"
+    local PYTAG
+    PYTAG=$(python -c "import sys; print(f'cp{sys.version_info.major}{sys.version_info.minor}')")
+    local FRANKY_WHEEL="${FRANKY_WHEEL:-https://github.com/Brunch-Life/franky/releases/download/wheels-libfranka-${LIBFRANKA_VERSION}/franky_control-1.1.3-${PYTAG}-${PYTAG}-manylinux_2_28_x86_64.whl}"
+    echo "Installing franky-control (libfranka $LIBFRANKA_VERSION): $FRANKY_WHEEL"
+    # --no-deps: franky-control's transitive deps (numpy, websockets) are
+    # already pinned by the franka extra and installed by `uv sync` above.
+    # Without --no-deps, uv pip install re-resolves to highest and lifts
+    # numpy past the franka extra's `numpy<2` pin (and similarly omegaconf
+    # past its 2.4.0.dev4 pin), breaking Ray pickle/unpickle across nodes.
+    uv pip install --reinstall-package franky-control --no-deps "$FRANKY_WHEEL"
 
     # If a libfranka build already exists on disk (e.g. under
     # $VENV_DIR/franka_catkin_ws/libfranka/build), make its .so

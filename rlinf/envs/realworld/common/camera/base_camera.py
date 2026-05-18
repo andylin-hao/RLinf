@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 import queue
 import threading
 import time
@@ -20,6 +21,8 @@ from dataclasses import dataclass
 from typing import Optional
 
 import numpy as np
+
+_logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -84,8 +87,19 @@ class BaseCamera(ABC):
     def _capture_frames(self):
         while self._frame_capturing_start:
             time.sleep(1 / self._camera_info.fps)
-            has_frame, frame = self._read_frame()
+            try:
+                has_frame, frame = self._read_frame()
+            except Exception as e:
+                _logger.error(
+                    "[%s] _read_frame raised %s: %s — exiting capture thread.",
+                    self._camera_info.name, type(e).__name__, e,
+                )
+                break
             if not has_frame:
+                _logger.error(
+                    "[%s] _read_frame returned (False, None) — exiting capture thread.",
+                    self._camera_info.name,
+                )
                 break
             if not self._frame_queue.empty():
                 try:

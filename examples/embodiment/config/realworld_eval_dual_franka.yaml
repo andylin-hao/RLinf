@@ -3,6 +3,7 @@ defaults:
   - env/realworld_dual_franka_rot6d@env.eval
   - model/pi0_5@actor.model
   - training_backend/fsdp@actor.fsdp_config
+  - weight_syncer/patch_syncer@weight_syncer
   - override hydra/job_logging: stdout
 
 hydra:
@@ -29,7 +30,7 @@ cluster:
       node_ranks: 0-1
       env_configs:
         - node_ranks: 0
-          python_interpreter_path: PYTHON_INTERPRETER_PATH  # Replace: e.g. /path/to/.venv-openpi/bin/python
+          python_interpreter_path: null  # Only set when node 0 needs a different venv from the entry script.
       hardware:
         type: DualFranka
         configs:
@@ -102,9 +103,6 @@ env:
       target_ee_pose:                         # Replace if your workspace differs
         - [0.5, -0.2, 0.5, -3.14, 0.0, 0.0]
         - [0.5,  0.2, 0.5, -3.14, 0.0, 0.0]
-      reset_ee_pose:                          # Replace if your workspace differs
-        - [0.5, -0.2, 0.6, -3.14, 0.0, 0.0]
-        - [0.5,  0.2, 0.6, -3.14, 0.0, 0.0]
       success_hold_steps: 1
 
 rollout:
