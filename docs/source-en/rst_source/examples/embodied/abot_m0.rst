@@ -332,14 +332,14 @@ Common environment setup:
 .. code-block:: bash
 
    export LIBERO_TYPE=standard
-   python examples/embodiment/train_embodied_agent.py --config-name libero_10_ppo_abot_m0
+   bash examples/embodiment/run_embodiment.sh libero_10_ppo_abot_m0
 
 **LIBERO-Plus:**
 
 .. code-block:: bash
 
    export LIBERO_TYPE=plus
-   python examples/embodiment/train_embodied_agent.py --config-name libero_10_plus_ppo_abot_m0
+   bash examples/embodiment/run_embodiment.sh libero_10_plus_ppo_abot_m0
 
 Visualization
 -------------

@@ -116,7 +116,7 @@ rollout:
 
   model:
     model_path: "path_to_your_model"
-    precision: ${actor.model.precision}
+    precision: "bf16"
 
 actor:
   group_name: "ActorGroup"
@@ -129,6 +129,7 @@ actor:
   model:
     model_path: "path_to_your_model"
     model_type: "abot_m0"
+    precision: "fp32"
     num_action_chunks: 10
     add_value_head: true
 
@@ -146,9 +147,9 @@ actor:
     strategy: "fsdp"
     gradient_checkpointing: true
     mixed_precision:
-      param_dtype: ${actor.model.precision}
-      reduce_dtype: ${actor.model.precision}
-      buffer_dtype: ${actor.model.precision}
+      param_dtype: "bf16"
+      reduce_dtype: "bf16"
+      buffer_dtype: "bf16"
 
 reward:
   use_reward_model: false
