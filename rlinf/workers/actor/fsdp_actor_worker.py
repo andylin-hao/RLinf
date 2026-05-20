@@ -45,7 +45,7 @@ from rlinf.hybrid_engines.fsdp.utils import (
 from rlinf.hybrid_engines.weight_syncer import WeightSyncer
 from rlinf.models import get_model
 from rlinf.models.embodiment.base_policy import ForwardType
-from rlinf.scheduler import Channel, Cluster, CollectiveGroupOptions, Worker
+from rlinf.scheduler import Channel, Cluster, Worker
 from rlinf.utils.data_iter_utils import (
     get_iterator_k_split,
     get_reverse_idx,
@@ -985,13 +985,6 @@ class EmbodiedFSDPActor(FSDPModelManager, Worker):
         self.enable_offload = self.cfg.actor.get("enable_offload", False)
         self.entropy_op_type = self.cfg.algorithm.get("entropy_op_type", "torch")
 
-        # Sync weight comm options
-        max_ctas = cfg.rollout.get("sync_weight_nccl_max_ctas", None)
-        min_ctas = cfg.rollout.get("sync_weight_nccl_min_ctas", None)
-        self._sync_weight_comm_options = CollectiveGroupOptions(
-            accel_max_ctas=max_ctas, accel_min_ctas=min_ctas
-        )
-
         self.enable_sft_co_train = cfg.actor.get("enable_sft_co_train", False)
         self.version = 0
         if self.enable_sft_co_train:
@@ -1000,6 +993,7 @@ class EmbodiedFSDPActor(FSDPModelManager, Worker):
         # create weight syncer
         weight_syncer_cfg = OmegaConf.select(cfg, "weight_syncer")
         self.weight_syncer = WeightSyncer.create(weight_syncer_cfg)
+        self._sync_weight_comm_options = self.weight_syncer.comm_options
 
         self._is_weight_sender = self._rank == 0
         self._actor_world_size = self._world_size

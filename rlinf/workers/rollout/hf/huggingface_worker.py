@@ -28,7 +28,7 @@ from rlinf.data.embodied_io_struct import (
 from rlinf.hybrid_engines.weight_syncer import WeightSyncer
 from rlinf.models import get_model
 from rlinf.models.embodiment.base_policy import BasePolicy
-from rlinf.scheduler import Channel, Cluster, CollectiveGroupOptions, Worker
+from rlinf.scheduler import Channel, Cluster, Worker
 from rlinf.utils.comm_mapping import CommMapper
 from rlinf.utils.placement import HybridComponentPlacement
 
@@ -56,12 +56,6 @@ class MultiStepRolloutWorker(Worker):
         self.collect_transitions = self.cfg.rollout.get("collect_transitions", False)
         self.expert_model = None
 
-        # Sync weight comm options
-        max_ctas = cfg.rollout.get("sync_weight_nccl_max_ctas", None)
-        min_ctas = cfg.rollout.get("sync_weight_nccl_min_ctas", None)
-        self._sync_weight_comm_options = CollectiveGroupOptions(
-            accel_max_ctas=max_ctas, accel_min_ctas=min_ctas
-        )
         self.total_num_train_envs = cfg.env.train.total_num_envs
         self.total_num_eval_envs = cfg.env.eval.total_num_envs
         self.num_pipeline_stages = cfg.rollout.pipeline_stage_num
@@ -92,6 +86,8 @@ class MultiStepRolloutWorker(Worker):
             "rollout.weight_syncer config must be provided"
         )
         self.weight_syncer = WeightSyncer.create(weight_syncer_cfg)
+        self._sync_weight_comm_options = self.weight_syncer.comm_options
+        print(f"self._sync_weight_comm_options: {self._sync_weight_comm_options}")
 
     def init_worker(self):
         rollout_model_config = copy.deepcopy(self.cfg.actor.model)
