@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Policy transforms for dual-Franka rot6d SFT.
+"""Policy transforms for dual-Franka TCP rot6d SFT.
 
 state[:20] = [L_grip, R_grip, L_xyz(3), L_rot6d(6), R_xyz(3), R_rot6d(6)].
 actions[:20] = per-arm [xyz(3), rot6d(6), grip(1)] (training layout).
@@ -61,8 +61,8 @@ def _extract_extra_views(data: dict) -> tuple[np.ndarray, np.ndarray]:
 
 
 @dataclasses.dataclass(frozen=True)
-class DualFrankaRot6dInputs(transforms.DataTransformFn):
-    """Feeds dual-Franka rot6d observations into pi0 / pi05."""
+class DualFrankaTcpRot6dInputs(transforms.DataTransformFn):
+    """Feeds dual-Franka TCP rot6d observations into pi0 / pi05."""
 
     action_dim: int
     model_type: _model.ModelType = _model.ModelType.PI0
@@ -102,7 +102,7 @@ class DualFrankaRot6dInputs(transforms.DataTransformFn):
 
 
 @dataclasses.dataclass(frozen=True)
-class DualFrankaRot6dOutputs(transforms.DataTransformFn):
+class DualFrankaTcpRot6dOutputs(transforms.DataTransformFn):
     """Recover 20-d rot6d action from padded model output."""
 
     output_action_dim: int = 20

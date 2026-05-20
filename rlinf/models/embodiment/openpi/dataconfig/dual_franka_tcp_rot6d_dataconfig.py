@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Data config for dual-Franka rot6d SFT — body-frame SE(3) delta on rot6d
+"""Data config for dual-Franka TCP rot6d SFT — body-frame SE(3) delta on rot6d
 (component-wise subtraction would break on rotations)."""
 
 import dataclasses
@@ -22,7 +22,7 @@ import openpi.transforms as _transforms
 from openpi.training.config import DataConfig, DataConfigFactory, ModelTransformFactory
 from typing_extensions import override
 
-from rlinf.models.embodiment.openpi.policies import dual_franka_rot6d_policy
+from rlinf.models.embodiment.openpi.policies import dual_franka_tcp_rot6d_policy
 from rlinf.models.embodiment.openpi.transforms import (
     DUAL_ARM_ROT6D_LAYOUT,
     RigidBodyAbsoluteActions,
@@ -31,7 +31,7 @@ from rlinf.models.embodiment.openpi.transforms import (
 
 
 @dataclasses.dataclass(frozen=True)
-class DualFrankaRot6dDataConfig(DataConfigFactory):
+class DualFrankaTcpRot6dDataConfig(DataConfigFactory):
     default_prompt: str | None = None
 
     # SE(3) delta at train, absolute recovery at inference. pi0/pi05 trains
@@ -59,12 +59,12 @@ class DualFrankaRot6dDataConfig(DataConfigFactory):
 
         data_transforms = _transforms.Group(
             inputs=[
-                dual_franka_rot6d_policy.DualFrankaRot6dInputs(
+                dual_franka_tcp_rot6d_policy.DualFrankaTcpRot6dInputs(
                     action_dim=model_config.action_dim,
                     model_type=model_config.model_type,
                 )
             ],
-            outputs=[dual_franka_rot6d_policy.DualFrankaRot6dOutputs()],
+            outputs=[dual_franka_tcp_rot6d_policy.DualFrankaTcpRot6dOutputs()],
         )
 
         if self.extra_delta_transform:

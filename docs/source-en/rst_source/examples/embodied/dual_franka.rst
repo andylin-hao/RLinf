@@ -3,7 +3,7 @@ Real-World Dual-Franka: GELLO Collection, π₀.₅ SFT, Deployment
 
 End-to-end guide for the **dual-arm Franka** real-world setup in RLinf:
 two-node bring-up, 1 kHz GELLO joint-space dual-arm data collection,
-π₀.₅ SFT in a 20-D rot6d action space, and foot-pedal-controlled
+π₀.₅ SFT in a 20-D tcp_rot6d action space, and foot-pedal-controlled
 deployment back to hardware.
 
 Read first:
@@ -344,8 +344,8 @@ Hardware YAML
 Hardware config lives in
 ``examples/embodiment/config/env/realworld_dual_franka_joint.yaml``
 (collection) and
-``examples/embodiment/config/env/realworld_dual_franka_rot6d.yaml``
-(rot6d deployment). Per-host placeholders:
+``examples/embodiment/config/env/realworld_dual_franka_tcp_rot6d.yaml``
+(tcp_rot6d deployment). Per-host placeholders:
 
 * ``LEFT_ROBOT_IP`` / ``RIGHT_ROBOT_IP`` — FCI IP of each arm
   (e.g. ``172.16.0.2``).
@@ -489,7 +489,7 @@ Output format
 
 LeRobot v2.1, one shard per session at
 ``<save_dir>/rank_0/id_{N}/``. ``meta/info.json`` has
-``state=[68]`` and ``actions=[16]`` (joint) or ``[20]`` (rot6d).
+``state=[68]`` and ``actions=[16]`` (joint) or ``[20]`` (tcp_rot6d).
 
 Key per-frame fields:
 
@@ -515,22 +515,22 @@ writes into a fresh ``id_{N}``. ``num_data_episodes`` is the
 accumulated cross-session target.
 
 
-Backfill rot6d and norm_stats
------------------------------
+Backfill tcp_rot6d and norm_stats
+---------------------------------
 
 Collection produces 16-D joint actions and 68-D state; π₀.₅ SFT
 needs 20-D rot6d (``[xyz(3) + rot6d(6) + grip(1)] × 2``). Backfill
 offline first, then compute norm_stats.
 
 ``<repo_id>`` is the dataset path relative to ``HF_LEROBOT_HOME``;
-``joint_v1`` / ``rot6d_v1`` are version subdirs.
+``joint_v1`` / ``tcp_rot6d_v1`` are version subdirs.
 
 .. code-block:: bash
 
    export PYTHONPATH=$PWD:${PYTHONPATH:-}
-   python toolkits/dual_franka/backfill_rot6d.py \
+   python toolkits/dual_franka/backfill_tcp_rot6d.py \
        --src $HF_LEROBOT_HOME/<repo_id>/joint_v1 \
-       --dst $HF_LEROBOT_HOME/<repo_id>/rot6d_v1
+       --dst $HF_LEROBOT_HOME/<repo_id>/tcp_rot6d_v1
 
 The script rewrites the first 20 state slots into rot6d (sliced
 from the existing tcp_pose columns, no FK), widens actions to 20-D
@@ -543,33 +543,33 @@ Re-backfilling an already-converted dataset errors out.
    export PYTHONPATH=$PWD:${PYTHONPATH:-}
    export HF_LEROBOT_HOME=/path/to/lerobot_root
    python toolkits/lerobot/calculate_norm_stats.py \
-       --config-name pi05_dualfranka_rot6d \
-       --repo-id <repo_id>/rot6d_v1
+       --config-name pi05_dualfranka_tcp_rot6d \
+       --repo-id <repo_id>/tcp_rot6d_v1
 
 Writes
-``<openpi_assets_dirs>/pi05_dualfranka_rot6d/<repo_id>/norm_stats.json``.
+``<openpi_assets_dirs>/pi05_dualfranka_tcp_rot6d/<repo_id>/norm_stats.json``.
 **Compute after backfill**, otherwise the stats reflect absolute
 targets rather than body-frame deltas.
 
 
-SFT (π₀.₅, rot6d_v1)
---------------------
+SFT (π₀.₅, tcp_rot6d_v1)
+------------------------
 
 SFT runs on a remote GPU training cluster, not on node 0 / node 1.
-Push the rot6d dataset to the cluster, train there, pull ckpt +
+Push the tcp_rot6d dataset to the cluster, train there, pull ckpt +
 norm_stats back to node 0 for deployment.
 
 1. Push dataset (node 0):
 
    .. code-block:: bash
 
-      rsync -av $HF_LEROBOT_HOME/<repo_id>/rot6d_v1/ \
-          <train>:$HF_LEROBOT_HOME/<repo_id>/rot6d_v1/
+      rsync -av $HF_LEROBOT_HOME/<repo_id>/tcp_rot6d_v1/ \
+          <train>:$HF_LEROBOT_HOME/<repo_id>/tcp_rot6d_v1/
 
 2. Install + train (on ``<train>``). Set
    ``runner.logger.wandb_entity`` and
    ``cluster.component_placement`` in
-   ``examples/sft/config/realworld_sft_openpi_dual_franka_rot6d.yaml``
+   ``examples/sft/config/realworld_sft_openpi_dual_franka_tcp_rot6d.yaml``
    first.
 
    .. code-block:: bash
@@ -580,17 +580,17 @@ norm_stats back to node 0 for deployment.
 
       export PYTHONPATH=$PWD:${PYTHONPATH:-}
       export HF_LEROBOT_HOME=/path/to/lerobot_root
-      export DUAL_FRANKA_DATA_ROOT=$HF_LEROBOT_HOME/<repo_id>/rot6d_v1
+      export DUAL_FRANKA_DATA_ROOT=$HF_LEROBOT_HOME/<repo_id>/tcp_rot6d_v1
       export PI05_BASE_CKPT=/path/to/pi05/torch
 
       python toolkits/lerobot/calculate_norm_stats.py \
-          --config-name pi05_dualfranka_rot6d \
-          --repo-id <repo_id>/rot6d_v1
+          --config-name pi05_dualfranka_tcp_rot6d \
+          --repo-id <repo_id>/tcp_rot6d_v1
       mkdir -p $PI05_BASE_CKPT/<repo_id>
-      mv <openpi_assets_dirs>/pi05_dualfranka_rot6d/<repo_id>/norm_stats.json \
+      mv <openpi_assets_dirs>/pi05_dualfranka_tcp_rot6d/<repo_id>/norm_stats.json \
          $PI05_BASE_CKPT/<repo_id>/norm_stats.json
 
-      bash examples/sft/run_vla_sft.sh realworld_sft_openpi_dual_franka_rot6d
+      bash examples/sft/run_vla_sft.sh realworld_sft_openpi_dual_franka_tcp_rot6d
 
    Ckpts land at
    ``<log_path>/checkpoints/global_step_<N>/actor/model_state_dict/full_weights.pt``.

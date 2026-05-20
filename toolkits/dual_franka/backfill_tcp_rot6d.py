@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Backfill a joint-action dual-Franka LeRobot dataset into rot6d_v1.
+"""Backfill a joint-action dual-Franka LeRobot dataset into tcp_rot6d_v1.
 
 The source ``actions`` are joint-space but ``state`` already records TCP
 pose (xyz + xyzw quat). No FK is run: the rot6d layout is built by
@@ -24,9 +24,9 @@ untouched.
 Run from the repo root::
 
     export PYTHONPATH=$(pwd)
-    python toolkits/dual_franka/backfill_rot6d.py \\
+    python toolkits/dual_franka/backfill_tcp_rot6d.py \\
         --src /path/to/collected_data/rank_0/id_0 \\
-        --dst /path/to/lerobot_rot6d_root
+        --dst /path/to/lerobot_tcp_rot6d_root
 """
 
 from __future__ import annotations
@@ -327,7 +327,7 @@ def backfill(src: Path, dst: Path, overwrite: bool = False) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Backfill a dual-Franka joint-space LeRobot dataset into rot6d_v1."
+        description="Backfill a dual-Franka joint-space LeRobot dataset into tcp_rot6d_v1."
     )
     parser.add_argument(
         "--src",
@@ -339,7 +339,7 @@ def main() -> int:
         "--dst",
         type=Path,
         required=True,
-        help="Output LeRobot root for the rot6d_v1 dataset (must not exist unless --overwrite).",
+        help="Output LeRobot root for the tcp_rot6d_v1 dataset (must not exist unless --overwrite).",
     )
     parser.add_argument(
         "--overwrite",

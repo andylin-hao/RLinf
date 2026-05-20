@@ -32,8 +32,8 @@ from rlinf.models.embodiment.openpi.dataconfig.behavior_dataconfig import (
 from rlinf.models.embodiment.openpi.dataconfig.calvin_dataconfig import (
     LeRobotCalvinDataConfig,
 )
-from rlinf.models.embodiment.openpi.dataconfig.dual_franka_rot6d_dataconfig import (
-    DualFrankaRot6dDataConfig,
+from rlinf.models.embodiment.openpi.dataconfig.dual_franka_tcp_rot6d_dataconfig import (
+    DualFrankaTcpRot6dDataConfig,
 )
 from rlinf.models.embodiment.openpi.dataconfig.franka_co_training_dataconfig import (
     LeRobotFrankaEEDataConfig,
@@ -401,11 +401,11 @@ _CONFIGS = [
         pytorch_weight_path="checkpoints/torch/pi05_base",
     ),
     TrainConfig(
-        name="pi05_dualfranka_rot6d",
+        name="pi05_dualfranka_tcp_rot6d",
         model=pi0_config.Pi0Config(
             pi05=True, action_horizon=20, discrete_state_input=False
         ),
-        data=DualFrankaRot6dDataConfig(
+        data=DualFrankaTcpRot6dDataConfig(
             repo_id="",
             base_config=DataConfig(prompt_from_task=True),
             assets=AssetsConfig(assets_dir="checkpoints/torch/pi05_base/assets"),

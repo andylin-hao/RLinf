@@ -2,7 +2,7 @@
 ====================================================
 
 本指南是 RLinf 中 **双臂 Franka** 真机的端到端流程：双节点环境搭建、
-1 kHz GELLO 关节空间双臂数据采集、π₀.₅ 在 20 维 rot6d 动作空间上的
+1 kHz GELLO 关节空间双臂数据采集、π₀.₅ 在 20 维 tcp_rot6d 动作空间上的
 SFT 微调，以及通过脚踏开关将训练好的策略部署回真机。
 
 阅读本页前请先阅读：
@@ -308,8 +308,8 @@ GELLO 标定
 双 Franka 的硬件配置写在
 ``examples/embodiment/config/env/realworld_dual_franka_joint.yaml``
 （采集）和
-``examples/embodiment/config/env/realworld_dual_franka_rot6d.yaml``
-（rot6d 部署）。参考这两份示例改即可，需要按本机替换的占位符：
+``examples/embodiment/config/env/realworld_dual_franka_tcp_rot6d.yaml``
+（tcp_rot6d 部署）。参考这两份示例改即可，需要按本机替换的占位符：
 
 * ``LEFT_ROBOT_IP`` / ``RIGHT_ROBOT_IP`` —— 左右臂 FCI IP（如
   ``172.16.0.2``）。
@@ -439,7 +439,7 @@ monitor 单独存在是因为 Ray 的 log monitor 缓冲会破坏 tqdm 原位刷
 
 LeRobot v2.1，每会话一个 shard：``<save_dir>/rank_0/id_{N}/``\ 。
 ``meta/info.json`` 里 ``state=[68]``\ 、\ ``actions=[16]``\ （joint）
-或 ``[20]``\ （rot6d）。
+或 ``[20]``\ （tcp_rot6d）。
 
 关键帧字段：
 
@@ -462,21 +462,21 @@ LeRobot v2.1，每会话一个 shard：``<save_dir>/rank_0/id_{N}/``\ 。
 ``num_data_episodes`` 是跨会话累计目标。
 
 
-回填 rot6d 与 norm_stats
--------------------------
+回填 tcp_rot6d 与 norm_stats
+-----------------------------
 
-采集的是 16 维 joint actions + 68 维 state；π₀.₅ SFT 要求 20 维 rot6d
+采集的是 16 维 joint actions + 68 维 state；π₀.₅ SFT 要求 20 维 tcp_rot6d
 （``[xyz(3) + rot6d(6) + grip(1)] × 2``\ ）。先离线回填，再算 norm_stats。
 
 ``<repo_id>`` 是数据集相对 ``HF_LEROBOT_HOME`` 的路径，
-``joint_v1`` / ``rot6d_v1`` 是版本子目录。
+``joint_v1`` / ``tcp_rot6d_v1`` 是版本子目录。
 
 .. code-block:: bash
 
    export PYTHONPATH=$PWD:${PYTHONPATH:-}
-   python toolkits/dual_franka/backfill_rot6d.py \
+   python toolkits/dual_franka/backfill_tcp_rot6d.py \
        --src $HF_LEROBOT_HOME/<repo_id>/joint_v1 \
-       --dst $HF_LEROBOT_HOME/<repo_id>/rot6d_v1
+       --dst $HF_LEROBOT_HOME/<repo_id>/tcp_rot6d_v1
 
 回填脚本：state 前 20 维从 tcp_pose 切出来转 rot6d（不跑 FK）；actions
 扩到 20 维，xyz/rot6d 用**下一帧** tcp_pose 当当前目标，gripper 槽位
@@ -487,28 +487,28 @@ LeRobot v2.1，每会话一个 shard：``<save_dir>/rank_0/id_{N}/``\ 。
    export PYTHONPATH=$PWD:${PYTHONPATH:-}
    export HF_LEROBOT_HOME=/path/to/lerobot_root
    python toolkits/lerobot/calculate_norm_stats.py \
-       --config-name pi05_dualfranka_rot6d \
-       --repo-id <repo_id>/rot6d_v1
+       --config-name pi05_dualfranka_tcp_rot6d \
+       --repo-id <repo_id>/tcp_rot6d_v1
 
-输出 ``<openpi_assets_dirs>/pi05_dualfranka_rot6d/<repo_id>/norm_stats.json``\ 。
+输出 ``<openpi_assets_dirs>/pi05_dualfranka_tcp_rot6d/<repo_id>/norm_stats.json``\ 。
 **回填后才算**\ ，否则 stats 对的是绝对目标而非 body-frame delta。
 
 
-SFT（π₀.₅，rot6d_v1）
----------------------
+SFT（π₀.₅，tcp_rot6d_v1）
+-------------------------
 
-SFT 跑在远端 GPU 训练集群上，不在 node 0 / node 1。把 rot6d 数据集
+SFT 跑在远端 GPU 训练集群上，不在 node 0 / node 1。把 tcp_rot6d 数据集
 推到训练集群、在那边训练、把 ckpt + norm_stats 拉回 node 0 给部署用。
 
 1. 推数据集（node 0）：
 
    .. code-block:: bash
 
-      rsync -av $HF_LEROBOT_HOME/<repo_id>/rot6d_v1/ \
-          <train>:$HF_LEROBOT_HOME/<repo_id>/rot6d_v1/
+      rsync -av $HF_LEROBOT_HOME/<repo_id>/tcp_rot6d_v1/ \
+          <train>:$HF_LEROBOT_HOME/<repo_id>/tcp_rot6d_v1/
 
 2. 装环境 + 训练（在 ``<train>``\ ）。开训前在
-   ``examples/sft/config/realworld_sft_openpi_dual_franka_rot6d.yaml``
+   ``examples/sft/config/realworld_sft_openpi_dual_franka_tcp_rot6d.yaml``
    里把 ``runner.logger.wandb_entity`` 和
    ``cluster.component_placement`` 改成你的值。
 
@@ -520,17 +520,17 @@ SFT 跑在远端 GPU 训练集群上，不在 node 0 / node 1。把 rot6d 数据
 
       export PYTHONPATH=$PWD:${PYTHONPATH:-}
       export HF_LEROBOT_HOME=/path/to/lerobot_root
-      export DUAL_FRANKA_DATA_ROOT=$HF_LEROBOT_HOME/<repo_id>/rot6d_v1
+      export DUAL_FRANKA_DATA_ROOT=$HF_LEROBOT_HOME/<repo_id>/tcp_rot6d_v1
       export PI05_BASE_CKPT=/path/to/pi05/torch
 
       python toolkits/lerobot/calculate_norm_stats.py \
-          --config-name pi05_dualfranka_rot6d \
-          --repo-id <repo_id>/rot6d_v1
+          --config-name pi05_dualfranka_tcp_rot6d \
+          --repo-id <repo_id>/tcp_rot6d_v1
       mkdir -p $PI05_BASE_CKPT/<repo_id>
-      mv <openpi_assets_dirs>/pi05_dualfranka_rot6d/<repo_id>/norm_stats.json \
+      mv <openpi_assets_dirs>/pi05_dualfranka_tcp_rot6d/<repo_id>/norm_stats.json \
          $PI05_BASE_CKPT/<repo_id>/norm_stats.json
 
-      bash examples/sft/run_vla_sft.sh realworld_sft_openpi_dual_franka_rot6d
+      bash examples/sft/run_vla_sft.sh realworld_sft_openpi_dual_franka_tcp_rot6d
 
    Ckpt 落在
    ``<log_path>/checkpoints/global_step_<N>/actor/model_state_dict/full_weights.pt``\ 。

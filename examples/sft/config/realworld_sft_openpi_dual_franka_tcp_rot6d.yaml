@@ -10,8 +10,8 @@ hydra:
   searchpath:
     - file://${oc.env:EMBODIED_PATH}/config/
 
-# Dual-Franka rot6d_v1 SFT.
-#   - config_name: pi05_dualfranka_rot6d (override repo_id at runtime)
+# Dual-Franka tcp_rot6d_v1 SFT.
+#   - config_name: pi05_dualfranka_tcp_rot6d (override repo_id at runtime)
 #   - 20-d state/action [xyz + rot6d + grip] per arm
 #   - Body-frame SE(3) RigidBodyDeltaActions at training time (no euler wrap)
 #
@@ -20,7 +20,7 @@ hydra:
 #   export DUAL_FRANKA_DATA_ROOT=/path/to/lerobot_root/<dataset>
 #   export PI05_BASE_CKPT=/path/to/pi05/torch
 #   python toolkits/lerobot/calculate_norm_stats.py \
-#       --config-name pi05_dualfranka_rot6d \
+#       --config-name pi05_dualfranka_tcp_rot6d \
 #       --repo-id <YOUR_HF_USER>/<dataset>
 
 cluster:
@@ -33,7 +33,7 @@ runner:
   logger:
     log_path: "../results"
     project_name: dual-franka-openpi
-    experiment_name: "dual_franka_rot6d_v1"
+    experiment_name: "dual_franka_tcp_rot6d_v1"
     wandb_entity: WANDB_ENTITY  # Replace: your wandb team / user (or remove if you don't use wandb)
     logger_backends: ["wandb"]
 
@@ -61,11 +61,11 @@ actor:
     precision: null
     # Path to the pi0.5 base checkpoint (torch). Set PI05_BASE_CKPT.
     model_path: ${oc.env:PI05_BASE_CKPT}
-    action_dim: 20 # dual-franka rot6d: [L_xyz, L_rot6d, L_grip, R_xyz, R_rot6d, R_grip]
+    action_dim: 20 # dual-franka tcp_rot6d: [L_xyz, L_rot6d, L_grip, R_xyz, R_rot6d, R_grip]
     num_action_chunks: 20 # matches Pi0Config action_horizon
     add_value_head: False
     openpi:
-      config_name: "pi05_dualfranka_rot6d"
+      config_name: "pi05_dualfranka_tcp_rot6d"
       detach_critic_input: True
       # model/pi0_5 defaults train_expert_only to True, which freezes
       # PaliGemma and breaks FSDP+gradient-checkpointing with a

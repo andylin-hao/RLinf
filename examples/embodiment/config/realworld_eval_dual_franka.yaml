@@ -1,6 +1,6 @@
 defaults:
-  - env/realworld_dual_franka_rot6d@env.train
-  - env/realworld_dual_franka_rot6d@env.eval
+  - env/realworld_dual_franka_tcp_rot6d@env.train
+  - env/realworld_dual_franka_tcp_rot6d@env.eval
   - model/pi0_5@actor.model
   - training_backend/fsdp@actor.fsdp_config
   - weight_syncer/patch_syncer@weight_syncer
@@ -135,10 +135,10 @@ actor:
     model_path: ${rollout.model.model_path}
     precision: null
     num_action_chunks: 20          # matches SFT action_horizon
-    action_dim: 20                 # dual-franka rot6d: [L_xyz, L_rot6d, L_grip, R_xyz, R_rot6d, R_grip]
+    action_dim: 20                 # dual-franka tcp_rot6d: [L_xyz, L_rot6d, L_grip, R_xyz, R_rot6d, R_grip]
     add_value_head: False
     openpi:
-      config_name: "pi05_dualfranka_rot6d"
+      config_name: "pi05_dualfranka_tcp_rot6d"
       train_expert_only: False
       detach_critic_input: True
       action_chunk: ${actor.model.num_action_chunks}
