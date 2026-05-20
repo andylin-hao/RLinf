@@ -18,7 +18,6 @@ Provides rollout action generation and training-time logprob recomputation
 through the `BasePolicy` interface.
 """
 
-from contextlib import nullcontext
 from typing import Any, Literal, Mapping, Optional
 
 import numpy as np
@@ -288,73 +287,49 @@ class ABotM0ForRLActionPrediction(nn.Module, BasePolicy):
                 for k, v in qwen_inputs.items()
             }
 
-        first_qwen_tensor = next(
-            (v for v in qwen_inputs.values() if isinstance(v, torch.Tensor)),
-            None,
-        )
-        if first_qwen_tensor is None:
-            raise ValueError(
-                "ABot-M0 qwen_inputs must include at least one tensor value."
+        with torch.no_grad():
+            self.base_model.qwen_vl_interface.eval()
+            qwenvl_outputs = self.base_model.qwen_vl_interface(
+                **qwen_inputs,
+                output_attentions=False,
+                output_hidden_states=True,
+                return_dict=True,
             )
+        last_hidden = qwenvl_outputs.hidden_states[-1]  # [B, L, H]
+        if spatial_images is not None:
+            expected_batch = spatial_images.shape[0]
+        else:
+            expected_batch = last_hidden.shape[0] if last_hidden.ndim >= 3 else 1
+        if last_hidden.ndim == 2 and expected_batch == 1:
+            last_hidden = last_hidden.unsqueeze(0)
+        elif (
+            last_hidden.ndim == 3
+            and last_hidden.shape[0] != expected_batch
+            and last_hidden.shape[1] == expected_batch
+        ):
+            last_hidden = last_hidden.transpose(0, 1).contiguous()
 
-        device_type = first_qwen_tensor.device.type
-        autocast_dtype = self.torch_dtype
-        use_autocast = (
-            device_type == "cuda" and autocast_dtype in (torch.float16, torch.bfloat16)
-        ) or (device_type == "cpu" and autocast_dtype == torch.bfloat16)
-        autocast_ctx = (
-            torch.autocast(device_type=device_type, dtype=autocast_dtype)
-            if use_autocast
-            else nullcontext()
-        )
-        with autocast_ctx:
-            with torch.no_grad():
-                self.base_model.qwen_vl_interface.eval()
-                qwenvl_outputs = self.base_model.qwen_vl_interface(
-                    **qwen_inputs,
-                    output_attentions=False,
-                    output_hidden_states=True,
-                    return_dict=True,
-                )
-            last_hidden = qwenvl_outputs.hidden_states[-1]  # [B, L, H]
-            if spatial_images is not None:
-                expected_batch = spatial_images.shape[0]
-            else:
-                expected_batch = last_hidden.shape[0] if last_hidden.ndim >= 3 else 1
-            if last_hidden.ndim == 2 and expected_batch == 1:
-                last_hidden = last_hidden.unsqueeze(0)
-            elif (
-                last_hidden.ndim == 3
-                and last_hidden.shape[0] != expected_batch
-                and last_hidden.shape[1] == expected_batch
-            ):
-                last_hidden = last_hidden.transpose(0, 1).contiguous()
-
-            if spatial_images is None:
-                raise ValueError(
-                    "ABot-M0 _encode_observations requires spatial_images."
-                )
-            batch_images = self._image_tensor_to_pil_batch(spatial_images)
-            with torch.no_grad():
-                spatial_dtype = last_hidden.dtype
-                spatial_model = getattr(self.base_model, "spatial_model", None)
-                if spatial_model is not None:
-                    spatial_model.eval()
-                    first_param = next(iter(spatial_model.parameters()), None)
-                    if first_param is not None:
-                        spatial_dtype = first_param.dtype
-                spatial_input = preprocess_images(
-                    batch_images,
-                    batch_images[0][0].size[0],
-                ).to(device=last_hidden.device, dtype=spatial_dtype)
-                aggregated_tokens_list, ps_idx = (
-                    self.base_model.spatial_model.aggregator(
-                        spatial_input,
-                    )
-                )
-            spatial_tokens = aggregated_tokens_list[-1][:, 0, ps_idx:, :]
-            spatial_tokens = self.base_model.spatial_projector(spatial_tokens)
-            last_hidden = self.base_model.fuser(last_hidden, spatial_tokens)
+        if spatial_images is None:
+            raise ValueError("ABot-M0 _encode_observations requires spatial_images.")
+        batch_images = self._image_tensor_to_pil_batch(spatial_images)
+        with torch.no_grad():
+            spatial_dtype = last_hidden.dtype
+            spatial_model = getattr(self.base_model, "spatial_model", None)
+            if spatial_model is not None:
+                spatial_model.eval()
+                first_param = next(iter(spatial_model.parameters()), None)
+                if first_param is not None:
+                    spatial_dtype = first_param.dtype
+            spatial_input = preprocess_images(
+                batch_images,
+                batch_images[0][0].size[0],
+            ).to(device=last_hidden.device, dtype=spatial_dtype)
+            aggregated_tokens_list, ps_idx = self.base_model.spatial_model.aggregator(
+                spatial_input,
+            )
+        spatial_tokens = aggregated_tokens_list[-1][:, 0, ps_idx:, :]
+        spatial_tokens = self.base_model.spatial_projector(spatial_tokens)
+        last_hidden = self.base_model.fuser(last_hidden, spatial_tokens)
 
         state_tensor = None
         if state is not None:
@@ -576,17 +551,18 @@ class ABotM0ForRLActionPrediction(nn.Module, BasePolicy):
             state=state,
         )
 
-        vl_embs, state_tensor = self._encode_observations(
-            qwen_inputs=qwen_inputs,
-            spatial_images=spatial_images,
-            state=state,
-        )
+        with torch.autocast(device_type="cuda", dtype=self.torch_dtype):
+            vl_embs, state_tensor = self._encode_observations(
+                qwen_inputs=qwen_inputs,
+                spatial_images=spatial_images,
+                state=state,
+            )
 
-        actions, rl_outputs = self.action_head_rl.get_rl_action(
-            vl_embs=vl_embs,
-            state=state_tensor,
-            mode=mode,
-        )
+            actions, rl_outputs = self.action_head_rl.get_rl_action(
+                vl_embs=vl_embs,
+                state=state_tensor,
+                mode=mode,
+            )
 
         runtime_action_dim = self._get_runtime_action_dim()
 
