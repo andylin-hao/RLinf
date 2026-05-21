@@ -219,4 +219,6 @@ class DualGelloJointIntervention(gym.ActionWrapper):
         t = self._stream_thread
         if t is not None and t.is_alive():
             t.join(timeout=2.0)
+        self.left_expert.close()
+        self.right_expert.close()
         return super().close()

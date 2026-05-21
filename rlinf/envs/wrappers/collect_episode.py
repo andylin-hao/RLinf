@@ -574,14 +574,13 @@ class CollectEpisode(gym.Wrapper):
 
         if self._lerobot_writer is None:
             self._lerobot_writer = LeRobotDatasetWriter()
-        writer = self._lerobot_writer
         shard_id = self._next_shard_id
 
-        if writer.dataset is None:
+        if self._lerobot_writer.dataset is None:
             first = ep_data[0]
             wrist_image_keys = self._collect_image_keys(first, "wrist_image")
             extra_view_image_keys = self._collect_image_keys(first, "extra_view_image")
-            writer.create(
+            self._lerobot_writer.create(
                 repo_id=os.path.join(
                     self.save_dir, f"rank_{self.rank}", f"id_{shard_id}"
                 ),
@@ -597,7 +596,7 @@ class CollectEpisode(gym.Wrapper):
                 has_segment_id="segment_id" in first,
             )
             self._next_shard_id = shard_id + 1
-        return writer
+        return self._lerobot_writer
 
     @staticmethod
     def _collect_image_keys(

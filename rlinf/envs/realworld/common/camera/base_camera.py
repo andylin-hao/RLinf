@@ -67,9 +67,9 @@ class BaseCamera(ABC):
     def close(self):
         """Stop the capture thread and release hardware resources."""
         self._frame_capturing_start = False
-        if self._frame_capturing_thread.is_alive():
-            self._frame_capturing_thread.join()
         self._close_device()
+        if self._frame_capturing_thread.is_alive():
+            self._frame_capturing_thread.join(timeout=2.0)
 
     def get_frame(self, timeout: int = 5) -> np.ndarray:
         """Return the most recent frame (blocks up to *timeout* seconds).
