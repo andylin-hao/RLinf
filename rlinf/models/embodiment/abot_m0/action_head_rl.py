@@ -167,7 +167,7 @@ class AMLFlowMatchingActionHeadRL(nn.Module):
         timesteps_tensor = torch.clamp(
             (t_cont * self.num_timestep_buckets).to(dtype=torch.long),
             min=0,
-            max=self.num_timestep_buckets,
+            max=self.num_timestep_buckets - 1,
         )
 
         action_features = self.base.action_encoder(x_t, timesteps_tensor)
