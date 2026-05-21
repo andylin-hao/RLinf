@@ -92,7 +92,9 @@ class BaseCamera(ABC):
             except Exception as e:
                 _logger.error(
                     "[%s] _read_frame raised %s: %s — exiting capture thread.",
-                    self._camera_info.name, type(e).__name__, e,
+                    self._camera_info.name,
+                    type(e).__name__,
+                    e,
                 )
                 break
             if not has_frame:

@@ -785,7 +785,7 @@ def run_calibrate(_args: argparse.Namespace) -> None:
         f"        gripper_config=({CALIB_GRIPPER_ID}, "
         f"{int(round(grip_open_deg))}, {int(round(grip_close_deg))}),\n"
         + (f"        baudrate={baudrate},\n" if baudrate != 57600 else "")
-        + f"    ),"
+        + "    ),"
     )
     print()
     print("After pasting, restart any process that imports gello (no need to")

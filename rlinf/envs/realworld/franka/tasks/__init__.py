@@ -24,16 +24,16 @@ from rlinf.envs.realworld.common.wrappers import (
     apply_single_arm_wrappers,
 )
 from rlinf.envs.realworld.franka.dual_franka_env import DualFrankaEnv as DualFrankaEnv
+from rlinf.envs.realworld.franka.franka_env import FrankaEnv as FrankaEnv
+from rlinf.envs.realworld.franka.tasks.bottle import BottleEnv as BottleEnv
+from rlinf.envs.realworld.franka.tasks.dex_pnp import (
+    DexpnpEnv as DexpnpEnv,
+)
 from rlinf.envs.realworld.franka.tasks.dual_franka_joint_env import (
     DualFrankaJointEnv as DualFrankaJointEnv,
 )
 from rlinf.envs.realworld.franka.tasks.dual_franka_tcp_env import (
     DualFrankaTcpEnv as DualFrankaTcpEnv,
-)
-from rlinf.envs.realworld.franka.franka_env import FrankaEnv as FrankaEnv
-from rlinf.envs.realworld.franka.tasks.bottle import BottleEnv as BottleEnv
-from rlinf.envs.realworld.franka.tasks.dex_pnp import (
-    DexpnpEnv as DexpnpEnv,
 )
 from rlinf.envs.realworld.franka.tasks.franka_bin_relocation import (
     FrankaBinRelocationEnv as FrankaBinRelocationEnv,

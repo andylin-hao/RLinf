@@ -74,8 +74,6 @@ class DualGelloJointIntervention(gym.ActionWrapper):
         )
         self._stream_thread.start()
 
-
-
     def _stream_loop(self) -> None:
         # Gripper events are edge-triggered: open/close RPCs are ~100 ms
         # and streaming them at 1 kHz would starve the serial channel.

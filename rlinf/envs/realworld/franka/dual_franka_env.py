@@ -40,7 +40,6 @@ from rlinf.utils.logging import get_logger
 from .franka_robot_state import FrankaRobotState
 from .franky_controller import FrankyController
 
-
 # Avoids Ray actor name collision when both arms land on the same node.
 _RIGHT_ARM_ENV_IDX_OFFSET = 1000
 # Per-camera get_frame timeout. Short so a stalled camera doesn't drag the
@@ -534,12 +533,8 @@ class DualFrankaEnv(gym.Env):
             {
                 "state": gym.spaces.Dict(
                     {
-                        "tcp_pose": gym.spaces.Box(
-                            -np.inf, np.inf, shape=(2 * 7,)
-                        ),
-                        "tcp_vel": gym.spaces.Box(
-                            -np.inf, np.inf, shape=(2 * 6,)
-                        ),
+                        "tcp_pose": gym.spaces.Box(-np.inf, np.inf, shape=(2 * 7,)),
+                        "tcp_vel": gym.spaces.Box(-np.inf, np.inf, shape=(2 * 6,)),
                         "joint_position": gym.spaces.Box(
                             -np.inf, np.inf, shape=(joint_position_dim,)
                         ),
@@ -547,12 +542,8 @@ class DualFrankaEnv(gym.Env):
                             -np.inf, np.inf, shape=(2 * 7,)
                         ),
                         "gripper_position": gym.spaces.Box(-1, 1, shape=(2,)),
-                        "tcp_force": gym.spaces.Box(
-                            -np.inf, np.inf, shape=(2 * 3,)
-                        ),
-                        "tcp_torque": gym.spaces.Box(
-                            -np.inf, np.inf, shape=(2 * 3,)
-                        ),
+                        "tcp_force": gym.spaces.Box(-np.inf, np.inf, shape=(2 * 3,)),
+                        "tcp_torque": gym.spaces.Box(-np.inf, np.inf, shape=(2 * 3,)),
                     }
                 ),
                 "frames": gym.spaces.Dict(

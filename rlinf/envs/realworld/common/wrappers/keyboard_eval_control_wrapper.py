@@ -61,7 +61,10 @@ class KeyboardEvalControlWrapper(gym.Wrapper):
             time.sleep(self.IDLE_POLL_S)
             for key in self.listener.pop_pressed_keys():
                 now = time.monotonic()
-                if now - self._last_press_ts.get(key, -math.inf) < self.PEDAL_DEBOUNCE_S:
+                if (
+                    now - self._last_press_ts.get(key, -math.inf)
+                    < self.PEDAL_DEBOUNCE_S
+                ):
                     continue
                 self._last_press_ts[key] = now
                 if key == "a":
