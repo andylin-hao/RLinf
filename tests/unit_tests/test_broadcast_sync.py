@@ -47,9 +47,9 @@ def accelerator_device_count():
     return Worker.torch_platform.device_count()
 
 
-def is_cuda():
+def is_accel():
     """Return True only on CUDA; IPC broadcast is not supported on NPU."""
-    return accelerator_is_available() and Worker.torch_device_type == "cuda"
+    return accelerator_is_available()
 
 
 # ---------------------------------------------------------------------------
@@ -163,6 +163,8 @@ class _BroadcastWorker(Worker):
 
 @pytest.fixture(scope="module")
 def cluster():
+    if not is_accel():
+        pytest.skip("Hybrid broadcast IPC integration tests require CUDA.")
     return Cluster(num_nodes=1)
 
 
