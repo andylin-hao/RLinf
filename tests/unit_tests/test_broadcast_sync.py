@@ -162,21 +162,19 @@ class _BroadcastWorker(Worker):
 
 
 @pytest.fixture(scope="module")
-def cuda_cluster():
-    if not is_cuda():
-        pytest.skip("Hybrid broadcast IPC integration tests require CUDA.")
+def cluster():
     return Cluster(num_nodes=1)
 
 
 @pytest.fixture(scope="class")
-def same_gpu_groups(cuda_cluster):
+def same_gpu_groups(cluster):
     """Both worker groups pinned to GPU 0 – exercises the IPC (definitely-same) path."""
     placement = NodePlacementStrategy([0])
     actor = _BroadcastWorker.create_group().launch(
-        cluster=cuda_cluster, placement_strategy=placement, name=_ACTOR_SAME
+        cluster=cluster, placement_strategy=placement, name=_ACTOR_SAME
     )
     rollout = _BroadcastWorker.create_group().launch(
-        cluster=cuda_cluster, placement_strategy=placement, name=_ROLLOUT_SAME
+        cluster=cluster, placement_strategy=placement, name=_ROLLOUT_SAME
     )
     yield actor, rollout
     actor._close()
@@ -184,17 +182,17 @@ def same_gpu_groups(cuda_cluster):
 
 
 @pytest.fixture(scope="class")
-def diff_gpu_groups(cuda_cluster):
+def diff_gpu_groups(cluster):
     """Actor on GPU 0, rollout on GPU 1 – exercises the NCCL sub-group (diff-device) path."""
     if accelerator_device_count() < 2:
         pytest.skip("Different-GPU broadcast test requires at least 2 GPUs.")
     actor = _BroadcastWorker.create_group().launch(
-        cluster=cuda_cluster,
+        cluster=cluster,
         placement_strategy=PackedPlacementStrategy(0, 0),
         name=_ACTOR_DIFF,
     )
     rollout = _BroadcastWorker.create_group().launch(
-        cluster=cuda_cluster,
+        cluster=cluster,
         placement_strategy=PackedPlacementStrategy(1, 1),
         name=_ROLLOUT_DIFF,
     )
@@ -204,7 +202,7 @@ def diff_gpu_groups(cuda_cluster):
 
 
 @pytest.fixture(scope="class")
-def mixed_gpu_groups(cuda_cluster):
+def mixed_gpu_groups(cluster):
     """Actor on GPU 0; rollout group with one worker on GPU 0 and one on GPU 1.
 
     The rollout receiver on GPU 0 is same-device as the actor (IPC path),
@@ -215,12 +213,12 @@ def mixed_gpu_groups(cuda_cluster):
     if accelerator_device_count() < 2:
         pytest.skip("Mixed-GPU broadcast test requires at least 2 GPUs.")
     actor = _BroadcastWorker.create_group().launch(
-        cluster=cuda_cluster,
+        cluster=cluster,
         placement_strategy=PackedPlacementStrategy(0, 0),
         name=_ACTOR_MIXED,
     )
     rollout = _BroadcastWorker.create_group().launch(
-        cluster=cuda_cluster,
+        cluster=cluster,
         placement_strategy=PackedPlacementStrategy(0, 1),
         name=_ROLLOUT_MIXED,
     )
