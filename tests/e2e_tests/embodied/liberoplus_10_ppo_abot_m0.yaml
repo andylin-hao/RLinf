@@ -117,7 +117,7 @@ rollout:
   pipeline_stage_num: 1
 
   model:
-    model_path: "path_to_your_model"
+    model_path: "/workspace/dataset/ABot-M0-LIBERO/checkpoints/steps_40000_pytorch_model.pt"
     precision: ${actor.model.precision}
 
 actor:
@@ -129,7 +129,7 @@ actor:
   enable_offload: false
 
   model:
-    model_path: "path_to_your_model"
+    model_path: "/workspace/dataset/ABot-M0-LIBERO/checkpoints/steps_40000_pytorch_model.pt"
     model_type: "abot_m0"
     num_action_chunks: 10
     add_value_head: true
