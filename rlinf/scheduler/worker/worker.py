@@ -950,9 +950,7 @@ class Worker(metaclass=WorkerMeta):
             @functools.wraps(func)
             def wrapper(self, *args, **kwargs):
                 with self.worker_timer(label):
-                    with AcceleratorUtil.profiling_range(
-                        self._accelerator_type, label
-                    ):
+                    with AcceleratorUtil.profiling_range(self._accelerator_type, label):
                         return func(self, *args, **kwargs)
 
             return wrapper

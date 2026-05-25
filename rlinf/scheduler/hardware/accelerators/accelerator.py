@@ -55,7 +55,8 @@ class ProfileConfig:
     steps: Optional[list[int]] = None
     """Function step indices to gate profiling around.
 
-    When ``None`` (default), profiling covers the whole worker lifetime.
+    When ``None`` (default), every training step is profiled if profiling is
+    enabled.
     """
 
     output_dir: Optional[str] = None
@@ -96,12 +97,11 @@ class ProfileConfig:
         return "all" in normalized or worker_group_name.lower() in normalized
 
     def should_profile_step(self, step_idx: int) -> bool:
-        """Return whether the given step should be gated for profiling.
-
-        Returns ``False`` when ``steps`` is ``None`` or ``enabled`` is ``False``.
-        """
-        if not self.enabled or self.steps is None:
+        """Return whether the given step should be gated for profiling."""
+        if not self.enabled:
             return False
+        if self.steps is None:
+            return True
         return step_idx in self.steps
 
 
@@ -483,7 +483,7 @@ class AcceleratorUtil:
         Falls back to a no-op context manager when no manager is registered.
         """
         if accelerator_type in AcceleratorManager.manager_register:
-            return AcceleratorManager.manager_register[accelerator_type].profiling_range(
-                label, color=color, domain=domain
-            )
+            return AcceleratorManager.manager_register[
+                accelerator_type
+            ].profiling_range(label, color=color, domain=domain)
         return contextlib.nullcontext()

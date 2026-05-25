@@ -34,18 +34,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# NVTX availability
-# ---------------------------------------------------------------------------
-
-try:
-    import nvtx as _nvtx  # type: ignore
-
-    _NVTX_AVAILABLE = True
-except ImportError:
-    _nvtx = None  # type: ignore
-    _NVTX_AVAILABLE = False
-
-# ---------------------------------------------------------------------------
 # Module-level profiling state — toggled by the runner around gated steps.
 # Workers read this via NvidiaGPUManager.is_profiling_active().
 # ---------------------------------------------------------------------------
@@ -411,11 +399,13 @@ class NvidiaGPUManager(AcceleratorManager):
         domain: Optional[str] = None,
     ):
         """Emit an NVTX range around the enclosed block when profiling is active."""
-        if not _nv_profiling_active or not _NVTX_AVAILABLE:
+        if not _nv_profiling_active:
             yield
             return
-        range_id = _nvtx.start_range(message=label, color=color, domain=domain)
+        import torch
+
+        torch.cuda.nvtx.range_push(label)
         try:
             yield
         finally:
-            _nvtx.end_range(range_id)
+            torch.cuda.nvtx.range_pop()

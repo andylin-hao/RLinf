@@ -721,11 +721,11 @@ def test_nsight_should_profile_step_matches_configured_steps():
     assert nsight_cfg.should_profile_step(7) is False
 
 
-def test_nsight_should_profile_step_returns_false_when_steps_none():
+def test_nsight_should_profile_step_profiles_all_steps_when_steps_none():
     nsight_cfg = NsightConfig(steps=None)
 
-    assert nsight_cfg.should_profile_step(0) is False
-    assert nsight_cfg.should_profile_step(100) is False
+    assert nsight_cfg.should_profile_step(0) is True
+    assert nsight_cfg.should_profile_step(100) is True
 
 
 def test_nsight_should_profile_step_returns_false_when_disabled():

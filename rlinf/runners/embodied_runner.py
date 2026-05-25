@@ -76,8 +76,6 @@ class EmbodiedRunner:
         )
 
         # Step-gated profiling: ``cluster.profiling.steps`` lists the global step
-        # indices to wrap with profiler start/stop. ``None`` means whole-process
-        # trace (the default when ``steps`` is absent from the config).
         profiling_raw = self.cfg.cluster.get("profiling", None)
         profiling_enabled = profiling_raw is not None and bool(
             profiling_raw.get("enabled", True)
@@ -85,6 +83,7 @@ class EmbodiedRunner:
         profile_steps_raw = (
             profiling_raw.get("steps", None) if profiling_enabled else None
         )
+        self._profile_all_steps = profiling_enabled and profile_steps_raw is None
         self._profile_steps: set[int] | None = (
             {int(s) for s in profile_steps_raw}
             if profile_steps_raw is not None
@@ -286,7 +285,9 @@ class EmbodiedRunner:
         return aggregated_metrics, ranked_metrics_list
 
     def _should_profile_step(self, step_idx: int) -> bool:
-        return self._profile_steps is not None and step_idx in self._profile_steps
+        return self._profile_all_steps or (
+            self._profile_steps is not None and step_idx in self._profile_steps
+        )
 
     def _open_profiling_window(self, step_idx: int) -> None:
         """Dispatch ``start_profile`` to all compute worker groups for this step."""

@@ -15,8 +15,10 @@
 # Override of Ray's AMDGPUAcceleratorManager
 # https://github.com/ray-project/ray/blob/161849364a784442cc659fb9780f1a6adee85fce/python/ray/_private/accelerators/amd_gpu.py
 
+import logging
 import os
 import shlex
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar, Optional
 
@@ -26,6 +28,16 @@ from .accelerator import AcceleratorManager, AcceleratorType, ProfileConfig
 
 if TYPE_CHECKING:
     from ...collective import CollectiveGroupOptions
+
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Module-level profiling state — toggled by the runner around gated steps.
+# Workers read this via AMDGPUManager.is_profiling_active().
+# ---------------------------------------------------------------------------
+
+_amd_profiling_active: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -237,6 +249,54 @@ class AMDGPUManager(AcceleratorManager):
         tokens = profiling_cfg.to_cli_tokens()
         tokens.append(py_executable)
         return " ".join(shlex.quote(t) for t in tokens)
+
+    @staticmethod
+    def start_profiling(step_idx: Optional[int] = None) -> None:
+        """Open a rocprof capture window via the CUDA profiler API."""
+        global _amd_profiling_active
+        if _amd_profiling_active:
+            return
+        import torch
+
+        _amd_profiling_active = True
+        torch.cuda.profiler.start()
+        if step_idx is not None:
+            logger.info("ROCm profiler window opened at step %d", step_idx)
+
+    @staticmethod
+    def stop_profiling() -> None:
+        """Close the current rocprof capture window."""
+        global _amd_profiling_active
+        if not _amd_profiling_active:
+            return
+        import torch
+
+        torch.cuda.profiler.stop()
+        _amd_profiling_active = False
+
+    @staticmethod
+    def is_profiling_active() -> bool:
+        """Check if the AMD GPU is profiling."""
+        return _amd_profiling_active
+
+    @staticmethod
+    @contextmanager
+    def profiling_range(
+        label: str,
+        color: Optional[str] = None,
+        domain: Optional[str] = None,
+    ):
+        """Emit an NVTX range around the enclosed block when profiling is active."""
+        if not _amd_profiling_active:
+            yield
+            return
+        import torch
+
+        torch.cuda.nvtx.range_push(label)
+        try:
+            yield
+        finally:
+            torch.cuda.nvtx.range_pop()
 
     @staticmethod
     def get_profiling_env_vars(
