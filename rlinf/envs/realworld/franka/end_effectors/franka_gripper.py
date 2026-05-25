@@ -1,4 +1,4 @@
-# Copyright 2026 The RLinf Authors.
+# Copyright 2025 The RLinf Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,13 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Helpers for env worker initialization."""
+from rlinf.envs.realworld.common.gripper.franka_gripper import FrankaGripper
 
-
-def resolve_env_classes(cfg, enable_eval: bool, get_env_cls_fn):
-    """Resolve train/eval env classes, skipping eval imports when evaluation is off."""
-    train_env_cls = get_env_cls_fn(cfg.env.train.env_type, cfg.env.train)
-    eval_env_cls = None
-    if enable_eval:
-        eval_env_cls = get_env_cls_fn(cfg.env.eval.env_type, cfg.env.eval)
-    return train_env_cls, eval_env_cls
+__all__ = ["FrankaGripper"]
