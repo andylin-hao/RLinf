@@ -130,7 +130,6 @@ class WanEnv(BaseWorldEnv):
                 ModelConfig(path=self.cfg.model_path, offload_device="cpu"),
                 ModelConfig(path=self.cfg.VAE_path, offload_device="cpu"),
             ],
-            tokenizer_config=ModelConfig(model_id="/data/qian.ren/robot_vla/models/Wan2.1-T2V-1.3B", origin_file_pattern="google/*")
         )
         # pipe.enable_vram_management()
         pipe.dit.to(self.device)
@@ -669,7 +668,7 @@ class WanEnv(BaseWorldEnv):
         self.onload()
         autocast_context = (
             torch.amp.autocast(device_type=self.device.type, dtype=torch.bfloat16)
-            if self.device.type in {"cuda", "musa"}
+            if self.device.type != "cpu"
             else nullcontext()
         )
         with autocast_context:

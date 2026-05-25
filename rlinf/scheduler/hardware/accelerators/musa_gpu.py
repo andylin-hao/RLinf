@@ -173,4 +173,3 @@ class MUSAGPUManager(AcceleratorManager):
             )
 
             return pg_options
-

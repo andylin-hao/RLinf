@@ -56,14 +56,6 @@ from rlinf.hybrid_engines.fsdp import (
 from rlinf.scheduler import Worker
 
 
-def _is_musa_available() -> bool:
-    return hasattr(torch, "musa") and torch.musa.is_available()
-
-
-def _is_cuda_backend_available() -> bool:
-    return torch.cuda.is_available() and hasattr(torch._C, "_cuda_setDevice")
-
-
 class FSDPVersion(str, Enum):
     FSDP = "fsdp"
     FSDP2 = "fsdp2"
@@ -685,10 +677,10 @@ def get_grad_norm(
             total_norm = torch.tensor(
                 float(total_norm),
                 dtype=torch.float,
-                device=grads_for_norm[0].device,
+                device=device,
             )
         else:
-            total_norm = total_norm.to(device=grads_for_norm[0].device)
+            total_norm = total_norm.to(device=device)
 
         # Sum across all data-parallel GPUs if using FSDP and then all model-parallel GPUs.
         if dp_group is not None:

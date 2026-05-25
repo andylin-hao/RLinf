@@ -21,15 +21,7 @@ from typing import Optional, Union
 
 import torch
 
-from rlinf.scheduler import WorkerInfo
-
-
-def _is_musa_available() -> bool:
-    return hasattr(torch, "musa") and torch.musa.is_available()
-
-
-def _is_cuda_backend_available() -> bool:
-    return torch.cuda.is_available() and hasattr(torch._C, "_cuda_setDevice")
+from rlinf.scheduler import Worker, WorkerInfo
 
 
 class BaseWorldEnv(ABC):
@@ -49,12 +41,7 @@ class BaseWorldEnv(ABC):
         record_metrics: bool = True,
     ):
         self.cfg = cfg
-        if _is_musa_available():
-            self.device = torch.device("musa")
-        elif _is_cuda_backend_available():
-            self.device = torch.device("cuda")
-        else:
-            self.device = torch.device("cpu")
+        self.device = torch.device(Worker.torch_device_type or "cpu")
 
         self.seed = cfg.seed + seed_offset
         self.total_num_processes = total_num_processes
@@ -122,17 +109,14 @@ class BaseWorldEnv(ABC):
         """Perform a single action step and return (obs, reward, done, info)."""
 
     def _get_runtime_device_str(self) -> str:
-        if self.device.type in {"cuda", "musa"}:
+        if Worker.torch_device_type is not None:
             device_index = 0 if self.device.index is None else self.device.index
-            return f"{self.device.type}:{device_index}"
+            return f"{Worker.torch_device_type}:{device_index}"
         return self.device.type
 
     @staticmethod
     def _clear_accelerator_cache() -> None:
-        if _is_musa_available():
-            torch.musa.empty_cache()
-        elif _is_cuda_backend_available():
-            torch.cuda.empty_cache()
+        Worker.torch_platform.empty_cache()
 
     def _init_metrics(self):
         """Initialize episode metrics tensors."""

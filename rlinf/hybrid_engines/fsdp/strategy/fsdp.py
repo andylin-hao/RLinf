@@ -40,14 +40,6 @@ from rlinf.scheduler import Worker
 from rlinf.utils.utils import clear_memory
 
 
-def _is_musa_available() -> bool:
-    return hasattr(torch, "musa") and torch.musa.is_available()
-
-
-def _is_cuda_backend_available() -> bool:
-    return torch.cuda.is_available() and hasattr(torch._C, "_cuda_setDevice")
-
-
 class FSDPStrategy(FSDPStrategyBase):
     _FSDP_CACHE_ATTRS = (
         "_mp_shard",
