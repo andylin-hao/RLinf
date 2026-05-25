@@ -1,3 +1,4 @@
+backend: nsight
 enabled: true
 worker_groups: [ActorGroup, RolloutGroup, EnvGroup, Actor, Rollout, Env]
 options:

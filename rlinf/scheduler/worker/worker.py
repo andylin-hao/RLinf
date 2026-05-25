@@ -931,45 +931,41 @@ class Worker(metaclass=WorkerMeta):
 
     @staticmethod
     def timer(tag: Optional[str] = None):
-        """Decorator to time a worker function."""
+        """Decorator to time a worker function and emit a profiling annotation."""
 
         def decorator(func):
+            label = tag or func.__name__
             if inspect.iscoroutinefunction(func):
 
                 @functools.wraps(func)
                 async def wrapper(self, *args, **kwargs):
-                    with self.worker_timer(tag or func.__name__):
-                        return await func(self, *args, **kwargs)
+                    with self.worker_timer(label):
+                        with AcceleratorUtil.profiling_range(
+                            self._accelerator_type, label
+                        ):
+                            return await func(self, *args, **kwargs)
 
                 return wrapper
 
             @functools.wraps(func)
             def wrapper(self, *args, **kwargs):
-                with self.worker_timer(tag or func.__name__):
-                    return func(self, *args, **kwargs)
+                with self.worker_timer(label):
+                    with AcceleratorUtil.profiling_range(
+                        self._accelerator_type, label
+                    ):
+                        return func(self, *args, **kwargs)
 
             return wrapper
 
         return decorator
 
     def start_profile(self, step_idx: int) -> None:
-        """Open the nsys capture window for the given step on this worker.
-
-        Routes to ``rlinf.utils.nsight_profiler.start_profile`` which calls
-        ``torch.cuda.profiler.start()``. When the worker is wrapped under
-        ``nsys profile --capture-range=cudaProfilerApi`` (configured via
-        ``cluster.nsight.steps``), nsys begins writing data; otherwise the
-        cuda profiler call is a harmless no-op.
-        """
-        from rlinf.utils import nsight_profiler
-
-        nsight_profiler.start_profile(step_idx)
+        """Open a profiling capture window for the given step on this worker."""
+        AcceleratorUtil.start_profiling(self._accelerator_type, step_idx)
 
     def stop_profile(self) -> None:
-        """Close the nsys capture window on this worker."""
-        from rlinf.utils import nsight_profiler
-
-        nsight_profiler.stop_profile()
+        """Close the current profiling capture window on this worker."""
+        AcceleratorUtil.stop_profiling(self._accelerator_type)
 
     @staticmethod
     def check_worker_alive(worker_name: str) -> bool:

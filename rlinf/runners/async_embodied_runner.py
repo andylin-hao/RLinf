@@ -167,7 +167,7 @@ class AsyncEmbodiedRunner(EmbodiedRunner):
                 else None
             )
             if profiled_step is not None:
-                self._open_nsight_window(profiled_step)
+                self._open_profiling_window(profiled_step)
             skip_step = False
             with self.timer("step"):
                 actor_training_handle: Handle = self.actor.run_training()
@@ -208,7 +208,7 @@ class AsyncEmbodiedRunner(EmbodiedRunner):
             if skip_step:
                 self.timer.consume_durations()
                 if profiled_step is not None:
-                    self._close_nsight_window(profiled_step)
+                    self._close_profiling_window(profiled_step)
                 time.sleep(1.0)
                 continue
 
@@ -281,7 +281,7 @@ class AsyncEmbodiedRunner(EmbodiedRunner):
             )
 
             if profiled_step is not None:
-                self._close_nsight_window(profiled_step)
+                self._close_profiling_window(profiled_step)
 
         self.env.stop().wait()
         self.rollout.stop().wait()

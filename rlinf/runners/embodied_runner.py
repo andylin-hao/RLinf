@@ -75,16 +75,16 @@ class EmbodiedRunner:
             self.cfg.runner.get("overlap_env_bootstrap", False)
         )
 
-        # Step-gated nsys profiling. ``cluster.nsight.steps`` lists the global
-        # step indices whose execution should be wrapped with
-        # ``cudaProfilerStart/Stop`` (paired with ``capture-range=cudaProfilerApi``
-        # which ``NsightConfig.__post_init__`` auto-attaches). ``None`` means
-        # whole-process trace (pre-existing behavior).
-        nsight_raw = self.cfg.cluster.get("nsight", None)
-        nsight_enabled = nsight_raw is not None and bool(
-            nsight_raw.get("enabled", True)
+        # Step-gated profiling: ``cluster.profiling.steps`` lists the global step
+        # indices to wrap with profiler start/stop. ``None`` means whole-process
+        # trace (the default when ``steps`` is absent from the config).
+        profiling_raw = self.cfg.cluster.get("profiling", None)
+        profiling_enabled = profiling_raw is not None and bool(
+            profiling_raw.get("enabled", True)
         )
-        profile_steps_raw = nsight_raw.get("steps", None) if nsight_enabled else None
+        profile_steps_raw = (
+            profiling_raw.get("steps", None) if profiling_enabled else None
+        )
         self._profile_steps: set[int] | None = (
             {int(s) for s in profile_steps_raw}
             if profile_steps_raw is not None
@@ -288,19 +288,19 @@ class EmbodiedRunner:
     def _should_profile_step(self, step_idx: int) -> bool:
         return self._profile_steps is not None and step_idx in self._profile_steps
 
-    def _open_nsight_window(self, step_idx: int) -> None:
-        """Dispatch ``start_profile`` to compute worker groups for this step."""
-        self.logger.info(f"Opening Nsight profiling window at step {step_idx}")
+    def _open_profiling_window(self, step_idx: int) -> None:
+        """Dispatch ``start_profile`` to all compute worker groups for this step."""
+        self.logger.info(f"Opening profiling window at step {step_idx}")
         self.actor.start_profile(step_idx).wait()
         self.rollout.start_profile(step_idx).wait()
         self.env.start_profile(step_idx).wait()
 
-    def _close_nsight_window(self, step_idx: int) -> None:
-        """Dispatch ``stop_profile`` to compute worker groups."""
+    def _close_profiling_window(self, step_idx: int) -> None:
+        """Dispatch ``stop_profile`` to all compute worker groups."""
         self.actor.stop_profile().wait()
         self.rollout.stop_profile().wait()
         self.env.stop_profile().wait()
-        self.logger.info(f"Closed Nsight profiling window at step {step_idx}")
+        self.logger.info(f"Closed profiling window at step {step_idx}")
 
     def run(self):
         start_step = self.global_step
@@ -316,7 +316,7 @@ class EmbodiedRunner:
                 else None
             )
             if profiled_step is not None:
-                self._open_nsight_window(profiled_step)
+                self._open_profiling_window(profiled_step)
 
             with self.timer("step"):
                 with self.timer("sync_weights"):
@@ -387,7 +387,7 @@ class EmbodiedRunner:
                     self._save_checkpoint()
 
             if profiled_step is not None:
-                self._close_nsight_window(profiled_step)
+                self._close_profiling_window(profiled_step)
 
             time_metrics = self.timer.consume_durations()
             time_metrics = {f"time/{k}": v for k, v in time_metrics.items()}

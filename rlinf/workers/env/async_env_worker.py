@@ -16,8 +16,7 @@ import asyncio
 
 from omegaconf.omegaconf import DictConfig
 
-from rlinf.scheduler import Channel
-from rlinf.utils.nsight_profiler import NsightProfiler
+from rlinf.scheduler import Channel, Worker
 from rlinf.workers.env.env_worker import EnvWorker
 
 
@@ -27,7 +26,7 @@ class AsyncEnvWorker(EnvWorker):
         self._interact_task: asyncio.Task = None
         assert not self.enable_offload, "Offload not supported in AsyncEnvWorker"
 
-    @NsightProfiler.annotate("env/interact")
+    @Worker.timer("interact")
     async def interact(
         self,
         input_channel: Channel,

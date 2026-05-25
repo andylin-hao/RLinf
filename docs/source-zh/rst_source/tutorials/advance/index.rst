@@ -35,9 +35,10 @@
    介绍具身训练中 actor 到 rollout 的权重同步优化机制，
    包括 ``patch`` 与 ``bucket`` 两种同步模式、配置方法、适用场景以及性能注意事项。
 
-- :doc:`nsight`
-   介绍基于 Hydra 的 ``cluster.nsight`` 配置，用于通过 ``nsys profile``
-   包装指定的 Ray worker group，并说明如何启用、关闭以及选择需要采样的 worker。
+- :doc:`profile`
+   介绍 ``cluster.profiling`` 配置，支持通过 ``nsys profile``（NVIDIA）或
+   ``rocprof-sys-python``（AMD）包装指定的 Ray worker group，并说明
+   ``enabled``、``worker_groups``、``steps``、``output_dir`` 等公共字段的用法。
 
 - :doc:`mbridge`
    介绍如何使用 Megatron-Bridge 集成 Megatron-LM 训练后端，
@@ -53,6 +54,6 @@
    resume
    convertor
    logger
-   nsight
+   profile
    weight_syncer
    mbridge

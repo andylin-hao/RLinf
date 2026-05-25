@@ -31,6 +31,7 @@ if "gymnasium" not in sys.modules:
 if "rlinf.envs.wrappers" not in sys.modules:
     sys.modules["rlinf.envs.wrappers"] = MagicMock()
 
+from rlinf.scheduler.hardware.accelerators.accelerator import AcceleratorType
 from rlinf.workers.env.env_worker import EnvWorker  # noqa: E402
 
 
@@ -98,6 +99,7 @@ class TestOverlapEnvBootstrap(unittest.TestCase):
         self.worker.history_reward_assign = self.cfg.get("reward", {}).get(
             "history_reward_assign", True
         )
+        self.worker._accelerator_type = AcceleratorType.NO_ACCEL
         self.worker._prefetched_train_bootstrap = None
 
         # Mock env_list

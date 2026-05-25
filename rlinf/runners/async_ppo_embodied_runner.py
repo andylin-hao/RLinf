@@ -134,7 +134,7 @@ class AsyncPPOEmbodiedRunner(EmbodiedRunner):
                 else None
             )
             if profiled_step is not None:
-                self._open_nsight_window(profiled_step)
+                self._open_profiling_window(profiled_step)
             with self.timer("step"):
                 with self.timer("recv_rollout_trajectories"):
                     self.actor.recv_rollout_trajectories(
@@ -257,7 +257,7 @@ class AsyncPPOEmbodiedRunner(EmbodiedRunner):
                 self._save_checkpoint()
 
             if profiled_step is not None:
-                self._close_nsight_window(profiled_step)
+                self._close_profiling_window(profiled_step)
 
         self.metric_logger.finish()
 
