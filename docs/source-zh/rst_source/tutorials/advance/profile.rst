@@ -225,10 +225,15 @@ NVIDIA：Nsight Systems（``backend: nsight``）
 Compute 路径上的 NVTX 注解
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-RLinf 在 actor、rollout、env worker 的关键方法上通过
-``@NsightProfiler.annotate("...")`` 装饰器加了一批命名 NVTX range。
-装饰器只在 ``is_profiling_active()`` 为 true 时才会发射事件，关闭 profiling
-时基本没有额外开销。
+RLinf 在 actor、rollout、env worker 的关键方法上使用
+``@Worker.timer("...")``。这个装饰器会记录 RLinf timer 指标，并通过
+``AcceleratorUtil.profiling_range`` 打开当前加速器对应的 profiling range。
+对 ``nsight`` 后端来说，这些 range 会在时间线和
+``nsys stats --report nvtx_sum`` 中显示为带标签的 NVTX 区间。
+
+profiling range 只会在 profiling 窗口打开时发射。profiling 关闭时，
+``Worker.timer`` 仍然会记录 timing 指标，而加速器 profiling range 会退化为
+no-op。
 
 内置注解一览：
 
@@ -289,42 +294,46 @@ RLinf 在 actor、rollout、env worker 的关键方法上通过
 
 .. code-block:: python
 
-   from rlinf.utils.nsight_profiler import NsightProfiler
+   from rlinf.scheduler.worker import Worker
 
    class MyWorker(Worker):
-       @NsightProfiler.annotate("my_worker/my_phase", color="green")
+       @Worker.timer("my_worker/my_phase")
        def my_phase(self, batch):
            ...
 
-Ad-Hoc NVTX Range
-~~~~~~~~~~~~~~~~~
+Ad-Hoc Profiling Range
+~~~~~~~~~~~~~~~~~~~~~~
 
 在函数内部临时圈出一段区间：
 
 .. code-block:: python
 
-   from rlinf.utils.utils import nvtx_range
+   from rlinf.scheduler.hardware import AcceleratorUtil
 
-   with nvtx_range("actor.forward", color="green"):
-       run_actor_forward()
+   class MyWorker(Worker):
+       def my_phase(self, batch):
+           with AcceleratorUtil.profiling_range(
+               self._accelerator_type, "my_worker/inner_phase"
+           ):
+               run_inner_phase(batch)
 
-这个 helper 会优先尝试可选的 ``nvtx`` Python 包；不存在时退回到
-``torch.cuda.nvtx``；如果两者都不可用，则退化成 no-op。
+``AcceleratorUtil.profiling_range`` 会分发到当前加速器后端。如果该加速器没有
+注册 profiling range 实现，或当前 profiling 未开启，它会退化为 no-op。
 
 
 AMD：ROCm Systems Profiler（``backend: rocprof_sys``）
 ------------------------------
 
-默认预设
+最小配置
 ~~~~~~~~~~~~~~~~~~
 
-内置的 ``profile/rocprof_sys`` 预设如下：
+在运行配置中内联配置 ``rocprof_sys``：
 
 .. code-block:: yaml
 
    backend: rocprof_sys
    enabled: true
-   worker_groups: [ActorGroup, RolloutGroup, EnvGroup, Actor, Rollout, Env]
+   worker_groups: [ActorGroup, RolloutGroup, EnvGroup]
    args:
      T: hip           # 采集 HIP API 调用
 
@@ -350,7 +359,7 @@ RLinf 会把每个匹配 worker 的 Python 解释器包装成：
 
 渲染规则：
 
-- 单字符 key → ``-F true``
+- 单字符 key → ``-T hip,hsa,rccl``
 - 多字符 key → ``--output-format=json``
 
 注入环境变量
@@ -382,13 +391,17 @@ NVIDIA 第一轮定位：
 
 AMD 第一轮定位：
 
-- 先用 ``profile/default@cluster.profiling``，然后覆盖 ``backend``：
+- 内联配置 ``rocprof_sys``：
 
   .. code-block:: yaml
 
      cluster:
        profiling:
          backend: rocprof_sys
+         enabled: true
+         worker_groups: [ActorGroup, RolloutGroup, EnvGroup]
+         args:
+           T: hip
 
 - 确认 ``rocprof-sys-python`` 已经在每个 worker 环境的 ``PATH`` 中。
 - 运行结束后检查 ``output_dir`` 下的 ``.json`` 或二进制 trace 文件。

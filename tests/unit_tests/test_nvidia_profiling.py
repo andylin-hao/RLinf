@@ -77,39 +77,29 @@ class TestProfilingRangeSync:
             NvidiaGPUManager.start_profiling()
 
         with (
-            patch.object(nv_module, "_nvtx") as mock_nvtx,
-            patch.object(nv_module, "_NVTX_AVAILABLE", True),
+            patch("torch.cuda.nvtx.range_push") as mock_range_push,
+            patch("torch.cuda.nvtx.range_pop") as mock_range_pop,
         ):
-            mock_nvtx.start_range.return_value = 1
             with NvidiaGPUManager.profiling_range("test/op", color="green"):
                 pass
 
-        mock_nvtx.start_range.assert_called_once_with(
-            message="test/op", color="green", domain=None
-        )
-        mock_nvtx.end_range.assert_called_once_with(1)
+        mock_range_push.assert_called_once_with("test/op")
+        mock_range_pop.assert_called_once_with()
 
     def test_ends_range_on_exception(self):
         with patch("torch.cuda.profiler.start"):
             NvidiaGPUManager.start_profiling()
 
         with (
-            patch.object(nv_module, "_nvtx") as mock_nvtx,
-            patch.object(nv_module, "_NVTX_AVAILABLE", True),
+            patch("torch.cuda.nvtx.range_push") as mock_range_push,
+            patch("torch.cuda.nvtx.range_pop") as mock_range_pop,
         ):
-            mock_nvtx.start_range.return_value = 42
             with pytest.raises(ValueError, match="oops"):
                 with NvidiaGPUManager.profiling_range("test/op"):
                     raise ValueError("oops")
 
-        mock_nvtx.end_range.assert_called_once_with(42)
-
-    def test_no_nvtx_package_is_passthrough(self):
-        with patch("torch.cuda.profiler.start"):
-            NvidiaGPUManager.start_profiling()
-        with patch.object(nv_module, "_NVTX_AVAILABLE", False):
-            with NvidiaGPUManager.profiling_range("test/op"):
-                pass  # must not raise
+        mock_range_push.assert_called_once_with("test/op")
+        mock_range_pop.assert_called_once_with()
 
 
 class TestProfilingRangeAsync:
@@ -120,7 +110,7 @@ class TestProfilingRangeAsync:
             with NvidiaGPUManager.profiling_range("test/async_op"):
                 return 99
 
-        assert asyncio.get_event_loop().run_until_complete(coro()) == 99
+        assert asyncio.run(coro()) == 99
 
     def test_emits_range_when_active(self):
         with patch("torch.cuda.profiler.start"):
@@ -131,14 +121,11 @@ class TestProfilingRangeAsync:
                 return 7
 
         with (
-            patch.object(nv_module, "_nvtx") as mock_nvtx,
-            patch.object(nv_module, "_NVTX_AVAILABLE", True),
+            patch("torch.cuda.nvtx.range_push") as mock_range_push,
+            patch("torch.cuda.nvtx.range_pop") as mock_range_pop,
         ):
-            mock_nvtx.start_range.return_value = 99
-            result = asyncio.get_event_loop().run_until_complete(coro())
+            result = asyncio.run(coro())
 
         assert result == 7
-        mock_nvtx.start_range.assert_called_once_with(
-            message="test/async_op", color=None, domain=None
-        )
-        mock_nvtx.end_range.assert_called_once_with(99)
+        mock_range_push.assert_called_once_with("test/async_op")
+        mock_range_pop.assert_called_once_with()

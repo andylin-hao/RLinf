@@ -230,12 +230,15 @@ Useful options:
 Compute-Path NVTX Annotations
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-RLinf decorates the hot path of actor, rollout, and env workers with named
-NVTX ranges via ``@NsightProfiler.annotate("...")``. These appear as labelled
-intervals in the timeline and in ``nsys stats --report nvtx_sum``.
+RLinf decorates the hot path of actor, rollout, and env workers with
+``@Worker.timer("...")``. The decorator records RLinf timer metrics and opens an
+accelerator-specific profiling range through ``AcceleratorUtil.profiling_range``.
+For the ``nsight`` backend these ranges appear as labelled NVTX intervals in the
+timeline and in ``nsys stats --report nvtx_sum``.
 
-The decorator emits events only while ``is_profiling_active()`` is true, so
-there is no overhead when profiling is off.
+The profiling range is emitted only while a profiling window is active. When
+profiling is off, ``Worker.timer`` still records timing metrics and the
+accelerator profiling range falls back to a no-op.
 
 Built-in annotations:
 
@@ -296,42 +299,47 @@ Decorating your own worker method:
 
 .. code-block:: python
 
-   from rlinf.utils.nsight_profiler import NsightProfiler
+   from rlinf.scheduler.worker import Worker
 
    class MyWorker(Worker):
-       @NsightProfiler.annotate("my_worker/my_phase", color="green")
+       @Worker.timer("my_worker/my_phase")
        def my_phase(self, batch):
            ...
 
-Ad-Hoc NVTX Ranges
-~~~~~~~~~~~~~~~~~~~
+Ad-Hoc Profiling Ranges
+~~~~~~~~~~~~~~~~~~~~~~~
 
 For one-off in-function annotations:
 
 .. code-block:: python
 
-   from rlinf.utils.utils import nvtx_range
+   from rlinf.scheduler.hardware import AcceleratorUtil
 
-   with nvtx_range("actor.forward", color="green"):
-       run_actor_forward()
+   class MyWorker(Worker):
+       def my_phase(self, batch):
+           with AcceleratorUtil.profiling_range(
+               self._accelerator_type, "my_worker/inner_phase"
+           ):
+               run_inner_phase(batch)
 
-The helper tries the optional ``nvtx`` package first, then falls back to
-``torch.cuda.nvtx``, then becomes a no-op.
+``AcceleratorUtil.profiling_range`` dispatches to the current accelerator
+backend. It is a no-op when the accelerator has no registered profiling range
+implementation or when profiling is not active.
 
 
 AMD: ROCm Systems Profiler (``backend: rocprof_sys``)
 ------------------------------
 
-Default Preset
-~~~~~~~~~~~~~~
+Minimal Configuration
+~~~~~~~~~~~~~~~~~~~~~
 
-The built-in ``profile/rocprof_sys`` preset:
+Configure ``rocprof_sys`` inline in your run config:
 
 .. code-block:: yaml
 
    backend: rocprof_sys
    enabled: true
-   worker_groups: [ActorGroup, RolloutGroup, EnvGroup, Actor, Rollout, Env]
+   worker_groups: [ActorGroup, RolloutGroup, EnvGroup]
    args:
      T: hip           # trace HIP API calls
 
@@ -355,9 +363,9 @@ Overriding ``rocprof-sys-python`` Arguments
          T: hip,hsa,rccl     # single-char key → -T hip,hsa,rccl
          output-format: json  # multi-char key  → --output-format=json
 
-Rendering rules mirror ``nsys profile``:
+Rendering rules:
 
-- Single-character keys → ``-F true``
+- Single-character keys → ``-T hip,hsa,rccl``
 - Multi-character keys → ``--output-format=json``
 
 Injecting Environment Variables
@@ -391,13 +399,17 @@ NVIDIA first pass:
 
 AMD first pass:
 
-- Start with ``profile/default@cluster.profiling`` and override ``backend``:
+- Configure ``rocprof_sys`` inline:
 
   .. code-block:: yaml
 
      cluster:
        profiling:
          backend: rocprof_sys
+         enabled: true
+         worker_groups: [ActorGroup, RolloutGroup, EnvGroup]
+         args:
+           T: hip
 
 - Verify ``rocprof-sys-python`` is on ``PATH`` in each worker's environment.
 - Check ``output_dir`` for ``.json`` or binary trace files after the run.
