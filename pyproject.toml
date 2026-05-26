@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rlinf"
-version = "0.2.0"
+version = "0.3.0"
 authors = [{ name = "RLinf Contributors" }]
 description = "Reinforcement Learning Infrastructure for Embodied and Agentic AI"
 readme = {file = "README.md", content-type = "text/markdown"}
-requires-python = ">=3.10,<=3.11.14"
+requires-python = ">=3.10"
 license = {file = "LICENSE"}
 keywords = [
     "reinforcement-learning",
@@ -58,7 +58,6 @@ dependencies = [
     "pip",
     "huggingface_hub",
     "icmplib",
-    "pyrealsense2; sys_platform == 'linux' and platform_machine == 'x86_64'",
 
     # Logging
     "wandb<0.25.1",
@@ -114,9 +113,9 @@ embodied = [
 franka = [
     "pyyaml",
     "rospkg",
+    "pyrealsense2; sys_platform == 'linux' and platform_machine == 'x86_64'",
     "empy==3.3.4",
     "gymnasium==0.29.1",
-    "pyrealsense2",
     "pyquaternion",
     "opencv-python",
     "defusedxml",
@@ -131,11 +130,11 @@ franka = [
 xsquare_turtle2 = [
     "pyyaml",
     "rospkg",
+    "pyrealsense2; sys_platform == 'linux' and platform_machine == 'x86_64'",
     "toppra==0.6.3",
     "numpy==1.26.4",
     "empy==3.3.4",
     "gymnasium==0.29.1",
-    "pyrealsense2",
     "pyquaternion",
     "opencv-python",
     "defusedxml",
@@ -152,7 +151,7 @@ gim_arm = [
     "scipy",
     "gymnasium",
     "opencv-python",
-    "pyrealsense2",
+    "pyrealsense2; sys_platform == 'linux' and platform_machine == 'x86_64'",
     "imageio[ffmpeg]",
 ]
 
