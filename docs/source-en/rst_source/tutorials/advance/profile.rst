@@ -173,7 +173,7 @@ When ``steps`` is set:
 
 
 NVIDIA: Nsight Systems (``backend: nsight``)
-------------------------------
+---------------------------------------------
 
 Default Preset
 ~~~~~~~~~~~~~~
@@ -328,7 +328,7 @@ implementation or when profiling is not active.
 
 
 AMD: ROCm Systems Profiler (``backend: rocprof_sys``)
-------------------------------
+-------------------------------------------------------
 
 Minimal Configuration
 ~~~~~~~~~~~~~~~~~~~~~
