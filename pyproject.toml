@@ -24,7 +24,6 @@ classifiers = [
     "Environment :: GPU :: NVIDIA CUDA :: 12 :: 12.4",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.11",
 ]
 
 
@@ -32,7 +31,7 @@ dependencies = [
     # Core System
     # These are the dependencies of the core scheduler
     "ray[default]>=2.47.0",
-    "torch>=2.5.0,<=2.9.0",
+    "torch>=2.5.0",
     "hydra-core",
     "numpy",
 
@@ -168,10 +167,10 @@ conflicts = [
     ],
 ]
 override-dependencies = [
-    "torch==2.6.0",
-    "torchvision==0.21.0",
-    "torchaudio==2.6.0",
-    "torchcodec==0.2",
+    "torch==2.7.0",
+    "torchvision==0.22.0",
+    "torchaudio==2.7.0",
+    "torchcodec>=0.5",
     "xgrammar==0.1.19",
     "uvloop==0.21.0",
     "tensorflow-addons==0.23.0 ; platform_machine == 'x86_64'",

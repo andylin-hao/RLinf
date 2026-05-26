@@ -571,6 +571,21 @@ apply_torch_override() {
     # UV_TORCH_BACKEND), PLATFORM_RELAX_TORCHCODEC is set (rewrite the
     # torchcodec pin for non-x86_64 / non-CUDA torch combos), or
     # PLATFORM_EXTRA_OVERRIDES has entries (insert extra override pins).
+
+    # torchcodec==0.2 only has wheels for torch<=2.6. Relax the pin whenever
+    # the effective torch version exceeds 2.6, regardless of platform.
+    local _eff_torch="${TORCH_VERSION}"
+    if [ -z "$_eff_torch" ] && [ -f "$PYPROJECT_FILE" ]; then
+        _eff_torch=$(sed -nE 's/.*"torch==([^"+]+).*".*/\1/p' "$PYPROJECT_FILE" | head -1)
+    fi
+    if [ -n "$_eff_torch" ]; then
+        local _tmaj _tmin _tpatch
+        IFS='.' read -r _tmaj _tmin _tpatch <<< "$_eff_torch"
+        if [ "$_tmaj" -gt 2 ] || { [ "$_tmaj" -eq 2 ] && [ "$_tmin" -gt 6 ]; }; then
+            PLATFORM_RELAX_TORCHCODEC=1
+        fi
+    fi
+
     local needs_torch_rewrite=0
     if [ -n "$TORCH_VERSION" ] || [ -n "$PLATFORM_TORCH_STR" ] || [ -n "$PLATFORM_TORCH_INDEX" ]; then
         needs_torch_rewrite=1
