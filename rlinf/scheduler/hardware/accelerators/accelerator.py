@@ -104,6 +104,13 @@ class ProfileConfig:
             return True
         return step_idx in self.steps
 
+    def check(self) -> bool:
+        """Return ``True`` if all required profiling tools are available on this node.
+
+        Subclasses override this to check backend-specific executables.
+        """
+        return True
+
 
 class AcceleratorType(str, Enum):
     """Enum representing different types of accelerators."""
@@ -281,6 +288,14 @@ class AcceleratorManager:
         configuration (e.g. ``ROCPROFSYS_OUTPUT_PATH``) override this.
         """
         return {}
+
+    @staticmethod
+    def check_profiler(profiling_cfg: "ProfileConfig") -> bool:
+        """Return ``True`` if all tools required by the profiling backend are available on this node.
+
+        Delegates to ``profiling_cfg.check()``.
+        """
+        return profiling_cfg.check()
 
 
 @Hardware.register(is_default_hw=True)

@@ -139,6 +139,12 @@ class NsightConfig(ProfileConfig):
                 f"Got duplicates: {overlapping_names}"
             )
 
+    def check(self) -> bool:
+        """Return ``True`` if the ``nsys`` executable is available on PATH."""
+        import shutil
+
+        return shutil.which("nsys") is not None
+
     def to_cli_tokens(self, default_output_prefix: Optional[str] = None) -> list[str]:
         """Render ``nsys profile`` options into CLI tokens."""
         flags = list(self.flags or [])

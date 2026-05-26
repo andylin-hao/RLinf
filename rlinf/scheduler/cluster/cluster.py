@@ -716,9 +716,25 @@ class Cluster:
         cfg_python_path = node_group.get_node_python_interpreter_path(node_rank)
         if cfg_python_path is not None:
             python_interpreter_path = cfg_python_path
+
         _profiling_cfg = (
             self._cluster_cfg.profiling if self._cluster_cfg is not None else None
         )
+        if _profiling_cfg is not None:
+            from ..manager import WorkerAddress
+
+            worker_group_name = WorkerAddress.from_name(worker_name).root_group_name
+            if (
+                _profiling_cfg.profiles_worker_group(worker_group_name)
+                and _profiling_cfg.backend not in node.profiler_backends
+            ):
+                raise RuntimeError(
+                    f"Profiling backend '{_profiling_cfg.backend}' is enabled for worker "
+                    f"group '{worker_group_name}' but is not available on node "
+                    f"{node.node_rank} ({node.node_ip}). "
+                    f"Available backends: {node.profiler_backends}. "
+                    f"Please install the required tools before running with profiling enabled."
+                )
         python_interpreter_path = self.modify_profile_context(
             python_interpreter_path=python_interpreter_path,
             worker_name=worker_name,

@@ -103,6 +103,12 @@ class RocprofSysConfig(ProfileConfig):
             )
             self.env = {str(k): str(v) for k, v in self.env.items()}
 
+    def check(self) -> bool:
+        """Return ``True`` if the ``rocprof-sys-python`` executable is available on PATH."""
+        import shutil
+
+        return shutil.which("rocprof-sys-python") is not None
+
     def to_cli_tokens(self) -> list[str]:
         """Render the ``rocprof-sys-python`` prefix tokens.
 
