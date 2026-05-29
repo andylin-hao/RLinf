@@ -1773,6 +1773,7 @@ install_roboverse_env() {
     pyroki_dir=$(clone_or_reuse_repo PYROKI_PATH "$roboverse_dir/pyroki" https://github.com/chungmin99/pyroki.git)
     uv pip install -e "$pyroki_dir"
     uv pip install "numpy==1.26.4" --force-reinstall
+    uv pip install "mujoco==3.3.7" "dm-control==1.0.34" --force-reinstall
 }
 
 #=======================AGENTIC INSTALLER=======================
