@@ -87,7 +87,6 @@ class MultiStepRolloutWorker(Worker):
         )
         self.weight_syncer = WeightSyncer.create(weight_syncer_cfg)
         self._sync_weight_comm_options = self.weight_syncer.comm_options
-        print(f"self._sync_weight_comm_options: {self._sync_weight_comm_options}")
 
     def init_worker(self):
         rollout_model_config = copy.deepcopy(self.cfg.actor.model)
