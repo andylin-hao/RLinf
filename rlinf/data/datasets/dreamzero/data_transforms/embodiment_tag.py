@@ -12,18 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from rlinf.data.datasets.dreamzero.dataloader import (
-    DreamZeroCollator,
-    build_dreamzero_sft_dataloader,
-)
-from rlinf.data.datasets.dreamzero.lerobot_dataset import (
-    DreamZeroLeRobotDataset,
-    DreamZeroLeRobotMixtureDataset,
-)
+"""RLinf DreamZero embodiment tags.
 
-__all__ = [
-    "DreamZeroCollator",
-    "DreamZeroLeRobotDataset",
-    "DreamZeroLeRobotMixtureDataset",
-    "build_dreamzero_sft_dataloader",
-]
+When adding a new embodiment, register it in ``data_transforms/__init__.py`` and
+add the corresponding member below.
+"""
+
+from enum import Enum
+
+
+class EmbodimentTag(Enum):
+    """Embodiment tags supported by RLinf DreamZero SFT / eval."""
+
+    LIBERO_SIM = "libero_sim"
+    OXE_DROID = "oxe_droid"
+    FRANKA_PNP = "franka_pnp"

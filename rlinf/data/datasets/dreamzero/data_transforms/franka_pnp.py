@@ -12,9 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""DreamZero transforms for Franka pick-and-place (dual-view, state/actions columns)."""
+
 from typing import Any
 
-import numpy as np
 from groot.vla.data.dataset.lerobot import ModalityConfig
 from groot.vla.data.transform.base import ComposedModalityTransform
 from groot.vla.data.transform.concat import ConcatTransform
@@ -30,66 +31,34 @@ from groot.vla.data.transform.video import (
     VideoToTensor,
 )
 
-from rlinf.data.datasets.dreamzero.data_transforms.base import RolloutObsLayout
 from rlinf.data.datasets.dreamzero.data_transforms.dream_transform import DreamTransform
-
-_VIDEO_KEYS = [
-    "video.image",
-    "video.wrist_image",
-]
-_STATE_KEYS = ["state.state"]
-_ACTION_KEYS = ["action.actions"]
-
-_VIDEO_BACKEND = "torchvision"
-_DEFAULT_VIDEO_HEIGHT = 256
-_DEFAULT_VIDEO_WIDTH = 256
-
-_TRAINING_PROMPT_PREFIX = "A multi-view video shows that a robot "
-_MULTIVIEW_LAYOUT = (
-    " The video is split into two horizontal views: the left view shows the "
-    "exterior camera and the right view shows the wrist camera. The robot "
+from rlinf.data.datasets.dreamzero.data_transforms.libero_sim import (
+    _ACTION_KEYS,
+    _STATE_KEYS,
+    _VIDEO_BACKEND,
+    _VIDEO_KEYS,
+    LiberoSimDataTransform,
 )
 
+_DEFAULT_VIDEO_HEIGHT = 176
+_DEFAULT_VIDEO_WIDTH = 320
+# Match ``8 * max_chunk_size + 1``; use 17 when ``max_chunk_size=2`` (short ~75f episodes).
+_NUM_VIDEO_FRAMES = 17
 
-class LiberoSimDataTransform:
-    """Provides modality config and composed transform for libero_sim."""
 
-    TAG = "libero_sim"
-    DEFAULT_TAG_MAPPING = {"libero_sim": 21}
-    DEFAULT_ACTION_HORIZON = 16
-    ROLLOUT_OBS_LAYOUT = RolloutObsLayout(
-        video_fields=(
-            ("main_images", "video.image"),
-            ("wrist_images", "video.wrist_image"),
-        ),
-        state_fields=(("states", "state.state"),),
-        binarize_gripper=True,
-    )
+class FrankaPnpDataTransform(LiberoSimDataTransform):
+    """Dual-view Franka PnP: same modality keys as ``libero_sim``, Franka training recipe."""
 
-    @staticmethod
-    def format_training_prompt(instruction: str) -> str:
-        """Build multi-view layout prompt for LIBERO (matches Groot collate template)."""
-        return _TRAINING_PROMPT_PREFIX + instruction + _MULTIVIEW_LAYOUT + instruction
-
-    @staticmethod
-    def concat_multiview_video(images: np.ndarray) -> np.ndarray:
-        """Horizontal concat: exterior (left) | wrist (right)."""
-        v, t, c, h, w = images.shape
-        if v < 2:
-            raise ValueError(
-                f"libero_sim expects at least 2 video views, got v={v} with shape {images.shape}"
-            )
-        concat_images = np.zeros((1, t, c, h, 2 * w), dtype=images.dtype)
-        concat_images[0, :, :, :, :w] = images[0]
-        concat_images[0, :, :, :, w:] = images[1]
-        return concat_images
+    TAG = "franka_pnp"
+    DEFAULT_TAG_MAPPING = {"franka_pnp": 21}
+    DEFAULT_ACTION_HORIZON = 24
 
     @staticmethod
     def get_modality_config() -> dict[str, ModalityConfig]:
-        """Return modality config dict for libero_sim (25 video delta, 24 action delta)."""
+        """Return modality config (17 video frames @ max_chunk_size=2, 24-step action)."""
         return {
             "video": ModalityConfig(
-                delta_indices=list(range(25)),
+                delta_indices=list(range(_NUM_VIDEO_FRAMES)),
                 eval_delta_indices=[0],
                 modality_keys=list(_VIDEO_KEYS),
             ),
@@ -98,7 +67,9 @@ class LiberoSimDataTransform:
                 modality_keys=list(_STATE_KEYS),
             ),
             "action": ModalityConfig(
-                delta_indices=list(range(24)),
+                delta_indices=list(
+                    range(FrankaPnpDataTransform.DEFAULT_ACTION_HORIZON)
+                ),
                 modality_keys=list(_ACTION_KEYS),
             ),
             "language": ModalityConfig(
@@ -118,12 +89,12 @@ class LiberoSimDataTransform:
         cfg: Any,
         embodiment_tag_mapping: dict[str, int],
     ) -> ComposedModalityTransform:
-        """Build the full ``ComposedModalityTransform`` chain for libero_sim."""
-        return LiberoSimDataTransform._build_composed_transform(
+        """Build the full ``ComposedModalityTransform`` chain for ``franka_pnp``."""
+        return FrankaPnpDataTransform._build_composed_transform(
             tokenizer_path=tokenizer_path,
             state_horizon=int(cfg.get("state_horizon", 1)),
             action_horizon=int(
-                cfg.get("action_horizon", LiberoSimDataTransform.DEFAULT_ACTION_HORIZON)
+                cfg.get("action_horizon", FrankaPnpDataTransform.DEFAULT_ACTION_HORIZON)
             ),
             max_state_dim=int(cfg.get("max_state_dim", 64)),
             max_action_dim=int(cfg.get("max_action_dim", 32)),
@@ -152,8 +123,8 @@ class LiberoSimDataTransform:
         language_dropout_prob: float,
         always_use_default_instruction: bool,
         embodiment_tag_mapping: dict[str, int],
-        video_height: int = _DEFAULT_VIDEO_HEIGHT,
-        video_width: int = _DEFAULT_VIDEO_WIDTH,
+        video_height: int,
+        video_width: int,
     ) -> ComposedModalityTransform:
         vk = list(_VIDEO_KEYS)
         state_k = list(_STATE_KEYS)
