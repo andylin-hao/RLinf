@@ -156,14 +156,20 @@ class TestOverlapEnvBootstrap(unittest.TestCase):
         # 2. Interact (should consume the prefetch)
         import asyncio
 
-        loop = asyncio.get_event_loop()
-        # Mock send_rollout_trajectories as it's awaited
-        self.worker.send_rollout_trajectories = MagicMock(return_value=asyncio.Future())
-        self.worker.send_rollout_trajectories.return_value.set_result(None)
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            # Mock send_rollout_trajectories as it's awaited
+            self.worker.send_rollout_trajectories = MagicMock(
+                return_value=asyncio.Future()
+            )
+            self.worker.send_rollout_trajectories.return_value.set_result(None)
 
-        loop.run_until_complete(
-            self.worker.interact(input_channel, rollout_channel, None, None)
-        )
+            loop.run_until_complete(
+                self.worker.interact(input_channel, rollout_channel, None, None)
+            )
+        finally:
+            loop.close()
 
         self.assertIsNone(self.worker._prefetched_train_bootstrap)
         # Verify that _bootstrap_and_send_train was NOT called during interact
