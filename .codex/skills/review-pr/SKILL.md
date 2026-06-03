@@ -5,7 +5,7 @@ description: Reviews a pull request from a PR URL by directly fetching the URL c
 
 # Review PR (From PR URL)
 
-Reviews the changes in a specific GitHub pull request. **The primary focus is code correctness and design-pattern consistency with the existing codebase.** PR formatting, commit conventions, and user-facing documentation are checked but should not dominate the review. See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution rules referenced below.
+Reviews the changes in a specific GitHub pull request. **The primary focus is code correctness and design-pattern consistency with the existing codebase.** PR formatting, commit conventions, and user-facing documentation are checked but should not dominate the review. See [CONTRIBUTING.md](../../../CONTRIBUTING.md) for the contribution rules referenced below.
 
 ## 1. Input: PR URL
 

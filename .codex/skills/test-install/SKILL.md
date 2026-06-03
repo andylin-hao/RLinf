@@ -29,7 +29,7 @@ so it works regardless.
 
 ## Run (agent path)
 
-The driver has six subcommands. **Start with the read-only ones** (`list`,
+The driver has seven subcommands. **Start with the read-only ones** (`list`,
 `resolve`, `check-paths`) — they're instant and tell you exactly what CI does
 before you spend an hour on an install.
 

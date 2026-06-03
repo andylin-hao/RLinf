@@ -337,15 +337,20 @@ def cmd_run(args):
     if rc:
         print("install failed; stopping.", file=sys.stderr)
         return rc
-    if not job.tests:
+    # A (model, env) pair can map to several CI jobs — e.g. openvla/maniskill_libero
+    # has separate SAC, async-SAC, and PPO jobs. Run the tests from every matching
+    # job on the same platform we installed, so coverage matches CI instead of
+    # silently stopping at the first job.
+    tests = [t for h in hits if h.platform == job.platform for t in h.tests]
+    if not tests:
         print(
-            "# install OK; this job has no e2e test in CI — nothing to run. "
-            "Ask the user what to run.",
+            "# install OK; no CI job for this model/env has an e2e test — "
+            "nothing to run. Ask the user what to run.",
             file=sys.stderr,
         )
         return 0
     rc = 0
-    for t in job.tests:
+    for t in tests:
         print(f"# === check-paths {t['config']} ===", file=sys.stderr)
         pr = scan_config_paths(t["config"])
         miss = [(k, v) for k, v, kind, ex in pr[1] if kind == "required" and not ex]
