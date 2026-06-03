@@ -86,6 +86,7 @@ Mention only if there are real issues; do not pad the review.
 - Public classes/methods have Google-style docstrings; type hints on parameters; return type when not deducible.
 - Assertions/exceptions have meaningful messages (no empty or `xxx != yyy` restatements).
 - `logging` / `self.log_*` not `print`.
+- **License header (newly-added files)**: every file *added* by this PR must carry the standard RLinf header (`# Copyright <YEAR> The RLinf Authors.`), and `<YEAR>` must equal the current calendar year. Determine the current year (e.g. `date +%Y`), list added files with `git diff --name-status origin/main...<pr-head>` (status `A`), and flag any new file whose header is missing or whose copyright year is not the current year. Files vendored from third parties keep their upstream copyright line — apply this only to the RLinf Authors header.
 - Every commit `Signed-off-by`; messages follow Conventional Commits `<type>(<scope>): <description>`.
 - PR title in Conventional Commits format; PR Description and Checklist sections filled; testing results if performance/stability is affected.
 

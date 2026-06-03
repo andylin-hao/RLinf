@@ -41,5 +41,6 @@ Use alongside the PR diff. **Always cross-reference against `origin/main`** (`gi
 - [ ] Public classes/methods have Google-style docstrings; param type hints; return type when needed
 - [ ] Assertions/exceptions have meaningful messages
 - [ ] Logging used (no `print`)
+- [ ] Newly-added files (`git diff --name-status origin/main...<pr-head>`, status `A`) carry the `# Copyright <YEAR> The RLinf Authors.` header with `<YEAR>` = current year (`date +%Y`); third-party-vendored files keep their upstream copyright line
 - [ ] Every commit `Signed-off-by`; Conventional Commits subject
 - [ ] PR title in Conventional Commits format; PR Description + Checklist sections filled
