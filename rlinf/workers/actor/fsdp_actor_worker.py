@@ -273,6 +273,7 @@ class FSDPActor(FSDPModelManager, Worker):
 
         torch.distributed.barrier()
 
+    @Worker.timer("actor/sync_model_to_rollout")
     def sync_model_to_rollout(self):
         """
         Sync the model's full state dict to the rollout worker.
@@ -1021,6 +1022,7 @@ class EmbodiedFSDPActor(FSDPModelManager, Worker):
     def get_rollout_state_dict(self) -> dict:
         return self.get_model_state_dict(cpu_offload=False, full_state_dict=False)
 
+    @Worker.timer("actor/sync_model_to_rollout")
     async def sync_model_to_rollout(self) -> None:
         if self.enable_offload:
             if not self.is_optimizer_offloaded:
@@ -1069,6 +1071,7 @@ class EmbodiedFSDPActor(FSDPModelManager, Worker):
             )
             self.offload_param_and_grad(True)
 
+    @Worker.timer("actor/recv_traj")
     async def recv_rollout_trajectories(self, input_channel: Channel) -> None:
         """
         Receive rollout trajectories from rollout workers.
@@ -1168,6 +1171,7 @@ class EmbodiedFSDPActor(FSDPModelManager, Worker):
 
         return rollout_batch
 
+    @Worker.timer("actor/compute_adv")
     def compute_advantages_and_returns(self) -> dict[str, torch.Tensor]:
         """
         Compute the advantages and returns.
