@@ -65,6 +65,7 @@ The PR must match how RLinf already does things. Mismatches are usually defects 
 
 Both directions matter, and EN/ZH parity must be checked explicitly:
 
+- **If this PR changes documentation**, follow the [docs-check skill](../docs-check/SKILL.md) to drive this review: it cross-checks docs against code and against each other (commands, config keys, paths, model/env names) and enforces EN↔ZH parity.
 - **Docs → code**: every config key, CLI flag, env var, file path, function/class name, and supported model/env name mentioned in changed docs must exist in `origin/main` + this PR. Verify with `git show origin/main:rlinf/...`. Stale references = finding.
 - **Code → docs**: when this PR adds, removes, or renames a public-facing config key, model, env, runner, script, env var, or supported feature, the corresponding doc page **must be updated in the same PR**. If missing, list the exact doc files (EN and ZH) that need edits.
 - **EN ↔ ZH parity** (do this explicitly, even when only one language was touched): paired pages under `docs/source-en/` and `docs/source-zh/` must agree on setup commands, paths, env vars, config keys, supported models/envs/algorithms, capability claims, reported numbers (metrics, table values, dataset sizes, trial counts), and section structure/order. If only one side is updated, name the matching file that also needs the change.
@@ -74,6 +75,7 @@ Both directions matter, and EN/ZH parity must be checked explicitly:
 ### (d) Tests and CI integration
 
 - **User-facing changes** must have **tests** (unit or e2e). Reviewer must be able to validate reproducibility.
+- **If this PR changes the install script** (`requirements/install.sh`, `requirements/embodied/`, or `docker/Dockerfile`), follow the [install-check skill](../install-check/SKILL.md) to review the changes: reuse of common utilities, system deps kept in `sys_deps.sh`, pinned/forked git deps, no ad-hoc `pyproject.toml`/core-dep hacks, and a matching Dockerfile build stage for every new model/env.
 - **Dependencies / CI**: new env/model needs install-script update, Docker stage, and CI/e2e coverage — cross-check with the [add-install-docker-ci-e2e skill](../add-install-docker-ci-e2e/SKILL.md).
 - New CI-relevant YAML must be referenced in the e2e test matrix.
 - Large/new dependencies (docker, models, datasets) → maintainer ping noted.

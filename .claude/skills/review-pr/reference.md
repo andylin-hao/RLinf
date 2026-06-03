@@ -23,6 +23,7 @@ Use alongside the PR diff. **Always cross-reference against `origin/main`** (`gi
 - [ ] No hardcoded machine paths, sleep-based sync, or monkey-patches
 
 ## (c) Code ↔ docs consistency
+- [ ] If docs changed, follow the [docs-check skill](../docs-check/SKILL.md) (code↔docs cross-check + EN↔ZH parity)
 - [ ] Every config key / CLI flag / env var / path / supported name mentioned in changed docs exists in `origin/main` + PR
 - [ ] Public-facing additions/renames/removals in code are reflected in BOTH `docs/source-en/` AND `docs/source-zh/`
 - [ ] EN/ZH paired pages agree: commands, paths, keys, claims, numbers, structure
@@ -31,6 +32,7 @@ Use alongside the PR diff. **Always cross-reference against `origin/main`** (`gi
 - [ ] Each docs finding gives concrete wording/structure fix and file references
 
 ## (d) Tests & CI
+- [ ] If the install script changed (`requirements/install.sh`, `requirements/embodied/`, `docker/Dockerfile`), follow the [install-check skill](../install-check/SKILL.md)
 - [ ] User-facing changes have unit or e2e tests
 - [ ] New env/model has install-script + Docker stage + CI/e2e coverage (use add-install-docker-ci-e2e)
 - [ ] New CI-relevant YAML referenced in the e2e test matrix
