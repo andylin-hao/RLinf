@@ -91,6 +91,7 @@ class TestOverlapEnvBootstrap(unittest.TestCase):
         self.worker.n_train_chunk_steps = 2
         self.worker.rollout_epoch = 1
         self.worker.enable_offload = False
+        self.worker.use_training_pipeline = False
         self.worker.collect_transitions = False
         self.worker.collect_prev_infos = True
         self.worker.reward_mode = self.cfg.get("reward", {}).get(

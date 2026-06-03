@@ -814,6 +814,16 @@ def validate_embodied_cfg(cfg):
         f"Supported embodied models: {sorted([x.value for x in EMBODIED_MODEL])}."
     )
 
+    if cfg.runner.get("use_training_pipeline", False):
+        assert not cfg.algorithm.get("normalize_advantages", True), (
+            "algorithm.normalize_advantages must be False when "
+            "runner.use_training_pipeline is True."
+        )
+        assert cfg.algorithm.adv_type == "gae", (
+            "algorithm.adv_type only supports 'gae' now"
+            "when runner.use_training_pipeline is True."
+        )
+
     # NOTE: Currently we only support actor_critic as PPO algorithm loss, and only support value_head as critic model.
     # This will be updated in the future to support more algorithms and critic models.
     # Check that actor_critic loss requires value_head (training only; eval does not need critic)
