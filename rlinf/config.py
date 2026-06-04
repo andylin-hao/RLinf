@@ -1227,7 +1227,6 @@ def validate_cfg(cfg: DictConfig) -> DictConfig:
     Cluster(
         cluster_cfg=cfg.cluster,
         distributed_log_dir=cfg.runner.per_worker_log_path,
-        nsight_output_dir=cfg.runner.nsight_output_path,
     )
 
     assert cfg.runner.task_type in SUPPORTED_TASK_TYPE, (

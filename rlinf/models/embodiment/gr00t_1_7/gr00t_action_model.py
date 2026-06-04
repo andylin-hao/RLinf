@@ -15,6 +15,7 @@
 import json
 import logging
 import random
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Literal, Optional, Union
 
@@ -40,6 +41,54 @@ from rlinf.models.embodiment.modules.explore_noise_net import ExploreNoiseNet
 from rlinf.models.embodiment.modules.value_head import ValueHead
 
 logger = logging.getLogger(__name__)
+
+
+@contextmanager
+def _use_local_hf_source_for_model_id(
+    *,
+    hf_model_id: str,
+    local_model_path: str | None,
+):
+    """Temporarily resolve one HF model id to a local snapshot directory.
+
+    GR00T-N1.7 keeps the official backbone id in ``config.model_name`` for
+    upstream backbone selection, but some RLinf environments need to source the
+    actual weights from a pre-downloaded local directory instead of the Hub.
+    """
+    if local_model_path is None:
+        yield
+        return
+
+    local_model_dir = Path(str(local_model_path))
+    if not local_model_dir.is_dir():
+        yield
+        return
+
+    from gr00t.model.modules import qwen3_backbone as qwen3_backbone_module
+
+    model_cls = qwen3_backbone_module.Qwen3VLForConditionalGeneration
+    original_from_pretrained_impl = model_cls.from_pretrained.__func__
+    original_from_pretrained = model_cls.from_pretrained
+
+    @classmethod
+    def _patched_from_pretrained(cls, pretrained_model_name_or_path, *args, **kwargs):
+        requested_source = str(pretrained_model_name_or_path)
+        resolved_source = requested_source
+        if requested_source == hf_model_id:
+            resolved_source = str(local_model_dir)
+            print(
+                "[RLinf] Loading backbone from local path "
+                f"{resolved_source} for model id {hf_model_id}"
+            )
+        return original_from_pretrained_impl(
+            cls, resolved_source, *args, **kwargs
+        )
+
+    model_cls.from_pretrained = _patched_from_pretrained
+    try:
+        yield
+    finally:
+        model_cls.from_pretrained = original_from_pretrained
 
 _FORWARD_INPUT_SKIP_KEYS = {
     "advantages",
@@ -753,21 +802,18 @@ class GR00T_N1_7_ForRLActionPrediction(Gr00tN1d7, BasePolicy):
             "transformers_loading_kwargs", {"trust_remote_code": True}
         )
 
-        # If a local backbone path is provided, override config.model_name so that
-        # Qwen3Backbone uses the local directory instead of downloading the gated
-        # HF repo "nvidia/Cosmos-Reason2-2B".
         backbone_model_path = kwargs.pop("backbone_model_path", None)
-        if backbone_model_path:
-            from pathlib import Path as _Path
-
+        configured_model_name = str(config.model_name)
+        if backbone_model_path is not None:
             backbone_model_path = str(backbone_model_path)
-            if _Path(backbone_model_path).is_dir():
-                config.model_name = backbone_model_path
-                print(f"[RLinf] RL model using local backbone: {backbone_model_path}")
 
-        super().__init__(
-            config, transformers_loading_kwargs=transformers_loading_kwargs, **kwargs
-        )
+        with _use_local_hf_source_for_model_id(
+            hf_model_id=configured_model_name,
+            local_model_path=backbone_model_path,
+        ):
+            super().__init__(
+                config, transformers_loading_kwargs=transformers_loading_kwargs, **kwargs
+            )
 
         self.padding_value = rl_head_config.get("padding_value", 0)
         self.model_path = Path(local_model_path)
