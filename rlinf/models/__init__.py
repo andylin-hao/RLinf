@@ -112,7 +112,7 @@ def _register_builtin_models():
         return get_model(cfg, torch_dtype)
 
     def _build_gr00t_n1d6(cfg: DictConfig, torch_dtype):
-        from rlinf.models.embodiment.gr00t_n1d6 import get_model
+        from rlinf.models.embodiment.gr00t import get_model
 
         return get_model(cfg, torch_dtype)
 

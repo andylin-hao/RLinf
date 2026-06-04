@@ -12,26 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
-import sys
-import types
 from pathlib import Path
 
 import torch
 from omegaconf import DictConfig, OmegaConf
 
-# Monkey-patch: inject a stub for rlinf.envs.libero.asset_paths so that
-# env workers can import it even when the file is absent from the container.
-# This avoids modifying the official rlinf/envs/libero/libero_env.py.
-_OLD_ASSET_PATHS = sys.modules.get("rlinf.envs.libero.asset_paths")
-if _OLD_ASSET_PATHS is None:
-    _stub = types.ModuleType("rlinf.envs.libero.asset_paths")
-
-    def _noop(*args, **kwargs):
-        pass
-
-    _stub.apply_standard_libero_env_vars = _noop
-    sys.modules["rlinf.envs.libero.asset_paths"] = _stub
+_SUPPORTED_EMBODIMENT_TAGS = (
+    "behavior_r1_pro",
+    "gr1",
+    "robocasa_panda_omron",
+    "libero_panda",
+    "libero_franka",
+    "isaaclab_franka",
+    "maniskill_widowx",
+    "new_embodiment",
+    "so101",
+    "so100",
+)
 
 
 def get_model(cfg: DictConfig, torch_dtype=torch.bfloat16):
@@ -41,65 +38,49 @@ def get_model(cfg: DictConfig, torch_dtype=torch.bfloat16):
 
     AutoConfig.register("Gr00tN1d6", Gr00tN1d6Config)
     AutoModel.register(Gr00tN1d6Config, Gr00tN1d6)
-    logging.info(
-        "Successfully registered custom architecture Gr00tN1d6, authentication passed!"
-    )
+
     from rlinf.utils.patcher import Patcher
 
     Patcher.clear()
     Patcher.add_patch(
         "gr00t.data.embodiment_tags.EmbodimentTag",
-        "rlinf.models.embodiment.gr00t_n1d6.embodiment_tags.EmbodimentTag",
+        "rlinf.models.embodiment.gr00t.embodiment_tags.EmbodimentTag",
     )
     Patcher.add_patch(
         "gr00t.data.embodiment_tags.EMBODIMENT_TAG_MAPPING",
-        "rlinf.models.embodiment.gr00t_n1d6.embodiment_tags.EMBODIMENT_TAG_MAPPING",
+        "rlinf.models.embodiment.gr00t.embodiment_tags.EMBODIMENT_TAG_MAPPING",
     )
     Patcher.apply()
 
     from gr00t.data.embodiment_tags import EmbodimentTag
 
-    from rlinf.models.embodiment.gr00t_n1d6.gr00t_action_model import (
+    from rlinf.models.embodiment.gr00t.gr00t_n1d6.gr00t_action_model import (
         GR00T_N1_6_ForRLActionPrediction,
     )
-    from rlinf.models.embodiment.gr00t_n1d6.utils import replace_dropout_with_identity
+    from rlinf.models.embodiment.gr00t.utils import replace_dropout_with_identity
 
-    use_official_libero_panda = bool(
-        OmegaConf.select(cfg, "use_official_libero_panda", default=False)
-    )
-
-    if cfg.embodiment_tag == "libero_panda":
-        emb_tag = (
-            EmbodimentTag.LIBERO_PANDA
-            if use_official_libero_panda
-            else EmbodimentTag.ROBOCASA_PANDA_OMRON
-        )
-    elif cfg.embodiment_tag in [
-        "libero_franka",
-        "isaaclab_franka",
-        "maniskill_widowx",
-        "robocasa_panda_omron",
-    ]:
-        emb_tag = EmbodimentTag.ROBOCASA_PANDA_OMRON
-    elif cfg.embodiment_tag == "gr1":
-        emb_tag = EmbodimentTag.GR1
-    elif cfg.embodiment_tag == "behavior_r1_pro":
-        emb_tag = EmbodimentTag.BEHAVIOR_R1_PRO
-    elif cfg.embodiment_tag in ("new_embodiment", "so101", "so100"):
-        emb_tag = EmbodimentTag.NEW_EMBODIMENT
-    else:
+    embodiment_tag_by_cfg = {
+        "libero_panda": EmbodimentTag.LIBERO_PANDA,
+        "libero_franka": EmbodimentTag.LIBERO_FRANKA,
+        "isaaclab_franka": EmbodimentTag.ISAACLAB_FRANKA,
+        "maniskill_widowx": EmbodimentTag.MANISKILL_WIDOWX,
+        "robocasa_panda_omron": EmbodimentTag.ROBOCASA_PANDA_OMRON,
+        "gr1": EmbodimentTag.GR1,
+        "behavior_r1_pro": EmbodimentTag.BEHAVIOR_R1_PRO,
+        "new_embodiment": EmbodimentTag.NEW_EMBODIMENT,
+        "so101": EmbodimentTag.NEW_EMBODIMENT,
+        "so100": EmbodimentTag.NEW_EMBODIMENT,
+    }
+    emb_tag = embodiment_tag_by_cfg.get(cfg.embodiment_tag)
+    if emb_tag is None:
         raise ValueError(
             f"Invalid or unsupported embodiment tag: {cfg.embodiment_tag}. "
-            "Supported tags are: ['behavior_r1_pro', 'gr1', 'robocasa_panda_omron', "
-            "'libero_panda', 'libero_franka', 'isaaclab_franka', 'maniskill_widowx', "
-            "'new_embodiment', 'so101', 'so100']."
+            f"Supported tags are: {list(_SUPPORTED_EMBODIMENT_TAGS)}."
         )
 
     model_path = Path(cfg.model_path)
     if not model_path.exists():
         raise FileNotFoundError(f"Model path does not exist: {model_path}")
-
-    model_cls = GR00T_N1_6_ForRLActionPrediction
 
     config = Gr00tN1d6Config.from_pretrained(str(model_path))
     _action_dim = cfg.get("action_dim")
@@ -108,7 +89,7 @@ def get_model(cfg: DictConfig, torch_dtype=torch.bfloat16):
 
     processor_path = OmegaConf.select(cfg, "processor_path", default=None)
 
-    model = model_cls.from_pretrained(
+    model = GR00T_N1_6_ForRLActionPrediction.from_pretrained(
         config=config,
         local_model_path=str(model_path),
         pretrained_model_name_or_path=str(model_path),
@@ -123,7 +104,6 @@ def get_model(cfg: DictConfig, torch_dtype=torch.bfloat16):
 
     model.to(torch_dtype)
     if cfg.rl_head_config.add_value_head and hasattr(model.action_head, "value_head"):
-        # reinitialize the value head after model loading
         model.action_head.value_head._init_weights()
 
     if cfg.rl_head_config.disable_dropout:

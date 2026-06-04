@@ -29,11 +29,11 @@ from torch.distributions import Normal
 from transformers.feature_extraction_utils import BatchFeature
 
 from rlinf.models.embodiment.base_policy import BasePolicy, ForwardType
-from rlinf.models.embodiment.gr00t_n1d6.simulation_io import (
-    ACTION_CONVERSION,
+from rlinf.models.embodiment.gr00t.simulation_io import (
+    ACTION_CONVERSION_N1D6,
     OBS_CONVERSION,
 )
-from rlinf.models.embodiment.gr00t_n1d6.utils import (
+from rlinf.models.embodiment.gr00t.utils import (
     squeeze_dict_values,
     unsqueeze_dict_values,
 )
@@ -616,7 +616,7 @@ class GR00T_N1_6_ForRLActionPrediction(Gr00tN1d6, BasePolicy):
             self.action_head.num_inference_timesteps = denoising_steps
 
         self.obs_convert_fn = OBS_CONVERSION[obs_converter_type]
-        self.action_convert_fn = ACTION_CONVERSION[obs_converter_type]
+        self.action_convert_fn = ACTION_CONVERSION_N1D6[obs_converter_type]
         exp_cfg_path = self.model_path / "experiment_cfg"
         self._load_metadata(exp_cfg_path)
 
@@ -1168,18 +1168,6 @@ class GR00T_N1_6_ForRLActionPrediction(Gr00tN1d6, BasePolicy):
                         else torch.tensor(val)
                     )
         return actions, result
-
-    def _get_action_from_normalized_input(
-        self, normalized_input: dict[str, Any]
-    ) -> torch.Tensor:
-        with (
-            torch.inference_mode(),
-            torch.autocast(device_type="cuda", dtype=self.compute_dtype),
-        ):
-            model_pred = self.get_action(normalized_input)
-
-        normalized_action = model_pred["action_pred"].float()
-        return normalized_action
 
     def _get_unnormalized_action(
         self,
