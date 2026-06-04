@@ -1033,7 +1033,10 @@ class EmbodiedFSDPActor(FSDPModelManager, Worker):
         return model
 
     def get_rollout_state_dict(self) -> dict:
-        return self.get_model_state_dict(cpu_offload=False, full_state_dict=False)
+        # Use full_state_dict=True to get regular tensors (not DTensor),
+        # matching RLinf-offcial N1.5's proven approach. DTensor via
+        # full_state_dict=False caused init_sync corruption in GR00T N1.7.
+        return self.get_model_state_dict(cpu_offload=False, full_state_dict=True)
 
     @Worker.timer("actor/sync_model_to_rollout")
     async def sync_model_to_rollout(self) -> None:
@@ -1402,6 +1405,7 @@ class EmbodiedFSDPActor(FSDPModelManager, Worker):
         elif SupportedModel(self.cfg.actor.model.model_type) in [
             SupportedModel.GR00T,
             SupportedModel.GR00T_N1D6,
+            SupportedModel.GR00T_1_7,
             SupportedModel.ABOT_M0,
         ]:
             kwargs["prev_logprobs"] = prev_logprobs
@@ -1420,6 +1424,7 @@ class EmbodiedFSDPActor(FSDPModelManager, Worker):
         if SupportedModel(self.cfg.actor.model.model_type) in [
             SupportedModel.GR00T,
             SupportedModel.GR00T_N1D6,
+            SupportedModel.GR00T_1_7,
             SupportedModel.ABOT_M0,
         ]:
             prev_logprobs = output_dict["prev_logprobs"]
@@ -1448,6 +1453,7 @@ class EmbodiedFSDPActor(FSDPModelManager, Worker):
 
         if SupportedModel(self.cfg.actor.model.model_type) in [
             SupportedModel.GR00T_N1D6,
+            SupportedModel.GR00T_1_7,
         ]:
             loss_kwargs["clip_ratio_c"] = self.cfg.algorithm.get("clip_ratio_c", 3.0)
             if self.cfg.algorithm.get("clip_log_ratio_min") is not None:

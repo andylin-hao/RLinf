@@ -104,6 +104,7 @@ SupportedModel.QWEN2_5_VL_SFT = SupportedModel.register("qwen2.5_vl", force=True
 SupportedModel.QWEN3_VL_SFT = SupportedModel.register("qwen3_vl", force=True)
 SupportedModel.QWEN3_VL_MOE_SFT = SupportedModel.register("qwen3_vl_moe", force=True)
 SupportedModel.GR00T_N1D6 = SupportedModel.register("gr00t_n1d6", force=True)
+SupportedModel.GR00T_1_7 = SupportedModel.register("gr00t_1_7", force=True)
 
 EMBODIED_MODEL = set(
     {
@@ -123,6 +124,7 @@ EMBODIED_MODEL = set(
         SupportedModel.ABOT_M0,
         SupportedModel.RESNET_REWARD,
         SupportedModel.GR00T_N1D6,
+        SupportedModel.GR00T_1_7,
         SupportedModel.CFG_MODEL,
         SupportedModel.VALUE_MODEL,
     }
@@ -1225,6 +1227,7 @@ def validate_cfg(cfg: DictConfig) -> DictConfig:
     Cluster(
         cluster_cfg=cfg.cluster,
         distributed_log_dir=cfg.runner.per_worker_log_path,
+        nsight_output_dir=cfg.runner.nsight_output_path,
     )
 
     assert cfg.runner.task_type in SUPPORTED_TASK_TYPE, (

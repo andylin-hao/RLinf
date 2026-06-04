@@ -261,6 +261,7 @@ class MultiStepRolloutWorker(Worker):
             SupportedModel.GR00T,
             SupportedModel.GR00T_N1D6,
             SupportedModel.ABOT_M0,
+            SupportedModel.GR00T_1_7,
             SupportedModel.DREAMZERO,
             SupportedModel.CNN_POLICY,
             SupportedModel.CFG_MODEL,
@@ -458,6 +459,9 @@ class MultiStepRolloutWorker(Worker):
 
         if self.enable_offload:
             self.offload_model()
+        else:
+            gc.collect()
+            self.torch_platform.empty_cache()
 
     async def evaluate(self, input_channel: Channel, output_channel: Channel):
         if self.enable_offload:
@@ -475,6 +479,9 @@ class MultiStepRolloutWorker(Worker):
 
         if self.enable_offload:
             self.offload_model()
+        else:
+            gc.collect()
+            self.torch_platform.empty_cache()
 
     def offload_model(self):
         if self.enable_cuda_graph:
@@ -627,6 +634,15 @@ class MultiStepRolloutWorker(Worker):
     def _split_rollout_result(
         self, rollout_result: RolloutResult, sizes: list[int]
     ) -> list[RolloutResult]:
+        # Fast path: when there is only one destination rank, keep the original
+        # rollout payload intact. Some embodied forward inputs are stored in
+        # processor/backbone-native shapes whose leading dimension is not always
+        # the env batch dimension (for example flattened image tokens or
+        # sequence-length tensors). Those tensors do not need to be re-sharded in
+        # the single-rank case, and splitting them on dim-0 can corrupt shapes.
+        if len(sizes) == 1:
+            return [rollout_result]
+
         def _split_optional_tensor(
             tensor: torch.Tensor | None,
         ) -> tuple[torch.Tensor | None, ...]:
