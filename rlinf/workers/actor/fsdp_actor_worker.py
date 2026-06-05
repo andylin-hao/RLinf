@@ -1033,10 +1033,7 @@ class EmbodiedFSDPActor(FSDPModelManager, Worker):
         return model
 
     def get_rollout_state_dict(self) -> dict:
-        # Use full_state_dict=True to get regular tensors (not DTensor),
-        # matching RLinf-offcial N1.5's proven approach. DTensor via
-        # full_state_dict=False caused init_sync corruption in GR00T N1.7.
-        return self.get_model_state_dict(cpu_offload=False, full_state_dict=True)
+        return self.get_model_state_dict(cpu_offload=False, full_state_dict=False)
 
     @Worker.timer("actor/sync_model_to_rollout")
     async def sync_model_to_rollout(self) -> None:

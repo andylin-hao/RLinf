@@ -1274,7 +1274,7 @@ jobs:
           export UV_CACHE_DIR=/workspace/dataset/.uv_cache
           export UV_PYTHON_INSTALL_DIR=/workspace/dataset/.uv_python
           export LIBERO_PATH=/workspace/dataset/LIBERO
-          export GR00T_PATH=/workspace/dataset/Isaac-GR00T/
+          export GR00T_PATH=/workspace/dataset/Isaac-GR00T-1.7/
           bash requirements/install.sh embodied --model gr00t_17 --env maniskill_libero
 
       - name: Libero-Spatial PPO test

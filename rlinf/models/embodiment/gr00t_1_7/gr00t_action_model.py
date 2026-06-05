@@ -80,15 +80,14 @@ def _use_local_hf_source_for_model_id(
                 "[RLinf] Loading backbone from local path "
                 f"{resolved_source} for model id {hf_model_id}"
             )
-        return original_from_pretrained_impl(
-            cls, resolved_source, *args, **kwargs
-        )
+        return original_from_pretrained_impl(cls, resolved_source, *args, **kwargs)
 
     model_cls.from_pretrained = _patched_from_pretrained
     try:
         yield
     finally:
         model_cls.from_pretrained = original_from_pretrained
+
 
 _FORWARD_INPUT_SKIP_KEYS = {
     "advantages",
@@ -812,7 +811,9 @@ class GR00T_N1_7_ForRLActionPrediction(Gr00tN1d7, BasePolicy):
             local_model_path=backbone_model_path,
         ):
             super().__init__(
-                config, transformers_loading_kwargs=transformers_loading_kwargs, **kwargs
+                config,
+                transformers_loading_kwargs=transformers_loading_kwargs,
+                **kwargs,
             )
 
         self.padding_value = rl_head_config.get("padding_value", 0)
