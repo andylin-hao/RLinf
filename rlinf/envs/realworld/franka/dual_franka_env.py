@@ -67,7 +67,7 @@ class DualFrankaRobotConfig:
     left_gripper_connection: Optional[str] = None
     right_gripper_connection: Optional[str] = None
 
-    enable_camera_player: bool = True
+    enable_camera_player: bool = False
     is_dummy: bool = False
     use_dense_reward: bool = False
     step_frequency: float = 10.0

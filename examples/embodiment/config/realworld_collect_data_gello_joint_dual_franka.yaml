@@ -78,6 +78,7 @@ env:
     left_gello_port: LEFT_GELLO_PORT                              # Replace: /dev/serial/by-id/usb-FTDI_..._FTAxxxxx-if00-port0
     right_gello_port: RIGHT_GELLO_PORT                            # Replace: /dev/serial/by-id/usb-FTDI_..._FTAxxxxx-if00-port0
     override_cfg:
+      enable_camera_player: true
       task_description: TASK_DESCRIPTION                          # Replace: prompt for this collection
       joint_action_mode: "absolute"
       # Safe dual-arm bookkeeping pose (joint-space step does NOT consume
