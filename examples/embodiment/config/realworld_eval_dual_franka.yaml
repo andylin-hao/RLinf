@@ -118,7 +118,7 @@ rollout:
     # SFT ckpt expected layout:
     #   <model_path>/actor/model_state_dict/full_weights.pt
     #   <model_path>/<openpi_data.repo_id>/norm_stats.json
-    model_path: MODEL_PATH  # Replace: /path/to/checkpoints/<run>/global_step_<N>/
+    model_path: MODEL_PATH  # Replace: node-0 path to DEPLOY_CKPT/global_step_<N>/
     precision: ${actor.model.precision}
 
 critic:
@@ -143,4 +143,4 @@ actor:
       detach_critic_input: True
       action_chunk: ${actor.model.num_action_chunks}
     openpi_data:
-      repo_id: SFT_DATASET_REPO_ID  # Replace: HF repo id used during SFT
+      repo_id: SFT_DATASET_REPO_ID  # Replace: <repo_id>/tcp_rot6d_v1 used during SFT

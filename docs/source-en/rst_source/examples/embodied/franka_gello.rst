@@ -144,12 +144,13 @@ Grant permission:
 4. Verify the GELLO device
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Run the built-in test script to confirm that the GELLO device is
-communicating correctly and producing valid joint readings:
+Run the built-in RLinf test script to confirm that the GELLO device is
+communicating correctly and producing valid TCP target readings:
 
 .. code-block:: bash
 
-   python -m gello_teleop.gello_expert \
+   export PYTHONPATH=$PWD:${PYTHONPATH:-}
+   python -m rlinf.envs.realworld.common.gello.gello_expert \
        --port /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTA0OUKN-if00-port0
 
 You should see continuously updating output like:

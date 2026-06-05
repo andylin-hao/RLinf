@@ -17,11 +17,12 @@ hydra:
 #
 # Before launching:
 #   export HF_LEROBOT_HOME=/path/to/lerobot_root
-#   export DUAL_FRANKA_DATA_ROOT=/path/to/lerobot_root/<dataset>
+#   export DUAL_FRANKA_DATA_ROOT=/path/to/lerobot_root
 #   export PI05_BASE_CKPT=/path/to/pi05/torch
+#   export SFT_REPO_ID=<repo_id>/tcp_rot6d_v1
 #   python toolkits/lerobot/calculate_norm_stats.py \
 #       --config-name pi05_dualfranka_tcp_rot6d \
-#       --repo-id <YOUR_HF_USER>/<dataset>
+#       --repo-id $SFT_REPO_ID
 
 cluster:
   num_nodes: 1
@@ -43,8 +44,8 @@ runner:
   save_interval: 2000
 
 data:
-  # LeRobot root on the training machine. Set DUAL_FRANKA_DATA_ROOT to the
-  # same HF_LEROBOT_HOME you export when running calculate_norm_stats.py.
+  # LeRobot root on the training machine, not including the repo id.
+  # Example: /path/to/lerobot_root
   train_data_paths: ${oc.env:DUAL_FRANKA_DATA_ROOT}
 
 algorithm:
@@ -56,6 +57,10 @@ actor:
   micro_batch_size: 16
   global_batch_size: 128
   seed: 0
+  openpi_data:
+    # Full repo id of the backfilled tcp_rot6d dataset.
+    # Must match calculate_norm_stats.py --repo-id.
+    repo_id: SFT_DATASET_REPO_ID  # Replace: <repo_id>/tcp_rot6d_v1
 
   model:
     precision: null
@@ -71,6 +76,9 @@ actor:
       # PaliGemma and breaks FSDP+gradient-checkpointing with a
       # view-inplace error. SFT here trains the full model.
       train_expert_only: False
+    openpi_data:
+      # Same full repo id as actor.openpi_data.repo_id.
+      repo_id: SFT_DATASET_REPO_ID  # Replace: <repo_id>/tcp_rot6d_v1
 
   optim:
     lr: 7.91e-6

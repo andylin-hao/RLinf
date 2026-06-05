@@ -95,7 +95,7 @@ Then look up the matching libfranka version in Franka's official
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Boot a PREEMPT_RT kernel per `Setting up the real-time kernel
-<https://frankarobotics.github.io/docs/libfranka/docs/real_time_kernel.html>`_
+<https://frankarobotics.github.io/docs/doc/libfranka/docs/real_time_kernel.html>`_
 (validated on ``5.15.133-rt69``). Verify:
 
 .. code-block:: bash
@@ -258,7 +258,7 @@ Live joint readout:
 .. code-block:: bash
 
    export PYTHONPATH=$PWD:${PYTHONPATH:-}
-   python -m gello_teleop.gello_expert \
+   python -m rlinf.envs.realworld.common.gello.gello_joint_expert \
        --port /dev/serial/by-id/usb-FTDI_..._<LEFT_ID>-if00-port0
 
 If values stall or jump by ±2π, run ``calibrate`` in the next
@@ -516,13 +516,12 @@ writes into a fresh ``id_{N}``. ``num_data_episodes`` is the
 accumulated cross-session target.
 
 
-Backfill tcp_rot6d and norm_stats
----------------------------------
+Backfill tcp_rot6d
+------------------
 
 Collection produces 16-D joint actions and 68-D joint-env state; π₀.₅
 SFT needs 20-D tcp_rot6d state/actions
-(``[xyz(3) + rot6d(6) + grip(1)] × 2`` for actions). Backfill offline
-first, then compute norm_stats.
+(``[xyz(3) + rot6d(6) + grip(1)] × 2`` for actions).
 
 ``<repo_id>`` is the dataset path relative to ``HF_LEROBOT_HOME``;
 ``joint_v1`` / ``tcp_rot6d_v1`` are version subdirs.
@@ -530,49 +529,35 @@ first, then compute norm_stats.
 .. code-block:: bash
 
    export PYTHONPATH=$PWD:${PYTHONPATH:-}
-   python toolkits/dual_franka/backfill_tcp_rot6d.py \
-       --src $HF_LEROBOT_HOME/<repo_id>/joint_v1 \
-       --dst $HF_LEROBOT_HOME/<repo_id>/tcp_rot6d_v1
-
-The script rebuilds state as 20-D tcp_rot6d (sliced from the existing
-tcp_pose columns, no FK), widens actions to 20-D with xyz/rot6d taken
-from the **next frame's** tcp_pose as the current target (gripper slots
-unchanged), and updates the schema.
-Re-backfilling an already-converted dataset errors out.
-
-.. code-block:: bash
-
-   export PYTHONPATH=$PWD:${PYTHONPATH:-}
    export HF_LEROBOT_HOME=/path/to/lerobot_root
-   python toolkits/lerobot/calculate_norm_stats.py \
-       --config-name pi05_dualfranka_tcp_rot6d \
-       --repo-id <repo_id>/tcp_rot6d_v1
+   export DATA_REPO_ID=<repo_id>
+   export SFT_REPO_ID=$DATA_REPO_ID/tcp_rot6d_v1
 
-Writes
-``<openpi_assets_dirs>/pi05_dualfranka_tcp_rot6d/<repo_id>/norm_stats.json``.
-**Compute after backfill**, otherwise the stats reflect absolute
-targets rather than body-frame deltas.
+   python toolkits/dual_franka/backfill_tcp_rot6d.py \
+       --src $HF_LEROBOT_HOME/$DATA_REPO_ID/joint_v1 \
+       --dst $HF_LEROBOT_HOME/$SFT_REPO_ID
+
+Re-backfilling an already-converted dataset errors out.
 
 
 SFT (π₀.₅, tcp_rot6d_v1)
 ------------------------
 
 SFT runs on a remote GPU training cluster, not on node 0 / node 1.
-Push the tcp_rot6d dataset to the cluster, train there, pull ckpt +
-norm_stats back to node 0 for deployment.
 
-1. Push dataset (node 0):
+1. Push the backfilled dataset to the training machine (node 0):
 
    .. code-block:: bash
 
-      rsync -av $HF_LEROBOT_HOME/<repo_id>/tcp_rot6d_v1/ \
-          <train>:$HF_LEROBOT_HOME/<repo_id>/tcp_rot6d_v1/
+      export HF_LEROBOT_HOME=/path/to/lerobot_root
+      export DATA_REPO_ID=<repo_id>
+      export SFT_REPO_ID=$DATA_REPO_ID/tcp_rot6d_v1
 
-2. Install + train (on ``<train>``). Set
-   ``runner.logger.wandb_entity`` and
-   ``cluster.component_placement`` in
-   ``examples/sft/config/realworld_sft_openpi_dual_franka_tcp_rot6d.yaml``
-   first.
+      ssh <train> "mkdir -p $HF_LEROBOT_HOME/$SFT_REPO_ID"
+      rsync -av $HF_LEROBOT_HOME/$SFT_REPO_ID/ \
+          <train>:$HF_LEROBOT_HOME/$SFT_REPO_ID/
+
+2. Install dependencies (on ``<train>``):
 
    .. code-block:: bash
 
@@ -580,42 +565,98 @@ norm_stats back to node 0 for deployment.
       bash requirements/install.sh embodied --model openpi --env maniskill_libero --use-mirror
       source .venv/bin/activate
 
+3. Compute norm_stats (on ``<train>``):
+
+   .. code-block:: bash
+
       export PYTHONPATH=$PWD:${PYTHONPATH:-}
       export HF_LEROBOT_HOME=/path/to/lerobot_root
-      export DUAL_FRANKA_DATA_ROOT=$HF_LEROBOT_HOME/<repo_id>/tcp_rot6d_v1
-      export PI05_BASE_CKPT=/path/to/pi05/torch
+      export DATA_REPO_ID=<repo_id>
+      export SFT_REPO_ID=$DATA_REPO_ID/tcp_rot6d_v1
 
       python toolkits/lerobot/calculate_norm_stats.py \
           --config-name pi05_dualfranka_tcp_rot6d \
-          --repo-id <repo_id>/tcp_rot6d_v1
-      mkdir -p $PI05_BASE_CKPT/<repo_id>
-      mv <openpi_assets_dirs>/pi05_dualfranka_tcp_rot6d/<repo_id>/norm_stats.json \
-         $PI05_BASE_CKPT/<repo_id>/norm_stats.json
+          --repo-id $SFT_REPO_ID
+
+4. Place norm_stats under the π₀.₅ base ckpt (on ``<train>``):
+
+   .. code-block:: bash
+
+      export PI05_BASE_CKPT=/path/to/pi05/torch
+      export DATA_REPO_ID=<repo_id>
+      export SFT_REPO_ID=$DATA_REPO_ID/tcp_rot6d_v1
+
+      mkdir -p $PI05_BASE_CKPT/$SFT_REPO_ID
+      cp <openpi_assets_dirs>/pi05_dualfranka_tcp_rot6d/$SFT_REPO_ID/norm_stats.json \
+         $PI05_BASE_CKPT/$SFT_REPO_ID/norm_stats.json
+
+5. Edit the SFT config (on ``<train>``):
+
+   ``examples/sft/config/realworld_sft_openpi_dual_franka_tcp_rot6d.yaml``:
+
+   .. code-block:: yaml
+
+      data:
+        train_data_paths: /path/to/lerobot_root
+
+      actor:
+        openpi_data:
+          repo_id: <repo_id>/tcp_rot6d_v1
+        model:
+          model_path: /path/to/pi05/torch
+          openpi_data:
+            repo_id: <repo_id>/tcp_rot6d_v1
+
+   Also set ``runner.logger.wandb_entity`` and
+   ``cluster.component_placement`` for the training cluster.
+
+6. Start training (on ``<train>``):
+
+   .. code-block:: bash
 
       bash examples/sft/run_vla_sft.sh realworld_sft_openpi_dual_franka_tcp_rot6d
 
    Ckpts land at
    ``<log_path>/checkpoints/global_step_<N>/actor/model_state_dict/full_weights.pt``.
 
-3. Pull ckpt + norm_stats back to node 0:
-
-   .. code-block:: bash
-
-      CKPT=<train_log>/checkpoints/global_step_<N>
-      mkdir -p $CKPT/actor/model_state_dict $CKPT/<repo_id>
-      rsync -av <train>:$CKPT/actor/model_state_dict/full_weights.pt \
-          $CKPT/actor/model_state_dict/full_weights.pt
-      rsync -av <train>:$PI05_BASE_CKPT/<repo_id>/norm_stats.json \
-          $CKPT/<repo_id>/norm_stats.json
-
-   Deployment reads
-   ``$CKPT/actor/model_state_dict/full_weights.pt`` and
-   ``$CKPT/<repo_id>/norm_stats.json``.
-
 Real-world deployment
 ---------------------
 
 Same Ray cluster as collection; different entry script and config.
+
+Prepare deployment files
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+1. Prepare the ckpt on the training machine:
+
+   .. code-block:: bash
+
+      CKPT=<train_log>/checkpoints/global_step_<N>
+      export PI05_BASE_CKPT=/path/to/pi05/torch
+      export SFT_REPO_ID=<repo_id>/tcp_rot6d_v1
+
+      mkdir -p $CKPT/$SFT_REPO_ID
+      cp $PI05_BASE_CKPT/$SFT_REPO_ID/norm_stats.json \
+         $CKPT/$SFT_REPO_ID/norm_stats.json
+
+2. Pull files back to node 0:
+
+   .. code-block:: bash
+
+      DEPLOY_CKPT=/path/to/deploy/global_step_<N>
+      SFT_REPO_ID=<repo_id>/tcp_rot6d_v1
+
+      mkdir -p $DEPLOY_CKPT/actor/model_state_dict
+      mkdir -p $DEPLOY_CKPT/$SFT_REPO_ID
+
+      rsync -av <train>:<train_log>/checkpoints/global_step_<N>/actor/model_state_dict/full_weights.pt \
+          $DEPLOY_CKPT/actor/model_state_dict/full_weights.pt
+
+      rsync -av <train>:<train_log>/checkpoints/global_step_<N>/$SFT_REPO_ID/norm_stats.json \
+          $DEPLOY_CKPT/$SFT_REPO_ID/norm_stats.json
+
+``$DEPLOY_CKPT`` only needs to exist on node 0. Set
+``rollout.model.model_path`` to ``$DEPLOY_CKPT`` for deployment.
 
 Install
 ~~~~~~~
@@ -638,15 +679,11 @@ Placeholders are flagged with ``# Replace:``. Most-edited fields:
    * - Field
      - Set to
    * - ``rollout.model.model_path``
-     - ``<sft_log>/checkpoints/global_step_<N>/`` — must contain
+     - ``<DEPLOY_CKPT>`` — must contain
        ``actor/model_state_dict/full_weights.pt`` and
-       ``<data_config.repo_id>/norm_stats.json`` (see
-       "ckpt / norm_stats lock-step" below).
+       ``<actor.model.openpi_data.repo_id>/norm_stats.json``.
    * - ``actor.model.openpi_data.repo_id``
-     - Passed as ``data_kwargs`` to ``get_openpi_config``, overrides
-       ``data_config.repo_id``; this is also the key used to find
-       ``norm_stats.json`` at deployment. Must match
-       ``calculate_norm_stats.py --repo-id``.
+     - ``<repo_id>/tcp_rot6d_v1``.
    * - ``env.eval.override_cfg.task_description``
      - Same as the SFT training prompt.
    * - ``env.eval.override_cfg.target_ee_pose``
@@ -699,6 +736,7 @@ Launch
    # Hydra override example:
    #   bash examples/embodiment/run_realworld_eval.sh realworld_eval_dual_franka \
    #        rollout.model.model_path=/sft/global_step_5000 \
+   #        actor.model.openpi_data.repo_id=<repo_id>/tcp_rot6d_v1 \
    #        env.eval.override_cfg.task_description="pour water"
 
 Per-episode deployment workflow
@@ -732,21 +770,22 @@ into autonomous inference mode:
 ckpt / norm_stats lock-step
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Rollout reads
-``<rollout.model.model_path>/<actor.model.openpi_data.repo_id>/norm_stats.json``.
-``repo_id`` must match the value used at SFT time with
-``calculate_norm_stats.py --repo-id``; otherwise it falls back and
-emits the warning
-``"norm_stats fallback: ... verify they match training or
-inference will be wrong"``. A mismatch does not crash but collapses
-the policy to a fixed action.
+The deployment checkpoint directory must contain:
+
+.. code-block:: text
+
+   <model_path>/
+   ├── actor/model_state_dict/full_weights.pt
+   └── <repo_id>/tcp_rot6d_v1/norm_stats.json
+
+Set ``actor.model.openpi_data.repo_id`` to ``<repo_id>/tcp_rot6d_v1``.
 
 Preflight checks:
 
 .. code-block:: bash
 
-   find <model_path> -maxdepth 3 -name norm_stats.json
    ls <model_path>/actor/model_state_dict/full_weights.pt
+   ls <model_path>/<repo_id>/tcp_rot6d_v1/norm_stats.json
 
 
 Troubleshooting
@@ -754,7 +793,7 @@ Troubleshooting
 
 **GELLO daemon does not start**
    Power-cycle the GELLO, replug the FTDI, and verify with
-   ``python -m gello_teleop.gello_expert --port /dev/...`` that
+   ``python -m rlinf.envs.realworld.common.gello.gello_joint_expert --port /dev/...`` that
    both sides stream Dynamixel readings.
 
 **Ray worker dies silently on import**
@@ -801,11 +840,8 @@ Troubleshooting
    policy chunk length.
 
 **Deployment cannot find ``norm_stats.json``**
-   Copy
-   ``<openpi_assets_dirs>/<repo_id>/`` written by
-   ``calculate_norm_stats.py`` into ``<model_path>/<repo_id>/``;
-   grep for the ``"norm_stats fallback"`` warning to confirm
-   whether the fallback path was taken.
+   Check that the file is at
+   ``<model_path>/<actor.model.openpi_data.repo_id>/norm_stats.json``.
 
 **collect_monitor shows no progress**
    Make sure the launcher pipes through ``2>&1 | tee

@@ -129,11 +129,12 @@ Dynamixel SDK 用于与 GELLO 设备内部的 Dynamixel 舵机通信。
 4. 验证 GELLO 设备
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-运行内置测试脚本，确认 GELLO 设备通信正常并能产生有效的关节数据：
+运行 RLinf 内置测试脚本，确认 GELLO 设备通信正常并能产生有效的 TCP 目标数据：
 
 .. code-block:: bash
 
-   python -m gello_teleop.gello_expert \
+   export PYTHONPATH=$PWD:${PYTHONPATH:-}
+   python -m rlinf.envs.realworld.common.gello.gello_expert \
        --port /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTA0OUKN-if00-port0
 
 你应该看到持续更新的输出，类似于：
