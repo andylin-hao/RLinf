@@ -438,8 +438,8 @@ monitor 单独存在是因为 Ray 的 log monitor 缓冲会破坏 tqdm 原位刷
 ~~~~~~~~
 
 LeRobot v2.1，每会话一个 shard：``<save_dir>/rank_0/id_{N}/``\ 。
-``meta/info.json`` 里 ``state=[68]``\ 、\ ``actions=[16]``\ （joint）
-或 ``[20]``\ （tcp_rot6d）。
+``meta/info.json`` 里 joint 数据为 ``state=[68]``\ 、\ ``actions=[16]``\ ，
+tcp_rot6d 数据为 ``state=[20]``\ 、\ ``actions=[20]``\ 。
 
 关键帧字段：
 
@@ -465,8 +465,9 @@ LeRobot v2.1，每会话一个 shard：``<save_dir>/rank_0/id_{N}/``\ 。
 回填 tcp_rot6d 与 norm_stats
 -----------------------------
 
-采集的是 16 维 joint actions + 68 维 state；π₀.₅ SFT 要求 20 维 tcp_rot6d
-（``[xyz(3) + rot6d(6) + grip(1)] × 2``\ ）。先离线回填，再算 norm_stats。
+采集的是 16 维 joint actions + 68 维 joint-env state；π₀.₅ SFT 要求
+20 维 tcp_rot6d state/actions（actions 为
+``[xyz(3) + rot6d(6) + grip(1)] × 2``\ ）。先离线回填，再算 norm_stats。
 
 ``<repo_id>`` 是数据集相对 ``HF_LEROBOT_HOME`` 的路径，
 ``joint_v1`` / ``tcp_rot6d_v1`` 是版本子目录。
@@ -478,9 +479,9 @@ LeRobot v2.1，每会话一个 shard：``<save_dir>/rank_0/id_{N}/``\ 。
        --src $HF_LEROBOT_HOME/<repo_id>/joint_v1 \
        --dst $HF_LEROBOT_HOME/<repo_id>/tcp_rot6d_v1
 
-回填脚本：state 前 20 维从 tcp_pose 切出来转 rot6d（不跑 FK）；actions
-扩到 20 维，xyz/rot6d 用**下一帧** tcp_pose 当当前目标，gripper 槽位
-沿用原信号。重复回填会直接报错。
+回填脚本：从已有 tcp_pose 列切出并重建 20 维 tcp_rot6d state（不跑
+FK）；actions 扩到 20 维，xyz/rot6d 用**下一帧** tcp_pose 当当前目标，
+gripper 槽位沿用原信号。重复回填会直接报错。
 
 .. code-block:: bash
 

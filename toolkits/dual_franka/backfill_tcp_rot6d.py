@@ -16,10 +16,10 @@
 The source ``actions`` are joint-space but ``state`` already records TCP
 pose (xyz + xyzw quat). No FK is run: the rot6d layout is built by
 re-slicing those existing TCP columns and converting the quaternion via
-``quat_xyzw_to_rot6d``. ``state[0:20]`` is rewritten in place;
-``actions`` widens 16 → 20 using the next frame's TCP as a 10 Hz
-commanded-target proxy. Output is a fresh dataset; the source is left
-untouched.
+``quat_xyzw_to_rot6d``. ``state`` is rebuilt from 68-D joint-env
+observations into the canonical 20-D tcp_rot6d layout; ``actions`` widens
+16 → 20 using the next frame's TCP as a 10 Hz commanded-target proxy.
+Output is a fresh dataset; the source is left untouched.
 
 Run from the repo root::
 
@@ -44,7 +44,8 @@ import tqdm
 
 from rlinf.utils.rot6d import quat_xyzw_to_rot6d
 
-STATE_DIM = 68
+STATE_DIM_IN = 68
+STATE_DIM_OUT = 20
 ACTION_DIM_IN = 16
 ACTION_DIM_OUT = 20
 
@@ -82,38 +83,35 @@ def _assert_unit_quats(state_68: np.ndarray, slc: slice, name: str) -> None:
         )
 
 
-def build_rot6d_state(state_68: np.ndarray) -> np.ndarray:
-    """Overwrite ``state[:, 0:20]`` with the rot6d layout. Keeps dim 68."""
-    if state_68.ndim != 2 or state_68.shape[1] != STATE_DIM:
-        raise ValueError(f"expected state shape (T, {STATE_DIM}), got {state_68.shape}")
-
+def _assert_source_layout(state_68: np.ndarray, actions_16: np.ndarray) -> None:
+    """Validate the source joint-env state/actions layout before conversion."""
+    if state_68.ndim != 2 or state_68.shape[1] != STATE_DIM_IN:
+        raise ValueError(
+            f"expected state shape (T, {STATE_DIM_IN}), got {state_68.shape}"
+        )
+    if actions_16.shape != (state_68.shape[0], ACTION_DIM_IN):
+        raise ValueError(
+            f"expected actions shape (T, {ACTION_DIM_IN}), got {actions_16.shape}"
+        )
     _assert_unit_quats(state_68, L_QUAT_SLICE, "left")
     _assert_unit_quats(state_68, R_QUAT_SLICE, "right")
 
+
+def build_rot6d_state(state_68: np.ndarray) -> np.ndarray:
+    """Build the canonical 20-D tcp_rot6d state layout."""
     grip = state_68[:, GRIP_SLICE]
     l_xyz = state_68[:, L_XYZ_SLICE]
     r_xyz = state_68[:, R_XYZ_SLICE]
     l_r6 = quat_xyzw_to_rot6d(state_68[:, L_QUAT_SLICE])
     r_r6 = quat_xyzw_to_rot6d(state_68[:, R_QUAT_SLICE])
 
-    new_prefix = np.concatenate([grip, l_xyz, l_r6, r_xyz, r_r6], axis=-1)
-    assert new_prefix.shape == (state_68.shape[0], 20)
-
-    out = state_68.astype(np.float32, copy=True)
-    out[:, 0:20] = new_prefix.astype(np.float32)
-    return out
+    out = np.concatenate([grip, l_xyz, l_r6, r_xyz, r_r6], axis=-1)
+    assert out.shape == (state_68.shape[0], STATE_DIM_OUT)
+    return out.astype(np.float32)
 
 
 def build_rot6d_actions(state_68: np.ndarray, actions_16: np.ndarray) -> np.ndarray:
     """Build 20-d rot6d actions using next-frame TCP as the target proxy."""
-    if actions_16.shape != (state_68.shape[0], ACTION_DIM_IN):
-        raise ValueError(
-            f"expected actions shape (T, {ACTION_DIM_IN}), got {actions_16.shape}"
-        )
-
-    _assert_unit_quats(state_68, L_QUAT_SLICE, "left")
-    _assert_unit_quats(state_68, R_QUAT_SLICE, "right")
-
     # Shift state forward by one frame; the final frame repeats itself so the
     # last action means "hold current pose" (task already terminated via `c`).
     nxt = np.empty_like(state_68)
@@ -149,7 +147,7 @@ def _fsl_float32(arr_2d: np.ndarray) -> pa.Array:
 def _patch_hf_metadata(
     metadata: dict[bytes, bytes] | None,
 ) -> dict[bytes, bytes] | None:
-    """Bump ``huggingface`` schema metadata's actions length to 20."""
+    """Bump ``huggingface`` schema metadata's state/actions length to 20."""
     if metadata is None:
         return None
     out = dict(metadata)
@@ -158,8 +156,9 @@ def _patch_hf_metadata(
         return out
     info = json.loads(raw)
     feats = info.get("info", {}).get("features", {})
-    if "actions" in feats:
-        feats["actions"]["length"] = ACTION_DIM_OUT
+    for key, dim in (("state", STATE_DIM_OUT), ("actions", ACTION_DIM_OUT)):
+        if key in feats:
+            feats[key]["length"] = dim
     out[b"huggingface"] = json.dumps(info, separators=(",", ":")).encode()
     return out
 
@@ -177,24 +176,43 @@ def rewrite_parquet(src_path: Path, dst_path: Path) -> tuple[np.ndarray, np.ndar
     if "state" not in src_table.column_names or "actions" not in src_table.column_names:
         raise ValueError(f"{src_path}: missing state/actions column")
 
+    state_type = src_table.schema.field("state").type
     actions_type = src_table.schema.field("actions").type
-    if getattr(actions_type, "list_size", None) == ACTION_DIM_OUT:
+    state_size = getattr(state_type, "list_size", None)
+    actions_size = getattr(actions_type, "list_size", None)
+    if state_size == STATE_DIM_OUT and actions_size == ACTION_DIM_OUT:
         raise ValueError(
-            f"{src_path}: actions are already {ACTION_DIM_OUT}-d; dataset looks "
-            "like it was already backfilled. Point --src at the original "
+            f"{src_path}: state/actions are already "
+            f"{STATE_DIM_OUT}/{ACTION_DIM_OUT}-d; dataset looks like it was "
+            "already backfilled. Point --src at the original "
             "joint-space dataset, or pick a fresh --dst."
         )
+    if state_size != STATE_DIM_IN or actions_size != ACTION_DIM_IN:
+        raise ValueError(
+            f"{src_path}: expected source state/actions dimensions "
+            f"{STATE_DIM_IN}/{ACTION_DIM_IN}, got {state_size}/{actions_size}."
+        )
 
-    state_np = _fsl_to_numpy(src_table.column("state"), STATE_DIM)
+    state_np = _fsl_to_numpy(src_table.column("state"), STATE_DIM_IN)
     actions_np = _fsl_to_numpy(src_table.column("actions"), ACTION_DIM_IN)
+    _assert_source_layout(state_np, actions_np)
 
     new_state = build_rot6d_state(state_np)
     new_actions = build_rot6d_actions(state_np, actions_np)
 
-    # Build the replacement schema: actions widens to fixed_size_list<float>[20].
+    # Build the replacement schema: state/actions become fixed_size_list<float>[20].
     new_fields = []
     for field in src_table.schema:
-        if field.name == "actions":
+        if field.name == "state":
+            new_fields.append(
+                pa.field(
+                    "state",
+                    pa.list_(pa.float32(), STATE_DIM_OUT),
+                    nullable=field.nullable,
+                    metadata=field.metadata,
+                )
+            )
+        elif field.name == "actions":
             new_fields.append(
                 pa.field(
                     "actions",
@@ -245,12 +263,13 @@ def rewrite_meta(
     dst_meta: Path,
     new_stats_per_episode: dict[int, tuple[np.ndarray, np.ndarray]],
 ) -> None:
-    """Mirror meta/, updating info.json (actions shape) and episodes_stats.jsonl."""
+    """Mirror meta/, updating info.json and episodes_stats.jsonl."""
     dst_meta.mkdir(parents=True, exist_ok=True)
 
-    # info.json: widen actions shape 16 -> 20.
+    # info.json: convert state/actions shapes to 20-D tcp_rot6d.
     with (src_meta / "info.json").open() as f:
         info = json.load(f)
+    info["features"]["state"]["shape"] = [STATE_DIM_OUT]
     info["features"]["actions"]["shape"] = [ACTION_DIM_OUT]
     with (dst_meta / "info.json").open("w") as f:
         json.dump(info, f, indent=4)
@@ -320,7 +339,7 @@ def backfill(src: Path, dst: Path, overwrite: bool = False) -> None:
     total_frames = sum(s.shape[0] for s, _ in per_episode_new.values())
     print(
         f"OK  episodes={len(per_episode_new)}  frames={total_frames}  "
-        f"state dim={STATE_DIM} (prefix rewritten)  actions dim={ACTION_DIM_OUT}"
+        f"state dim={STATE_DIM_OUT}  actions dim={ACTION_DIM_OUT}"
     )
     print(f"    src -> dst: {src}  ->  {dst}")
 

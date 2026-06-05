@@ -13,7 +13,7 @@
 # limitations under the License.
 """Policy transforms for dual-Franka TCP rot6d SFT.
 
-state[:20] = [L_grip, R_grip, L_xyz(3), L_rot6d(6), R_xyz(3), R_rot6d(6)].
+state = [L_grip, R_grip, L_xyz(3), L_rot6d(6), R_xyz(3), R_rot6d(6)].
 actions[:20] = per-arm [xyz(3), rot6d(6), grip(1)] (training layout).
 """
 
@@ -42,6 +42,7 @@ def _rearrange_state(state: np.ndarray) -> np.ndarray:
     # R_xyz, R_rot6d] (gripper_position < tcp_pose_rot6d). Reorder to
     # training-time [L_xyz, L_rot6d, L_grip, R_xyz, R_rot6d, R_grip] so
     # RigidBodyDeltaActions sees state and actions in identical slot order.
+    # The slice is a compatibility guard for old 68-D backfilled datasets.
     s = np.asarray(state)[..., :_STATE_SLICE_DIM]
     return np.concatenate(
         [s[..., 2:11], s[..., 0:1], s[..., 11:20], s[..., 1:2]], axis=-1

@@ -489,7 +489,8 @@ Output format
 
 LeRobot v2.1, one shard per session at
 ``<save_dir>/rank_0/id_{N}/``. ``meta/info.json`` has
-``state=[68]`` and ``actions=[16]`` (joint) or ``[20]`` (tcp_rot6d).
+``state=[68]`` and ``actions=[16]`` for joint data, or ``state=[20]``
+and ``actions=[20]`` for tcp_rot6d data.
 
 Key per-frame fields:
 
@@ -518,9 +519,10 @@ accumulated cross-session target.
 Backfill tcp_rot6d and norm_stats
 ---------------------------------
 
-Collection produces 16-D joint actions and 68-D state; π₀.₅ SFT
-needs 20-D rot6d (``[xyz(3) + rot6d(6) + grip(1)] × 2``). Backfill
-offline first, then compute norm_stats.
+Collection produces 16-D joint actions and 68-D joint-env state; π₀.₅
+SFT needs 20-D tcp_rot6d state/actions
+(``[xyz(3) + rot6d(6) + grip(1)] × 2`` for actions). Backfill offline
+first, then compute norm_stats.
 
 ``<repo_id>`` is the dataset path relative to ``HF_LEROBOT_HOME``;
 ``joint_v1`` / ``tcp_rot6d_v1`` are version subdirs.
@@ -532,10 +534,10 @@ offline first, then compute norm_stats.
        --src $HF_LEROBOT_HOME/<repo_id>/joint_v1 \
        --dst $HF_LEROBOT_HOME/<repo_id>/tcp_rot6d_v1
 
-The script rewrites the first 20 state slots into rot6d (sliced
-from the existing tcp_pose columns, no FK), widens actions to 20-D
-with xyz/rot6d taken from the **next frame's** tcp_pose as the
-current target (gripper slots unchanged), and updates the schema.
+The script rebuilds state as 20-D tcp_rot6d (sliced from the existing
+tcp_pose columns, no FK), widens actions to 20-D with xyz/rot6d taken
+from the **next frame's** tcp_pose as the current target (gripper slots
+unchanged), and updates the schema.
 Re-backfilling an already-converted dataset errors out.
 
 .. code-block:: bash
