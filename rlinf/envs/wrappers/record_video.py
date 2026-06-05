@@ -476,24 +476,10 @@ class RecordVideo(gym.Wrapper):
         """Remove finished futures to avoid unbounded growth."""
         self._save_futures = [f for f in self._save_futures if not f.done()]
 
-    @staticmethod
-    def _release_memory() -> None:
-        """Return freed allocations to the OS after releasing large video buffers."""
-        import gc as _gc
-
-        _gc.collect()
-        try:
-            import ctypes as _ctypes
-
-            _ctypes.CDLL("libc.so.6").malloc_trim(0)
-        except Exception:
-            pass
-
     def close(self):
         """Wait for pending video writes before closing."""
         self._executor.shutdown(wait=True)
         self._save_futures = []
-        self._release_memory()
         return super().close()
 
     def update_reset_state_ids(self):

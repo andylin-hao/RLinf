@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import ctypes
-import gc
 import logging
 import os
 import queue
@@ -34,39 +32,6 @@ from rlinf.utils.runner_utils import check_progress
 from rlinf.utils.timers import Timer
 
 logger = logging.getLogger(__name__)
-
-
-def _aggressive_memory_cleanup() -> None:
-    """Release freed memory back to the OS as aggressively as possible.
-
-    Python's pymalloc and glibc's malloc both hold onto freed memory in
-    allocation arenas rather than returning it to the OS.  Long-running RL
-    training that alternates between low-memory (training) and high-memory
-    (evaluation) phases is especially vulnerable: the peak eval allocation
-    becomes the process's permanent RSS floor.
-
-    This helper:
-    1. Runs two GC generations so Python-side circular references are broken
-       and pymalloc arenas can be released.
-    2. Calls ``malloc_trim`` so glibc releases free heap pages.
-    3. Triggers CUDA IPC collection to clean up stale GPU-shared-memory
-       handles that may pin system memory.
-    """
-    gc.collect()
-    gc.collect()  # second pass catches objects with __del__
-    try:
-        ctypes.CDLL("libc.so.6").malloc_trim(0)
-    except Exception:
-        pass
-    try:
-        import torch
-
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-            torch.cuda.ipc_collect()
-    except Exception:
-        pass
-
 
 if TYPE_CHECKING:
     from rlinf.workers.actor.async_fsdp_sac_policy_worker import (
@@ -237,17 +202,6 @@ class EmbodiedRunner:
         rollout_handle.wait()
         eval_metrics_list = [results for results in env_results if results is not None]
         eval_metrics = compute_evaluate_metrics(eval_metrics_list)
-
-        # Free references to large result objects to help garbage collection.
-        del env_results
-        del eval_metrics_list
-
-        # Aggressive cleanup: eval processes many environments through the
-        # full GR00T N1.7 model and records videos, so peak allocation is
-        # significantly higher than training.  Return freed memory to the OS
-        # so the process RSS floor does not ratchet upward on every eval.
-        _aggressive_memory_cleanup()
-
         return eval_metrics
 
     def _log_ranked_metrics(
@@ -585,13 +539,6 @@ class EmbodiedRunner:
                 if env_bootstrap_handle is not None:
                     env_bootstrap_handle.wait()
 
-                # Actor training (forward + backward + optimizer step) is the
-                # single largest per-step allocation peak.  Help the allocator
-                # return freed pages to the OS so the RSS floor does not drift
-                # upward over thousands of steps.
-                if _step % 10 == 0:
-                    _aggressive_memory_cleanup()
-
                 self.global_step += 1
                 eval_metrics = self._maybe_eval_and_checkpoint(_step)
 
@@ -702,16 +649,6 @@ class EmbodiedRunner:
         actor_save_path = os.path.join(base_output_dir, "actor")
         os.makedirs(actor_save_path, exist_ok=True)
         self.actor.save_checkpoint(actor_save_path, self.global_step).wait()
-        # Release gathered state_dict memory back to OS after checkpoint save
-        import gc as _gc
-
-        _gc.collect()
-        try:
-            import ctypes as _ctypes
-
-            _ctypes.CDLL("libc.so.6").malloc_trim(0)
-        except Exception:
-            pass
 
     def set_max_steps(self):
         self.num_steps_per_epoch = 1

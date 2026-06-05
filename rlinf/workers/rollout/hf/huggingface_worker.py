@@ -459,9 +459,6 @@ class MultiStepRolloutWorker(Worker):
 
         if self.enable_offload:
             self.offload_model()
-        else:
-            gc.collect()
-            self.torch_platform.empty_cache()
 
     async def evaluate(self, input_channel: Channel, output_channel: Channel):
         if self.enable_offload:
@@ -479,9 +476,6 @@ class MultiStepRolloutWorker(Worker):
 
         if self.enable_offload:
             self.offload_model()
-        else:
-            gc.collect()
-            self.torch_platform.empty_cache()
 
     def offload_model(self):
         if self.enable_cuda_graph:

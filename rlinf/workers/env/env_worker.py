@@ -1318,8 +1318,6 @@ class EnvWorker(Worker):
 
         for key, value in eval_metrics.items():
             eval_metrics[key] = torch.cat(value, dim=0).contiguous().cpu()
-            # Release the intermediate list of tensors to help garbage collection.
-            value.clear()
 
         return eval_metrics
 
