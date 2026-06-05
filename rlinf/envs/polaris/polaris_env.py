@@ -89,7 +89,9 @@ class PolarisEnv(IsaaclabBaseEnv):
 
             os.environ.pop("DISPLAY", None)
 
-            from torchvision.utils import save_image  # noqa: F401
+            # This must be imported before the Isaac Sim AppLauncher is created.
+            # Otherwise, a circular import error occurs.
+            from torchvision.utils import save_image  # noqa: F401, I001
 
             from isaaclab.app import AppLauncher
 
