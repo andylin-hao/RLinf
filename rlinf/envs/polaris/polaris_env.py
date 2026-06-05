@@ -88,8 +88,8 @@ class PolarisEnv(IsaaclabBaseEnv):
                     del sys.modules[key]
 
             os.environ.pop("DISPLAY", None)
-            for _key in ("ISAAC_PATH", "EXP_PATH", "CARB_APP_PATH"):
-                os.environ.pop(_key, None)
+
+            from torchvision.utils import save_image  # noqa: F401
 
             from isaaclab.app import AppLauncher
 

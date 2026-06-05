@@ -1252,6 +1252,7 @@ jobs:
           export REPO_PATH=$(pwd)
           source .venv/bin/activate
           export POLARIS_DATA_PATH=/workspace/dataset/PolaRiS-Hub
+          source /workspace/dataset/isaac-sim-5.1/setup_conda_env.sh
           bash tests/e2e_tests/embodied/run.sh polaris_ppo_openpi
 
       - name: Clean up

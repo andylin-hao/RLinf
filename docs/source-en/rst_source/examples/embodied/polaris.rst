@@ -98,6 +98,28 @@ Install dependencies directly in your environment by running the following comma
    bash requirements/install.sh embodied --model openpi --env polaris
    source .venv/bin/activate
 
+3. Isaac Sim Download
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Before using PolaRiS, you need to download and set up Isaac Sim. Please follow the instructions below:
+
+.. code-block:: bash
+
+   mkdir -p isaac_sim
+   cd isaac_sim
+   wget https://download.isaacsim.omniverse.nvidia.com/isaac-sim-standalone-5.1.0-linux-x86_64.zip
+   unzip isaac-sim-standalone-5.1.0-linux-x86_64.zip
+   rm isaac-sim-standalone-5.1.0-linux-x86_64.zip
+
+After downloading, set environment variables via:
+
+.. code-block:: bash
+
+   source ./setup_conda_env.sh
+
+.. warning::
+
+   This step must be done every time you open a new terminal to use Isaac Sim.
 
 Dataset Download
 ----------------
@@ -262,6 +284,8 @@ The training configuration file references them via Hydra defaults (e.g. ``defau
 
 .. code-block:: bash
 
+   source /path/to/isaac_sim/setup_conda_env.sh
+
    # pi05
    bash examples/embodiment/run_embodiment.sh polaris_ppo_openpi_pi05
    # pi0
@@ -279,6 +303,8 @@ The training configuration file references them via Hydra defaults (e.g. ``defau
 **5. Start Evaluation**
 
 .. code-block:: bash
+
+   source /path/to/isaac_sim/setup_conda_env.sh
 
    # pi05
    bash examples/embodiment/eval_embodiment.sh polaris_openpi_pi05_eval
