@@ -132,7 +132,7 @@ Please switch to the corresponding virtual environment via the built-in `switch_
 .. code:: bash
 
    # For mainland China users, you can add the `--use-mirror` flag to the install.sh command for better download speed.
-   bash requirements/install.sh embodied --model gr00t_17 --env maniskill_libero
+   bash requirements/install.sh embodied --model gr00t_n1d7 --env maniskill_libero
    source .venv/bin/activate
 
 Model Download
@@ -361,7 +361,7 @@ Use ``noise_method`` to select different noise injection methods. Two options ar
 **N1.7:**
 
 - GR00T-N1.7 + PPO + Libero-Spatial:
-  ``examples/embodiment/config/libero_spatial_ppo_gr00t_17.yaml``
+  ``examples/embodiment/config/libero_spatial_ppo_gr00t_n1d7.yaml``
 
 Update the SFT model path:
 
@@ -393,7 +393,7 @@ Update the SFT model path:
 
 .. code:: bash
 
-   bash examples/embodiment/run_embodiment.sh libero_spatial_ppo_gr00t_17
+   bash examples/embodiment/run_embodiment.sh libero_spatial_ppo_gr00t_n1d7
 
 --------------
 

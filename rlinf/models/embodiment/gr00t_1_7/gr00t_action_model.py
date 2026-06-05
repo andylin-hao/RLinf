@@ -761,7 +761,7 @@ class FlowMatchingActionHeadForRLActionPrediction(Gr00tN1d7ActionHead):
 
 class GR00T_N1_7_ForRLActionPrediction(Gr00tN1d7, BasePolicy):
     """
-    RLinf GR00T wrapper that keeps the existing `gr00t_1_7` entrypoints while
+    RLinf GR00T wrapper that keeps the existing `gr00t_n1d7` entrypoints while
     running on top of the upstream GR00T N1.7 model stack.
     """
 
