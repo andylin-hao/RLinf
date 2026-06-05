@@ -212,9 +212,9 @@
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
        <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
          <a href="gr00t.html" style="text-decoration: underline; color: blue;">
-           <b>GR00T-N1.5模型强化学习训练</b>
+           <b>GR00T模型强化学习训练</b>
          </a><br>
-         支持GR00T-N1.5强化学习微调
+         支持GR00T-N1.5与N1.6强化学习微调
        </p>
      </div>
      <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
@@ -389,16 +389,17 @@
        </p>
       </div>
 
-     <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
-       <img src="https://github.com/RLinf/misc/raw/main/pic/robotiq_zed.jpeg"
-            style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
-       <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
-         <a href="franka_zed_robotiq.html" style="text-decoration: underline; color: blue;">
-           <b>Franka 真机使用 ZED 相机与 Robotiq 夹爪</b>
-         </a><br>
-         Franka 真机中 ZED 相机、Robotiq 夹爪安装与数据采集配置
-       </p>
-     </div>
+    <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
+      <img src="https://github.com/RLinf/misc/raw/main/pic/robotiq_zed.jpeg"
+           style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
+      <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
+        <a href="franka_zed_robotiq.html" style="text-decoration: underline; color: blue;">
+          <b>Franka 真机使用 ZED 相机与 Robotiq 夹爪</b>
+        </a><br>
+        Franka 真机中 ZED 相机、Robotiq 夹爪安装与数据采集配置
+      </p>
+    </div>
+
     <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
       <img src="https://github.com/RLinf/misc/raw/main/pic/gello.jpeg"
            style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
@@ -468,6 +469,17 @@
     </div>
 
     <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
+      <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/ABot-M0.png"
+           style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
+      <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
+        <a href="abot_m0.html" style="text-decoration: underline; color: blue;">
+          <b>ABot-M0 模型强化学习训练</b>
+        </a><br>
+        ABot-M0 原生集成与 LIBERO-plus PPO 训练
+      </p>
+    </div>
+
+    <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
       <!-- TODO(thumbnail): replace placeholder cover image URL for dosw1 -->
       <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/dos-w1.png"
            style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
@@ -517,6 +529,7 @@
    pi0
    gr00t
    lingbotvla
+   abot_m0
    dexbotic
    starvla
    mlp
@@ -525,6 +538,8 @@
    sft_dreamzero
    sft_vlm
    dsrl
+   genesis
+
    dagger
    recap
    co_training

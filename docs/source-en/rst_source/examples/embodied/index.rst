@@ -217,9 +217,9 @@ as well as reinforcement learning training examples on real robots.
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
        <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
          <a href="gr00t.html" style="text-decoration: underline; color: blue;">
-           <b>RL on GR00T-N1.5 Model</b>
+           <b>RL on GR00T Models</b>
          </a><br>
-         Support GR00T-N1.5 RL fine-tuning.
+         Support GR00T-N1.5 and N1.6 RL fine-tuning.
        </p>
      </div>
 
@@ -499,7 +499,18 @@ as well as reinforcement learning training examples on real robots.
         Integrate data collection for the GimArm robotic arm
       </p>
     </div>
-   </div>
+
+    <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
+      <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/ABot-M0.png"
+          style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
+      <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
+        <a href="abot_m0.html" style="text-decoration: underline; color: blue;">
+          <b>RL on ABot-M0 Model</b>
+        </a><br>
+        ABot-M0 native integration with LIBERO-plus PPO training
+      </p>
+    </div>
+  </div>
 
 .. toctree::
    :hidden:
@@ -526,6 +537,7 @@ as well as reinforcement learning training examples on real robots.
    pi0
    gr00t
    lingbotvla
+   abot_m0
    dexbotic
    starvla
    mlp
@@ -534,6 +546,8 @@ as well as reinforcement learning training examples on real robots.
    sft_dreamzero
    sft_vlm
    dsrl
+   genesis
+
    dagger
    recap
    co_training

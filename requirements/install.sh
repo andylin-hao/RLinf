@@ -74,8 +74,8 @@ GITHUB_PREFIX=""
 NO_ROOT=0
 NO_INSTALL_RLINF_CMD="--no-install-project"
 SUPPORTED_TARGETS=("embodied" "agentic" "docs")
-SUPPORTED_MODELS=("openvla" "openvla-oft" "openpi" "gr00t" "dexbotic" "starvla" "lingbotvla" "dreamzero" "qwen3_vl")
-SUPPORTED_ENVS=("behavior" "maniskill_libero" "libero" "metaworld" "calvin" "isaaclab" "robocasa" "franka" "franka-dexhand" "franka-franky" "frankasim" "robotwin" "habitat" "opensora" "wan" "xsquare_turtle2" "liberopro" "liberoplus" "roboverse" "embodichain" "d4rl" "dosw1" "gim_arm" "dummy")
+SUPPORTED_MODELS=("openvla" "openvla-oft" "openpi" "gr00t" "gr00t_n1d6" "dexbotic" "starvla" "lingbotvla" "dreamzero" "qwen3_vl" "abot_m0")
+SUPPORTED_ENVS=("behavior" "maniskill_libero" "libero" "metaworld" "calvin" "isaaclab" "robocasa" "franka" "franka-dexhand" "franka-franky" "frankasim" "robotwin" "habitat" "opensora" "wan" "genesis" "xsquare_turtle2" "liberopro" "liberoplus" "roboverse" "embodichain" "d4rl" "dosw1" "gim_arm" "dummy")
 
 #=======================Utility Functions=======================
 
@@ -121,6 +121,8 @@ Common options:
     --rocm <version>       ROCm version for --platform amd. When unset, auto-detected from the
                            system (/opt/rocm/.info/version, hipconfig, rocminfo). Composes
                            UV_TORCH_BACKEND=rocm<version>. Ignored on other platforms.
+    --python <version>     Python version for the venv (e.g. 3.11.14). Defaults to 3.11.14.
+                           Must be >=3.10. Some envs (behavior, d4rl) require 3.10 and will override this.
     --use-mirror           Use mirrors for faster downloads.
     --no-root              Avoid system dependency installation for non-root users. Only use this if you are certain system dependencies are already installed.
     --no-flash-attn        Skip flash-attn install. Useful when the host lacks a CUDA build
@@ -147,6 +149,14 @@ parse_args() {
                     exit 1
                 fi
                 VENV_DIR="${2:-}"
+                shift 2
+                ;;
+            --python)
+                if [ -z "${2:-}" ]; then
+                    echo "--python requires a version argument (e.g. 3.11.14)." >&2
+                    exit 1
+                fi
+                PYTHON_VERSION="${2:-}"
                 shift 2
                 ;;
             --torch)
@@ -225,6 +235,22 @@ parse_args() {
 
     if [ -z "$TARGET" ]; then
         TARGET="embodied"
+    fi
+}
+
+validate_python_version() {
+    # Reject malformed versions (must be X.Y or X.Y.Z with numeric components).
+    if [[ ! "$PYTHON_VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+        echo "--python must be of form X.Y or X.Y.Z (got '$PYTHON_VERSION')." >&2
+        exit 1
+    fi
+
+    # Soft-check against pyproject.toml's requires-python = ">=3.10".
+    local py_major py_minor _py_patch
+    IFS='.' read -r py_major py_minor _py_patch <<< "$PYTHON_VERSION"
+    local mm="${py_major}.${py_minor}"
+    if [ "$(printf '%s\n3.10\n' "$mm" | sort -V | head -n1)" != "3.10" ]; then
+        echo "[install.sh] WARNING: Python ${PYTHON_VERSION} is below the pyproject.toml requires-python minimum (>=3.10). The install may fail." >&2
     fi
 }
 
@@ -557,6 +583,21 @@ apply_torch_override() {
     # UV_TORCH_BACKEND), PLATFORM_RELAX_TORCHCODEC is set (rewrite the
     # torchcodec pin for non-x86_64 / non-CUDA torch combos), or
     # PLATFORM_EXTRA_OVERRIDES has entries (insert extra override pins).
+
+    # torchcodec==0.2 only has wheels for torch<=2.6. Relax the pin whenever
+    # the effective torch version exceeds 2.6, regardless of platform.
+    local _eff_torch="${TORCH_VERSION}"
+    if [ -z "$_eff_torch" ] && [ -f "$PYPROJECT_FILE" ]; then
+        _eff_torch=$(sed -nE 's/.*"torch==([^"+]+).*".*/\1/p' "$PYPROJECT_FILE" | head -1)
+    fi
+    if [ -n "$_eff_torch" ]; then
+        local _tmaj _tmin _tpatch
+        IFS='.' read -r _tmaj _tmin _tpatch <<< "$_eff_torch"
+        if [ "$_tmaj" -gt 2 ] || { [ "$_tmaj" -eq 2 ] && [ "$_tmin" -gt 6 ]; }; then
+            PLATFORM_RELAX_TORCHCODEC=1
+        fi
+    fi
+
     local needs_torch_rewrite=0
     if [ -n "$TORCH_VERSION" ] || [ -n "$PLATFORM_TORCH_STR" ] || [ -n "$PLATFORM_TORCH_INDEX" ]; then
         needs_torch_rewrite=1
@@ -1196,7 +1237,7 @@ install_gr00t_model() {
     install_common_embodied_deps
 
     local gr00t_path
-    gr00t_path=$(clone_or_reuse_repo GR00T_PATH "$VENV_DIR/gr00t" https://github.com/RLinf/Isaac-GR00T.git)
+    gr00t_path=$(clone_or_reuse_repo GR00T_PATH "$VENV_DIR/gr00t" https://github.com/NVIDIA/Isaac-GR00T.git -b n1.5-release)
     uv pip install -e "$gr00t_path" --no-deps
     uv pip install -r $SCRIPT_DIR/embodied/models/gr00t.txt
     case "$ENV_NAME" in
@@ -1215,6 +1256,29 @@ install_gr00t_model() {
             exit 1
             ;;
     esac
+    uv pip uninstall pynvml || true
+}
+
+install_gr00t_n1d6_model() {
+    create_and_sync_venv
+    install_common_embodied_deps
+
+    local gr00t_path
+    gr00t_path=$(clone_or_reuse_repo GR00T_PATH "$VENV_DIR/gr00t" "https://github.com/NVIDIA/Isaac-GR00T.git" -b n1.6.1-release)
+    uv pip install -e "$gr00t_path" --no-deps
+    uv pip install -r "$SCRIPT_DIR/embodied/models/gr00t_n1d6.txt"
+
+    case "$ENV_NAME" in
+        maniskill_libero)
+            install_maniskill_libero_env
+            install_flash_attn
+            ;;
+        *)
+            echo "Environment '$ENV_NAME' is not yet validated for Gr00t 1.6." >&2
+            exit 1
+            ;;
+    esac
+
     uv pip uninstall pynvml || true
 }
 
@@ -1262,6 +1326,48 @@ install_lingbot_vla_model() {
             exit 1
             ;;
     esac
+    uv pip uninstall pynvml || true
+}
+
+install_abot_m0_model() {
+    create_and_sync_venv
+    install_common_embodied_deps
+
+    local abot_path
+    local vggt_path
+    abot_path=$(clone_or_reuse_repo ABOT_PATH "$VENV_DIR/abot" https://github.com/amap-cvlab/ABot-Manipulation.git)
+    vggt_path=$(clone_or_reuse_repo VGGT_PATH "$VENV_DIR/vggt" https://github.com/facebookresearch/vggt.git)
+
+    uv pip install -e "$vggt_path"
+
+    uv pip install -e "$abot_path" --no-deps
+
+    uv pip install -r $SCRIPT_DIR/embodied/models/abot.txt
+
+    install_flash_attn
+
+    case "$ENV_NAME" in
+        maniskill_libero)
+            install_maniskill_libero_env
+            ;;
+        robocasa)
+            install_robocasa_env
+            ;;
+        robotwin)
+            install_robotwin_env
+            ;;
+        liberoplus)
+            install_liberoplus_env
+            ;;
+        *)
+            echo "Environment '$ENV_NAME' is not supported for ABot-M0 model." >&2
+            exit 1
+            ;;
+    esac
+
+    # Keep ABot-M0 runtime PEFT on the expected version after all installs.
+    uv pip install peft==0.18.1
+
     uv pip uninstall pynvml || true
 }
 
@@ -1350,6 +1456,10 @@ install_env_only() {
         habitat)
             install_common_embodied_deps
             install_habitat_env
+            ;;
+        genesis)
+            install_common_embodied_deps
+            install_genesis_env
             ;;
         embodichain)
             install_common_embodied_deps
@@ -1760,6 +1870,20 @@ install_habitat_env() {
     uv pip install -e $habitat_lab_dir/habitat-baselines
 }
 
+install_genesis_env() {
+    echo "Installing Genesis environment dependencies..."
+    uv pip install "transformers==4.57.6"
+    uv pip install "cuda-python==12.9.6"
+    uv pip install "genesis-world==0.4.5"
+    uv pip install "pyglet==2.1.14"
+    uv pip install "matplotlib==3.10.8"
+
+    uv pip install "torch==2.8.0"
+    uv pip install "torchvision==0.23.0"
+    uv pip install "torchaudio==2.8.0"
+    uv pip install "torchcodec==0.6"
+}
+
 install_opensora_world_model() {
     # Clone opensora repository
     local opensora_dir
@@ -1799,6 +1923,7 @@ install_roboverse_env() {
     pyroki_dir=$(clone_or_reuse_repo PYROKI_PATH "$roboverse_dir/pyroki" https://github.com/chungmin99/pyroki.git)
     uv pip install -e "$pyroki_dir"
     uv pip install "numpy==1.26.4" --force-reinstall
+    uv pip install "mujoco==3.3.7" "dm-control==1.0.34" --force-reinstall
 }
 
 #=======================AGENTIC INSTALLER=======================
@@ -1836,6 +1961,7 @@ install_docs() {
 
 main() {
     parse_args "$@"
+    validate_python_version
     configure_platform
     setup_mirror
     apply_torch_override
@@ -1876,11 +2002,17 @@ main() {
                 gr00t)
                     install_gr00t_model
                     ;;
+                gr00t_n1d6)
+                    install_gr00t_n1d6_model
+                    ;;
                 dexbotic)
                     install_dexbotic_model
                     ;;
                 lingbotvla)                  
                     install_lingbot_vla_model 
+                    ;;
+                abot_m0)
+                    install_abot_m0_model
                     ;;
                 dreamzero)
                     install_dreamzero_model
