@@ -22,7 +22,7 @@ def get_model(cfg: DictConfig, torch_dtype=torch.bfloat16):
     model_type = str(cfg.get("model_type", "gr00t"))
 
     if model_type == "gr00t_n1d7":
-        from rlinf.models.embodiment.gr00t_1_7 import get_model as get_model_n1d7
+        from rlinf.models.embodiment.gr00t.gr00t_n1d7 import get_model as get_model_n1d7
 
         return get_model_n1d7(cfg, torch_dtype)
 

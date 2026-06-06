@@ -109,8 +109,8 @@ rollout:
   pipeline_stage_num: 1
 
   model:
-    model_path: /workspace/dataset/GR00T-N1.7-LIBERO/libero_spatial
-    backbone_model_path: /workspace/dataset/Cosmos-Reason2-2B
+    model_path: /path/to/RLinf-Gr00t-N1.7-RL-Spatial
+    backbone_model_path: /path/to/Cosmos-Reason2-2B
     precision: ${actor.model.precision}
 
 actor:
@@ -122,8 +122,8 @@ actor:
   enable_offload: True
 
   model:
-    model_path: /workspace/dataset/GR00T-N1.7-LIBERO/libero_spatial
-    backbone_model_path: /workspace/dataset/Cosmos-Reason2-2B
+    model_path: /path/to/RLinf-Gr00t-N1.7-RL-Spatial
+    backbone_model_path: /path/to/Cosmos-Reason2-2B
     model_type: "gr00t_n1d7"
     embodiment_tag: "libero_sim"
     add_value_head: True

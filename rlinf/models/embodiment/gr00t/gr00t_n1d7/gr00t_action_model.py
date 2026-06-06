@@ -29,11 +29,11 @@ from torch.distributions import Normal
 from transformers.feature_extraction_utils import BatchFeature
 
 from rlinf.models.embodiment.base_policy import BasePolicy, ForwardType
-from rlinf.models.embodiment.gr00t_1_7.simulation_io import (
-    ACTION_CONVERSION,
+from rlinf.models.embodiment.gr00t.simulation_io import (
+    ACTION_CONVERSION_N1D7,
     OBS_CONVERSION,
 )
-from rlinf.models.embodiment.gr00t_1_7.utils import (
+from rlinf.models.embodiment.gr00t.utils import (
     squeeze_dict_values,
     unsqueeze_dict_values,
 )
@@ -889,7 +889,7 @@ class GR00T_N1_7_ForRLActionPrediction(Gr00tN1d7, BasePolicy):
 
         self.obs_converter_type = obs_converter_type
         self.obs_convert_fn = OBS_CONVERSION[obs_converter_type]
-        self._action_convert_fn = ACTION_CONVERSION[obs_converter_type]
+        self._action_convert_fn = ACTION_CONVERSION_N1D7[obs_converter_type]
         exp_cfg_path = self.model_path / "experiment_cfg"
         self._load_metadata(exp_cfg_path)
 
