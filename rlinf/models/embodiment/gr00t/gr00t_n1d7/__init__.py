@@ -23,6 +23,7 @@ _SUPPORTED_EMBODIMENT_TAGS = (
     "robocasa_panda_omron",
     "libero_panda",
     "libero_franka",
+    "libero_sim",
     "isaaclab_franka",
     "maniskill_widowx",
     "new_embodiment",
@@ -83,11 +84,11 @@ def get_model(cfg: DictConfig, torch_dtype=torch.bfloat16):
     Patcher.clear()
     Patcher.add_patch(
         "gr00t.data.embodiment_tags.EmbodimentTag",
-        "rlinf.models.embodiment.gr00t.embodiment_tags.EmbodimentTag",
+        "rlinf.models.embodiment.gr00t.gr00t_n1d7.embodiment_tags.EmbodimentTag",
     )
     Patcher.add_patch(
         "gr00t.data.embodiment_tags.EMBODIMENT_TAG_MAPPING",
-        "rlinf.models.embodiment.gr00t.embodiment_tags.EMBODIMENT_TAG_MAPPING",
+        "rlinf.models.embodiment.gr00t.gr00t_n1d7.embodiment_tags.EMBODIMENT_TAG_MAPPING",
     )
     Patcher.apply()
 
@@ -99,8 +100,9 @@ def get_model(cfg: DictConfig, torch_dtype=torch.bfloat16):
     from rlinf.models.embodiment.gr00t.utils import replace_dropout_with_identity
 
     embodiment_tag_by_cfg = {
-        "libero_panda": "libero_sim",  # N1.7 uses libero_sim instead of libero_panda
-        "libero_franka": "libero_sim",  # N1.7 uses libero_sim instead of libero_franka
+        "libero_sim": EmbodimentTag.LIBERO_PANDA,  # N1.7 uses libero_sim instead of libero_panda
+        "libero_panda": EmbodimentTag.LIBERO_PANDA,  # N1.7 uses libero_sim instead of libero_panda
+        "libero_franka": EmbodimentTag.LIBERO_FRANKA,  # N1.7 uses libero_sim instead of libero_franka
         "isaaclab_franka": EmbodimentTag.ISAACLAB_FRANKA,
         "maniskill_widowx": EmbodimentTag.MANISKILL_WIDOWX,
         "robocasa_panda_omron": EmbodimentTag.ROBOCASA_PANDA_OMRON,
