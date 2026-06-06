@@ -357,9 +357,10 @@ def _batchify_gr00t_forward_input(
         return value
 
     if key == "pixel_values" and value.ndim >= 2 and value.shape[0] != batch_size:
-        assert value.shape[0] % batch_size == 0, (
-            f"{key} leading dim {value.shape[0]} is not divisible by batch size {batch_size}"
-        )
+        if value.shape[0] % batch_size != 0:
+            raise ValueError(
+                f"{key} leading dim {value.shape[0]} is not divisible by batch size {batch_size}"
+            )
         return value.reshape(batch_size, value.shape[0] // batch_size, *value.shape[1:])
 
     if key in {"image_grid_thw", "image_sizes"} and value.ndim >= 2:

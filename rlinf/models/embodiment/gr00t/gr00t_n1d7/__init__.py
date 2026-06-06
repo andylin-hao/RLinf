@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 from pathlib import Path
 
 import torch
@@ -39,7 +40,8 @@ def get_model(cfg: DictConfig, torch_dtype=torch.bfloat16):
 
     AutoConfig.register("Gr00tN1d7", Gr00tN1d7Config)
     AutoModel.register(Gr00tN1d7Config, Gr00tN1d7)
-    print(
+
+    logging.info(
         "Successfully registered custom architecture Gr00tN1d7, authentication passed!"
     )
     # FSDP wrap policy: N1.7 model module hierarchy differs slightly from N1.6,
@@ -68,7 +70,8 @@ def get_model(cfg: DictConfig, torch_dtype=torch.bfloat16):
                     result = _orig_policy(module, config, is_lora, model_type)
                     if result is not None:
                         return result
-                except Exception:
+                except Exception as e:
+                    logging.error(f"Error in _gr00t_n1d7_fsdp_wrap_policy: {e}")
                     pass
                 return functools.partial(
                     transformer_auto_wrap_policy,

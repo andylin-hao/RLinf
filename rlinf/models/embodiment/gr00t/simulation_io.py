@@ -136,7 +136,7 @@ def convert_to_libero_action_n1d6(
 
 
 def convert_to_libero_action_n1d7(
-    action_chunk: dict[str, np.array],
+    action_chunk: dict[str, np.ndarray],
     chunk_size: int = 1,
 ) -> np.ndarray:
     """Convert GR00T N1.7 action chunk to a 7-dim Libero action array.
@@ -174,9 +174,9 @@ def convert_to_libero_action_n1d7(
             raise KeyError(f"can not find Action Keys: {list(action_chunk.keys())}")
     # gripper conversion is handled by the shared
     # ``prepare_actions_for_libero`` in ``rlinf.envs.action_utils``.
-    assert action_array.shape[-1] == 7, (
-        f"Expected 7-dim action, got {action_array.shape[-1]}"
-    )
+
+    if action_array.shape[-1] != 7:
+        raise ValueError(f"Expected 7-dim action, got {action_array.shape[-1]}")
     return action_array
 
 

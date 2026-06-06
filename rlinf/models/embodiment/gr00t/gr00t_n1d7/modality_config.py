@@ -20,7 +20,7 @@ from gr00t.data.embodiment_tags import EmbodimentTag
 from gr00t.policy.gr00t_policy import Gr00tPolicy
 
 
-class BaseN16DataConfig:
+class BaseN1d7DataConfig:
     def __init__(self):
         self.emb_tag: EmbodimentTag = None
         self._policy: Optional[Gr00tPolicy] = None
@@ -74,7 +74,7 @@ class BaseN16DataConfig:
         return self._modality_config.get("action", {}).get("modality_keys", [])
 
 
-class LiberoFrankaDataConfig(BaseN16DataConfig):
+class LiberoFrankaDataConfig(BaseN1d7DataConfig):
     def __init__(self):
         super().__init__()
         self.emb_tag = EmbodimentTag.LIBERO_PANDA
@@ -84,7 +84,7 @@ class LiberoFrankaDataConfig(BaseN16DataConfig):
         self.language_keys = ["language.task"]
 
 
-class ManiskillWidowXDataConfig(BaseN16DataConfig):
+class ManiskillWidowXDataConfig(BaseN1d7DataConfig):
     def __init__(self):
         super().__init__()
         self.emb_tag = EmbodimentTag.OXE_WIDOWX
