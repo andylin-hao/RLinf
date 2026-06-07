@@ -132,23 +132,6 @@ _FORWARD_INPUT_MODEL_KEYS = {
     "image_sizes",
 }
 
-# Legacy ``eagle_*`` aliases kept for backward compatibility with cached
-# trajectories; they map back onto their canonical Qwen3-VL counterparts.
-_FORWARD_INPUT_ALIASES = {
-    "eagle_input_ids": "input_ids",
-    "eagle_attention_mask": "attention_mask",
-    "eagle_pixel_values": "pixel_values",
-    "eagle_image_grid_thw": "image_grid_thw",
-    "eagle_image_sizes": "image_sizes",
-}
-
-# Text fields that the tokenizer pads to a fixed length and whose canonical /
-# alias forms must stay shape-consistent.
-_TEXT_FORWARD_INPUT_FIELDS = (
-    ("input_ids", "eagle_input_ids"),
-    ("attention_mask", "eagle_attention_mask"),
-)
-
 
 def _resolve_env_action_dim(action_dim: int | None, valid_action_dim: int) -> int:
     """Resolve the environment-facing action dim, clamped by ``valid_action_dim``."""
@@ -158,16 +141,6 @@ def _resolve_env_action_dim(action_dim: int | None, valid_action_dim: int) -> in
         f"({valid_action_dim})."
     )
     return env_action_dim
-
-
-def _add_gr00t_forward_aliases(
-    processed_observation: dict[str, Any] | BatchFeature,
-) -> dict[str, Any] | BatchFeature:
-    """Mirror canonical processor outputs onto their ``eagle_*`` aliases."""
-    for alias_key, canonical_key in _FORWARD_INPUT_ALIASES.items():
-        if canonical_key in processed_observation:
-            processed_observation[alias_key] = processed_observation[canonical_key]
-    return processed_observation
 
 
 def _reshape_forward_tensor(key: str, value: Any) -> Any:
@@ -182,81 +155,30 @@ def _reshape_forward_tensor(key: str, value: Any) -> Any:
     return value
 
 
-def _validate_gr00t_text_forward_inputs(
-    forward_inputs: dict[str, Any],
-    *,
-    context: str,
-) -> None:
-    """Assert canonical/alias text tensors share consistent shapes."""
-    named_shapes = {
-        key: tuple(value.shape)
-        for key, value in forward_inputs.items()
-        if key
-        in {
-            "input_ids",
-            "attention_mask",
-            "eagle_input_ids",
-            "eagle_attention_mask",
-        }
-        and torch.is_tensor(value)
-    }
-    if not named_shapes:
-        return
-
-    input_ids_shape = named_shapes.get("input_ids")
-    attention_mask_shape = named_shapes.get("attention_mask")
-    if (
-        input_ids_shape is not None
-        and attention_mask_shape is not None
-        and input_ids_shape != attention_mask_shape
-    ):
-        raise ValueError(
-            f"{context}: input_ids and attention_mask shapes differ: "
-            f"{input_ids_shape} vs {attention_mask_shape}. "
-            f"All cached GR00T text tensors: {named_shapes}"
-        )
-
-    for canonical_key, alias_key in _TEXT_FORWARD_INPUT_FIELDS:
-        canonical_shape = named_shapes.get(canonical_key)
-        alias_shape = named_shapes.get(alias_key)
-        if (
-            canonical_shape is not None
-            and alias_shape is not None
-            and canonical_shape != alias_shape
-        ):
-            raise ValueError(
-                f"{context}: canonical GR00T key '{canonical_key}' and alias "
-                f"'{alias_key}' diverged: {canonical_shape} vs {alias_shape}. "
-                f"All cached GR00T text tensors: {named_shapes}"
-            )
-
-
 def _canonicalize_gr00t_text_forward_inputs(
     forward_inputs: dict[str, Any],
     padding_value: int,
 ) -> dict[str, Any]:
-    """Right-pad text fields to ``padding_value`` and keep aliases in sync."""
+    """Right-pad ``input_ids`` and ``attention_mask`` to ``padding_value``."""
     canonicalized = dict(forward_inputs)
 
-    for canonical_key, alias_key in _TEXT_FORWARD_INPUT_FIELDS:
-        tensor = canonicalized.get(canonical_key)
-        if tensor is None:
-            tensor = canonicalized.get(alias_key)
+    for key in ("input_ids", "attention_mask"):
+        tensor = canonicalized.get(key)
         if tensor is None:
             continue
         if not torch.is_tensor(tensor):
             raise TypeError(
-                f"Expected GR00T text field '{canonical_key}' to be a tensor, "
+                f"Expected GR00T text field '{key}' to be a tensor, "
                 f"got {type(tensor).__name__}."
             )
         if tensor.ndim < 2:
             raise ValueError(
-                f"Expected GR00T text field '{canonical_key}' to be at least 2D, "
+                f"Expected GR00T text field '{key}' to be at least 2D, "
                 f"got shape {tuple(tensor.shape)}."
             )
         if padding_value > 0 and tensor.shape[-1] > padding_value:
             raise ValueError(
-                f"GR00T text field '{canonical_key}' length {tensor.shape[-1]} exceeds "
+                f"GR00T text field '{key}' length {tensor.shape[-1]} exceeds "
                 f"padding_value={padding_value}."
             )
         if padding_value > 0 and tensor.shape[-1] < padding_value:
@@ -266,43 +188,24 @@ def _canonicalize_gr00t_text_forward_inputs(
                 mode="constant",
                 value=0,
             )
-        canonicalized[canonical_key] = tensor
-        if alias_key in canonicalized or canonical_key in canonicalized:
-            canonicalized[alias_key] = tensor
+        canonicalized[key] = tensor
 
-    _validate_gr00t_text_forward_inputs(
-        canonicalized,
-        context="GR00T rollout cached text tensors",
-    )
     return canonicalized
 
 
 def _normalize_gr00t_forward_inputs(forward_inputs: dict[str, Any]) -> dict[str, Any]:
     """Convert cached actor ``forward_inputs`` back into backbone inputs.
 
-    Drops RL bookkeeping keys, collapses ``eagle_*`` aliases onto their canonical
-    counterparts, restores flattened visual shapes and synthesizes a default
-    ``state_mask`` when missing.
+    Drops RL bookkeeping keys, restores flattened visual shapes, and synthesizes
+    a default ``state_mask`` when missing.
     """
     normalized_input = {}
     for key, value in forward_inputs.items():
         if key in _FORWARD_INPUT_SKIP_KEYS:
             continue
-        if key in _FORWARD_INPUT_ALIASES:
-            continue
         if key not in _FORWARD_INPUT_MODEL_KEYS:
             continue
         normalized_input[key] = _reshape_forward_tensor(key, value)
-
-    for alias_key, canonical_key in _FORWARD_INPUT_ALIASES.items():
-        if canonical_key in normalized_input or alias_key not in forward_inputs:
-            continue
-        if canonical_key not in _FORWARD_INPUT_MODEL_KEYS:
-            continue
-        normalized_input[canonical_key] = _reshape_forward_tensor(
-            canonical_key,
-            forward_inputs[alias_key],
-        )
 
     state = normalized_input.get("state")
     if "state_mask" not in normalized_input and torch.is_tensor(state):
@@ -310,31 +213,7 @@ def _normalize_gr00t_forward_inputs(forward_inputs: dict[str, Any]) -> dict[str,
             state.shape[:-1], dtype=torch.bool, device=state.device
         )
 
-    normalized_input = {
-        key: value for key, value in normalized_input.items() if value is not None
-    }
-    _validate_gr00t_text_forward_inputs(
-        normalized_input,
-        context="Normalized GR00T actor forward_inputs",
-    )
-    return normalized_input
-
-
-def _drop_redundant_gr00t_forward_aliases(
-    forward_inputs: dict[str, Any],
-) -> dict[str, Any]:
-    """Drop alias-only duplicates before caching rollout forward inputs.
-
-    The actor normalizes ``eagle_*`` keys back to their canonical counterparts
-    only as a fallback. When both forms are present, keeping both in trajectory
-    buffers doubles the cached text/image tensors and causes unnecessary
-    host-memory growth over long training runs.
-    """
-    trimmed = dict(forward_inputs)
-    for alias_key, canonical_key in _FORWARD_INPUT_ALIASES.items():
-        if canonical_key in trimmed and alias_key in trimmed:
-            trimmed.pop(alias_key, None)
-    return trimmed
+    return {key: value for key, value in normalized_input.items() if value is not None}
 
 
 def _batchify_gr00t_forward_input(
@@ -873,13 +752,9 @@ class GR00T_N1_7_ForRLActionPrediction(Gr00tN1d7, BasePolicy):
     """GR00T N1.7 model for reinforcement-learning action prediction."""
 
     _no_split_modules = [
-        "Qwen3DecoderLayer",
-        "Siglip2EncoderLayer",
-        "FlowMatchingActionHeadForRLActionPrediction",
-        "TimestepEncoder",
-        "TimestepEmbedding",
-        "ValueHead",
-        "ExploreNoiseNet",
+        "Qwen3VLTextDecoderLayer",
+        "Qwen3VLVisionBlock",
+        "BasicTransformerBlock",
     ]
 
     def __init__(
@@ -1262,10 +1137,7 @@ class GR00T_N1_7_ForRLActionPrediction(Gr00tN1d7, BasePolicy):
 
     def apply_transforms(self, obs: dict) -> dict:
         """Tokenize/normalize a batched observation via the GR00T processor."""
-        processed_observation = self._modality_transform.process_observation(
-            obs, self.embodiment_tag
-        )
-        return _add_gr00t_forward_aliases(processed_observation)
+        return self._modality_transform.process_observation(obs, self.embodiment_tag)
 
     def unapply_transforms(
         self,
@@ -1322,18 +1194,11 @@ class GR00T_N1_7_ForRLActionPrediction(Gr00tN1d7, BasePolicy):
             key: _batchify_gr00t_forward_input(key, value, batch_size)
             for key, value in normalized_input.items()
         }
-        _validate_gr00t_text_forward_inputs(
-            stashed_forward_inputs,
-            context="GR00T stashed rollout forward_inputs",
-        )
-
-        forward_inputs = _drop_redundant_gr00t_forward_aliases(
-            {
-                "chains": rlinf_outputs["chains"],
-                "denoise_inds": rlinf_outputs["denoise_inds"],
-                **stashed_forward_inputs,
-            }
-        )
+        forward_inputs = {
+            "chains": rlinf_outputs["chains"],
+            "denoise_inds": rlinf_outputs["denoise_inds"],
+            **stashed_forward_inputs,
+        }
         result = {
             "prev_logprobs": rlinf_outputs["prev_logprobs"],
             "prev_values": rlinf_outputs["prev_values"],

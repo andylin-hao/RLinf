@@ -130,14 +130,6 @@ actor:
     num_action_chunks: 1
     action_dim: 7
     denoising_steps: 1
-    no_split_modules:
-      - "Qwen3DecoderLayer"
-      - "Siglip2EncoderLayer"
-      - "FlowMatchingActionHeadForRLActionPrediction"
-      - "TimestepEncoder"
-      - "TimestepEmbedding"
-      - "ValueHead"
-      - "ExploreNoiseNet"
 
   optim:
     lr: 5.0e-6

@@ -16,7 +16,7 @@ policy_setup: "widowx_bridge"
 
 # Observation and embodiment settings
 obs_converter_type: "libero"
-embodiment_tag: "libero_franka"
+embodiment_tag: "libero_panda"
 add_value_head: True
 
 # RL head configuration

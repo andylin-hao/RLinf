@@ -9,13 +9,11 @@ is_lora: false
 action_dim: 7
 # Match the validated Isaac-GR00T LIBERO rollout, which executes the first 8
 # actions from each predicted chunk during evaluation.
-num_action_chunks: 8
-denoising_steps: 1
+num_action_chunks: 16
+denoising_steps: 4
 
 obs_converter_type: "libero"
-embodiment_tag: libero_sim
-libero_action_mode: official
-libero_eval_action_mode: official
+embodiment_tag: libero_panda
 add_value_head: True
 
 rl_head_config:
@@ -26,6 +24,7 @@ rl_head_config:
   noise_anneal: False
   noise_params: [0.7, 0.3, 400]
   noise_level: 0.5
+  action_noise_scale: 0.1
   add_value_head: ${actor.model.add_value_head}
   chunk_critic_input: False
   detach_critic_input: True

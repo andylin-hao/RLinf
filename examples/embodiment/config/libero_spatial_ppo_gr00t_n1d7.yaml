@@ -125,21 +125,11 @@ actor:
     model_path: /path/to/RLinf-Gr00t-N1.7-RL-Spatial
     backbone_model_path: /path/to/Cosmos-Reason2-2B
     model_type: "gr00t_n1d7"
-    embodiment_tag: "libero_sim"
+    embodiment_tag: "libero_panda"
     add_value_head: True
-    rl_head_config:
-      noise_level: 0.5
     # Match Isaac-GR00T validated LIBERO rollout defaults.
-    num_action_chunks: 8
+    num_action_chunks: 16
     denoising_steps: 4
-    no_split_modules:
-      - "Qwen3DecoderLayer"
-      - "Siglip2EncoderLayer"
-      - "FlowMatchingActionHeadForRLActionPrediction"
-      - "TimestepEncoder"
-      - "TimestepEmbedding"
-      - "ValueHead"
-      - "ExploreNoiseNet"         
 
   optim:
     lr: 5.0e-6
