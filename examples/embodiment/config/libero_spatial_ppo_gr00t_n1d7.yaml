@@ -93,7 +93,7 @@ env:
     total_num_envs: 8
     group_size: 1
     auto_reset: True
-    ignore_terminations: True
+    ignore_terminations: True # False for evaluation
     max_episode_steps: 256
     max_steps_per_rollout_epoch: 256
     is_eval: True
@@ -109,8 +109,9 @@ rollout:
   pipeline_stage_num: 1
 
   model:
-    model_path: /path/to/RLinf-Gr00t-N1.7-RL-Spatial
-    backbone_model_path: /path/to/Cosmos-Reason2-2B
+    model_path: /path/to/GR00T-N1.7-LIBERO/libero_spatial
+    # Local backbone dir; path must contain the canonical id `nvidia/Cosmos-Reason2-2B`
+    backbone_model_path: /path/to/nvidia/Cosmos-Reason2-2B
     precision: ${actor.model.precision}
 
 actor:
@@ -122,9 +123,10 @@ actor:
   enable_offload: True
 
   model:
-    model_path: /path/to/RLinf-Gr00t-N1.7-RL-Spatial
-    backbone_model_path: /path/to/Cosmos-Reason2-2B
     model_type: "gr00t_n1d7"
+    model_path: /path/to/GR00T-N1.7-LIBERO/libero_spatial
+    # Local backbone dir; path must contain the canonical id `nvidia/Cosmos-Reason2-2B`
+    backbone_model_path: /path/to/nvidia/Cosmos-Reason2-2B
     embodiment_tag: "libero_panda"
     add_value_head: True
     # Match Isaac-GR00T validated LIBERO rollout defaults.
