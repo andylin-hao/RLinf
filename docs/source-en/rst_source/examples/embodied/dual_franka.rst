@@ -183,36 +183,16 @@ used by :doc:`franka`. ``--use-mirror`` is for mainland China users
    control path.
 
 5. GELLO (env-worker node)
-~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Both GELLO USB-FTDI cables plug into the env-worker node (**node 0**
-in the shipped placement) and stay there during data collection.
-``DualGelloJointIntervention`` opens both serial ports from inside
-the env-worker process and reads them at ~1 kHz — routing through
-the LAN to a GELLO physically wired to node 1 would blow the
-real-time budget, drop samples, and cause tracker reference jumps.
-
-For the actual install commands (``gello`` + ``gello-teleop`` +
-USB-FTDI permission, with the rationale for why only the
-``DynamixelSDK`` submodule is initialised), see :doc:`franka_gello`.
-Run those commands on **node 0 only**, in the same venv as RLinf —
-``DualGelloJointIntervention`` imports both packages in-process when
-the env wrapper stack is built.
-
-6. Foot pedal
-~~~~~~~~~~~~~
-
-4. GELLO (node 0 only)
-~~~~~~~~~~~~~~~~~~~~~~
-
-Both GELLO USB-FTDI cables plug into node 0; routing over the LAN
-breaks the 1 kHz real-time budget.
+Both GELLO USB-FTDI cables plug into the env-worker node (**node 0**);
+routing over the LAN breaks the 1 kHz real-time budget.
 
 Install ``gello`` + ``gello-teleop`` + USB-FTDI permissions into
 the same venv on node 0 per :doc:`franka_gello`.
 
-5. Foot pedal (node 0 only)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~
+6. Foot pedal
+~~~~~~~~~~~~~
 
 Use the vendor's Windows tool once to burn keycodes ``a`` / ``b`` /
 ``c`` into the PCsensor FootSwitch firmware (persists across boots).
@@ -319,8 +299,6 @@ second unit's by-id path and run the same two steps again.
                gripper_config=(8, ..., ...),
            ),
 
-   python toolkits/realworld_check/test_gello.py calibrate
-
 2. **Verify with align-sequential**: immediately after pasting, run
    align-sequential through J1 → J7 to confirm every joint settles
    inside ±0.10 rad cleanly. If a joint never converges or the residual
@@ -328,9 +306,9 @@ second unit's by-id path and run the same two steps again.
 
 **Align** (run when the leader and arm pose disagree):
 
-      export PYTHONPATH=$PWD:${PYTHONPATH:-}
-      python toolkits/realworld_check/test_gello.py align-sequential
+.. code-block:: bash
 
+   export PYTHONPATH=$PWD:${PYTHONPATH:-}
    python toolkits/realworld_check/test_gello.py align-sequential
 
 Both scripts auto-discover the local Robotiq port by globbing

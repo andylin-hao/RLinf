@@ -33,6 +33,7 @@ class KeyboardEvalControlWrapper(gym.Wrapper):
 
     IDLE_POLL_S = 0.05
     PEDAL_DEBOUNCE_S = 0.2
+    WAIT_HEARTBEAT_S = 10.0
 
     def __init__(self, env: gym.Env):
         super().__init__(env)
@@ -46,11 +47,24 @@ class KeyboardEvalControlWrapper(gym.Wrapper):
         self.listener.pop_pressed_keys()
         obs, info = self.env.reset(seed=seed, options=options)
         self._last_obs = obs
+        # Block until the operator has arranged the scene and presses 'a'.
+        # This is intentional (the arms are homed and idle); log on entry and
+        # emit a periodic heartbeat so the wait is not mistaken for a hang.
+        self._log_info(
+            "Arms homed and idle. Arrange the scene, then press pedal 'a' "
+            "to start the next rollout (Ctrl-C to abort)."
+        )
+        last_heartbeat = time.monotonic()
         while True:
             time.sleep(self.IDLE_POLL_S)
+            now = time.monotonic()
+            if now - last_heartbeat >= self.WAIT_HEARTBEAT_S:
+                last_heartbeat = now
+                self._log_info("Still waiting for pedal 'a' to start the rollout...")
             for key in self.listener.pop_pressed_keys():
                 if key == "a":
                     self._running = True
+                    self._log_info("Pedal 'a' pressed; starting rollout.")
                     return obs, info
 
     def step(
@@ -105,3 +119,11 @@ class KeyboardEvalControlWrapper(gym.Wrapper):
     def _idle_response(self, event: str | None):
         info = {"eval_phase": "pre", "eval_event": event, "eval_result": None}
         return self._last_obs, 0.0, False, False, info
+
+    def _log_info(self, message: str) -> None:
+        logger = getattr(self._base_env(), "_logger", None)
+        if logger is not None:
+            logger.info(message)
+
+    def _base_env(self):
+        return getattr(self.env, "unwrapped", self.env)

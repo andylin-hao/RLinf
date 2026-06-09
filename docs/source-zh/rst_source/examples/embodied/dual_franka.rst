@@ -284,17 +284,15 @@ GELLO 标定
                gripper_config=(8, ..., ...),
            ),
 
-   python toolkits/realworld_check/test_gello.py calibrate
-
 2. **对齐验证**：标完直接跑 align-sequential 走一遍 J1 → J7，确认每个
    关节都能稳稳进 ±0.10 rad 容差。如果某关节始终对不上 / 残差超过预期，
    回到上一步重标。
 
 **对齐**\ （leader 跟机械臂位姿对不上时跑）：
 
-      export PYTHONPATH=$PWD:${PYTHONPATH:-}
-      python toolkits/realworld_check/test_gello.py align-sequential
+.. code-block:: bash
 
+   export PYTHONPATH=$PWD:${PYTHONPATH:-}
    python toolkits/realworld_check/test_gello.py align-sequential
 
 两个脚本都会用 glob ``/dev/serial/by-id/usb-FTDI_USB_TO_RS-485_*-if00-port0``
