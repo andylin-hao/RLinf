@@ -746,6 +746,7 @@ setup_mirror() {
         export HF_ENDPOINT=https://hf-mirror.com
         export GITHUB_PREFIX="https://ghfast.top/"
         git config --global url."${GITHUB_PREFIX}github.com/".insteadOf "https://github.com/"
+        trap 'unset_mirror' EXIT INT TERM HUP
     fi
 }
 
@@ -1975,7 +1976,6 @@ main() {
     esac
 
     install_platform_extras
-    unset_mirror
 }
 
 main "$@"
