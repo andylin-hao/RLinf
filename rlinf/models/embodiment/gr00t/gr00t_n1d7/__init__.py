@@ -36,7 +36,7 @@ def get_model(cfg: DictConfig, torch_dtype=torch.bfloat16):
     Patcher.clear()
     Patcher.add_patch(
         "gr00t.data.embodiment_tags.EmbodimentTag",
-        "rlinf.models.embodiment.gr00t.gr00t_n1d7.embodiment_tags.EmbodimentTag",
+        "rlinf.models.embodiment.gr00t.embodiment_tags.EmbodimentTag",
     )
     Patcher.apply()
 
@@ -48,6 +48,7 @@ def get_model(cfg: DictConfig, torch_dtype=torch.bfloat16):
     from rlinf.models.embodiment.gr00t.utils import replace_dropout_with_identity
 
     embodiment_tag_by_cfg = {
+        "libero_sim": EmbodimentTag.LIBERO_SIM,  # N1.7 specific change
         "libero_panda": EmbodimentTag.LIBERO_PANDA,
         "libero_franka": EmbodimentTag.LIBERO_FRANKA,
         "isaaclab_franka": EmbodimentTag.ISAACLAB_FRANKA,

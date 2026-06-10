@@ -43,6 +43,9 @@ class EmbodimentTag(Enum):
     LIBERO_PANDA = "libero_panda"
     """The Libero Panda robot."""
 
+    LIBERO_SIM = "libero_sim"
+    """The Libero SIM robot for GR00T N1.7."""
+
     OXE_GOOGLE = "oxe_google"
     """The Open-X-Embodiment Google robot."""
 

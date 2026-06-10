@@ -13,7 +13,7 @@ num_action_chunks: 16
 denoising_steps: 4
 
 obs_converter_type: "libero"
-embodiment_tag: libero_panda
+embodiment_tag: libero_sim # N1.7 change this value from libero_panda to libero_sim
 add_value_head: True
 
 rl_head_config:

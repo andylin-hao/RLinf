@@ -127,7 +127,7 @@ actor:
     model_path: /path/to/GR00T-N1.7-LIBERO/libero_spatial
     # Local backbone dir; path must contain the canonical id `nvidia/Cosmos-Reason2-2B`
     backbone_model_path: /path/to/nvidia/Cosmos-Reason2-2B
-    embodiment_tag: "libero_panda"
+    embodiment_tag: "libero_sim" # N1.7 change this value from libero_panda to libero_sim
     add_value_head: True
     # Match Isaac-GR00T validated LIBERO rollout defaults.
     num_action_chunks: 16
