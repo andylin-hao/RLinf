@@ -972,9 +972,7 @@ class GR00T_N1_7_ForRLActionPrediction(Gr00tN1d7, BasePolicy):
     ):
         """Rollout entry point: produce env-ready actions and RL bookkeeping."""
         del kwargs
-        observations, obs_copy, is_batch = self._prepare_rollout_observation(
-            env_obs, mode
-        )
+        observations, obs_copy, is_batch = self._prepare_rollout_observation(env_obs)
         normalized_action, result = self._predict_normalized_action(obs_copy, mode)
         unnormalized_action = self._get_unnormalized_action(
             normalized_action,
@@ -1022,23 +1020,13 @@ class GR00T_N1_7_ForRLActionPrediction(Gr00tN1d7, BasePolicy):
     def _prepare_rollout_observation(
         self,
         env_obs: dict[str, Any],
-        mode: Literal["train", "eval"] = "train",
     ) -> tuple[dict[str, Any], dict[str, Any], bool]:
-        """Convert raw env observations into batched GR00T processor inputs.
-
-        In ``train`` mode the raw state is round-tripped through bf16 before
-        normalization so the rollout matches the bf16 actor backbone used during
-        RL updates (training-inference consistency).  In ``eval`` mode the state
-        is kept in fp32 all the way through normalization, mirroring the upstream
-        ``Gr00tPolicy`` inference pipeline (which only casts to bf16 *after*
-        normalization, inside the model's ``prepare_input``).
-        """
+        """Convert raw env observations into batched GR00T processor inputs."""
         env_obs = dict(env_obs)
-        if mode == "train":
-            # Here we have a source causing tiny inference-training inconsistency,
-            # force convert the state to bf16 then back to float32 to reproduce the info loss in training.
-            env_obs["states"] = env_obs["states"].to(torch.bfloat16)
-            env_obs["states"] = env_obs["states"].cpu().float()
+        # Here we have a source causing tiny inference-training inconsistency,
+        # force convert the state to bf16 then back to float32 to reproduce the info loss in training.
+        env_obs["states"] = env_obs["states"].to(torch.bfloat16)
+        env_obs["states"] = env_obs["states"].cpu().float()
 
         observations = self.obs_convert_fn(env_obs)
         obs_copy = observations.copy()
@@ -1055,16 +1043,6 @@ class GR00T_N1_7_ForRLActionPrediction(Gr00tN1d7, BasePolicy):
     ) -> tuple[torch.Tensor, dict[str, Any]]:
         """Run the policy and return normalized actions plus RL bookkeeping."""
         normalized_input = self.apply_transforms(obs_copy)
-
-        if mode == "eval":
-            normalized_action = self._get_action_from_normalized_input(normalized_input)
-            result = {
-                "prev_logprobs": None,
-                "prev_values": None,
-                "forward_inputs": {},
-            }
-            return normalized_action, result
-
         normalized_input = self._cast_float_tensors_to_compute_dtype(
             normalized_input,
             self.compute_dtype,
@@ -1073,7 +1051,20 @@ class GR00T_N1_7_ForRLActionPrediction(Gr00tN1d7, BasePolicy):
             normalized_input,
             getattr(self, "padding_value", 0),
         )
-        return self._get_rl_action(normalized_input, mode=mode)
+
+        if mode == "eval":
+            normalized_action = self._get_action_from_normalized_input(normalized_input)
+            result = {
+                "prev_logprobs": None,
+                "prev_values": None,
+                "forward_inputs": {},
+            }
+        else:
+            normalized_action, result = self._get_rl_action(
+                normalized_input,
+                mode=mode,
+            )
+        return normalized_action, result
 
     def _apply_exploration_noise(
         self,
