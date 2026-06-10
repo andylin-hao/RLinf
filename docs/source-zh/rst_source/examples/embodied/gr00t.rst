@@ -195,11 +195,10 @@ RLinf **目前还没有**提供一个由本仓库产出的、专门用于这个 
 
 换句话说：
 
-- ``model_path`` 当前指向的是本地解包后的官方 ``nvidia/GR00T-N1.7-LIBERO`` checkpoint，而不是本仓库导出的 N1.7 SFT checkpoint。
-- ``backbone_model_path`` 指向本地 ``nvidia/Cosmos-Reason2-2B`` snapshot，以便 actor、rollout 和 processor 全部离线运行。
-- 这是一个为了 RL 集成与调试先跑通的临时方案。
+- ``model_path`` 当前指向的是本地官方 ``nvidia/GR00T-N1.7-LIBERO`` checkpoint，而不是本仓库导出的 N1.7 SFT checkpoint。
+- ``backbone_model_path`` 指向本地 ``nvidia/Cosmos-Reason2-2B`` checkpoint，以便 actor、rollout 和 processor 全部离线运行。
 
-这个临时方案也和官方 N1.7 文档里的核心升级方向一致：
+对应官方 N1.7 文档里的核心升级方向：
 
 - **Relative EEF Action Space**：N1.7 使用机器人与人类具身共享的 relative EEF 动作空间，以当前位姿增量而不是绝对目标来表达动作，这是其跨具身泛化能力的重要原因之一。
 - **Human Video Pretraining**：N1.7 在多样机器人示范之外，还联合使用了 20K 小时 EgoScale 人类视频进行预训练，因此可以将从人类视频中学到的操作先验迁移到机器人控制。
@@ -209,9 +208,15 @@ RLinf **目前还没有**提供一个由本仓库产出的、专门用于这个 
 
 .. code:: bash
 
+   # 为提升国内下载速度，可以设置：
+   # export HF_ENDPOINT=https://hf-mirror.com
+   pip install huggingface-hub
+
+   # 下载 Cosmos-Reason2-2B backbone
    uv run hf download nvidia/Cosmos-Reason2-2B \
       --local-dir checkpoints/nvidia/Cosmos-Reason2-2B
 
+   # 下载 GR00T-N1.7-LIBERO 任务 checkpoint（仅 libero_spatial 所需文件）
    uv run hf download nvidia/GR00T-N1.7-LIBERO \
       --include "libero_spatial/config.json" \
                 "libero_spatial/embodiment_id.json" \
@@ -306,33 +311,27 @@ RLinf 框架针对GR00T-N1.6采用了高度解耦的两阶段训练架构：
 - 官方 ``processing_gr00t_n1d7.py`` 路径相较 N1.6 简化了数据处理流水线。
 - 官方 N1.7 还增强了完整的 ONNX / TensorRT 导出支持。
 - 官方 N1.7 模型配置将默认通用上限提升为 ``max_state_dim=132``、``max_action_dim=132`` 和 ``action_horizon=40``。
-- 官方 GR00T 仓库当前将 N1.7 标记为 Early Access 版本，因此其上游接口演化速度可能会快于更成熟的 N1.6 分支。
 
 **3. RLinf 当前的 checkpoint 策略**
 
 - RLinf 目前还没有为这个 RL 示例提供一个由仓库自产出的 N1.7 SFT checkpoint。
 - 因此，当前维护中的示例暂时使用官方发布的 ``GR00T-N1.7-LIBERO/libero_spatial`` checkpoint 作为 ``model_path``。
-- 这应当理解为一个用于 RL 集成与调试的临时启动方案，而不是最终的 RLinf 原生 N1.7 SFT 工作流。
 
 **4. RLinf 的 N1.7 接口适配**
 
-- RLinf 保持当前 LIBERO 环境接口不变，在环境边界执行观测/动作转换，而不是直接改写官方 GR00T-N1.7 processor 契约。
-- 对于 LIBERO，RLinf 会将环境观测转换为官方 N1.7 processor 字段，并把官方 GR00T 动作输出解码回 7 维 LIBERO 控制空间。
 - 在当前 RLinf 实现中，LIBERO 的原始 state 在转换前是 8 维，而官方 N1.7 模型内部使用的是更大的通用 state/action 表示。
 - 当前 LIBERO 示例使用 ``embodiment_tag: libero_panda``，并在共享的环境动作工具中应用 LIBERO 的 gripper 约定。
 
 **5. Checkpoint 与 processor 契约**
 
-- RLinf 可以直接从 checkpoint 目录本身加载官方 processor，也可以从显式指定的 ``processor_path`` 加载。
-- ``experiment_cfg/metadata.json`` 是 valid action 维度和图像数量元数据的首选来源；如果该文件缺失，RLinf 会回退到基于 modality config 和 model config 的推断路径。
+- RLinf 直接从 checkpoint 目录加载官方 processor。
 - 在离线或镜像环境中，``backbone_model_path`` 可将官方 backbone id 重定向到本地 ``Cosmos-Reason2-2B`` snapshot。
-- 当前这个临时的官方 release 下载命令可能不会包含 ``experiment_cfg/metadata.json``；这在当前阶段是可以接受的，因为 RLinf 已有 fallback 路径，但如果能保留 metadata，仍然更推荐保留。
 
 **6. 本仓库中的 RL 训练契约**
 
 - 当前维护中的 RLinf N1.7 RL 示例为 ``examples/embodiment/config/libero_spatial_ppo_gr00t_n1d7.yaml``。
 - 当前 RL 设置使用 PPO 且 ``algorithm.loss_type: actor_critic``，因此训练时必须保证 ``actor.model.add_value_head`` 为 ``True``。
-- 当前仓库中经过验证的 LIBERO 示例使用 ``num_action_chunks: 16`` 和 ``denoising_steps: 4``，即便官方 N1.7 模型配置暴露了更大的默认 action horizon。
+- 当前仓库中经过验证的 LIBERO 示例使用 ``num_action_chunks: 16`` 和 ``denoising_steps: 4``。
 
 ---------------
 
@@ -420,6 +419,26 @@ GR00T-N1.5的动作头包含dropout层，这会干扰对数概率的计算，因
          - "Qwen3DecoderLayer"
          - "Siglip2EncoderLayer"
 
+**N1.7:**
+
+**Actor 模型与动作头配置**
+
+.. code:: yaml
+
+   model:
+      model_type: "gr00t_n1d7"
+      add_value_head: True
+      num_action_chunks: 16
+      denoising_steps: 4
+
+**运行时路径配置**
+
+.. code:: yaml
+
+   model:
+      model_path: "/path/to/GR00T-N1.7-LIBERO/libero_spatial"
+      backbone_model_path: "/path/to/nvidia/Cosmos-Reason2-2B"
+
 **PPO 与优化器超参数**
 
 .. code:: yaml
@@ -463,6 +482,19 @@ GR00T-N1.5的动作头包含dropout层，这会干扰对数概率的计算，因
    model:
       model_path: "/path/to/RLinf-Gr00t-N1.6-RL-Spatial"
 
+**N1.7:**
+
+- GR00T-N1.7 + PPO + Libero-Spatial:
+  ``examples/embodiment/config/libero_spatial_ppo_gr00t_n1d7.yaml``
+
+需要修改模型路径和 backbone 路径：
+
+.. code:: yaml
+
+   model:
+      model_path: "/path/to/GR00T-N1.7-LIBERO/libero_spatial"
+      backbone_model_path: "/path/to/nvidia/Cosmos-Reason2-2B"
+
 --------------
 
 **4. 启动命令**
@@ -481,6 +513,12 @@ GR00T-N1.5的动作头包含dropout层，这会干扰对数概率的计算，因
 .. code:: bash
 
    bash examples/embodiment/run_embodiment.sh libero_spatial_ppo_gr00t_n1d6
+
+**N1.7:**
+
+.. code:: bash
+
+   bash examples/embodiment/run_embodiment.sh libero_spatial_ppo_gr00t_n1d7
 
 --------------
 
@@ -599,3 +637,15 @@ GR00T-N1.5的动作头包含dropout层，这会干扰对数概率的计算，因
 
    * - +PPO
      - |huggingface| `82% <https://huggingface.co/RLinf/RLinf-Gr00t-N1.6-RL-Spatial-Step500>`_
+
+
+**N1.7:**
+
+.. list-table:: **GR00T-N1.7 使用Flow-SDE方法在LIBERO Spatial上的结果**
+   :header-rows: 1
+
+   * - 模型
+     - Spatial
+
+   * - GR00T-N1.7 PPO
+     - |huggingface| TODO

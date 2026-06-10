@@ -15,7 +15,7 @@
 import json
 import logging
 import random
-from contextlib import contextmanager, nullcontext
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any, Literal, Optional, Union
 
@@ -48,56 +48,19 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-@contextmanager
-def _use_local_hf_source_for_model_id(
-    *,
-    hf_model_id: str,
-    local_model_path: str | None,
-):
-    """Temporarily resolve one HF model id to a local snapshot directory.
-
-    GR00T-N1.7 keeps the official backbone id in ``config.model_name`` for
-    upstream backbone selection, but some RLinf environments need to source the
-    actual weights from a pre-downloaded local directory instead of the Hub.
-
-    Args:
-        hf_model_id: The backbone model id stored in the config.
-        local_model_path: Local snapshot directory to use instead. When ``None``
-            or not a directory, the context manager is a no-op.
-    """
-    if local_model_path is None:
-        yield
-        return
-
-    local_model_dir = Path(str(local_model_path))
-    if not local_model_dir.is_dir():
-        yield
-        return
-
-    from gr00t.model.modules import qwen3_backbone as qwen3_backbone_module
-
-    model_cls = qwen3_backbone_module.Qwen3VLForConditionalGeneration
-    original_from_pretrained_impl = model_cls.from_pretrained.__func__
-    original_from_pretrained = model_cls.from_pretrained
-
-    @classmethod
-    def _patched_from_pretrained(cls, pretrained_model_name_or_path, *args, **kwargs):
-        requested_source = str(pretrained_model_name_or_path)
-        resolved_source = requested_source
-        if requested_source == hf_model_id:
-            resolved_source = str(local_model_dir)
-            logger.info(
-                "[RLinf] Loading backbone from local path %s for model id %s",
-                resolved_source,
-                hf_model_id,
-            )
-        return original_from_pretrained_impl(cls, resolved_source, *args, **kwargs)
-
-    model_cls.from_pretrained = _patched_from_pretrained
-    try:
-        yield
-    finally:
-        model_cls.from_pretrained = original_from_pretrained
+def _find_processor_dir(model_path: Path) -> Path | None:
+    """Find the local directory containing GR00T N1.7 processor files."""
+    processor_required_files = (
+        "processor_config.json",
+        "statistics.json",
+        "embodiment_id.json",
+    )
+    for candidate in (model_path / "processor", model_path):
+        if candidate.is_dir() and all(
+            (candidate / f).is_file() for f in processor_required_files
+        ):
+            return candidate
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -783,37 +746,31 @@ class GR00T_N1_7_ForRLActionPrediction(Gr00tN1d7, BasePolicy):
         else:
             self.embodiment_tag = embodiment_tag
 
-        processor_path = kwargs.pop("processor_path", None)
-        transformers_loading_kwargs = kwargs.pop(
+        loading_kwargs = kwargs.pop(
             "transformers_loading_kwargs", {"trust_remote_code": True}
         )
 
         backbone_model_path = kwargs.pop("backbone_model_path", None)
         if backbone_model_path is not None:
             backbone_model_path = str(backbone_model_path)
-        configured_model_name = str(config.model_name)
+        original_model_name = str(config.model_name)
 
-        # The upstream ``Gr00tN1d7.__init__`` only accepts ``config`` and
-        # ``transformers_loading_kwargs``. Backbone tuning options such as
-        # ``tune_visual``/``tune_llm`` are configured through the config fields in
-        # the official GR00T N1.7 repo, so fold any leftover config-attribute
-        # kwargs onto the config instead of forwarding them to ``super()``.
+        if backbone_model_path and Path(backbone_model_path).is_dir():
+            config.model_name = backbone_model_path
+            loading_kwargs.setdefault("local_files_only", True)
+            logger.info("Offline model: backbone from %s", backbone_model_path)
+        else:
+            logger.info(
+                "Online model: backbone from HuggingFace (%s)", original_model_name
+            )
+
         for key in list(kwargs.keys()):
             if hasattr(config, key):
                 setattr(config, key, kwargs.pop(key))
         if kwargs:
-            logger.warning(
-                "Ignoring unexpected GR00T N1.7 init kwargs: %s", sorted(kwargs)
-            )
+            logger.warning("Ignoring unexpected kwargs: %s", sorted(kwargs))
 
-        with _use_local_hf_source_for_model_id(
-            hf_model_id=configured_model_name,
-            local_model_path=backbone_model_path,
-        ):
-            super().__init__(
-                config,
-                transformers_loading_kwargs=transformers_loading_kwargs,
-            )
+        super().__init__(config, transformers_loading_kwargs=loading_kwargs)
 
         self.padding_value = rl_head_config.get("padding_value", 0)
         self.model_path = Path(local_model_path)
@@ -823,7 +780,6 @@ class GR00T_N1_7_ForRLActionPrediction(Gr00tN1d7, BasePolicy):
         self._modality_config, self._modality_transform = self._load_modality_processor(
             modality_config=modality_config,
             modality_transform=modality_transform,
-            processor_path=processor_path,
             local_model_path=local_model_path,
             backbone_model_path=backbone_model_path,
         )
@@ -869,49 +825,38 @@ class GR00T_N1_7_ForRLActionPrediction(Gr00tN1d7, BasePolicy):
         self,
         modality_config: Optional[Any],
         modality_transform: Optional[Any],
-        processor_path: Optional[str],
         local_model_path: str,
         backbone_model_path: Optional[str],
     ) -> tuple[Any, Any]:
-        """Resolve the modality config and transform (processor).
-
-        When a config/transform pair is already supplied it is used verbatim;
-        otherwise the processor is loaded from ``processor_path`` (preferred) or
-        via ``AutoProcessor`` from the local checkpoint. Model weights are never
-        touched by this method.
-        """
+        """Resolve the modality config and transform (processor)."""
         if modality_config is not None and modality_transform is not None:
             return modality_config, modality_transform
 
-        from transformers import AutoProcessor
-
-        logger.info("Loading GR00T N1.7 processor...")
-        if processor_path is not None:
+        processor_dir = _find_processor_dir(Path(local_model_path))
+        if processor_dir is not None:
+            logger.info("Loading processor from local dir: %s", processor_dir)
             modality_transform, modality_config = self._load_processor_from_dir(
-                Path(processor_path),
+                processor_dir,
                 backbone_model_path=backbone_model_path,
             )
         else:
-            processor = AutoProcessor.from_pretrained(
-                str(local_model_path),
-                trust_remote_code=True,
-            )
-            if hasattr(processor, "process_observation") and hasattr(
-                processor, "decode_action"
-            ):
-                modality_transform = processor
-                modality_config = getattr(
-                    processor,
-                    "modality_configs",
-                    getattr(processor, "modality_config", None),
-                )
-            else:
-                modality_transform, modality_config = self._load_processor_from_dir(
-                    Path(local_model_path),
-                    backbone_model_path=backbone_model_path,
-                )
+            from transformers import AutoProcessor
 
-        logger.info("Processor loaded safely. No model weights were touched.")
+            logger.info(
+                "Loading processor via AutoProcessor from: %s", local_model_path
+            )
+            processor = AutoProcessor.from_pretrained(
+                local_model_path,
+                trust_remote_code=True,
+                local_files_only=Path(local_model_path).is_dir(),
+            )
+            modality_transform = processor
+            modality_config = getattr(
+                processor,
+                "modality_configs",
+                getattr(processor, "modality_config", None),
+            )
+
         return modality_config, modality_transform
 
     @staticmethod
@@ -929,6 +874,8 @@ class GR00T_N1_7_ForRLActionPrediction(Gr00tN1d7, BasePolicy):
             processor_cfg["embodiment_id_mapping"] = json.load(f)
         if backbone_model_path:
             processor_cfg["model_name"] = str(backbone_model_path)
+            processor_cfg.setdefault("transformers_loading_kwargs", {})
+            processor_cfg["transformers_loading_kwargs"]["local_files_only"] = True
         modality_transform = Gr00tN1d7Processor(**processor_cfg)
         modality_config = getattr(modality_transform, "modality_configs", None)
         return modality_transform, modality_config

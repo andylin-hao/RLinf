@@ -75,7 +75,6 @@ def get_model(cfg: DictConfig, torch_dtype=torch.bfloat16):
     if _action_dim is not None:
         config.action_dim = _action_dim
 
-    processor_path = OmegaConf.select(cfg, "processor_path", default=None)
     backbone_model_path = OmegaConf.select(cfg, "backbone_model_path", default=None)
 
     model = GR00T_N1_7_ForRLActionPrediction.from_pretrained(
@@ -89,7 +88,6 @@ def get_model(cfg: DictConfig, torch_dtype=torch.bfloat16):
         output_action_chunks=cfg.num_action_chunks,
         obs_converter_type=cfg.obs_converter_type,
         rl_head_config=cfg.rl_head_config,
-        processor_path=processor_path,
     )
 
     model.to(torch_dtype)

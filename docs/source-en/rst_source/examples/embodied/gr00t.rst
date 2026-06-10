@@ -209,9 +209,15 @@ Before RLinf ships its own N1.7 SFT checkpoint, you can use the following offlin
 
 .. code:: bash
 
+   # For mainland China users, you can use the following for better download speed:
+   # export HF_ENDPOINT=https://hf-mirror.com
+   pip install huggingface-hub
+
+   # Download Cosmos-Reason2-2B backbone
    uv run hf download nvidia/Cosmos-Reason2-2B \
       --local-dir checkpoints/nvidia/Cosmos-Reason2-2B
 
+   # Download GR00T-N1.7-LIBERO task checkpoint (libero_spatial minimum file set)
    uv run hf download nvidia/GR00T-N1.7-LIBERO \
       --include "libero_spatial/config.json" \
                 "libero_spatial/embodiment_id.json" \
@@ -306,25 +312,20 @@ After fine-tuning, the system generates ``metadata.json`` and other statistical 
 - The official ``processing_gr00t_n1d7.py`` path simplifies the data-processing pipeline compared with the older N1.6 stack.
 - The official N1.7 stack also expands ONNX / TensorRT export support.
 - The official N1.7 model config raises the default universal limits to ``max_state_dim=132``, ``max_action_dim=132``, and ``action_horizon=40``.
-- The official GR00T repository currently marks N1.7 as an Early Access release, so upstream interfaces may evolve faster than the older N1.6 line.
 
 **3. Current checkpoint strategy in RLinf**
 
 - RLinf does not yet provide a repository-produced N1.7 SFT checkpoint for this RL example.
 - The current maintained example therefore temporarily uses the official released ``GR00T-N1.7-LIBERO/libero_spatial`` checkpoint as ``model_path``.
-- This should be understood as a temporary bootstrap path for RL integration, not as the final RLinf-native N1.7 SFT workflow.
 
 **4. RLinf N1.7 Interface Adaptation**
 
-- RLinf keeps the current LIBERO environment interface unchanged and performs observation/action conversion at the environment boundary instead of modifying the official GR00T-N1.7 processor contract.
-- For LIBERO, RLinf converts environment observations to official N1.7 processor fields and decodes official GR00T action outputs back to the 7-dim LIBERO control space.
 - The current raw LIBERO state in RLinf is 8-dim before conversion, while the official N1.7 model uses a larger universal state/action representation internally.
 - The current LIBERO example uses ``embodiment_tag: libero_panda`` and applies the LIBERO gripper convention in the shared environment action utilities.
 
 **5. Checkpoint and Processor Contract**
 
-- RLinf can load the official processor from the checkpoint directory itself or from an explicit ``processor_path``.
-- ``experiment_cfg/metadata.json`` is the preferred source for valid action-dimension and image-count metadata. If it is absent, RLinf falls back to inferring the necessary values from the modality config and model config.
+- RLinf loads the official processor directly from the checkpoint directory.
 - When running in offline or mirrored environments, ``backbone_model_path`` can redirect the official backbone id to a local ``Cosmos-Reason2-2B`` snapshot.
 - The current temporary official-release download command may omit ``experiment_cfg/metadata.json``; that is acceptable for now because RLinf has a fallback path, but keeping metadata is still recommended when available.
 
@@ -332,7 +333,7 @@ After fine-tuning, the system generates ``metadata.json`` and other statistical 
 
 - The maintained RLinf N1.7 RL example is ``examples/embodiment/config/libero_spatial_ppo_gr00t_n1d7.yaml``.
 - The current RL setup uses PPO with ``algorithm.loss_type: actor_critic``, so ``actor.model.add_value_head`` must be ``True`` during training.
-- The repository's validated LIBERO example uses ``num_action_chunks: 16`` and ``denoising_steps: 4``, even though the official N1.7 model config exposes a larger default action horizon.
+- The repository's validated LIBERO example uses ``num_action_chunks: 16`` and ``denoising_steps: 4``.
 
 ---------------
 
@@ -648,8 +649,5 @@ We would like to point out that the results presented above utilize the identica
    * - Model
      - Spatial
 
-   * - GR00T-N1.7 SFT
-     - |huggingface| TODO
-
-   * - +PPO
+   * - GR00T-N1.7 PPO
      - |huggingface| TODO
