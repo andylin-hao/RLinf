@@ -12,11 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
 from pathlib import Path
 
 import torch
 from omegaconf import DictConfig, OmegaConf
+
+from rlinf.utils.logging import get_logger
 
 
 def get_model(cfg: DictConfig, torch_dtype=torch.bfloat16):
@@ -27,7 +28,8 @@ def get_model(cfg: DictConfig, torch_dtype=torch.bfloat16):
     AutoConfig.register("Gr00tN1d7", Gr00tN1d7Config)
     AutoModel.register(Gr00tN1d7Config, Gr00tN1d7)
 
-    logging.info(
+    logger = get_logger()
+    logger.info(
         "Successfully registered custom architecture Gr00tN1d7, authentication passed!"
     )
 

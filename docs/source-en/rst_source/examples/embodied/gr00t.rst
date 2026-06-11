@@ -321,7 +321,7 @@ After fine-tuning, the system generates ``metadata.json`` and other statistical 
 **4. RLinf N1.7 Interface Adaptation**
 
 - The current raw LIBERO state in RLinf is 8-dim before conversion, while the official N1.7 model uses a larger universal state/action representation internally.
-- The current LIBERO example uses ``embodiment_tag: libero_panda`` and applies the LIBERO gripper convention in the shared environment action utilities.
+- The current LIBERO example uses ``embodiment_tag: libero_sim`` and applies the LIBERO gripper convention in the shared environment action utilities.
 
 **5. Checkpoint and Processor Contract**
 

@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import json
-import logging
 import random
 from contextlib import nullcontext
 from pathlib import Path
@@ -39,13 +38,9 @@ from rlinf.models.embodiment.gr00t.utils import (
 )
 from rlinf.models.embodiment.modules.explore_noise_net import ExploreNoiseNet
 from rlinf.models.embodiment.modules.value_head import ValueHead
+from rlinf.utils.logging import get_logger
 
-logger = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Backbone loading utilities
-# ---------------------------------------------------------------------------
+logger = get_logger()
 
 
 def _find_processor_dir(model_path: Path) -> Path | None:
@@ -62,10 +57,6 @@ def _find_processor_dir(model_path: Path) -> Path | None:
             return candidate
     return None
 
-
-# ---------------------------------------------------------------------------
-# Rollout/actor forward-input plumbing (Qwen3-VL specific)
-# ---------------------------------------------------------------------------
 
 # Keys produced during rollout that must never be replayed as backbone inputs by
 # the actor (they are RL bookkeeping rather than model inputs).
@@ -309,10 +300,6 @@ class FlowMatchingActionHeadForRLActionPrediction(Gr00tN1d7ActionHead):
                 noise_scheduler_type="learn",
             )
 
-    # ------------------------------------------------------------------
-    # Module access helpers
-    # ------------------------------------------------------------------
-
     def _get_component(self, name: str):
         """Return a named submodule of the head, or ``None`` if absent."""
         return getattr(self, name, None)
@@ -364,10 +351,6 @@ class FlowMatchingActionHeadForRLActionPrediction(Gr00tN1d7ActionHead):
                 action_inputs[k] = inputs[k]
 
         return BatchFeature(data=action_inputs)
-
-    # ------------------------------------------------------------------
-    # Distribution / denoising primitives
-    # ------------------------------------------------------------------
 
     def get_logprob_norm(self, sample, mu, sigma):
         """Gaussian log-probability of ``sample`` under ``Normal(mu, sigma)``.
@@ -543,10 +526,6 @@ class FlowMatchingActionHeadForRLActionPrediction(Gr00tN1d7ActionHead):
 
         values_vlm = self.value_head(value_embs)[:, 0]
         return values_vlm
-
-    # ------------------------------------------------------------------
-    # Rollout / actor entry points
-    # ------------------------------------------------------------------
 
     def get_rl_action(
         self,
@@ -784,9 +763,6 @@ class GR00T_N1_7_ForRLActionPrediction(Gr00tN1d7, BasePolicy):
             backbone_model_path=backbone_model_path,
         )
 
-        # Replace the upstream action head before HF checkpoint weights are
-        # materialized so actor and rollout instantiate the same final RL model
-        # structure from the outset.
         self.action_head = FlowMatchingActionHeadForRLActionPrediction(
             config, rl_head_config, output_action_chunks
         )
@@ -816,10 +792,6 @@ class GR00T_N1_7_ForRLActionPrediction(Gr00tN1d7, BasePolicy):
             "Forced FSDP _no_split_modules into config: %s",
             self.config.no_split_modules,
         )
-
-    # ------------------------------------------------------------------
-    # Construction helpers
-    # ------------------------------------------------------------------
 
     def _load_modality_processor(
         self,
@@ -891,10 +863,6 @@ class GR00T_N1_7_ForRLActionPrediction(Gr00tN1d7, BasePolicy):
             if "state" in k and len(v.shape) < 3:
                 return False
         return True
-
-    # ------------------------------------------------------------------
-    # Forward (actor) and rollout entry points
-    # ------------------------------------------------------------------
 
     def forward(self, forward_type=ForwardType.DEFAULT, **kwargs):
         if forward_type == ForwardType.DEFAULT:
@@ -989,10 +957,6 @@ class GR00T_N1_7_ForRLActionPrediction(Gr00tN1d7, BasePolicy):
         raw_action = self._apply_exploration_noise(raw_action, mode)
         return raw_action, result
 
-    # ------------------------------------------------------------------
-    # Rollout helpers
-    # ------------------------------------------------------------------
-
     @staticmethod
     def _coerce_observation_values_to_numpy(
         observation: dict[str, Any],
@@ -1085,10 +1049,6 @@ class GR00T_N1_7_ForRLActionPrediction(Gr00tN1d7, BasePolicy):
         raw_tensor = (raw_tensor + noise).clamp(-1.0, 1.0)
         return raw_tensor.numpy() if is_numpy else raw_tensor
 
-    # ------------------------------------------------------------------
-    # Observation / action transforms
-    # ------------------------------------------------------------------
-
     def apply_transforms(self, obs: dict) -> dict:
         """Tokenize/normalize a batched observation via the GR00T processor."""
         return self._modality_transform.process_observation(obs, self.embodiment_tag)
@@ -1120,10 +1080,6 @@ class GR00T_N1_7_ForRLActionPrediction(Gr00tN1d7, BasePolicy):
             state=decoded_state,
         )
         return decoded
-
-    # ------------------------------------------------------------------
-    # Internal action / value computation
-    # ------------------------------------------------------------------
 
     def _get_rl_action(
         self,
@@ -1196,10 +1152,6 @@ class GR00T_N1_7_ForRLActionPrediction(Gr00tN1d7, BasePolicy):
         state: Optional[dict[str, Any]] = None,
     ) -> dict[str, Any]:
         return self.unapply_transforms({"action": normalized_action.cpu()}, state=state)
-
-    # ------------------------------------------------------------------
-    # Metadata
-    # ------------------------------------------------------------------
 
     def _load_metadata(self, exp_cfg_dir: Path):
         """Populate ``valid_action_dim`` and ``image_nums`` from checkpoint metadata.

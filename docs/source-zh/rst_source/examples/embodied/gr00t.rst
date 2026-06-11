@@ -320,7 +320,7 @@ RLinf 框架针对GR00T-N1.6采用了高度解耦的两阶段训练架构：
 **4. RLinf 的 N1.7 接口适配**
 
 - 在当前 RLinf 实现中，LIBERO 的原始 state 在转换前是 8 维，而官方 N1.7 模型内部使用的是更大的通用 state/action 表示。
-- 当前 LIBERO 示例使用 ``embodiment_tag: libero_panda``，并在共享的环境动作工具中应用 LIBERO 的 gripper 约定。
+- 当前 LIBERO 示例使用 ``embodiment_tag: libero_sim``，并在共享的环境动作工具中应用 LIBERO 的 gripper 约定。
 
 **5. Checkpoint 与 processor 契约**
 
