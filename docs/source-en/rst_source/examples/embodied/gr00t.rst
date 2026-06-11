@@ -196,7 +196,7 @@ RLinf does **not** ship a dedicated RLinf-produced GR00T-N1.7 SFT checkpoint yet
 In other words:
 
 - ``model_path`` currently points to a locally unpacked official ``nvidia/GR00T-N1.7-LIBERO`` checkpoint, not to an RLinf-exported N1.7 SFT checkpoint produced by RLinf.
-- ``backbone_model_path`` points to a local snapshot of ``nvidia/Cosmos-Reason2-2B`` so actor, rollout, and processor can run fully offline.
+- ``backbone_model_path`` points to a local snapshot of ``Cosmos-Reason2-2B`` so actor, rollout, and processor can run fully offline.
 - This is a practical temporary setup for RL integration and debugging.
 
 This temporary setup is also consistent with the official N1.7 release notes:
@@ -439,7 +439,7 @@ Use ``noise_method`` to select different noise injection methods. Two options ar
 
    model:
       model_path: "/path/to/GR00T-N1.7-LIBERO/libero_spatial"
-      backbone_model_path: "/path/to/nvidia/Cosmos-Reason2-2B"
+      backbone_model_path: "/path/to/Cosmos-Reason2-2B"
 
 **PPO & Optimizer Hyperparameters**
 
@@ -495,7 +495,7 @@ Update the SFT model path:
 
    model:
       model_path: "/path/to/GR00T-N1.7-LIBERO/libero_spatial"
-      backbone_model_path: "/path/to/nvidia/Cosmos-Reason2-2B"
+      backbone_model_path: "/path/to/Cosmos-Reason2-2B"
 
 --------------
 
