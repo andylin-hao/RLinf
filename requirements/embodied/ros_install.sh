@@ -27,7 +27,11 @@ sudo apt-get install -y --no-install-recommends \
     lsb-release \
     gnupg \
     cmake \
-    build-essential
+    build-essential \
+    rt-tests \
+    ethtool \
+    iputils-ping \
+    git
 
 # Detect Ubuntu codename (e.g., focal, jammy)
 ubuntu_codename=""

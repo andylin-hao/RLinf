@@ -125,11 +125,37 @@ RT 抖动会回来。
 3. 每次开机的 RT 调优
 ~~~~~~~~~~~~~~~~~~~~~~
 
+这些**不会**由安装脚本自动完成 —— 每次重启与 Franka 通信的工作站后都要重新执行：
+
 .. code-block:: bash
 
+   # CPU governor -> performance（对 1 kHz 周期抖动影响最大；
+   # P-state 切换开销 100-400 us）
    sudo bash -c 'for g in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do echo performance > "$g"; done'
+
+   # 取消 RT 调度预算限制（默认把 SCHED_FIFO 线程限到 95% CPU，
+   # 会破坏紧循环）
    sudo sysctl -w kernel.sched_rt_runtime_us=-1
-   sudo ethtool -C eno1 rx-usecs 0 tx-usecs 0   # eno1 换成你的网卡
+
+   # 关掉 Franka 链路网卡的中断合并，避免响应被批量延迟最多 1 ms
+   # （eno1 换成你的网卡）
+   sudo ethtool -C eno1 rx-usecs 0 tx-usecs 0
+
+让 sysctl 跨重启持久化：
+
+.. code-block:: bash
+
+   echo 'kernel.sched_rt_runtime_us = -1' | sudo tee /etc/sysctl.d/99-franka-rt.conf
+
+运行前验证 RT 配置：
+
+.. code-block:: bash
+
+   uname -a | grep -o PREEMPT_RT            # 必须打印 PREEMPT_RT
+   sudo cyclictest -p 80 -t 4 -i 1000 -l 300000 -m
+       # 最大延迟 < 150 us 健康；> 500 us 有问题
+   sudo ping -c 1000 -i 0.001 172.16.0.2 | tail -3
+       # Franka 直连链路：平均 < 0.5 ms，最大 < 2 ms
 
 4. RLinf + franky
 ~~~~~~~~~~~~~~~~~
@@ -145,28 +171,28 @@ RT 抖动会回来。
    # 按 "1. 检查 Franka 固件版本" 一节里查到的 libfranka 版本设这个变量。
    export LIBFRANKA_VERSION=0.15.0       # 或 0.19.0、...
 
-   # 一次装齐：系统依赖（rt-tests, ethtool, eigen, pinocchio，由
-   # install.sh 内部调 franky_install.sh 处理）+ RLinf Python 依赖
-   # + 与 LIBFRANKA_VERSION 对应的 franky-control wheel。
-   # 非 root 用户在系统依赖安装那一步会提示输 sudo 密码。
+   # 一次装齐：先装 realworld franka 环境（ROS Noetic、libfranka
+   # catkin 编译，以及 ros_install.sh 里的 rt-tests/ethtool 等系统依赖，
+   # 需要 sudo）+ RLinf Python 依赖 + 与 LIBFRANKA_VERSION 对应的
+   # franky-control wheel。非 root 用户在系统依赖安装那一步会提示输 sudo 密码。
    bash requirements/install.sh embodied --env franka-franky --use-mirror
    source .venv/bin/activate
 
-``--env franka-franky`` 走 franky 路径 —— 从
-``Brunch-Life/franky`` fork 的 ``wheels-libfranka-<LIBFRANKA_VERSION>``
-release 按当前 Python ABI 挑对应的 ``franky-control`` wheel
-（cp39..cp314，x86_64 manylinux_2_28，**libfranka 内嵌在 wheel 里**），
-**跳过** :doc:`franka` 使用的 ``serl_franka_controllers`` ROS / catkin
-编译流。``--use-mirror`` 面向国内用户（自动切换 PyPI / GitHub /
-HuggingFace 镜像）。
+``--env franka-franky`` 会先安装 realworld franka 环境（按
+``LIBFRANKA_VERSION`` 通过 catkin 工作区编译 libfranka，与 :doc:`franka`
+同一条路径），再叠加 ``Brunch-Life/franky`` fork 的
+``wheels-libfranka-<LIBFRANKA_VERSION>`` release 中、按当前 Python ABI
+挑选的 ``franky-control`` wheel（cp39..cp314，x86_64 manylinux_2_28）。
+wheel 在运行时从该 catkin 编译产物加载与固件匹配的 ``libfranka.so``。
+``--use-mirror`` 面向国内用户（自动切换 PyPI / GitHub / HuggingFace 镜像）。
 
 .. note::
 
    ``requirements/install.sh embodied --env franka-franky`` **一条命令
-   搞定**：uv venv → 内部调 ``franky_install.sh`` 装系统级依赖
-   （``rt-tests``、``ethtool``、``cmake``、``libeigen3-dev``、
-   ``libpoco-dev``、``libfmt-dev``、pinocchio 等）→ 拉对应 libfranka
-   版本的 ``franky-control`` wheel。**不需要单独跑** ``franky_install.sh``。
+   搞定**：uv venv → realworld franka 环境（系统依赖由 ``ros_install.sh``
+   安装：ROS Noetic、``rt-tests``、``ethtool``、``cmake``、
+   ``libeigen3-dev``、``libpoco-dev``、``libfmt-dev``、pinocchio 等 +
+   libfranka catkin 编译）→ 对应 libfranka 版本的 ``franky-control`` wheel。
 
 .. warning::
 

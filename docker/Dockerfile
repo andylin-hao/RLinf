@@ -54,6 +54,7 @@ FROM base-image-platform-${PLATFORM} AS base-image-embodied-polaris
 # Franka depends on ros-noetic (Ubuntu 20.04) and is GPU-agnostic, so it
 # bypasses the platform switch and always uses a plain Ubuntu base.
 FROM ubuntu:20.04 AS base-image-embodied-franka
+FROM ubuntu:20.04 AS base-image-embodied-franka-franky
 
 
 ##################################################################################################
@@ -307,12 +308,25 @@ FROM embodied-common-image AS embodied-franka-image
 # Install multiple Franka environments with different libfranka versions
 # franka uses ubuntu:20.04 with no GPU stack regardless of build-arg platform,
 # so always invoke install.sh with --platform nvidia to skip ROCm detection.
-RUN for v in 0.10.0 0.13.3 0.14.1 0.15.0 0.18.0; do \
+RUN for v in 0.10.0 0.13.3 0.14.1 0.15.0 0.18.0 0.19.0; do \
             LIBFRANKA_VERSION="$v" FRANKA_ROS_VERSION=0.10.0 bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform nvidia embodied --venv "franka-$v" --env franka; \
         done
 
 # Set default env (recommended libfranka 0.15.0)
 RUN echo "source ${UV_PATH}/franka-0.15.0/bin/activate" >> ~/.bashrc
+
+
+##################################################################################################
+# Embodied: Franka (franky control stack)
+##################################################################################################
+FROM embodied-common-image AS embodied-franka-franky-image
+
+RUN for v in 0.15.0 0.19.0; do \
+            LIBFRANKA_VERSION="$v" FRANKA_ROS_VERSION=0.10.0 bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform nvidia embodied --venv "franka-franky-$v" --env franka-franky; \
+        done
+
+# Set default env (latest validated libfranka 0.19.0)
+RUN echo "source ${UV_PATH}/franka-franky-0.19.0/bin/activate" >> ~/.bashrc
 
 
 ##################################################################################################

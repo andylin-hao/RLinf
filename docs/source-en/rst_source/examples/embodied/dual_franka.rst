@@ -129,11 +129,38 @@ controller still runs, but RT jitter returns.
 3. Per-boot RT tuning
 ~~~~~~~~~~~~~~~~~~~~~
 
+These are **not** automated by the installer — re-apply them whenever you
+reboot the workstation that talks to the Franka:
+
 .. code-block:: bash
 
+   # CPU governor -> performance (biggest single contributor to 1 kHz
+   # cycle jitter; P-state transitions cost 100-400 us)
    sudo bash -c 'for g in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do echo performance > "$g"; done'
+
+   # Unthrottle the RT scheduling budget (default throttles SCHED_FIFO
+   # threads to 95% CPU, which breaks tight loops)
    sudo sysctl -w kernel.sched_rt_runtime_us=-1
-   sudo ethtool -C eno1 rx-usecs 0 tx-usecs 0   # replace eno1 with your NIC
+
+   # Close NIC interrupt coalescing on the Franka link so responses are
+   # not batched with up to 1 ms of extra jitter (replace eno1 with your NIC)
+   sudo ethtool -C eno1 rx-usecs 0 tx-usecs 0
+
+To persist the sysctl across reboots:
+
+.. code-block:: bash
+
+   echo 'kernel.sched_rt_runtime_us = -1' | sudo tee /etc/sysctl.d/99-franka-rt.conf
+
+Verify the RT setup before running:
+
+.. code-block:: bash
+
+   uname -a | grep -o PREEMPT_RT            # must print PREEMPT_RT
+   sudo cyclictest -p 80 -t 4 -i 1000 -l 300000 -m
+       # max latency < 150 us is healthy; > 500 us is broken
+   sudo ping -c 1000 -i 0.001 172.16.0.2 | tail -3
+       # Franka direct link: avg < 0.5 ms, max < 2 ms
 
 4. RLinf + franky
 ~~~~~~~~~~~~~~~~~
@@ -150,31 +177,32 @@ Export ``LIBFRANKA_VERSION`` to the libfranka version determined in
    # Franka firmware version".
    export LIBFRANKA_VERSION=0.15.0       # or 0.19.0, ...
 
-   # One command does it all: system deps (rt-tests, ethtool, eigen,
-   # pinocchio, ... — install.sh invokes franky_install.sh internally,
-   # which needs sudo) + RLinf Python deps + the franky-control wheel
-   # matching LIBFRANKA_VERSION.  Non-root users get a sudo password
-   # prompt mid-install.
+   # One command does it all: the realworld franka env (ROS Noetic,
+   # libfranka catkin build, plus rt-tests/ethtool and other system
+   # deps from ros_install.sh, which needs sudo) + RLinf Python deps +
+   # the franky-control wheel matching LIBFRANKA_VERSION.  Non-root
+   # users get a sudo password prompt mid-install.
    bash requirements/install.sh embodied --env franka-franky --use-mirror
    source .venv/bin/activate
 
-The ``--env franka-franky`` target pins the franky path — it pulls
-the ``franky-control`` wheel from the
-``Brunch-Life/franky`` fork's ``wheels-libfranka-<LIBFRANKA_VERSION>``
-release, picking the wheel for the active Python ABI (cp39..cp314,
-x86_64 manylinux_2_28, **libfranka is bundled inside the wheel**), and
-**skips** the legacy ``serl_franka_controllers`` ROS / catkin build
-used by :doc:`franka`. ``--use-mirror`` is for mainland China users
-(switches PyPI / GitHub / HuggingFace mirrors).
+The ``--env franka-franky`` target installs the realworld franka env
+first (building libfranka at ``LIBFRANKA_VERSION`` via the catkin
+workspace, the same path as :doc:`franka`), then layers the
+``franky-control`` wheel from the ``Brunch-Life/franky`` fork's
+``wheels-libfranka-<LIBFRANKA_VERSION>`` release, picking the wheel for
+the active Python ABI (cp39..cp314, x86_64 manylinux_2_28). The wheel
+loads the firmware-matched ``libfranka.so`` from that catkin build.
+``--use-mirror`` is for mainland China users (switches PyPI / GitHub /
+HuggingFace mirrors).
 
 .. note::
 
    ``requirements/install.sh embodied --env franka-franky`` is a
-   **one-command install**: uv venv → invokes ``franky_install.sh``
-   for system deps (``rt-tests``, ``ethtool``, ``cmake``,
-   ``libeigen3-dev``, ``libpoco-dev``, ``libfmt-dev``, pinocchio, ...)
-   → pulls the libfranka-matched ``franky-control`` wheel. **No need
-   to run** ``franky_install.sh`` standalone.
+   **one-command install**: uv venv → realworld franka env (system
+   deps via ``ros_install.sh``: ROS Noetic, ``rt-tests``, ``ethtool``,
+   ``cmake``, ``libeigen3-dev``, ``libpoco-dev``, ``libfmt-dev``,
+   pinocchio, ... + the libfranka catkin build) → the libfranka-matched
+   ``franky-control`` wheel.
 
 .. warning::
 
