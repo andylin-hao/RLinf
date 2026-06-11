@@ -215,7 +215,7 @@ Before RLinf ships its own N1.7 SFT checkpoint, you can use the following offlin
 
    # Download Cosmos-Reason2-2B backbone
    uv run hf download nvidia/Cosmos-Reason2-2B \
-      --local-dir checkpoints/nvidia/Cosmos-Reason2-2B
+      --local-dir checkpoints/Cosmos-Reason2-2B
 
    # Download GR00T-N1.7-LIBERO task checkpoint (libero_spatial minimum file set)
    uv run hf download nvidia/GR00T-N1.7-LIBERO \

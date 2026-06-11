@@ -26,12 +26,12 @@ runner:
     experiment_name: "libero_spatial_ppo_gr00t_n1d7"
     logger_backends: ["tensorboard"]
 
-  max_epochs: 1000
+  max_epochs: 2000
   max_steps: -1
 
   only_eval: False
   val_check_interval: 20
-  save_interval: 100
+  save_interval: 200
 
   resume_dir: null # Optional: path to a saved checkpoint directory, such as 'checkpoints/global_step_10'. If not None, it will be used to resume training.
   ckpt_path: null  # Optional: path to a .pt checkpoint. If not None, it will be loaded after the model is instantiated (for evaluation).
@@ -110,8 +110,7 @@ rollout:
 
   model:
     model_path: /path/to/GR00T-N1.7-LIBERO/libero_spatial
-    # Local backbone dir; path must contain the canonical id `nvidia/Cosmos-Reason2-2B`
-    backbone_model_path: /path/to/nvidia/Cosmos-Reason2-2B
+    backbone_model_path: /path/to/Cosmos-Reason2-2B
     precision: ${actor.model.precision}
 
 actor:
@@ -125,8 +124,7 @@ actor:
   model:
     model_type: "gr00t_n1d7"
     model_path: /path/to/GR00T-N1.7-LIBERO/libero_spatial
-    # Local backbone dir; path must contain the canonical id `nvidia/Cosmos-Reason2-2B`
-    backbone_model_path: /path/to/nvidia/Cosmos-Reason2-2B
+    backbone_model_path: /path/to/Cosmos-Reason2-2B
     embodiment_tag: "libero_sim" # N1.7 change this value from libero_panda to libero_sim
     add_value_head: True
     # Match Isaac-GR00T validated LIBERO rollout defaults.

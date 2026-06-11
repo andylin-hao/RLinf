@@ -191,7 +191,7 @@ RLinf SFT的模型将会后续放出，敬请期待！
 
 **N1.7：当前临时使用官方 release checkpoint**
 
-RLinf **目前还没有**提供一个由本仓库产出的、专门用于这个 RL 示例的 GR00T-N1.7 SFT checkpoint。因此，在当前仓库状态下，维护中的 N1.7 RL 示例暂时直接使用官方发布的 LIBERO checkpoint 作为任务 checkpoint 起点。
+RLinf 目前还没有提供一个由本仓库产出的、专门用于这个 RL 示例的 GR00T-N1.7 SFT checkpoint。因此，在当前仓库状态下，维护中的 N1.7 RL 示例暂时直接使用官方发布的 LIBERO checkpoint 作为任务 checkpoint 起点。
 
 换句话说：
 
@@ -214,7 +214,7 @@ RLinf **目前还没有**提供一个由本仓库产出的、专门用于这个 
 
    # 下载 Cosmos-Reason2-2B backbone
    uv run hf download nvidia/Cosmos-Reason2-2B \
-      --local-dir checkpoints/nvidia/Cosmos-Reason2-2B
+      --local-dir checkpoints/Cosmos-Reason2-2B
 
    # 下载 GR00T-N1.7-LIBERO 任务 checkpoint（仅 libero_spatial 所需文件）
    uv run hf download nvidia/GR00T-N1.7-LIBERO \

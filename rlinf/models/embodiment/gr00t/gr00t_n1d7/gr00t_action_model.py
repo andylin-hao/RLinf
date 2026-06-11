@@ -14,9 +14,10 @@
 
 import json
 import random
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 from typing import Any, Literal, Optional, Union
+from unittest.mock import patch
 
 import numpy as np
 import torch
@@ -25,6 +26,7 @@ from gr00t.data.embodiment_tags import EmbodimentTag
 from gr00t.model.gr00t_n1d7.gr00t_n1d7 import Gr00tN1d7, Gr00tN1d7ActionHead
 from gr00t.model.gr00t_n1d7.processing_gr00t_n1d7 import Gr00tN1d7Processor
 from torch.distributions import Normal
+from transformers import Qwen3VLForConditionalGeneration
 from transformers.feature_extraction_utils import BatchFeature
 
 from rlinf.models.embodiment.base_policy import BasePolicy, ForwardType
@@ -41,6 +43,32 @@ from rlinf.models.embodiment.modules.value_head import ValueHead
 from rlinf.utils.logging import get_logger
 
 logger = get_logger()
+
+
+@contextmanager
+def redirect_qwen3_backbone_to_local(canonical_name: str, local_path: str | None):
+    if local_path is None:
+        yield
+        return
+
+    local_path = Path(local_path).expanduser().resolve()
+    if not local_path.is_dir():
+        raise FileNotFoundError(f"Backbone model path does not exist: {local_path}")
+
+    original_from_pretrained = Qwen3VLForConditionalGeneration.from_pretrained
+
+    def from_pretrained_with_local_redirect(model_name, *args, **kwargs):
+        if str(model_name) == canonical_name:
+            model_name = str(local_path)
+            kwargs["local_files_only"] = True
+        return original_from_pretrained(model_name, *args, **kwargs)
+
+    with patch.object(
+        Qwen3VLForConditionalGeneration,
+        "from_pretrained",
+        side_effect=from_pretrained_with_local_redirect,
+    ):
+        yield
 
 
 def _find_processor_dir(model_path: Path) -> Path | None:
@@ -731,17 +759,23 @@ class GR00T_N1_7_ForRLActionPrediction(Gr00tN1d7, BasePolicy):
 
         backbone_model_path = kwargs.pop("backbone_model_path", None)
         if backbone_model_path is not None:
-            backbone_model_path = str(backbone_model_path)
+            backbone_model_path = str(Path(backbone_model_path).expanduser().resolve())
+            if not Path(backbone_model_path).is_dir():
+                raise FileNotFoundError(
+                    f"Backbone model path does not exist: {backbone_model_path}"
+                )
+            loading_kwargs["local_files_only"] = True
+
         original_model_name = str(config.model_name)
 
-        if backbone_model_path and Path(backbone_model_path).is_dir():
-            config.model_name = backbone_model_path
-            loading_kwargs.setdefault("local_files_only", True)
-            logger.info("Offline model: backbone from %s", backbone_model_path)
-        else:
+        if backbone_model_path is not None:
             logger.info(
-                "Online model: backbone from HuggingFace (%s)", original_model_name
+                "Loading backbone locally from %s with canonical model_name=%s",
+                backbone_model_path,
+                original_model_name,
             )
+        else:
+            logger.info("Loading backbone from HuggingFace: %s", original_model_name)
 
         for key in list(kwargs.keys()):
             if hasattr(config, key):
@@ -749,19 +783,22 @@ class GR00T_N1_7_ForRLActionPrediction(Gr00tN1d7, BasePolicy):
         if kwargs:
             logger.warning("Ignoring unexpected kwargs: %s", sorted(kwargs))
 
-        super().__init__(config, transformers_loading_kwargs=loading_kwargs)
+        with redirect_qwen3_backbone_to_local(original_model_name, backbone_model_path):
+            super().__init__(config, transformers_loading_kwargs=loading_kwargs)
+
+            self._modality_config, self._modality_transform = (
+                self._load_modality_processor(
+                    modality_config=modality_config,
+                    modality_transform=modality_transform,
+                    local_model_path=local_model_path,
+                    backbone_model_path=backbone_model_path,
+                )
+            )
 
         self.padding_value = rl_head_config.get("padding_value", 0)
         self.model_path = Path(local_model_path)
         self.compute_dtype = compute_dtype
         self.output_action_chunks = output_action_chunks
-
-        self._modality_config, self._modality_transform = self._load_modality_processor(
-            modality_config=modality_config,
-            modality_transform=modality_transform,
-            local_model_path=local_model_path,
-            backbone_model_path=backbone_model_path,
-        )
 
         self.action_head = FlowMatchingActionHeadForRLActionPrediction(
             config, rl_head_config, output_action_chunks
@@ -844,8 +881,7 @@ class GR00T_N1_7_ForRLActionPrediction(Gr00tN1d7, BasePolicy):
             processor_cfg["statistics"] = json.load(f)
         with open(processor_dir / "embodiment_id.json", "r") as f:
             processor_cfg["embodiment_id_mapping"] = json.load(f)
-        if backbone_model_path:
-            processor_cfg["model_name"] = str(backbone_model_path)
+        if backbone_model_path is not None:
             processor_cfg.setdefault("transformers_loading_kwargs", {})
             processor_cfg["transformers_loading_kwargs"]["local_files_only"] = True
         modality_transform = Gr00tN1d7Processor(**processor_cfg)
