@@ -1,9 +1,9 @@
-RL on VLA / WAM Models
-======================
+VLA / WAM 模型的强化学习
+========================
 
-This category groups examples in which the **vision-language-action (VLA)** or **world-action model (WAM)** is the headline. They show how to onboard a specific model family in RLinf — checkpoint loading, processor / config wiring, action head, and a reference RL fine-tuning recipe — independent of any single benchmark.
+本类示例以 **视觉-语言-动作（VLA）模型** 或 **世界-动作模型（WAM）** 为主线，展示如何在 RLinf 中接入特定模型家族 —— 包括 checkpoint 加载、processor / config 接线、动作头实现，以及一份不依赖具体基准的强化学习微调参考配方。
 
-If you are starting from "I want to RL-fine-tune model *X*", this is the right entry point. For benchmark-driven examples see :doc:`../simulators/index`.
+如果你的出发点是 "我想对模型 *X* 做 RL 微调"，这里是合适的入口。若以基准为主线请参考 :doc:`simulators_index`\ 。
 
 .. raw:: html
 
@@ -13,10 +13,10 @@ If you are starting from "I want to RL-fine-tune model *X*", this is the right e
        <img src="https://github.com/RLinf/misc/raw/main/pic/pi0_icon.jpg"
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
        <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
-         <a href="../embodied/pi0.html" style="text-decoration: underline; color: blue;">
-           <b>RL on π₀ and π₀.₅ Models</b>
+         <a href="embodied/pi0.html" style="text-decoration: underline; color: blue;">
+           <b>π₀和π₀.₅模型强化学习训练</b>
          </a><br>
-         Significant improvement in RL training on π₀ and π₀.₅
+         在π₀和π₀.₅上实现强化学习的效果跃升
        </p>
      </div>
 
@@ -24,10 +24,10 @@ If you are starting from "I want to RL-fine-tune model *X*", this is the right e
        <img src="https://github.com/RLinf/misc/raw/main/pic/gr00t.png"
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
        <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
-         <a href="../embodied/gr00t.html" style="text-decoration: underline; color: blue;">
-           <b>RL on GR00T Models</b>
+         <a href="embodied/gr00t.html" style="text-decoration: underline; color: blue;">
+           <b>GR00T模型强化学习训练</b>
          </a><br>
-         Support GR00T-N1.5 and N1.6 RL fine-tuning.
+         支持GR00T-N1.5与N1.6强化学习微调
        </p>
      </div>
 
@@ -35,10 +35,10 @@ If you are starting from "I want to RL-fine-tune model *X*", this is the right e
        <img src="https://github.com/RLinf/misc/raw/main/pic/lingbotvla.png"
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
        <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
-         <a href="../embodied/lingbotvla.html" style="text-decoration: underline; color: blue;">
-           <b>RL with Lingbot-VLA Model</b>
+         <a href="embodied/lingbotvla.html" style="text-decoration: underline; color: blue;">
+           <b>基于 Lingbot-VLA 模型的强化学习</b>
          </a><br>
-         Support Lingbot-VLA + RoboTwin + GRPO training
+         支持 Lingbot-VLA + RoboTwin + GRPO 训练
        </p>
      </div>
 
@@ -46,10 +46,10 @@ If you are starting from "I want to RL-fine-tune model *X*", this is the right e
        <img src="https://raw.githubusercontent.com/dexmal/dexbotic/main/resources/intro.png"
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
        <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
-         <a href="../embodied/dexbotic.html" style="text-decoration: underline; color: blue;">
-           <b>RL on Dexbotic Model</b>
+         <a href="embodied/dexbotic.html" style="text-decoration: underline; color: blue;">
+           <b>基于 Dexbotic 模型的强化学习训练</b>
          </a><br>
-         Dexbotic (π₀.₅-based) + LIBERO + PPO training
+         Dexbotic（基于 π₀.₅）+ LIBERO + PPO 训练
        </p>
      </div>
 
@@ -57,10 +57,10 @@ If you are starting from "I want to RL-fine-tune model *X*", this is the right e
        <img src="https://github.com/RLinf/misc/raw/main/pic/starvla.png"
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
        <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
-         <a href="../embodied/starvla.html" style="text-decoration: underline; color: blue;">
-           <b>RL on StarVLA Models</b>
+         <a href="embodied/starvla.html" style="text-decoration: underline; color: blue;">
+           <b>StarVLA 模型强化学习训练</b>
          </a><br>
-         StarVLA + LIBERO + GRPO embodied RL training
+         StarVLA + LIBERO + GRPO 具身强化学习训练
        </p>
      </div>
 
@@ -68,10 +68,10 @@ If you are starting from "I want to RL-fine-tune model *X*", this is the right e
        <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/ABot-M0.png"
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
        <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
-         <a href="../embodied/abot_m0.html" style="text-decoration: underline; color: blue;">
-           <b>RL on ABot-M0 Model</b>
+         <a href="embodied/abot_m0.html" style="text-decoration: underline; color: blue;">
+           <b>ABot-M0 模型强化学习训练</b>
          </a><br>
-         ABot-M0 native integration with LIBERO-plus PPO training
+         ABot-M0 原生集成与 LIBERO-plus PPO 训练
        </p>
      </div>
 
@@ -80,10 +80,10 @@ If you are starting from "I want to RL-fine-tune model *X*", this is the right e
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);"
             data-target="animated-image.originalImage">
        <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
-         <a href="../embodied/opensora.html" style="text-decoration: underline; color: blue;">
-           <b>RL with OpenSora World Model</b>
+         <a href="embodied/opensora.html" style="text-decoration: underline; color: blue;">
+           <b>基于 OpenSora 世界模型的强化学习</b>
          </a><br>
-         Support OpenSora World Model + OpenVLA-OFT + GRPO training
+         支持 OpenSora 世界模型 + OpenVLA-OFT + GRPO 训练
        </p>
      </div>
 
@@ -92,10 +92,10 @@ If you are starting from "I want to RL-fine-tune model *X*", this is the right e
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);"
             data-target="animated-image.originalImage">
        <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
-         <a href="../embodied/wan.html" style="text-decoration: underline; color: blue;">
-           <b>RL with Wan World Model</b>
+         <a href="embodied/wan.html" style="text-decoration: underline; color: blue;">
+           <b>基于 Wan 世界模型的强化学习</b>
          </a><br>
-         Support Wan World Model + OpenVLA-OFT + GRPO training
+         支持 Wan 世界模型 + OpenVLA-OFT + GRPO 训练
        </p>
      </div>
 
@@ -105,11 +105,11 @@ If you are starting from "I want to RL-fine-tune model *X*", this is the right e
    :hidden:
    :maxdepth: 2
 
-   ../embodied/pi0
-   ../embodied/gr00t
-   ../embodied/lingbotvla
-   ../embodied/dexbotic
-   ../embodied/starvla
-   ../embodied/abot_m0
-   ../embodied/opensora
-   ../embodied/wan
+   π₀ 与 π₀.₅ 模型 <embodied/pi0>
+   GR00T 模型 <embodied/gr00t>
+   Lingbot-VLA 模型 <embodied/lingbotvla>
+   Dexbotic 模型 <embodied/dexbotic>
+   StarVLA 模型 <embodied/starvla>
+   ABot-M0 <embodied/abot_m0>
+   OpenSora 世界模型 <embodied/opensora>
+   Wan 世界模型 <embodied/wan>

@@ -4,7 +4,7 @@ AMD ROCm 平台上的 LIBERO 强化学习
 本文介绍在 AMD ROCm 平台上运行 RLinf LIBERO 强化学习示例所需的配置。
 本文重点说明依赖安装和运行时环境变量。LIBERO 任务说明、PPO/GRPO
 算法、模型下载、配置文件、指标和结果均与平台无关；这些内容请参考
-:doc:`基于 LIBERO 的强化学习训练 <../../examples/embodied/libero>`。
+:doc:`基于 LIBERO 的强化学习训练 <../../examples/embodied/libero>`\ 。
 
 依赖安装
 --------

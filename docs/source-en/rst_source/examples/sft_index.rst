@@ -3,7 +3,7 @@ SFT for VLA / WAM Models
 
 Supervised fine-tuning (SFT) is the standard cold-start step before embodied RL: a strong SFT checkpoint dramatically reduces RL exploration time and improves final policy quality. This category lists RLinf's recipes for full-parameter and LoRA SFT on VLA / WAM models, plus VLM SFT for multimodal post-training.
 
-After running SFT here, continue to :doc:`../vla_wam/index` (model-centric RL) or :doc:`../simulators/index` (benchmark-centric RL) to fine-tune the resulting checkpoint with RL.
+After running SFT here, continue to :doc:`vla_wam_index` (model-centric RL) or :doc:`simulators_index` (benchmark-centric RL) to fine-tune the resulting checkpoint with RL.
 
 .. raw:: html
 
@@ -14,7 +14,7 @@ After running SFT here, continue to :doc:`../vla_wam/index` (model-centric RL) o
        <img src="https://github.com/RLinf/misc/raw/main/pic/pi0_icon.jpg"
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
        <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
-         <a href="../embodied/sft_openpi.html" style="text-decoration: underline; color: blue;">
+         <a href="embodied/sft_openpi.html" style="text-decoration: underline; color: blue;">
            <b>OpenPI Supervised Fine-Tuning</b>
          </a><br>
          Run full-parameter and LoRA SFT for OpenPI before RL fine-tuning
@@ -25,7 +25,7 @@ After running SFT here, continue to :doc:`../vla_wam/index` (model-centric RL) o
        <img src="https://github.com/RLinf/misc/raw/main/pic/waiting_icon.jpg"
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
        <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
-         <a href="../embodied/sft_dreamzero.html" style="text-decoration: underline; color: blue;">
+         <a href="embodied/sft_dreamzero.html" style="text-decoration: underline; color: blue;">
            <b>DreamZero Supervised Fine-Tuning</b>
          </a><br>
          Full-parameter and mixture SFT for DreamZero (WAN2.1 / WAN2.2 backbones)
@@ -36,7 +36,7 @@ After running SFT here, continue to :doc:`../vla_wam/index` (model-centric RL) o
        <img src="https://github.com/RLinf/misc/raw/main/pic/release_0.2/qwen2_5_sft_vlm.png"
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
        <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
-         <a href="../embodied/sft_vlm.html" style="text-decoration: underline; color: blue;">
+         <a href="embodied/sft_vlm.html" style="text-decoration: underline; color: blue;">
            <b>VLM Supervised Fine-Tuning</b>
          </a><br>
          Run full-parameter SFT and evaluation for VLM models such as Qwen
@@ -49,6 +49,6 @@ After running SFT here, continue to :doc:`../vla_wam/index` (model-centric RL) o
    :hidden:
    :maxdepth: 2
 
-   ../embodied/sft_openpi
-   ../embodied/sft_dreamzero
-   ../embodied/sft_vlm
+   embodied/sft_openpi
+   embodied/sft_dreamzero
+   embodied/sft_vlm
