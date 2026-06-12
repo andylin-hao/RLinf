@@ -3,63 +3,7 @@ RL with Embodied Simulators
 
 This category groups examples in which the **simulator (or benchmark)** is the headline. They show how to bring up RLinf on a specific simulation platform — environment installation, asset paths, observation/action spaces, and a reference RL recipe (typically PPO or GRPO with a VLA policy).
 
-If you are starting from "I want to train on benchmark *X*", this is the right entry point. For model-centric examples (pi₀, GR00T, …) see :doc:`../vla_wam/index`. For real-robot setups see :doc:`../real_world/index`.
-
-LIBERO family
--------------
-
-.. raw:: html
-
-   <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; align-items: flex-start; justify-items: center; max-width: 980px; margin: 0 auto;">
-
-     <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
-       <img src="https://github.com/RLinf/misc/raw/main/pic/libero_numbers.jpeg"
-            style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
-       <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
-         <a href="../embodied/libero.html" style="text-decoration: underline; color: blue;">
-           <b>RL with LIBERO Benchmark</b>
-         </a><br>
-         LIBERO + OpenVLA-OFT + GRPO reaches 99% success rate
-       </p>
-     </div>
-
-     <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
-       <img src="https://raw.githubusercontent.com/RLinf/misc/378920588652fff0a2a0b163b392c94694993345/pic/libero-plus.jpg"
-            style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
-       <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
-         <a href="../embodied/liberoplus_pro.html" style="text-decoration: underline; color: blue;">
-           <b>RL with LIBERO-Pro &amp; LIBERO-Plus</b>
-         </a><br>
-         Support LIBERO-Pro / LIBERO-Plus + OpenVLA-OFT / π₀ / π₀.₅ + PPO/GRPO training
-       </p>
-     </div>
-
-     <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
-       <img src="https://github.com/RLinf/misc/raw/main/pic/libero_numbers.jpeg"
-            style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
-       <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
-         <a href="../embodied/libero_amd.html" style="text-decoration: underline; color: blue;">
-           <b>RL with LIBERO on AMD ROCm</b>
-         </a><br>
-         ROCm dependency setup and OSMesa rendering for LIBERO RL
-       </p>
-     </div>
-
-     <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
-       <img src="https://github.com/RLinf/misc/raw/main/pic/libero_numbers.jpeg"
-            style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
-       <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
-         <a href="../embodied/libero_ascend.html" style="text-decoration: underline; color: blue;">
-           <b>RL with LIBERO on Ascend CANN</b>
-         </a><br>
-         CANN dependency setup and driver mounting for LIBERO RL
-       </p>
-     </div>
-
-   </div>
-
-Other simulators
-----------------
+If you are starting from "I want to train on benchmark *X*", this is the right entry point. For model-centric examples (pi₀, GR00T, …) see :doc:`../vla_wam/index`. For real-robot setups see :doc:`../real_world/index`. For LIBERO setup on AMD ROCm or Ascend CANN accelerators, see the :doc:`Supported Accelerators <../../tutorials/accelerators/index>` tutorial.
 
 .. raw:: html
 
@@ -75,6 +19,17 @@ Other simulators
            <b>RL with ManiSkill Benchmark</b>
          </a><br>
          ManiSkill + OpenVLA + PPO/GRPO achieves SOTA performance
+       </p>
+     </div>
+
+     <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
+       <img src="https://github.com/RLinf/misc/raw/main/pic/libero_numbers.jpeg"
+            style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
+       <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
+         <a href="../embodied/libero.html" style="text-decoration: underline; color: blue;">
+           <b>RL with LIBERO Benchmarks</b>
+         </a><br>
+         OpenVLA-OFT + PPO/GRPO on LIBERO (99% success) and on the harder LIBERO-Pro / LIBERO-Plus suites
        </p>
      </div>
 
@@ -222,9 +177,6 @@ Other simulators
 
    ../embodied/maniskill
    ../embodied/libero
-   ../embodied/libero_amd
-   ../embodied/libero_ascend
-   ../embodied/liberoplus_pro
    ../embodied/behavior
    ../embodied/metaworld
    ../embodied/isaaclab
