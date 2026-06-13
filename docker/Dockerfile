@@ -49,6 +49,8 @@ FROM base-image-platform-${PLATFORM} AS base-image-embodied-liberoplus
 FROM base-image-platform-${PLATFORM} AS base-image-embodied-embodichain
 FROM base-image-platform-${PLATFORM} AS base-image-embodied-roboverse
 FROM base-image-platform-${PLATFORM} AS base-image-embodied-polaris
+FROM base-image-platform-${PLATFORM} AS base-image-embodied-dreamzero
+FROM base-image-platform-${PLATFORM} AS base-image-embodied-dreamzero-libero
 
 
 # Franka depends on ros-noetic (Ubuntu 20.04) and is GPU-agnostic, so it

@@ -3,7 +3,7 @@
 RLinf provides a unified Dockerfile for both the math reasoning image and the various embodied images. Use the `BUILD_TARGET` build argument to select which image to build:
 
 - `reason` — math reasoning image
-- `embodied-<env>` or `embodied-<env>-<model>` — embodied image for a specific environment (and optionally a specific model when multiple model flavors exist for the same env)
+- `embodied-<env>` — embodied image for a specific environment (and optionally a specific model when multiple model flavors exist for the same env)
 
 To build the Docker image, run the following command **in the RLinf root directory**:
 
