@@ -5,7 +5,7 @@
 
 协同训练的核心在于：在利用 PPO 算法通过仿真环境反馈优化策略的同时，引入真机数据进行监督微调 (SFT)，以确保模型在提升任务成功率的同时不丢失真机物理世界的先验知识。
 
-详细技术细节请参考论文: `Beyond Imitation: Reinforcement Learning-Based Sim-Real Co-Training for VLA Models <../../publications/rlinf_co>`_。
+详细技术细节请参考论文： :doc:`Beyond Imitation: Reinforcement Learning-Based Sim-Real Co-Training for VLA Models <../../publications/rlinf_co>`\ 。
 
 模型在训练后应具备以下核心能力：
 
