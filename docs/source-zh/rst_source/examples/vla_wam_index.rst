@@ -27,7 +27,7 @@ VLA / WAM 模型的强化学习
          <a href="embodied/gr00t.html" style="text-decoration: underline; color: blue;">
            <b>GR00T模型强化学习训练</b>
          </a><br>
-         支持GR00T-N1.5与N1.6强化学习微调
+         支持GR00T-N1.5，N1.6与N1.7强化学习微调
        </p>
      </div>
 

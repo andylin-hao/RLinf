@@ -27,7 +27,7 @@ If you are starting from "I want to RL-fine-tune model *X*", this is the right e
          <a href="embodied/gr00t.html" style="text-decoration: underline; color: blue;">
            <b>RL on GR00T Models</b>
          </a><br>
-         Support GR00T-N1.5 and N1.6 RL fine-tuning.
+         Support GR00T-N1.5, N1.6 and N1.7 RL fine-tuning.
        </p>
      </div>
 
