@@ -307,7 +307,7 @@ FROM embodied-common-image AS embodied-franka-image
 # Install multiple Franka environments with different libfranka versions
 # franka uses ubuntu:20.04 with no GPU stack regardless of build-arg platform,
 # so always invoke install.sh with --platform nvidia to skip ROCm detection.
-RUN for v in 0.10.0 0.13.3 0.14.1 0.15.0 0.18.0; do \
+RUN for v in 0.10.0 0.13.3 0.14.1 0.15.0 0.18.0 0.19.0; do \
             LIBFRANKA_VERSION="$v" FRANKA_ROS_VERSION=0.10.0 bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform nvidia embodied --venv "franka-$v" --env franka; \
         done
 
@@ -429,6 +429,28 @@ RUN bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLA
 
 # Set default env
 RUN echo "source ${UV_PATH}/openpi/bin/activate" >> ~/.bashrc
+
+##################################################################################################
+# Embodied: DreamZero (SFT-focused; no simulation environment)
+##################################################################################################
+FROM embodied-common-image AS embodied-dreamzero-image
+
+# Install dreamzero (SFT does not require a simulator env)
+RUN bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} embodied --venv dreamzero --model dreamzero
+
+# Set default env
+RUN echo "source ${UV_PATH}/dreamzero/bin/activate" >> ~/.bashrc
+
+##################################################################################################
+# Embodied: DreamZero (with LIBERO simulation for evaluation)
+##################################################################################################
+FROM embodied-common-image AS embodied-dreamzero-libero-image
+
+# Install dreamzero and libero env
+RUN bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} embodied --venv dreamzero-libero --model dreamzero --env libero
+
+# Set default env
+RUN echo "source ${UV_PATH}/dreamzero-libero/bin/activate" >> ~/.bashrc
 
 ##################################################################################################
 # Final image selection
