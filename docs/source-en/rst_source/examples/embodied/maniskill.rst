@@ -51,12 +51,12 @@ RL-finetune a VLA on ManiSkill3; OpenVLA and OpenVLA-OFT exceed 90% success on p
    .. grid-item-card:: Models
       :text-align: center
 
-      OpenVLA · OpenVLA-OFT · π₀ / π₀.₅ · MLP · SAC-Flow · ResNet
+      OpenVLA · OpenVLA-OFT · π₀ / π₀.₅ · MLP · Flow policy
 
    .. grid-item-card:: Algorithms
       :text-align: center
 
-      PPO · GRPO · SAC · CrossQ · DAgger
+      PPO · GRPO · SAC · SAC-Flow · CrossQ · DAgger
 
    .. grid-item-card:: Tasks
       :text-align: center

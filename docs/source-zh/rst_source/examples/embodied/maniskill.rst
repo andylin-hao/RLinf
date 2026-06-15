@@ -48,12 +48,12 @@
    .. grid-item-card:: 模型
       :text-align: center
 
-      OpenVLA · OpenVLA-OFT · π₀ / π₀.₅ · MLP · SAC-Flow · ResNet
+      OpenVLA · OpenVLA-OFT · π₀ / π₀.₅ · MLP · Flow policy
 
    .. grid-item-card:: 算法
       :text-align: center
 
-      PPO · GRPO · SAC · CrossQ · DAgger
+      PPO · GRPO · SAC · SAC-Flow · CrossQ · DAgger
 
    .. grid-item-card:: 任务
       :text-align: center
