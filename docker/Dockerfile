@@ -201,6 +201,10 @@ RUN chmod +x /usr/local/bin/download_assets
 ##################################################################################################
 FROM embodied-common-image AS embodied-maniskill_libero-image
 
+# Clone the LIBERO env repo once into a shared path; every model below reuses it
+# (via clone_or_reuse_repo) instead of re-downloading it per venv.
+ENV LIBERO_PATH=/opt/envs/LIBERO
+
 # Install openvla env
 RUN bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} embodied --venv openvla --model openvla --env maniskill_libero && \
     bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} embodied --venv openvla-oft --model openvla-oft --env maniskill_libero && \
@@ -263,6 +267,9 @@ RUN echo "source ${UV_PATH}/openpi/bin/activate" >> ~/.bashrc
 ##################################################################################################
 FROM embodied-common-image AS embodied-calvin-image
 
+# Clone the CALVIN env repo once into a shared path; both models below reuse it.
+ENV CALVIN_PATH=/opt/envs/calvin
+
 # Install openvla-oft and openpi envs
 RUN bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} embodied --venv openvla-oft --model openvla-oft --env calvin && \
     bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} embodied --venv openpi --model openpi --env calvin
@@ -293,6 +300,9 @@ RUN echo "source ${UV_PATH}/openpi/bin/activate" >> ~/.bashrc
 # Embodied: IsaacLab
 ##################################################################################################
 FROM embodied-common-image AS embodied-isaaclab-image
+
+# Clone the IsaacLab env repo once into a shared path; both models below reuse it.
+ENV ISAAC_LAB_PATH=/opt/envs/isaaclab
 
 # Install gr00t env, and openpi env
 RUN bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} embodied --venv gr00t --model gr00t --env isaaclab && \
@@ -381,6 +391,10 @@ RUN echo "source ${UV_PATH}/embodichain/bin/activate" >> ~/.bashrc
 # Embodied: LIBERO
 ##################################################################################################
 FROM embodied-common-image AS embodied-libero-image
+
+# Clone the LIBERO env repo once into a shared path; every model below reuses it
+# (via clone_or_reuse_repo) instead of re-downloading it per venv.
+ENV LIBERO_PATH=/opt/envs/LIBERO
 
 # Install openvla, openvla-oft, and dreamzero envs
 RUN bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} embodied --venv openvla --model openvla --env libero && \
