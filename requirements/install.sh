@@ -741,6 +741,7 @@ install_uv() {
 
 setup_mirror() {
     if [ "$USE_MIRRORS" -eq 1 ]; then
+        export USE_MIRRORS
         export UV_PYTHON_INSTALL_MIRROR=https://ghfast.top/https://github.com/astral-sh/python-build-standalone/releases/download
         export UV_DEFAULT_INDEX=https://mirrors.aliyun.com/pypi/simple
         export HF_ENDPOINT=https://hf-mirror.com

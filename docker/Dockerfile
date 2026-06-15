@@ -97,16 +97,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ##################################################################################################
 # Python / pip / uv setup
 ##################################################################################################
-RUN pip config set global.index-url https://mirrors.ustc.edu.cn/pypi/simple
-RUN python3 -m pip install -i https://mirrors.ustc.edu.cn/pypi/simple --upgrade pip setuptools wheel uv
 
-ENV HF_HOME=/opt/.cache/huggingface
-RUN mkdir -p $HF_HOME
-
+ENV PIP_INDEX=${NO_MIRROR:+"https://pypi.org/simple/"}
+ENV PIP_INDEX=${PIP_INDEX:-"https://mirrors.ustc.edu.cn/pypi/simple"}
 ENV UV_DEFAULT_INDEX=${NO_MIRROR:+"https://pypi.org/simple/"}
 ENV UV_DEFAULT_INDEX=${UV_DEFAULT_INDEX:-"https://mirrors.ustc.edu.cn/pypi/simple"}
 ENV INSTALL_MIRROR_OPTION=${NO_MIRROR:+" "}
 ENV INSTALL_MIRROR_OPTION=${INSTALL_MIRROR_OPTION:-"--use-mirror"}
+
+RUN pip config set global.index-url ${PIP_INDEX}
+RUN python3 -m pip install -i ${PIP_INDEX} --upgrade pip setuptools wheel uv
+
+ENV HF_HOME=/opt/.cache/huggingface
+RUN mkdir -p $HF_HOME
 
 ENV UV_PATH=/opt/venv
 RUN mkdir $UV_PATH
@@ -208,7 +211,7 @@ RUN bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLA
     bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} embodied --venv starvla --model starvla --env maniskill_libero && \
     bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} embodied --venv abot_m0 --model abot_m0 --env maniskill_libero
 
-RUN source switch_env openvla && download_assets --dir /opt/assets --assets maniskill,openpi
+RUN source switch_env openvla && download_assets ${INSTALL_MIRROR_OPTION} --dir /opt/assets --assets maniskill,openpi
 RUN link_assets
 
 # Set default env
@@ -233,7 +236,7 @@ RUN bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLA
 # omnigibson downloads assets to /tmp during initialization
 RUN source switch_env openpi && python -c "import omnigibson as og; cfg={}; og.Environment(cfg); og.shutdown()" || exit 0
 
-RUN source switch_env openpi && download_assets --dir /opt/assets --assets openpi
+RUN source switch_env openpi && download_assets ${INSTALL_MIRROR_OPTION} --dir /opt/assets --assets openpi
 RUN link_assets
 
 # Set default env
@@ -248,7 +251,7 @@ FROM embodied-common-image AS embodied-metaworld-image
 RUN bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} embodied --venv openvla-oft --model openvla-oft --env metaworld && \
     bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} embodied --venv openpi --model openpi --env metaworld
 
-RUN source switch_env openpi && download_assets --dir /opt/assets --assets openpi
+RUN source switch_env openpi && download_assets ${INSTALL_MIRROR_OPTION} --dir /opt/assets --assets openpi
 RUN link_assets
 
 # Set default env
@@ -264,7 +267,7 @@ FROM embodied-common-image AS embodied-calvin-image
 RUN bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} embodied --venv openvla-oft --model openvla-oft --env calvin && \
     bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} embodied --venv openpi --model openpi --env calvin
 
-RUN source switch_env openpi && download_assets --dir /opt/assets --assets openpi
+RUN source switch_env openpi && download_assets ${INSTALL_MIRROR_OPTION} --dir /opt/assets --assets openpi
 RUN link_assets
 
 # Set default env
@@ -279,7 +282,7 @@ FROM embodied-common-image AS embodied-robocasa-image
 # Install openpi env
 RUN bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} embodied --venv openpi --model openpi --env robocasa
 
-RUN source switch_env openpi && download_assets --dir /opt/assets --assets openpi
+RUN source switch_env openpi && download_assets ${INSTALL_MIRROR_OPTION} --dir /opt/assets --assets openpi
 RUN link_assets
 
 # Set default env
@@ -325,7 +328,7 @@ RUN bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLA
     bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} embodied --venv openpi --model openpi --env robotwin && \
     bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} embodied --venv lingbotvla --model lingbotvla --env robotwin
 
-RUN source switch_env openpi && download_assets --dir /opt/assets --assets openpi
+RUN source switch_env openpi && download_assets ${INSTALL_MIRROR_OPTION} --dir /opt/assets --assets openpi
 RUN link_assets
 
 # Set default env
