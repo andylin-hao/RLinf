@@ -16,8 +16,14 @@
 一台 7 自由度机械臂完成语言条件下的桌面操作任务；RLinf 借助 ManiSkill3 对视觉-语言-动作（VLA）
 策略进行强化学习微调，达到业界领先的成功率，并在分布外（OOD）变体上同样表现优异。
 
-观测与动作
+任务与环境
 ----------
+
+参考方案在 ``PutOnPlateInScene25Main-v3`` (plate-25) 任务上训练，并在分布内以及改变视觉
+（Vision）、语义（Semantic）、执行（Execution）的 OOD 设置上评测。
+
+观测与动作
+~~~~~~~~~~
 
 .. list-table::
    :header-rows: 1
@@ -34,11 +40,8 @@
    * - 任务提示
      - ``In: What action should the robot take to [task_description]? Out:``
 
-参考方案在 ``PutOnPlateInScene25Main-v3`` (plate-25) 任务上训练，并在分布内以及改变视觉
-（Vision）、语义（Semantic）、执行（Execution）的 OOD 设置上评测。
-
-一图速览
---------
+概览
+----
 
 在 ManiSkill3 上对 VLA 进行强化学习微调；OpenVLA 与 OpenVLA-OFT 在 plate-25 上成功率均超过 90%。
 

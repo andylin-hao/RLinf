@@ -17,8 +17,8 @@ benchmark with a large, diverse task suite. RLinf provides the ``RoboTwinEnv`` e
 to RL-fine-tune vision-language-action (VLA) policies on it, often turning a weak SFT
 checkpoint into a near-saturated policy.
 
-At a Glance
------------
+Overview
+--------
 
 RL-finetune a VLA on RoboTwin 2.0; OpenVLA-OFT + GRPO lifts average task success by +57%.
 
@@ -48,7 +48,7 @@ RL-finetune a VLA on RoboTwin 2.0; OpenVLA-OFT + GRPO lifts average task success
 | **You'll do:** install deps → clone RoboTwin + assets → download an SFT model → launch ``run_embodiment.sh`` → watch ``env/success_once``.
 | **Prerequisites:** :doc:`Installation </rst_source/start/installation>` · the RoboTwin repo and assets · an SFT checkpoint (steps below).
 
-Tasks and environment
+Tasks and Environment
 ---------------------
 
 ``RoboTwinEnv`` is built on the RoboTwin 2.0 simulation platform and currently supports
@@ -126,8 +126,8 @@ Tasks and environment
 .. note::
    Currently four tasks are not yet supported:  ``place_fan``, ``open_laptop``, ``place_object_scale``, and ``put_object_cabinet``. Additionally, dense reward functions are still under development and will gradually be extended to all tasks.
 
-Observation and action
-~~~~~~~~~~~~~~~~~~~~~~~
+Observation and Action
+~~~~~~~~~~~~~~~~~~~~~~
 
 .. list-table::
    :header-rows: 1
@@ -146,8 +146,8 @@ Observation and action
    * - Action
      - 14-dim continuous ``float32``: 3D position + 3D rotation + 1D gripper + 7D joint positions.
 
-Dependency Installation
------------------------
+Installation
+------------
 
 1. Clone RLinf Repository
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -387,7 +387,7 @@ For example, to train the π\ :sub:`0.5`\ model using PPO:
    - Resuming from a checkpoint → :doc:`Resume </rst_source/tutorials/configuration/resume>`
    - Stuck or hitting OOM? → :doc:`FAQ </rst_source/faq>`
 
-Visualization and results
+Visualization and Results
 -------------------------
 
 Launch TensorBoard to watch training live:

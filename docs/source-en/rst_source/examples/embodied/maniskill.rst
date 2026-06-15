@@ -18,8 +18,15 @@ tabletop tasks; RLinf uses ManiSkill3 to RL-fine-tune vision-language-action (VL
 policies and reach state-of-the-art success rates, including on out-of-distribution
 (OOD) variations.
 
-Observation and action
-----------------------
+Tasks and Environment
+---------------------
+
+The reference recipe trains on the ``PutOnPlateInScene25Main-v3`` (plate-25) task and
+evaluates both in-distribution and on OOD settings that vary **Vision**, **Semantics**,
+and **Execution**.
+
+Observation and Action
+~~~~~~~~~~~~~~~~~~~~~~~
 
 .. list-table::
    :header-rows: 1
@@ -36,12 +43,8 @@ Observation and action
    * - Task prompt
      - ``In: What action should the robot take to [task_description]? Out:``
 
-The reference recipe trains on the ``PutOnPlateInScene25Main-v3`` (plate-25) task and
-evaluates both in-distribution and on OOD settings that vary **Vision**, **Semantics**,
-and **Execution**.
-
-At a Glance
------------
+Overview
+--------
 
 RL-finetune a VLA on ManiSkill3; OpenVLA and OpenVLA-OFT exceed 90% success on plate-25.
 
@@ -73,8 +76,8 @@ RL-finetune a VLA on ManiSkill3; OpenVLA and OpenVLA-OFT exceed 90% success on p
 
 The walkthrough below uses **OpenVLA / OpenVLA-OFT** with **PPO/GRPO**; switch the config to use another supported model.
 
-Install
--------
+Installation
+------------
 
 .. include:: _setup_common.rst
 
@@ -102,7 +105,7 @@ Install
    bash requirements/install.sh embodied --model openvla --env maniskill_libero
    source .venv/bin/activate
 
-Download the assets
+Download the Assets
 -------------------
 
 Download the ManiSkill assets into the env package directory:
@@ -113,7 +116,7 @@ Download the ManiSkill assets into the env package directory:
    # Set HF_ENDPOINT=https://hf-mirror.com in mainland China.
    hf download --repo-type dataset RLinf/maniskill_assets --local-dir ./assets
 
-Download the model
+Download the Model
 ------------------
 
 Download a pretrained base checkpoint (either method works):
@@ -130,7 +133,7 @@ Download a pretrained base checkpoint (either method works):
 
 .. include:: _model_path.rst
 
-Run it
+Run It
 ------
 
 Each recipe is a YAML config under ``examples/embodiment/config/``:
@@ -161,8 +164,8 @@ Launch a config with ``run_embodiment.sh``:
    - Resuming from a checkpoint → :doc:`Resume </rst_source/tutorials/configuration/resume>`
    - Stuck or hitting OOM? → :doc:`FAQ </rst_source/faq>`
 
-Visualization and results
---------------------------
+Visualization and Results
+-------------------------
 
 Launch TensorBoard to watch training live:
 
@@ -183,7 +186,7 @@ To save evaluation videos, enable them in the config:
             save_video: True
             video_base_dir: ${runner.logger.log_path}/video/eval
 
-ManiSkill3 results
+ManiSkill3 Results
 ~~~~~~~~~~~~~~~~~~
 
 Running on a single 8-GPU H100 machine, OpenVLA (left) and OpenVLA-OFT (right) achieve

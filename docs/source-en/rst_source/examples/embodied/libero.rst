@@ -26,8 +26,11 @@ This page covers two families of LIBERO recipes:
 For LIBERO setup on **AMD ROCm** or **Ascend CANN** accelerators, see the
 :doc:`Supported Accelerators <../../tutorials/accelerators/index>` tutorial.
 
-Task suites
------------
+Tasks and Environment
+---------------------
+
+Task Suites
+~~~~~~~~~~~
 
 LIBERO ships **five task suites covering 130 tasks**, from single-step pick-and-place
 to long-horizon, multi-step scenarios. Pick a suite through the config name; ``libero_130``
@@ -66,8 +69,8 @@ trains one unified policy across all of them.
      - 130
      - All suites combined, for large-scale multi-task RL.
 
-Observation and action
-----------------------
+Observation and Action
+~~~~~~~~~~~~~~~~~~~~~~~
 
 .. list-table::
    :header-rows: 1
@@ -86,8 +89,8 @@ Observation and action
 
 .. _libero-benchmark:
 
-At a Glance
------------
+Standard LIBERO Suites
+----------------------
 
 RL-finetune a VLA on the original LIBERO suites; OpenVLA-OFT + GRPO reaches ~98–99% success.
 
@@ -119,8 +122,8 @@ RL-finetune a VLA on the original LIBERO suites; OpenVLA-OFT + GRPO reaches ~98�
 
 The walkthrough below uses **OpenVLA-OFT** with **PPO/GRPO**; switch the config to use another supported model.
 
-Install
-~~~~~~~
+Installation
+~~~~~~~~~~~~
 
 .. include:: _setup_common.rst
 
@@ -147,7 +150,7 @@ Install
    bash requirements/install.sh embodied --model openvla-oft --env maniskill_libero
    source .venv/bin/activate
 
-Download the model
+Download the Model
 ~~~~~~~~~~~~~~~~~~
 
 Download a pretrained base checkpoint (either method works):
@@ -166,7 +169,7 @@ Download a pretrained base checkpoint (either method works):
 
 .. include:: _model_path.rst
 
-Run it
+Run It
 ~~~~~~
 
 Each recipe is a YAML config under ``examples/embodiment/config/``. For OpenVLA-OFT on LIBERO:
@@ -195,8 +198,8 @@ Launch a config with ``run_embodiment.sh``:
    - Resuming from a checkpoint → :doc:`Resume </rst_source/tutorials/configuration/resume>`
    - Stuck or hitting OOM? → :doc:`FAQ </rst_source/faq>`
 
-Visualization and results
-~~~~~~~~~~~~~~~~~~~~~~~~~~
+Visualization and Results
+~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Launch TensorBoard to watch training live:
 
@@ -229,7 +232,7 @@ Choose logging backends (TensorBoard, Weights & Biases, SwanLab) under ``runner.
          experiment_name: "libero_10_grpo_openvlaoft"
          logger_backends: ["tensorboard"]  # wandb, swanlab
 
-LIBERO results
+LIBERO Results
 ^^^^^^^^^^^^^^
 
 To show RLinf's large-scale multi-task RL, we train a single unified model on all 130
@@ -277,10 +280,10 @@ RL models use ``do_sample = True``, ``temperature = 1.6``, and ``rollout_epoch =
 
 .. _liberopro-plus-benchmark:
 
-LIBERO-Pro & LIBERO-Plus Benchmark
-----------------------------------
+LIBERO-Pro & LIBERO-Plus Suites
+-------------------------------
 
-**At a glance** — stress-test generalization on the harder LIBERO-Pro / LIBERO-Plus perturbation suites.
+Stress-test generalization on the harder LIBERO-Pro / LIBERO-Plus perturbation suites.
 
 .. grid:: 2 4 4 4
    :gutter: 2
@@ -352,8 +355,8 @@ physical and semantic dimensions:
    * - Sensor noise
      - Motion/Gaussian/zoom blur, fog, and glass-refraction distortions.
 
-Install
-~~~~~~~
+Installation
+~~~~~~~~~~~~
 
 Install the RLinf-maintained forks for the suite you want.
 
@@ -381,8 +384,8 @@ Install the RLinf-maintained forks for the suite you want.
     bash requirements/install.sh embodied --model openvla-oft --env liberoplus   # LIBERO-Plus
     source .venv/bin/activate
 
-Download the assets (LIBERO-Plus)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Download the Assets (LIBERO-Plus)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 LIBERO-Plus needs hundreds of extra objects, textures, and scenes. Download ``assets.zip``
 from the Hugging Face dataset ``Sylvest/LIBERO-plus`` and extract it into the installed
@@ -412,7 +415,7 @@ After extraction the directory should look like:
         ├── wall_frames.stl
         └── wall.xml
 
-Download the model
+Download the Model
 ~~~~~~~~~~~~~~~~~~
 
 LIBERO-Pro / LIBERO-Plus reuse the standard LIBERO base checkpoints:
@@ -425,7 +428,7 @@ LIBERO-Pro / LIBERO-Plus reuse the standard LIBERO base checkpoints:
 
 .. include:: _model_path.rst
 
-Run it
+Run It
 ~~~~~~
 
 Both suites reuse the standard LIBERO config family and select the suite with the

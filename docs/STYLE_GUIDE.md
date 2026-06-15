@@ -21,7 +21,7 @@ Every benchmark (env) or model example page must:
 2. **Promote the benchmark facts to the top as tables.** Move observation/action/reward,
    task suites, and available-task lists into `list-table`s near the top — not buried in
    a per-recipe "Environment" subsection.
-3. **At a glance = 4 aligned cards.** Use `.. grid:: 2 4 4 4` (see below). On an **env**
+3. **Overview = 4 aligned cards.** Use `.. grid:: 2 4 4 4` (see below). On an **env**
    page the **Models** card lists *every* model supported on that env and the **Algorithms**
    card lists *every* algorithm; on a **model** page they list every env / algorithm the
    model supports. Cards must align across env and model pages (same 4-card set).
@@ -35,11 +35,12 @@ Every benchmark (env) or model example page must:
 7. **Don't explain metrics per page.** Link to the shared
    :doc:`Training metrics <tutorials/configuration/metrics>` page; keep only the page-specific
    "watch `env/success_once`" pointer and the results table.
-8. **Don't duplicate the page title in the first subtitle.** When the first recipe
-   section's name would just repeat the H1 (e.g. page "RL with LIBERO Benchmarks" →
-   section "LIBERO Benchmark"), title that section **"At a Glance"** instead. Named
-   variants keep their own subtitle (e.g. "LIBERO-Pro & LIBERO-Plus Benchmark"). Give any
-   `:ref:` that pointed at the renamed section explicit link text so it still reads right.
+8. **Name the card-grid section "Overview".** On a single-recipe page the card grid lives
+   under an `Overview` heading right after the intro. On a multi-recipe page (e.g. LIBERO),
+   there's no page-level `Overview`; instead each recipe family is its own section with a
+   **descriptive, parallel** name (e.g. `Standard LIBERO Suites` / `LIBERO-Pro & LIBERO-Plus
+   Suites`) and its own card grid. Don't repeat the H1 in a subtitle, and give any `:ref:`
+   that points at a renamed section explicit link text so it still reads right.
 
 ## Navigation labels
 
@@ -63,18 +64,21 @@ RL with <Name> Benchmarks            ← descriptive H1; nav caption is just "<N
 
 <One paragraph: what the benchmark/model is and how RLinf uses it.>
 
-Task suites                          ← promote benchmark facts to the top, as tables
------------
+Tasks and Environment                ← promote benchmark facts to the top, as tables
+---------------------
+
+Task Suites                          ← H3
+~~~~~~~~~~~
 .. list-table::   (Suite · config id · Tasks · Focus)
 
-Observation and action
-----------------------
+Observation and Action               ← H3
+~~~~~~~~~~~~~~~~~~~~~~~
 .. list-table::   (Observation · Action · Reward · Task prompt)
 
-<Recipe section>                     ← e.g. "LIBERO Benchmark"
-----------------
+Overview                             ← the card grid (single-recipe page)
+--------
 
-**At a glance** — <one-line outcome>.
+<one-line outcome>.
 
 .. grid:: 2 4 4 4                    ← 4 aligned cards (a 12-col grid aligns cleanly only
    :gutter: 2                          for 1/2/3/4/6 — avoid 5; push overflow to prose)
@@ -89,10 +93,10 @@ Observation and action
 | **You'll do:** install → download model → launch → watch ``<metric>``.
 | **Prerequisites:** :doc:`Installation <…>` · <other prereqs>.
 
-Install              → .. include:: _setup_common.rst + recipe-specific tag / --env
-Download the model   → recipe-specific download + .. include:: _model_path.rst
-Run it               → command + "What this command does" + "Configure further" admonition
-Visualization and results → TensorBoard / video / logger + link to Training metrics; results as a TABLE
+Installation              → .. include:: _setup_common.rst + recipe-specific tag / --env
+Download the Model        → recipe-specific download + .. include:: _model_path.rst
+Run It                    → command + "What this command does" + "Configure further" admonition
+Visualization and Results → TensorBoard / video / logger + link to Training metrics; results as a TABLE
 ```
 
 ## Reuse
@@ -132,8 +136,14 @@ Visualization and results → TensorBoard / video / logger + link to Training me
 
 ## Headings & admonitions
 
-- **Sentence case**, consistent: `Run it`, not `Running the Script`.
-- **At a glance** uses a `sphinx-design` **card grid** (`.. grid:: 2 4 4 4` + `grid-item-card`),
+- **Title Case for all headings**, consistent: `Run It`, `Download the Model`,
+  `Visualization and Results` (lowercase only articles/short prepositions/conjunctions:
+  a, an, the, and, or, of, to, in, on, with, vs).
+- **Standard section names** (use these exact names so pages match):
+  `Overview` (the card grid) · `Tasks and Environment` (with `Task Suites` /
+  `Observation and Action` subsections) · `Installation` · `Download the Model`
+  (and `Download the Assets` if needed) · `Run It` · `Visualization and Results`.
+- **Overview** uses a `sphinx-design` **card grid** (`.. grid:: 2 4 4 4` + `grid-item-card`),
   not a `tip` admonition — see the page anatomy above.
 - `note` = side info · `warning` = footguns (OOM, `MUJOCO_GL`, `RLINF_NODE_RANK` ordering,
   multi-node gotchas). Put footguns in a `warning`, not prose.
