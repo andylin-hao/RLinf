@@ -6,59 +6,83 @@ RL with MetaWorld Benchmark
    :height: 16px
    :class: inline-icon
 
-This example provides a comprehensive guide to using the **RLinf** framework in the `MetaWorld <https://metaworld.farama.org/>`_ environment
-to finetune OpenVLA-OFT, π\ :sub:`0`\, and π\ :sub:`0.5` algorithms through reinforcement learning. It covers the entire process—from environment setup and core algorithm design to training configuration, evaluation, and visualization—along with reproducible commands and configuration snippets.
+.. figure:: https://raw.githubusercontent.com/RLinf/misc/main/pic/metaworld.png
+   :align: center
+   :width: 90%
 
-The primary objective is to develop a model capable of performing robotic manipulation:
+   The Meta-World benchmark (image: `Meta-World <https://metaworld.farama.org>`__).
 
-1. **Visual Understanding**: Processing RGB images from the robot's camera.
-2. **Language Comprehension**: Interpreting natural-language task descriptions.
-3. **Action Generation**: Producing precise robotic actions (position, rotation, gripper control).
-4. **Reinforcement Learning**: Optimizing the policy via PPO with environment feedback.
+`Meta-World <https://metaworld.farama.org>`__ is a multi-task manipulation benchmark on
+MuJoCo: a 7-DoF arm performs 50 diverse tabletop tasks. RLinf uses it to RL-fine-tune
+vision-language-action (VLA) policies, including held-out (OOD) generalization.
+
+Overview
+--------
+
+RL-finetune a VLA across Meta-World's 50 tasks; pi0 + PPO reaches ~78% average success.
+
+.. grid:: 2 4 4 4
+   :gutter: 2
+
+   .. grid-item-card:: Models
+      :text-align: center
+
+      OpenVLA-OFT · π₀ / π₀.₅
+
+   .. grid-item-card:: Algorithms
+      :text-align: center
+
+      PPO · GRPO
+
+   .. grid-item-card:: Tasks
+      :text-align: center
+
+      MT50 · ML45 (5 OOD)
+
+   .. grid-item-card:: Hardware
+      :text-align: center
+
+      1 node · 8 GPUs
+
+| **You'll do:** install deps → download the SFT model → launch ``run_embodiment.sh`` → watch ``env/success_once``.
+| **Prerequisites:** :doc:`Installation </rst_source/start/installation>` · an SFT checkpoint (steps below).
+
+Tasks
+~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 18 22 60
+
+   * - Suite
+     - Tasks
+     - Setting
+   * - MT50
+     - 50
+     - Multi-task training and evaluation across all 50 tasks.
+   * - ML45
+     - 45 + 5
+     - Train on 45 tasks; evaluate on 5 held-out (OOD) tasks.
+
+Observation and Action
+~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 18 82
+
+   * - Field
+     - Specification
+   * - Observation
+     - RGB (480×480) from off-screen cameras around the workspace.
+   * - Action
+     - 4-dim continuous: 3D end-effector position (x, y, z) + gripper open/close.
+   * - Reward
+     - Sparse — based on task completion.
 
 
-Environment
------------
-
-**MetaWorld Environment**
-
-- **Environment**: Multi-task simulation environment based on *MuJoCo*
-- **Task**: Control a 7-DOF robotic arm to perform various manipulation tasks
-- **Observation**: RGB images from off-screen cameras around the workspace
-- **Action Space**: 4-dimensional continuous actions
-  - 3D end-effector position control (x, y, z)
-  - Gripper control (open/close)
-
-**Data Structure**
-
-- **Images**: RGB tensors ``[batch_size, 480, 480, 3]``
-- **Task Descriptions**: Natural-language instructions
-- **Actions**: Normalized continuous values
-- **Rewards**: Sparse rewards based on task completion
-
-Algorithm
----------
-
-**Core Algorithm Components**
-
-1. **PPO (Proximal Policy Optimization)**
-
-   - Advantage estimation using GAE (Generalized Advantage Estimation)
-
-   - Policy clipping with ratio limits
-
-   - Value function clipping
-
-   - Entropy regularization
-
-2. **GRPO (Group Relative Policy Optimization)**
-
-   - For every state / prompt the policy generates *G* independent actions
-
-   - Compute the advantage of each action by subtracting the group's mean reward
-
-Dependency Installation
------------------------
+Installation
+------------
 
 1. Clone RLinf Repository
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -114,8 +138,8 @@ Install dependencies directly in your environment by running the following comma
 
    source .venv/bin/activate
 
-Model Download
---------------
+Download the Model
+------------------
 
 Before starting training, you need to download the corresponding pretrained model:
 
@@ -140,8 +164,8 @@ Alternatively, you can also download the model from ModelScope at https://www.mo
 
 After downloading, make sure to correctly specify the model path in the configuration yaml file.
 
-Running the Script
-------------------
+Run It
+------
 
 **1. Key Cluster Configuration**
 
@@ -233,26 +257,10 @@ Visualization and Results
    tensorboard --logdir ./logs --port 6006
 
 
-**2. Key Monitoring Metrics**
+**2. Key metrics**
 
--  **Training Metrics**
-
-   -  ``actor/loss``: Policy loss
-   -  ``actor/value_loss``: Value function loss (PPO)
-   -  ``actor/grad_norm``: Gradient norm
-   -  ``actor/approx_kl``: KL divergence between old and new policies
-   -  ``actor/pg_clipfrac``: Policy clipping ratio
-   -  ``actor/value_clip_ratio``: Value loss clipping ratio (PPO)
-
--  **Rollout Metrics**
-
-   -  ``rollout/returns_mean``: Mean episode return
-   -  ``rollout/advantages_mean``: Mean advantage value
-
--  **Environment Metrics**
-
-   -  ``env/episode_len``: Mean episode length
-   -  ``env/success_once``: Task success rate
+The key signal to watch is **``env/success_once``** — the task success rate. For every
+logged metric, see :doc:`Training metrics </rst_source/tutorials/configuration/metrics>`.
 
 **3. Video Generation**
 
