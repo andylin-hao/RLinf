@@ -16,30 +16,6 @@
 一台 7 自由度机械臂完成语言条件下的桌面操作任务；RLinf 借助 ManiSkill3 对视觉-语言-动作（VLA）
 策略进行强化学习微调，达到业界领先的成功率，并在分布外（OOD）变体上同样表现优异。
 
-任务与环境
-----------
-
-参考方案在 ``PutOnPlateInScene25Main-v3`` (plate-25) 任务上训练，并在分布内以及改变视觉
-（Vision）、语义（Semantic）、执行（Execution）的 OOD 设置上评测。
-
-观测与动作
-~~~~~~~~~~
-
-.. list-table::
-   :header-rows: 1
-   :widths: 18 82
-
-   * - 字段
-     - 说明
-   * - 观测 (Observation)
-     - 第三人称相机的 RGB 图像（224×224）；语言任务描述。
-   * - 动作 (Action)
-     - 7 维连续动作：3D 末端执行器位置、3D 旋转与 1 维夹爪开合。
-   * - 奖励 (Reward)
-     - 基于任务进展与成功的 step 级奖励。
-   * - 任务提示
-     - ``In: What action should the robot take to [task_description]? Out:``
-
 概览
 ----
 
@@ -70,6 +46,45 @@
 
 | **你将完成：** 安装依赖 → 下载资产与基座模型 → 运行 ``run_embodiment.sh`` → 观察 ``env/success_once``。
 | **前置条件：** :doc:`安装 </rst_source/start/installation>` · ManiSkill 资产与基座检查点（见下文步骤）。
+
+任务
+~~~~
+
+参考方案在 ``PutOnPlateInScene25Main-v3`` (plate-25) 任务上训练，并在分布内（IND）以及分布外
+（OOD）设置上评测：
+
+.. list-table::
+   :header-rows: 1
+   :widths: 28 72
+
+   * - 设置
+     - 考察内容
+   * - 训练 (IND)
+     - plate-25 训练任务。
+   * - 视觉 (OOD)
+     - 场景的视觉变化。
+   * - 语义 (OOD)
+     - 语义变化（物体、指令）。
+   * - 执行 (OOD)
+     - 执行阶段的变化。
+
+观测与动作
+~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 18 82
+
+   * - 字段
+     - 说明
+   * - 观测 (Observation)
+     - 第三人称相机的 RGB 图像（224×224）；语言任务描述。
+   * - 动作 (Action)
+     - 7 维连续动作：3D 末端执行器位置、3D 旋转与 1 维夹爪开合。
+   * - 奖励 (Reward)
+     - 基于任务进展与成功的 step 级奖励。
+   * - 任务提示
+     - ``In: What action should the robot take to [task_description]? Out:``
 
 下面的流程以 **OpenVLA / OpenVLA-OFT** + **PPO/GRPO** 为例；切换配置即可使用其他受支持的模型。
 

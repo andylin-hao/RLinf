@@ -18,31 +18,6 @@ tabletop tasks; RLinf uses ManiSkill3 to RL-fine-tune vision-language-action (VL
 policies and reach state-of-the-art success rates, including on out-of-distribution
 (OOD) variations.
 
-Tasks and Environment
----------------------
-
-The reference recipe trains on the ``PutOnPlateInScene25Main-v3`` (plate-25) task and
-evaluates both in-distribution and on OOD settings that vary **Vision**, **Semantics**,
-and **Execution**.
-
-Observation and Action
-~~~~~~~~~~~~~~~~~~~~~~~
-
-.. list-table::
-   :header-rows: 1
-   :widths: 18 82
-
-   * - Field
-     - Specification
-   * - Observation
-     - RGB from a third-person camera (224×224); language task description.
-   * - Action
-     - 7-dim continuous: 3D end-effector position, 3D rotation, and 1-D gripper open/close.
-   * - Reward
-     - Step-level reward based on task progress and success.
-   * - Task prompt
-     - ``In: What action should the robot take to [task_description]? Out:``
-
 Overview
 --------
 
@@ -73,6 +48,45 @@ RL-finetune a VLA on ManiSkill3; OpenVLA and OpenVLA-OFT exceed 90% success on p
 
 | **You'll do:** install deps → download assets + base model → launch ``run_embodiment.sh`` → watch ``env/success_once``.
 | **Prerequisites:** :doc:`Installation </rst_source/start/installation>` · the ManiSkill assets and a base checkpoint (steps below).
+
+Tasks
+~~~~~
+
+The reference recipe trains on the ``PutOnPlateInScene25Main-v3`` (plate-25) task and
+evaluates both in-distribution (IND) and on out-of-distribution (OOD) settings:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 28 72
+
+   * - Setting
+     - What it tests
+   * - Training (IND)
+     - The plate-25 training task.
+   * - Vision (OOD)
+     - Visual variations of the scene.
+   * - Semantic (OOD)
+     - Semantic variations (objects, instructions).
+   * - Execution (OOD)
+     - Execution-time variations.
+
+Observation and Action
+~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 18 82
+
+   * - Field
+     - Specification
+   * - Observation
+     - RGB from a third-person camera (224×224); language task description.
+   * - Action
+     - 7-dim continuous: 3D end-effector position, 3D rotation, and 1-D gripper open/close.
+   * - Reward
+     - Step-level reward based on task progress and success.
+   * - Task prompt
+     - ``In: What action should the robot take to [task_description]? Out:``
 
 The walkthrough below uses **OpenVLA / OpenVLA-OFT** with **PPO/GRPO**; switch the config to use another supported model.
 

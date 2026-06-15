@@ -18,9 +18,10 @@ Every benchmark (env) or model example page must:
 1. **Open with a figure + intro.** Lead with the upstream benchmark/model figure
    (credited) and one paragraph on what it is and how RLinf uses it — like the
    [LeRobot benchmark pages](https://huggingface.co/docs/lerobot/en/libero).
-2. **Promote the benchmark facts to the top as tables.** Move observation/action/reward,
-   task suites, and available-task lists into `list-table`s near the top — not buried in
-   a per-recipe "Environment" subsection.
+2. **Put the benchmark facts inside Overview as tables.** Under the card grid, add two
+   H3 subsections — `Tasks` (always a `list-table`, never a bullet list) and
+   `Observation and Action` (a `list-table` of observation/action/reward/prompt). There is
+   no separate "Tasks and Environment" section.
 3. **Overview = 4 aligned cards.** Use `.. grid:: 2 4 4 4` (see below). On an **env**
    page the **Models** card lists *every* model supported on that env and the **Algorithms**
    card lists *every* algorithm; on a **model** page they list every env / algorithm the
@@ -64,18 +65,7 @@ RL with <Name> Benchmarks            ← descriptive H1; nav caption is just "<N
 
 <One paragraph: what the benchmark/model is and how RLinf uses it.>
 
-Tasks and Environment                ← promote benchmark facts to the top, as tables
----------------------
-
-Task Suites                          ← H3
-~~~~~~~~~~~
-.. list-table::   (Suite · config id · Tasks · Focus)
-
-Observation and Action               ← H3
-~~~~~~~~~~~~~~~~~~~~~~~
-.. list-table::   (Observation · Action · Reward · Task prompt)
-
-Overview                             ← the card grid (single-recipe page)
+Overview                             ← cards + the benchmark facts (no "Tasks and Environment" title)
 --------
 
 <one-line outcome>.
@@ -92,6 +82,15 @@ Overview                             ← the card grid (single-recipe page)
 
 | **You'll do:** install → download model → launch → watch ``<metric>``.
 | **Prerequisites:** :doc:`Installation <…>` · <other prereqs>.
+
+Tasks                                ← H3, always a TABLE (never a bullet list)
+~~~~~
+.. list-table::   (benchmark suites: Suite · config id · Tasks · Focus;
+                   multi-task envs: Category · Task · Description)
+
+Observation and Action               ← H3
+~~~~~~~~~~~~~~~~~~~~~~~
+.. list-table::   (Observation · Action · Reward · Task prompt)
 
 Installation              → .. include:: _setup_common.rst + recipe-specific tag / --env
 Download the Model        → recipe-specific download + .. include:: _model_path.rst
@@ -140,9 +139,10 @@ Visualization and Results → TensorBoard / video / logger + link to Training me
   `Visualization and Results` (lowercase only articles/short prepositions/conjunctions:
   a, an, the, and, or, of, to, in, on, with, vs).
 - **Standard section names** (use these exact names so pages match):
-  `Overview` (the card grid) · `Tasks and Environment` (with `Task Suites` /
-  `Observation and Action` subsections) · `Installation` · `Download the Model`
-  (and `Download the Assets` if needed) · `Run It` · `Visualization and Results`.
+  `Overview` (the card grid + the `Tasks` and `Observation and Action` subsections —
+  there is no separate "Tasks and Environment" section) · `Installation` ·
+  `Download the Model` (and `Download the Assets` if needed) · `Run It` ·
+  `Visualization and Results`.
 - **Overview** uses a `sphinx-design` **card grid** (`.. grid:: 2 4 4 4` + `grid-item-card`),
   not a `tip` admonition — see the page anatomy above.
 - `note` = side info · `warning` = footguns (OOM, `MUJOCO_GL`, `RLINF_NODE_RANK` ordering,

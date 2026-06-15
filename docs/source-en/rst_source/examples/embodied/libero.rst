@@ -26,11 +26,39 @@ This page covers two families of LIBERO recipes:
 For LIBERO setup on **AMD ROCm** or **Ascend CANN** accelerators, see the
 :doc:`Supported Accelerators <../../tutorials/accelerators/index>` tutorial.
 
-Tasks and Environment
----------------------
+Overview
+--------
 
-Task Suites
-~~~~~~~~~~~
+RL-finetune a VLA on the original LIBERO suites; OpenVLA-OFT + GRPO reaches ~98–99% success.
+
+.. grid:: 2 4 4 4
+   :gutter: 2
+
+   .. grid-item-card:: Models
+      :text-align: center
+
+      OpenVLA-OFT · π₀ / π₀.₅ · GR00T · Dexbotic · ABot-M0 · StarVLA · MLP
+
+   .. grid-item-card:: Algorithms
+      :text-align: center
+
+      PPO · GRPO · DSRL · DAgger
+
+   .. grid-item-card:: Tasks
+      :text-align: center
+
+      130 across 5 suites
+
+   .. grid-item-card:: Hardware
+      :text-align: center
+
+      1–2 nodes · 8–16 GPUs
+
+| **You'll do:** install deps → download the base model → launch ``run_embodiment.sh`` → watch ``env/success_once``.
+| **Prerequisites:** :doc:`Installation </rst_source/start/installation>` · a downloaded base checkpoint (steps below).
+
+Tasks
+~~~~~
 
 LIBERO ships **five task suites covering 130 tasks**, from single-step pick-and-place
 to long-horizon, multi-step scenarios. Pick a suite through the config name; ``libero_130``
@@ -91,34 +119,6 @@ Observation and Action
 
 Standard LIBERO Suites
 ----------------------
-
-RL-finetune a VLA on the original LIBERO suites; OpenVLA-OFT + GRPO reaches ~98–99% success.
-
-.. grid:: 2 4 4 4
-   :gutter: 2
-
-   .. grid-item-card:: Models
-      :text-align: center
-
-      OpenVLA-OFT · π₀ / π₀.₅ · GR00T · Dexbotic · ABot-M0 · StarVLA · MLP
-
-   .. grid-item-card:: Algorithms
-      :text-align: center
-
-      PPO · GRPO · DSRL · DAgger
-
-   .. grid-item-card:: Tasks
-      :text-align: center
-
-      130 across 5 suites
-
-   .. grid-item-card:: Hardware
-      :text-align: center
-
-      1–2 nodes · 8–16 GPUs
-
-| **You'll do:** install deps → download the base model → launch ``run_embodiment.sh`` → watch ``env/success_once``.
-| **Prerequisites:** :doc:`Installation </rst_source/start/installation>` · a downloaded base checkpoint (steps below).
 
 The walkthrough below uses **OpenVLA-OFT** with **PPO/GRPO**; switch the config to use another supported model.
 
@@ -284,32 +284,6 @@ LIBERO-Pro & LIBERO-Plus Suites
 -------------------------------
 
 Stress-test generalization on the harder LIBERO-Pro / LIBERO-Plus perturbation suites.
-
-.. grid:: 2 4 4 4
-   :gutter: 2
-
-   .. grid-item-card:: Models
-      :text-align: center
-
-      OpenVLA-OFT · ABot-M0
-
-   .. grid-item-card:: Algorithms
-      :text-align: center
-
-      PPO · GRPO
-
-   .. grid-item-card:: Tasks
-      :text-align: center
-
-      Pro: 4 perturbation axes · Plus: 10,030 tasks / 7 axes
-
-   .. grid-item-card:: Hardware
-      :text-align: center
-
-      1–2 nodes · 8–16 GPUs
-
-| **You'll do:** install the suite (``--env liberopro`` / ``liberoplus``) → (LIBERO-Plus) download the asset pack → reuse the LIBERO base model → train/eval with ``LIBERO_TYPE=pro|plus``.
-| **Prerequisites:** :doc:`Installation </rst_source/start/installation>` · reuses the standard LIBERO base checkpoint.
 
 Both suites share the same robosuite/MuJoCo setup and 7-DoF action space as standard
 LIBERO, but apply systematic perturbations to defeat memorization and stress generalization.

@@ -48,80 +48,157 @@ RL-finetune a VLA on RoboTwin 2.0; OpenVLA-OFT + GRPO lifts average task success
 | **You'll do:** install deps → clone RoboTwin + assets → download an SFT model → launch ``run_embodiment.sh`` → watch ``env/success_once``.
 | **Prerequisites:** :doc:`Installation </rst_source/start/installation>` · the RoboTwin repo and assets · an SFT checkpoint (steps below).
 
-Tasks and Environment
----------------------
+Tasks
+~~~~~
 
 ``RoboTwinEnv`` is built on the RoboTwin 2.0 simulation platform and currently supports
 **46 manipulation tasks**; select tasks for training as needed.
 
-**Placement Tasks**
+.. list-table::
+   :header-rows: 1
+   :widths: 22 24 54
 
-- ``adjust_bottle``: Pick up the bottle on the table headup with the correct arm.
-- ``place_a2b_left``: Use appropriate arm to place object A on the left of object B.
-- ``place_a2b_right``: Use appropriate arm to place object A on the right of object B.
-- ``place_bread_basket``: If there is one bread on the table, use one arm to grab the bread and put it in the basket, if there are two breads on the table, use two arms to simultaneously grab up two breads and put them in the basket.
-- ``place_bread_skillet``: Use one arm to grab the bread on the table and put it into the skillet.
-- ``place_burger_fries``: Use dual arm to pick the hamburg and frenchfries and put them onto the tray.
-- ``place_can_basket``: Use one arm to pick up the can, put it into the basket, and use another arm to lift the basket.
-- ``place_cans_plasticbox``: Use dual arm to pick and place cans into plasticbox.
-- ``place_container_plate``: Place the container onto the plate.
-- ``place_empty_cup``: Use an arm to place the empty cup on the coaster.
-- ``place_mouse_pad``: Grab the mouse and place it on a colored mat.
-- ``place_object_basket``: Use one arm to grab the target object and put it in the basket, then use the other arm to grab the basket, and finally move the basket slightly away.
-- ``place_object_stand``: Use appropriate arm to place the object on the stand.
-- ``place_phone_stand``: Pick up the phone and put it on the phone stand.
-- ``place_shoe``: Use one arm to grab the shoe from the table and place it on the mat.
-- ``place_dual_shoes``: Use both arms to pick up the two shoes on the table and put them in the shoebox, with the shoe tip pointing to the left.
-
-**Pick Tasks**
-
-- ``pick_dual_bottles``: Pick up one bottle with one arm, and pick up another bottle with the other arm.
-- ``pick_diverse_bottles``: Pick up one bottle with one arm, and pick up another bottle with the other arm.
-- ``move_can_pot``: There is a can and a pot on the table, use one arm to pick up the can and move it to beside the pot.
-- ``move_pillbottle_pad``: Use one arm to pick the pillbottle and place it onto the pad.
-- ``move_playingcard_away``: Pick up the playing card and move it away from the table.
-- ``move_stapler_pad``: Use appropriate arm to move the stapler to a colored mat.
-- ``grab_roller``: Use both arms to grab the roller on the table.
-- ``lift_pot``: Use arms to lift the pot.
-- ``put_bottles_dustbin``: Use arms to grab the bottles and put them into the dustbin to the left of the table.
-
-**Stacking Tasks**
-
-- ``stack_blocks_two``: Stack the green block on the red block.
-- ``stack_blocks_three``: Stack the blue block on the green block, and then stack the green block on the red block.
-- ``stack_bowls_two``: Stack the two bowls on top of each other.
-- ``stack_bowls_three``: Stack the three bowls on top of each other.
-
-**Ranking Tasks**
-
-- ``blocks_ranking_rgb``: Arrange the blocks in the order of red, green, and blue from left to right.
-- ``blocks_ranking_size``: Arrange the blocks from largest to smallest, from left to right.
-
-**Tool Use & Interaction Tasks**
-
-- ``click_alarmclock``: Click the alarm clock's center of the top side button on the table.
-- ``click_bell``: Click the bell's top center on the table.
-- ``beat_block_hammer``: Grab the hammer and hit the block.
-- ``open_microwave``: Use one arm to open the microwave.
-- ``press_stapler``: Use one arm to press the stapler.
-- ``stamp_seal``: Grab the stamp and stamp onto the specific color mat.
-- ``turn_switch``: Use the robotic arm to click the switch.
-
-**Handover Tasks**
-- ``handover_block``: Use the left arm to grasp the red block, handover it to the right arm, and then place it on the blue pad.
-- ``handover_mic``: Use one arm to grasp the microphone and handover it to the other arm.
-
-**Pouring, Dumping & Shaking Tasks**
-
-- ``shake_bottle``: Shake the bottle with proper arm.
-- ``shake_bottle_horizontally``: Shake the bottle horizontally with proper arm.
-- ``dump_bin_bigbin``: Grab the small bin and pour the balls into the big bin.
-
-**Hanging & Special Tasks**
-
-- ``hanging_mug``: Use the left arm to pick up the mug and adjust its pose, then use the right arm to pick it up again and hang it onto the rack.
-- ``scan_object``: Use one arm to hold the scanner, use the other arm to hold the object, and complete the scanning.
-- ``rotate_qrcode``: Pick up the QR code board and rotate it so that the QR code faces the robot.
+   * - Category
+     - Task
+     - Description
+   * - Placement Tasks
+     - ``adjust_bottle``
+     - Pick up the bottle on the table headup with the correct arm.
+   * - 
+     - ``place_a2b_left``
+     - Use appropriate arm to place object A on the left of object B.
+   * - 
+     - ``place_a2b_right``
+     - Use appropriate arm to place object A on the right of object B.
+   * - 
+     - ``place_bread_basket``
+     - If there is one bread on the table, use one arm to grab the bread and put it in the basket, if there are two breads on the table, use two arms to simultaneously grab up two breads and put them in the basket.
+   * - 
+     - ``place_bread_skillet``
+     - Use one arm to grab the bread on the table and put it into the skillet.
+   * - 
+     - ``place_burger_fries``
+     - Use dual arm to pick the hamburg and frenchfries and put them onto the tray.
+   * - 
+     - ``place_can_basket``
+     - Use one arm to pick up the can, put it into the basket, and use another arm to lift the basket.
+   * - 
+     - ``place_cans_plasticbox``
+     - Use dual arm to pick and place cans into plasticbox.
+   * - 
+     - ``place_container_plate``
+     - Place the container onto the plate.
+   * - 
+     - ``place_empty_cup``
+     - Use an arm to place the empty cup on the coaster.
+   * - 
+     - ``place_mouse_pad``
+     - Grab the mouse and place it on a colored mat.
+   * - 
+     - ``place_object_basket``
+     - Use one arm to grab the target object and put it in the basket, then use the other arm to grab the basket, and finally move the basket slightly away.
+   * - 
+     - ``place_object_stand``
+     - Use appropriate arm to place the object on the stand.
+   * - 
+     - ``place_phone_stand``
+     - Pick up the phone and put it on the phone stand.
+   * - 
+     - ``place_shoe``
+     - Use one arm to grab the shoe from the table and place it on the mat.
+   * - 
+     - ``place_dual_shoes``
+     - Use both arms to pick up the two shoes on the table and put them in the shoebox, with the shoe tip pointing to the left.
+   * - Pick Tasks
+     - ``pick_dual_bottles``
+     - Pick up one bottle with one arm, and pick up another bottle with the other arm.
+   * - 
+     - ``pick_diverse_bottles``
+     - Pick up one bottle with one arm, and pick up another bottle with the other arm.
+   * - 
+     - ``move_can_pot``
+     - There is a can and a pot on the table, use one arm to pick up the can and move it to beside the pot.
+   * - 
+     - ``move_pillbottle_pad``
+     - Use one arm to pick the pillbottle and place it onto the pad.
+   * - 
+     - ``move_playingcard_away``
+     - Pick up the playing card and move it away from the table.
+   * - 
+     - ``move_stapler_pad``
+     - Use appropriate arm to move the stapler to a colored mat.
+   * - 
+     - ``grab_roller``
+     - Use both arms to grab the roller on the table.
+   * - 
+     - ``lift_pot``
+     - Use arms to lift the pot.
+   * - 
+     - ``put_bottles_dustbin``
+     - Use arms to grab the bottles and put them into the dustbin to the left of the table.
+   * - Stacking Tasks
+     - ``stack_blocks_two``
+     - Stack the green block on the red block.
+   * - 
+     - ``stack_blocks_three``
+     - Stack the blue block on the green block, and then stack the green block on the red block.
+   * - 
+     - ``stack_bowls_two``
+     - Stack the two bowls on top of each other.
+   * - 
+     - ``stack_bowls_three``
+     - Stack the three bowls on top of each other.
+   * - Ranking Tasks
+     - ``blocks_ranking_rgb``
+     - Arrange the blocks in the order of red, green, and blue from left to right.
+   * - 
+     - ``blocks_ranking_size``
+     - Arrange the blocks from largest to smallest, from left to right.
+   * - Tool Use & Interaction Tasks
+     - ``click_alarmclock``
+     - Click the alarm clock's center of the top side button on the table.
+   * - 
+     - ``click_bell``
+     - Click the bell's top center on the table.
+   * - 
+     - ``beat_block_hammer``
+     - Grab the hammer and hit the block.
+   * - 
+     - ``open_microwave``
+     - Use one arm to open the microwave.
+   * - 
+     - ``press_stapler``
+     - Use one arm to press the stapler.
+   * - 
+     - ``stamp_seal``
+     - Grab the stamp and stamp onto the specific color mat.
+   * - 
+     - ``turn_switch``
+     - Use the robotic arm to click the switch.
+   * - Handover Tasks
+     - ``handover_block``
+     - Use the left arm to grasp the red block, handover it to the right arm, and then place it on the blue pad.
+   * - 
+     - ``handover_mic``
+     - Use one arm to grasp the microphone and handover it to the other arm.
+   * - Pouring, Dumping & Shaking Tasks
+     - ``shake_bottle``
+     - Shake the bottle with proper arm.
+   * - 
+     - ``shake_bottle_horizontally``
+     - Shake the bottle horizontally with proper arm.
+   * - 
+     - ``dump_bin_bigbin``
+     - Grab the small bin and pour the balls into the big bin.
+   * - Hanging & Special Tasks
+     - ``hanging_mug``
+     - Use the left arm to pick up the mug and adjust its pose, then use the right arm to pick it up again and hang it onto the rack.
+   * - 
+     - ``scan_object``
+     - Use one arm to hold the scanner, use the other arm to hold the object, and complete the scanning.
+   * - 
+     - ``rotate_qrcode``
+     - Pick up the QR code board and rotate it so that the QR code faces the robot.
 
 .. note::
    Currently four tasks are not yet supported:  ``place_fan``, ``open_laptop``, ``place_object_scale``, and ``put_object_cabinet``. Additionally, dense reward functions are still under development and will gradually be extended to all tasks.

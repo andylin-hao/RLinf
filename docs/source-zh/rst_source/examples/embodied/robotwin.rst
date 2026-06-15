@@ -47,79 +47,156 @@ SFT 检查点提升为接近饱和的策略。
 | **你将完成：** 安装依赖 → 克隆 RoboTwin 与资产 → 下载 SFT 模型 → 运行 ``run_embodiment.sh`` → 观察 ``env/success_once``。
 | **前置条件：** :doc:`安装 </rst_source/start/installation>` · RoboTwin 仓库与资产 · 一个 SFT 检查点（见下文步骤）。
 
-任务与环境
-----------
+任务
+~~~~
 
 ``RoboTwinEnv`` 基于 RoboTwin 2.0 仿真平台，目前支持 46 个操作任务，可按需选择任务进行训练。
 
-**放置类任务（Placement Tasks）**
+.. list-table::
+   :header-rows: 1
+   :widths: 22 24 54
 
-- ``adjust_bottle``：使用正确的手臂将桌上的瓶子拾起并保持瓶口朝上
-- ``place_a2b_left``：使用合适的手臂将物体 A 放置在物体 B 的左侧
-- ``place_a2b_right``：使用合适的手臂将物体 A 放置在物体 B 的右侧
-- ``place_bread_basket``：若桌上有一个面包，用单臂抓取并放入篮子；若有两个面包，用双臂同时抓取并放入篮子
-- ``place_bread_skillet``：用单臂抓取桌上的面包并放入平底锅
-- ``place_burger_fries``：使用双臂抓取汉堡和薯条并放置到托盘上
-- ``place_can_basket``：一只手臂将易拉罐放入篮子，另一只手臂提起篮子
-- ``place_cans_plasticbox``：使用双臂将易拉罐抓取并放入塑料箱
-- ``place_container_plate``：将容器放置到盘子上
-- ``place_empty_cup``：使用单臂将空杯放置到杯垫上
-- ``place_mouse_pad``：抓取鼠标并放置到彩色垫子上
-- ``place_object_basket``：一只手臂将目标物体放入篮子，另一只手臂抓起篮子并向外移动
-- ``place_object_stand``：使用合适的手臂将物体放置到支架上
-- ``place_phone_stand``：抓取手机并放置到手机支架上
-- ``place_shoe``：使用单臂从桌上抓取鞋子并放到垫子上
-- ``place_dual_shoes``：使用双臂抓取两只鞋并放入鞋盒，且鞋头朝左
-
-**抓取类任务（Pick Tasks）**
-
-- ``pick_dual_bottles``：用双臂分别抓取两个瓶子
-- ``pick_diverse_bottles``：用双臂分别抓取两个不同的瓶子
-- ``move_can_pot``：用单臂抓取易拉罐并移动到锅旁
-- ``move_pillbottle_pad``：用单臂抓取药瓶并放到垫子上
-- ``move_playingcard_away``：抓取扑克牌并将其朝远离桌面的方向移动
-- ``move_stapler_pad``：使用合适的手臂将订书机移动到彩色垫子上
-- ``grab_roller``：使用双臂抓取桌上的滚轴
-- ``lift_pot``：使用双臂抬起锅
-- ``put_bottles_dustbin``：抓取瓶子并放入桌子左侧的垃圾桶
-
-**堆叠类任务（Stacking Tasks）**
-
-- ``stack_blocks_two``：将绿色积木堆叠在红色积木上
-- ``stack_blocks_three``：将蓝色积木叠在绿色积木上，再将绿色积木叠在红色积木上
-- ``stack_bowls_two``：将两个碗上下堆叠
-- ``stack_bowls_three``：将三个碗上下堆叠
-
-**排序类任务（Ranking Tasks）**
-
-- ``blocks_ranking_rgb``：按红、绿、蓝顺序从左到右排列积木
-- ``blocks_ranking_size``：将积木从左到右按由大到小排列
-
-**使用工具类任务（Tool Use & Interaction Tasks）**
-
-- ``click_alarmclock``：按下闹钟顶部中央按钮
-- ``click_bell``：按下铃铛顶部中央
-- ``beat_block_hammer``：抓起锤子敲击积木
-- ``open_microwave``：用单臂打开微波炉
-- ``press_stapler``：用单臂按压订书机
-- ``stamp_seal``：抓取印章并盖在指定颜色的垫子上
-- ``turn_switch``：用机械臂拨动开关
-
-**交接类任务（Handover Tasks）**
-- ``handover_block``：左臂抓取红色积木并交接给右臂，随后放置到蓝色垫子上
-- ``handover_mic``：单臂抓取麦克风并交接给另一只手臂
-
-**倾倒、投掷与摇晃任务（Pouring, Dumping & Shaking Tasks）**
-
-- ``shake_bottle``：使用合适的手臂摇晃瓶子
-- ``shake_bottle_horizontally``：使用合适的手臂水平摇晃瓶子
-- ``dump_bin_bigbin``：抓取小箱并将其中物体倒入大箱中
-
-**悬挂与特殊任务（Hanging & Special Tasks）**
-
-- ``hanging_mug``：左臂抓取杯子并调整姿态，右臂再次抓取并将杯子挂到挂架上
-- ``scan_object``：一只手臂持扫描器，另一只手臂持物体并完成扫描
-- ``rotate_qrcode``：抓取二维码板并旋转，使二维码朝向机器人
+   * - 类别
+     - 任务
+     - 描述
+   * - 放置类任务
+     - ``adjust_bottle``
+     - 使用正确的手臂将桌上的瓶子拾起并保持瓶口朝上
+   * - 
+     - ``place_a2b_left``
+     - 使用合适的手臂将物体 A 放置在物体 B 的左侧
+   * - 
+     - ``place_a2b_right``
+     - 使用合适的手臂将物体 A 放置在物体 B 的右侧
+   * - 
+     - ``place_bread_basket``
+     - 若桌上有一个面包，用单臂抓取并放入篮子；若有两个面包，用双臂同时抓取并放入篮子
+   * - 
+     - ``place_bread_skillet``
+     - 用单臂抓取桌上的面包并放入平底锅
+   * - 
+     - ``place_burger_fries``
+     - 使用双臂抓取汉堡和薯条并放置到托盘上
+   * - 
+     - ``place_can_basket``
+     - 一只手臂将易拉罐放入篮子，另一只手臂提起篮子
+   * - 
+     - ``place_cans_plasticbox``
+     - 使用双臂将易拉罐抓取并放入塑料箱
+   * - 
+     - ``place_container_plate``
+     - 将容器放置到盘子上
+   * - 
+     - ``place_empty_cup``
+     - 使用单臂将空杯放置到杯垫上
+   * - 
+     - ``place_mouse_pad``
+     - 抓取鼠标并放置到彩色垫子上
+   * - 
+     - ``place_object_basket``
+     - 一只手臂将目标物体放入篮子，另一只手臂抓起篮子并向外移动
+   * - 
+     - ``place_object_stand``
+     - 使用合适的手臂将物体放置到支架上
+   * - 
+     - ``place_phone_stand``
+     - 抓取手机并放置到手机支架上
+   * - 
+     - ``place_shoe``
+     - 使用单臂从桌上抓取鞋子并放到垫子上
+   * - 
+     - ``place_dual_shoes``
+     - 使用双臂抓取两只鞋并放入鞋盒，且鞋头朝左
+   * - 抓取类任务
+     - ``pick_dual_bottles``
+     - 用双臂分别抓取两个瓶子
+   * - 
+     - ``pick_diverse_bottles``
+     - 用双臂分别抓取两个不同的瓶子
+   * - 
+     - ``move_can_pot``
+     - 用单臂抓取易拉罐并移动到锅旁
+   * - 
+     - ``move_pillbottle_pad``
+     - 用单臂抓取药瓶并放到垫子上
+   * - 
+     - ``move_playingcard_away``
+     - 抓取扑克牌并将其朝远离桌面的方向移动
+   * - 
+     - ``move_stapler_pad``
+     - 使用合适的手臂将订书机移动到彩色垫子上
+   * - 
+     - ``grab_roller``
+     - 使用双臂抓取桌上的滚轴
+   * - 
+     - ``lift_pot``
+     - 使用双臂抬起锅
+   * - 
+     - ``put_bottles_dustbin``
+     - 抓取瓶子并放入桌子左侧的垃圾桶
+   * - 堆叠类任务
+     - ``stack_blocks_two``
+     - 将绿色积木堆叠在红色积木上
+   * - 
+     - ``stack_blocks_three``
+     - 将蓝色积木叠在绿色积木上，再将绿色积木叠在红色积木上
+   * - 
+     - ``stack_bowls_two``
+     - 将两个碗上下堆叠
+   * - 
+     - ``stack_bowls_three``
+     - 将三个碗上下堆叠
+   * - 排序类任务
+     - ``blocks_ranking_rgb``
+     - 按红、绿、蓝顺序从左到右排列积木
+   * - 
+     - ``blocks_ranking_size``
+     - 将积木从左到右按由大到小排列
+   * - 使用工具类任务
+     - ``click_alarmclock``
+     - 按下闹钟顶部中央按钮
+   * - 
+     - ``click_bell``
+     - 按下铃铛顶部中央
+   * - 
+     - ``beat_block_hammer``
+     - 抓起锤子敲击积木
+   * - 
+     - ``open_microwave``
+     - 用单臂打开微波炉
+   * - 
+     - ``press_stapler``
+     - 用单臂按压订书机
+   * - 
+     - ``stamp_seal``
+     - 抓取印章并盖在指定颜色的垫子上
+   * - 
+     - ``turn_switch``
+     - 用机械臂拨动开关
+   * - 交接类任务
+     - ``handover_block``
+     - 左臂抓取红色积木并交接给右臂，随后放置到蓝色垫子上
+   * - 
+     - ``handover_mic``
+     - 单臂抓取麦克风并交接给另一只手臂
+   * - 倾倒、投掷与摇晃任务
+     - ``shake_bottle``
+     - 使用合适的手臂摇晃瓶子
+   * - 
+     - ``shake_bottle_horizontally``
+     - 使用合适的手臂水平摇晃瓶子
+   * - 
+     - ``dump_bin_bigbin``
+     - 抓取小箱并将其中物体倒入大箱中
+   * - 悬挂与特殊任务
+     - ``hanging_mug``
+     - 左臂抓取杯子并调整姿态，右臂再次抓取并将杯子挂到挂架上
+   * - 
+     - ``scan_object``
+     - 一只手臂持扫描器，另一只手臂持物体并完成扫描
+   * - 
+     - ``rotate_qrcode``
+     - 抓取二维码板并旋转，使二维码朝向机器人
 
 .. note::
    目前有四个任务尚未支持，分别是 ``place_fan``， ``open_laptop``， ``place_object_scale`` 和 ``put_object_cabinet`` 。另外，dense reward 奖励函数还在开发中，后续将逐步扩展到所有任务。
