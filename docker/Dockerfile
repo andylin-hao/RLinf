@@ -49,8 +49,6 @@ FROM base-image-platform-${PLATFORM} AS base-image-embodied-liberoplus
 FROM base-image-platform-${PLATFORM} AS base-image-embodied-embodichain
 FROM base-image-platform-${PLATFORM} AS base-image-embodied-roboverse
 FROM base-image-platform-${PLATFORM} AS base-image-embodied-polaris
-FROM base-image-platform-${PLATFORM} AS base-image-embodied-dreamzero
-FROM base-image-platform-${PLATFORM} AS base-image-embodied-dreamzero-libero
 
 
 # Franka depends on ros-noetic (Ubuntu 20.04) and is GPU-agnostic, so it
@@ -381,9 +379,10 @@ RUN echo "source ${UV_PATH}/embodichain/bin/activate" >> ~/.bashrc
 ##################################################################################################
 FROM embodied-common-image AS embodied-libero-image
 
-# Install openvla env
+# Install openvla, openvla-oft, and dreamzero envs
 RUN bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} embodied --venv openvla --model openvla --env libero && \
-    bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} embodied --venv openvla-oft --model openvla-oft --env libero
+    bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} embodied --venv openvla-oft --model openvla-oft --env libero && \
+    bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} embodied --venv dreamzero --model dreamzero --env libero
 
 # Set default env
 RUN echo "source ${UV_PATH}/openvla/bin/activate" >> ~/.bashrc
@@ -431,28 +430,6 @@ RUN bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLA
 
 # Set default env
 RUN echo "source ${UV_PATH}/openpi/bin/activate" >> ~/.bashrc
-
-##################################################################################################
-# Embodied: DreamZero (SFT-focused; no simulation environment)
-##################################################################################################
-FROM embodied-common-image AS embodied-dreamzero-image
-
-# Install dreamzero (SFT does not require a simulator env)
-RUN bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} embodied --venv dreamzero --model dreamzero
-
-# Set default env
-RUN echo "source ${UV_PATH}/dreamzero/bin/activate" >> ~/.bashrc
-
-##################################################################################################
-# Embodied: DreamZero (with LIBERO simulation for evaluation)
-##################################################################################################
-FROM embodied-common-image AS embodied-dreamzero-libero-image
-
-# Install dreamzero and libero env
-RUN bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} embodied --venv dreamzero-libero --model dreamzero --env libero
-
-# Set default env
-RUN echo "source ${UV_PATH}/dreamzero-libero/bin/activate" >> ~/.bashrc
 
 ##################################################################################################
 # Final image selection
