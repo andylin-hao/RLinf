@@ -10,7 +10,7 @@ VLA / WAM 模型的强化学习
    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; align-items: flex-start; justify-items: center; max-width: 980px; margin: 0 auto;">
 
      <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
-       <img src="https://github.com/RLinf/misc/raw/main/pic/pi0_icon.jpg"
+       <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/pi0_icon.jpg"
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
        <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
          <a href="embodied/pi0.html" style="text-decoration: underline; color: blue;">
@@ -21,7 +21,7 @@ VLA / WAM 模型的强化学习
      </div>
 
      <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
-       <img src="https://github.com/RLinf/misc/raw/main/pic/gr00t.png"
+       <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/gr00t.png"
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
        <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
          <a href="embodied/gr00t.html" style="text-decoration: underline; color: blue;">
@@ -32,7 +32,7 @@ VLA / WAM 模型的强化学习
      </div>
 
      <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
-       <img src="https://github.com/RLinf/misc/raw/main/pic/lingbotvla.png"
+       <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/lingbotvla.png"
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
        <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
          <a href="embodied/lingbotvla.html" style="text-decoration: underline; color: blue;">
@@ -54,7 +54,7 @@ VLA / WAM 模型的强化学习
      </div>
 
      <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
-       <img src="https://github.com/RLinf/misc/raw/main/pic/starvla.png"
+       <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/starvla.png"
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
        <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
          <a href="embodied/starvla.html" style="text-decoration: underline; color: blue;">
@@ -88,7 +88,7 @@ VLA / WAM 模型的强化学习
      </div>
 
      <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
-       <img src="https://github.com/RLinf/misc/raw/main/pic/wan.png"
+       <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/wan.png"
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);"
             data-target="animated-image.originalImage">
        <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
