@@ -6,11 +6,11 @@ RL with RoboTwin Benchmark
    :height: 16px
    :class: inline-icon
 
-.. figure:: https://raw.githubusercontent.com/RoboTwin-Platform/RoboTwin/main/assets/files/domain_randomization.png
+.. figure:: https://robotwin-platform.github.io/assets/images/teaser.png
    :align: center
    :width: 90%
 
-   RoboTwin 2.0 simulation scenes with domain randomization (image: `RoboTwin <https://robotwin-platform.github.io>`__).
+   RoboTwin 2.0 dual-arm manipulation tasks (image: `RoboTwin <https://robotwin-platform.github.io>`__).
 
 `RoboTwin 2.0 <https://robotwin-platform.github.io>`__ is a dual-arm manipulation
 benchmark with a large, diverse task suite. RLinf provides the ``RoboTwinEnv`` environment
