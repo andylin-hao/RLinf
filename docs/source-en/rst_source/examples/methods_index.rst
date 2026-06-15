@@ -1,5 +1,5 @@
-Training Solutions for Embodiment
-=================================
+Algorithms for Embodiment
+=========================
 
 This category groups examples in which the **training algorithm or recipe** is the headline — independent of any single benchmark or model. They cover offline RL, imitation learning, hybrid sim-real co-training, residual / noise-space policy steering, and lightweight policy classes.
 
