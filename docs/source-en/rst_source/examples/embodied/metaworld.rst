@@ -84,24 +84,11 @@ Observation and Action
 Installation
 ------------
 
-1. Clone RLinf Repository
-~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.. include:: _setup_common.rst
 
-.. code:: bash
+**Option 1: Docker image** — image tag ``agentic-rlinf0.2-metaworld``:
 
-   # For mainland China users, you can use the following for better download speed:
-   # git clone https://ghfast.top/github.com/RLinf/RLinf.git
-   git clone https://github.com/RLinf/RLinf.git
-   cd RLinf
-
-2. Install Dependencies
-~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-**Option 1: Docker Image**
-
-Use Docker image for the experiment.
-
-.. code:: bash
+.. code-block:: bash
 
    docker run -it --rm --gpus all \
       --shm-size 20g \
@@ -109,31 +96,18 @@ Use Docker image for the experiment.
       --name rlinf \
       -v .:/workspace/RLinf \
       rlinf/rlinf:agentic-rlinf0.2-metaworld
-      # For mainland China users, you can use the following for better download speed:
-      # docker.1ms.run/rlinf/rlinf:agentic-rlinf0.2-metaworld
+      # Mainland China mirror: docker.1ms.run/rlinf/rlinf:agentic-rlinf0.2-metaworld
 
-Please switch to the corresponding virtual environment via the built-in `switch_env` utility in the image:
+   # Inside the container, switch to the model's virtual environment:
+   source switch_env openpi        # or: source switch_env openvla-oft
 
-.. code:: bash
+**Option 2: Custom environment** — install bundle ``--env metaworld``:
 
-   # To train OpenPi models
-   source switch_env openpi
+.. code-block:: bash
 
-   # To train OpenVLA-OFT models
-   # source switch_env openvla-oft
-
-**Option 2: Custom Environment**
-
-Install dependencies directly in your environment by running the following command:
-
-.. code:: bash
-
-   # For mainland China users, you can add the `--use-mirror` flag to the install.sh command for better download speed.
-
-   # To train OpenPi models
+   # Add --use-mirror for faster downloads in mainland China.
    bash requirements/install.sh embodied --model openpi --env metaworld
-
-   # To train OpenVLA-OFT models
+   # Or install the OpenVLA-OFT environment:
    # bash requirements/install.sh embodied --model openvla-oft --env metaworld
 
    source .venv/bin/activate
@@ -141,19 +115,17 @@ Install dependencies directly in your environment by running the following comma
 Download the Model
 ------------------
 
-Before starting training, you need to download the corresponding pretrained model:
+Download the SFT checkpoints used by the reference recipes (either method works):
 
-.. code:: bash
+.. code-block:: bash
 
-   # Download the model (choose either method)
-   # Method 1: Using git clone
+   # Method 1: git clone
    git lfs install
    git clone https://huggingface.co/RLinf/RLinf-Pi0-MetaWorld-SFT
    git clone https://huggingface.co/RLinf/RLinf-Pi05-MetaWorld-SFT
    git clone https://huggingface.co/RLinf/RLinf-OpenVLAOFT-MetaWorld-SFT
 
-   # Method 2: Using huggingface-hub
-   # For mainland China users, you can use the following for better download speed:
+   # Method 2: huggingface-hub (set HF_ENDPOINT=https://hf-mirror.com in mainland China)
    # export HF_ENDPOINT=https://hf-mirror.com
    pip install huggingface-hub
    hf download RLinf/RLinf-Pi0-MetaWorld-SFT --local-dir RLinf-Pi0-MetaWorld-SFT
@@ -162,130 +134,79 @@ Before starting training, you need to download the corresponding pretrained mode
 
 Alternatively, you can also download the model from ModelScope at https://www.modelscope.cn/models/RLinf/RLinf-Pi0-MetaWorld.
 
-After downloading, make sure to correctly specify the model path in the configuration yaml file.
+.. include:: _model_path.rst
 
 Run It
 ------
 
-**1. Key Cluster Configuration**
+Each recipe is a YAML config under ``examples/embodiment/config/``:
 
-.. code:: yaml
+.. list-table::
+   :header-rows: 1
+   :widths: 30 30 40
 
-   cluster:
-      num_nodes: 1
-      component_placement:
-         env: 0-3
-         rollout: 4-7
-         actor: 0-7
+   * - Setting
+     - Model / algorithm
+     - Config
+   * - MT50
+     - π₀ + PPO
+     - ``metaworld_50_ppo_openpi.yaml``
+   * - MT50
+     - π₀.₅ + PPO
+     - ``metaworld_50_ppo_openpi_pi05.yaml``
+   * - MT50
+     - OpenVLA-OFT + GRPO
+     - ``metaworld_50_grpo_openvlaoft.yaml``
+   * - ML45
+     - π₀ + PPO
+     - ``metaworld_45_ppo_openpi.yaml``
 
-   rollout:
-      pipeline_stage_num: 2
+Launch a config with ``run_embodiment.sh``:
 
-You can flexibly configure the GPU count for env, rollout, and actor components.
-Additionally, by setting ``pipeline_stage_num = 2`` in the configuration,
-you can achieve pipeline overlap between rollout and env, improving rollout efficiency.
-
-.. code:: yaml
-
-   cluster:
-      num_nodes: 1
-      component_placement:
-         env,rollout,actor: all
-
-You can also reconfigure the layout to achieve full sharing,
-where env, rollout, and actor components all share all GPUs.
-
-.. code:: yaml
-
-   cluster:
-      num_nodes: 1
-      component_placement:
-         env: 0-1
-         rollout: 2-5
-         actor: 6-7
-
-You can also reconfigure the layout to achieve full separation,
-where env, rollout, and actor components each use their own GPUs with no
-interference, eliminating the need for offloading functionality.
-
-
-
-**2. Configuration Files**
-
-MetaWorld MT50 multi-task joint training configuration files (In this task setting, both training and inference are performed in a multi-task environment):
-
-- π\ :sub:`0`\ + PPO:
-  ``examples/embodiment/config/metaworld_50_ppo_openpi.yaml``
-
-- π\ :sub:`0.5`\ + PPO:
-  ``examples/embodiment/config/metaworld_50_ppo_openpi_pi05.yaml``
-
-- OpenVLA-OFT + GRPO:
-  ``examples/embodiment/config/metaworld_50_grpo_openvlaoft.yaml``
-  
-MetaWorld ML45 joint training configuration files (In this task setting, training is performed on 45 tasks, and inference is performed on 5 OOD tasks):
-
-- π\ :sub:`0`\ + PPO:
-  ``examples/embodiment/config/metaworld_45_ppo_openpi.yaml``
-
-
-
-**3. Launch Commands**
-
-To start training with the selected configuration, run the following
-command:
-
-.. code:: bash
-
-   bash examples/embodiment/run_embodiment.sh CHOSEN_CONFIG
-
-For example, to train the π\ :sub:`0`\ model using the PPO algorithm in the MetaWorld environment, run:
-
-.. code:: bash
+.. code-block:: bash
 
    bash examples/embodiment/run_embodiment.sh metaworld_50_ppo_openpi
+
+**What this command does:**
+
+1. Loads ``examples/embodiment/config/metaworld_50_ppo_openpi.yaml``.
+2. Starts Meta-World MT50 rollout/evaluation workers according to ``cluster.component_placement``.
+3. Runs the PPO training loop and writes logs/checkpoints under ``runner.logger.log_path``.
+
+.. admonition:: Configure further
+   :class: note
+
+   - Placement and throughput → :doc:`Placement </rst_source/tutorials/usage/placement>` and :doc:`Execution modes </rst_source/tutorials/usage/execution_modes>`
+   - All config keys → :doc:`Configuration </rst_source/tutorials/configuration/index>`
+   - Metric definitions and logging backends → :doc:`Training metrics </rst_source/tutorials/configuration/metrics>`
+   - Resuming from a checkpoint → :doc:`Resume </rst_source/tutorials/configuration/resume>`
 
 
 Visualization and Results
 -------------------------
 
-**1. TensorBoard Logging**
+Launch TensorBoard to watch training live:
 
-.. code:: bash
+.. code-block:: bash
 
-   # Launch TensorBoard
    tensorboard --logdir ./logs --port 6006
-
-
-**2. Key metrics**
 
 The key signal to watch is **``env/success_once``** — the task success rate. For every
 logged metric, see :doc:`Training metrics </rst_source/tutorials/configuration/metrics>`.
 
-**3. Video Generation**
+To save evaluation videos, enable them in the config:
 
-.. code:: yaml
+.. code-block:: yaml
 
-   video_cfg:
-     save_video: True
-     info_on_video: True
-     video_base_dir: ${runner.logger.log_path}/video/train
-
-**4. WandB Integration**
-
-.. code:: yaml
-
-   runner:
-     task_type: embodied
-     logger:
-       log_path: "../results"
-       project_name: rlinf
-       experiment_name: "metaworld_50_ppo_openpi"
-       logger_backends: ["tensorboard", "wandb"] # tensorboard, wandb, swanlab
+   env:
+      eval:
+         video_cfg:
+            save_video: True
+            video_base_dir: ${runner.logger.log_path}/video/eval
 
 
 MetaWorld Results
--------------------------
+~~~~~~~~~~~~~~~~~
 The results for Diffusion Policy, TinyVLA, and SmolVLA in the table below are referenced from the `SmolVLA paper <https://arxiv.org/abs/2403.04880>`_. The SFT results for π\ :sub:`0`\  and π\ :sub:`0.5`\  are obtained by retraining using the official `dataset <https://huggingface.co/datasets/lerobot/metaworld_mt50>`_ provided by LeRobot.
 
 .. list-table:: **MetaWorld-MT50 Performance Comparison (Success Rate, %)**
