@@ -6,137 +6,143 @@
    :height: 16px
    :class: inline-icon
 
-本文档给出在 RLinf 框架内启动与管理 **Vision-Language-Action Models (VLAs)** 训练任务的完整指南，
-在 RoboTwin 环境中微调 VLA 模型以完成机器人操作。
+.. figure:: https://raw.githubusercontent.com/RoboTwin-Platform/RoboTwin/main/assets/files/50_tasks.gif
+   :align: center
+   :width: 90%
 
-主要目标是让模型具备以下能力：
+   RoboTwin 2.0 的双臂操作任务（图片来源：`RoboTwin <https://robotwin-platform.github.io>`__）。
 
-1. **视觉理解**：处理来自机器人相机的 RGB 图像。  
-2. **语言理解**：理解自然语言的任务描述。  
-3. **动作生成**：产生精确的机器人动作（位置、旋转、夹爪控制）。  
-4. **强化学习**：结合环境反馈，使用 PPO 和 GRPO 优化策略。
+`RoboTwin 2.0 <https://robotwin-platform.github.io>`__ 是一个任务丰富、规模可观的双臂操作基准。
+RLinf 提供 ``RoboTwinEnv`` 环境，在其上对视觉-语言-动作（VLA）策略进行强化学习微调，常常能把较弱的
+SFT 检查点提升为接近饱和的策略。
 
-RoboTwinEnv 环境介绍
---------------------------
+一图速览
+--------
 
-**RoboTwinEnv 环境**
+在 RoboTwin 2.0 上对 VLA 进行强化学习微调；OpenVLA-OFT + GRPO 平均任务成功率提升约 +57%。
 
-- **Environment**：RLinf 框架基于 RoboTwin 2.0 仿真环境提供了用于强化学习训练的 RoboTwinEnv 环境。  
-- **Task**：控制机械臂完成多种操作任务。RLinf RoboTwinEnv 目前支持以下 **46 个任务** ，用户可以根据需要选择任务进行训练。
+.. grid:: 2 4 4 4
+   :gutter: 2
 
-  **放置类任务（Placement Tasks）**
+   .. grid-item-card:: 模型
+      :text-align: center
 
-  - ``adjust_bottle``：使用正确的手臂将桌上的瓶子拾起并保持瓶口朝上
-  - ``place_a2b_left``：使用合适的手臂将物体 A 放置在物体 B 的左侧
-  - ``place_a2b_right``：使用合适的手臂将物体 A 放置在物体 B 的右侧
-  - ``place_bread_basket``：若桌上有一个面包，用单臂抓取并放入篮子；若有两个面包，用双臂同时抓取并放入篮子
-  - ``place_bread_skillet``：用单臂抓取桌上的面包并放入平底锅
-  - ``place_burger_fries``：使用双臂抓取汉堡和薯条并放置到托盘上
-  - ``place_can_basket``：一只手臂将易拉罐放入篮子，另一只手臂提起篮子
-  - ``place_cans_plasticbox``：使用双臂将易拉罐抓取并放入塑料箱
-  - ``place_container_plate``：将容器放置到盘子上
-  - ``place_empty_cup``：使用单臂将空杯放置到杯垫上
-  - ``place_mouse_pad``：抓取鼠标并放置到彩色垫子上
-  - ``place_object_basket``：一只手臂将目标物体放入篮子，另一只手臂抓起篮子并向外移动
-  - ``place_object_stand``：使用合适的手臂将物体放置到支架上
-  - ``place_phone_stand``：抓取手机并放置到手机支架上
-  - ``place_shoe``：使用单臂从桌上抓取鞋子并放到垫子上
-  - ``place_dual_shoes``：使用双臂抓取两只鞋并放入鞋盒，且鞋头朝左
+      OpenVLA-OFT · π₀ / π₀.₅ · Lingbot-VLA
 
-  **抓取类任务（Pick Tasks）**
+   .. grid-item-card:: 算法
+      :text-align: center
 
-  - ``pick_dual_bottles``：用双臂分别抓取两个瓶子
-  - ``pick_diverse_bottles``：用双臂分别抓取两个不同的瓶子
-  - ``move_can_pot``：用单臂抓取易拉罐并移动到锅旁
-  - ``move_pillbottle_pad``：用单臂抓取药瓶并放到垫子上
-  - ``move_playingcard_away``：抓取扑克牌并将其朝远离桌面的方向移动
-  - ``move_stapler_pad``：使用合适的手臂将订书机移动到彩色垫子上
-  - ``grab_roller``：使用双臂抓取桌上的滚轴
-  - ``lift_pot``：使用双臂抬起锅
-  - ``put_bottles_dustbin``：抓取瓶子并放入桌子左侧的垃圾桶
+      PPO · GRPO · DAgger
 
-  **堆叠类任务（Stacking Tasks）**
-  
-  - ``stack_blocks_two``：将绿色积木堆叠在红色积木上
-  - ``stack_blocks_three``：将蓝色积木叠在绿色积木上，再将绿色积木叠在红色积木上
-  - ``stack_bowls_two``：将两个碗上下堆叠
-  - ``stack_bowls_three``：将三个碗上下堆叠
+   .. grid-item-card:: 任务
+      :text-align: center
 
-  **排序类任务（Ranking Tasks）**
-  
-  - ``blocks_ranking_rgb``：按红、绿、蓝顺序从左到右排列积木
-  - ``blocks_ranking_size``：将积木从左到右按由大到小排列
+      46 个双臂操作任务
 
-  **使用工具类任务（Tool Use & Interaction Tasks）**
-  
-  - ``click_alarmclock``：按下闹钟顶部中央按钮
-  - ``click_bell``：按下铃铛顶部中央
-  - ``beat_block_hammer``：抓起锤子敲击积木
-  - ``open_microwave``：用单臂打开微波炉
-  - ``press_stapler``：用单臂按压订书机
-  - ``stamp_seal``：抓取印章并盖在指定颜色的垫子上
-  - ``turn_switch``：用机械臂拨动开关
+   .. grid-item-card:: 硬件
+      :text-align: center
 
-  **交接类任务（Handover Tasks）**
-  - ``handover_block``：左臂抓取红色积木并交接给右臂，随后放置到蓝色垫子上
-  - ``handover_mic``：单臂抓取麦克风并交接给另一只手臂
+      1–2 节点 · 8–16 张 GPU
 
-  **倾倒、投掷与摇晃任务（Pouring, Dumping & Shaking Tasks）**
+| **你将完成：** 安装依赖 → 克隆 RoboTwin 与资产 → 下载 SFT 模型 → 运行 ``run_embodiment.sh`` → 观察 ``env/success_once``。
+| **前置条件：** :doc:`安装 </rst_source/start/installation>` · RoboTwin 仓库与资产 · 一个 SFT 检查点（见下文步骤）。
 
-  - ``shake_bottle``：使用合适的手臂摇晃瓶子
-  - ``shake_bottle_horizontally``：使用合适的手臂水平摇晃瓶子
-  - ``dump_bin_bigbin``：抓取小箱并将其中物体倒入大箱中
+任务与环境
+----------
 
-  **悬挂与特殊任务（Hanging & Special Tasks）**
+``RoboTwinEnv`` 基于 RoboTwin 2.0 仿真平台，目前支持 46 个操作任务，可按需选择任务进行训练。
 
-  - ``hanging_mug``：左臂抓取杯子并调整姿态，右臂再次抓取并将杯子挂到挂架上
-  - ``scan_object``：一只手臂持扫描器，另一只手臂持物体并完成扫描
-  - ``rotate_qrcode``：抓取二维码板并旋转，使二维码朝向机器人
+**放置类任务（Placement Tasks）**
 
-  .. note::
-     目前有四个任务尚未支持，分别是 ``place_fan``， ``open_laptop``， ``place_object_scale`` 和 ``put_object_cabinet`` 。另外，dense reward 奖励函数还在开发中，后续将逐步扩展到所有任务。
+- ``adjust_bottle``：使用正确的手臂将桌上的瓶子拾起并保持瓶口朝上
+- ``place_a2b_left``：使用合适的手臂将物体 A 放置在物体 B 的左侧
+- ``place_a2b_right``：使用合适的手臂将物体 A 放置在物体 B 的右侧
+- ``place_bread_basket``：若桌上有一个面包，用单臂抓取并放入篮子；若有两个面包，用双臂同时抓取并放入篮子
+- ``place_bread_skillet``：用单臂抓取桌上的面包并放入平底锅
+- ``place_burger_fries``：使用双臂抓取汉堡和薯条并放置到托盘上
+- ``place_can_basket``：一只手臂将易拉罐放入篮子，另一只手臂提起篮子
+- ``place_cans_plasticbox``：使用双臂将易拉罐抓取并放入塑料箱
+- ``place_container_plate``：将容器放置到盘子上
+- ``place_empty_cup``：使用单臂将空杯放置到杯垫上
+- ``place_mouse_pad``：抓取鼠标并放置到彩色垫子上
+- ``place_object_basket``：一只手臂将目标物体放入篮子，另一只手臂抓起篮子并向外移动
+- ``place_object_stand``：使用合适的手臂将物体放置到支架上
+- ``place_phone_stand``：抓取手机并放置到手机支架上
+- ``place_shoe``：使用单臂从桌上抓取鞋子并放到垫子上
+- ``place_dual_shoes``：使用双臂抓取两只鞋并放入鞋盒，且鞋头朝左
 
-- **Observation**：RLinf RoboTwinEnv 环境返回的观测信息是一个字典（dict），包含以下字段：
+**抓取类任务（Pick Tasks）**
 
-  - ``images``：头部相机 RGB 图像
+- ``pick_dual_bottles``：用双臂分别抓取两个瓶子
+- ``pick_diverse_bottles``：用双臂分别抓取两个不同的瓶子
+- ``move_can_pot``：用单臂抓取易拉罐并移动到锅旁
+- ``move_pillbottle_pad``：用单臂抓取药瓶并放到垫子上
+- ``move_playingcard_away``：抓取扑克牌并将其朝远离桌面的方向移动
+- ``move_stapler_pad``：使用合适的手臂将订书机移动到彩色垫子上
+- ``grab_roller``：使用双臂抓取桌上的滚轴
+- ``lift_pot``：使用双臂抬起锅
+- ``put_bottles_dustbin``：抓取瓶子并放入桌子左侧的垃圾桶
 
-    - **类型**：``torch.Tensor``
-    - **形状**：``[batch_size, 224, 224, 3]``
-    - **数据类型**：``uint8`` （0-255）
-    - **说明**：经过中心裁剪（center crop）处理的头部相机图像，每个环境返回一张图像
+**堆叠类任务（Stacking Tasks）**
 
-  - ``wrist_images``：腕部相机 RGB 图像（可选）
-  
-    - **类型**：``torch.Tensor`` 或 ``None``
-    - **形状**：``[batch_size, num_wrist_images, 224, 224, 3]`` （如果存在）
-    - **数据类型**：``uint8`` （0-255）
-    - **说明**：可能包含左腕相机（``left_wrist_image``）和/或右腕相机（``right_wrist_image``）的图像，如果任务不需要腕部图像则为 ``None``
+- ``stack_blocks_two``：将绿色积木堆叠在红色积木上
+- ``stack_blocks_three``：将蓝色积木叠在绿色积木上，再将绿色积木叠在红色积木上
+- ``stack_bowls_two``：将两个碗上下堆叠
+- ``stack_bowls_three``：将三个碗上下堆叠
 
-  - ``states``：本体感觉信息（proprioception）
+**排序类任务（Ranking Tasks）**
 
-    - **类型**：``torch.Tensor``
-    - **形状**：``[batch_size, 14]``
-    - **数据类型**：``float32``
-    - **说明**：包含末端执行器的位姿信息（位置和姿态），共 14 维，对应 ``proprio_dim=14``
+- ``blocks_ranking_rgb``：按红、绿、蓝顺序从左到右排列积木
+- ``blocks_ranking_size``：将积木从左到右按由大到小排列
 
-  - ``task_descriptions``：任务描述文本
+**使用工具类任务（Tool Use & Interaction Tasks）**
 
-    - **类型**：``List[str]``
-    - **长度**：``batch_size``
-    - **说明**：每个环境对应的自然语言任务描述，例如 "What action should the robot take to place the empty cup on the coaster?"
+- ``click_alarmclock``：按下闹钟顶部中央按钮
+- ``click_bell``：按下铃铛顶部中央
+- ``beat_block_hammer``：抓起锤子敲击积木
+- ``open_microwave``：用单臂打开微波炉
+- ``press_stapler``：用单臂按压订书机
+- ``stamp_seal``：抓取印章并盖在指定颜色的垫子上
+- ``turn_switch``：用机械臂拨动开关
 
-- **Action Space**：14 维连续动作空间
+**交接类任务（Handover Tasks）**
+- ``handover_block``：左臂抓取红色积木并交接给右臂，随后放置到蓝色垫子上
+- ``handover_mic``：单臂抓取麦克风并交接给另一只手臂
 
-  - **类型**：``torch.Tensor`` 或 ``numpy.ndarray``
-  - **形状**：``[batch_size, action_dim]`` 或 ``[batch_size, horizon, action_dim]``，其中 ``action_dim=14``
-  - **数据类型**：``float32``
-  - **动作组成**：
+**倾倒、投掷与摇晃任务（Pouring, Dumping & Shaking Tasks）**
 
-    - 末端执行器三维位置控制（x, y, z）：3 维
-    - 三维旋转控制（roll, pitch, yaw）：3 维
-    - 夹爪控制（开/合）：1 维
-    - 关节位置控制：7 维
-    - **总计**：14 维
+- ``shake_bottle``：使用合适的手臂摇晃瓶子
+- ``shake_bottle_horizontally``：使用合适的手臂水平摇晃瓶子
+- ``dump_bin_bigbin``：抓取小箱并将其中物体倒入大箱中
+
+**悬挂与特殊任务（Hanging & Special Tasks）**
+
+- ``hanging_mug``：左臂抓取杯子并调整姿态，右臂再次抓取并将杯子挂到挂架上
+- ``scan_object``：一只手臂持扫描器，另一只手臂持物体并完成扫描
+- ``rotate_qrcode``：抓取二维码板并旋转，使二维码朝向机器人
+
+.. note::
+   目前有四个任务尚未支持，分别是 ``place_fan``， ``open_laptop``， ``place_object_scale`` 和 ``put_object_cabinet`` 。另外，dense reward 奖励函数还在开发中，后续将逐步扩展到所有任务。
+
+观测与动作
+~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 22 78
+
+   * - 字段
+     - 说明
+   * - ``images``
+     - 头部相机 RGB，``[B, 224, 224, 3]`` uint8（中心裁剪）。
+   * - ``wrist_images``
+     - 可选的左/右腕部相机 RGB，``[B, n, 224, 224, 3]`` uint8，或 ``None``。
+   * - ``states``
+     - 本体感知，``[B, 14]`` float32（末端执行器位姿；``proprio_dim=14``）。
+   * - ``task_descriptions``
+     - 自然语言任务描述，长度为 ``B``。
+   * - 动作 (Action)
+     - 14 维连续 ``float32``：3D 位置 + 3D 旋转 + 1D 夹爪 + 7D 关节位置。
 
 依赖安装
 -----------------------
@@ -368,17 +374,26 @@ RoboTwin 当前可直接参考的配置文件如下：
 
    bash examples/embodiment/run_embodiment.sh robotwin_adjust_bottle_ppo_OpenPI_pi05
 
-可视化与结果
--------------------------
+.. admonition:: 进一步配置
+   :class: note
 
-**1. TensorBoard 日志**
+   - 放置与吞吐 → :doc:`放置 </rst_source/tutorials/usage/placement>` 与 :doc:`执行模式 </rst_source/tutorials/usage/execution_modes>`
+   - 全部配置项 → :doc:`配置 </rst_source/tutorials/configuration/index>`
+   - 指标定义与日志后端 → :doc:`训练指标 </rst_source/tutorials/configuration/metrics>`
+   - 从检查点恢复 → :doc:`断点续训 </rst_source/tutorials/configuration/resume>`
+   - 卡住或显存不足（OOM）？ → :doc:`FAQ </rst_source/faq>`
+
+可视化与结果
+------------
+
+启动 TensorBoard 实时查看训练：
 
 .. code-block:: bash
 
-   # 启动 TensorBoard
    tensorboard --logdir ./logs --port 6006
 
-**2. 视频生成**
+最值得关注的指标是 **``env/success_once``**。每个日志指标的含义见
+:doc:`训练指标 </rst_source/tutorials/configuration/metrics>`。
 
 训练和评估过程中的视频会自动保存。配置如下：
 

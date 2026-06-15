@@ -6,138 +6,145 @@ RL with RoboTwin Benchmark
    :height: 16px
    :class: inline-icon
 
-This document provides a comprehensive guide to launching and managing 
-**Vision-Language-Action Models (VLAs)** training tasks within the RLinf framework,
-focusing on finetuning a VLA model for robotic manipulation in the RoboTwin environment.
+.. figure:: https://raw.githubusercontent.com/RoboTwin-Platform/RoboTwin/main/assets/files/50_tasks.gif
+   :align: center
+   :width: 90%
 
-The primary objective is to develop a model capable of performing robotic manipulation by:
+   RoboTwin 2.0 dual-arm manipulation tasks (image: `RoboTwin <https://robotwin-platform.github.io>`__).
 
-1. **Visual Understanding**: Processing RGB images from the robot's camera.
-2. **Language Comprehension**: Interpreting natural-language task descriptions.
-3. **Action Generation**: Producing precise robotic actions (position, rotation, gripper control).
-4. **Reinforcement Learning**: Optimizing the policy via PPO and GRPO with environment feedback.
+`RoboTwin 2.0 <https://robotwin-platform.github.io>`__ is a dual-arm manipulation
+benchmark with a large, diverse task suite. RLinf provides the ``RoboTwinEnv`` environment
+to RL-fine-tune vision-language-action (VLA) policies on it, often turning a weak SFT
+checkpoint into a near-saturated policy.
 
-RoboTwinEnv Environment
---------------------------
+At a Glance
+-----------
 
-**RoboTwinEnv Environment**
+RL-finetune a VLA on RoboTwin 2.0; OpenVLA-OFT + GRPO lifts average task success by +57%.
 
-- **Environment**: RLinf framework provides the RoboTwinEnv environment for reinforcement learning training based on the RoboTwin 2.0 simulation platform.
-- **Task**: Control a robotic arm to perform various manipulation tasks. RLinf RoboTwinEnv currently supports **46 tasks**, and users can select tasks for training as needed.
+.. grid:: 2 4 4 4
+   :gutter: 2
 
-  **Placement Tasks**
+   .. grid-item-card:: Models
+      :text-align: center
 
-  - ``adjust_bottle``: Pick up the bottle on the table headup with the correct arm.
-  - ``place_a2b_left``: Use appropriate arm to place object A on the left of object B.
-  - ``place_a2b_right``: Use appropriate arm to place object A on the right of object B.
-  - ``place_bread_basket``: If there is one bread on the table, use one arm to grab the bread and put it in the basket, if there are two breads on the table, use two arms to simultaneously grab up two breads and put them in the basket.
-  - ``place_bread_skillet``: Use one arm to grab the bread on the table and put it into the skillet.
-  - ``place_burger_fries``: Use dual arm to pick the hamburg and frenchfries and put them onto the tray.
-  - ``place_can_basket``: Use one arm to pick up the can, put it into the basket, and use another arm to lift the basket.
-  - ``place_cans_plasticbox``: Use dual arm to pick and place cans into plasticbox.
-  - ``place_container_plate``: Place the container onto the plate.
-  - ``place_empty_cup``: Use an arm to place the empty cup on the coaster.
-  - ``place_mouse_pad``: Grab the mouse and place it on a colored mat.
-  - ``place_object_basket``: Use one arm to grab the target object and put it in the basket, then use the other arm to grab the basket, and finally move the basket slightly away.
-  - ``place_object_stand``: Use appropriate arm to place the object on the stand.
-  - ``place_phone_stand``: Pick up the phone and put it on the phone stand.
-  - ``place_shoe``: Use one arm to grab the shoe from the table and place it on the mat.
-  - ``place_dual_shoes``: Use both arms to pick up the two shoes on the table and put them in the shoebox, with the shoe tip pointing to the left.
+      OpenVLA-OFT · π₀ / π₀.₅ · Lingbot-VLA
 
-  **Pick Tasks**
+   .. grid-item-card:: Algorithms
+      :text-align: center
 
-  - ``pick_dual_bottles``: Pick up one bottle with one arm, and pick up another bottle with the other arm.
-  - ``pick_diverse_bottles``: Pick up one bottle with one arm, and pick up another bottle with the other arm.
-  - ``move_can_pot``: There is a can and a pot on the table, use one arm to pick up the can and move it to beside the pot.
-  - ``move_pillbottle_pad``: Use one arm to pick the pillbottle and place it onto the pad.
-  - ``move_playingcard_away``: Pick up the playing card and move it away from the table.
-  - ``move_stapler_pad``: Use appropriate arm to move the stapler to a colored mat.
-  - ``grab_roller``: Use both arms to grab the roller on the table.
-  - ``lift_pot``: Use arms to lift the pot.
-  - ``put_bottles_dustbin``: Use arms to grab the bottles and put them into the dustbin to the left of the table.
+      PPO · GRPO · DAgger
 
-  **Stacking Tasks**
-  
-  - ``stack_blocks_two``: Stack the green block on the red block.
-  - ``stack_blocks_three``: Stack the blue block on the green block, and then stack the green block on the red block.
-  - ``stack_bowls_two``: Stack the two bowls on top of each other.
-  - ``stack_bowls_three``: Stack the three bowls on top of each other.
+   .. grid-item-card:: Tasks
+      :text-align: center
 
-  **Ranking Tasks**
-  
-  - ``blocks_ranking_rgb``: Arrange the blocks in the order of red, green, and blue from left to right.
-  - ``blocks_ranking_size``: Arrange the blocks from largest to smallest, from left to right.
+      46 dual-arm manipulation tasks
 
-  **Tool Use & Interaction Tasks**
-  
-  - ``click_alarmclock``: Click the alarm clock's center of the top side button on the table.
-  - ``click_bell``: Click the bell's top center on the table.
-  - ``beat_block_hammer``: Grab the hammer and hit the block.
-  - ``open_microwave``: Use one arm to open the microwave.
-  - ``press_stapler``: Use one arm to press the stapler.
-  - ``stamp_seal``: Grab the stamp and stamp onto the specific color mat.
-  - ``turn_switch``: Use the robotic arm to click the switch.
+   .. grid-item-card:: Hardware
+      :text-align: center
 
-  **Handover Tasks**
-  - ``handover_block``: Use the left arm to grasp the red block, handover it to the right arm, and then place it on the blue pad.
-  - ``handover_mic``: Use one arm to grasp the microphone and handover it to the other arm.
+      1–2 nodes · 8–16 GPUs
 
-  **Pouring, Dumping & Shaking Tasks**
+| **You'll do:** install deps → clone RoboTwin + assets → download an SFT model → launch ``run_embodiment.sh`` → watch ``env/success_once``.
+| **Prerequisites:** :doc:`Installation </rst_source/start/installation>` · the RoboTwin repo and assets · an SFT checkpoint (steps below).
 
-  - ``shake_bottle``: Shake the bottle with proper arm.
-  - ``shake_bottle_horizontally``: Shake the bottle horizontally with proper arm.
-  - ``dump_bin_bigbin``: Grab the small bin and pour the balls into the big bin.
+Tasks and environment
+---------------------
 
-  **Hanging & Special Tasks**
+``RoboTwinEnv`` is built on the RoboTwin 2.0 simulation platform and currently supports
+**46 manipulation tasks**; select tasks for training as needed.
 
-  - ``hanging_mug``: Use the left arm to pick up the mug and adjust its pose, then use the right arm to pick it up again and hang it onto the rack.
-  - ``scan_object``: Use one arm to hold the scanner, use the other arm to hold the object, and complete the scanning.
-  - ``rotate_qrcode``: Pick up the QR code board and rotate it so that the QR code faces the robot.
+**Placement Tasks**
 
-  .. note::
-     Currently four tasks are not yet supported:  ``place_fan``, ``open_laptop``, ``place_object_scale``, and ``put_object_cabinet``. Additionally, dense reward functions are still under development and will gradually be extended to all tasks.
+- ``adjust_bottle``: Pick up the bottle on the table headup with the correct arm.
+- ``place_a2b_left``: Use appropriate arm to place object A on the left of object B.
+- ``place_a2b_right``: Use appropriate arm to place object A on the right of object B.
+- ``place_bread_basket``: If there is one bread on the table, use one arm to grab the bread and put it in the basket, if there are two breads on the table, use two arms to simultaneously grab up two breads and put them in the basket.
+- ``place_bread_skillet``: Use one arm to grab the bread on the table and put it into the skillet.
+- ``place_burger_fries``: Use dual arm to pick the hamburg and frenchfries and put them onto the tray.
+- ``place_can_basket``: Use one arm to pick up the can, put it into the basket, and use another arm to lift the basket.
+- ``place_cans_plasticbox``: Use dual arm to pick and place cans into plasticbox.
+- ``place_container_plate``: Place the container onto the plate.
+- ``place_empty_cup``: Use an arm to place the empty cup on the coaster.
+- ``place_mouse_pad``: Grab the mouse and place it on a colored mat.
+- ``place_object_basket``: Use one arm to grab the target object and put it in the basket, then use the other arm to grab the basket, and finally move the basket slightly away.
+- ``place_object_stand``: Use appropriate arm to place the object on the stand.
+- ``place_phone_stand``: Pick up the phone and put it on the phone stand.
+- ``place_shoe``: Use one arm to grab the shoe from the table and place it on the mat.
+- ``place_dual_shoes``: Use both arms to pick up the two shoes on the table and put them in the shoebox, with the shoe tip pointing to the left.
 
-- **Observation**: The observation returned by RLinf RoboTwinEnv environment is a dictionary (dict) containing the following fields:
+**Pick Tasks**
 
-  - ``images``: Head camera RGB images
+- ``pick_dual_bottles``: Pick up one bottle with one arm, and pick up another bottle with the other arm.
+- ``pick_diverse_bottles``: Pick up one bottle with one arm, and pick up another bottle with the other arm.
+- ``move_can_pot``: There is a can and a pot on the table, use one arm to pick up the can and move it to beside the pot.
+- ``move_pillbottle_pad``: Use one arm to pick the pillbottle and place it onto the pad.
+- ``move_playingcard_away``: Pick up the playing card and move it away from the table.
+- ``move_stapler_pad``: Use appropriate arm to move the stapler to a colored mat.
+- ``grab_roller``: Use both arms to grab the roller on the table.
+- ``lift_pot``: Use arms to lift the pot.
+- ``put_bottles_dustbin``: Use arms to grab the bottles and put them into the dustbin to the left of the table.
 
-    - **Type**: ``torch.Tensor``
-    - **Shape**: ``[batch_size, 224, 224, 3]``
-    - **Data Type**: ``uint8`` (0-255)
-    - **Description**: Head camera images processed with center crop, one image per environment
+**Stacking Tasks**
 
-  - ``wrist_images``: Wrist camera RGB images (optional)
-  
-    - **Type**: ``torch.Tensor`` or ``None``
-    - **Shape**: ``[batch_size, num_wrist_images, 224, 224, 3]`` (if exists)
-    - **Data Type**: ``uint8`` (0-255)
-    - **Description**: May contain left wrist camera (``left_wrist_image``) and/or right wrist camera (``right_wrist_image``) images, or ``None`` if the task does not require wrist images
+- ``stack_blocks_two``: Stack the green block on the red block.
+- ``stack_blocks_three``: Stack the blue block on the green block, and then stack the green block on the red block.
+- ``stack_bowls_two``: Stack the two bowls on top of each other.
+- ``stack_bowls_three``: Stack the three bowls on top of each other.
 
-  - ``states``: Proprioception information
+**Ranking Tasks**
 
-    - **Type**: ``torch.Tensor``
-    - **Shape**: ``[batch_size, 14]``
-    - **Data Type**: ``float32``
-    - **Description**: Contains end-effector pose information (position and orientation), 14 dimensions total, corresponding to ``proprio_dim=14``
+- ``blocks_ranking_rgb``: Arrange the blocks in the order of red, green, and blue from left to right.
+- ``blocks_ranking_size``: Arrange the blocks from largest to smallest, from left to right.
 
-  - ``task_descriptions``: Task description text
+**Tool Use & Interaction Tasks**
 
-    - **Type**: ``List[str]``
-    - **Length**: ``batch_size``
-    - **Description**: Natural language task descriptions for each environment, e.g., "What action should the robot take to place the empty cup on the coaster?"
+- ``click_alarmclock``: Click the alarm clock's center of the top side button on the table.
+- ``click_bell``: Click the bell's top center on the table.
+- ``beat_block_hammer``: Grab the hammer and hit the block.
+- ``open_microwave``: Use one arm to open the microwave.
+- ``press_stapler``: Use one arm to press the stapler.
+- ``stamp_seal``: Grab the stamp and stamp onto the specific color mat.
+- ``turn_switch``: Use the robotic arm to click the switch.
 
-- **Action Space**: 14-dimensional continuous action space
+**Handover Tasks**
+- ``handover_block``: Use the left arm to grasp the red block, handover it to the right arm, and then place it on the blue pad.
+- ``handover_mic``: Use one arm to grasp the microphone and handover it to the other arm.
 
-  - **Type**: ``torch.Tensor`` or ``numpy.ndarray``
-  - **Shape**: ``[batch_size, action_dim]`` or ``[batch_size, horizon, action_dim]``, where ``action_dim=14``
-  - **Data Type**: ``float32``
-  - **Action Components**:
+**Pouring, Dumping & Shaking Tasks**
 
-    - End-effector 3D position control (x, y, z): 3 dimensions
-    - 3D rotation control (roll, pitch, yaw): 3 dimensions
-    - Gripper control (open/close): 1 dimension
-    - Joint position control: 7 dimensions
-    - **Total**: 14 dimensions
+- ``shake_bottle``: Shake the bottle with proper arm.
+- ``shake_bottle_horizontally``: Shake the bottle horizontally with proper arm.
+- ``dump_bin_bigbin``: Grab the small bin and pour the balls into the big bin.
+
+**Hanging & Special Tasks**
+
+- ``hanging_mug``: Use the left arm to pick up the mug and adjust its pose, then use the right arm to pick it up again and hang it onto the rack.
+- ``scan_object``: Use one arm to hold the scanner, use the other arm to hold the object, and complete the scanning.
+- ``rotate_qrcode``: Pick up the QR code board and rotate it so that the QR code faces the robot.
+
+.. note::
+   Currently four tasks are not yet supported:  ``place_fan``, ``open_laptop``, ``place_object_scale``, and ``put_object_cabinet``. Additionally, dense reward functions are still under development and will gradually be extended to all tasks.
+
+Observation and action
+~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 22 78
+
+   * - Field
+     - Specification
+   * - ``images``
+     - Head-camera RGB, ``[B, 224, 224, 3]`` uint8 (center-cropped).
+   * - ``wrist_images``
+     - Optional left/right wrist-camera RGB, ``[B, n, 224, 224, 3]`` uint8, or ``None``.
+   * - ``states``
+     - Proprioception, ``[B, 14]`` float32 (end-effector pose; ``proprio_dim=14``).
+   * - ``task_descriptions``
+     - Natural-language task text, length ``B``.
+   * - Action
+     - 14-dim continuous ``float32``: 3D position + 3D rotation + 1D gripper + 7D joint positions.
 
 Dependency Installation
 -----------------------
@@ -371,20 +378,28 @@ For example, to train the π\ :sub:`0.5`\ model using PPO:
 
    bash examples/embodiment/run_embodiment.sh robotwin_adjust_bottle_ppo_OpenPI_pi05
 
+.. admonition:: Configure further
+   :class: note
 
-Visualization and Results
+   - Placement and throughput → :doc:`Placement </rst_source/tutorials/usage/placement>` and :doc:`Execution modes </rst_source/tutorials/usage/execution_modes>`
+   - All config keys → :doc:`Configuration </rst_source/tutorials/configuration/index>`
+   - Metric definitions and logging backends → :doc:`Training metrics </rst_source/tutorials/configuration/metrics>`
+   - Resuming from a checkpoint → :doc:`Resume </rst_source/tutorials/configuration/resume>`
+   - Stuck or hitting OOM? → :doc:`FAQ </rst_source/faq>`
+
+Visualization and results
 -------------------------
 
-**1. TensorBoard Logs**
+Launch TensorBoard to watch training live:
 
 .. code-block:: bash
 
-   # Start TensorBoard
    tensorboard --logdir ./logs --port 6006
 
-**2. Video Generation**
+The key signal to watch is **``env/success_once``**. For every logged metric, see
+:doc:`Training metrics </rst_source/tutorials/configuration/metrics>`.
 
-Videos from training and evaluation processes are automatically saved. Configuration:
+Videos from training and evaluation are saved automatically. Configuration:
 
 .. code-block:: yaml
 
