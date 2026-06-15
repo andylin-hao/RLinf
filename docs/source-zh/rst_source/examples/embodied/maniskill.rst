@@ -6,7 +6,7 @@
    :height: 16px
    :class: inline-icon
 
-.. figure:: https://github.com/haosulab/ManiSkill/raw/main/figures/teaser.jpg
+.. figure:: https://raw.githubusercontent.com/mani-skill/ManiSkill/main/figures/teaser.jpg
    :align: center
    :width: 90%
 
