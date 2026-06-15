@@ -40,3 +40,4 @@ embodied training, and agentic RL.
    hetero
    resume
    logger
+   metrics

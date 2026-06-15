@@ -175,17 +175,17 @@ If you are starting from "I want to train on benchmark *X*", this is the right e
    :hidden:
    :maxdepth: 2
 
-   ManiSkill Benchmark <embodied/maniskill>
-   LIBERO Benchmarks <embodied/libero>
-   Behavior Benchmark <embodied/behavior>
-   MetaWorld Benchmark <embodied/metaworld>
+   ManiSkill <embodied/maniskill>
+   LIBERO <embodied/libero>
+   Behavior <embodied/behavior>
+   MetaWorld <embodied/metaworld>
    IsaacLab <embodied/isaaclab>
-   CALVIN Benchmark <embodied/calvin>
-   RoboCasa Benchmark <embodied/robocasa>
-   RoboTwin Benchmark <embodied/robotwin>
-   RoboVerse Benchmark <embodied/roboverse>
-   Franka-Sim Benchmark <embodied/frankasim>
+   CALVIN <embodied/calvin>
+   RoboCasa <embodied/robocasa>
+   RoboTwin <embodied/robotwin>
+   RoboVerse <embodied/roboverse>
+   Franka-Sim <embodied/frankasim>
    EmbodiChain <embodied/embodichain>
-   PolaRiS Simulation Platform <embodied/polaris>
-   Real2Sim2Real GSEnv <embodied/gsenv>
-   Genesis Benchmark <embodied/genesis>
+   PolaRiS <embodied/polaris>
+   GSEnv <embodied/gsenv>
+   Genesis <embodied/genesis>

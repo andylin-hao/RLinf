@@ -38,3 +38,4 @@
    hetero
    resume
    logger
+   metrics

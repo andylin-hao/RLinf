@@ -175,17 +175,17 @@
    :hidden:
    :maxdepth: 2
 
-   ManiSkill 评测平台 <embodied/maniskill>
+   ManiSkill <embodied/maniskill>
    LIBERO <embodied/libero>
-   Behavior 评测平台 <embodied/behavior>
-   MetaWorld 评测平台 <embodied/metaworld>
+   Behavior <embodied/behavior>
+   MetaWorld <embodied/metaworld>
    IsaacLab <embodied/isaaclab>
-   CALVIN 评测平台 <embodied/calvin>
-   RoboCasa 评测平台 <embodied/robocasa>
-   RoboTwin 评测平台 <embodied/robotwin>
-   RoboVerse 评测平台 <embodied/roboverse>
-   Franka-Sim 评测平台 <embodied/frankasim>
+   CALVIN <embodied/calvin>
+   RoboCasa <embodied/robocasa>
+   RoboTwin <embodied/robotwin>
+   RoboVerse <embodied/roboverse>
+   Franka-Sim <embodied/frankasim>
    EmbodiChain <embodied/embodichain>
-   PolaRiS 仿真平台 <embodied/polaris>
-   Real2Sim2Real GSEnv <embodied/gsenv>
-   Genesis 仿真平台 <embodied/genesis>
+   PolaRiS <embodied/polaris>
+   GSEnv <embodied/gsenv>
+   Genesis <embodied/genesis>

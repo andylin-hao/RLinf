@@ -105,11 +105,11 @@ VLA / WAM 模型的强化学习
    :hidden:
    :maxdepth: 2
 
-   π₀ 与 π₀.₅ 模型 <embodied/pi0>
-   GR00T 模型 <embodied/gr00t>
-   Lingbot-VLA 模型 <embodied/lingbotvla>
-   Dexbotic 模型 <embodied/dexbotic>
-   StarVLA 模型 <embodied/starvla>
+   π₀ / π₀.₅ <embodied/pi0>
+   GR00T <embodied/gr00t>
+   Lingbot-VLA <embodied/lingbotvla>
+   Dexbotic <embodied/dexbotic>
+   StarVLA <embodied/starvla>
    ABot-M0 <embodied/abot_m0>
-   OpenSora 世界模型 <embodied/opensora>
-   Wan 世界模型 <embodied/wan>
+   OpenSora <embodied/opensora>
+   Wan <embodied/wan>

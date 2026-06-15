@@ -30,3 +30,21 @@ a.reference.external:hover,
 a.reference.internal:hover {
   text-decoration: none !important;
 } */
+
+/* --- Wider content area -------------------------------------------------
+   pydata-sphinx-theme caps the article column at 60em and the page at 88rem,
+   which leaves large empty gutters and a cramped content column on wide
+   screens. Widen both and slim the side navigations a touch so the content
+   gets more horizontal room. */
+.bd-page-width {
+  max-width: 100rem;            /* was 88rem (~1408px) */
+}
+.bd-main .bd-content .bd-article-container {
+  max-width: 84rem;            /* was 60em (~960px) — let prose, cards and tables breathe */
+}
+.bd-sidebar-primary {
+  max-width: 16rem;            /* slimmer left "Section Navigation" */
+}
+.bd-sidebar-secondary {
+  max-width: 15rem;            /* slimmer right "On this page" */
+}

@@ -105,11 +105,11 @@ If you are starting from "I want to RL-fine-tune model *X*", this is the right e
    :hidden:
    :maxdepth: 2
 
-   π₀ and π₀.₅ Models <embodied/pi0>
-   GR00T Models <embodied/gr00t>
-   Lingbot-VLA Models <embodied/lingbotvla>
-   Dexbotic Models <embodied/dexbotic>
-   StarVLA Models <embodied/starvla>
+   π₀ / π₀.₅ <embodied/pi0>
+   GR00T <embodied/gr00t>
+   Lingbot-VLA <embodied/lingbotvla>
+   Dexbotic <embodied/dexbotic>
+   StarVLA <embodied/starvla>
    ABot-M0 <embodied/abot_m0>
-   OpenSora World Model <embodied/opensora>
-   Wan World Model <embodied/wan>
+   OpenSora <embodied/opensora>
+   Wan <embodied/wan>
