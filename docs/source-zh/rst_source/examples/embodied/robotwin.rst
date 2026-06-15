@@ -6,11 +6,11 @@
    :height: 16px
    :class: inline-icon
 
-.. figure:: https://raw.githubusercontent.com/RoboTwin-Platform/RoboTwin/main/assets/files/50_tasks.gif
+.. figure:: https://raw.githubusercontent.com/RoboTwin-Platform/RoboTwin/main/assets/files/domain_randomization.png
    :align: center
    :width: 90%
 
-   RoboTwin 2.0 的双臂操作任务（图片来源：`RoboTwin <https://robotwin-platform.github.io>`__）。
+   RoboTwin 2.0 的仿真场景与域随机化（图片来源：`RoboTwin <https://robotwin-platform.github.io>`__）。
 
 `RoboTwin 2.0 <https://robotwin-platform.github.io>`__ 是一个任务丰富、规模可观的双臂操作基准。
 RLinf 提供 ``RoboTwinEnv`` 环境，在其上对视觉-语言-动作（VLA）策略进行强化学习微调，常常能把较弱的

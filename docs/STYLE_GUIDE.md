@@ -105,6 +105,31 @@ Visualization and results → TensorBoard / video / logger + link to Training me
   blocks, so partials hold only the *identical* prose/code; recipe-specific tokens stay
   on the page.
 
+## Images and media
+
+- **Verify every image/media URL resolves (HTTP 200) before committing.** Broken images
+  are a recurring problem — check the figure, every `<img>`/`<source>` in `raw:: html`
+  blocks, and result images. Quick scan:
+
+  ```bash
+  grep -rhoE '(\.\. (figure|image):: |src=")https?://[^ "<>]+' source-en source-zh \
+    | sed -E 's/^\.\. (figure|image):: //; s/^src="//' \
+    | grep -iE '\.(png|jpg|jpeg|gif|svg|mp4|webm)$' | sort -u \
+    | while read -r u; do echo "$(curl -s -o /dev/null -w '%{http_code}' -L "$u")  $u"; done \
+    | grep -v '^200 '
+  ```
+
+- **Use a direct host URL, not a redirecting one.** Prefer
+  `https://raw.githubusercontent.com/<org>/<repo>/<branch>/<path>` (or the gh-pages site).
+  Avoid `https://github.com/<org>/<repo>/raw/...` — it 301/302-redirects through
+  `text/html` responses that browsers don't reliably render as an `<img>`.
+- **Watch for repo renames.** A 301 on the `raw` path means the org/repo moved (e.g.
+  `haosulab/ManiSkill` → `mani-skill/ManiSkill`); point at the current name directly.
+- **Confirm the exact path.** RLinf assets live in `RLinf/misc` under `pic/` *and*
+  subfolders (e.g. `pic/rlinf-vla/…`, `pic/release_0.2/…`) — a wrong subfolder 404s.
+- **Prefer a static image over a large animated GIF** for page figures (GIFs must fully
+  download before they display, so heavy ones look broken).
+
 ## Headings & admonitions
 
 - **Sentence case**, consistent: `Run it`, not `Running the Script`.
