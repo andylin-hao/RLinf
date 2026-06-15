@@ -1,69 +1,79 @@
 RL with Behavior Benchmark
 ==========================
 
-This example provides a complete guide to fine-tuning Behavior policies with reinforcement learning in the `Behavior <https://behavior.stanford.edu/index.html>`_ environment
-using the **RLinf** framework. It covers the entire process—from
-environment setup and core algorithm design to training configuration,
-evaluation, and visualization—along with reproducible commands and
-configuration snippets.
+.. figure:: https://raw.githubusercontent.com/RLinf/misc/main/pic/behavior.jpg
+   :align: center
+   :width: 90%
 
-The primary objective is to develop a model capable of performing
-robotic manipulation by:
+   The BEHAVIOR benchmark (image: `BEHAVIOR <https://behavior.stanford.edu>`__).
 
-1. **Visual Understanding**: Processing RGB images from the robot's
-   camera.
-2. **Language Comprehension**: Interpreting natural-language task
-   descriptions.
-3. **Action Generation**: Producing precise robotic actions (position,
-   rotation, gripper control).
-4. **Reinforcement Learning**: Optimizing the policy via the PPO with
-   environment feedback.
+`BEHAVIOR <https://behavior.stanford.edu>`__ is a benchmark of everyday household
+activities built on NVIDIA IsaacSim / OmniGibson. A dual-arm R1 Pro robot performs
+long-horizon manipulation; RLinf uses it to RL-fine-tune vision-language-action (VLA)
+policies.
 
---------------
+Overview
+--------
 
-Environment
------------
+RL-finetune a VLA on BEHAVIOR household tasks with PPO/GRPO.
 
-**Behavior Environment**
+.. grid:: 2 4 4 4
+   :gutter: 2
 
-- **Environment**: Behavior simulation benchmark built on top of *IsaacSim*.
-- **Task**: Command a dual-arm R1 Pro robot to perform a variety of household manipulation skills (pick-and-place, stacking, opening drawers, spatial rearrangement).
-- **Observation**: Multi-camera RGB images captured by robot-mounted sensors:
-   - **Head Camera**: provides 720×720 RGB images for global scene understanding
-   - **Wrist Cameras**: left and right RealSense cameras provide 480×480 RGB images for precise manipulation
-- **Action Space**: 23-dimensional continuous actions (a 3-DOF (x,y,rz) set of joints, 4-DOF torso, x2 7-DOF arm, and x2 1-DOF parallel jaw grippers.)
+   .. grid-item-card:: Models
+      :text-align: center
 
-**Data Structure**
+      OpenVLA-OFT · π₀ / π₀.₅
 
-- **Task descriptions**: select from `behavior-1k` tasks
-- **Images**: Multi-camera RGB tensors
-   - Head images: ``[batch_size, 720, 720, 3]``
-   - Wrist images: ``[batch_size, 2, 480, 480, 3]`` (left and right cameras)
+   .. grid-item-card:: Algorithms
+      :text-align: center
+
+      PPO · GRPO
+
+   .. grid-item-card:: Tasks
+      :text-align: center
+
+      50 BEHAVIOR-1K tasks
+
+   .. grid-item-card:: Hardware
+      :text-align: center
+
+      1 node · ray-tracing GPUs
+
+| **You'll do:** install (IsaacSim) → download assets + base model → launch ``run_embodiment.sh`` → watch ``env/success_once``.
+| **Prerequisites:** :doc:`Installation </rst_source/start/installation>` · IsaacSim 4.5 + BEHAVIOR-1K assets (>30 GB) · a base checkpoint (steps below).
+
+Tasks
+~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 22 78
+
+   * - Field
+     - Detail
+   * - Tasks
+     - 50 household manipulation tasks from BEHAVIOR-1K (select via ``task_idx`` 0–49).
+   * - Robot
+     - Dual-arm R1 Pro on IsaacSim / OmniGibson.
+
+Observation and Action
+~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 18 82
+
+   * - Field
+     - Specification
+   * - Observation
+     - Head-camera RGB (720×720) plus left/right wrist RealSense RGB (480×480).
+   * - Action
+     - 23-dim continuous: 3-DOF base (x, y, rz), 4-DOF torso, 2×7-DOF arms, and 2×1-DOF parallel-jaw grippers.
 
 
-Algorithm
----------
-
-**Core Algorithm Components**
-
-1. **PPO (Proximal Policy Optimization)**
-
-   - Advantage estimation using GAE (Generalized Advantage Estimation)
-
-   - Policy clipping with ratio limits
-
-   - Value function clipping
-
-   - Entropy regularization
-
-2. **GRPO (Group Relative Policy Optimization)**
-
-   - For every state / prompt the policy generates *G* independent actions
-
-   - Compute the advantage of each action by subtracting the group’s mean reward.
-
-Dependency Installation
-------------------------
+Installation
+------------
 
 .. warning::
 
@@ -121,8 +131,8 @@ Install dependencies directly in your environment by running the following comma
    bash requirements/install.sh embodied --model openpi --env behavior
    source .venv/bin/activate
 
-Assets Download
------------------
+Download the Assets
+-------------------
 
 * ISAAC-SIM 4.5 Download
 
@@ -159,8 +169,8 @@ Assets Download
    python -c "from omnigibson.utils.asset_utils import download_2025_challenge_task_instances; download_2025_challenge_task_instances()"
 
 
-Model Download
----------------
+Download the Model
+------------------
 
 Before starting training, you need to download the corresponding pretrained models. Based on the algorithm type you want to use, we provide different model options:
 
@@ -199,8 +209,8 @@ OpenVLA-OFT provides a unified model that is suitable for all task types in the 
 
 After downloading, please make sure to specify the model path correctly in your configuration yaml file.
 
-Running Scripts
----------------
+Run It
+------
 
 **1. Key Cluster Configuration**
 
@@ -518,26 +528,10 @@ Visualization and Results
 
 --------------
 
-**2. Key Monitoring Metrics**
+**2. Key metrics**
 
--  **Training Metrics**
-
-   -  ``actor/loss``: Policy loss
-   -  ``actor/value_loss``: Value function loss (PPO)
-   -  ``actor/grad_norm``: Gradient norm
-   -  ``actor/approx_kl``: KL divergence between old and new policies
-   -  ``actor/pg_clipfrac``: Policy clipping ratio
-   -  ``actor/value_clip_ratio``: Value loss clipping ratio (PPO)
-
--  **Rollout Metrics**
-
-   -  ``rollout/returns_mean``: Average episode return
-   -  ``rollout/advantages_mean``: Mean advantage value
-
--  **Environment Metrics**
-
-   -  ``env/episode_len``: Average episode length
-   -  ``env/success_once``: Task success rate
+The key signal to watch is **``env/success_once``** — the task success rate. For every
+logged metric, see :doc:`Training metrics </rst_source/tutorials/configuration/metrics>`.
 
 --------------
 
