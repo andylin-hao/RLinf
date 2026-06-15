@@ -386,7 +386,7 @@ If you still encounter OOM issues under the minimum parameter configuration, we 
 
 For models after SFT or RL training, we provide two evaluation methods:
 
-- Use RLinf's unified evaluation script, refer to the `VLA Evaluation Documentation <https://rlinf.readthedocs.io/en/latest/rst_source/start/vla-eval.html>`__ for evaluation. This method supports parallel environment evaluation, which is fast, but only supports outputting the success rate of the entire task.
+- Use RLinf's unified evaluation script, refer to :doc:`VLA Evaluation Documentation </rst_source/start/vla-eval>` for evaluation. This method supports parallel environment evaluation, which is fast, but only supports outputting the success rate of the entire task.
 
 .. note::
 
@@ -565,8 +565,8 @@ The results achieved through RL training are shown below:
 
 MetaWorld Results
 ~~~~~~~~~~~~~~~~~
-For MetaWorld results, please check `MetaWorld Page <https://rlinf.readthedocs.io/en/latest/rst_source/examples/embodied/metaworld.html>`__.
+For MetaWorld results, please check :doc:`MetaWorld Page <metaworld>`.
 
 CALVIN Results
 ~~~~~~~~~~~~~~~~~
-For CALVIN results, please check `CALVIN Page <https://rlinf.readthedocs.io/en/latest/rst_source/examples/embodied/calvin.html>`__.
+For CALVIN results, please check :doc:`CALVIN Page <calvin>`.

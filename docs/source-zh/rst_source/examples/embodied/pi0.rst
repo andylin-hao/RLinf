@@ -354,7 +354,7 @@ env** 之间的流水线重叠，从而提升 rollout 效率。
 
 针对SFT或RL训练后的模型，我们提供两种评估方式：
 
-- 使用RLinf统一的评估脚本，参考 `VLA评估文档 <https://rlinf.readthedocs.io/zh-cn/latest/rst_source/start/vla-eval.html>`__ 进行评估，这种方式支持并行环境评估，速度快，但是只支持输出整个任务的成功率。
+- 使用RLinf统一的评估脚本，参考 :doc:`VLA评估文档 </rst_source/start/vla-eval>` 进行评估，这种方式支持并行环境评估，速度快，但是只支持输出整个任务的成功率。
 
 .. note::
 
@@ -518,9 +518,9 @@ LIBERO 结果
 
 MetaWorld 结果
 ~~~~~~~~~~~~~~~~~
-有关 MetaWorld 结果，请查看 `MetaWorld 页面 <https://rlinf.readthedocs.io/zh-cn/latest/rst_source/examples/embodied/metaworld.html>`__。
+有关 MetaWorld 结果，请查看 :doc:`MetaWorld 页面 <metaworld>`。
 
 
 CALVIN 结果
 ~~~~~~~~~~~
-有关 CALVIN 结果，请查看 `CALVIN 页面 <https://rlinf.readthedocs.io/zh-cn/latest/rst_source/examples/embodied/calvin.html>`__。
+有关 CALVIN 结果，请查看 :doc:`CALVIN 页面 <calvin>`。
