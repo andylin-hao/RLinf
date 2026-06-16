@@ -1,70 +1,72 @@
 MLP策略强化学习训练
 ===============================================
 
-本示例展示 RLinf 框架使用 **MLP (Multi-Layer Perceptron)** 策略网络进行强化学习训练的完整流程。
-MLP 策略主要面向 **低维状态(state)输入** 的机器人控制任务，支持在仿真环境(ManiSkill3)、仿真环境(FrankaSim)、仿真环境(Libero-Spatial)中进行训练。
-当前提供的配置覆盖 **PPO-MLP** 、 **SAC-MLP** 、**GRPO-MLP** 算法设置，可用于快速验证环境、训练管线与网络结构。
+.. figure:: https://raw.githubusercontent.com/RLinf/misc/main/pic/3_layer_mlp.jpg
+   :align: center
+   :width: 55%
 
-主要目标是让模型具备以下能力:
+   多层感知机（MLP）策略。
 
-1. **状态理解**:处理来自环境的低维状态(关节角、末端位姿、物体状态等)。
-2. **动作生成**:产生连续控制动作(末端位置增量/关节目标/夹爪控制等)。
-3. **强化学习**:结合环境反馈，使用 PPO 或 SAC 优化策略。
+MLP 策略是一种轻量网络，用于从低维状态输入（关节角、末端执行器位姿、物体状态等）进行机器人控制。
+RLinf 在多个仿真器上用 PPO、SAC、GRPO 训练 MLP 策略——便于快速验证环境、训练流程与网络结构。
 
-环境
+概览
 ----
-RLinf 目前支持多类具身智能环境，可通过 **defaults** 中的 ``env/<env_name>@env.train`` 与 ``env/<env_name>@env.eval`` 选择不同环境配置，
-并在 ``env.train`` / ``env.eval`` 节点对并行环境数、episode 长度、reset 方式、视频保存等进行覆盖。
 
-目前支持(示例中已覆盖)的环境包括:
+在低维状态下，用 PPO/SAC/GRPO 在 ManiSkill、LIBERO-Spatial、FrankaSim 上训练 MLP 策略。
 
-- ``maniskill_pick_cube`` (ManiSkill3 )
-- ``libero_spatial`` (LIBERO Spatial)
-- ``frankasim_pickcube_state`` (Mujoco )
+.. grid:: 2 4 4 4
+   :gutter: 2
 
-也可通过自定义环境配置来训练特定任务，具体可参考以下方式:
+   .. grid-item-card:: 策略
+      :text-align: center
 
-1. 在配置文件中通过 defaults 引用环境(训练/评估可分别指定)。
+      MLP
 
-.. code:: yaml
+   .. grid-item-card:: 算法
+      :text-align: center
 
-   defaults:
-     - env/maniskill_pick_cube@env.train
-     - env/maniskill_pick_cube@env.eval
+      PPO · SAC · GRPO
 
-   defaults:
-     - env/libero_spatial@env.train
-     - env/libero_spatial@env.eval
+   .. grid-item-card:: 环境
+      :text-align: center
 
-   defaults:
-     - env/frankasim_pickcube_state@env.train
-     - env/frankasim_pickcube_state@env.eval
+      ManiSkill · LIBERO · FrankaSim
 
-算法
------------------------------------------
+   .. grid-item-card:: 硬件
+      :text-align: center
 
-**核心算法组件**
+      1 节点 · GPU
 
-1.  **PPO (Proximal Policy Optimization)**
+| **你将完成：** 安装目标仿真器 → 选择配置 → 运行 ``run_embodiment.sh`` → 观察 ``env/success_once``。
+| **前置条件：** :doc:`安装 </rst_source/start/installation>` · 目标仿真器的依赖。
 
-    -   采用 on-policy 的 Actor-Critic 框架。
-    -   使用 GAE(Generalized Advantage Estimation)估计优势函数:``adv_type: gae``。
-    -   使用 clip 约束策略更新幅度(ratio clipping)，并可选 KL 约束项。
+支持的环境
+~~~~~~~~~~
 
-2.  **SAC (Soft Actor-Critic)**
+通过 ``defaults`` 列表选择环境（``env/<env_name>@env.train`` / ``@env.eval``）；可在
+``env.train`` / ``env.eval`` 下覆写并行环境数、回合长度与录制等参数。
 
-    -   通过 Bellman 备份与熵正则化学习 Q 值(off-policy)。
-    -   使用 MLP 作为 Actor 策略网络，并在配置中启用 Q 相关头/结构(``add_q_head: True``)。
-    -   支持自动温度调节（配置 ``entropy_tuning``，如 ``alpha_type: softplus``），平衡探索与利用。
+.. list-table::
+   :header-rows: 1
+   :widths: 36 22 42
 
-3.  **GRPO(Group Relative Policy Optimization)**
+   * - 环境配置
+     - 仿真器
+     - 任务
+   * - ``maniskill_pick_cube``
+     - ManiSkill3
+     - 从低维状态抓取方块。
+   * - ``libero_spatial``
+     - LIBERO
+     - LIBERO-Spatial 套件。
+   * - ``frankasim_pickcube_state``
+     - MuJoCo / FrankaSim
+     - 从状态抓取方块。
 
-    - 对于每个状态/提示，策略生成 *G* 个独立动作  
-    - 以组内平均奖励为基线，计算每个动作的相对优势
 
-
-依赖安装
----------------
+安装
+----
 
 对于在仿真环境运行，请参考 :doc:`../../start/installation` 进行安装。
 
@@ -74,8 +76,8 @@ RLinf 目前支持多类具身智能环境，可通过 **defaults** 中的 ``env
 
 请确保已正确设置 ``EMBODIED_PATH``，并安装 ManiSkill3 / FrankaSim 相关依赖与资源。
 
-运行脚本
---------
+运行
+----
 
 **1. 配置文件**
 
@@ -145,7 +147,7 @@ MLP 模型由 ``model/mlp_policy@actor.model`` 引入，并在不同配置中做
    bash examples/embodiment/run_embodiment.sh franka_sim_ppo_mlp
 
 可视化与结果
--------------------------
+------------
 
 **1. TensorBoard 日志**
 
@@ -154,29 +156,7 @@ MLP 模型由 ``model/mlp_policy@actor.model`` 引入，并在不同配置中做
    # 启动 TensorBoard
    tensorboard --logdir ../results
 
-**2. 关键监控指标**
+**2. 关键指标**
 
-- **环境指标**:
-
-  - ``env/episode_len``:回合实际经历的环境步数(单位:step)
-  - ``env/return``:回合总回报
-  - ``env/reward``:step-level 奖励
-  - ``env/success_once``:回合中至少成功一次标志(若环境提供)
-
-- **Training Metrics (SAC)**:
-
-  - ``train/sac/critic_loss``:Q 函数损失
-  - ``train/sac/actor_loss``:策略损失
-  - ``train/sac/alpha_loss``:温度参数损失
-  - ``train/sac/alpha``:温度参数值
-  - ``train/replay_buffer/size``:重放缓冲区大小
-
-- **Training Metrics (PPO)**:
-
-  - 策略损失(policy loss)
-  - 价值损失(value loss)
-  - 估计 KL(approx_kl / kl)
-  - clip 比例(clip_frac)
-  - 策略熵(entropy)
-
-
+最值得关注的指标是 **``env/success_once``** —— 任务成功率。每个日志指标的含义见
+:doc:`训练指标 </rst_source/tutorials/configuration/metrics>`。

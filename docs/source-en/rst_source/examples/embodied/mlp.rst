@@ -1,73 +1,75 @@
 MLP Policy Reinforcement Learning Training
 ==========================================
 
-This example demonstrates the complete workflow for training Reinforcement Learning (RL) agents using **MLP (Multi-Layer Perceptron)** policy networks within the RLinf framework.
+.. figure:: https://raw.githubusercontent.com/RLinf/misc/main/pic/3_layer_mlp.jpg
+   :align: center
+   :width: 55%
 
-The MLP policy is primarily designed for robotics control tasks utilizing **low-dimensional state inputs**. It supports training across various simulation environments, including **ManiSkill3**, **FrankaSim**, and **Libero-Spatial**.
+   A multi-layer perceptron policy.
 
-The current configuration covers **PPO-MLP**, **SAC-MLP**, and **GRPO-MLP** algorithm setups, enabling rapid validation of environments, training pipelines, and network architectures.
+An **MLP policy** is a lightweight network for robotics control from **low-dimensional
+state inputs** (joint angles, end-effector pose, object states). RLinf trains MLP policies
+with PPO, SAC, and GRPO across several simulators — useful for quickly validating
+environments, training pipelines, and network architectures.
 
-The primary goal is to equip the model with the following capabilities:
+Overview
+--------
 
-1.  **State Understanding**: Process low-dimensional proprioceptive data from the environment (joint angles, end-effector pose, object states, etc.).
-2.  **Action Generation**: Produce continuous control actions (end-effector position deltas, joint targets, gripper commands, etc.).
-3.  **Reinforcement Learning**: Optimize policies using PPO or SAC based on environmental feedback.
+Train an MLP policy with PPO/SAC/GRPO on low-dimensional state across ManiSkill, LIBERO-Spatial, and FrankaSim.
 
-Environments
+.. grid:: 2 4 4 4
+   :gutter: 2
+
+   .. grid-item-card:: Policy
+      :text-align: center
+
+      MLP
+
+   .. grid-item-card:: Algorithms
+      :text-align: center
+
+      PPO · SAC · GRPO
+
+   .. grid-item-card:: Environments
+      :text-align: center
+
+      ManiSkill · LIBERO · FrankaSim
+
+   .. grid-item-card:: Hardware
+      :text-align: center
+
+      1 node · GPUs
+
+| **You'll do:** install the target simulator → pick a config → launch ``run_embodiment.sh`` → watch ``env/success_once``.
+| **Prerequisites:** :doc:`Installation </rst_source/start/installation>` · the target simulator's dependencies.
+
+Supported Environments
+~~~~~~~~~~~~~~~~~~~~~~~
+
+Select an environment via the ``defaults`` list (``env/<env_name>@env.train`` /
+``@env.eval``); override parallel-env count, episode length, and recording under
+``env.train`` / ``env.eval``.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 36 22 42
+
+   * - Env config
+     - Simulator
+     - Task
+   * - ``maniskill_pick_cube``
+     - ManiSkill3
+     - Pick cube from low-dimensional state.
+   * - ``libero_spatial``
+     - LIBERO
+     - LIBERO-Spatial suite.
+   * - ``frankasim_pickcube_state``
+     - MuJoCo / FrankaSim
+     - Pick cube from state.
+
+
+Installation
 ------------
-
-RLinf currently supports a diverse range of embodied intelligence environments. You can select different environment configurations via the **defaults** list using ``env/<env_name>@env.train`` and ``env/<env_name>@env.eval``.
-
-Specific parameters such as parallel environment count, episode length, reset protocols, and video recording can be overridden under the ``env.train`` / ``env.eval`` nodes.
-
-Currently supported environments (covered in this example) include:
-
--   ``maniskill_pick_cube`` (ManiSkill3)
--   ``libero_spatial`` (LIBERO Spatial)
--   ``frankasim_pickcube_state`` (Mujoco / FrankaSim)
-
-You can also train on custom tasks by referencing specific environment configurations:
-
-1.  Reference the environment in the configuration file via defaults (training and evaluation can be specified separately).
-
-.. code:: yaml
-
-   defaults:
-     - env/maniskill_pick_cube@env.train
-     - env/maniskill_pick_cube@env.eval
-
-   defaults:
-     - env/libero_spatial@env.train
-     - env/libero_spatial@env.eval
-
-   defaults:
-     - env/frankasim_pickcube_state@env.train
-     - env/frankasim_pickcube_state@env.eval
-
-Algorithms
-----------
-
-**Core Algorithm Components**
-
-1.  **PPO (Proximal Policy Optimization)**
-
-    -   Adopts an on-policy Actor-Critic framework.
-    -   Uses **GAE (Generalized Advantage Estimation)** for advantage function estimation: ``adv_type: gae``.
-    -   Utilizes ratio clipping to constrain policy updates, with optional KL divergence constraints.
-
-2.  **SAC (Soft Actor-Critic)**
-
-    -   Learns Q-values via Bellman backups and entropy regularization (off-policy).
-    -   Uses an MLP as the Actor policy network; ensure Q-related heads/structures are enabled in the configuration (``add_q_head: True``).
-    -   Supports **Automatic Entropy Tuning** via ``entropy_tuning`` (e.g., ``alpha_type: softplus``) to balance exploration and exploitation.
-
-3.  **GRPO (Group Relative Policy Optimization)**
-
-    -   For each state/prompt, the policy generates *G* independent actions.
-    -   Uses the group average reward as a baseline to calculate the relative advantage of each action.
-
-Installation & Dependencies
----------------------------
 
 For running in simulation environments, please refer to :doc:`../../start/installation` for installation instructions.
 
@@ -77,8 +79,8 @@ This configuration series uses Hydra's ``searchpath`` to load external configura
 
 Please ensure that ``EMBODIED_PATH`` is correctly set and that dependencies/resources for ManiSkill3 / FrankaSim are installed.
 
-Running Scripts
----------------
+Run It
+------
 
 **1. Configuration Files**
 
@@ -148,8 +150,8 @@ For real-robot training, a multi-node configuration is used, deploying the Actor
 
    bash examples/embodiment/run_embodiment.sh franka_sim_ppo_mlp
 
-Visualization & Results
------------------------
+Visualization and Results
+-------------------------
 
 **1. TensorBoard Logs**
 
@@ -158,27 +160,7 @@ Visualization & Results
    # Launch TensorBoard
    tensorboard --logdir ../results
 
-**2. Key Monitoring Metrics**
+**2. Key metrics**
 
--   **Environment Metrics**:
-
-    -   ``env/episode_len``: Actual environment steps taken in an episode (Unit: step).
-    -   ``env/return``: Total cumulative return of the episode.
-    -   ``env/reward``: Step-level reward signal.
-    -   ``env/success_once``: Flag indicating if success was achieved at least once in the episode (if provided by environment).
-
--   **Training Metrics (SAC)**:
-
-    -   ``train/sac/critic_loss``: Q-function loss.
-    -   ``train/sac/actor_loss``: Policy loss.
-    -   ``train/sac/alpha_loss``: Temperature parameter loss.
-    -   ``train/sac/alpha``: Temperature parameter value.
-    -   ``train/replay_buffer/size``: Replay buffer size.
-
--   **Training Metrics (PPO)**:
-
-    -   Policy Loss
-    -   Value Loss
-    -   Approx KL / KL (Estimated KL Divergence)
-    -   Clip Frac (Ratio clipping proportion)
-    -   Entropy (Policy entropy)
+The key signal to watch is **``env/success_once``** — the task success rate. For every
+logged metric, see :doc:`Training metrics </rst_source/tutorials/configuration/metrics>`.
