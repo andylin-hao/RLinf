@@ -69,6 +69,13 @@ category, not a sentence:
 The category index pages keep their descriptive H1 (e.g. "Algorithms for Embodiment"); only
 the `examples/index.rst` toctree caption is the one-word form.
 
+**Robots / Franka hierarchy:** Franka belongs under the Robots gallery, not as a top-level
+Examples category. The Robots toctree links ``Franka <embodied/franka>`` so clicking
+**Franka** opens the base Real-World RL page. The Franka page owns the nested Franka
+variant toctree (``Reward Model``, ``ZED + Robotiq``, ``GELLO``, ``Dual-Arm``,
+``Dexterous Hand``, ``Pi0 SFT``, ``HG-DAgger``). Keep these nav captions short and stable;
+do not mirror longer page H1 titles into the nav.
+
 ## Page anatomy (recipe / example pages)
 
 ```rst
@@ -150,6 +157,10 @@ Visualization and Results → TensorBoard / video / logger + link to Training me
   subfolders (e.g. `pic/rlinf-vla/…`, `pic/release_0.2/…`) — a wrong subfolder 404s.
 - **Prefer a static image over a large animated GIF** for page figures (GIFs must fully
   download before they display, so heavy ones look broken).
+- **Make robot figure captions specific to the page.** Do not use generic captions such as
+  "Robot setup used by this RLinf recipe." State what the image represents for that
+  recipe, for example "GELLO joint-level teleoperation device used to collect Franka
+  demonstrations." For RLinf-owned robot images, omit image-credit suffixes.
 
 ## Headings & admonitions
 
