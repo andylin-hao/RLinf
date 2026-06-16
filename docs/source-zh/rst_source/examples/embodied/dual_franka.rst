@@ -433,25 +433,9 @@ Checkpoint 保存到
 启动策略部署
 ~~~~~~~~~~~~
 
-可复用采集阶段的 Ray 集群，也可使用相同环境变量重新启动。随后在
-``node 0`` 执行：
-
-.. code-block:: bash
-
-   cd /path/to/RLinf
-   source .venv/bin/activate
-   export PYTHONPATH=$PWD:${PYTHONPATH:-}
-
-   bash evaluations/run_eval.sh realworld_eval_dual_franka
-
-Hydra override 示例：
-
-.. code-block:: bash
-
-   bash evaluations/run_eval.sh realworld_eval_dual_franka \
-       rollout.model.model_path=/path/to/deploy/global_step_<N> \
-       actor.model.openpi_data.repo_id=<repo_id>/tcp_rot6d_v1 \
-       env.eval.override_cfg.task_description="handover the object"
+可复用采集阶段的 Ray 集群，也可使用相同环境变量重新启动。策略启动由
+:doc:`真机评测指南 <../../evaluations/guides/realworld>` 统一维护，使用
+``realworld_eval_dual_franka``。
 
 部署阶段脚踏按键：
 

@@ -447,25 +447,9 @@ Set ``rollout.model.model_path`` to ``$DEPLOY_CKPT`` and
 Launch deployment
 ~~~~~~~~~~~~~~~~~
 
-Reuse the Ray cluster from collection, or restart it with the same
-environment variables. Then execute on ``node 0``:
-
-.. code-block:: bash
-
-   cd /path/to/RLinf
-   source .venv/bin/activate
-   export PYTHONPATH=$PWD:${PYTHONPATH:-}
-
-   bash evaluations/run_eval.sh realworld_eval_dual_franka
-
-Hydra override example:
-
-.. code-block:: bash
-
-   bash evaluations/run_eval.sh realworld_eval_dual_franka \
-       rollout.model.model_path=/path/to/deploy/global_step_<N> \
-       actor.model.openpi_data.repo_id=<repo_id>/tcp_rot6d_v1 \
-       env.eval.override_cfg.task_description="handover the object"
+Reuse the Ray cluster from collection, or restart it with the same environment
+variables. Launch the policy through the :doc:`real-world evaluation guide
+<../../evaluations/guides/realworld>` with ``realworld_eval_dual_franka``.
 
 Deployment pedal controls:
 

@@ -345,13 +345,8 @@ config:
        model_path: "/path/to/pi0-model"
 
 After starting the Ray cluster (see the **Cluster configuration** section in
-:doc:`franka`), run the deployment script on the head node:
-
-.. code:: bash
-
-   bash evaluations/run_eval.sh realworld_pnp_eval
-
-The script runs in **eval-only mode** (``runner.only_eval: True``); the policy
+:doc:`franka`), run deployment through the :doc:`real-world evaluation guide
+<../../evaluations/guides/realworld>` with ``realworld_pnp_eval``. The policy
 will autonomously control the robot to complete the Bin-relocation task.
 
 You can control the number of evaluation episodes via the
@@ -402,18 +397,13 @@ Real-World Evaluation / Deployment
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 A full evaluation config is provided at
-``evaluations/realworld/realworld_eval.yaml``. It pairs the generic SFT
-env with a Pi0 actor in **eval-only mode** (``runner.only_eval: True``).
+``evaluations/realworld/realworld_eval.yaml``. It pairs the generic SFT env
+with a Pi0 actor for deployment.
 
 Before running, replace the placeholders:
 
 - ``ROBOT_IP`` — your Franka robot's IP address.
 - ``MODEL_PATH`` — path to your trained checkpoint.
 
-Then launch:
-
-.. code:: bash
-
-   bash evaluations/run_eval.sh realworld_eval
-
-For the full real-robot evaluation workflow, see :doc:`real-world evaluation guide <../../evaluations/guides/realworld>`.
+Launch and override examples are maintained in the :doc:`real-world evaluation
+guide <../../evaluations/guides/realworld>`.
