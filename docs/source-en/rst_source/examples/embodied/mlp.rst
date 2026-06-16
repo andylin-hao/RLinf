@@ -46,29 +46,27 @@ Train an MLP policy with PPO/SAC/GRPO on low-dimensional state across ManiSkill,
 Tasks
 ~~~~~
 
-Select an environment via the ``defaults`` list (``env/<env_name>@env.train`` /
-``@env.eval``); override parallel-env count, episode length, and recording under
-``env.train`` / ``env.eval``.
+Select an environment via the ``defaults`` list (``env/<env_name>@env.train`` / ``@env.eval``); override parallel-env count, episode length, and recording under ``env.train`` / ``env.eval``.
 
 .. list-table::
    :header-rows: 1
-   :widths: 26 28 22 24
+   :widths: 22 24 30 24
 
-   * - Task family
-     - Config
-     - Simulator
+   * - Environment
+     - Task / Suite
+     - Config / Weights
      - Focus
-   * - PickCube
+   * - ManiSkill3
+     - PickCube
      - ``maniskill_ppo_mlp`` / ``maniskill_sac_mlp``
-     - ManiSkill3
      - Low-dimensional state policy training.
-   * - LIBERO-Spatial
+   * - LIBERO
+     - LIBERO-Spatial
      - ``libero_spatial_0_grpo_mlp``
-     - LIBERO
      - GRPO with an MLP policy on a LIBERO spatial task.
-   * - PickCube
+   * - MuJoCo / FrankaSim
+     - PickCube
      - ``frankasim_ppo_mlp``
-     - MuJoCo / FrankaSim
      - FrankaSim state-based PPO training.
 
 Observation and Action
@@ -88,7 +86,6 @@ Observation and Action
      - Simulator task reward or success signal.
    * - Prompt
      - Not used by the MLP policy; tasks are selected through Hydra configs.
-
 
 Installation
 ------------

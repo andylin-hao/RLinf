@@ -50,44 +50,48 @@ VLA 策略。Wan 根据当前观测与动作序列生成未来视频帧，因此
 任务
 ~~~~
 
-作为世界模型，Wan 理论上可在一致的接口下拟合多种任务设置。RLinf 目前提供三个 LIBERO 套件的权重与初始化数据：
+作为世界模型，Wan 原则上可以通过一致接口适配多种任务设置。RLinf 目前提供三个 LIBERO 套件的权重和初始化数据：
 
 .. list-table::
    :header-rows: 1
-   :widths: 30 34 36
+   :widths: 22 24 30 24
 
-   * - 套件
-     - 世界模型权重
+   * - 环境
+     - 任务 / 套件
+     - 配置 / 权重
      - 重点
-   * - LIBERO Spatial
+   * - Wan
+     - LIBERO-Spatial
      - ``RLinf/RLinf-Wan-LIBERO-Spatial``
-     - 空间关系与桌面重排。
-   * - LIBERO Object
+     - 使用 Wan 作为 LIBERO spatial 任务的学习型仿真器。
+   * - Wan
+     - LIBERO-Object
      - ``RLinf/RLinf-Wan-LIBERO-Object``
-     - 以物体为中心的操作。
-   * - LIBERO Goal
+     - 在视频世界模型中 rollout 物体操作动力学。
+   * - Wan
+     - LIBERO-Goal
      - ``RLinf/RLinf-Wan-LIBERO-Goal``
-     - 目标条件操作。
+     - 通过 Wan 评测目标条件 rollout。
 
 观测与动作
 ~~~~~~~~~~
 
 .. list-table::
    :header-rows: 1
-   :widths: 18 82
+   :widths: 24 38
 
    * - 字段
      - 说明
-   * - 观测
-     - 世界模型生成的 RGB 帧，``[B, 256, 256, 3]``。
-   * - 动作
-     - 7 维连续动作——末端位置（x, y, z）、三维旋转（roll, pitch, yaw）、夹爪开/合——归一化并 token 化。
-   * - 奖励
-     - 由世界模型的奖励判定器预测，范围 ``[0, 1]``。
-   * - 任务提示
-     - 自然语言任务描述。
+   * - Observation
+     - 由初始化帧启动、世界模型生成的 RGB 帧，形状为 ``[B, 256, 256, 3]``。
+   * - Action
+     - 归一化并 tokenized 后用于条件生成的 7 维连续动作。
+   * - Reward
+     - 世界模型 reward classifier 输出，范围为 ``[0, 1]``。
+   * - Prompt
+     - 用于条件化视频世界模型的自然语言任务描述。
 
-不同于传统仿真器，Wan 没有 ``reset()``：它需要初始帧与任务描述，因此需提前下载初始化数据集并在配置中指定路径。
+与传统仿真器不同，Wan 没有 ``reset()``：它需要初始化帧和任务描述，因此需要下载初始化数据集并在配置中指向它。
 
 依赖安装
 --------

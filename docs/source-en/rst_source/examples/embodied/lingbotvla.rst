@@ -47,35 +47,42 @@ SFT then GRPO-fine-tune Lingbot-VLA on RoboTwin 2.0 dual-arm manipulation tasks.
 Tasks
 ~~~~~
 
-Lingbot-VLA runs on RoboTwin 2.0 dual-arm / single-arm tasks (e.g. ``click_bell``,
-``open_microwave``, ``stack_blocks_three``). RLinf ships ready-to-run GRPO configs for:
+Select the model page by matching the environment, task family, and config or checkpoint artifact.
 
 .. list-table::
    :header-rows: 1
-   :widths: 30 70
+   :widths: 22 24 30 24
 
-   * - Task
-     - Config
-   * - ``click_bell``
-     - ``robotwin_click_bell_grpo_lingbotvla.yaml``
-   * - ``place_shoe``
-     - ``robotwin_place_shoe_grpo_lingbotvla.yaml``
+   * - Environment
+     - Task / Suite
+     - Config / Weights
+     - Focus
+   * - RoboTwin
+     - Click Bell
+     - ``robotwin_click_bell_grpo_lingbotvla``
+     - GRPO training with LingbotVLA on a RoboTwin manipulation task.
+   * - RoboTwin
+     - Place Shoe
+     - ``robotwin_place_shoe_grpo_lingbotvla``
+     - GRPO training on a second RoboTwin task variant.
 
 Observation and Action
-~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~
 
 .. list-table::
    :header-rows: 1
-   :widths: 18 82
+   :widths: 24 38
 
    * - Field
-     - Specification
+     - Description
    * - Observation
-     - Multi-view RGB — head and left/right wrist cameras.
+     - RoboTwin camera observations and robot state required by LingbotVLA.
    * - Action
-     - 14-dim continuous (dual-arm ALOHA): both-arm absolute pose (x, y, z, roll, pitch, yaw) + gripper; action chunks of length 50.
-   * - Task prompt
-     - The environment's natural-language task description (e.g. "click the bell").
+     - Continuous robot actions decoded by the LingbotVLA policy.
+   * - Reward
+     - RoboTwin task success or shaped task reward.
+   * - Prompt
+     - Natural-language task instruction for the RoboTwin episode.
 
 Installation
 ------------

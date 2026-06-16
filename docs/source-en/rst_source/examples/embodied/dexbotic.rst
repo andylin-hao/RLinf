@@ -49,43 +49,46 @@ Fine-tune Dexbotic π\ :sub:`0`\ or DM0 on LIBERO with PPO.
 Tasks
 ~~~~~
 
+Select the model page by matching the environment, task family, and config or checkpoint artifact.
+
 .. list-table::
    :header-rows: 1
-   :widths: 24 30 46
+   :widths: 22 24 30 24
 
-   * - Suite
-     - Config prefix
+   * - Environment
+     - Task / Suite
+     - Config / Weights
      - Focus
-   * - LIBERO Spatial
-     - ``libero_spatial``
-     - Spatial relations and tabletop rearrangement.
-   * - LIBERO Object
-     - ``libero_object``
-     - Object-centric manipulation.
-   * - LIBERO Goal
-     - ``libero_goal``
-     - Goal-conditioned manipulation.
-   * - LIBERO 10
-     - ``libero_10``
-     - Long-horizon multi-step tasks.
+   * - LIBERO
+     - LIBERO-Spatial
+     - ``libero_spatial_ppo_dexbotic_*``
+     - Dexbotic pi0/dm0 policies on spatial manipulation tasks.
+   * - LIBERO
+     - LIBERO-Object
+     - ``libero_object_ppo_dexbotic_pi0``
+     - Dexbotic pi0 on object manipulation tasks.
+   * - LIBERO
+     - LIBERO-Goal / LIBERO-10
+     - ``libero_goal_ppo_dexbotic_pi0`` / ``libero_10_ppo_dexbotic_pi0``
+     - Goal-conditioned and long-horizon LIBERO suites.
 
 Observation and Action
 ~~~~~~~~~~~~~~~~~~~~~~
 
 .. list-table::
    :header-rows: 1
-   :widths: 18 82
+   :widths: 24 38
 
    * - Field
-     - Specification
+     - Description
    * - Observation
-     - Main-view and wrist-view RGB images plus LIBERO robot state.
+     - LIBERO camera streams and proprioception packaged for Dexbotic policies.
    * - Action
-     - 7-dim continuous end-effector control, generated in action chunks.
-   * - Policy details
-     - Flow-matching / flow-SDE action generation, configurable ``noise_method``, ``noise_level``, ``num_steps``, and value head.
+     - Chunked continuous actions produced by the selected Dexbotic policy backend, including flow-matching / flow-SDE settings.
    * - Reward
-     - Sparse task success reward from LIBERO.
+     - LIBERO success signal or simulator reward used for PPO updates.
+   * - Prompt
+     - Natural-language LIBERO instruction consumed by the policy processor.
 
 Installation
 ------------

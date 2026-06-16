@@ -51,48 +51,52 @@ RL-fine-tune π\ :sub:`0`\  / π\ :sub:`0.5`\  on LIBERO, ManiSkill, MetaWorld, 
 Tasks
 ~~~~~
 
+Select the model page by matching the environment, task family, and config or checkpoint artifact.
+
 .. list-table::
    :header-rows: 1
-   :widths: 22 30 48
+   :widths: 22 24 30 24
 
    * - Environment
-     - Tasks
-     - Example config
+     - Task / Suite
+     - Config / Weights
+     - Focus
    * - LIBERO
      - Spatial · Object · Goal · Long
-     - ``libero_10_ppo_openpi`` / ``..._grpo_openpi``
+     - ``libero_spatial_ppo_openpi_pi05`` / ``libero_10_grpo_openpi_pi05``
+     - Fine-tune π0 / π0.5 on LIBERO manipulation suites.
    * - ManiSkill3
-     - 25-task grasping
-     - ``maniskill_ppo_openpi``
+     - PickCube and related tasks
+     - ``maniskill_ppo_openpi_pi05``
+     - Fine-tune π0.5 on ManiSkill3 robot-control tasks.
    * - MetaWorld
      - MT50
-     - ``metaworld_*_ppo_openpi``
+     - ``metaworld_50_ppo_openpi_pi05``
+     - Evaluate generalization across MetaWorld manipulation tasks.
    * - CALVIN
      - ABC-D
      - ``calvin_abc_d_ppo_openpi_pi05``
+     - Train on long-horizon language-conditioned manipulation.
 
 Observation and Action
 ~~~~~~~~~~~~~~~~~~~~~~
 
 .. list-table::
    :header-rows: 1
-   :widths: 18 82
+   :widths: 24 38
 
    * - Field
      - Description
    * - Observation
-     - Main-view and wrist-view RGB, ``[B, 224, 224, 3]``.
-   * - State
-     - LIBERO/MetaWorld/CALVIN: end-effector pose + gripper. ManiSkill3: robot joint angles.
+     - Main-view and wrist-view RGB plus robot state from LIBERO, ManiSkill3, MetaWorld, or CALVIN.
    * - Action
-     - 7-D continuous control — 3-D end-effector position (x, y, z), 3-D rotation (roll, pitch, yaw), gripper open/close.
+     - 7-D continuous control for end-effector position, rotation, and gripper state.
    * - Reward
-     - Sparse success/failure.
-   * - Task prompt
-     - Environment-provided natural-language task description, consumed directly by the VLM.
+     - Environment success or shaped reward used by PPO / GRPO.
+   * - Prompt
+     - Environment-provided natural-language task description consumed by the VLA processor.
 
-π\ :sub:`0`\  / π\ :sub:`0.5`\  train with PPO (actor-critic; GAE, ratio clipping, value clipping,
-entropy regularization) or GRPO (group-relative advantages over *G* sampled actions).
+π\ :sub:`0`\  / π\ :sub:`0.5`\  train with PPO (actor-critic; GAE, ratio clipping, value clipping, entropy regularization) or GRPO (group-relative advantages over *G* sampled actions).
 
 Installation
 ------------

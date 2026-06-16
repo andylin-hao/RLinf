@@ -46,34 +46,38 @@ Fine-tune StarVLA (QwenOFT) on LIBERO Spatial with GRPO.
 Tasks
 ~~~~~
 
+Select the model page by matching the environment, task family, and config or checkpoint artifact.
+
 .. list-table::
    :header-rows: 1
-   :widths: 28 30 42
+   :widths: 22 24 30 24
 
-   * - Suite
-     - Config
+   * - Environment
+     - Task / Suite
+     - Config / Weights
      - Focus
-   * - LIBERO Spatial
+   * - LIBERO
+     - LIBERO-Spatial
      - ``libero_spatial_grpo_starvla``
-     - Spatial relations and tabletop rearrangement.
+     - GRPO fine-tuning for StarVLA in LIBERO.
 
 Observation and Action
 ~~~~~~~~~~~~~~~~~~~~~~
 
 .. list-table::
    :header-rows: 1
-   :widths: 18 82
+   :widths: 24 38
 
    * - Field
      - Description
    * - Observation
-     - Multi-view RGB (``main_images``, optional ``wrist_images`` / ``extra_view_images``) with optional proprio ``states``.
+     - LIBERO image observations and robot state formatted for StarVLA.
    * - Action
-     - Continuous chunked actions ``[B, T, D_action]``; commonly 7-D (6-D end-effector delta pose + 1-D gripper) on LIBERO.
-   * - Task prompt
-     - Environment-provided natural-language task description, consumed directly by the VLM.
-   * - Robot platform
-     - Selected via ``ROBOT_PLATFORM`` (this page assumes ``ROBOT_PLATFORM=libero``).
+     - Continuous robot control commands generated through the StarVLA policy API.
+   * - Reward
+     - LIBERO task success or shaped reward used by GRPO.
+   * - Prompt
+     - Natural-language LIBERO task instruction.
 
 Interface Conventions
 ~~~~~~~~~~~~~~~~~~~~~~

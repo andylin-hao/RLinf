@@ -45,34 +45,38 @@ Vision-Language-Action 工具箱，支持将 VLM backbone 与 action head 以模
 任务
 ~~~~
 
+根据环境、任务族以及配置或权重工件选择对应的模型页面。
+
 .. list-table::
    :header-rows: 1
-   :widths: 28 30 42
+   :widths: 22 24 30 24
 
-   * - 套件
-     - 配置
+   * - 环境
+     - 任务 / 套件
+     - 配置 / 权重
      - 重点
-   * - LIBERO Spatial
+   * - LIBERO
+     - LIBERO-Spatial
      - ``libero_spatial_grpo_starvla``
-     - 空间关系与桌面重排。
+     - 在 LIBERO 上使用 GRPO 微调 StarVLA。
 
 观测与动作
 ~~~~~~~~~~
 
 .. list-table::
    :header-rows: 1
-   :widths: 18 82
+   :widths: 24 38
 
    * - 字段
      - 说明
-   * - 观测
-     - 多视角 RGB（``main_images``，可选 ``wrist_images`` / ``extra_view_images``），可选本体状态 ``states``。
-   * - 动作
-     - 连续动作块 ``[B, T, D_action]``；LIBERO 上常见为 7 维（末端位姿增量 6D + 夹爪 1D）。
-   * - 任务提示
-     - 环境提供的自然语言任务描述，直接作为 VLM 输入。
-   * - 机器人平台
-     - 通过 ``ROBOT_PLATFORM`` 选择（本文默认 ``ROBOT_PLATFORM=libero``）。
+   * - Observation
+     - 按 StarVLA 格式组织的 LIBERO 图像观测与机器人状态。
+   * - Action
+     - 通过 StarVLA 策略 API 生成的连续机器人控制命令。
+   * - Reward
+     - GRPO 使用的 LIBERO 任务成功信号或 shaped reward。
+   * - Prompt
+     - LIBERO 自然语言任务指令。
 
 接口约定
 ~~~~~~~~

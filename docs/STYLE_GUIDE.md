@@ -181,13 +181,17 @@ Visualization and Results → TensorBoard / video / logger + link to Training me
 - **Align pages within each gallery subsection when applicable.** Simulator / benchmark
   pages use `Overview` → `Tasks` → `Observation and Action` → `Installation` → optional
   download sections → `Run It` → `Visualization and Results`. Model pages use the same
-  overview table pattern, including lightweight policies such as ``MLP``; omit
-  `Download the Model` only when there is no checkpoint to download. Algorithm pages use
-  `Overview` with cards and a task/config table, then a method-specific `How <Method>
-  Works` / `Pipeline` section before setup and commands. SFT pages use `Overview`, then
-  dataset/model preparation sections as needed, followed by `Installation`, `Run It`, and
-  `Visualization and Results` where applicable. Robots pages may keep hardware/safety
-  workflow sections, but still start with `Overview`, `Tasks`, and `Observation and Action`.
+  overview table pattern, including lightweight policies such as ``MLP``. Within one
+  subsection, overview tables must use the same fields: Models pages use `Tasks` columns
+  `Environment`, `Task / Suite`, `Config / Weights`, `Focus`, and `Observation and Action`
+  rows `Observation`, `Action`, `Reward`, `Prompt` (translated in ZH, technical row names
+  unchanged). Omit `Download the Model` only when there is no checkpoint to download.
+  Algorithm pages use `Overview` with cards and a task/config table, then a method-specific
+  `How <Method> Works` / `Pipeline` section before setup and commands. SFT pages use
+  `Overview`, then dataset/model preparation sections as needed, followed by `Installation`,
+  `Run It`, and `Visualization and Results` where applicable. Robots pages may keep
+  hardware/safety workflow sections, but still start with `Overview`, `Tasks`, and
+  `Observation and Action`.
 - **Overview** uses a `sphinx-design` **card grid** (`.. grid:: 2 4 4 4` + `grid-item-card`),
   not a `tip` admonition — see the page anatomy above.
 - `note` = side info · `warning` = footguns (OOM, `MUJOCO_GL`, `RLINF_NODE_RANK` ordering,

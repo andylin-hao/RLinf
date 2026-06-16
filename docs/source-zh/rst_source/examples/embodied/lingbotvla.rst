@@ -45,35 +45,42 @@ Lingbot-VLA模型强化学习
 任务
 ~~~~
 
-Lingbot-VLA 可运行于 RoboTwin 2.0 的双臂 / 单臂任务（如 ``click_bell``、``open_microwave``、
-``stack_blocks_three``）。RLinf 提供以下开箱即用的 GRPO 配置：
+根据环境、任务族以及配置或权重工件选择对应的模型页面。
 
 .. list-table::
    :header-rows: 1
-   :widths: 30 70
+   :widths: 22 24 30 24
 
-   * - 任务
-     - 配置
-   * - ``click_bell``
-     - ``robotwin_click_bell_grpo_lingbotvla.yaml``
-   * - ``place_shoe``
-     - ``robotwin_place_shoe_grpo_lingbotvla.yaml``
+   * - 环境
+     - 任务 / 套件
+     - 配置 / 权重
+     - 重点
+   * - RoboTwin
+     - Click Bell
+     - ``robotwin_click_bell_grpo_lingbotvla``
+     - 在 RoboTwin 操作任务上使用 LingbotVLA 运行 GRPO。
+   * - RoboTwin
+     - Place Shoe
+     - ``robotwin_place_shoe_grpo_lingbotvla``
+     - 在第二个 RoboTwin 任务变体上运行 GRPO。
 
 观测与动作
 ~~~~~~~~~~
 
 .. list-table::
    :header-rows: 1
-   :widths: 18 82
+   :widths: 24 38
 
    * - 字段
      - 说明
-   * - 观测 (Observation)
-     - 多视角 RGB——头部与左右腕部相机。
-   * - 动作 (Action)
-     - 14 维连续动作（双臂 ALOHA）：双臂绝对位姿（x, y, z, roll, pitch, yaw）+ 夹爪；动作块长度为 50。
-   * - 任务提示
-     - 环境提供的自然语言任务描述（如 "click the bell"）。
+   * - Observation
+     - LingbotVLA 所需的 RoboTwin 相机观测与机器人状态。
+   * - Action
+     - LingbotVLA 策略解码出的连续机器人动作。
+   * - Reward
+     - RoboTwin 任务成功信号或 shaped task reward。
+   * - Prompt
+     - RoboTwin episode 的自然语言任务指令。
 
 安装
 ----

@@ -50,48 +50,52 @@
 任务
 ~~~~
 
+根据环境、任务族以及配置或权重工件选择对应的模型页面。
+
 .. list-table::
    :header-rows: 1
-   :widths: 22 30 48
+   :widths: 22 24 30 24
 
    * - 环境
-     - 任务
-     - 示例配置
+     - 任务 / 套件
+     - 配置 / 权重
+     - 重点
    * - LIBERO
      - Spatial · Object · Goal · Long
-     - ``libero_10_ppo_openpi`` / ``..._grpo_openpi``
+     - ``libero_spatial_ppo_openpi_pi05`` / ``libero_10_grpo_openpi_pi05``
+     - 在 LIBERO 操作套件上微调 π0 / π0.5。
    * - ManiSkill3
-     - 25 任务抓取
-     - ``maniskill_ppo_openpi``
+     - PickCube 及相关任务
+     - ``maniskill_ppo_openpi_pi05``
+     - 在 ManiSkill3 机器人控制任务上微调 π0.5。
    * - MetaWorld
      - MT50
-     - ``metaworld_*_ppo_openpi``
+     - ``metaworld_50_ppo_openpi_pi05``
+     - 评测跨 MetaWorld 操作任务的泛化能力。
    * - CALVIN
      - ABC-D
      - ``calvin_abc_d_ppo_openpi_pi05``
+     - 训练长程语言条件操作任务。
 
 观测与动作
 ~~~~~~~~~~
 
 .. list-table::
    :header-rows: 1
-   :widths: 18 82
+   :widths: 24 38
 
    * - 字段
      - 说明
-   * - 观测
-     - 主视角与腕部视角 RGB，``[B, 224, 224, 3]``。
-   * - 状态
-     - LIBERO/MetaWorld/CALVIN：末端位姿 + 夹爪状态。ManiSkill3：机器人关节角度。
-   * - 动作
-     - 7 维连续控制——末端位置（x, y, z）、三维旋转（roll, pitch, yaw）、夹爪开/合。
-   * - 奖励
-     - 任务成功/失败的稀疏奖励。
-   * - 任务提示
-     - 环境提供的自然语言任务描述，直接作为 VLM 输入。
+   * - Observation
+     - 来自 LIBERO、ManiSkill3、MetaWorld 或 CALVIN 的主视角 / 腕部 RGB 与机器人状态。
+   * - Action
+     - 7 维连续控制，包括末端位置、旋转和夹爪状态。
+   * - Reward
+     - PPO / GRPO 使用的环境成功信号或 shaped reward。
+   * - Prompt
+     - 环境提供的自然语言任务描述，由 VLA processor 消费。
 
-π\ :sub:`0`\  / π\ :sub:`0.5`\  使用 actor-critic 形式的 PPO（GAE、ratio clipping、value clipping、熵正则），
-或 GRPO（在 *G* 个采样动作上计算组相对优势）进行训练。
+π\ :sub:`0` / π\ :sub:`0.5` 使用 PPO（actor-critic；GAE、ratio clipping、value clipping、entropy regularization）或 GRPO（基于 *G* 个采样动作的 group-relative advantages）训练。
 
 依赖安装
 --------

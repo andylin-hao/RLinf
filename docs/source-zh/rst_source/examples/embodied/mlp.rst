@@ -44,28 +44,27 @@ RLinf 在多个仿真器上用 PPO、SAC、GRPO 训练 MLP 策略——便于快
 任务
 ~~~~
 
-通过 ``defaults`` 列表选择环境（``env/<env_name>@env.train`` / ``@env.eval``）；可在
-``env.train`` / ``env.eval`` 下覆写并行环境数、回合长度与录制等参数。
+通过 ``defaults`` 列表选择环境（``env/<env_name>@env.train`` / ``@env.eval``）；可在 ``env.train`` / ``env.eval`` 下覆写并行环境数、回合长度与录制等参数。
 
 .. list-table::
    :header-rows: 1
-   :widths: 26 28 22 24
+   :widths: 22 24 30 24
 
-   * - 任务族
-     - 配置
-     - 仿真器
+   * - 环境
+     - 任务 / 套件
+     - 配置 / 权重
      - 重点
-   * - PickCube
+   * - ManiSkill3
+     - PickCube
      - ``maniskill_ppo_mlp`` / ``maniskill_sac_mlp``
-     - ManiSkill3
      - 基于低维状态的策略训练。
-   * - LIBERO-Spatial
+   * - LIBERO
+     - LIBERO-Spatial
      - ``libero_spatial_0_grpo_mlp``
-     - LIBERO
      - 在 LIBERO spatial 任务上使用 MLP 策略运行 GRPO。
-   * - PickCube
+   * - MuJoCo / FrankaSim
+     - PickCube
      - ``frankasim_ppo_mlp``
-     - MuJoCo / FrankaSim
      - FrankaSim 中基于状态的 PPO 训练。
 
 观测与动作
@@ -85,7 +84,6 @@ RLinf 在多个仿真器上用 PPO、SAC、GRPO 训练 MLP 策略——便于快
      - 仿真器任务奖励或成功信号。
    * - Prompt
      - MLP 策略不使用 prompt；任务通过 Hydra 配置选择。
-
 
 安装
 ----

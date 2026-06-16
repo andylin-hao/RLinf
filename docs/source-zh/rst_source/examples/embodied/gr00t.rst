@@ -52,45 +52,50 @@ GR00T模型强化学习训练
 任务
 ~~~~
 
+根据环境、任务族以及配置或权重工件选择对应的模型页面。
+
 .. list-table::
    :header-rows: 1
-   :widths: 26 36 38
+   :widths: 22 24 30 24
 
-   * - 套件
-     - 配置前缀
+   * - 环境
+     - 任务 / 套件
+     - 配置 / 权重
      - 重点
-   * - LIBERO Spatial
+   * - LIBERO
+     - LIBERO-Spatial
      - ``libero_spatial_ppo_gr00t``
-     - 空间关系与桌面重排。
-   * - LIBERO Object
+     - 在 spatial 操作任务上使用 GR00T-N1.x 与 Flow-SDE PPO。
+   * - LIBERO
+     - LIBERO-Object
      - ``libero_object_ppo_gr00t``
-     - 以物体为中心的操作。
-   * - LIBERO Goal
+     - 使用 GR00T 进行物体操作微调。
+   * - LIBERO
+     - LIBERO-Goal
      - ``libero_goal_ppo_gr00t``
-     - 目标条件操作。
-   * - LIBERO Long (10)
+     - 进行目标条件操作微调。
+   * - LIBERO
+     - LIBERO-10
      - ``libero_10_ppo_gr00t``
-     - 长程多步任务。
+     - 使用 GR00T 进行长程 LIBERO 训练。
 
 观测与动作
 ~~~~~~~~~~
 
 .. list-table::
    :header-rows: 1
-   :widths: 18 82
+   :widths: 24 38
 
    * - 字段
      - 说明
-   * - 观测
-     - 主视角与腕部视角 RGB（``main_images`` / ``wrist_images``，如 ``[B, 224, 224, 3]``；N1.6 增加时间序列维度），以及 8 维 LIBERO state。
-   * - 动作
-     - LIBERO 上为 7 维连续控制（末端位置、三维旋转、夹爪）。N1.6 通过具身标签零填充至 128 维跨具身动作空间；N1.7 从相对末端位姿（relative-EEF）的通用表示解码。
-   * - 奖励
-     - 稀疏的成功/失败奖励（成功为 1，否则为 0）。
-   * - 任务提示
-     - 环境提供的自然语言任务描述，直接作为 VLM 输入。
-
-GR00T 使用 actor-critic 形式的 PPO（GAE 估计 advantage/return、ratio clipping、value clipping、可选 entropy 正则）。
+   * - Observation
+     - GR00T dataconfig 所需的多视角 RGB 图像与机器人本体状态。
+   * - Action
+     - GR00T 策略生成的连续动作块。
+   * - Reward
+     - PPO 使用的 LIBERO 任务成功信号或仿真器奖励。
+   * - Prompt
+     - 每个 LIBERO episode 提供的自然语言任务 prompt。
 
 依赖安装
 --------

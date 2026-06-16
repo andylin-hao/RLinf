@@ -50,22 +50,24 @@ value clipping、可选 entropy 正则）。
 任务
 ~~~~
 
+根据环境、任务族以及配置或权重工件选择对应的模型页面。
+
 .. list-table::
    :header-rows: 1
-   :widths: 28 30 42
+   :widths: 22 24 30 24
 
-   * - 套件
-     - 配置
+   * - 环境
+     - 任务 / 套件
+     - 配置 / 权重
      - 重点
-   * - LIBERO-10
+   * - LIBERO
+     - LIBERO-10
      - ``libero_10_ppo_abot_m0``
-     - 从 ABot-M0 RL baseline checkpoint 启动 PPO 训练。
-   * - LIBERO-10
-     - ``libero_10_ppo_abot_m0``
-     - 使用 evaluation overrides 评测 ABot-M0 SFT checkpoint。
-   * - LIBERO-Plus
+     - 针对 ABot-M0 release checkpoint 的 PPO 微调。
+   * - LIBERO
+     - LIBERO-10+
      - ``libero_10_plus_ppo_abot_m0``
-     - 安装额外 LIBERO-Plus 资产后运行 PPO 训练。
+     - 使用 ABot-M0 进行长程 LIBERO-10+ 训练。
 
 观测与动作
 ~~~~~~~~~~
@@ -77,13 +79,13 @@ value clipping、可选 entropy 正则）。
    * - 字段
      - 说明
    * - Observation
-     - ABot-M0 通过 HuggingFace rollout wrapper 消费的 LIBERO RGB 观测与 proprioceptive state。
+     - ABot-M0 所需的 LIBERO RGB 观测与机器人状态。
    * - Action
-     - ABot-M0 action model 生成的分块连续机器人动作。
+     - 从 ABot-M0 策略输出解码的连续机器人动作。
    * - Reward
-     - LIBERO 任务成功信号与 dense environment reward。
+     - PPO 使用的 LIBERO 成功信号或任务奖励。
    * - Prompt
-     - LIBERO 自然语言任务指令。
+     - 每个 LIBERO 任务对应的自然语言指令。
 
 依赖安装
 --------
