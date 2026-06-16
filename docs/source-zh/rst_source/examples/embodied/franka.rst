@@ -660,3 +660,15 @@ RLinf 支持对多台 Franka 机器人进行统一管理，实现并行数据采
     </video>
     <p><em>充电器插电（Charger）</em></p>
   </div>
+
+.. toctree::
+   :hidden:
+   :maxdepth: 1
+
+   Reward Model <franka_reward_model>
+   ZED + Robotiq <franka_zed_robotiq>
+   GELLO <franka_gello>
+   Dual-Arm <dual_franka>
+   Dexterous Hand <franka_dexhand>
+   Pi0 SFT <franka_pi0_sft_deploy>
+   HG-DAgger <hg-dagger>

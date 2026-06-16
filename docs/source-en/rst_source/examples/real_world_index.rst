@@ -13,7 +13,7 @@ Each section gives the setup path for teleoperation, data collection, sim-to-rea
        <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/franka_arm_small.jpg"
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
        <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
-         <a href="franka_index.html" style="text-decoration: underline; color: blue;">
+         <a href="embodied/franka.html" style="text-decoration: underline; color: blue;">
            <b>Franka</b>
          </a><br>
          Use the Franka section for base real-world RL, reward models, ZED + Robotiq, GELLO, dual-arm rigs, dexterous hands, Pi0 SFT, and HG-DAgger
@@ -56,7 +56,7 @@ Each section gives the setup path for teleoperation, data collection, sim-to-rea
    :hidden:
    :maxdepth: 2
 
-   Franka <franka_index>
+   Franka <embodied/franka>
    GimArm <embodied/gim_arm>
    XSquare Turtle2 <embodied/xsquare_turtle2>
    DOS-W1 <embodied/dosw1>

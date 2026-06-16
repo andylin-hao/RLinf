@@ -13,7 +13,7 @@
        <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/franka_arm_small.jpg"
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
        <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
-         <a href="franka_index.html" style="text-decoration: underline; color: blue;">
+         <a href="embodied/franka.html" style="text-decoration: underline; color: blue;">
            <b>Franka</b>
          </a><br>
          进入 Franka 章节，查看基础真机 RL、reward model、ZED + Robotiq、GELLO、双臂、灵巧手、Pi0 SFT 和 HG-DAgger
@@ -56,7 +56,7 @@
    :hidden:
    :maxdepth: 2
 
-   Franka <franka_index>
+   Franka <embodied/franka>
    GimArm <embodied/gim_arm>
    XSquare Turtle2 <embodied/xsquare_turtle2>
    DOS-W1 <embodied/dosw1>
