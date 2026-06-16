@@ -1,132 +1,42 @@
-真机具身强化学习
-================
+真实机器人强化学习
+====================
 
-当你的出发点是 **真实硬件** 时，从本节开始。这里的示例覆盖 Franka 机械臂、灵巧手、移动双臂平台和自研机械臂，并给出遥操作、数据采集、SFT 部署、Sim-to-Real 迁移和在线 RL 所需的配置步骤。
+当你的出发点是 Franka 系列之外的真实机器人硬件时，请使用本节。这里的配方覆盖 GimArm、XSquare Turtle2 和 Dexmal DOS-W1 的遥操作、数据采集、Sim-to-Real 迁移和在线 RL 流程。
 
-每个页面都假定你已经具备对应机器人。通用 Ray 与安全流程请先阅读基础 Franka 页面；相机、夹爪、GELLO、灵巧手、GimArm、XSquare Turtle2 或 DOS-W1 的差异化步骤请进入对应页面。
+Franka 机械臂及其变体请进入专门的 :doc:`franka_index` 章节。
 
 .. raw:: html
 
    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; align-items: flex-start; justify-items: center; max-width: 980px; margin: 0 auto;">
 
      <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
-       <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/franka_arm_small.jpg"
-            style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
-       <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
-         <a href="embodied/franka.html" style="text-decoration: underline; color: blue;">
-           <b>Franka真机强化学习</b>
-         </a><br>
-         RLinf worker无缝对接Franka机械臂
-       </p>
-     </div>
-
-     <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
-       <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/franka_reward_model.jpg"
-            style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
-       <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
-         <a href="embodied/franka_reward_model.html" style="text-decoration: underline; color: blue;">
-           <b>Franka真机强化学习（基于 Reward Model ）</b>
-         </a><br>
-         使用 reward model 辅助完成机器人操作任务
-       </p>
-     </div>
-
-     <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
-       <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/robotiq_zed.jpeg"
-            style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
-       <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
-         <a href="embodied/franka_zed_robotiq.html" style="text-decoration: underline; color: blue;">
-           <b>Franka 真机使用 ZED 相机与 Robotiq 夹爪</b>
-         </a><br>
-         Franka 真机中 ZED 相机、Robotiq 夹爪安装与数据采集配置
-       </p>
-     </div>
-
-     <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
-       <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/gello.jpeg"
-            style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
-       <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
-         <a href="embodied/franka_gello.html" style="text-decoration: underline; color: blue;">
-           <b>Franka 真机使用 GELLO 遥操作设备</b>
-         </a><br>
-         Franka 真机中 GELLO 遥操作设备安装、配置与验证流程
-       </p>
-     </div>
-
-     <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
-       <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/franka_arm_small.jpg"
-            style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
-       <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
-         <a href="embodied/dual_franka.html" style="text-decoration: underline; color: blue;">
-           <b>双 Franka 真机：GELLO 采集 + π₀.₅ SFT</b>
-         </a><br>
-         双节点双臂 Franka rig：GELLO 关节空间采集、rot6d SFT、脚踏部署
-       </p>
-     </div>
-
-     <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
-       <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/dexhand.jpg"
-            style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
-       <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
-         <a href="embodied/franka_dexhand.html" style="text-decoration: underline; color: blue;">
-           <b>Franka 机械臂与灵巧手真机强化学习</b>
-         </a><br>
-         Franka 机械臂 + 睿研五指灵巧手真机强化学习
-       </p>
-     </div>
-
-     <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
-       <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/pi0_icon.jpg"
-            style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
-       <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
-         <a href="embodied/franka_pi0_sft_deploy.html" style="text-decoration: underline; color: blue;">
-           <b>Franka真机Pi0监督微调与部署全流程</b>
-         </a><br>
-         数据采集 + Pi0 SFT + 真机部署的完整端到端演示
-       </p>
-     </div>
-
-     <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
-       <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/hg-dagger.jpg"
-            style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
-       <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
-         <a href="embodied/hg-dagger.html" style="text-decoration: underline; color: blue;">
-           <b>Franka 机械臂上的 HG-DAgger</b>
-         </a><br>
-         Human-Gated 真机 DAgger 流程：数据采集、SFT 与在线干预训练
-       </p>
-     </div>
-
-     <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
        <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/gim-arm.png"
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
        <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
          <a href="embodied/gim_arm.html" style="text-decoration: underline; color: blue;">
-           <b>GimArm 真机强化学习</b>
+           <b>GimArm</b>
          </a><br>
-         GimArm 六自由度机械臂 + peg-insertion 任务，通过 SocketCAN 通信，并基于 Pinocchio 做正运动学
+         在 GimArm 六自由度机械臂上通过 SocketCAN 与 Pinocchio FK 训练 peg-insertion 任务
        </p>
      </div>
-
      <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
        <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/xsquare_turtle2_arm_small.jpg"
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
        <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
          <a href="embodied/xsquare_turtle2.html" style="text-decoration: underline; color: blue;">
-           <b>XSquare Turtle2 真机强化学习</b>
+           <b>XSquare Turtle2</b>
          </a><br>
-         SAC + CNN 策略在 XSquare Turtle2 双臂机器人上的真机训练
+         在 XSquare Turtle2 双臂机器人上运行 SAC + CNN 策略
        </p>
      </div>
-
      <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
        <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/dos-w1.png"
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
        <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
          <a href="embodied/dosw1.html" style="text-decoration: underline; color: blue;">
-           <b>Dexmal DOS-W1 真机强化学习</b>
+           <b>Dexmal DOS-W1</b>
          </a><br>
-         基于 Flow Matching 策略 + SAC 的 Dexmal DOS-W1 双臂抓取任务
+         在 Dexmal DOS-W1 双臂机器人上训练 Flow Matching + SAC 抓取任务
        </p>
      </div>
 
@@ -136,14 +46,6 @@
    :hidden:
    :maxdepth: 2
 
-   Franka <embodied/franka>
-   Franka (Reward Model) <embodied/franka_reward_model>
-   Franka (ZED + Robotiq) <embodied/franka_zed_robotiq>
-   Franka (GELLO) <embodied/franka_gello>
-   Franka (Dual-Arm) <embodied/dual_franka>
-   Franka (Dexterous Hand) <embodied/franka_dexhand>
-   Franka (Pi0 SFT) <embodied/franka_pi0_sft_deploy>
-   HG-DAgger <embodied/hg-dagger>
    GimArm <embodied/gim_arm>
    XSquare Turtle2 <embodied/xsquare_turtle2>
    DOS-W1 <embodied/dosw1>

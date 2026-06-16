@@ -4,11 +4,13 @@
 本节展示了 **RLinf 目前支持的示例集合**，
 展示该框架如何应用于不同场景，并演示其在实际中的高效性。示例库会随着时间不断扩展，涵盖新的场景和任务，以展示 RLinf 的多样性和可扩展性。
 
-具身智能是 RLinf 的核心方向，具身示例被拆分为以下五个入口，便于按你的实际起点快速定位：
+具身智能是 RLinf 的核心方向，具身示例被拆分为以下六个入口，便于按你的实际起点快速定位：
 
 - :doc:`simulators_index` —— 当你以模拟器 / 基准（LIBERO、ManiSkill、RoboTwin、IsaacLab 等）为出发点时选择本节。
 
-- :doc:`real_world_index` —— 当你拥有真实硬件（Franka、灵巧手、移动双臂平台等）时选择本节。
+- :doc:`franka_index` —— 当你的真机流程从 Franka 机械臂开始时选择本节。
+
+- :doc:`real_world_index` —— 当你拥有 Franka 系列之外的真实机器人（GimArm、XSquare Turtle2、DOS-W1 等）时选择本节。
 
 - :doc:`vla_wam_index` —— 当你想对某个模型家族（π₀、GR00T、Lingbot-VLA、OpenSora、Wan 等）做 RL 微调时选择本节。
 
@@ -27,6 +29,7 @@
    :maxdepth: 2
 
    模拟器 <simulators_index>
+   Franka <franka_index>
    真机 <real_world_index>
    模型 <vla_wam_index>
    SFT <sft_index>

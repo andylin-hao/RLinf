@@ -59,6 +59,7 @@ category, not a sentence:
 | Index page | Nav caption (EN) | Nav caption (ZH) |
 |---|---|---|
 | `simulators_index` | Simulators | 模拟器 |
+| `franka_index` | Franka | Franka |
 | `real_world_index` | Robots | 真机 |
 | `vla_wam_index` | Models | 模型 |
 | `sft_index` | SFT | SFT |

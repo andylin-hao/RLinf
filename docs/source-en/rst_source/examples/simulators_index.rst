@@ -3,7 +3,7 @@ RL with Embodied Simulators
 
 This category groups examples in which the **simulator (or benchmark)** is the headline. They show how to bring up RLinf on a specific simulation platform — environment installation, asset paths, observation/action spaces, and a reference RL recipe (typically PPO or GRPO with a VLA policy).
 
-If you are starting from "I want to train on benchmark *X*", this is the right entry point. For model-centric examples (pi₀, GR00T, …) see :doc:`vla_wam_index`. For real-robot setups see :doc:`real_world_index`. For LIBERO setup on AMD ROCm or Ascend CANN accelerators, see the :doc:`Supported Accelerators <../tutorials/accelerators/index>` tutorial.
+If you are starting from "I want to train on benchmark *X*", this is the right entry point. For model-centric examples (pi₀, GR00T, …) see :doc:`vla_wam_index`. For Franka setups see :doc:`franka_index`; for other real-robot setups see :doc:`real_world_index`. For LIBERO setup on AMD ROCm or Ascend CANN accelerators, see the :doc:`Supported Accelerators <../tutorials/accelerators/index>` tutorial.
 
 .. raw:: html
 
