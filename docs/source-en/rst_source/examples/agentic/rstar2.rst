@@ -9,7 +9,7 @@ Environment
 RLinf Environment
 ~~~~~~~~~~~~~~~~~
 
-For RLinf environment configuration, please refer to `RLinf Installation <https://rlinf.readthedocs.io/en/latest/rst_source/start/installation.html>`__
+For RLinf environment configuration, see :doc:`RLinf Installation </rst_source/start/installation>`.
 
 Code Judge Runtime Environment
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

@@ -12,8 +12,7 @@ Environment
 RLinf Environment
 ~~~~~~~~~~~~~~~~~
 
-RLinf environment setup follows:  
-`RLinf Installation <https://rlinf.readthedocs.io/en/latest/rst_source/start/installation.html>`__
+RLinf environment setup follows :doc:`RLinf Installation </rst_source/start/installation>`.
 
 Local Wiki Server Environment
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

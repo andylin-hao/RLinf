@@ -7,7 +7,7 @@ The agent reads a question, produces reasoning and an answer, and then receives 
 Environment
 -----------
 
-For the base RLinf environment, see `RLinf Installation <https://rlinf.readthedocs.io/en/latest/rst_source/start/installation.html>`__.
+For the base RLinf environment, see :doc:`RLinf Installation </rst_source/start/installation>`.
 
 Install dependencies for this example:
 

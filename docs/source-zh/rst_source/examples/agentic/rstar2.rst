@@ -9,7 +9,7 @@ rStar2的强化学习训练
 RLinf环境
 ~~~~~~~~~
 
-RLinf 环境配置参照 `RLinf Installation <https://rlinf.readthedocs.io/en/latest/rst_source/start/installation.html>`__
+RLinf 环境配置参照 :doc:`RLinf Installation </rst_source/start/installation>`。
 
 Code judge运行环境
 ~~~~~~~~~~~~~~~~~~
