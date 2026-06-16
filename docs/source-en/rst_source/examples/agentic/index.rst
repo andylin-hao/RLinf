@@ -98,10 +98,8 @@ The following examples include math reasoning RL and agentic AI workflows, such 
    :hidden:
    :maxdepth: 2
 
-   wideseek_r1/index
-   coding_online_rl
-   searchr1
-   reasoning
-   reasoning_ppo
-   rstar2
-   agentlightning_calc_x
+   Search-R1 <searchr1>
+   Math GRPO <reasoning>
+   Math PPO <reasoning_ppo>
+   rStar2 <rstar2>
+   AgentLightning <agentlightning_calc_x>
