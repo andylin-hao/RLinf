@@ -10,6 +10,34 @@ WideSeek-R1 提供两种搜索后端：
 
 在标准工作流中，离线工具通常用于训练和标准 QA 评测，而在线工具用于 WideSearch 评测。
 
+概述
+----
+
+启动 WideSeek-R1 训练或评测前，先配置一个工具后端。
+
+.. grid:: 2 4 4 4
+   :gutter: 2
+
+   .. grid-item-card:: 在线
+      :text-align: center
+
+      Serper 搜索与 Jina 网页访问
+
+   .. grid-item-card:: 离线
+      :text-align: center
+
+      基于 Wiki-2018 的本地 Qdrant 检索
+
+   .. grid-item-card:: 配置
+      :text-align: center
+
+      ``tools.online``、``use_jina`` 与 cache 设置
+
+   .. grid-item-card:: 测试
+      :text-align: center
+
+      ``rlinf/agents/wideseek_r1/tools.py``
+
 .. contents::
    :depth: 2
    :local:

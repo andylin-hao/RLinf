@@ -6,6 +6,34 @@ This page describes how to reproduce WideSeek-R1 training in RLinf.
 The reference configuration uses ``Qwen3-4B``, but the current pipeline is also
 compatible with other dense models in the Qwen3 family.
 
+Overview
+--------
+
+Use this page to prepare the model, data, and config for WideSeek-R1 training.
+
+.. grid:: 2 4 4 4
+   :gutter: 2
+
+   .. grid-item-card:: Model
+      :text-align: center
+
+      Qwen3-4B
+
+   .. grid-item-card:: Algorithm
+      :text-align: center
+
+      Hybrid multi-agent RL
+
+   .. grid-item-card:: Data
+      :text-align: center
+
+      ``hybrid_20k.jsonl`` from WideSeek-R1-train-data
+
+   .. grid-item-card:: Tools
+      :text-align: center
+
+      Offline retrieval and judge model server
+
 .. contents::
    :depth: 2
    :local:

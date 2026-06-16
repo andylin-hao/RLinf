@@ -3,6 +3,35 @@ Reinforcement Learning Training for rStar2
 
 Multi-turn RL combined with tool invocation has been proven to extend the interaction boundaries of Large Language Models (LLMs) to the real world. This document introduces how to reproduce the experiments from the paper `rStar2-Agent: Agentic Reasoning Technical Report <https://arxiv.org/abs/2508.20722>`__ under the RLinf framework, using Reinforcement Learning (RL) to train Large Language Models (LLMs) to answer questions by invoking code execution tools.
 
+Overview
+--------
+
+Use this recipe to reproduce rStar2-style agentic reasoning with code execution
+tools and Megatron training.
+
+.. grid:: 2 4 4 4
+   :gutter: 2
+
+   .. grid-item-card:: Model
+      :text-align: center
+
+      Qwen2.5-7B-Instruct
+
+   .. grid-item-card:: Algorithm
+      :text-align: center
+
+      Multi-turn RL with tool invocation
+
+   .. grid-item-card:: Tools
+      :text-align: center
+
+      Code Judge server and Math-Verify rewards
+
+   .. grid-item-card:: Hardware
+      :text-align: center
+
+      Reference run on 8×H100
+
 Environment
 -----------
 
@@ -137,14 +166,14 @@ Training Curves
 
 Below shows the comparison of reward curves and response length curves between RLinf and Verl.
 
-.. figure:: https://github.com/RLinf/misc/raw/main/pic/rstar2-RLinf-7b.jpg
+.. figure:: https://raw.githubusercontent.com/RLinf/misc/main/pic/rstar2-RLinf-7b.jpg
    :width: 80%
    :align: center
    :alt: Qwen2.5-7B-Instruct in RLinf
 
    Qwen2.5-7B-Instruct in RLinf
 
-.. figure:: https://github.com/RLinf/misc/raw/main/pic/rstar2-Verl-7b.jpg
+.. figure:: https://raw.githubusercontent.com/RLinf/misc/main/pic/rstar2-Verl-7b.jpg
    :width: 80%
    :align: center
    :alt: Qwen2.5-7B-Instruct in Verl

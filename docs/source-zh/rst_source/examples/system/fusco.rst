@@ -4,6 +4,34 @@ FUSCO高性能MoE通信库
 FUSCO是一个高性能的分布式 All-to-All 通信库，专为 MoE（Mixture of Experts）训练和推理场景设计。
 通过融合数据变换与通信过程，FUSCO 显著提升了大规模 MoE 模型的通信效率。本文档介绍了如何在 RLinf 框架下使用 FUSCO 进行加速。
 
+概述
+----
+
+使用本页为 RLinf 中基于 Megatron 的 MoE 训练启用 FUSCO 加速。
+
+.. grid:: 2 4 4 4
+   :gutter: 2
+
+   .. grid-item-card:: 组件
+      :text-align: center
+
+      MoE All-to-All token dispatcher
+
+   .. grid-item-card:: 后端
+      :text-align: center
+
+      Megatron-LM actor training
+
+   .. grid-item-card:: 配置
+      :text-align: center
+
+      ``moe_token_dispatcher_type: alltoall``
+
+   .. grid-item-card:: 测试
+      :text-align: center
+
+      Reasoning e2e FUSCO smoke test
+
 安装
 ----
 

@@ -10,6 +10,34 @@
 
 参考配置使用的是 Qwen3 系列稠密模型。
 
+概述
+----
+
+使用本页评测已发布的 WideSeek-R1 checkpoint，或你自己的 Qwen3 稠密模型。
+
+.. grid:: 2 4 4 4
+   :gutter: 2
+
+   .. grid-item-card:: 模型
+      :text-align: center
+
+      WideSeek-R1-4B 或 Qwen3 系列稠密模型
+
+   .. grid-item-card:: 基准
+      :text-align: center
+
+      WideSearch 与标准 QA
+
+   .. grid-item-card:: 工具
+      :text-align: center
+
+      WideSearch 使用在线搜索；QA 使用离线检索
+
+   .. grid-item-card:: 输出
+      :text-align: center
+
+      ``metric.json`` 与生成结果
+
 .. contents::
    :depth: 2
    :local:

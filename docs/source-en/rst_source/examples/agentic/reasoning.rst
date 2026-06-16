@@ -11,6 +11,34 @@ Compared with supervised fine-tuning (SFT), RL encourages the model to explore d
 
 Our goal is to improve the model's ability to solve challenging math problems by optimizing both its reasoning process and its final answers.
 
+Overview
+--------
+
+Use this recipe to train Qwen-based reasoning models with GRPO on math data.
+
+.. grid:: 2 4 4 4
+   :gutter: 2
+
+   .. grid-item-card:: Models
+      :text-align: center
+
+      Qwen2.5-1.5B and Qwen2.5-7B
+
+   .. grid-item-card:: Algorithm
+      :text-align: center
+
+      GRPO with token-level loss and minibatch early-stop
+
+   .. grid-item-card:: Data
+      :text-align: center
+
+      AReaL-boba math reasoning data
+
+   .. grid-item-card:: Hardware
+      :text-align: center
+
+      Multi-node Megatron training
+
 
 Dataset
 -------------
@@ -73,8 +101,8 @@ To support different dataset formats, you can adjust the configuration as needed
   When the option is enabled, the raw dataset is processed through `tokenizer.apply_chat_template()` to format the prompt according to the model's chat template.
   After processing, the prompt will be converted into a string for input.
 
-Algorithm
----------
+How GRPO Works
+--------------
 
 We adopt GRPO (Group Relative Policy Optimization) with the following modifications:
 
@@ -154,11 +182,11 @@ The following plots show training curves.
 
    <div style="display: flex; justify-content: space-between; gap: 10px;">
      <div style="flex: 1; text-align: center;">
-       <img src="https://github.com/RLinf/misc/raw/main/pic/1.5b-loss-curve.jpg" style="width: 100%;"/>
+       <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/1.5b-loss-curve.jpg" style="width: 100%;"/>
        <p><em>MATH 1.5B</em></p>
      </div>
      <div style="flex: 1; text-align: center;">
-       <img src="https://github.com/RLinf/misc/raw/main/pic/7b-loss-curve.jpg" style="width: 100%;"/>
+       <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/7b-loss-curve.jpg" style="width: 100%;"/>
        <p><em>MATH 7B</em></p>
      </div>
    </div>

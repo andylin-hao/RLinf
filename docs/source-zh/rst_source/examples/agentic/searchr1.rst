@@ -7,6 +7,34 @@ RLinf 框架下复现论文\ `Search-R1: Training LLMs to Reason and Leverage
 Search Engines with Reinforcement
 Learning <https://arxiv.org/abs/2503.09516>`__\ 中的实验，使用强化学习（RL）来训练大语言模型（LLM）通过调用搜索工具回答问题。
 
+概述
+----
+
+使用本配方结合本地 wiki 检索服务训练搜索增强推理模型。
+
+.. grid:: 2 4 4 4
+   :gutter: 2
+
+   .. grid-item-card:: 模型
+      :text-align: center
+
+      Qwen2.5-3B-Instruct
+
+   .. grid-item-card:: 算法
+      :text-align: center
+
+      带搜索工具调用的多轮强化学习
+
+   .. grid-item-card:: 工具
+      :text-align: center
+
+      FAISS 或 Qdrant 本地 wiki server
+
+   .. grid-item-card:: 硬件
+      :text-align: center
+
+      参考运行使用 8×H100
+
 环境
 ----
 
@@ -227,7 +255,7 @@ model路径填入 `examples/agent/searchr1/config/eval_qwen2.5.yaml`
 
    <div style="display: flex; justify-content: space-between; gap: 10px;">
      <div style="flex: 1; text-align: center;">
-       <img src="https://github.com/RLinf/misc/raw/main/pic/searchr1.png" style="width: 100%;"/>
+       <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/searchr1.png" style="width: 100%;"/>
        <p><em>Qwen2.5-3B-Instruct in RLinf</em></p>
      </div>
    </div>
@@ -238,7 +266,7 @@ model路径填入 `examples/agent/searchr1/config/eval_qwen2.5.yaml`
 
    <div style="display: flex; justify-content: space-between; gap: 10px;">
      <div style="flex: 1; text-align: center;">
-       <img src="https://github.com/RLinf/misc/raw/main/pic/searchr1_orig_impl_time.png" style="width: 35%;"/>
+       <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/searchr1_orig_impl_time.png" style="width: 35%;"/>
        <p><em>Qwen2.5-3B-Instruct in original implementation at PeterGriffinJin/Search-R1</em></p>
      </div>
    </div>

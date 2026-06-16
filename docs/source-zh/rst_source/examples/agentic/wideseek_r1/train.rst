@@ -5,6 +5,34 @@
 
 参考配置使用 ``Qwen3-4B``，但当前流程也兼容 Qwen3 系列中的其他稠密模型。
 
+概述
+----
+
+使用本页准备 WideSeek-R1 训练所需的模型、数据与配置。
+
+.. grid:: 2 4 4 4
+   :gutter: 2
+
+   .. grid-item-card:: 模型
+      :text-align: center
+
+      Qwen3-4B
+
+   .. grid-item-card:: 算法
+      :text-align: center
+
+      Hybrid multi-agent RL
+
+   .. grid-item-card:: 数据
+      :text-align: center
+
+      WideSeek-R1-train-data 中的 ``hybrid_20k.jsonl``
+
+   .. grid-item-card:: 工具
+      :text-align: center
+
+      离线检索与 judge model server
+
 .. contents::
    :depth: 2
    :local:

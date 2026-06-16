@@ -3,6 +3,34 @@ rStar2的强化学习训练
 
 结合工具调用的 Multi-turn RL 被证明能够将大语言模型（LLM）的交互边界扩展到真实世界。本文档介绍了如何在 RLinf 框架下复现论文 `rStar2-Agent: Agentic Reasoning Technical Report <https://arxiv.org/abs/2508.20722>`__ 的实验，使用强化学习（RL）来训练大语言模型（LLM）通过调用代码运行工具回答问题。
 
+概述
+----
+
+使用本配方复现 rStar2 风格的智能体推理，包含代码执行工具与 Megatron 训练。
+
+.. grid:: 2 4 4 4
+   :gutter: 2
+
+   .. grid-item-card:: 模型
+      :text-align: center
+
+      Qwen2.5-7B-Instruct
+
+   .. grid-item-card:: 算法
+      :text-align: center
+
+      带工具调用的多轮强化学习
+
+   .. grid-item-card:: 工具
+      :text-align: center
+
+      Code Judge server 与 Math-Verify reward
+
+   .. grid-item-card:: 硬件
+      :text-align: center
+
+      参考运行使用 8×H100
+
 环境
 ----
 
@@ -29,7 +57,7 @@ Code judge运行环境
    # install rstar2_agent requirements
    pip install -r requirements.txt
 
-   cd ../..
+   cd code-judge
 
 Code Judge 服务器设置
 ^^^^^^^^^^^^^^^^^^^^^
@@ -135,14 +163,14 @@ Reward计算工具
 
 下面展示 RLinf 与 Verl 的 reward 曲线和 response 长度曲线对比。
 
-.. figure:: https://github.com/RLinf/misc/raw/main/pic/rstar2-RLinf-7b.jpg
+.. figure:: https://raw.githubusercontent.com/RLinf/misc/main/pic/rstar2-RLinf-7b.jpg
    :width: 80%
    :align: center
    :alt: Qwen2.5-7B-Instruct in RLinf
 
    Qwen2.5-7B-Instruct in RLinf
 
-.. figure:: https://github.com/RLinf/misc/raw/main/pic/rstar2-Verl-7b.jpg
+.. figure:: https://raw.githubusercontent.com/RLinf/misc/main/pic/rstar2-Verl-7b.jpg
    :width: 80%
    :align: center
    :alt: Qwen2.5-7B-Instruct in Verl

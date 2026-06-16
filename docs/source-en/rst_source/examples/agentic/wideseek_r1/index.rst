@@ -18,6 +18,34 @@ For the full method and results, see the
 `paper on arXiv <https://arxiv.org/abs/2602.04634>`__, and the
 `example code in RLinf <https://github.com/RLinf/RLinf/tree/main/examples/agent/wideseek_r1>`__.
 
+Overview
+--------
+
+Use this guide as the entry point for WideSeek-R1 setup, training, and evaluation.
+
+.. grid:: 2 4 4 4
+   :gutter: 2
+
+   .. grid-item-card:: Model
+      :text-align: center
+
+      Qwen3-4B and Qwen3-series dense models
+
+   .. grid-item-card:: Algorithm
+      :text-align: center
+
+      Multi-agent RL for broad information seeking
+
+   .. grid-item-card:: Tools
+      :text-align: center
+
+      Online web search or offline Qdrant retrieval
+
+   .. grid-item-card:: Hardware
+      :text-align: center
+
+      Single-node quick start or multi-node scaling
+
 .. contents::
    :depth: 2
    :local:

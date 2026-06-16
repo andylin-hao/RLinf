@@ -11,6 +11,34 @@
 
 我们的目标是提升模型解决复杂数学问题的能力，同时优化推理过程和最终答案。
 
+概述
+----
+
+使用本配方在数学数据上通过 GRPO 训练 Qwen 系列推理模型。
+
+.. grid:: 2 4 4 4
+   :gutter: 2
+
+   .. grid-item-card:: 模型
+      :text-align: center
+
+      Qwen2.5-1.5B 与 Qwen2.5-7B
+
+   .. grid-item-card:: 算法
+      :text-align: center
+
+      GRPO，使用 token-level loss 与 minibatch early-stop
+
+   .. grid-item-card:: 数据
+      :text-align: center
+
+      AReaL-boba 数学推理数据
+
+   .. grid-item-card:: 硬件
+      :text-align: center
+
+      多节点 Megatron 训练
+
 数据集
 -------------
 
@@ -72,8 +100,8 @@
   启用该选项后，原始数据集将通过 `tokenizer.apply_chat_template()` 方法处理，按照使用模型的 tokenizer 中对话模板对提示词信息进行格式化。
   处理完成后，提示词信息将转换为字符串格式，用于模型输入。
 
-算法
----------
+GRPO 工作方式
+-------------
 
 我们采用 GRPO（Group Relative Policy Optimization），并做了如下改进：  
 
@@ -153,11 +181,11 @@
 
    <div style="display: flex; justify-content: space-between; gap: 10px;">
      <div style="flex: 1; text-align: center;">
-       <img src="https://github.com/RLinf/misc/raw/main/pic/1.5b-loss-curve.jpg" style="width: 100%;"/>
+       <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/1.5b-loss-curve.jpg" style="width: 100%;"/>
        <p><em>MATH 1.5B</em></p>
      </div>
      <div style="flex: 1; text-align: center;">
-       <img src="https://github.com/RLinf/misc/raw/main/pic/7b-loss-curve.jpg" style="width: 100%;"/>
+       <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/7b-loss-curve.jpg" style="width: 100%;"/>
        <p><em>MATH 7B</em></p>
      </div>
    </div>

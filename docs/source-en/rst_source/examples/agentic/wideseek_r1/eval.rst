@@ -10,6 +10,35 @@ The provided scripts support two evaluation settings:
 
 The reference configs use Qwen3-series dense models.
 
+Overview
+--------
+
+Use this page to evaluate a released WideSeek-R1 checkpoint or your own Qwen3
+dense model.
+
+.. grid:: 2 4 4 4
+   :gutter: 2
+
+   .. grid-item-card:: Model
+      :text-align: center
+
+      WideSeek-R1-4B or Qwen3-series dense models
+
+   .. grid-item-card:: Benchmarks
+      :text-align: center
+
+      WideSearch and standard QA
+
+   .. grid-item-card:: Tools
+      :text-align: center
+
+      Online search for WideSearch; offline retrieval for QA
+
+   .. grid-item-card:: Outputs
+      :text-align: center
+
+      ``metric.json`` and generated responses
+
 .. contents::
    :depth: 2
    :local:

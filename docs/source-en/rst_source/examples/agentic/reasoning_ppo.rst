@@ -1,26 +1,55 @@
 PPO training for Math Reasoning
 ==================================
 
-In the example `Reinforcement Learning Training for Math Reasoning <reasoning.html>`_, we have already introduced how to use GRPO to train a math reasoning model. RLinf also supports using the PPO algorithm for the same task. This page explains how to train this task with PPO. Since GRPO can be regarded as a variant of standard PPO, and we try to make PPO and GRPO share most of the code and configuration items, this page omits the parts that are largely repetitive. We recommend reading the `Reinforcement Learning Training for Math Reasoning <reasoning.html>`_ example first.
+In :doc:`reasoning`, we have already introduced how to use GRPO to train a math reasoning model. RLinf also supports using the PPO algorithm for the same task. This page explains how to train this task with PPO. Since GRPO can be regarded as a variant of standard PPO, and we try to make PPO and GRPO share most of the code and configuration items, this page omits the parts that are largely repetitive. We recommend reading :doc:`reasoning` first.
+
+Overview
+--------
+
+Use this recipe when you want actor-critic PPO for the same math-reasoning setup
+used by the GRPO example.
+
+.. grid:: 2 4 4 4
+   :gutter: 2
+
+   .. grid-item-card:: Model
+      :text-align: center
+
+      Qwen2.5-1.5B
+
+   .. grid-item-card:: Algorithm
+      :text-align: center
+
+      PPO with GAE advantages and a critic
+
+   .. grid-item-card:: Data
+      :text-align: center
+
+      AReaL-boba math reasoning data
+
+   .. grid-item-card:: Hardware
+      :text-align: center
+
+      Multi-GPU Megatron training
 
 Dataset
 -------
 
-We also use the boba dataset. For details, please refer to `Reinforcement Learning Training for Math Reasoning <reasoning.html>`_.
+We also use the boba dataset. For details, see :doc:`reasoning`.
 
 Algorithm
 ---------
 
-We use the standard PPO (Proximal Policy Optimization) algorithm. For a detailed introduction to this algorithm, please refer to `PPO <../../tutorials/rlalg/ppo.html>`_.
+We use the standard PPO (Proximal Policy Optimization) algorithm. For the algorithm reference, see :doc:`PPO </rst_source/tutorials/rlalg/ppo>`.
 
-Run Script
-----------
+Run It
+------
 
 **1. Config file**
 
 Recommended config example:  
 
-- ``examples/reasoning/config/math/qwen2.5-1.5b-ppo-megatron-dynamicbatch-4gpu.yaml``
+- ``examples/reasoning/config/math/qwen2.5-1.5b-ppo-megatron.yaml``
 
 **2. Launch command**
 
@@ -38,8 +67,7 @@ Since the base capability of the Qwen2.5-1.5B-Instruct model is relatively weak,
 
    <div style="display: flex; justify-content: space-between; gap: 10px;">
      <div style="flex: 1; text-align: center;">
-       <img src="https://github.com/RLinf/misc/raw/main/pic/ppo_rlinf_vs_verl.jpg" style="width: 50%;"/>
+       <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/ppo_rlinf_vs_verl.jpg" style="width: 50%;"/>
        <p><em>MATH 1.5B PPO</em></p>
      </div>
    </div>
-

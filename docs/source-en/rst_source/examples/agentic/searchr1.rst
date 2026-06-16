@@ -6,6 +6,35 @@ This document describes how to reproduce the experiments from
 `Search-R1: Training LLMs to Reason and Leverage Search Engines with Reinforcement Learning <https://arxiv.org/abs/2503.09516>`__  
 under the RLinf framework, using reinforcement learning (RL) to train LLMs to answer questions by invoking search tools.
 
+Overview
+--------
+
+Use this recipe to train a search-augmented reasoning model with a local wiki
+retrieval server.
+
+.. grid:: 2 4 4 4
+   :gutter: 2
+
+   .. grid-item-card:: Model
+      :text-align: center
+
+      Qwen2.5-3B-Instruct
+
+   .. grid-item-card:: Algorithm
+      :text-align: center
+
+      Multi-turn RL with search-tool calls
+
+   .. grid-item-card:: Tools
+      :text-align: center
+
+      FAISS or Qdrant local wiki server
+
+   .. grid-item-card:: Hardware
+      :text-align: center
+
+      Reference run on 8×H100
+
 Environment
 -----------
 
@@ -235,7 +264,7 @@ The following shows the reward curves and training time curves.
 
    <div style="display: flex; justify-content: space-between; gap: 10px;">
      <div style="flex: 1; text-align: center;">
-       <img src="https://github.com/RLinf/misc/raw/main/pic/searchr1.png" style="width: 100%;"/>
+       <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/searchr1.png" style="width: 100%;"/>
        <p><em>Qwen2.5-3B-Instruct in RLinf</em></p>
      </div>
    </div>
@@ -246,7 +275,7 @@ Compared to the original performance (133s per step after response length stabil
 
    <div style="display: flex; justify-content: space-between; gap: 10px;">
      <div style="flex: 1; text-align: center;">
-       <img src="https://github.com/RLinf/misc/raw/main/pic/searchr1_orig_impl_time.png" style="width: 35%;"/>
+       <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/searchr1_orig_impl_time.png" style="width: 35%;"/>
        <p><em>Qwen2.5-3B-Instruct in original implementation at PeterGriffinJin/Search-R1</em></p>
      </div>
    </div>

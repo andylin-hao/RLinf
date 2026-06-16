@@ -4,6 +4,34 @@ FUSCO High-Performance MoE Communication Library
 FUSCO is a high-performance distributed All-to-All communication library designed specifically for MoE (Mixture of Experts) training and inference scenarios.
 By fusing data transformation and communication, FUSCO significantly improves communication efficiency for large-scale MoE models. This document introduces how to use FUSCO for acceleration within the RLinf framework.
 
+Overview
+--------
+
+Use this page to enable FUSCO acceleration for Megatron-backed MoE training in RLinf.
+
+.. grid:: 2 4 4 4
+   :gutter: 2
+
+   .. grid-item-card:: Component
+      :text-align: center
+
+      MoE All-to-All token dispatcher
+
+   .. grid-item-card:: Backend
+      :text-align: center
+
+      Megatron-LM actor training
+
+   .. grid-item-card:: Config
+      :text-align: center
+
+      ``moe_token_dispatcher_type: alltoall``
+
+   .. grid-item-card:: Test
+      :text-align: center
+
+      Reasoning e2e FUSCO smoke test
+
 Installation
 ------------
 

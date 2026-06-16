@@ -10,14 +10,50 @@
 概述
 --------
 
-代码补全在线强化学习系统通过以下方式工作：
+使用本配方将 Continue 连接到 RLinf 训练服务，并根据用户反馈更新代码补全模型。
 
-1. **实时交互**：系统接收来自 Continue 等编辑器的代码补全请求
-2. **模型推理**：使用训练好的模型生成代码补全建议
-3. **用户反馈**：收集用户对生成代码的接受/拒绝反馈
-4. **在线学习**：基于用户反馈实时更新模型参数
+.. grid:: 2 4 4 4
+   :gutter: 2
 
-这种实时学习机制使得模型能够快速适应用户的编程习惯和偏好。
+   .. grid-item-card:: 模型
+      :text-align: center
+
+      Qwen2.5-Coder-1.5B
+
+   .. grid-item-card:: 算法
+      :text-align: center
+
+      PPO 在线强化学习或 GRPO 离线验证
+
+   .. grid-item-card:: 反馈
+      :text-align: center
+
+      Continue 接受 / 拒绝事件或 LLM-as-judge 标签
+
+   .. grid-item-card:: 服务
+      :text-align: center
+
+      ``8081`` 推理服务与 ``8082`` 反馈接收服务
+
+.. list-table::
+   :header-rows: 1
+   :widths: 24 38 38
+
+   * - 步骤
+     - 组件
+     - 产出
+   * - 实时交互
+     - Continue 扩展
+     - 向 RLinf 发送代码补全请求
+   * - 模型推理
+     - RLinf 推理服务
+     - 返回代码补全建议
+   * - 用户反馈
+     - Continue tracking callback
+     - 记录接受或拒绝的补全
+   * - 在线学习
+     - RLinf 训练服务
+     - 根据反馈更新策略
 
 我们同时提供了针对在线强化学习及离线验证的示例。其中离线验证示例使用大模型模拟人类偏好进行打分，不需要也不支持部署 Continue 在线使用。
 
@@ -135,7 +171,7 @@
       .. code-block:: bash
       
          # 进入项目目录
-         cd /path/to/rlinf_online_rl
+         cd /path/to/RLinf
          
          # 启动训练服务
          bash examples/agent/coding_online_rl/run_main_coding_online_rl.sh
@@ -149,7 +185,7 @@
       .. code-block:: bash
       
          # 进入项目目录
-         cd /path/to/rlinf_online_rl
+         cd /path/to/RLinf
          
          # 启动训练服务
          bash examples/agent/coding_online_rl/run_main_coding_rl_llm_judge.sh
@@ -203,7 +239,7 @@
 .. code-block:: bash
 
    # 运行测试客户端
-   python examples/agent/coding_online_rl/simple_test_client.py
+   python examples/agent/coding_online_rl/simple_online_coding_client.py
 
 测试客户端会模拟 Continue 的行为，发送代码补全请求并提交反馈数据。
 
@@ -221,6 +257,6 @@
 
 3. **Continue 连接失败**
    
-   确保 Continue 配置中的 API 端点地址正确，检查网络连接。还可使用 simple_test_client 测试是否能正常收到反馈数据。
+   确保 Continue 配置中的 API 端点地址正确，检查网络连接。还可使用 ``simple_online_coding_client.py`` 测试是否能正常收到反馈数据。
 
 通过以上步骤，您就可以成功运行代码补全在线强化学习系统，并实现与 Continue 编辑器的无缝集成。
