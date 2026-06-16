@@ -4,7 +4,7 @@
    :align: center
    :width: 80%
 
-   本 RLinf 示例使用的机器人配置。图片来源：RLinf 项目资源。
+   接入 Stereolabs ZED 相机和 Robotiq 2F 夹爪的 Franka 数据采集配置。图片来源：RLinf 项目资源。
 
 在基础 Franka 配置上接入 Stereolabs ZED 相机和 Robotiq 2F 夹爪。你将安装 SDK，连接串口设备，更新 YAML 硬件字段，并用新传感器采集数据。
 

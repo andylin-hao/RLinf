@@ -10,7 +10,7 @@ Dexmal DOS-W1 真机强化学习
    :align: center
    :width: 80%
 
-   本 RLinf 示例使用的机器人配置。图片来源：RLinf 项目资源。
+   用于 Flow Matching 单臂抓取流程的 Dexmal DOS-W1 双臂机器人。图片来源：RLinf 项目资源。
 
 在 Dexmal DOS-W1 双臂机器人上训练 Flow Matching 策略。当前流程运行单臂抓取任务，使用 AirBot 服务、RealSense 相机、键盘门控 episode，以及 SAC/RLPD 风格真机训练。
 

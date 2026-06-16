@@ -4,7 +4,7 @@ XSquare Turtle2 真机强化学习
    :align: center
    :width: 80%
 
-   本 RLinf 示例使用的机器人配置。图片来源：RLinf 项目资源。
+   用于 SAC/CNN 真机按键训练的 XSquare Turtle2 双臂机器人。图片来源：RLinf 项目资源。
 
 在 XSquare Turtle2 双臂机器人上训练真机策略。你将进入厂商控制容器，安装 RLinf 依赖，设置按键任务目标位姿，并在机器人节点与 GPU 节点上启动 SAC/CNN 训练。
 

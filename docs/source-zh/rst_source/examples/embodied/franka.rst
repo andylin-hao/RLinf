@@ -10,7 +10,7 @@ Franka 真机强化学习
    :align: center
    :width: 80%
 
-   本 RLinf 示例使用的机器人配置。图片来源：RLinf 项目资源。
+   基础 RLinf 真机 RL 流程使用的 Franka Emika Panda 机械臂。图片来源：RLinf 项目资源。
 
 使用 RLinf 在 Franka Emika Panda 机械臂上训练和评测真机策略。你将配置控制节点与训练节点，采集示教数据，运行 SAC / RLPD 或 PPO 类训练，并在真实硬件上监控安全的在线更新。
 

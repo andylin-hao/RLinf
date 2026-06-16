@@ -4,7 +4,7 @@
    :align: center
    :width: 80%
 
-   本 RLinf 示例使用的机器人配置。图片来源：RLinf 项目资源。
+   用于采集 Franka 示教数据的 GELLO 关节级遥操作设备。图片来源：RLinf 项目资源。
 
 使用 GELLO 作为 Franka 数据采集的关节级遥操作设备。你将安装 ``gello_teleop``，验证串口设备，更新采集配置，并监控保存的 episode。
 

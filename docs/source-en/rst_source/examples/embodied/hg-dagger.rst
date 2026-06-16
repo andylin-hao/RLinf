@@ -4,7 +4,7 @@ Using HG-DAgger with Franka
    :align: center
    :width: 80%
 
-   Robot setup used by this RLinf recipe. Image credit: RLinf project assets.
+   Human-Gated DAgger workflow for collecting interventions and training a Franka policy online. Image credit: RLinf project assets.
 
 Train a real-world Franka policy with Human-Gated DAgger. You will collect intervention data, compute OpenPI normalization stats, run SFT, then launch online HG-DAgger with expert-only steps saved for training.
 

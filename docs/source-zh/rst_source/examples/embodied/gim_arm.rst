@@ -4,7 +4,7 @@ GimArm 真机强化学习
    :align: center
    :width: 80%
 
-   本 RLinf 示例使用的机器人配置。图片来源：RLinf 项目资源。
+   用于 SocketCAN 控制、电机校准和 peg-insertion 训练的 GimArm 六自由度机械臂。图片来源：RLinf 项目资源。
 
 通过 SocketCAN 在 GimArm 六自由度机械臂上运行 RLinf。你将安装 CAN 控制 SDK，校准电机，设置目标末端位姿，采集示教，并启动真机训练。
 

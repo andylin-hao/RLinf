@@ -4,7 +4,7 @@ Real-World RL with XSquare Turtle2
    :align: center
    :width: 80%
 
-   Robot setup used by this RLinf recipe. Image credit: RLinf project assets.
+   XSquare Turtle2 dual-arm robot used for SAC/CNN real-world button-pressing training. Image credit: RLinf project assets.
 
 Train a real-world policy on the XSquare Turtle2 dual-arm robot. You will enter the vendor controller container, install RLinf dependencies, set target poses for button pressing, and launch SAC/CNN training across robot and GPU nodes.
 

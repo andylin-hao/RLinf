@@ -4,7 +4,7 @@
    :align: center
    :width: 80%
 
-   本 RLinf 示例使用的机器人配置。图片来源：RLinf 项目资源。
+   双 Franka GELLO 采集与 π₀.₅ 部署流程所基于的 Franka 机械臂硬件。图片来源：RLinf 项目资源。
 
 运行受支持的双 Franka 流程：用 GELLO 采集关节空间示教，将数据转换为 tcp_rot6d，微调 OpenPI π₀.₅，并把 checkpoint 部署回机器人节点。
 
