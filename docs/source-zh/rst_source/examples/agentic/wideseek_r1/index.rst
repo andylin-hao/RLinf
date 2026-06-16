@@ -1,5 +1,3 @@
-:orphan:
-
 .. _wideseek-r1-example:
 
 WideSeek-R1

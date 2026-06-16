@@ -97,6 +97,8 @@ RLinf的worker抽象、灵活的通信组件、以及对不同类型加速器的
    :hidden:
    :maxdepth: 2
 
+   WideSeek-R1 <wideseek_r1/index>
+   Coding Online RL <coding_online_rl>
    Search-R1 <searchr1>
    Math GRPO <reasoning>
    Math PPO <reasoning_ppo>

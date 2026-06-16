@@ -98,6 +98,8 @@ The following examples include math reasoning RL and agentic AI workflows, such 
    :hidden:
    :maxdepth: 2
 
+   WideSeek-R1 <wideseek_r1/index>
+   Coding Online RL <coding_online_rl>
    Search-R1 <searchr1>
    Math GRPO <reasoning>
    Math PPO <reasoning_ppo>
