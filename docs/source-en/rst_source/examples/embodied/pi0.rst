@@ -6,109 +6,100 @@ RL on π\ :sub:`0`\  and π\ :sub:`0.5`\  Models
    :height: 16px
    :class: inline-icon
 
-This example provides a complete guide to fine-tuning the 
-π\ :sub:`0`\  and π\ :sub:`0.5`\  algorithms with reinforcement learning
-using the **RLinf** framework. It covers the entire process—from
-environment input, core algorithms, training script configuration to
-evaluation and visualization—along with reproducible commands and
-configuration snippets.
+.. figure:: https://raw.githubusercontent.com/RLinf/misc/main/pic/pi0_icon.jpg
+   :align: center
+   :width: 35%
 
-For detailed technical report, please refer to the paper: `πRL: ONLINE RL FINE-TUNING FOR FLOW-BASED VISION-LANGUAGE-ACTION MODELS <https://arxiv.org/abs/2510.25889>`__.
+   The π\ :sub:`0`\  / π\ :sub:`0.5`\  flow-based VLA models.
 
-The primary objective is to develop a model capable of performing
-robotic manipulation by:
+Fine-tune the **π**\ :sub:`0`\  and **π**\ :sub:`0.5`\  flow-based VLA models with
+reinforcement learning (PPO / GRPO) across several simulators using RLinf. For the full
+method, see the paper
+`πRL: Online RL Fine-Tuning for Flow-Based Vision-Language-Action Models <https://arxiv.org/abs/2510.25889>`__.
 
-1. **Visual Understanding**: Processing RGB images from the robot’s
-   camera.
-2. **Language Comprehension**: Interpreting natural-language task
-   descriptions.
-3. **Action Generation**: Producing precise robotic actions (position,
-   rotation, gripper control).
-4. **Reinforcement Learning**: Optimizing the policy via the PPO with
-   environment feedback.
+Overview
+--------
 
---------------
+RL-fine-tune π\ :sub:`0`\  / π\ :sub:`0.5`\  on LIBERO, ManiSkill, MetaWorld, and CALVIN with PPO or GRPO.
 
-Environment
------------
+.. grid:: 2 4 4 4
+   :gutter: 2
 
-**LIBERO Environment**
+   .. grid-item-card:: Models
+      :text-align: center
 
--  **Environment**: LIBERO simulation benchmark built on top of
-   *robosuite* (MuJoCo).
--  **Task**: Command a 7-DoF robotic arm to perform a variety of
-   household manipulation skills (pick-and-place, stacking, opening
-   drawers, spatial rearrangement).
--  **Observation**: RGB images (typical resolutions 128 × 128 or 224 ×
-   224) captured by off-screen cameras placed around the workspace.
--  **Action Space**: 7-dimensional continuous actions
-   - 3D end-effector position control (x, y, z)
-   - 3D rotation control (roll, pitch, yaw)
-   - Gripper control (open / close)
+      π\ :sub:`0`\  · π\ :sub:`0.5`\ 
 
-**ManiSkill3 Environment**
+   .. grid-item-card:: Algorithms
+      :text-align: center
 
--  **Environment**: ManiSkill3 simulation platform
--  **Task**: Control a robotic arm to grasp various objects
--  **Observation**: RGB images (224 × 224) from third-person camera
--  **Action Space**: 7-dimensional continuous actions
-   - 3D position control (x, y, z)
-   - 3D rotation control (roll, pitch, yaw)
-   - Gripper control (open / close)
+      PPO · GRPO
 
-**Task Description Format**
+   .. grid-item-card:: Environments
+      :text-align: center
 
-   π\ :sub:`0`\  and π\ :sub:`0.5`\  directly use the environment-provided natural-language
-   task description as the language model input.
+      LIBERO · ManiSkill · MetaWorld · CALVIN
 
-**Data Structure**
+   .. grid-item-card:: Hardware
+      :text-align: center
 
--  **Images**: Main-view and wrist-view RGB tensors, each of shape
-   ``[batch_size, 224, 224, 3]``
--  **States**: In LIBERO, states include end-effector pose (position + orientation) and gripper state. In ManiSkill3, states are robot joint angles.
--  **Task Descriptions**: Natural-language instructions
--  **Rewards**: Sparse success/failure rewards
+      1 node · GPUs
 
---------------
+| **You'll do:** install → download an SFT checkpoint → pick a config → launch ``run_embodiment.sh`` → watch ``env/success_once``.
+| **Prerequisites:** :doc:`Installation </rst_source/start/installation>` · a π\ :sub:`0`\  / π\ :sub:`0.5`\  SFT checkpoint (steps below).
 
-Algorithm
----------
+Tasks
+~~~~~
 
-**Core Algorithm Components**
+.. list-table::
+   :header-rows: 1
+   :widths: 22 30 48
 
-1. **PPO (Proximal Policy Optimization)**
+   * - Environment
+     - Tasks
+     - Example config
+   * - LIBERO
+     - Spatial · Object · Goal · Long
+     - ``libero_10_ppo_openpi`` / ``..._grpo_openpi``
+   * - ManiSkill3
+     - 25-task grasping
+     - ``maniskill_ppo_openpi``
+   * - MetaWorld
+     - MT50
+     - ``metaworld_*_ppo_openpi``
+   * - CALVIN
+     - ABC-D
+     - ``calvin_abc_d_ppo_openpi_pi05``
 
-   -  Advantage estimation using GAE (Generalized Advantage Estimation)
-   -  Policy clipping with ratio limits
-   -  Value function clipping
-   -  Entropy regularization
+Observation and Action
+~~~~~~~~~~~~~~~~~~~~~~
 
-2. **GRPO (Group Relative Policy Optimization)**
+.. list-table::
+   :header-rows: 1
+   :widths: 18 82
 
-   -  For every state / prompt the policy generates *G* independent
-      actions
-   -  Compute the advantage of each action by subtracting the group’s
-      mean reward.
+   * - Field
+     - Description
+   * - Observation
+     - Main-view and wrist-view RGB, ``[B, 224, 224, 3]``.
+   * - State
+     - LIBERO/MetaWorld/CALVIN: end-effector pose + gripper. ManiSkill3: robot joint angles.
+   * - Action
+     - 7-D continuous control — 3-D end-effector position (x, y, z), 3-D rotation (roll, pitch, yaw), gripper open/close.
+   * - Reward
+     - Sparse success/failure.
+   * - Task prompt
+     - Environment-provided natural-language task description, consumed directly by the VLM.
 
-Dependency Installation
------------------------
+π\ :sub:`0`\  / π\ :sub:`0.5`\  train with PPO (actor-critic; GAE, ratio clipping, value clipping,
+entropy regularization) or GRPO (group-relative advantages over *G* sampled actions).
 
-1. Clone RLinf Repository
-~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Installation
+------------
 
-.. code:: bash
+.. include:: _setup_common.rst
 
-   # For mainland China users, you can use the following for better download speed:
-   # git clone https://ghfast.top/github.com/RLinf/RLinf.git
-   git clone https://github.com/RLinf/RLinf.git
-   cd RLinf
-
-2. Install Dependencies
-~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-**Option 1: Docker Image**
-
-Use Docker image for the experiment.
+**Option 1: Docker image** — image tag ``agentic-rlinf0.2-maniskill_libero``:
 
 .. code:: bash
 
@@ -140,8 +131,8 @@ Install dependencies directly in your environment by running the following comma
 
 --------------
 
-Model Download
---------------
+Download the Model
+------------------
 
 Before starting training, you need to download the corresponding pretrained models. For example, for Spatial, Object, Goal task types in the LIBERO environment, you can download them as follows:
 
@@ -239,8 +230,8 @@ Of course, RLinf also provides pretrained models for other environments. The mod
 
 After downloading, please make sure to specify the model path correctly in your configuration file.
 
-Running Scripts
----------------
+Run It
+------
 
 **1. Key Cluster Configuration**
 
@@ -439,26 +430,10 @@ Visualization and Results
 
 --------------
 
-**2. Key Monitoring Metrics**
+**2. Key Metrics**
 
--  **Training Metrics**
-
-   -  ``actor/loss``: Policy loss
-   -  ``actor/value_loss``: Value function loss (PPO)
-   -  ``actor/grad_norm``: Gradient norm
-   -  ``actor/approx_kl``: KL divergence between old and new policies
-   -  ``actor/pg_clipfrac``: Policy clipping ratio
-   -  ``actor/value_clip_ratio``: Value loss clipping ratio (PPO)
-
--  **Rollout Metrics**
-
-   -  ``rollout/returns_mean``: Average episode return
-   -  ``rollout/advantages_mean``: Mean advantage value
-
--  **Environment Metrics**
-
-   -  ``env/episode_len``: Average episode length
-   -  ``env/success_once``: Task success rate
+Watch **``env/success_once``** for the task success rate. For every logged metric, see
+:doc:`Training metrics </rst_source/tutorials/configuration/metrics>`.
 
 --------------
 
