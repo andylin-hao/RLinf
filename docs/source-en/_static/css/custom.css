@@ -67,7 +67,7 @@ html[data-theme="dark"] {
 
 .sd-card {
   background: var(--pst-color-surface, var(--pst-color-background)) !important;
-  border: 1px solid var(--pst-color-border) !important;
+  border: 0 !important;
   border-radius: var(--rlinf-card-radius) !important;
   box-shadow: var(--rlinf-card-shadow) !important;
   color: var(--pst-color-text-base) !important;
@@ -77,7 +77,6 @@ html[data-theme="dark"] {
 }
 
 .sd-card:hover {
-  border-color: var(--pst-color-primary) !important;
   box-shadow: var(--rlinf-card-shadow-hover) !important;
   transform: translateY(-2px);
 }
