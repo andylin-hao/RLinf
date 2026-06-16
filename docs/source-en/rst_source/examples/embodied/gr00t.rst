@@ -6,97 +6,100 @@ RL on GR00T Models
    :height: 16px
    :class: inline-icon
 
-This example provides a complete guide to fine-tune GR00T models with reinforcement learning in the **LIBERO** environment using the **RLinf** framework. It covers the entire process—from environment setup and core algorithm design to training configuration, evaluation, and visualization—along with reproducible commands and configuration snippets.
+.. figure:: https://raw.githubusercontent.com/RLinf/misc/main/pic/gr00t.png
+   :align: center
+   :width: 70%
+
+   NVIDIA GR00T: a cross-embodiment VLA foundation model.
+
+Fine-tune **GR00T** models with reinforcement learning on **LIBERO** using RLinf —
+SFT cold-start, PPO training, evaluation, and visualization.
 
 .. note::
 
    RLinf supports GR00T-N1.5, GR00T-N1.6, and GR00T-N1.7. N1.6 introduced the Flow-Matching Action Head, FSDP-based training, and stronger cross-embodiment support. N1.7 further upgrades the official backbone to Cosmos-Reason2-2B / Qwen3-VL and expands the official universal state/action space. Version-specific differences are marked with **N1.5** / **N1.6** / **N1.7** labels.
 
-Environment
------------
+Overview
+--------
 
-**LIBERO Environment**
+Fine-tune GR00T (N1.5 / N1.6 / N1.7) on LIBERO with PPO (actor-critic).
 
-- **Environment**: LIBERO simulation benchmark built on top of *robosuite* (MuJoCo).
-- **Task**: Command a 7-DoF robotic arm to perform a variety of household manipulation skills (pick-and-place, stacking, opening drawers, spatial rearrangement).
+.. grid:: 2 4 4 4
+   :gutter: 2
 
-**N1.5:**
+   .. grid-item-card:: Environments
+      :text-align: center
 
-- **Observation**: RGB images (typical resolutions 128 × 128 or 224 × 224) captured by off-screen cameras placed around the workspace.
-- **Action Space**: 7-dimensional continuous actions — 3D end-effector position control (x, y, z), 3D rotation control (roll, pitch, yaw), gripper control (open / close).
+      LIBERO · IsaacLab
 
-**N1.6:**
+   .. grid-item-card:: Algorithms
+      :text-align: center
 
-- **Observation**: RGB images (typical resolutions 128×128, 224×224, or 256×256) captured by off-screen cameras placed around the workspace.
-- **Action Space**: 7-dimensional continuous actions. *Note: GR00T-N1.6 zero-pads these 7-dim actions to a 128-dim cross-embodiment universal action space via embodiment tags.*
+      PPO
 
-**N1.7:**
+   .. grid-item-card:: Tasks
+      :text-align: center
 
-- **Observation**: For the current RLinf LIBERO integration, the environment still provides main-view and wrist-view RGB observations plus a raw 8-dim LIBERO state tensor, and RLinf converts them to the official GR00T-N1.7 processor input format.
-- **Action Space**: The environment-facing action remains 7-dimensional continuous control for LIBERO. Inside the official GR00T-N1.7 pipeline, actions are decoded from the GR00T action representation and mapped back to the LIBERO 7-dim control space.
+      LIBERO Spatial · Object · Goal · Long
 
-**Task Description Format**
+   .. grid-item-card:: Hardware
+      :text-align: center
 
-GR00T directly uses the environment-provided natural-language task description as the language model input.
+      1 node · GPUs
 
-**N1.5:**
+| **You'll do:** install the target GR00T version → download the SFT / task checkpoint → pick a config → launch ``run_embodiment.sh`` → watch ``env/success_once``.
+| **Prerequisites:** :doc:`Installation </rst_source/start/installation>` · a GR00T LIBERO checkpoint (steps below).
 
-**Data Structure**
+Tasks
+~~~~~
 
-- **Images**: Main-view and wrist-view RGB tensors, respectively named as "main_images" and "wrist_images" with shape ``[batch_size, 224, 224, 3]``
-- **States**: End-effector position, orientation, and gripper state
-- **Task Descriptions**: Natural-language instructions
-- **Rewards**: Sparse success/failure rewards
+.. list-table::
+   :header-rows: 1
+   :widths: 26 36 38
 
-**N1.6:**
+   * - Suite
+     - Config prefix
+     - Focus
+   * - LIBERO Spatial
+     - ``libero_spatial_ppo_gr00t``
+     - Spatial relations and tabletop rearrangement.
+   * - LIBERO Object
+     - ``libero_object_ppo_gr00t``
+     - Object-centric manipulation.
+   * - LIBERO Goal
+     - ``libero_goal_ppo_gr00t``
+     - Goal-conditioned manipulation.
+   * - LIBERO Long (10)
+     - ``libero_10_ppo_gr00t``
+     - Long-horizon multi-step tasks.
 
-**Data Structure**
+Observation and Action
+~~~~~~~~~~~~~~~~~~~~~~
 
-- **Images**: Continuous RGB video frames from the main view and wrist view, typically named ``main_images`` and ``wrist_images``. Considering timestep history, the shape is usually ``[batch_size, seq_len, 224, 224, 3]``.
-- **State**: End-effector position, pose, and gripper state (concatenated with visual features at the network bottom as state representation).
-- **Task Description**: Natural-language instructions.
-- **Rewards**: Sparse rewards for PPO reinforcement (1 for success, 0 for failure).
+.. list-table::
+   :header-rows: 1
+   :widths: 18 82
 
-**N1.7:**
+   * - Field
+     - Description
+   * - Observation
+     - Main-view and wrist-view RGB (``main_images`` / ``wrist_images``, e.g. ``[B, 224, 224, 3]``; N1.6 adds a temporal sequence axis) plus an 8-D LIBERO state.
+   * - Action
+     - 7-D continuous control on LIBERO (3-D end-effector position, 3-D rotation, gripper). N1.6 zero-pads to a 128-D cross-embodiment action space via embodiment tags; N1.7 decodes from a relative-EEF universal representation.
+   * - Reward
+     - Sparse success/failure (1 on success, 0 otherwise).
+   * - Task prompt
+     - Environment-provided natural-language task description, consumed directly by the VLM.
 
-**Data Structure**
+GR00T uses PPO with an actor-critic loss (GAE advantages/returns, ratio clipping, value
+clipping, optional entropy regularization).
 
-- **Images**: RLinf currently reads ``main_images`` and ``wrist_images`` from LIBERO and converts them to the GR00T-N1.7 observation schema (for example ``video.image`` and ``video.wrist_image``) before calling the official processor.
-- **State**: RLinf currently receives an 8-dim raw LIBERO state tensor and splits it into ``state.x``, ``state.y``, ``state.z``, ``state.roll``, ``state.pitch``, ``state.yaw``, and ``state.gripper``. The current LIBERO example therefore keeps the existing RLinf/LIBERO state contract at the environment boundary, while the official N1.7 model uses a larger universal state/action representation internally.
-- **Task Description**: ``task_descriptions`` are mapped to ``annotation.human.action.task_description`` for the official processor.
-- **Rewards**: Sparse rewards for PPO reinforcement (1 for success, 0 for failure).
+Installation
+------------
 
-Algorithm
----------
+.. include:: _setup_common.rst
 
-**Core Algorithm Components**
-
-1. **PPO (Proximal Policy Optimization)**
-
-   - Advantage estimation using GAE (Generalized Advantage Estimation)
-   - Policy clipping with ratio limits
-   - Value function clipping
-   - Entropy regularization
-
-Dependency Installation
------------------------
-
-1. Clone the RLinf Repository
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-.. code:: bash
-
-   # For mainland China users, you can use the following for better download speed:
-   # git clone https://ghfast.top/github.com/RLinf/RLinf.git
-   git clone https://github.com/RLinf/RLinf.git
-   cd RLinf
-
-2. Install Dependencies
-~~~~~~~~~~~~~~~~~~~~~~~~~
-
-**Option 1: Docker Image**
-
-Use the Docker image to run the experiments.
+**Option 1: Docker image** — image tag ``agentic-rlinf0.2-maniskill_libero``:
 
 .. code:: bash
 
@@ -337,8 +340,8 @@ After fine-tuning, the system generates ``metadata.json`` and other statistical 
 
 ---------------
 
-Running Scripts
----------------
+Run It
+------
 
 **1. Key Cluster Configuration**
 
@@ -524,7 +527,7 @@ Update the SFT model path:
 
 --------------
 
-Visualization & Results
+Visualization and Results
 -------------------------
 
 **1. TensorBoard Logs**
@@ -534,28 +537,10 @@ Visualization & Results
    # Launch TensorBoard
    tensorboard --logdir ./logs --port 6006
 
---------------
+**2. Key Metrics**
 
-**2. Key Monitoring Metrics**
-
-- **Training Metrics**
-
-  - ``actor/loss``: Policy loss
-  - ``actor/value_loss``: Value function loss (PPO)
-  - ``actor/grad_norm``: Gradient norm
-  - ``actor/approx_kl``: KL divergence between old and new policy
-  - ``actor/pg_clipfrac``: Policy clipping ratio
-  - ``actor/value_clip_ratio``: Value loss clipping ratio (PPO)
-
-- **Rollout Metrics**
-
-  - ``rollout/returns_mean``: Average episode returns
-  - ``rollout/advantages_mean``: Average advantage values
-
-- **Environment Metrics**
-
-  - ``env/episode_len``: Average episode length
-  - ``env/success_once``: Task success rate
+Watch **``env/success_once``** for the task success rate. For every logged metric, see
+:doc:`Training metrics </rst_source/tutorials/configuration/metrics>`.
 
 --------------
 
