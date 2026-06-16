@@ -2,87 +2,85 @@ RLinf Documentation
 ===================
 
 .. image:: _static/svg/logo_white.svg
-   :width: 500px
+   :width: 360px
    :align: center
    :class: logo-svg
 
 .. raw:: html
 
-   <h1 style="text-align: center;">Welcome to <b>RLinf</b>!</h1>
+   <h1 style="text-align: center;">Scalable RL post-training for foundation models and embodied agents</h1>
 
+RLinf is a flexible, scalable open-source infrastructure for post-training
+foundation models with reinforcement learning. The "inf" stands for
+*Infrastructure* — a robust backbone for next-generation training — and for
+*Infinite*, capturing open-ended learning and continuous generalization.
 
-RLinf is a flexible and scalable open-source infrastructure designed for post-training foundation models via reinforcement learning. The 'inf' in RLinf stands for `Infrastructure`, highlighting its role as a robust backbone for next-generation training. It also stands for `Infinite`, symbolizing the system’s support for open-ended learning, continuous generalization, and limitless possibilities in intelligence development.
+.. grid:: 2 4 4 4
+   :gutter: 2
 
-----------------
+   .. grid-item-card:: Get Started
+      :link: rst_source/start/index
+      :link-type: doc
+      :text-align: center
+
+   .. grid-item-card:: Install
+      :link: rst_source/start/installation
+      :link-type: doc
+      :text-align: center
+
+   .. grid-item-card:: Examples
+      :link: rst_source/examples/index
+      :link-type: doc
+      :text-align: center
+
+   .. grid-item-card:: Evaluation
+      :link: rst_source/evaluations/index
+      :link-type: doc
+      :text-align: center
 
 .. image:: _static/svg/overview.svg
    :width: 1000px
    :align: center
    :class: overview-svg
 
+Choose Your Path
 ----------------
 
-**RLinf is unique with:**
+.. grid:: 1 2 2 2
+   :gutter: 3
 
-- Macro-to-Micro Flow: a new paradigm M2Flow, which executes macro-level logical flows through micro-level execution flows, decoupling logical workflow construction (programmable) from physical communication and scheduling (efficiency).
+   .. grid-item-card:: 🤖 Embodied RL
+      :link: rst_source/start/vla
+      :link-type: doc
 
-- Flexible Execution Modes
+      Fine-tune a VLA on LIBERO, ManiSkill, RoboTwin, and more with PPO or GRPO.
 
-  - Collocated mode: shares all GPUs across all workers.
-  - Disaggregated mode: enables fine-grained pipelining.
-  - Hybrid mode: a customizable combination of different placement modes, integrating both collocated and disaggregated modes.
+   .. grid-item-card:: 🧠 Agentic / Reasoning RL
+      :link: rst_source/start/llm
+      :link-type: doc
 
-- Auto Scheduling
+      Train math-reasoning and agentic tasks with GRPO on Qwen / DeepSeek models.
 
-  - Dynamic Scheduling: dynamically schedule resource allocation, maximizing resource utilization.
-  - Static Scheduling: automatically select the most suitable execution mode based on the training workload, without the need for manual resource allocation.
+   .. grid-item-card:: 🧩 Bring Your Own
+      :link: rst_source/extending/index
+      :link-type: doc
 
-- Embodied Agent Support
+      Add a model, environment, or algorithm and plug it into RLinf.
 
-  - Fast adaptation support for mainstream VLA models: `OpenVLA`_, `OpenVLA-OFT`_, `π₀`_, `GR00T-N1.5`_
-  - Support for mainstream CPU & GPU-based simulators via standardized RL interfaces: `ManiSkill3`_, `LIBERO`_, `IsaacLab`_
-  - Enabling the first RL fine-tuning of the π₀ model family with a flow-matching action expert.
+   .. grid-item-card:: 🚀 Scale to a Cluster
+      :link: rst_source/concepts/execution_modes
+      :link-type: doc
 
-**RLinf is fast with:**
+      Collocated, disaggregated, and hybrid placement across GPUs and nodes.
 
-- Hybrid mode with fine-grained pipelining: achieves a **120%+** throughput improvement compared to other frameworks.
-- Automatic Online Scaling Strategy: dynamically scales training resources, with GPU switching completed within seconds, further improving efficiency by 20–40% while preserving the on-policy nature of RL algorithms.
+Why RLinf
+---------
 
-**RLinf is flexible and easy to use with:**
+- **Fast** — hybrid fine-grained pipelining delivers 120%+ throughput over comparable frameworks, plus automatic online scaling.
+- **Flexible** — switch FSDP + Hugging Face for prototyping or Megatron + SGLang for large-scale training, with no code changes.
+- **Proven** — built-in PPO, GRPO, DAPO, and Reinforce++, with SOTA recipes for embodied and reasoning tasks.
 
-- Multiple Backend Integrations
-
-  .. - A single unified interface drives two complementary backends, allowing seamless switching without code changes.
-  
-  - FSDP + Hugging Face: rapid adaptation to new models and algorithms, ideal for beginners and fast prototyping.
-  - Megatron + SGLang: optimized for large-scale training, delivering maximum efficiency for expert users with demanding workloads.
-
-- Adaptive communication via the asynchronous communication channel
-
-- Built-in support for popular RL methods, including `PPO`_ , `GRPO`_ , `DAPO`_ , `Reinforce++`_ , and more.
-
-.. _PPO: https://arxiv.org/abs/1707.06347
-.. _GRPO: https://arxiv.org/abs/2402.03300
-.. _DAPO: https://arxiv.org/abs/2503.14476
-.. _Reinforce++: https://arxiv.org/abs/2501.03262
-
-
-
-.. _OpenVLA: https://github.com/openvla/openvla
-.. _OpenVLA-OFT: https://github.com/moojink/openvla-oft
-.. _IsaacLab: https://github.com/isaac-sim/IsaacLab
-.. _ManiSkill3: https://github.com/haosulab/ManiSkill
-.. _LIBERO: https://github.com/Lifelong-Robot-Learning/LIBERO
-.. _IsaacLab: https://github.com/isaac-sim/IsaacLab
-.. _π₀: https://github.com/Physical-Intelligence/openpi
-.. _Megatron-LM: https://github.com/NVIDIA/Megatron-LM
-.. _SGLang: https://github.com/sgl-project/sglang
-.. _vLLM: https://github.com/vllm-project/vllm
-.. _GR00T-N1.5: https://github.com/NVIDIA/Isaac-GR00T.git
-
-
-
---------------------------------------------
+:doc:`Learn more about RLinf's design and benchmarks → <rst_source/resources/why_rlinf>`
 
 .. toctree::
   :maxdepth: 3

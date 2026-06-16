@@ -1,12 +1,13 @@
 资源
 ====
 
-资源页收录项目更新、论文、发布说明和故障排查内容。
+资源页收录项目理念、更新、论文、发布说明和故障排查内容。
 
 .. toctree::
    :maxdepth: 2
    :titlesonly:
 
+   为什么选择 RLinf <why_rlinf>
    博客 <blog/index>
    论文 <publications/index>
    与 veRL 对比 <blog/compare_with_verl>

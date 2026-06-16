@@ -1,13 +1,14 @@
 Resources
 =========
 
-Use Resources for project updates, publications, release notes, and
-troubleshooting.
+Use Resources for the project rationale, updates, publications, release notes,
+and troubleshooting.
 
 .. toctree::
    :maxdepth: 2
    :titlesonly:
 
+   Why RLinf <why_rlinf>
    Blog <blog/index>
    Publications <publications/index>
    Compare with veRL <blog/compare_with_verl>
