@@ -8,11 +8,11 @@ synchronization path to RLinf.
    :maxdepth: 2
    :titlesonly:
 
-   Extending Overview <../tutorials/extend/index>
-   New Environment <../tutorials/extend/new_env>
-   New Model with FSDP <../tutorials/extend/new_model_fsdp>
-   New Model with Megatron <../tutorials/extend/new_model_megatron>
-   New SFT Model <../tutorials/extend/new_model_sft>
-   Megatron-Bridge <../tutorials/extend/mbridge>
-   Weight Synchronization <../tutorials/extend/weight_syncer>
-   Reward Model Workflow <../tutorials/embodied/reward_model>
+   Extending Overview <overview>
+   New Environment <new_env>
+   New Model with FSDP <new_model_fsdp>
+   New Model with Megatron <new_model_megatron>
+   New SFT Model <new_model_sft>
+   Megatron-Bridge <mbridge>
+   Weight Synchronization <weight_syncer>
+   Reward Model Workflow <reward_model>

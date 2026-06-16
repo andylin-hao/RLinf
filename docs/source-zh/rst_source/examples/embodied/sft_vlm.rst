@@ -201,7 +201,7 @@ VLM 配置与 RLinf 中其他训练配置结构基本一致，主要修改 ``dat
 
 正常的训练中，**loss** 下降、**评估准确率** 上升。脚本会自动创建 ``logs/<时间戳>``；可用
 TensorBoard 可视化。各项指标的含义见
-:doc:`训练指标 </rst_source/tutorials/configuration/metrics>`。
+:doc:`训练指标 <../../reference/metrics>`。
 
 .. code:: bash
 
@@ -298,7 +298,7 @@ TensorBoard 可视化。各项指标的含义见
        --config-path rlinf/utils/ckpt_convertor/fsdp_convertor/config \
        --config-name fsdp_model_convertor
 
-详见 :doc:`检查点转换 <../../tutorials/usage/convertor>`。
+详见 :doc:`检查点转换 <../../guides/convertor>`。
 
 字段说明
 --------

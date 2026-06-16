@@ -177,10 +177,10 @@
 .. admonition:: 进一步配置
    :class: note
 
-   - 组件放置和吞吐调优 → :doc:`组件放置 </rst_source/tutorials/usage/placement>` 与 :doc:`执行模式 </rst_source/tutorials/usage/execution_modes>`
-   - 全量配置项 → :doc:`配置 </rst_source/tutorials/configuration/index>`
-   - 指标定义和日志后端 → :doc:`训练指标 </rst_source/tutorials/configuration/metrics>`
-   - 从检查点恢复 → :doc:`恢复训练 </rst_source/tutorials/configuration/resume>`
+   - 组件放置和吞吐调优 → :doc:`组件放置 <../../concepts/placement>` 与 :doc:`执行模式 <../../concepts/execution_modes>`
+   - 全量配置项 → :doc:`配置 <../../guides/index>`
+   - 指标定义和日志后端 → :doc:`训练指标 <../../reference/metrics>`
+   - 从检查点恢复 → :doc:`恢复训练 <../../guides/resume>`
 
 
 可视化与结果
@@ -193,7 +193,7 @@
    tensorboard --logdir ./logs --port 6006
 
 最值得关注的指标是 **``env/success_once``** —— 任务成功率。每个日志指标的含义见
-:doc:`训练指标 </rst_source/tutorials/configuration/metrics>`。
+:doc:`训练指标 <../../reference/metrics>`。
 
 如需保存评估视频，在配置中启用：
 

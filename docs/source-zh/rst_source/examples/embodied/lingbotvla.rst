@@ -288,7 +288,7 @@ GRPO 顶层文件通过 Hydra 动态组装了环境与模型，并直接在 ``ac
     tensorboard --logdir ../results --port 6006
 
 最值得关注的指标是 **``env/success_once``** —— 回合成功率。每个日志指标的含义见
-:doc:`训练指标 </rst_source/tutorials/configuration/metrics>`。
+:doc:`训练指标 <../../reference/metrics>`。
 
 .. figure:: https://raw.githubusercontent.com/RLinf/misc/main/pic/lingbotvla_success_once.png
    :width: 95%

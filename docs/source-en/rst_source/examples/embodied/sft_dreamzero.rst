@@ -421,7 +421,7 @@ For command syntax, Hydra overrides, logs, and result files, use the
 :doc:`Evaluation CLI reference <../../evaluations/reference/cli>` and
 :doc:`Evaluation results reference <../../evaluations/reference/results>`. If your SFT
 checkpoint is still sharded as ``.distcp``, convert it first with the
-:doc:`checkpoint conversion guide <../../tutorials/usage/convertor>`.
+:doc:`checkpoint conversion guide <../../guides/convertor>`.
 
 .. note::
 

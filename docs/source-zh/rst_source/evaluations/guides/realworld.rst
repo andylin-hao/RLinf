@@ -55,7 +55,7 @@ DreamZero 真机评测还需在 GPU 节点安装 DreamZero 依赖，详见 :doc:
 
 ``realworld_pnp_eval.yaml`` 与 ``realworld_pnp_eval_dreamzero.yaml`` 使用上述双节点布局；``realworld_eval.yaml`` （自定义任务）为 **单机** 布局，``env`` 与 ``rollout`` 均部署在同一 Franka 节点。
 
-Ray 集群的完整搭建、固件版本与 libfranka 兼容性见 :doc:`../../examples/embodied/franka` 与 :doc:`../../tutorials/embodied/realworld_robot`。
+Ray 集群的完整搭建、固件版本与 libfranka 兼容性见 :doc:`../../examples/embodied/franka` 与 :doc:`../../guides/realworld_robot`。
 
 示例配置
 --------

@@ -12,12 +12,12 @@ Core Model
    :titlesonly:
 
    RLinf Execution Flow <execution_flow>
-   Worker and WorkerGroup <../tutorials/usage/worker>
-   M2Flow Programming Flow <../tutorials/usage/flow>
-   Channel <../tutorials/usage/channel>
-   Placement <../tutorials/usage/placement>
-   Execution Modes <../tutorials/usage/execution_modes>
-   Cluster <../tutorials/advance/cluster>
-   Collective Communication <../tutorials/advance/collective>
-   Supported Environments <../tutorials/embodied/supported_envs>
-   Replay Buffer <../tutorials/embodied/replay_buffer>
+   Worker and WorkerGroup <worker>
+   M2Flow Programming Flow <flow>
+   Channel <channel>
+   Placement <placement>
+   Execution Modes <execution_modes>
+   Cluster <cluster>
+   Collective Communication <collective>
+   Supported Environments <supported_envs>
+   Replay Buffer <replay_buffer>

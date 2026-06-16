@@ -184,7 +184,7 @@ Then launch TensorBoard from the RLinf repo root:
    tensorboard --logdir ../results --port 6006
 
 For every logged metric, see
-:doc:`Training metrics </rst_source/tutorials/configuration/metrics>`.
+:doc:`Training metrics <../../reference/metrics>`.
 
 Evaluation and CI
 -----------------

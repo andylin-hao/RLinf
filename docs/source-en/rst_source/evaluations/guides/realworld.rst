@@ -55,7 +55,7 @@ Real-robot evaluation typically uses a **1 GPU node + 1 Franka control node** he
 
 ``realworld_pnp_eval.yaml`` and ``realworld_pnp_eval_dreamzero.yaml`` use this two-node layout; ``realworld_eval.yaml`` (custom tasks) is a **single-node** layout with both ``env`` and ``rollout`` on the Franka node.
 
-For full Ray cluster setup, firmware versions, and libfranka compatibility, see :doc:`../../examples/embodied/franka` and :doc:`../../tutorials/embodied/realworld_robot`.
+For full Ray cluster setup, firmware versions, and libfranka compatibility, see :doc:`../../examples/embodied/franka` and :doc:`../../guides/realworld_robot`.
 
 Example Configs
 ---------------

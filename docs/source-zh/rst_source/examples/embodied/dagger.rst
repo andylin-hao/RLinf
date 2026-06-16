@@ -274,7 +274,7 @@ Pi0 DAgger 配置使用单独的学生模型与专家模型路径：
 
 **2. 推荐关注的监控指标**
 
-指标含义见 :doc:`训练指标 </rst_source/tutorials/configuration/metrics>`。DAgger 专属指标：
+指标含义见 :doc:`训练指标 <../../reference/metrics>`。DAgger 专属指标：
 
 - ``env/success_once``：推荐用于监控具身 DAgger 训练效果的成功率指标。
 - ``train/dagger/actor_loss``：基于专家标注样本计算的 DAgger 监督损失。

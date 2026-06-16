@@ -212,7 +212,7 @@ RLinf 为不同 D4RL 任务族提供默认 IQL 配置：
 
 **2. 关键跟踪指标**
 
-指标含义见 :doc:`训练指标 </rst_source/tutorials/configuration/metrics>`。IQL 相关指标：
+指标含义见 :doc:`训练指标 <../../reference/metrics>`。IQL 相关指标：
 
 - **训练指标**：
 

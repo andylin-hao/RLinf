@@ -191,7 +191,7 @@ Visualization and Results
 
 **2. Key Monitoring Metrics**
 
-For metric definitions, see :doc:`Training metrics </rst_source/tutorials/configuration/metrics>`. SAC-relevant metrics:
+For metric definitions, see :doc:`Training metrics <../../reference/metrics>`. SAC-relevant metrics:
 
 - **Environment Metrics**:
 

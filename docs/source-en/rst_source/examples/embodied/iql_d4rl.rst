@@ -212,7 +212,7 @@ Visualization and Results
 
 **2. Key Metrics Tracked**
 
-For metric definitions, see :doc:`Training metrics </rst_source/tutorials/configuration/metrics>`. IQL-relevant metrics:
+For metric definitions, see :doc:`Training metrics <../../reference/metrics>`. IQL-relevant metrics:
 
 - **Training Metrics**:
 

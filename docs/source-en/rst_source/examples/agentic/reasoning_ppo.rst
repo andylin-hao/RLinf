@@ -40,7 +40,7 @@ We also use the boba dataset. For details, see :doc:`reasoning`.
 Algorithm
 ---------
 
-We use the standard PPO (Proximal Policy Optimization) algorithm. For the algorithm reference, see :doc:`PPO </rst_source/tutorials/rlalg/ppo>`.
+We use the standard PPO (Proximal Policy Optimization) algorithm. For the algorithm reference, see :doc:`PPO <../../reference/algorithms/ppo>`.
 
 Run It
 ------

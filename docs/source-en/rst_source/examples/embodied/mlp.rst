@@ -190,4 +190,4 @@ Visualization and Results
 **2. Key metrics**
 
 The key signal to watch is **``env/success_once``** — the task success rate. For every
-logged metric, see :doc:`Training metrics </rst_source/tutorials/configuration/metrics>`.
+logged metric, see :doc:`Training metrics <../../reference/metrics>`.

@@ -180,7 +180,7 @@ PPO 训练 MLP actor-critic。
 
    tensorboard --logdir ../results --port 6006
 
-完整指标说明见 :doc:`训练指标 </rst_source/tutorials/configuration/metrics>`。
+完整指标说明见 :doc:`训练指标 <../../reference/metrics>`。
 
 评测与 CI
 ---------

@@ -10,7 +10,7 @@ RL-based Sim-Real Co-Training
 **Sim-real co-training** trains a π₀.₅ policy by combining **PPO in simulation** with **SFT on
 real data**, so the policy improves task success in sim while retaining real-world priors and
 avoiding sim-only overfitting that hurts sim-to-real transfer. For technical details, see
-:doc:`Beyond Imitation: RL-Based Sim-Real Co-Training for VLA Models <../../publications/rlinf_co>`.
+:doc:`Beyond Imitation: RL-Based Sim-Real Co-Training for VLA Models <../../resources/publications/rlinf_co>`.
 
 Overview
 --------
@@ -231,7 +231,7 @@ Visualization and Results
 
 **Metrics**
 
-Besides the standard metrics (see :doc:`Training metrics </rst_source/tutorials/configuration/metrics>`), co-training adds:
+Besides the standard metrics (see :doc:`Training metrics <../../reference/metrics>`), co-training adds:
 
 - ``train/ppo_loss``: PPO (RL) loss.
 - ``train/sft_loss``: SFT loss on real data.

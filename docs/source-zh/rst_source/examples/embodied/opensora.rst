@@ -251,7 +251,7 @@ OpenVLA-OFT + GRPO 使用 ``examples/embodiment/config/opensora_libero_spatial_g
 ------------
 
 关注未归一化的回合成功率指标 ``env/success_once``。各项指标的含义见
-:doc:`训练指标 </rst_source/tutorials/configuration/metrics>`。可通过以下配置保存生成的 rollout 视频：
+:doc:`训练指标 <../../reference/metrics>`。可通过以下配置保存生成的 rollout 视频：
 
 .. code-block:: yaml
 

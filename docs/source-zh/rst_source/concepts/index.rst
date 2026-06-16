@@ -11,12 +11,12 @@
    :titlesonly:
 
    RLinf 执行流程 <execution_flow>
-   Worker 与 WorkerGroup <../tutorials/usage/worker>
-   M2Flow 编程流程 <../tutorials/usage/flow>
-   Channel <../tutorials/usage/channel>
-   Placement <../tutorials/usage/placement>
-   执行模式 <../tutorials/usage/execution_modes>
-   Cluster <../tutorials/advance/cluster>
-   集合通信 <../tutorials/advance/collective>
-   支持的环境 <../tutorials/embodied/supported_envs>
-   Replay Buffer <../tutorials/embodied/replay_buffer>
+   Worker 与 WorkerGroup <worker>
+   M2Flow 编程流程 <flow>
+   Channel <channel>
+   Placement <placement>
+   执行模式 <execution_modes>
+   Cluster <cluster>
+   集合通信 <collective>
+   支持的环境 <supported_envs>
+   Replay Buffer <replay_buffer>

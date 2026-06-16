@@ -202,7 +202,7 @@ Visualization and Results
 
 A healthy run shows the **loss** decreasing and the **eval accuracy** climbing. The script
 creates ``logs/<timestamp>`` automatically; visualize with TensorBoard. For every logged
-metric, see :doc:`Training metrics </rst_source/tutorials/configuration/metrics>`.
+metric, see :doc:`Training metrics <../../reference/metrics>`.
 
 .. code:: bash
 
@@ -300,7 +300,7 @@ Then run:
        --config-path rlinf/utils/ckpt_convertor/fsdp_convertor/config \
        --config-name fsdp_model_convertor
 
-See :doc:`Checkpoint conversion <../../tutorials/usage/convertor>` for details.
+See :doc:`Checkpoint conversion <../../guides/convertor>` for details.
 
 Field Reference
 ---------------

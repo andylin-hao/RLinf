@@ -288,7 +288,7 @@ Launch TensorBoard to watch training live:
     tensorboard --logdir ../results --port 6006
 
 The key signal to watch is **``env/success_once``** — the episodic success rate. For every
-logged metric, see :doc:`Training metrics </rst_source/tutorials/configuration/metrics>`.
+logged metric, see :doc:`Training metrics <../../reference/metrics>`.
 
 .. figure:: https://raw.githubusercontent.com/RLinf/misc/main/pic/lingbotvla_success_once.png
    :width: 95%

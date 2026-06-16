@@ -170,11 +170,11 @@
 .. admonition:: 进一步配置
    :class: note
 
-   - 放置与吞吐 → :doc:`放置 </rst_source/tutorials/usage/placement>` 与 :doc:`执行模式 </rst_source/tutorials/usage/execution_modes>`
-   - 全部配置项 → :doc:`配置 </rst_source/tutorials/configuration/index>`
-   - 指标定义与日志后端 → :doc:`训练指标 </rst_source/tutorials/configuration/metrics>`
-   - 从检查点恢复 → :doc:`断点续训 </rst_source/tutorials/configuration/resume>`
-   - 卡住或显存不足（OOM）？ → :doc:`FAQ </rst_source/faq>`
+   - 放置与吞吐 → :doc:`放置 <../../concepts/placement>` 与 :doc:`执行模式 <../../concepts/execution_modes>`
+   - 全部配置项 → :doc:`配置 <../../guides/index>`
+   - 指标定义与日志后端 → :doc:`训练指标 <../../reference/metrics>`
+   - 从检查点恢复 → :doc:`断点续训 <../../guides/resume>`
+   - 卡住或显存不足（OOM）？ → :doc:`FAQ <../../resources/faq>`
 
 可视化与结果
 ------------
@@ -186,7 +186,7 @@
    tensorboard --logdir ./logs --port 6006
 
 最值得关注的指标是 **``env/success_once``** —— 未归一化的回合成功率。每个日志指标的含义见
-:doc:`训练指标 </rst_source/tutorials/configuration/metrics>`。
+:doc:`训练指标 <../../reference/metrics>`。
 
 如需保存评测视频，在配置中开启：
 

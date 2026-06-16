@@ -191,7 +191,7 @@ RLinf 提供了针对仿真和真机环境的默认配置文件：
 
 **2. 关键监控指标**
 
-指标含义见 :doc:`训练指标 </rst_source/tutorials/configuration/metrics>`。SAC 相关指标：
+指标含义见 :doc:`训练指标 <../../reference/metrics>`。SAC 相关指标：
 
 - **环境指标**:
 

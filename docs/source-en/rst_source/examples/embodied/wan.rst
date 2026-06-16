@@ -270,7 +270,7 @@ Visualization and Results
 -------------------------
 
 Watch **``env/success_once``** for the unnormalized episodic success rate. For every logged
-metric, see :doc:`Training metrics </rst_source/tutorials/configuration/metrics>`. Enable
+metric, see :doc:`Training metrics <../../reference/metrics>`. Enable
 generated-rollout videos with:
 
 .. code-block:: yaml

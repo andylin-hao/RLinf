@@ -283,7 +283,7 @@ Visualization and Results
 
 **2. Useful Monitoring Metrics**
 
-For metric definitions, see :doc:`Training metrics </rst_source/tutorials/configuration/metrics>`. DAgger-specific metrics:
+For metric definitions, see :doc:`Training metrics <../../reference/metrics>`. DAgger-specific metrics:
 
 - ``env/success_once``: Recommended success metric for embodied DAgger runs.
 - ``train/dagger/actor_loss``: Supervised DAgger loss on replayed expert-labeled samples.

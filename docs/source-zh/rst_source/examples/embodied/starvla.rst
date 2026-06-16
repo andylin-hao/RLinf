@@ -196,7 +196,7 @@ StarVLA + GRPO + LIBERO Spatial 使用
 ------------
 
 关注任务成功率指标 ``env/success_once``。各项指标的含义见
-:doc:`训练指标 </rst_source/tutorials/configuration/metrics>`。
+:doc:`训练指标 <../../reference/metrics>`。
 
 参考曲线（采用的模型来自
 `LIBERO_BASELIEN_FORJINHUI_10K_QWENOFT <https://huggingface.co/JasonYang66/LIBERO_BASELIEN_FORJINHUI_10K_QWENOFT>`_）：

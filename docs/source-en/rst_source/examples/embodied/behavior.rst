@@ -212,8 +212,8 @@ Launch a config with ``run_embodiment.sh``:
    - BEHAVIOR throughput → increase env GPU count first, then tune ``env.num_env_subprocess`` and ``env.train.total_num_envs``.
    - Each BEHAVIOR process can use roughly 10 GiB of VRAM; tune subprocess count for your GPU memory.
    - Cached task instances → generate them with ``rlinf/envs/behavior/instance_generator.py`` and ``examples/embodiment/config/env/behavior_r1pro.yaml``.
-   - Placement and throughput → :doc:`Placement </rst_source/tutorials/usage/placement>` and :doc:`Execution modes </rst_source/tutorials/usage/execution_modes>`
-   - Metric definitions and logging backends → :doc:`Training metrics </rst_source/tutorials/configuration/metrics>`
+   - Placement and throughput → :doc:`Placement <../../concepts/placement>` and :doc:`Execution modes <../../concepts/execution_modes>`
+   - Metric definitions and logging backends → :doc:`Training metrics <../../reference/metrics>`
 
 .. warning::
 
@@ -368,7 +368,7 @@ Launch TensorBoard to watch training live:
    tensorboard --logdir ./logs --port 6006
 
 The key signal to watch is **``env/success_once``** — the task success rate. For every
-logged metric, see :doc:`Training metrics </rst_source/tutorials/configuration/metrics>`.
+logged metric, see :doc:`Training metrics <../../reference/metrics>`.
 
 To save evaluation videos, enable them in the config:
 

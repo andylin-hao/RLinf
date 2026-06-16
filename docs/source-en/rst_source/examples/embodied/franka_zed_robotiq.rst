@@ -410,7 +410,7 @@ The cluster setup procedure is the same as described in
    install dependencies first, then start Ray.
 
 For multi-node Ray setup details, refer to :doc:`franka` and
-:doc:`../../tutorials/configuration/hetero`.
+:doc:`../../guides/hetero`.
 
 
 Troubleshooting

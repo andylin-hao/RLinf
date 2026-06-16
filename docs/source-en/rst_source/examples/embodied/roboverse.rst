@@ -185,7 +185,7 @@ Launch TensorBoard from the RLinf repo root:
    tensorboard --logdir ../results --port 6006
 
 The key signal is ``env/success_once``. For every logged metric, see
-:doc:`Training metrics </rst_source/tutorials/configuration/metrics>`.
+:doc:`Training metrics <../../reference/metrics>`.
 
 Enable video in the env config when you want rollout videos:
 

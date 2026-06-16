@@ -9,7 +9,7 @@
 
 仿真-真机协同训练通过在仿真中用 PPO 与在真机数据上用 SFT 相结合来训练 π₀.₅ 策略：
 在提升仿真任务成功率的同时保留真机先验，避免仅靠仿真过拟合而损害 sim-to-real 迁移。技术细节详见
-:doc:`Beyond Imitation: RL-Based Sim-Real Co-Training for VLA Models <../../publications/rlinf_co>`。
+:doc:`Beyond Imitation: RL-Based Sim-Real Co-Training for VLA Models <../../resources/publications/rlinf_co>`。
 
 概览
 ----
@@ -241,7 +241,7 @@ Stage II：仿真-真机协同 RL 训练
 
 **指标**
 
-除标准指标外（见 :doc:`训练指标 </rst_source/tutorials/configuration/metrics>`），协同训练还新增以下指标：
+除标准指标外（见 :doc:`训练指标 <../../reference/metrics>`），协同训练还新增以下指标：
 
 - ``train/ppo_loss``: PPO（RL）损失。
 - ``train/sft_loss``: 真机数据上的 SFT 损失。

@@ -544,7 +544,7 @@ Visualization and Results
 **2. Key Metrics**
 
 Watch **``env/success_once``** for the task success rate. For every logged metric, see
-:doc:`Training metrics </rst_source/tutorials/configuration/metrics>`.
+:doc:`Training metrics <../../reference/metrics>`.
 
 --------------
 

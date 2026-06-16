@@ -415,7 +415,7 @@ YAML 示例（LIBERO 冷启动，见 ``libero_sft_dreamzero_5b.yaml``）：
 
 命令格式、Hydra 覆盖、日志与结果文件见 :doc:`Evaluation CLI 参考 <../../evaluations/reference/cli>`
 和 :doc:`Evaluation 结果参考 <../../evaluations/reference/results>`。如果 SFT checkpoint 仍是
-``.distcp`` 分片格式，请先按 :doc:`checkpoint 转换指南 <../../tutorials/usage/convertor>` 转换。
+``.distcp`` 分片格式，请先按 :doc:`checkpoint 转换指南 <../../guides/convertor>` 转换。
 
 .. note::
 

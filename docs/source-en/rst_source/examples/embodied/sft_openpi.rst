@@ -215,7 +215,7 @@ Visualization and Results
 -------------------------
 
 Monitor the **training loss** to confirm the model is imitating the demonstrations. For
-every logged metric, see :doc:`Training metrics </rst_source/tutorials/configuration/metrics>`.
+every logged metric, see :doc:`Training metrics <../../reference/metrics>`.
 
 .. code-block:: bash
 

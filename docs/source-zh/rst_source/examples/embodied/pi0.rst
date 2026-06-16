@@ -416,7 +416,7 @@ env** 之间的流水线重叠，从而提升 rollout 效率。
 **2. 关键指标**
 
 关注任务成功率指标 ``env/success_once``。各项指标的含义见
-:doc:`训练指标 </rst_source/tutorials/configuration/metrics>`。
+:doc:`训练指标 <../../reference/metrics>`。
 
 **3. 视频生成**
 

@@ -39,7 +39,7 @@
 算法
 ---------
 
-我们采用标准的 PPO（Proximal Policy Optimization）算法，算法参考见 :doc:`PPO </rst_source/tutorials/rlalg/ppo>`。
+我们采用标准的 PPO（Proximal Policy Optimization）算法，算法参考见 :doc:`PPO <../../reference/algorithms/ppo>`。
 
 运行
 ----

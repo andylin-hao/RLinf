@@ -201,7 +201,7 @@ Visualization and Results
 -------------------------
 
 Watch **``env/success_once``** for the task success rate. For every logged metric, see
-:doc:`Training metrics </rst_source/tutorials/configuration/metrics>`.
+:doc:`Training metrics <../../reference/metrics>`.
 
 Reference curves (using the model from
 `LIBERO_BASELIEN_FORJINHUI_10K_QWENOFT <https://huggingface.co/JasonYang66/LIBERO_BASELIEN_FORJINHUI_10K_QWENOFT>`_):

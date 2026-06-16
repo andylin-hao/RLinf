@@ -670,7 +670,7 @@ Visualize specific episodes:
 
 Visualization and Results
 ----------------------------
-For metric definitions, see :doc:`Training metrics </rst_source/tutorials/configuration/metrics>`.
+For metric definitions, see :doc:`Training metrics <../../reference/metrics>`.
 
 
 **TensorBoard Logging**

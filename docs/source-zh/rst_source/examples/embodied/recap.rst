@@ -665,7 +665,7 @@ Step 3 完成后，可以使用 ``examples/recap/process/visualize_advantage_dat
 
 可视化与结果
 -------------------------
-指标含义见 :doc:`训练指标 </rst_source/tutorials/configuration/metrics>`。
+指标含义见 :doc:`训练指标 <../../reference/metrics>`。
 
 
 **TensorBoard 日志**

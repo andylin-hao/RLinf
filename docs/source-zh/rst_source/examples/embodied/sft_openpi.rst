@@ -216,7 +216,7 @@ OpenPI 加载器会在运行时从 ``<model_path>/<repo_id>`` 读取归一化统
 ------------
 
 关注 **训练损失** 即可确认模型是否在拟合示例数据。各项指标的含义见
-:doc:`训练指标 </rst_source/tutorials/configuration/metrics>`。
+:doc:`训练指标 <../../reference/metrics>`。
 
 .. code-block:: bash
 

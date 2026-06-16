@@ -34,7 +34,7 @@ Every benchmark (env) or model example page must:
 6. **Cards or tables, not bullet walls.** Replace bullet lists of specs/metrics/perturbations
    with cards or `list-table`s.
 7. **Don't explain metrics or evaluation per page.** Link to the shared
-   :doc:`Training metrics <tutorials/configuration/metrics>` page for training logs and
+   :doc:`Training metrics <reference/metrics>` page for training logs and
    to the unified Evaluation section for benchmark / standalone eval workflows. Keep only
    the page-specific "watch `env/success_once`" pointer and the results table.
 8. **Name the card-grid section "Overview".** On a single-recipe page the card grid lives

@@ -176,10 +176,10 @@ Launch a config with ``run_embodiment.sh``:
 .. admonition:: Configure further
    :class: note
 
-   - Placement and throughput → :doc:`Placement </rst_source/tutorials/usage/placement>` and :doc:`Execution modes </rst_source/tutorials/usage/execution_modes>`
-   - All config keys → :doc:`Configuration </rst_source/tutorials/configuration/index>`
-   - Metric definitions and logging backends → :doc:`Training metrics </rst_source/tutorials/configuration/metrics>`
-   - Resuming from a checkpoint → :doc:`Resume </rst_source/tutorials/configuration/resume>`
+   - Placement and throughput → :doc:`Placement <../../concepts/placement>` and :doc:`Execution modes <../../concepts/execution_modes>`
+   - All config keys → :doc:`Configuration <../../guides/index>`
+   - Metric definitions and logging backends → :doc:`Training metrics <../../reference/metrics>`
+   - Resuming from a checkpoint → :doc:`Resume <../../guides/resume>`
 
 
 Visualization and Results
@@ -192,7 +192,7 @@ Launch TensorBoard to watch training live:
    tensorboard --logdir ./logs --port 6006
 
 The key signal to watch is **``env/success_once``** — the task success rate. For every
-logged metric, see :doc:`Training metrics </rst_source/tutorials/configuration/metrics>`.
+logged metric, see :doc:`Training metrics <../../reference/metrics>`.
 
 To save evaluation videos, enable them in the config:
 

@@ -163,7 +163,7 @@ Visualization and Results
 
 **2. Key Monitoring Metrics**
 
-For metric definitions, see :doc:`Training metrics </rst_source/tutorials/configuration/metrics>`. DSRL-relevant metrics:
+For metric definitions, see :doc:`Training metrics <../../reference/metrics>`. DSRL-relevant metrics:
 
 - **Environment Metrics**:
 

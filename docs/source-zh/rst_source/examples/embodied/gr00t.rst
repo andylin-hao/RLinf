@@ -543,7 +543,7 @@ GR00T-N1.5的动作头包含dropout层，这会干扰对数概率的计算，因
 **2. 关键指标**
 
 关注任务成功率指标 ``env/success_once``。各项指标的含义见
-:doc:`训练指标 </rst_source/tutorials/configuration/metrics>`。
+:doc:`训练指标 <../../reference/metrics>`。
 
 --------------
 

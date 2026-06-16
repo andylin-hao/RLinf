@@ -211,8 +211,8 @@
    - BEHAVIOR 吞吐调优 → 先增加 env GPU 数量，再调 ``env.num_env_subprocess`` 和 ``env.train.total_num_envs``。
    - 每个 BEHAVIOR 进程可能占用约 10 GiB 显存；请按 GPU 显存调节 subprocess 数量。
    - 缓存任务实例 → 使用 ``rlinf/envs/behavior/instance_generator.py`` 和 ``examples/embodiment/config/env/behavior_r1pro.yaml`` 生成。
-   - 组件放置和吞吐调优 → :doc:`组件放置 </rst_source/tutorials/usage/placement>` 与 :doc:`执行模式 </rst_source/tutorials/usage/execution_modes>`
-   - 指标定义和日志后端 → :doc:`训练指标 </rst_source/tutorials/configuration/metrics>`
+   - 组件放置和吞吐调优 → :doc:`组件放置 <../../concepts/placement>` 与 :doc:`执行模式 <../../concepts/execution_modes>`
+   - 指标定义和日志后端 → :doc:`训练指标 <../../reference/metrics>`
 
 .. warning::
 
@@ -357,7 +357,7 @@ OmniGibson 的基础配置（``base_config_name``），再应用 ``omni_config``
    tensorboard --logdir ./logs --port 6006
 
 最值得关注的指标是 **``env/success_once``** —— 任务成功率。每个日志指标的含义见
-:doc:`训练指标 </rst_source/tutorials/configuration/metrics>`。
+:doc:`训练指标 <../../reference/metrics>`。
 
 如需保存评估视频，在配置中启用：
 

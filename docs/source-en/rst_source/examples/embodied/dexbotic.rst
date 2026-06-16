@@ -183,8 +183,8 @@ Launch a config with ``run_embodiment.sh``:
    - π₀ checkpoint path → set ``actor.model.model_path`` and ``rollout.model.model_path`` to ``libero-db-pi0``.
    - DM0 checkpoint path → set both model paths to ``DM0-libero`` in ``libero_spatial_ppo_dexbotic_dm0.yaml``.
    - Action chunks → π₀ uses ``num_action_chunks: 5``; DM0 uses ``num_action_chunks: 10``.
-   - Metric definitions and logging backends → :doc:`Training metrics </rst_source/tutorials/configuration/metrics>`
-   - Placement and throughput → :doc:`Placement </rst_source/tutorials/usage/placement>` and :doc:`Execution modes </rst_source/tutorials/usage/execution_modes>`
+   - Metric definitions and logging backends → :doc:`Training metrics <../../reference/metrics>`
+   - Placement and throughput → :doc:`Placement <../../concepts/placement>` and :doc:`Execution modes <../../concepts/execution_modes>`
 
 Evaluate
 --------
@@ -224,4 +224,4 @@ Launch TensorBoard to watch training live:
 
    tensorboard --logdir ./logs --port 6006
 
-The key signal to watch is **``env/success_once``** — the episodic success rate. For every logged metric, see :doc:`Training metrics </rst_source/tutorials/configuration/metrics>`.
+The key signal to watch is **``env/success_once``** — the episodic success rate. For every logged metric, see :doc:`Training metrics <../../reference/metrics>`.

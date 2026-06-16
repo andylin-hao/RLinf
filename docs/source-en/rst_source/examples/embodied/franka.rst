@@ -576,7 +576,7 @@ An example configuration for two Franka robots is shown in ``examples/embodiment
             node_rank: 2 # The node rank of the second robot controller node
 
 Naturally, the settings can be extended to more robots by following the same pattern.
-For more details regarding the configuration syntax of this kind of heterogeneous hardware setup, please refer to :doc:`../../tutorials/configuration/hetero`.
+For more details regarding the configuration syntax of this kind of heterogeneous hardware setup, please refer to :doc:`../../guides/hetero`.
 
 Visualization and Results
 -------------------------

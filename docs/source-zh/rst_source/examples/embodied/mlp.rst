@@ -185,4 +185,4 @@ MLP 模型由 ``model/mlp_policy@actor.model`` 引入，并在不同配置中做
 **2. 关键指标**
 
 最值得关注的指标是 **``env/success_once``** —— 任务成功率。每个日志指标的含义见
-:doc:`训练指标 </rst_source/tutorials/configuration/metrics>`。
+:doc:`训练指标 <../../reference/metrics>`。

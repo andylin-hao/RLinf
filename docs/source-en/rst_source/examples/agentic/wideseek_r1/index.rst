@@ -13,7 +13,7 @@ On the WideSearch benchmark, WideSeek-R1-4B reaches an item F1 score of
 to improve as the number of parallel subagents increases.
 
 For the full method and results, see the
-:doc:`WideSeek-R1 publication <../../../publications/wideseek_r1>`, the
+:doc:`WideSeek-R1 publication <../../../resources/publications/wideseek_r1>`, the
 `project page <https://wideseek-r1.github.io>`__, the
 `paper on arXiv <https://arxiv.org/abs/2602.04634>`__, and the
 `example code in RLinf <https://github.com/RLinf/RLinf/tree/main/examples/agent/wideseek_r1>`__.

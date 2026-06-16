@@ -397,7 +397,7 @@ YAML 配置说明
    所有依赖，然后再启动 Ray。
 
 关于多节点 Ray 配置的详细信息，请参考 :doc:`franka` 和
-:doc:`../../tutorials/configuration/hetero`。
+:doc:`../../guides/hetero`。
 
 
 故障排查

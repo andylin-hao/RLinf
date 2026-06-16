@@ -266,7 +266,7 @@
    tensorboard --logdir ../results --port 6006
 
 关键指标是 ``env/success_once``。完整指标说明见
-:doc:`训练指标 </rst_source/tutorials/configuration/metrics>`。
+:doc:`训练指标 <../../reference/metrics>`。
 
 如需评估视频，请在环境配置中启用 video：
 
