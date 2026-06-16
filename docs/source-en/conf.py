@@ -97,7 +97,7 @@ html_js_files = [
     "js/mode-panel.js",
     "sphinx-modal-widget.js",
 ]
-html_sidebars = {"**": ["sidebar-nav-bs.html"]}
+html_sidebars = {"**": ["global-sidebar-nav.html"]}
 
 
 # -- Theme Options -------------------------------------------------------------
@@ -115,7 +115,7 @@ def render_svg_logo(path, width="4rem", height="auto"):
 html_theme_options = {
     "logo": {"svg": render_svg_logo("_static/svg/logo.svg")},
     "navbar_start": ["navbar-logo"],
-    "navbar_center": ["navbar-nav-dropdown"],
+    "navbar_center": [],
     "navbar_end": ["version-switcher", "navbar-icon-links", "askai"],
     "navbar_align": "left",
     "secondary_sidebar_items": {
@@ -123,7 +123,7 @@ html_theme_options = {
         "index": [],
     },
     "collapse_navigation": False,
-    "show_nav_level": 3,
+    "show_nav_level": 1,
     "navigation_depth": 5,
     "header_links_before_dropdown": 10,
     "icon_links": [

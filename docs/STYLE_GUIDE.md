@@ -70,12 +70,16 @@ category, not a sentence:
 The category index pages keep their descriptive H1 (e.g. "Algorithms for Embodiment"); only
 the `examples/index.rst` toctree caption is the one-word form.
 
-**Global navigation discoverability:** The top navigation uses dropdown menus for every
-major axis (`Get Started`, `Examples`, `Evaluation`, `Concepts`, `Guides`, `Reference`,
-`Extending`, `Resources`) so readers can jump directly to major subsections, following the
-Ray / LeRobot pattern. The left sidebar should expose section contents without requiring
-deep click-through: keep `collapse_navigation: False`, `show_nav_level: 3`, and
-`navigation_depth: 5` unless a later IA change intentionally revises the global contract.
+**Global navigation discoverability:** Use a sidebar-first navigation model, following the
+Ray / LeRobot pattern. The top bar should not duplicate the documentation sections; keep
+major docs axes (`Get Started`, `Examples`, `Evaluation`, `Concepts`, `Guides`,
+`Reference`, `Extending`, `Resources`) pinned in the left sidebar even on the home index
+page. The sidebar should show the major axes immediately but keep most nested content
+collapsed by default: keep `navbar_center: []`, `collapse_navigation: False`,
+`show_nav_level: 1`, `navigation_depth: 5`, and `html_sidebars = {"**":
+["global-sidebar-nav.html"]}` unless a later IA change intentionally revises the global
+contract. The root `index.rst` toctree should stay hidden so navigation lives in the
+sidebar, not in the page body.
 
 **Information ownership:** A page should be owned by the section where readers look for
 that task. Do not make `Concepts` point at broad aggregate pages that also own Guides,

@@ -88,6 +88,7 @@ RLinf is a flexible and scalable open-source infrastructure designed for post-tr
   :maxdepth: 3
   :includehidden:
   :titlesonly:
+  :hidden:
 
   Get Started <rst_source/start/index>
   Examples <rst_source/examples/index>

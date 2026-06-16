@@ -49,27 +49,6 @@ a.reference.internal:hover {
   max-width: 15rem;            /* slimmer right "On this page" */
 }
 
-/* --- Discoverable top navigation ---------------------------------------
-   Keep the top bar compact while exposing each major section as a dropdown,
-   similar to Ray and LeRobot. */
-.rlinf-navbar-dropdown .dropdown-menu {
-  max-height: calc(100vh - 6rem);
-  min-width: 16rem;
-  overflow-y: auto;
-}
-
-.rlinf-navbar-dropdown .dropdown-header {
-  color: var(--pst-color-text-muted);
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-}
-
-.rlinf-navbar-dropdown .dropdown-item {
-  font-weight: 500 !important;
-}
-
 /* --- Ray-style cards ----------------------------------------------------
    Ray's docs use compact PyData cards with a clean surface, subtle shadow,
    small radius, and stronger hover affordance. Apply that treatment globally
