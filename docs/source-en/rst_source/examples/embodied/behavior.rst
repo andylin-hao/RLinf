@@ -254,15 +254,9 @@ After conversion, update ``behavior_openpi_pi05_eval.yaml`` as follows:
        max_episode_steps: 4096
        max_steps_per_rollout_epoch: 4096
 
-Run evaluation with:
-
-.. code-block:: bash
-
-   export ISAAC_PATH=/path/to/isaac-sim
-   export OMNIGIBSON_DATA_PATH=/path/to/BEHAVIOR-1K-datasets
-   bash evaluations/run_eval.sh behavior behavior_openpi_pi05_eval
-
-For the full evaluation workflow, see :doc:`BEHAVIOR-1K evaluation guide <../../evaluations/guides/behavior>`.
+Run standalone evaluation through the :doc:`BEHAVIOR-1K evaluation guide <../../evaluations/guides/behavior>`.
+It owns the required ``ISAAC_PATH`` / ``OMNIGIBSON_DATA_PATH`` setup, the
+``behavior_openpi_pi05_eval`` launch command, and result interpretation.
 
 
 Configuration Reference

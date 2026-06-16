@@ -273,14 +273,10 @@ For example, to fine-tune the SFT-trained model with the GRPO algorithm on the R
 Evaluation
 ----------
 
-Lingbot-VLA provides an end-to-end evaluation script for various tasks in the RoboTwin environment (using the bell task as an example):
-
-.. code-block:: bash
-
-    export ROBOT_PLATFORM="ALOHA"
-    bash evaluations/run_eval.sh robotwin robotwin_click_bell_lingbotvla_eval
-
-For RLinf's unified VLA evaluation flow, please refer to :doc:`evaluation <../../evaluations/index>`.
+Run standalone evaluation through the :doc:`RoboTwin evaluation guide <../../evaluations/guides/robotwin>`.
+Use the Lingbot-VLA eval configs such as ``robotwin_click_bell_lingbotvla_eval`` and
+``robotwin_place_shoe_lingbotvla_eval``; the guide owns ``ROBOT_PLATFORM=ALOHA``,
+``ROBOTWIN_PATH``, assets, launch commands, and result interpretation.
 
 Visualization and Results
 -------------------------

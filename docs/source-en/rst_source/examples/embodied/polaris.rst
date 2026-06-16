@@ -228,14 +228,10 @@ What this does:
 2. Creates Ray workers for the actor, rollout, and PolaRiS env components.
 3. Runs PPO with chunked OpenPI actions and Gaussian Splatting-rendered observations.
 
-Run evaluation with the eval configs:
-
-.. code:: bash
-
-   bash evaluations/run_eval.sh polaris polaris_tapeintocontainer_openpi_pi05_eval
-   bash evaluations/run_eval.sh polaris polaris_movelattecup_openpi_eval
-
-For the full evaluation workflow (environment variables, config fields, and results), see :doc:`PolaRiS evaluation guide <../../evaluations/guides/polaris>`.
+Run standalone evaluation through the :doc:`PolaRiS evaluation guide <../../evaluations/guides/polaris>`.
+It owns ``POLARIS_DATA_PATH``, the available eval configs
+(``polaris_tapeintocontainer_openpi_pi05_eval`` and ``polaris_movelattecup_openpi_eval``),
+and result interpretation.
 
 .. note::
 

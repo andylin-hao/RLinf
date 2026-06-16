@@ -227,14 +227,10 @@
 2. 为 actor、rollout 和 PolaRiS env 组件创建 Ray worker。
 3. 使用 chunked OpenPI 动作和 Gaussian Splatting 渲染观测运行 PPO。
 
-使用 eval 配置运行评估：
-
-.. code:: bash
-
-   bash evaluations/run_eval.sh polaris polaris_tapeintocontainer_openpi_pi05_eval
-   bash evaluations/run_eval.sh polaris polaris_movelattecup_openpi_eval
-
-完整评估流程（环境变量、配置字段与结果）见 :doc:`PolaRiS 评测指南 <../../evaluations/guides/polaris>`。
+独立评估请走 :doc:`PolaRiS 评测指南 <../../evaluations/guides/polaris>`。
+该指南负责 ``POLARIS_DATA_PATH``、可用评测配置
+（``polaris_tapeintocontainer_openpi_pi05_eval`` 与 ``polaris_movelattecup_openpi_eval``）
+和结果解读。
 
 .. note::
 

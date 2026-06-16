@@ -249,15 +249,9 @@ OpenPI-Comet 作为示例来源：
        max_episode_steps: 4096
        max_steps_per_rollout_epoch: 4096
 
-使用以下命令运行评估：
-
-.. code-block:: bash
-
-   export ISAAC_PATH=/path/to/isaac-sim
-   export OMNIGIBSON_DATA_PATH=/path/to/BEHAVIOR-1K-datasets
-   bash evaluations/run_eval.sh behavior behavior_openpi_pi05_eval
-
-完整评估流程见 :doc:`BEHAVIOR-1K 评测指南 <../../evaluations/guides/behavior>`。
+独立评估请走 :doc:`BEHAVIOR-1K 评测指南 <../../evaluations/guides/behavior>`。
+该指南负责 ``ISAAC_PATH`` / ``OMNIGIBSON_DATA_PATH`` 设置、
+``behavior_openpi_pi05_eval`` 启动命令和结果解读。
 
 
 配置参考

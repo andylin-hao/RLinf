@@ -255,12 +255,10 @@ What this does:
 2. Creates Ray workers for actor, rollout, and RoboTwin env components.
 3. Runs rollouts, computes task rewards, and updates the selected VLA policy.
 
-Run evaluation with the corresponding eval config when one exists:
-
-.. code:: bash
-
-   bash evaluations/run_eval.sh robotwin robotwin_place_empty_cup_openvlaoft_eval
-   bash evaluations/run_eval.sh robotwin robotwin_adjust_bottle_openpi_pi05_eval
+Run standalone evaluation through the :doc:`RoboTwin evaluation guide <../../evaluations/guides/robotwin>`.
+It owns ``ROBOTWIN_PATH`` / ``assets_path`` setup, available eval configs such as
+``robotwin_place_empty_cup_openvlaoft_eval`` and ``robotwin_adjust_bottle_openpi_pi05_eval``,
+and result interpretation.
 
 .. note::
 
