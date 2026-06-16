@@ -41,28 +41,50 @@ RLinf 在多个仿真器上用 PPO、SAC、GRPO 训练 MLP 策略——便于快
 | **你将完成：** 安装目标仿真器 → 选择配置 → 运行 ``run_embodiment.sh`` → 观察 ``env/success_once``。
 | **前置条件：** :doc:`安装 </rst_source/start/installation>` · 目标仿真器的依赖。
 
-支持的环境
-~~~~~~~~~~
+任务
+~~~~
 
 通过 ``defaults`` 列表选择环境（``env/<env_name>@env.train`` / ``@env.eval``）；可在
 ``env.train`` / ``env.eval`` 下覆写并行环境数、回合长度与录制等参数。
 
 .. list-table::
    :header-rows: 1
-   :widths: 36 22 42
+   :widths: 26 28 22 24
 
-   * - 环境配置
+   * - 任务族
+     - 配置
      - 仿真器
-     - 任务
-   * - ``maniskill_pick_cube``
+     - 重点
+   * - PickCube
+     - ``maniskill_ppo_mlp`` / ``maniskill_sac_mlp``
      - ManiSkill3
-     - 从低维状态抓取方块。
-   * - ``libero_spatial``
+     - 基于低维状态的策略训练。
+   * - LIBERO-Spatial
+     - ``libero_spatial_0_grpo_mlp``
      - LIBERO
-     - LIBERO-Spatial 套件。
-   * - ``frankasim_pickcube_state``
+     - 在 LIBERO spatial 任务上使用 MLP 策略运行 GRPO。
+   * - PickCube
+     - ``frankasim_ppo_mlp``
      - MuJoCo / FrankaSim
-     - 从状态抓取方块。
+     - FrankaSim 中基于状态的 PPO 训练。
+
+观测与动作
+~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 24 38
+
+   * - 字段
+     - 说明
+   * - Observation
+     - 低维状态向量，例如机器人关节、末端执行器位姿和物体状态。
+   * - Action
+     - 由 ``policy_setup``、``obs_dim`` 和 ``action_dim`` 配置的连续机器人控制命令。
+   * - Reward
+     - 仿真器任务奖励或成功信号。
+   * - Prompt
+     - MLP 策略不使用 prompt；任务通过 Hydra 配置选择。
 
 
 安装

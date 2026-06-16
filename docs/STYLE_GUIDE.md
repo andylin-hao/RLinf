@@ -69,6 +69,12 @@ category, not a sentence:
 The category index pages keep their descriptive H1 (e.g. "Algorithms for Embodiment"); only
 the `examples/index.rst` toctree caption is the one-word form.
 
+**Category ownership:** Place a page by the reader's starting point. Simulators /
+benchmarks go in `simulators_index`; physical hardware goes in `real_world_index`; model
+families and policy classes go in `vla_wam_index` (Models), including lightweight policies
+such as ``MLP``; training recipes / algorithms go in `methods_index`; SFT-only workflows go
+in `sft_index`. Do not duplicate the same page in multiple gallery indexes.
+
 **Robots / Franka hierarchy:** Franka belongs under the Robots gallery, not as a top-level
 Examples category. The Robots toctree links ``Franka <embodied/franka>`` so clicking
 **Franka** opens the base Real-World RL page. The Franka page owns the nested Franka
@@ -172,6 +178,16 @@ Visualization and Results → TensorBoard / video / logger + link to Training me
   there is no separate "Tasks and Environment" section) · `Installation` ·
   `Download the Model` (and `Download the Assets` if needed) · `Run It` ·
   `Visualization and Results`.
+- **Align pages within each gallery subsection when applicable.** Simulator / benchmark
+  pages use `Overview` → `Tasks` → `Observation and Action` → `Installation` → optional
+  download sections → `Run It` → `Visualization and Results`. Model pages use the same
+  overview table pattern, including lightweight policies such as ``MLP``; omit
+  `Download the Model` only when there is no checkpoint to download. Algorithm pages use
+  `Overview` with cards and a task/config table, then a method-specific `How <Method>
+  Works` / `Pipeline` section before setup and commands. SFT pages use `Overview`, then
+  dataset/model preparation sections as needed, followed by `Installation`, `Run It`, and
+  `Visualization and Results` where applicable. Robots pages may keep hardware/safety
+  workflow sections, but still start with `Overview`, `Tasks`, and `Observation and Action`.
 - **Overview** uses a `sphinx-design` **card grid** (`.. grid:: 2 4 4 4` + `grid-item-card`),
   not a `tip` admonition — see the page anatomy above.
 - `note` = side info · `warning` = footguns (OOM, `MUJOCO_GL`, `RLINF_NODE_RANK` ordering,

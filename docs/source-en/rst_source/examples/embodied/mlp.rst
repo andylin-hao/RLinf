@@ -43,8 +43,8 @@ Train an MLP policy with PPO/SAC/GRPO on low-dimensional state across ManiSkill,
 | **You'll do:** install the target simulator → pick a config → launch ``run_embodiment.sh`` → watch ``env/success_once``.
 | **Prerequisites:** :doc:`Installation </rst_source/start/installation>` · the target simulator's dependencies.
 
-Supported Environments
-~~~~~~~~~~~~~~~~~~~~~~~
+Tasks
+~~~~~
 
 Select an environment via the ``defaults`` list (``env/<env_name>@env.train`` /
 ``@env.eval``); override parallel-env count, episode length, and recording under
@@ -52,20 +52,42 @@ Select an environment via the ``defaults`` list (``env/<env_name>@env.train`` /
 
 .. list-table::
    :header-rows: 1
-   :widths: 36 22 42
+   :widths: 26 28 22 24
 
-   * - Env config
+   * - Task family
+     - Config
      - Simulator
-     - Task
-   * - ``maniskill_pick_cube``
+     - Focus
+   * - PickCube
+     - ``maniskill_ppo_mlp`` / ``maniskill_sac_mlp``
      - ManiSkill3
-     - Pick cube from low-dimensional state.
-   * - ``libero_spatial``
+     - Low-dimensional state policy training.
+   * - LIBERO-Spatial
+     - ``libero_spatial_0_grpo_mlp``
      - LIBERO
-     - LIBERO-Spatial suite.
-   * - ``frankasim_pickcube_state``
+     - GRPO with an MLP policy on a LIBERO spatial task.
+   * - PickCube
+     - ``frankasim_ppo_mlp``
      - MuJoCo / FrankaSim
-     - Pick cube from state.
+     - FrankaSim state-based PPO training.
+
+Observation and Action
+~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 24 38
+
+   * - Field
+     - Description
+   * - Observation
+     - Low-dimensional state vectors such as robot joints, end-effector pose, and object states.
+   * - Action
+     - Continuous robot control commands configured by ``policy_setup``, ``obs_dim``, and ``action_dim``.
+   * - Reward
+     - Simulator task reward or success signal.
+   * - Prompt
+     - Not used by the MLP policy; tasks are selected through Hydra configs.
 
 
 Installation
