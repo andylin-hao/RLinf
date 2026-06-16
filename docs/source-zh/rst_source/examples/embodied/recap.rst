@@ -1,14 +1,51 @@
 RECAP：基于离线优势估计的策略优化
 ==========================================
 
+.. figure:: https://raw.githubusercontent.com/RLinf/misc/main/pic/recap.png
+   :align: center
+   :width: 80%
+
+   The RECAP offline pipeline.
+
 本文档介绍 RLinf 框架中 **RECAP（RL with Experience and Corrections via Advantage-conditioned Policies）** 流程的完整使用指南。
 RECAP 是一种离线策略优化方法——不需要在线环境交互，通过对已有数据集离线计算回报（return）、训练价值模型（value model）、
 估计优势（advantage），最终利用 **Classifier-Free Guidance（CFG）训练** 对策略进行优化。
 
 该流程特别适用于真实机器人等无法进行大规模在线采样的场景。
 
-流程概览
------------
+概览
+----
+
+离线提升 π₀.₅ 策略（无需新采样）：用价值模型为已有数据打分，再以无分类器引导（CFG）进行优化。
+
+.. grid:: 2 4 4 4
+   :gutter: 2
+
+   .. grid-item-card:: 算法
+      :text-align: center
+
+      RECAP (CFG)
+
+   .. grid-item-card:: 模型
+      :text-align: center
+
+      π₀.₅
+
+   .. grid-item-card:: 模式
+      :text-align: center
+
+      离线
+
+   .. grid-item-card:: 阶段
+      :text-align: center
+
+      4 步
+
+| **你将完成：** 计算回报 → SFT 价值模型 → 计算优势 → CFG 训练策略 → 评测。
+| **前置条件：** :doc:`安装 </rst_source/start/installation>` · SigLIP2 + Gemma3 + π₀.₅ 检查点 · LeRobot 格式数据集（见下文步骤）。
+
+流程
+----
 
 RECAP 包含四个顺序执行的阶段：
 
@@ -29,8 +66,8 @@ RECAP 包含四个顺序执行的阶段：
 
 4. **CFG Training**：使用优势标签训练策略模型——正样本（高优势）作为条件输入，负样本（低优势）作为无条件输入，实现 classifier-free guidance 策略优化。
 
-算法
----------
+RECAP 工作原理
+--------------
 
 **RECAP 核心组件**
 
@@ -59,8 +96,8 @@ RECAP 包含四个顺序执行的阶段：
    - 正样本以 ``unconditional_prob`` 概率随机转为无条件（默认 :math:`0.1`），实现 dropout 正则化
    - 推理时通过 ``cfgrl_guidance_scale`` 控制引导强度
 
-依赖安装
------------
+安装
+----
 
 1. 克隆 RLinf 仓库
 ~~~~~~~~~~~~~~~~~~~~
@@ -104,8 +141,8 @@ RECAP 包含四个顺序执行的阶段：
    source .venv/bin/activate
 
 
-模型下载
------------
+下载模型
+--------
 
 RECAP 流程需要以下预训练模型：
 
@@ -628,6 +665,8 @@ Step 3 完成后，可以使用 ``examples/recap/process/visualize_advantage_dat
 
 可视化与结果
 -------------------------
+指标含义见 :doc:`训练指标 </rst_source/tutorials/configuration/metrics>`。
+
 
 **TensorBoard 日志**
 
@@ -679,7 +718,7 @@ RECAP 实验结果
 
    <div style="display: flex; justify-content: center; margin: 20px 0;">
      <div style="flex: 0.5; text-align: center;">
-       <img src="https://github.com/RLinf/misc/raw/main/pic/recap_libero10_task0.png" style="width: 100%;"/>
+       <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/recap_libero10_task0.png" style="width: 100%;"/>
        <p><em>LIBERO-10 Task 0 上的 RECAP 实验结果</em></p>
      </div>
    </div>
