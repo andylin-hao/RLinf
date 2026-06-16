@@ -10,7 +10,7 @@
    :maxdepth: 2
    :titlesonly:
 
-   RLinf 执行流程 <../tutorials/index>
+   RLinf 执行流程 <execution_flow>
    Worker 与 WorkerGroup <../tutorials/usage/worker>
    M2Flow 编程流程 <../tutorials/usage/flow>
    Channel <../tutorials/usage/channel>

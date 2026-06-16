@@ -115,16 +115,16 @@ def render_svg_logo(path, width="4rem", height="auto"):
 html_theme_options = {
     "logo": {"svg": render_svg_logo("_static/svg/logo.svg")},
     "navbar_start": ["navbar-logo"],
-    "navbar_center": ["navbar-nav"],
+    "navbar_center": ["navbar-nav-dropdown"],
     "navbar_end": ["version-switcher", "navbar-icon-links", "askai"],
     "navbar_align": "left",
     "secondary_sidebar_items": {
         "**": ["page-toc"],
         "index": [],
     },
-    "collapse_navigation": True,
-    "show_nav_level": 2,
-    "navigation_depth": 4,
+    "collapse_navigation": False,
+    "show_nav_level": 3,
+    "navigation_depth": 5,
     "header_links_before_dropdown": 10,
     "icon_links": [
         {

@@ -1,9 +1,7 @@
-:orphan:
+RLinf 执行流程
+==============
 
-教程
-=========
-
-本节将对 **RLinf** 进行深入讲解。我们提供了一系列实操教程，涵盖该库的所有核心组件与功能。首先，我们将从整体上介绍 RLinf 的执行流程，帮助用户理解其如何完成一个强化学习（RL）训练过程。
+先阅读本页，理解 RLinf 如何执行一个 RL 训练任务，再调优 worker、channel 或 placement。
 
 RLinf 执行流程概览
 --------------------------------
@@ -22,18 +20,3 @@ RLinf 执行流程概览
 - **关键概念与特性。** 图右侧突出展示了 RLinf 的三大核心特性：(i) 灵活的 Worker 放置机制，任意 WorkerGroup 可以弹性部署在任意节点或 GPU 上；(ii) 易用的通信接口，用户只需通过 WorkerGroup 名称即可发送或接收数据；(iii) 分布式数据通道（Channel）， Worker 之间可以使用 channel.put 与 channel.get 轻松交换数据。
 
 RLinf 采用模块化设计，通过 Worker、WorkerGroup 与 Channel 抽象了分布式系统的复杂性。这种设计使用户能够以极低的分布式编程成本构建大规模的强化学习训练流水线，尤其适用于具身智能与智能体系统。
-
-
-.. toctree::
-   :hidden:
-   :maxdepth: 4
-
-   configuration/index
-   usage/index
-   embodied/index
-   agentic/index
-   rlalg/index
-   accelerators/index
-   extend/index
-   advance/index
-   release

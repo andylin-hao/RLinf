@@ -1,11 +1,8 @@
-:orphan:
+RLinf Execution Flow
+====================
 
-Tutorials
-=========
-
-This section offers an in-depth exploration of **RLinf**.
-It provides a collection of hands-on tutorials covering all the core components and features of the library.
-Below, we first give an overview of RLinf execution flow to help users understand how RLinf executes an RL training.
+Use this page to understand how RLinf executes an RL training job before you
+tune workers, channels, or placement.
 
 RLinf Execution Overview
 ------------------------
@@ -25,18 +22,3 @@ The following figure demonstrates the overview of RLinf execution flow, includin
 
 RLinf adopts a modular design that abstracts distributed complexity through the Worker, WorkerGroup, and Channel features.
 This design enables users to build large-scale RL training pipelines with minimal distributed programming effort, especially for embodied intelligence and agent-based systems.
-
-
-.. toctree::
-   :hidden:
-   :maxdepth: 4
-
-   configuration/index
-   usage/index
-   embodied/index
-   agentic/index
-   rlalg/index
-   accelerators/index
-   extend/index
-   advance/index
-   release

@@ -27,7 +27,15 @@ Operations
 
    Multi-Node Training <../tutorials/usage/multi_node>
    Checkpoint Conversion <../tutorials/usage/convertor>
-   Embodied Guides <../tutorials/embodied/index>
    Agentic Guides <../tutorials/agentic/index>
-   Accelerators <../tutorials/accelerators/index>
-   Advanced Features <../tutorials/advance/index>
+   Real-World Robots <../tutorials/embodied/realworld_robot>
+   Cloud-Edge Collaboration <../tutorials/embodied/cloud_edge>
+   Data Collection <../tutorials/embodied/data_collection>
+   AMD ROCm <../tutorials/accelerators/amd_rocm>
+   Ascend CANN <../tutorials/accelerators/ascend_cann>
+   LoRA <../tutorials/advance/lora>
+   5D Parallelism <../tutorials/advance/5D>
+   SGLang Version Switching <../tutorials/advance/version>
+   Profiling <../tutorials/advance/profile>
+   Dynamic Scheduling <../tutorials/advance/dynamic_scheduling>
+   Auto Placement <../tutorials/advance/auto_placement>

@@ -11,7 +11,7 @@ Core Model
    :maxdepth: 2
    :titlesonly:
 
-   RLinf Execution Flow <../tutorials/index>
+   RLinf Execution Flow <execution_flow>
    Worker and WorkerGroup <../tutorials/usage/worker>
    M2Flow Programming Flow <../tutorials/usage/flow>
    Channel <../tutorials/usage/channel>

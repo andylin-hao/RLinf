@@ -26,7 +26,15 @@
 
    多节点训练 <../tutorials/usage/multi_node>
    Checkpoint 转换 <../tutorials/usage/convertor>
-   具身智能指南 <../tutorials/embodied/index>
    智能体指南 <../tutorials/agentic/index>
-   加速器 <../tutorials/accelerators/index>
-   高级功能 <../tutorials/advance/index>
+   真机机器人 <../tutorials/embodied/realworld_robot>
+   云边协同 <../tutorials/embodied/cloud_edge>
+   数据采集 <../tutorials/embodied/data_collection>
+   AMD ROCm <../tutorials/accelerators/amd_rocm>
+   Ascend CANN <../tutorials/accelerators/ascend_cann>
+   LoRA <../tutorials/advance/lora>
+   5D 并行 <../tutorials/advance/5D>
+   SGLang 版本切换 <../tutorials/advance/version>
+   Profiling <../tutorials/advance/profile>
+   动态调度 <../tutorials/advance/dynamic_scheduling>
+   自动 Placement <../tutorials/advance/auto_placement>

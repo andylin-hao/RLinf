@@ -70,6 +70,19 @@ category, not a sentence:
 The category index pages keep their descriptive H1 (e.g. "Algorithms for Embodiment"); only
 the `examples/index.rst` toctree caption is the one-word form.
 
+**Global navigation discoverability:** The top navigation uses dropdown menus for every
+major axis (`Get Started`, `Examples`, `Evaluation`, `Concepts`, `Guides`, `Reference`,
+`Extending`, `Resources`) so readers can jump directly to major subsections, following the
+Ray / LeRobot pattern. The left sidebar should expose section contents without requiring
+deep click-through: keep `collapse_navigation: False`, `show_nav_level: 3`, and
+`navigation_depth: 5` unless a later IA change intentionally revises the global contract.
+
+**Information ownership:** A page should be owned by the section where readers look for
+that task. Do not make `Concepts` point at broad aggregate pages that also own Guides,
+Reference, or Extending content. If conceptual content is needed from a mixed old page,
+move or copy that concept into a dedicated Concepts page and link operational/reference
+pages directly from their owning sections.
+
 **Category ownership:** Place a page by the reader's starting point. Simulators /
 benchmarks go in `simulators_index`; physical hardware goes in `real_world_index`; model
 families and policy classes go in `vla_wam_index` (Models), including lightweight policies
