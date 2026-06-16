@@ -1,5 +1,5 @@
-Real-World RL with Franka (Reward Model)
-========================================
+Using Reward Model with Franka
+==============================
 
 .. |huggingface| image:: /_static/svg/hf-logo.svg
    :width: 16px

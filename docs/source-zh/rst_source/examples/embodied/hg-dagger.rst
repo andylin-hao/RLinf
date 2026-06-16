@@ -1,5 +1,5 @@
-Franka 真机 HG-DAgger
-========================================
+在 Franka 上使用 HG-DAgger
+================================================
 .. figure:: https://raw.githubusercontent.com/RLinf/misc/main/pic/hg-dagger.jpg
    :align: center
    :width: 80%

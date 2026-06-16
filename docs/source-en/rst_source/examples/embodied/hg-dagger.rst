@@ -1,5 +1,5 @@
-HG-DAgger for Real-World Franka
-===============================
+Using HG-DAgger with Franka
+===========================
 .. figure:: https://raw.githubusercontent.com/RLinf/misc/main/pic/hg-dagger.jpg
    :align: center
    :width: 80%

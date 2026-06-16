@@ -1,5 +1,5 @@
-Franka Real-World Pi0 SFT and Deployment
-========================================
+Running Pi0 SFT with Franka
+===========================
 .. figure:: https://raw.githubusercontent.com/RLinf/misc/main/pic/pi0_icon.jpg
    :align: center
    :width: 80%

@@ -1,5 +1,5 @@
-Franka 真机：ZED 相机与 Robotiq 夹爪
-========================================
+在 Franka 上使用 ZED + Robotiq
+================================================
 .. figure:: https://raw.githubusercontent.com/RLinf/misc/main/pic/robotiq_zed.jpeg
    :align: center
    :width: 80%

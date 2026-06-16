@@ -1,5 +1,5 @@
-Franka 真机：GELLO 遥操作
-========================================
+在 Franka 上使用 GELLO
+================================================
 .. figure:: https://raw.githubusercontent.com/RLinf/misc/main/pic/gello.jpeg
    :align: center
    :width: 80%

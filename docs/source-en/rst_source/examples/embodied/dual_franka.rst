@@ -1,5 +1,5 @@
-Real-World Dual-Franka: GELLO Collection, π₀.₅ SFT, Deployment
-==============================================================
+Using Dual Franka
+=================
 .. figure:: https://raw.githubusercontent.com/RLinf/misc/main/pic/franka_arm_small.jpg
    :align: center
    :width: 80%

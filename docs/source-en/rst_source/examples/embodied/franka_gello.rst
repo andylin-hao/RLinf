@@ -1,5 +1,5 @@
-Real-World Franka with GELLO Teleoperation
-==========================================
+Using GELLO with Franka
+=======================
 .. figure:: https://raw.githubusercontent.com/RLinf/misc/main/pic/gello.jpeg
    :align: center
    :width: 80%

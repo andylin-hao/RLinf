@@ -1,5 +1,5 @@
-Real-World RL with Franka + Dexterous Hand
-==========================================
+Using Dexterous Hand with Franka
+================================
 .. figure:: https://raw.githubusercontent.com/RLinf/misc/main/pic/dexhand.jpg
    :align: center
    :width: 80%

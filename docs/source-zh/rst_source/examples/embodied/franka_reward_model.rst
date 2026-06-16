@@ -1,5 +1,5 @@
-Franka 真机强化学习（Reward Model）
-========================================
+在 Franka 上使用 Reward Model
+================================================
 
 .. |huggingface| image:: /_static/svg/hf-logo.svg
    :width: 16px

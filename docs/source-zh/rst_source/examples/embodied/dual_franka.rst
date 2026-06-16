@@ -1,5 +1,5 @@
-双 Franka 真机：GELLO 采集、π₀.₅ SFT 与部署
-============================================================
+使用双 Franka
+================================================
 .. figure:: https://raw.githubusercontent.com/RLinf/misc/main/pic/franka_arm_small.jpg
    :align: center
    :width: 80%

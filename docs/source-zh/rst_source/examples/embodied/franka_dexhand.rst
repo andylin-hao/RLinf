@@ -1,5 +1,5 @@
-Franka 机械臂与灵巧手真机强化学习
-========================================
+在 Franka 上使用灵巧手
+================================================
 .. figure:: https://raw.githubusercontent.com/RLinf/misc/main/pic/dexhand.jpg
    :align: center
    :width: 80%

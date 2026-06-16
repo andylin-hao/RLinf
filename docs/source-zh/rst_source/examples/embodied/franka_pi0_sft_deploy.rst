@@ -1,5 +1,5 @@
-Franka 真机 Pi0 监督微调与部署
-========================================
+在 Franka 上运行 Pi0 SFT
+================================================
 .. figure:: https://raw.githubusercontent.com/RLinf/misc/main/pic/pi0_icon.jpg
    :align: center
    :width: 80%
