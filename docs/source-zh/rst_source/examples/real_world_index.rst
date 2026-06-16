@@ -54,6 +54,17 @@
      </div>
 
      <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
+       <img src="https://github.com/RLinf/misc/raw/main/pic/dual.jpeg"
+            style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
+       <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
+         <a href="embodied/dual_franka.html" style="text-decoration: underline; color: blue;">
+           <b>双 Franka 真机：GELLO 采集 + π₀.₅ SFT</b>
+         </a><br>
+         双节点双臂 Franka rig：GELLO 关节空间采集、rot6d SFT、脚踏部署
+       </p>
+     </div>
+
+     <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
        <img src="https://github.com/RLinf/misc/raw/main/pic/dexhand.jpg"
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
        <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
@@ -129,6 +140,7 @@
    Franka (Reward Model) <embodied/franka_reward_model>
    Franka (ZED + Robotiq) <embodied/franka_zed_robotiq>
    Franka (GELLO) <embodied/franka_gello>
+   Franka (Dual-Arm) <embodied/dual_franka>
    Franka (Dexterous Hand) <embodied/franka_dexhand>
    Franka (Pi0 SFT) <embodied/franka_pi0_sft_deploy>
    HG-DAgger <embodied/hg-dagger>
