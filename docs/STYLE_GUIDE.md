@@ -70,16 +70,21 @@ category, not a sentence:
 The category index pages keep their descriptive H1 (e.g. "Algorithms for Embodiment"); only
 the `examples/index.rst` toctree caption is the one-word form.
 
-**Global navigation discoverability:** Use a sidebar-first navigation model, following the
-Ray / LeRobot pattern. The top bar should not duplicate the documentation sections; keep
-major docs axes (`Get Started`, `Examples`, `Evaluation`, `Concepts`, `Guides`,
-`Reference`, `Extending`, `Resources`) pinned in the left sidebar even on the home index
-page. The sidebar should show the major axes immediately but keep most nested content
-collapsed by default: keep `navbar_center: []`, `collapse_navigation: False`,
-`show_nav_level: 1`, `navigation_depth: 5`, and `html_sidebars = {"**":
-["global-sidebar-nav.html"]}` unless a later IA change intentionally revises the global
-contract. The root `index.rst` toctree should stay hidden so navigation lives in the
-sidebar, not in the page body.
+**Global navigation discoverability:** Use a sidebar-only navigation model. The top bar
+is intentionally removed; place the logo/title, search field, and a compact utility row
+(version selector + repository link with a live GitHub star count) in the left sidebar,
+followed by the global section navigation. The **Ask AI** button is a floating action
+button pinned to the bottom-right of the viewport (not in the sidebar). The sidebar must
+show all major docs axes (`Get Started`, `Examples`, `Evaluation`, `Concepts`, `Guides`,
+`Reference`, `Extending`, `Resources`) from every page, including the home index. All
+top-level sections expand to their immediate children by default (`js/sidebar-nav.js`),
+while deeper sub-trees stay collapsed. Keep `navbar_start: []`, `navbar_center: []`,
+`navbar_end: []`, `html_sidebars` ordered as `sidebar-brand`, `search-field`,
+`sidebar-tools`, `global-sidebar-nav`, `collapse_navigation: False`, `show_nav_level: 1`,
+and `navigation_depth: 5` unless a later IA change intentionally revises the global
+contract. The header band is collapsed to zero height (`--pst-header-height: 0`) so the
+sidebar starts at the top edge. The root `index.rst` toctree should stay hidden so
+navigation is exposed through the sidebar, not duplicated in the page body.
 
 **Information ownership:** A page should be owned by the section where readers look for
 that task. Do not make `Concepts` point at broad aggregate pages that also own Guides,

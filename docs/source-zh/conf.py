@@ -95,9 +95,18 @@ html_js_files = [
     "js/ai-chat-service.js",
     "js/mode-badge.js",
     "js/mode-panel.js",
+    "js/github-stars.js",
+    "js/sidebar-nav.js",
     "sphinx-modal-widget.js",
 ]
-html_sidebars = {"**": ["global-sidebar-nav.html"]}
+html_sidebars = {
+    "**": [
+        "sidebar-brand",
+        "search-field",
+        "sidebar-tools",
+        "global-sidebar-nav",
+    ]
+}
 
 
 # -- Theme Options -------------------------------------------------------------
@@ -114,9 +123,9 @@ def render_svg_logo(path, width="4rem", height="auto"):
 
 html_theme_options = {
     "logo": {"svg": render_svg_logo("_static/svg/logo.svg")},
-    "navbar_start": ["navbar-logo"],
+    "navbar_start": [],
     "navbar_center": [],
-    "navbar_end": ["version-switcher", "navbar-icon-links", "askai"],
+    "navbar_end": [],
     "navbar_align": "left",
     "secondary_sidebar_items": {
         "**": ["page-toc"],
