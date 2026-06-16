@@ -5,7 +5,7 @@ RLinf的worker抽象、灵活的通信组件、以及对不同类型加速器的
 
 .. raw:: html
 
-   <div style="display: flex; justify-content: center; gap: 20px; align-items: flex-start; flex-wrap: wrap;">
+   <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; align-items: flex-start; justify-items: center; max-width: 980px; margin: 0 auto;">
      <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
        <img src="https://github.com/RLinf/misc/raw/main/pic/wideseek_r1/scaling.png"
             style="width: 100%; height: 200px; object-fit: contain; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />

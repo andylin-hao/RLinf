@@ -7,7 +7,7 @@ Thanks to this decoupled design, workers can be flexibly and dynamically schedul
 
 .. raw:: html
 
-   <div style="display: flex; justify-content: center; gap: 20px; align-items: flex-start; flex-wrap: wrap;">
+   <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; align-items: flex-start; justify-items: center; max-width: 980px; margin: 0 auto;">
      <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
        <img src="https://github.com/RLinf/misc/raw/main/pic/waiting_icon.jpg"
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
