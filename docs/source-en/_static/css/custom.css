@@ -48,3 +48,117 @@ a.reference.internal:hover {
 .bd-sidebar-secondary {
   max-width: 15rem;            /* slimmer right "On this page" */
 }
+
+/* --- Ray-style cards ----------------------------------------------------
+   Ray's docs use compact PyData cards with a clean surface, subtle shadow,
+   small radius, and stronger hover affordance. Apply that treatment globally
+   to sphinx-design overview cards and the raw-HTML example gallery cards. */
+:root {
+  --rlinf-card-radius: 4px;
+  --rlinf-card-gap: 1em;
+  --rlinf-card-shadow: 0px 4px 10px 0px rgba(0, 0, 0, 0.08);
+  --rlinf-card-shadow-hover: 0px 6px 30px 5px rgba(0, 0, 0, 0.12);
+}
+
+html[data-theme="dark"] {
+  --rlinf-card-shadow: 0px 4px 10px 0px rgba(0, 0, 0, 0.32);
+  --rlinf-card-shadow-hover: 0px 6px 30px 5px rgba(0, 0, 0, 0.42);
+}
+
+.sd-card {
+  background: var(--pst-color-surface, var(--pst-color-background)) !important;
+  border: 1px solid var(--pst-color-border) !important;
+  border-radius: var(--rlinf-card-radius) !important;
+  box-shadow: var(--rlinf-card-shadow) !important;
+  color: var(--pst-color-text-base) !important;
+  overflow: hidden;
+  transition: border-color 160ms ease, box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.sd-card:hover {
+  border-color: var(--pst-color-primary) !important;
+  box-shadow: var(--rlinf-card-shadow-hover) !important;
+  transform: translateY(-2px);
+}
+
+.sd-card .sd-card-title {
+  color: var(--pst-color-text-base) !important;
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.sd-card .sd-card-body {
+  padding: 1rem;
+}
+
+.sd-card .sd-card-body p:last-child {
+  margin-bottom: 0;
+}
+
+.bd-article div[style*="display: grid"][style*="grid-template-columns"],
+.bd-article div[style*="display: flex"][style*="justify-content: center"][style*="flex-wrap: wrap"] {
+  gap: var(--rlinf-card-gap) !important;
+  justify-items: stretch !important;
+}
+
+.bd-article div[style*="display: grid"][style*="grid-template-columns"] > div[style*="max-width: 300px"],
+.bd-article div[style*="display: flex"][style*="justify-content: center"][style*="flex-wrap: wrap"] > div[style*="max-width: 300px"] {
+  align-self: stretch;
+  background: var(--pst-color-surface, var(--pst-color-background)) !important;
+  border: 1px solid var(--pst-color-border) !important;
+  border-radius: var(--rlinf-card-radius) !important;
+  box-shadow: var(--rlinf-card-shadow) !important;
+  display: flex !important;
+  flex-direction: column;
+  max-width: 300px !important;
+  min-width: 0;
+  overflow: hidden;
+  text-align: left !important;
+  transition: border-color 160ms ease, box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.bd-article div[style*="display: grid"][style*="grid-template-columns"] > div[style*="max-width: 300px"]:hover,
+.bd-article div[style*="display: flex"][style*="justify-content: center"][style*="flex-wrap: wrap"] > div[style*="max-width: 300px"]:hover {
+  border-color: var(--pst-color-primary) !important;
+  box-shadow: var(--rlinf-card-shadow-hover) !important;
+  transform: translateY(-2px);
+}
+
+.bd-article div[style*="max-width: 300px"] > img,
+.bd-article div[style*="max-width: 300px"] > video {
+  border-radius: var(--rlinf-card-radius) var(--rlinf-card-radius) 0 0 !important;
+  box-shadow: none !important;
+  display: block;
+}
+
+.bd-article div[style*="max-width: 300px"] > p {
+  color: var(--pst-color-text-muted);
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  margin: 0 !important;
+  padding: 1rem;
+}
+
+.bd-article div[style*="max-width: 300px"] > p a.reference,
+.bd-article div[style*="max-width: 300px"] > p a {
+  color: var(--pst-color-text-base) !important;
+  font-weight: 600 !important;
+  text-decoration: none !important;
+}
+
+.bd-article div[style*="max-width: 300px"] > p a:hover {
+  color: var(--pst-color-primary) !important;
+}
+
+@media (max-width: 768px) {
+  .bd-article div[style*="display: grid"][style*="grid-template-columns"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  .bd-article div[style*="max-width: 300px"] {
+    max-width: 100% !important;
+  }
+}
