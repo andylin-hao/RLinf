@@ -83,71 +83,15 @@ RLinf 是一个灵活且可扩展的开源基础架构，专为通过强化学�
 --------------------------------------------
 
 .. toctree::
-  :maxdepth: 2
-  :includehidden:
-  :titlesonly:
-
-  rst_source/start/index
-
---------------------------------------------
-
-.. toctree::
   :maxdepth: 3
   :includehidden:
   :titlesonly:
 
-  rst_source/tutorials/index
-
---------------------------------------------
-
-.. toctree::
-  :maxdepth: 2
-  :includehidden:
-  :titlesonly:
-
-  rst_source/examples/index
-
---------------------------------------------
-
-.. toctree::
-  :maxdepth: 3
-  :includehidden:
-  :titlesonly:
-
-  rst_source/evaluations/index
-
---------------------------------------------
-
-.. toctree::
-  :maxdepth: 2
-  :includehidden:
-  :titlesonly:
-
-  rst_source/blog/index
-
---------------------------------------------
-
-.. toctree::
-  :maxdepth: 2
-  :includehidden:
-  :titlesonly:
-
-  rst_source/publications/index
-
---------------------------------------------
-
-.. toctree::
-  :maxdepth: 2
-  :includehidden:
-  :titlesonly:
-
-  rst_source/apis/index
-
---------------------------------------------
-
-.. toctree::
-  :maxdepth: 1
-  :includehidden:
-  :titlesonly:
-
-  rst_source/faq
+  快速开始 <rst_source/start/index>
+  示例 <rst_source/examples/index>
+  评测 <rst_source/evaluations/index>
+  概念 <rst_source/concepts/index>
+  指南 <rst_source/guides/index>
+  参考 <rst_source/reference/index>
+  扩展 <rst_source/extending/index>
+  资源 <rst_source/resources/index>

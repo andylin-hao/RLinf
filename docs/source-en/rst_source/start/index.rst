@@ -28,6 +28,7 @@ For agentic tasks (including math reasoning), RLinf achieves SOTA performance on
    :maxdepth: 1
 
    installation
+   cheat_sheet
    vla
    llm
    distribute
