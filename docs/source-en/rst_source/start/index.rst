@@ -15,7 +15,7 @@ We present three concise examples to demonstrate the framework's workflow and he
 
 
 SOTA RL Training Reproduction
-=====================================
+-----------------------------
 
 RLinf provides end-to-end recipes that reproduce or match **state-of-the-art (SOTA) RL results** out of the box—users can directly run our configs and scripts to obtain published numbers without custom engineering.
 
