@@ -293,58 +293,26 @@ VGGT 加载路径显式改为本地目录。
 评测
 ----
 
-建议在训练前先执行独立评测，用于验证 checkpoint、rollout 流程和环境资产是否正确。
+训练前请使用统一的 Evaluation 章节验证 ABot-M0 checkpoint。先阅读
+:doc:`LIBERO 评测指南 <../../evaluations/guides/libero>`，并在评测配置中同时设置
+``actor.model.model_path`` 与 ``rollout.model.model_path`` 指向 ABot-M0 checkpoint。
 
-评测入口是 ``evaluations/eval_embodied_agent.py``。两个 benchmark
-共用同一套启动流程，差异只在 ``LIBERO_TYPE`` 与配置文件名。
+.. list-table::
+   :header-rows: 1
+   :widths: 28 36 36
 
-通用环境变量：
+   * - 套件
+     - 配置来源
+     - 需要修改
+   * - LIBERO-10
+     - 通过 Evaluation 配置回退使用 ``libero_10_ppo_abot_m0``
+     - 设置 ``LIBERO_TYPE=standard``，并将两个 model path 指向 ABot-M0 checkpoint。
+   * - LIBERO-10+
+     - 通过 Evaluation 配置回退使用 ``libero_10_plus_ppo_abot_m0``
+     - 设置 ``LIBERO_TYPE=plus``，并将两个 model path 指向 ABot-M0 checkpoint。
 
-.. code-block:: bash
-
-   source .venv/bin/activate
-
-   export REPO_PATH=$(pwd)
-   export EMBODIED_PATH=$(pwd)/examples/embodiment
-   export PYTHONPATH=${REPO_PATH}:$PYTHONPATH
-   export MUJOCO_GL=egl
-   export PYOPENGL_PLATFORM=egl
-   export ROBOT_PLATFORM=LIBERO
-
-   ray stop || true
-   ray start --head --port=6379
-
-**LIBERO：**
-
-.. code-block:: bash
-
-   export LIBERO_TYPE=standard
-
-   python evaluations/eval_embodied_agent.py \
-     --config-name libero_10_ppo_abot_m0 \
-     actor.model.model_path=<path_to_abot_m0_ckpt> \
-     rollout.model.model_path=<path_to_abot_m0_ckpt> \
-     runner.only_eval=True \
-     env.eval.total_num_envs=8 \
-     env.eval.video_cfg.save_video=true \
-     env.eval.rollout_epoch=1 \
-     runner.logger.experiment_name=abot_m0_libero10_eval
-
-**LIBERO-Plus：**
-
-.. code-block:: bash
-
-   export LIBERO_TYPE=plus
-
-   python evaluations/eval_embodied_agent.py \
-     --config-name libero_10_plus_ppo_abot_m0 \
-     actor.model.model_path=<path_to_abot_m0_ckpt> \
-     rollout.model.model_path=<path_to_abot_m0_ckpt> \
-     runner.only_eval=True \
-     env.eval.total_num_envs=8 \
-     env.eval.video_cfg.save_video=true \
-     env.eval.rollout_epoch=1 \
-     runner.logger.experiment_name=abot_m0_liberoplus_eval
+CLI 用法、Hydra 覆盖、日志和视频输出见 :doc:`Evaluation CLI 参考 <../../evaluations/reference/cli>`
+与 :doc:`Evaluation 结果参考 <../../evaluations/reference/results>`。
 
 训练
 ----

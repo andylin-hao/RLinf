@@ -304,60 +304,28 @@ If the command prints ``IMPORT_OK``, the package-level dependency wiring is vali
 Evaluation
 ----------
 
-Use standalone evaluation before training to verify the checkpoint, rollout
-pipeline, and environment assets.
+Use the unified Evaluation section to verify ABot-M0 checkpoints before training.
+Start from the :doc:`LIBERO evaluation guide <../../evaluations/guides/libero>` and
+set the ABot-M0 checkpoint in both ``actor.model.model_path`` and
+``rollout.model.model_path``.
 
-The eval entrypoint is ``evaluations/eval_embodied_agent.py``. Both
-benchmarks share the same launch flow; the only differences are
-``LIBERO_TYPE`` and the config name.
+.. list-table::
+   :header-rows: 1
+   :widths: 28 36 36
 
-Common environment setup:
+   * - Suite
+     - Config source
+     - What to change
+   * - LIBERO-10
+     - ``libero_10_ppo_abot_m0`` via the Evaluation config fallback
+     - Set ``LIBERO_TYPE=standard`` and point both model paths at the ABot-M0 checkpoint.
+   * - LIBERO-10+
+     - ``libero_10_plus_ppo_abot_m0`` via the Evaluation config fallback
+     - Set ``LIBERO_TYPE=plus`` and point both model paths at the ABot-M0 checkpoint.
 
-.. code-block:: bash
-
-   source .venv/bin/activate
-
-   export REPO_PATH=$(pwd)
-   export EMBODIED_PATH=$(pwd)/examples/embodiment
-   export PYTHONPATH=${REPO_PATH}:$PYTHONPATH
-   export MUJOCO_GL=egl
-   export PYOPENGL_PLATFORM=egl
-   export ROBOT_PLATFORM=LIBERO
-
-   ray stop || true
-   ray start --head --port=6379
-
-**LIBERO:**
-
-.. code-block:: bash
-
-   export LIBERO_TYPE=standard
-
-   python evaluations/eval_embodied_agent.py \
-     --config-name libero_10_ppo_abot_m0 \
-     actor.model.model_path=<path_to_abot_m0_ckpt> \
-     rollout.model.model_path=<path_to_abot_m0_ckpt> \
-     runner.only_eval=True \
-     env.eval.total_num_envs=8 \
-     env.eval.video_cfg.save_video=true \
-     env.eval.rollout_epoch=1 \
-     runner.logger.experiment_name=abot_m0_libero10_eval
-
-**LIBERO-Plus:**
-
-.. code-block:: bash
-
-   export LIBERO_TYPE=plus
-
-   python evaluations/eval_embodied_agent.py \
-     --config-name libero_10_plus_ppo_abot_m0 \
-     actor.model.model_path=<path_to_abot_m0_ckpt> \
-     rollout.model.model_path=<path_to_abot_m0_ckpt> \
-     runner.only_eval=True \
-     env.eval.total_num_envs=8 \
-     env.eval.video_cfg.save_video=true \
-     env.eval.rollout_epoch=1 \
-     runner.logger.experiment_name=abot_m0_liberoplus_eval
+For CLI usage, Hydra overrides, logs, and video output, use the
+:doc:`Evaluation CLI reference <../../evaluations/reference/cli>` and
+:doc:`Evaluation results reference <../../evaluations/reference/results>`.
 
 Training
 --------
