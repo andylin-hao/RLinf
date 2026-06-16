@@ -399,8 +399,9 @@ LIBERO-Pro / LIBERO-Plus 复用标准 LIBERO 基座检查点：
 运行
 ~~~~
 
-两个套件复用标准 LIBERO 配置族，并通过 ``LIBERO_TYPE`` 环境变量选择套件。用 ``run_embodiment.sh``
-训练，用 ``evaluations/run_eval.sh`` 评测（见 :doc:`LIBERO 评测指南 <../../evaluations/guides/libero>`）：
+两个套件复用标准 LIBERO 配置族，并通过 ``LIBERO_TYPE`` 环境变量选择套件。
+使用 ``run_embodiment.sh`` 训练；独立评测请参考
+:doc:`LIBERO 评测指南 <../../evaluations/guides/libero>`，并使用相同环境变量。
 
 .. code-block:: bash
 
@@ -408,9 +409,7 @@ LIBERO-Pro / LIBERO-Plus 复用标准 LIBERO 基座检查点：
     export LIBERO_TYPE=pro
     bash examples/embodiment/run_embodiment.sh libero_10_grpo_openvlaoft
 
-    # 评测训练好的模型
-    export LIBERO_TYPE=pro
-    bash evaluations/run_eval.sh libero libero_10_openvlaoft_eval
+``libero_10_openvlaoft_eval`` 等评测配置由该指南统一说明。
 
 训练与评测过程中记录的指标含义见
 :doc:`训练指标 </rst_source/tutorials/configuration/metrics>`。

@@ -406,8 +406,9 @@ Run It
 ~~~~~~
 
 Both suites reuse the standard LIBERO config family and select the suite with the
-``LIBERO_TYPE`` environment variable. Train with ``run_embodiment.sh`` and evaluate with
-``evaluations/run_eval.sh`` (see the :doc:`LIBERO evaluation guide <../../evaluations/guides/libero>`):
+``LIBERO_TYPE`` environment variable. Train with ``run_embodiment.sh``; for
+standalone evaluation, use the :doc:`LIBERO evaluation guide
+<../../evaluations/guides/libero>` with the same environment variable.
 
 .. code-block:: bash
 
@@ -415,9 +416,8 @@ Both suites reuse the standard LIBERO config family and select the suite with th
     export LIBERO_TYPE=pro
     bash examples/embodiment/run_embodiment.sh libero_10_grpo_openvlaoft
 
-    # Evaluate the trained model
-    export LIBERO_TYPE=pro
-    bash evaluations/run_eval.sh libero libero_10_openvlaoft_eval
+Evaluation configs such as ``libero_10_openvlaoft_eval`` are covered by the
+guide.
 
 See :doc:`Training metrics </rst_source/tutorials/configuration/metrics>` for the metrics
 logged during training and evaluation.

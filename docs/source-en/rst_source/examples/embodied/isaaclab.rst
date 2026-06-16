@@ -212,12 +212,10 @@ What this does:
 2. Creates Ray workers for the actor, rollout, and IsaacLab env components.
 3. Runs PPO rollouts, computes sparse task rewards, and updates the VLA policy.
 
-Run evaluation with the same config suffix:
-
-.. code:: bash
-
-   bash evaluations/run_eval.sh isaaclab_franka_stack_cube_ppo_gr00t
-   bash evaluations/run_eval.sh isaaclab_franka_stack_cube_ppo_openpi_pi05
+For standalone evaluation, use the unified :doc:`Evaluation CLI
+<../../evaluations/reference/cli>` with config fallback and the same suffixes:
+``isaaclab_franka_stack_cube_ppo_gr00t`` and
+``isaaclab_franka_stack_cube_ppo_openpi_pi05``.
 
 .. note::
 

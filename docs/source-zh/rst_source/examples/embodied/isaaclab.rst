@@ -211,12 +211,9 @@
 2. 为 actor、rollout 和 IsaacLab env 组件创建 Ray worker。
 3. 运行 PPO rollout，计算稀疏任务奖励，并更新 VLA 策略。
 
-使用相同配置后缀运行评估：
-
-.. code:: bash
-
-   bash evaluations/run_eval.sh isaaclab_franka_stack_cube_ppo_gr00t
-   bash evaluations/run_eval.sh isaaclab_franka_stack_cube_ppo_openpi_pi05
+独立评测请使用统一的 :doc:`Evaluation CLI <../../evaluations/reference/cli>`，
+通过配置回退机制复用相同后缀：``isaaclab_franka_stack_cube_ppo_gr00t`` 和
+``isaaclab_franka_stack_cube_ppo_openpi_pi05``。
 
 .. note::
 

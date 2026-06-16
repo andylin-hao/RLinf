@@ -173,11 +173,8 @@ OpenPI π₀ 策略。
 2. 为 actor、rollout 和 RoboCasa env 组件创建 Ray worker。
 3. 运行 PPO rollout，计算稀疏任务奖励，并更新 OpenPI 策略。
 
-使用相同配置后缀运行评估：
-
-.. code:: bash
-
-   bash evaluations/run_eval.sh robocasa_closedrawer_ppo_openpi
+独立评测请使用统一的 :doc:`Evaluation CLI <../../evaluations/reference/cli>`，
+通过配置回退机制复用相同后缀 ``robocasa_closedrawer_ppo_openpi``。
 
 .. note::
 
