@@ -125,13 +125,13 @@ These examples assume you have access to the corresponding hardware. They walk t
    :hidden:
    :maxdepth: 2
 
-   embodied/franka
-   embodied/franka_reward_model
-   embodied/franka_zed_robotiq
-   embodied/franka_gello
-   embodied/franka_dexhand
-   embodied/franka_pi0_sft_deploy
-   embodied/hg-dagger
-   embodied/gim_arm
-   embodied/xsquare_turtle2
-   embodied/dosw1
+   Franka <embodied/franka>
+   Franka (Reward Model) <embodied/franka_reward_model>
+   Franka (ZED + Robotiq) <embodied/franka_zed_robotiq>
+   Franka (GELLO) <embodied/franka_gello>
+   Franka (Dexterous Hand) <embodied/franka_dexhand>
+   Franka (Pi0 SFT) <embodied/franka_pi0_sft_deploy>
+   HG-DAgger <embodied/hg-dagger>
+   GimArm <embodied/gim_arm>
+   XSquare Turtle2 <embodied/xsquare_turtle2>
+   DOS-W1 <embodied/dosw1>

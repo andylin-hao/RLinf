@@ -46,10 +46,28 @@ Every benchmark (env) or model example page must:
 ## Navigation labels
 
 Toctree entry captions (what shows in the left "Section Navigation") must be the **bare
-name** — no "Benchmark", "Benchmarks", "Models", "World Model", "Simulation Platform",
-"评测平台", "仿真平台", "模型" suffixes. Use an explicit caption: ``LIBERO <embodied/libero>``,
-``ManiSkill <embodied/maniskill>``, ``π₀ / π₀.₅ <embodied/pi0>``. The page **H1 title** may
-stay descriptive (e.g. "RL with LIBERO Benchmarks"); only the nav caption is shortened.
+name** — no "Benchmark", "Benchmarks", "Models", "World Model", "Simulation Platform", "RL
+with …", "Training", "评测平台", "仿真平台", "模型" prefixes/suffixes. Use an explicit caption
+in the toctree: ``LIBERO <embodied/libero>``, ``MLP <embodied/mlp>``,
+``π₀ / π₀.₅ <embodied/pi0>``. The page **H1 title** may stay descriptive (e.g. "RL with
+LIBERO Benchmarks"); only the nav caption is shortened. This applies to **every** gallery —
+simulators, models, SFT, algorithms, and real-world.
+
+**Top-level gallery category captions** (in `examples/index.rst`) are a single word — the
+category, not a sentence:
+
+| Index page | Nav caption (EN) | Nav caption (ZH) |
+|---|---|---|
+| `simulators_index` | Simulators | 模拟器 |
+| `real_world_index` | Robots | 真机 |
+| `vla_wam_index` | Models | 模型 |
+| `sft_index` | SFT | SFT |
+| `methods_index` | Algorithms | 算法 |
+| `agentic/index` | Agents | 智能体 |
+| `system/index` | Systems | 系统 |
+
+The category index pages keep their descriptive H1 (e.g. "Algorithms for Embodiment"); only
+the `examples/index.rst` toctree caption is the one-word form.
 
 ## Page anatomy (recipe / example pages)
 

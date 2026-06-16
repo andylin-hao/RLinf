@@ -26,10 +26,10 @@
    :hidden:
    :maxdepth: 2
 
-   simulators_index
-   real_world_index
-   vla_wam_index
-   sft_index
-   methods_index
-   agentic/index
-   system/index
+   模拟器 <simulators_index>
+   真机 <real_world_index>
+   模型 <vla_wam_index>
+   SFT <sft_index>
+   算法 <methods_index>
+   智能体 <agentic/index>
+   系统 <system/index>

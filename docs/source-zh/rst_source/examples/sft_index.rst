@@ -49,6 +49,6 @@ VLA / WAM 模型监督微调
    :hidden:
    :maxdepth: 2
 
-   embodied/sft_openpi
-   embodied/sft_dreamzero
-   embodied/sft_vlm
+   OpenPI <embodied/sft_openpi>
+   DreamZero <embodied/sft_dreamzero>
+   VLM <embodied/sft_vlm>

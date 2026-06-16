@@ -93,10 +93,10 @@ Use this section when you are choosing *how* to train (PPO vs SAC vs IQL vs DAgg
    :hidden:
    :maxdepth: 2
 
-   embodied/mlp
-   embodied/sac_flow
-   embodied/dsrl
-   embodied/dagger
-   embodied/recap
-   embodied/co_training
-   embodied/iql_d4rl
+   MLP <embodied/mlp>
+   SAC-Flow <embodied/sac_flow>
+   DSRL <embodied/dsrl>
+   DAgger <embodied/dagger>
+   RECAP <embodied/recap>
+   Co-Training <embodied/co_training>
+   IQL (D4RL) <embodied/iql_d4rl>

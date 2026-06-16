@@ -49,6 +49,6 @@ After running SFT here, continue to :doc:`vla_wam_index` (model-centric RL) or :
    :hidden:
    :maxdepth: 2
 
-   embodied/sft_openpi
-   embodied/sft_dreamzero
-   embodied/sft_vlm
+   OpenPI <embodied/sft_openpi>
+   DreamZero <embodied/sft_dreamzero>
+   VLM <embodied/sft_vlm>

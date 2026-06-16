@@ -28,10 +28,10 @@ Beyond embodiment:
    :hidden:
    :maxdepth: 2
 
-   simulators_index
-   real_world_index
-   vla_wam_index
-   sft_index
-   methods_index
-   agentic/index
-   system/index
+   Simulators <simulators_index>
+   Robots <real_world_index>
+   Models <vla_wam_index>
+   SFT <sft_index>
+   Algorithms <methods_index>
+   Agents <agentic/index>
+   Systems <system/index>
