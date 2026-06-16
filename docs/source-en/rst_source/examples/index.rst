@@ -6,13 +6,11 @@ showcasing how the framework can be applied across different scenarios and
 demonstrating its efficiency in practice.
 This example gallery is continuously expanding, covering new scenarios and tasks to highlight RLinf's flexibility and efficiency.
 
-Embodied intelligence is RLinf's primary focus, and the embodied gallery is split into six entry points so you can pick the one that matches your starting question:
+Embodied intelligence is RLinf's primary focus, and the embodied gallery is split into five entry points so you can pick the one that matches your starting question:
 
 - :doc:`simulators_index` — pick this when the simulator / benchmark (LIBERO, ManiSkill, RoboTwin, IsaacLab, …) is your starting point.
 
-- :doc:`franka_index` — pick this when your real-world workflow starts from a Franka arm.
-
-- :doc:`real_world_index` — pick this when you have access to non-Franka physical robots (GimArm, XSquare Turtle2, DOS-W1, …).
+- :doc:`real_world_index` — pick this when you have access to physical robot hardware. It contains the Franka section plus GimArm, XSquare Turtle2, and DOS-W1.
 
 - :doc:`vla_wam_index` — pick this when you want to RL-fine-tune a specific model family (π₀, GR00T, Lingbot-VLA, OpenSora, Wan, …).
 
@@ -31,7 +29,6 @@ Beyond embodiment:
    :maxdepth: 2
 
    Simulators <simulators_index>
-   Franka <franka_index>
    Robots <real_world_index>
    Models <vla_wam_index>
    SFT <sft_index>

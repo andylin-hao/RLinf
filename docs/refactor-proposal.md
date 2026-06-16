@@ -73,7 +73,7 @@ Extending · Resources** (Examples before Concepts, per §10 Q1).
 TODAY                         →   PROPOSED
 ─────────────────────────────────────────────────────────────
 Quickstart (start/)           →   Get Started      (install · quickstarts · cheat sheet)
-Examples/ (galleries)         →   Examples         (the 6 galleries, promoted & unchanged in content)
+Examples/ (galleries)         →   Examples         (the 5 galleries, promoted & unchanged in content)
                               →   Concepts         (NEW: M2Flow, Worker/WorkerGroup/Channel,
                                                     execution modes, placement — the mental model)
 Tutorials/ (8 mixed subdirs)  →   Guides           (how-to: usage/, configuration/ how-tos,
@@ -99,7 +99,7 @@ FAQ                           →   (folded into Resources)
 | `tutorials/advance/` (5D, lora, profile, cluster, dynamic_scheduling, …) | **Guides → Advanced** | Operational deep-dives. |
 | `tutorials/extend/` (new_env, new_model_*, mbridge, weight_syncer) | **Extending** | Contributor-facing; own top-level axis like Ray's "Developer guides". |
 | `tutorials/embodied/`, `tutorials/agentic/` | merge into **Concepts/Guides** per page | Removes the `tutorials/embodied` vs `examples/embodied` ambiguity. |
-| `examples/*_index` (6 galleries) | **Examples** | Promote to first-class; content unchanged. |
+| `examples/*_index` (5 galleries) | **Examples** | Promote to first-class; content unchanged. |
 | `apis/` | **Reference → API** | Unchanged content, regrouped. |
 | `blog/`, `publications/`, `release` | **Resources** | Lower visual weight. |
 

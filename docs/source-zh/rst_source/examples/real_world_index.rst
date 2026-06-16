@@ -1,14 +1,24 @@
 真实机器人强化学习
-====================
+========================
 
-当你的出发点是 Franka 系列之外的真实机器人硬件时，请使用本节。这里的配方覆盖 GimArm、XSquare Turtle2 和 Dexmal DOS-W1 的遥操作、数据采集、Sim-to-Real 迁移和在线 RL 流程。
+当你的出发点是真实机器人硬件时，请使用本节。如果你使用 Franka 机械臂或 Franka-based rig，请从 Franka 开始；GimArm、XSquare Turtle2 和 Dexmal DOS-W1 请进入对应机器人页面。
 
-Franka 机械臂及其变体请进入专门的 :doc:`franka_index` 章节。
+每个章节都给出遥操作、数据采集、Sim-to-Real 迁移、部署或在线 RL 所需的配置路径。
 
 .. raw:: html
 
    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; align-items: flex-start; justify-items: center; max-width: 980px; margin: 0 auto;">
 
+     <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
+       <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/franka_arm_small.jpg"
+            style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
+       <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
+         <a href="franka_index.html" style="text-decoration: underline; color: blue;">
+           <b>Franka</b>
+         </a><br>
+         进入 Franka 章节，查看基础真机 RL、reward model、ZED + Robotiq、GELLO、双臂、灵巧手、Pi0 SFT 和 HG-DAgger
+       </p>
+     </div>
      <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
        <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/gim-arm.png"
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
@@ -46,6 +56,7 @@ Franka 机械臂及其变体请进入专门的 :doc:`franka_index` 章节。
    :hidden:
    :maxdepth: 2
 
+   Franka <franka_index>
    GimArm <embodied/gim_arm>
    XSquare Turtle2 <embodied/xsquare_turtle2>
    DOS-W1 <embodied/dosw1>
