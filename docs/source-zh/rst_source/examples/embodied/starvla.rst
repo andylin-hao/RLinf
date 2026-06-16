@@ -201,17 +201,17 @@ StarVLA + GRPO + LIBERO Spatial 使用
 参考曲线（采用的模型来自
 `LIBERO_BASELIEN_FORJINHUI_10K_QWENOFT <https://huggingface.co/JasonYang66/LIBERO_BASELIEN_FORJINHUI_10K_QWENOFT>`_）：
 
-.. image:: https://github.com/RLinf/misc/raw/main/pic/libero_goal_starvla_baseline.png
+.. image:: https://raw.githubusercontent.com/RLinf/misc/main/pic/libero_goal_starvla_baseline.png
    :alt: LIBERO Goal StarVLA baseline result curve
    :width: 95%
    :align: center
 
-.. image:: https://github.com/RLinf/misc/raw/main/pic/libero_object_starvla_baseline.png
+.. image:: https://raw.githubusercontent.com/RLinf/misc/main/pic/libero_object_starvla_baseline.png
    :alt: LIBERO Object StarVLA baseline result curve
    :width: 95%
    :align: center
 
-.. image:: https://github.com/RLinf/misc/raw/main/pic/libero_spatial_starvla_baseline.png
+.. image:: https://raw.githubusercontent.com/RLinf/misc/main/pic/libero_spatial_starvla_baseline.png
    :alt: LIBERO Spatial StarVLA baseline result curve
    :width: 95%
    :align: center

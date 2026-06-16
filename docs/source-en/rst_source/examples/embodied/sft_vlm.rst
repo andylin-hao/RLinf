@@ -234,46 +234,46 @@ Reference runs across model scales:
 
 **Qwen2.5-VL-3B** — eval accuracy, grad_norm, and loss every 1000 iterations:
 
-.. image:: https://github.com/RLinf/misc/raw/main/pic/sft_vlm_eval_accuracy.png
+.. image:: https://raw.githubusercontent.com/RLinf/misc/main/pic/sft_vlm_eval_accuracy.png
    :alt: Qwen2.5-VL-3B VLM SFT eval accuracy
    :width: 85%
    :align: center
 
-.. image:: https://github.com/RLinf/misc/raw/main/pic/sft_vlm_eval_grad_norm.png
+.. image:: https://raw.githubusercontent.com/RLinf/misc/main/pic/sft_vlm_eval_grad_norm.png
    :alt: Qwen2.5-VL-3B VLM SFT grad norm
    :width: 85%
    :align: center
 
-.. image:: https://github.com/RLinf/misc/raw/main/pic/sft_vlm_eval_loss.png
+.. image:: https://raw.githubusercontent.com/RLinf/misc/main/pic/sft_vlm_eval_loss.png
    :alt: Qwen2.5-VL-3B VLM SFT loss
    :width: 85%
    :align: center
 
 **Qwen3-VL-4B** — eval accuracy, grad_norm, and loss every 1000 iterations:
 
-.. image:: https://github.com/RLinf/misc/raw/main/pic/qwen3_sft_vlm_eval_accuracy.png
+.. image:: https://raw.githubusercontent.com/RLinf/misc/main/pic/qwen3_sft_vlm_eval_accuracy.png
    :alt: Qwen3-VL-4B VLM SFT eval accuracy
    :width: 85%
    :align: center
 
-.. image:: https://github.com/RLinf/misc/raw/main/pic/qwen3_sft_vlm_eval_grad_norm.png
+.. image:: https://raw.githubusercontent.com/RLinf/misc/main/pic/qwen3_sft_vlm_eval_grad_norm.png
    :alt: Qwen3-VL-4B VLM SFT grad norm
    :width: 85%
    :align: center
 
-.. image:: https://github.com/RLinf/misc/raw/main/pic/qwen3_sft_vlm_eval_loss.png
+.. image:: https://raw.githubusercontent.com/RLinf/misc/main/pic/qwen3_sft_vlm_eval_loss.png
    :alt: Qwen3-VL-4B VLM SFT loss
    :width: 85%
    :align: center
 
 **Qwen3-VL-30B-A3B (MoE)** — grad_norm and loss over 1000 iterations:
 
-.. image:: https://github.com/RLinf/misc/raw/main/pic/qwen3_moe_sft_vlm_eval_grad_norm.png
+.. image:: https://raw.githubusercontent.com/RLinf/misc/main/pic/qwen3_moe_sft_vlm_eval_grad_norm.png
    :alt: Qwen3-VL-30B-A3B MoE VLM SFT grad norm
    :width: 85%
    :align: center
 
-.. image:: https://github.com/RLinf/misc/raw/main/pic/qwen3_moe_sft_vlm_eval_loss.png
+.. image:: https://raw.githubusercontent.com/RLinf/misc/main/pic/qwen3_moe_sft_vlm_eval_loss.png
    :alt: Qwen3-VL-30B-A3B MoE VLM SFT loss
    :width: 85%
    :align: center

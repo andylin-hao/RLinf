@@ -210,11 +210,11 @@ over 90% success on ManiSkill3's plate-25-main task.
 
    <div style="display: flex; justify-content: space-between; gap: 10px;">
      <div style="flex: 1; text-align: center;">
-       <img src="https://github.com/RLinf/misc/raw/main/pic/rlinf-vla/mani_openvla.png" style="width: 100%;"/>
+       <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/rlinf-vla/mani_openvla.png" style="width: 100%;"/>
        <p><em>OpenVLA</em></p>
      </div>
      <div style="flex: 1; text-align: center;">
-       <img src="https://github.com/RLinf/misc/raw/main/pic/rlinf-vla/mani_openvlaoft.png" style="width: 100%;"/>
+       <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/rlinf-vla/mani_openvlaoft.png" style="width: 100%;"/>
        <p><em>OpenVLA-OFT</em></p>
      </div>
    </div>
@@ -295,6 +295,6 @@ The animation below shows OpenVLA trained on ManiSkill3's multi-task benchmark w
 .. raw:: html
 
    <video controls autoplay loop muted playsinline preload="metadata" width="720">
-     <source src="https://github.com/RLinf/misc/raw/main/pic/embody.mp4" type="video/mp4">
+     <source src="https://raw.githubusercontent.com/RLinf/misc/main/pic/embody.mp4" type="video/mp4">
      Your browser does not support the video tag.
    </video>
