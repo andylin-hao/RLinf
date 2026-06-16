@@ -281,12 +281,9 @@ TensorBoard 可视化。各项指标的含义见
 ----------
 
 使用 FSDP 训练时，SFT 保存的是 FSDP 格式权重（如 ``full_weights.pt``）。若需要 HuggingFace
-格式，请使用内置转换脚本：
-
-- 脚本：``toolkits/ckpt_convertor/fsdp_convertor/convert_pt_to_hf.sh``
-- 配置：``toolkits/ckpt_convertor/fsdp_convertor/config/fsdp_model_convertor.yaml``
-
-先修改配置中的以下字段：
+格式，请使用内置转换脚本 ``rlinf/utils/ckpt_convertor/fsdp_convertor/convert_pt_to_hf.py``
+和 ``fsdp_model_convertor`` 配置。先在
+``rlinf/utils/ckpt_convertor/fsdp_convertor/config/fsdp_model_convertor.yaml`` 中设置以下字段：
 
 - ``convertor.ckpt_path``：指向 ``full_weights.pt``
 - ``convertor.save_path``：输出 HF 权重目录
@@ -297,7 +294,11 @@ TensorBoard 可视化。各项指标的含义见
 
 .. code:: bash
 
-   bash toolkits/ckpt_convertor/fsdp_convertor/convert_pt_to_hf.sh
+   python -m rlinf.utils.ckpt_convertor.fsdp_convertor.convert_pt_to_hf \
+       --config-path rlinf/utils/ckpt_convertor/fsdp_convertor/config \
+       --config-name fsdp_model_convertor
+
+详见 :doc:`检查点转换 <../../tutorials/usage/convertor>`。
 
 字段说明
 --------

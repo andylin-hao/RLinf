@@ -88,7 +88,7 @@ RLinf provides several default MLP configurations covering different environment
 
 -   **ManiSkill + PPO + MLP**: ``maniskill_ppo_mlp``
 -   **ManiSkill + SAC + MLP**: ``maniskill_sac_mlp``
--   **FrankaSim + PPO + MLP**: ``franka_sim_ppo_mlp``
+-   **FrankaSim + PPO + MLP**: ``frankasim_ppo_mlp``
 
 **2. Key Parameter Configuration**
 
@@ -148,7 +148,7 @@ For real-robot training, a multi-node configuration is used, deploying the Actor
 
 ::
 
-   bash examples/embodiment/run_embodiment.sh franka_sim_ppo_mlp
+   bash examples/embodiment/run_embodiment.sh frankasim_ppo_mlp
 
 Visualization and Results
 -------------------------

@@ -282,12 +282,10 @@ Checkpoint Conversion
 ---------------------
 
 SFT with FSDP saves checkpoints in FSDP format (for example, ``full_weights.pt``). To get
-HuggingFace format, use the built-in converter:
-
-- Script: ``toolkits/ckpt_convertor/fsdp_convertor/convert_pt_to_hf.sh``
-- Config: ``toolkits/ckpt_convertor/fsdp_convertor/config/fsdp_model_convertor.yaml``
-
-Update these fields first:
+HuggingFace format, use the built-in converter
+``rlinf/utils/ckpt_convertor/fsdp_convertor/convert_pt_to_hf.py`` with the
+``fsdp_model_convertor`` config. First set, in
+``rlinf/utils/ckpt_convertor/fsdp_convertor/config/fsdp_model_convertor.yaml``:
 
 - ``convertor.ckpt_path``: path to ``full_weights.pt``
 - ``convertor.save_path``: output HF model directory
@@ -298,7 +296,11 @@ Then run:
 
 .. code:: bash
 
-   bash toolkits/ckpt_convertor/fsdp_convertor/convert_pt_to_hf.sh
+   python -m rlinf.utils.ckpt_convertor.fsdp_convertor.convert_pt_to_hf \
+       --config-path rlinf/utils/ckpt_convertor/fsdp_convertor/config \
+       --config-name fsdp_model_convertor
+
+See :doc:`Checkpoint conversion <../../tutorials/usage/convertor>` for details.
 
 Field Reference
 ---------------

@@ -85,7 +85,7 @@ RLinf 提供多份 MLP 默认配置，覆盖不同环境与算法设置:
 
 -   **ManiSkill + PPO + MLP**: ``maniskill_ppo_mlp`` 
 -   **ManiSkill + SAC + MLP**: ``maniskill_sac_mlp`` 
--   **FrankaSim + PPO + MLP**: ``franka_sim_ppo_mlp`` 
+-   **FrankaSim + PPO + MLP**: ``frankasim_ppo_mlp`` 
 
 **2. 关键参数配置**
 
@@ -144,7 +144,7 @@ MLP 模型由 ``model/mlp_policy@actor.model`` 引入，并在不同配置中做
 
 ::
 
-   bash examples/embodiment/run_embodiment.sh franka_sim_ppo_mlp
+   bash examples/embodiment/run_embodiment.sh frankasim_ppo_mlp
 
 可视化与结果
 ------------
