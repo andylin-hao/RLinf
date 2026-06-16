@@ -108,7 +108,7 @@ a. 克隆 RLinf 仓库
    cd RLinf
 
 b. 安装 RLinf 依赖
-~~~~~~~~~~~~~~~~~~~~~~~~~~______
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. code:: bash
 
@@ -118,7 +118,7 @@ b. 安装 RLinf 依赖
    source .venv/bin/activate
 
 c. 安装 gim_arm_control SDK
-~~~~~~~~~~~~~~~~~~~~~~~~~~______
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 ``gim_arm_control`` 包提供了用于控制 GimArm 机械臂的底层 CAN 通信驱动与 Python 绑定。
 它同时附带了下一步需要使用的辅助脚本（``sh/init_can.sh``、``sh/set_zero.sh``），

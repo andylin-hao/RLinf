@@ -233,31 +233,24 @@ Stage II：仿真-真机协同 RL 训练
 可视化与结果
 -----------------------
 
-1. TensorBoard 日志
-~~~~~~~~~~~~~~~~~~~~~
+**TensorBoard**
 
 .. code:: bash
 
-   # 启动 TensorBoard
    tensorboard --logdir ./logs --port 6006
 
-2. 关键指标说明
-~~~~~~~~~~~~~~~~~~~~
+**指标**
 
-标准 RL 指标的含义见 :doc:`训练指标 </rst_source/tutorials/configuration/metrics>`。
+除标准指标外（见 :doc:`训练指标 </rst_source/tutorials/configuration/metrics>`），协同训练还新增以下指标：
 
-除了常规 RL 指标外，请重点关注以下 Co-Training 专属指标：
+- ``train/ppo_loss``: PPO（RL）损失。
+- ``train/sft_loss``: 真机数据上的 SFT 损失。
+- ``actor/total_loss``: :math:`\mathcal{L}_{Total} = \mathcal{L}_{RL} + \beta \mathcal{L}_{SFT}`。
+- ``train/loss_ratio``: :math:`\frac{\beta \lvert \mathcal{L}_{SFT} \rvert}{\lvert \mathcal{L}_{RL} \rvert}`。若该值持续过大（如 :math:`> 10^5`），日志会触发警告，此时应降低 ``sft_loss_weight``。
 
-- ``train/ppo_loss``: PPO 策略梯度的损失部分 (RL Loss)。
-- ``train/sft_loss``: 真机数据的监督学习损失 (SFT Loss)。
-- ``actor/total_loss``: 总损失函数，即 :math:`\mathcal{L}_{Total} = \mathcal{L}_{RL} + \beta \mathcal{L}_{SFT}`。
-- ``train/loss_ratio``: 损失比率，计算公式为 :math:`\frac{\beta \lvert \mathcal{L}_{SFT} \rvert}{\lvert \mathcal{L}_{RL} \rvert}`。
-- **监控建议**: 该值用于衡量 SFT 是否过度主导更新。如果该值持续过大（如 :math:`> 10^5`），系统会触发警告，此时应降低 ``sft_loss_weight``。
+**示例结果**
 
-3. 实验结果示例
-~~~~~~~~~~~~~~~~~~~~
+- 加载 Stage I 权重后：仿真中零样本成功率约 35%。
+- 经过 100 步协同训练后：仿真成功率约 50%。
 
-- **初始性能**: 模型加载 Stage I 权重后，在仿真环境中的零样本成功率约为 35%。
-- **训练后性能**: 经过 100 步 Co-Training 训练后，仿真成功率提升至 50%。
-
-更多关于真机部署效果及详细消融实验，请参考论文：``Beyond Imitation: Reinforcement Learning-Based Sim-Real Co-Training for VLA Models``
+更多关于真机部署效果及消融实验，请参考论文：*Beyond Imitation: Reinforcement Learning-Based Sim-Real Co-Training for VLA Models*。
