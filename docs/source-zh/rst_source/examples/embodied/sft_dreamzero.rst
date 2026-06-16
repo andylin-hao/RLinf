@@ -17,7 +17,7 @@ DreamZero 监督微调和 Franka 真机部署
 .. grid:: 2 4 4 4
    :gutter: 2
 
-   .. grid-item-card:: 骨干网络
+   .. grid-item-card:: 模型
       :text-align: center
 
       WAN2.1 · WAN2.2
@@ -27,15 +27,15 @@ DreamZero 监督微调和 Franka 真机部署
 
       SFT · Mixture SFT
 
-   .. grid-item-card:: 数据集
+   .. grid-item-card:: 数据
       :text-align: center
 
       LIBERO · DROID · Franka PnP
 
-   .. grid-item-card:: 部署
+   .. grid-item-card:: 硬件
       :text-align: center
 
-      仿真评测 · Franka
+      1+ 节点 · GPU
 
 | **你将完成：** 安装 → 准备模型和 LeRobot 数据 → 生成 ``metadata.json`` → 运行 ``run_vla_sft.sh`` → 在仿真或 Franka 上评测。
 | **前置条件：** :doc:`安装 </rst_source/start/installation>` · `DreamZero 仓库 <https://github.com/RLinf/dreamzero>`_（``DREAMZERO_PATH``）· 一个 LeRobot 数据集。

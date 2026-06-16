@@ -20,20 +20,20 @@ Train an MLP policy with PPO/SAC/GRPO on low-dimensional state across ManiSkill,
 .. grid:: 2 4 4 4
    :gutter: 2
 
-   .. grid-item-card:: Policy
+   .. grid-item-card:: Environments
       :text-align: center
 
-      MLP
+      ManiSkill · LIBERO · FrankaSim
 
    .. grid-item-card:: Algorithms
       :text-align: center
 
       PPO · SAC · GRPO
 
-   .. grid-item-card:: Environments
+   .. grid-item-card:: Tasks
       :text-align: center
 
-      ManiSkill · LIBERO · FrankaSim
+      PickCube · LIBERO-Spatial
 
    .. grid-item-card:: Hardware
       :text-align: center

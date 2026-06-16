@@ -31,10 +31,10 @@ SFT then GRPO-fine-tune Lingbot-VLA on RoboTwin 2.0 dual-arm manipulation tasks.
 
       SFT · GRPO
 
-   .. grid-item-card:: Backbone
+   .. grid-item-card:: Tasks
       :text-align: center
 
-      Qwen2.5-VL-3B
+      Click Bell · Place Shoe
 
    .. grid-item-card:: Hardware
       :text-align: center

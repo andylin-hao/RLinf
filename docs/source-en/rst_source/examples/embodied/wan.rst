@@ -25,20 +25,20 @@ Train OpenVLA-OFT with GRPO on LIBERO suites simulated by the Wan world model.
 .. grid:: 2 4 4 4
    :gutter: 2
 
-   .. grid-item-card:: Models
+   .. grid-item-card:: Environments
       :text-align: center
 
-      OpenVLA-OFT
+      LIBERO
 
    .. grid-item-card:: Algorithms
       :text-align: center
 
       GRPO
 
-   .. grid-item-card:: Environments
+   .. grid-item-card:: Tasks
       :text-align: center
 
-      LIBERO (Spatial · Object · Goal)
+      Spatial · Object · Goal
 
    .. grid-item-card:: Hardware
       :text-align: center

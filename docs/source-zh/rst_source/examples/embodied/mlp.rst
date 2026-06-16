@@ -18,20 +18,20 @@ RLinf 在多个仿真器上用 PPO、SAC、GRPO 训练 MLP 策略——便于快
 .. grid:: 2 4 4 4
    :gutter: 2
 
-   .. grid-item-card:: 策略
+   .. grid-item-card:: 环境
       :text-align: center
 
-      MLP
+      ManiSkill · LIBERO · FrankaSim
 
    .. grid-item-card:: 算法
       :text-align: center
 
       PPO · SAC · GRPO
 
-   .. grid-item-card:: 环境
+   .. grid-item-card:: 任务
       :text-align: center
 
-      ManiSkill · LIBERO · FrankaSim
+      PickCube · LIBERO-Spatial
 
    .. grid-item-card:: 硬件
       :text-align: center

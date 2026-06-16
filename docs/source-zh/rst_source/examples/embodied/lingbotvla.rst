@@ -29,15 +29,15 @@ Lingbot-VLA模型强化学习
 
       SFT · GRPO
 
-   .. grid-item-card:: 底座
+   .. grid-item-card:: 任务
       :text-align: center
 
-      Qwen2.5-VL-3B
+      Click Bell · Place Shoe
 
    .. grid-item-card:: 硬件
       :text-align: center
 
-      1–2 节点 · 8–16 张 GPU
+      1–2 节点 · 8–16 GPU
 
 | **你将完成：** 原生安装 → 克隆 RoboTwin 与资产 → 下载检查点 → SFT → GRPO → 观察 ``env/success_once``。
 | **前置条件：** :doc:`安装 </rst_source/start/installation>` · RoboTwin 仓库与资产 · Lingbot-VLA 与 Qwen 底座检查点（见下文步骤）。

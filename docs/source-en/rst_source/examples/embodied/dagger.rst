@@ -33,12 +33,12 @@ DAgger-finetune an embodied policy: the student acts, an expert relabels visited
 
       MLP · π₀
 
-   .. grid-item-card:: Environments
+   .. grid-item-card:: Environments / Data
       :text-align: center
 
       ManiSkill · LIBERO · RoboTwin
 
-   .. grid-item-card:: Modes
+   .. grid-item-card:: Training
       :text-align: center
 
       Sync · Async

@@ -26,12 +26,12 @@ VLM 监督微调
    .. grid-item-card:: 方法
       :text-align: center
 
-      全量 SFT
+      Full-parameter SFT
 
    .. grid-item-card:: 数据
       :text-align: center
 
-      Robo2VLM（视觉问答）
+      Robo2VLM (visual QA)
 
    .. grid-item-card:: 硬件
       :text-align: center

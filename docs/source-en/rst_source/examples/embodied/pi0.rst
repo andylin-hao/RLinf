@@ -25,20 +25,20 @@ RL-fine-tune π\ :sub:`0`\  / π\ :sub:`0.5`\  on LIBERO, ManiSkill, MetaWorld, 
 .. grid:: 2 4 4 4
    :gutter: 2
 
-   .. grid-item-card:: Models
+   .. grid-item-card:: Environments
       :text-align: center
 
-      π\ :sub:`0`\  · π\ :sub:`0.5`\ 
+      LIBERO · ManiSkill · MetaWorld · CALVIN
 
    .. grid-item-card:: Algorithms
       :text-align: center
 
       PPO · GRPO
 
-   .. grid-item-card:: Environments
+   .. grid-item-card:: Tasks
       :text-align: center
 
-      LIBERO · ManiSkill · MetaWorld · CALVIN
+      Spatial · Object · Goal · Long
 
    .. grid-item-card:: Hardware
       :text-align: center

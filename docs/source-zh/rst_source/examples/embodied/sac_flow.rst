@@ -25,20 +25,20 @@
 
       SAC · RLPD
 
-   .. grid-item-card:: 策略
+   .. grid-item-card:: 模型
       :text-align: center
 
-      流匹配
+      Flow Matching 策略
 
-   .. grid-item-card:: 环境
+   .. grid-item-card:: 环境 / 数据
       :text-align: center
 
       ManiSkill · Franka
 
-   .. grid-item-card:: 模式
+   .. grid-item-card:: 训练
       :text-align: center
 
-      仿真 & 真机
+      Sim & Real
 
 | **你将完成：** 安装（仿真或真机）→ 选择配置 → 启动 → 观察 ``env/success_once``。
 | **前置条件：** 仿真请参考 :doc:`安装 </rst_source/start/installation>`，真机请参考 :doc:`franka`。

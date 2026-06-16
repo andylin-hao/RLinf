@@ -28,17 +28,17 @@
 
       IQL
 
-   .. grid-item-card:: 数据集
-      :text-align: center
-
-      D4RL
-
-   .. grid-item-card:: 策略
+   .. grid-item-card:: 模型
       :text-align: center
 
       MLP
 
-   .. grid-item-card:: 模式
+   .. grid-item-card:: 环境 / 数据
+      :text-align: center
+
+      D4RL
+
+   .. grid-item-card:: 训练
       :text-align: center
 
       离线

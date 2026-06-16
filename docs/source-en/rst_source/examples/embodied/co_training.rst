@@ -20,25 +20,25 @@ Co-train π₀.₅ on a ManiSkill digital twin — PPO in sim + SFT on 50 real t
 .. grid:: 2 4 4 4
    :gutter: 2
 
-   .. grid-item-card:: Model
-      :text-align: center
-
-      π₀.₅
-
    .. grid-item-card:: Algorithm
       :text-align: center
 
       PPO + SFT (RL-Co)
 
-   .. grid-item-card:: Environment
+   .. grid-item-card:: Models
+      :text-align: center
+
+      π₀.₅
+
+   .. grid-item-card:: Environments / Data
       :text-align: center
 
       ManiSkill digital twin
 
-   .. grid-item-card:: Hardware
+   .. grid-item-card:: Training
       :text-align: center
 
-      1 node · GPUs
+      2-stage sim-real
 
 | **You'll do:** install → download assets + SFT model → SFT (Stage I) → co-train RL (Stage II) → watch ``env/success_once``.
 | **Prerequisites:** :doc:`Installation </rst_source/start/installation>` · ManiSkill assets · an SFT checkpoint and the real dataset (steps below).

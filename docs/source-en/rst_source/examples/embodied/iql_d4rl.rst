@@ -28,17 +28,17 @@ Train a policy from D4RL offline datasets with IQL — no online environment int
 
       IQL
 
-   .. grid-item-card:: Datasets
-      :text-align: center
-
-      D4RL
-
-   .. grid-item-card:: Policy
+   .. grid-item-card:: Models
       :text-align: center
 
       MLP
 
-   .. grid-item-card:: Mode
+   .. grid-item-card:: Environments / Data
+      :text-align: center
+
+      D4RL
+
+   .. grid-item-card:: Training
       :text-align: center
 
       Offline

@@ -22,10 +22,10 @@ Every benchmark (env) or model example page must:
    H3 subsections — `Tasks` (always a `list-table`, never a bullet list) and
    `Observation and Action` (a `list-table` of observation/action/reward/prompt). There is
    no separate "Tasks and Environment" section.
-3. **Overview = 4 aligned cards.** Use `.. grid:: 2 4 4 4` (see below). On an **env**
-   page the **Models** card lists *every* model supported on that env and the **Algorithms**
-   card lists *every* algorithm; on a **model** page they list every env / algorithm the
-   model supports. Cards must align across env and model pages (same 4-card set).
+3. **Overview = 4 aligned cards.** Use `.. grid:: 2 4 4 4` (see below). Cards must
+   align within each gallery subsection, with the exact same card titles and order in
+   every page in that subsection. On an **env** page the **Models** card lists *every*
+   model supported on that env and the **Algorithms** card lists *every* algorithm.
 4. **No "Env type" card** — it carries too little information; put the env-type string in
    prose or the overview table instead.
 5. **No generic "Algorithm" section** and **no boilerplate VLA intro** ("This section
@@ -182,9 +182,13 @@ Visualization and Results → TensorBoard / video / logger + link to Training me
   pages use `Overview` → `Tasks` → `Observation and Action` → `Installation` → optional
   download sections → `Run It` → `Visualization and Results`. Model pages use the same
   overview table pattern, including lightweight policies such as ``MLP``. Within one
-  subsection, overview tables must use the same fields: Models pages use `Tasks` columns
-  `Environment`, `Task / Suite`, `Config / Weights`, `Focus`, and `Observation and Action`
-  rows `Observation`, `Action`, `Reward`, `Prompt` (translated in ZH, technical row names
+  subsection, overview cards and tables must use the same fields. Card schemas are:
+  Simulators and Robots use `Models`, `Algorithms`, `Tasks`, `Hardware`; Models use
+  `Environments`, `Algorithms`, `Tasks`, `Hardware`; Algorithms use `Algorithm`,
+  `Models`, `Environments / Data`, `Training`; SFT uses `Models`, `Methods`, `Data`,
+  `Hardware` (translated in ZH). Models pages use `Tasks` columns `Environment`,
+  `Task / Suite`, `Config / Weights`, `Focus`, and `Observation and Action` rows
+  `Observation`, `Action`, `Reward`, `Prompt` (translated in ZH, technical row names
   unchanged). Omit `Download the Model` only when there is no checkpoint to download.
   Algorithm pages use `Overview` with cards and a task/config table, then a method-specific
   `How <Method> Works` / `Pipeline` section before setup and commands. SFT pages use

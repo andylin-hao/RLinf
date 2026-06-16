@@ -26,20 +26,20 @@ Improve a π₀.₅ policy offline (no new rollouts) by scoring existing data wi
 
       RECAP (CFG)
 
-   .. grid-item-card:: Model
+   .. grid-item-card:: Models
       :text-align: center
 
       π₀.₅
 
-   .. grid-item-card:: Mode
+   .. grid-item-card:: Environments / Data
       :text-align: center
 
-      Offline
+      LeRobot datasets
 
-   .. grid-item-card:: Stages
+   .. grid-item-card:: Training
       :text-align: center
 
-      4 steps
+      Offline · 4 stages
 
 | **You'll do:** compute returns → SFT a value model → compute advantages → CFG-train the policy → evaluate.
 | **Prerequisites:** :doc:`Installation </rst_source/start/installation>` · SigLIP2 + Gemma3 + π₀.₅ checkpoints · LeRobot-format datasets (steps below).

@@ -24,20 +24,20 @@ VLA 策略。Wan 根据当前观测与动作序列生成未来视频帧，因此
 .. grid:: 2 4 4 4
    :gutter: 2
 
-   .. grid-item-card:: 模型
+   .. grid-item-card:: 环境
       :text-align: center
 
-      OpenVLA-OFT
+      LIBERO
 
    .. grid-item-card:: 算法
       :text-align: center
 
       GRPO
 
-   .. grid-item-card:: 环境
+   .. grid-item-card:: 任务
       :text-align: center
 
-      LIBERO（Spatial · Object · Goal）
+      Spatial · Object · Goal
 
    .. grid-item-card:: 硬件
       :text-align: center

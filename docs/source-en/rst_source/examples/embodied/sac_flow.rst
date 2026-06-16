@@ -25,17 +25,17 @@ Train a Flow Matching policy with SAC — in ManiSkill simulation or on a real F
 
       SAC · RLPD
 
-   .. grid-item-card:: Policy
+   .. grid-item-card:: Models
       :text-align: center
 
-      Flow Matching
+      Flow Matching policy
 
-   .. grid-item-card:: Environments
+   .. grid-item-card:: Environments / Data
       :text-align: center
 
       ManiSkill · Franka
 
-   .. grid-item-card:: Mode
+   .. grid-item-card:: Training
       :text-align: center
 
       Sim & Real

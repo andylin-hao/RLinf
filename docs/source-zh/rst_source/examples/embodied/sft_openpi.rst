@@ -26,12 +26,12 @@ OpenPI 监督微调
    .. grid-item-card:: 方法
       :text-align: center
 
-      全量 SFT · LoRA
+      Full SFT · LoRA
 
    .. grid-item-card:: 数据
       :text-align: center
 
-      LeRobot 格式
+      LeRobot format
 
    .. grid-item-card:: 硬件
       :text-align: center

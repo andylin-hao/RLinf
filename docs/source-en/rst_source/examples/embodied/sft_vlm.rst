@@ -24,7 +24,7 @@ Full-parameter SFT for Qwen-VL models on the Robo2VLM visual-QA dataset, with FS
 
       Qwen2.5-VL · Qwen3-VL · Qwen3-VL-MoE
 
-   .. grid-item-card:: Method
+   .. grid-item-card:: Methods
       :text-align: center
 
       Full-parameter SFT

@@ -19,7 +19,7 @@ Fine-tune a WAN-based DreamZero world model into a manipulation policy on LeRobo
 .. grid:: 2 4 4 4
    :gutter: 2
 
-   .. grid-item-card:: Backbones
+   .. grid-item-card:: Models
       :text-align: center
 
       WAN2.1 · WAN2.2
@@ -29,15 +29,15 @@ Fine-tune a WAN-based DreamZero world model into a manipulation policy on LeRobo
 
       SFT · Mixture SFT
 
-   .. grid-item-card:: Datasets
+   .. grid-item-card:: Data
       :text-align: center
 
       LIBERO · DROID · Franka PnP
 
-   .. grid-item-card:: Deploy
+   .. grid-item-card:: Hardware
       :text-align: center
 
-      Sim eval · Franka
+      1+ nodes · GPUs
 
 | **You'll do:** install → prepare model + LeRobot data → generate ``metadata.json`` → launch ``run_vla_sft.sh`` → evaluate in sim or on Franka.
 | **Prerequisites:** :doc:`Installation </rst_source/start/installation>` · the `DreamZero repo <https://github.com/RLinf/dreamzero>`_ (``DREAMZERO_PATH``) · a LeRobot dataset.

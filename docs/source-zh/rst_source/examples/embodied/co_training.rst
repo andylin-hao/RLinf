@@ -19,25 +19,25 @@
 .. grid:: 2 4 4 4
    :gutter: 2
 
-   .. grid-item-card:: 模型
-      :text-align: center
-
-      π₀.₅
-
    .. grid-item-card:: 算法
       :text-align: center
 
       PPO + SFT (RL-Co)
 
-   .. grid-item-card:: 环境
+   .. grid-item-card:: 模型
       :text-align: center
 
-      ManiSkill 数字孪生
+      π₀.₅
 
-   .. grid-item-card:: 硬件
+   .. grid-item-card:: 环境 / 数据
       :text-align: center
 
-      1 节点 · GPU
+      ManiSkill digital twin
+
+   .. grid-item-card:: 训练
+      :text-align: center
+
+      两阶段 sim-real
 
 | **你将完成：** 安装 → 下载资产与 SFT 模型 → SFT（阶段一）→ 协同 RL 训练（阶段二）→ 观察 ``env/success_once``。
 | **前置条件：** :doc:`安装 </rst_source/start/installation>` · ManiSkill 资产 · SFT 检查点与真机数据（见下文步骤）。

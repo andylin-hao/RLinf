@@ -34,20 +34,20 @@ Steer a frozen π₀ diffusion policy with a lightweight SAC agent (~500K params
 
       DSRL (SAC)
 
-   .. grid-item-card:: Model
+   .. grid-item-card:: Models
       :text-align: center
 
       π₀ (frozen)
 
-   .. grid-item-card:: Environment
+   .. grid-item-card:: Environments / Data
       :text-align: center
 
       LIBERO-Spatial
 
-   .. grid-item-card:: Trainable
+   .. grid-item-card:: Training
       :text-align: center
 
-      ~500K params
+      ~500K trainable params
 
 | **You'll do:** install (same as π₀) → launch ``run_embodiment.sh`` → watch ``env/success_once``.
 | **Prerequisites:** :doc:`Installation </rst_source/start/installation>` · a pretrained π₀ checkpoint (see :doc:`pi0`).

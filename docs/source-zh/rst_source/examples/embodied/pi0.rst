@@ -24,20 +24,20 @@
 .. grid:: 2 4 4 4
    :gutter: 2
 
-   .. grid-item-card:: 模型
+   .. grid-item-card:: 环境
       :text-align: center
 
-      π\ :sub:`0`\  · π\ :sub:`0.5`\ 
+      LIBERO · ManiSkill · MetaWorld · CALVIN
 
    .. grid-item-card:: 算法
       :text-align: center
 
       PPO · GRPO
 
-   .. grid-item-card:: 环境
+   .. grid-item-card:: 任务
       :text-align: center
 
-      LIBERO · ManiSkill · MetaWorld · CALVIN
+      Spatial · Object · Goal · Long
 
    .. grid-item-card:: 硬件
       :text-align: center
