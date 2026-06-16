@@ -207,6 +207,12 @@ Download the SFT checkpoint that matches your config. Examples:
 For Lingbot-VLA recipes, point ``actor.model.model_path`` and
 ``rollout.model.model_path`` at your Lingbot-VLA SFT checkpoint.
 
+.. note::
+
+   The action-normalization key ``unnorm_key`` in the config (e.g.
+   ``unnorm_key: "place_empty_cup"``) must match the ``unnorm_key`` used when the SFT
+   checkpoint was trained, otherwise actions will be denormalized incorrectly.
+
 Run It
 ------
 

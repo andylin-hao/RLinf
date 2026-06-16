@@ -265,6 +265,105 @@ Run evaluation with:
 For the full evaluation workflow, see :doc:`BEHAVIOR-1K evaluation guide <../../evaluations/guides/behavior>`.
 
 
+Configuration Reference
+-----------------------
+
+The BEHAVIOR env is driven by ``examples/embodiment/config/env/behavior_r1pro.yaml``.
+RLinf first loads OmniGibson's base config (``base_config_name``) and then applies the
+``omni_config`` overrides (see ``setup_omni_cfg`` in ``rlinf/envs/behavior/utils.py``).
+The fields below control reset behavior, scene loading, simulator frequencies, and
+throughput — most have sensible defaults and only need tuning for custom tasks or
+performance.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 34 66
+
+   * - Key
+     - Meaning
+   * - ``base_config_name``
+     - Base OmniGibson config (e.g. ``r1pro_behavior``) loaded before ``omni_config`` overrides.
+   * - ``omni_config.task.type`` / ``omni_config.scene.type``
+     - Keep ``BehaviorTask`` / ``InteractiveTraversableScene`` explicit so the intended
+       upstream OmniGibson classes are selected after overrides are applied.
+   * - ``task_idx``
+     - Current task id (0–49). RLinf maps it to ``task.activity_name`` (see ``behavior_env.py``).
+   * - ``omni_config.task.instance_resample_mode``
+     - Reset-time instance switching: ``disabled`` (load the fixed ``activity_instance_id``),
+       ``offline`` (scan ``activity_instance_dir`` once and sample a cached instance per reset —
+       ``*_template.json`` use the heavy scene-reload path, ``*_template-tro_state.json`` the
+       lighter in-place path), or ``online`` (requires ``online_object_sampling: True`` and
+       ``use_presampled_robot_pose: False``).
+   * - ``omni_config.task.activity_instance_dir``
+     - Directory of cached instance JSONs (``*_template.json`` / ``*_template-tro_state.json``),
+       used by ``offline`` mode and by fixed-id loading when the mode is ``disabled``.
+   * - ``omni_config.task.instance_file_format``
+     - Cached-instance format: ``template`` (full reload) or ``tro_state`` (light, task-relevant
+       only). RLinf accepts ``tro_state`` files without ``robot_poses``; it then clears stale
+       cached robot-pose metadata and the reset falls back to the task's default robot pose.
+   * - ``omni_config.scene.partial_scene_load``
+     - When ``true``, auto-fills ``scene.load_room_types`` with rooms relevant to
+       ``activity_name`` (reduces startup time and memory). Requires ``activity_name`` and
+       ``scene_model``. Set ``load_room_types`` explicitly when ``false``/omitted.
+   * - ``camera.head_resolution`` / ``camera.wrist_resolution``
+     - Head / wrist camera resolutions (defaults 720×720 / 480×480, applied to R1Pro sensors).
+   * - ``omni_config.env.action_frequency`` / ``rendering_frequency`` / ``physics_frequency``
+     - Action / render / physics stepping frequency (common default 30 / 30 / 120). Higher is slower.
+   * - ``omni_config.env.automatic_reset``
+     - Keep ``False`` — reset is controlled explicitly by the RLinf train/eval loop.
+   * - ``omni_config.env.flatten_obs_space`` / ``flatten_action_space``
+     - Keep ``False`` to preserve structured observation / action spaces.
+   * - ``omni_config.macro.use_gpu_dynamics``
+     - ``False`` usually improves performance; enable only for particles / fluids.
+   * - ``omni_config.macro.enable_flatcache``
+     - ``True`` generally improves performance on large scenes.
+   * - ``omni_config.macro.enable_object_states``
+     - Keep ``True`` — ``BehaviorTask`` depends on object states.
+   * - ``omni_config.macro.enable_transition_rules``
+     - ``True`` enables transition-rule state changes (e.g. slicing, cooking).
+   * - ``omni_config.macro.use_numpy_controller_backend``
+     - ``True`` uses the numpy controller backend, usually faster in single-/moderate-parallel runs.
+   * - ``skip_intermediate_obs_in_chunk``
+     - When ``True``, skips collecting intermediate observations inside an action chunk (large
+       env-speed gain). Saved videos then show only the frames the policy observes at chunk boundaries.
+   * - ``num_env_subprocess``
+     - Splits ``num_envs`` across child processes, each hosting its own Isaac/OmniGibson sim
+       (see ``BehaviorProcess``). Default ``1``. **Constraint:** ``num_envs`` must be divisible by
+       ``num_env_subprocess``. Higher values cut env-step bottlenecks but multiply processes and memory.
+
+Generating cached task instances
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``rlinf/envs/behavior/instance_generator.py`` generates ``*_template.json`` and
+``*_template-tro_state.json`` files directly from ``behavior_r1pro.yaml`` (it reads
+``scene_model``, ``activity_name``, ``activity_definition_id``, the robot config, and
+room-loading settings, then temporarily switches to online object sampling). It writes to
+``activity_instance_dir`` if set, otherwise to ``OMNIGIBSON_DATA_PATH``'s default
+``2025-challenge-task-instances`` directory; use ``--output-dir`` to override.
+
+.. code-block:: bash
+
+   cd /path/to/RLinf
+
+   python rlinf/envs/behavior/instance_generator.py \
+     --config examples/embodiment/config/env/behavior_r1pro.yaml \
+     --output-format template \
+     --start-idx 1 --end-idx 50
+
+   python rlinf/envs/behavior/instance_generator.py \
+     --config examples/embodiment/config/env/behavior_r1pro.yaml \
+     --output-format tro_state \
+     --start-idx 1 --end-idx 50
+
+Generated filenames follow
+``<scene_model>_task_<activity_name>_<activity_definition_id>_<activity_instance_id>_template(.json|-tro_state.json)``,
+so ``--start-idx`` / ``--end-idx`` set the ``activity_instance_id`` range. ``tro_state``
+outputs include top-level ``robot_poses`` only when the task metadata provides them; otherwise
+the key is omitted and reset falls back to the task's default robot pose. BEHAVIOR-1K's upstream
+``multiply_b1k_tasks.py`` still works, but RLinf's generator is recommended because it reads the
+RLinf YAML directly and preserves ``activity_definition_id``.
+
+
 Visualization and Results
 -------------------------
 

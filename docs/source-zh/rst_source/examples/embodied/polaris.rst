@@ -242,6 +242,24 @@
    env defaults 改为其他 ``polaris_droid_*`` 环境配置，并保持 ``POLARIS_DATA_PATH``
    指向 ``PolaRiS-Hub``。
 
+在调优动作 / 渲染流水线时，以下 PolaRiS 专有字段值得了解：
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - 配置项
+     - 含义
+   * - ``open_loop_horizon``
+     - **高质量** Gaussian Splatting 渲染的频率。在一个动作 chunk 内，每 ``open_loop_horizon``
+       步执行一次高质量渲染，中间步则使用低质量渲染以加速仿真。
+   * - ``num_action_chunks``
+     - 模型一次生成的动作步数（如 ``15``）。
+   * - ``num_images_in_input``
+     - 输入给策略的相机图像数量（如 ``2``：外部相机 + 腕部相机）。
+   * - ``config_name``
+     - OpenPI 配置 / 数据格式选择（如 ``pi05_droid_polaris`` 对应 DROID 数据格式）。
+
 可视化与结果
 ------------
 

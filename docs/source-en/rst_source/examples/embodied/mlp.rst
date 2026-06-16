@@ -138,6 +138,14 @@ For real-robot training, a multi-node configuration is used, deploying the Actor
 
    bash examples/embodiment/run_embodiment.sh maniskill_sac_mlp
 
+.. note::
+
+   **SAC specifics.** SAC learns Q-values via Bellman backups with entropy
+   regularization (off-policy), so enable the Q-related heads in the config
+   (``add_q_head: True``). It also supports **automatic entropy tuning** via
+   ``entropy_tuning`` (e.g. ``alpha_type: softplus``) to balance exploration and
+   exploitation.
+
 **Libero-Spatial (GRPO-MLP)**
 
 ::

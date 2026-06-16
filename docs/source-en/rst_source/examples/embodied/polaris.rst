@@ -243,6 +243,25 @@ For the full evaluation workflow (environment variables, config fields, and resu
    change the Hydra env defaults to another ``polaris_droid_*`` env config and keep
    ``POLARIS_DATA_PATH`` pointed at ``PolaRiS-Hub``.
 
+A few PolaRiS-specific fields are worth knowing when tuning the action/rendering pipeline:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Key
+     - Meaning
+   * - ``open_loop_horizon``
+     - Frequency of **high-quality** Gaussian-Splatting rendering. Within an action chunk,
+       high-quality rendering runs every ``open_loop_horizon`` steps while intermediate steps
+       use low-quality rendering to speed up the simulation.
+   * - ``num_action_chunks``
+     - Number of action steps the model generates at a time (e.g. ``15``).
+   * - ``num_images_in_input``
+     - Number of camera images fed to the policy (e.g. ``2``: external + wrist camera).
+   * - ``config_name``
+     - OpenPI config / data format selector (e.g. ``pi05_droid_polaris`` for the DROID data format).
+
 Visualization and Results
 -------------------------
 
