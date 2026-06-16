@@ -1,51 +1,63 @@
 RL on ABot-M0
 ==============
 
-This example describes how to run evaluation and PPO training for
-`ABot-M0 <https://github.com/amap-cvlab/ABot-Manipulation>`__ in RLinf. The
-provided configuration files cover standard **LIBERO** and **LIBERO-Plus**.
+.. figure:: https://raw.githubusercontent.com/RLinf/misc/main/pic/ABot-M0.png
+   :align: center
+   :width: 80%
 
-The integration uses the Hugging Face rollout backend and FSDP actor training.
-During rollout, ABot-M0 generates action chunks for LIBERO environments. During
-actor updates, RLinf recomputes log probabilities and value estimates from the
-stored rollout inputs.
+   ABot-M0: a VGGT-grounded VLA policy.
 
-Algorithm
----------
+Run evaluation and **PPO** training for
+`ABot-M0 <https://github.com/amap-cvlab/ABot-Manipulation>`__ in RLinf, on
+standard **LIBERO** and **LIBERO-Plus**. The integration uses the HuggingFace
+rollout backend and FSDP actor training: ABot-M0 generates action chunks during
+rollout, and RLinf recomputes log-probabilities and value estimates from the
+stored rollout inputs during actor updates.
 
-The example uses PPO with an actor-critic loss:
+Overview
+--------
 
-* GAE for advantage and return estimation.
-* PPO ratio clipping for policy updates.
-* Value-function clipping for the value head.
-* Optional entropy regularization.
+Fine-tune ABot-M0 on LIBERO-10 / LIBERO-Plus with PPO (actor-critic).
 
-ABot-M0 is used as the VLA policy. The RLinf wrapper keeps pretrained
-perception components frozen, trains the action model through the RL objective,
-and adds a value head for actor-critic training.
+.. grid:: 2 4 4 4
+   :gutter: 2
 
-Dependency Installation
------------------------
+   .. grid-item-card:: Environments
+      :text-align: center
 
-Install ABot-M0, VGGT, and the LIBERO runtime in the same Python environment as
-RLinf.
+      LIBERO · LIBERO-Plus
 
-1. Clone RLinf Repository
-~~~~~~~~~~~~~~~~~~~~~~~~~
+   .. grid-item-card:: Algorithms
+      :text-align: center
 
-.. code:: bash
+      PPO
 
-   # For mainland China users, you can use the following for better download speed:
-   # git clone https://ghfast.top/github.com/RLinf/RLinf.git
-   git clone https://github.com/RLinf/RLinf.git
-   cd RLinf
+   .. grid-item-card:: Tasks
+      :text-align: center
 
-2. Install Dependencies
-~~~~~~~~~~~~~~~~~~~~~~~
+      LIBERO-10
 
-**Option 1: Docker Image**
+   .. grid-item-card:: Hardware
+      :text-align: center
 
-Use Docker image for the experiment.
+      1 node · GPUs
+
+| **You'll do:** install → download the ABot-M0 checkpoint + backbones → set ``model_path`` → evaluate → launch ``run_embodiment.sh`` → watch ``env/success_once``.
+| **Prerequisites:** :doc:`Installation </rst_source/start/installation>` · an ABot-M0 LIBERO checkpoint and its backbone weights (steps below).
+
+ABot-M0 is the VLA policy: the RLinf wrapper keeps pretrained perception
+components frozen, trains the action model through the RL objective, and adds a
+value head for actor-critic PPO (GAE advantages/returns, ratio clipping, value
+clipping, optional entropy regularization).
+
+Installation
+------------
+
+Install ABot-M0, VGGT, and the LIBERO runtime in the same Python environment as RLinf.
+
+.. include:: _setup_common.rst
+
+**Option 1: Docker image** — image tag ``agentic-rlinf0.2-maniskill_libero``:
 
 .. code:: bash
 
@@ -55,20 +67,14 @@ Use Docker image for the experiment.
       --name rlinf \
       -v .:/workspace/RLinf \
       rlinf/rlinf:agentic-rlinf0.2-maniskill_libero
-      # For mainland China users, you can use the following for better download speed:
-      # docker.1ms.run/rlinf/rlinf:agentic-rlinf0.2-maniskill_libero
+      # Mainland China mirror: docker.1ms.run/rlinf/rlinf:agentic-rlinf0.2-maniskill_libero
 
-Please switch to the corresponding virtual environment via the built-in
-``switch_env`` utility in the image:
-
-.. code:: bash
-
+   # Inside the container, switch to the ABot-M0 virtual environment:
    source switch_env abot_m0
 
-**Option 2: Custom Environment**
-
-The installer clones ABot-M0 and VGGT automatically. If you already have local
-checkouts, set ``ABOT_PATH`` and ``VGGT_PATH`` before running the installer.
+**Option 2: Custom environment** — install bundle ``--env maniskill_libero``. The
+installer clones ABot-M0 and VGGT automatically; set ``ABOT_PATH`` / ``VGGT_PATH``
+first to reuse local checkouts:
 
 .. code:: bash
 
@@ -76,7 +82,7 @@ checkouts, set ``ABOT_PATH`` and ``VGGT_PATH`` before running the installer.
    # export ABOT_PATH=<path_to_ABot-Manipulation>
    # export VGGT_PATH=<path_to_vggt>
 
-   # For mainland China users, you can add the `--use-mirror` flag to the install.sh command for better download speed.
+   # Add --use-mirror for faster downloads in mainland China.
    bash requirements/install.sh embodied --model abot_m0 --env maniskill_libero
    source .venv/bin/activate
 
@@ -89,8 +95,8 @@ the same environment:
    bash requirements/install.sh embodied --model abot_m0 --env liberoplus
    source .venv/bin/activate
 
-LIBERO-Plus Assets Download
----------------------------
+Download the LIBERO-Plus Assets
+-------------------------------
 
 LIBERO-Plus requires hundreds of new objects, textures, and other assets to
 function correctly. Download the ``assets.zip`` archive from the Hugging Face
@@ -166,8 +172,8 @@ After extraction, the directory should look like:
 
 See the :ref:`LIBERO-Pro & LIBERO-Plus section <liberopro-plus-benchmark>` of the LIBERO benchmarks page for full LIBERO-Plus details.
 
-Model Download
---------------
+Download the Model
+------------------
 
 Before training, download the ABot-M0 checkpoint and the required backbone
 weights:
@@ -348,8 +354,11 @@ Common environment setup:
    export LIBERO_TYPE=plus
    bash examples/embodiment/run_embodiment.sh libero_10_plus_ppo_abot_m0
 
-Visualization
--------------
+Visualization and Results
+-------------------------
+
+Watch ``env/success_once`` for the task success rate. For every logged metric, see
+:doc:`Training metrics </rst_source/tutorials/configuration/metrics>`.
 
 .. code-block:: bash
 
