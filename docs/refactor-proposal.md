@@ -23,7 +23,8 @@ approved.** It is intentionally outside the Sphinx build (`docs/source-en` /
 **Resolved (§10):** (1) nav axes accepted, **Examples placed before Concepts**;
 (2) **accept URL breakage** — no redirects; (3) keep the full feature/benchmark
 pitch but **rewrite it for clarity** on a dedicated *Why RLinf* page; (4) Phase 3
-covers **all example pages**; (5) **ship a Cheat Sheet** (contents in Appendix A).
+covers **all example pages**; (5) **ship a Cheat Sheet** (contents in Appendix A);
+(6) keep the new unified **Evaluation** section as a first-class top-level axis.
 
 ---
 
@@ -66,14 +67,17 @@ covers **all example pages**; (5) **ship a Cheat Sheet** (contents in Appendix A
 
 Regroup the top nav into clean, single-purpose axes. Left = today, right = proposed.
 
-Final top-nav order: **Get Started · Examples · Concepts · Guides · Reference ·
-Extending · Resources** (Examples before Concepts, per §10 Q1).
+Final top-nav order: **Get Started · Examples · Evaluation · Concepts · Guides ·
+Reference · Extending · Resources** (Examples before Concepts, per §10 Q1; Evaluation
+keeps its own axis because it has its own get-started, guide, and reference hierarchy).
 
 ```
 TODAY                         →   PROPOSED
 ─────────────────────────────────────────────────────────────
 Quickstart (start/)           →   Get Started      (install · quickstarts · cheat sheet)
 Examples/ (galleries)         →   Examples         (the 5 galleries, promoted & unchanged in content)
+Evaluations/                  →   Evaluation       (unified embodied eval entry point,
+                                                    benchmark eval guides, eval config/CLI reference)
                               →   Concepts         (NEW: M2Flow, Worker/WorkerGroup/Channel,
                                                     execution modes, placement — the mental model)
 Tutorials/ (8 mixed subdirs)  →   Guides           (how-to: usage/, configuration/ how-tos,
@@ -91,6 +95,7 @@ FAQ                           →   (folded into Resources)
 | Current path | New home | Notes |
 |---|---|---|
 | `start/installation,vla,llm,distribute,vla-eval,llm-eval` | **Get Started** | Split "quickstart" (vla/llm) from "evaluation" (vla-eval/llm-eval); add a **Cheat Sheet** page. |
+| `evaluations/` | **Evaluation** | Keep as a first-class product area: `get_started/` for eval onboarding, `guides/` for benchmark workflows, `reference/` for eval CLI/config/results. Example pages link here instead of duplicating standalone eval workflows. |
 | `tutorials/index` architecture prose | **Concepts** (new landing) | Becomes a real Concepts page, not a section preamble. |
 | `tutorials/usage/` (worker, channel, placement, execution_modes, flow, multi_node, convertor) | **Concepts** (flow/channel/worker/placement) + **Guides** (multi_node, convertor) | Conceptual pages explain the model; operational pages are how-tos. |
 | `tutorials/configuration/` (basic, embodiment, agentic, hetero, logger, resume) | **Guides** (the how-to ones) + **Reference** (the key tables) | Separate "how to configure X" from "the list of keys". |
@@ -115,7 +120,7 @@ Replace the feature wall with a task router. Sketch:
 
 ```
 RLinf — Scalable RL post-training for foundation models & embodied agents
-[ Get Started ]   [ Install ]   [ Examples ]
+[ Get Started ]   [ Install ]   [ Examples ]   [ Evaluation ]
 
 Choose your path
 ┌─ Embodied RL ──────────┬─ Agentic / Reasoning RL ─┐
@@ -145,6 +150,9 @@ page linked from the landing — kept, but below the fold.
   short-paragraph layout.
 - **Guides / Reference / Extending landings:** lead with a one-line purpose + a routed
   list ("Pick this when…"), not prose — mirror the reorg's gallery-intro style.
+- **Evaluation landing:** keep it separate from Examples. Lead with "run a model and
+  measure success rate", then route to quick tour, benchmark guides, and eval reference.
+  Do not bury evaluation setup inside training recipes.
 
 ---
 
@@ -164,8 +172,11 @@ example/recipe page must follow it. Hard requirements:
 4. **Remove** the "Env type" card, the generic "Algorithm" section, and the boilerplate
    VLA intro ("This section provides a comprehensive guide…", "Visual Understanding…").
 5. **Cards or tables, not bullet walls** (specs, metrics, perturbation dimensions).
-6. **Metrics live on one page** — link to :doc:`Training metrics <…>`; never re-explain
-   metrics per recipe. Keep only "watch `env/success_once`" + the results table.
+6. **Metrics and evaluation live elsewhere** — link to :doc:`Training metrics <…>` for
+   training logs and to the unified Evaluation section for benchmark/standalone eval
+   workflows. Never re-explain metrics or duplicate eval launch flows per recipe. Keep only
+   "watch `env/success_once`", page-specific training outputs, and a compact results table
+   when the page owns those results.
 7. **Nav captions are bare names** — `LIBERO`, `ManiSkill`, `π₀ / π₀.₅` (no
    "Benchmark/Models/Platform/评测平台/模型" suffixes); the H1 may stay descriptive.
 
@@ -194,12 +205,15 @@ Task suites / Observation and action ← promoted to top as .. list-table::
 Install              → .. include:: _setup_common.rst + recipe-specific tag/--env
 Download the model   → recipe-specific download + .. include:: _model_path.rst
 Run it               → command + "What this command does" + "Configure further" admonition
-Visualization and results → TensorBoard/video/logger + link to Training metrics; results TABLE
+Visualization and results → TensorBoard/video/logger + link to Training metrics;
+                            link to Evaluation for standalone eval; results TABLE
 ```
 
 Reference material that was copy-pasted per page (full placement examples, the entire
-metrics list, config-key explanations) is **extracted once** into Reference pages and
-linked — e.g. the new `tutorials/configuration/metrics.rst` already does this for metrics.
+metrics list, config-key explanations, standalone evaluation commands) is **extracted
+once** into Reference / Evaluation pages and linked — e.g. the new
+`tutorials/configuration/metrics.rst` already does this for metrics, and `evaluations/`
+owns embodied eval onboarding, benchmark workflows, CLI, config, and results interpretation.
 Shared includes live as underscore-prefixed partials (`exclude_patterns = ["**/_*.rst"]`).
 
 ---
@@ -238,9 +252,10 @@ stable `:doc:`/`:ref:` (no hardcoded ReadTheDocs URLs).
 | Phase | Deliverable | Blast radius | Gate |
 |---|---|---|---|
 | **0. Conventions** | Style guide adopted; `_setup_common.rst` + `_model_path.rst` partials; **`sphinx-design`** added for At-a-glance card grids; `libero` pilot converted (done) | small | build clean |
-| **1. IA / nav** | Move dirs per §3 mapping; rewrite all toctrees/captions + cross-links (EN+ZH); add Concepts/Reference/Resources/Extending landings + Cheat Sheet stub | large (link churn) | build clean, no orphans, docs-check parity |
-| **2. Landing + intros** | New landing task-router; Why-RLinf page; slim Get Started; Concepts page from old tutorials prose | medium | build clean |
-| **3. Page design** | Apply §6 template to all recipe pages; extract Config/Metrics Reference pages | large (per-page) | build clean; pilot template locked on `libero` first |
+| **0.1. Evaluation contract** | Record `evaluations/` as a first-class top-level axis; define Example ↔ Evaluation ownership and links | small | docs-check parity |
+| **1. IA / nav** | Move dirs per §3 mapping; rewrite all toctrees/captions + cross-links (EN+ZH); add Concepts/Reference/Resources/Extending landings + Cheat Sheet stub; keep Evaluation as a top-level axis with its existing substructure | large (link churn) | build clean, no orphans, docs-check parity |
+| **2. Landing + intros** | New landing task-router; Why-RLinf page; slim Get Started; Concepts page from old tutorials prose; Evaluation landing stays task-routed to quick tour / benchmark guides / reference | medium | build clean |
+| **3. Page design** | Apply §6 template to all recipe pages; extract Config/Metrics Reference pages; link benchmark/standalone eval flows to `evaluations/` instead of duplicating them | large (per-page) | build clean; pilot template locked on `libero` first |
 | **4. Wording pass** | Voice/imperative/heading-case sweep across EN+ZH | medium | build clean; spot review |
 
 Each phase is independently shippable and reviewable.
@@ -249,14 +264,19 @@ Each phase is independently shippable and reviewable.
 
 ## 10. Open questions — RESOLVED
 
-1. **Nav axis names** — ✅ accepted; **Examples moved before Concepts**:
-   `Get Started · Examples · Concepts · Guides · Reference · Extending · Resources`.
+1. **Nav axis names** — ✅ accepted; **Examples moved before Concepts** and Evaluation
+   kept as first-class:
+   `Get Started · Examples · Evaluation · Concepts · Guides · Reference · Extending · Resources`.
 2. **URL stability** — ✅ **accept breakage**, no redirects (docs are versioned).
 3. **"Why RLinf"** — ✅ **keep** the full feature/benchmark pitch, but **rewrite it for
    clarity and readability** on a dedicated *Why RLinf* page under Resources, linked from
    the landing.
 4. **Scope of Phase 3** — ✅ **all example pages** (~42), embodied + agentic + system.
 5. **Cheat Sheet** — ✅ ship it; contents in **Appendix A**.
+6. **Evaluation section** — ✅ keep `evaluations/` as a first-class top-level section.
+   It owns unified embodied eval onboarding, benchmark-specific eval guides, and eval
+   CLI/config/results reference. Training example pages link to it for standalone eval
+   workflows instead of duplicating them.
 
 ---
 
@@ -271,8 +291,9 @@ repo):
 
 **Run (entry scripts)**
 - Embodied train: `bash examples/embodiment/run_embodiment.sh <config>`
-- Embodied eval: `bash examples/embodiment/eval_embodiment.sh <config>`
-- Async embodied: `examples/embodiment/run_async.sh` · Real-world: `run_realworld.sh` / `run_realworld_eval.sh`
+- Embodied eval: `bash evaluations/run_eval.sh <benchmark> <config_name>`
+- Async embodied: `examples/embodiment/run_async.sh` · Real-world training:
+  `examples/embodiment/run_realworld.sh`
 - Reasoning GRPO (math): `examples/reasoning/run_main_grpo_math.sh` · (VQA): `run_main_grpo_vqa.sh`
 - Offline RL: `run_offline_rl.sh` · Placement autotune: `run_placement_autotune.sh`
 
@@ -293,6 +314,6 @@ repo):
 
 ---
 
-*Next step:* execute **Phase 0** (adopt §7 style guide; add the `_model_path.rst`
-partial used by the recipe template), then open **Phase 1 (IA)** as its own reviewable
-change implementing the §3 mapping in EN+ZH.
+*Next step:* finish **Phase 3** consistency for Examples while respecting the **Phase 0.1
+Evaluation contract**, then open **Phase 1 (IA)** as its own reviewable change
+implementing the §3 mapping in EN+ZH.

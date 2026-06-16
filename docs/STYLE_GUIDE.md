@@ -33,9 +33,10 @@ Every benchmark (env) or model example page must:
    Algorithm definitions live in Reference, not on every recipe page.
 6. **Cards or tables, not bullet walls.** Replace bullet lists of specs/metrics/perturbations
    with cards or `list-table`s.
-7. **Don't explain metrics per page.** Link to the shared
-   :doc:`Training metrics <tutorials/configuration/metrics>` page; keep only the page-specific
-   "watch `env/success_once`" pointer and the results table.
+7. **Don't explain metrics or evaluation per page.** Link to the shared
+   :doc:`Training metrics <tutorials/configuration/metrics>` page for training logs and
+   to the unified Evaluation section for benchmark / standalone eval workflows. Keep only
+   the page-specific "watch `env/success_once`" pointer and the results table.
 8. **Name the card-grid section "Overview".** On a single-recipe page the card grid lives
    under an `Overview` heading right after the intro. On a multi-recipe page (e.g. LIBERO),
    there's no page-level `Overview`; instead each recipe family is its own section with a
@@ -74,6 +75,14 @@ benchmarks go in `simulators_index`; physical hardware goes in `real_world_index
 families and policy classes go in `vla_wam_index` (Models), including lightweight policies
 such as ``MLP``; training recipes / algorithms go in `methods_index`; SFT-only workflows go
 in `sft_index`. Do not duplicate the same page in multiple gallery indexes.
+
+**Evaluation ownership:** Evaluation is a first-class top-level section, not an Examples
+gallery subsection. `rst_source/evaluations/get_started/` owns eval onboarding,
+`rst_source/evaluations/guides/` owns benchmark-specific eval workflows, and
+`rst_source/evaluations/reference/` owns eval CLI/config/results reference. Training
+example pages may include training-time validation and compact results, but standalone
+benchmark eval setup, `run_eval.sh` usage, and eval result interpretation should link to
+Evaluation instead of being duplicated.
 
 **Robots / Franka hierarchy:** Franka belongs under the Robots gallery, not as a top-level
 Examples category. The Robots toctree links ``Franka <embodied/franka>`` so clicking
@@ -126,13 +135,15 @@ Observation and Action               ← H3
 Installation              → .. include:: _setup_common.rst + recipe-specific tag / --env
 Download the Model        → recipe-specific download + .. include:: _model_path.rst
 Run It                    → command + "What this command does" + "Configure further" admonition
-Visualization and Results → TensorBoard / video / logger + link to Training metrics; results as a TABLE
+Visualization and Results → TensorBoard / video / logger + link to Training metrics;
+                            link to Evaluation for standalone eval; results as a TABLE
 ```
 
 ## Reuse
 
 - **Link, don't inline** reference material (full config tables, the complete metrics
-  list, placement theory). Each page does one job and links to the canonical Reference.
+  list, placement theory, standalone evaluation workflows). Each page does one job and
+  links to the canonical Reference or Evaluation page.
 - **Shared partials** live as underscore-prefixed files (`_setup_common.rst`,
   `_model_path.rst`). They are excluded from the build (`exclude_patterns = ["**/_*.rst"]`)
   and pulled in with `.. include:: _name.rst`. Substitutions don't work inside code
