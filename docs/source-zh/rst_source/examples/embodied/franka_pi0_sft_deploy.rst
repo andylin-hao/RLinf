@@ -1,18 +1,84 @@
-Franka真机Pi0监督微调与部署全流程
-=====================================
+Franka 真机 Pi0 监督微调与部署
+========================================
+.. figure:: https://raw.githubusercontent.com/RLinf/misc/main/pic/pi0_icon.jpg
+   :align: center
+   :width: 80%
 
-本文档介绍如何在 RLinf 框架中完成 **Bin-relocation** 任务的真机全流程演示，
-该任务会将目标物体从起点位置搬运到终点位置（放入盘子视为成功完成任务）。
-涵盖从真实世界采集专家数据、SFT 训练 Pi0，到策略真机部署的完整步骤。
+   本 RLinf 示例使用的机器人配置。图片来源：RLinf 项目资源。
 
-主要流程如下：
+使用 OpenPI π₀ 端到端运行 Bin-relocation 流程：采集 Franka 数据，转换为 LeRobot 风格数据集，计算归一化统计，执行 SFT，并在真机硬件上部署 checkpoint。
 
-1. **数据采集**：使用空间鼠标遥操作采集成功示范数据（LeRobot 格式）。
-2. **SFT 训练**：基于 Pi0 模型在全量参数模式下进行监督微调。
-3. **真机部署**：将训练好的策略在真实机器人上评估运行。
+概览
+----------------------------------------
+
+创建 Franka 真机数据集，微调 π₀，并部署结果。
+
+.. grid:: 2 4 4 4
+   :gutter: 2
+
+   .. grid-item-card:: 模型
+      :text-align: center
+
+      OpenPI π₀
+
+   .. grid-item-card:: 算法
+      :text-align: center
+
+      SFT · eval-only deployment
+
+   .. grid-item-card:: 任务
+      :text-align: center
+
+      Bin relocation · generic SFT env
+
+   .. grid-item-card:: 硬件
+      :text-align: center
+
+      Franka · cameras · gripper
+
+| **你将完成:** 获取目标位姿 → 采集数据 → 计算 norm stats → 运行 SFT → 真机评测.
+| **前置条件:** :doc:`franka` · :doc:`sft_openpi` · OpenPI base checkpoint · real-world dataset path.
+
+任务
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 24 24 24
+
+   * - 任务
+     - 配置 / 入口
+     - 说明
+   * - Data conversion
+     - ``pi0_realworld``
+     - 用 OpenPI 数据格式表示 Franka 数据。
+   * - SFT
+     - ``realworld_sft_openpi``
+     - 在 Franka 真机数据上微调 π₀。
+   * - Deployment
+     - ``realworld_pnp_eval`` / ``realworld_eval``
+     - 在真实机器人上运行 eval-only 部署。
+
+观测与动作
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 24 24
+
+   * - 字段
+     - 说明
+   * - Observation
+     - 映射到 OpenPI 数据键的真机相机帧。
+   * - Action
+     - 由 ``pi0_realworld`` metadata 选择的 Franka 动作格式。
+   * - Reward
+     - 评测成功信号或操作员观察到的部署结果。
+   * - Prompt
+     - 保存在 SFT 数据集/配置中的任务文本。
 
 硬件与软件环境准备
----------------------
+----------------------------------------
 
 硬件要求
 ~~~~~~~~~~~~
@@ -173,7 +239,7 @@ Franka真机Pi0监督微调与部署全流程
 .. code:: bash
 
    export HF_LEROBOT_HOME=/path/to/lerobot_root
-   python toolkits/replay_buffer/calculate_norm_stats.py \
+   python toolkits/lerobot/calculate_norm_stats.py \
        --config-name pi0_realworld \
        --repo-id realworld_franka_bin_relocation
 

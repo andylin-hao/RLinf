@@ -1,75 +1,87 @@
 Dexmal DOS-W1 真机强化学习
-==========================
+========================================
 
 .. |huggingface| image:: /_static/svg/hf-logo.svg
    :width: 16px
    :height: 16px
    :class: inline-icon
 
-本文档介绍如何在 RLinf 框架中，针对 **DOS-W1** 双臂机器人运行真机强化学习。
-当前示例为 **单臂抓取** 任务（``DOSW1PickEnv-v1``）：左臂从 home 位出发，
-先到达目标抓取关节位，闭合夹爪抓住物体，再到达目标抬起关节位；右臂在整个
-过程中保持 home 位。
+.. figure:: https://raw.githubusercontent.com/RLinf/misc/main/pic/dos-w1.png
+   :align: center
+   :width: 80%
 
-该示例使用 **Flow Matching 策略 + ResNet-10 视觉编码器**，通过 **SAC**
-进行训练，整体流程与 :doc:`franka` / :doc:`xsquare_turtle2` 的真机 RL 管线一致。
+   本 RLinf 示例使用的机器人配置。图片来源：RLinf 项目资源。
 
-环境
------
+在 Dexmal DOS-W1 双臂机器人上训练 Flow Matching 策略。当前流程运行单臂抓取任务，使用 AirBot 服务、RealSense 相机、键盘门控 episode，以及 SAC/RLPD 风格真机训练。
 
-**DOS-W1 Pick**
+概览
+----------------------------------------
 
-- **机器人**：DOS-W1 双臂机器人（基于 AirBot），配有主动臂用于遥操作。
-- **任务**：单臂抓取，在关节空间分三阶段执行：
+为 DOS-W1 抓取任务训练视觉 flow policy。
 
-  1. **Reach**：左臂从 home 位移动到 ``target_grasp_joint``。
-  2. **Grasp**：夹爪闭合（宽度 ≤ ``gripper_closed_max_width``）。
-  3. **Lift**：抓住物体后，继续移动到 ``target_lift_joint``。
+.. grid:: 2 4 4 4
+   :gutter: 2
 
-- **观测（Observation）**：
+   .. grid-item-card:: 模型
+      :text-align: center
 
-  - 最多 3 路 RGB 图像（128 × 128）：``cam_front``、``cam_left``、``cam_right``
-    （由 Intel RealSense 相机采集）。
-  - 本体状态：左右臂各 6 维关节角，以及左右夹爪宽度。
+      Flow policy · ResNet-10
 
-- **动作空间（Action Space）**：14 维连续动作，每只手臂 6 维关节目标
-  （弧度）+ 1 维夹爪宽度（米），排列顺序为
-  ``[left_joint(6), left_gripper(1), right_joint(6), right_gripper(1)]``。
+   .. grid-item-card:: 算法
+      :text-align: center
 
-**数据结构**
+      SAC · RLPD optional
 
-- **Images**：``frames/{cam_front, cam_left, cam_right}``，uint8
-  ``[H, W, 3] = [128, 128, 3]``。
-- **State**：``state/{left_joint_positions(6), left_gripper(1),
-  right_joint_positions(6), right_gripper(1)}``。
-- **Actions**：14 维浮点，关节空间 + 夹爪宽度。
-- **Rewards**：默认使用密集奖励：
+   .. grid-item-card:: 任务
+      :text-align: center
 
-  - ``reach`` 阶段：``exp(-sharpness * ||q - q_grasp||^2)``
-  - 成功抓取时额外加 ``grasp_bonus``（默认 ``0.3``）
-  - ``lift`` 阶段：``exp(-sharpness * ||q - q_lift||^2)``
-  - 当 ``||q - q_lift|| <= lift_threshold`` 时，reward 置为 ``1.0``，
-    episode ``terminated = True``。
-  - 额外惩罚右臂偏离 home 位的距离（保持非活动臂不动）。
+      Single-arm pick
 
-算法
------
+   .. grid-item-card:: 硬件
+      :text-align: center
 
-**核心算法组件**
+      DOS-W1 · AirBot · RealSense
 
-1. **SAC (Soft Actor-Critic)** + 自适应熵调节（``loss_type:
-   embodied_sac``、``adv_type: embodied_sac``），与 :doc:`franka` /
-   :doc:`sac_flow` 共用同一套 embodied RL 栈。
-2. **Flow Matching 策略**\ （``flow_policy``）。一个轻量的去噪 Transformer
-   （4 步去噪、2 层、256 隐藏维），以视觉 + 本体特征为条件，输出关节空间动作。
-3. **ResNet-10 视觉编码器**\ （共享 backbone）。预训练权重来自
-   ``RLinf/RLinf-ResNet10-pretrained``。
-4. **RLPD（可选）**。若有遥操示教数据，可把
-   ``algorithm.demo_buffer.load_path`` 指向 demo 目录，用先验数据做
-   warm start。
+| **你将完成:** 安装 DOS-W1 env → 校准目标关节 → 配置键盘门控 → 可选采集示教 → 训练.
+| **前置条件:** :doc:`安装 </rst_source/start/installation>` · robot node 上的 AirBot SDK · 局域网 · 安全操作员.
 
-如果只想做 **state-only MLP 烟雾测试**\ （无相机，用于 CI），请参考
-``tests/e2e_tests/embodied/dosw1_dummy_sac_mlp_pick.yaml``。
+任务
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 24 24 24
+
+   * - 任务
+     - 配置 / 入口
+     - 说明
+   * - Dummy smoke test
+     - ``dosw1_dummy_sac_mlp_pick.yaml``
+     - 在无相机和无硬件调用情况下验证配置。
+   * - Data collection
+     - ``dosw1_collect_data``
+     - 可选采集遥操作示教，用于 RLPD warm start。
+   * - Training
+     - ``dosw1_pick_sac_flow(_async)``
+     - 在抓取任务上用 SAC 训练 flow policy。
+
+观测与动作
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 24 24
+
+   * - 字段
+     - 说明
+   * - Observation
+     - ``cam_front``、``cam_left``、``cam_right`` 图像，加双臂关节/夹爪状态。
+   * - Action
+     - 14 维关节空间动作：左右各 6 个关节加夹爪宽度。
+   * - Reward
+     - reach/grasp/lift 稠密 shaping，并在 ``target_lift_joint`` 达成时终止成功。
+   * - Prompt
+     - ``Perform the DOSW1 dual-arm manipulation task.``
 
 硬件环境搭建
 -------------
@@ -104,7 +116,7 @@ Dexmal DOS-W1 真机强化学习
 AirBot SDK 通常已在 DOS-W1 机器上预部署，以下命令可自动检测并安装。
 
 a. 克隆 RLinf 仓库
-^^^^^^^^^^^^^^^^^^
+~~~~~~~~~~~~~~~~~~
 
 .. code:: bash
 
@@ -114,7 +126,7 @@ a. 克隆 RLinf 仓库
    cd RLinf
 
 b. 安装依赖
-^^^^^^^^^^^
+~~~~~~~~~~~
 
 .. code:: bash
 
@@ -139,7 +151,7 @@ b. 安装依赖
 ~~~~~~~~~~~~~~~~~~~
 
 a. 克隆 RLinf 仓库
-^^^^^^^^^^^^^^^^^^
+~~~~~~~~~~~~~~~~~~
 
 .. code:: bash
 
@@ -149,7 +161,7 @@ a. 克隆 RLinf 仓库
    cd RLinf
 
 b. 安装依赖
-^^^^^^^^^^^
+~~~~~~~~~~~
 
 .. code:: bash
 

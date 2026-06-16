@@ -1,89 +1,84 @@
-双 Franka 真机：GELLO 数据采集、π₀.₅ SFT 与部署
-====================================================
+双 Franka 真机：GELLO 采集、π₀.₅ SFT 与部署
+============================================================
+.. figure:: https://raw.githubusercontent.com/RLinf/misc/main/pic/franka_arm_small.jpg
+   :align: center
+   :width: 80%
 
-本示例介绍 RLinf 双臂 Franka 真机流程的最小可执行工作流：启动双节点真机
-集群，使用两台 GELLO 主手采集双臂演示数据，将数据转换为 tcp_rot6d 后对
-π₀.₅ 执行 SFT，并通过脚踏控制将训练后的策略部署至机器人。
+   本 RLinf 示例使用的机器人配置。图片来源：RLinf 项目资源。
 
-本文包含硬件布局、依赖安装、必须替换的配置项、硬件检查、数据采集、
-tcp_rot6d 回填与 SFT、部署，以及常见故障排查。
-
-首次搭建硬件时，建议先阅读：
-
-* :doc:`franka`：单臂 Franka 基础、Ray 集群、FCI 与
-  ``RLINF_NODE_RANK``。
-* :doc:`franka_gello`：GELLO 安装、Dynamixel 权限和 ``gello-teleop``。
-
+运行受支持的双 Franka 流程：用 GELLO 采集关节空间示教，将数据转换为 tcp_rot6d，微调 OpenPI π₀.₅，并把 checkpoint 部署回机器人节点。
 
 概览
-----
+----------------------------------------
 
-流程包含五个阶段：
+构建双臂数据集，训练 π₀.₅，并部署到双节点 Franka rig。
 
-1. 在两个机器人节点上安装 ``franka-franky`` 依赖。
-2. 在 head 节点设置 ``RLINF_NODE_RANK=0``，在 worker 节点设置
-   ``RLINF_NODE_RANK=1``，然后启动 Ray。
-3. 使用 ``realworld_collect_data_gello_joint_dual_franka`` 采集关节空间演示。
-4. 将数据转换为 tcp_rot6d，并使用
-   ``realworld_sft_openpi_dual_franka_tcp_rot6d`` 执行 π₀.₅ SFT。
-5. 使用 ``realworld_eval_dual_franka`` 部署策略。
+.. grid:: 2 4 4 4
+   :gutter: 2
 
-仓库预置配置已指定对应环境。通常仅需替换硬件路径、任务文本、数据集
-ID 和模型 checkpoint。
+   .. grid-item-card:: 模型
+      :text-align: center
 
+      OpenPI π₀.₅
 
-环境
-----
+   .. grid-item-card:: 算法
+      :text-align: center
 
-硬件布局
-~~~~~~~~
+      SFT · eval-only deployment
 
-.. list-table::
-   :header-rows: 1
-   :widths: 20 35 45
+   .. grid-item-card:: 任务
+      :text-align: center
 
-   * - 节点
-     - 角色
-     - 硬件
-   * - ``node 0`` （head）
-     - Ray head、env worker、左臂 Franka controller、相机、GELLO 输入、
-       采集和部署入口
-     - GPU 机器；左 Franka FR3；左 Robotiq gripper；base 相机；左右腕相机；
-       两台 GELLO 主手；PCsensor 脚踏
-   * - ``node 1`` （worker）
-     - Ray worker 和右臂 Franka controller
-     - 右 Franka FR3；右 Robotiq gripper；GPU 可选
+      Dual-arm manipulation
 
-两台 Franka 通常分别通过专用网卡连接到本地控制节点。所有相机、两台 GELLO
-主手和脚踏都连接到 ``node 0``。
+   .. grid-item-card:: 硬件
+      :text-align: center
 
-数据与动作空间
-~~~~~~~~~~~~~~
+      2× Franka · 2 robot nodes · GELLO
+
+| **你将完成:** 安装 franky 依赖 → 采集 GELLO 示教 → 转换 rot6d 数据 → 运行 SFT → 部署 eval 配置.
+| **前置条件:** :doc:`franka` · :doc:`franka_gello` · 两台 Franka · OpenPI assets.
+
+任务
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. list-table::
    :header-rows: 1
-   :widths: 24 22 20 34
+   :widths: 24 24 24
 
-   * - 阶段
-     - 环境
-     - 形状
-     - 用途
-   * - 采集
-     - ``DualFrankaJointEnv-v1``
-     - ``state=[68]``，``actions=[16]``
-     - GELLO 关节空间演示
-   * - SFT / 部署
-     - ``DualFrankaTCPEnv-v1``
-     - ``state=[20]``，``actions=[20]``
-     - π₀.₅ tcp_rot6d 策略
+   * - 任务
+     - 配置 / 入口
+     - 说明
+   * - Collection
+     - ``realworld_collect_data_gello_joint_dual_franka``
+     - 采集双臂关节轨迹。
+   * - SFT
+     - ``realworld_sft_openpi_dual_franka_tcp_rot6d``
+     - 在 tcp_rot6d 动作上微调 π₀.₅。
+   * - Deployment
+     - ``realworld_eval_dual_franka``
+     - 在机器人节点上运行 eval-only 部署。
 
-每条 tcp_rot6d 动作为每只手臂一组 ``[xyz(3), rot6d(6), gripper(1)]``。
-主图像键为 ``left_wrist_0_rgb``；额外视角顺序为 ``base_0_rgb`` 和
-``right_wrist_0_rgb``。
+观测与动作
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+.. list-table::
+   :header-rows: 1
+   :widths: 24 24
+
+   * - 字段
+     - 说明
+   * - Observation
+     - 腕部/全局相机视角加双臂机器人状态。
+   * - Action
+     - 双臂 tcp_rot6d：``[L_xyz, L_rot6d, L_grip, R_xyz, R_rot6d, R_grip]``。
+   * - Reward
+     - 评测成功信号或人工门控部署结果。
+   * - Prompt
+     - OpenPI 数据/配置 metadata 中的任务文本。
 
 依赖安装
---------
+----------------------------------------
 
 机器人节点
 ~~~~~~~~~~

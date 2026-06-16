@@ -1,79 +1,81 @@
 Real-World RL with XSquare Turtle2
-====================================
+==================================
+.. figure:: https://raw.githubusercontent.com/RLinf/misc/main/pic/xsquare_turtle2_arm_small.jpg
+   :align: center
+   :width: 80%
 
-This document provides a comprehensive guide to launching real-world reinforcement
-learning training on the **XSquare Turtle2** dual-arm robot platform using the
-RLinf framework.
+   Robot setup used by this RLinf recipe. Image credit: RLinf project assets.
 
-The primary objective is to train a ResNet-based CNN policy from scratch for robotic
-manipulation tasks on a real robot by:
+Train a real-world policy on the XSquare Turtle2 dual-arm robot. You will enter the vendor controller container, install RLinf dependencies, set target poses for button pressing, and launch SAC/CNN training across robot and GPU nodes.
 
-1. **Visual Understanding**: Processing RGB images from up to three onboard cameras.
-2. **Action Generation**: Producing precise delta end-effector actions (position, rotation, and gripper) for one or two arms.
-3. **Reinforcement Learning**: Optimizing the policy via SAC with real-environment feedback.
+Overview
+--------
 
-Environment
------------
+Train a visual SAC policy for button pressing on XSquare Turtle2.
 
-**Real-World Environment**
+.. grid:: 2 4 4 4
+   :gutter: 2
 
-- **Robot**: XSquare Turtle2 – a dual-arm tabletop robot with up to 2 arms (left arm ID ``0``, right arm ID ``1``) and up to 3 RGB cameras (IDs ``0``, ``1``, ``2``).
-- **Task**: Currently we support the **button-pressing** task (``ButtonEnv``):
+   .. grid-item-card:: Models
+      :text-align: center
 
-  - The robot end-effector moves downward to press a button located at a target pose.
-  - Random resets add ±5 cm position noise and ±20° orientation noise to increase difficulty.
-  - The task description string: *"Press the button with the end-effector."*
+      CNN policy
 
-- **Observation**:
+   .. grid-item-card:: Algorithms
+      :text-align: center
 
-  - RGB images (128 × 128) from one or more cameras, returned as ``frames/wrist_<k>``.
-  - TCP pose: position (xyz) + quaternion (xyzw) per active arm, concatenated as a flat vector.
+      SAC · Cross-Q · RLPD
 
-    - Single arm: ``[batch_size, 7]``
-    - Dual arm: ``[batch_size, 14]``
+   .. grid-item-card:: Tasks
+      :text-align: center
 
-- **Action Space**: 7-dimensional continuous action per arm, stacked for dual-arm use:
+      Button pressing
 
-  - 3D delta position (Δx, Δy, Δz)
-  - 3D delta orientation (Δroll, Δpitch, Δyaw)
-  - Gripper width command (open/close)
+   .. grid-item-card:: Hardware
+      :text-align: center
 
-  Single arm: ``(7,)`` — Dual arm: ``(14,)``; values normalized to ``[-1, 1]``.
+      XSquare Turtle2 · 1–2 arms · cameras
 
-**Data Structure**
+| **You'll do:** enter vendor container → install RLinf env → set target poses → test dummy config → train.
+| **Prerequisites:** :doc:`Installation </rst_source/start/installation>` · XSquare Docker/controller stack · local network.
 
-- **Images**: RGB tensors ``[batch_size, 128, 128, 3]``
-- **Actions**: Normalized continuous values ``[-1, 1]`` per dimension
-- **Rewards**: ``1.0`` on success (all active arms reach target within threshold), ``0.0`` otherwise; optionally a dense exponential reward
+Tasks
+~~~~~
 
+.. list-table::
+   :header-rows: 1
+   :widths: 24 24 24
 
-Algorithm
----------
+   * - Task
+     - Config / entry point
+     - Description
+   * - Dummy check
+     - ``realworld_dummy_turtle2_sac_cnn``
+     - Validate config and cluster plumbing without hardware motion.
+   * - Training
+     - ``realworld_button_turtle2_sac_cnn``
+     - Train button pressing with one or two active arms.
+   * - Monitoring
+     - TensorBoard logs
+     - Track reward, return, and replay-buffer statistics.
 
-**Core Algorithm Components**
+Observation and Action
+~~~~~~~~~~~~~~~~~~~~~~
 
-1. **SAC (Soft Actor-Critic)**
+.. list-table::
+   :header-rows: 1
+   :widths: 24 24
 
-   - Learns Q-values via Bellman backups with entropy regularization.
-   - Learns a policy that maximizes the entropy-regularized Q objective.
-   - Automatically tunes the temperature parameter (``alpha``) for exploration–exploitation balance.
-
-2. **Cross-Q** (optional)
-
-   - A SAC variant that removes the target Q-network.
-   - Concatenates current and next observations in one batch with BatchNorm for stable Q learning.
-
-3. **RLPD (Reinforcement Learning with Prior Data)** (optional)
-
-   - Augments online SAC with offline demonstration data.
-   - High update-to-data ratio exploits collected data efficiently.
-
-4. **CNN Policy Network**
-
-   - ResNet-based visual encoder for RGB input.
-   - MLP layers fuse image features with proprioceptive state to produce actions.
-   - Separate Q-heads for the critic.
-
+   * - Field
+     - Description
+   * - Observation
+     - Up to three RGB camera streams plus TCP pose per active arm.
+   * - Action
+     - 7-D continuous delta pose and gripper command per arm.
+   * - Reward
+     - ``1.0`` on button-press success; optional dense exponential shaping.
+   * - Prompt
+     - ``Press the button with the end-effector.``
 
 Hardware Setup
 --------------

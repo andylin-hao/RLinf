@@ -1,79 +1,84 @@
 XSquare Turtle2 真机强化学习
-==============================
+========================================
+.. figure:: https://raw.githubusercontent.com/RLinf/misc/main/pic/xsquare_turtle2_arm_small.jpg
+   :align: center
+   :width: 80%
 
-本文档给出在 RLinf 框架内，基于 **XSquare Turtle2** 双臂机器人平台启动真机强化学习训练任务的完整指南。
+   本 RLinf 示例使用的机器人配置。图片来源：RLinf 项目资源。
 
-主要目标是让模型具备以下能力：
+在 XSquare Turtle2 双臂机器人上训练真机策略。你将进入厂商控制容器，安装 RLinf 依赖，设置按键任务目标位姿，并在机器人节点与 GPU 节点上启动 SAC/CNN 训练。
 
-1. **视觉理解**：处理来自最多三个机载相机的 RGB 图像。
-2. **动作生成**：为一条或两条机械臂产生精确的末端执行器增量动作（位置、旋转及夹爪控制）。
-3. **强化学习**：结合真实环境反馈，使用 SAC 优化策略。
+概览
+----------------------------------------
 
-环境
-----
+在 XSquare Turtle2 上训练用于按键任务的视觉 SAC 策略。
 
-**真实世界环境**
+.. grid:: 2 4 4 4
+   :gutter: 2
 
-- **机器人**：XSquare Turtle2 双臂桌面机器人，支持最多 2 条机械臂（左臂 ID ``0``，右臂 ID ``1``）以及最多 3 个 RGB 相机（ID ``0``、``1``、``2``）。
-- **任务**：目前支持**按键按压**任务（``ButtonEnv``）：
+   .. grid-item-card:: 模型
+      :text-align: center
 
-  - 机械臂末端执行器向下运动，按压位于目标位姿处的按键。
-  - 随机复位时加入 ±5 cm 位置噪声和 ±20° 姿态噪声，以提升任务难度。
-  - 任务描述字符串：*"Press the button with the end-effector."*
+      CNN policy
 
-- **观测（Observation）**：
+   .. grid-item-card:: 算法
+      :text-align: center
 
-  - 来自一个或多个相机的 RGB 图像（128 × 128），以 ``frames/wrist_<k>`` 形式返回。
-  - TCP 位姿：每条激活机械臂的位置（xyz）与四元数（xyzw），拼接为一维向量。
+      SAC · Cross-Q · RLPD
 
-    - 单臂：``[batch_size, 7]``
-    - 双臂：``[batch_size, 14]``
+   .. grid-item-card:: 任务
+      :text-align: center
 
-- **动作空间（Action Space）**：每条机械臂 7 维连续动作，双臂叠加：
+      Button pressing
 
-  - 三维增量位置（Δx, Δy, Δz）
-  - 三维增量姿态（Δroll, Δpitch, Δyaw）
-  - 夹爪宽度指令（开/合）
+   .. grid-item-card:: 硬件
+      :text-align: center
 
-  单臂：``(7,)``；双臂：``(14,)``；取值归一化至 ``[-1, 1]``。
+      XSquare Turtle2 · 1–2 arms · cameras
 
-**数据结构**
+| **你将完成:** 进入厂商容器 → 安装 RLinf env → 设置目标位姿 → 测试 dummy 配置 → 训练.
+| **前置条件:** :doc:`安装 </rst_source/start/installation>` · XSquare Docker/controller stack · 局域网.
 
-- **Images**：RGB 张量 ``[batch_size, 128, 128, 3]``
-- **Actions**：归一化连续值，每维度取值范围 ``[-1, 1]``
-- **Rewards**：成功时返回 ``1.0``（所有激活机械臂均到达目标位置阈值内），否则返回 ``0.0``；可选稠密指数奖励
+任务
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+.. list-table::
+   :header-rows: 1
+   :widths: 24 24 24
 
-算法
-----
+   * - 任务
+     - 配置 / 入口
+     - 说明
+   * - Dummy check
+     - ``realworld_dummy_turtle2_sac_cnn``
+     - 在无硬件运动情况下验证配置和集群连通。
+   * - Training
+     - ``realworld_button_turtle2_sac_cnn``
+     - 使用一条或两条活动机械臂训练按键任务。
+   * - Monitoring
+     - TensorBoard logs
+     - 跟踪 reward、return 与 replay-buffer 统计。
 
-**核心算法组件**
+观测与动作
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-1. **SAC（Soft Actor-Critic）**
+.. list-table::
+   :header-rows: 1
+   :widths: 24 24
 
-   - 通过 Bellman 公式和熵正则化学习 Q 值。
-   - 学习策略网络以最大化熵正则化的 Q 值。
-   - 自动调节温度参数（``alpha``）以平衡探索与利用。
-
-2. **Cross-Q** （可选）
-
-   - SAC 的一种变体，去除了目标 Q 网络。
-   - 在一个批次中连接当前和下一个观测，结合 BatchNorm 实现稳定的 Q 训练。
-
-3. **RLPD（Reinforcement Learning with Prior Data）** （可选）
-
-   - 在在线 SAC 中融合离线示范数据。
-   - 高更新-数据比以充分利用已采集数据。
-
-4. **CNN 策略网络**
-
-   - 基于 ResNet 的视觉编码器，处理 RGB 输入。
-   - MLP 层融合图像特征与本体感知状态，输出动作。
-   - 独立 Q-head 实现 Critic 功能。
-
+   * - 字段
+     - 说明
+   * - Observation
+     - 最多三路 RGB 相机流，以及每条活动机械臂的 TCP 位姿。
+   * - Action
+     - 每条机械臂 7 维连续增量位姿与夹爪命令。
+   * - Reward
+     - 按键成功时为 ``1.0``；可选指数稠密 shaping。
+   * - Prompt
+     - ``Press the button with the end-effector.``
 
 硬件环境搭建
-------------
+----------------------------------------
 
 真机实验需要以下硬件：
 
@@ -118,7 +123,7 @@ XSquare Turtle2平台自带SDK和基于ROS的控制器。**请在开始下安装
 ~~~~~~~~~~~~~~~~~~~
 
 a. 克隆 RLinf 仓库
-^^^^^^^^^^^^^^^^^^^
+~~~~~~~~~~~~~~~~~~~
 
 .. code:: bash
 

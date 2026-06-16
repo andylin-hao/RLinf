@@ -1,16 +1,16 @@
 RL with Real-world Robotics
 ===========================
 
-This category collects RLinf examples that run on **real robotic hardware** — Franka arms, dexterous hands, mobile dual-arm platforms, and homemade arms — covering teleoperation, data collection, sim-to-real transfer, and online RL fine-tuning.
+Use this section when your starting point is **physical hardware**. These recipes cover Franka arms, dexterous hands, mobile dual-arm platforms, and homemade arms, with the setup details needed for teleoperation, data collection, SFT deployment, sim-to-real transfer, and online RL.
 
-These examples assume you have access to the corresponding hardware. They walk through ROS / SocketCAN integration, sensor wiring (cameras, grippers, dex hands), reward design for real environments, and safe online policy updates.
+Each page assumes you have access to the corresponding robot. Start from the base Franka page for the common Ray and safety workflow, then use the hardware-specific pages for cameras, grippers, GELLO, dexterous hands, GimArm, XSquare Turtle2, or DOS-W1.
 
 .. raw:: html
 
    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; align-items: flex-start; justify-items: center; max-width: 980px; margin: 0 auto;">
 
      <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
-       <img src="https://github.com/RLinf/misc/raw/main/pic/franka_arm_small.jpg"
+       <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/franka_arm_small.jpg"
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
        <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
          <a href="embodied/franka.html" style="text-decoration: underline; color: blue;">
@@ -21,7 +21,7 @@ These examples assume you have access to the corresponding hardware. They walk t
      </div>
 
      <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
-       <img src="https://github.com/RLinf/misc/blob/main/pic/franka_reward_model.jpg?raw=true"
+       <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/franka_reward_model.jpg"
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
        <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
          <a href="embodied/franka_reward_model.html" style="text-decoration: underline; color: blue;">
@@ -32,7 +32,7 @@ These examples assume you have access to the corresponding hardware. They walk t
      </div>
 
      <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
-       <img src="https://github.com/RLinf/misc/raw/main/pic/robotiq_zed.jpeg"
+       <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/robotiq_zed.jpeg"
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
        <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
          <a href="embodied/franka_zed_robotiq.html" style="text-decoration: underline; color: blue;">
@@ -43,7 +43,7 @@ These examples assume you have access to the corresponding hardware. They walk t
      </div>
 
      <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
-       <img src="https://github.com/RLinf/misc/raw/main/pic/gello.jpeg"
+       <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/gello.jpeg"
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
        <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
          <a href="embodied/franka_gello.html" style="text-decoration: underline; color: blue;">
@@ -54,7 +54,7 @@ These examples assume you have access to the corresponding hardware. They walk t
      </div>
 
      <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
-       <img src="https://github.com/RLinf/misc/raw/main/pic/dual.jpeg"
+       <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/franka_arm_small.jpg"
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
        <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
          <a href="embodied/dual_franka.html" style="text-decoration: underline; color: blue;">
@@ -65,7 +65,7 @@ These examples assume you have access to the corresponding hardware. They walk t
      </div>
 
      <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
-       <img src="https://github.com/RLinf/misc/raw/main/pic/dexhand.jpg"
+       <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/dexhand.jpg"
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
        <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
          <a href="embodied/franka_dexhand.html" style="text-decoration: underline; color: blue;">
@@ -76,7 +76,7 @@ These examples assume you have access to the corresponding hardware. They walk t
      </div>
 
      <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
-       <img src="https://github.com/RLinf/misc/raw/main/pic/pi0_icon.jpg"
+       <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/pi0_icon.jpg"
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
        <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
          <a href="embodied/franka_pi0_sft_deploy.html" style="text-decoration: underline; color: blue;">
@@ -87,7 +87,7 @@ These examples assume you have access to the corresponding hardware. They walk t
      </div>
 
      <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
-       <img src="https://github.com/RLinf/misc/raw/main/pic/hg-dagger.jpg"
+       <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/hg-dagger.jpg"
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
        <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
          <a href="embodied/hg-dagger.html" style="text-decoration: underline; color: blue;">
@@ -98,7 +98,7 @@ These examples assume you have access to the corresponding hardware. They walk t
      </div>
 
      <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
-       <img src="https://github.com/RLinf/misc/raw/main/pic/gim-arm.png"
+       <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/gim-arm.png"
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
        <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
          <a href="embodied/gim_arm.html" style="text-decoration: underline; color: blue;">
@@ -109,7 +109,7 @@ These examples assume you have access to the corresponding hardware. They walk t
      </div>
 
      <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
-       <img src="https://github.com/RLinf/misc/raw/main/pic/xsquare_turtle2_arm_small.jpg"
+       <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/xsquare_turtle2_arm_small.jpg"
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
        <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
          <a href="embodied/xsquare_turtle2.html" style="text-decoration: underline; color: blue;">

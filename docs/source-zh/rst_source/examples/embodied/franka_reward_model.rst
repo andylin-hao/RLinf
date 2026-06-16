@@ -1,18 +1,87 @@
-Franka真机强化学习（基于 Reward Model ）
-========================================================
+Franka 真机强化学习（Reward Model）
+========================================
 
 .. |huggingface| image:: /_static/svg/hf-logo.svg
    :width: 16px
    :height: 16px
    :class: inline-icon
 
-本文档介绍如何在 Franka 机械臂真机环境中的训练任务中使用 reward model，
-重点介绍如何从零开始训练并部署基于 ResNet 的 reward model ，以辅助完成机器人操作任务。
+.. figure:: https://raw.githubusercontent.com/RLinf/misc/main/pic/franka_reward_model.jpg
+   :align: center
+   :width: 80%
 
-在开始前，强烈建议先阅读以下文档：
+   本 RLinf 示例使用的机器人配置。图片来源：RLinf 项目资源。
 
-1. :doc:`franka` 以熟悉 Franka 机械臂真机环境下训练全流程。
-2. :doc:`../../tutorials/embodied/reward_model` 以熟悉 RLinf 的仿真环境中使用 reward model 的完整流程。
+为 Franka 真机流程加入学习得到的视觉 reward model。你将采集标注帧，训练 ResNet reward model，并让环境用模型预测来判定成功与重置。
+
+概览
+----------------------------------------
+
+将训练后的 reward model 用作 Franka 真机任务的成功信号。
+
+.. grid:: 2 4 4 4
+   :gutter: 2
+
+   .. grid-item-card:: 模型
+      :text-align: center
+
+      CNN policy · ResNet reward model
+
+   .. grid-item-card:: 算法
+      :text-align: center
+
+      SAC/RLPD · reward-model inference
+
+   .. grid-item-card:: 任务
+      :text-align: center
+
+      Charger · fixed-pose manipulation
+
+   .. grid-item-card:: 硬件
+      :text-align: center
+
+      Franka · cameras · keyboard labels
+
+| **你将完成:** 采集专家示教 → 采集 reward 标注 → 预处理数据 → 训练 reward model → 启动真机 RL.
+| **前置条件:** :doc:`franka` 到数据采集步骤 · :doc:`Reward model 教程 </rst_source/tutorials/embodied/reward_model>`.
+
+任务
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 24 24 24
+
+   * - 任务
+     - 配置 / 入口
+     - 说明
+   * - Keyboard labels
+     - ``realworld_collect_dataset``
+     - 在实时遥操作中标注 success/failure 帧。
+   * - Fixed pose labels
+     - ``realworld_charger_sac_cnn_async_standalone_reward``
+     - 用目标位姿到达情况生成 reward-model 数据。
+   * - RL with reward model
+     - ``realworld_charger_sac_cnn_async_standalone_reward``
+     - 在 Franka env 中使用 reward-model 成功预测。
+
+观测与动作
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 24 24
+
+   * - 字段
+     - 说明
+   * - Observation
+     - policy 与 reward model 共用相机帧。
+   * - Action
+     - 与基础 Franka 真机环境相同的笛卡尔动作。
+   * - Reward
+     - reward-model 成功/失败预测替代手写成功信号。
+   * - Prompt
+     - 由配置决定，使用任务文本或固定目标位姿。
 
 预备工作
 -----------------------
@@ -49,7 +118,7 @@ Reward Model 数据集采集
 方式二为基于位姿的自动标注，专为固定目标位姿的任务设计。
 
 方式一：键盘标注（通用）
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 此方式通过键盘在实时 episode 中手动标注每一帧，适用于任何操作任务。
 此方式将数据采集、标注和数据集生成整合为一次端到端运行，无需繁琐的离线预处理步骤。
@@ -78,7 +147,7 @@ Reward Model 数据集采集
 详细配置说明及完整示例请参见 :doc:`../../tutorials/embodied/reward_model` 中的方式一。
 
 方式二：固定位姿（目标驱动）
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 此方式专为**固定目标位姿**的任务设计，无需手动键盘标注，episode 会根据机器人是否到达
 配置的 ``target_ee_pose`` 自动驱动成功/失败判定。

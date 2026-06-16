@@ -1,18 +1,87 @@
 Real-World RL with Franka (Reward Model)
-=========================================
+========================================
 
 .. |huggingface| image:: /_static/svg/hf-logo.svg
    :width: 16px
    :height: 16px
    :class: inline-icon
 
-This document describes how to use a reward model when training on a Franka robotic arm in the real world.
-The focus is on training and deploying a ResNet-based reward model from scratch to assist robotic manipulation tasks.
+.. figure:: https://raw.githubusercontent.com/RLinf/misc/main/pic/franka_reward_model.jpg
+   :align: center
+   :width: 80%
 
-Before getting started, it is strongly recommended to read the following documents:
+   Robot setup used by this RLinf recipe. Image credit: RLinf project assets.
 
-1. :doc:`franka` — to familiarize yourself with the end-to-end real-world Franka training pipeline.
-2. :doc:`../../tutorials/embodied/reward_model` — to understand the complete reward model workflow in RLinf's simulated environments.
+Add a learned visual reward model to the Franka real-world pipeline. You'll collect labeled frames, train a ResNet reward model, and let the environment use model predictions to decide success and resets.
+
+Overview
+--------
+
+Use a trained reward model as the real-world success signal for Franka tasks.
+
+.. grid:: 2 4 4 4
+   :gutter: 2
+
+   .. grid-item-card:: Models
+      :text-align: center
+
+      CNN policy · ResNet reward model
+
+   .. grid-item-card:: Algorithms
+      :text-align: center
+
+      SAC/RLPD · reward-model inference
+
+   .. grid-item-card:: Tasks
+      :text-align: center
+
+      Charger · fixed-pose manipulation
+
+   .. grid-item-card:: Hardware
+      :text-align: center
+
+      Franka · cameras · keyboard labels
+
+| **You'll do:** collect expert demos → collect reward labels → preprocess data → train reward model → launch real-world RL.
+| **Prerequisites:** :doc:`franka` through data collection · :doc:`Reward model tutorial </rst_source/tutorials/embodied/reward_model>`.
+
+Tasks
+~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 24 24 24
+
+   * - Task
+     - Config / entry point
+     - Description
+   * - Keyboard labels
+     - ``realworld_collect_dataset``
+     - Label success/failure frames during live teleoperation.
+   * - Fixed pose labels
+     - ``realworld_charger_sac_cnn_async_standalone_reward``
+     - Use target-pose reachability to generate reward-model data.
+   * - RL with reward model
+     - ``realworld_charger_sac_cnn_async_standalone_reward``
+     - Use reward-model success predictions in the Franka env.
+
+Observation and Action
+~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 24 24
+
+   * - Field
+     - Description
+   * - Observation
+     - Camera frames used by both policy and reward model.
+   * - Action
+     - Same Franka Cartesian action as the base real-world env.
+   * - Reward
+     - Reward-model success/failure prediction replaces the hand-coded success signal.
+   * - Prompt
+     - Task-specific env text or fixed target pose, depending on config.
 
 Prerequisites
 -----------------------

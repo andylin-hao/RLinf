@@ -1,26 +1,84 @@
-Franka + 灵巧手真机强化学习
-================================
+Franka 机械臂与灵巧手真机强化学习
+========================================
+.. figure:: https://raw.githubusercontent.com/RLinf/misc/main/pic/dexhand.jpg
+   :align: center
+   :width: 80%
 
-本文档说明 Franka 机械臂接入睿研灵巧手时需要关注的配置差异。
-完整的真机强化学习与 reward model 工作流请参考 :doc:`franka` 和 :doc:`franka_reward_model`。
+   本 RLinf 示例使用的机器人配置。图片来源：RLinf 项目资源。
 
-.. contents:: 目录
-   :local:
-   :depth: 2
+将 Franka 真机流程适配到睿研五指灵巧手。你将保留相同的集群与 reward-model 流程，并替换末端执行器、遥操作输入、动作布局和灵巧手配置。
 
-总览
-----
+概览
+----------------------------------------
 
-灵巧手方案沿用与 Franka 相同的真机强化学习和 reward model 工作流，主要差异集中在末端执行器、遥操作方式和动作空间：
+使用灵巧手末端执行器运行 Franka 真机流程。
 
-- 动作空间为 12 维
-- 前 6 维控制机械臂位姿增量
-- 后 6 维控制灵巧手关节
-- ``RuiyanHand`` 负责灵巧手硬件控制
-- ``DexHandIntervention`` 将 SpaceMouse 和数据手套输入组合为专家动作
+.. grid:: 2 4 4 4
+   :gutter: 2
+
+   .. grid-item-card:: 模型
+      :text-align: center
+
+      CNN policy · reward model
+
+   .. grid-item-card:: 算法
+      :text-align: center
+
+      SAC/RLPD · reward-model assist
+
+   .. grid-item-card:: 任务
+      :text-align: center
+
+      Dexterous pick-and-place
+
+   .. grid-item-card:: 硬件
+      :text-align: center
+
+      Franka · Ruiyan dex hand · glove
+
+| **你将完成:** 安装 Franka 依赖 → 安装灵巧手依赖 → 配置 glove/hand → 采集数据 → 训练.
+| **前置条件:** :doc:`franka` · :doc:`franka_reward_model` · Ruiyan hand driver · glove device.
+
+任务
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 24 24 24
+
+   * - 任务
+     - 配置 / 入口
+     - 说明
+   * - Collection
+     - ``realworld_collect_dexhand_data``
+     - 采集灵巧手示教。
+   * - Training
+     - ``realworld_dexpnp_rlpd_cnn_async``
+     - 用灵巧手动作训练 CNN policy。
+   * - Reward model
+     - Franka reward-model workflow
+     - 复用 reward-model 路径完成灵巧操作。
+
+观测与动作
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 24 24
+
+   * - 字段
+     - 说明
+   * - Observation
+     - Franka 相机帧，以及配置中的灵巧手/glove 状态。
+   * - Action
+     - 机械臂动作加灵巧手关节或命令向量。
+   * - Reward
+     - 任务完成信号或 reward-model 预测。
+   * - Prompt
+     - 来自真机 env config 的任务文本。
 
 遥操作
-------
+----------------------------------------
 
 灵巧手遥操作使用：
 

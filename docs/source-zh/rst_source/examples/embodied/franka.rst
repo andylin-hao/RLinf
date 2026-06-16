@@ -1,79 +1,87 @@
-Franka真机强化学习
-============================
+Franka 真机强化学习
+========================================
 
 .. |huggingface| image:: /_static/svg/hf-logo.svg
    :width: 16px
    :height: 16px
    :class: inline-icon
 
+.. figure:: https://raw.githubusercontent.com/RLinf/misc/main/pic/franka_arm_small.jpg
+   :align: center
+   :width: 80%
 
-本文档给出在 RLinf 框架内启动在 Franka 机械臂真机环境中训练任务的完整指南，
-重点介绍如何从零开始训练基于 ResNet 的 CNN 策略以完成机器人操作任务。
+   本 RLinf 示例使用的机器人配置。图片来源：RLinf 项目资源。
 
-主要目标是让模型具备以下能力：
+使用 RLinf 在 Franka Emika Panda 机械臂上训练和评测真机策略。你将配置控制节点与训练节点，采集示教数据，运行 SAC / RLPD 或 PPO 类训练，并在真实硬件上监控安全的在线更新。
 
-1. **视觉理解**：处理来自机器人相机的 RGB 图像。  
-2. **动作生成**：产生精确的机器人动作（位置、旋转、夹爪控制）。  
-3. **强化学习**：结合环境反馈，使用 SAC 优化策略。
+概览
+----------------------------------------
 
-环境
------------
+从相机观测和机器人反馈中训练真机操作策略。
 
-**真实世界环境**
+.. grid:: 2 4 4 4
+   :gutter: 2
 
-- **Environment**: 真机设置
+   .. grid-item-card:: 模型
+      :text-align: center
 
-  - Franka Emika Panda 机械臂
-  - Realsense 相机
-  - 可能使用空间鼠标进行数据采集和人类干预
-- **Task**: 目前支持插块插入（Peg Insertion）和充电器插电（Charger）任务
-- **Observation**: 腕部或第三人称相机的 RGB 图像（128×128）
-- **Action Space**: 6 维或 7 维连续动作，取决于是否包含夹爪控制：
+      CNN policy · OpenPI π₀.₅
 
-  - 三维位置控制（x, y, z）
-  - 三维旋转控制（roll, pitch, yaw）
-  - 夹爪控制（开/合）
+   .. grid-item-card:: 算法
+      :text-align: center
 
-**数据结构**
+      SAC · Cross-Q · RLPD · PPO
 
-- **Images**: RGB 张量 ``[batch_size, 128, 128, 3]``
-- **Actions**:归一化取值在 ``[-1, 1]`` 的连续值
-- **Rewards**: 基于任务完成度的逐步奖励
+   .. grid-item-card:: 任务
+      :text-align: center
 
+      Peg insertion · charger · PnP
 
-算法
------------------------------------------
+   .. grid-item-card:: 硬件
+      :text-align: center
 
-**核心算法组件**
+      Franka · RealSense/ZED · gripper
 
-1. **SAC (Soft Actor-Critic)**
+| **你将完成:** 安装控制端依赖 → 采集示教 → 启动 Ray → 发起真机训练 → 观察 ``env/reward`` 和视频.
+| **前置条件:** :doc:`安装 </rst_source/start/installation>` · Franka firmware/libfranka 匹配 · 局域网 · 安全操作员.
 
-   - 通过 Bellman 公式和熵正则化学习 Q 值。
+任务
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-   - 学习策略网络以最大化熵正则化的 Q 值。
+.. list-table::
+   :header-rows: 1
+   :widths: 24 24 24
 
-   - 学习温度参数以平衡探索与利用。
+   * - 任务
+     - 配置 / 入口
+     - 说明
+   * - Peg insertion
+     - ``realworld_peginsertion_rlpd_cnn_async``
+     - 在目标末端位姿完成插块插入。
+   * - Charger
+     - ``realworld_charger_sac_cnn_async``
+     - 通过真机奖励反馈完成充电器对齐与插入。
+   * - PnP / eval
+     - ``realworld_pnp_*``
+     - 采集或部署 pick-and-place 类策略。
 
-2. **Cross-Q**
+观测与动作
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-   - SAC 的一种变体，去除了目标 Q 网络。
+.. list-table::
+   :header-rows: 1
+   :widths: 24 24
 
-   - 在一个批次中连接当前观测和下一个观测，结合 BatchNorm 实现 Q 的稳定训练。
-
-3. **RLPD (Reinforcement Learning with Prior Data)**
-
-   - SAC 的一种变体，结合离线数据和在线数据进行训练。
-
-   - 使用较大的网络更新与数据更新比例，以提高数据效率。
-
-4. **CNN Policy Network**
-
-   - 基于 ResNet 的视觉输入处理架构。
-
-   - 使用 MLP 层融合图像和状态以输出动作。
-
-   - 用多个 Q-head 实现 Critic 功能。
-
+   * - 字段
+     - 说明
+   * - Observation
+     - RGB 相机帧，以及可选机器人状态。
+   * - Action
+     - 6D/7D 连续笛卡尔增量动作，可包含夹爪控制。
+   * - Reward
+     - 任务成功、键盘标注或任务特定稠密反馈。
+   * - Prompt
+     - 使用 VLA 策略时由 env config 提供真机任务文本。
 
 硬件环境搭建
 ----------------
@@ -108,7 +116,7 @@ Franka真机强化学习
 ~~~~~~~~~~~~~~~~
 
 1. 检查 Franka 固件版本
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 在机器人管理网页（一般为 ``http://<robot_ip>/desk``）中，点击 ``SETTINGS`` 选项卡，在 ``DashBoard`` 中查看 ``Control`` 后面的版本号，如下所示。
 请记录该固件版本号，后续步骤会用到。
@@ -116,7 +124,7 @@ Franka真机强化学习
 .. raw:: html
 
   <div style="flex: 1; text-align: center;">
-      <img src="https://github.com/RLinf/misc/blob/main/pic/franka_firmware.png?raw=true" style="width: 60%;"/>
+      <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/franka_firmware.png" style="width: 60%;"/>
   </div>
 
 .. warning::
@@ -125,16 +133,16 @@ Franka真机强化学习
   推荐使用固件版本 5.7.2 以获得最佳兼容性。
 
 2. 实时内核安装
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 推荐在实时内核（Real-time Kernel）上运行 Franka 控制程序，以获得更好的实时性。
 请参考 `Franka 官方文档 <https://frankarobotics.github.io/docs/doc/libfranka/docs/real_time_kernel.html>`_ 安装实时内核。
 
 3. 依赖安装
-^^^^^^^^^^^^^^^^^^^^^^^^^^^
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 a. 克隆 RLinf 仓库
-____________________
+~~~~~~~~~~~~~~~~~~~~
 
 .. code:: bash
 
@@ -144,7 +152,7 @@ ____________________
   cd RLinf
 
 b. 安装依赖
-____________
+~~~~~~~~~~~~
 
 **方式 1：Docker 镜像**
 
@@ -224,7 +232,7 @@ ____________
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 a. 克隆 RLinf 仓库
-^^^^^^^^^^^^^^^^^^^^^
+~~~~~~~~~~~~~~~~~~~~~
 
 .. code:: bash
 
@@ -234,7 +242,7 @@ a. 克隆 RLinf 仓库
   cd RLinf
 
 b. 安装依赖
-^^^^^^^^^^^^^^^^^^^^^
+~~~~~~~~~~~~~~~~~~~~~
 
 **方式 1：Docker 镜像**
 
@@ -372,7 +380,7 @@ b. 安装依赖
    :ref:`数据采集 <franka-zed-robotiq-data-collection-zh>` 章节。
 
 使用 GELLO 进行数据采集
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 除空间鼠标外，RLinf 还支持使用 `GELLO <https://github.com/wuphilipp/gello_software>`_ 进行遥操作数据采集。
 GELLO 是一种关节级遥操作设备，其运动学结构与 Franka 机械臂一致，操控更直观、精确，并原生支持夹爪控制。
@@ -629,7 +637,7 @@ RLinf 支持对多台 Franka 机器人进行统一管理，实现并行数据采
 .. raw:: html
 
   <div style="flex: 0.8; text-align: center;">
-      <img src="https://github.com/RLinf/misc/raw/main/pic/realworld-curve.png" style="width: 100%;"/>
+      <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/realworld-curve.png" style="width: 100%;"/>
       <p><em>训练曲线</em></p>
     </div>
 
@@ -637,7 +645,7 @@ RLinf 支持对多台 Franka 机器人进行统一管理，实现并行数据采
 
   <div style="flex: 1; text-align: center;">
     <video controls autoplay loop muted playsinline preload="metadata" width="720">
-      <source src="https://github.com/RLinf/misc/raw/main/pic/peg-insertion-compressed.mp4" type="video/mp4">
+      <source src="https://raw.githubusercontent.com/RLinf/misc/main/pic/peg-insertion-compressed.mp4" type="video/mp4">
       Your browser does not support the video tag.
     </video>
     <p><em>插块插入（Peg Insertion）</em></p>
@@ -647,7 +655,7 @@ RLinf 支持对多台 Franka 机器人进行统一管理，实现并行数据采
 
   <div style="flex: 1; text-align: center;">
     <video controls autoplay loop muted playsinline preload="metadata" width="720">
-      <source src="https://github.com/RLinf/misc/raw/main/pic/charger-compressed.mp4" type="video/mp4">
+      <source src="https://raw.githubusercontent.com/RLinf/misc/main/pic/charger-compressed.mp4" type="video/mp4">
       Your browser does not support the video tag.
     </video>
     <p><em>充电器插电（Charger）</em></p>

@@ -1,79 +1,87 @@
 Real-World RL with Dexmal DOS-W1
-=================================
+================================
 
 .. |huggingface| image:: /_static/svg/hf-logo.svg
    :width: 16px
    :height: 16px
    :class: inline-icon
 
-This document describes how to run real-world reinforcement learning on the
-**DOS-W1** dual-arm robot with RLinf. The current example is a **single-arm
-pick** task (``DOSW1PickEnv-v1``): the left arm reaches a target grasp joint
-pose, closes the gripper, and lifts the object to a target lift joint pose,
-while the right arm stays at its home position.
+.. figure:: https://raw.githubusercontent.com/RLinf/misc/main/pic/dos-w1.png
+   :align: center
+   :width: 80%
 
-The example trains a **Flow Matching policy** with a **ResNet-10** visual
-encoder via **SAC**, following the same real-world RL recipe used for
-:doc:`franka` and :doc:`xsquare_turtle2`.
+   Robot setup used by this RLinf recipe. Image credit: RLinf project assets.
 
-Environment
------------
+Train a Flow Matching policy on the Dexmal DOS-W1 dual-arm robot. The current recipe runs a single-arm pick task with AirBot services, RealSense cameras, keyboard-gated episodes, and SAC/RLPD-style real-world training.
 
-**DOS-W1 Pick**
+Overview
+--------
 
-- **Robot**: DOS-W1 dual-arm (AirBot-based) with leader arms for teleoperation.
-- **Task**: Single-arm pick. Three phases executed in joint space:
+Train a visual flow policy for the DOS-W1 pick task.
 
-  1. **Reach** — left arm moves from home toward ``target_grasp_joint``.
-  2. **Grasp** — gripper closes (width ≤ ``gripper_closed_max_width``).
-  3. **Lift** — with the object held, the left arm reaches ``target_lift_joint``.
+.. grid:: 2 4 4 4
+   :gutter: 2
 
-- **Observation**:
+   .. grid-item-card:: Models
+      :text-align: center
 
-  - Up to three RGB images (128 × 128): ``cam_front``, ``cam_left``, ``cam_right``
-    (captured from Intel RealSense cameras).
-  - Proprioceptive state: left/right 6-DoF joint positions and gripper widths.
+      Flow policy · ResNet-10
 
-- **Action Space**: 14-dimensional continuous action — per arm, 6 joint
-  targets (radians) + 1 gripper width (meters); layout is
-  ``[left_joint(6), left_gripper(1), right_joint(6), right_gripper(1)]``.
+   .. grid-item-card:: Algorithms
+      :text-align: center
 
-**Data Structure**
+      SAC · RLPD optional
 
-- **Images**: ``frames/{cam_front, cam_left, cam_right}`` — uint8
-  ``[H, W, 3] = [128, 128, 3]``.
-- **State**: ``state/{left_joint_positions(6), left_gripper(1),
-  right_joint_positions(6), right_gripper(1)}``.
-- **Actions**: 14-D float, joint space + gripper width.
-- **Rewards**: Dense shaping by default:
+   .. grid-item-card:: Tasks
+      :text-align: center
 
-  - ``reach`` phase: ``exp(-sharpness * ||q - q_grasp||^2)``
-  - On successful grasp: add ``grasp_bonus`` (default ``0.3``)
-  - ``lift`` phase: ``exp(-sharpness * ||q - q_lift||^2)``
-  - Task success when ``||q - q_lift|| <= lift_threshold`` → reward ``1.0``
-    and ``terminated = True``.
-  - Additional penalty proportional to the right-arm deviation from home
-    (keeps the non-active arm still).
+      Single-arm pick
 
-Algorithm
----------
+   .. grid-item-card:: Hardware
+      :text-align: center
 
-**Core Algorithm Components**
+      DOS-W1 · AirBot · RealSense
 
-1. **SAC (Soft Actor-Critic)** with automatic entropy tuning — the same
-   loss/adv stack as :doc:`franka` and :doc:`sac_flow` (``loss_type:
-   embodied_sac``, ``adv_type: embodied_sac``).
-2. **Flow Matching Policy** (``flow_policy``). A small denoising transformer
-   (4 steps, 2 layers, 256 hidden) predicts joint-space actions conditioned
-   on visual + proprioceptive features.
-3. **ResNet-10 visual encoder** (shared backbone). Pretrained weights are
-   loaded from ``RLinf/RLinf-ResNet10-pretrained``.
-4. **RLPD (optional)**. If teleoperated demos are available, point
-   ``algorithm.demo_buffer.load_path`` to the demo directory to warm-start
-   training with prior data.
+| **You'll do:** install DOS-W1 env → calibrate target joints → configure keyboard gating → collect optional demos → train.
+| **Prerequisites:** :doc:`Installation </rst_source/start/installation>` · AirBot SDK on robot node · local network · safety operator.
 
-For a state-only MLP **smoke test** (no cameras, used by CI), see
-``tests/e2e_tests/embodied/dosw1_dummy_sac_mlp_pick.yaml``.
+Tasks
+~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 24 24 24
+
+   * - Task
+     - Config / entry point
+     - Description
+   * - Dummy smoke test
+     - ``dosw1_dummy_sac_mlp_pick.yaml``
+     - Validate config wiring without cameras or hardware calls.
+   * - Data collection
+     - ``dosw1_collect_data``
+     - Collect optional teleoperated demos for RLPD warm start.
+   * - Training
+     - ``dosw1_pick_sac_flow(_async)``
+     - Train the flow policy with SAC on the pick task.
+
+Observation and Action
+~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 24 24
+
+   * - Field
+     - Description
+   * - Observation
+     - ``cam_front``, ``cam_left``, ``cam_right`` images plus dual-arm joint/gripper state.
+   * - Action
+     - 14-D joint-space action: left/right 6 joints plus gripper widths.
+   * - Reward
+     - Dense reach/grasp/lift shaping with terminal success at ``target_lift_joint``.
+   * - Prompt
+     - ``Perform the DOSW1 dual-arm manipulation task.``
 
 Hardware Setup
 --------------

@@ -1,82 +1,87 @@
 Real-World RL with Franka
-============================
+=========================
 
 .. |huggingface| image:: /_static/svg/hf-logo.svg
    :width: 16px
    :height: 16px
    :class: inline-icon
 
-This document provides a comprehensive guide to launching and managing the 
-a CNN policy training task within the RLinf framework, 
-focusing on training a ResNet-based CNN policy from scratch for robotic manipulation in the real world setup. 
+.. figure:: https://raw.githubusercontent.com/RLinf/misc/main/pic/franka_arm_small.jpg
+   :align: center
+   :width: 80%
 
-The primary objective is to develop a model capable of performing robotic manipulation by:
+   Robot setup used by this RLinf recipe. Image credit: RLinf project assets.
 
-1. **Visual Understanding**: Processing RGB images from the robot's camera.
-2. **Action Generation**: Producing precise robotic actions (position, rotation), possibly with gripper control.
-3. **Reinforcement Learning**: Optimizing the policy via the SAC with environment feedback.
+Use RLinf to train and evaluate real-world policies on a Franka Emika Panda arm. You'll set up the controller and training nodes, collect demonstrations, run SAC/RLPD or PPO-style training, and monitor safe online updates on physical hardware.
 
-Environment
------------
+Overview
+--------
 
-**Real World Environment**
+Train a real-world manipulation policy from camera observations and robot feedback.
 
-- **Environment**: Real world setup.
+.. grid:: 2 4 4 4
+   :gutter: 2
 
-  - Franka Emika Panda robotic arm
-  - Realsense cameras
-  - Possibly use spacemouse for teleoperation data collection or human intervention.
+   .. grid-item-card:: Models
+      :text-align: center
 
-- **Task**: Currently we support the peg-insertion task and the charger task. 
-- **Observation**:
+      CNN policy · OpenPI π₀.₅
 
-  - RGB images (128x128) from a wrist camera or a third-person camera.
+   .. grid-item-card:: Algorithms
+      :text-align: center
 
-- **Action Space**: 6 or 7-dimensional continuous actions, depending on whether gripper control is included:
+      SAC · Cross-Q · RLPD · PPO
 
-  - 3D position control (x, y, z)
-  - 3D rotation control (roll, pitch, yaw)
-  - Gripper control (open/close)
+   .. grid-item-card:: Tasks
+      :text-align: center
 
-**Data Structure**
+      Peg insertion · charger · PnP
 
-- **Images**: RGB tensors ``[batch_size, 128, 128, 3]``
-- **Actions**: Normalized continuous values ``[-1, 1]`` for each action dimension
-- **Rewards**: Step-level rewards based on task completion
+   .. grid-item-card:: Hardware
+      :text-align: center
 
+      Franka · RealSense/ZED · gripper
 
-Algorithm
------------------------------------------
+| **You'll do:** install controller deps → collect demos → start Ray → launch real-world training → watch ``env/reward`` and videos.
+| **Prerequisites:** :doc:`Installation </rst_source/start/installation>` · Franka firmware/libfranka match · local network · safety operator.
 
-**Core Algorithm Components**
+Tasks
+~~~~~
 
-1. **SAC (Soft Actor-Critic)**
+.. list-table::
+   :header-rows: 1
+   :widths: 24 24 24
 
-   - Learning Q-values by Bellman backups and entropy regularization.
+   * - Task
+     - Config / entry point
+     - Description
+   * - Peg insertion
+     - ``realworld_peginsertion_rlpd_cnn_async``
+     - Insert a peg at a target end-effector pose.
+   * - Charger
+     - ``realworld_charger_sac_cnn_async``
+     - Align and insert a charger using real-world reward feedback.
+   * - PnP / eval
+     - ``realworld_pnp_*``
+     - Collect or deploy pick-and-place style policies.
 
-   - Learning policy to maximize entropy-regularized Q.
+Observation and Action
+~~~~~~~~~~~~~~~~~~~~~~
 
-   - Learning temperature parameter for exploration-exploitation trade-off.
+.. list-table::
+   :header-rows: 1
+   :widths: 24 24
 
-2. **Cross-Q**
-
-   - A variant of SAC that removes the target Q network.
-
-   - Concating curr-obs and next-obs in one batch, incorporating BatchNorm for stable training for Q.
-
-3. **RLPD (Reinforcement Learning with Prior Data)**
-
-   - A variant of SAC that incorporates prior data for improved learning efficiency.
-
-   - High update-to-data ratio to leverage collected data effectively.
-
-4. **CNN Policy Network**
-
-   - ResNet-based architecture for processing visual inputs.
-
-   - MLP layers for fusing images and states to output actions.
-
-   - Q heads for critic functions.
+   * - Field
+     - Description
+   * - Observation
+     - RGB camera frames plus optional robot state.
+   * - Action
+     - 6D/7D continuous Cartesian delta action, optionally with gripper control.
+   * - Reward
+     - Task success, keyboard labels, or dense task-specific feedback.
+   * - Prompt
+     - Real-world task text in the env config when a VLA policy is used.
 
 Hardware Setup
 ----------------
@@ -119,7 +124,7 @@ Please take a note of the firmware version for later use.
 .. raw:: html
 
   <div style="flex: 1; text-align: center;">
-      <img src="https://github.com/RLinf/misc/blob/main/pic/franka_firmware.png?raw=true" style="width: 60%;"/>
+      <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/franka_firmware.png" style="width: 60%;"/>
   </div>
 
 .. warning::
@@ -621,7 +626,7 @@ Here we provide demo videos and training curves for the task peg-insertion and c
 .. raw:: html
 
   <div style="flex: 0.8; text-align: center;">
-      <img src="https://github.com/RLinf/misc/raw/main/pic/realworld-curve.png" style="width: 100%;"/>
+      <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/realworld-curve.png" style="width: 100%;"/>
       <p><em>Training Curve</em></p>
     </div>
 
@@ -629,7 +634,7 @@ Here we provide demo videos and training curves for the task peg-insertion and c
 
   <div style="flex: 1; text-align: center;">
     <video controls autoplay loop muted playsinline preload="metadata" width="720">
-      <source src="https://github.com/RLinf/misc/raw/main/pic/peg-insertion-compressed.mp4" type="video/mp4">
+      <source src="https://raw.githubusercontent.com/RLinf/misc/main/pic/peg-insertion-compressed.mp4" type="video/mp4">
       Your browser does not support the video tag.
     </video>
     <p><em>Peg Insertion</em></p>
@@ -639,7 +644,7 @@ Here we provide demo videos and training curves for the task peg-insertion and c
 
   <div style="flex: 1; text-align: center;">
     <video controls autoplay loop muted playsinline preload="metadata" width="720">
-      <source src="https://github.com/RLinf/misc/raw/main/pic/charger-compressed.mp4" type="video/mp4">
+      <source src="https://raw.githubusercontent.com/RLinf/misc/main/pic/charger-compressed.mp4" type="video/mp4">
       Your browser does not support the video tag.
     </video>
     <p><em>Charger</em></p>

@@ -1,46 +1,81 @@
 HG-DAgger for Real-World Franka
 ===============================
+.. figure:: https://raw.githubusercontent.com/RLinf/misc/main/pic/hg-dagger.jpg
+   :align: center
+   :width: 80%
 
-**HG-DAgger** (Human-Gated DAgger) is an algorithm for real-world interactive imitation
-learning pipeline. The workflow starts with teleoperated real-world data collection, runs OpenPI SFT on the collected LeRobot dataset, and then continues with async online HG-DAgger on the robot.
+   Robot setup used by this RLinf recipe. Image credit: RLinf project assets.
 
-In RLinf configs, HG-DAgger is enabled by setting ``algorithm.dagger.only_save_expert: True``. This keeps only the expert-acted steps, which is the default choice for real-world intervention data.
+Train a real-world Franka policy with Human-Gated DAgger. You will collect intervention data, compute OpenPI normalization stats, run SFT, then launch online HG-DAgger with expert-only steps saved for training.
 
-Environment
------------
+Overview
+--------
 
-**Real-World Franka Bin Relocation + Pi0**
+Use human-gated interventions to improve a real-world Franka policy online.
 
-- **Environment**: ``FrankaBinRelocationEnv-v1`` on a robot node
-- **Observation**: Wrist / external RGB images and robot state
-- **Action Space**: Delta end-effector qpos and gripper action
-- **Use Case**: Collect human-guided real-world data, run OpenPI SFT, then continue async HG-DAgger
+.. grid:: 2 4 4 4
+   :gutter: 2
 
-Algorithm
----------
+   .. grid-item-card:: Models
+      :text-align: center
 
-**HG-DAgger Pipeline**
+      OpenPI π₀ / π₀.₅
 
-1. **Human-Guided Collection**
+   .. grid-item-card:: Algorithms
+      :text-align: center
 
-   - A human operator intervenes through the spacemouse on the real robot.
-   - RLinf exports the successful trajectories in LeRobot format for later SFT.
+      SFT · HG-DAgger
 
-2. **Supervised Warm Start**
+   .. grid-item-card:: Tasks
+      :text-align: center
 
-   - Compute normalization statistics for the collected dataset.
-   - Run OpenPI SFT to turn the collected human-guided dataset into the initial student policy.
+      Real-world PnP
 
-3. **Online HG-DAgger**
+   .. grid-item-card:: Hardware
+      :text-align: center
 
-   - Async rollout continues on the real robot; expert actions come from human teleoperation through the spacemouse.
-   - With ``only_save_expert: True``, only expert-acted steps are added to the replay buffer.
+      Franka · SpaceMouse/operator
 
-4. **Replay-Buffer Updates**
+| **You'll do:** collect intervention data → compute norm stats → run SFT → launch HG-DAgger → monitor interventions.
+| **Prerequisites:** :doc:`franka` · :doc:`sft_openpi` · Ray cluster · trained or base OpenPI checkpoint.
 
-   - The actor trains on the buffered intervention data with the
-     ``embodied_dagger`` loss.
-   - The student checkpoint from SFT becomes the initialization for online training.
+Tasks
+~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 24 24 24
+
+   * - Task
+     - Config / entry point
+     - Description
+   * - Collection
+     - ``realworld_collect_data``
+     - Collect real-world intervention demonstrations.
+   * - SFT
+     - ``realworld_sft_openpi``
+     - Train the student initialization.
+   * - HG-DAgger
+     - ``realworld_pnp_dagger_openpi``
+     - Run online intervention training with expert-only save mode.
+
+Observation and Action
+~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 24 24
+
+   * - Field
+     - Description
+   * - Observation
+     - Franka camera frames and optional robot state.
+   * - Action
+     - OpenPI action decoded to Franka real-world control.
+   * - Reward
+     - Human-gated intervention signal and task outcome.
+   * - Prompt
+     - Task text in OpenPI dataset/config metadata.
 
 Dependency Installation
 -----------------------

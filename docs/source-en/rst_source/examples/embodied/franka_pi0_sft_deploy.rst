@@ -1,18 +1,81 @@
 Franka Real-World Pi0 SFT and Deployment
-====================================================
+========================================
+.. figure:: https://raw.githubusercontent.com/RLinf/misc/main/pic/pi0_icon.jpg
+   :align: center
+   :width: 80%
 
-This document describes how to run the complete **Bin-relocation** demo end-to-end
-in the RLinf framework: the robot picks up an object from the starting position
-and places it into a container (success is achieved once the object lands in the
-container). It covers data collection from the real world, Pi0 SFT training,
-and real-world policy deployment.
+   Robot setup used by this RLinf recipe. Image credit: RLinf project assets.
 
-The main pipeline consists of:
+Run the Bin-relocation pipeline end to end with OpenPI π₀: collect Franka data, convert it to a LeRobot-style dataset, compute normalization stats, fine-tune, and deploy the checkpoint on real hardware.
 
-1. **Data Collection**: Use a SpaceMouse for teleoperation to collect successful
-   demonstration data in LeRobot format.
-2. **SFT Training**: Supervised fine-tuning of the Pi0 model in full-parameter mode.
-3. **Real-World Deployment**: Run the trained policy on the real robot in eval mode.
+Overview
+--------
+
+Create a real-world Franka dataset, fine-tune π₀, and deploy the result.
+
+.. grid:: 2 4 4 4
+   :gutter: 2
+
+   .. grid-item-card:: Models
+      :text-align: center
+
+      OpenPI π₀
+
+   .. grid-item-card:: Algorithms
+      :text-align: center
+
+      SFT · eval-only deployment
+
+   .. grid-item-card:: Tasks
+      :text-align: center
+
+      Bin relocation · generic SFT env
+
+   .. grid-item-card:: Hardware
+      :text-align: center
+
+      Franka · cameras · gripper
+
+| **You'll do:** get target pose → collect data → compute norm stats → run SFT → run real-world eval.
+| **Prerequisites:** :doc:`franka` · :doc:`sft_openpi` · OpenPI base checkpoint · real-world dataset path.
+
+Tasks
+~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 24 24 24
+
+   * - Task
+     - Config / entry point
+     - Description
+   * - Data conversion
+     - ``pi0_realworld``
+     - Represent Franka data in the OpenPI data format.
+   * - SFT
+     - ``realworld_sft_openpi``
+     - Fine-tune π₀ on real-world Franka data.
+   * - Deployment
+     - ``realworld_pnp_eval`` / ``realworld_eval``
+     - Run eval-only deployment on the real robot.
+
+Observation and Action
+~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 24 24
+
+   * - Field
+     - Description
+   * - Observation
+     - Real-world camera frames mapped to OpenPI dataset keys.
+   * - Action
+     - Franka action format selected by ``pi0_realworld`` metadata.
+   * - Reward
+     - Eval success or operator-observed deployment outcome.
+   * - Prompt
+     - Task text stored in the SFT dataset/config.
 
 Hardware and Software Setup
 ----------------------------
@@ -191,7 +254,7 @@ Then run on the training node:
 .. code:: bash
 
    export HF_LEROBOT_HOME=/path/to/lerobot_root
-   python toolkits/replay_buffer/calculate_norm_stats.py \
+   python toolkits/lerobot/calculate_norm_stats.py \
        --config-name pi0_realworld \
        --repo-id realworld_franka_bin_relocation
 

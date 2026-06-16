@@ -1,16 +1,16 @@
 真机具身强化学习
 ================
 
-本类示例运行在 **真实机器人硬件** 上 —— 涵盖 Franka 机械臂、灵巧手、移动双臂平台以及自研机械臂，包括遥操作、数据采集、Sim-to-Real 迁移以及在线强化学习微调。
+当你的出发点是 **真实硬件** 时，从本节开始。这里的示例覆盖 Franka 机械臂、灵巧手、移动双臂平台和自研机械臂，并给出遥操作、数据采集、SFT 部署、Sim-to-Real 迁移和在线 RL 所需的配置步骤。
 
-这些示例假定你已经具备相应硬件，将引导你完成 ROS / SocketCAN 接入、传感器（相机、夹爪、灵巧手）布线、真机奖励设计以及在线策略安全更新。
+每个页面都假定你已经具备对应机器人。通用 Ray 与安全流程请先阅读基础 Franka 页面；相机、夹爪、GELLO、灵巧手、GimArm、XSquare Turtle2 或 DOS-W1 的差异化步骤请进入对应页面。
 
 .. raw:: html
 
    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; align-items: flex-start; justify-items: center; max-width: 980px; margin: 0 auto;">
 
      <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
-       <img src="https://github.com/RLinf/misc/raw/main/pic/franka_arm_small.jpg"
+       <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/franka_arm_small.jpg"
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
        <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
          <a href="embodied/franka.html" style="text-decoration: underline; color: blue;">
@@ -21,7 +21,7 @@
      </div>
 
      <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
-       <img src="https://github.com/RLinf/misc/blob/main/pic/franka_reward_model.jpg?raw=true"
+       <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/franka_reward_model.jpg"
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
        <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
          <a href="embodied/franka_reward_model.html" style="text-decoration: underline; color: blue;">
@@ -32,7 +32,7 @@
      </div>
 
      <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
-       <img src="https://github.com/RLinf/misc/raw/main/pic/robotiq_zed.jpeg"
+       <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/robotiq_zed.jpeg"
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
        <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
          <a href="embodied/franka_zed_robotiq.html" style="text-decoration: underline; color: blue;">
@@ -43,7 +43,7 @@
      </div>
 
      <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
-       <img src="https://github.com/RLinf/misc/raw/main/pic/gello.jpeg"
+       <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/gello.jpeg"
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
        <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
          <a href="embodied/franka_gello.html" style="text-decoration: underline; color: blue;">
@@ -54,7 +54,7 @@
      </div>
 
      <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
-       <img src="https://github.com/RLinf/misc/raw/main/pic/dual.jpeg"
+       <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/franka_arm_small.jpg"
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
        <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
          <a href="embodied/dual_franka.html" style="text-decoration: underline; color: blue;">
@@ -65,7 +65,7 @@
      </div>
 
      <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
-       <img src="https://github.com/RLinf/misc/raw/main/pic/dexhand.jpg"
+       <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/dexhand.jpg"
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
        <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
          <a href="embodied/franka_dexhand.html" style="text-decoration: underline; color: blue;">
@@ -76,7 +76,7 @@
      </div>
 
      <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
-       <img src="https://github.com/RLinf/misc/raw/main/pic/pi0_icon.jpg"
+       <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/pi0_icon.jpg"
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
        <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
          <a href="embodied/franka_pi0_sft_deploy.html" style="text-decoration: underline; color: blue;">
@@ -87,7 +87,7 @@
      </div>
 
      <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
-       <img src="https://github.com/RLinf/misc/raw/main/pic/hg-dagger.jpg"
+       <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/hg-dagger.jpg"
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
        <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
          <a href="embodied/hg-dagger.html" style="text-decoration: underline; color: blue;">
@@ -98,7 +98,7 @@
      </div>
 
      <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
-       <img src="https://github.com/RLinf/misc/raw/main/pic/gim-arm.png"
+       <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/gim-arm.png"
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
        <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
          <a href="embodied/gim_arm.html" style="text-decoration: underline; color: blue;">
@@ -109,7 +109,7 @@
      </div>
 
      <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
-       <img src="https://github.com/RLinf/misc/raw/main/pic/xsquare_turtle2_arm_small.jpg"
+       <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/xsquare_turtle2_arm_small.jpg"
             style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" />
        <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
          <a href="embodied/xsquare_turtle2.html" style="text-decoration: underline; color: blue;">

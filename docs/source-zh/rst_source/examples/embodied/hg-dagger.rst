@@ -1,51 +1,84 @@
-真实 Franka 的 HG-DAgger 全流程
-===============================
+Franka 真机 HG-DAgger
+========================================
+.. figure:: https://raw.githubusercontent.com/RLinf/misc/main/pic/hg-dagger.jpg
+   :align: center
+   :width: 80%
 
-**HG-DAgger** （Human-Gated DAgger）是一种面向真实世界交互式模仿学习的算法
-流程。该流程先采集带遥操作的真实数据，再基于收集到的 LeRobot 数据集执行
-OpenPI SFT，最后在机器人上继续运行异步在线 HG-DAgger。
+   本 RLinf 示例使用的机器人配置。图片来源：RLinf 项目资源。
 
-在 RLinf 配置中，HG-DAgger 主要通过
-``algorithm.dagger.only_save_expert: True`` 启用。该选项表示仅保存专家实际执行
-的 step，这也是现实世界干预式数据的默认用法。
+使用 Human-Gated DAgger 训练 Franka 真机策略。你将采集干预数据，计算 OpenPI 归一化统计，运行 SFT，然后启动在线 HG-DAgger，并只保存专家接管步骤用于训练。
 
-环境
-----
+概览
+----------------------------------------
 
-**真实 Franka Bin Relocation + Pi0**
+用人工门控干预在线提升 Franka 真机策略。
 
-- **环境**：运行在机器人节点上的 ``FrankaBinRelocationEnv-v1``
-- **观测**：腕部 / 外部 RGB 图像与机器人状态
-- **动作空间**：末端执行器 delta qpos 与夹爪动作
-- **适用场景**：采集带人工引导的真实数据，进行 OpenPI SFT，然后继续异步 HG-DAgger
+.. grid:: 2 4 4 4
+   :gutter: 2
 
-算法
-----
+   .. grid-item-card:: 模型
+      :text-align: center
 
-**HG-DAgger 流程**
+      OpenPI π₀ / π₀.₅
 
-1. **人工引导数据采集**
+   .. grid-item-card:: 算法
+      :text-align: center
 
-   - 操作者通过 spacemouse 在真机上进行干预。
-   - RLinf 将成功轨迹导出为 LeRobot 数据集，供后续 SFT 使用。
+      SFT · HG-DAgger
 
-2. **监督预热**
+   .. grid-item-card:: 任务
+      :text-align: center
 
-   - 为采集到的数据集计算归一化统计量。
-   - 先运行 OpenPI SFT，将人工引导数据训练成初始学生策略。
+      Real-world PnP
 
-3. **在线 HG-DAgger**
+   .. grid-item-card:: 硬件
+      :text-align: center
 
-   - 异步 rollout 在真机上继续执行，专家数据由人工通过 spacemouse 遥操作产生。
-   - 当 ``only_save_expert: True`` 时，只有专家实际执行的 step 会写入 replay buffer。
+      Franka · SpaceMouse/operator
 
-4. **Replay Buffer 更新**
+| **你将完成:** 采集干预数据 → 计算 norm stats → 运行 SFT → 启动 HG-DAgger → 监控干预.
+| **前置条件:** :doc:`franka` · :doc:`sft_openpi` · Ray cluster · trained or base OpenPI checkpoint.
 
-   - actor 使用 ``embodied_dagger`` 损失在干预数据上继续训练。
-   - SFT 阶段导出的 checkpoint 会作为在线 HG-DAgger 的初始化模型。
+任务
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 24 24 24
+
+   * - 任务
+     - 配置 / 入口
+     - 说明
+   * - Collection
+     - ``realworld_collect_data``
+     - 采集真机干预示教。
+   * - SFT
+     - ``realworld_sft_openpi``
+     - 训练 student 初始化。
+   * - HG-DAgger
+     - ``realworld_pnp_dagger_openpi``
+     - 以 expert-only save 模式运行在线干预训练。
+
+观测与动作
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 24 24
+
+   * - 字段
+     - 说明
+   * - Observation
+     - Franka 相机帧与可选机器人状态。
+   * - Action
+     - OpenPI action 解码为 Franka 真机控制。
+   * - Reward
+     - 人工门控干预信号与任务结果。
+   * - Prompt
+     - OpenPI 数据集/配置 metadata 中的任务文本。
 
 依赖安装
---------
+----------------------------------------
 
 真实世界流程的不同节点需要 **不同的软件环境**：
 

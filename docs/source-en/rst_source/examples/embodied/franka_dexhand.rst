@@ -1,24 +1,81 @@
 Real-World RL with Franka + Dexterous Hand
 ==========================================
+.. figure:: https://raw.githubusercontent.com/RLinf/misc/main/pic/dexhand.jpg
+   :align: center
+   :width: 80%
 
-This page summarizes the configuration differences when the Franka arm uses a Ruiyan dexterous hand.
-For the end-to-end real-world workflow, see :doc:`franka` and :doc:`franka_reward_model`.
+   Robot setup used by this RLinf recipe. Image credit: RLinf project assets.
 
-.. contents:: Contents
-   :local:
-   :depth: 2
+Adapt the Franka real-world workflow to a Ruiyan five-finger dexterous hand. You'll keep the same cluster and reward-model flow, then change the end effector, teleoperation input, action layout, and dex-hand configs.
 
 Overview
 --------
 
-The dexterous-hand setup keeps the same real-world RL and reward-model workflow as Franka.
-The main differences are in the end-effector, teleoperation, and action space:
+Run the Franka real-world recipe with a dexterous hand end effector.
 
-- The action space is 12-D.
-- The first 6 dimensions control arm pose deltas.
-- The last 6 dimensions control the dexterous hand.
-- ``RuiyanHand`` handles the hand hardware.
-- ``DexHandIntervention`` combines SpaceMouse input and glove input into expert actions.
+.. grid:: 2 4 4 4
+   :gutter: 2
+
+   .. grid-item-card:: Models
+      :text-align: center
+
+      CNN policy · reward model
+
+   .. grid-item-card:: Algorithms
+      :text-align: center
+
+      SAC/RLPD · reward-model assist
+
+   .. grid-item-card:: Tasks
+      :text-align: center
+
+      Dexterous pick-and-place
+
+   .. grid-item-card:: Hardware
+      :text-align: center
+
+      Franka · Ruiyan dex hand · glove
+
+| **You'll do:** install Franka deps → install dex-hand deps → configure glove/hand → collect data → train.
+| **Prerequisites:** :doc:`franka` · :doc:`franka_reward_model` · Ruiyan hand driver · glove device.
+
+Tasks
+~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 24 24 24
+
+   * - Task
+     - Config / entry point
+     - Description
+   * - Collection
+     - ``realworld_collect_dexhand_data``
+     - Collect dexterous-hand demonstrations.
+   * - Training
+     - ``realworld_dexpnp_rlpd_cnn_async``
+     - Train a CNN policy with dex-hand actions.
+   * - Reward model
+     - Franka reward-model workflow
+     - Reuse the reward-model path for dexterous manipulation.
+
+Observation and Action
+~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 24 24
+
+   * - Field
+     - Description
+   * - Observation
+     - Franka camera frames plus dex-hand/glove state when configured.
+   * - Action
+     - Arm action plus dexterous-hand joint or command vector.
+   * - Reward
+     - Task completion or reward-model prediction.
+   * - Prompt
+     - Task text from the real-world env config.
 
 Teleoperation
 -------------
