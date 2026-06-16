@@ -1,46 +1,70 @@
 Flow Matching Policy Training with SAC
 ======================================================
 
+.. figure:: https://raw.githubusercontent.com/RLinf/misc/main/pic/sac-flow-overview.png
+   :align: center
+   :width: 80%
+
+   SAC-Flow overview.
+
 This document provides a comprehensive guide of training a **Flow Matching** policy network using the **SAC (Soft Actor-Critic)** algorithm in the RLinf framework.
 This algorithm combines the advantages of maximum entropy reinforcement learning and generative flow matching models, supporting training in both simulation environments and real-world environments.
 
 Paper: `SAC Flow: Sample-Efficient Reinforcement Learning of Flow-Based Policies via Velocity-Reparameterized Sequential Modeling <https://arxiv.org/abs/2509.25756>`_
 
-The primary objective is to develop a model capable of performing robotic manipulation by:
+Overview
+--------
 
-1. **Visual Understanding**: Processing RGB images from the robot's camera.
-2. **Action Generation**: Producing precise robotic actions (position, rotation), possibly with gripper control.
-3. **Reinforcement Learning**: Optimizing the policy via the SAC with environment feedback.
+Train a Flow Matching policy with SAC — in ManiSkill simulation or on a real Franka (peg insertion).
 
-Environment
------------
+.. grid:: 2 4 4 4
+   :gutter: 2
 
-**ManiSkill3 Environment (Simulation)**
+   .. grid-item-card:: Algorithm
+      :text-align: center
 
-- **Environment**: ManiSkill3 Simulation Platform
-- **Task**: Controlling a robotic arm to grasp objects, e.g., ``PickCube-v1``
-- **Observation**: Robot joint angles, object position, and other state information
-- **Action Space**: 4-dimensional continuous action
+      SAC · RLPD
 
-  - 3D position control (x, y, z)
-  - Gripper control (open/close)
+   .. grid-item-card:: Policy
+      :text-align: center
 
-**Franka Environment (Real World)**
+      Flow Matching
 
-- **Environment**: Real-world setup
+   .. grid-item-card:: Environments
+      :text-align: center
 
-  - Franka Emika Panda or Research 3 robotic arm
-  - Realsense camera
-  - Space mouse can be used for data collection and human intervention
--  **Task**: Currently supports the Peg Insertion task
--  **Observation**: Camera RGB image + Robot proprioception
--  **Action Space**: End-effector pose (6 dims)
+      ManiSkill · Franka
 
-   - 3D position control (x, y, z)
-   - 3D rotation control (roll, pitch, yaw)
+   .. grid-item-card:: Mode
+      :text-align: center
 
-Algorithm
------------------------------------------
+      Sim & Real
+
+| **You'll do:** install (sim or real) → pick a config → launch → watch ``env/success_once``.
+| **Prerequisites:** :doc:`Installation </rst_source/start/installation>` (sim) or :doc:`franka` (real hardware).
+
+Tasks
+~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 16 32 28 24
+
+   * - Setting
+     - Environment & task
+     - Observation
+     - Action
+   * - Simulation
+     - ManiSkill3 — ``PickCube-v1``
+     - Joint angles + object state
+     - 4-dim: 3D position + gripper
+   * - Real world
+     - Franka Panda + RealSense — peg insertion
+     - RGB + proprioception
+     - 6-dim end-effector pose
+
+How SAC-Flow Works
+------------------
 
 **Core Algorithm Components**
 
@@ -71,8 +95,8 @@ For running in a simulation environment, please refer to :doc:`../../start/insta
 
 For running on real hardware, please refer to :doc:`franka` for installation and hardware configuration.
 
-Running Scripts
----------------
+Run It
+------
 
 **1. Configuration Files**
 
@@ -167,6 +191,8 @@ Visualization and Results
 
 **2. Key Monitoring Metrics**
 
+For metric definitions, see :doc:`Training metrics </rst_source/tutorials/configuration/metrics>`. SAC-relevant metrics:
+
 - **Environment Metrics**:
 
   - ``env/episode_len``: The actual number of environment steps in the episode
@@ -201,7 +227,7 @@ Below are the demo video (accelerated) and training curve for the SAC-Flow algor
 .. raw:: html
 
   <div style="flex: 0.8; text-align: center;">
-      <img src="https://github.com/RLinf/misc/raw/main/pic/sac-flow-success-rate.png" style="width: 100%;"/>
+      <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/sac-flow-success-rate.png" style="width: 100%;"/>
       <p><em>Training Curve</em></p>
     </div>
 
@@ -209,7 +235,7 @@ Below are the demo video (accelerated) and training curve for the SAC-Flow algor
 
   <div style="flex: 1; text-align: center;">
     <video controls autoplay loop muted playsinline preload="metadata" width="720">
-      <source src="https://github.com/RLinf/misc/raw/main/pic/sac-flow-peg-insertion.mp4" type="video/mp4">
+      <source src="https://raw.githubusercontent.com/RLinf/misc/main/pic/sac-flow-peg-insertion.mp4" type="video/mp4">
       Your browser does not support the video tag.
     </video>
     <p><em>Peg Insertion</em></p>

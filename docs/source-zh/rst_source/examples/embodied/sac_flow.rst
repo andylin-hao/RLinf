@@ -1,46 +1,70 @@
 流匹配策略SAC强化学习训练
 ===============================================
 
+.. figure:: https://raw.githubusercontent.com/RLinf/misc/main/pic/sac-flow-overview.png
+   :align: center
+   :width: 80%
+
+   SAC-Flow 总览。
+
 本示例展示 RLinf 框架使用 **SAC (Soft Actor-Critic)** 算法训练 **Flow Matching** 策略网络的完整流程。
 该算法结合了最大熵强化学习（SAC）与生成式流匹配模型（Flow Matching）的优势，支持在仿真环境（ManiSkill3）和真机环境（Franka）中进行训练。
 
 相关论文：`SAC Flow: Sample-Efficient Reinforcement Learning of Flow-Based Policies via Velocity-Reparameterized Sequential Modeling <https://arxiv.org/abs/2509.25756>`_
 
-主要目标是让模型具备以下能力：
-
-1. **视觉理解**：处理来自机器人相机的 RGB 图像。  
-2. **动作生成**：产生精确的机器人动作（位置、旋转、夹爪控制）。  
-3. **强化学习**：结合环境反馈，使用 SAC 优化策略。
-
-环境
+概览
 ----
 
-**ManiSkill3 环境 (仿真)**
+用 SAC 训练流匹配（Flow Matching）策略——可在 ManiSkill 仿真中或真实 Franka（插销）上进行。
 
--  **Environment**：ManiSkill3 仿真平台
--  **Task**：控制机械臂抓取物体，例如 ``PickCube-v1``
--  **Observation**：机器人关节角度、物体位置等状态信息
--  **Action Space**：4 维连续动作
+.. grid:: 2 4 4 4
+   :gutter: 2
 
-   - 三维位置控制（x, y, z）
-   - 夹爪控制（开/合）
+   .. grid-item-card:: 算法
+      :text-align: center
 
-**Franka 环境 (真机)**
+      SAC · RLPD
 
--  **Environment**：真机设置
-   
-   - Franka Emika Panda 或 Research 3 机械臂
-   - Realsense 相机
-   - 可使用空间鼠标进行数据采集和人类干预
--  **Task**：目前支持插块插入（Peg Insertion）任务
--  **Observation**：相机 RGB 图像 + 机器人本体状态
--  **Action Space**：末端执行器位姿 (6 dims)
-   
-   - 三维位置控制（x, y, z）
-   - 三维旋转控制（roll, pitch, yaw）
+   .. grid-item-card:: 策略
+      :text-align: center
 
-算法
------------------------------------------
+      流匹配
+
+   .. grid-item-card:: 环境
+      :text-align: center
+
+      ManiSkill · Franka
+
+   .. grid-item-card:: 模式
+      :text-align: center
+
+      仿真 & 真机
+
+| **你将完成：** 安装（仿真或真机）→ 选择配置 → 启动 → 观察 ``env/success_once``。
+| **前置条件：** 仿真请参考 :doc:`安装 </rst_source/start/installation>`，真机请参考 :doc:`franka`。
+
+任务
+~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 16 32 28 24
+
+   * - 设置
+     - 环境与任务
+     - 观测
+     - 动作
+   * - 仿真
+     - ManiSkill3 —— ``PickCube-v1``
+     - 关节角 + 物体状态
+     - 4 维：3D 位置 + 夹爪
+   * - 真机
+     - Franka Panda + RealSense —— 插销
+     - RGB + 本体感知
+     - 6 维末端执行器位姿
+
+SAC-Flow 工作原理
+-----------------
 
 **核心算法组件**
 
@@ -71,8 +95,8 @@
 
 对于在真机上运行，请参考 :doc:`franka` 进行安装和硬件配置。
 
-运行脚本
---------
+运行
+----
 
 **1. 配置文件**
 
@@ -167,6 +191,8 @@ RLinf 提供了针对仿真和真机环境的默认配置文件：
 
 **2. 关键监控指标**
 
+指标含义见 :doc:`训练指标 </rst_source/tutorials/configuration/metrics>`。SAC 相关指标：
+
 - **环境指标**:
 
   - ``env/episode_len``：该回合实际经历的环境步数（单位：step）
@@ -201,7 +227,7 @@ RLinf 提供了针对仿真和真机环境的默认配置文件：
 .. raw:: html
 
   <div style="flex: 0.8; text-align: center;">
-      <img src="https://github.com/RLinf/misc/raw/main/pic/sac-flow-success-rate.png" style="width: 100%;"/>
+      <img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/sac-flow-success-rate.png" style="width: 100%;"/>
       <p><em>训练曲线</em></p>
     </div>
 
@@ -209,7 +235,7 @@ RLinf 提供了针对仿真和真机环境的默认配置文件：
 
   <div style="flex: 1; text-align: center;">
     <video controls autoplay loop muted playsinline preload="metadata" width="720">
-      <source src="https://github.com/RLinf/misc/raw/main/pic/sac-flow-peg-insertion.mp4" type="video/mp4">
+      <source src="https://raw.githubusercontent.com/RLinf/misc/main/pic/sac-flow-peg-insertion.mp4" type="video/mp4">
       Your browser does not support the video tag.
     </video>
     <p><em>插块插入（Peg Insertion）</em></p>
