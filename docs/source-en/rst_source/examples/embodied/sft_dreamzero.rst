@@ -400,17 +400,17 @@ Resume training with ``runner.resume_dir`` pointing to a checkpoint directory (f
 Evaluation
 ----------
 
-After SFT, you can evaluate the policy in the embodied environment that matches your training dataset. The steps below use the **LIBERO** simulator as an example (task suite: LIBERO Spatial); see ``examples/embodiment/config/libero_spatial_eval_dreamzero.yaml``. Other simulators that support ``env.eval`` can follow the same workflow with their own eval YAML and ``eval_embodiment.sh``.
+After SFT, you can evaluate the policy in the embodied environment that matches your training dataset. The steps below use the **LIBERO** simulator as an example (task suite: LIBERO Spatial); see ``evaluations/libero/libero_spatial_dreamzero_eval.yaml``. Other simulators that support ``env.eval`` can follow the same workflow with their own eval YAML and ``evaluations/run_eval.sh``.
 
 **Prerequisites**
 
 1. Install with the LIBERO environment (``--env libero`` in **Installation** above).
-2. Set ``DREAMZERO_PATH`` to the DreamZero repo root (``eval_embodiment.sh`` adds it to ``PYTHONPATH``).
+2. Set ``DREAMZERO_PATH`` to the DreamZero repo root (``evaluations/run_eval.sh`` adds it to ``PYTHONPATH``).
 3. Use the same ``metadata.json`` as training (``actor.model.metadata_json_path``).
 
 **Configure the eval YAML**
 
-Copy or edit ``examples/embodiment/config/libero_spatial_eval_dreamzero.yaml`` and update at least:
+Copy or edit ``evaluations/libero/libero_spatial_dreamzero_eval.yaml`` and update at least:
 
 .. list-table::
    :header-rows: 1
@@ -431,7 +431,7 @@ Copy or edit ``examples/embodiment/config/libero_spatial_eval_dreamzero.yaml`` a
    * - ``algorithm.eval_rollout_epoch``
      - Number of eval passes; metrics are averaged over passes with the same seeds.
    * - ``env.eval.total_num_envs`` / ``auto_reset`` / ``max_steps_per_rollout_epoch``
-     - Parallel env count and coverage of the test set; see :doc:`VLA evaluation guide <../../start/vla-eval>`.
+     - Parallel env count and coverage of the test set; see :doc:`LIBERO evaluation guide <../../evaluations/guides/libero>`.
    * - ``env.eval.video_cfg.save_video``
      - Set ``True`` to save videos under ``{log_path}/video/eval``.
 
@@ -465,14 +465,14 @@ From the repo root, with the DreamZero venv active and ``DREAMZERO_PATH`` set:
 
 .. code:: bash
 
-   bash examples/embodiment/eval_embodiment.sh libero_spatial_eval_dreamzero
+   bash evaluations/run_eval.sh libero libero_spatial_dreamzero_eval
 
-Logs go to ``logs/<timestamp>-libero_spatial_eval_dreamzero/eval_embodiment.log``; the terminal prints metrics such as ``eval/success_once`` and ``eval/return``. For general eval YAML fields, see :doc:`VLA evaluation guide <../../start/vla-eval>`.
+Logs go to ``logs/<timestamp>-libero_spatial_dreamzero_eval/eval_embodiment.log``; the terminal prints metrics such as ``eval/success_once`` and ``eval/return``. For general eval YAML fields, see :doc:`LIBERO evaluation guide <../../evaluations/guides/libero>`.
 
 Franka Real-World Deployment and Evaluation
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-After SFT or checkpoint conversion, use ``examples/embodiment/config/realworld_pnp_eval_dreamzero.yaml`` to deploy a full DreamZero checkpoint directory on the real Franka pick-and-place task. This workflow uses ``embodiment_tag: franka_pnp`` and the rollout observation mapping defined in ``data_transforms/franka_pnp.py``.
+After SFT or checkpoint conversion, use ``evaluations/realworld/realworld_pnp_eval_dreamzero.yaml`` to deploy a full DreamZero checkpoint directory on the real Franka pick-and-place task. This workflow uses ``embodiment_tag: franka_pnp`` and the rollout observation mapping defined in ``data_transforms/franka_pnp.py``.
 
 **Prepare Ray on two machines**
 
@@ -496,7 +496,7 @@ The example below uses two machines: one GPU node and one Franka node. Before st
    ray stop
    ray start --address=<head_ip>:6379
 
-Update ``examples/embodiment/config/realworld_pnp_eval_dreamzero.yaml`` according to the real robot and checkpoint:
+Update ``evaluations/realworld/realworld_pnp_eval_dreamzero.yaml`` according to the real robot and checkpoint:
 
 .. code:: yaml
 
@@ -543,7 +543,7 @@ After Ray is connected, run on the GPU / head node:
    export CUDA_VISIBLE_DEVICES=0
    export RLINF_CODE_WORKING_DIR=auto
 
-   bash examples/embodiment/run_realworld_eval.sh realworld_pnp_eval_dreamzero
+   bash evaluations/run_eval.sh realworld realworld_pnp_eval_dreamzero
 
 ``max_steps_per_rollout_epoch`` must be divisible by ``actor.model.num_action_chunks``.
 

@@ -194,7 +194,7 @@
 
 .. code:: bash
 
-   bash examples/embodiment/eval_embodiment.sh calvin_d_d_ppo_openpi_pi05
+   bash evaluations/run_eval.sh calvin_d_d_ppo_openpi_pi05
 
 .. note::
 

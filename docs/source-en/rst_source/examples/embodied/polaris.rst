@@ -208,19 +208,19 @@ Pick one training config and launch from a terminal where Isaac Sim is initializ
      - Config
      - Command suffix
    * - π₀.₅ + PPO
-     - ``examples/embodiment/config/polaris_ppo_openpi_pi05.yaml``
-     - ``polaris_ppo_openpi_pi05``
+     - ``examples/embodiment/config/polaris_tapeintocontainer_ppo_openpi_pi05.yaml``
+     - ``polaris_tapeintocontainer_ppo_openpi_pi05``
    * - π₀ + PPO
-     - ``examples/embodiment/config/polaris_ppo_openpi.yaml``
-     - ``polaris_ppo_openpi``
+     - ``examples/embodiment/config/polaris_tapeintocontainer_ppo_openpi.yaml``
+     - ``polaris_tapeintocontainer_ppo_openpi``
 
 .. code:: bash
 
    source /path/to/isaac_sim/setup_conda_env.sh
    export POLARIS_DATA_PATH=/path/to/PolaRiS-Hub
 
-   bash examples/embodiment/run_embodiment.sh polaris_ppo_openpi_pi05
-   bash examples/embodiment/run_embodiment.sh polaris_ppo_openpi
+   bash examples/embodiment/run_embodiment.sh polaris_tapeintocontainer_ppo_openpi_pi05
+   bash examples/embodiment/run_embodiment.sh polaris_tapeintocontainer_ppo_openpi
 
 What this does:
 
@@ -232,8 +232,10 @@ Run evaluation with the eval configs:
 
 .. code:: bash
 
-   bash examples/embodiment/eval_embodiment.sh polaris_openpi_pi05_eval
-   bash examples/embodiment/eval_embodiment.sh polaris_openpi_eval
+   bash evaluations/run_eval.sh polaris polaris_tapeintocontainer_openpi_pi05_eval
+   bash evaluations/run_eval.sh polaris polaris_movelattecup_openpi_eval
+
+For the full evaluation workflow (environment variables, config fields, and results), see :doc:`PolaRiS evaluation guide <../../evaluations/guides/polaris>`.
 
 .. note::
 

@@ -239,7 +239,7 @@ To show RLinf's large-scale multi-task RL, we train a single unified model on al
 LIBERO tasks and evaluate across the five suites. We evaluate every ``task_id`` × ``trial_id``
 combination: 500 environments each for Object/Spatial/Goal/Long (10 tasks × 50 trials),
 4,500 for LIBERO-90, and 6,500 for LIBERO-130. SFT (LoRA-base) models use ``do_sample = False``;
-RL models use ``do_sample = True``, ``temperature = 1.6``, and ``rollout_epoch = 2``.
+RL models use ``do_sample = True`` and ``temperature_train = 1.6`` in ``rollout.sampling_params``, and ``env.train.rollout_epoch = 2``.
 
 .. note::
 
@@ -407,7 +407,7 @@ Run It
 
 Both suites reuse the standard LIBERO config family and select the suite with the
 ``LIBERO_TYPE`` environment variable. Train with ``run_embodiment.sh`` and evaluate with
-``eval_embodiment.sh``:
+``evaluations/run_eval.sh`` (see the :doc:`LIBERO evaluation guide <../../evaluations/guides/libero>`):
 
 .. code-block:: bash
 
@@ -417,7 +417,7 @@ Both suites reuse the standard LIBERO config family and select the suite with th
 
     # Evaluate the trained model
     export LIBERO_TYPE=pro
-    bash examples/embodiment/eval_embodiment.sh libero_10_grpo_openvlaoft
+    bash evaluations/run_eval.sh libero libero_10_openvlaoft_eval
 
 See :doc:`Training metrics </rst_source/tutorials/configuration/metrics>` for the metrics
 logged during training and evaluation.

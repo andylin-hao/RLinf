@@ -169,7 +169,7 @@ Run evaluation with the same config suffix:
 
 .. code:: bash
 
-   bash examples/embodiment/eval_embodiment.sh roboverse_ppo_openpi_pi05
+   bash evaluations/run_eval.sh roboverse_ppo_openpi_pi05
 
 .. note::
 

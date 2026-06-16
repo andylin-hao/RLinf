@@ -236,7 +236,7 @@ LIBERO 结果
 为展示 RLinf 的大规模多任务强化学习能力，我们在全部 130 个 LIBERO 任务上训练一个统一模型，并在
 五个套件上评测。我们评估每一个 ``task_id`` × ``trial_id`` 组合：Object/Spatial/Goal/Long 各 500
 个环境（10 任务 × 50 试次），LIBERO-90 为 4,500 个，LIBERO-130 为 6,500 个。SFT（LoRA-base）模型
-设置 ``do_sample = False``；RL 模型设置 ``do_sample = True``、``temperature = 1.6``、``rollout_epoch = 2``。
+设置 ``do_sample = False``；RL 模型在 ``rollout.sampling_params`` 中设置 ``do_sample = True``、``temperature_train = 1.6``，并设置 ``env.train.rollout_epoch = 2``。
 
 .. note::
 
@@ -400,7 +400,7 @@ LIBERO-Pro / LIBERO-Plus 复用标准 LIBERO 基座检查点：
 ~~~~
 
 两个套件复用标准 LIBERO 配置族，并通过 ``LIBERO_TYPE`` 环境变量选择套件。用 ``run_embodiment.sh``
-训练，用 ``eval_embodiment.sh`` 评测：
+训练，用 ``evaluations/run_eval.sh`` 评测（见 :doc:`LIBERO 评测指南 <../../evaluations/guides/libero>`）：
 
 .. code-block:: bash
 
@@ -410,7 +410,7 @@ LIBERO-Pro / LIBERO-Plus 复用标准 LIBERO 基座检查点：
 
     # 评测训练好的模型
     export LIBERO_TYPE=pro
-    bash examples/embodiment/eval_embodiment.sh libero_10_grpo_openvlaoft
+    bash evaluations/run_eval.sh libero libero_10_openvlaoft_eval
 
 训练与评测过程中记录的指标含义见
 :doc:`训练指标 </rst_source/tutorials/configuration/metrics>`。

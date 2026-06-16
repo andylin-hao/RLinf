@@ -176,7 +176,7 @@ Run evaluation with the same config suffix:
 
 .. code:: bash
 
-   bash examples/embodiment/eval_embodiment.sh robocasa_closedrawer_ppo_openpi
+   bash evaluations/run_eval.sh robocasa_closedrawer_ppo_openpi
 
 .. note::
 

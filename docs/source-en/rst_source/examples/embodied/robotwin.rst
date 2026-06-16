@@ -253,8 +253,8 @@ Run evaluation with the corresponding eval config when one exists:
 
 .. code:: bash
 
-   bash examples/embodiment/eval_embodiment.sh robotwin_place_empty_cup_ppo_openvlaoft_eval
-   bash examples/embodiment/eval_embodiment.sh robotwin_adjust_bottle_ppo_openpi_pi05_eval
+   bash evaluations/run_eval.sh robotwin robotwin_place_empty_cup_openvlaoft_eval
+   bash evaluations/run_eval.sh robotwin robotwin_adjust_bottle_openpi_pi05_eval
 
 .. note::
 

@@ -191,9 +191,6 @@ Each recipe is a YAML config under ``examples/embodiment/config/``:
    * - π₀.₅
      - PPO
      - ``behavior_ppo_openpi_pi05.yaml``
-   * - π₀.₅ evaluation
-     - PPO evaluation
-     - ``behavior_ppo_openpi_pi05_eval.yaml``
 
 Launch a config with ``run_embodiment.sh``:
 
@@ -224,7 +221,7 @@ Launch a config with ``run_embodiment.sh``:
    (``env/success_once``) may stay at 0 for OpenVLA-OFT / π₀.
    This issue will be fixed in a later release.
 
-Evaluate with ``behavior_ppo_openpi_pi05_eval.yaml``
+Evaluate with ``behavior_openpi_pi05_eval.yaml``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 In principle, any ``pi05`` checkpoint that has non-zero success rate on
@@ -241,7 +238,7 @@ PyTorch format:
 Thanks to the OpenPI-Comet authors for open-sourcing the model and tools, which
 helps reproducibility and evaluation in RLinf.
 
-After conversion, update ``behavior_ppo_openpi_pi05_eval.yaml`` as follows:
+After conversion, update ``behavior_openpi_pi05_eval.yaml`` as follows:
 
 1. Set ``actor.model.model_path`` and ``rollout.model.model_path`` to the converted model directory.
 2. Increase ``max_episode_steps`` and ``max_steps_per_rollout_epoch`` in both
@@ -263,7 +260,9 @@ Run evaluation with:
 
    export ISAAC_PATH=/path/to/isaac-sim
    export OMNIGIBSON_DATA_PATH=/path/to/BEHAVIOR-1K-datasets
-   bash examples/embodiment/eval_embodiment.sh behavior_ppo_openpi_pi05_eval
+   bash evaluations/run_eval.sh behavior behavior_openpi_pi05_eval
+
+For the full evaluation workflow, see :doc:`BEHAVIOR-1K evaluation guide <../../evaluations/guides/behavior>`.
 
 
 Visualization and Results

@@ -396,17 +396,17 @@ YAML 示例（LIBERO 冷启动，见 ``libero_sft_dreamzero_5b.yaml``）：
 评测
 ----
 
-SFT 完成后，可在数据集对应具身环境中评测策略。下文以 **LIBERO** 仿真环境为例说明完整流程（任务套件为 LIBERO Spatial）；对应示例配置为 ``examples/embodiment/config/libero_spatial_eval_dreamzero.yaml``。其它支持 ``env.eval`` 的仿真环境亦可按相同方式编写配置并调用 ``eval_embodiment.sh``。
+SFT 完成后，可在数据集对应具身环境中评测策略。下文以 **LIBERO** 仿真环境为例说明完整流程（任务套件为 LIBERO Spatial）；对应示例配置为 ``evaluations/libero/libero_spatial_dreamzero_eval.yaml``。其它支持 ``env.eval`` 的仿真环境亦可按相同方式编写配置并调用 ``evaluations/run_eval.sh``。
 
 **前置条件**
 
 1. 安装时需包含 LIBERO 仿真环境（见上文 **安装** 中的 ``--env libero``）。
-2. 已设置 ``DREAMZERO_PATH`` 指向 DreamZero 代码库根目录（``eval_embodiment.sh`` 会将其加入 ``PYTHONPATH``）。
+2. 已设置 ``DREAMZERO_PATH`` 指向 DreamZero 代码库根目录（``evaluations/run_eval.sh`` 会将其加入 ``PYTHONPATH``）。
 3. 已准备与训练一致的 ``metadata.json``（``actor.model.metadata_json_path``）。
 
 **配置评测 YAML**
 
-复制或编辑 ``examples/embodiment/config/libero_spatial_eval_dreamzero.yaml``，至少修改以下字段：
+复制或编辑 ``evaluations/libero/libero_spatial_dreamzero_eval.yaml``，至少修改以下字段：
 
 .. list-table::
    :header-rows: 1
@@ -427,7 +427,7 @@ SFT 完成后，可在数据集对应具身环境中评测策略。下文以 **L
    * - ``algorithm.eval_rollout_epoch``
      - 评测轮数；每轮在相同种子下跑完测试集，最终指标为多轮平均。
    * - ``env.eval.total_num_envs`` / ``auto_reset`` / ``max_steps_per_rollout_epoch``
-     - 并行环境数与是否通过 ``auto_reset`` 覆盖更大测试集；详见 :doc:`评估教程 <../../start/vla-eval>`。
+     - 并行环境数与是否通过 ``auto_reset`` 覆盖更大测试集；详见 :doc:`LIBERO 评测指南 <../../evaluations/guides/libero>`。
    * - ``env.eval.video_cfg.save_video``
      - 设为 ``True`` 可在 ``{log_path}/video/eval`` 下保存评测视频。
 
@@ -461,14 +461,14 @@ SFT 完成后，可在数据集对应具身环境中评测策略。下文以 **L
 
 .. code:: bash
 
-   bash examples/embodiment/eval_embodiment.sh libero_spatial_eval_dreamzero
+   bash evaluations/run_eval.sh libero libero_spatial_dreamzero_eval
 
-脚本会调用 ``eval_embodied_agent.py``，将日志写入 ``logs/<时间戳>-libero_spatial_eval_dreamzero/eval_embodiment.log``，并在终端输出 ``eval/success_once``、 ``eval/return`` 等指标。更多通用评测参数说明见 :doc:`评估教程 <../../start/vla-eval>`。
+脚本会调用 ``eval_embodied_agent.py``，将日志写入 ``logs/<时间戳>-libero_spatial_dreamzero_eval/eval_embodiment.log``，并在终端输出 ``eval/success_once``、 ``eval/return`` 等指标。更多通用评测参数说明见 :doc:`LIBERO 评测指南 <../../evaluations/guides/libero>`。
 
 Franka 真机部署评测
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-完成 SFT 或 checkpoint 转换后，可使用 ``examples/embodiment/config/realworld_pnp_eval_dreamzero.yaml`` 将完整 DreamZero checkpoint 目录部署到 Franka pick-and-place 真机任务。该流程使用 ``embodiment_tag: franka_pnp``，rollout 观测映射由 ``data_transforms/franka_pnp.py`` 中的布局定义。
+完成 SFT 或 checkpoint 转换后，可使用 ``evaluations/realworld/realworld_pnp_eval_dreamzero.yaml`` 将完整 DreamZero checkpoint 目录部署到 Franka pick-and-place 真机任务。该流程使用 ``embodiment_tag: franka_pnp``，rollout 观测映射由 ``data_transforms/franka_pnp.py`` 中的布局定义。
 
 **在两台机器上准备 Ray**
 
@@ -492,7 +492,7 @@ Franka 真机部署评测
    ray stop
    ray start --address=<head_ip>:6379
 
-注意根据真实机器人与 checkpoint 修改 ``examples/embodiment/config/realworld_pnp_eval_dreamzero.yaml``：
+注意根据真实机器人与 checkpoint 修改 ``evaluations/realworld/realworld_pnp_eval_dreamzero.yaml``：
 
 .. code:: yaml
 
@@ -539,7 +539,7 @@ Ray 已连接后，在 GPU / head 节点执行：
    export CUDA_VISIBLE_DEVICES=0
    export RLINF_CODE_WORKING_DIR=auto
 
-   bash examples/embodiment/run_realworld_eval.sh realworld_pnp_eval_dreamzero
+   bash evaluations/run_eval.sh realworld realworld_pnp_eval_dreamzero
 
 ``max_steps_per_rollout_epoch`` 必须能被 ``actor.model.num_action_chunks`` 整除。
 

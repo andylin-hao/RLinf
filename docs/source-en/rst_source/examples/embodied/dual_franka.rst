@@ -456,13 +456,13 @@ environment variables. Then execute on ``node 0``:
    source .venv/bin/activate
    export PYTHONPATH=$PWD:${PYTHONPATH:-}
 
-   bash examples/embodiment/run_realworld_eval.sh realworld_eval_dual_franka
+   bash evaluations/run_eval.sh realworld_eval_dual_franka
 
 Hydra override example:
 
 .. code-block:: bash
 
-   bash examples/embodiment/run_realworld_eval.sh realworld_eval_dual_franka \
+   bash evaluations/run_eval.sh realworld_eval_dual_franka \
        rollout.model.model_path=/path/to/deploy/global_step_<N> \
        actor.model.openpi_data.repo_id=<repo_id>/tcp_rot6d_v1 \
        env.eval.override_cfg.task_description="handover the object"

@@ -190,9 +190,6 @@
    * - π₀.₅
      - PPO
      - ``behavior_ppo_openpi_pi05.yaml``
-   * - π₀.₅ 评估
-     - PPO evaluation
-     - ``behavior_ppo_openpi_pi05_eval.yaml``
 
 使用 ``run_embodiment.sh`` 启动一个配置：
 
@@ -222,7 +219,7 @@
    已知问题：在当前 BEHAVIOR 设置下，OpenVLA-OFT / π₀ 的训练成功率
    （``env/success_once``）可能保持为 0。该问题会在后续版本修复。
 
-使用 ``behavior_ppo_openpi_pi05_eval.yaml`` 评估
+使用 ``behavior_openpi_pi05_eval.yaml`` 评估
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 原则上，任何在 BEHAVIOR 上有非零成功率、并且已经转换为 PyTorch
@@ -237,7 +234,7 @@ OpenPI-Comet 作为示例来源：
 
 感谢 OpenPI-Comet 作者开源模型和工具，这有助于 RLinf 中的可复现评估。
 
-转换完成后，按如下方式更新 ``behavior_ppo_openpi_pi05_eval.yaml``：
+转换完成后，按如下方式更新 ``behavior_openpi_pi05_eval.yaml``：
 
 1. 将 ``actor.model.model_path`` 和 ``rollout.model.model_path`` 设置为转换后的模型目录。
 2. 在 ``env.train`` 和 ``env.eval`` 中提高 ``max_episode_steps`` 与 ``max_steps_per_rollout_epoch``，例如设置为 ``4096``。
@@ -258,7 +255,9 @@ OpenPI-Comet 作为示例来源：
 
    export ISAAC_PATH=/path/to/isaac-sim
    export OMNIGIBSON_DATA_PATH=/path/to/BEHAVIOR-1K-datasets
-   bash examples/embodiment/eval_embodiment.sh behavior_ppo_openpi_pi05_eval
+   bash evaluations/run_eval.sh behavior behavior_openpi_pi05_eval
+
+完整评估流程见 :doc:`BEHAVIOR-1K 评测指南 <../../evaluations/guides/behavior>`。
 
 
 可视化与结果

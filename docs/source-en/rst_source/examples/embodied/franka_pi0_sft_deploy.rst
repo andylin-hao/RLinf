@@ -313,7 +313,7 @@ See :doc:`sft_openpi` for more details on OpenPI datasets and SFT training.
 Step 5: Real-World Deployment
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Modify ``examples/embodiment/config/realworld_pnp_eval.yaml``
+Modify ``evaluations/realworld/realworld_pnp_eval.yaml``
 to match your cluster, camera, and target pose:
 
 .. code-block:: yaml
@@ -349,18 +349,19 @@ After starting the Ray cluster (see the **Cluster configuration** section in
 
 .. code:: bash
 
-   bash examples/embodiment/run_realworld_eval.sh realworld_pnp_eval
+   bash evaluations/run_eval.sh realworld_pnp_eval
 
 The script runs in **eval-only mode** (``runner.only_eval: True``); the policy
 will autonomously control the robot to complete the Bin-relocation task.
 
 You can control the number of evaluation episodes via the
-``eval_rollout_epoch`` parameter:
+``env.eval.rollout_epoch`` parameter:
 
 .. code:: yaml
 
-   runner:
-     eval_rollout_epoch: 20
+   env:
+     eval:
+       rollout_epoch: 20
 
 Generic Real-World SFT Environment and Deployment
 -------------------------------------------------
@@ -401,7 +402,7 @@ Real-World Evaluation / Deployment
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 A full evaluation config is provided at
-``examples/embodiment/config/realworld_eval.yaml``. It pairs the generic SFT
+``evaluations/realworld/realworld_eval.yaml``. It pairs the generic SFT
 env with a Pi0 actor in **eval-only mode** (``runner.only_eval: True``).
 
 Before running, replace the placeholders:
@@ -413,4 +414,6 @@ Then launch:
 
 .. code:: bash
 
-   bash examples/embodiment/run_realworld_eval.sh realworld_eval
+   bash evaluations/run_eval.sh realworld_eval
+
+For the full real-robot evaluation workflow, see :doc:`real-world evaluation guide <../../evaluations/guides/realworld>`.

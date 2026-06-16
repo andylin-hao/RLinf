@@ -190,7 +190,7 @@ Run Dexbotic's LIBERO evaluator for a trained checkpoint:
 
 .. code-block:: bash
 
-   python toolkits/eval_scripts_dexbotic/libero_eval.py \
+   python toolkits/standalone_eval_scripts/dexbotic/libero_eval.py \
       --config_name db_pi0_libero \
       --pretrained_path /path/to/checkpoint \
       --task_suite_name libero_spatial \
@@ -202,7 +202,7 @@ For DM0, switch the evaluator config and action chunk:
 
 .. code-block:: bash
 
-   python toolkits/eval_scripts_dexbotic/libero_eval.py \
+   python toolkits/standalone_eval_scripts/dexbotic/libero_eval.py \
       --config_name dm0_libero \
       --pretrained_path /path/to/checkpoint \
       --task_suite_name libero_spatial \
@@ -210,7 +210,7 @@ For DM0, switch the evaluator config and action chunk:
       --action_chunk 10 \
       --num_steps 10
 
-You can also use RLinf's unified VLA evaluation flow. See :doc:`VLA Evaluation </rst_source/start/vla-eval>`.
+You can also use RLinf's unified VLA evaluation flow. See :doc:`evaluation <../../evaluations/index>`.
 
 Visualization and Results
 -------------------------
