@@ -1,58 +1,89 @@
 DreamZero Supervised Fine-Tuning and Franka Real-World Deployment
 =================================================================
 
-This guide explains how to run DreamZero supervised fine-tuning (SFT) in RLinf, from **model and data preparation** through **configuration**, **launching training**, **evaluation**, and **troubleshooting**.
-It also explains how to deploy a trained DreamZero model on a real Franka robot and run evaluation.
+.. figure:: https://dreamzero0.github.io/images/project_overview.png
+   :align: center
+   :width: 90%
 
-Currently supported:
+   DreamZero: a video-generation world model fine-tuned into a VLA policy.
 
-- **Datasets**: LIBERO (``libero_sim``), OXE DROID (``oxe_droid``), Franka pick-and-place (``franka_pnp``); **mixture SFT** across embodiments (see ``libero_franka_mix_sft_dreamzero_5b.yaml``)
-- **Backbones**: WAN2.1 (e.g. DreamZero-DROID 14B), WAN2.2 (e.g. Wan2.2-TI2V-5B cold start)
+Run DreamZero supervised fine-tuning (SFT) in RLinf — from model and data preparation
+through configuration, training, evaluation, and troubleshooting — then deploy the trained
+policy on a real Franka robot.
 
+Overview
+--------
 
-Environment setup
------------------
+Fine-tune a WAN-based DreamZero world model into a manipulation policy on LeRobot data, evaluate it in simulation, and deploy it on a Franka.
 
-1. Clone the RLinf repository and enter the repo root:
+.. grid:: 2 4 4 4
+   :gutter: 2
 
-.. code:: bash
+   .. grid-item-card:: Backbones
+      :text-align: center
 
-   git clone https://github.com/RLinf/RLinf.git
-   cd RLinf
+      WAN2.1 · WAN2.2
 
-2. Use ``requirements/install.sh`` to create and install a **DreamZero-specific uv virtual environment** :
+   .. grid-item-card:: Methods
+      :text-align: center
 
-.. code:: bash
+      SFT · Mixture SFT
 
-   # SFT only (offline LeRobot data, no simulation) — recommended
+   .. grid-item-card:: Datasets
+      :text-align: center
+
+      LIBERO · DROID · Franka PnP
+
+   .. grid-item-card:: Deploy
+      :text-align: center
+
+      Sim eval · Franka
+
+| **You'll do:** install → prepare model + LeRobot data → generate ``metadata.json`` → launch ``run_vla_sft.sh`` → evaluate in sim or on Franka.
+| **Prerequisites:** :doc:`Installation </rst_source/start/installation>` · the `DreamZero repo <https://github.com/RLinf/dreamzero>`_ (``DREAMZERO_PATH``) · a LeRobot dataset.
+
+**Currently supported**
+
+- **Datasets:** LIBERO (``libero_sim``), OXE DROID (``oxe_droid``), Franka pick-and-place (``franka_pnp``); **mixture SFT** across embodiments (see ``libero_franka_mix_sft_dreamzero_5b.yaml``).
+- **Backbones:** WAN2.1 (e.g. DreamZero-DROID 14B), WAN2.2 (e.g. Wan2.2-TI2V-5B cold start).
+
+Installation
+------------
+
+.. include:: _setup_common.rst
+
+**Option 1: SFT-only environment** — install DreamZero without simulator dependencies:
+
+.. code-block:: bash
+
+   # Add --use-mirror for faster downloads in mainland China.
    bash requirements/install.sh embodied --model dreamzero
-
-   # If you also need LIBERO simulation for evaluation
-   bash requirements/install.sh embodied --model dreamzero --env libero
-
-Notes:
-
-- Add ``--use-mirror`` for faster PyPI / Python / GitHub downloads in regions with limited access.
-- Custom venv directory: ``--venv <dir>``; skip system deps when already installed: ``--no-root``.
-
-After installation, activate the environment:
-
-.. code:: bash
-
    source .venv/bin/activate
 
-3. Clone the `DreamZero repository <https://github.com/RLinf/dreamzero>`_ separately and set ``DREAMZERO_PATH`` to the Python package root:
+**Option 2: SFT + LIBERO evaluation** — add LIBERO simulator dependencies:
 
-.. code:: bash
+.. code-block:: bash
+
+   bash requirements/install.sh embodied --model dreamzero --env libero
+   source .venv/bin/activate
+
+Clone the DreamZero repository separately and set ``DREAMZERO_PATH`` before SFT or eval:
+
+.. code-block:: bash
 
    git clone https://github.com/RLinf/dreamzero.git
    export DREAMZERO_PATH=/path/to/dreamzero
 
+**What this does:**
 
-Model preparation
+1. Creates a DreamZero-specific uv virtual environment through ``requirements/install.sh``.
+2. Installs only offline SFT dependencies by default, or adds LIBERO when you need simulator evaluation.
+3. Makes the external DreamZero package importable through ``DREAMZERO_PATH``; ``examples/sft/run_vla_sft.sh`` also appends it to ``PYTHONPATH``.
+
+Model Preparation
 -----------------
 
-Resume from a checkpoint
+Resume from a Checkpoint
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
 Set ``actor.model.model_path`` to a downloaded checkpoint directory; architecture and weights load from that path. Options:
@@ -83,7 +114,7 @@ YAML example (DROID + official 14B; see ``droid_sft_dreamzero_14b.yaml``):
 
 For AgiBot data, set ``model_path`` to ``./DreamZero-AgiBot`` instead.
 
-Train from scratch (WAN2.2 component cold start)
+Train from Scratch (WAN2.2 Component Cold Start)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Set ``model_path: null`` and fill each ``*_pretrained_path``. Download from Hugging Face:
@@ -120,12 +151,12 @@ YAML example (LIBERO cold start; see ``libero_sft_dreamzero_5b.yaml``):
        embodiment_tag: libero_sim
 
 
-Data preparation
+Data Preparation
 ----------------
 
 Training data must follow the LeRobot v2/v3 layout (``meta/``, ``data/``, etc.). Set a local path or Hugging Face dataset ID via ``data.train_data_paths``.
 
-Download datasets
+Download Datasets
 ~~~~~~~~~~~~~~~~~
 
 Supported datasets:
@@ -147,8 +178,8 @@ Download example:
    # Franka PnP real-world data
    huggingface-cli download RLinf/dreamzero-franka-pnp --repo-type dataset --local-dir ./franka_pnp
 
-Generating metadata.json
-~~~~~~~~~~~~~~~~~~~~~~~~
+Generate ``metadata.json``
+~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 For a new dataset or cold start (no ``experiment_cfg/metadata.json``), generate normalization stats for the corresponding ``embodiment_tag`` first:
 
@@ -176,13 +207,13 @@ For a new dataset or cold start (no ``experiment_cfg/metadata.json``), generate 
 Then set ``actor.model.metadata_json_path`` in config (or place the file at ``model_path/experiment_cfg/metadata.json``).
 
 
-Configuration reference
+Configuration Reference
 -----------------------
 
 Configs are managed by Hydra; the entry script is ``examples/sft/train_vla_sft.py``. Below, **data fields** and **model/training fields** are explained separately.
 
-Data-related settings
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Data-Related Settings
+~~~~~~~~~~~~~~~~~~~~~
 
 .. list-table::
    :header-rows: 1
@@ -212,8 +243,8 @@ Data-related settings
 - Under ``multi_anchor``, dataset action length is roughly ``action_horizon * max_chunk_size`` (e.g. LIBERO 64, DROID 96).
 - Set video time dimension via ``action_head_cfg.config.num_frames`` in presets (DreamZero default 33 = ``8 * max_chunk_size + 1``); auto-derived if omitted.
 
-Model and training settings
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Model and Training Settings
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 **Identity and weight paths**
 
@@ -331,8 +362,8 @@ Model and training settings
        metadata_json_path: /path/to/metadata.json   # if no experiment_cfg/metadata.json
 
 
-Launch training
----------------
+Run It
+------
 
 From the repository root:
 
@@ -373,7 +404,7 @@ After SFT, you can evaluate the policy in the embodied environment that matches 
 
 **Prerequisites**
 
-1. Install with the LIBERO environment (``--env libero`` in **Environment setup** above).
+1. Install with the LIBERO environment (``--env libero`` in **Installation** above).
 2. Set ``DREAMZERO_PATH`` to the DreamZero repo root (``eval_embodiment.sh`` adds it to ``PYTHONPATH``).
 3. Use the same ``metadata.json`` as training (``actor.model.metadata_json_path``).
 
@@ -438,7 +469,7 @@ From the repo root, with the DreamZero venv active and ``DREAMZERO_PATH`` set:
 
 Logs go to ``logs/<timestamp>-libero_spatial_eval_dreamzero/eval_embodiment.log``; the terminal prints metrics such as ``eval/success_once`` and ``eval/return``. For general eval YAML fields, see :doc:`VLA evaluation guide <../../start/vla-eval>`.
 
-Franka real-world deployment and evaluation
+Franka Real-World Deployment and Evaluation
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 After SFT or checkpoint conversion, use ``examples/embodiment/config/realworld_pnp_eval_dreamzero.yaml`` to deploy a full DreamZero checkpoint directory on the real Franka pick-and-place task. This workflow uses ``embodiment_tag: franka_pnp`` and the rollout observation mapping defined in ``data_transforms/franka_pnp.py``.
@@ -548,8 +579,8 @@ Evaluation on LIBERO Spatial for `RLinf-DreamZero-WAN2.2-5B-LIBERO-SFT-Step18000
    * - 21000
      - 90.43%
 
-Monitoring and sanity checks
-----------------------------
+Visualization and Results
+-------------------------
 
 1. Inspect ``run_embodiment.log``: stable ``time/step``; reasonable ``train/loss``, ``train/action_loss``, ``train/dynamics_loss``.
 
@@ -566,8 +597,8 @@ Monitoring and sanity checks
    - For WAN2.2: input resolution and ``frame_seqlen`` match ``config.json`` or the preset
 
 
-Extension: adding a new ``embodiment_tag``
-------------------------------------------
+Extend DreamZero to a New ``embodiment_tag``
+--------------------------------------------
 
 To train DreamZero SFT on a **new robot or LeRobot dataset**, add an ``embodiment_tag`` and register the corresponding transforms and metadata tooling in RLinf. Use existing modules as templates:
 
@@ -584,10 +615,10 @@ Data flow:
         → ComposedModalityTransform + DreamTransform (normalize, multi-view concat, tokenize)
         → DreamZeroCollator → training
 
-Step 1: Implement the embodiment transform module
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Step 1: Implement the Embodiment Transform Module
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Create ``rlinf/data/datasets/dreamzero/data_transforms/<your_tag>.py`` implementing ``DreamZeroEmbodimentTransform`` (see ``base.py``), including at least:
+Create a new transform module under ``rlinf/data/datasets/dreamzero/data_transforms/`` named for your tag, for example ``your_tag.py``. Implement ``DreamZeroEmbodimentTransform`` (see ``base.py``), including at least:
 
 .. list-table::
    :header-rows: 1
@@ -619,7 +650,7 @@ Create ``rlinf/data/datasets/dreamzero/data_transforms/<your_tag>.py`` implement
 - Keys in training YAML must match ``*_concat_order`` in ``ConcatTransform``.
 
 Step 2: Register in RLinf
-~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 1. Add a member to ``EmbodimentTag`` in ``rlinf/data/datasets/dreamzero/data_transforms/embodiment_tag.py`` (value must equal your ``TAG`` string).
 2. Edit ``rlinf/data/datasets/dreamzero/data_transforms/__init__.py``:
@@ -649,8 +680,8 @@ Compute normalization stats; the output key must equal ``TAG``:
 
 Set ``actor.model.metadata_json_path`` in training config (or ``model_path/experiment_cfg/metadata.json``).
 
-Step 4: Author / adjust training config
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Step 4: Author / Adjust the Training Config
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Copy ``libero_sft_dreamzero_14b.yaml``, ``libero_sft_dreamzero_5b.yaml``, or ``droid_sft_dreamzero_14b.yaml`` and update at least:
 
@@ -674,8 +705,8 @@ Copy ``libero_sft_dreamzero_14b.yaml``, ``libero_sft_dreamzero_5b.yaml``, or ``d
 
 For WAN cold start, add the new ID to ``action_head_cfg.config.action_loss_embodiment_ids`` in ``examples/sft/config/model/dreamzero_5b.yaml`` (or ``dreamzero_14b.yaml``).
 
-Step 5: Validate (short run + data checks)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Step 5: Validate with a Short Run
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 1. Run the metadata script alone; confirm ``metadata.json[<your_tag>]`` statistics/modalities match parquet dimensions.
 2. Run 50–200 SFT steps; ensure no ``Could not map transform video keys`` or ``embodiment_tag not found in metadata`` errors.
@@ -689,12 +720,12 @@ Step 5: Validate (short run + data checks)
 - Multi-view **concat order** must match **prompt text** or training signal is wrong.
 - Do not change ``DEFAULT_TAG_MAPPING`` integer IDs arbitrarily when fine-tuning official weights.
 - Prefer ``target_video_height/width`` or transform-chain resize over hard-coded sizes for WAN2.1/2.2.
-- Inference/eval: set ``embodiment_tag`` correctly in ``examples/embodiment/config/*_dreamzero.yaml``.
+- Inference/eval: set ``embodiment_tag`` correctly in DreamZero eval configs under ``examples/embodiment/config/``.
 
 For inference only (no RLinf code changes) when upstream Groot/DreamZero already supports the tag, ``metadata.json`` and eval config may suffice; **SFT on new data** requires the enum member, registry entry, and transform module above (``get_model`` patches Groot ``EmbodimentTag`` automatically).
 
 
-Common issues
+Common Issues
 -------------
 
 1. **Missing weights (No safetensors weights)**
@@ -732,7 +763,7 @@ Common issues
    - Register new tags in ``embodiment_tag.py`` and ``_EMBODIMENT_REGISTRY``; ``get_model()`` patches the Groot enum at model load
 
 
-Practical recommendations
+Practical Recommendations
 -------------------------
 
 - For stable convergence, prefer continuing SFT from released DreamZero weights (set ``model_path``).

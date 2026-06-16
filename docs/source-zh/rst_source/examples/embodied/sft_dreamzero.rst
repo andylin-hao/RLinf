@@ -1,55 +1,85 @@
 DreamZero 监督微调和 Franka 真机部署
 ====================================
 
-本文档介绍如何在 RLinf 中运行 DreamZero 监督微调（SFT），覆盖从 **模型与数据准备**、 **配置填写** 到 **启动训练**、 **评测** 与 **排错** 的完整流程。
-同时介绍如何在Franka真机上部署训练好的 DreamZero 模型，并进行评测。
+.. figure:: https://dreamzero0.github.io/images/project_overview.png
+   :align: center
+   :width: 90%
 
-当前支持：
+   DreamZero：由视频生成世界模型微调得到的 VLA 策略。
 
-- **数据集**: LIBERO (``libero_sim``)、OXE DROID (``oxe_droid``)、Franka 抓取放置 (``franka_pnp``)；支持多 embodiment **混合训练** (见 ``libero_franka_mix_sft_dreamzero_5b.yaml``)
-- **骨干网络**：WAN2.1（如 DreamZero-DROID 14B）、WAN2.2（如 Wan2.2-TI2V-5B 冷启动）
+在 RLinf 中运行 DreamZero 监督微调（SFT）：准备模型与 LeRobot 数据，启动训练，执行仿真评测，并将训练后的策略部署到 Franka 真机。
 
+概览
+----
 
-环境准备
-----------------
+将基于 WAN 的 DreamZero 世界模型微调成操作策略，在 LeRobot 数据上训练，在仿真中评测，并部署到 Franka。
 
-1. 克隆 RLinf 仓库并进入根目录：
+.. grid:: 2 4 4 4
+   :gutter: 2
 
-.. code:: bash
+   .. grid-item-card:: 骨干网络
+      :text-align: center
 
-   git clone https://github.com/RLinf/RLinf.git
-   cd RLinf
+      WAN2.1 · WAN2.2
 
-2. 使用 ``requirements/install.sh`` 创建并安装 **DreamZero 专用 uv 虚拟环境** ：
+   .. grid-item-card:: 方法
+      :text-align: center
 
-.. code:: bash
+      SFT · Mixture SFT
 
-   # 仅做 SFT（LeRobot 离线数据，不跑仿真）— 推荐
+   .. grid-item-card:: 数据集
+      :text-align: center
+
+      LIBERO · DROID · Franka PnP
+
+   .. grid-item-card:: 部署
+      :text-align: center
+
+      仿真评测 · Franka
+
+| **你将完成：** 安装 → 准备模型和 LeRobot 数据 → 生成 ``metadata.json`` → 运行 ``run_vla_sft.sh`` → 在仿真或 Franka 上评测。
+| **前置条件：** :doc:`安装 </rst_source/start/installation>` · `DreamZero 仓库 <https://github.com/RLinf/dreamzero>`_（``DREAMZERO_PATH``）· 一个 LeRobot 数据集。
+
+**当前支持**
+
+- **数据集：** LIBERO（``libero_sim``）、OXE DROID（``oxe_droid``）、Franka pick-and-place（``franka_pnp``）；支持跨 embodiment 的 **mixture SFT** （见 ``libero_franka_mix_sft_dreamzero_5b.yaml``）。
+- **骨干网络：** WAN2.1（如 DreamZero-DROID 14B）、WAN2.2（如 Wan2.2-TI2V-5B 冷启动）。
+
+安装
+----
+
+.. include:: _setup_common.rst
+
+**选项 1：仅 SFT 环境** — 安装 DreamZero，不安装仿真器依赖：
+
+.. code-block:: bash
+
+   # 国内用户可以添加 --use-mirror 加速下载。
    bash requirements/install.sh embodied --model dreamzero
-
-   # 若后续还要在 LIBERO 仿真里评测，可一并安装 libero 环境
-   bash requirements/install.sh embodied --model dreamzero --env libero
-
-说明：
-
-- 国内网络可加 ``--use-mirror`` 加速 PyPI / Python / GitHub 下载。
-- 自定义 venv 目录： ``--venv <dir>``；无 root 且系统依赖已就绪： ``--no-root``。
-
-安装完成后激活环境：
-
-.. code:: bash
-
    source .venv/bin/activate
 
-3. 单独克隆 `DreamZero 代码库 <https://github.com/RLinf/dreamzero>`_，并设置 ``DREAMZERO_PATH`` 指向其 Python 包根目录：
+**选项 2：SFT + LIBERO 评测** — 额外安装 LIBERO 仿真依赖：
 
-.. code:: bash
+.. code-block:: bash
+
+   bash requirements/install.sh embodied --model dreamzero --env libero
+   source .venv/bin/activate
+
+单独克隆 DreamZero 仓库，并在 SFT 或评测前设置 ``DREAMZERO_PATH``：
+
+.. code-block:: bash
 
    git clone https://github.com/RLinf/dreamzero.git
    export DREAMZERO_PATH=/path/to/dreamzero
 
+**这些命令会：**
+
+1. 通过 ``requirements/install.sh`` 创建 DreamZero 专用 uv 虚拟环境。
+2. 默认只安装离线 SFT 依赖；如果需要仿真评测，则额外安装 LIBERO。
+3. 通过 ``DREAMZERO_PATH`` 让外部 DreamZero 包可导入；``examples/sft/run_vla_sft.sh`` 也会将其加入 ``PYTHONPATH``。
+
 模型准备
-----------------
+--------
 
 从 checkpoint 继续训练
 ~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -119,7 +149,7 @@ YAML 示例（LIBERO 冷启动，见 ``libero_sft_dreamzero_5b.yaml``）：
 
 
 数据准备
-----------------
+--------
 
 训练数据需为 LeRobot v2/v3 布局（含 ``meta/``、``data/`` 等）。通过 ``data.train_data_paths`` 指定本地目录或 Hugging Face 数据集 ID。
 
@@ -175,7 +205,7 @@ YAML 示例（LIBERO 冷启动，见 ``libero_sft_dreamzero_5b.yaml``）：
 
 
 配置说明
----------------
+--------
 
 配置文件由 Hydra 管理，入口脚本为 ``examples/sft/train_vla_sft.py``。下面按 **数据相关** 与 **模型及训练超参相关** 分别说明含义与作用。
 
@@ -328,8 +358,8 @@ YAML 示例（LIBERO 冷启动，见 ``libero_sft_dreamzero_5b.yaml``）：
        action_horizon: 24
        metadata_json_path: /path/to/metadata.json   # 若无 experiment_cfg/metadata.json
 
-启动训练
--------------
+运行
+----
 
 在仓库根目录执行：
 
@@ -364,13 +394,13 @@ YAML 示例（LIBERO 冷启动，见 ``libero_sft_dreamzero_5b.yaml``）：
 
 
 评测
---------
+----
 
 SFT 完成后，可在数据集对应具身环境中评测策略。下文以 **LIBERO** 仿真环境为例说明完整流程（任务套件为 LIBERO Spatial）；对应示例配置为 ``examples/embodiment/config/libero_spatial_eval_dreamzero.yaml``。其它支持 ``env.eval`` 的仿真环境亦可按相同方式编写配置并调用 ``eval_embodiment.sh``。
 
 **前置条件**
 
-1. 安装时需包含 LIBERO 仿真环境（见上文 **环境准备** 中的 ``--env libero``）。
+1. 安装时需包含 LIBERO 仿真环境（见上文 **安装** 中的 ``--env libero``）。
 2. 已设置 ``DREAMZERO_PATH`` 指向 DreamZero 代码库根目录（``eval_embodiment.sh`` 会将其加入 ``PYTHONPATH``）。
 3. 已准备与训练一致的 ``metadata.json``（``actor.model.metadata_json_path``）。
 
@@ -545,8 +575,8 @@ Ray 已连接后，在 GPU / head 节点执行：
    * - 21000
      - 90.43%
 
-监控与 sanity check
--------------------------------
+可视化与结果
+------------
 
 1. 查看 ``run_embodiment.log``：``time/step`` 是否稳定；``train/loss``、``train/action_loss``、``train/dynamics_loss`` 是否合理。
 
@@ -563,8 +593,8 @@ Ray 已连接后，在 GPU / head 节点执行：
    - WAN2.2 时确认输入分辨率与 ``frame_seqlen`` 与 ``config.json`` 或预设一致
 
 
-扩展：新增 ``embodiment_tag``
-------------------------------------------
+扩展 DreamZero 到新的 ``embodiment_tag``
+-------------------------------------------
 
 当要在 **新的机器人 或 新 LeRobot 数据集** 上训练 DreamZero SFT 时，需要新增一个 ``embodiment_tag``，并在 RLinf 中注册对应的数据变换与元数据生成逻辑。建议以现有实现为模板对照修改：
 
@@ -686,13 +716,13 @@ Ray 已连接后，在 GPU / head 节点执行：
 - 多视角拼接顺序与 prompt 文案不一致会导致训练信号错乱。
 - 继续微调官方权重时，随意改 ``DEFAULT_TAG_MAPPING`` 的整数 ID 会导致 projector 对不上。
 - 视频 resize：优先在 transform 链或 ``target_video_height/width`` 配置，避免写死尺寸导致 WAN2.1/2.2 不兼容。
-- 推理 / 评测：``examples/embodiment/config/*_dreamzero.yaml`` 中同样需要正确的 ``embodiment_tag``。
+- 推理 / 评测：``examples/embodiment/config/`` 下的 DreamZero 评测配置 中同样需要正确的 ``embodiment_tag``。
 
 若仅推理、不改 RLinf 代码，且 Groot/DreamZero 上游已支持该 tag，有时只需准备 ``metadata.json`` 与评测配置；**SFT 新数据** 则须完成上述枚举成员、registry 注册与 transform 实现（``get_model`` 会自动 patch Groot ``EmbodimentTag``）。
 
 
 常见问题
---------------
+--------
 
 1. **找不到权重（No safetensors weights）**
 
@@ -730,7 +760,7 @@ Ray 已连接后，在 GPU / head 节点执行：
 
 
 实践建议
-------------------
+--------
 
 - 追求稳定收敛时，优先从已发布的 DreamZero 权重继续 SFT（设置 ``model_path``）。
 - 全量适配 WAN2.2 可冷启动，但需更大数据与更长训练；改配置后先用 50–200 step 试跑验证 shape 与 loss。
