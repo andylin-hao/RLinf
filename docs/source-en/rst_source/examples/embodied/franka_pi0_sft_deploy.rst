@@ -4,7 +4,7 @@ Running Pi0 SFT with Franka
    :align: center
    :width: 80%
 
-   OpenPI π₀ SFT and deployment workflow used for Franka bin-relocation experiments. Image credit: RLinf project assets.
+   OpenPI π₀ SFT and deployment workflow used for Franka bin-relocation experiments.
 
 Run the Bin-relocation pipeline end to end with OpenPI π₀: collect Franka data, convert it to a LeRobot-style dataset, compute normalization stats, fine-tune, and deploy the checkpoint on real hardware.
 

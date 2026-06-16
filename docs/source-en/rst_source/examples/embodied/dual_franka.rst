@@ -4,7 +4,7 @@ Using Dual Franka
    :align: center
    :width: 80%
 
-   Franka arm hardware used as the basis for the dual-Franka GELLO collection and π₀.₅ deployment workflow. Image credit: RLinf project assets.
+   Franka arm hardware used as the basis for the dual-Franka GELLO collection and π₀.₅ deployment workflow.
 
 Run the supported dual-Franka workflow: collect joint-space demonstrations with GELLO, convert them to tcp_rot6d data, fine-tune OpenPI π₀.₅, and deploy the checkpoint back to the robot nodes.
 

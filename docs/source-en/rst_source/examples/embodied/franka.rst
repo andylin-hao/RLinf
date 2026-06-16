@@ -10,7 +10,7 @@ Real-World RL with Franka
    :align: center
    :width: 80%
 
-   Franka Emika Panda arm used for the base RLinf real-world RL workflow. Image credit: RLinf project assets.
+   Franka Emika Panda arm used for the base RLinf real-world RL workflow.
 
 Use RLinf to train and evaluate real-world policies on a Franka Emika Panda arm. You'll set up the controller and training nodes, collect demonstrations, run SAC/RLPD or PPO-style training, and monitor safe online updates on physical hardware.
 

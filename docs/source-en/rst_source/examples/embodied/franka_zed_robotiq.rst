@@ -4,7 +4,7 @@ Using ZED + Robotiq with Franka
    :align: center
    :width: 80%
 
-   Franka setup with Stereolabs ZED cameras and a Robotiq 2F gripper for sensor-rich data collection. Image credit: RLinf project assets.
+   Franka setup with Stereolabs ZED cameras and a Robotiq 2F gripper for sensor-rich data collection.
 
 Extend the base Franka setup with Stereolabs ZED cameras and a Robotiq 2F gripper. You'll install the SDKs, wire serial devices, update YAML hardware fields, and collect data with the new sensors.
 

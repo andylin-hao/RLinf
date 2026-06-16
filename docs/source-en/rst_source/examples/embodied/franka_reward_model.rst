@@ -10,7 +10,7 @@ Using Reward Model with Franka
    :align: center
    :width: 80%
 
-   Franka reward-model workflow for collecting labeled frames and training a visual success detector. Image credit: RLinf project assets.
+   Franka reward-model workflow for collecting labeled frames and training a visual success detector.
 
 Add a learned visual reward model to the Franka real-world pipeline. You'll collect labeled frames, train a ResNet reward model, and let the environment use model predictions to decide success and resets.
 

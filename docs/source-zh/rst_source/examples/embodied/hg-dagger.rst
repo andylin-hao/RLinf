@@ -4,7 +4,7 @@
    :align: center
    :width: 80%
 
-   用于采集干预数据并在线训练 Franka 策略的 Human-Gated DAgger 流程。图片来源：RLinf 项目资源。
+   用于采集干预数据并在线训练 Franka 策略的 Human-Gated DAgger 流程。
 
 使用 Human-Gated DAgger 训练 Franka 真机策略。你将采集干预数据，计算 OpenPI 归一化统计，运行 SFT，然后启动在线 HG-DAgger，并只保存专家接管步骤用于训练。
 

@@ -10,7 +10,7 @@
    :align: center
    :width: 80%
 
-   Franka reward-model 流程，用于采集标注帧并训练视觉成功判别器。图片来源：RLinf 项目资源。
+   Franka reward-model 流程，用于采集标注帧并训练视觉成功判别器。
 
 为 Franka 真机流程加入学习得到的视觉 reward model。你将采集标注帧，训练 ResNet reward model，并让环境用模型预测来判定成功与重置。
 

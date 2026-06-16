@@ -4,7 +4,7 @@ Real-World RL with GimArm
    :align: center
    :width: 80%
 
-   GimArm 6-DoF arm used for SocketCAN control, motor calibration, and peg-insertion training. Image credit: RLinf project assets.
+   GimArm 6-DoF arm used for SocketCAN control, motor calibration, and peg-insertion training.
 
 Run RLinf on a GimArm 6-DoF arm over SocketCAN. You will install the CAN control SDK, calibrate motors, set a target end-effector pose, collect demonstrations, and launch real-world training.
 

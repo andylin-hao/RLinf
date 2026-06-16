@@ -4,7 +4,7 @@ Using GELLO with Franka
    :align: center
    :width: 80%
 
-   GELLO joint-level teleoperation device used to collect Franka demonstrations. Image credit: RLinf project assets.
+   GELLO joint-level teleoperation device used to collect Franka demonstrations.
 
 Use GELLO as a joint-level teleoperation device for Franka data collection. You'll install ``gello_teleop``, verify the serial device, update collection configs, and monitor saved episodes.
 

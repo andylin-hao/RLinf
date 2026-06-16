@@ -4,7 +4,7 @@ Using Dexterous Hand with Franka
    :align: center
    :width: 80%
 
-   Franka arm paired with a Ruiyan five-finger dexterous hand for real-world manipulation. Image credit: RLinf project assets.
+   Franka arm paired with a Ruiyan five-finger dexterous hand for real-world manipulation.
 
 Adapt the Franka real-world workflow to a Ruiyan five-finger dexterous hand. You'll keep the same cluster and reward-model flow, then change the end effector, teleoperation input, action layout, and dex-hand configs.
 

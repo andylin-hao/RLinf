@@ -10,7 +10,7 @@ Real-World RL with Dexmal DOS-W1
    :align: center
    :width: 80%
 
-   Dexmal DOS-W1 dual-arm robot used for the Flow Matching single-arm pick workflow. Image credit: RLinf project assets.
+   Dexmal DOS-W1 dual-arm robot used for the Flow Matching single-arm pick workflow.
 
 Train a Flow Matching policy on the Dexmal DOS-W1 dual-arm robot. The current recipe runs a single-arm pick task with AirBot services, RealSense cameras, keyboard-gated episodes, and SAC/RLPD-style real-world training.
 
