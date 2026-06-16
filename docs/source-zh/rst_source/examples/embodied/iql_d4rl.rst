@@ -1,6 +1,12 @@
 基于D4RL评测平台的强化学习训练
 ============================================
 
+.. figure:: https://raw.githubusercontent.com/RLinf/misc/main/pic/d4rl.png
+   :align: center
+   :width: 70%
+
+   D4RL 基准上的离线强化学习。
+
 本文说明如何在 RLinf 中运行基于 **D4RL 的 IQL（Implicit Q-Learning）离线强化学习训练**，面向直接使用离线数据集训练策略、无需在线环境交互的场景。
 
 主要目标为训练一个策略，使其：
@@ -9,21 +15,61 @@
 2. **遵循 IQL**：Value 用 expectile 回归、Actor 用 AWR 风格加权、双 Q 网络用 TD 目标。
 3. **接入 RLinf 体系**：离线数据在 IQL Actor 内加载；EnvWorker、RolloutWorker 与 OfflineRunner 负责评测等；支持 PyTorch + FSDP。
 
-环境
------------
+概览
+----
 
-**D4RL（Datasets for Deep Data-Driven Reinforcement Learning）**
+用 IQL 从 D4RL 离线数据集训练策略——无需在线环境交互。
 
-RLinf 使用 D4RL 基准套件，并为不同任务族提供配置：
+.. grid:: 2 4 4 4
+   :gutter: 2
 
-- **MuJoCo 运动**：如 ``halfcheetah-medium-v2``、``hopper-medium-replay-v2``，连续控制、基于状态。
-- **AntMaze**：如 ``antmaze-large-play-v0``，目标条件导航、稀疏奖励。
-- **Kitchen / Adroit**：机械臂与灵巧手任务，高维状态与动作。
+   .. grid-item-card:: 算法
+      :text-align: center
 
-观测与动作空间由各 D4RL 任务定义。
+      IQL
 
-算法
------------
+   .. grid-item-card:: 数据集
+      :text-align: center
+
+      D4RL
+
+   .. grid-item-card:: 策略
+      :text-align: center
+
+      MLP
+
+   .. grid-item-card:: 模式
+      :text-align: center
+
+      离线
+
+| **你将完成：** 安装（含 D4RL）→ 选择配置 → 运行 ``run_offline_rl.sh`` → 观察 ``eval/return``。
+| **前置条件：** :doc:`安装 </rst_source/start/installation>` · D4RL 数据集（首次运行时自动下载）。
+
+任务
+~~~~
+
+RLinf 为三类 D4RL 任务族提供 IQL 配置；各任务的观测与动作空间由 D4RL 定义。
+
+.. list-table::
+   :header-rows: 1
+   :widths: 26 34 40
+
+   * - 任务族
+     - 示例任务
+     - 配置
+   * - MuJoCo 运动控制
+     - ``halfcheetah-medium-v2``
+     - ``d4rl_iql_mujoco.yaml``
+   * - AntMaze
+     - ``antmaze-large-play-v0``
+     - ``d4rl_iql_antmaze.yaml``
+   * - Kitchen / Adroit
+     - 操作 / 灵巧手
+     - ``d4rl_iql_kitchen_adroit.yaml``
+
+IQL 工作原理
+------------
 
 **核心算法组件**
 
@@ -38,8 +84,8 @@ RLinf 使用 D4RL 基准套件，并为不同任务族提供配置：
 
    每个 update step：Actor 从各 rank 本地的 ``DataLoader``（在 ``EmbodiedIQLFSDPPolicy.build_offline_dataloader`` 中构建）取一个 batch，然后按当前实现顺序执行 IQL：更新 Value → 更新 Actor → 更新 Critic → 软更新目标 Critic。
 
-依赖安装
-----------------------------
+安装
+----
 
 安装带 D4RL 的 embodied 环境：
 
@@ -50,8 +96,8 @@ RLinf 使用 D4RL 基准套件，并为不同任务族提供配置：
 
 启动脚本默认设置 ``MUJOCO_GL=egl`` 与 ``PYOPENGL_PLATFORM=egl``，便于无头运行。
 
-运行脚本
-----------------------------
+运行
+----
 
 **1. 配置文件**
 
@@ -165,6 +211,8 @@ RLinf 为不同 D4RL 任务族提供默认 IQL 配置：
    tensorboard --logdir ./logs --port 6006
 
 **2. 关键跟踪指标**
+
+指标含义见 :doc:`训练指标 </rst_source/tutorials/configuration/metrics>`。IQL 相关指标：
 
 - **训练指标**：
 
