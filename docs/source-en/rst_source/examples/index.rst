@@ -15,35 +15,30 @@ entry points — pick the one that matches your starting question:
    .. grid-item-card:: Simulators
       :link: simulators_index
       :link-type: doc
-      :img-top: https://roboverseorg.github.io/static/images/teaser.jpg
 
       Start from a benchmark — LIBERO, ManiSkill, RoboTwin, IsaacLab, and more.
 
    .. grid-item-card:: Robots
       :link: real_world_index
       :link-type: doc
-      :img-top: https://raw.githubusercontent.com/RLinf/misc/main/pic/franka_arm_small.jpg
 
       Run on physical robot hardware — the Franka family plus GimArm, XSquare Turtle2, and DOS-W1.
 
    .. grid-item-card:: Models
       :link: vla_wam_index
       :link-type: doc
-      :img-top: https://raw.githubusercontent.com/RLinf/misc/main/pic/gr00t.png
 
       RL-fine-tune a specific model family — π₀, GR00T, Lingbot-VLA, OpenSora, Wan, and more.
 
    .. grid-item-card:: SFT
       :link: sft_index
       :link-type: doc
-      :img-top: https://dreamzero0.github.io/images/project_overview.png
 
       Supervised fine-tuning recipes that produce strong RL cold-start checkpoints.
 
    .. grid-item-card:: Algorithms
       :link: methods_index
       :link-type: doc
-      :img-top: https://raw.githubusercontent.com/RLinf/misc/main/pic/sac-flow-overview.png
 
       Algorithm-centric examples — DAgger, RECAP, DSRL, IQL offline RL, sim-real co-training, MLP / SAC-Flow.
 
@@ -55,14 +50,12 @@ Beyond embodiment:
    .. grid-item-card:: Agents
       :link: agentic/index
       :link-type: doc
-      :img-top: https://raw.githubusercontent.com/RLinf/misc/main/pic/searchr1.png
 
       Math reasoning and agentic AI workflows, in both single-agent and multi-agent settings.
 
    .. grid-item-card:: Systems
       :link: system/index
       :link-type: doc
-      :img-top: https://raw.githubusercontent.com/RLinf/misc/main/pic/rlinf-system/rlinf_arch.jpg
 
       Flexible, dynamic scheduling of compute resources across the most suitable hardware devices.
 

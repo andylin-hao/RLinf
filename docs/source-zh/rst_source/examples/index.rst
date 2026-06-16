@@ -12,35 +12,30 @@
    .. grid-item-card:: 模拟器
       :link: simulators_index
       :link-type: doc
-      :img-top: https://roboverseorg.github.io/static/images/teaser.jpg
 
       以模拟器 / 基准为出发点 —— LIBERO、ManiSkill、RoboTwin、IsaacLab 等。
 
    .. grid-item-card:: 真机
       :link: real_world_index
       :link-type: doc
-      :img-top: https://raw.githubusercontent.com/RLinf/misc/main/pic/franka_arm_small.jpg
 
       在真实机器人硬件上运行 —— Franka 系列，以及 GimArm、XSquare Turtle2、DOS-W1。
 
    .. grid-item-card:: 模型
       :link: vla_wam_index
       :link-type: doc
-      :img-top: https://raw.githubusercontent.com/RLinf/misc/main/pic/gr00t.png
 
       对某个模型家族做 RL 微调 —— π₀、GR00T、Lingbot-VLA、OpenSora、Wan 等。
 
    .. grid-item-card:: SFT
       :link: sft_index
       :link-type: doc
-      :img-top: https://dreamzero0.github.io/images/project_overview.png
 
       用于产出 RL 冷启动检查点的监督微调（SFT）配方。
 
    .. grid-item-card:: 算法
       :link: methods_index
       :link-type: doc
-      :img-top: https://raw.githubusercontent.com/RLinf/misc/main/pic/sac-flow-overview.png
 
       以训练算法为主线 —— DAgger、RECAP、DSRL、IQL 离线 RL、仿真-真机协同训练、MLP / SAC-Flow。
 
@@ -52,14 +47,12 @@
    .. grid-item-card:: 智能体
       :link: agentic/index
       :link-type: doc
-      :img-top: https://raw.githubusercontent.com/RLinf/misc/main/pic/searchr1.png
 
       数学推理与智能体 AI 工作流，涵盖单智能体与多智能体设置。
 
    .. grid-item-card:: 系统
       :link: system/index
       :link-type: doc
-      :img-top: https://raw.githubusercontent.com/RLinf/misc/main/pic/rlinf-system/rlinf_arch.jpg
 
       计算资源的灵活与动态调度，并将任务分配到最合适的硬件设备。
 
