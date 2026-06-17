@@ -99,9 +99,9 @@ The following examples include math reasoning RL and agentic AI workflows, such 
    :maxdepth: 2
 
    WideSeek-R1 <wideseek_r1/index>
+   AgentLightning <agentlightning_calc_x>
    Coding Online RL <coding_online_rl>
    Search-R1 <searchr1>
+   rStar2 <rstar2>
    Math GRPO <reasoning>
    Math PPO <reasoning_ppo>
-   rStar2 <rstar2>
-   AgentLightning <agentlightning_calc_x>

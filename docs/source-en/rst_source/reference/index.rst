@@ -1,13 +1,13 @@
 Reference
 =========
 
-Use Reference when you need exact API, algorithm, configuration, or evaluation
-details.
+Use Reference when you need exact API, algorithm, or configuration details.
+Evaluation reference lives in the :doc:`Evaluation <../evaluations/index>` section.
 
 Choose a Reference Area
 -----------------------
 
-.. grid:: 1 2 2 4
+.. grid:: 1 2 2 3
    :gutter: 2
 
    .. grid-item-card:: API
@@ -28,16 +28,9 @@ Choose a Reference Area
 
       Look up training config keys and metric namespaces.
 
-   .. grid-item-card:: Evaluation Reference
-      :link: evaluation/index
-      :link-type: doc
-
-      Jump to evaluation CLI, configuration, model, and result references.
-
 .. toctree::
    :hidden:
 
    API <api/index>
    Algorithms <algorithms/index>
    Configuration <training/index>
-   Evaluation Reference <evaluation/index>
