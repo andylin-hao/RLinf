@@ -44,6 +44,23 @@ Every benchmark (env) or model example page must:
    Suites`) and its own card grid. Don't repeat the H1 in a subtitle, and give any `:ref:`
    that points at a renamed section explicit link text so it still reads right.
 
+## Section and subsection index pages
+
+Every section and subsection landing — the root `index.rst`, each top-level axis
+index (`Get Started`, `Examples`, `Evaluation`, `Concepts`, `Guides`,
+`Reference`, `Extending`, `Resources`), and every gallery / sub-index under them
+— organizes its contents with **cards or tables, never bullet lists**.
+
+- Open with a one-line outcome ("Pick this when…"), then route with a
+  `sphinx-design` card grid (`.. grid::` + `grid-item-card` using `:link:` /
+  `:link-type: doc`), or a `list-table` when columns carry information
+  (e.g. *Page · What you get*).
+- Keep the page's `.. toctree::` **`:hidden:`** — it drives the sidebar nav and
+  page order, while the visible body presents the same entries as cards/tables.
+  Do **not** render child pages as `-` bullets or as a bare `:doc:`-per-line
+  bullet list in the body.
+- `examples/index.rst` is the reference implementation (category card grid).
+
 ## Navigation labels
 
 Toctree entry captions (what shows in the left "Section Navigation") must be the **bare
