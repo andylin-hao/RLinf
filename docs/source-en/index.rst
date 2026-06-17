@@ -1,5 +1,7 @@
-RLinf Documentation
-===================
+.. _home:
+
+Welcome to RLinf
+================
 
 .. image:: _static/svg/logo_white.svg
    :width: 360px
@@ -8,7 +10,7 @@ RLinf Documentation
 
 .. raw:: html
 
-   <h1 style="text-align: center;">Scalable RL post-training for foundation models and embodied agents</h1>
+   <p class="rlinf-hero-subtitle">Scalable RL post-training for foundation models and embodied agents</p>
 
 RLinf is a flexible, scalable open-source infrastructure for post-training
 foundation models with reinforcement learning. The "inf" stands for

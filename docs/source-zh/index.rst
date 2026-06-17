@@ -1,5 +1,7 @@
-RLinf 文档
-==========
+.. _home:
+
+欢迎使用 RLinf
+==============
 
 .. image:: _static/svg/logo_white.svg
    :width: 360px
@@ -8,7 +10,7 @@ RLinf 文档
 
 .. raw:: html
 
-   <h1 style="text-align: center;">面向基础模型与具身智能体的可扩展强化学习后训练框架</h1>
+   <p class="rlinf-hero-subtitle">面向基础模型与具身智能体的可扩展强化学习后训练框架</p>
 
 RLinf 是一个灵活且可扩展的开源基础架构，专为通过强化学习对基础模型进行后训练而设计。名称中的 "inf" 既代表 Infrastructure（基础架构）——新一代训练的强大支撑，也代表 Infinite（无限）——象征开放式学习与持续泛化。
 
