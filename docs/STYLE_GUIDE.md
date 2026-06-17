@@ -23,7 +23,7 @@ correctness, use the **`docs-check`** skill.
 
 RLinf docs are organized into eight single-purpose top-level axes, in this order:
 
-**Get Started · Examples · Evaluation · Concepts · Guides · Reference · Extending · Resources**
+**Get Started · Examples · Evaluation · Guides · Concepts · Reference · Extending · Resources**
 
 Every page belongs to exactly **one** axis. Place it by the reader's starting
 question, not by the team that owns the feature.
@@ -33,8 +33,8 @@ question, not by the team that owns the feature.
 | **Get Started** | Install, quickstarts, requirements, cheat sheet. |
 | **Examples** | The recipe galleries (simulators, robots, models, SFT, algorithms, agents, systems). |
 | **Evaluation** | Eval onboarding, benchmark eval guides, eval CLI / config / results reference. |
-| **Concepts** | The mental model: execution flow, workers, channels, placement, execution modes, environments. |
 | **Guides** | Operational how-tos: configure, launch & scale, data & checkpoints, performance, hardware backends, agent workflows. |
+| **Concepts** | The mental model: execution flow, workers, channels, cluster, placement, execution modes, replay buffer. |
 | **Reference** | Exact specs: APIs, algorithm specs, configuration keys & metrics, evaluation reference. |
 | **Extending** | Contributor how-tos: new env / model / SFT, advanced integrations. |
 | **Resources** | Why RLinf, blog, publications, release notes, FAQ. |
@@ -80,7 +80,7 @@ established groupings:
 
 - **Guides:** Configure · Launch & Scale · Data & Checkpoints · Performance · Hardware Backends · Agent Workflows.
 - **Reference:** API · Algorithms · Configuration · Evaluation Reference.
-- **Concepts:** Execution Model · Scheduling Model · Environment Model.
+- **Concepts:** Execution Model · Scheduling Model.
 - **Extending:** keep the primary add-component pages (New Environment, New Model with FSDP, New Model with Megatron, New SFT Model) as immediate children; group only advanced topics under Advanced Integrations (Megatron-Bridge, weight synchronization, reward-model workflow).
 - **Examples** keeps its own gallery category structure — do not regroup it.
 

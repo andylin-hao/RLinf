@@ -93,8 +93,8 @@ Why RLinf
   Get Started <rst_source/start/index>
   Examples <rst_source/examples/index>
   Evaluation <rst_source/evaluations/index>
-  Concepts <rst_source/concepts/index>
   Guides <rst_source/guides/index>
+  Concepts <rst_source/concepts/index>
   Reference <rst_source/reference/index>
   Extending <rst_source/extending/index>
   Resources <rst_source/resources/index>
