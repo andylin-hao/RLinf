@@ -54,7 +54,9 @@ source_suffix = {
 }
 
 templates_path = ["_templates"]
-exclude_patterns = ["**/_*.rst"]  # underscore-prefixed files are reusable includes, not standalone pages
+exclude_patterns = [
+    "**/_*.rst"
+]  # underscore-prefixed files are reusable includes, not standalone pages
 default_role = "code"
 autosummary_generate = True
 autodoc_mock_imports = ["sglang", "megatron", "prismatic", "libero", "lerobot"]
