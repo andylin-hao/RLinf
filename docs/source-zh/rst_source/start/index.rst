@@ -3,7 +3,7 @@
 
 欢迎使用 RLinf。本指南带你从安装到第一次训练运行，并指引接下来的步骤。
 
-.. grid:: 1 2 2 3
+.. grid:: 1 2 2 4
    :gutter: 2
 
    .. grid-item-card:: 安装
@@ -11,6 +11,12 @@
       :link-type: doc
 
       使用 Docker 或自定义环境安装具身智能栈。
+
+   .. grid-item-card:: 环境要求
+      :link: requirements
+      :link-type: doc
+
+      经过测试的硬件与软件配置。
 
    .. grid-item-card:: 快速上手
       :link: vla
@@ -23,46 +29,6 @@
       :link-type: doc
 
       从单机扩展到多节点或真实机器人运行。
-
-环境要求
---------
-
-以下是经过充分测试的配置。
-
-.. list-table:: 硬件
-   :header-rows: 1
-   :widths: 30 70
-
-   * - 组件
-     - 配置
-   * - GPU
-     - 每个节点 8 块 H100
-   * - CPU
-     - 每个节点 192 核心
-   * - 内存
-     - 每个节点 1.8TB
-   * - 网络
-     - NVLink + RoCE / IB，带宽 3.2 Tbps
-   * - 存储
-     - | 单节点实验使用 1TB 本地存储
-       | 分布式实验使用 10TB 共享存储（NAS）
-
-.. list-table:: 软件
-   :header-rows: 1
-   :widths: 30 70
-
-   * - 组件
-     - 版本
-   * - 操作系统
-     - Ubuntu 22.04
-   * - NVIDIA 驱动
-     - 535.183.06
-   * - CUDA
-     - 12.4
-   * - Docker
-     - 26.0.0
-   * - NVIDIA Container Toolkit
-     - 1.17.8
 
 接下来
 ------
@@ -117,5 +83,6 @@
    :maxdepth: 1
 
    installation
+   requirements
    vla
    cheat_sheet

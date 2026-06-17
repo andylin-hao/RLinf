@@ -4,7 +4,7 @@ Get Started
 Welcome to RLinf. This guide takes you from install to your first training run,
 then points you to what comes next.
 
-.. grid:: 1 2 2 3
+.. grid:: 1 2 2 4
    :gutter: 2
 
    .. grid-item-card:: Install
@@ -12,6 +12,12 @@ then points you to what comes next.
       :link-type: doc
 
       Install the embodied stack with Docker or a custom environment.
+
+   .. grid-item-card:: Requirements
+      :link: requirements
+      :link-type: doc
+
+      The tested hardware and software configuration.
 
    .. grid-item-card:: Quick Start
       :link: vla
@@ -24,46 +30,6 @@ then points you to what comes next.
       :link-type: doc
 
       Move from a single machine to multi-node or real-world runs.
-
-Requirements
-------------
-
-The following configuration has been extensively tested.
-
-.. list-table:: Hardware
-   :header-rows: 1
-   :widths: 30 70
-
-   * - Component
-     - Configuration
-   * - GPU
-     - 8xH100 per node
-   * - CPU
-     - 192 cores per node
-   * - Memory
-     - 1.8TB per node
-   * - Network
-     - NVLink + RoCE / IB 3.2 Tbps
-   * - Storage
-     - | 1TB local storage for single-node experiments
-       | 10TB shared storage (NAS) for distributed experiments
-
-.. list-table:: Software
-   :header-rows: 1
-   :widths: 30 70
-
-   * - Component
-     - Version
-   * - Operating System
-     - Ubuntu 22.04
-   * - NVIDIA Driver
-     - 535.183.06
-   * - CUDA
-     - 12.4
-   * - Docker
-     - 26.0.0
-   * - NVIDIA Container Toolkit
-     - 1.17.8
 
 What's Next
 -----------
@@ -118,5 +84,6 @@ Command Reference
    :maxdepth: 1
 
    installation
+   requirements
    vla
    cheat_sheet
