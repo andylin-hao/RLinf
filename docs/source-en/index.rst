@@ -72,9 +72,17 @@ Choose Your Path
 Why RLinf
 ---------
 
-- **Fast** — hybrid fine-grained pipelining delivers 120%+ throughput over comparable frameworks, plus automatic online scaling.
-- **Flexible** — switch FSDP + Hugging Face for prototyping or Megatron + SGLang for large-scale training, with no code changes.
-- **Proven** — built-in PPO, GRPO, DAPO, and Reinforce++, with SOTA recipes for embodied and reasoning tasks.
+.. list-table::
+   :header-rows: 1
+
+   * - Strength
+     - What it gives you
+   * - Fast
+     - Hybrid fine-grained pipelining delivers 120%+ throughput over comparable frameworks, plus automatic online scaling.
+   * - Flexible
+     - Switch FSDP + Hugging Face for prototyping or Megatron + SGLang for large-scale training, with no code changes.
+   * - Proven
+     - Built-in PPO, GRPO, DAPO, and Reinforce++, with SOTA recipes for embodied and reasoning tasks.
 
 :doc:`Learn more about RLinf's design and benchmarks → <rst_source/resources/why_rlinf>`
 

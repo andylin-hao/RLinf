@@ -70,17 +70,32 @@ If you prefer a local environment, install the agentic stack:
 
 Our startup scripts and configuration files are located in ``examples/agent/wideseek_r1``.
 
-- ``examples/agent/wideseek_r1/config`` contains the YAML configuration files for training and evaluation.
-- ``examples/agent/tools/search_local_server_qdrant`` provides the search engine implementation used by offline tools.
-- ``examples/agent/wideseek_r1/run_train.sh`` and ``examples/agent/wideseek_r1/run_eval.sh`` are the main entry points for training and evaluation, respectively.
+.. list-table::
+   :header-rows: 1
+
+   * - Path
+     - Role
+   * - ``examples/agent/wideseek_r1/config``
+     - YAML configuration files for training and evaluation.
+   * - ``examples/agent/tools/search_local_server_qdrant``
+     - Search engine implementation used by offline tools.
+   * - ``examples/agent/wideseek_r1/run_train.sh`` / ``examples/agent/wideseek_r1/run_eval.sh``
+     - Main entry points for training and evaluation.
 
 Tool Backends
 -------------
 
 WideSeek-R1 supports two tool backends:
 
-- :ref:`wideseek-r1-offline-tools` for training and standard QA evaluation.
-- :ref:`wideseek-r1-online-tools` for WideSearch evaluation.
+.. list-table::
+   :header-rows: 1
+
+   * - Backend
+     - Use it for
+   * - :ref:`Offline tools <wideseek-r1-offline-tools>`
+     - Training and standard QA evaluation.
+   * - :ref:`Online tools <wideseek-r1-online-tools>`
+     - WideSearch evaluation.
 
 See :doc:`Tool Setup <tools>` for the full configuration workflow.
 
@@ -163,8 +178,15 @@ Then configure the rollout_judge section with your desired model and settings:
 
 Example configuration files using the built-in judge can be found in:
 
- - ``examples/agent/wideseek_r1/config/train_qwen3_hybrid_local_judge.yaml``
- - ``examples/agent/wideseek_r1/config/eval_qwen3_widesearch_local_judge.yaml``
+.. list-table::
+   :header-rows: 1
+
+   * - Config
+     - Purpose
+   * - ``examples/agent/wideseek_r1/config/train_qwen3_hybrid_local_judge.yaml``
+     - Train with the local judge.
+   * - ``examples/agent/wideseek_r1/config/eval_qwen3_widesearch_local_judge.yaml``
+     - Evaluate WideSearch with the local judge.
 
 When using the built-in judge, you don't need to start a separate judge server. The judge model will be loaded and managed by RLinf's rollout engine.
 
@@ -177,9 +199,17 @@ WideSeek-R1 supports multi-node training and evaluation. Please refer to the doc
 Next Steps
 ~~~~~~~~~~
 
-- For tool configuration, see :doc:`tools`.
-- For the full training procedure, see :doc:`train`.
-- For the full evaluation procedure, see :doc:`eval`.
+.. list-table::
+   :header-rows: 1
+
+   * - Page
+     - Next step
+   * - :doc:`Tool Setup <tools>`
+     - Configure offline and online tool backends.
+   * - :doc:`Training <train>`
+     - Run the full training procedure.
+   * - :doc:`Evaluation <eval>`
+     - Run the full evaluation procedure.
 
 .. toctree::
    :hidden:

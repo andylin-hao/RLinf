@@ -91,8 +91,8 @@ a.reference.internal:hover {
    controls, then a single global navigation tree. */
 /* Collapse the empty top navbar (sidebar-only model). The theme reserves a 4rem
    header band above the sidebar; with no navbar items it is just blank space.
-   The mobile toggle and the Ask AI button are position:fixed, so they stay
-   visible even with a zero-height header. */
+   The Ask AI button is position:fixed, so it stays visible even with a
+   zero-height header. */
 :root {
   --pst-header-height: 0rem;
 }
@@ -105,6 +105,10 @@ a.reference.internal:hover {
 
 .bd-header .bd-header__inner {
   min-height: 0 !important;
+}
+
+.bd-header .sidebar-toggle {
+  display: none !important;
 }
 
 /* Condense the sidebar header chrome. The theme uses padding:2rem 1rem 1rem,
