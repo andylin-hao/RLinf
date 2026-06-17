@@ -2,7 +2,7 @@ Installation
 ============
 
 Install RLinf in one of two ways: **Option 1 (Docker)** for the most
-reproducible setup, or **Option 2 (uv)** when the Docker image does not match
+reproducible setup, or **Option 2 (UV)** when the Docker image does not match
 your machine.
 
 Option 1: Docker
@@ -34,28 +34,12 @@ environment inside the container:
 - Switch model environments with ``source switch_env openvla``,
   ``source switch_env openvla-oft``, or ``source switch_env openpi``.
 
-Option 2: uv
+Option 2: UV
 ------------
 
-Build a uv virtual environment with ``install.sh`` when the Docker image does
-not match your machine. Choose an install target, then pass it plus any
-target-specific flags.
-
-Choose an Install Target
-~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-.. list-table::
-   :header-rows: 1
-   :widths: 28 72
-
-   * - Target
-     - Use it when
-   * - ``embodied``
-     - You run VLA / robotics examples. Pass ``--model`` and ``--env``.
-   * - ``agentic``
-     - You run agentic or reasoning examples that need Megatron, SGLang, or vLLM.
-   * - ``docs``
-     - You build the Sphinx documentation locally.
+Build a UV virtual environment with ``install.sh`` when the Docker image does
+not match your machine. Pass an install target (``embodied``, ``agentic``, or
+``docs``) plus any target-specific flags:
 
 .. code-block:: bash
 
