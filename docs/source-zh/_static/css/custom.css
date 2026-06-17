@@ -42,6 +42,7 @@ img.logo-img {
 }
 
 .rlinf-hero-logo {
+  background-color: transparent !important; /* override the theme's dark-mode white image bg */
   display: block;
   margin: 0 auto;
   max-width: 360px;
