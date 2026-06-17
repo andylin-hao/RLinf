@@ -92,8 +92,8 @@ Data Efficiency
 
 Effect of the number of real-world demonstrations. We vary the number of real-world demonstrations for the ``Open Drawer`` task and evaluate all training paradigms using the :math:`\pi_{0.5}` model. Performance is reported as success rate, with shaded regions indicating standard deviation.
 
-Quickstart
-----------
+Quick Start
+-----------
 
 - **Instruction:** :doc:`../../examples/embodied/co_training`
 

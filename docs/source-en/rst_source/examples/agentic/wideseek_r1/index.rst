@@ -194,7 +194,7 @@ Multi-node
 ~~~~~~~~~~~~
 
 Since multi-agent generation incurs substantial time overhead, training and evaluation on a single machine with eight GPUs can significantly slow down experiments; therefore,
-WideSeek-R1 supports multi-node training and evaluation. Please refer to the documentation :doc:`../../../start/distribute`.
+WideSeek-R1 supports multi-node training and evaluation. Please refer to :doc:`../../../guides/multi_node`.
 
 Next Steps
 ~~~~~~~~~~

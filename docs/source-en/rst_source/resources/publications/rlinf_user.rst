@@ -149,8 +149,8 @@ With the unified hardware abstraction, RLinf-USER treats robots as first-class r
 
 Under multi-robot and heterogeneous settings, RLinf-USER achieves full policy convergence within comparable time.
 
-Quickstart
-----------
+Quick Start
+-----------
 
 - :doc:`../../examples/embodied/franka`
 

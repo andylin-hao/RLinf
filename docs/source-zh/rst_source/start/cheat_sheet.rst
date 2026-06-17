@@ -10,7 +10,7 @@
 
    git clone https://github.com/RLinf/RLinf.git
    cd RLinf
-   bash requirements/install.sh embodied --model openvla_oft --env maniskill
+   bash requirements/install.sh embodied --model openvla --env maniskill_libero
 
 启动 Ray
 --------
@@ -22,6 +22,7 @@
    ray start --head
 
 多节点运行时，必须在每个节点执行 ``ray start`` 之前设置 ``RLINF_NODE_RANK``。
+参见 :doc:`../guides/multi_node`。
 
 运行训练
 --------
@@ -30,13 +31,7 @@
 
 .. code-block:: bash
 
-   bash examples/embodiment/run_embodiment.sh maniskill_ppo_openvlaoft
-
-从对应示例目录启动智能体或推理训练。
-
-.. code-block:: bash
-
-   bash examples/reasoning/run_main_grpo_math.sh
+   bash examples/embodiment/run_embodiment.sh maniskill_ppo_openvla_quickstart
 
 运行评测
 --------
@@ -51,6 +46,6 @@
 ------
 
 - :doc:`安装 <installation>` — 安装 RLinf 和可选依赖。
-- :doc:`具身智能快速开始 <vla>` — 运行 VLA 训练示例。
-- :doc:`智能体快速开始 <llm>` — 运行推理训练示例。
+- :doc:`快速上手 <vla>` — 运行快速开始训练示例。
+- :doc:`启动与扩展 <../guides/launch-scale/index>` — 扩展到多节点运行。
 - :doc:`评测 <../evaluations/index>` — 运行独立具身智能评测。

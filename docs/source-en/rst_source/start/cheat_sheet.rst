@@ -11,7 +11,7 @@ Install
 
    git clone https://github.com/RLinf/RLinf.git
    cd RLinf
-   bash requirements/install.sh embodied --model openvla_oft --env maniskill
+   bash requirements/install.sh embodied --model openvla --env maniskill_libero
 
 Start Ray
 ---------
@@ -23,6 +23,7 @@ Single-node runs can start Ray locally.
    ray start --head
 
 For multi-node runs, set ``RLINF_NODE_RANK`` before ``ray start`` on every node.
+See :doc:`../guides/multi_node`.
 
 Run Training
 ------------
@@ -31,13 +32,7 @@ Launch an embodied recipe by config name.
 
 .. code-block:: bash
 
-   bash examples/embodiment/run_embodiment.sh maniskill_ppo_openvlaoft
-
-Launch an agentic or reasoning recipe from its example directory.
-
-.. code-block:: bash
-
-   bash examples/reasoning/run_main_grpo_math.sh
+   bash examples/embodiment/run_embodiment.sh maniskill_ppo_openvla_quickstart
 
 Evaluate
 --------
@@ -52,6 +47,6 @@ Next Steps
 ----------
 
 - :doc:`Installation <installation>` — set up RLinf and optional dependencies.
-- :doc:`Embodied Quickstart <vla>` — run a VLA training recipe.
-- :doc:`Agentic Quickstart <llm>` — run a reasoning training recipe.
+- :doc:`Quick Start <vla>` — run the Get Started training recipe.
+- :doc:`Launch & Scale <../guides/launch-scale/index>` — run across nodes.
 - :doc:`Evaluation <../evaluations/index>` — run standalone embodied evaluation.

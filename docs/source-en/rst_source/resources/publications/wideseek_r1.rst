@@ -38,7 +38,7 @@ WideSeek-R1: Exploring Width Scaling for Broad Information Seeking via Multi-Age
 
 **Model:** `WideSeek-R1-4B <https://huggingface.co/RLinf/WideSeek-R1-4b>`__
 
-**QuickStart:** :doc:`QuickStart Guide <../../examples/agentic/wideseek_r1/index>`
+**Quick Start:** :doc:`Quick Start Guide <../../examples/agentic/wideseek_r1/index>`
 
 
 

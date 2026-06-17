@@ -181,8 +181,8 @@ RoboTwin (seven tasks)
 
 "Base" and "SFT" refer to supervised fine-tuned models before RL training.
 
-Quickstart
-----------
+Quick Start
+-----------
 
 - **ManiSkill:** :doc:`../../examples/embodied/maniskill`
 - **LIBERO:** :doc:`../../examples/embodied/libero`

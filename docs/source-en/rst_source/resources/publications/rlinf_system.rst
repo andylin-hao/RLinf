@@ -235,11 +235,11 @@ The following tables report evaluation performance of models trained with RLinf 
 
 RLinf achieves state-of-the-art performance on math reasoning tasks, consistently outperforming existing models across AIME 24, AIME 25, and GPQA-diamond for both 1.5B and 7B model sizes.
 
-Quickstart
-----------
+Quick Start
+-----------
 
 - **Installation:** :doc:`../../start/installation`
-- **Math (reasoning) training:** :doc:`../../start/llm`
+- **Agentic / reasoning examples:** :doc:`../../examples/agentic/index`
 - **Embodied training:** :doc:`../../start/vla`
 
 Citation

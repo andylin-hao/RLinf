@@ -1,5 +1,5 @@
-Quickstart 1: PPO Training of VLAs on Maniskill3
-=================================================
+Quick Start
+===========
 
 This quick-start walks you through training the Visual-Language-Action model, including
 `OpenVLA <https://github.com/openvla/openvla>`_ and `OpenVLA-OFT <https://github.com/moojink/openvla-oft>`_ on the

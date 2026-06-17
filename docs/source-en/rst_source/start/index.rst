@@ -11,31 +11,19 @@ then points you to what comes next.
       :link: installation
       :link-type: doc
 
-      Set up RLinf with a Docker image or a custom environment.
+      Install the embodied stack with Docker or a custom environment.
 
-   .. grid-item-card:: Embodied Training
+   .. grid-item-card:: Quick Start
       :link: vla
       :link-type: doc
 
-      Train OpenVLA and OpenVLA-OFT on ManiSkill3 with PPO.
+      Train OpenVLA on ManiSkill3 with PPO.
 
-   .. grid-item-card:: Agentic Training
-      :link: llm
+   .. grid-item-card:: Launch & Scale
+      :link: ../guides/launch-scale/index
       :link-type: doc
 
-      Train DeepSeek-R1-Distill-Qwen-1.5B on the boba dataset with GRPO.
-
-   .. grid-item-card:: Distributed Training
-      :link: distribute
-      :link-type: doc
-
-      Run multi-node embodied / agentic training.
-
-   .. grid-item-card:: Cheat Sheet
-      :link: cheat_sheet
-      :link-type: doc
-
-      The most-used commands, environment variables, and config keys.
+      Move from a single machine to multi-node or real-world runs.
 
 What's Next
 -----------
@@ -61,18 +49,34 @@ What's Next
 
       Understand the execution model.
 
+   .. grid-item-card:: Guides
+      :link: ../guides/index
+      :link-type: doc
+
+      Configure launches, logging, checkpoints, and clusters.
+
    .. grid-item-card:: Why RLinf
       :link: ../resources/why_rlinf
       :link-type: doc
 
       The design, performance, and SOTA results behind RLinf.
 
+Command Reference
+-----------------
+
+.. grid:: 1 1 1 1
+   :gutter: 2
+
+   .. grid-item-card:: Cheat Sheet
+      :link: cheat_sheet
+      :link-type: doc
+
+      Jump to the most-used commands after you know the workflow.
+
 .. toctree::
    :hidden:
    :maxdepth: 1
 
    installation
-   cheat_sheet
    vla
-   llm
-   distribute
+   cheat_sheet

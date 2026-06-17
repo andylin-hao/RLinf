@@ -88,8 +88,8 @@ Results
      - `87.0% <https://huggingface.co/RLinf/RLinf-Pi05-CALVIN-ABC-D-RL-FlowSDE>`__
      - `84.5% <https://huggingface.co/RLinf/RLinf-Pi05-CALVIN-ABC-D-RL-FlowNoise>`__
 
-Quickstart
-----------
+Quick Start
+-----------
 
 **Full guide:** :doc:`../../examples/embodied/pi0`
 

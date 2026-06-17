@@ -52,10 +52,10 @@ Choose Your Path
       Fine-tune a VLA on LIBERO, ManiSkill, RoboTwin, and more with PPO or GRPO.
 
    .. grid-item-card:: 🧠 Agentic / Reasoning RL
-      :link: rst_source/start/llm
+      :link: rst_source/examples/agentic/index
       :link-type: doc
 
-      Train math-reasoning and agentic tasks with GRPO on Qwen / DeepSeek models.
+      Browse agentic and reasoning recipes for Qwen / DeepSeek models.
 
    .. grid-item-card:: 🧩 Bring Your Own
       :link: rst_source/extending/index
@@ -64,7 +64,7 @@ Choose Your Path
       Add a model, environment, or algorithm and plug it into RLinf.
 
    .. grid-item-card:: 🚀 Scale to a Cluster
-      :link: rst_source/concepts/execution_modes
+      :link: rst_source/guides/launch-scale/index
       :link-type: doc
 
       Collocated, disaggregated, and hybrid placement across GPUs and nodes.

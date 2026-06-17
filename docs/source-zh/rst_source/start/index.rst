@@ -10,31 +10,19 @@
       :link: installation
       :link-type: doc
 
-      使用 Docker 镜像或自定义环境安装 RLinf。
+      使用 Docker 或自定义环境安装具身智能栈。
 
-   .. grid-item-card:: 具身智能训练
+   .. grid-item-card:: 快速上手
       :link: vla
       :link-type: doc
 
-      在 ManiSkill3 上使用 PPO 训练 OpenVLA 与 OpenVLA-OFT。
+      在 ManiSkill3 上使用 PPO 训练 OpenVLA。
 
-   .. grid-item-card:: 智能体训练
-      :link: llm
+   .. grid-item-card:: 启动与扩展
+      :link: ../guides/launch-scale/index
       :link-type: doc
 
-      使用 GRPO 在 boba 数据集上训练 DeepSeek-R1-Distill-Qwen-1.5B。
-
-   .. grid-item-card:: 分布式训练
-      :link: distribute
-      :link-type: doc
-
-      运行多节点的具身智能 / 智能体训练。
-
-   .. grid-item-card:: 速查表
-      :link: cheat_sheet
-      :link-type: doc
-
-      最常用的命令、环境变量与配置项。
+      从单机扩展到多节点或真实机器人运行。
 
 接下来
 ------
@@ -60,18 +48,34 @@
 
       理解 RLinf 的执行模型。
 
+   .. grid-item-card:: 指南
+      :link: ../guides/index
+      :link-type: doc
+
+      配置启动、日志、检查点与集群。
+
    .. grid-item-card:: 为什么选择 RLinf
       :link: ../resources/why_rlinf
       :link-type: doc
 
       RLinf 背后的设计理念、性能与 SOTA 结果。
 
+命令参考
+--------
+
+.. grid:: 1 1 1 1
+   :gutter: 2
+
+   .. grid-item-card:: 速查表
+      :link: cheat_sheet
+      :link-type: doc
+
+      熟悉流程后，直接查找最常用命令。
+
 .. toctree::
    :hidden:
    :maxdepth: 1
 
    installation
-   cheat_sheet
    vla
-   llm
-   distribute
+   cheat_sheet
