@@ -1,28 +1,12 @@
 Installation
 ============
 
-Install RLinf with Docker for the most reproducible setup, or in a custom Python
-environment when the image does not match your machine. Either way, choose the
-install target that matches your workload.
+Install RLinf in one of two ways: **Option 1 (Docker)** for the most
+reproducible setup, or **Option 2 (uv)** when the Docker image does not match
+your machine.
 
-Choose an Install Target
-------------------------
-
-.. list-table::
-   :header-rows: 1
-   :widths: 28 72
-
-   * - Target
-     - Use it when
-   * - ``embodied``
-     - You run VLA / robotics examples. Pass ``--model`` and ``--env``.
-   * - ``agentic``
-     - You run agentic or reasoning examples that need Megatron, SGLang, or vLLM.
-   * - ``docs``
-     - You build the Sphinx documentation locally.
-
-Docker
-------
+Option 1: Docker
+----------------
 
 Each image bundles a ready-to-run stack (for example,
 ``agentic-rlinf0.2-maniskill_libero``). Pull and run it, then select the model
@@ -50,11 +34,28 @@ environment inside the container:
 - Switch model environments with ``source switch_env openvla``,
   ``source switch_env openvla-oft``, or ``source switch_env openpi``.
 
-Custom Environment
-------------------
+Option 2: uv
+------------
 
-Build a virtual environment with ``install.sh`` when the Docker image does not
-match your machine. Pass the target plus any target-specific flags:
+Build a uv virtual environment with ``install.sh`` when the Docker image does
+not match your machine. Choose an install target, then pass it plus any
+target-specific flags.
+
+Choose an Install Target
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 28 72
+
+   * - Target
+     - Use it when
+   * - ``embodied``
+     - You run VLA / robotics examples. Pass ``--model`` and ``--env``.
+   * - ``agentic``
+     - You run agentic or reasoning examples that need Megatron, SGLang, or vLLM.
+   * - ``docs``
+     - You build the Sphinx documentation locally.
 
 .. code-block:: bash
 

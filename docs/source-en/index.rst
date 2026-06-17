@@ -84,8 +84,6 @@ Why RLinf
    * - Proven
      - Built-in PPO, GRPO, DAPO, and Reinforce++, with SOTA recipes for embodied and reasoning tasks.
 
-:doc:`Learn more about RLinf's design and benchmarks → <rst_source/resources/why_rlinf>`
-
 .. toctree::
   :maxdepth: 3
   :includehidden:

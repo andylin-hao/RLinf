@@ -1,27 +1,11 @@
 安装说明
 ========
 
-使用 Docker 获得最可复现的安装，或在 Docker 镜像与机器不匹配时使用自定义 Python
-环境。无论哪种方式，先选择与你的工作负载匹配的安装目标。
+RLinf 提供两种安装方式：**选项 1（Docker）** 获得最可复现的安装，或 **选项 2（uv）**
+在 Docker 镜像与机器不匹配时使用。
 
-选择安装目标
-------------
-
-.. list-table::
-   :header-rows: 1
-   :widths: 28 72
-
-   * - 目标
-     - 适用场景
-   * - ``embodied``
-     - 运行 VLA / 机器人示例。需要传入 ``--model`` 和 ``--env``。
-   * - ``agentic``
-     - 运行需要 Megatron、SGLang 或 vLLM 的智能体 / 推理示例。
-   * - ``docs``
-     - 在本地构建 Sphinx 文档。
-
-Docker
-------
+选项 1：Docker
+--------------
 
 每个镜像都打包了开箱即用的栈（例如 ``agentic-rlinf0.2-maniskill_libero``）。拉取
 并运行镜像，然后在容器内选择模型环境：
@@ -46,11 +30,27 @@ Docker
 - 使用 ``source switch_env openvla``、``source switch_env openvla-oft`` 或
   ``source switch_env openpi`` 切换模型环境。
 
-自定义环境
+选项 2：uv
 ----------
 
-当 Docker 镜像与机器不匹配时，用 ``install.sh`` 构建虚拟环境。传入安装目标以及
-对应的专用参数：
+当 Docker 镜像与机器不匹配时，用 ``install.sh`` 构建 uv 虚拟环境。先选择安装目标，
+再传入该目标以及对应的专用参数。
+
+选择安装目标
+~~~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 28 72
+
+   * - 目标
+     - 适用场景
+   * - ``embodied``
+     - 运行 VLA / 机器人示例。需要传入 ``--model`` 和 ``--env``。
+   * - ``agentic``
+     - 运行需要 Megatron、SGLang 或 vLLM 的智能体 / 推理示例。
+   * - ``docs``
+     - 在本地构建 Sphinx 文档。
 
 .. code-block:: bash
 
