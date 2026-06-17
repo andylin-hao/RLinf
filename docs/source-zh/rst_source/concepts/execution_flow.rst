@@ -3,6 +3,13 @@ RLinf 执行流程
 
 先阅读本页，理解 RLinf 如何执行一个 RL 训练任务，再调优 worker、channel 或 placement。
 
+.. figure:: ../../_static/svg/overview.svg
+   :width: 90%
+   :align: center
+   :class: overview-svg
+
+   RLinf 系统架构总览。
+
 RLinf 执行流程概览
 --------------------------------
 

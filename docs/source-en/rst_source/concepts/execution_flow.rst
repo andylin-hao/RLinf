@@ -4,6 +4,13 @@ RLinf Execution Flow
 Use this page to understand how RLinf executes an RL training job before you
 tune workers, channels, or placement.
 
+.. figure:: ../../_static/svg/overview.svg
+   :width: 90%
+   :align: center
+   :class: overview-svg
+
+   RLinf system architecture overview.
+
 RLinf Execution Overview
 ------------------------
 

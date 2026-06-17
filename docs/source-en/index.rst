@@ -39,11 +39,6 @@ foundation models with reinforcement learning. The "inf" stands for
       :link-type: doc
       :text-align: center
 
-.. image:: _static/svg/overview.svg
-   :width: 1000px
-   :align: center
-   :class: overview-svg
-
 Choose Your Path
 ----------------
 
