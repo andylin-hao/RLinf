@@ -1,5 +1,5 @@
 基于 ManiSkill 的强化学习训练
-=============================
+========================================
 
 .. |huggingface| image:: /_static/svg/hf-logo.svg
    :width: 16px
@@ -17,7 +17,7 @@
 策略进行强化学习微调，达到业界领先的成功率，并在分布外（OOD）变体上同样表现优异。
 
 概览
-----
+----------------------------------------
 
 在 ManiSkill3 上对 VLA 进行强化学习微调；OpenVLA 与 OpenVLA-OFT 在 plate-25 上成功率均超过 90%。
 
@@ -48,7 +48,7 @@
 | **前置条件：** :doc:`安装 </rst_source/start/installation>` · ManiSkill 资产与基座检查点（见下文步骤）。
 
 任务
-~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 参考方案在 ``PutOnPlateInScene25Main-v3`` (plate-25) 任务上训练，并在分布内（IND）以及分布外
 （OOD）设置上评测：
@@ -69,7 +69,7 @@
      - 执行阶段的变化。
 
 观测与动作
-~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. list-table::
    :header-rows: 1
@@ -89,7 +89,7 @@
 下面的流程以 **OpenVLA / OpenVLA-OFT** + **PPO/GRPO** 为例；切换配置即可使用其他受支持的模型。
 
 安装
-----
+----------------------------------------
 
 .. include:: _setup_common.rst
 
@@ -118,7 +118,7 @@
    source .venv/bin/activate
 
 下载资产
---------
+----------------------------------------
 
 将 ManiSkill 资产下载到环境包目录：
 
@@ -129,7 +129,7 @@
    hf download --repo-type dataset RLinf/maniskill_assets --local-dir ./assets
 
 下载模型
---------
+----------------------------------------
 
 下载预训练基座检查点（任选一种方式）：
 
@@ -146,7 +146,7 @@
 .. include:: _model_path.rst
 
 运行
-----
+----------------------------------------
 
 每个方案对应 ``examples/embodiment/config/`` 下的一个 YAML 配置：
 
@@ -177,7 +177,7 @@
    - 卡住或显存不足（OOM）？ → :doc:`FAQ <../../resources/faq>`
 
 可视化与结果
-------------
+----------------------------------------
 
 启动 TensorBoard 实时查看训练：
 
@@ -199,7 +199,7 @@
             video_base_dir: ${runner.logger.log_path}/video/eval
 
 ManiSkill3 结果
-~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 在单台 8 卡 H100 机器上，OpenVLA（左）与 OpenVLA-OFT（右）在 ManiSkill3 的 plate-25-main
 任务上成功率均超过 90%。

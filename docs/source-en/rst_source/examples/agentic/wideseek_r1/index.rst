@@ -67,7 +67,7 @@ If you prefer a local environment, install the agentic stack:
 .. code-block:: bash
 
    bash requirements/install.sh agentic
-   
+
 Our startup scripts and configuration files are located in ``examples/agent/wideseek_r1``.
 
 - ``examples/agent/wideseek_r1/config`` contains the YAML configuration files for training and evaluation.
@@ -84,8 +84,8 @@ WideSeek-R1 supports two tool backends:
 
 See :doc:`Tool Setup <tools>` for the full configuration workflow.
 
-Quick Start
------------
+Run It
+------
 
 Before running either training or evaluation, start the judge model server.
 WideSeek-R1 uses an LLM judge to provide more reliable feedback than exact-match
@@ -153,7 +153,7 @@ Then configure the rollout_judge section with your desired model and settings:
      group_name: "RolloutJudgeGroup"
      gpu_memory_utilization: 0.5
      model:
-       model_type: qwen3  
+       model_type: qwen3
        model_path: /PATH/TO/YOUR/JUDGE/MODEL  # Replace with actual path
        precision: fp16
      rollout_backend: sglang
@@ -168,10 +168,10 @@ Example configuration files using the built-in judge can be found in:
 
 When using the built-in judge, you don't need to start a separate judge server. The judge model will be loaded and managed by RLinf's rollout engine.
 
-Multi-node 
+Multi-node
 ~~~~~~~~~~~~
 
-Since multi-agent generation incurs substantial time overhead, training and evaluation on a single machine with eight GPUs can significantly slow down experiments; therefore, 
+Since multi-agent generation incurs substantial time overhead, training and evaluation on a single machine with eight GPUs can significantly slow down experiments; therefore,
 WideSeek-R1 supports multi-node training and evaluation. Please refer to the documentation :doc:`../../../start/distribute`.
 
 Next Steps

@@ -268,8 +268,10 @@ Example local override:
 
    self.spatial_model = spatial_model = VGGT.from_pretrained('/workspace/models/VGGT-1B')
 
-Configure ``model_path``
-------------------------
+Configure Further
+-----------------
+
+For common Hydra sections and path fields, see :doc:`Training configuration <../../reference/configuration>`.
 
 Two configs are provided, one per benchmark:
 
@@ -301,8 +303,8 @@ Import Sanity Check
 
 If the command prints ``IMPORT_OK``, the package-level dependency wiring is valid.
 
-Evaluation
-----------
+Standalone Evaluation
+---------------------
 
 Use the unified Evaluation section to verify ABot-M0 checkpoints before training.
 Start from the :doc:`LIBERO evaluation guide <../../evaluations/guides/libero>` and
@@ -327,8 +329,8 @@ For CLI usage, Hydra overrides, logs, and video output, use the
 :doc:`Evaluation CLI reference <../../evaluations/reference/cli>` and
 :doc:`Evaluation results reference <../../evaluations/reference/results>`.
 
-Training
---------
+Run It
+------
 
 PPO training uses the same launch flow as evaluation. Select the target suite
 with ``LIBERO_TYPE`` and launch the corresponding config.

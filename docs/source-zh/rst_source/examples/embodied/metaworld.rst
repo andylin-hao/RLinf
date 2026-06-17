@@ -1,5 +1,5 @@
 基于MetaWorld评测平台的强化学习训练
-======================================
+========================================
 
 .. |huggingface| image:: /_static/svg/hf-logo.svg
    :width: 16px
@@ -17,7 +17,7 @@
 分布外（OOD）泛化。
 
 概览
-----
+----------------------------------------
 
 在 Meta-World 的 50 个任务上对 VLA 进行强化学习微调；π₀ + PPO 平均成功率约 78%。
 
@@ -48,7 +48,7 @@
 | **前置条件：** :doc:`安装 </rst_source/start/installation>` · SFT 检查点（见下文步骤）。
 
 任务
-~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. list-table::
    :header-rows: 1
@@ -65,7 +65,7 @@
      - 在 45 个任务上训练；在 5 个留出（OOD）任务上评测。
 
 观测与动作
-~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. list-table::
    :header-rows: 1
@@ -82,7 +82,7 @@
 
 
 安装
-----
+----------------------------------------
 
 .. include:: _setup_common.rst
 
@@ -109,12 +109,12 @@
    bash requirements/install.sh embodied --model openpi --env metaworld
    # 或安装 OpenVLA-OFT 环境：
    # bash requirements/install.sh embodied --model openvla-oft --env metaworld
-   
+
    source .venv/bin/activate
 
 
 下载模型
---------
+----------------------------------------
 
 下载参考配方使用的 SFT 检查点（任选一种方式）：
 
@@ -138,7 +138,7 @@
 .. include:: _model_path.rst
 
 运行
-----
+----------------------------------------
 
 每个配方都是 ``examples/embodiment/config/`` 下的一个 YAML 配置：
 
@@ -184,7 +184,7 @@
 
 
 可视化与结果
-------------
+----------------------------------------
 
 启动 TensorBoard 实时观察训练：
 
@@ -207,7 +207,7 @@
 
 
 MetaWorld 结果
-~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 下表Diffusion Policy, TinyVLA和SmolVLA的结果参考 `SmolVLA 论文 <https://arxiv.org/abs/2403.04880>`_ 论文得到。π\ :sub:`0`\ 和 π\ :sub:`0.5`\ 的SFT结果是通过LeRobot官方提供的 `数据集 <https://huggingface.co/datasets/lerobot/metaworld_mt50>`_ 重新训练所得。
 
 .. list-table:: **MetaWorld-MT50 性能对比（Success Rate, %）**

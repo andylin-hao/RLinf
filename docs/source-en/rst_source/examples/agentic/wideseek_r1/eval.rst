@@ -1,5 +1,5 @@
-Evaluation
-==========
+WideSeek-R1 Evaluation
+======================
 
 This page describes how to evaluate WideSeek-R1 in RLinf.
 

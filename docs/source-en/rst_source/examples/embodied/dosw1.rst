@@ -106,8 +106,8 @@ Hardware Setup
    - ``right_arm_port = 50053`` (right follower)
    - ``right_lead_port = 50052`` (right leader)
 
-Dependency Installation
------------------------
+Installation
+------------
 
 The robot node and the training / rollout node share the same install command,
 but only the robot node needs the official **AirBot SDK** (``airbot_py``
@@ -120,7 +120,7 @@ Robot Node
 The AirBot SDK is typically pre-deployed on a DOS-W1 robot, so the install
 command below can pick it up automatically.
 
-a. Clone RLinf Repository
+A. Clone RLinf Repository
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. code:: bash
@@ -130,7 +130,7 @@ a. Clone RLinf Repository
    git clone https://github.com/RLinf/RLinf.git
    cd RLinf
 
-b. Install Dependencies
+B. Install Dependencies
 ^^^^^^^^^^^^^^^^^^^^^^^
 
 .. code:: bash
@@ -152,10 +152,10 @@ If your SDK files live elsewhere, point the installer at the correct paths:
    export DOSW1_API_PATH=/path/to/airbot_api
    bash requirements/install.sh embodied --env dosw1
 
-Training / Rollout Node
-~~~~~~~~~~~~~~~~~~~~~~~
+Training / Rollout Nodes
+~~~~~~~~~~~~~~~~~~~~~~~~
 
-a. Clone RLinf Repository
+A. Clone RLinf Repository
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. code:: bash
@@ -165,7 +165,7 @@ a. Clone RLinf Repository
    git clone https://github.com/RLinf/RLinf.git
    cd RLinf
 
-b. Install Dependencies
+B. Install Dependencies
 ^^^^^^^^^^^^^^^^^^^^^^^
 
 .. code:: bash
@@ -185,8 +185,8 @@ expected. The remaining dependencies (``embodied`` extra, ``evdev``,
    ``embodied`` extra and you will be missing environment-side dependencies
    (``evdev``, ``opencv-python``, RealSense bindings, …).
 
-Model Download
---------------
+Download the Model
+------------------
 
 Download the ResNet-10 pretrained checkpoint used by the Flow Matching
 policy (``actor.model.encoder_config.ckpt_name: resnet10_pretrained.pt``):
@@ -204,8 +204,8 @@ policy (``actor.model.encoder_config.ckpt_name: resnet10_pretrained.pt``):
 Point ``actor.model.model_path`` and ``rollout.model.model_path`` in the YAML
 at the downloaded directory.
 
-Running the Experiment
-----------------------
+Run It
+------
 
 Target Joint Calibration
 ~~~~~~~~~~~~~~~~~~~~~~~~
@@ -456,8 +456,8 @@ state-only MLP so it runs on a single node without cameras:
 Use this to validate the config tree and cluster plumbing end-to-end. It is
 **not** a real-robot training recipe — the image pipeline is disabled.
 
-Training
-~~~~~~~~
+Visualization and Results
+~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Once calibration, demos, and the YAML are ready, launch training from the
 GPU node:

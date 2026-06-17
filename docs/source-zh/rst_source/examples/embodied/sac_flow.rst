@@ -13,7 +13,7 @@
 相关论文：`SAC Flow: Sample-Efficient Reinforcement Learning of Flow-Based Policies via Velocity-Reparameterized Sequential Modeling <https://arxiv.org/abs/2509.25756>`_
 
 概览
-----
+----------------------------------------
 
 用 SAC 训练流匹配（Flow Matching）策略——可在 ManiSkill 仿真中或真实 Franka（插销）上进行。
 
@@ -44,7 +44,7 @@
 | **前置条件：** 仿真请参考 :doc:`安装 </rst_source/start/installation>`，真机请参考 :doc:`franka`。
 
 任务
-~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. list-table::
    :header-rows: 1
@@ -64,22 +64,22 @@
      - 6 维末端执行器位姿
 
 SAC-Flow 工作原理
------------------
+----------------------------------------
 
 **核心算法组件**
 
 1.  **SAC (Soft Actor-Critic)**
-    
+
     -   通过 Bellman 公式和熵正则化学习 Q 值。
-    
+
     -   使用 **Flow Matching** 网络作为 Actor 策略。
-    
+
     -   学习温度参数以平衡探索与利用。
 
 2.  **Flow Matching Policy**
 
     -   **速度网络参数化**：将流策略的 K 步采样视为 RNN，将流策略中的速度网络替换成为循环而生的现代 Transformer 架构，解决训练稳定问题。
-    
+
     -   **对数似然计算**：在每步采样中填加高斯噪声 + 配套漂移修正，保证末端动作分布不变，同时把路径密度分解为单步高斯似然的连乘，从而得到可微的 :math:`\log p_{\theta}(A|s)`。
 
 3. **RLPD (Reinforcement Learning with Prior Data)**
@@ -88,15 +88,15 @@ SAC-Flow 工作原理
 
    - 为加速在真实世界的训练，SAC-Flow 也可结合 RLPD 使用预采集的离线数据作为演示缓冲区。
 
-依赖安装
----------------
+安装
+----------------------------------------
 
 对于在仿真环境运行，请参考 :doc:`../../start/installation` 进行安装。
 
 对于在真机上运行，请参考 :doc:`franka` 进行安装和硬件配置。
 
 运行
-----
+----------------------------------------
 
 **1. 配置文件**
 
@@ -115,8 +115,8 @@ RLinf 提供了针对仿真和真机环境的默认配置文件：
      model:
        model_type: "flow_policy"
        # 输入类型: 'state' (仿真) 或 'mixed' (真机, 图像+状态)
-       input_type: "state" 
-       
+       input_type: "state"
+
        # Flow Matching 相关参数
        denoising_steps: 4  # 生成动作去噪步数
        d_model: 256        # Transformer 维度
@@ -138,7 +138,7 @@ RLinf 提供了针对仿真和真机环境的默认配置文件：
 **2.2 算法参数 (Algorithm)**
 
 .. code:: yaml
-   
+
    algorithm:
       # SAC 超参数
       gamma: 0.96          # 折扣因子
@@ -152,7 +152,7 @@ RLinf 提供了针对仿真和真机环境的默认配置文件：
             lr_scheduler: torch_constant
             clip_grad: 10.0
       critic_actor_ratio: 4  # Critic 与 Actor 训练次数比例
-      
+
       # 训练与交互频率
       update_epoch: 30     # 每次交互后的训练步数
 
@@ -180,7 +180,7 @@ RLinf 提供了针对仿真和真机环境的默认配置文件：
    bash examples/embodiment/run_realworld_async.sh realworld_sac_flow_image
 
 可视化与结果
--------------------------
+----------------------------------------
 
 **1. TensorBoard 日志**
 
@@ -221,7 +221,7 @@ RLinf 提供了针对仿真和真机环境的默认配置文件：
   - ``train/replay_buffer/utilization``: 重放缓冲区的利用率
 
 真实世界结果
-~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 以下提供了SAC-Flow算法插块插入任务的演示视频（经加速处理）和训练曲线。在 30分钟 的训练时间内，机器人能够学习到一套能够持续成功完成任务的策略。
 
 .. raw:: html

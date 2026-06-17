@@ -7,8 +7,7 @@ Flow Matching Policy Training with SAC
 
    SAC-Flow overview.
 
-This document provides a comprehensive guide of training a **Flow Matching** policy network using the **SAC (Soft Actor-Critic)** algorithm in the RLinf framework.
-This algorithm combines the advantages of maximum entropy reinforcement learning and generative flow matching models, supporting training in both simulation environments and real-world environments.
+Train a **Flow Matching** policy network with **SAC (Soft Actor-Critic)** in simulation or on a real robot. The method combines maximum-entropy reinforcement learning with generative flow matching models.
 
 Paper: `SAC Flow: Sample-Efficient Reinforcement Learning of Flow-Based Policies via Velocity-Reparameterized Sequential Modeling <https://arxiv.org/abs/2509.25756>`_
 
@@ -69,17 +68,17 @@ How SAC-Flow Works
 **Core Algorithm Components**
 
 1.  **SAC (Soft Actor-Critic)**
-    
+
     -   Learns Q-values through the Bellman equation and entropy regularization.
-    
+
     -   Uses a **Flow Matching** network as the Actor policy.
-    
+
     -   Learns a temperature parameter to balance exploration and exploitation.
 
 2.  **Flow Matching Policy**
 
     -   **Velocity Network Parameterization**: Treats the K-step sampling of the flow policy as an RNN, replacing the velocity network in the flow policy with a recurrent modern Transformer architecture to solve training stability issues.
-    
+
     -   **Log-Likelihood Calculation**: Adds Gaussian noise + corresponding drift correction in each sampling step to ensure the terminal action distribution remains unchanged, while decomposing the path density into a product of single-step Gaussian likelihoods, thereby obtaining a differentiable :math:`\log p_{\theta}(A|s)` .
 
 3. **RLPD (Reinforcement Learning with Prior Data)**
@@ -115,8 +114,8 @@ RLinf provides default configuration files for both simulation and real-world en
      model:
        model_type: "flow_policy"
        # Input type: 'state' (simulation) or 'mixed' (real world, image+state)
-       input_type: "state" 
-       
+       input_type: "state"
+
        # Flow Matching related parameters
        denoising_steps: 4  # Number of denoising steps for action generation
        d_model: 256        # Transformer dimension
@@ -138,7 +137,7 @@ RLinf provides default configuration files for both simulation and real-world en
 **2.2 Algorithm Parameters (Algorithm)**
 
 .. code:: yaml
-   
+
    algorithm:
       # SAC Hyperparameters
       gamma: 0.96          # Discount factor
@@ -152,7 +151,7 @@ RLinf provides default configuration files for both simulation and real-world en
             lr_scheduler: torch_constant
             clip_grad: 10.0
       critic_actor_ratio: 4  # Ratio of Critic to Actor training steps
-      
+
       # Training and Interaction Frequency
       update_epoch: 30     # Number of training steps after each interaction
 

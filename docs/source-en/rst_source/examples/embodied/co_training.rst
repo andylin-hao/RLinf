@@ -65,8 +65,8 @@ This example ships one demo setup; for your own robot, collect data and build a 
 Installation
 ------------
 
-1. Clone the RLinf repo
-~~~~~~~~~~~~~~~~~~~~~~~~~~
+1. Clone the RLinf Repository
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. code:: bash
 
@@ -75,8 +75,8 @@ Installation
    git clone https://github.com/RLinf/RLinf.git
    cd RLinf
 
-2. Install dependencies
-~~~~~~~~~~~~~~~~~~~~~~~~~~
+2. Install Dependencies
+~~~~~~~~~~~~~~~~~~~~~~~
 
 **Option 1: Docker**
 
@@ -119,8 +119,11 @@ Refer to the :doc:`ManiSkill example <maniskill>` for base asset setup, then dow
    hf download --repo-type dataset RLinf/RLCo-maniskill-assets --include "custom_assets/*" --local-dir .
 
 
-Stage I: SFT pretraining
-------------------------
+Run It
+------
+
+Stage I: SFT Pretraining
+~~~~~~~~~~~~~~~~~~~~~~~~
 
 Stage I injects real and sim data via supervised learning before RL. You can either train yourself or use a provided checkpoint.
 
@@ -154,8 +157,8 @@ Skip training and use the provided SFT checkpoint:
    # export HF_ENDPOINT=https://hf-mirror.com
    hf download RLinf/RLinf-Pi05-RLCo-PandaPutOnPlateInScene25DigitalTwin-V1-SFT --local-dir RLinf-Pi05-RLCo-PandaPutOnPlateInScene25DigitalTwin-V1-SFT
 
-Stage II: Sim-real co-training (RL)
------------------------------------
+Stage II: Sim-Real Co-Training (RL)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 This stage adds SFT loss into the PPO loop for joint optimization.
 
@@ -171,7 +174,7 @@ Download the 50 real trajectories in LeRobot format used for co-training:
 
 **Important config**
 
-The config ``maniskill_ppo_co_training_openpi_pi05.yaml`` is provided. For general PPO settings see :doc:`π₀ and π₀.₅ RL training <pi0>`. Co-training-specific options:
+The config ``maniskill_ppo_co_training_openpi_pi05.yaml`` is provided. For common path, cluster, and runner fields, see :doc:`Training configuration <../../reference/configuration>`. For general PPO settings see :doc:`π₀ and π₀.₅ RL training <pi0>`. Co-training-specific options:
 
 **Model paths**
 

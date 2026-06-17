@@ -1,5 +1,5 @@
 基于Behavior评测平台的强化学习训练
-====================================
+========================================
 
 .. figure:: https://raw.githubusercontent.com/RLinf/misc/main/pic/behavior.jpg
    :align: center
@@ -12,7 +12,7 @@
 强化学习微调。
 
 概览
-----
+----------------------------------------
 
 在 BEHAVIOR 家居任务上用 PPO 对 VLA 进行强化学习微调。
 
@@ -43,7 +43,7 @@
 | **前置条件：** :doc:`安装 </rst_source/start/installation>` · IsaacSim 4.5 与 BEHAVIOR-1K 资产（>30 GB）· 基座检查点（见下文步骤）。
 
 任务
-~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. list-table::
    :header-rows: 1
@@ -57,7 +57,7 @@
      - IsaacSim / OmniGibson 上的双臂 R1 Pro。
 
 观测与动作
-~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. list-table::
    :header-rows: 1
@@ -72,7 +72,7 @@
 
 
 安装
-----
+----------------------------------------
 
 .. warning::
 
@@ -113,7 +113,7 @@
 
 
 下载资产
---------
+----------------------------------------
 
 下载 IsaacSim 4.5，并在每次运行前设置 ``ISAAC_PATH``：
 
@@ -145,7 +145,7 @@
 
 
 下载模型
---------
+----------------------------------------
 
 下载对应模型族的检查点（任选一种方式）：
 
@@ -166,7 +166,7 @@
 
 
 运行
-----
+----------------------------------------
 
 .. warning::
 
@@ -219,8 +219,8 @@
    已知问题：在当前 BEHAVIOR 设置下，OpenVLA-OFT / π₀ 的训练成功率
    （``env/success_once``）可能保持为 0。该问题会在后续版本修复。
 
-使用 ``behavior_openpi_pi05_eval.yaml`` 评估
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+独立评测
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 原则上，任何在 BEHAVIOR 上有非零成功率、并且已经转换为 PyTorch
 格式的 ``pi05`` checkpoint 都可以使用该配置评估。我们只将
@@ -255,7 +255,7 @@ OpenPI-Comet 作为示例来源：
 
 
 配置参考
---------
+----------------------------------------
 
 BEHAVIOR 环境由 ``examples/embodiment/config/env/behavior_r1pro.yaml`` 驱动。RLinf 先加载
 OmniGibson 的基础配置（``base_config_name``），再应用 ``omni_config`` 覆盖项（见
@@ -317,7 +317,7 @@ OmniGibson 的基础配置（``base_config_name``），再应用 ``omni_config``
        整除。提高该值可缓解环境步进瓶颈，但会成倍增加进程数与内存。
 
 生成缓存任务实例
-~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 ``rlinf/envs/behavior/instance_generator.py`` 直接从 ``behavior_r1pro.yaml`` 生成
 ``*_template.json`` 与 ``*_template-tro_state.json`` 文件（它读取 ``scene_model``、
@@ -348,7 +348,7 @@ OmniGibson 的基础配置（``base_config_name``），再应用 ``omni_config``
 
 
 可视化与结果
-------------
+----------------------------------------
 
 启动 TensorBoard 实时观察训练：
 

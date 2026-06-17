@@ -7,7 +7,7 @@
 
    D4RL 基准上的离线强化学习。
 
-本文说明如何在 RLinf 中运行基于 **D4RL 的 IQL（Implicit Q-Learning）离线强化学习训练**，面向直接使用离线数据集训练策略、无需在线环境交互的场景。
+使用本配方在 RLinf 中运行基于 **D4RL 的 IQL（Implicit Q-Learning）离线强化学习训练**，直接用离线数据集训练策略，无需在线环境交互。
 
 主要目标为训练一个策略，使其：
 
@@ -16,7 +16,7 @@
 3. **接入 RLinf 体系**：离线数据在 IQL Actor 内加载；EnvWorker、RolloutWorker 与 OfflineRunner 负责评测等；支持 PyTorch + FSDP。
 
 概览
-----
+----------------------------------------
 
 用 IQL 从 D4RL 离线数据集训练策略——无需在线环境交互。
 
@@ -47,7 +47,7 @@
 | **前置条件：** :doc:`安装 </rst_source/start/installation>` · D4RL 数据集（首次运行时自动下载）。
 
 任务
-~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 RLinf 为三类 D4RL 任务族提供 IQL 配置；各任务的观测与动作空间由 D4RL 定义。
 
@@ -69,7 +69,7 @@ RLinf 为三类 D4RL 任务族提供 IQL 配置；各任务的观测与动作空
      - ``d4rl_iql_kitchen_adroit.yaml``
 
 IQL 工作原理
-------------
+----------------------------------------
 
 **核心算法组件**
 
@@ -85,7 +85,7 @@ IQL 工作原理
    每个 update step：Actor 从各 rank 本地的 ``DataLoader``（在 ``EmbodiedIQLFSDPPolicy.build_offline_dataloader`` 中构建）取一个 batch，然后按当前实现顺序执行 IQL：更新 Value → 更新 Actor → 更新 Critic → 软更新目标 Critic。
 
 安装
-----
+----------------------------------------
 
 安装带 D4RL 的 embodied 环境：
 
@@ -97,7 +97,7 @@ IQL 工作原理
 启动脚本默认设置 ``MUJOCO_GL=egl`` 与 ``PYOPENGL_PLATFORM=egl``，便于无头运行。
 
 运行
-----
+----------------------------------------
 
 **1. 配置文件**
 
@@ -196,12 +196,12 @@ RLinf 为不同 D4RL 任务族提供默认 IQL 配置：
    ./examples/embodiment/run_offline_rl.sh d4rl_iql_kitchen_adroit
 
 断点续训
-----------------------------
+----------------------------------------
 
 将 ``runner.resume_dir`` 设为 checkpoint 目录（如 ``checkpoints/global_step_XXXXX``），再执行相同启动命令即可从该步加载权重并继续训练。
 
 可视化与结果
-----------------------------
+----------------------------------------
 
 **1. TensorBoard 日志**
 

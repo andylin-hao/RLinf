@@ -28,7 +28,8 @@ details.
    RLPD <algorithms/rlpd>
    IQL <algorithms/iql>
    Async PPO <algorithms/async_ppo>
-   Configuration Metrics <metrics>
+   Training Configuration <configuration>
+   Training Metrics <metrics>
    Evaluation Configuration <../evaluations/reference/configuration>
    Evaluation CLI <../evaluations/reference/cli>
    Evaluation Models <../evaluations/reference/models>

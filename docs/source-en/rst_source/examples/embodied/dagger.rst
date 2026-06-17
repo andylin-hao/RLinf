@@ -272,8 +272,8 @@ Use the same config name with either launcher:
    # For RoboTwin, add the following two commands before running the .sh file:
    # export ROBOT_PLATFORM=ALOHA export ROBOTWIN_PATH=/path/to/RoboTwin
 
-Visualization and Results
--------------------------
+Visualization and Visualization and Results
+-------------------------------------------
 
 **1. TensorBoard Logs**
 
@@ -293,8 +293,8 @@ For metric definitions, see :doc:`Training metrics <../../reference/metrics>`. D
 - ``train/replay_buffer/total_samples``: Number of replay-buffer samples available for training.
 - ``train/replay_buffer/cache_size``: Number of cached flattened trajectories.
 
-Results
--------
+Visualization and Results
+-------------------------
 
 .. csv-table::
    :header: "Configuration", "Student init SR", "Expert SR", "Training Time", "Student final SR"

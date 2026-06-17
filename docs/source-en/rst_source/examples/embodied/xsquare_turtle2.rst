@@ -92,8 +92,8 @@ The real-world setup requires:
   Ensure the training node and the robot controller node are in the **same local network**.
 
 
-Dependency Installation
------------------------
+Installation
+------------
 
 The controller node and the training/rollout node(s) require different software dependencies.
 
@@ -120,11 +120,11 @@ Then install the RLinf Python dependencies for the embodied real-world setup:
    bash requirements/install.sh embodied --env xsquare_turtle2
    source .venv/bin/activate
 
-Training / Rollout Node
-~~~~~~~~~~~~~~~~~~~~~~~
+Training / Rollout Nodes
+~~~~~~~~~~~~~~~~~~~~~~~~
 
-a. Clone RLinf Repository
-^^^^^^^^^^^^^^^^^^^^^^^^^^
+A. Clone RLinf Repository
+^^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. code:: bash
 
@@ -133,8 +133,8 @@ a. Clone RLinf Repository
    git clone https://github.com/RLinf/RLinf.git
    cd RLinf
 
-b. Install Dependencies
-^^^^^^^^^^^^^^^^^^^^^^^^
+B. Install Dependencies
+^^^^^^^^^^^^^^^^^^^^^^^
 
 **Option 1: Docker Image**
 
@@ -160,8 +160,8 @@ b. Install Dependencies
    source .venv/bin/activate
 
 
-Model Download
---------------
+Download the Model
+------------------
 
 Before starting training, download the pretrained ResNet CNN backbone:
 
@@ -180,8 +180,8 @@ Before starting training, download the pretrained ResNet CNN backbone:
 After downloading, update the ``model_path`` field in the configuration YAML file.
 
 
-Running the Experiment
------------------------
+Run It
+------
 
 Prerequisites
 ~~~~~~~~~~~~~
@@ -313,8 +313,8 @@ Run on the head node:
 
    bash examples/embodiment/run_realworld_async.sh realworld_dummy_turtle2_sac_cnn
 
-Running the Experiment
-~~~~~~~~~~~~~~~~~~~~~~
+Run It
+~~~~~~
 
 After verifying the setup, start the real-world training experiment on the head node:
 

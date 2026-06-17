@@ -1,5 +1,5 @@
 基于 IsaacLab 的强化学习训练
-====================================
+========================================
 
 .. |huggingface| image:: /_static/svg/hf-logo.svg
    :width: 16px
@@ -16,7 +16,7 @@
 你将使用 RLinf 在自定义 Franka 方块堆叠任务上，通过 PPO 微调 GR00T N1.5 或 OpenPI π₀.₅。
 
 概览
-----
+----------------------------------------
 
 先使用 SFT 检查点，再通过 PPO 在 IsaacLab Franka stack-cube 任务上微调 VLA。
 
@@ -47,7 +47,7 @@
 | **前置条件：** :doc:`安装 </rst_source/start/installation>` · Isaac Sim · SFT 检查点（见下文）。
 
 任务
-~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. list-table::
    :header-rows: 1
@@ -59,7 +59,7 @@
      - 将红色方块堆到蓝色方块上，再将绿色方块堆到红色方块上。
 
 观测与动作
-~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. list-table::
    :header-rows: 1
@@ -77,7 +77,7 @@
      - ``Stack the red block on the blue block, then stack the green block on the red block.``
 
 安装
-----
+----------------------------------------
 
 .. include:: _setup_common.rst
 
@@ -122,7 +122,7 @@
    # source .venv/bin/activate
 
 下载 Isaac Sim
-~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 下载 Isaac Sim 5.1.0 并初始化其 shell 环境：
 
@@ -140,7 +140,7 @@
    每次在新终端中启动 IsaacLab 前，都需要运行 ``source ./setup_conda_env.sh``。
 
 下载模型
---------
+----------------------------------------
 
 下载你要微调的模型检查点。
 
@@ -179,7 +179,7 @@
 `IsaacLab-Stack-Cube-Data <https://huggingface.co/datasets/RLinf/IsaacLab-Stack-Cube-Data>`__。
 
 运行
-----
+----------------------------------------
 
 选择一个配置并启动训练：
 
@@ -230,7 +230,7 @@
    ``init_params.id`` 指向新的 task id。
 
 可视化与结果
-------------
+----------------------------------------
 
 在 RLinf 仓库根目录启动 TensorBoard：
 
@@ -276,7 +276,7 @@
      - 0.953
 
 致谢
-----
+----------------------------------------
 
 感谢 `许明辉 <https://github.com/smallcracker>`__ 和
 `杨楠 <https://github.com/AquaSage18>`__ 对 GR00T N1.5 示例的贡献与支持，也感谢

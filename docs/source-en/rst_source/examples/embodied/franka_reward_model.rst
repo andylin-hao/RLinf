@@ -83,8 +83,8 @@ Observation and Action
    * - Prompt
      - Task-specific env text or fixed target pose, depending on config.
 
-Prerequisites
------------------------
+Installation
+------------
 
 Follow all steps in the :doc:`franka` document up to and including **Data Collection** (i.e., everything before the "Running the Experiment" section).
 
@@ -211,13 +211,13 @@ In particular, for real-world scenarios, it is recommended to lower the ``min_de
 For real-world teleoperation with live reward model inference (SpaceMouse + GPU node, no RL loop),
 see **Real-World Teleoperation with Live Reward Inference** in :doc:`../../extending/reward_model`.
 
-Cluster Configuration
------------------------
+Cluster Setup
+-------------
 
 This step is identical to the **Cluster Configuration** section under **Running the Experiment** in :doc:`franka`.
 
 Configuration File
------------------------
+------------------
 
 This step is identical to the **Configuration File** section under **Running the Experiment** in :doc:`franka`, applied to ``examples/embodiment/config/realworld_charger_sac_cnn_async_standalone_reward.yaml``.
 In addition, enable the reward model parameters under the ``reward`` section:
@@ -242,8 +242,8 @@ Where:
 - ``reward_threshold`` applies threshold filtering on the success probability output by the reward model; values below the threshold are set to ``0``.
 - ``model_path`` points to the reward model checkpoint used for online inference.
 
-Starting the Experiment
------------------------
+Run It
+------
 
 Once training begins, the reward model directly judges task success/failure based on image observations and drives environment resets.
 The remaining steps follow the **Running the Experiment** section of :doc:`franka`.

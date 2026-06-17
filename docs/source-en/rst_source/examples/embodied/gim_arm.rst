@@ -90,8 +90,8 @@ Hardware Setup
    Unlike the Franka setup, GimArm does **not** require a real-time kernel or ROS.
    Communication uses the Linux SocketCAN interface directly.
 
-Dependency Installation
--------------------------
+Installation
+------------
 
 The controller node and the training/rollout node(s) should be set up with different software dependencies.
 
@@ -206,8 +206,8 @@ From the ``gim_arm_control`` repository:
   Incorrect calibration can cause the arm to move unexpectedly.
   Requires ``can-utils`` (install with ``sudo apt install can-utils``).
 
-Training/Rollout Nodes
-~~~~~~~~~~~~~~~~~~~~~~~~~~
+Training / Rollout Nodes
+~~~~~~~~~~~~~~~~~~~~~~~~
 
 Clone the RLinf repository (same as above), then install dependencies.
 
@@ -244,8 +244,8 @@ Install dependencies directly in your environment by running the following comma
    # bash requirements/install.sh embodied --model openvla --env maniskill_libero
 
 
-Running the Experiment
------------------------
+Run It
+------
 
 Prerequisites
 ~~~~~~~~~~~~~~~

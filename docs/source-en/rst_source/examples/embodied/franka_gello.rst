@@ -77,8 +77,8 @@ Observation and Action
    * - Prompt
      - Inherited from the downstream Franka task config.
 
-GELLO Software Installation
-------------------------------
+Installation
+------------
 
 GELLO depends on two packages that must be installed **in order**:
 
@@ -200,8 +200,8 @@ If the output is updating as you move the GELLO device, the installation
 is successful.
 
 
-YAML Configuration
--------------------
+Configuration File
+------------------
 
 To use GELLO for data collection, use the config file
 ``examples/embodiment/config/realworld_collect_data_gello.yaml``.
@@ -238,8 +238,8 @@ For full data collection instructions, refer to the
 **Data Collection with GELLO** section in :doc:`franka`.
 
 
-Monitoring Collection Progress
--------------------------------
+Run It
+------
 
 Because the collector runs as a Ray worker, its stdout is batched by
 Ray's log monitor, which breaks ``tqdm``'s in-place ``\r`` refresh.

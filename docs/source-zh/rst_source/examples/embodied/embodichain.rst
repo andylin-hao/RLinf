@@ -1,5 +1,5 @@
 基于 EmbodiChain 的强化学习训练
-===============================
+========================================
 
 .. figure:: https://raw.githubusercontent.com/RLinf/misc/main/pic/embodichain.gif
    :align: center
@@ -12,7 +12,7 @@ RL 任务的具身智能实验室框架。你将使用 RLinf 在 EmbodiChain Car
 PPO 训练 MLP actor-critic。
 
 概览
-----
+----------------------------------------
 
 在 EmbodiChain CartPole 上训练基于状态的 MLP policy。
 
@@ -43,7 +43,7 @@ PPO 训练 MLP actor-critic。
 | **前置条件：** :doc:`安装 </rst_source/start/installation>` · EmbodiChain 包与任务资源。
 
 任务
-~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. list-table::
    :header-rows: 1
@@ -55,7 +55,7 @@ PPO 训练 MLP actor-critic。
      - 使用 ``configs/agents/rl/basic/cart_pole/gym_config.json`` 中的状态观测平衡 pole。
 
 观测与动作
-~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. list-table::
    :header-rows: 1
@@ -73,7 +73,7 @@ PPO 训练 MLP actor-critic。
      - 不使用；这是低维状态控制配方。
 
 安装
-----
+----------------------------------------
 
 .. include:: _setup_common.rst
 
@@ -128,12 +128,12 @@ PPO 训练 MLP actor-critic。
    python -m embodichain.data download --name SimResources
 
 下载模型
---------
+----------------------------------------
 
 不需要检查点。MLP policy 从头开始训练。
 
 运行
-----
+----------------------------------------
 
 启动 CartPole 配方：
 
@@ -164,7 +164,7 @@ PPO 训练 MLP actor-critic。
    ``actor.model.action_dim`` 和 ``actor.model.policy_setup`` 与任务配置一致。
 
 可视化与结果
-------------
+----------------------------------------
 
 默认配置使用 W&B 记录日志。可改为 TensorBoard：
 
@@ -183,7 +183,7 @@ PPO 训练 MLP actor-critic。
 完整指标说明见 :doc:`训练指标 <../../reference/metrics>`。
 
 评测与 CI
----------
+----------------------------------------
 
 EmbodiChain CartPole 也被 embodied e2e 配置覆盖，位于
 ``tests/e2e_tests/embodied/``。仅当需要非默认 checkout 时设置 ``EMBODICHAIN_PATH``。

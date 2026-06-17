@@ -77,10 +77,10 @@ Observation and Action
    * - Prompt
      - Task text in the OpenPI data/config metadata.
 
-Dependency Installation
------------------------
+Installation
+------------
 
-Robot nodes
+Robot Nodes
 ~~~~~~~~~~~
 
 Run the robot-node installation on both ``node 0`` and ``node 1``.
@@ -137,7 +137,7 @@ before starting Ray. Replace ``<FRANKA_NIC>`` with the dedicated robot NIC and
 ``ulimit -r`` should report ``99`` or ``unlimited``; ``ulimit -l`` should report
 ``unlimited``. Re-apply the per-boot tuning after every workstation reboot.
 
-Training node
+Training Node
 ~~~~~~~~~~~~~
 
 Install OpenPI dependencies on the remote GPU training cluster that will
@@ -282,8 +282,8 @@ Run the same two commands for the second leader by changing
 ``GELLO_PORT``.
 
 
-Quick Start
------------
+Run It
+------
 
 Start Ray
 ~~~~~~~~~

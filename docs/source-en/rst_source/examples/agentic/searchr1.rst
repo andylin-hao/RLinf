@@ -1,9 +1,9 @@
 Reinforcement Learning Training of Search-R1
 ================================================
 
-Multi-turn RL with tool calls has been proven to extend the interaction boundary of large language models (LLMs) to the real world.  
-This document describes how to reproduce the experiments from  
-`Search-R1: Training LLMs to Reason and Leverage Search Engines with Reinforcement Learning <https://arxiv.org/abs/2503.09516>`__  
+Multi-turn RL with tool calls has been proven to extend the interaction boundary of large language models (LLMs) to the real world.
+This document describes how to reproduce the experiments from
+`Search-R1: Training LLMs to Reason and Leverage Search Engines with Reinforcement Learning <https://arxiv.org/abs/2503.09516>`__
 under the RLinf framework, using reinforcement learning (RL) to train LLMs to answer questions by invoking search tools.
 
 Overview
@@ -46,11 +46,11 @@ RLinf environment setup follows :doc:`RLinf Installation </rst_source/start/inst
 Local Wiki Server Environment
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-We use the local retrieval server from the Search-R1 example.  
-Install faiss via conda; details in  
-`SearchR1 <https://raw.githubusercontent.com/PeterGriffinJin/Search-R1/refs/heads/main/docs/retriever.md>`__  
-and installation reference in  
-`Search-R1 & veRL-SGLang <https://github.com/zhaochenyang20/Awesome-ML-SYS-Tutorial/blob/main/rlhf/verl/multi-turn/tool_examples/verl-multiturn-searchR1-like_ZH.md>`__  
+We use the local retrieval server from the Search-R1 example.
+Install faiss via conda; details in
+`SearchR1 <https://raw.githubusercontent.com/PeterGriffinJin/Search-R1/refs/heads/main/docs/retriever.md>`__
+and installation reference in
+`Search-R1 & veRL-SGLang <https://github.com/zhaochenyang20/Awesome-ML-SYS-Tutorial/blob/main/rlhf/verl/multi-turn/tool_examples/verl-multiturn-searchR1-like_ZH.md>`__
 The environment is also configured via conda.
 
 .. code-block:: bash
@@ -79,7 +79,7 @@ The downloaded files are approximately 50–60 GB in size.
    save_path=/the/path/to/save
    python examples/agent/searchr1/download.py --save_path $save_path
 
-Download the `e5-base-v2 <https://huggingface.co/intfloat/e5-base-v2>`__ embedding model from HuggingFace,  
+Download the `e5-base-v2 <https://huggingface.co/intfloat/e5-base-v2>`__ embedding model from HuggingFace,
 and build the index
 
 .. code-block:: bash
@@ -110,7 +110,7 @@ Write the paths to the previously downloaded wiki files and the index into examp
                                                --retriever_model $retriever_path \
                                                --faiss_gpu --port 8000
 
-Run `launch_local_server.sh` to start the Local Wiki Server.  
+Run `launch_local_server.sh` to start the Local Wiki Server.
 Wait until server IP information is printed — indicating successful startup.
 
 (Optional) Using Qdrant as Local Wiki Server
@@ -157,7 +157,7 @@ Qdrant uses the HNSW graph index algorithm by default. For details on optimizing
 Training on 8×H100
 ------------------
 
-Download the `training dataset <https://huggingface.co/datasets/RLinf/Search-R1-Data>`__ from HuggingFace  
+Download the `training dataset <https://huggingface.co/datasets/RLinf/Search-R1-Data>`__ from HuggingFace
 and write its path into `examples/agent/searchr1/config/train_qwen2.5.yaml`:
 
 .. code-block:: yaml
@@ -187,7 +187,7 @@ If you use `sampling_params.stop` to control model stop and save training time, 
       ……
       distributed_executor_backend: mp   # ray or mp
       disable_log_stats: False
-      detokenize: True  
+      detokenize: True
 
 Since Search-R1 will re-tokenize the model output, `recompute_logprobs`` should be set to True.
 
@@ -200,8 +200,8 @@ Since Search-R1 will re-tokenize the model output, `recompute_logprobs`` should 
 
 Run `bash examples/agent/searchr1/run_train.sh` to start training.
 
-Evaluation
-----------
+Standalone Evaluation
+---------------------
 
 Run the following commands to convert a Megatron checkpoint into a HuggingFace model:
 
@@ -231,7 +231,7 @@ Run the following commands to convert a Megatron checkpoint into a HuggingFace m
    shopt -s extglob
    cp "${CKPT_PATH_ORIGINAL_HF}"/!(*model.safetensors.index.json) "${CKPT_PATH_HF}"
 
-Fill the converted HuggingFace model path into  
+Fill the converted HuggingFace model path into
 `examples/agent/searchr1/config/eval_qwen2.5.yaml`:
 
 .. code-block:: yaml
@@ -255,8 +255,8 @@ Modify the evaluation dataset path:
 
 Run `bash examples/agent/searchr1/run_eval.sh` to start evaluation.
 
-Training Curves
----------------
+Visualization and Results
+-------------------------
 
 The following shows the reward curves and training time curves.
 
@@ -285,7 +285,7 @@ References
 
 search-r1: https://github.com/PeterGriffinJin/Search-R1
 
-Search-R1 & veRL-SGLang:  
+Search-R1 & veRL-SGLang:
 https://github.com/zhaochenyang20/Awesome-ML-SYS-Tutorial/blob/main/rlhf/verl/multi-turn/tool_examples/verl-multiturn-searchR1-like_ZH.md
 
 Asearcher: https://github.com/inclusionAI/ASearcher

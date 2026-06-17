@@ -221,8 +221,8 @@ Launch a config with ``run_embodiment.sh``:
    (``env/success_once``) may stay at 0 for OpenVLA-OFT / π₀.
    This issue will be fixed in a later release.
 
-Evaluate with ``behavior_openpi_pi05_eval.yaml``
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Standalone Evaluation
+~~~~~~~~~~~~~~~~~~~~~
 
 In principle, any ``pi05`` checkpoint that has non-zero success rate on
 Behavior and has been converted to PyTorch format can be used for evaluation
@@ -259,8 +259,8 @@ It owns the required ``ISAAC_PATH`` / ``OMNIGIBSON_DATA_PATH`` setup, the
 ``behavior_openpi_pi05_eval`` launch command, and result interpretation.
 
 
-Configuration Reference
------------------------
+Configure Further
+-----------------
 
 The BEHAVIOR env is driven by ``examples/embodiment/config/env/behavior_r1pro.yaml``.
 RLinf first loads OmniGibson's base config (``base_config_name``) and then applies the
@@ -381,6 +381,6 @@ To save evaluation videos, enable them in the config:
             video_base_dir: ${runner.logger.log_path}/video/eval
 
 
-For the Behavior experiment, we were inspired by 
-`Behavior-1K baselines <https://github.com/StanfordVL/b1k-baselines.git>`_, 
+For the Behavior experiment, we were inspired by
+`Behavior-1K baselines <https://github.com/StanfordVL/b1k-baselines.git>`_,
 with only minor modifications. We thank the authors for releasing their open-source code.

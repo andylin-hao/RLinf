@@ -207,8 +207,8 @@ For a new dataset or cold start (no ``experiment_cfg/metadata.json``), generate 
 Then set ``actor.model.metadata_json_path`` in config (or place the file at ``model_path/experiment_cfg/metadata.json``).
 
 
-Configuration Reference
------------------------
+Configure Further
+-----------------
 
 Configs are managed by Hydra; the entry script is ``examples/sft/train_vla_sft.py``. Below, **data fields** and **model/training fields** are explained separately.
 
@@ -397,8 +397,8 @@ Logs:
 Resume training with ``runner.resume_dir`` pointing to a checkpoint directory (field provided in example configs such as ``droid_sft_dreamzero_14b.yaml`` and ``libero_sft_dreamzero_5b.yaml``).
 
 
-Evaluation
-----------
+Standalone Evaluation
+---------------------
 
 Use the unified Evaluation section for standalone simulator or real-robot evaluation.
 This SFT page only records the DreamZero-specific handoff points.

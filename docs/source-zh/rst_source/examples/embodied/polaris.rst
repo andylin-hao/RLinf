@@ -1,5 +1,5 @@
 基于 PolaRiS 仿真平台的强化学习训练
-===================================
+========================================
 
 .. figure:: https://raw.githubusercontent.com/RLinf/misc/main/pic/polaris.png
    :align: center
@@ -12,7 +12,7 @@
 任务上，通过 PPO 微调 OpenPI π₀ 或 π₀.₅ 策略。
 
 概览
-----
+----------------------------------------
 
 在 PolaRiS 上使用两个 RGB 视角、本体状态和 chunked 8 维动作微调 OpenPI 策略。
 
@@ -43,7 +43,7 @@
 | **前置条件：** :doc:`安装 </rst_source/start/installation>` · Isaac Sim · PolaRiS-Hub · OpenPI 检查点。
 
 任务
-~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. list-table::
    :header-rows: 1
@@ -72,7 +72,7 @@
      - ``polaris_droid_organizetools.yaml``
 
 观测与动作
-~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. list-table::
    :header-rows: 1
@@ -90,7 +90,7 @@
      - ``init_params.task_description`` 中的任务描述。
 
 安装
-----
+----------------------------------------
 
 .. include:: _setup_common.rst
 
@@ -125,7 +125,7 @@
    source .venv/bin/activate
 
 下载 Isaac Sim
-~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 下载 Isaac Sim 5.1.0 并初始化其 shell 环境：
 
@@ -143,7 +143,7 @@
    每次在新终端中启动 PolaRiS 前，都需要运行 ``source ./setup_conda_env.sh``。
 
 下载数据集
-----------
+----------------------------------------
 
 下载评估场景和初始条件：
 
@@ -160,7 +160,7 @@
    hf download owhan/PolaRiS-datasets --repo-type=dataset --local-dir ./PolaRiS-datasets
 
 下载模型
---------
+----------------------------------------
 
 下载你要微调的 OpenPI 模型检查点。
 
@@ -195,7 +195,7 @@
 .. include:: _model_path.rst
 
 运行
-----
+----------------------------------------
 
 选择一个训练配置，并在已初始化 Isaac Sim 的终端中启动：
 
@@ -257,7 +257,7 @@
      - OpenPI 配置 / 数据格式选择（如 ``pi05_droid_polaris`` 对应 DROID 数据格式）。
 
 可视化与结果
-------------
+----------------------------------------
 
 在 RLinf 仓库根目录启动 TensorBoard：
 

@@ -49,8 +49,8 @@ Data Preparation
 
 Download and extract the ``calc_x`` dataset (Google Drive). See the download link `here <https://drive.google.com/file/d/1FQMyKLLd6hP9dw9rfZn1EZOWNvKaDsqw/view>`_.
 
-Training
---------
+Run It
+------
 
 Go to the example directory:
 
@@ -76,8 +76,8 @@ Start training:
 
    bash run_calc_x.sh qwen2.5-1.5b-enginehttp-multiturn
 
-Training curves
----------------
+Visualization and Results
+-------------------------
 
 Example training / metric curves from a ``calc_x`` run (logged metrics may vary by config and seed):
 
@@ -88,8 +88,8 @@ Example training / metric curves from a ``calc_x`` run (logged metrics may vary 
 
    AgentLightning ``calc_x`` training curves
 
-Evaluation
-----------
+Standalone Evaluation
+---------------------
 
 For HF evaluation, set ``rollout.model.model_path`` in the matching ``*_eval.yaml``. Examples:
 

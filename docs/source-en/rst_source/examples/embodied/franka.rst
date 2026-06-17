@@ -107,8 +107,8 @@ The real-world setup requires the following hardware components:
    :doc:`franka_zed_robotiq` for SDK installation, serial-device setup,
    YAML configuration fields, and data collection.
 
-Dependency Installation
--------------------------
+Installation
+------------
 
 The controller node and the training/rollout node(s) should be set up with different software dependencies.
 
@@ -214,7 +214,7 @@ Our installation script consists of the installation of two parts:
 .. note::
 
   If the script does not work for you, please refer to the official `ROS Noectic <https://wiki.ros.org/noetic/Installation/Ubuntu>`_ for ROS Noetic installation, `Franka <https://frankarobotics.github.io/docs/libfranka/docs/installation.html>`_ for libfranka and franka_ros installation, and `serl_franka_controllers <https://github.com/rail-berkeley/serl_franka_controllers>`_ for serl_franka_controllers installation.
-  
+
 Execute the following command to install the dependencies:
 
 .. code:: bash
@@ -224,11 +224,11 @@ Execute the following command to install the dependencies:
    bash requirements/install.sh embodied --env franka
    source .venv/bin/activate
 
-Training/Rollout Nodes
-~~~~~~~~~~~~~~~~~~~~~~~~~~
+Training / Rollout Nodes
+~~~~~~~~~~~~~~~~~~~~~~~~
 
-a. Clone RLinf Repository
-^^^^^^^^^^^^^^^^^^^^^^^^^^^
+A. Clone RLinf Repository
+^^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. code:: bash
 
@@ -237,8 +237,8 @@ a. Clone RLinf Repository
    git clone https://github.com/RLinf/RLinf.git
    cd RLinf
 
-b. Install Dependencies
-^^^^^^^^^^^^^^^^^^^^^^^^^^^
+B. Install Dependencies
+^^^^^^^^^^^^^^^^^^^^^^^
 
 **Option 1: Docker Image**
 
@@ -265,9 +265,9 @@ Install dependencies directly in your environment by running the following comma
 
    bash requirements/install.sh embodied --model openvla --env maniskill_libero
    source .venv/bin/activate
-   
-Model Download
----------------
+
+Download the Model
+------------------
 
 Before starting training, you need to download the corresponding pretrained model:
 
@@ -288,8 +288,8 @@ Before starting training, you need to download the corresponding pretrained mode
 
 After downloading, make sure to correctly specify the model path in the configuration yaml file.
 
-Running the Experiment
------------------------
+Run It
+------
 
 Prerequisites
 ~~~~~~~~~~~~~~~
@@ -428,11 +428,11 @@ You can modify the script accordingly and source it before starting ray on each 
 Specifically, the script sets up the following important aspects:
 
 1. Source the correct virtual python environment. See the section on Dependency Installation for details.
-   
+
 2. Source the franka_ros and serl_franka_controllers packages setup scripts (if on the controller node), usually at ``<your_catkin_ws>/devel/setup.bash``. **If you are using the docker image or the installation script, this is already done when you source the virtual python environment.**
 
 3. Setup RLinf environment variables on all nodes:
-   
+
 .. code-block:: bash
 
    export PYTHONPATH=<path_to_your_RLinf_repo>:$PYTHONPATH
@@ -441,7 +441,7 @@ Specifically, the script sets up the following important aspects:
 
 The ``RLINF_NODE_RANK`` is set to ``0 ~ N-1`` for each of the ``N`` nodes in the cluster, and is used by the configuration file to identify the node.
 
-The ``RLINF_COMM_NET_DEVICES`` is optional and only needed if you have multiple network devices on your machine, e.g., ``eth0``, ``enp3s0``, which must be the network card providing the IP that can be accessed by other nodes in the cluster. 
+The ``RLINF_COMM_NET_DEVICES`` is optional and only needed if you have multiple network devices on your machine, e.g., ``eth0``, ``enp3s0``, which must be the network card providing the IP that can be accessed by other nodes in the cluster.
 This can be checked by running ``ifconfig`` or ``ip addr`` on your machine.
 
 After sourcing the script, you can start ray on each node as follows:
@@ -458,8 +458,8 @@ Here `<head_node_ip_address>` is the IP address of the head node that can be acc
 
 You can run `ray status` to check if the cluster is set up correctly.
 
-Configuration file
-~~~~~~~~~~~~~~~~~~~~~~
+Configuration File
+~~~~~~~~~~~~~~~~~~
 
 Before starting the experiment, you need to modify the configuration file, ``examples/embodiment/config/realworld_peginsertion_rlpd_cnn_async.yaml`` according to your setup.
 
@@ -531,8 +531,8 @@ Then, run the test script on the head node:
 
    bash examples/embodiment/run_realworld_async.sh realworld_peginsertion_rlpd_cnn_async
 
-Running the Experiment
-~~~~~~~~~~~~~~~~~~~~~~~~~~
+Run It
+~~~~~~
 
 After verifying the setup, you can start the real-world training experiment by running the following command on the head node:
 
@@ -553,7 +553,7 @@ An example configuration for two Franka robots is shown in ``examples/embodiment
   cluster:
   num_nodes: 3 # One training/rollout node + two robot controller nodes
   component_placement:
-    actor: 
+    actor:
       node_group: "4090"
       placement: 0 # Run on the first GPU of the training/rollout node
     env:
@@ -596,7 +596,7 @@ At the ray head node, run:
 
   - ``env/episode_len``: Number of environment steps elapsed in the episode (unit: step).
   - ``env/return``: Episode return.
-  - ``env/reward``: Step-level reward.  
+  - ``env/reward``: Step-level reward.
   - ``env/success_once``: Recommended metric to monitor training performance. It directly reflects the unnormalized episodic success rate.
 
 - **Training Metrics**:

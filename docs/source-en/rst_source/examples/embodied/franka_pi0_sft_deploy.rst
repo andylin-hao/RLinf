@@ -77,8 +77,8 @@ Observation and Action
    * - Prompt
      - Task text stored in the SFT dataset/config.
 
-Hardware and Software Setup
-----------------------------
+Installation
+------------
 
 Hardware Requirements
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -126,8 +126,8 @@ This config defines key Bin-relocation task parameters such as end-effector pose
 limits and success thresholds. Adjust fields under ``override_cfg`` as needed
 for your task.
 
-Complete Pipeline
------------------
+Run It
+------
 
 The following steps cover the full Bin-relocation pipeline.
 
@@ -393,8 +393,8 @@ a class-variable ``CONFIG_CLS`` to instantiate the dataclass config (defaults to
 override ``CONFIG_CLS`` to their own dataclass while sharing the same
 constructor.
 
-Real-World Evaluation / Deployment
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Standalone Evaluation
+~~~~~~~~~~~~~~~~~~~~~
 
 A full evaluation config is provided at
 ``evaluations/realworld/realworld_eval.yaml``. It pairs the generic SFT env

@@ -27,7 +27,8 @@
    RLPD <algorithms/rlpd>
    IQL <algorithms/iql>
    Async PPO <algorithms/async_ppo>
-   配置指标 <metrics>
+   训练配置 <configuration>
+   训练指标 <metrics>
    评测配置 <../evaluations/reference/configuration>
    评测 CLI <../evaluations/reference/cli>
    评测模型 <../evaluations/reference/models>

@@ -1,5 +1,5 @@
 基于RL的仿真-真机协同训练
-=========================
+========================================
 
 .. figure:: https://raw.githubusercontent.com/RLinf/misc/main/pic/rlinf-co/overview.png
    :align: center
@@ -12,7 +12,7 @@
 :doc:`Beyond Imitation: RL-Based Sim-Real Co-Training for VLA Models <../../resources/publications/rlinf_co>`。
 
 概览
-----
+----------------------------------------
 
 在 ManiSkill 数字孪生上协同训练 π₀.₅——仿真中 PPO + 50 条真机轨迹 SFT（仿真成功率约 35%→50%）。
 
@@ -43,7 +43,7 @@
 | **前置条件：** :doc:`安装 </rst_source/start/installation>` · ManiSkill 资产 · SFT 检查点与真机数据（见下文步骤）。
 
 设置
-~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 本示例仅提供单一演示环境；用于自己的机器人时，请采集数据并构建匹配的仿真场景。
 
@@ -62,10 +62,10 @@
 
 
 安装
-----
+----------------------------------------
 
 1. 克隆 RLinf 仓库
-~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. code:: bash
 
@@ -75,7 +75,7 @@
    cd RLinf
 
 2. 安装依赖
-~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 **选项 1：Docker 镜像**
 
@@ -108,7 +108,7 @@
    source .venv/bin/activate
 
 Maniskill 资源下载
-~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 请先参考 :doc:`ManiSkill 示例 <maniskill>` 下载基础资源。随后下载本示例所需的特定资源：
 
@@ -119,8 +119,11 @@ Maniskill 资源下载
    # export HF_ENDPOINT=https://hf-mirror.com
    hf download --repo-type dataset RLinf/RLCo-maniskill-assets --include "custom_assets/*" --local-dir .
 
+运行
+----------------------------------------
+
 Stage I：SFT 预训练
------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 第一阶段旨在通过监督学习快速注入真机与仿真知识，为后续 RL 训练奠定基础。您可以选择 **自行训练** 或 **下载权重**。
 
@@ -157,7 +160,7 @@ Stage I：SFT 预训练
    hf download RLinf/RLinf-Pi05-RLCo-PandaPutOnPlateInScene25DigitalTwin-V1-SFT --local-dir RLinf-Pi05-RLCo-PandaPutOnPlateInScene25DigitalTwin-V1-SFT
 
 Stage II：仿真-真机协同 RL 训练
----------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 本阶段在 PPO 训练循环中加入 SFT 损失，实现协同优化。
 
@@ -173,7 +176,7 @@ Stage II：仿真-真机协同 RL 训练
 
 **关键参数配置**
 
-我们提供 ``maniskill_ppo_co_training_openpi_pi05.yaml`` 配置文件，PPO 训练相关参数可参照 :doc:`π0 和 π0.5 模型强化学习训练 <pi0>`，另外需关注以下参数：
+我们提供 ``maniskill_ppo_co_training_openpi_pi05.yaml`` 配置文件。通用路径、集群和 runner 字段见 :doc:`训练配置 <../../reference/configuration>`；PPO 训练相关参数可参照 :doc:`π0 和 π0.5 模型强化学习训练 <pi0>`。另外需关注以下参数：
 
 **模型加载路径**
 
@@ -197,10 +200,10 @@ Stage II：仿真-真机协同 RL 训练
        model:
            openpi:
                config_name: "pi05_maniskill_sim_real_co_training"
-       
+
        # 开启真机数据协同训练
        enable_sft_co_train: True
-       
+
        # SFT Loss 权重系数 (beta)
        sft_loss_weight: 0.2
 
@@ -231,7 +234,7 @@ Stage II：仿真-真机协同 RL 训练
    bash examples/embodiment/run_embodiment.sh maniskill_ppo_co_training_openpi_pi05
 
 可视化与结果
------------------------
+----------------------------------------
 
 **TensorBoard**
 

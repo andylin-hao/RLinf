@@ -77,6 +77,11 @@ Observation and Action
    * - Prompt
      - Task text from the real-world env config.
 
+Installation
+------------
+
+Install the base Franka dependencies from :doc:`franka`, then install the dexterous-hand runtime in the workflow below.
+
 Teleoperation
 -------------
 
@@ -133,8 +138,8 @@ not affected. Without ``camera_names``, default names follow the
 If you rename a camera to ``global``, update ``main_image_key`` to ``global``
 in the task YAML as well.
 
-Workflow
---------
+Run It
+------
 
 1. On the Franka control node, install the Franka DexHand environment:
 

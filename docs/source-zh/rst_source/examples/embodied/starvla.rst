@@ -1,5 +1,5 @@
 StarVLA 模型强化学习训练
-=========================
+========================================
 
 .. figure:: https://raw.githubusercontent.com/RLinf/misc/main/pic/starvla.png
    :align: center
@@ -12,7 +12,7 @@ Vision-Language-Action 工具箱，支持将 VLM backbone 与 action head 以模
 本示例采用 **QwenOFT** 设置，在 **LIBERO** 上使用 GRPO 训练。
 
 概览
-----
+----------------------------------------
 
 在 LIBERO Spatial 上用 GRPO 微调 StarVLA（QwenOFT）。
 
@@ -43,7 +43,7 @@ Vision-Language-Action 工具箱，支持将 VLM backbone 与 action head 以模
 | **前置条件：** :doc:`安装 </rst_source/start/installation>` · 一个 StarVLA LIBERO checkpoint 与 Qwen2.5-VL 基座（见下文）。
 
 任务
-~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 根据环境、任务族以及配置或权重工件选择对应的模型页面。
 
@@ -61,7 +61,7 @@ Vision-Language-Action 工具箱，支持将 VLM backbone 与 action head 以模
      - 在 LIBERO 上使用 GRPO 微调 StarVLA。
 
 观测与动作
-~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. list-table::
    :header-rows: 1
@@ -79,7 +79,7 @@ Vision-Language-Action 工具箱，支持将 VLM backbone 与 action head 以模
      - LIBERO 自然语言任务指令。
 
 接口约定
-~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 在 RLinf 的 StarVLA wrapper 中，``env_obs`` 为 batch-first 的 dict（第 0 维为 batch size ``B``）。
 
@@ -104,8 +104,8 @@ StarVLA 推理输出动作块 ``[B, T, D_action]``，其中
 ``D_action = actor.model.action_dim``（LIBERO 常用 7）。Rollout 采用 receding-horizon：
 每次 forward 产生长度 ``T`` 的动作序列，环境执行前 ``N`` 步（``1 <= N <= T``）后重新规划。
 
-依赖安装
---------
+安装
+----------------------------------------
 
 .. include:: _setup_common.rst
 
@@ -133,7 +133,7 @@ StarVLA 推理输出动作块 ``[B, T, D_action]``，其中
    source .venv/bin/activate
 
 下载模型
-~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 下载 StarVLA checkpoint 与 base VLM：
 
@@ -155,7 +155,7 @@ StarVLA 推理输出动作块 ``[B, T, D_action]``，其中
    ``framework.qwenvl.base_vlm``，使其指向 ``Qwen2.5-VL-3B-Instruct`` 的本地路径。
 
 运行
-----
+----------------------------------------
 
 **1. 配置**
 
@@ -193,7 +193,7 @@ StarVLA + GRPO + LIBERO Spatial 使用
 评估建议采用 RLinf 统一的评估流程，详见 :doc:`LIBERO 评测指南 <../../evaluations/guides/libero>`。
 
 可视化与结果
-------------
+----------------------------------------
 
 关注任务成功率指标 ``env/success_once``。各项指标的含义见
 :doc:`训练指标 <../../reference/metrics>`。

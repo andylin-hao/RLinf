@@ -162,8 +162,8 @@ Please switch to the corresponding virtual environment via the built-in `switch_
    bash requirements/install.sh embodied --model gr00t_n1d7 --env maniskill_libero
    source .venv/bin/activate
 
-Model Download
---------------
+Download the Model
+------------------
 
 Before starting training, you need to download the corresponding pre-trained model.
 

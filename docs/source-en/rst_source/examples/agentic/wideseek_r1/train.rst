@@ -1,5 +1,5 @@
-Training
-========
+WideSeek-R1 Training
+====================
 
 This page describes how to reproduce WideSeek-R1 training in RLinf.
 
@@ -103,8 +103,8 @@ standard QA data.
 - When ``is_hybrid`` is ``False``, make sure ``data.is_markdown`` matches the
   dataset format you use (True for ``width_20k``, False for ``depth_20k``).
 
-Launch Training
----------------
+Run It
+------
 
 Before starting training, verify all of the following:
 
@@ -119,8 +119,8 @@ Then run:
 
    bash examples/agent/wideseek_r1/run_train.sh train_qwen3_hybrid
 
-Outputs
--------
+Visualization and Results
+-------------------------
 
 Training outputs are written to:
 

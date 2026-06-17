@@ -1,5 +1,5 @@
 DreamZero 监督微调和 Franka 真机部署
-====================================
+========================================
 
 .. figure:: https://dreamzero0.github.io/images/project_overview.png
    :align: center
@@ -10,7 +10,7 @@ DreamZero 监督微调和 Franka 真机部署
 在 RLinf 中运行 DreamZero 监督微调（SFT）：准备模型与 LeRobot 数据，启动训练，执行仿真评测，并将训练后的策略部署到 Franka 真机。
 
 概览
-----
+----------------------------------------
 
 将基于 WAN 的 DreamZero 世界模型微调成操作策略，在 LeRobot 数据上训练，在仿真中评测，并部署到 Franka。
 
@@ -46,7 +46,7 @@ DreamZero 监督微调和 Franka 真机部署
 - **骨干网络：** WAN2.1（如 DreamZero-DROID 14B）、WAN2.2（如 Wan2.2-TI2V-5B 冷启动）。
 
 安装
-----
+----------------------------------------
 
 .. include:: _setup_common.rst
 
@@ -79,10 +79,10 @@ DreamZero 监督微调和 Franka 真机部署
 3. 通过 ``DREAMZERO_PATH`` 让外部 DreamZero 包可导入；``examples/sft/run_vla_sft.sh`` 也会将其加入 ``PYTHONPATH``。
 
 模型准备
---------
+----------------------------------------
 
 从 checkpoint 继续训练
-~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 设置 ``actor.model.model_path`` 为已下载的权重目录；架构与权重从该目录加载。可选 checkpoint：
 
@@ -112,7 +112,7 @@ YAML 示例（DROID + 官方 14B，见 ``droid_sft_dreamzero_14b.yaml``）：
 AgiBot 数据将 ``model_path`` 换为 ``./DreamZero-AgiBot`` 即可。
 
 从头训练（WAN2.2 组件冷启动）
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 设置 ``model_path: null``，并填写各 ``*_pretrained_path``。需从 Hugging Face 下载：
 
@@ -149,12 +149,12 @@ YAML 示例（LIBERO 冷启动，见 ``libero_sft_dreamzero_5b.yaml``）：
 
 
 数据准备
---------
+----------------------------------------
 
 训练数据需为 LeRobot v2/v3 布局（含 ``meta/``、``data/`` 等）。通过 ``data.train_data_paths`` 指定本地目录或 Hugging Face 数据集 ID。
 
 数据集下载
-~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 当前支持：
 
@@ -176,7 +176,7 @@ YAML 示例（LIBERO 冷启动，见 ``libero_sft_dreamzero_5b.yaml``）：
    huggingface-cli download RLinf/dreamzero-franka-pnp --repo-type dataset --local-dir ./franka_pnp
 
 生成 metadata.json
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 在新数据集或冷启动（无 ``experiment_cfg/metadata.json``）时，必须先为对应 ``embodiment_tag`` 生成归一化统计：
 
@@ -204,13 +204,13 @@ YAML 示例（LIBERO 冷启动，见 ``libero_sft_dreamzero_5b.yaml``）：
 然后在配置中设置 ``actor.model.metadata_json_path`` （ 或放到 ``model_path/experiment_cfg/metadata.json`` ） 。
 
 
-配置说明
---------
+配置参考
+----------------------------------------
 
 配置文件由 Hydra 管理，入口脚本为 ``examples/sft/train_vla_sft.py``。下面按 **数据相关** 与 **模型及训练超参相关** 分别说明含义与作用。
 
 数据相关配置
-~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. list-table::
    :header-rows: 1
@@ -241,7 +241,7 @@ YAML 示例（LIBERO 冷启动，见 ``libero_sft_dreamzero_5b.yaml``）：
 - 视频时间维在预设里配置 ``action_head_cfg.config.num_frames`` （DreamZero 默认 33，对应 ``8 * max_chunk_size + 1``）；未设置时自动推导。
 
 模型与训练相关配置
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 **标识与权重路径**
 
@@ -359,7 +359,7 @@ YAML 示例（LIBERO 冷启动，见 ``libero_sft_dreamzero_5b.yaml``）：
        metadata_json_path: /path/to/metadata.json   # 若无 experiment_cfg/metadata.json
 
 运行
-----
+----------------------------------------
 
 在仓库根目录执行：
 
@@ -393,8 +393,8 @@ YAML 示例（LIBERO 冷启动，见 ``libero_sft_dreamzero_5b.yaml``）：
 断点续训可设置 ``runner.resume_dir`` 指向 checkpoint 目录。
 
 
-评测
-----
+独立评测
+----------------------------------------
 
 独立的仿真或真机评测由统一的 Evaluation 章节负责。本 SFT 页面只保留 DreamZero
 特有的衔接点。
@@ -448,7 +448,7 @@ YAML 示例（LIBERO 冷启动，见 ``libero_sft_dreamzero_5b.yaml``）：
      - 90.43%
 
 可视化与结果
-------------
+----------------------------------------
 
 1. 查看 ``run_embodiment.log``：``time/step`` 是否稳定；``train/loss``、``train/action_loss``、``train/dynamics_loss`` 是否合理。
 
@@ -518,7 +518,7 @@ YAML 示例（LIBERO 冷启动，见 ``libero_sft_dreamzero_5b.yaml``）：
 - 训练 YAML 里的 ``video.*`` / ``state.*`` / ``action.*`` 必须与 transform 里 ``ConcatTransform`` 的 ``*_concat_order`` 一致。
 
 步骤 2：注册到 RLinf
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 1. 在 ``rlinf/data/datasets/dreamzero/data_transforms/embodiment_tag.py`` 的 ``EmbodimentTag`` 枚举中增加成员（值等于 ``TAG`` 字符串）。
 2. 编辑 ``rlinf/data/datasets/dreamzero/data_transforms/__init__.py``：
@@ -531,7 +531,7 @@ YAML 示例（LIBERO 冷启动，见 ``libero_sft_dreamzero_5b.yaml``）：
 未注册时，``build_dreamzero_composed_transform`` 会报错并列出已有 tag。
 
 步骤 3：生成 ``metadata.json``
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 为新数据集计算归一化统计，输出键名必须等于 ``TAG``：
 
@@ -594,7 +594,7 @@ YAML 示例（LIBERO 冷启动，见 ``libero_sft_dreamzero_5b.yaml``）：
 
 
 常见问题
---------
+----------------------------------------
 
 1. **找不到权重（No safetensors weights）**
 
@@ -632,7 +632,7 @@ YAML 示例（LIBERO 冷启动，见 ``libero_sft_dreamzero_5b.yaml``）：
 
 
 实践建议
---------
+----------------------------------------
 
 - 追求稳定收敛时，优先从已发布的 DreamZero 权重继续 SFT（设置 ``model_path``）。
 - 全量适配 WAN2.2 可冷启动，但需更大数据与更长训练；改配置后先用 50–200 step 试跑验证 shape 与 loss。

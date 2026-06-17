@@ -1,5 +1,5 @@
 基于 Wan 世界模型的强化学习
-======================================
+========================================
 
 .. |huggingface| image:: /_static/svg/hf-logo.svg
    :width: 16px
@@ -17,7 +17,7 @@ VLA 策略。Wan 根据当前观测与动作序列生成未来视频帧，因此
 强化学习（GRPO/PPO）优化策略。
 
 概览
-----
+----------------------------------------
 
 在 Wan 世界模型模拟的 LIBERO 套件上用 GRPO 训练 OpenVLA-OFT。
 
@@ -48,7 +48,7 @@ VLA 策略。Wan 根据当前观测与动作序列生成未来视频帧，因此
 | **前置条件：** :doc:`安装 </rst_source/start/installation>` · 一个 OpenVLA-OFT SFT checkpoint · Wan 世界模型权重与初始化数据集（见下文）。
 
 任务
-~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 作为世界模型，Wan 原则上可以通过一致接口适配多种任务设置。RLinf 目前提供三个 LIBERO 套件的权重和初始化数据：
 
@@ -74,7 +74,7 @@ VLA 策略。Wan 根据当前观测与动作序列生成未来视频帧，因此
      - 通过 Wan 评测目标条件 rollout。
 
 观测与动作
-~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. list-table::
    :header-rows: 1
@@ -93,8 +93,8 @@ VLA 策略。Wan 根据当前观测与动作序列生成未来视频帧，因此
 
 与传统仿真器不同，Wan 没有 ``reset()``：它需要初始化帧和任务描述，因此需要下载初始化数据集并在配置中指向它。
 
-依赖安装
---------
+安装
+----------------------------------------
 
 .. include:: _setup_common.rst
 
@@ -122,7 +122,7 @@ VLA 策略。Wan 根据当前观测与动作序列生成未来视频帧，因此
    source .venv/bin/activate
 
 VLA 模型下载
-------------
+----------------------------------------
 
 下载 OpenVLA-OFT SFT checkpoint：
 
@@ -155,7 +155,7 @@ VLA 模型下载
          unnorm_key: libero_90_no_noops_trajall # 对于 RLinf-OpenVLAOFT-LIBERO-130-Base-Lora 模型，使用 libero_130_no_noops_trajall
 
 世界模型下载
-------------
+----------------------------------------
 
 除 VLA 模型外，还需下载 Wan 权重与初始化数据。当前 RLinf 提供三个套件的数据/权重；每个 Wan
 权重均基于 VLA 模型 rollout 的 1500 条轨迹构建：
@@ -201,7 +201,7 @@ VLA 模型下载
             wan_wm_hf_ckpt_path: /Pathto/model/RLinf-Wan-LIBERO-Spatial/
 
 运行
-----
+----------------------------------------
 
 **1. 模型参数**
 
@@ -264,7 +264,7 @@ OpenVLA-OFT + GRPO 使用 ``examples/embodiment/config/wan_libero_spatial_grpo_o
    bash examples/embodiment/run_embodiment.sh wan_libero_spatial_grpo_openvlaoft
 
 可视化与结果
-------------
+----------------------------------------
 
 关注未归一化的回合成功率指标 ``env/success_once``。各项指标的含义见
 :doc:`训练指标 <../../reference/metrics>`。可通过以下配置保存生成的 rollout 视频：

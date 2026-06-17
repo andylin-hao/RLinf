@@ -77,8 +77,11 @@ Observation and Action
    * - Prompt
      - Inherited from the downstream Franka task config.
 
-ZED Camera Installation
------------------------
+Installation
+------------
+
+ZED Camera Setup
+~~~~~~~~~~~~~~~~
 
 The ZED SDK and its Python API must be installed on every node that captures
 images (typically the GPU server node).  Full details are available in the
@@ -155,8 +158,8 @@ List connected ZED cameras and note their **serial numbers**:
 Record the serial numbers; they will be used in the YAML configuration.
 
 
-Robotiq Gripper Installation
------------------------------
+Robotiq Gripper Setup
+~~~~~~~~~~~~~~~~~~~~~
 
 The Robotiq gripper communicates over **Modbus RTU** through a USB-to-RS485
 adapter.  The required Python dependency ``pymodbus`` is **automatically
@@ -205,8 +208,8 @@ A quick sanity check (run on the NUC):
    "
 
 
-YAML Configuration
--------------------
+Configuration File
+------------------
 
 The key differences from a standard (RealSense + Franka gripper) config are
 the new ``camera_type``, ``gripper_type``, ``gripper_connection``, and
@@ -272,8 +275,8 @@ the new ``camera_type``, ``gripper_type``, ``gripper_connection``, and
 
 .. _franka-zed-robotiq-data-collection:
 
-Data Collection
------------------
+Run It
+------
 
 A dedicated data collection script and configuration are provided for
 collecting teleoperation demonstrations using the ZED + Robotiq hardware

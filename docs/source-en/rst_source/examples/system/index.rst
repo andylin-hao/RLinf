@@ -1,6 +1,6 @@
 System-level Optimizations
 ==============================
-   
+
 RLinf's overall design is simple and modular.
 Workers abstract components for RL and agents, with a flexible and efficient communication library enabling inter-component interaction.
 Thanks to this decoupled design, workers can be flexibly and dynamically scheduled to computing resources or assigned to the most suitable accelerators.

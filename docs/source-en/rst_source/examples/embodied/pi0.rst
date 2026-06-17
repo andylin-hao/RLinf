@@ -297,7 +297,7 @@ interference, eliminating the need for offload functionality.
      action_env_dim: ${actor.model.action_dim}
      noise_method: "flow_sde" # flow_sde, flow_noise
      add_value_head: False
-     pi05: False 
+     pi05: False
      value_after_vlm: False
 
 - Set different flow-matching steps via ``num_steps``.
@@ -476,10 +476,10 @@ The results achieved through RL training are shown below:
    :header-rows: 1
 
    * - Model
-     - Spatial 
+     - Spatial
      - Object
-     - Goal 
-     - Long 
+     - Goal
+     - Long
      - Average
      - Δ Avg.
 
@@ -511,10 +511,10 @@ The results achieved through RL training are shown below:
    :header-rows: 1
 
    * - Model
-     - Spatial 
+     - Spatial
      - Object
-     - Goal 
-     - Long 
+     - Goal
+     - Long
      - Average
      - Δ Avg.
 

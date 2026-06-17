@@ -17,7 +17,7 @@
 `πRL: Online RL Fine-Tuning for Flow-Based Vision-Language-Action Models <https://arxiv.org/abs/2510.25889>`__。
 
 概览
-----
+----------------------------------------
 
 在 LIBERO、ManiSkill、MetaWorld、CALVIN 上用 PPO 或 GRPO 对 π\ :sub:`0`\  / π\ :sub:`0.5`\  做 RL 微调。
 
@@ -48,7 +48,7 @@
 | **前置条件：** :doc:`安装 </rst_source/start/installation>` · 一个 π\ :sub:`0`\  / π\ :sub:`0.5`\  SFT checkpoint（见下文）。
 
 任务
-~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 根据环境、任务族以及配置或权重工件选择对应的模型页面。
 
@@ -78,7 +78,7 @@
      - 训练长程语言条件操作任务。
 
 观测与动作
-~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. list-table::
    :header-rows: 1
@@ -97,8 +97,8 @@
 
 π\ :sub:`0` / π\ :sub:`0.5` 使用 PPO（actor-critic；GAE、ratio clipping、value clipping、entropy regularization）或 GRPO（基于 *G* 个采样动作的 group-relative advantages）训练。
 
-依赖安装
---------
+安装
+----------------------------------------
 
 .. include:: _setup_common.rst
 
@@ -130,8 +130,8 @@
    bash requirements/install.sh embodied --model openpi --env maniskill_libero
    source .venv/bin/activate
 
-模型下载
---------
+下载模型
+----------------------------------------
 
 在开始训练之前，您需要下载相应的预训练模型。例如，针对 LIBERO 环境的 Spatial、Object、Goal 类型的任务，您可以通过如下方式进行下载：
 
@@ -230,7 +230,7 @@
 下载完成后，请确保在配置文件中正确指定模型路径。
 
 运行
-----
+----------------------------------------
 
 **1. 运行关键参数配置**
 
@@ -287,7 +287,7 @@ env** 之间的流水线重叠，从而提升 rollout 效率。
      action_env_dim: ${actor.model.action_dim}
      noise_method: "flow_sde" # flow_sde, flow_noise
      add_value_head: False
-     pi05: False 
+     pi05: False
      value_after_vlm: False
 
 - 通过 ``num_steps`` 设置不同的流匹配步数。
@@ -303,7 +303,7 @@ env** 之间的流水线重叠，从而提升 rollout 效率。
 在论文中，我们提供 flow-noise 和 flow-sde 两种技术方案来微调 π\ :sub:`0`\ 和 π\ :sub:`0.5`\ 模型。具体而言，你可以通过切换如下配置来选择不同的技术方案：
 
 .. code:: yaml
-   
+
    algorithm:
       entropy_bonus: 0.0 # 熵正则化系数，flow-sde 设置为0.0，flow-noise 设置为0.005
    openpi:
@@ -364,7 +364,7 @@ env** 之间的流水线重叠，从而提升 rollout 效率。
 
    如果遇到 ``micro_batch_size`` 和 ``global_batch_size`` 不匹配的问题，需要保证 ``global_batch_size`` 是 ``micro_batch_size`` × GPU数量 的整数倍。
 
-**2.5 模型评测** 
+**2.5 模型评测**
 
 针对SFT或RL训练后的模型，我们提供两种评测方式：
 
@@ -404,7 +404,7 @@ env** 之间的流水线重叠，从而提升 rollout 效率。
    bash examples/embodiment/run_embodiment.sh libero_spatial_ppo_openpi_quickstart
 
 可视化与结果
-------------
+----------------------------------------
 
 **1. TensorBoard 日志**
 
@@ -440,7 +440,7 @@ env** 之间的流水线重叠，从而提升 rollout 效率。
        logger_backends: ["tensorboard", "wandb"] # tensorboard, wandb, swanlab
 
 LIBERO 结果
-~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 我们在 LIBERO 环境中使用 PPO 和 GRPO 训练了 π\ :sub:`0`\ 和 π\ :sub:`0.5`\。通过 RL 训练所获得的结果如下：
 
@@ -448,10 +448,10 @@ LIBERO 结果
    :header-rows: 1
 
    * - Model
-     - Spatial 
+     - Spatial
      - Object
-     - Goal 
-     - Long 
+     - Goal
+     - Long
      - Average
      - Δ Avg.
 
@@ -483,10 +483,10 @@ LIBERO 结果
    :header-rows: 1
 
    * - Model
-     - Spatial 
+     - Spatial
      - Object
-     - Goal 
-     - Long 
+     - Goal
+     - Long
      - Average
      - Δ Avg.
 
@@ -515,10 +515,10 @@ LIBERO 结果
      - **+20.8**
 
 MetaWorld 结果
-~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 有关 MetaWorld 结果，请查看 :doc:`MetaWorld 页面 <metaworld>`。
 
 
 CALVIN 结果
-~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 有关 CALVIN 结果，请查看 :doc:`CALVIN 页面 <calvin>`。

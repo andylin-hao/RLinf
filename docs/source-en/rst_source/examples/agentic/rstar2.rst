@@ -155,14 +155,14 @@ Since the down sample logic is not compatible with the current inference logic, 
       recompute_logprobs: False
       shuffle_rollout: False
 
-Start Training
-~~~~~~~~~~~~~~
+Run It
+~~~~~~
 
 Run ``examples/agent/rstar2/run_rstar2.sh`` to start training.
 
 
-Training Curves
----------------
+Visualization and Results
+-------------------------
 
 Below shows the comparison of reward curves and response length curves between RLinf and Verl.
 

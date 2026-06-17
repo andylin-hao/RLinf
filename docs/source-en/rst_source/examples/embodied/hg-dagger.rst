@@ -77,8 +77,8 @@ Observation and Action
    * - Prompt
      - Task text in OpenPI dataset/config metadata.
 
-Dependency Installation
------------------------
+Installation
+------------
 
 The real-world pipeline uses **different environments on different nodes**:
 
@@ -121,8 +121,8 @@ Then switch to the libfranka-compatible environment:
 Before ``ray start`` on the robot node, source the same ROS / Franka controller
 environment described in :doc:`franka`.
 
-Training / Rollout Node
-~~~~~~~~~~~~~~~~~~~~~~~
+Training / Rollout Nodes
+~~~~~~~~~~~~~~~~~~~~~~~~
 
 Use the same environment as simulator Pi0 DAgger.
 
@@ -174,8 +174,8 @@ in :doc:`franka`. The training / rollout node is typically the Ray head
 Ray records the current Python interpreter and environment variables at startup,
 so make sure each node has sourced the correct environment before ``ray start``.
 
-Full Pipeline
--------------
+Run It
+------
 
 1. Collect Human-Guided Real-World Data
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -329,8 +329,8 @@ Launch HG-DAgger from the Ray head node:
 
    bash examples/embodiment/run_realworld_async.sh realworld_pnp_dagger_openpi
 
-Visualization and Monitoring
-----------------------------
+Visualization and Results
+-------------------------
 
 **1. TensorBoard Logs**
 

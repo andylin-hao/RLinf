@@ -668,8 +668,14 @@ Visualize specific episodes:
 - ``episode_{N}_summary.png``: Key frames + value/advantage time series for each episode (frames above threshold highlighted with green border)
 - ``episode_{N}.mp4``: Per-frame replay video with advantage annotations
 
+Run It
+------
+
+Follow the numbered RECAP stages above to generate returns, train the value model, compute advantages, and train the CFG policy.
+
 Visualization and Results
-----------------------------
+-------------------------
+
 For metric definitions, see :doc:`Training metrics <../../reference/metrics>`.
 
 

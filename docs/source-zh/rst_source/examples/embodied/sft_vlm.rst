@@ -1,5 +1,5 @@
 VLM 监督微调
-==========================
+========================================
 
 .. figure:: https://raw.githubusercontent.com/RLinf/misc/main/pic/release_0.2/qwen2_5_sft_vlm.png
    :align: center
@@ -11,7 +11,7 @@ VLM 监督微调
 （Full-parameter SFT）**——训练、评估，并将得到的检查点转换为 HuggingFace 格式。
 
 概览
-----
+----------------------------------------
 
 在 Robo2VLM 视觉问答数据集上对 Qwen-VL 系列模型进行全量 SFT，使用 FSDP 并内置评估。
 
@@ -44,8 +44,8 @@ VLM 监督微调
 本示例主要关注两个文件——启动脚本 ``examples/sft/run_vlm_sft.sh`` 和训练配置
 ``examples/sft/config/qwen2_5_vl_sft_vlm.yaml``。
 
-依赖安装
---------
+安装
+----------------------------------------
 
 1. **拉取 RLinf 镜像：**
    ``rlinf/rlinf:math-rlinf0.2-torch2.6.0-sglang0.4.6.post5-vllm0.8.5-megatron0.13.0-te2.1``。
@@ -64,7 +64,7 @@ VLM 监督微调
    如需训练 **qwen3_vl** 或 **qwen3_vl_moe**，请确保 ``transformers >= 4.57.1``。
 
 运行
-----
+----------------------------------------
 
 **1. 配置**
 
@@ -187,7 +187,7 @@ VLM 配置与 RLinf 中其他训练配置结构基本一致，主要修改 ``dat
 - 若配置文件名不同（如 ``my_vlm_config.yaml``），将其作为参数传入：``bash examples/sft/run_vlm_sft.sh my_vlm_config``。
 
 仅评估模式
-~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 若只想运行评估，将 ``data.train_data_paths`` 设为 ``null``，并将 ``data.val_data_paths``
 指向验证数据，启动命令保持不变：
@@ -197,7 +197,7 @@ VLM 配置与 RLinf 中其他训练配置结构基本一致，主要修改 ``dat
    bash examples/sft/run_vlm_sft.sh <配置名>
 
 可视化与结果
-------------
+----------------------------------------
 
 正常的训练中，**loss** 下降、**评估准确率** 上升。脚本会自动创建 ``logs/<时间戳>``；可用
 TensorBoard 可视化。各项指标的含义见
@@ -278,7 +278,7 @@ TensorBoard 可视化。各项指标的含义见
    :align: center
 
 检查点转换
-----------
+----------------------------------------
 
 使用 FSDP 训练时，SFT 保存的是 FSDP 格式权重（如 ``full_weights.pt``）。若需要 HuggingFace
 格式，请使用内置转换脚本 ``rlinf/utils/ckpt_convertor/fsdp_convertor/convert_pt_to_hf.py``
@@ -301,7 +301,7 @@ TensorBoard 可视化。各项指标的含义见
 详见 :doc:`检查点转换 <../../guides/convertor>`。
 
 字段说明
---------
+----------------------------------------
 
 - ``micro_batch_size``：单卡一次前向/反向的样本数。
 - ``global_batch_size``：全局 batch（需满足可整除关系）。
@@ -311,7 +311,7 @@ TensorBoard 可视化。各项指标的含义见
 - ``train_data_paths`` / ``val_data_paths``：数据目录或文件路径。
 
 常见报错与排查
---------------
+----------------------------------------
 
 - **找不到模型路径** —— 检查 ``actor.model.model_path`` 是否正确、是否有读取权限。
 - **数据字段不匹配** —— 检查 ``prompt_key`` / ``choice_key`` / ``answer_key`` / ``image_keys`` 是否与数据实际列名一致。

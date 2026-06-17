@@ -17,7 +17,7 @@ GSEnv，也称 ManiSkill-GS，将 ManiSkill 物理仿真与 3D Gaussian Splattin
 通过 PPO 微调 OpenPI π₀.₅。
 
 概览
-----
+----------------------------------------
 
 在兼容 ManiSkill 的 GSEnv 任务上微调 OpenPI π₀.₅。
 
@@ -48,7 +48,7 @@ GSEnv，也称 ManiSkill-GS，将 ManiSkill 物理仿真与 3D Gaussian Splattin
 | **前置条件：** :doc:`安装 </rst_source/start/installation>` · ManiSkill-GS checkout · GSEnv 资产 · SFT 检查点。
 
 任务
-~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. list-table::
    :header-rows: 1
@@ -60,7 +60,7 @@ GSEnv，也称 ManiSkill-GS，将 ManiSkill 物理仿真与 3D Gaussian Splattin
      - 抓取立方体并放到托盘上。
 
 观测与动作
-~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. list-table::
    :header-rows: 1
@@ -83,7 +83,7 @@ GSEnv，也称 ManiSkill-GS，将 ManiSkill 物理仿真与 3D Gaussian Splattin
    ``env_type: maniskill`` 接入。任务 id 选择 ManiSkill-GS 环境。
 
 安装
-----
+----------------------------------------
 
 .. include:: _setup_common.rst
 
@@ -140,7 +140,7 @@ GSEnv，也称 ManiSkill-GS，将 ManiSkill 物理仿真与 3D Gaussian Splattin
    首次运行可能需要编译 ``gsplat`` kernel，因此耗时较长。
 
 下载模型
---------
+----------------------------------------
 
 下载 OpenPI π₀.₅ SFT 检查点：
 
@@ -159,7 +159,7 @@ GSEnv，也称 ManiSkill-GS，将 ManiSkill 物理仿真与 3D Gaussian Splattin
 .. include:: _model_path.rst
 
 运行
-----
+----------------------------------------
 
 启动 GSEnv 配方：
 
@@ -191,7 +191,7 @@ GSEnv，也称 ManiSkill-GS，将 ManiSkill 物理仿真与 3D Gaussian Splattin
    ``actor.global_batch_size``。
 
 可视化与结果
-------------
+----------------------------------------
 
 在 RLinf 仓库根目录启动 TensorBoard：
 
@@ -226,7 +226,7 @@ GSEnv，也称 ManiSkill-GS，将 ManiSkill 物理仿真与 3D Gaussian Splattin
    GSEnv 训练曲线示例。
 
 参考
-----
+----------------------------------------
 
 - `ManiSkill-GS <https://github.com/chenkang455/ManiSkill-GS>`__
 - `pi_RL paper <https://arxiv.org/pdf/2510.25889>`__

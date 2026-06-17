@@ -186,8 +186,8 @@ Launch a config with ``run_embodiment.sh``:
    - Metric definitions and logging backends → :doc:`Training metrics <../../reference/metrics>`
    - Placement and throughput → :doc:`Placement <../../concepts/placement>` and :doc:`Execution modes <../../concepts/execution_modes>`
 
-Evaluate
---------
+Standalone Evaluation
+---------------------
 
 Run Dexbotic's LIBERO evaluator for a trained checkpoint:
 
