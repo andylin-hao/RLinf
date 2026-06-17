@@ -1,38 +1,9 @@
 Installation
 ============
 
-Start with the embodied stack unless you know you need the agentic / reasoning
-dependencies. The embodied path is the shortest route to the quickstart in this
-section.
-
-Fast Path: Embodied
--------------------
-
-Use Docker when you want the most reproducible setup:
-
-.. code-block:: bash
-
-   docker pull rlinf/rlinf:agentic-rlinf0.2-maniskill_libero
-   docker run -it --gpus all \
-      --shm-size 100g \
-      --net=host \
-      --name rlinf \
-      -e NVIDIA_DRIVER_CAPABILITIES=all \
-      rlinf/rlinf:agentic-rlinf0.2-maniskill_libero /bin/bash
-
-   git clone https://github.com/RLinf/RLinf.git
-   cd RLinf
-   source switch_env openvla
-
-Use a custom Python environment when the Docker image does not match your
-machine:
-
-.. code-block:: bash
-
-   git clone https://github.com/RLinf/RLinf.git
-   cd RLinf
-   bash requirements/install.sh embodied --model openvla --env maniskill_libero
-   source .venv/bin/activate
+Install RLinf with Docker for the most reproducible setup, or in a custom Python
+environment when the image does not match your machine. Either way, choose the
+install target that matches your workload.
 
 Choose an Install Target
 ------------------------
@@ -50,25 +21,28 @@ Choose an Install Target
    * - ``docs``
      - You build the Sphinx documentation locally.
 
-Common embodied examples:
+Docker
+------
+
+Each image bundles a ready-to-run stack (for example,
+``agentic-rlinf0.2-maniskill_libero``). Pull and run it, then select the model
+environment inside the container:
 
 .. code-block:: bash
 
-   bash requirements/install.sh embodied --model openvla --env maniskill_libero
-   bash requirements/install.sh embodied --model openvla-oft --env maniskill_libero
-   bash requirements/install.sh embodied --model openpi --env libero
+   docker pull rlinf/rlinf:agentic-rlinf0.2-maniskill_libero
+   docker run -it --gpus all \
+      --shm-size 100g \
+      --net=host \
+      --name rlinf \
+      -e NVIDIA_DRIVER_CAPABILITIES=all \
+      rlinf/rlinf:agentic-rlinf0.2-maniskill_libero /bin/bash
 
-Run ``bash requirements/install.sh --help`` for the complete model and
-environment list.
+   git clone https://github.com/RLinf/RLinf.git
+   cd RLinf
+   source switch_env openvla
 
-Detailed Options
-----------------
-
-Docker
-~~~~~~
-
-- Keep ``-e NVIDIA_DRIVER_CAPABILITIES=all`` for GPU rendering in embodied
-  environments.
+- Keep ``-e NVIDIA_DRIVER_CAPABILITIES=all`` for GPU rendering.
 - Do not mount over ``/root`` or ``/opt``; those directories contain assets and
   virtual environments in the image.
 - If your platform changes ``$HOME`` or remounts ``/root``, run ``link_assets``
@@ -77,7 +51,29 @@ Docker
   ``source switch_env openvla-oft``, or ``source switch_env openpi``.
 
 Custom Environment
-~~~~~~~~~~~~~~~~~~
+------------------
+
+Build a virtual environment with ``install.sh`` when the Docker image does not
+match your machine. Pass the target plus any target-specific flags:
+
+.. code-block:: bash
+
+   git clone https://github.com/RLinf/RLinf.git
+   cd RLinf
+   bash requirements/install.sh embodied --model openvla --env maniskill_libero
+   source .venv/bin/activate
+
+More targets and combinations:
+
+.. code-block:: bash
+
+   bash requirements/install.sh embodied --model openvla-oft --env maniskill_libero
+   bash requirements/install.sh embodied --model openpi --env libero
+   bash requirements/install.sh agentic
+   bash requirements/install.sh docs
+
+Run ``bash requirements/install.sh --help`` for the complete model and
+environment list.
 
 - Use ``--venv <dir>`` to choose the virtual environment directory.
 - Use ``--use-mirror`` for faster downloads from mainland China.
@@ -87,25 +83,6 @@ Custom Environment
 - Use ``--torch <version>`` only when you need a different PyTorch wheel.
 - Use ``--platform amd`` or ``--platform ascend`` for experimental non-NVIDIA
   installs. See :doc:`../guides/amd_rocm` and :doc:`../guides/ascend_cann`.
-
-Agentic / Reasoning
-~~~~~~~~~~~~~~~~~~~
-
-Install the agentic stack only when you plan to run agentic or reasoning
-examples:
-
-.. code-block:: bash
-
-   bash requirements/install.sh agentic
-
-Documentation
-~~~~~~~~~~~~~
-
-Install the documentation dependencies with:
-
-.. code-block:: bash
-
-   bash requirements/install.sh docs
 
 Verify
 ------
