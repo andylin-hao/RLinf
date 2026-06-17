@@ -318,17 +318,7 @@ a.reference.internal:hover {
 }
 
 .rlinf-sidebar-toggle {
-  display: none;
-}
-
-@media (max-width: 959.98px) {
-  .rlinf-sidebar-toggle {
-    display: inline-flex;
-    left: 0.75rem;
-    position: fixed;
-    top: 0.75rem;
-    z-index: 1040;
-  }
+  display: none !important;
 }
 
 /* --- Ray-style cards ----------------------------------------------------
