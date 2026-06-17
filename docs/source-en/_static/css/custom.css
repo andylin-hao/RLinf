@@ -321,6 +321,24 @@ a.reference.internal:hover {
   display: none !important;
 }
 
+@media (max-width: 959.98px) {
+  .rlinf-sidebar-toggle {
+    align-items: center !important;
+    border-radius: 4px !important;
+    display: inline-flex !important;
+    height: 2.25rem !important;
+    justify-content: center !important;
+    left: 0.75rem !important;
+    margin: 0 !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    position: fixed !important;
+    top: 0.75rem !important;
+    width: 2.25rem !important;
+    z-index: 1040 !important;
+  }
+}
+
 /* --- Ray-style cards ----------------------------------------------------
    Ray's docs use compact PyData cards with a clean surface, subtle shadow,
    small radius, and stronger hover affordance. Apply that treatment globally
