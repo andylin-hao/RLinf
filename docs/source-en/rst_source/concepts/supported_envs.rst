@@ -7,26 +7,33 @@ supported by RLinf for embodied reinforcement learning.
 Supported Simulators
 --------------------
 
-RLinf supports a wide range of GPU and CPU-based simulators through standardized RL interfaces:
+RLinf supports a wide range of GPU and CPU-based simulators through
+standardized RL interfaces. Use the value in parentheses as
+``env.train.env_type`` / ``env.eval.env_type``.
 
-* **ManiSkill3** — GPU-parallelized robotic manipulation simulator with diverse tasks and object sets.
-* **LIBERO** — Lifelong Robot Learning benchmark with 130 language-conditioned manipulation tasks.
-* **IsaacLab** — NVIDIA Isaac Lab for high-fidelity robot simulation, including GR00T workflows.
-* **MetaWorld** — Classic robotic manipulation benchmark with 50 distinct tabletop tasks.
-* **CALVIN** — Long-horizon language-conditioned benchmark with 4-DOF manipulation.
-* **RoboCasa** — Large-scale simulation of daily household manipulation tasks.
-* **RoboTwin 2.0** — Dual-arm manipulation benchmark with 50 diverse tasks.
-* **RoboVerse** — Unified simulation platform integrating multiple environments and embodiments.
-* **FrankaSim** — Franka arm simulation environment with MLP/CNN policy support.
-* **Behavior** — Interactive simulation benchmark with complex household activities.
-* **EmbodiChain** — Gym-style environment for chain-based manipulation tasks.
+* **ManiSkill3** (``maniskill``) — GPU-parallelized robotic manipulation simulator with diverse tasks and object sets.
+* **LIBERO** (``libero``) — Lifelong Robot Learning benchmark with 130 language-conditioned manipulation tasks.
+* **IsaacLab** (``isaaclab``) — NVIDIA Isaac Lab for high-fidelity robot simulation, including GR00T workflows.
+* **MetaWorld** (``metaworld``) — Classic robotic manipulation benchmark with 50 distinct tabletop tasks.
+* **CALVIN** (``calvin``) — Long-horizon language-conditioned benchmark with 4-DOF manipulation.
+* **RoboCasa** (``robocasa``) — Large-scale simulation of daily household manipulation tasks.
+* **RoboTwin 2.0** (``robotwin``) — Dual-arm manipulation benchmark with 50 diverse tasks.
+* **RoboVerse** (``roboverse``) — Unified simulation platform integrating multiple environments and embodiments.
+* **FrankaSim** (``frankasim``) — Franka arm simulation environment with MLP/CNN policy support.
+* **Behavior** (``behavior``) — Interactive simulation benchmark with complex household activities.
+* **EmbodiChain** (``embodichain``) — Gym-style environment for chain-based manipulation tasks.
+* **Habitat** (``habitat``) — Embodied navigation and interaction environments.
+* **Genesis** (``genesis``) — GPU-accelerated robotics and physics simulation.
+* **D4RL** (``d4rl``) — Offline RL benchmark tasks.
+* **Polaris** (``polaris``) — Polaris evaluation and embodied training environments.
 
 For simulator-specific training examples, see :doc:`../examples/simulators_index`.
 
 Real-World Robotics
 -------------------
 
-RLinf supports real-world RL training on the following robotic platforms:
+RLinf supports real-world RL training through ``realworld`` and related robot
+integrations:
 
 * **Franka Arm** — Franka Research 3 robotic arm with RealSense/ZED cameras and standard or Robotiq grippers.
 * **XSquare Turtle2** — Dual-arm robot with SAC + CNN policy training.
@@ -39,30 +46,36 @@ For detailed setup guides, see :doc:`../guides/realworld_robot` and the :doc:`Fr
 Supported Embodied Models
 --------------------------
 
-RLinf supports the following VLA and embodied policy models:
+RLinf supports the following VLA and embodied policy models. Use the value in
+parentheses as ``model.model_type``.
 
 Vision-Language-Action (VLA) Models
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-* **OpenVLA** — 7B-parameter open-source VLA model for general-purpose robot manipulation.
-* **OpenVLA-OFT** — Fine-tuned OpenVLA with LoRA adaptation for improved task-specific performance.
-* **π₀ / π₀.₅** — Flow-matching based VLA models from Physical Intelligence with state-of-the-art dexterity.
-* **GR00T-N1.5** — NVIDIA's large-scale VLA model for generalist robot control.
-* **StarVLA** — Vision-language-action model with spatial-temporal reasoning.
-* **Dexbotic** — Dexterous manipulation model based on π₀.₅ architecture.
-* **Lingbot-VLA** — VLA model optimized for language-conditioned manipulation.
+* **OpenVLA** (``openvla``) — 7B-parameter open-source VLA model for general-purpose robot manipulation.
+* **OpenVLA-OFT** (``openvla_oft``) — Fine-tuned OpenVLA with LoRA adaptation for improved task-specific performance.
+* **π₀ / π₀.₅** (``openpi``) — Flow-matching based VLA models from Physical Intelligence.
+* **GR00T** (``gr00t``, ``gr00t_n1d6``, ``gr00t_n1d7``) — NVIDIA VLA models for generalist robot control.
+* **StarVLA** (``starvla``) — Vision-language-action model with spatial-temporal reasoning.
+* **Dexbotic** (``dexbotic_pi``, ``dexbotic_dm0``) — Dexterous manipulation models based on π₀.₅-style architectures.
+* **Lingbot-VLA** (``lingbotvla``) — VLA model optimized for language-conditioned manipulation.
+* **ABOT-M0** (``abot_m0``) — Embodied VLA model for robot manipulation.
+* **DreamZero** (``dreamzero``) — SFT / world-model workflow for embodied policy learning.
 
 World Action Models (WAMs)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-* **OpenSora** — Video generation world model used as a simulator for RL training.
-* **Wan** — Large-scale video generation model for world-model-based RL.
+* **OpenSora** (``opensora_wm``) — Video generation world model used as a simulator for RL training.
+* **Wan** (``wan_wm``) — Large-scale video generation model for world-model-based RL.
 
 Policy Networks
 ~~~~~~~~~~~~~~~
 
-* **MLP** — Simple multi-layer perceptron policy for state-based RL.
-* **CNN** — Convolutional neural network policy for visual RL tasks.
-* **ResNet** — Pretrained ResNet models for image-based reward modeling.
+* **MLP** (``mlp_policy``) — Simple multi-layer perceptron policy for state-based RL.
+* **CNN** (``cnn_policy``) — Convolutional neural network policy for visual RL tasks.
+* **Flow Policy** (``flow_policy``) — Flow-matching policy for continuous control.
+* **CMA Policy** (``cma``) — CMA-style policy baseline.
+* **ResNet Reward** (``resnet``) — Pretrained ResNet models for image-based reward modeling.
+* **Config / Value Models** (``cfg_model``, ``value_model``) — Internal model wrappers for configuration and value modeling paths.
 
 For model-specific training examples, see :doc:`../examples/vla_wam_index`.
