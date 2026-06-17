@@ -1,8 +1,8 @@
 权重同步
 ==============================
 
-本文介绍 RLinf 在 具身训练中的 ``weight_syncer`` 机制。它主要用于优化
-actor 侧训练权重向 rollout 侧策略模型的同步过程，减少每次参数更新后的通信与加载开销。
+使用 ``weight_syncer`` 机制优化具身训练中 actor 侧训练权重向 rollout 侧策略
+模型的同步过程，减少每次参数更新后的通信与加载开销。
 
 当前这套能力主要面向具身训练中的 **FSDP actor + HuggingFace rollout**
 链路，也就是 ``examples/embodiment/train_embodied_agent.py`` 与

@@ -1,10 +1,10 @@
 Reinforcement Learning Training of Search-R1
 ================================================
 
-Multi-turn RL with tool calls has been proven to extend the interaction boundary of large language models (LLMs) to the real world.
-This document describes how to reproduce the experiments from
+Multi-turn RL with tool calls extends the interaction boundary of large language models (LLMs) to the real world.
+Reproduce the experiments from
 `Search-R1: Training LLMs to Reason and Leverage Search Engines with Reinforcement Learning <https://arxiv.org/abs/2503.09516>`__
-under the RLinf framework, using reinforcement learning (RL) to train LLMs to answer questions by invoking search tools.
+in RLinf, training LLMs to answer questions by invoking search tools.
 
 Overview
 --------

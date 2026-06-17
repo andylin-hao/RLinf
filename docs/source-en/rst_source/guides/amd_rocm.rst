@@ -1,14 +1,14 @@
 RL with LIBERO on AMD ROCm
 ==========================
 
-This page covers the AMD ROCm-specific setup for running the LIBERO RL example
-in RLinf. It intentionally focuses on dependency installation and runtime
-environment variables. The LIBERO task description, PPO/GRPO algorithm details,
-model download, configuration files, metrics, and results are platform
-independent; for those sections, refer to :doc:`RL with LIBERO Benchmarks <../examples/embodied/libero>`.
+Run the LIBERO RL example on AMD ROCm. This page covers only the ROCm-specific
+dependency installation and runtime environment variables. The LIBERO task
+description, PPO/GRPO algorithm details, model download, configuration files,
+metrics, and results are platform independent — see
+:doc:`RL with LIBERO Benchmarks <../examples/embodied/libero>`.
 
-Dependency Installation
------------------------
+Installation
+------------
 
 The key difference from the NVIDIA workflow is that dependencies must be
 installed with the ROCm backend and LIBERO should use CPU rendering through

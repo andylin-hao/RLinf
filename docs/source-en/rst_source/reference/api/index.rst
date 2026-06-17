@@ -2,7 +2,7 @@ APIs
 ==========
 
 
-This section provides a detailed walkthrough of the most essential API interfaces in RLinf, aiming to help users deeply understand our API design and usage. 
+Walk through RLinf's most essential API interfaces and how to use them.
 These key APIs are exposed to users to simplify the complex data flows of RL, allowing them to focus on higher-level abstractions without needing to worry about the underlying implementations.
 
 This API documentation proceeds bottom-up, starting with the foundational APIs of RLinf, including:

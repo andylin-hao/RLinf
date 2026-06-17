@@ -1,14 +1,14 @@
 RL with LIBERO on Ascend CANN
 =============================
 
-This page covers the Ascend CANN-specific setup for running the LIBERO RL
-example in RLinf. It focuses on dependency installation and runtime access to
-the host Ascend driver. The LIBERO task description, PPO/GRPO algorithm details,
-model download, configuration files, metrics, and results are platform
-independent; for those sections, refer to :doc:`RL with LIBERO Benchmarks <../examples/embodied/libero>`.
+Run the LIBERO RL example on Ascend CANN. This page covers only the
+CANN-specific dependency installation and runtime access to the host Ascend
+driver. The LIBERO task description, PPO/GRPO algorithm details, model download,
+configuration files, metrics, and results are platform independent — see
+:doc:`RL with LIBERO Benchmarks <../examples/embodied/libero>`.
 
-Dependency Installation
------------------------
+Installation
+------------
 
 The key difference from the NVIDIA workflow is that dependencies must be
 installed with the Ascend backend. ``install.sh`` installs the CPU PyTorch wheel

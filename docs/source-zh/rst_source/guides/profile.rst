@@ -1,7 +1,7 @@
 GPU Profiling
 ==============================
 
-本文介绍 RLinf 中的 ``cluster.profiling`` 配置，用于对 Ray worker 进程进行系统级 Profiling。
+使用 ``cluster.profiling`` 配置对 Ray worker 进程进行系统级 Profiling。
 
 RLinf 支持使用特定 profiling 工具包装指定的 worker group。通过必填字段 ``backend``
 来选择后端：

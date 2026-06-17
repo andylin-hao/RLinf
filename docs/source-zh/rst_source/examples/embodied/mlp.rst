@@ -157,7 +157,7 @@ MLP 模型由 ``model/mlp_policy@actor.model`` 引入，并在不同配置中做
 .. note::
 
    **SAC 注意事项。** SAC 通过 Bellman 回传与熵正则学习 Q 值（off-policy），因此需在配置中启用
-   Q 相关的 head（``add_q_head: True``）。它还支持通过 ``entropy_tuning`` 进行**自动熵调节**
+   Q 相关的 head（``add_q_head: True``）。它还支持通过 ``entropy_tuning`` 进行自动熵调节
    （如 ``alpha_type: softplus``），以平衡探索与利用。
 
 **Libero-Spatial(GRPO-MLP)**

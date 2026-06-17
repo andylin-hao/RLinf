@@ -7,7 +7,7 @@ RECAP: Offline Advantage-Based Policy Optimization
 
    The RECAP offline pipeline.
 
-This document provides a complete guide to the **RECAP (RL with Experience and Corrections via Advantage-conditioned Policies)** pipeline in the RLinf framework.
+Run the **RECAP (RL with Experience and Corrections via Advantage-conditioned Policies)** pipeline in RLinf.
 RECAP is an offline policy optimization method that requires no online environment interaction. It computes returns from existing datasets,
 trains a value model, estimates advantages, and finally uses **Classifier-Free Guidance (CFG) training** to optimize the policy.
 

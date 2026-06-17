@@ -281,8 +281,8 @@ ManiSkill3 结果
 
 .. note::
 
-   ``rl4vla`` 是在**小批量**下的 PPO + OpenVLA，因此只应与在相近条件下训练的 PPO+OpenVLA 比较。
-   我们的 PPO+OpenVLA 依托 RLinf 的大规模基础设施以**更大批量**训练，显著提升了性能。
+   ``rl4vla`` 是在小批量下的 PPO + OpenVLA，因此只应与在相近条件下训练的 PPO+OpenVLA 比较。
+   我们的 PPO+OpenVLA 依托 RLinf 的大规模基础设施以更大批量训练，显著提升了性能。
 
 下面的动画展示了在 RLinf 中用 PPO 在 ManiSkill3 多任务基准上训练 OpenVLA 的结果。
 

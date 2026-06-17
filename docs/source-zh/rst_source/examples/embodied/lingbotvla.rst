@@ -8,7 +8,7 @@ Lingbot-VLA模型强化学习
    Lingbot-VLA 在 RoboTwin 上（图片来源：`RLinf <https://github.com/RLinf>`__）。
 
 `Lingbot-VLA <https://huggingface.co/robbyant/lingbot-vla-4b>`__ 是一个基于 Qwen2.5-VL 的
-视觉-语言-动作模型，以自回归方式生成连续动作块。RLinf 将其**原生接入**——嵌入 RLinf 的 Python
+视觉-语言-动作模型，以自回归方式生成连续动作块。RLinf 将其原生接入——嵌入 RLinf 的 Python
 内存空间，实现零延迟的 Tensor 级交互——并支持在 RoboTwin 2.0 仿真器上进行全参数 SFT 与 GRPO 微调。
 
 概览
@@ -167,7 +167,7 @@ RoboTwin Assets 是 RoboTwin 环境运行所需的资源文件，需要从 Huggi
     huggingface-cli download Qwen/Qwen2.5-VL-3B-Instruct --local-dir Qwen2.5-VL-3B-Instruct
 
 
-然后在配置中将 ``rollout.model.model_path`` 和 ``actor.model.model_path`` 设为本地模型路径（如基础权重 ``/path/to/model/lingbot-vla-4b``，或固定 revision 的 RoboTwin SFT 权重 ``/path/to/model/lingbot-vla-4b-posttrain-robotwin``），并**务必**将对应的 ``tokenizer_path`` 设为下载的 Tokenizer 路径（如 ``/path/to/model/Qwen2.5-VL-3B-Instruct``），否则 Rollout 节点在解析文本指令时会报错。
+然后在配置中将 ``rollout.model.model_path`` 和 ``actor.model.model_path`` 设为本地模型路径（如基础权重 ``/path/to/model/lingbot-vla-4b``，或固定 revision 的 RoboTwin SFT 权重 ``/path/to/model/lingbot-vla-4b-posttrain-robotwin``），并务必将对应的 ``tokenizer_path`` 设为下载的 Tokenizer 路径（如 ``/path/to/model/Qwen2.5-VL-3B-Instruct``），否则 Rollout 节点在解析文本指令时会报错。
 
 运行
 ----------------------------------------

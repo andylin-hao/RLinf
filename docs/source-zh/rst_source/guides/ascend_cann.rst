@@ -1,13 +1,13 @@
 Ascend CANN 芯片上的 LIBERO 强化学习
 ====================================
 
-本文介绍在 Ascend CANN 芯片上运行 RLinf LIBERO 强化学习示例所需的配置。
-本文重点说明依赖安装以及容器访问宿主机 Ascend 驱动的运行方式。LIBERO
-任务说明、PPO/GRPO 算法、模型下载、配置文件、指标和结果均与芯片无关；
-这些内容请参考 :doc:`基于 LIBERO 的强化学习训练 <../examples/embodied/libero>`\ 。
+在 Ascend CANN 芯片上运行 LIBERO 强化学习示例。本文仅说明 CANN 相关的依赖安装，
+以及容器访问宿主机 Ascend 驱动的运行方式。LIBERO 任务说明、PPO/GRPO 算法、模型
+下载、配置文件、指标和结果均与芯片无关——请参考
+:doc:`基于 LIBERO 的强化学习训练 <../examples/embodied/libero>`\ 。
 
-依赖安装
---------
+安装
+----
 
 与 NVIDIA 流程相比，Ascend 芯片的关键区别是依赖需要使用 Ascend 后端安装。
 ``install.sh`` 会安装 CPU PyTorch wheel，然后安装与 PyTorch 版本匹配的

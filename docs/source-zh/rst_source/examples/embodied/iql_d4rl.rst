@@ -238,7 +238,7 @@ RLinf 为不同 D4RL 任务族提供默认 IQL 配置：
 
 **3. 视频生成**
 
-D4RL 观测为纯状态（无图像键）。当观测中没有图像字段时，录像会**回退到 ``env.render()``**，因此只需将 ``save_video`` 设为 true 即可生成评估视频。``video_base_dir`` 为可选项（默认 ``./video``），你也可以显式配置以便统一管理输出目录。需保证 MuJoCo 环境支持渲染（当 ``save_video`` 为 true 时会自动以 ``render_mode="rgb_array"`` 创建）。无头服务器请设置 ``MUJOCO_GL=egl`` 与 ``PYOPENGL_PLATFORM=egl``。
+D4RL 观测为纯状态（无图像键）。当观测中没有图像字段时，录像会回退到 ``env.render()``，因此只需将 ``save_video`` 设为 true 即可生成评估视频。``video_base_dir`` 为可选项（默认 ``./video``），你也可以显式配置以便统一管理输出目录。需保证 MuJoCo 环境支持渲染（当 ``save_video`` 为 true 时会自动以 ``render_mode="rgb_array"`` 创建）。无头服务器请设置 ``MUJOCO_GL=egl`` 与 ``PYOPENGL_PLATFORM=egl``。
 
 .. code-block:: yaml
 

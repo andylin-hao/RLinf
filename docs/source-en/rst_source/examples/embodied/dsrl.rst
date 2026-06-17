@@ -7,7 +7,7 @@ DSRL: Diffusion Steering via Reinforcement Learning
 
    DSRL steers a frozen diffusion policy in noise space.
 
-This document provides a guide for training a pre-trained **Pi0 diffusion policy** using **DSRL (Diffusion Steering via Reinforcement Learning)** in the RLinf framework.
+Train a pre-trained **Pi0 diffusion policy** with **DSRL (Diffusion Steering via Reinforcement Learning)** in RLinf.
 DSRL steers a frozen Pi0 policy by training a lightweight SAC agent in the latent noise space, achieving RL fine-tuning with minimal trainable parameters (~500K).
 
 Paper: `Steering Your Diffusion Policy with Latent Space Reinforcement Learning <https://arxiv.org/abs/2506.15799>`_ (CoRL 2025, Wagenmaker et al.)

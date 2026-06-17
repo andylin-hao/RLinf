@@ -2,9 +2,8 @@ Adding New Models with Megatron+SGLang
 =============================================
 
 
-This document is based on the Megatron implementation and provides a
-comprehensive guide to adding new HuggingFace models in the RLinf
-framework.
+Add a new HuggingFace model to RLinf with the Megatron+SGLang backend. This
+guide walks through the required steps end to end.
 
 Prerequisites
 -------------

@@ -1,10 +1,9 @@
 Weight Synchronization
 ==============================
 
-This document introduces the ``weight_syncer`` mechanism in RLinf for
-**embodied training**. It is designed to optimize weight synchronization from
-the actor side to the rollout-side policy model, reducing the communication and
-loading overhead after each parameter update.
+Use the ``weight_syncer`` mechanism to optimize weight synchronization from the
+actor side to the rollout-side policy model in **embodied training**, reducing
+the communication and loading overhead after each parameter update.
 
 At the moment, this capability is mainly intended for the
 **FSDP actor + HuggingFace rollout** path used by

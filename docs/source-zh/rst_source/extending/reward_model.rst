@@ -1,8 +1,8 @@
 Reward Model 使用指南
 ======================
 
-本文档介绍如何在 RLinf 中使用 reward model，覆盖 ``ResNetRewardModel``
-这类图像分类 reward，以及 QwenTrend / ``HistoryVLMRewardModel`` 这类 VLM reward。
+在 RLinf 中使用 reward model——既包括 ``ResNetRewardModel`` 这类图像分类
+reward，也包括 QwenTrend / ``HistoryVLMRewardModel`` 这类 VLM reward。
 这里的 QwenTrend 指使用 Qwen3-VL 模型判断一段历史视频中的动作趋势，并据此转换为标量 reward。
 
 仿真场景 Reward Model
@@ -385,7 +385,7 @@ RLinf 提供了多个 reward model 接入 RL 的示例配置：
 真机场景 Reward Model
 ---------------------
 
-本文档介绍如何在真实世界的 Franka 机械臂上直接采集并预处理 reward model 训练数据集。
+在真实世界的 Franka 机械臂上直接采集并预处理 reward model 训练数据集。
 支持两种数据采集方式：**通用键盘标注方式** 和 **固定位姿方式** （通过预定的目标位姿驱动 episode 成功/失败）。
 
 在开始前，强烈建议先阅读以下文档：
@@ -506,8 +506,8 @@ RLinf 提供了多个 reward model 接入 RL 的示例配置：
 
 在 episode 过程中使用以下按键：
 
-- ``c`` — 将当前帧标注为**成功**。
-- ``a`` — 将当前帧标注为**失败**。
+- ``c`` — 将当前帧标注为成功。
+- ``a`` — 将当前帧标注为失败。
 - ``keyboard_reward_wrapper`` 中的键盘操作也会控制 episode 是否继续或重置。
 
 当 ``num_success_frames`` 和 ``num_fail_frames`` 两个阈值均达到后，
@@ -517,7 +517,7 @@ RLinf 提供了多个 reward model 接入 RL 的示例配置：
 方式二：固定位姿（目标驱动）
 """"""""""""""""""""""""""""
 
-此方式专为**固定目标位姿**的任务设计（例如到达预定箱体位置）。
+此方式专为固定目标位姿的任务设计（例如到达预定箱体位置）。
 无需手动键盘标注，episode 会根据机器人是否到达配置的 ``target_ee_pose`` 自动驱动成功/失败判定。
 可以设置 ``success_hold_steps``，要求机器人在目标位姿保持一定步数后才判定为成功，
 有助于采集更多样的成功样本。
@@ -674,7 +674,7 @@ Reward Model 训练
 集群配置
 ^^^^^^^^
 
-遥操作脚本需要**两个节点**：一个用于 Franka 机器人，一个用于运行 reward model 推理的 GPU：
+遥操作脚本需要两个节点：一个用于 Franka 机器人，一个用于运行 reward model 推理的 GPU：
 
 .. code-block:: yaml
 

@@ -1,8 +1,8 @@
 GPU Profiling
 ==============================
 
-This document introduces the ``cluster.profiling`` configuration in RLinf for
-system-level profiling of Ray worker processes.
+Use the ``cluster.profiling`` configuration for system-level profiling of Ray
+worker processes.
 
 RLinf supports wrapping selected worker groups with a backend-specific profiler
 command. The backend is selected by the required ``backend`` field:

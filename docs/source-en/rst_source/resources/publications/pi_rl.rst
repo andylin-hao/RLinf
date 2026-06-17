@@ -10,7 +10,7 @@ Overview
    :alt: πRL teaser
    :align: center
 
-πRL provides online reinforcement learning fine-tuning for flow-based vision-language-action (VLA) models π₀ and π₀.₅ within the **RLinf** framework. By combining PPO/GRPO with flow matching policies, the method enables few-shot SFT models to achieve strong manipulation performance through environment feedback. It supports LIBERO, ManiSkill3, MetaWorld, and CALVIN benchmarks, with visual understanding, language comprehension, and continuous action generation jointly optimized via RL.
+πRL provides online reinforcement learning fine-tuning for flow-based vision-language-action (VLA) models π₀ and π₀.₅ within the **RLinf** framework. By combining PPO/GRPO with flow matching policies, the method enables few-shot SFT models to achieve strong manipulation performance through environment feedback. It supports the LIBERO, ManiSkill3, MetaWorld, and CALVIN benchmarks.
 
 Results
 -------

@@ -251,7 +251,7 @@ GR00T 核心设计理念
 **1.1 增强的LeRobot数据集**
 
 LeRobot数据集包含一个meta文件夹，其中详细记录了数据集的所有元数据。
-GR00T-N1.5进一步定义了一个**modality.json**文件，用于确定数据集的数据接口。
+GR00T-N1.5进一步定义了一个modality.json文件，用于确定数据集的数据接口。
 
 **1.2 DataConfig类**
 

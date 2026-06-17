@@ -1,9 +1,9 @@
 Reward Model Guide
 ==================
 
-This document describes how to use reward models in RLinf. It covers both image
-classification rewards such as ``ResNetRewardModel`` and VLM rewards such as
-QwenTrend / ``HistoryVLMRewardModel``.
+Use reward models in RLinf — both image-classification rewards such as
+``ResNetRewardModel`` and VLM rewards such as QwenTrend /
+``HistoryVLMRewardModel``.
 Here, QwenTrend means using a Qwen3-VL model to judge the action trend in a short
 history video and convert that judgment into a scalar reward.
 
@@ -389,8 +389,8 @@ The full workflow is:
 Real-World Reward Model
 -----------------------
 
-This document describes how to collect and preprocess a reward model training dataset
-directly on a real-world Franka robot. Two data collection approaches are supported:
+Collect and preprocess a reward model training dataset directly on a real-world
+Franka robot. Two data collection approaches are supported:
 a **general-purpose keyboard-labeling** approach and a **fixed-pose** approach that
 uses a predetermined target pose to drive episode success/failure.
 

@@ -1,7 +1,7 @@
 Adding New Environment 
 ============================
 
-This document provides detailed instructions on how to add new environments to the RLinf framework.  
+Add a new reinforcement learning environment to RLinf.
 RLinf supports various reinforcement learning environments, including robotic manipulation (e.g., ManiSkill3, LIBERO) and others.
 
 The RLinf environment system consists of the following components:
