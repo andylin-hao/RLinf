@@ -1,45 +1,15 @@
 Installation
 ============
 
-Install RLinf in one of two ways: **Option 1 (Docker)** for the most
-reproducible setup, or **Option 2 (UV)** when the Docker image does not match
-your machine.
+Install RLinf in one of two ways: **Option 1 (UV)** builds a local virtual
+environment matched to your machine, while **Option 2 (Docker)** gives the most
+reproducible setup.
 
-Option 1: Docker
-----------------
-
-Each image bundles a ready-to-run stack (for example,
-``agentic-rlinf0.2-maniskill_libero``). Pull and run it, then select the model
-environment inside the container:
-
-.. code-block:: bash
-
-   docker pull rlinf/rlinf:agentic-rlinf0.2-maniskill_libero
-   docker run -it --gpus all \
-      --shm-size 100g \
-      --net=host \
-      --name rlinf \
-      -e NVIDIA_DRIVER_CAPABILITIES=all \
-      rlinf/rlinf:agentic-rlinf0.2-maniskill_libero /bin/bash
-
-   git clone https://github.com/RLinf/RLinf.git
-   cd RLinf
-   source switch_env openvla
-
-- Keep ``-e NVIDIA_DRIVER_CAPABILITIES=all`` for GPU rendering.
-- Do not mount over ``/root`` or ``/opt``; those directories contain assets and
-  virtual environments in the image.
-- If your platform changes ``$HOME`` or remounts ``/root``, run ``link_assets``
-  inside the container before launching an example.
-- Switch model environments with ``source switch_env openvla``,
-  ``source switch_env openvla-oft``, or ``source switch_env openpi``.
-
-Option 2: UV
+Option 1: UV
 ------------
 
-Build a UV virtual environment with ``install.sh`` when the Docker image does
-not match your machine. Pass an install target (``embodied``, ``agentic``, or
-``docs``) plus any target-specific flags:
+Build a UV virtual environment with ``install.sh``. Pass an install target
+(``embodied``, ``agentic``, or ``docs``) plus any target-specific flags:
 
 .. code-block:: bash
 
@@ -68,6 +38,35 @@ environment list.
 - Use ``--torch <version>`` only when you need a different PyTorch wheel.
 - Use ``--platform amd`` or ``--platform ascend`` for experimental non-NVIDIA
   installs. See :doc:`../guides/amd_rocm` and :doc:`../guides/ascend_cann`.
+
+Option 2: Docker
+----------------
+
+Each image bundles a ready-to-run stack (for example,
+``agentic-rlinf0.2-maniskill_libero``). Pull and run it, then select the model
+environment inside the container:
+
+.. code-block:: bash
+
+   docker pull rlinf/rlinf:agentic-rlinf0.2-maniskill_libero
+   docker run -it --gpus all \
+      --shm-size 100g \
+      --net=host \
+      --name rlinf \
+      -e NVIDIA_DRIVER_CAPABILITIES=all \
+      rlinf/rlinf:agentic-rlinf0.2-maniskill_libero /bin/bash
+
+   git clone https://github.com/RLinf/RLinf.git
+   cd RLinf
+   source switch_env openvla
+
+- Keep ``-e NVIDIA_DRIVER_CAPABILITIES=all`` for GPU rendering.
+- Do not mount over ``/root`` or ``/opt``; those directories contain assets and
+  virtual environments in the image.
+- If your platform changes ``$HOME`` or remounts ``/root``, run ``link_assets``
+  inside the container before launching an example.
+- Switch model environments with ``source switch_env openvla``,
+  ``source switch_env openvla-oft``, or ``source switch_env openpi``.
 
 Verify
 ------
