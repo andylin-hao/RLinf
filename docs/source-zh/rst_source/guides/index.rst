@@ -1,88 +1,56 @@
 指南
 ====
 
-指南面向实际操作流程：配置训练、扩展到多节点、恢复训练，以及调试性能。
+指南面向实际操作流程：配置训练、扩展运行、管理数据与 checkpoint，以及调优性能。
 
-配置
-----
+选择工作流
+----------
 
-.. list-table::
-   :header-rows: 1
-   :widths: 32 68
+.. grid:: 1 2 2 3
+   :gutter: 2
 
-   * - 指南
-     - 内容
-   * - :doc:`基础配置 <basic_config>`
-     - 配置文件的结构与覆盖方式。
-   * - :doc:`具身智能配置 <embodiment_config>`
-     - 具身训练专用的配置项。
-   * - :doc:`智能体配置 <agentic_config>`
-     - 智能体 / 推理训练专用的配置项。
-   * - :doc:`异构集群 <hetero>`
-     - 配置混合硬件与节点分组。
-   * - :doc:`日志 <logger>`
-     - 接入 TensorBoard / wandb / swanlab 后端。
-   * - :doc:`恢复训练 <resume>`
-     - Checkpoint 频率与断点续训。
+   .. grid-item-card:: 配置
+      :link: configure/index
+      :link-type: doc
 
-运维
-----
+      设置 Hydra 配置、日志与不同工作负载的专用选项。
 
-.. list-table::
-   :header-rows: 1
-   :widths: 32 68
+   .. grid-item-card:: 启动与扩展
+      :link: launch-scale/index
+      :link-type: doc
 
-   * - 指南
-     - 内容
-   * - :doc:`多节点训练 <multi_node>`
-     - 在多个节点上启动训练。
-   * - :doc:`Checkpoint 转换 <convertor>`
-     - 在不同格式之间转换 checkpoint。
-   * - :doc:`智能体指南 <agentic>`
-     - 智能体任务的操作流程。
-   * - :doc:`真机机器人 <realworld_robot>`
-     - 在真实机器人硬件上运行 RL。
-   * - :doc:`云边协同 <cloud_edge>`
-     - 在云端与边缘之间拆分推理与训练。
-   * - :doc:`数据采集 <data_collection>`
-     - 采集并预处理示教数据。
-   * - :doc:`AMD ROCm <amd_rocm>`
-     - 在 AMD ROCm 加速器上运行。
-   * - :doc:`Ascend CANN <ascend_cann>`
-     - 在 Ascend CANN 加速器上运行。
-   * - :doc:`LoRA <lora>`
-     - 使用 LoRA 适配器训练。
-   * - :doc:`5D 并行 <5D>`
-     - 为大模型配置 5D 并行。
-   * - :doc:`SGLang 版本切换 <version>`
-     - 在不同 SGLang 版本之间切换。
-   * - :doc:`Profiling <profile>`
-     - 对 Ray worker 进程进行系统级 Profiling。
-   * - :doc:`动态调度 <dynamic_scheduling>`
-     - 训练过程中动态调度资源。
-   * - :doc:`自动 Placement <auto_placement>`
-     - 为训练负载自动选择最优 placement。
+      在多节点、异构硬件、云边协同或真实机器人上运行。
+
+   .. grid-item-card:: 数据与 Checkpoint
+      :link: data-checkpoints/index
+      :link-type: doc
+
+      采集数据、转换 checkpoint，并恢复训练。
+
+   .. grid-item-card:: 性能
+      :link: performance/index
+      :link-type: doc
+
+      调整 placement、调度、并行、profiling 与 adapter 训练。
+
+   .. grid-item-card:: 硬件后端
+      :link: hardware/index
+      :link-type: doc
+
+      在 AMD ROCm、Ascend CANN 或不同 SGLang 版本上运行 RLinf。
+
+   .. grid-item-card:: 智能体工作流
+      :link: agent-workflows/index
+      :link-type: doc
+
+      运行智能体与推理工作负载。
 
 .. toctree::
    :hidden:
 
-   基础配置 <basic_config>
-   具身智能配置 <embodiment_config>
-   智能体配置 <agentic_config>
-   异构集群 <hetero>
-   日志 <logger>
-   恢复训练 <resume>
-   多节点训练 <multi_node>
-   Checkpoint 转换 <convertor>
-   智能体指南 <agentic>
-   真机机器人 <realworld_robot>
-   云边协同 <cloud_edge>
-   数据采集 <data_collection>
-   AMD ROCm <amd_rocm>
-   Ascend CANN <ascend_cann>
-   LoRA <lora>
-   5D 并行 <5D>
-   SGLang 版本切换 <version>
-   Profiling <profile>
-   动态调度 <dynamic_scheduling>
-   自动 Placement <auto_placement>
+   配置 <configure/index>
+   启动与扩展 <launch-scale/index>
+   数据与 Checkpoint <data-checkpoints/index>
+   性能 <performance/index>
+   硬件后端 <hardware/index>
+   智能体工作流 <agent-workflows/index>
