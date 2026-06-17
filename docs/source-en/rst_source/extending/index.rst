@@ -1,10 +1,10 @@
 Extending
 =========
 
-Use Extending when you add a model, environment, algorithm, bridge, or weight
-synchronization path to RLinf.
+Use Extending when you add a model, environment, or advanced integration path
+to RLinf.
 
-.. grid:: 1 2 2 2
+.. grid:: 1 2 2 3
    :gutter: 2
 
    .. grid-item-card:: Extending Overview
@@ -37,23 +37,11 @@ synchronization path to RLinf.
 
       Plug a new model into the SFT training flow.
 
-   .. grid-item-card:: Megatron-Bridge
-      :link: mbridge
+   .. grid-item-card:: Advanced Integrations
+      :link: advanced-integrations/index
       :link-type: doc
 
-      Use the Megatron-Bridge actor backend.
-
-   .. grid-item-card:: Weight Synchronization
-      :link: weight_syncer
-      :link-type: doc
-
-      Optimize actor-to-rollout weight sync in embodied training.
-
-   .. grid-item-card:: Reward Model Workflow
-      :link: reward_model
-      :link-type: doc
-
-      Use image-classification and VLM reward models.
+      Add Megatron-Bridge, weight synchronization, or reward model workflows.
 
 .. toctree::
    :hidden:
@@ -63,6 +51,4 @@ synchronization path to RLinf.
    New Model with FSDP <new_model_fsdp>
    New Model with Megatron <new_model_megatron>
    New SFT Model <new_model_sft>
-   Megatron-Bridge <mbridge>
-   Weight Synchronization <weight_syncer>
-   Reward Model Workflow <reward_model>
+   Advanced Integrations <advanced-integrations/index>

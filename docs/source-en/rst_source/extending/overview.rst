@@ -54,14 +54,3 @@ the main RLinf repository.
 
 Whether you're training a novel model architecture or experimenting with a custom RL environment,  
 this section gives you the tools to plug directly into RLinf’s modular design.
-
-.. toctree::
-   :hidden:
-   :maxdepth: 2
-
-   new_env
-   new_model_fsdp
-   new_model_megatron
-   new_model_sft
-   mbridge
-   weight_syncer

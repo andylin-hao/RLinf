@@ -1,9 +1,9 @@
 扩展
 ====
 
-当你要向 RLinf 添加模型、环境、算法、bridge 或权重同步路径时，使用扩展页。
+当你要向 RLinf 添加模型、环境或高级集成路径时，使用扩展页。
 
-.. grid:: 1 2 2 2
+.. grid:: 1 2 2 3
    :gutter: 2
 
    .. grid-item-card:: 扩展概览
@@ -36,23 +36,11 @@
 
       将新模型接入 SFT 训练流程。
 
-   .. grid-item-card:: Megatron-Bridge
-      :link: mbridge
+   .. grid-item-card:: 高级集成
+      :link: advanced-integrations/index
       :link-type: doc
 
-      使用 Megatron-Bridge actor 后端。
-
-   .. grid-item-card:: 权重同步
-      :link: weight_syncer
-      :link-type: doc
-
-      优化具身训练中 actor 到 rollout 的权重同步。
-
-   .. grid-item-card:: 奖励模型流程
-      :link: reward_model
-      :link-type: doc
-
-      使用图像分类与 VLM 奖励模型。
+      添加 Megatron-Bridge、权重同步或奖励模型工作流。
 
 .. toctree::
    :hidden:
@@ -62,6 +50,4 @@
    FSDP 新模型 <new_model_fsdp>
    Megatron 新模型 <new_model_megatron>
    新 SFT 模型 <new_model_sft>
-   Megatron-Bridge <mbridge>
-   权重同步 <weight_syncer>
-   奖励模型流程 <reward_model>
+   高级集成 <advanced-integrations/index>
