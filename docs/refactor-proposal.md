@@ -257,8 +257,63 @@ stable `:doc:`/`:ref:` (no hardcoded ReadTheDocs URLs).
 | **2. Landing + intros** | New landing task-router; Why-RLinf page; slim Get Started; Concepts page from old tutorials prose; Evaluation landing stays task-routed to quick tour / benchmark guides / reference | medium | build clean |
 | **3. Page design** | Apply §6 template to all recipe pages; extract Config/Metrics Reference pages; link benchmark/standalone eval flows to `evaluations/` instead of duplicating them | large (per-page) | build clean; pilot template locked on `libero` first |
 | **4. Wording pass** | Voice/imperative/heading-case sweep across EN+ZH | medium | build clean; spot review |
+| **5. Sidebar grouping** | Reorganize non-Examples sections into intent-based subsection groups so the sidebar is easier to scan. Work one top-level section at a time; **do not refactor Examples** in this phase. | medium | build clean; docs-check parity; no orphaned pages |
 
 Each phase is independently shippable and reviewable.
+
+### Phase 5 plan — sidebar grouping outside Examples
+
+Phase 5 reduces flat, overlong sidebars by grouping child pages under small
+section-owned indexes. It does **not** change Examples, because the gallery has
+its own category structure and Phase 3 already aligned recipe pages.
+
+Execute Phase 5 one section at a time, EN+ZH together:
+
+1. **Guides** — group operational how-tos by user intent:
+   - `Configure`: basic, embodied, agentic, logging, resume.
+   - `Launch & Scale`: multi-node, heterogeneous clusters, cloud-edge,
+     real-world robots.
+   - `Data & Checkpoints`: data collection, checkpoint conversion, resume if it
+     fits better here after review.
+   - `Performance`: auto placement, dynamic scheduling, profiling, 5D
+     parallelism, LoRA.
+   - `Hardware Backends`: AMD ROCm, Ascend CANN, SGLang version switching.
+   - `Agent Workflows`: agentic operational guides.
+2. **Reference** — keep reference pages exact, but expose them through grouped
+   indexes:
+   - `API`: actor, rollout, worker, cluster, channel, placement, env, data,
+     replay buffer.
+   - `Algorithms`: PPO, GRPO, DAPO, Reinforce++, SAC, CrossQ, RLPD, IQL,
+     Async PPO.
+   - `Configuration`: training configuration and metrics.
+   - `Evaluation Reference`: link to the Evaluation section's reference pages
+     without duplicating ownership.
+3. **Concepts** — group mental-model pages by how readers reason about the
+   system:
+   - `Execution Model`: execution flow, worker, cluster, channel, collective.
+   - `Scheduling Model`: placement, execution modes, replay buffer.
+   - `Environment Model`: supported environments.
+4. **Extending** — keep the primary add-component pages directly visible:
+   `New Environment`, `New Model with FSDP`, `New Model with Megatron`, and
+   `New SFT Model` stay as immediate children. Only group advanced integration
+   topics under `Advanced Integrations`: Megatron-Bridge, weight
+   synchronization, and reward model workflow.
+5. **Resources / Get Started / Evaluation** — only adjust if their sidebars
+   become similarly flat after the above sections. Preserve Evaluation ownership:
+   evaluation setup, benchmark guides, and eval reference remain under
+   `evaluations/`.
+
+Implementation rules:
+
+- Prefer creating small group `index.rst` pages over adding more top-level
+  entries.
+- Make the immediate sidebar children group names; keep individual articles one
+  level deeper.
+- Use short group landing pages with cards or `list-table`s, not prose-heavy
+  introductions.
+- Preserve old page filenames where practical to avoid unnecessary link churn.
+- Update both EN and ZH toctrees in the same change.
+- Run `docs-check` plus EN/ZH `sphinx-build -W --keep-going` for each section.
 
 ---
 
@@ -314,6 +369,6 @@ repo):
 
 ---
 
-*Next step:* finish **Phase 3** consistency for Examples while respecting the **Phase 0.1
-Evaluation contract**, then open **Phase 1 (IA)** as its own reviewable change
-implementing the §3 mapping in EN+ZH.
+*Next step:* execute **Phase 5** one section at a time, starting with **Guides**.
+Do not refactor Examples in Phase 5; keep that gallery stable after the Phase 3
+recipe alignment.
