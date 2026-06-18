@@ -99,6 +99,7 @@ html_js_files = [
     "js/mode-panel.js",
     "js/github-stars.js",
     "js/sidebar-nav.js",
+    "js/lang-switcher.js",
     "sphinx-modal-widget.js",
 ]
 html_sidebars = {
