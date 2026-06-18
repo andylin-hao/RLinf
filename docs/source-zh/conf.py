@@ -126,6 +126,7 @@ def render_svg_logo(path, width="4rem", height="auto"):
 
 html_theme_options = {
     "logo": {"svg": render_svg_logo("_static/svg/logo.svg")},
+    "search_bar_text": "搜索文档…",
     "navbar_start": [],
     "navbar_center": [],
     "navbar_end": [],

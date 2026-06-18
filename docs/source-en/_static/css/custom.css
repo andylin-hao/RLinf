@@ -168,37 +168,36 @@ a.reference.internal:hover {
   min-height: 1.85rem;
 }
 
-/* Tools row: version switcher grows; language switcher, theme toggle, and
-   repository icons sit beside it, wrapping to a second line when narrow. */
+/* Tools: one compact row (LeRobot-style) — version + language switchers on the
+   left, the color-mode toggle and repository icons on the right. */
 .rlinf-sidebar-tools {
   align-items: center;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem 0.5rem;
+  gap: 0.4rem;
   padding: 0 0.75rem;
 }
 
-.rlinf-sidebar-tools__version {
-  flex: 1 1 6rem;
-  min-width: 0;
+.rlinf-sidebar-tools__version,
+.rlinf-lang-switcher {
+  flex: 0 0 auto;
 }
 
 .rlinf-sidebar-tools__icons {
   align-items: center;
   display: flex;
   flex: 0 0 auto;
-  gap: 0.15rem;
+  gap: 0.25rem;
   margin-left: auto;
 }
 
-/* Language switcher — match the compact version-switcher button. */
-.rlinf-lang-switcher {
-  flex: 0 0 auto;
-}
-
+/* Compact version + language dropdown buttons, sized to their content. */
+.rlinf-sidebar-tools .version-switcher__button,
 .rlinf-lang-button {
   font-size: 0.8rem;
-  padding: 0.25rem 0.6rem;
+  margin: 0;
+  padding: 0.25rem 0.55rem;
+  width: auto;
 }
 
 /* Color-mode toggle in the sidebar tools. */
@@ -206,22 +205,6 @@ a.reference.internal:hover {
   border: 0;
   font-size: 0.85rem;
   padding: 0.25rem 0.4rem;
-}
-
-/* Hide the ReadTheDocs addons flyout (bottom-right); language/version/theme
-   are exposed in the sidebar instead. */
-readthedocs-flyout,
-.readthedocs-flyout,
-.rst-versions {
-  display: none !important;
-}
-
-.rlinf-sidebar-tools .version-switcher__button {
-  font-size: 0.8rem;
-  justify-content: space-between;
-  margin: 0;
-  padding: 0.25rem 0.6rem;
-  width: 100%;
 }
 
 .rlinf-sidebar-tools .navbar-icon-links {
