@@ -116,7 +116,9 @@ a.reference.internal:hover {
    version rows far apart — tighten all of it. */
 .bd-sidebar-primary {
   gap: 0.3rem;
-  padding-top: 0.6rem;
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+  padding-top: 0.25rem;
 }
 
 .bd-sidebar-primary .sidebar-primary-items__start {
@@ -141,7 +143,7 @@ a.reference.internal:hover {
   color: var(--pst-color-text-base) !important;
   display: flex;
   gap: 0.5rem;
-  padding: 0 0.75rem;
+  padding: 0 0.25rem;
   text-decoration: none !important;
 }
 
@@ -158,7 +160,7 @@ a.reference.internal:hover {
 }
 
 .bd-sidebar-primary .bd-search {
-  margin: 0 0.75rem;
+  margin: 0 0.25rem;
 }
 
 /* Keep the theme's search "pill" (border + absolutely-positioned magnifier on
@@ -168,10 +170,25 @@ a.reference.internal:hover {
   min-height: 1.85rem;
 }
 
-/* Shrink the Ctrl+K hint so it doesn't crowd the search field. */
-.bd-sidebar-primary .bd-search .search-button__kbd-shortcut kbd {
+/* Render the Ctrl+K hint as one small pill (LeRobot-style) instead of two
+   separate key boxes. */
+.bd-sidebar-primary .bd-search .search-button__kbd-shortcut {
+  align-items: center;
+  background-color: var(--pst-color-surface);
+  border: 1px solid var(--pst-color-border);
+  border-radius: 0.3rem;
+  display: inline-flex;
   font-size: 0.62rem;
-  padding: 0.05rem 0.25rem;
+  margin-inline-end: 0.4rem;
+  padding: 0.1rem 0.35rem;
+}
+
+.bd-sidebar-primary .bd-search .search-button__kbd-shortcut kbd {
+  background: none;
+  border: 0;
+  box-shadow: none;
+  font-size: inherit;
+  padding: 0;
 }
 
 /* Tools: one compact row (LeRobot-style) — version + language switchers on the
@@ -181,7 +198,7 @@ a.reference.internal:hover {
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem;
-  padding: 0 0.75rem;
+  padding: 0 0.25rem;
 }
 
 .rlinf-sidebar-tools__version,
@@ -204,6 +221,15 @@ a.reference.internal:hover {
   margin: 0;
   padding: 0.25rem 0.55rem;
   width: auto;
+}
+
+/* Match the version switcher's theme-aware colors so the language label stays
+   readable in dark mode (the bootstrap .btn default is near-black). */
+.rlinf-lang-button {
+  background-color: transparent;
+  border: 1px solid var(--pst-color-border);
+  border-radius: 0.25rem;
+  color: var(--pst-color-text-base);
 }
 
 /* Two-state (light/dark) color-mode toggle in the sidebar tools. The icon
