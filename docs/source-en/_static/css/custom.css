@@ -168,6 +168,12 @@ a.reference.internal:hover {
   min-height: 1.85rem;
 }
 
+/* Shrink the Ctrl+K hint so it doesn't crowd the search field. */
+.bd-sidebar-primary .bd-search .search-button__kbd-shortcut kbd {
+  font-size: 0.62rem;
+  padding: 0.05rem 0.25rem;
+}
+
 /* Tools: one compact row (LeRobot-style) — version + language switchers on the
    left, the color-mode toggle and repository icons on the right. */
 .rlinf-sidebar-tools {
@@ -200,11 +206,23 @@ a.reference.internal:hover {
   width: auto;
 }
 
-/* Color-mode toggle in the sidebar tools. */
-.rlinf-sidebar-tools .theme-switch-button {
+/* Two-state (light/dark) color-mode toggle in the sidebar tools. The icon
+   reflects the active theme: sun in light mode, moon in dark mode. */
+.rlinf-theme-toggle {
   border: 0;
+  color: var(--pst-color-text-muted);
+  cursor: pointer;
   font-size: 0.85rem;
   padding: 0.25rem 0.4rem;
+}
+
+.rlinf-theme-toggle:hover {
+  color: var(--pst-color-primary);
+}
+
+html[data-theme="light"] .rlinf-theme-icon-dark,
+html[data-theme="dark"] .rlinf-theme-icon-light {
+  display: none;
 }
 
 .rlinf-sidebar-tools .navbar-icon-links {
