@@ -1,7 +1,9 @@
 {%- extends "!layout.html" %}
 
-{%- block extrahead %}
-{{ super() }}
+{# Define SPHINX_AI_CONFIG before the html_js_files load (the script block wraps
+   the script_files loop), so config-manager.js reads a populated apiKey instead
+   of falling back to demo mode. #}
+{%- block scripts %}
 <script>
 // Sphinx AI Configuration - Injected during build process
 window.SPHINX_AI_CONFIG = {
@@ -41,6 +43,7 @@ window.SPHINX_AI_CONFIG = {
   }
 })();
 </script>
+{{ super() }}
 {%- endblock %}
 
 {%- block docs_navbar %}
