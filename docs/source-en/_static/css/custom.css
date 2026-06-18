@@ -214,12 +214,15 @@ a.reference.internal:hover {
   margin-left: auto;
 }
 
-/* Compact version + language dropdown buttons, sized to their content. */
+/* Version + language dropdown buttons: a touch wider now that the tools row has
+   more room, with the label left and caret right. */
 .rlinf-sidebar-tools .version-switcher__button,
 .rlinf-lang-button {
   font-size: 0.8rem;
+  justify-content: space-between;
   margin: 0;
-  padding: 0.25rem 0.55rem;
+  min-width: 5rem;
+  padding: 0.25rem 0.7rem;
   width: auto;
 }
 
