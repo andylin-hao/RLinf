@@ -1534,7 +1534,8 @@ install_qwen3_vl_model() {
 }
 
 install_lerobot() {
-    uv pip install "git+${GITHUB_PREFIX}https://github.com/huggingface/lerobot.git@${LEROBOT_COMMIT}"
+    env -u UV_TORCH_BACKEND uv pip install \
+        "git+${GITHUB_PREFIX}https://github.com/huggingface/lerobot.git@${LEROBOT_COMMIT}"
 }
 
 install_franka_realworld_env() {
