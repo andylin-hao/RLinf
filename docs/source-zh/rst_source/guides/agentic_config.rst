@@ -583,6 +583,55 @@ actor
    * - ``actor.megatron.ckpt_convertor.pipeline_model_parallel_size``
      - 转换后检查点的 PP 并行度。
 
+**Megatron 性能分析器（``actor.megatron.profiler``）**
+
+由 ``actor.megatron.use_profiler`` 启用；在训练/推理步前后运行 PyTorch profiler。
+若需对 Ray worker 进行系统级（Nsight / ROCm）性能分析，请改用 ``cluster.profiling``
+——见 :doc:`profile`。
+
+.. code:: yaml
+
+  actor:
+    megatron:
+      use_profiler: False
+      profiler:
+        output_dir: ${runner.output_dir}/${runner.experiment_name}/profiler
+        activities: ["cpu", "cuda"]
+        record_shapes: False
+        profile_memory: False
+        with_stack: False
+        with_flops: False
+        with_modules: True
+        export_tensorboard: True
+        export_chrome_trace: False
+        chrome_filename_prefix: "chrome_trace"
+        schedule_warmup: 2
+        schedule_active: 1
+        schedule_repeat: 1
+
+.. list-table::
+   :header-rows: 1
+   :widths: 34 66
+
+   * - 参数
+     - 说明
+   * - ``actor.megatron.profiler.output_dir``
+     - profiler trace 的写入目录。
+   * - ``actor.megatron.profiler.activities``
+     - 记录的活动（``cpu`` 和/或 ``cuda``）。
+   * - ``actor.megatron.profiler.record_shapes``
+     - 记录张量形状。
+   * - ``actor.megatron.profiler.profile_memory``
+     - 记录内存分配。
+   * - ``actor.megatron.profiler.with_stack`` / ``with_flops`` / ``with_modules``
+     - 记录源码调用栈 / 估计 FLOPs / 模块层次。
+   * - ``actor.megatron.profiler.export_tensorboard``
+     - 以 TensorBoard 格式导出 trace。
+   * - ``actor.megatron.profiler.export_chrome_trace``
+     - 导出 Chrome trace；``chrome_filename_prefix`` 设置其文件名前缀。
+   * - ``actor.megatron.profiler.schedule_warmup`` / ``schedule_active`` / ``schedule_repeat``
+     - profiler 调度：预热步数、活跃（记录）步数，以及预热/活跃周期重复的次数。
+
 **FSDP 集成（``actor.fsdp_config``）**
 
 当 ``actor.training_backend`` 为 ``fsdp`` 时使用。

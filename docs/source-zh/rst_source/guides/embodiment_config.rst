@@ -414,6 +414,43 @@ actor
 :doc:`agentic_config` 与 :doc:`basic_config` 中的共享 schema；FSDP 预设从
 ``training_backend/fsdp`` 挂载。
 
+weight_syncer
+~~~~~~~~~~~~~~~
+
+在具身训练中优化 actor→rollout 的权重同步（FSDP actor + HuggingFace rollout 路径）。
+通过 ``defaults`` 作为 Hydra 配置组挂载（例如
+``weight_syncer/patch_syncer@weight_syncer``）。
+
+.. code:: yaml
+
+  weight_syncer:
+    type: patch          # patch 或 bucket
+    patch:
+      snapshot_device: cpu
+      delta_encoding: True
+      compression: none
+      init_sync:
+        enabled: True
+        prefixes: null
+        bucket_size: 134217728
+
+.. list-table::
+   :header-rows: 1
+   :widths: 32 68
+
+   * - 参数
+     - 说明
+   * - ``weight_syncer.type``
+     - 同步策略：``patch``\ （增量，仅发送变化的权重，推荐）或 ``bucket``\ （完整分桶传输）。
+   * - ``weight_syncer.patch.*``
+     - patch 模式选项（``snapshot_device``、``delta_encoding``、``compression``、
+       ``init_sync.*``）。
+   * - ``weight_syncer.bucket.*``
+     - bucket 模式选项（``bucket_size``、``bucket_dtype``、``load_instant``）。
+
+完整参考（所有 patch/bucket 字段、异步行为与调优建议）见
+:doc:`../extending/weight_syncer`。
+
 环境专用配置
 ------------------------------------
 

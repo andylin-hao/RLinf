@@ -427,6 +427,44 @@ The tokenizer (``actor.tokenizer.*``) and FSDP (``actor.fsdp_config.*``) sub-sec
 follow the shared schemas in :doc:`agentic_config` and :doc:`basic_config`; the FSDP
 preset is mounted from ``training_backend/fsdp``.
 
+weight_syncer
+~~~~~~~~~~~~~~~
+
+Optimizes actor→rollout weight synchronization in embodied training (the
+FSDP actor + HuggingFace rollout path). Mounted as a Hydra config group via
+``defaults`` (e.g. ``weight_syncer/patch_syncer@weight_syncer``).
+
+.. code:: yaml
+
+  weight_syncer:
+    type: patch          # patch or bucket
+    patch:
+      snapshot_device: cpu
+      delta_encoding: True
+      compression: none
+      init_sync:
+        enabled: True
+        prefixes: null
+        bucket_size: 134217728
+
+.. list-table::
+   :header-rows: 1
+   :widths: 32 68
+
+   * - Parameter
+     - Description
+   * - ``weight_syncer.type``
+     - Sync strategy: ``patch`` (incremental, sends only changed weights —
+       recommended) or ``bucket`` (full bucketized transfer).
+   * - ``weight_syncer.patch.*``
+     - Patch-mode options (``snapshot_device``, ``delta_encoding``,
+       ``compression``, ``init_sync.*``).
+   * - ``weight_syncer.bucket.*``
+     - Bucket-mode options (``bucket_size``, ``bucket_dtype``, ``load_instant``).
+
+See :doc:`../extending/weight_syncer` for the full reference — every patch/bucket
+field, async behavior, and tuning guidance.
+
 Environment-Specific Configuration
 ------------------------------------
 

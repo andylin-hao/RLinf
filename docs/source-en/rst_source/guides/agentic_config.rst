@@ -593,6 +593,56 @@ actor
    * - ``actor.megatron.ckpt_convertor.pipeline_model_parallel_size``
      - PP degree for the converted checkpoint.
 
+**Megatron profiler (``actor.megatron.profiler``)**
+
+Enabled by ``actor.megatron.use_profiler``; runs the PyTorch profiler around
+training/inference steps. For system-level (Nsight / ROCm) profiling of Ray
+workers, use ``cluster.profiling`` instead — see :doc:`profile`.
+
+.. code:: yaml
+
+  actor:
+    megatron:
+      use_profiler: False
+      profiler:
+        output_dir: ${runner.output_dir}/${runner.experiment_name}/profiler
+        activities: ["cpu", "cuda"]
+        record_shapes: False
+        profile_memory: False
+        with_stack: False
+        with_flops: False
+        with_modules: True
+        export_tensorboard: True
+        export_chrome_trace: False
+        chrome_filename_prefix: "chrome_trace"
+        schedule_warmup: 2
+        schedule_active: 1
+        schedule_repeat: 1
+
+.. list-table::
+   :header-rows: 1
+   :widths: 34 66
+
+   * - Parameter
+     - Description
+   * - ``actor.megatron.profiler.output_dir``
+     - Directory where profiler traces are written.
+   * - ``actor.megatron.profiler.activities``
+     - Activities to record (``cpu`` and/or ``cuda``).
+   * - ``actor.megatron.profiler.record_shapes``
+     - Record tensor shapes.
+   * - ``actor.megatron.profiler.profile_memory``
+     - Record memory allocation.
+   * - ``actor.megatron.profiler.with_stack`` / ``with_flops`` / ``with_modules``
+     - Record source stacks / estimated FLOPs / module hierarchy.
+   * - ``actor.megatron.profiler.export_tensorboard``
+     - Export traces in TensorBoard format.
+   * - ``actor.megatron.profiler.export_chrome_trace``
+     - Export a Chrome trace; ``chrome_filename_prefix`` sets its filename prefix.
+   * - ``actor.megatron.profiler.schedule_warmup`` / ``schedule_active`` / ``schedule_repeat``
+     - Profiler schedule: warm-up steps, active (recorded) steps, and how many
+       times the warmup/active cycle repeats.
+
 **FSDP integration (``actor.fsdp_config``)**
 
 Used when ``actor.training_backend`` is ``fsdp``.

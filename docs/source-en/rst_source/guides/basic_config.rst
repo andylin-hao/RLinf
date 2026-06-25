@@ -301,3 +301,27 @@ critic
      - Description
    * - ``critic.use_critic_model``
      - Whether to use a critic model.
+
+profiling
+~~~~~~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 32 68
+
+   * - Key
+     - Description
+   * - ``cluster.profiling``
+     - System-level profiling (NVIDIA Nsight / AMD ROCm) of selected Ray worker
+       groups, mounted via the ``profile/default.yaml`` preset. See :doc:`profile`.
+   * - ``actor.megatron.profiler``
+     - PyTorch profiler around Megatron training/inference steps (enabled by
+       ``actor.megatron.use_profiler``). See :doc:`agentic_config`.
+
+weight_syncer
+~~~~~~~~~~~~~~~
+
+``weight_syncer`` optimizes actor→rollout weight synchronization in embodied
+training (``patch`` / ``bucket`` strategies), mounted as a Hydra config group via
+``defaults``. See :doc:`embodiment_config` for the config keys and
+:doc:`../extending/weight_syncer` for the full reference.

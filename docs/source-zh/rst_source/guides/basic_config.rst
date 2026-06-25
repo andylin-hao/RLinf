@@ -297,3 +297,26 @@ critic
      - 说明
    * - ``critic.use_critic_model``
      - 是否使用价值网络（critic）。
+
+profiling
+~~~~~~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 32 68
+
+   * - 键
+     - 说明
+   * - ``cluster.profiling``
+     - 对选定的 Ray worker 组进行系统级（NVIDIA Nsight / AMD ROCm）性能分析，通过
+       ``profile/default.yaml`` 预设挂载。见 :doc:`profile`。
+   * - ``actor.megatron.profiler``
+     - 在 Megatron 训练/推理步前后运行 PyTorch profiler（由
+       ``actor.megatron.use_profiler`` 启用）。见 :doc:`agentic_config`。
+
+weight_syncer
+~~~~~~~~~~~~~~~
+
+``weight_syncer`` 在具身训练中优化 actor→rollout 的权重同步（``patch`` / ``bucket``
+策略），通过 ``defaults`` 作为 Hydra 配置组挂载。配置键见 :doc:`embodiment_config`，
+完整参考见 :doc:`../extending/weight_syncer`。
