@@ -1435,7 +1435,7 @@ install_lingbot_vla_model() {
     uv pip install -e $lingbotvla_dir/lingbotvla/models/vla/vision_models/MoGe --no-deps
 
     install_lerobot
-    uv pip install -r $SCRIPT_DIR/embodied/models/lingbotvla.txt
+    env -u UV_TORCH_BACKEND uv pip install -r $SCRIPT_DIR/embodied/models/lingbotvla.txt
 
     case "$ENV_NAME" in
         robotwin)
