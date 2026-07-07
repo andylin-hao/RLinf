@@ -1141,8 +1141,7 @@ EOF
 
     echo "[install.sh] Building decord==0.6.0 from source on $(uname -m)..."
     local decord_path
-    decord_path=$(clone_or_reuse_repo DECORD_PATH "$VENV_DIR/decord" ${GITHUB_PREFIX}https://github.com/dmlc/decord.git -b v0.6.0)
-    update_decord_submodules "$decord_path"
+    decord_path=$(clone_or_reuse_repo DECORD_PATH "$VENV_DIR/decord" https://github.com/dmlc/decord.git -b v0.6.0 --recurse-submodules)
 
     mkdir -p "$decord_path/build"
     (
@@ -1151,28 +1150,6 @@ EOF
         make -j"$(nproc)"
     )
     uv pip install "$decord_path/python" --no-build-isolation
-}
-
-update_decord_submodules() {
-    local decord_path="$1"
-
-    if [ -n "$GITHUB_PREFIX" ]; then
-        git -C "$decord_path" config url."${GITHUB_PREFIX}github.com/".insteadOf "https://github.com/"
-    fi
-    git -C "$decord_path" submodule sync --recursive
-
-    local attempt
-    for attempt in 1 2 3; do
-        echo "[install.sh] Updating decord submodules (attempt ${attempt}/3)..."
-        if git -C "$decord_path" -c http.version=HTTP/1.1 submodule update --init --recursive --depth 1 --jobs 1; then
-            return 0
-        fi
-        echo "[install.sh] decord submodule update failed; retrying..." >&2
-        sleep 5
-    done
-
-    echo "[install.sh] Failed to update decord submodules. Try rerunning install.sh with --use-mirror or set DECORD_PATH to a pre-cloned decord checkout." >&2
-    return 1
 }
 
 install_openvla_model() {
