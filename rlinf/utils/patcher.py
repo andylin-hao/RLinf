@@ -283,7 +283,16 @@ class _Patcher:
             self._wrappers_dict[old] = []
         self._wrappers_dict[old].append(wrapper)
 
-    def skip_import(self, *module_paths: str):
+    def skip_import(self, *module_paths: str) -> "_Patcher":
+        """Register stub modules so ``import <path>`` succeeds without the real dep.
+
+        For each path not already imported, installs a no-op stub in
+        ``sys.modules`` (and, via the meta-path finder, for its submodules).
+        Use this to satisfy an optional/unavailable dependency's import site;
+        pair with :meth:`clear_stub_import` to remove the stub before code that
+        must observe the dependency's real (absent) state runs. Returns ``self``
+        for chaining.
+        """
         for module_path in module_paths:
             assert isinstance(module_path, str)
             if module_path in sys.modules:
@@ -292,7 +301,13 @@ class _Patcher:
             _register_stub_module(module_path)
         return self
 
-    def clear_stub_import(self, *module_paths: str):
+    def clear_stub_import(self, *module_paths: str) -> "_Patcher":
+        """Remove stub modules previously installed by :meth:`skip_import`.
+
+        Drops the given paths and their stubbed submodules from ``sys.modules``,
+        but only entries that are stubs — real modules imported in the meantime
+        are left untouched. Returns ``self`` for chaining.
+        """
         for module_path in module_paths:
             assert isinstance(module_path, str)
             for module_name in list(sys.modules):

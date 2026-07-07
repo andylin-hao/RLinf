@@ -20,7 +20,6 @@ from pathlib import Path
 
 import pytest
 
-
 _PATCHER_UNDER_TEST = "_rlinf_utils_patcher_under_test"
 _TEST_MODULE_NAMES = (
     "flash_attn",

@@ -145,6 +145,9 @@ install_deps_dnf() {
         sudo dnf config-manager --set-enabled powertools 2>/dev/null || true
     sudo dnf install -y --allowerasing \
         kernel-headers \
+        gcc \
+        gcc-c++ \
+        make \
         wget \
         unzip \
         curl \
@@ -188,6 +191,9 @@ install_deps_yum() {
     sudo yum install -y epel-release 2>/dev/null || true  # Enable EPEL for extra packages
     sudo yum install -y \
         kernel-headers \
+        gcc \
+        gcc-c++ \
+        make \
         wget \
         unzip \
         curl \
@@ -256,6 +262,7 @@ install_deps_pacman() {
         libxi \
         libaio \
         gcc \
+        make \
         libgomp \
         expat \
         fontconfig \
