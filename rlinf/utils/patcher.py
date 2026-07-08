@@ -90,7 +90,8 @@ def _register_stub_module(module_path: str) -> _StubModule:
         if index > 0:
             parent_path = ".".join(parts[:index])
             parent = sys.modules.get(parent_path)
-            if parent is not None:
+            # Only attach children onto stub parents
+            if _is_stub_module(parent):
                 setattr(parent, parts[index], sys.modules[current_path])
 
     return sys.modules[module_path]

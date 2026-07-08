@@ -61,7 +61,7 @@ def get_model(cfg: DictConfig, torch_dtype=torch.bfloat16):
         modality_config = data_config.modality_config()
         modality_transform = data_config.transform()
 
-        # The transformer rigisteration is done in gr00t/model/gr00t_n1.py
+        # The transformer registration is done in gr00t/model/gr00t_n1.py
         model_path = Path(cfg.model_path)
         if not model_path.exists():
             # raise error or it triggers auto download from hf(It's cool but we don't have internet connection.)
