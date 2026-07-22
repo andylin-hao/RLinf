@@ -112,6 +112,18 @@ embodied = [
     "gymnasium",
     "gym",
 ]
+libero = [
+    "rlinf-libero",
+    "rlinf[embodied]",
+]
+liberopro = [
+    "rlinf-liberopro",
+    "rlinf[libero]",
+]
+liberoplus = [
+    "rlinf-liberoplus",
+    "rlinf[libero]",
+]
 franka = [
     "pyyaml",
     "rospkg",
@@ -127,8 +139,6 @@ franka = [
     "imageio[ffmpeg]",
     "evdev",
     "numpy<2",
-    # lerobot is installed from a pinned git commit by requirements/install.sh
-    # (PyPI forbids direct-URL deps in published packages).
     "pyzmq",
     "websockets"
 ]
@@ -146,13 +156,8 @@ xsquare_turtle2 = [
     "pyspacemouse>=2.0.0",
     "imageio[ffmpeg]",
     "evdev",
-    # lerobot is installed from a pinned git commit by requirements/install.sh
-    # (PyPI forbids direct-URL deps in published packages).
 ]
 gim_arm = [
-    # gim_arm_control SDK: install separately via
-    #   pip install -e /path/to/gim_arm_control/python
-    # (brings in pinocchio as a transitive runtime dependency)
     "numpy",
     "scipy",
     "gymnasium",
@@ -163,11 +168,37 @@ gim_arm = [
 
 [tool.uv]
 prerelease = "allow"
+# One row per simulator extra: the libero extras include `embodied` (and each
+# other), so they get separate rows rather than joining the first.
 conflicts = [
     [
       { extra = "agentic-sglang" },
       { extra = "agentic-vllm" },
       { extra = "embodied" },
+      { extra = "franka" },
+      { extra = "xsquare_turtle2" },
+      { extra = "gim_arm" }
+    ],
+    [
+      { extra = "agentic-sglang" },
+      { extra = "agentic-vllm" },
+      { extra = "libero" },
+      { extra = "franka" },
+      { extra = "xsquare_turtle2" },
+      { extra = "gim_arm" }
+    ],
+    [
+      { extra = "agentic-sglang" },
+      { extra = "agentic-vllm" },
+      { extra = "liberopro" },
+      { extra = "franka" },
+      { extra = "xsquare_turtle2" },
+      { extra = "gim_arm" }
+    ],
+    [
+      { extra = "agentic-sglang" },
+      { extra = "agentic-vllm" },
+      { extra = "liberoplus" },
       { extra = "franka" },
       { extra = "xsquare_turtle2" },
       { extra = "gim_arm" }

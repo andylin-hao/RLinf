@@ -1766,14 +1766,8 @@ install_dummy_env() {
 }
 
 install_libero_env() {
-    # Use LIBERO_PATH as the checkout location if set (shared, cloned on first use);
-    # otherwise clone into the venv.
-    local libero_dir
-    libero_dir=$(clone_or_reuse_repo LIBERO_PATH "$VENV_DIR/libero" https://github.com/RLinf/LIBERO.git)
-
-    uv pip install -e "$libero_dir"
-    uv pip install "mujoco<=3.9.0"
-    echo "export PYTHONPATH=$(realpath "$libero_dir"):\$PYTHONPATH" >> "$VENV_DIR/bin/activate"
+    uv sync --extra libero --inexact --active $NO_INSTALL_RLINF_CMD
+    libero-download-assets --skip-existing
 }
 
 install_maniskill_libero_env() {
@@ -1847,27 +1841,15 @@ install_d4rl_env() {
 }
 
 install_liberopro_env() {
-    # Base LIBERO + ManiSkill required for LIBERO-Pro.
-    local libero_dir
-    libero_dir=$(clone_or_reuse_repo LIBERO_PATH "$VENV_DIR/libero" https://github.com/RLinf/LIBERO.git)
-    uv pip install -e "$libero_dir"
-
-    local libero_pro_dir
-    libero_pro_dir=$(clone_or_reuse_repo LIBERO_PRO_PATH "$VENV_DIR/libero_pro" https://github.com/RLinf/LIBERO-PRO.git)
-    uv pip install -e "$libero_pro_dir"
-    uv pip install "mujoco<=3.9.0"
+    uv sync --extra liberopro --inexact --active $NO_INSTALL_RLINF_CMD
+    libero-download-assets --skip-existing
+    liberopro-download-assets --skip-existing
 }
 
 install_liberoplus_env() {
-    local libero_dir
-    libero_dir=$(clone_or_reuse_repo LIBERO_PATH "$VENV_DIR/libero" https://github.com/RLinf/LIBERO.git)
-    uv pip install -e "$libero_dir"
-
-    local libero_plus_dir
-    libero_plus_dir=$(clone_or_reuse_repo LIBERO_PLUS_PATH "$VENV_DIR/libero_plus" https://github.com/RLinf/LIBERO-plus.git)
-    uv pip install -r $libero_plus_dir/extra_requirements.txt
-    uv pip install -e "$libero_plus_dir"
-    uv pip install "mujoco<=3.9.0"
+    uv sync --extra liberoplus --inexact --active $NO_INSTALL_RLINF_CMD
+    libero-download-assets --skip-existing
+    liberoplus-download-assets --skip-existing
 }
 
 install_behavior_env() {
