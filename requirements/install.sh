@@ -433,7 +433,9 @@ configure_nvidia() {
     PLATFORM_FLASH_ATTN_PREBUILT=1
     PLATFORM_RELAX_TORCHCODEC=0
     PLATFORM_EXTRA_OVERRIDES=()
+    local _uvtb_user_set=1
     if [ -z "${UV_TORCH_BACKEND:-}" ]; then
+        _uvtb_user_set=0
         export UV_TORCH_BACKEND="$DEFAULT_BACKEND_NVIDIA"
     fi
 
@@ -467,7 +469,10 @@ configure_nvidia() {
             PLATFORM_TORCH_STR="+${_cuda_tag}"
             PLATFORM_TORCH_INDEX="${_index_base}/${_cuda_tag}"
             PLATFORM_TORCH_PACKAGES=("torch" "torchvision" "torchaudio")
-            echo "[install.sh] Driver supports CUDA <= ${_driver_num}; routing torch ${_torch_ver} (${_cuda_tag}) through ${PLATFORM_TORCH_INDEX}."
+            if [ "$_uvtb_user_set" -eq 0 ]; then
+                export UV_TORCH_BACKEND="$_cuda_tag"
+            fi
+            echo "[install.sh] Driver supports CUDA <= ${_driver_num}; routing torch ${_torch_ver} (${_cuda_tag}) through ${PLATFORM_TORCH_INDEX} (UV_TORCH_BACKEND=${UV_TORCH_BACKEND})."
         else
             echo "[install.sh] Could not resolve a driver-compatible CUDA wheel for torch ${_torch_ver}; leaving torch on the default index (UV_TORCH_BACKEND=${UV_TORCH_BACKEND})." >&2
         fi
