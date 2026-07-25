@@ -395,6 +395,31 @@ EOF
     echo "${ver%%.*} ${ver#*.}"
 }
 
+detect_nvidia_driver_max_cuda() {
+    command -v nvidia-smi &>/dev/null || return 1
+    local ver maj min
+    ver=$(nvidia-smi 2>/dev/null | grep -oE 'CUDA Version: [0-9]+\.[0-9]+' | head -1 | grep -oE '[0-9]+\.[0-9]+')
+    [ -n "$ver" ] || return 1
+    maj=${ver%%.*}
+    min=${ver#*.}
+    echo "$(( maj * 10 + min ))"
+}
+
+detect_nvidia_torch_cuda_tag() {
+    local torch_ver="$1" index_base="$2" driver_num="$3"
+    local ver_re n listing
+    ver_re=$(printf '%s' "$torch_ver" | sed 's/\./\\./g')
+    for n in 130 129 128 126 124 121 118; do
+        [ "$n" -le "$driver_num" ] || continue
+        listing=$(curl -fsSL --max-time 60 "${index_base}/cu${n}/torch/" 2>/dev/null) || continue
+        if grep -qE "torch-${ver_re}(%2B|\+)cu${n}-" <<< "$listing"; then
+            echo "cu${n}"
+            return 0
+        fi
+    done
+    return 1
+}
+
 configure_nvidia() {
     PLATFORM_TORCH_STR=""
     PLATFORM_TORCH_INDEX=""
@@ -410,6 +435,35 @@ configure_nvidia() {
     PLATFORM_EXTRA_OVERRIDES=()
     if [ -z "${UV_TORCH_BACKEND:-}" ]; then
         export UV_TORCH_BACKEND="$DEFAULT_BACKEND_NVIDIA"
+    fi
+
+    local _torch_ver _tmaj _tmin _rest _driver_num _index_base _cuda_tag
+    _torch_ver="$TORCH_VERSION"
+    if [ -z "$_torch_ver" ] && [ -f "$PYPROJECT_FILE" ]; then
+        _torch_ver=$(sed -nE 's/.*"torch==([^"+]+).*".*/\1/p' "$PYPROJECT_FILE" | head -1)
+    fi
+    _tmaj=${_torch_ver%%.*}
+    _rest=${_torch_ver#*.}
+    _tmin=${_rest%%.*}
+    if [ -n "$_torch_ver" ] && [[ "$_tmaj" =~ ^[0-9]+$ ]] && [[ "$_tmin" =~ ^[0-9]+$ ]] \
+        && { [ "$_tmaj" -gt 2 ] || { [ "$_tmaj" -eq 2 ] && [ "$_tmin" -ge 11 ]; }; }; then
+        if ! _driver_num=$(detect_nvidia_driver_max_cuda); then
+            _driver_num=128
+            echo "[install.sh] No NVIDIA driver detected; capping torch CUDA build at cu${_driver_num} (<= CUDA 12.8)."
+        fi
+        if [ "$USE_MIRRORS" -eq 1 ]; then
+            _index_base="https://mirrors.tencent.com/pytorch-wheels/whl"
+        else
+            _index_base="https://download.pytorch.org/whl"
+        fi
+        if _cuda_tag=$(detect_nvidia_torch_cuda_tag "$_torch_ver" "$_index_base" "$_driver_num"); then
+            PLATFORM_TORCH_STR="+${_cuda_tag}"
+            PLATFORM_TORCH_INDEX="${_index_base}/${_cuda_tag}"
+            PLATFORM_TORCH_PACKAGES=("torch" "torchvision" "torchaudio")
+            echo "[install.sh] Driver supports CUDA <= ${_driver_num}; routing torch ${_torch_ver} (${_cuda_tag}) through ${PLATFORM_TORCH_INDEX}."
+        else
+            echo "[install.sh] Could not resolve a driver-compatible CUDA wheel for torch ${_torch_ver}; leaving torch on the default index (UV_TORCH_BACKEND=${UV_TORCH_BACKEND})." >&2
+        fi
     fi
 }
 
@@ -651,6 +705,28 @@ apply_sglang_override() {
     fi
 }
 
+derive_torchcodec_spec() {
+    local tmaj="$1" tmin="$2"
+    [ "$tmaj" = "2" ] || { echo ""; return 0; }
+    case "$tmin" in
+        6)  echo "torchcodec==0.2" ;;
+        7)  echo "torchcodec>=0.3,<0.6" ;;
+        8)  echo "torchcodec>=0.6,<0.8" ;;
+        9)  echo "torchcodec>=0.8,<0.10" ;;
+        10) echo "torchcodec>=0.10,<0.11" ;;
+        11) echo "torchcodec>=0.11,<0.12" ;;
+        *)
+            if [ "$tmin" -le 5 ] 2>/dev/null; then
+                echo "torchcodec==0.1"
+            elif [ "$tmin" -ge 12 ] 2>/dev/null; then
+                echo "torchcodec>=0.12"
+            else
+                echo ""
+            fi
+            ;;
+    esac
+}
+
 apply_torch_override() {
     # Fires when --torch is given (rewrite versions), PLATFORM_TORCH_STR is
     # non-empty (append a PEP 440 local segment so uv picks the platform-specific
@@ -660,18 +736,21 @@ apply_torch_override() {
     # torchcodec pin for non-x86_64 / non-CUDA torch combos), or
     # PLATFORM_EXTRA_OVERRIDES has entries (insert extra override pins).
 
-    # torchcodec==0.2 only has wheels for torch<=2.6. Relax the pin whenever
-    # the effective torch version exceeds 2.6, regardless of platform.
     local _eff_torch="${TORCH_VERSION}"
     if [ -z "$_eff_torch" ] && [ -f "$PYPROJECT_FILE" ]; then
         _eff_torch=$(sed -nE 's/.*"torch==([^"+]+).*".*/\1/p' "$PYPROJECT_FILE" | head -1)
     fi
+    local _torchcodec_spec="" _cur_torchcodec=""
     if [ -n "$_eff_torch" ]; then
         local _tmaj _tmin _tpatch
         IFS='.' read -r _tmaj _tmin _tpatch <<< "$_eff_torch"
-        if [ "$_tmaj" -gt 2 ] || { [ "$_tmaj" -eq 2 ] && [ "$_tmin" -gt 6 ]; }; then
-            PLATFORM_RELAX_TORCHCODEC=1
-        fi
+        _torchcodec_spec=$(derive_torchcodec_spec "$_tmaj" "$_tmin")
+    fi
+    if [ -f "$PYPROJECT_FILE" ]; then
+        _cur_torchcodec=$(sed -nE 's/.*"(torchcodec[<>=!][^"]*)".*/\1/p' "$PYPROJECT_FILE" | head -1)
+    fi
+    if [ -n "$_torchcodec_spec" ] && [ "$_torchcodec_spec" != "$_cur_torchcodec" ]; then
+        PLATFORM_RELAX_TORCHCODEC=1
     fi
 
     local needs_torch_rewrite=0
@@ -693,15 +772,9 @@ apply_torch_override() {
     cp "$PYPROJECT_FILE" "$PYPROJECT_BACKUP"
     trap 'restore_pyproject' EXIT INT TERM HUP
 
-    if [ "$PLATFORM_RELAX_TORCHCODEC" -eq 1 ]; then
-        # The pyproject.toml `torchcodec==0.2` override only has wheels for
-        # x86_64 + torch ~2.5/2.6. It breaks on AMD (our torch override pins
-        # 2.8 from the rocm index) and on Ascend (typically aarch64, where
-        # 0.2.x has no wheels). Relaxing to >=0.5 lets uv pick a wheel for
-        # the resolved environment; transitive pins like lerobot==0.1.0's
-        # ==0.2 are superseded by override-dependencies.
-        sed -i 's/"torchcodec==0\.2"/"torchcodec>=0.5"/' "$PYPROJECT_FILE"
-        echo "[install.sh] Relaxed torchcodec override to >=0.5 for ${PLATFORM} compatibility"
+    if [ "$PLATFORM_RELAX_TORCHCODEC" -eq 1 ] && [ -n "$_torchcodec_spec" ]; then
+        sed -i -E "s/\"torchcodec[<>=!][^\"]*\"/\"${_torchcodec_spec}\"/" "$PYPROJECT_FILE"
+        echo "[install.sh] Set torchcodec override to ${_torchcodec_spec} for torch ${_eff_torch}"
     fi
 
     if [ ${#PLATFORM_EXTRA_OVERRIDES[@]} -gt 0 ]; then
@@ -889,8 +962,7 @@ EOF
 }
 
 install_flash_attn() {
-    # Base release info – adjust when bumping flash-attn
-    local flash_ver="2.7.4.post1"
+    local flash_ver="2.8.3"
 
     if [ "$DISABLE_FLASH_ATTN" -eq 1 ]; then
         echo "[install.sh] --no-flash-attn was specified; skipping flash-attn install."
@@ -901,29 +973,7 @@ install_flash_attn() {
         return 0
     fi
 
-    local torch_ge_28
-    if torch_ge_28=$(python - <<'EOF' 2>/dev/null
-import re
-import torch
-
-version = torch.__version__.split("+", 1)[0]
-match = re.match(r"^(\d+)\.(\d+)", version)
-if match is None:
-    print("0")
-else:
-    major, minor = (int(part) for part in match.groups())
-    print("1" if (major, minor) >= (2, 8) else "0")
-EOF
-    ); then
-        if [ "$torch_ge_28" = "1" ]; then
-            flash_ver="2.8.3"
-        fi
-    fi
-
     local prebuilt_flash_versions=("$flash_ver")
-    if [ "$flash_ver" != "2.8.3" ]; then
-        prebuilt_flash_versions+=("2.8.3")
-    fi
 
     if [ "$PLATFORM_FLASH_ATTN_PREBUILT" -ne 1 ]; then
         echo "[install.sh] Building flash-attn==${flash_ver} from source on platform=${PLATFORM}..."
@@ -979,15 +1029,21 @@ EOF
 )
 
     uv pip uninstall flash-attn || true
-    local prebuilt_ver base_url wheel_name
+    local prebuilt_ver base_url wheel_name flash_attn_release_hosts host
+    flash_attn_release_hosts=(
+        "https://github.com/Dao-AILab/flash-attention/releases/download"
+        "https://github.com/RLinf/flash-attention/releases/download"
+    )
     for prebuilt_ver in "${prebuilt_flash_versions[@]}"; do
-        base_url="${GITHUB_PREFIX}https://github.com/Dao-AILab/flash-attention/releases/download/v${prebuilt_ver}"
         wheel_name="flash_attn-${prebuilt_ver}+${cu_tag}${torch_tag}${cxx_abi}-${py_tag}-${abi_tag}-${platform_tag}.whl"
-        echo "[install.sh] Installing flash-attn prebuilt wheel from v${prebuilt_ver}..."
-        if uv pip install "${base_url}/${wheel_name}"; then
-            return 0
-        fi
-        echo "[install.sh] flash-attn prebuilt wheel v${prebuilt_ver} was unavailable or failed to install."
+        for host in "${flash_attn_release_hosts[@]}"; do
+            base_url="${GITHUB_PREFIX}${host}/v${prebuilt_ver}"
+            echo "[install.sh] Installing flash-attn prebuilt wheel ${wheel_name} from ${host}..."
+            if uv pip install "${base_url}/${wheel_name}"; then
+                return 0
+            fi
+            echo "[install.sh] flash-attn prebuilt wheel v${prebuilt_ver} was unavailable or failed to install from ${host}."
+        done
     done
     echo "Flash attn installation via prebuilt wheels failed. Attempting to install from source..."
     uv pip install "flash-attn==${flash_ver}" --no-build-isolation
@@ -1308,7 +1364,7 @@ install_openpi_model() {
             PYTHON_VERSION="3.10"
             create_and_sync_venv
             install_common_embodied_deps
-            uv pip install git+${GITHUB_PREFIX}https://github.com/RLinf/openpi
+            uv pip install "rlinf-openpi==0.1.1"
             install_behavior_env
             uv pip install protobuf==6.33.0
             pushd ~ >/dev/null
@@ -1319,27 +1375,27 @@ install_openpi_model() {
             create_and_sync_venv
             install_common_embodied_deps
             install_${ENV_NAME}_env
-            uv pip install git+${GITHUB_PREFIX}https://github.com/RLinf/openpi
+            uv pip install "rlinf-openpi==0.1.1"
             install_flash_attn
             ;;
         metaworld)
             create_and_sync_venv
             install_common_embodied_deps
-            uv pip install git+${GITHUB_PREFIX}https://github.com/RLinf/openpi
+            uv pip install "rlinf-openpi==0.1.1"
             install_flash_attn
             install_metaworld_env
             ;;
         calvin)
             create_and_sync_venv
             install_common_embodied_deps
-            uv pip install git+${GITHUB_PREFIX}https://github.com/RLinf/openpi
+            uv pip install "rlinf-openpi==0.1.1"
             install_flash_attn
             install_calvin_env
             ;;
         robocasa)
             create_and_sync_venv
             install_common_embodied_deps
-            uv pip install git+${GITHUB_PREFIX}https://github.com/RLinf/openpi
+            uv pip install "rlinf-openpi==0.1.1"
             install_flash_attn
             install_robocasa_env
             ;;
@@ -1353,14 +1409,14 @@ install_openpi_model() {
         robotwin)
             create_and_sync_venv
             install_common_embodied_deps
-            uv pip install git+${GITHUB_PREFIX}https://github.com/RLinf/openpi
+            uv pip install "rlinf-openpi==0.1.1"
             install_flash_attn
             install_robotwin_env
             ;;
         isaaclab)
             create_and_sync_venv
             install_common_embodied_deps
-            uv pip install git+${GITHUB_PREFIX}https://github.com/RLinf/openpi
+            uv pip install "rlinf-openpi==0.1.1"
             install_isaaclab_env
             # Torch is modified in Isaac Lab, install flash-attn afterwards
             install_flash_attn
@@ -1369,7 +1425,7 @@ install_openpi_model() {
         roboverse)
             create_and_sync_venv
             install_common_embodied_deps
-            uv pip install git+${GITHUB_PREFIX}https://github.com/RLinf/openpi
+            uv pip install "rlinf-openpi==0.1.1"
             install_flash_attn
             install_roboverse_env
             ;;
@@ -1381,14 +1437,14 @@ install_openpi_model() {
                 bash $SCRIPT_DIR/embodied/franky_install.sh
             fi
             install_franka_franky_env
-            uv pip install git+${GITHUB_PREFIX}https://github.com/RLinf/openpi
+            uv pip install "rlinf-openpi==0.1.1"
             install_flash_attn
             ;;
         polaris)
             create_and_sync_venv
             install_common_embodied_deps
             install_polaris_env
-            uv pip install git+${GITHUB_PREFIX}https://github.com/RLinf/openpi
+            uv pip install "rlinf-openpi==0.1.1"
             ;;
         *)
             echo "Environment '$ENV_NAME' is not supported for OpenPI model." >&2
@@ -1469,6 +1525,7 @@ install_gr00t_model() {
         maniskill_libero|libero)
             install_${ENV_NAME}_env
             install_flash_attn
+            uv pip install -r "$SCRIPT_DIR/embodied/models/gr00t.txt"
             ;;
         isaaclab)
             install_isaaclab_env
@@ -1848,8 +1905,10 @@ install_liberopro_env() {
 
 install_liberoplus_env() {
     uv sync --extra liberoplus --inexact --active $NO_INSTALL_RLINF_CMD
+    uv pip install "rlinf-liberoplus>=0.1.3"
     libero-download-assets --skip-existing
-    liberoplus-download-assets --skip-existing
+    LIBERO_PLUS_ASSETS_REPO="${LIBERO_PLUS_ASSETS_REPO:-RLinf/LIBERO-plus-assets}" \
+        liberoplus-download-assets --skip-existing
 }
 
 install_behavior_env() {
