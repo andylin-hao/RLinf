@@ -448,8 +448,15 @@ configure_nvidia() {
     if [ -n "$_torch_ver" ] && [[ "$_tmaj" =~ ^[0-9]+$ ]] && [[ "$_tmin" =~ ^[0-9]+$ ]] \
         && { [ "$_tmaj" -gt 2 ] || { [ "$_tmaj" -eq 2 ] && [ "$_tmin" -ge 11 ]; }; }; then
         if ! _driver_num=$(detect_nvidia_driver_max_cuda); then
-            _driver_num=128
-            echo "[install.sh] No NVIDIA driver detected; capping torch CUDA build at cu${_driver_num} (<= CUDA 12.8)."
+            local _cmm _cmaj _cmin
+            if _cmm=$(detect_cuda_major_minor); then
+                read -r _cmaj _cmin <<< "$_cmm"
+                _driver_num=$(( _cmaj * 10 + _cmin ))
+                echo "[install.sh] No NVIDIA driver detected; using CUDA toolkit ${_cmaj}.${_cmin} (cu${_driver_num}) for the torch build (e.g. docker build)."
+            else
+                _driver_num=128
+                echo "[install.sh] No NVIDIA driver or CUDA toolkit detected; capping torch CUDA build at cu${_driver_num} (<= CUDA 12.8)."
+            fi
         fi
         if [ "$USE_MIRRORS" -eq 1 ]; then
             _index_base="https://mirrors.tencent.com/pytorch-wheels/whl"
