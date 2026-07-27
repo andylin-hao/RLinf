@@ -449,6 +449,7 @@ configure_nvidia() {
     _tmin=${_rest%%.*}
     if [ -n "$_torch_ver" ] && [[ "$_tmaj" =~ ^[0-9]+$ ]] && [[ "$_tmin" =~ ^[0-9]+$ ]] \
         && { [ "$_tmaj" -gt 2 ] || { [ "$_tmaj" -eq 2 ] && [ "$_tmin" -ge 11 ]; }; }; then
+        local _cpu_only=0
         if ! _driver_num=$(detect_nvidia_driver_max_cuda); then
             local _cmm _cmaj _cmin
             if _cmm=$(detect_cuda_major_minor); then
@@ -456,8 +457,8 @@ configure_nvidia() {
                 _driver_num=$(( _cmaj * 10 + _cmin ))
                 echo "[install.sh] No NVIDIA driver detected; using CUDA toolkit ${_cmaj}.${_cmin} (cu${_driver_num}) for the torch build (e.g. docker build)."
             else
-                _driver_num=128
-                echo "[install.sh] No NVIDIA driver or CUDA toolkit detected; capping torch CUDA build at cu${_driver_num} (<= CUDA 12.8)."
+                _cpu_only=1
+                echo "[install.sh] No NVIDIA driver or CUDA toolkit detected; using CPU-only torch."
             fi
         fi
         if [ "$USE_MIRRORS" -eq 1 ]; then
@@ -465,7 +466,15 @@ configure_nvidia() {
         else
             _index_base="https://download.pytorch.org/whl"
         fi
-        if _cuda_tag=$(detect_nvidia_torch_cuda_tag "$_torch_ver" "$_index_base" "$_driver_num"); then
+        if [ "$_cpu_only" -eq 1 ]; then
+            PLATFORM_TORCH_STR=""
+            PLATFORM_TORCH_INDEX="${_index_base}/cpu"
+            PLATFORM_TORCH_PACKAGES=("torch" "torchvision" "torchaudio")
+            if [ "$_uvtb_user_set" -eq 0 ]; then
+                export UV_TORCH_BACKEND="cpu"
+            fi
+            echo "[install.sh] Routing torch ${_torch_ver} (cpu) through ${PLATFORM_TORCH_INDEX} (UV_TORCH_BACKEND=${UV_TORCH_BACKEND})."
+        elif _cuda_tag=$(detect_nvidia_torch_cuda_tag "$_torch_ver" "$_index_base" "$_driver_num"); then
             PLATFORM_TORCH_STR="+${_cuda_tag}"
             PLATFORM_TORCH_INDEX="${_index_base}/${_cuda_tag}"
             PLATFORM_TORCH_PACKAGES=("torch" "torchvision" "torchaudio")
@@ -555,6 +564,23 @@ configure_ascend() {
     # C compilations during this install so the constants are always visible.
     if [ -f /usr/include/linux/input-event-codes.h ]; then
         export CFLAGS="${CFLAGS:+$CFLAGS }-include /usr/include/linux/input-event-codes.h"
+    fi
+}
+
+apply_env_default_torch() {
+    # Envs that require a different torch than the project default (e.g. Isaac
+    # Sim / OmniGibson need 2.5.1) declare it here so configure_platform and
+    # apply_torch_override re-point TORCH_VERSION, the wheel index and
+    # UV_TORCH_BACKEND cleanly, instead of a mid-install `uv pip install
+    # torch==...` that fights the override. An explicit --torch always wins.
+    [ -n "$TORCH_VERSION" ] && return 0
+    local _env_torch=""
+    case "$ENV_NAME" in
+        behavior) _env_torch="2.5.1" ;;
+    esac
+    if [ -n "$_env_torch" ]; then
+        TORCH_VERSION="$_env_torch"
+        echo "[install.sh] Environment '${ENV_NAME}' pins torch ${TORCH_VERSION}; overriding the project default."
     fi
 }
 
@@ -1098,13 +1124,31 @@ EOF
     local py_tag="cp${py_major}${py_minor}"   # e.g. cp311
     local abi_tag="${py_tag}"                 # we assume cpXY-cpXY ABI, adjust if needed
     local platform_tag="linux_x86_64"
-    local wheel_name="apex-0.1+${torch_tag}-${py_tag}-${abi_tag}-${platform_tag}.whl"
-        
+    # Newer wheels embed the CUDA major (e.g. +cu13torch2.11); prefer that, then
+    # fall back to the legacy torch-only name, then a source build.
+    local torch_cu
+    torch_cu=$(python - <<'EOF'
+import torch
+v = (torch.version.cuda or "").split(".")
+print("cu" + v[0] if v and v[0] else "")
+EOF
+)
+    local wheel_cu=""
+    [ -n "$torch_cu" ] && wheel_cu="apex-0.1+${torch_cu}${torch_tag}-${py_tag}-${abi_tag}-${platform_tag}.whl"
+    local wheel_legacy="apex-0.1+${torch_tag}-${py_tag}-${abi_tag}-${platform_tag}.whl"
+
     uv pip uninstall apex || true
     export NUM_THREADS=$(nproc)
     export NVCC_APPEND_FLAGS=${NVCC_APPEND_FLAGS:-"--threads ${NUM_THREADS}"}
     export APEX_PARALLEL_BUILD=${APEX_PARALLEL_BUILD:-${NUM_THREADS}}
-    uv pip install "${base_url}/${wheel_name}" || (echo "Apex installation via wheel failed. Attempting to install from source..."; APEX_CPP_EXT=1 APEX_CUDA_EXT=1 uv pip install git+${GITHUB_PREFIX}https://github.com/RLinf/apex.git --no-build-isolation)
+    if [ -n "$wheel_cu" ] && uv pip install "${base_url}/${wheel_cu}"; then
+        :
+    elif uv pip install "${base_url}/${wheel_legacy}"; then
+        :
+    else
+        echo "Apex installation via wheel failed. Attempting to install from source..."
+        APEX_CPP_EXT=1 APEX_CUDA_EXT=1 uv pip install git+${GITHUB_PREFIX}https://github.com/RLinf/apex.git --no-build-isolation
+    fi
 }
 
 clone_or_reuse_repo() {
@@ -1939,9 +1983,10 @@ install_behavior_env() {
     uv pip install ml_dtypes==0.5.3 protobuf==3.20.3
     uv pip install click==8.2.1
     uv pip install llvmlite==0.47.0 numba==0.65.1
-    pushd ~ >/dev/null
+    # TORCH_VERSION is already pinned to 2.5.1 for the behavior env (see
+    # apply_env_default_torch), so this reinstall just re-asserts it after
+    # OmniGibson's setup and resolves cleanly against the override.
     uv pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1
-    popd >/dev/null
 }
 
 install_metaworld_env() {
@@ -2276,11 +2321,9 @@ install_opensora_world_model() {
     
     uv pip install -e "$opensora_dir"
     
-    # xformers 0.0.29.post2 only has wheels for torch<=2.5, but we pin
-    # torch==2.6.0. UV_TORCH_BACKEND=auto rejects mismatched torch-version
-    # labels, so unset UV_TORCH_BACKEND entirely for this install so uv
-    # picks the non-CUDA wheel without torch-version filtering.
-    env -u UV_TORCH_BACKEND uv pip install "xformers==0.0.29.post2"
+    # xformers embeds the torch version in its local label; 0.0.35 ships
+    # wheels for torch 2.11. Install it against the resolved torch build.
+    uv pip install "xformers==0.0.35"
 
     # Install remaining opensora dependencies (xformers handled above).
     uv pip install -r $SCRIPT_DIR/embodied/models/opensora.txt
@@ -2351,6 +2394,7 @@ install_docs() {
 main() {
     parse_args "$@"
     validate_python_version
+    apply_env_default_torch
     configure_platform
     setup_mirror
     apply_torch_override
