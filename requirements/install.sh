@@ -567,23 +567,6 @@ configure_ascend() {
     fi
 }
 
-apply_env_default_torch() {
-    # Envs that require a different torch than the project default (e.g. Isaac
-    # Sim / OmniGibson need 2.5.1) declare it here so configure_platform and
-    # apply_torch_override re-point TORCH_VERSION, the wheel index and
-    # UV_TORCH_BACKEND cleanly, instead of a mid-install `uv pip install
-    # torch==...` that fights the override. An explicit --torch always wins.
-    [ -n "$TORCH_VERSION" ] && return 0
-    local _env_torch=""
-    case "$ENV_NAME" in
-        behavior) _env_torch="2.5.1" ;;
-    esac
-    if [ -n "$_env_torch" ]; then
-        TORCH_VERSION="$_env_torch"
-        echo "[install.sh] Environment '${ENV_NAME}' pins torch ${TORCH_VERSION}; overriding the project default."
-    fi
-}
-
 configure_platform() {
     if [[ ! " ${SUPPORTED_PLATFORMS[*]} " =~ " $PLATFORM " ]]; then
         echo "--platform must be one of: ${SUPPORTED_PLATFORMS[*]} (got '$PLATFORM')." >&2
@@ -1983,10 +1966,6 @@ install_behavior_env() {
     uv pip install ml_dtypes==0.5.3 protobuf==3.20.3
     uv pip install click==8.2.1
     uv pip install llvmlite==0.47.0 numba==0.65.1
-    # TORCH_VERSION is already pinned to 2.5.1 for the behavior env (see
-    # apply_env_default_torch), so this reinstall just re-asserts it after
-    # OmniGibson's setup and resolves cleanly against the override.
-    uv pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1
 }
 
 install_metaworld_env() {
@@ -2394,7 +2373,6 @@ install_docs() {
 main() {
     parse_args "$@"
     validate_python_version
-    apply_env_default_torch
     configure_platform
     setup_mirror
     apply_torch_override

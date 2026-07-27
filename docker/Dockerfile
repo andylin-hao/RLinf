@@ -4,7 +4,7 @@ ARG TARGETARCH
 ARG PLATFORM=nvidia
 # Per-platform runtime versions. Override these for common CUDA/ROCm/CANN bumps, or
 # override the full base-image args below for a different image family/Ubuntu.
-ARG CUDA_VER=13.3.0
+ARG CUDA_VER=12.8.2
 ARG ROCM_VER=6.4
 ARG ROCM_ARCHS=gfx90a;gfx942
 ARG CANN_VER=9.0.0-910b
