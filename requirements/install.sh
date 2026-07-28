@@ -694,6 +694,15 @@ apply_sglang_override() {
         echo "[install.sh] Patched pyproject.toml optional-dependencies: sglang[all]==${SGLANG_VERSION}"
     fi
 
+    # The agentic extras pin transformers for the sglang 0.4.x line. sglang
+    # >= 0.5.11 pins an exact transformers 5.x instead, so derive it when the
+    # user did not pass --transformers (older sglang keeps the existing pin).
+    if [ -n "$SGLANG_VERSION" ] && [ -z "$TRANSFORMERS_VERSION" ]; then
+        case "${SGLANG_VERSION}" in
+            0.5.11|0.5.12) TRANSFORMERS_VERSION="5.6.0" ;;
+        esac
+    fi
+
     if [ -n "$TRANSFORMERS_VERSION" ]; then
         sed -i \
             -e "s/\"transformers==[^\"]*\"/\"transformers==${TRANSFORMERS_VERSION}\"/" \
@@ -710,9 +719,12 @@ apply_sglang_override() {
             0.5.0|0.5.0rc*) XGRAMMAR_VERSION="0.1.22" ;;
             0.5.1) XGRAMMAR_VERSION="0.1.23" ;;
             0.5.2|0.5.3) XGRAMMAR_VERSION="0.1.24" ;;
-            0.5.4) XGRAMMAR_VERSION="0.1.25" ;;
+            0.5.4|0.5.5) XGRAMMAR_VERSION="0.1.25" ;;
+            0.5.6|0.5.7|0.5.8|0.5.9) XGRAMMAR_VERSION="0.1.27" ;;
+            0.5.10|0.5.11) XGRAMMAR_VERSION="0.1.32" ;;
+            0.5.12) XGRAMMAR_VERSION="0.2.0" ;;
             *)
-                echo "[install.sh] ERROR: Unsupported sglang version '${SGLANG_VERSION}' for xgrammar auto-derivation (supported: 0.4.6 – 0.5.4). Set XGRAMMAR_VERSION explicitly."
+                echo "[install.sh] ERROR: Unsupported sglang version '${SGLANG_VERSION}' for xgrammar auto-derivation (supported: 0.4.6 – 0.5.12). Set XGRAMMAR_VERSION explicitly."
                 exit 1
                 ;;
         esac
@@ -724,6 +736,22 @@ apply_sglang_override() {
             "$PYPROJECT_FILE"
         echo "[install.sh] Patched pyproject.toml override-dependencies: xgrammar==${XGRAMMAR_VERSION}"
     fi
+}
+
+effective_sglang_version() {
+    if [ -n "$SGLANG_VERSION" ]; then
+        printf '%s\n' "$SGLANG_VERSION"
+        return 0
+    fi
+    [ -f "$PYPROJECT_FILE" ] || return 1
+    sed -nE 's/.*"sglang\[all\]==([^"]+)".*/\1/p' "$PYPROJECT_FILE" | head -1
+}
+
+sglang_needs_torch211() {
+    local ver
+    ver=$(effective_sglang_version) || return 1
+    [ -n "$ver" ] || return 1
+    [ "$(printf '%s\n0.5.11\n' "$ver" | sort -V | head -n1)" = "0.5.11" ]
 }
 
 derive_torchcodec_spec() {
@@ -746,6 +774,21 @@ derive_torchcodec_spec() {
             fi
             ;;
     esac
+}
+
+AGENTIC_DEFAULT_TORCH="2.6.0"
+
+apply_agentic_torch_default() {
+    [ "$TARGET" = "agentic" ] || return 0
+    # --torch wins; on AMD, configure_amd derives torch from the ROCm version.
+    [ -z "$TORCH_VERSION" ] || return 0
+    [ "$PLATFORM" != "amd" ] || return 0
+    # sglang >= 0.5.11 needs torch 2.11, which pyproject.toml already pins.
+    if sglang_needs_torch211; then
+        return 0
+    fi
+    TORCH_VERSION="$AGENTIC_DEFAULT_TORCH"
+    echo "[install.sh] agentic: sglang $(effective_sglang_version) targets the torch ${AGENTIC_DEFAULT_TORCH} stack; pinning torch ${TORCH_VERSION} (pass --torch to override, or --sglang >= 0.5.11 for the torch 2.11 stack)."
 }
 
 apply_torch_override() {
@@ -983,7 +1026,7 @@ EOF
 }
 
 install_flash_attn() {
-    local flash_ver="2.8.3"
+    local flash_ver="2.7.4.post1"
 
     if [ "$DISABLE_FLASH_ATTN" -eq 1 ]; then
         echo "[install.sh] --no-flash-attn was specified; skipping flash-attn install."
@@ -994,12 +1037,31 @@ install_flash_attn() {
         return 0
     fi
 
+    local torch_ge_28
+    if torch_ge_28=$(python - <<'EOF' 2>/dev/null
+import re
+import torch
+
+version = torch.__version__.split("+", 1)[0]
+match = re.match(r"^(\d+)\.(\d+)", version)
+if match is None:
+    print("0")
+else:
+    major, minor = (int(part) for part in match.groups())
+    print("1" if (major, minor) >= (2, 8) else "0")
+EOF
+    ); then
+        if [ "$torch_ge_28" = "1" ]; then
+            flash_ver="2.8.3"
+        fi
+    fi
+
     local prebuilt_flash_versions=("$flash_ver")
 
     if [ "$PLATFORM_FLASH_ATTN_PREBUILT" -ne 1 ]; then
         echo "[install.sh] Building flash-attn==${flash_ver} from source on platform=${PLATFORM}..."
         uv pip uninstall flash-attn || true
-        uv pip install "flash-attn==${flash_ver}" --no-build-isolation
+        FLASH_ATTENTION_FORCE_BUILD=TRUE uv pip install "flash-attn==${flash_ver}" --no-build-isolation
         return 0
     fi
     # Detect Python tags
@@ -1031,7 +1093,7 @@ EOF
     local cuda_mm cuda_major
     cuda_mm=$(detect_cuda_major_minor) || {
         echo "[install.sh] Could not detect CUDA version; falling back to source build." >&2
-        uv pip install "flash-attn==${flash_ver}" --no-build-isolation
+        FLASH_ATTENTION_FORCE_BUILD=TRUE uv pip install "flash-attn==${flash_ver}" --no-build-isolation
         return 0
     }
     cuda_major="${cuda_mm%% *}"
@@ -1067,7 +1129,7 @@ EOF
         done
     done
     echo "Flash attn installation via prebuilt wheels failed. Attempting to install from source..."
-    uv pip install "flash-attn==${flash_ver}" --no-build-isolation
+    FLASH_ATTENTION_FORCE_BUILD=TRUE uv pip install "flash-attn==${flash_ver}" --no-build-isolation
 }
 
 install_apex() {
@@ -2335,24 +2397,123 @@ install_roboverse_env() {
 
 #=======================AGENTIC INSTALLER=======================
 
+install_te_2_17() {
+    local torch_cu_major te_extra
+    torch_cu_major=$(python - <<'EOF'
+import torch
+
+cuda = torch.version.cuda or ""
+print(cuda.split(".")[0] if cuda else "")
+EOF
+)
+    if [ -z "$torch_cu_major" ]; then
+        echo "[install.sh] ERROR: torch has no CUDA build; cannot install transformer-engine." >&2
+        exit 1
+    fi
+    te_extra="core_cu${torch_cu_major}"
+    echo "[install.sh] Installing TE 2.17.0 (source build with nvcc, ${te_extra})..."
+    NVTE_PYTORCH_FORCE_BUILD=TRUE uv pip install --no-build-isolation \
+        "transformer-engine[pytorch,${te_extra}]==2.17.0"
+    echo "[install.sh] TE 2.17.0 installed."
+}
+
+install_mbridge() {
+    # megatron-bridge 0.4.2 declares requires-python >= 3.12 (it uses
+    # typing.override), so RLinf publishes a py3.10/3.11 fork on PyPI as
+    # rlinf-megatron-bridge. --no-deps keeps it from re-resolving torch and
+    # pulling nemo-toolkit; its runtime deps come in via sglang/TE.
+    echo "[install.sh] Installing rlinf-megatron-bridge 0.4.2 (PyPI wheel)..."
+    uv pip install --no-deps --extra-index-url https://pypi.org/simple "rlinf-megatron-bridge==0.4.2"
+    echo "[install.sh] rlinf-megatron-bridge 0.4.2 installed (import: megatron.bridge)."
+}
+
+# flash-attn-4 backward kernels are sm90+ only. On sm<9 (e.g. A100) drop FA4 so
+# TE falls back to FA2, which supports forward and backward on sm80.
+uninstall_fa4_conditional() {
+    local gpu_cc
+    gpu_cc=$(python -c "import torch;print(torch.cuda.get_device_capability(0)[0])" 2>/dev/null)
+    if [ -z "$gpu_cc" ]; then
+        echo "[install.sh] WARNING: Could not detect GPU compute capability; keeping FA4."
+        return 0
+    fi
+    if [ "$gpu_cc" -lt 9 ]; then
+        echo "[install.sh] GPU sm${gpu_cc} < sm90: FA4 backward unsupported, uninstalling flash-attn-4 → TE will use FA2."
+        uv pip uninstall flash-attn-4 || true
+    else
+        echo "[install.sh] GPU sm${gpu_cc} >= sm90: FA4 usable, keeping flash-attn-4."
+    fi
+}
+
+# TE 2.17's .so files carry no RPATH, so the venv's NVIDIA libs must precede a
+# stale system libnccl. The path is resolved via `import nvidia`, keeping the
+# script Python-version agnostic.
+generate_nccl_env_script() {
+    local env_script="$(dirname "$VENV_DIR")/$(basename "$VENV_DIR")_env.sh"
+    local nvlib
+    nvlib="$(python -c 'import nvidia; print(nvidia.__path__[0])' 2>/dev/null)"
+    if [ -z "$nvlib" ]; then
+        echo "[install.sh] WARNING: nvidia package not found in venv; skipping NCCL env script."
+        return 0
+    fi
+    cat > "$env_script" <<EOF
+# NCCL fix for TE 2.17 + torch CUDA wheels (generated by install.sh).
+# The venv's NVIDIA libs must take precedence over stale system libnccl.
+NVLIB=$nvlib
+export LD_LIBRARY_PATH="\$(ls -d \$NVLIB/*/lib 2>/dev/null | tr '\n' ':')\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}"
+EOF
+    if ! grep -q "^source $(realpath "$env_script")\$" "$VENV_DIR/bin/activate" 2>/dev/null; then
+        echo "source $(realpath "$env_script")" >> "$VENV_DIR/bin/activate"
+    fi
+    echo "[install.sh] NCCL env script generated: $env_script (sourced in activate)."
+}
+
 install_agentic() {
+    local torch211_stack=0
+    if sglang_needs_torch211; then
+        torch211_stack=1
+        echo "[install.sh] sglang $(effective_sglang_version) (>=0.5.11): using the torch 2.11 stack (TE 2.17, mcore 0.17, megatron-bridge)."
+    fi
+
+    local sglang_prerelease=""
+    [ "$torch211_stack" -eq 1 ] && sglang_prerelease="--prerelease=allow"
+
     uv sync --extra agentic-vllm --active $NO_INSTALL_RLINF_CMD
-    uv sync --extra agentic-sglang --inexact --active $NO_INSTALL_RLINF_CMD
+    uv sync --extra agentic-sglang --inexact --active $sglang_prerelease $NO_INSTALL_RLINF_CMD
     if [ "$NO_ROOT" -eq 0 ]; then
         bash $SCRIPT_DIR/sys_deps.sh "$PLATFORM"
+    fi
+
+    if [ "$torch211_stack" -eq 1 ]; then
+        uv pip install "kernels>=0.12,<0.13"
     fi
 
     # Megatron-LM
     # Use MEGATRON_PATH as the checkout location if set (shared, cloned on first use);
     # otherwise clone into the venv.
+    local megatron_branch="core_r0.13.0"
+    [ "$torch211_stack" -eq 1 ] && megatron_branch="core_r0.17.0"
     local megatron_dir
-    megatron_dir=$(clone_or_reuse_repo MEGATRON_PATH "$VENV_DIR/Megatron-LM" https://github.com/NVIDIA/Megatron-LM.git -b core_r0.13.0)
+    megatron_dir=$(clone_or_reuse_repo MEGATRON_PATH "$VENV_DIR/Megatron-LM" https://github.com/NVIDIA/Megatron-LM.git -b "$megatron_branch")
 
     echo "export PYTHONPATH=$(realpath "$megatron_dir"):\$PYTHONPATH" >> "$VENV_DIR/bin/activate"
 
-    # If TEST_BUILD is 1, skip installing megatron.txt
+    # If TEST_BUILD is 1, skip the heavy transformer-engine build (megatron.txt
+    # pins TE 2.1.0; the torch 2.11 stack builds TE 2.17 instead).
     if [ "$TEST_BUILD" -ne 1 ]; then
-        uv pip install -r $SCRIPT_DIR/agentic/megatron.txt --no-build-isolation
+        if [ "$torch211_stack" -eq 1 ]; then
+            if [ -f /etc/profile.d/cuda.sh ]; then
+                source /etc/profile.d/cuda.sh
+            fi
+            install_te_2_17
+        else
+            uv pip install -r $SCRIPT_DIR/agentic/megatron.txt --no-build-isolation
+        fi
+    fi
+
+    if [ "$torch211_stack" -eq 1 ]; then
+        install_mbridge
+        uninstall_fa4_conditional
+        generate_nccl_env_script
     fi
 
     install_apex
@@ -2373,6 +2534,7 @@ install_docs() {
 main() {
     parse_args "$@"
     validate_python_version
+    apply_agentic_torch_default
     configure_platform
     setup_mirror
     apply_torch_override
