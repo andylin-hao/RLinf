@@ -49,6 +49,10 @@ PLATFORM_FLASH_ATTN_PREBUILT=0
 DISABLE_FLASH_ATTN=0
 # User-level opt-out for apex, set by --no-apex. Wins over the platform default.
 DISABLE_APEX=0
+# Platform-specific torchcodec specifier. When non-empty it wins over the
+# specifier derived from the torch version, for platforms where the derived
+# pin has no wheels (e.g. Ascend/aarch64). Set by configure_<platform>.
+PLATFORM_TORCHCODEC_SPEC=""
 # Whether apply_torch_override should rewrite the pyproject.toml `torchcodec`
 # pin from ==0.2 to >=0.5. The ==0.2 line in override-dependencies has wheels
 # only for x86_64 + torch 2.5/2.6, so it breaks on AMD (torch 2.8 from rocm
@@ -432,6 +436,7 @@ configure_nvidia() {
     PLATFORM_FLASH_ATTN_INSTALL=1
     PLATFORM_FLASH_ATTN_PREBUILT=1
     PLATFORM_RELAX_TORCHCODEC=0
+    PLATFORM_TORCHCODEC_SPEC=""
     PLATFORM_EXTRA_OVERRIDES=()
     local _uvtb_user_set=1
     if [ -z "${UV_TORCH_BACKEND:-}" ]; then
@@ -531,6 +536,7 @@ configure_amd() {
     PLATFORM_FLASH_ATTN_INSTALL=1
     PLATFORM_FLASH_ATTN_PREBUILT=0
     PLATFORM_RELAX_TORCHCODEC=1
+    PLATFORM_TORCHCODEC_SPEC=""
     PLATFORM_EXTRA_OVERRIDES=()
     if [ -z "${UV_TORCH_BACKEND:-}" ]; then
         export UV_TORCH_BACKEND="rocm${ROCM_VERSION}"
@@ -551,7 +557,18 @@ configure_ascend() {
     PLATFORM_FLASH_ATTN_INSTALL=0
     PLATFORM_FLASH_ATTN_PREBUILT=0
     PLATFORM_RELAX_TORCHCODEC=1
+    # The version-derived torchcodec pin (==0.2 for torch 2.6) has wheels only
+    # for x86_64, and Ascend hosts are typically aarch64.
+    PLATFORM_TORCHCODEC_SPEC="torchcodec>=0.5"
     PLATFORM_EXTRA_OVERRIDES=()
+    # torch-npu tracks torch releases one-for-one and each release needs a
+    # matching CANN toolkit on the host (torch-npu 2.11.0 requires CANN 8.5.0),
+    # so Ascend stays on the torch 2.6 stack instead of following the repo-wide
+    # pin. Bump this together with the CANN version on the Ascend hosts.
+    if [ -z "$TORCH_VERSION" ]; then
+        TORCH_VERSION="2.6.0"
+        echo "[install.sh] ascend: pinning torch ${TORCH_VERSION} to match torch-npu/CANN (pass --torch to override)."
+    fi
     if [ -z "${UV_TORCH_BACKEND:-}" ]; then
         # `cpu` keeps `uv pip install torch ...` calls fetching the CPU build
         # from download.pytorch.org/whl/cpu instead of PyPI's CUDA wheel.
@@ -805,7 +822,9 @@ apply_torch_override() {
         _eff_torch=$(sed -nE 's/.*"torch==([^"+]+).*".*/\1/p' "$PYPROJECT_FILE" | head -1)
     fi
     local _torchcodec_spec="" _cur_torchcodec=""
-    if [ -n "$_eff_torch" ]; then
+    if [ -n "$PLATFORM_TORCHCODEC_SPEC" ]; then
+        _torchcodec_spec="$PLATFORM_TORCHCODEC_SPEC"
+    elif [ -n "$_eff_torch" ]; then
         local _tmaj _tmin _tpatch
         IFS='.' read -r _tmaj _tmin _tpatch <<< "$_eff_torch"
         _torchcodec_spec=$(derive_torchcodec_spec "$_tmaj" "$_tmin")
