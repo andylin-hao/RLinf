@@ -73,24 +73,7 @@ Documentation = "https://rlinf.readthedocs.io/"
 "Bug Report" = "https://github.com/RLinf/RLinf/issues"
 
 [project.optional-dependencies]
-# The sglang/vllm engines themselves are installed from
-# requirements/agentic/{sglang,vllm}_<version>.txt, not from these extras: a
-# pinned engine here would join uv's universal lock and make every other extra
-# unresolvable whenever the engine's CUDA requirements clash with the platform
-# torch pin (sglang >= 0.5.11 needs cu13, embodied runs cu12).
-agentic-sglang = [
-    "numpy==2.2",
-    # uvloop is not compatible with simulators, put it here
-    "uvloop==0.21.0",
-    "hydra-core==1.4.0.dev1",
-    "omegaconf==2.4.0.dev4",
-    "word2number",
-    "regex",
-    "peft==0.11.1",
-    "rlinf_latex2sympy2",
-    "mcp",
-]
-agentic-vllm = [
+agentic = [
     "numpy==2.2",
     # uvloop is not compatible with simulators, put it here
     "uvloop==0.21.0",
@@ -170,32 +153,28 @@ gim_arm = [
 # other), so they get separate rows rather than joining the first.
 conflicts = [
     [
-      { extra = "agentic-sglang" },
-      { extra = "agentic-vllm" },
+      { extra = "agentic" },
       { extra = "embodied" },
       { extra = "franka" },
       { extra = "xsquare_turtle2" },
       { extra = "gim_arm" }
     ],
     [
-      { extra = "agentic-sglang" },
-      { extra = "agentic-vllm" },
+      { extra = "agentic" },
       { extra = "libero" },
       { extra = "franka" },
       { extra = "xsquare_turtle2" },
       { extra = "gim_arm" }
     ],
     [
-      { extra = "agentic-sglang" },
-      { extra = "agentic-vllm" },
+      { extra = "agentic" },
       { extra = "liberopro" },
       { extra = "franka" },
       { extra = "xsquare_turtle2" },
       { extra = "gim_arm" }
     ],
     [
-      { extra = "agentic-sglang" },
-      { extra = "agentic-vllm" },
+      { extra = "agentic" },
       { extra = "liberoplus" },
       { extra = "franka" },
       { extra = "xsquare_turtle2" },

@@ -780,7 +780,7 @@ AGENTIC_LEGACY_TORCH="2.6.0"
 
 # The sglang >= 0.5.11 line needs cuda-python >= 13, which only resolves against
 # a cu13 torch build, so it cannot be the pyproject default: `uv sync` locks
-# every extra together, and on a CUDA 12 host the agentic-sglang split would
+# every extra together, and on a CUDA 12 host the agentic split would
 # make even an embodied install unsatisfiable. Upgrade the agentic stack here
 # instead, when the driver can actually run cu13.
 AGENTIC_CU13_SGLANG="0.5.12.post1"
@@ -1296,8 +1296,8 @@ install_qwen3_vl_sglang_deps() {
         exit 1
     fi
 
-    uv sync --extra agentic-sglang --inexact --active $NO_INSTALL_RLINF_CMD
-    uv pip install -r "$(agentic_requirements_file sglang "$SGLANG_VERSION")"
+    uv sync --extra agentic --inexact --active $NO_INSTALL_RLINF_CMD
+    env -u UV_TORCH_BACKEND uv pip install -r "$(agentic_requirements_file sglang "$SGLANG_VERSION")"
     uv pip install "transformers==${TRANSFORMERS_VERSION}"
     python - "$TORCH_VERSION" "$SGLANG_VERSION" "$TRANSFORMERS_VERSION" <<'EOF'
 from importlib.metadata import version
@@ -1962,6 +1962,17 @@ install_dummy_env() {
 # LIBERO and its forks cache absolute paths in ~/.libero, ~/.liberopro and
 # ~/.liberoplus on first import and never refresh them, so a config left by an
 # earlier install points at assets this venv does not have.
+# LIBERO resolves its data paths with os.path.realpath(__file__), so under
+# UV_LINK_MODE=symlink (what CI uses) they point into the shared uv cache
+# archive, while libero-download-assets writes into site-packages. Reinstall the
+# package with copied files so both agree.
+materialize_package_files() {
+    local dist="$1" ver
+    ver=$(uv pip show "$dist" 2>/dev/null | sed -n 's/^Version: //p')
+    [ -n "$ver" ] || return 0
+    UV_LINK_MODE=copy uv pip install --force-reinstall --no-deps "${dist}==${ver}"
+}
+
 reset_libero_config() {
     python - <<'EOF'
 import importlib
@@ -1978,6 +1989,7 @@ EOF
 
 install_libero_env() {
     uv sync --extra libero --inexact --active $NO_INSTALL_RLINF_CMD
+    materialize_package_files rlinf-libero
     libero-download-assets --skip-existing
     reset_libero_config
 }
@@ -2054,6 +2066,8 @@ install_d4rl_env() {
 
 install_liberopro_env() {
     uv sync --extra liberopro --inexact --active $NO_INSTALL_RLINF_CMD
+    materialize_package_files rlinf-libero
+    materialize_package_files rlinf-liberopro
     libero-download-assets --skip-existing
     liberopro-download-assets --skip-existing
     reset_libero_config
@@ -2062,6 +2076,8 @@ install_liberopro_env() {
 install_liberoplus_env() {
     uv sync --extra liberoplus --inexact --active $NO_INSTALL_RLINF_CMD
     uv pip install "rlinf-liberoplus>=0.1.3"
+    materialize_package_files rlinf-libero
+    materialize_package_files rlinf-liberoplus
     libero-download-assets --skip-existing
     LIBERO_PLUS_ASSETS_REPO="${LIBERO_PLUS_ASSETS_REPO:-RLinf/LIBERO-plus-assets}" \
         liberoplus-download-assets --skip-existing
@@ -2531,10 +2547,9 @@ install_agentic() {
     sglang_req=$(agentic_requirements_file sglang "$(effective_sglang_version)")
     vllm_req=$(agentic_requirements_file vllm "${VLLM_VERSION:-$AGENTIC_DEFAULT_VLLM}")
 
-    uv sync --extra agentic-vllm --active $NO_INSTALL_RLINF_CMD
-    uv pip install -r "$vllm_req"
-    uv sync --extra agentic-sglang --inexact --active $NO_INSTALL_RLINF_CMD
-    uv pip install -r "$sglang_req"
+    uv sync --extra agentic --active $NO_INSTALL_RLINF_CMD
+    env -u UV_TORCH_BACKEND uv pip install -r "$vllm_req"
+    env -u UV_TORCH_BACKEND uv pip install -r "$sglang_req"
     echo "[install.sh] Installed engines: $(basename "$vllm_req"), $(basename "$sglang_req")"
     if [ "$NO_ROOT" -eq 0 ]; then
         bash $SCRIPT_DIR/sys_deps.sh "$PLATFORM"
@@ -2586,10 +2601,9 @@ install_agentic() {
 #=======================DOCUMENTATION INSTALLER=======================
 
 install_docs() {
-    uv sync --extra agentic-vllm --active $NO_INSTALL_RLINF_CMD
-    uv pip install -r "$(agentic_requirements_file vllm "$AGENTIC_DEFAULT_VLLM")"
-    uv sync --extra agentic-sglang --inexact --active $NO_INSTALL_RLINF_CMD
-    uv pip install -r "$(agentic_requirements_file sglang "$(effective_sglang_version)")"
+    uv sync --extra agentic --active $NO_INSTALL_RLINF_CMD
+    env -u UV_TORCH_BACKEND uv pip install -r "$(agentic_requirements_file vllm "$AGENTIC_DEFAULT_VLLM")"
+    env -u UV_TORCH_BACKEND uv pip install -r "$(agentic_requirements_file sglang "$(effective_sglang_version)")"
     uv sync --extra embodied --active --inexact $NO_INSTALL_RLINF_CMD
     uv pip install -r $SCRIPT_DIR/docs/requirements.txt
     uv pip uninstall pynvml || true
