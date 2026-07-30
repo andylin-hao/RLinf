@@ -110,8 +110,11 @@ Common options:
                            duration of the install; the original is restored on exit. On
                            --platform amd, defaults to the lowest torch version with a matching
                            +rocm<version> wheel on https://download.pytorch.org/whl/torch/.
-    --sglang <version>    Override sglang version (e.g., 0.5.4). xgrammar is
-                           auto-derived from the sglang version.
+    --sglang <version>     Override sglang version (e.g., 0.5.4). Must be one of the
+                           versions in requirements/agentic/; torch is derived from it.
+    --vllm <version>       Override vllm version (e.g., 0.23.0). Must be one of the
+                           versions in requirements/agentic/. Defaults to the version
+                           paired with the sglang line.
     --transformers <version> Override transformers version (e.g., 4.57.1). Patches
                            the == pinned version in agentic extras; restored on exit.
     --platform <name>      Hardware platform: nvidia (default, fully tested), amd (experimental,
@@ -176,6 +179,14 @@ parse_args() {
                     exit 1
                 fi
                 SGLANG_VERSION="${2:-}"
+                shift 2
+                ;;
+            --vllm)
+                if [ -z "${2:-}" ]; then
+                    echo "--vllm requires a version argument (e.g. 0.23.0)." >&2
+                    exit 1
+                fi
+                VLLM_VERSION="${2:-}"
                 shift 2
                 ;;
             --transformers)
@@ -437,6 +448,7 @@ configure_nvidia() {
     PLATFORM_RELAX_TORCHCODEC=0
     PLATFORM_TORCHCODEC_SPEC=""
     PLATFORM_EXTRA_OVERRIDES=()
+    PLATFORM_CUDA_TAG=""
     local _uvtb_user_set=1
     if [ -z "${UV_TORCH_BACKEND:-}" ]; then
         _uvtb_user_set=0
@@ -484,6 +496,7 @@ configure_nvidia() {
             fi
             echo "[install.sh] Routing torch ${_torch_ver} (cpu) through ${PLATFORM_TORCH_INDEX} (UV_TORCH_BACKEND=${UV_TORCH_BACKEND})."
         elif _cuda_tag=$(detect_nvidia_torch_cuda_tag "$_torch_ver" "$_index_base" "$_driver_num"); then
+            PLATFORM_CUDA_TAG="$_cuda_tag"
             PLATFORM_TORCH_STR="+${_cuda_tag}"
             PLATFORM_TORCH_INDEX="${_index_base}/${_cuda_tag}"
             PLATFORM_TORCH_PACKAGES=("torch" "torchvision" "torchaudio")
@@ -705,26 +718,23 @@ restore_pyproject() {
     fi
 }
 
-apply_sglang_override() {
-    # Engine pins (sglang/vllm and the transformers/xgrammar they require) live
-    # in requirements/agentic/*.txt, so nothing is patched into pyproject here.
-    # Derive the transformers version implied by an explicit --sglang so
-    # install_agentic can re-assert it on top of the engine's own pin.
-    if [ -n "$SGLANG_VERSION" ] && [ -z "$TRANSFORMERS_VERSION" ]; then
-        case "${SGLANG_VERSION}" in
-            # sglang pins transformers 5.6.0, whose flash-attention path calls
-            # s_aux.to() unconditionally and crashes on models with no attention
-            # sink; 5.6.1 guards it.
-            0.5.11|0.5.12|0.5.12.post*) TRANSFORMERS_VERSION="5.6.1" ;;
-        esac
-    fi
-}
+# sglang/vllm are installed from requirements/agentic/<engine>_<version>_<line>.txt
+# rather than a pyproject extra, so the supported builds are exactly the files
+# that exist and no engine pin can break the project-wide lock. See
+# requirements/agentic/README.md.
+AGENTIC_DEFAULT_SGLANG="0.5.12.post1"
 
-# sglang/vllm are installed from requirements/agentic/<engine>_<version>.txt
-# rather than a pyproject extra, so the supported versions are exactly the files
-# that exist and no engine pin can break the project-wide lock.
-AGENTIC_DEFAULT_SGLANG="0.4.6.post5"
-AGENTIC_DEFAULT_VLLM="0.8.5"
+# Each sglang line fixes the torch version the whole venv has to agree on, so it
+# also fixes which vllm can be installed next to it.
+agentic_stack_for_sglang() {
+    # Prints "<torch version or -> <vllm version>"; torch "-" means the version
+    # pyproject.toml already pins (2.11.0).
+    case "$1" in
+        0.4.6.post5) echo "2.6.0 0.8.5" ;;
+        0.5.2|0.5.4) echo "2.8.0 0.8.5" ;;
+        *)           echo "- 0.23.0" ;;
+    esac
+}
 
 effective_sglang_version() {
     if [ -n "$SGLANG_VERSION" ]; then
@@ -734,15 +744,65 @@ effective_sglang_version() {
     fi
 }
 
+effective_vllm_version() {
+    if [ -n "$VLLM_VERSION" ]; then
+        printf '%s\n' "$VLLM_VERSION"
+    else
+        agentic_stack_for_sglang "$(effective_sglang_version)" | awk '{print $2}'
+    fi
+}
+
+agentic_cuda_line() {
+    # The engines ship separate builds for CUDA 12 and CUDA 13. configure_nvidia
+    # has already resolved the torch wheel's CUDA tag against the driver, so the
+    # line follows torch: a torch version with no cu13 build (2.8 and below)
+    # stays on cu12 even on a CUDA 13 host.
+    case "${PLATFORM_CUDA_TAG:-}" in
+        cu13*) echo "cu13" ;;
+        *)     echo "cu12" ;;
+    esac
+}
+
 agentic_requirements_file() {
     # $1 = engine (sglang|vllm), $2 = version
-    local path="$SCRIPT_DIR/agentic/$1_$2.txt"
+    local line path
+    line=$(agentic_cuda_line)
+    path="$SCRIPT_DIR/agentic/$1_$2_${line}.txt"
     if [ ! -f "$path" ]; then
-        echo "[install.sh] ERROR: unsupported $1 version '$2'. Available:" >&2
-        ls "$SCRIPT_DIR/agentic/" | sed -nE "s/^$1_(.*)\.txt$/  $1 \1/p" >&2
+        echo "[install.sh] ERROR: no $1 $2 build for ${line}. Available:" >&2
+        ls "$SCRIPT_DIR/agentic/" | sed -nE "s/^$1_(.*)_(cu1[23])\.txt$/  $1 \1 (\2)/p" >&2
         exit 1
     fi
     printf '%s\n' "$path"
+}
+
+install_engine_requirements() {
+    # Installs one requirements/agentic/<engine>_<version>_<line>.txt. A file
+    # whose dependency lines cannot coexist with the engine's own metadata
+    # carries `# engine: <spec>` headers; those specs are installed --no-deps
+    # after the rest, which is how a CUDA 12 build of a CUDA-13-only engine
+    # release is reachable at all.
+    local req="$1" engine_specs engine_req
+    engine_specs=$(sed -n 's/^# engine: //p' "$req")
+    # The `uv pip` interface ignores [tool.uv.sources] but still applies
+    # [tool.uv] override-dependencies, so a torch pin carrying a local version
+    # (torchvision==0.26.0+cu130) is unresolvable unless the platform torch index
+    # is passed explicitly. unsafe-best-match is needed with it: under the
+    # default first-index strategy uv would stop at PyPI, which has the package
+    # but not the +cuXXX build.
+    local index_args=()
+    if [ -n "${PLATFORM_TORCH_INDEX:-}" ]; then
+        index_args=(--extra-index-url "$PLATFORM_TORCH_INDEX" --index-strategy unsafe-best-match)
+    fi
+    env -u UV_TORCH_BACKEND uv pip install "${index_args[@]}" -r "$req"
+    if [ -n "$engine_specs" ]; then
+        # Through a requirements file, not the command line, so that the
+        # per-architecture markers select a single wheel.
+        engine_req=$(mktemp)
+        printf '%s\n' "$engine_specs" > "$engine_req"
+        env -u UV_TORCH_BACKEND uv pip install "${index_args[@]}" --no-deps -r "$engine_req"
+        rm -f "$engine_req"
+    fi
 }
 
 sglang_needs_torch211() {
@@ -774,47 +834,20 @@ derive_torchcodec_spec() {
     esac
 }
 
-# Only fires when --sglang requests the legacy 0.4.x line; the default agentic
-# stack follows the repo-wide torch 2.11 pin.
-AGENTIC_LEGACY_TORCH="2.6.0"
-
-# The sglang >= 0.5.11 line needs cuda-python >= 13, which only resolves against
-# a cu13 torch build, so it cannot be the pyproject default: `uv sync` locks
-# every extra together, and on a CUDA 12 host the agentic split would
-# make even an embodied install unsatisfiable. Upgrade the agentic stack here
-# instead, when the driver can actually run cu13.
-AGENTIC_CU13_SGLANG="0.5.12.post1"
-AGENTIC_CU13_VLLM="0.23.0"
 VLLM_VERSION=""
-
-apply_agentic_cu13_stack() {
-    [ "$TARGET" = "agentic" ] || return 0
-    [ "$PLATFORM" = "nvidia" ] || return 0
-    # --sglang / --torch pick the stack explicitly.
-    [ -z "$SGLANG_VERSION" ] || return 0
-    [ -z "$TORCH_VERSION" ] || return 0
-    local driver_num
-    driver_num=$(detect_nvidia_driver_max_cuda) || return 0
-    if [ "$driver_num" -lt 130 ]; then
-        echo "[install.sh] agentic: driver supports CUDA <= ${driver_num}; keeping the sglang $(effective_sglang_version) / torch ${AGENTIC_LEGACY_TORCH} stack (sglang >= 0.5.11 requires cu13)."
-        return 0
-    fi
-    SGLANG_VERSION="$AGENTIC_CU13_SGLANG"
-    VLLM_VERSION="$AGENTIC_CU13_VLLM"
-    echo "[install.sh] agentic: driver supports CUDA ${driver_num}; upgrading to sglang ${SGLANG_VERSION} on the torch 2.11 stack."
-}
 
 apply_agentic_torch_default() {
     [ "$TARGET" = "agentic" ] || return 0
     # --torch wins; on AMD, configure_amd derives torch from the ROCm version.
     [ -z "$TORCH_VERSION" ] || return 0
     [ "$PLATFORM" != "amd" ] || return 0
-    # sglang >= 0.5.11 needs torch 2.11, which pyproject.toml already pins.
-    if sglang_needs_torch211; then
-        return 0
-    fi
-    TORCH_VERSION="$AGENTIC_LEGACY_TORCH"
-    echo "[install.sh] agentic: sglang $(effective_sglang_version) predates 0.5.11; pinning torch ${TORCH_VERSION} (pass --torch to override)."
+    local sglang_ver torch_ver
+    sglang_ver=$(effective_sglang_version)
+    torch_ver=$(agentic_stack_for_sglang "$sglang_ver" | awk '{print $1}')
+    # "-" means the version pyproject.toml already pins.
+    [ "$torch_ver" != "-" ] || return 0
+    TORCH_VERSION="$torch_ver"
+    echo "[install.sh] agentic: sglang ${sglang_ver} needs torch ${TORCH_VERSION}; pinning it (pass --torch to override)."
 }
 
 apply_torch_override() {
@@ -1297,7 +1330,7 @@ install_qwen3_vl_sglang_deps() {
     fi
 
     uv sync --extra agentic --inexact --active $NO_INSTALL_RLINF_CMD
-    env -u UV_TORCH_BACKEND uv pip install -r "$(agentic_requirements_file sglang "$SGLANG_VERSION")"
+    install_engine_requirements "$(agentic_requirements_file sglang "$SGLANG_VERSION")"
     uv pip install "transformers==${TRANSFORMERS_VERSION}"
     python - "$TORCH_VERSION" "$SGLANG_VERSION" "$TRANSFORMERS_VERSION" <<'EOF'
 from importlib.metadata import version
@@ -2545,23 +2578,18 @@ install_agentic() {
 
     local sglang_req vllm_req
     sglang_req=$(agentic_requirements_file sglang "$(effective_sglang_version)")
-    vllm_req=$(agentic_requirements_file vllm "${VLLM_VERSION:-$AGENTIC_DEFAULT_VLLM}")
+    vllm_req=$(agentic_requirements_file vllm "$(effective_vllm_version)")
 
     uv sync --extra agentic --active $NO_INSTALL_RLINF_CMD
-    env -u UV_TORCH_BACKEND uv pip install -r "$vllm_req"
-    env -u UV_TORCH_BACKEND uv pip install -r "$sglang_req"
+    install_engine_requirements "$vllm_req"
+    install_engine_requirements "$sglang_req"
     echo "[install.sh] Installed engines: $(basename "$vllm_req"), $(basename "$sglang_req")"
     # The engines are resolved after the lock, so a pin of theirs can downgrade
-    # part of a package family the lock had resolved together (e.g. vllm caps
-    # opentelemetry, ray pulls the exporter unpinned). Surface that here instead
-    # of at import time.
+    # part of a package family the lock had resolved together. Surface that here
+    # instead of at import time.
     uv pip check || echo "[install.sh] WARNING: dependency conflicts reported above"
     if [ "$NO_ROOT" -eq 0 ]; then
         bash $SCRIPT_DIR/sys_deps.sh "$PLATFORM"
-    fi
-
-    if [ "$torch211_stack" -eq 1 ]; then
-        uv pip install "kernels>=0.12,<0.13"
     fi
 
     # Megatron-LM
@@ -2607,8 +2635,8 @@ install_agentic() {
 
 install_docs() {
     uv sync --extra agentic --active $NO_INSTALL_RLINF_CMD
-    env -u UV_TORCH_BACKEND uv pip install -r "$(agentic_requirements_file vllm "$AGENTIC_DEFAULT_VLLM")"
-    env -u UV_TORCH_BACKEND uv pip install -r "$(agentic_requirements_file sglang "$(effective_sglang_version)")"
+    install_engine_requirements "$(agentic_requirements_file vllm "$(effective_vllm_version)")"
+    install_engine_requirements "$(agentic_requirements_file sglang "$(effective_sglang_version)")"
     uv sync --extra embodied --active --inexact $NO_INSTALL_RLINF_CMD
     uv pip install -r $SCRIPT_DIR/docs/requirements.txt
     uv pip uninstall pynvml || true
@@ -2618,12 +2646,10 @@ main() {
     parse_args "$@"
     validate_python_version
     apply_env_default_torch
-    apply_agentic_cu13_stack
     apply_agentic_torch_default
     configure_platform
     setup_mirror
     apply_torch_override
-    apply_sglang_override
 
     case "$TARGET" in
         embodied)

@@ -687,7 +687,10 @@ jobs:
           export MEGATRON_PATH=/workspace/dataset/Megatron-LM
           bash requirements/install.sh agentic
           uv pip install transformers==4.57.1
-          uv pip install bitsandbytes
+          # --no-deps: bitsandbytes' torch requirement is unpinned, so a plain
+          # install re-resolves torch through pyproject's override and replaces
+          # the version install.sh chose for this stack.
+          uv pip install --no-deps bitsandbytes
 
       - name: Train with SGLang Megatron-Bridge Collocated mode
         timeout-minutes: 20

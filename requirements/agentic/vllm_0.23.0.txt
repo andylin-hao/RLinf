@@ -1,4 +1,0 @@
-# vllm for the torch 2.11 agentic stack; paired with rlinf/hybrid_engines/vllm/vllm_0_23.
-# Newest vllm on torch 2.11 that accepts xgrammar 0.2.0 (sglang's pin) and does
-# not require torchcodec >= 0.14.
-vllm==0.23.0
