@@ -2557,20 +2557,32 @@ EOF
         exit 1
     fi
     te_extra="core_cu${torch_cu_major}"
-    local build_args=()
-    if [ "$torch_cu_major" = "12" ]; then
-        # The published transformer-engine-torch wheel is built against CUDA 13 --
-        # its metadata requires transformer_engine_cu13 outright -- so on a cu12
-        # torch it installs happily and then dies at import on
-        # `libcublas.so.13: cannot open shared object file`. Build it here instead,
-        # against the CUDA the host actually has. NVTE_PYTORCH_FORCE_BUILD alone is
-        # not enough: it only steers TE's own setup.py, and uv still prefers the
-        # prebuilt wheel when one matches.
-        build_args=(--no-binary transformer-engine-torch)
+    if [ "$torch_cu_major" != "12" ]; then
+        echo "[install.sh] Installing TE 2.17.0 (${te_extra})..."
+        NVTE_PYTORCH_FORCE_BUILD=TRUE uv pip install --no-build-isolation \
+            "transformer-engine[pytorch,${te_extra}]==2.17.0"
+        echo "[install.sh] TE 2.17.0 installed."
+        return 0
     fi
-    echo "[install.sh] Installing TE 2.17.0 (${te_extra}${build_args:+, source build with nvcc})..."
-    NVTE_PYTORCH_FORCE_BUILD=TRUE uv pip install --no-build-isolation "${build_args[@]}" \
-        "transformer-engine[pytorch,${te_extra}]==2.17.0"
+
+    # On a CUDA 12 torch the `pytorch` extra cannot be used: transformer-engine-torch
+    # requires transformer_engine_cu13 outright, and the two cores unpack into the
+    # same transformer_engine/ tree, so the cu13 core's shared object lands on top
+    # of the cu12 one and every import dies on
+    # `libcublas.so.13: cannot open shared object file`. Install the cu12 core, then
+    # the torch extension with --no-deps so cu13 is never pulled, naming its other
+    # requirements explicitly. --no-binary because the published extension wheel is
+    # itself linked against CUDA 13; NVTE_PYTORCH_FORCE_BUILD only steers TE's
+    # setup.py and does not stop uv preferring that wheel.
+    echo "[install.sh] Installing TE 2.17.0 (${te_extra}, source build with nvcc)..."
+    uv pip install --no-build-isolation "transformer-engine[${te_extra}]==2.17.0"
+    uv pip install einops onnx onnxscript packaging pydantic nvdlfw-inspect
+    NVTE_PYTORCH_FORCE_BUILD=TRUE uv pip install --no-build-isolation --no-deps \
+        --no-binary transformer-engine-torch "transformer-engine-torch==2.17.0"
+    if uv pip show transformer-engine-cu13 >/dev/null 2>&1; then
+        echo "[install.sh] ERROR: transformer-engine-cu13 present on a CUDA 12 torch; its core would shadow the cu12 one." >&2
+        exit 1
+    fi
     echo "[install.sh] TE 2.17.0 installed."
 }
 
