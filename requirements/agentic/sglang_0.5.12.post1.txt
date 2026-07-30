@@ -1,0 +1,11 @@
+# sglang 0.5.12 line (torch 2.11, cu13 only: it requires cuda-python >= 13).
+# flash-attn-4 has pre-releases only; listing it here keeps it out of the
+# project lock. transformers 5.6.0 is sglang's exact pin, but 5.6.1 fixes an
+# unconditional s_aux.to() in the flash-attention path and is installed on top
+# by install_agentic.
+sglang[all]==0.5.12.post1
+sglang-router
+torch-memory-saver
+flash-attn-4>=4.0.0b9
+xgrammar==0.2.0
+tokenizers==0.22.2

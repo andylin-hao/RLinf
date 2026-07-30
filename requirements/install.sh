@@ -706,79 +706,43 @@ restore_pyproject() {
 }
 
 apply_sglang_override() {
-    if [ -z "$SGLANG_VERSION" ] && [ -z "$TRANSFORMERS_VERSION" ] && [ -z "$XGRAMMAR_VERSION" ]; then
-        return 0
-    fi
-
-    if [ ! -f "$PYPROJECT_FILE" ]; then
-        echo "Cannot locate pyproject.toml at $PYPROJECT_FILE" >&2
-        exit 1
-    fi
-
-    # Reuse an existing backup if apply_torch_override already created one.
-    if [ -z "$PYPROJECT_BACKUP" ] || [ ! -f "$PYPROJECT_BACKUP" ]; then
-        PYPROJECT_BACKUP="${PYPROJECT_FILE}.rlinf-sglang-bak.$$"
-        cp "$PYPROJECT_FILE" "$PYPROJECT_BACKUP"
-        trap 'restore_pyproject' EXIT INT TERM HUP
-    fi
-
-    if [ -n "$SGLANG_VERSION" ]; then
-        sed -i \
-            -e "s/\"sglang\[all\]==[^\"]*\"/\"sglang[all]==${SGLANG_VERSION}\"/" \
-            "$PYPROJECT_FILE"
-        echo "[install.sh] Patched pyproject.toml optional-dependencies: sglang[all]==${SGLANG_VERSION}"
-    fi
-
-    # sglang >= 0.5.11 needs an exact transformers 5.x; derive it unless the
-    # user passed --transformers.
+    # Engine pins (sglang/vllm and the transformers/xgrammar they require) live
+    # in requirements/agentic/*.txt, so nothing is patched into pyproject here.
+    # Derive the transformers version implied by an explicit --sglang so
+    # install_agentic can re-assert it on top of the engine's own pin.
     if [ -n "$SGLANG_VERSION" ] && [ -z "$TRANSFORMERS_VERSION" ]; then
         case "${SGLANG_VERSION}" in
-            0.5.11|0.5.12) TRANSFORMERS_VERSION="5.6.0" ;;
+            # sglang pins transformers 5.6.0, whose flash-attention path calls
+            # s_aux.to() unconditionally and crashes on models with no attention
+            # sink; 5.6.1 guards it.
+            0.5.11|0.5.12|0.5.12.post*) TRANSFORMERS_VERSION="5.6.1" ;;
         esac
-    fi
-
-    if [ -n "$TRANSFORMERS_VERSION" ]; then
-        sed -i \
-            -e "s/\"transformers==[^\"]*\"/\"transformers==${TRANSFORMERS_VERSION}\"/" \
-            "$PYPROJECT_FILE"
-        echo "[install.sh] Patched pyproject.toml optional-dependencies: transformers==${TRANSFORMERS_VERSION}"
-    fi
-
-    # Auto-derive xgrammar from sglang version when not explicitly set.
-    # Mapping derived from each sglang release's python/pyproject.toml.
-    if [ -n "$SGLANG_VERSION" ] && [ -z "$XGRAMMAR_VERSION" ]; then
-        case "${SGLANG_VERSION}" in
-            0.4.6) XGRAMMAR_VERSION="0.1.17" ;;
-            0.4.7|0.4.8|0.4.9) XGRAMMAR_VERSION="0.1.19" ;;
-            0.5.0|0.5.0rc*) XGRAMMAR_VERSION="0.1.22" ;;
-            0.5.1) XGRAMMAR_VERSION="0.1.23" ;;
-            0.5.2|0.5.3) XGRAMMAR_VERSION="0.1.24" ;;
-            0.5.4|0.5.5) XGRAMMAR_VERSION="0.1.25" ;;
-            0.5.6|0.5.7|0.5.8|0.5.9) XGRAMMAR_VERSION="0.1.27" ;;
-            0.5.10|0.5.11) XGRAMMAR_VERSION="0.1.32" ;;
-            0.5.12|0.5.12.post*) XGRAMMAR_VERSION="0.2.0" ;;
-            *)
-                echo "[install.sh] ERROR: Unsupported sglang version '${SGLANG_VERSION}' for xgrammar auto-derivation (supported: 0.4.6 – 0.5.12). Set XGRAMMAR_VERSION explicitly."
-                exit 1
-                ;;
-        esac
-    fi
-
-    if [ -n "$XGRAMMAR_VERSION" ]; then
-        sed -i \
-            -e "s/\"xgrammar==[^\"]*\"/\"xgrammar==${XGRAMMAR_VERSION}\"/" \
-            "$PYPROJECT_FILE"
-        echo "[install.sh] Patched pyproject.toml override-dependencies: xgrammar==${XGRAMMAR_VERSION}"
     fi
 }
+
+# sglang/vllm are installed from requirements/agentic/<engine>_<version>.txt
+# rather than a pyproject extra, so the supported versions are exactly the files
+# that exist and no engine pin can break the project-wide lock.
+AGENTIC_DEFAULT_SGLANG="0.4.6.post5"
+AGENTIC_DEFAULT_VLLM="0.8.5"
 
 effective_sglang_version() {
     if [ -n "$SGLANG_VERSION" ]; then
         printf '%s\n' "$SGLANG_VERSION"
-        return 0
+    else
+        printf '%s\n' "$AGENTIC_DEFAULT_SGLANG"
     fi
-    [ -f "$PYPROJECT_FILE" ] || return 1
-    sed -nE 's/.*"sglang\[all\]==([^"]+)".*/\1/p' "$PYPROJECT_FILE" | head -1
+}
+
+agentic_requirements_file() {
+    # $1 = engine (sglang|vllm), $2 = version
+    local path="$SCRIPT_DIR/agentic/$1_$2.txt"
+    if [ ! -f "$path" ]; then
+        echo "[install.sh] ERROR: unsupported $1 version '$2'. Available:" >&2
+        ls "$SCRIPT_DIR/agentic/" | sed -nE "s/^$1_(.*)\.txt$/  $1 \1/p" >&2
+        exit 1
+    fi
+    printf '%s\n' "$path"
 }
 
 sglang_needs_torch211() {
@@ -813,6 +777,32 @@ derive_torchcodec_spec() {
 # Only fires when --sglang requests the legacy 0.4.x line; the default agentic
 # stack follows the repo-wide torch 2.11 pin.
 AGENTIC_LEGACY_TORCH="2.6.0"
+
+# The sglang >= 0.5.11 line needs cuda-python >= 13, which only resolves against
+# a cu13 torch build, so it cannot be the pyproject default: `uv sync` locks
+# every extra together, and on a CUDA 12 host the agentic-sglang split would
+# make even an embodied install unsatisfiable. Upgrade the agentic stack here
+# instead, when the driver can actually run cu13.
+AGENTIC_CU13_SGLANG="0.5.12.post1"
+AGENTIC_CU13_VLLM="0.23.0"
+VLLM_VERSION=""
+
+apply_agentic_cu13_stack() {
+    [ "$TARGET" = "agentic" ] || return 0
+    [ "$PLATFORM" = "nvidia" ] || return 0
+    # --sglang / --torch pick the stack explicitly.
+    [ -z "$SGLANG_VERSION" ] || return 0
+    [ -z "$TORCH_VERSION" ] || return 0
+    local driver_num
+    driver_num=$(detect_nvidia_driver_max_cuda) || return 0
+    if [ "$driver_num" -lt 130 ]; then
+        echo "[install.sh] agentic: driver supports CUDA <= ${driver_num}; keeping the sglang $(effective_sglang_version) / torch ${AGENTIC_LEGACY_TORCH} stack (sglang >= 0.5.11 requires cu13)."
+        return 0
+    fi
+    SGLANG_VERSION="$AGENTIC_CU13_SGLANG"
+    VLLM_VERSION="$AGENTIC_CU13_VLLM"
+    echo "[install.sh] agentic: driver supports CUDA ${driver_num}; upgrading to sglang ${SGLANG_VERSION} on the torch 2.11 stack."
+}
 
 apply_agentic_torch_default() {
     [ "$TARGET" = "agentic" ] || return 0
@@ -1307,6 +1297,8 @@ install_qwen3_vl_sglang_deps() {
     fi
 
     uv sync --extra agentic-sglang --inexact --active $NO_INSTALL_RLINF_CMD
+    uv pip install -r "$(agentic_requirements_file sglang "$SGLANG_VERSION")"
+    uv pip install "transformers==${TRANSFORMERS_VERSION}"
     python - "$TORCH_VERSION" "$SGLANG_VERSION" "$TRANSFORMERS_VERSION" <<'EOF'
 from importlib.metadata import version
 import sys
@@ -2535,21 +2527,21 @@ install_agentic() {
         echo "[install.sh] sglang $(effective_sglang_version) (>=0.5.11): using the torch 2.11 stack (TE 2.17, mcore 0.17, megatron-bridge)."
     fi
 
-    # No --prerelease=allow needed: flash-attn-4 is declared first-party in the
-    # agentic-sglang extra, which uv permits by default.
+    local sglang_req vllm_req
+    sglang_req=$(agentic_requirements_file sglang "$(effective_sglang_version)")
+    vllm_req=$(agentic_requirements_file vllm "${VLLM_VERSION:-$AGENTIC_DEFAULT_VLLM}")
+
     uv sync --extra agentic-vllm --active $NO_INSTALL_RLINF_CMD
+    uv pip install -r "$vllm_req"
     uv sync --extra agentic-sglang --inexact --active $NO_INSTALL_RLINF_CMD
+    uv pip install -r "$sglang_req"
+    echo "[install.sh] Installed engines: $(basename "$vllm_req"), $(basename "$sglang_req")"
     if [ "$NO_ROOT" -eq 0 ]; then
         bash $SCRIPT_DIR/sys_deps.sh "$PLATFORM"
     fi
 
     if [ "$torch211_stack" -eq 1 ]; then
         uv pip install "kernels>=0.12,<0.13"
-        # sglang pins transformers==5.6.0, whose flash-attention path calls
-        # s_aux.to() unconditionally and so crashes on models without an
-        # attention sink; 5.6.1 guards it. Installed after the sync because the
-        # exact pin makes 5.6.1 unresolvable.
-        uv pip install "transformers==5.6.1"
     fi
 
     # Megatron-LM
@@ -2581,6 +2573,11 @@ install_agentic() {
         setup_nccl_env
     fi
 
+    # --transformers / --xgrammar (and the version derived from --sglang) win
+    # over the engine's own pins.
+    [ -n "$TRANSFORMERS_VERSION" ] && uv pip install "transformers==${TRANSFORMERS_VERSION}"
+    [ -n "$XGRAMMAR_VERSION" ] && uv pip install "xgrammar==${XGRAMMAR_VERSION}"
+
     install_apex
     install_flash_attn
     uv pip uninstall pynvml || true
@@ -2590,7 +2587,9 @@ install_agentic() {
 
 install_docs() {
     uv sync --extra agentic-vllm --active $NO_INSTALL_RLINF_CMD
+    uv pip install -r "$(agentic_requirements_file vllm "$AGENTIC_DEFAULT_VLLM")"
     uv sync --extra agentic-sglang --inexact --active $NO_INSTALL_RLINF_CMD
+    uv pip install -r "$(agentic_requirements_file sglang "$(effective_sglang_version)")"
     uv sync --extra embodied --active --inexact $NO_INSTALL_RLINF_CMD
     uv pip install -r $SCRIPT_DIR/docs/requirements.txt
     uv pip uninstall pynvml || true
@@ -2600,6 +2599,7 @@ main() {
     parse_args "$@"
     validate_python_version
     apply_env_default_torch
+    apply_agentic_cu13_stack
     apply_agentic_torch_default
     configure_platform
     setup_mirror

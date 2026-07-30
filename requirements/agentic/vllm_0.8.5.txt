@@ -1,0 +1,3 @@
+# vllm for the torch 2.6 agentic stack; paired with rlinf/hybrid_engines/vllm/vllm_0_8_5.
+vllm==0.8.5
+transformers==4.51.1
