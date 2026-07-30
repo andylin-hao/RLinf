@@ -1,3 +1,7 @@
 # vllm for the torch 2.6 agentic stack; paired with rlinf/hybrid_engines/vllm/vllm_0_8_5.
 vllm==0.8.5
 transformers==4.51.1
+# vllm caps opentelemetry at < 1.27, but ray[default] pulls an unpinned
+# opentelemetry-exporter-prometheus, which resolves to a 1.4x-generation build and
+# then fails to import against the downgraded api/sdk. Keep the family together.
+opentelemetry-exporter-prometheus==0.47b0

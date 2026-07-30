@@ -2551,6 +2551,11 @@ install_agentic() {
     env -u UV_TORCH_BACKEND uv pip install -r "$vllm_req"
     env -u UV_TORCH_BACKEND uv pip install -r "$sglang_req"
     echo "[install.sh] Installed engines: $(basename "$vllm_req"), $(basename "$sglang_req")"
+    # The engines are resolved after the lock, so a pin of theirs can downgrade
+    # part of a package family the lock had resolved together (e.g. vllm caps
+    # opentelemetry, ray pulls the exporter unpinned). Surface that here instead
+    # of at import time.
+    uv pip check || echo "[install.sh] WARNING: dependency conflicts reported above"
     if [ "$NO_ROOT" -eq 0 ]; then
         bash $SCRIPT_DIR/sys_deps.sh "$PLATFORM"
     fi
