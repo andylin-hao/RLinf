@@ -1294,6 +1294,23 @@ clone_or_reuse_repo() {
             git clone "$@" "$git_url" "$target_dir" >&2
         else
             echo "Reusing existing checkout at $env_var_name=$target_dir." >&2
+            # A shared checkout is reused as-is -- switching branches under it
+            # would affect every other venv pointing at the same path. Say so
+            # when it is not what was asked for, because otherwise a stack that
+            # needs a specific branch silently gets whatever is already there
+            # (e.g. MEGATRON_PATH on a core_r0.13.0 clone while the torch 2.11
+            # stack asks for core_r0.17.0).
+            local want_ref="" prev="" arg current_ref
+            for arg in "$@"; do
+                [ "$prev" = "-b" ] && want_ref="$arg"
+                prev="$arg"
+            done
+            if [ -n "$want_ref" ] && [ -d "$target_dir/.git" ]; then
+                current_ref=$(git -C "$target_dir" rev-parse --abbrev-ref HEAD 2>/dev/null || true)
+                if [ -n "$current_ref" ] && [ "$current_ref" != "$want_ref" ]; then
+                    echo "[install.sh] WARNING: $env_var_name=$target_dir is on '${current_ref}', but this install asked for '${want_ref}'. Unset $env_var_name to have install.sh clone the right one." >&2
+                fi
+            fi
         fi
     else
         target_dir="$default_dir"
