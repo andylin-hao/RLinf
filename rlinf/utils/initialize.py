@@ -44,8 +44,21 @@ except ImportError:  # the legacy JIT fused kernels were dropped in 0.17
     fused_kernels = None
 
 
+# Args Megatron reads off the namespace unconditionally but RLinf's YAML does not
+# define. omegaconf raises `Missing key` instead of returning None, so each has to
+# be present or the run dies. Note that seeding the whole namespace from
+# megatron.training.arguments.parse_args() is not a shortcut for this: those are
+# pre-validate_args values, and Megatron's own validate_args normalises them --
+# main_grads_dtype, for instance, defaults to the string "fp32", which
+# OptimizerConfig then rejects because it compares against torch.float32.
+MEGATRON_ARG_FALLBACKS = {
+    # Read by training.py and the FSDP branch of setup_model_and_optimizer.
+    "use_megatron_fsdp": False,  # added in mcore 0.17
+}
+
+
 def extract_selected_fields(cfg: DictConfig) -> DictConfig:
-    result = {}
+    result = dict(MEGATRON_ARG_FALLBACKS)
 
     keys_to_extract = [
         ("model", ""),
