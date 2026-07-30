@@ -57,6 +57,11 @@ setuptools>=77.0.3,<81.0.0; python_version > "3.11"
 six>=1.16.0; python_version > "3.11"
 tiktoken>=0.6.0
 tokenizers>=0.21.1
+# torchvision: both engines declare it, and installing the engine --no-deps means
+# nothing else pulls it in -- rlinf.workers.reward imports it transitively, so a
+# venv without it cannot even start a reasoning run. The version comes from
+# pyproject.toml's override, as with the rest of the torch family.
+torchvision
 tqdm
 transformers>=4.56.0,!=5.0.*,!=5.1.*,!=5.2.*,!=5.3.*,!=5.4.*,!=5.5.0
 typing_extensions>=4.10
