@@ -40,6 +40,11 @@ requests
 scipy
 sentencepiece
 setproctitle
+# smg-grpc-servicer pulls grpcio-health-checking / grpcio-reflection, whose
+# current releases require protobuf >= 7.35.1 -- but wandb and swanlab both cap
+# protobuf below 7, and tensorboard needs >= 6.31.1. Hold the window all four
+# accept; the grpcio helpers backtrack to 1.81.x, which sglang is fine with.
+protobuf>=6.31.1,<7
 smg-grpc-servicer>=0.5.0
 soundfile==0.13.1
 tiktoken
