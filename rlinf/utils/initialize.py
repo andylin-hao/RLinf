@@ -30,7 +30,6 @@ from megatron.core.rerun_state_machine import (
     initialize_rerun_state_machine,
 )
 from megatron.core.utils import get_te_version, is_te_min_version
-from megatron.legacy import fused_kernels
 from megatron.training.global_vars import _set_timers, set_args
 from omegaconf import open_dict
 from omegaconf.dictconfig import DictConfig
@@ -38,6 +37,11 @@ from omegaconf.omegaconf import OmegaConf
 
 from rlinf.config import torch_dtype_from_precision
 from rlinf.scheduler import Worker
+
+try:  # Megatron-LM < 0.17
+    from megatron.legacy import fused_kernels
+except ImportError:  # the legacy JIT fused kernels were dropped in 0.17
+    fused_kernels = None
 
 
 def extract_selected_fields(cfg: DictConfig) -> DictConfig:
@@ -161,6 +165,9 @@ def _compile_dependencies(cfg: DictConfig):
     # ==================
     # Load fused kernels
     # ==================
+
+    if fused_kernels is None:
+        return
 
     # Custom kernel constraints check.
     seq_len = cfg.model.seq_length
