@@ -153,7 +153,12 @@ RUN chmod +x /usr/local/bin/switch_env
 ##################################################################################################
 FROM base-image AS reason-image
 
-RUN bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} agentic --venv reason
+# One venv per rollout engine: sglang and vllm pin the same kernel libraries
+# (nvidia-cutlass-dsl, flashinfer, tilelang, tokenspeed-mla) to different
+# versions, so sharing a venv means whichever is installed second downgrades the
+# other's kernels. Activate `reason-vllm` for vLLM rollout.
+RUN bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} agentic --venv reason --engine sglang && \
+    bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} agentic --venv reason-vllm --engine vllm
 
 # Set default env
 RUN echo "source ${UV_PATH}/reason/bin/activate" >> ~/.bashrc

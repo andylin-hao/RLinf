@@ -13,6 +13,21 @@ the set of files *is* the set of supported versions.
 
 The CUDA line is picked from the driver by `install.sh` (`agentic_cuda_line`).
 
+## One venv per engine
+
+A venv holds exactly one engine, chosen with `--engine`:
+
+    bash requirements/install.sh agentic --engine sglang
+    bash requirements/install.sh agentic --venv .venv-vllm --engine vllm
+
+sglang and vLLM pin the same kernel libraries to different versions
+(`nvidia-cutlass-dsl`, `flashinfer-python`, `tilelang`, `tokenspeed-mla`), and
+sometimes a different torch, so in a shared venv whichever is installed second
+downgrades the other's kernels — silently, until a kernel actually runs. Keeping
+them apart is also why each file can simply follow its own engine's declared
+pins. The one exception, `install.sh docs`, installs both because autodoc has to
+import them and never launches a kernel.
+
 ## How a file is installed
 
 `install.sh` installs the dependency lines normally and then the engine wheel

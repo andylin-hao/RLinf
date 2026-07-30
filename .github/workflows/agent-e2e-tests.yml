@@ -18,7 +18,10 @@ jobs:
           export UV_CACHE_DIR=/workspace/dataset/.uv_cache
           export UV_PYTHON_INSTALL_DIR=/workspace/dataset/.uv_python
           export MEGATRON_PATH=/workspace/dataset/Megatron-LM
-          bash requirements/install.sh agentic
+          # One venv per engine: sglang and vllm pin the same kernel libraries to
+          # different versions, so a shared venv breaks whichever is installed first.
+          bash requirements/install.sh agentic --engine sglang
+          bash requirements/install.sh agentic --venv .venv-vllm --engine vllm
 
       - name: Megatron SGLang Collocated mode
         timeout-minutes: 20
@@ -31,7 +34,7 @@ jobs:
         timeout-minutes: 20
         run: |
           export REPO_PATH=$(pwd)
-          source .venv/bin/activate
+          source .venv-vllm/bin/activate
           bash tests/e2e_tests/reasoning/run.sh qwen2.5-1.5b-grpo-collocated-mg-vllm
 
       - name: Megatron SGLang Pipeline mode
@@ -45,7 +48,7 @@ jobs:
         timeout-minutes: 20
         run: |
           export REPO_PATH=$(pwd)
-          source .venv/bin/activate
+          source .venv-vllm/bin/activate
           bash tests/e2e_tests/reasoning/run.sh qwen2.5-1.5b-grpo-pipeline-mg-vllm
 
       - name: FSDP SGLang Collocated mode
@@ -59,7 +62,7 @@ jobs:
         timeout-minutes: 20
         run: |
           export REPO_PATH=$(pwd)
-          source .venv/bin/activate
+          source .venv-vllm/bin/activate
           bash tests/e2e_tests/reasoning/run.sh qwen2.5-1.5b-grpo-collocated-fsdp-vllm
 
       - name: FSDP SGLang Pipeline mode
@@ -73,12 +76,12 @@ jobs:
         timeout-minutes: 20
         run: |
           export REPO_PATH=$(pwd)
-          source .venv/bin/activate
+          source .venv-vllm/bin/activate
           bash tests/e2e_tests/reasoning/run.sh qwen2.5-1.5b-grpo-pipeline-fsdp-vllm
 
       - name: Clean up
         run: |
-          rm -rf .venv
+          rm -rf .venv .venv-vllm
           uv cache prune
 
 
@@ -133,7 +136,10 @@ jobs:
           export UV_CACHE_DIR=/workspace/dataset/.uv_cache
           export UV_PYTHON_INSTALL_DIR=/workspace/dataset/.uv_python
           export MEGATRON_PATH=/workspace/dataset/Megatron-LM
-          bash requirements/install.sh agentic
+          # One venv per engine: sglang and vllm pin the same kernel libraries to
+          # different versions, so a shared venv breaks whichever is installed first.
+          bash requirements/install.sh agentic --engine sglang
+          bash requirements/install.sh agentic --venv .venv-vllm --engine vllm
 
       - name: Megatron SGLang Collocated mode
         timeout-minutes: 20
@@ -146,7 +152,7 @@ jobs:
         timeout-minutes: 20
         run: |
           export REPO_PATH=$(pwd)
-          source .venv/bin/activate
+          source .venv-vllm/bin/activate
           bash tests/e2e_tests/reasoning/run.sh qwen2.5-1.5b-grpo-collocated-mg-vllm-rollout-logprobs
 
       - name: Megatron SGLang Pipeline mode
@@ -160,7 +166,7 @@ jobs:
         timeout-minutes: 20
         run: |
           export REPO_PATH=$(pwd)
-          source .venv/bin/activate
+          source .venv-vllm/bin/activate
           bash tests/e2e_tests/reasoning/run.sh qwen2.5-1.5b-grpo-pipeline-mg-vllm-rollout-logprobs
 
       - name: FSDP SGLang Collocated mode
@@ -174,12 +180,12 @@ jobs:
         timeout-minutes: 20
         run: |
           export REPO_PATH=$(pwd)
-          source .venv/bin/activate
+          source .venv-vllm/bin/activate
           bash tests/e2e_tests/reasoning/run.sh qwen2.5-1.5b-grpo-collocated-fsdp-vllm-rollout-logprobs
 
       - name: Clean up
         run: |
-          rm -rf .venv
+          rm -rf .venv .venv-vllm
           uv cache prune
 
   reason-qwen-ppo-test:
@@ -470,7 +476,10 @@ jobs:
           export UV_CACHE_DIR=/workspace/dataset/.uv_cache
           export UV_PYTHON_INSTALL_DIR=/workspace/dataset/.uv_python
           export MEGATRON_PATH=/workspace/dataset/Megatron-LM
-          bash requirements/install.sh agentic
+          # One venv per engine: sglang and vllm pin the same kernel libraries to
+          # different versions, so a shared venv breaks whichever is installed first.
+          bash requirements/install.sh agentic --engine sglang
+          bash requirements/install.sh agentic --venv .venv-vllm --engine vllm
 
       - name: FSDP SGLang Collocated mode
         timeout-minutes: 20
@@ -483,12 +492,12 @@ jobs:
         timeout-minutes: 20
         run: |
           export REPO_PATH=$(pwd)
-          source .venv/bin/activate
+          source .venv-vllm/bin/activate
           bash tests/e2e_tests/reasoning/run.sh qwen2.5-vl-3b-grpo-collocated-fsdp-vllm
 
       - name: Clean up
         run: |
-          rm -rf .venv
+          rm -rf .venv .venv-vllm
           uv cache prune
 
   qwen3-vl-grpo-test:

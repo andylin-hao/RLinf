@@ -11,6 +11,7 @@ PYTHON_VERSION="3.11.14"
 LEROBOT_COMMIT="0cf864870cf29f4738d3ade893e6fd13fbd7cdb5"
 TORCH_VERSION=""
 SGLANG_VERSION=""
+ENGINE=""
 TRANSFORMERS_VERSION=""
 XGRAMMAR_VERSION=""
 PLATFORM="nvidia"
@@ -83,6 +84,7 @@ GITHUB_PREFIX=""
 NO_ROOT=0
 NO_INSTALL_RLINF_CMD="--no-install-project"
 SUPPORTED_TARGETS=("embodied" "agentic" "docs")
+SUPPORTED_ENGINES=("sglang" "vllm")
 SUPPORTED_MODELS=("openvla" "openvla-oft" "openpi" "gr00t" "gr00t_n1d6" "gr00t_n1d7" "dexbotic" "starvla" "lingbotvla" "dreamzero" "qwen3_vl" "abot_m0")
 SUPPORTED_ENVS=("behavior" "maniskill_libero" "libero" "metaworld" "calvin" "isaaclab" "robocasa" "robocasa365" "franka" "franka-dexhand" "franka-franky" "frankasim" "robotwin" "habitat" "opensora" "wan" "genesis" "xsquare_turtle2" "liberopro" "liberoplus" "roboverse" "embodichain" "d4rl" "dosw1" "gim_arm" "dummy" "polaris")
 
@@ -110,11 +112,14 @@ Common options:
                            duration of the install; the original is restored on exit. On
                            --platform amd, defaults to the lowest torch version with a matching
                            +rocm<version> wheel on https://download.pytorch.org/whl/torch/.
+    --engine <name>        Rollout engine for target=agentic: ${SUPPORTED_ENGINES[*]}
+                           (default: sglang). One venv holds one engine -- they pin the
+                           same kernel libraries to different versions, so run install.sh
+                           twice with different --venv to get both.
     --sglang <version>     Override sglang version (e.g., 0.5.4). Must be one of the
                            versions in requirements/agentic/; torch is derived from it.
     --vllm <version>       Override vllm version (e.g., 0.23.0). Must be one of the
-                           versions in requirements/agentic/. Defaults to the version
-                           paired with the sglang line.
+                           versions in requirements/agentic/.
     --transformers <version> Override transformers version (e.g., 4.57.1). Patches
                            the == pinned version in agentic extras; restored on exit.
     --platform <name>      Hardware platform: nvidia (default, fully tested), amd (experimental,
@@ -187,6 +192,14 @@ parse_args() {
                     exit 1
                 fi
                 VLLM_VERSION="${2:-}"
+                shift 2
+                ;;
+            --engine)
+                if [[ ! " ${SUPPORTED_ENGINES[*]} " =~ " ${2:-} " ]]; then
+                    echo "--engine requires one of: ${SUPPORTED_ENGINES[*]}." >&2
+                    exit 1
+                fi
+                ENGINE="${2:-}"
                 shift 2
                 ;;
             --transformers)
@@ -722,34 +735,40 @@ restore_pyproject() {
 # rather than a pyproject extra, so the supported builds are exactly the files
 # that exist and no engine pin can break the project-wide lock. See
 # requirements/agentic/README.md.
+#
+# One venv holds one engine: sglang and vllm pin the same kernel libraries
+# (nvidia-cutlass-dsl, flashinfer, tilelang, tokenspeed-mla) to different
+# versions, and often a different torch, so installing both together means
+# whichever comes second silently downgrades the other's kernels. --engine picks
+# which one this venv gets; install twice with different --venv for both.
+AGENTIC_DEFAULT_ENGINE="sglang"
 AGENTIC_DEFAULT_SGLANG="0.5.12.post1"
+AGENTIC_DEFAULT_VLLM="0.23.0"
 
-# Each sglang line fixes the torch version the whole venv has to agree on, so it
-# also fixes which vllm can be installed next to it.
-agentic_stack_for_sglang() {
-    # Prints "<torch version or -> <vllm version>"; torch "-" means the version
-    # pyproject.toml already pins (2.11.0).
-    case "$1" in
-        0.4.6.post5) echo "2.6.0 0.8.5" ;;
-        0.5.2|0.5.4) echo "2.8.0 0.8.5" ;;
-        *)           echo "- 0.23.0" ;;
+effective_engine() {
+    printf '%s\n' "${ENGINE:-$AGENTIC_DEFAULT_ENGINE}"
+}
+
+effective_engine_version() {
+    case "$(effective_engine)" in
+        sglang) printf '%s\n' "${SGLANG_VERSION:-$AGENTIC_DEFAULT_SGLANG}" ;;
+        vllm)   printf '%s\n' "${VLLM_VERSION:-$AGENTIC_DEFAULT_VLLM}" ;;
     esac
 }
 
-effective_sglang_version() {
-    if [ -n "$SGLANG_VERSION" ]; then
-        printf '%s\n' "$SGLANG_VERSION"
-    else
-        printf '%s\n' "$AGENTIC_DEFAULT_SGLANG"
-    fi
+agentic_torch_for_engine() {
+    # torch version the selected engine build requires; "-" means the version
+    # pyproject.toml already pins (2.11.0).
+    case "$(effective_engine):$(effective_engine_version)" in
+        sglang:0.4.6.post5)        echo "2.6.0" ;;
+        sglang:0.5.2|sglang:0.5.4) echo "2.8.0" ;;
+        vllm:0.8.5)                echo "2.6.0" ;;
+        *)                         echo "-" ;;
+    esac
 }
 
-effective_vllm_version() {
-    if [ -n "$VLLM_VERSION" ]; then
-        printf '%s\n' "$VLLM_VERSION"
-    else
-        agentic_stack_for_sglang "$(effective_sglang_version)" | awk '{print $2}'
-    fi
+engine_needs_torch211() {
+    [ "$(agentic_torch_for_engine)" = "-" ]
 }
 
 agentic_cuda_line() {
@@ -805,13 +824,6 @@ install_engine_requirements() {
     fi
 }
 
-sglang_needs_torch211() {
-    local ver
-    ver=$(effective_sglang_version) || return 1
-    [ -n "$ver" ] || return 1
-    [ "$(printf '%s\n0.5.11\n' "$ver" | sort -V | head -n1)" = "0.5.11" ]
-}
-
 derive_torchcodec_spec() {
     local tmaj="$1" tmin="$2"
     [ "$tmaj" = "2" ] || { echo ""; return 0; }
@@ -841,13 +853,12 @@ apply_agentic_torch_default() {
     # --torch wins; on AMD, configure_amd derives torch from the ROCm version.
     [ -z "$TORCH_VERSION" ] || return 0
     [ "$PLATFORM" != "amd" ] || return 0
-    local sglang_ver torch_ver
-    sglang_ver=$(effective_sglang_version)
-    torch_ver=$(agentic_stack_for_sglang "$sglang_ver" | awk '{print $1}')
+    local torch_ver
+    torch_ver=$(agentic_torch_for_engine)
     # "-" means the version pyproject.toml already pins.
     [ "$torch_ver" != "-" ] || return 0
     TORCH_VERSION="$torch_ver"
-    echo "[install.sh] agentic: sglang ${sglang_ver} needs torch ${TORCH_VERSION}; pinning it (pass --torch to override)."
+    echo "[install.sh] agentic: $(effective_engine) $(effective_engine_version) needs torch ${TORCH_VERSION}; pinning it (pass --torch to override)."
 }
 
 apply_torch_override() {
@@ -2570,21 +2581,21 @@ EOF
 }
 
 install_agentic() {
-    local torch211_stack=0
-    if sglang_needs_torch211; then
+    local engine engine_ver torch211_stack=0
+    engine=$(effective_engine)
+    engine_ver=$(effective_engine_version)
+    if engine_needs_torch211; then
         torch211_stack=1
-        echo "[install.sh] sglang $(effective_sglang_version) (>=0.5.11): using the torch 2.11 stack (TE 2.17, mcore 0.17, megatron-bridge)."
+        echo "[install.sh] ${engine} ${engine_ver} runs on torch 2.11: using TE 2.17, mcore 0.17, megatron-bridge."
     fi
 
-    local sglang_req vllm_req
-    sglang_req=$(agentic_requirements_file sglang "$(effective_sglang_version)")
-    vllm_req=$(agentic_requirements_file vllm "$(effective_vllm_version)")
+    local engine_req
+    engine_req=$(agentic_requirements_file "$engine" "$engine_ver")
 
     uv sync --extra agentic --active $NO_INSTALL_RLINF_CMD
-    install_engine_requirements "$vllm_req"
-    install_engine_requirements "$sglang_req"
-    echo "[install.sh] Installed engines: $(basename "$vllm_req"), $(basename "$sglang_req")"
-    # The engines are resolved after the lock, so a pin of theirs can downgrade
+    install_engine_requirements "$engine_req"
+    echo "[install.sh] Installed engine: $(basename "$engine_req")"
+    # The engine is resolved after the lock, so a pin of its own can downgrade
     # part of a package family the lock had resolved together. Surface that here
     # instead of at import time.
     uv pip check || echo "[install.sh] WARNING: dependency conflicts reported above"
@@ -2635,8 +2646,10 @@ install_agentic() {
 
 install_docs() {
     uv sync --extra agentic --active $NO_INSTALL_RLINF_CMD
-    install_engine_requirements "$(agentic_requirements_file vllm "$(effective_vllm_version)")"
-    install_engine_requirements "$(agentic_requirements_file sglang "$(effective_sglang_version)")"
+    # autodoc has to import both engines but never launches a kernel, so this is
+    # the one place they share a venv despite disagreeing on the kernel pins.
+    install_engine_requirements "$(agentic_requirements_file vllm "$AGENTIC_DEFAULT_VLLM")"
+    install_engine_requirements "$(agentic_requirements_file sglang "$AGENTIC_DEFAULT_SGLANG")"
     uv sync --extra embodied --active --inexact $NO_INSTALL_RLINF_CMD
     uv pip install -r $SCRIPT_DIR/docs/requirements.txt
     uv pip uninstall pynvml || true
