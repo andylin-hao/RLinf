@@ -2597,7 +2597,10 @@ install_mbridge() {
 # FA4 backward is sm90+ only; on sm<9 drop it so TE falls back to FA2.
 uninstall_fa4_conditional() {
     local gpu_cc
-    gpu_cc=$(python -c "import torch;print(torch.cuda.get_device_capability(0)[0])" 2>/dev/null)
+    # `|| true` because there is no GPU in a docker build: torch raises, python
+    # exits non-zero, and under `set -e` the bare assignment would end the install
+    # before the empty-value branch below ever runs.
+    gpu_cc=$(python -c "import torch;print(torch.cuda.get_device_capability(0)[0])" 2>/dev/null || true)
     if [ -z "$gpu_cc" ]; then
         echo "[install.sh] WARNING: Could not detect GPU compute capability; keeping FA4."
         return 0
@@ -2614,7 +2617,7 @@ uninstall_fa4_conditional() {
 # stale system libnccl.
 setup_nccl_env() {
     local nvlib
-    nvlib="$(python -c 'import nvidia; print(nvidia.__path__[0])' 2>/dev/null)"
+    nvlib="$(python -c 'import nvidia; print(nvidia.__path__[0])' 2>/dev/null || true)"
     if [ -z "$nvlib" ]; then
         echo "[install.sh] WARNING: nvidia package not found in venv; skipping NCCL env setup."
         return 0
