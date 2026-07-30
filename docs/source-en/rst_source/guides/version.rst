@@ -29,9 +29,11 @@ vLLM          0.23.0          cu12,cu13  2.11.0
 vLLM          0.8.5           cu12       2.6.0
 ============  ==============  =========  =======
 
-The defaults are SGLang 0.5.12.post1 and vLLM 0.23.0, both on torch 2.11.  The
-CUDA line follows the torch wheel rather than the driver, so a torch version with
-no cu13 build stays on cu12 even on a CUDA 13 host.
+The default is the highest version listed above -- SGLang 0.5.12.post1 and vLLM
+0.23.0 today, both on torch 2.11 -- derived from the files themselves, so adding
+a newer one moves the default with it.  The CUDA line follows the torch wheel
+rather than the driver, so a torch version with no cu13 build stays on cu12 even
+on a CUDA 13 host.
 
 One venv per engine
 -------------------

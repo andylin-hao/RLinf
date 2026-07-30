@@ -742,17 +742,27 @@ restore_pyproject() {
 # whichever comes second silently downgrades the other's kernels. --engine picks
 # which one this venv gets; install twice with different --venv for both.
 AGENTIC_DEFAULT_ENGINE="sglang"
-AGENTIC_DEFAULT_SGLANG="0.5.12.post1"
-AGENTIC_DEFAULT_VLLM="0.23.0"
+
+agentic_latest_version() {
+    # $1 = engine. Highest version this repo has a requirements file for, which
+    # is the default. Adding <engine>_<version>_<line>.txt therefore moves the
+    # default forward on its own -- there is no second place to update.
+    ls "$SCRIPT_DIR/agentic/" 2>/dev/null \
+        | sed -nE "s/^$1_(.*)_(cu1[23])\.txt\$/\1/p" \
+        | sort -Vu \
+        | tail -n1
+}
 
 effective_engine() {
     printf '%s\n' "${ENGINE:-$AGENTIC_DEFAULT_ENGINE}"
 }
 
 effective_engine_version() {
-    case "$(effective_engine)" in
-        sglang) printf '%s\n' "${SGLANG_VERSION:-$AGENTIC_DEFAULT_SGLANG}" ;;
-        vllm)   printf '%s\n' "${VLLM_VERSION:-$AGENTIC_DEFAULT_VLLM}" ;;
+    local engine
+    engine=$(effective_engine)
+    case "$engine" in
+        sglang) printf '%s\n' "${SGLANG_VERSION:-$(agentic_latest_version sglang)}" ;;
+        vllm)   printf '%s\n' "${VLLM_VERSION:-$(agentic_latest_version vllm)}" ;;
     esac
 }
 
@@ -2665,8 +2675,8 @@ install_docs() {
     uv sync --extra agentic --active $NO_INSTALL_RLINF_CMD
     # autodoc has to import both engines but never launches a kernel, so this is
     # the one place they share a venv despite disagreeing on the kernel pins.
-    install_engine_requirements "$(agentic_requirements_file vllm "$AGENTIC_DEFAULT_VLLM")"
-    install_engine_requirements "$(agentic_requirements_file sglang "$AGENTIC_DEFAULT_SGLANG")"
+    install_engine_requirements "$(agentic_requirements_file vllm "$(agentic_latest_version vllm)")"
+    install_engine_requirements "$(agentic_requirements_file sglang "$(agentic_latest_version sglang)")"
     uv sync --extra embodied --active --inexact $NO_INSTALL_RLINF_CMD
     uv pip install -r $SCRIPT_DIR/docs/requirements.txt
     uv pip uninstall pynvml || true

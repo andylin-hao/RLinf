@@ -11,7 +11,10 @@ the set of files *is* the set of supported versions.
     <engine>_<version>_<cu12|cu13>.txt   one supported engine build
     <engine>_<version>_common.txt        deps shared by that version's CUDA lines
 
-The CUDA line is picked from the driver by `install.sh` (`agentic_cuda_line`).
+The CUDA line is picked from the driver by `install.sh` (`agentic_cuda_line`),
+and the default version is the highest one with a file here
+(`agentic_latest_version`) -- adding a newer file is all it takes to move the
+default, there is no second place to update.
 
 ## One venv per engine
 
