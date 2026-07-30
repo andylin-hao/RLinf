@@ -46,6 +46,15 @@ publishes cu12 builds of all of those:
 | `vllm` | <https://wheels.vllm.ai/0.23.0/cu129/> |
 | `nvidia-cutlass-dsl`, `flashinfer-python` | PyPI, via the `cu12` extra instead of `cu13` |
 
+On the cu12 line a few unsuffixed (i.e. CUDA 13) `nvidia-*` wheels still show up:
+`nvidia-cuda-nvcc`, `nvidia-nvvm`, `nvidia-cuda-crt`, `nvidia-cuda-tileiras` and
+the `nvidia-cuda-runtime` they pull. That is upstream's CuTe compiler toolchain,
+reached through `flashinfer-python` -> `cuda-tile[tileiras]`, which pins
+`nvidia-cuda-nvcc >= 13.2, < 13.3` on every CUDA line. It is a build-time
+toolchain, not a runtime library: no extension module in the venv links
+`libcudart.so.13`, and the sonames differ from the cu12 wheels' so nothing is
+overwritten. Don't try to "fix" it.
+
 The two index-hosted wheels are pinned by URL rather than through an extra
 index, so resolution cannot drift onto a nightly and does not depend on uv's
 index-strategy. Compare THUDM/slime's `build_conda.sh`, which reaches the same

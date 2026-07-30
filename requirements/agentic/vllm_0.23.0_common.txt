@@ -12,7 +12,9 @@ compressed-tensors==0.17.0
 depyf==0.20.0
 diskcache==5.6.3
 einops
-fastapi[standard]>=0.115.0
+# Upper bound taken from the installed wheel, not PyPI's JSON metadata: the two
+# disagree here, and `uv pip check` reports against the wheel.
+fastapi[standard]>=0.115.0,<0.137
 fastsafetensors>=0.3.2
 filelock>=3.16.1
 gguf>=0.17.0

@@ -15,12 +15,7 @@ cuda-python>=12.9,<13
 flash-attn-4>=4.0.0b9
 flashinfer-cubin==0.6.11.post1
 flashinfer-python[cu12]==0.6.11.post1
-# sglang declares 4.5.1, but in that release the generated MLIR dialect calls an
-# OpView constructor its own native bindings do not have, so every cute.compile
-# dies with "GPUModuleOp.__init__(): incompatible function arguments" -- which is
-# the path flashinfer's rmsnorm takes when there is no prebuilt cubin for the
-# GPU (e.g. sm80). 4.5.2 is the fix.
-nvidia-cutlass-dsl==4.5.2
+nvidia-cutlass-dsl==4.5.1
 quack-kernels>=0.4.1
 tilelang==0.1.8
 sglang-kernel @ https://github.com/sgl-project/whl/releases/download/v0.4.2.post2/sglang_kernel-0.4.2.post2%2Bcu129-cp310-abi3-manylinux2014_x86_64.whl ; platform_machine == "x86_64"
