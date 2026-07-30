@@ -74,11 +74,13 @@ Documentation = "https://rlinf.readthedocs.io/"
 
 [project.optional-dependencies]
 agentic-sglang = [
-    "sglang[all]==0.4.6.post5",
+    "sglang[all]==0.5.12.post1",
     "sglang-router",
     "torch-memory-saver",
     "numpy==2.2",
-    "transformers==4.51.1",
+    "transformers==5.6.0",
+    "flash-attn-4>=4.0.0b9",
+    "tokenizers==0.22.2",
     # uvloop is not compatible with simulators, put it here
     "uvloop==0.21.0",
     "hydra-core==1.4.0.dev1",
@@ -90,9 +92,10 @@ agentic-sglang = [
     "mcp",
 ]
 agentic-vllm = [
-    "vllm==0.8.5",
+    "vllm==0.23.0",
     "numpy==2.2",
-    "transformers==4.51.1",
+    "transformers==5.6.0",
+    "tokenizers==0.22.2",
     # uvloop is not compatible with simulators, put it here
     "uvloop==0.21.0",
     "hydra-core==1.4.0.dev1",
@@ -167,7 +170,6 @@ gim_arm = [
 ]
 
 [tool.uv]
-prerelease = "allow"
 # One row per simulator extra: the libero extras include `embodied` (and each
 # other), so they get separate rows rather than joining the first.
 conflicts = [
@@ -209,7 +211,7 @@ override-dependencies = [
     "torchvision==0.26.0",
     "torchaudio==2.11.0",
     "torchcodec>=0.11,<0.12",
-    "xgrammar==0.1.19",
+    "xgrammar==0.2.0",
     "uvloop==0.21.0",
     "tensorflow-addons==0.23.0 ; platform_machine == 'x86_64'",
     "setuptools>=69.5.1,<75.9",

@@ -49,9 +49,8 @@ PLATFORM_FLASH_ATTN_PREBUILT=0
 DISABLE_FLASH_ATTN=0
 # User-level opt-out for apex, set by --no-apex. Wins over the platform default.
 DISABLE_APEX=0
-# Platform-specific torchcodec specifier. When non-empty it wins over the
-# specifier derived from the torch version, for platforms where the derived
-# pin has no wheels (e.g. Ascend/aarch64). Set by configure_<platform>.
+# Platform torchcodec pin; when set it wins over the version-derived one (the
+# derived pin has no wheels on e.g. Ascend/aarch64). Set by configure_<platform>.
 PLATFORM_TORCHCODEC_SPEC=""
 # Whether apply_torch_override should rewrite the pyproject.toml `torchcodec`
 # pin from ==0.2 to >=0.5. The ==0.2 line in override-dependencies has wheels
@@ -455,7 +454,12 @@ configure_nvidia() {
     if [ -n "$_torch_ver" ] && [[ "$_tmaj" =~ ^[0-9]+$ ]] && [[ "$_tmin" =~ ^[0-9]+$ ]] \
         && { [ "$_tmaj" -gt 2 ] || { [ "$_tmaj" -eq 2 ] && [ "$_tmin" -ge 11 ]; }; }; then
         local _cpu_only=0
-        if ! _driver_num=$(detect_nvidia_driver_max_cuda); then
+        # An explicit UV_TORCH_BACKEND=cuXXX wins over driver detection, for
+        # hosts with CUDA forward-compatibility libraries installed.
+        if [ "$_uvtb_user_set" -eq 1 ] && [[ "$UV_TORCH_BACKEND" =~ ^cu[0-9]+$ ]]; then
+            _driver_num="${UV_TORCH_BACKEND#cu}"
+            echo "[install.sh] UV_TORCH_BACKEND=${UV_TORCH_BACKEND} was set explicitly; using it instead of the detected driver CUDA version."
+        elif ! _driver_num=$(detect_nvidia_driver_max_cuda); then
             local _cmm _cmaj _cmin
             if _cmm=$(detect_cuda_major_minor); then
                 read -r _cmaj _cmin <<< "$_cmm"
@@ -557,14 +561,11 @@ configure_ascend() {
     PLATFORM_FLASH_ATTN_INSTALL=0
     PLATFORM_FLASH_ATTN_PREBUILT=0
     PLATFORM_RELAX_TORCHCODEC=1
-    # The version-derived torchcodec pin (==0.2 for torch 2.6) has wheels only
-    # for x86_64, and Ascend hosts are typically aarch64.
+    # The derived pin (==0.2 for torch 2.6) is x86_64-only; Ascend is aarch64.
     PLATFORM_TORCHCODEC_SPEC="torchcodec>=0.5"
     PLATFORM_EXTRA_OVERRIDES=()
-    # torch-npu tracks torch releases one-for-one and each release needs a
-    # matching CANN toolkit on the host (torch-npu 2.11.0 requires CANN 8.5.0),
-    # so Ascend stays on the torch 2.6 stack instead of following the repo-wide
-    # pin. Bump this together with the CANN version on the Ascend hosts.
+    # torch-npu tracks torch 1:1 and needs a matching CANN (2.11.0 wants CANN
+    # 8.5.0), so Ascend stays on torch 2.6. Bump with the hosts' CANN.
     if [ -z "$TORCH_VERSION" ]; then
         TORCH_VERSION="2.6.0"
         echo "[install.sh] ascend: pinning torch ${TORCH_VERSION} to match torch-npu/CANN (pass --torch to override)."
@@ -581,6 +582,23 @@ configure_ascend() {
     # C compilations during this install so the constants are always visible.
     if [ -f /usr/include/linux/input-event-codes.h ]; then
         export CFLAGS="${CFLAGS:+$CFLAGS }-include /usr/include/linux/input-event-codes.h"
+    fi
+}
+
+# Envs that need a different torch than the project default (Isaac Sim /
+# OmniGibson need 2.5.1) declare it here, so configure_platform and
+# apply_torch_override re-point TORCH_VERSION, the wheel index and
+# UV_TORCH_BACKEND together instead of a mid-install `uv pip install torch==...`
+# that leaves a mixed torch tree. An explicit --torch always wins.
+apply_env_default_torch() {
+    [ -n "$TORCH_VERSION" ] && return 0
+    local env_torch=""
+    case "$ENV_NAME" in
+        behavior) env_torch="2.5.1" ;;
+    esac
+    if [ -n "$env_torch" ]; then
+        TORCH_VERSION="$env_torch"
+        echo "[install.sh] Environment '${ENV_NAME}' pins torch ${TORCH_VERSION}; overriding the project default."
     fi
 }
 
@@ -711,9 +729,8 @@ apply_sglang_override() {
         echo "[install.sh] Patched pyproject.toml optional-dependencies: sglang[all]==${SGLANG_VERSION}"
     fi
 
-    # The agentic extras pin transformers for the sglang 0.4.x line. sglang
-    # >= 0.5.11 pins an exact transformers 5.x instead, so derive it when the
-    # user did not pass --transformers (older sglang keeps the existing pin).
+    # sglang >= 0.5.11 needs an exact transformers 5.x; derive it unless the
+    # user passed --transformers.
     if [ -n "$SGLANG_VERSION" ] && [ -z "$TRANSFORMERS_VERSION" ]; then
         case "${SGLANG_VERSION}" in
             0.5.11|0.5.12) TRANSFORMERS_VERSION="5.6.0" ;;
@@ -739,7 +756,7 @@ apply_sglang_override() {
             0.5.4|0.5.5) XGRAMMAR_VERSION="0.1.25" ;;
             0.5.6|0.5.7|0.5.8|0.5.9) XGRAMMAR_VERSION="0.1.27" ;;
             0.5.10|0.5.11) XGRAMMAR_VERSION="0.1.32" ;;
-            0.5.12) XGRAMMAR_VERSION="0.2.0" ;;
+            0.5.12|0.5.12.post*) XGRAMMAR_VERSION="0.2.0" ;;
             *)
                 echo "[install.sh] ERROR: Unsupported sglang version '${SGLANG_VERSION}' for xgrammar auto-derivation (supported: 0.4.6 – 0.5.12). Set XGRAMMAR_VERSION explicitly."
                 exit 1
@@ -793,7 +810,9 @@ derive_torchcodec_spec() {
     esac
 }
 
-AGENTIC_DEFAULT_TORCH="2.6.0"
+# Only fires when --sglang requests the legacy 0.4.x line; the default agentic
+# stack follows the repo-wide torch 2.11 pin.
+AGENTIC_LEGACY_TORCH="2.6.0"
 
 apply_agentic_torch_default() {
     [ "$TARGET" = "agentic" ] || return 0
@@ -804,8 +823,8 @@ apply_agentic_torch_default() {
     if sglang_needs_torch211; then
         return 0
     fi
-    TORCH_VERSION="$AGENTIC_DEFAULT_TORCH"
-    echo "[install.sh] agentic: sglang $(effective_sglang_version) targets the torch ${AGENTIC_DEFAULT_TORCH} stack; pinning torch ${TORCH_VERSION} (pass --torch to override, or --sglang >= 0.5.11 for the torch 2.11 stack)."
+    TORCH_VERSION="$AGENTIC_LEGACY_TORCH"
+    echo "[install.sh] agentic: sglang $(effective_sglang_version) predates 0.5.11; pinning torch ${TORCH_VERSION} (pass --torch to override)."
 }
 
 apply_torch_override() {
@@ -1587,6 +1606,12 @@ EOF
         "$VENV_DIR/lib/python${py_major_minor}/site-packages/transformers/"
     
     bash $SCRIPT_DIR/embodied/download_assets.sh --assets openpi
+    # rlinf-openpi pulls rlinf-transformer-openpi (a transformers 4.53 fork) into
+    # the same package dir as the stock transformers, so two distributions claim
+    # `transformers` with conflicting tokenizers bounds. The fork's files win at
+    # runtime, so re-assert its bound; otherwise a later resolve drifts tokenizers
+    # past 0.22 and transformers refuses to import.
+    uv pip install "tokenizers>=0.21,<0.22"
     uv pip uninstall pynvml || true
 }
 
@@ -1942,9 +1967,27 @@ install_dummy_env() {
     uv sync --extra embodied --active $NO_INSTALL_RLINF_CMD
 }
 
+# LIBERO and its forks cache absolute paths in ~/.libero, ~/.liberopro and
+# ~/.liberoplus on first import and never refresh them, so a config left by an
+# earlier install points at assets this venv does not have.
+reset_libero_config() {
+    python - <<'EOF'
+import importlib
+
+for package in ("libero.libero", "liberopro.liberopro", "liberoplus.liberoplus"):
+    try:
+        module = importlib.import_module(package)
+    except ImportError:
+        continue
+    module.set_libero_default_path()
+    print(f"[install.sh] Reset {package} config paths to the installed package")
+EOF
+}
+
 install_libero_env() {
     uv sync --extra libero --inexact --active $NO_INSTALL_RLINF_CMD
     libero-download-assets --skip-existing
+    reset_libero_config
 }
 
 install_maniskill_libero_env() {
@@ -2021,6 +2064,7 @@ install_liberopro_env() {
     uv sync --extra liberopro --inexact --active $NO_INSTALL_RLINF_CMD
     libero-download-assets --skip-existing
     liberopro-download-assets --skip-existing
+    reset_libero_config
 }
 
 install_liberoplus_env() {
@@ -2029,6 +2073,7 @@ install_liberoplus_env() {
     libero-download-assets --skip-existing
     LIBERO_PLUS_ASSETS_REPO="${LIBERO_PLUS_ASSETS_REPO:-RLinf/LIBERO-plus-assets}" \
         liberoplus-download-assets --skip-existing
+    reset_libero_config
 }
 
 install_behavior_env() {
@@ -2047,6 +2092,9 @@ install_behavior_env() {
     uv pip install ml_dtypes==0.5.3 protobuf==3.20.3
     uv pip install click==8.2.1
     uv pip install llvmlite==0.47.0 numba==0.65.1
+    # Re-assert the pin after OmniGibson's setup, which otherwise leaves a torch
+    # tree mixing two versions (inductor then fails in _pad_mm_init).
+    uv pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1
 }
 
 install_metaworld_env() {
@@ -2437,17 +2485,14 @@ EOF
 }
 
 install_mbridge() {
-    # megatron-bridge 0.4.2 declares requires-python >= 3.12 (it uses
-    # typing.override), so RLinf publishes a py3.10/3.11 fork on PyPI as
-    # rlinf-megatron-bridge. --no-deps keeps it from re-resolving torch and
-    # pulling nemo-toolkit; its runtime deps come in via sglang/TE.
+    # megatron-bridge 0.4.2 requires python >= 3.12, so RLinf publishes a
+    # py3.10/3.11 fork. --no-deps avoids re-resolving torch and nemo-toolkit.
     echo "[install.sh] Installing rlinf-megatron-bridge 0.4.2 (PyPI wheel)..."
     uv pip install --no-deps --extra-index-url https://pypi.org/simple "rlinf-megatron-bridge==0.4.2"
     echo "[install.sh] rlinf-megatron-bridge 0.4.2 installed (import: megatron.bridge)."
 }
 
-# flash-attn-4 backward kernels are sm90+ only. On sm<9 (e.g. A100) drop FA4 so
-# TE falls back to FA2, which supports forward and backward on sm80.
+# FA4 backward is sm90+ only; on sm<9 drop it so TE falls back to FA2.
 uninstall_fa4_conditional() {
     local gpu_cc
     gpu_cc=$(python -c "import torch;print(torch.cuda.get_device_capability(0)[0])" 2>/dev/null)
@@ -2464,26 +2509,23 @@ uninstall_fa4_conditional() {
 }
 
 # TE 2.17's .so files carry no RPATH, so the venv's NVIDIA libs must precede a
-# stale system libnccl. The path is resolved via `import nvidia`, keeping the
-# script Python-version agnostic.
-generate_nccl_env_script() {
-    local env_script="$(dirname "$VENV_DIR")/$(basename "$VENV_DIR")_env.sh"
+# stale system libnccl.
+setup_nccl_env() {
     local nvlib
     nvlib="$(python -c 'import nvidia; print(nvidia.__path__[0])' 2>/dev/null)"
     if [ -z "$nvlib" ]; then
-        echo "[install.sh] WARNING: nvidia package not found in venv; skipping NCCL env script."
+        echo "[install.sh] WARNING: nvidia package not found in venv; skipping NCCL env setup."
         return 0
     fi
-    cat > "$env_script" <<EOF
-# NCCL fix for TE 2.17 + torch CUDA wheels (generated by install.sh).
-# The venv's NVIDIA libs must take precedence over stale system libnccl.
-NVLIB=$nvlib
-export LD_LIBRARY_PATH="\$(ls -d \$NVLIB/*/lib 2>/dev/null | tr '\n' ':')\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}"
-EOF
-    if ! grep -q "^source $(realpath "$env_script")\$" "$VENV_DIR/bin/activate" 2>/dev/null; then
-        echo "source $(realpath "$env_script")" >> "$VENV_DIR/bin/activate"
+    if grep -q "^# RLinf NCCL fix$" "$VENV_DIR/bin/activate" 2>/dev/null; then
+        return 0
     fi
-    echo "[install.sh] NCCL env script generated: $env_script (sourced in activate)."
+    cat >> "$VENV_DIR/bin/activate" <<EOF
+
+# RLinf NCCL fix
+export LD_LIBRARY_PATH="\$(ls -d ${nvlib}/*/lib 2>/dev/null | tr '\n' ':')\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}"
+EOF
+    echo "[install.sh] NCCL LD_LIBRARY_PATH export added to $VENV_DIR/bin/activate."
 }
 
 install_agentic() {
@@ -2493,17 +2535,21 @@ install_agentic() {
         echo "[install.sh] sglang $(effective_sglang_version) (>=0.5.11): using the torch 2.11 stack (TE 2.17, mcore 0.17, megatron-bridge)."
     fi
 
-    local sglang_prerelease=""
-    [ "$torch211_stack" -eq 1 ] && sglang_prerelease="--prerelease=allow"
-
+    # No --prerelease=allow needed: flash-attn-4 is declared first-party in the
+    # agentic-sglang extra, which uv permits by default.
     uv sync --extra agentic-vllm --active $NO_INSTALL_RLINF_CMD
-    uv sync --extra agentic-sglang --inexact --active $sglang_prerelease $NO_INSTALL_RLINF_CMD
+    uv sync --extra agentic-sglang --inexact --active $NO_INSTALL_RLINF_CMD
     if [ "$NO_ROOT" -eq 0 ]; then
         bash $SCRIPT_DIR/sys_deps.sh "$PLATFORM"
     fi
 
     if [ "$torch211_stack" -eq 1 ]; then
         uv pip install "kernels>=0.12,<0.13"
+        # sglang pins transformers==5.6.0, whose flash-attention path calls
+        # s_aux.to() unconditionally and so crashes on models without an
+        # attention sink; 5.6.1 guards it. Installed after the sync because the
+        # exact pin makes 5.6.1 unresolvable.
+        uv pip install "transformers==5.6.1"
     fi
 
     # Megatron-LM
@@ -2532,7 +2578,7 @@ install_agentic() {
     if [ "$torch211_stack" -eq 1 ]; then
         install_mbridge
         uninstall_fa4_conditional
-        generate_nccl_env_script
+        setup_nccl_env
     fi
 
     install_apex
@@ -2553,6 +2599,7 @@ install_docs() {
 main() {
     parse_args "$@"
     validate_python_version
+    apply_env_default_torch
     apply_agentic_torch_default
     configure_platform
     setup_mirror

@@ -12,9 +12,9 @@ jobs:
 
       - name: Create environment and install dependencies
         run: |
-          uv venv
+          unset UV_DEFAULT_INDEX
+          bash requirements/install.sh --no-flash-attn embodied --env dummy
           source .venv/bin/activate
-          UV_TORCH_BACKEND=auto uv sync
           uv pip install "transformers<=5.9.0"
 
       - name: Run pytest
