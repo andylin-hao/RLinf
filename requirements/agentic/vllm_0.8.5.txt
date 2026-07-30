@@ -1,7 +1,11 @@
 # vllm for the torch 2.6 agentic stack; paired with rlinf/hybrid_engines/vllm/vllm_0_8_5.
 vllm==0.8.5
 transformers==4.51.1
-# vllm caps opentelemetry at < 1.27, but ray[default] pulls an unpinned
-# opentelemetry-exporter-prometheus, which resolves to a 1.4x-generation build and
-# then fails to import against the downgraded api/sdk. Keep the family together.
+# vllm caps opentelemetry below 1.27, so the whole telemetry stack has to stay on
+# that generation: ray >= 2.48 requires opentelemetry-sdk >= 1.30 and its metrics
+# code calls create_histogram(explicit_bucket_boundaries_advisory=...), which 1.26
+# does not accept, and an unpinned exporter-prometheus resolves to a 1.4x build
+# that cannot import against 1.26. The project lock used to backtrack ray for the
+# same reason; keep it doing so here.
+ray[default]<2.48
 opentelemetry-exporter-prometheus==0.47b0
