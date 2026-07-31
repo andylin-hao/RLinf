@@ -31,6 +31,10 @@ jobs:
       - name: Clean up
         run: |
           rm -rf .venv
+          # e2e checkpoints are large and the experiment names repeat, so they
+          # accumulate across runs until the runner's disk fills.
+          find /workspace/results -maxdepth 3 -type d \( -name checkpoints -o -name converted_ckpts \) \
+               -prune -exec rm -rf {} + 2>/dev/null || true
           uv cache prune
 
   sft-maniskill-openpi-test:
@@ -68,6 +72,10 @@ jobs:
       - name: Clean up
         run: |
           rm -rf .venv
+          # e2e checkpoints are large and the experiment names repeat, so they
+          # accumulate across runs until the runner's disk fills.
+          find /workspace/results -maxdepth 3 -type d \( -name checkpoints -o -name converted_ckpts \) \
+               -prune -exec rm -rf {} + 2>/dev/null || true
           uv cache prune
 
   sft-openpi-pytorch-behavior-test:
@@ -100,6 +108,10 @@ jobs:
       - name: Clean up
         run: |
           rm -rf .venv
+          # e2e checkpoints are large and the experiment names repeat, so they
+          # accumulate across runs until the runner's disk fills.
+          find /workspace/results -maxdepth 3 -type d \( -name checkpoints -o -name converted_ckpts \) \
+               -prune -exec rm -rf {} + 2>/dev/null || true
           uv cache prune
           rm -rf /tmp/tmp*
 
@@ -156,6 +168,10 @@ jobs:
       - name: Clean up
         run: |
           rm -rf .venv
+          # e2e checkpoints are large and the experiment names repeat, so they
+          # accumulate across runs until the runner's disk fills.
+          find /workspace/results -maxdepth 3 -type d \( -name checkpoints -o -name converted_ckpts \) \
+               -prune -exec rm -rf {} + 2>/dev/null || true
           uv cache prune
 
   sft-maniskill-reward-model-test:
@@ -193,4 +209,8 @@ jobs:
       - name: Clean up
         run: |
           rm -rf .venv
+          # e2e checkpoints are large and the experiment names repeat, so they
+          # accumulate across runs until the runner's disk fills.
+          find /workspace/results -maxdepth 3 -type d \( -name checkpoints -o -name converted_ckpts \) \
+               -prune -exec rm -rf {} + 2>/dev/null || true
           uv cache prune

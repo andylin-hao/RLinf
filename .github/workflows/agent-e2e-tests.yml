@@ -82,6 +82,10 @@ jobs:
       - name: Clean up
         run: |
           rm -rf .venv .venv-vllm
+          # e2e checkpoints are large and the experiment names repeat, so they
+          # accumulate across runs until the runner's disk fills.
+          find /workspace/results -maxdepth 3 -type d \( -name checkpoints -o -name converted_ckpts \) \
+               -prune -exec rm -rf {} + 2>/dev/null || true
           uv cache prune
 
 
@@ -119,6 +123,10 @@ jobs:
       - name: Clean up
         run: |
           rm -rf .venv
+          # e2e checkpoints are large and the experiment names repeat, so they
+          # accumulate across runs until the runner's disk fills.
+          find /workspace/results -maxdepth 3 -type d \( -name checkpoints -o -name converted_ckpts \) \
+               -prune -exec rm -rf {} + 2>/dev/null || true
           uv cache prune
 
 
@@ -186,6 +194,10 @@ jobs:
       - name: Clean up
         run: |
           rm -rf .venv .venv-vllm
+          # e2e checkpoints are large and the experiment names repeat, so they
+          # accumulate across runs until the runner's disk fills.
+          find /workspace/results -maxdepth 3 -type d \( -name checkpoints -o -name converted_ckpts \) \
+               -prune -exec rm -rf {} + 2>/dev/null || true
           uv cache prune
 
   reason-qwen-ppo-test:
@@ -214,6 +226,10 @@ jobs:
       - name: Clean up
         run: |
           rm -rf .venv
+          # e2e checkpoints are large and the experiment names repeat, so they
+          # accumulate across runs until the runner's disk fills.
+          find /workspace/results -maxdepth 3 -type d \( -name checkpoints -o -name converted_ckpts \) \
+               -prune -exec rm -rf {} + 2>/dev/null || true
           uv cache prune
 
   reason-qwen-importance-sampling-test:
@@ -242,6 +258,10 @@ jobs:
       - name: Clean up
         run: |
           rm -rf .venv
+          # e2e checkpoints are large and the experiment names repeat, so they
+          # accumulate across runs until the runner's disk fills.
+          find /workspace/results -maxdepth 3 -type d \( -name checkpoints -o -name converted_ckpts \) \
+               -prune -exec rm -rf {} + 2>/dev/null || true
           uv cache prune
 
   reason-qwen-reinforcepp-test:
@@ -270,6 +290,10 @@ jobs:
       - name: Clean up
         run: |
           rm -rf .venv
+          # e2e checkpoints are large and the experiment names repeat, so they
+          # accumulate across runs until the runner's disk fills.
+          find /workspace/results -maxdepth 3 -type d \( -name checkpoints -o -name converted_ckpts \) \
+               -prune -exec rm -rf {} + 2>/dev/null || true
           uv cache prune
 
   coding-online-rl-qwen-ppo-test:
@@ -303,6 +327,10 @@ jobs:
       - name: Clean up
         run: |
           rm -rf .venv
+          # e2e checkpoints are large and the experiment names repeat, so they
+          # accumulate across runs until the runner's disk fills.
+          find /workspace/results -maxdepth 3 -type d \( -name checkpoints -o -name converted_ckpts \) \
+               -prune -exec rm -rf {} + 2>/dev/null || true
           uv cache prune
 
   rstar2-qwen-grpo-test:
@@ -386,6 +414,10 @@ jobs:
       - name: Clean up
         run: |
           rm -rf .venv
+          # e2e checkpoints are large and the experiment names repeat, so they
+          # accumulate across runs until the runner's disk fills.
+          find /workspace/results -maxdepth 3 -type d \( -name checkpoints -o -name converted_ckpts \) \
+               -prune -exec rm -rf {} + 2>/dev/null || true
           uv cache prune
           tmux kill-session -t server 2>/dev/null || true
           tmux kill-session -t worker 2>/dev/null || true
@@ -425,6 +457,10 @@ jobs:
       - name: Clean up
         run: |
           rm -rf .venv
+          # e2e checkpoints are large and the experiment names repeat, so they
+          # accumulate across runs until the runner's disk fills.
+          find /workspace/results -maxdepth 3 -type d \( -name checkpoints -o -name converted_ckpts \) \
+               -prune -exec rm -rf {} + 2>/dev/null || true
           uv cache prune
 
   wideseek-r1-qwen-grpo-test:
@@ -460,6 +496,10 @@ jobs:
       - name: Clean up
         run: |
           rm -rf .venv
+          # e2e checkpoints are large and the experiment names repeat, so they
+          # accumulate across runs until the runner's disk fills.
+          find /workspace/results -maxdepth 3 -type d \( -name checkpoints -o -name converted_ckpts \) \
+               -prune -exec rm -rf {} + 2>/dev/null || true
           uv cache prune
 
   qwen-vl-grpo-test:
@@ -498,6 +538,10 @@ jobs:
       - name: Clean up
         run: |
           rm -rf .venv .venv-vllm
+          # e2e checkpoints are large and the experiment names repeat, so they
+          # accumulate across runs until the runner's disk fills.
+          find /workspace/results -maxdepth 3 -type d \( -name checkpoints -o -name converted_ckpts \) \
+               -prune -exec rm -rf {} + 2>/dev/null || true
           uv cache prune
 
   qwen3-vl-grpo-test:
@@ -527,6 +571,10 @@ jobs:
       - name: Clean up
         run: |
           rm -rf .venv
+          # e2e checkpoints are large and the experiment names repeat, so they
+          # accumulate across runs until the runner's disk fills.
+          find /workspace/results -maxdepth 3 -type d \( -name checkpoints -o -name converted_ckpts \) \
+               -prune -exec rm -rf {} + 2>/dev/null || true
           uv cache prune
 
   qwen-moe-grpo-test:
@@ -626,6 +674,10 @@ jobs:
       - name: Clean up
         run: |
           rm -rf .venv
+          # e2e checkpoints are large and the experiment names repeat, so they
+          # accumulate across runs until the runner's disk fills.
+          find /workspace/results -maxdepth 3 -type d \( -name checkpoints -o -name converted_ckpts \) \
+               -prune -exec rm -rf {} + 2>/dev/null || true
           uv cache prune
 
   fusco-moe-qwen-grpo-test:
@@ -678,6 +730,10 @@ jobs:
         run: |
           rm -rf .venv
           rm -rf FUSCO
+          # e2e checkpoints are large and the experiment names repeat, so they
+          # accumulate across runs until the runner's disk fills.
+          find /workspace/results -maxdepth 3 -type d \( -name checkpoints -o -name converted_ckpts \) \
+               -prune -exec rm -rf {} + 2>/dev/null || true
           uv cache prune
 
   megatron-bridge-qwen-grpo-test:
@@ -715,4 +771,8 @@ jobs:
       - name: Clean up
         run: |
           rm -rf .venv
+          # e2e checkpoints are large and the experiment names repeat, so they
+          # accumulate across runs until the runner's disk fills.
+          find /workspace/results -maxdepth 3 -type d \( -name checkpoints -o -name converted_ckpts \) \
+               -prune -exec rm -rf {} + 2>/dev/null || true
           uv cache prune
