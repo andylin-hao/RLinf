@@ -731,22 +731,9 @@ restore_pyproject() {
     fi
 }
 
-# sglang/vllm are installed from requirements/agentic/<engine>_<version>_<line>.txt
-# rather than a pyproject extra, so the supported builds are exactly the files
-# that exist and no engine pin can break the project-wide lock. See
-# requirements/agentic/README.md.
-#
-# One venv holds one engine: sglang and vllm pin the same kernel libraries
-# (nvidia-cutlass-dsl, flashinfer, tilelang, tokenspeed-mla) to different
-# versions, and often a different torch, so installing both together means
-# whichever comes second silently downgrades the other's kernels. --engine picks
-# which one this venv gets; install twice with different --venv for both.
 AGENTIC_DEFAULT_ENGINE="sglang"
 
 agentic_latest_version() {
-    # $1 = engine. Highest version this repo has a requirements file for, which
-    # is the default. Adding <engine>_<version>_<line>.txt therefore moves the
-    # default forward on its own -- there is no second place to update.
     ls "$SCRIPT_DIR/agentic/" 2>/dev/null \
         | sed -nE "s/^$1_(.*)_(cu1[23])\.txt\$/\1/p" \
         | sort -Vu \
@@ -767,8 +754,6 @@ effective_engine_version() {
 }
 
 agentic_torch_for_engine() {
-    # torch version the selected engine build requires; "-" means the version
-    # pyproject.toml already pins (2.11.0).
     case "$(effective_engine):$(effective_engine_version)" in
         sglang:0.4.6.post5)        echo "2.6.0" ;;
         sglang:0.5.2|sglang:0.5.4) echo "2.8.0" ;;
@@ -782,10 +767,6 @@ engine_needs_torch211() {
 }
 
 agentic_cuda_line() {
-    # The engines ship separate builds for CUDA 12 and CUDA 13. configure_nvidia
-    # has already resolved the torch wheel's CUDA tag against the driver, so the
-    # line follows torch: a torch version with no cu13 build (2.8 and below)
-    # stays on cu12 even on a CUDA 13 host.
     case "${PLATFORM_CUDA_TAG:-}" in
         cu13*) echo "cu13" ;;
         *)     echo "cu12" ;;
@@ -806,27 +787,14 @@ agentic_requirements_file() {
 }
 
 install_engine_requirements() {
-    # Installs one requirements/agentic/<engine>_<version>_<line>.txt. A file
-    # whose dependency lines cannot coexist with the engine's own metadata
-    # carries `# engine: <spec>` headers; those specs are installed --no-deps
-    # after the rest, which is how a CUDA 12 build of a CUDA-13-only engine
-    # release is reachable at all.
     local req="$1" engine_specs engine_req
     engine_specs=$(sed -n 's/^# engine: //p' "$req")
-    # The `uv pip` interface ignores [tool.uv.sources] but still applies
-    # [tool.uv] override-dependencies, so a torch pin carrying a local version
-    # (torchvision==0.26.0+cu130) is unresolvable unless the platform torch index
-    # is passed explicitly. unsafe-best-match is needed with it: under the
-    # default first-index strategy uv would stop at PyPI, which has the package
-    # but not the +cuXXX build.
     local index_args=()
     if [ -n "${PLATFORM_TORCH_INDEX:-}" ]; then
         index_args=(--extra-index-url "$PLATFORM_TORCH_INDEX" --index-strategy unsafe-best-match)
     fi
     env -u UV_TORCH_BACKEND uv pip install "${index_args[@]}" -r "$req"
     if [ -n "$engine_specs" ]; then
-        # Through a requirements file, not the command line, so that the
-        # per-architecture markers select a single wheel.
         engine_req=$(mktemp)
         printf '%s\n' "$engine_specs" > "$engine_req"
         env -u UV_TORCH_BACKEND uv pip install "${index_args[@]}" --no-deps -r "$engine_req"
@@ -865,7 +833,6 @@ apply_agentic_torch_default() {
     [ "$PLATFORM" != "amd" ] || return 0
     local torch_ver
     torch_ver=$(agentic_torch_for_engine)
-    # "-" means the version pyproject.toml already pins.
     [ "$torch_ver" != "-" ] || return 0
     TORCH_VERSION="$torch_ver"
     echo "[install.sh] agentic: $(effective_engine) $(effective_engine_version) needs torch ${TORCH_VERSION}; pinning it (pass --torch to override)."
@@ -1304,12 +1271,6 @@ clone_or_reuse_repo() {
             git clone "$@" "$git_url" "$target_dir" >&2
         else
             echo "Reusing existing checkout at $env_var_name=$target_dir." >&2
-            # A shared checkout is reused as-is -- switching branches under it
-            # would affect every other venv pointing at the same path. Say so
-            # when it is not what was asked for, because otherwise a stack that
-            # needs a specific branch silently gets whatever is already there
-            # (e.g. MEGATRON_PATH on a core_r0.13.0 clone while the torch 2.11
-            # stack asks for core_r0.17.0).
             local want_ref="" prev="" arg current_ref
             for arg in "$@"; do
                 [ "$prev" = "-b" ] && want_ref="$arg"
@@ -1754,8 +1715,6 @@ install_gr00t_n1d6_model() {
     install_common_embodied_deps
 
     local gr00t_path
-    # RLinf fork: carries the Eagle backbone fix for the attn implementation its
-    # own assertion requires. Upstream n1.5/n1.7 are unaffected and stay on NVIDIA.
     gr00t_path=$(clone_or_reuse_repo GR00T_PATH "$VENV_DIR/gr00t" "https://github.com/RLinf/Isaac-GR00T.git" -b n1.6.1-release)
     uv pip install -e "$gr00t_path" --no-deps
     uv pip install -r "$SCRIPT_DIR/embodied/models/gr00t_n1d6.txt"
@@ -2522,31 +2481,14 @@ install_opensora_world_model() {
 }
 
 install_tensornvme() {
-    # TensorNVMe builds a torch C++ extension, but uv keys its built-wheel cache
-    # on the source -- the git commit -- not on the torch in the environment. The
-    # commit is fixed, so uv serves whatever it built when the cache was first
-    # filled: after the move to torch 2.11 that is a wheel linked against the old
-    # c10 ABI, and `import tensornvme._C` dies on
-    # `undefined symbol: _ZN3c104cuda29c10_cuda_check_implementationEiPKcS2_ib`.
     local url="git+${GITHUB_PREFIX}https://github.com/fangqi-Zhu/TensorNVMe.git"
     uv pip install "$url" --no-build-isolation
 
-    # Rebuild only when the cached wheel does not match this torch. Evicting the
-    # entry rather than passing --no-cache means the rebuild is itself cached, so
-    # this costs one build after a torch change instead of a re-clone and rebuild
-    # on every install. (--refresh / --refresh-package do not help: they
-    # invalidate registry metadata and leave the built wheel in place.)
-    # The extension loads shared objects the build drops in ~/.tensornvme/lib,
-    # which is why that path is appended to the venv activate below; the probe
-    # has to see it too or it would report a false mismatch.
     local tnvme_env=(env "LD_LIBRARY_PATH=$HOME/.tensornvme/lib:${LD_LIBRARY_PATH:-}")
     if ! "${tnvme_env[@]}" python -c "import tensornvme._C" >/dev/null 2>&1; then
         echo "[install.sh] tensornvme does not load against this torch; rebuilding."
         uv cache clean tensornvme || true
         uv pip install "$url" --no-build-isolation --reinstall-package tensornvme
-        # A warning, not a failure: the import also needs a working CUDA stack, so
-        # it cannot succeed in a GPU-less docker build, and that must not stop the
-        # image from being built.
         "${tnvme_env[@]}" python -c "import tensornvme._C" >/dev/null 2>&1 \
             || echo "[install.sh] WARNING: tensornvme still does not import; expected without a GPU, otherwise check the torch ABI."
     fi
@@ -2598,15 +2540,6 @@ EOF
         return 0
     fi
 
-    # On a CUDA 12 torch the `pytorch` extra cannot be used: transformer-engine-torch
-    # requires transformer_engine_cu13 outright, and the two cores unpack into the
-    # same transformer_engine/ tree, so the cu13 core's shared object lands on top
-    # of the cu12 one and every import dies on
-    # `libcublas.so.13: cannot open shared object file`. Install the cu12 core, then
-    # the torch extension with --no-deps so cu13 is never pulled, naming its other
-    # requirements explicitly. --no-binary because the published extension wheel is
-    # itself linked against CUDA 13; NVTE_PYTORCH_FORCE_BUILD only steers TE's
-    # setup.py and does not stop uv preferring that wheel.
     echo "[install.sh] Installing TE 2.17.0 (${te_extra}, source build with nvcc)..."
     uv pip install --no-build-isolation "transformer-engine[${te_extra}]==2.17.0"
     uv pip install einops onnx onnxscript packaging pydantic nvdlfw-inspect
@@ -2630,9 +2563,6 @@ install_mbridge() {
 # FA4 backward is sm90+ only; on sm<9 drop it so TE falls back to FA2.
 uninstall_fa4_conditional() {
     local gpu_cc
-    # `|| true` because there is no GPU in a docker build: torch raises, python
-    # exits non-zero, and under `set -e` the bare assignment would end the install
-    # before the empty-value branch below ever runs.
     gpu_cc=$(python -c "import torch;print(torch.cuda.get_device_capability(0)[0])" 2>/dev/null || true)
     if [ -z "$gpu_cc" ]; then
         echo "[install.sh] WARNING: Could not detect GPU compute capability; keeping FA4."
@@ -2681,9 +2611,6 @@ install_agentic() {
     uv sync --extra agentic --active $NO_INSTALL_RLINF_CMD
     install_engine_requirements "$engine_req"
     echo "[install.sh] Installed engine: $(basename "$engine_req")"
-    # The engine is resolved after the lock, so a pin of its own can downgrade
-    # part of a package family the lock had resolved together. Surface that here
-    # instead of at import time.
     uv pip check || echo "[install.sh] WARNING: dependency conflicts reported above"
     if [ "$NO_ROOT" -eq 0 ]; then
         bash $SCRIPT_DIR/sys_deps.sh "$PLATFORM"
@@ -2732,8 +2659,6 @@ install_agentic() {
 
 install_docs() {
     uv sync --extra agentic --active $NO_INSTALL_RLINF_CMD
-    # autodoc has to import both engines but never launches a kernel, so this is
-    # the one place they share a venv despite disagreeing on the kernel pins.
     install_engine_requirements "$(agentic_requirements_file vllm "$(agentic_latest_version vllm)")"
     install_engine_requirements "$(agentic_requirements_file sglang "$(agentic_latest_version sglang)")"
     uv sync --extra embodied --active --inexact $NO_INSTALL_RLINF_CMD
