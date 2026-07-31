@@ -71,7 +71,6 @@ reason Docker 镜像同时提供两者：``reason``（SGLang，默认激活）�
    请不要用 ``pip install sglang`` / ``pip install vllm`` 装进已有环境。两者都会
    固定整个 torch 系列，而它们的 CUDA 13 版本会固定 CUDA 13 运行时 wheel，
    并就地覆盖对应的 CUDA 12 版本 —— 这些 requirements 文件正是为了避免这种情况。
-   详见 ``requirements/agentic/README.md``。
 
 ----------------------------
 

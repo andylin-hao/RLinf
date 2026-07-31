@@ -79,7 +79,6 @@ rather than resolving into a broken environment.
    environment.  Both pin the whole torch family, and their CUDA 13 releases
    pin CUDA 13 runtime wheels that overwrite their CUDA 12 counterparts in
    place -- the requirements files exist precisely to keep that from happening.
-   See ``requirements/agentic/README.md``.
 
 ----------------------------
 
