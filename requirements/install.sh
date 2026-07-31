@@ -1686,10 +1686,6 @@ install_gr00t_model() {
     uv pip install -e "$gr00t_path" --no-deps
     maybe_build_decord_from_source
     uv pip install -r "$SCRIPT_DIR/embodied/models/gr00t.txt"
-    if [ "$PLATFORM" = "ascend" ]; then
-        echo "[install.sh] Applying Ascend GR00T compatibility pins"
-        uv pip install -r "$SCRIPT_DIR/embodied/models/ascend/gr00t.txt"
-    fi
     case "$ENV_NAME" in
         maniskill_libero|libero)
             install_${ENV_NAME}_env
@@ -1707,6 +1703,10 @@ install_gr00t_model() {
             exit 1
             ;;
     esac
+    if [ "$PLATFORM" = "ascend" ]; then
+        echo "[install.sh] Applying Ascend GR00T compatibility pins"
+        uv pip install -r "$SCRIPT_DIR/embodied/models/ascend/gr00t.txt"
+    fi
     uv pip uninstall pynvml || true
 }
 
