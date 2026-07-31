@@ -94,18 +94,6 @@ embodied = [
     "gymnasium",
     "gym",
 ]
-libero = [
-    "rlinf-libero",
-    "rlinf[embodied]",
-]
-liberopro = [
-    "rlinf-liberopro",
-    "rlinf[libero]",
-]
-liberoplus = [
-    "rlinf-liberoplus",
-    "rlinf[libero]",
-]
 franka = [
     "pyyaml",
     "rospkg",
@@ -149,33 +137,10 @@ gim_arm = [
 ]
 
 [tool.uv]
-# One row per simulator extra: the libero extras include `embodied` (and each
-# other), so they get separate rows rather than joining the first.
 conflicts = [
     [
       { extra = "agentic" },
       { extra = "embodied" },
-      { extra = "franka" },
-      { extra = "xsquare_turtle2" },
-      { extra = "gim_arm" }
-    ],
-    [
-      { extra = "agentic" },
-      { extra = "libero" },
-      { extra = "franka" },
-      { extra = "xsquare_turtle2" },
-      { extra = "gim_arm" }
-    ],
-    [
-      { extra = "agentic" },
-      { extra = "liberopro" },
-      { extra = "franka" },
-      { extra = "xsquare_turtle2" },
-      { extra = "gim_arm" }
-    ],
-    [
-      { extra = "agentic" },
-      { extra = "liberoplus" },
       { extra = "franka" },
       { extra = "xsquare_turtle2" },
       { extra = "gim_arm" }

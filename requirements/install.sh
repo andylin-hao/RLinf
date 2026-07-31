@@ -1717,6 +1717,7 @@ install_gr00t_n1d6_model() {
     local gr00t_path
     gr00t_path=$(clone_or_reuse_repo GR00T_PATH "$VENV_DIR/gr00t" "https://github.com/RLinf/Isaac-GR00T.git" -b n1.6.1-release)
     uv pip install -e "$gr00t_path" --no-deps
+    uv pip install -r "$SCRIPT_DIR/embodied/models/gr00t_n1d6.txt"
 
     case "$ENV_NAME" in
         maniskill_libero)
@@ -1728,11 +1729,6 @@ install_gr00t_n1d6_model() {
             exit 1
             ;;
     esac
-
-    # After the environment install: install_libero_env re-resolves the project
-    # with uv sync, which would otherwise lift transformers past the 4.51 API
-    # this model's Eagle3 processor expects.
-    uv pip install -r "$SCRIPT_DIR/embodied/models/gr00t_n1d6.txt"
 
     uv pip uninstall pynvml || true
 }
@@ -2024,7 +2020,7 @@ EOF
 }
 
 install_libero_env() {
-    uv sync --extra libero --inexact --active $NO_INSTALL_RLINF_CMD
+    uv pip install rlinf-libero
     materialize_package_files rlinf-libero
     libero-download-assets --skip-existing
     reset_libero_config
@@ -2101,7 +2097,7 @@ install_d4rl_env() {
 }
 
 install_liberopro_env() {
-    uv sync --extra liberopro --inexact --active $NO_INSTALL_RLINF_CMD
+    uv pip install rlinf-libero rlinf-liberopro
     materialize_package_files rlinf-libero
     materialize_package_files rlinf-liberopro
     libero-download-assets --skip-existing
@@ -2110,13 +2106,12 @@ install_liberopro_env() {
 }
 
 install_liberoplus_env() {
-    uv sync --extra liberoplus --inexact --active $NO_INSTALL_RLINF_CMD
-    uv pip install "rlinf-liberoplus>=0.1.3"
+    uv pip install rlinf-libero "rlinf-liberoplus>=0.1.3"
     materialize_package_files rlinf-libero
     materialize_package_files rlinf-liberoplus
     libero-download-assets --skip-existing
-    LIBERO_PLUS_ASSETS_REPO="${LIBERO_PLUS_ASSETS_REPO:-RLinf/LIBERO-plus-assets}" \
-        liberoplus-download-assets --skip-existing
+    export LIBERO_PLUS_ASSETS_REPO="${LIBERO_PLUS_ASSETS_REPO:-RLinf/LIBERO-plus-assets}"
+    liberoplus-download-assets --skip-existing
     reset_libero_config
 }
 
