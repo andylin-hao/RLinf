@@ -2019,10 +2019,25 @@ for package in ("libero.libero", "liberopro.liberopro", "liberoplus.liberoplus")
 EOF
 }
 
+retry_cmd() {
+    local max=5 delay=15 attempt=1
+    until "$@"; do
+        if [ "$attempt" -ge "$max" ]; then
+            echo "[install.sh] '$*' failed after ${max} attempts" >&2
+            return 1
+        fi
+        local wait=$((delay + RANDOM % 10))
+        echo "[install.sh] '$*' failed (attempt ${attempt}/${max}); retrying in ${wait}s" >&2
+        sleep "$wait"
+        attempt=$((attempt + 1))
+        delay=$((delay * 2))
+    done
+}
+
 install_libero_env() {
     uv pip install rlinf-libero
     materialize_package_files rlinf-libero
-    libero-download-assets --skip-existing
+    retry_cmd libero-download-assets --skip-existing
     reset_libero_config
 }
 
@@ -2100,8 +2115,8 @@ install_liberopro_env() {
     uv pip install rlinf-libero rlinf-liberopro
     materialize_package_files rlinf-libero
     materialize_package_files rlinf-liberopro
-    libero-download-assets --skip-existing
-    liberopro-download-assets --skip-existing
+    retry_cmd libero-download-assets --skip-existing
+    retry_cmd liberopro-download-assets --skip-existing
     reset_libero_config
 }
 
@@ -2109,9 +2124,9 @@ install_liberoplus_env() {
     uv pip install rlinf-libero "rlinf-liberoplus>=0.1.3"
     materialize_package_files rlinf-libero
     materialize_package_files rlinf-liberoplus
-    libero-download-assets --skip-existing
+    retry_cmd libero-download-assets --skip-existing
     export LIBERO_PLUS_ASSETS_REPO="${LIBERO_PLUS_ASSETS_REPO:-RLinf/LIBERO-plus-assets}"
-    liberoplus-download-assets --skip-existing
+    retry_cmd liberoplus-download-assets --skip-existing
     reset_libero_config
 }
 
