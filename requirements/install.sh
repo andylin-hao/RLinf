@@ -1754,7 +1754,9 @@ install_gr00t_n1d6_model() {
     install_common_embodied_deps
 
     local gr00t_path
-    gr00t_path=$(clone_or_reuse_repo GR00T_PATH "$VENV_DIR/gr00t" "https://github.com/NVIDIA/Isaac-GR00T.git" -b n1.6.1-release)
+    # RLinf fork: carries the Eagle backbone fix for the attn implementation its
+    # own assertion requires. Upstream n1.5/n1.7 are unaffected and stay on NVIDIA.
+    gr00t_path=$(clone_or_reuse_repo GR00T_PATH "$VENV_DIR/gr00t" "https://github.com/RLinf/Isaac-GR00T.git" -b n1.6.1-release)
     uv pip install -e "$gr00t_path" --no-deps
     uv pip install -r "$SCRIPT_DIR/embodied/models/gr00t_n1d6.txt"
 
