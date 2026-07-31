@@ -1717,7 +1717,6 @@ install_gr00t_n1d6_model() {
     local gr00t_path
     gr00t_path=$(clone_or_reuse_repo GR00T_PATH "$VENV_DIR/gr00t" "https://github.com/RLinf/Isaac-GR00T.git" -b n1.6.1-release)
     uv pip install -e "$gr00t_path" --no-deps
-    uv pip install -r "$SCRIPT_DIR/embodied/models/gr00t_n1d6.txt"
 
     case "$ENV_NAME" in
         maniskill_libero)
@@ -1729,6 +1728,11 @@ install_gr00t_n1d6_model() {
             exit 1
             ;;
     esac
+
+    # After the environment install: install_libero_env re-resolves the project
+    # with uv sync, which would otherwise lift transformers past the 4.51 API
+    # this model's Eagle3 processor expects.
+    uv pip install -r "$SCRIPT_DIR/embodied/models/gr00t_n1d6.txt"
 
     uv pip uninstall pynvml || true
 }
