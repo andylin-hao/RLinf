@@ -2516,9 +2516,40 @@ install_opensora_world_model() {
 
     # Install remaining opensora dependencies (xformers handled above).
     uv pip install -r $SCRIPT_DIR/embodied/models/opensora.txt
-    uv pip install git+${GITHUB_PREFIX}https://github.com/fangqi-Zhu/TensorNVMe.git --no-build-isolation
+    install_tensornvme
     echo "export LD_LIBRARY_PATH=~/.tensornvme/lib:\$LD_LIBRARY_PATH" >> "$VENV_DIR/bin/activate"
     install_apex
+}
+
+install_tensornvme() {
+    # TensorNVMe builds a torch C++ extension, but uv keys its built-wheel cache
+    # on the source -- the git commit -- not on the torch in the environment. The
+    # commit is fixed, so uv serves whatever it built when the cache was first
+    # filled: after the move to torch 2.11 that is a wheel linked against the old
+    # c10 ABI, and `import tensornvme._C` dies on
+    # `undefined symbol: _ZN3c104cuda29c10_cuda_check_implementationEiPKcS2_ib`.
+    local url="git+${GITHUB_PREFIX}https://github.com/fangqi-Zhu/TensorNVMe.git"
+    uv pip install "$url" --no-build-isolation
+
+    # Rebuild only when the cached wheel does not match this torch. Evicting the
+    # entry rather than passing --no-cache means the rebuild is itself cached, so
+    # this costs one build after a torch change instead of a re-clone and rebuild
+    # on every install. (--refresh / --refresh-package do not help: they
+    # invalidate registry metadata and leave the built wheel in place.)
+    # The extension loads shared objects the build drops in ~/.tensornvme/lib,
+    # which is why that path is appended to the venv activate below; the probe
+    # has to see it too or it would report a false mismatch.
+    local tnvme_env=(env "LD_LIBRARY_PATH=$HOME/.tensornvme/lib:${LD_LIBRARY_PATH:-}")
+    if ! "${tnvme_env[@]}" python -c "import tensornvme._C" >/dev/null 2>&1; then
+        echo "[install.sh] tensornvme does not load against this torch; rebuilding."
+        uv cache clean tensornvme || true
+        uv pip install "$url" --no-build-isolation --reinstall-package tensornvme
+        # A warning, not a failure: the import also needs a working CUDA stack, so
+        # it cannot succeed in a GPU-less docker build, and that must not stop the
+        # image from being built.
+        "${tnvme_env[@]}" python -c "import tensornvme._C" >/dev/null 2>&1 \
+            || echo "[install.sh] WARNING: tensornvme still does not import; expected without a GPU, otherwise check the torch ABI."
+    fi
 }
 
 install_wan_world_model() {
