@@ -111,6 +111,8 @@ class PathEnvMergeMode(str, Enum):
 class Cluster:
     """A singleton class that manages the cluster resources for Ray workers."""
 
+    _run_failed = False
+
     SYS_NAME = "RLinf"
     NAMESPACE = SYS_NAME
     LOGGING_LEVEL = os.getenv(
@@ -340,6 +342,7 @@ class Cluster:
                 ray_init_kwargs["runtime_env"] = dict(self._ray_code_sync_fragment)
             ray.init(**ray_init_kwargs)
 
+        Cluster._install_failure_hook()
         atexit.register(Cluster._shutdown_ray_at_exit)
 
         # Ray log collector
@@ -444,18 +447,32 @@ class Cluster:
                 # Mimic ray's sleep before shutdown to ensure log messages are flushed
                 time.sleep(0.5)
                 ray.shutdown(_exiting_interpreter=True)
+            Cluster._run_failed = True
             print("Exiting main process due to a failure upon worker execution.")
             exit(-1)
 
         signal.signal(signal.SIGUSR1, signal_handler)
 
     @staticmethod
+    def _install_failure_hook():
+        previous = sys.excepthook
+
+        def hook(exc_type, exc_value, exc_tb):
+            Cluster._run_failed = True
+            previous(exc_type, exc_value, exc_tb)
+
+        sys.excepthook = hook
+
+    @staticmethod
     def _shutdown_ray_at_exit():
+        if Cluster._run_failed:
+            return
         try:
-            if ray.is_initialized():
-                ray.shutdown()
+            sys.stdout.flush()
+            sys.stderr.flush()
         except Exception:
             pass
+        os._exit(0)
 
     def _init_from_existing_managers(self):
         if not ray.is_initialized():
