@@ -13,31 +13,12 @@
 # limitations under the License.
 
 import os
-import sys
 import tempfile
-from typing import Any, NoReturn, Union
+from typing import Any, Union
 
 from rlinf.utils.logging import get_logger
 
 logger = get_logger()
-
-
-def exit_skipping_teardown(code: int = 0) -> NoReturn:
-    """Exit the process immediately, without running interpreter finalization.
-
-    The agent entrypoints segfault during teardown on the torch 2.11 stack,
-    after the run has finished and written its results: the work is complete
-    and on disk, but the process dies on SIGSEGV and the caller sees exit 139.
-    Call this once a run has genuinely succeeded, so a crash in cleanup cannot
-    turn a good run red.
-
-    Only reach for this at the very end of an entrypoint. It skips atexit
-    handlers, garbage collection and buffer flushing, so anything not already
-    persisted is lost -- stdout and stderr are flushed here for that reason.
-    """
-    sys.stdout.flush()
-    sys.stderr.flush()
-    os._exit(code)
 
 
 def safe_is_divisible(a, b):

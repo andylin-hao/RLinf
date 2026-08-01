@@ -26,7 +26,6 @@ from rlinf.data.datasets import create_rl_dataset
 from rlinf.data.tokenizers import hf_tokenizer
 from rlinf.scheduler import Cluster, NodePlacementStrategy
 from rlinf.utils.placement import ModelParallelEvalComponentPlacement
-from rlinf.utils.runner_utils import exit_skipping_teardown
 from rlinf.utils.utils import output_redirector
 from rlinf.workers.agent.tool_worker import ToolWorkerInfo
 from rlinf.workers.rollout.utils import get_rollout_backend_worker
@@ -98,10 +97,6 @@ def main(cfg) -> None:
 
     runner.init_workers()
     runner.run()
-
-    # The run is complete and its results are written; skip the teardown that
-    # segfaults on this stack rather than let it mask a successful run.
-    exit_skipping_teardown()
 
 
 if __name__ == "__main__":

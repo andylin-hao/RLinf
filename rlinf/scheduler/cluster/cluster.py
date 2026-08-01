@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import atexit
 import logging
 import os
 import re
@@ -339,6 +340,8 @@ class Cluster:
                 ray_init_kwargs["runtime_env"] = dict(self._ray_code_sync_fragment)
             ray.init(**ray_init_kwargs)
 
+        atexit.register(Cluster._shutdown_ray_at_exit)
+
         # Ray log collector
         if distributed_log_dir is not None:
             self._distributed_log_collector = DistributedRayLogCollector(
@@ -445,6 +448,14 @@ class Cluster:
             exit(-1)
 
         signal.signal(signal.SIGUSR1, signal_handler)
+
+    @staticmethod
+    def _shutdown_ray_at_exit():
+        try:
+            if ray.is_initialized():
+                ray.shutdown()
+        except Exception:
+            pass
 
     def _init_from_existing_managers(self):
         if not ray.is_initialized():

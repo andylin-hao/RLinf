@@ -26,7 +26,6 @@ from rlinf.data.tokenizers import hf_tokenizer
 from rlinf.runners.agent_runner import AgentRunner
 from rlinf.scheduler import Cluster, NodePlacementStrategy
 from rlinf.utils.placement import ModelParallelComponentPlacement, PlacementMode
-from rlinf.utils.runner_utils import exit_skipping_teardown
 from rlinf.utils.utils import output_redirector
 from rlinf.workers.actor import get_actor_worker
 from rlinf.workers.agent.tool_worker import ToolWorkerInfo
@@ -137,10 +136,6 @@ def main(cfg) -> None:
 
     runner.init_workers()
     runner.run()
-
-    # The run is complete and its results are written; skip the teardown that
-    # segfaults on this stack rather than let it mask a successful run.
-    exit_skipping_teardown()
 
 
 if __name__ == "__main__":
