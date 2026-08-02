@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import inspect
 import multiprocessing as mp
 import os
 import signal
@@ -50,13 +51,20 @@ def _run_sglang_server(server_args_dict: dict, ready_pipe) -> None:
     from sglang.srt.entrypoints.http_server import launch_server
 
     server_args = ServerArgs(**server_args_dict)
+
+    # sglang dropped pipe_finish_writer after 0.5.4; readiness is established by
+    # polling /health either way, so the pipe is only used to surface exceptions.
+    launch_kwargs = {}
+    if "pipe_finish_writer" in inspect.signature(launch_server).parameters:
+        launch_kwargs["pipe_finish_writer"] = ready_pipe
+
     # Strip proxy env vars so sglang's internal HTTP calls (e.g. the
     # tokenizer-manager / scheduler IPC that /get_server_info touches)
     # don't tunnel through a user-configured proxy — otherwise the router's
     # discover_metadata step hangs and worker registration fails.
     with no_proxy_env():
         try:
-            launch_server(server_args, pipe_finish_writer=ready_pipe)
+            launch_server(server_args, **launch_kwargs)
         except Exception as e:  # pragma: no cover — surface failures to parent
             try:
                 ready_pipe.send(repr(e))
