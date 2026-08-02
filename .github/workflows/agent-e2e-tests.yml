@@ -82,8 +82,6 @@ jobs:
       - name: Clean up
         run: |
           rm -rf .venv .venv-vllm
-          # e2e checkpoints are large and the experiment names repeat, so they
-          # accumulate across runs until the runner's disk fills.
           find /workspace/results -maxdepth 3 -type d \( -name checkpoints -o -name converted_ckpts \) \
                -prune -exec rm -rf {} + 2>/dev/null || true
           uv cache prune
@@ -123,8 +121,6 @@ jobs:
       - name: Clean up
         run: |
           rm -rf .venv
-          # e2e checkpoints are large and the experiment names repeat, so they
-          # accumulate across runs until the runner's disk fills.
           find /workspace/results -maxdepth 3 -type d \( -name checkpoints -o -name converted_ckpts \) \
                -prune -exec rm -rf {} + 2>/dev/null || true
           uv cache prune
@@ -194,8 +190,6 @@ jobs:
       - name: Clean up
         run: |
           rm -rf .venv .venv-vllm
-          # e2e checkpoints are large and the experiment names repeat, so they
-          # accumulate across runs until the runner's disk fills.
           find /workspace/results -maxdepth 3 -type d \( -name checkpoints -o -name converted_ckpts \) \
                -prune -exec rm -rf {} + 2>/dev/null || true
           uv cache prune
@@ -226,8 +220,6 @@ jobs:
       - name: Clean up
         run: |
           rm -rf .venv
-          # e2e checkpoints are large and the experiment names repeat, so they
-          # accumulate across runs until the runner's disk fills.
           find /workspace/results -maxdepth 3 -type d \( -name checkpoints -o -name converted_ckpts \) \
                -prune -exec rm -rf {} + 2>/dev/null || true
           uv cache prune
@@ -258,8 +250,6 @@ jobs:
       - name: Clean up
         run: |
           rm -rf .venv
-          # e2e checkpoints are large and the experiment names repeat, so they
-          # accumulate across runs until the runner's disk fills.
           find /workspace/results -maxdepth 3 -type d \( -name checkpoints -o -name converted_ckpts \) \
                -prune -exec rm -rf {} + 2>/dev/null || true
           uv cache prune
@@ -290,8 +280,6 @@ jobs:
       - name: Clean up
         run: |
           rm -rf .venv
-          # e2e checkpoints are large and the experiment names repeat, so they
-          # accumulate across runs until the runner's disk fills.
           find /workspace/results -maxdepth 3 -type d \( -name checkpoints -o -name converted_ckpts \) \
                -prune -exec rm -rf {} + 2>/dev/null || true
           uv cache prune
@@ -327,8 +315,6 @@ jobs:
       - name: Clean up
         run: |
           rm -rf .venv
-          # e2e checkpoints are large and the experiment names repeat, so they
-          # accumulate across runs until the runner's disk fills.
           find /workspace/results -maxdepth 3 -type d \( -name checkpoints -o -name converted_ckpts \) \
                -prune -exec rm -rf {} + 2>/dev/null || true
           uv cache prune
@@ -414,8 +400,6 @@ jobs:
       - name: Clean up
         run: |
           rm -rf .venv
-          # e2e checkpoints are large and the experiment names repeat, so they
-          # accumulate across runs until the runner's disk fills.
           find /workspace/results -maxdepth 3 -type d \( -name checkpoints -o -name converted_ckpts \) \
                -prune -exec rm -rf {} + 2>/dev/null || true
           uv cache prune
@@ -457,8 +441,6 @@ jobs:
       - name: Clean up
         run: |
           rm -rf .venv
-          # e2e checkpoints are large and the experiment names repeat, so they
-          # accumulate across runs until the runner's disk fills.
           find /workspace/results -maxdepth 3 -type d \( -name checkpoints -o -name converted_ckpts \) \
                -prune -exec rm -rf {} + 2>/dev/null || true
           uv cache prune
@@ -496,8 +478,6 @@ jobs:
       - name: Clean up
         run: |
           rm -rf .venv
-          # e2e checkpoints are large and the experiment names repeat, so they
-          # accumulate across runs until the runner's disk fills.
           find /workspace/results -maxdepth 3 -type d \( -name checkpoints -o -name converted_ckpts \) \
                -prune -exec rm -rf {} + 2>/dev/null || true
           uv cache prune
@@ -538,8 +518,6 @@ jobs:
       - name: Clean up
         run: |
           rm -rf .venv .venv-vllm
-          # e2e checkpoints are large and the experiment names repeat, so they
-          # accumulate across runs until the runner's disk fills.
           find /workspace/results -maxdepth 3 -type d \( -name checkpoints -o -name converted_ckpts \) \
                -prune -exec rm -rf {} + 2>/dev/null || true
           uv cache prune
@@ -571,8 +549,6 @@ jobs:
       - name: Clean up
         run: |
           rm -rf .venv
-          # e2e checkpoints are large and the experiment names repeat, so they
-          # accumulate across runs until the runner's disk fills.
           find /workspace/results -maxdepth 3 -type d \( -name checkpoints -o -name converted_ckpts \) \
                -prune -exec rm -rf {} + 2>/dev/null || true
           uv cache prune
@@ -674,8 +650,6 @@ jobs:
       - name: Clean up
         run: |
           rm -rf .venv
-          # e2e checkpoints are large and the experiment names repeat, so they
-          # accumulate across runs until the runner's disk fills.
           find /workspace/results -maxdepth 3 -type d \( -name checkpoints -o -name converted_ckpts \) \
                -prune -exec rm -rf {} + 2>/dev/null || true
           uv cache prune
@@ -730,8 +704,6 @@ jobs:
         run: |
           rm -rf .venv
           rm -rf FUSCO
-          # e2e checkpoints are large and the experiment names repeat, so they
-          # accumulate across runs until the runner's disk fills.
           find /workspace/results -maxdepth 3 -type d \( -name checkpoints -o -name converted_ckpts \) \
                -prune -exec rm -rf {} + 2>/dev/null || true
           uv cache prune
@@ -771,8 +743,6 @@ jobs:
       - name: Clean up
         run: |
           rm -rf .venv
-          # e2e checkpoints are large and the experiment names repeat, so they
-          # accumulate across runs until the runner's disk fills.
           find /workspace/results -maxdepth 3 -type d \( -name checkpoints -o -name converted_ckpts \) \
                -prune -exec rm -rf {} + 2>/dev/null || true
           uv cache prune
