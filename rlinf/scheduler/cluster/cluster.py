@@ -143,13 +143,22 @@ class Cluster:
         """Raised when there is a namespace conflict in Ray initialization."""
 
     @classmethod
-    def find_free_port(cls):
-        """Find a free port on the node."""
+    def find_free_port(cls, max_port_num: Optional[int] = None):
+        """Find a free port on the node.
+
+        Args:
+            max_port_num (Optional[int]): Largest acceptable port. Use it for servers that
+                derive a second port from this one and would overflow past 65535.
+        """
         import socket
 
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.bind(("", 0))
-            return s.getsockname()[1]
+        for _ in range(1000):
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind(("", 0))
+                port = s.getsockname()[1]
+            if max_port_num is None or port <= max_port_num:
+                return port
+        raise RuntimeError(f"Failed to find a free port at most {max_port_num}.")
 
     @classmethod
     def has_initialized(cls):

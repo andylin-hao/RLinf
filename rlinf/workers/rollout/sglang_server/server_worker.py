@@ -84,6 +84,12 @@ def _wait_for_http_health(host: str, port: int, timeout: float = 300.0) -> None:
     )
 
 
+# sglang derives its gRPC port as ``port + SGLANG_GRPC_PORT_OFFSET`` and rejects
+# the result above 65535, so the HTTP port has to leave room for it.
+SGLANG_GRPC_PORT_OFFSET = 10000
+MAX_SGLANG_HTTP_PORT = 65535 - SGLANG_GRPC_PORT_OFFSET
+
+
 class SGLangServerWorker(Worker):
     """Worker that owns one sglang HTTP server process.
 
@@ -137,7 +143,7 @@ class SGLangServerWorker(Worker):
         # internal torch.distributed bootstrap. ``acquire_free_port``
         # uses the worker's PortLock so neither port collides with any
         # other worker on this node.
-        http_port = self.acquire_free_port()
+        http_port = self.acquire_free_port(max_port_num=MAX_SGLANG_HTTP_PORT)
         dist_port = self.acquire_free_port()
 
         sglang_kwargs = OmegaConf.to_container(self._sglang_cfg, resolve=True)
