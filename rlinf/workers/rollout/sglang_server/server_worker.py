@@ -194,7 +194,10 @@ class SGLangServerWorker(Worker):
         # internal torch.distributed bootstrap. ``acquire_free_port``
         # uses the worker's PortLock so neither port collides with any
         # other worker on this node.
-        http_port = self.acquire_free_port(max_port_num=MAX_SGLANG_HTTP_PORT)
+        http_port = self.acquire_free_port(
+            max_port_num=MAX_SGLANG_HTTP_PORT,
+            derived_offsets=(SGLANG_GRPC_PORT_OFFSET,),
+        )
         dist_port = self.acquire_free_port()
 
         server_kwargs = OmegaConf.to_container(self._sglang_cfg, resolve=True) or {}

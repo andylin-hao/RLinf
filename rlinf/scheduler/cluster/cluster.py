@@ -79,6 +79,29 @@ class ClusterEnvVar(str, Enum):
         export RLINF_EXT_MODULE=workflows.scripts.rlinf_ext
     """
 
+    PORT_RANGE = "PORT_RANGE"
+    """Inclusive port band that workers allocate listening ports from, as ``<low>-<high>``.
+
+    Ports are allocated from this band instead of asking the kernel for an ephemeral
+    port, because the kernel draws ephemeral ports (``net.ipv4.ip_local_port_range``,
+    typically 32768-60999) for the source ports of *outbound* connections too. A port
+    that was free when it was picked can therefore be handed to an unrelated outgoing
+    socket before the server that reserved it gets around to binding, which surfaces
+    much later as ``EADDRINUSE``.
+
+    Defaults to ``20000-32767``. Set this when the default band overlaps something else
+    on the host. If the band is exhausted, allocation falls back to an ephemeral port.
+    """
+
+    PORT_LOCK_DIR = "PORT_LOCK_DIR"
+    """Directory holding the host-wide port lock files. Defaults to ``/tmp/rlinf-port-locks``.
+
+    Port reservations are recorded both in the cluster's ``PortLockManager`` and as an
+    ``flock`` under this directory. The latter is what keeps two Ray clusters sharing a
+    host -- concurrent CI jobs, most commonly -- from handing out the same port, since
+    each cluster has its own manager but they all share one kernel port space.
+    """
+
     PATH_ENV_MERGE_MODE = "PATH_ENV_MERGE_MODE"
     """How to merge path-like env vars when allocating workers.
 
@@ -126,6 +149,10 @@ class Cluster:
         ClusterEnvVar.NODE_RANK: None,
         ClusterEnvVar.COMM_NET_DEVICES: None,
         ClusterEnvVar.EXT_MODULE: None,
+        # Left unset so the code defaults apply uniformly; propagated to workers only
+        # when the user overrides them, which keeps every worker on the same band.
+        ClusterEnvVar.PORT_RANGE: None,
+        ClusterEnvVar.PORT_LOCK_DIR: None,
         ClusterEnvVar.PATH_ENV_MERGE_MODE: PathEnvMergeMode.APPEND.value,
         ClusterEnvVar.CODE_WORKING_DIR: "0",
     }
@@ -142,16 +169,136 @@ class Cluster:
     class NamespaceConflictError(Exception):
         """Raised when there is a namespace conflict in Ray initialization."""
 
+    DEFAULT_PORT_RANGE = (20000, 32767)
+    """Fallback band for :meth:`find_free_port`. See ``ClusterEnvVar.PORT_RANGE``."""
+
+    DEFAULT_PORT_RANGE_WIDTH = 12768
+    """Width of the auto-derived default band, matching :attr:`DEFAULT_PORT_RANGE`."""
+
+    @classmethod
+    def get_ephemeral_port_range(cls) -> Optional[tuple[int, int]]:
+        """Return the kernel's ephemeral port range, or None if it cannot be read.
+
+        Ports in this range are handed out as the source ports of outbound connections,
+        so allocating a *listening* port from it is inherently racy.
+        """
+        try:
+            with open("/proc/sys/net/ipv4/ip_local_port_range") as handle:
+                low, high = handle.read().split()
+            return int(low), int(high)
+        except (OSError, ValueError):
+            return None
+
+    @classmethod
+    def default_port_range(cls) -> tuple[int, int]:
+        """Return the default band, placed below the kernel's ephemeral range.
+
+        Derived from ``net.ipv4.ip_local_port_range`` so the default stays correct on
+        hosts that have retuned it. Falls back to :attr:`DEFAULT_PORT_RANGE` when the
+        setting is unreadable or leaves no usable window below it.
+        """
+        ephemeral = cls.get_ephemeral_port_range()
+        if ephemeral is None:
+            return cls.DEFAULT_PORT_RANGE
+        high = min(cls.DEFAULT_PORT_RANGE[1], ephemeral[0] - 1)
+        low = max(1024, high - cls.DEFAULT_PORT_RANGE_WIDTH + 1)
+        if low >= high:
+            # The ephemeral range starts too low to leave a usable window below it; the
+            # operator needs to set RLINF_PORT_RANGE (or retune the kernel) explicitly.
+            return cls.DEFAULT_PORT_RANGE
+        return low, high
+
+    @classmethod
+    def get_port_range(cls) -> tuple[int, int]:
+        """Return the inclusive band that :meth:`find_free_port` allocates from.
+
+        Reads ``RLINF_PORT_RANGE`` (``<low>-<high>``), falling back to
+        :meth:`default_port_range`.
+
+        Raises:
+            ValueError: If ``RLINF_PORT_RANGE`` is set but not a valid ``<low>-<high>`` band.
+        """
+        raw = os.getenv(f"{cls.SYS_NAME.upper()}_{ClusterEnvVar.PORT_RANGE.value}")
+        if not raw:
+            return cls.default_port_range()
+        match = re.fullmatch(r"\s*(\d+)\s*-\s*(\d+)\s*", raw)
+        if match is None:
+            raise ValueError(
+                f"Invalid {cls.SYS_NAME.upper()}_{ClusterEnvVar.PORT_RANGE.value}={raw!r}; "
+                "expected '<low>-<high>'."
+            )
+        low, high = int(match.group(1)), int(match.group(2))
+        if not (0 < low <= high <= 65535):
+            raise ValueError(
+                f"Invalid {cls.SYS_NAME.upper()}_{ClusterEnvVar.PORT_RANGE.value}={raw!r}; "
+                "expected 0 < low <= high <= 65535."
+            )
+        return low, high
+
+    @classmethod
+    def _port_is_bindable(cls, port: int) -> bool:
+        """Return whether a listening socket can currently bind ``port`` on all interfaces.
+
+        ``SO_REUSEADDR`` is deliberately *not* set so that this mirrors what a plain
+        server (``TCPStore``, an HTTP server, ...) will experience: a port still held in
+        ``TIME_WAIT`` is reported as unavailable rather than free.
+        """
+        import socket
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.bind(("", port))
+            except OSError:
+                return False
+        return True
+
     @classmethod
     def find_free_port(cls, max_port_num: Optional[int] = None):
         """Find a free port on the node.
 
+        Ports are drawn from the ``RLINF_PORT_RANGE`` band rather than from the kernel's
+        ephemeral range. Binding to port 0 and closing the socket only reports a port
+        that *was* free: the kernel is then free to hand that same port to any outbound
+        connection's source port, and the caller -- which typically binds seconds later,
+        often from a subprocess -- fails with ``EADDRINUSE``. Ports outside the ephemeral
+        range are never auto-assigned, which removes that race rather than narrowing it.
+
         Args:
             max_port_num (Optional[int]): Largest acceptable port. Use it for servers that
                 derive a second port from this one and would overflow past 65535.
+
+        Returns:
+            int: A port that was bindable at the time of the call.
+
+        Raises:
+            RuntimeError: If neither the configured band nor the ephemeral fallback yields a port.
         """
+        import random
         import socket
 
+        low, high = cls.get_port_range()
+        if max_port_num is not None:
+            if max_port_num < low:
+                # The configured band sits entirely above the caller's cap. Scan below it
+                # instead of falling through to an ephemeral port, which the kernel draws
+                # from a range that is itself above the cap and so can never satisfy it.
+                low, high = 1024, max_port_num
+            else:
+                high = min(high, max_port_num)
+
+        if low <= high:
+            # Probe from a random offset so that concurrently starting workers do not all
+            # walk the band from the same end and collide on every candidate.
+            span = high - low + 1
+            start = random.randrange(span)
+            for offset in range(span):
+                port = low + (start + offset) % span
+                if cls._port_is_bindable(port):
+                    return port
+
+        # Band exhausted or unusable: fall back to an ephemeral port. This restores the
+        # old (racy) behavior rather than failing outright, so a misconfigured band
+        # degrades to what previous releases did instead of breaking the run.
         for _ in range(1000):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.bind(("", 0))

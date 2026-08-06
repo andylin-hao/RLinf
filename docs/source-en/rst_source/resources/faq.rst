@@ -166,6 +166,34 @@ interface is chosen).
 - If needed, choose the correct interface's IP address explicitly for the Ray
   head and share that IP with workers.
 
+Random "address already in use" (EADDRINUSE) During Startup
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**Symptom:** A run fails intermittently while an engine starts, e.g.
+``torch.distributed.DistNetworkError: The server socket has failed to listen on any
+local network address. port: <N>, name: EADDRINUSE``. Checking the port by hand
+afterwards always shows it as free.
+
+**Cause:** RLinf allocates listening ports from the band given by ``RLINF_PORT_RANGE``
+(default ``20000-32767``) precisely so this cannot happen. If that band is exhausted or
+misconfigured, allocation falls back to asking the kernel for an ephemeral port. The
+kernel draws ephemeral ports (``net.ipv4.ip_local_port_range``, typically
+``32768-60999``) for the source ports of *outbound* connections too, so a port that was
+free when it was reserved can be taken by an unrelated outgoing socket in the seconds
+before the server binds it. The port genuinely is free at check time, which is why
+probing it never reproduces the failure.
+
+**Fix:**
+
+- Make sure ``RLINF_PORT_RANGE`` does not overlap ``net.ipv4.ip_local_port_range``
+  (``cat /proc/sys/net/ipv4/ip_local_port_range``), and is wide enough for all workers.
+- If several RLinf runs share one machine, leave ``RLINF_PORT_LOCK_DIR`` on a local
+  filesystem shared by all of them (default ``/tmp/rlinf-port-locks``). The lock is what
+  keeps independent Ray clusters on one host from being handed the same port.
+- Stop leftover processes from a previous run (``ray stop --force``) before starting a
+  new one; orphaned engine subprocesses keep holding ports that the new run's lock
+  manager knows nothing about.
+
 CUDA Issues
 -------------
 

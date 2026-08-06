@@ -23,6 +23,7 @@ import threading
 import time
 import traceback
 import warnings
+from collections.abc import Sequence
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, Callable, Optional, TypeVar
 
@@ -1254,19 +1255,47 @@ class Worker(metaclass=WorkerMeta):
         """
         return self._worker_address.get_parent_rank()
 
-    def acquire_free_port(self, max_port_num: Optional[int] = None):
+    def acquire_free_port(
+        self,
+        max_port_num: Optional[int] = None,
+        derived_offsets: Sequence[int] = (),
+    ):
         """Safely acquire a free port on the current node without causing conflicts within the node.
 
         Args:
             max_port_num (Optional[int]): Largest acceptable port. Use it for servers that
                 derive a second port from this one and would overflow past 65535.
+            derived_offsets (Sequence[int]): Additional offsets from the returned port that
+                the caller's server will also bind (e.g. sglang derives its gRPC port as
+                ``port + 10000``). Those ports are reserved alongside the returned one, so
+                no other worker can be handed them. Without this they look free to the
+                allocator and are handed out, which surfaces as a late ``EADDRINUSE`` in
+                whichever process binds second.
+
+        Returns:
+            int: The acquired port, with any derived ports reserved as well.
+
+        Raises:
+            RuntimeError: If no free port could be acquired.
         """
         max_tries = 10000  # Retry up to 10000 times to find a free port
         for _ in range(max_tries):
             port = Cluster.find_free_port(max_port_num)
-            success = self._port_lock.acquire(port)
-            if success:
+            if not self._port_lock.acquire(port):
+                continue
+
+            reserved = [port]
+            for offset in derived_offsets:
+                if not self._port_lock.acquire(port + offset):
+                    break
+                reserved.append(port + offset)
+            else:
                 return port
+
+            # A derived port was taken. Hand back everything reserved for this candidate
+            # before retrying, so a repeatedly unlucky loop cannot drain the port band.
+            for reserved_port in reserved:
+                self._port_lock.release(reserved_port)
         raise RuntimeError(f"Failed to acquire a free port after {max_tries} attempts.")
 
     def log_on_first_rank(self, msg):

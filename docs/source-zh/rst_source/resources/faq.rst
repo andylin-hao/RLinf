@@ -157,8 +157,31 @@ Vulkan Incompatible GPU Driver
 
 **修复：**
 
-- 确认所选 IP 能被其他节点访问（例如使用 ping 测试）。  
+- 确认所选 IP 能被其他节点访问（例如使用 ping 测试）。
 - 如有需要，请显式选择正确网卡对应的 IP 作为 Ray head，并将该 IP 告知各 Worker。
+
+启动过程中偶发 “address already in use”（EADDRINUSE）
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**现象：** 引擎启动过程中偶发失败，例如
+``torch.distributed.DistNetworkError: The server socket has failed to listen on any
+local network address. port: <N>, name: EADDRINUSE``。事后手动检查该端口时，总是显示空闲。
+
+**原因：** RLinf 从 ``RLINF_PORT_RANGE`` 指定的端口段（默认 ``20000-32767``）分配监听端口，
+正是为了避免这一问题。若该端口段被占满或配置有误，分配会退回到向内核申请临时端口。
+内核同样会从临时端口范围（``net.ipv4.ip_local_port_range``，通常为 ``32768-60999``）
+为**出站**连接分配源端口，因此一个在预留时确实空闲的端口，可能在服务真正 bind 之前的
+几秒内被无关的出站套接字占用。检查时该端口确实空闲，这正是事后探测无法复现该故障的原因。
+
+**修复：**
+
+- 确认 ``RLINF_PORT_RANGE`` 与 ``net.ipv4.ip_local_port_range``
+  （``cat /proc/sys/net/ipv4/ip_local_port_range``）不重叠，且范围足够容纳所有 Worker。
+- 若同一台机器上有多个 RLinf 任务并行，请让它们共享同一个本地文件系统上的
+  ``RLINF_PORT_LOCK_DIR``（默认 ``/tmp/rlinf-port-locks``）。该锁用于避免同一主机上相互
+  独立的 Ray 集群拿到相同端口。
+- 启动新任务前，先清理上一次运行残留的进程（``ray stop --force``）；残留的引擎子进程会继续
+  占用端口，而新任务的锁管理器对此一无所知。
 
 CUDA 问题
 ----------

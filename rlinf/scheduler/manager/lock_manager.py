@@ -169,6 +169,22 @@ class PortLockManager(Manager):
             self._port_locks[key] = worker_name
             return True
 
+    def release(self, node_rank: int, worker_name: str, port: int) -> None:
+        """Unlock a port previously acquired by ``worker_name``.
+
+        Releasing a port held by a different worker is a no-op, so a stale caller cannot
+        free someone else's reservation.
+
+        Args:
+            node_rank (int): The rank of the node.
+            worker_name (str): The name of the worker releasing the lock.
+            port (int): The port number to unlock.
+        """
+        with self._lock:
+            key = (node_rank, port)
+            if self._port_locks.get(key, None) == worker_name:
+                self._port_locks.pop(key)
+
     def _release_daemon(self):
         """Daemon thread to periodically clean up released ports when it finds a worker is no longer alive."""
         from ..worker import Worker
