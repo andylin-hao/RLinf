@@ -26,6 +26,8 @@ from typing import TYPE_CHECKING, ClassVar, Optional
 from omegaconf import ListConfig
 from ray._private.accelerators.nvidia_gpu import NvidiaGPUAcceleratorManager
 
+from rlinf.utils.mujoco import SCHEDULER_EGL_DEVICE_ID_ENV
+
 from .accelerator import AcceleratorManager, AcceleratorType, ProfileConfig
 
 if TYPE_CHECKING:
@@ -273,9 +275,12 @@ class NvidiaGPUManager(AcceleratorManager):
         env_vars["RAY_EXPERIMENTAL_NOSET_CUDA_VISIBLE_DEVICES"] = "1"
         # https://github.com/ray-project/ray/blob/161849364a784442cc659fb9780f1a6adee85fce/python/ray/_private/accelerators/nvidia_gpu.py#L95-L96
 
-        # Simulator env vars
+        # Simulator env vars. Deliberately not MUJOCO_EGL_DEVICE_ID: EGL
+        # enumerates devices in its own namespace, so a CUDA ordinal is not a
+        # valid EGL index. rlinf.utils.mujoco resolves the real index inside
+        # the worker and treats this only as a fallback.
         if len(visible_accelerators) > 0:
-            env_vars["MUJOCO_EGL_DEVICE_ID"] = str(visible_accelerators[0])
+            env_vars[SCHEDULER_EGL_DEVICE_ID_ENV] = str(visible_accelerators[0])
 
         # NCCL env vars
         env_vars["NCCL_CUMEM_ENABLE"] = "0"

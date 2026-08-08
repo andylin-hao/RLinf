@@ -30,43 +30,49 @@ from rlinf.envs.venv import (
     SubprocVectorEnv,
     _setup_buf,
 )
+from rlinf.utils.mujoco import mujoco_egl_device_selected
 
 # ---------------------------------------------------------------------------
 # Dynamic Module Import Logic for Libero Pro / Plus
 # ---------------------------------------------------------------------------
 libero_type = get_libero_type()
 
-if libero_type == "pro":
-    try:
-        from liberopro.liberopro.envs import OffScreenRenderEnv
-    except ImportError as e:
-        print(
-            f"[Venv] Warning: LIBERO_TYPE=pro but import failed ({e}). Falling back to standard libero..."
-        )
-        from libero.libero.envs import OffScreenRenderEnv
-
-elif libero_type == "plus":
-    try:
-        from liberoplus.liberoplus.envs import OffScreenRenderEnv
-    except ImportError as e:
-        print(
-            f"[Venv] Warning: LIBERO_TYPE=plus but import failed ({e}). Falling back to standard libero..."
-        )
-        from libero.libero.envs import OffScreenRenderEnv
-
-else:
-    try:
-        from libero.libero.envs import OffScreenRenderEnv
-    except ImportError:
+# This is the only place in RLinf that imports robosuite, by way of
+# ``libero.libero.envs``. The EGL device has to be resolved here, before
+# robosuite's import-time check runs. See ``rlinf.utils.mujoco``.
+with mujoco_egl_device_selected():
+    if libero_type == "pro":
         try:
             from liberopro.liberopro.envs import OffScreenRenderEnv
+        except ImportError as e:
+            print(
+                f"[Venv] Warning: LIBERO_TYPE=pro but import failed ({e}). Falling back to standard libero..."
+            )
+            from libero.libero.envs import OffScreenRenderEnv
+
+    elif libero_type == "plus":
+        try:
+            from liberoplus.liberoplus.envs import OffScreenRenderEnv
+        except ImportError as e:
+            print(
+                f"[Venv] Warning: LIBERO_TYPE=plus but import failed ({e}). Falling back to standard libero..."
+            )
+            from libero.libero.envs import OffScreenRenderEnv
+
+    else:
+        try:
+            from libero.libero.envs import OffScreenRenderEnv
         except ImportError:
             try:
-                from liberoplus.liberoplus.envs import OffScreenRenderEnv
+                from liberopro.liberopro.envs import OffScreenRenderEnv
             except ImportError:
-                raise ImportError(
-                    "Could not import OffScreenRenderEnv from libero, liberopro, or liberoplus."
-                )
+                try:
+                    from liberoplus.liberoplus.envs import OffScreenRenderEnv
+                except ImportError:
+                    raise ImportError(
+                        "Could not import OffScreenRenderEnv from libero, "
+                        "liberopro, or liberoplus."
+                    )
 
 
 gym_old_venv_step_type = tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]
