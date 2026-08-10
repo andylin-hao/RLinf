@@ -294,6 +294,8 @@ class ManiskillEnv(gym.Env):
     def step(
         self, actions: Union[Array, dict] = None, auto_reset=True
     ) -> tuple[Array, Array, Array, Array, dict]:
+        if isinstance(actions, torch.Tensor):
+            actions = actions.to(self.device)
         raw_obs, _reward, terminations, truncations, infos = self.env.step(actions)
         extracted_obs = self._wrap_obs(raw_obs, infos=infos)
         step_reward = self._calc_step_reward(_reward, infos)

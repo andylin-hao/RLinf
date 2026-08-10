@@ -835,6 +835,8 @@ class ManiskillRLTEnv(ManiskillEnv):
     def step(
         self, actions: Union[Array, dict] = None, auto_reset=True
     ) -> tuple[Array, Array, Array, Array, dict]:
+        if isinstance(actions, torch.Tensor):
+            actions = actions.to(self.device)
         raw_obs, _reward, terminations, truncations, infos = self.env.step(actions)
         infos = maybe_augment_peg_insertion_info(
             env=self.env.unwrapped,
