@@ -30,6 +30,7 @@ RLinf is a flexible and scalable open-source RL infrastructure designed for Embo
 
 
 ## What's NEW!
+- [2026/08] 🔥 RLinf officially supports three more accelerators: Moore Threads (MUSA), Huawei Ascend (CANN), and AMD (ROCm). Docs: [Moore Threads MUSA](https://rlinf.readthedocs.io/en/latest/rst_source/guides/moore_threads_musa.html), [Ascend CANN](https://rlinf.readthedocs.io/en/latest/rst_source/guides/ascend_cann.html), [AMD ROCm](https://rlinf.readthedocs.io/en/latest/rst_source/guides/amd_rocm.html).
 - [2026/08] 🔥 RLinf supports GRPO training for Moonlight-16B-A3B (DeepSeek-V3 MLA + MoE). Doc: [Moonlight-16B GRPO](https://rlinf.readthedocs.io/en/latest/rst_source/examples/agentic/language_models/moonlight.html).
 - [2026/08] 🔥 RLinf supports MolmoAct2 evaluation on LIBERO. Doc: [MolmoAct2](https://rlinf.readthedocs.io/en/latest/rst_source/examples/embodied/molmoact2.html).
 - [2026/08] 🎉 Two papers accepted to **OSDI 2026**: [RLinf](https://www.usenix.org/conference/osdi26/presentation/yu-chao) and [DynaRL](https://www.usenix.org/conference/osdi26/presentation/wang-yuanqing). DynaRL dynamically reallocates compute, memory, and communication across heterogeneous RL components to improve end-to-end training throughput. Doc: [DynaRL](https://rlinf.readthedocs.io/en/latest/rst_source/resources/publications/dynarl.html).
