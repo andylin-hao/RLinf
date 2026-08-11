@@ -5,10 +5,10 @@
 环境如何构建、渲染与物理仿真如何配置，以及目前尚不支持的能力。任务说明、算法、
 模型下载与指标都与硬件平台无关，参见
 :doc:`LIBERO 基准强化学习 <../examples/embodied/libero>` 和
-:doc:`ManiSkill 强化学习 <../examples/embodied/maniskill>`。
+:doc:`ManiSkill 强化学习 <../examples/embodied/maniskill>`\ 。
 
 RLinf 会自动识别 MTT GPU：调度器将其报告为 ``MUSA_GPU`` 加速器，并为每个 worker
-设置 ``MUSA_VISIBLE_DEVICES``，因此 placement 与多卡配置无需改动即可使用。
+设置 ``MUSA_VISIBLE_DEVICES``\ ，因此 placement 与多卡配置无需改动即可使用。
 
 安装
 ----
@@ -32,7 +32,7 @@ MUSA 与其他平台有一个重要区别：**RLinf 不会在 MUSA 上安装 PyT
 ~~~~~~~~~~~~~~~~~~~
 
 使用 RLinf 的 Dockerfile 并指定 ``PLATFORM=musa`` 构建，基础镜像为
-``registry.mthreads.com/mcctest/ai/training-suite:${MUSA_VER}``；
+``registry.mthreads.com/mcctest/ai/training-suite:${MUSA_VER}``\ ；
 构建目标本身无需针对 MUSA 做任何特殊处理：
 
 .. code-block:: bash
@@ -43,7 +43,7 @@ MUSA 与其他平台有一个重要区别：**RLinf 不会在 MUSA 上安装 PyT
       --build-arg BUILD_TARGET=embodied-maniskill_libero \
       -t rlinf:embodied-maniskill_libero .
 
-必须启用 BuildKit：传统构建器会解析 Dockerfile 中的每个 ``FROM``，
+必须启用 BuildKit：传统构建器会解析 Dockerfile 中的每个 ``FROM``\ ，
 包括 Docker Hub 上的 CUDA 与 ROCm 基础镜像，而 MUSA 主机通常访问不到它们。
 
 .. important::
@@ -51,7 +51,7 @@ MUSA 与其他平台有一个重要区别：**RLinf 不会在 MUSA 上安装 PyT
    mthreads 容器运行时会在运行时注入 MUSA 驱动库，这与 NVIDIA 运行时注入
    ``libcuda`` 的方式完全相同。这些库在镜像构建期间并不存在，因此构建时
    ``import torch`` 会以 ``ImportError: libmusa.so.1`` 失败。MUSA 镜像构建过程中
-   任何步骤都不能导入 torch。ManiSkill 资产是通过 ``mani_skill``（进而通过 torch）
+   任何步骤都不能导入 torch。ManiSkill 资产是通过 ``mani_skill``\ （进而通过 torch）
    下载的，因此在构建时会自动跳过。请改为在运行中的容器内下载一次：
 
    .. code-block:: bash
@@ -90,7 +90,7 @@ MUSA 与其他平台有一个重要区别：**RLinf 不会在 MUSA 上安装 PyT
 中国大陆用户可加 ``--use-mirror`` 加速下载。
 
 如果 ``torch_musa`` 无法导入，``install.sh`` 会立即报错退出；如果它报告没有可用
-设备，则只会给出警告——在运行时这通常意味着容器启动时缺少 ``--runtime=mthreads``。
+设备，则只会给出警告——在运行时这通常意味着容器启动时缺少 ``--runtime=mthreads``\ 。
 
 渲染：使用 OSMesa 而非 EGL
 --------------------------
@@ -108,8 +108,8 @@ e2e 脚本还支持以第二个参数指定渲染后端；若直接调用 Python
 
 .. note::
 
-   ``training-suite:v2.1.5-musa4.3.7`` 自带 ``libGL`` 但没有 ``libOSMesa``。
-   ``requirements/sys_deps.sh`` 会安装它（``libosmesa6``），与 Ascend、ROCm 上的
+   ``training-suite:v2.1.5-musa4.3.7`` 自带 ``libGL`` 但没有 ``libOSMesa``\ 。
+   ``requirements/sys_deps.sh`` 会安装它（``libosmesa6``\ ），与 Ascend、ROCm 上的
    做法完全一致，因此 ``PLATFORM=musa`` 构建出的镜像自带可用的软件渲染器。
    如果你手工组装镜像，请在运行仿真器前用
    ``ldconfig -p | grep -i osmesa`` 检查。
@@ -138,10 +138,10 @@ CPU 后端无法在单个进程内做环境向量化，因此每个 env rank 只
 
    ManiSkill 还需要针对 MUSA 适配的 SAPIEN，而该版本并未发布到 PyPI。官方
    ``sapien`` 无法在 ``cpu`` 设备上创建渲染系统，会报
-   ``Failed to find a supported physical device "cpu"``；而厂商版 SAPIEN 又需要
+   ``Failed to find a supported physical device "cpu"``\ ；而厂商版 SAPIEN 又需要
    打过补丁的 ManiSkill（公开的 ``v3.0.0b22`` tag 会导入
-   ``sapien.sensor.StereoDepthSensor``，厂商版 SAPIEN 并不提供该符号）。两者都
-   随摩尔线程提供的 RLinf 镜像（``registry.mthreads.com/lgpublic/rlinf:*``）一起
+   ``sapien.sensor.StereoDepthSensor``\ ，厂商版 SAPIEN 并不提供该符号）。两者都
+   随摩尔线程提供的 RLinf 镜像（``registry.mthreads.com/lgpublic/rlinf:*``\ ）一起
    发布，因此目前 MUSA 上的 ManiSkill 只能在这些镜像中运行。无论哪种方式，
    ``install.sh --platform musa`` 都能得到可用的 LIBERO 环境。
 
@@ -169,10 +169,10 @@ CPU 后端无法在单个进程内做环境向量化，因此每个 env rank 只
 
 - **transformers 的 ``flash_attention_2`` 路径** —— 镜像自带可用的 MUSA
   flash-attn（``flash_attn`` 2.6.3，kernel 可在 ``musa`` 上运行），但它没有在顶层
-  重新导出 ``flash_attn_func``，因此
-  ``transformers.utils.is_flash_attn_2_available()`` 返回 ``False``。默认使用
-  ``attn_implementation: flash_attention_2`` 的模型需改为 ``sdpa``；
-  如需直接调用 kernel，请通过 ``flash_attn.flash_attn_interface``。
+  重新导出 ``flash_attn_func``\ ，因此
+  ``transformers.utils.is_flash_attn_2_available()`` 返回 ``False``\ 。默认使用
+  ``attn_implementation: flash_attention_2`` 的模型需改为 ``sdpa``\ ；
+  如需直接调用 kernel，请通过 ``flash_attn.flash_attn_interface``\ 。
 - **vLLM / SGLang rollout** —— RLinf 的 agentic 目标依赖这两个引擎的 CUDA 构建。
   具身训练使用 ``huggingface`` rollout 后端，不受影响。
 - **ManiSkill GPU 向量化仿真** —— 见上文。
