@@ -79,6 +79,9 @@ env:
       use_multiple_plates: False
       # SAPIEN's GPU physx backend needs CUDA.
       sim_backend: "cpu"
+      # No CUDA means SAPIEN falls back to a "cpu" render device its Vulkan
+      # renderer rejects, so name a PCI device and let it pick the software one.
+      render_backend: "pci:0000:00:00.0"
     video_cfg:
       save_video: False
   eval:
@@ -97,6 +100,7 @@ env:
     init_params:
       use_multiple_plates: False
       sim_backend: "cpu"
+      render_backend: "pci:0000:00:00.0"
 
 rollout:
   group_name: "RolloutGroup"
