@@ -25,17 +25,17 @@ def allow_pci_render_backend() -> None:
     ``ValueError`` before SAPIEN sees it. Keep such a backend intact and let
     SAPIEN resolve it; everything else keeps ManiSkill's own parsing.
 
-    Idempotent, and a no-op when ManiSkill is not installed.
+    Idempotent, and a no-op for a ManiSkill that is absent or parses backend
+    strings some other way.
     """
     try:
         from mani_skill.envs.utils.system import backend
     except ImportError:
         return
 
-    if getattr(backend.parse_backend_device_id, "_rlinf_pci_patched", False):
+    original_parse = getattr(backend, "parse_backend_device_id", None)
+    if original_parse is None or getattr(original_parse, "_rlinf_pci_patched", False):
         return
-
-    original_parse = backend.parse_backend_device_id
 
     def parse_backend_device_id(device_backend):
         if isinstance(device_backend, str) and device_backend.startswith("pci:"):
