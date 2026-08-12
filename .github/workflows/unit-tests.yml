@@ -63,7 +63,7 @@ jobs:
               ray stop
           done
 
-  scheduler-unit-tests-rocm:
+  unit-tests-rocm:
     runs-on: rocm
     steps:
       - name: Checkout code
@@ -79,7 +79,7 @@ jobs:
           source .venv/bin/activate
           uv pip install "transformers<=5.9.0"
 
-      - name: Run scheduler unit tests
+      - name: Run unit tests
         timeout-minutes: 20
         run: |
           export PYTHONPATH=$(pwd):$(pwd)/tests/unit_tests:$PYTHONPATH
@@ -94,7 +94,7 @@ jobs:
           rm -rf .venv
           uv cache prune
 
-  scheduler-unit-tests-ascend:
+  unit-tests-ascend:
     runs-on: ascend
     steps:
       - name: Checkout code
@@ -110,7 +110,7 @@ jobs:
           source .venv/bin/activate
           uv pip install "transformers<=5.9.0"
 
-      - name: Run scheduler unit tests
+      - name: Run unit tests
         timeout-minutes: 60
         run: |
           export PYTHONPATH=$(pwd):$(pwd)/tests/unit_tests:$PYTHONPATH
@@ -125,7 +125,7 @@ jobs:
           rm -rf .venv
           uv cache prune
 
-  scheduler-unit-tests-musa:
+  unit-tests-musa:
     runs-on: musa
     steps:
       - name: Checkout code
@@ -141,7 +141,7 @@ jobs:
           source .venv/bin/activate
           uv pip install "transformers<=5.9.0"
 
-      - name: Run scheduler unit tests
+      - name: Run unit tests
         timeout-minutes: 60
         run: |
           export PYTHONPATH=$(pwd):$(pwd)/tests/unit_tests:$PYTHONPATH
