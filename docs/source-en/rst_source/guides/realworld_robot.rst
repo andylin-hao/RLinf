@@ -65,24 +65,6 @@ On control nodes, also source the ROS / Franka workspace if not in ``setup_befor
 
    source <your_catkin_ws>/devel/setup.bash
 
-embodied-runtime integration
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-When `embodied-runtime <https://github.com/rlinf/embodied-runtime>`_ injects
-``rosctr`` / ``camctr`` and enables their controllers, RLinf uses those CLIs
-automatically. Cameras are matched by ``camera_id``, serial number, or name;
-Franka robots are matched by ``robot_ip`` when more than one is registered.
-RLinf then connects to the managed ROS master and switches the ``impedance`` /
-``joint`` modes through ``rosctr`` instead of starting ``roscore`` and
-``roslaunch`` directly. If the runtime controllers are disabled or their CLIs
-are absent, the existing direct ROS and camera SDK paths remain unchanged.
-
-For an ambiguous multi-robot inventory, set ``embodied_runtime_robot_id`` in
-``hardware.configs``. The embodied-runtime device plugin supplies
-``RLINF_EMBODIED_PATH``, ``RLINF_EMBODIED_ROS_SOCKET_PATH``, and
-``RLINF_EMBODIED_CAMERA_SOCKET_PATH``; standalone deployments may set them
-explicitly.
-
 Step 2: Start Ray
 ~~~~~~~~~~~~~~~~~
 

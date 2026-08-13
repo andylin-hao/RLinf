@@ -63,21 +63,6 @@ Ray 集群的基础启动步骤（``RLINF_NODE_RANK``、``ray start``、代码�
 
    source <your_catkin_ws>/devel/setup.bash
 
-embodied-runtime 集成
-~~~~~~~~~~~~~~~~~~~~~
-
-当 `embodied-runtime <https://github.com/rlinf/embodied-runtime>`_ 注入
-``rosctr`` / ``camctr`` 并启用对应 controller 时，RLinf 会自动使用这些 CLI。
-相机可通过 ``camera_id``、序列号或名称匹配；注册了多个 Franka 时，默认通过
-``robot_ip`` 匹配。RLinf 会连接 runtime 管理的 ROS master，并通过 ``rosctr``
-切换 ``impedance`` / ``joint`` 模式，不再直接启动 ``roscore`` 和 ``roslaunch``。
-如果 runtime controller 未启用或 CLI 不存在，原有 ROS 与相机 SDK 路径保持不变。
-
-多机器人清单无法唯一匹配时，可在 ``hardware.configs`` 中设置
-``embodied_runtime_robot_id``。embodied-runtime device plugin 通常会注入
-``RLINF_EMBODIED_PATH``、``RLINF_EMBODIED_ROS_SOCKET_PATH`` 和
-``RLINF_EMBODIED_CAMERA_SOCKET_PATH``；独立部署时也可显式设置。
-
 步骤 2：启动 Ray
 ~~~~~~~~~~~~~~~~
 
