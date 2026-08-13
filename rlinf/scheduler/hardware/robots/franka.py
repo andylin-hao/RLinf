@@ -12,13 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import glob
 import importlib
 import ipaddress
+import os
 import warnings
 from dataclasses import dataclass
 from typing import Optional, cast
-
-from rlinf.utils.embodied_runtime import EmbodiedRuntimeCLI
 
 from ..hardware import (
     Hardware,
@@ -28,6 +28,7 @@ from ..hardware import (
     NodeHardwareConfig,
 )
 from .auto_config import RobotAutoConfig
+from .embodied_runtime import EmbodiedRuntimeCLI
 
 
 @dataclass
@@ -219,9 +220,10 @@ class FrankaRobot(Hardware):
             for dev in sl.Camera.get_device_list():
                 cameras.add(str(dev.serial_number))
         elif ct == "lumos":
-            from rlinf.envs.realworld.common.camera.lumos_camera import LumosCamera
-
-            cameras.update(LumosCamera.get_device_serial_numbers())
+            devices = glob.glob("/dev/v4l/by-id/*")
+            if not devices:
+                devices = glob.glob("/dev/video*")
+            cameras.update(os.path.basename(device) for device in devices)
         else:
             try:
                 import pyrealsense2 as rs

@@ -33,6 +33,7 @@ class EmbodiedRuntimeCLI:
     }
 
     def __init__(self, tool: str, executable: Optional[str] = None):
+        """Initialize a client for ``camctr`` or ``rosctr``."""
         if tool not in self._BIN_ENV:
             raise ValueError(f"Unsupported embodied-runtime tool: {tool}")
         self.tool = tool
@@ -43,6 +44,7 @@ class EmbodiedRuntimeCLI:
 
     @classmethod
     def find_executable(cls, tool: str) -> Optional[str]:
+        """Find an embodied-runtime CLI executable."""
         if tool not in cls._BIN_ENV:
             raise ValueError(f"Unsupported embodied-runtime tool: {tool}")
         explicit = os.environ.get(cls._BIN_ENV[tool])

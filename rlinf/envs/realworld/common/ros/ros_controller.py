@@ -22,7 +22,7 @@ import psutil
 import rospy
 from filelock import FileLock
 
-from rlinf.utils.embodied_runtime import EmbodiedRuntimeCLI
+from rlinf.scheduler import EmbodiedRuntimeCLI
 from rlinf.utils.logging import get_logger
 
 

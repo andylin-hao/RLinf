@@ -18,7 +18,7 @@ from typing import Optional
 
 import numpy as np
 
-from rlinf.utils.embodied_runtime import EmbodiedRuntimeCLI
+from rlinf.scheduler import EmbodiedRuntimeCLI
 
 from .base_camera import BaseCamera, CameraInfo
 

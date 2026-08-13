@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from rlinf.utils.embodied_runtime import EmbodiedRuntimeCLI
+from rlinf.scheduler import EmbodiedRuntimeCLI
 
 from .base_camera import BaseCamera, CameraInfo
 from .embodied_runtime_camera import EmbodiedRuntimeCamera
