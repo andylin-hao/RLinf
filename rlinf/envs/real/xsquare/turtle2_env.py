@@ -154,7 +154,7 @@ class Turtle2Env(gym.Env):
             worker_rank=self.env_worker_rank,
         )
         # Both arms ride one connection, so there is a single handle.
-        self._controller = self.robot.drivers["controller"]
+        self._controller = self.robot.handles["controller"]
 
     def close(self) -> None:
         """Detach all composed Turtle2 runtime proxies."""

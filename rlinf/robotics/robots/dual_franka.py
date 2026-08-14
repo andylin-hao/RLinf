@@ -253,7 +253,7 @@ def build_dual_franka_robot(
         worker_rank=worker_rank,
         env_idx=env_idx,
     )
-    return DualFrankaRobot(arms=arms, drivers=handles)
+    return DualFrankaRobot(arms=arms, handles=handles)
 
 
 register_robot(

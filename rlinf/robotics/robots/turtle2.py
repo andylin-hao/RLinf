@@ -99,7 +99,7 @@ def build_turtle2_robot(
     One connection backs both arms, both grippers, and the wrist cameras; the
     driver decomposes itself into those parts.
     """
-    from ..drivers.turtle2 import Turtle2Driver
+    from ..parts.arms.turtle2 import Turtle2Driver
 
     handle = Turtle2Driver.spawn(
         frequency,
@@ -111,10 +111,10 @@ def build_turtle2_robot(
         name: part for name, part in handle.parts.items() if name.startswith("wrist_")
     }
     return Turtle2Robot.dual_arm(
-        Arm(handle.part("left"), handle.part("left_end_effector")),
-        Arm(handle.part("right"), handle.part("right_end_effector")),
+        Arm(handle.subpart("left"), handle.subpart("left_end_effector")),
+        Arm(handle.subpart("right"), handle.subpart("right_end_effector")),
         cameras=cameras,
-        drivers={"controller": handle},
+        handles={"controller": handle},
     )
 
 

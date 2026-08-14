@@ -14,7 +14,7 @@
 
 import time
 
-from rlinf.robotics.drivers.turtle2 import Turtle2Driver
+from rlinf.robotics.parts.arms.turtle2 import Turtle2Driver
 
 
 def main():

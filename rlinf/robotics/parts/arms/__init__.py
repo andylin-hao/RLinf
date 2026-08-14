@@ -12,23 +12,35 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""Arms, and the hardware sessions behind them.
+
+Each module owns one vendor connection and the parts it exposes through
+:meth:`~rlinf.robotics.parts.base.RobotPart.subparts` -- typically the arm
+itself plus its end effector, and for coupled hardware several arms at once.
+
+Symbols load lazily so a node without a given vendor SDK can still import this
+package.
+"""
+
 # ruff: noqa: F822
 
 from importlib import import_module
 from typing import Any
 
-__all__ = [
-    "DOSW1ArmDriver",
-    "DOSW1ConnectionConfig",
-    "DOSW1EndEffector",
-    "DOSW1SDKAdapter",
-    "FrankyDriver",
-    "FrankaROSDriver",
-    "GimArmDriver",
-    "Turtle2Driver",
-]
+#: Canonical arm observation fields shared by the Franka and GimArm families.
+#: An arm reports these and nothing else; end-effector values belong to the
+#: end-effector part, and camera frames to camera parts.
+ARM_STATE_FIELDS: tuple[str, ...] = (
+    "tcp_pose",
+    "tcp_vel",
+    "arm_joint_position",
+    "arm_joint_velocity",
+    "tcp_force",
+    "tcp_torque",
+    "arm_jacobian",
+)
 
-_MODULE_BY_NAME = {
+_MODULE_BY_NAME: dict[str, str] = {
     "DOSW1ArmDriver": ".dosw1",
     "DOSW1ConnectionConfig": ".dosw1",
     "DOSW1EndEffector": ".dosw1",
@@ -39,9 +51,11 @@ _MODULE_BY_NAME = {
     "Turtle2Driver": ".turtle2",
 }
 
+__all__ = ["ARM_STATE_FIELDS", *sorted(_MODULE_BY_NAME)]
+
 
 def __getattr__(name: str) -> Any:
-    """Load optional driver modules only when their symbols are requested."""
+    """Load an arm module only when one of its symbols is requested."""
     module_name = _MODULE_BY_NAME.get(name)
     if module_name is None:
         raise AttributeError(name)

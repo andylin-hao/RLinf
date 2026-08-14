@@ -33,9 +33,9 @@ from rlinf.robotics import (
     RobotInfo,
     build_dosw1_robot,
 )
-from rlinf.robotics.drivers import DOSW1ArmDriver, DOSW1SDKAdapter
-from rlinf.robotics.drivers.teleop.keyboard import KeyboardListener
+from rlinf.robotics.parts.arms import DOSW1ArmDriver, DOSW1SDKAdapter
 from rlinf.robotics.parts.cameras import BaseCamera, CameraInfo, create_camera
+from rlinf.robotics.parts.teleop.keyboard import KeyboardListener
 from rlinf.robotics.states import DOSW1RobotState
 from rlinf.scheduler import WorkerInfo
 from rlinf.utils.logging import get_logger

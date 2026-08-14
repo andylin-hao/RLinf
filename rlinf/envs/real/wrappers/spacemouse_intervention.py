@@ -17,7 +17,7 @@ import time
 import gymnasium as gym
 import numpy as np
 
-from rlinf.robotics.drivers.teleop.spacemouse import SpaceMouseExpert
+from rlinf.robotics.parts.teleop.spacemouse import SpaceMouseExpert
 
 
 def sample_gripper_action(is_open: bool) -> np.ndarray:

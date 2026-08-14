@@ -21,7 +21,6 @@ from typing import Protocol
 
 import numpy as np
 
-from rlinf.robotics.drivers.base import Driver
 from rlinf.robotics.parts.base import ControllablePart, EndEffector, RobotPart
 from rlinf.robotics.states import DOSW1RobotState
 from rlinf.utils.logging import get_logger
@@ -54,7 +53,7 @@ _CONTROL_LOOP_DT = 0.02
 _STATE_READY_TIMEOUT_S = 5.0
 
 
-class DOSW1SDKAdapter(Driver):
+class DOSW1SDKAdapter(RobotPart):
     """Thin wrapper around ``airbot_sdk.AirbotRobot`` for RLinf."""
 
     def __init__(self, config: DOSW1ConnectionConfig) -> None:
@@ -129,10 +128,10 @@ class DOSW1SDKAdapter(Driver):
         except Exception:
             self._logger.exception("[DOSW1SDK] Failed to disconnect cleanly")
 
-    def parts(self) -> dict[str, RobotPart]:
+    def subparts(self) -> dict[str, RobotPart]:
         """Expose both arms and both end effectors on this one SDK session.
 
-        The parts borrow the session; the driver itself owns connecting and
+        The subparts borrow the session; this part owns connecting and
         disconnecting it.
         """
         parts: dict[str, RobotPart] = {}
@@ -140,6 +139,20 @@ class DOSW1SDKAdapter(Driver):
             parts[side] = DOSW1ArmDriver(self, side)
             parts[f"{side}_end_effector"] = DOSW1EndEffector(self, side)
         return parts
+
+    @property
+    def observation_features(self) -> dict:
+        """Describe this session by its subparts; it has no state of its own."""
+        return {
+            name: part.observation_features
+            for name, part in self.subparts().items()
+        }
+
+    def get_observation(self) -> dict:
+        """Read every part riding on this session."""
+        return {
+            name: part.get_observation() for name, part in self.subparts().items()
+        }
 
     def set_leader_arm_enabled(self, enabled: bool) -> None:
         """Toggle leader-arm linkage used by teleoperation."""

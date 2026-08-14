@@ -17,20 +17,19 @@ import tracemalloc
 
 import numpy as np
 
-from rlinf.robotics.drivers.base import Driver
-from rlinf.robotics.drivers.views import DriverArm, DriverCamera, DriverGripper
 from rlinf.robotics.parts.base import ControllablePart, RobotPart
 from rlinf.robotics.states import Turtle2RobotState
+from rlinf.robotics.views import MethodArm, MethodCamera, MethodGripper
 from rlinf.utils.logging import get_logger
 
-#: Driver state prefix backing each arm, and the method suffix commanding it.
+#: State-field prefix backing each arm, and the method suffix commanding it.
 _ARM_SIDES: dict[str, str] = {"left": "follow1", "right": "follow2"}
 
 #: Index of the gripper value inside an arm's pose vector.
 _GRIPPER_STATE_INDEX = 6
 
 
-class Turtle2Driver(Driver, ControllablePart):
+class Turtle2Driver(ControllablePart):
     """Pure ROS-backed Turtle2 device driver.
 
     One ROS connection drives both arms, both grippers, and the wrist cameras.
@@ -46,11 +45,11 @@ class Turtle2Driver(Driver, ControllablePart):
         self._state = Turtle2RobotState()
         self._connected = False
 
-    def parts(self) -> dict[str, RobotPart]:
+    def subparts(self) -> dict[str, RobotPart]:
         """Decompose the shared connection into per-side arms and cameras."""
         parts: dict[str, RobotPart] = {}
         for side, prefix in _ARM_SIDES.items():
-            parts[side] = DriverArm(
+            parts[side] = MethodArm(
                 self,
                 commands={"tcp_pose": f"move_{side}_arm"},
                 state_fields={
@@ -59,14 +58,14 @@ class Turtle2Driver(Driver, ControllablePart):
                     "joint_current": f"{prefix}_cur_data",
                 },
             )
-            parts[f"{side}_end_effector"] = DriverGripper(
+            parts[f"{side}_end_effector"] = MethodGripper(
                 self,
                 state_field=f"{prefix}_pos",
                 command=f"move_{side}_gripper",
                 state_index=_GRIPPER_STATE_INDEX,
             )
         for index, camera_id in enumerate(self.camera_ids):
-            parts[f"wrist_{index + 1}"] = DriverCamera(self, "get_camera", camera_id)
+            parts[f"wrist_{index + 1}"] = MethodCamera(self, "get_camera", camera_id)
         return parts
 
     @property

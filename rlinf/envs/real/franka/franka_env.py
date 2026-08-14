@@ -277,7 +277,7 @@ class FrankaEnv(gym.Env):
             end_effector_config=self.config.end_effector_config,
             gripper_connection=self.config.gripper_connection,
         )
-        self._controller = self.robot.drivers["arm"]
+        self._controller = self.robot.handles["arm"]
 
     def _setup_reward_worker(self):
         if not self.config.use_reward_model:

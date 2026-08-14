@@ -20,9 +20,8 @@ import numpy as np
 import psutil
 from scipy.spatial.transform import Rotation as R
 
-from rlinf.robotics.drivers.base import ARM_STATE_FIELDS, SinglePartDriver
-from rlinf.robotics.drivers.views import DriverGripper
-from rlinf.robotics.parts.base import RobotPart
+from rlinf.robotics.parts.arms import ARM_STATE_FIELDS
+from rlinf.robotics.parts.base import ControllablePart, RobotPart
 from rlinf.robotics.parts.end_effectors import (
     BaseEndEffector,
     EndEffectorType,
@@ -30,10 +29,11 @@ from rlinf.robotics.parts.end_effectors import (
     normalize_end_effector_type,
 )
 from rlinf.robotics.states import FrankaRobotState
+from rlinf.robotics.views import MethodGripper
 from rlinf.utils.logging import get_logger
 
 
-class FrankaROSDriver(SinglePartDriver):
+class FrankaROSDriver(ControllablePart):
     """Pure ROS-backed Franka driver with no scheduler dependency."""
 
     def __init__(
@@ -83,17 +83,17 @@ class FrankaROSDriver(SinglePartDriver):
         """Describe the Cartesian pose command."""
         return {"tcp_pose": {}}
 
-    def parts(self) -> dict[str, RobotPart]:
+    def subparts(self) -> dict[str, RobotPart]:
         """Expose the arm and whichever end effector is configured."""
         if self._end_effector_type.is_hand:
-            end_effector = DriverGripper(
+            end_effector = MethodGripper(
                 self,
                 state_field="hand_position",
                 action_dim=6,
                 command="command_end_effector",
             )
         else:
-            end_effector = DriverGripper(self, state_field="gripper_position")
+            end_effector = MethodGripper(self, state_field="gripper_position")
         return {"arm": self, "end_effector": end_effector}
 
     def connect(self) -> None:
@@ -106,7 +106,7 @@ class FrankaROSDriver(SinglePartDriver):
         from franka_msgs.msg import ErrorRecoveryActionGoal, FrankaState
         from serl_franka_controllers.msg import ZeroJacobian
 
-        from rlinf.robotics.drivers.ros import ROSController
+        from rlinf.robotics.parts.transports.ros import ROSController
 
         self._geom_msg = geom_msg
         self._rospy = rospy

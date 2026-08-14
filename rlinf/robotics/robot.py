@@ -32,14 +32,14 @@ class Robot:
         arms: Optional[Mapping[str, Arm]] = None,
         cameras: Optional[Mapping[str, Camera]] = None,
         parts: Optional[Mapping[str, RobotPart]] = None,
-        drivers: Optional[Mapping[str, Any]] = None,
+        handles: Optional[Mapping[str, Any]] = None,
     ) -> None:
         self.arms = self._validate_named_parts("arm", arms, Arm)
         self.cameras = self._validate_named_parts("camera", cameras, Camera)
         self.parts = self._validate_named_parts("part", parts, RobotPart)
-        self.drivers = dict(drivers or {})
-        """Driver handles this robot owns, keyed by name. Parts borrow their
-        connections, so the robot releases them once every part is
+        self.handles = dict(handles or {})
+        """Part handles this robot owns, keyed by name. Composed parts borrow
+        their connections, so the robot releases the handles once every part is
         disconnected."""
 
     @classmethod
@@ -48,10 +48,10 @@ class Robot:
         arm: Arm,
         cameras: Optional[Mapping[str, Camera]] = None,
         parts: Optional[Mapping[str, RobotPart]] = None,
-        drivers: Optional[Mapping[str, Any]] = None,
+        handles: Optional[Mapping[str, Any]] = None,
     ) -> RobotType:
         """Compose a single-arm robot with stable part names."""
-        return cls(arms={"arm": arm}, cameras=cameras, parts=parts, drivers=drivers)
+        return cls(arms={"arm": arm}, cameras=cameras, parts=parts, handles=handles)
 
     @classmethod
     def dual_arm(
@@ -60,14 +60,14 @@ class Robot:
         right_arm: Arm,
         cameras: Optional[Mapping[str, Camera]] = None,
         parts: Optional[Mapping[str, RobotPart]] = None,
-        drivers: Optional[Mapping[str, Any]] = None,
+        handles: Optional[Mapping[str, Any]] = None,
     ) -> RobotType:
         """Compose a dual-arm robot with stable left and right part names."""
         return cls(
             arms={"left": left_arm, "right": right_arm},
             cameras=cameras,
             parts=parts,
-            drivers=drivers,
+            handles=handles,
         )
 
     @staticmethod
@@ -243,11 +243,11 @@ class Robot:
         return applied
 
     def disconnect(self) -> None:
-        """Disconnect every part, then release the connections behind them."""
+        """Disconnect every part, then release the handles behind them."""
         for part in reversed(self._top_level_parts()):
             if isinstance(part, Arm) or part.is_connected:
                 part.disconnect()
-        for handle in reversed(list(self.drivers.values())):
+        for handle in reversed(list(self.handles.values())):
             handle.disconnect()
 
     def _top_level_parts(self) -> list[RobotPart]:

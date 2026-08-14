@@ -253,7 +253,7 @@ class GimArmEnv(gym.Env):
         )
         # Off-interface driver calls (is_robot_up, reset_joint, ...) go
         # straight to the handle; no cast through a part proxy.
-        self._controller = self.robot.drivers["arm"]
+        self._controller = self.robot.handles["arm"]
 
     def _init_action_obs_spaces(self):
         """Initialise action and observation spaces."""

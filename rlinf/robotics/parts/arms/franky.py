@@ -28,11 +28,11 @@ from typing import Optional
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
-from rlinf.robotics.drivers.base import ARM_STATE_FIELDS, SinglePartDriver
-from rlinf.robotics.drivers.views import DriverGripper
-from rlinf.robotics.parts.base import RobotPart
+from rlinf.robotics.parts.arms import ARM_STATE_FIELDS
+from rlinf.robotics.parts.base import ControllablePart, RobotPart
 from rlinf.robotics.parts.end_effectors.grippers import create_gripper
 from rlinf.robotics.states import FrankaRobotState
+from rlinf.robotics.views import MethodGripper
 from rlinf.utils.logging import get_logger
 
 # Franka Panda joint position / velocity limits.
@@ -73,7 +73,7 @@ _RT_PRIORITY = 80
 _MCL_CURRENT, _MCL_FUTURE = 1, 2
 
 
-class FrankyDriver(SinglePartDriver):
+class FrankyDriver(ControllablePart):
     """Pure libfranka device driver with no scheduler dependency."""
 
     def __init__(
@@ -116,11 +116,11 @@ class FrankyDriver(SinglePartDriver):
         """Describe supported joint and Cartesian targets."""
         return {"joint_position": {}, "tcp_pose": {}}
 
-    def parts(self) -> dict[str, RobotPart]:
+    def subparts(self) -> dict[str, RobotPart]:
         """Expose the arm and the gripper riding on the same connection."""
         return {
             "arm": self,
-            "end_effector": DriverGripper(self, state_field="gripper_position"),
+            "end_effector": MethodGripper(self, state_field="gripper_position"),
         }
 
     def connect(self) -> None:

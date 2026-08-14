@@ -17,10 +17,10 @@ import time
 
 import numpy as np
 
-from rlinf.robotics.drivers.base import ARM_STATE_FIELDS, SinglePartDriver
-from rlinf.robotics.drivers.views import DriverGripper
-from rlinf.robotics.parts.base import RobotPart
+from rlinf.robotics.parts.arms import ARM_STATE_FIELDS
+from rlinf.robotics.parts.base import ControllablePart, RobotPart
 from rlinf.robotics.states import GimArmRobotState
+from rlinf.robotics.views import MethodGripper
 from rlinf.utils.logging import get_logger
 
 # End-effector frame name in gim_arm URDF.
@@ -38,7 +38,7 @@ def _smoothstep(t: float) -> float:
     return 10 * t**3 - 15 * t**4 + 6 * t**5
 
 
-class GimArmDriver(SinglePartDriver):
+class GimArmDriver(ControllablePart):
     """GimArm robot arm controller.
 
     Wraps the ``gim_arm_control`` SDK (CAN bus) independently of scheduling.
@@ -89,11 +89,11 @@ class GimArmDriver(SinglePartDriver):
         """Describe the absolute joint target."""
         return {"joint_position": {}}
 
-    def parts(self) -> dict[str, RobotPart]:
+    def subparts(self) -> dict[str, RobotPart]:
         """Expose the arm, plus the gripper when one is fitted."""
         parts: dict[str, RobotPart] = {"arm": self}
         if self._enable_gripper:
-            parts["end_effector"] = DriverGripper(
+            parts["end_effector"] = MethodGripper(
                 self, state_field="gripper_position"
             )
         return parts

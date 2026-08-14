@@ -12,18 +12,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""RLinf's robotics layer: parts, drivers, and the robots composed from them.
+"""RLinf's robotics layer: parts, and the robots composed from them.
 
-Three concepts, and the boundary between them is what keeps this layer small:
+Two concepts:
 
-* **Part** -- a robot-semantic view with a policy-facing contract: an arm, an
-  end effector, a camera. See :mod:`rlinf.robotics.parts.base`.
-* **Driver** -- a connection to one physical device, backing one or more parts.
-  It is the unit of placement. See :mod:`rlinf.robotics.drivers.base`.
+* **Part** -- anything physical, with a policy-facing observation and action
+  contract: an arm, an end effector, a camera. Hardware that presents several
+  components over one connection -- a coupled dual-arm controller, a two-armed
+  SDK session -- exposes them through
+  :meth:`~rlinf.robotics.parts.base.RobotPart.subparts`. "Owns a connection" is
+  therefore a property some parts have, not a separate kind of thing.
 * **Robot** -- a named composition of parts. See :mod:`rlinf.robotics.robot`.
 
-The scheduler never imports this package; drivers never import the scheduler
-except through :meth:`~rlinf.robotics.drivers.base.Driver.spawn`.
+Any part can be placed on a node with
+:meth:`~rlinf.robotics.parts.base.RobotPart.spawn`, so a camera can run on the
+machine it is plugged into while the policy runs elsewhere.
+
+The scheduler never imports this package, and parts never import the scheduler
+except through ``spawn``, which loads :mod:`rlinf.robotics.placement` lazily.
 
 Symbols load lazily so a node without a given robot's SDK can still import
 ``rlinf.robotics``.
@@ -34,63 +40,7 @@ Symbols load lazily so a node without a given robot's SDK can still import
 from importlib import import_module
 from typing import Any
 
-__all__ = [
-    # Parts
-    "Arm",
-    "Camera",
-    "ControllablePart",
-    "EndEffector",
-    "LeggedBase",
-    "MobileBase",
-    "RobotPart",
-    "run_parallel",
-    # Drivers
-    "ARM_STATE_FIELDS",
-    "Driver",
-    "DriverArm",
-    "DriverCamera",
-    "DriverGripper",
-    "DriverHandle",
-    "LocalDriverHandle",
-    "RemoteCamera",
-    "RemoteControllablePart",
-    "RemoteDriverHandle",
-    "RemoteEndEffector",
-    "RemotePart",
-    "SinglePartDriver",
-    # Composition
-    "Robot",
-    # Robots
-    "DOSW1Robot",
-    "DOSW1RobotConfig",
-    "DualFrankaConfig",
-    "DualFrankaRobot",
-    "FrankaArmConfig",
-    "FrankaConfig",
-    "FrankaRobot",
-    "GimArmConfig",
-    "GimArmRobot",
-    "Turtle2Config",
-    "Turtle2Robot",
-    "build_dosw1_robot",
-    "build_dual_franka_robot",
-    "build_franka_robot",
-    "build_gim_arm_robot",
-    "build_turtle2_robot",
-    # Configuration and discovery
-    "LegacyObservationAdapter",
-    "RobotAutoConfig",
-    "RobotConfig",
-    "RobotDiscovery",
-    "RobotInfo",
-    "RobotRegistration",
-    "build_robot",
-    "VectorActionAdapter",
-    "VectorActionBinding",
-    "register_robot",
-]
-
-#: Symbols are grouped by the module that defines them, so adding one is a
+#: Symbols grouped by the module that defines them, so adding one is a
 #: single-line change in the group it belongs to.
 _MODULE_GROUPS: dict[str, tuple[str, ...]] = {
     ".parts": (
@@ -103,21 +53,18 @@ _MODULE_GROUPS: dict[str, tuple[str, ...]] = {
         "RobotPart",
         "run_parallel",
     ),
+    ".parts.base": ("part_kind",),
+    ".parts.arms": ("ARM_STATE_FIELDS",),
     ".robot": ("Robot",),
-    ".drivers.base": (
-        "ARM_STATE_FIELDS",
-        "Driver",
-        "SinglePartDriver",
-    ),
-    ".drivers.views": ("DriverArm", "DriverCamera", "DriverGripper"),
-    ".drivers.handle": (
-        "DriverHandle",
-        "LocalDriverHandle",
+    ".views": ("MethodArm", "MethodCamera", "MethodGripper"),
+    ".placement": (
+        "LocalPartHandle",
+        "PartHandle",
         "RemoteCamera",
         "RemoteControllablePart",
-        "RemoteDriverHandle",
         "RemoteEndEffector",
         "RemotePart",
+        "RemotePartHandle",
     ),
     ".robots": (
         "DOSW1Robot",
@@ -125,7 +72,7 @@ _MODULE_GROUPS: dict[str, tuple[str, ...]] = {
         "DualFrankaConfig",
         "DualFrankaRobot",
         "FrankaArmConfig",
-    "FrankaConfig",
+        "FrankaConfig",
         "FrankaRobot",
         "GimArmConfig",
         "GimArmRobot",
@@ -136,6 +83,7 @@ _MODULE_GROUPS: dict[str, tuple[str, ...]] = {
         "build_franka_robot",
         "build_gim_arm_robot",
         "build_turtle2_robot",
+        "place_franka_arms",
     ),
     ".adapters": (
         "LegacyObservationAdapter",
@@ -144,20 +92,20 @@ _MODULE_GROUPS: dict[str, tuple[str, ...]] = {
     ),
     ".config": ("RobotAutoConfig",),
     ".discovery": (
-        "build_robot",
         "RobotConfig",
         "RobotDiscovery",
         "RobotInfo",
         "RobotRegistration",
+        "build_robot",
         "register_robot",
     ),
-    ".layout": (
-                        ),
 }
 
 _MODULE_BY_NAME: dict[str, str] = {
     name: module for module, names in _MODULE_GROUPS.items() for name in names
 }
+
+__all__ = sorted(_MODULE_BY_NAME)
 
 #: Discovery classes only exist once every robot module has registered itself.
 _DISCOVERY_NAMES = frozenset(_MODULE_GROUPS[".discovery"])

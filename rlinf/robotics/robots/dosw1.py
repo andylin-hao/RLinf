@@ -129,13 +129,13 @@ def build_dosw1_robot(config) -> DOSW1Robot:
     Both arms share a single connection, so there is nothing to place: the
     driver is built in this process.
     """
-    from ..drivers.dosw1 import DOSW1SDKAdapter
+    from ..parts.arms.dosw1 import DOSW1SDKAdapter
 
     handle = DOSW1SDKAdapter.spawn(config)
     return DOSW1Robot.dual_arm(
-        Arm(handle.part("left"), handle.part("left_end_effector")),
-        Arm(handle.part("right"), handle.part("right_end_effector")),
-        drivers={"sdk": handle},
+        Arm(handle.subpart("left"), handle.subpart("left_end_effector")),
+        Arm(handle.subpart("right"), handle.subpart("right_end_effector")),
+        handles={"sdk": handle},
     )
 
 

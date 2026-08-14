@@ -24,8 +24,6 @@ from rlinf.robotics import (
     Camera,
     ControllablePart,
     DOSW1RobotConfig,
-    DriverArm,
-    DriverGripper,
     DualFrankaConfig,
     DualFrankaRobot,
     EndEffector,
@@ -34,7 +32,9 @@ from rlinf.robotics import (
     FrankaRobot,
     GimArmConfig,
     LegacyObservationAdapter,
-    RemoteDriverHandle,
+    MethodArm,
+    MethodGripper,
+    RemotePartHandle,
     Robot,
     RobotAutoConfig,
     RobotConfig,
@@ -46,13 +46,12 @@ from rlinf.robotics import (
     build_dosw1_robot,
     register_robot,
 )
-from rlinf.robotics.drivers import (
+from rlinf.robotics.parts.arms import (
     FrankaROSDriver,
     FrankyDriver,
     GimArmDriver,
     Turtle2Driver,
 )
-from rlinf.robotics.drivers.base import Driver
 from rlinf.robotics.robots.franka import place_franka_arms
 from rlinf.robotics.states import FrankaRobotState
 from rlinf.scheduler.hardware import (
@@ -141,7 +140,7 @@ class FakeMethodDriver:
 
 
 class FakeWorkerGroup:
-    """Stand-in for the one-worker group behind a RemoteDriverHandle."""
+    """Stand-in for the one-worker group behind a RemotePartHandle."""
 
     def __init__(self):
         self.calls: list[tuple[str, Any]] = []
@@ -150,12 +149,12 @@ class FakeWorkerGroup:
         self.calls.append(("shutdown", None))
         return FakeRemoteResult(None)
 
-    def part_observation(self, name: str) -> FakeRemoteResult:
-        self.calls.append(("part_observation", name))
+    def subpart_observation(self, name: str) -> FakeRemoteResult:
+        self.calls.append(("subpart_observation", name))
         return FakeRemoteResult({"tcp_pose": np.zeros(7)})
 
-    def part_action(self, name: str, action: Any) -> FakeRemoteResult:
-        self.calls.append(("part_action", (name, action)))
+    def subpart_action(self, name: str, action: Any) -> FakeRemoteResult:
+        self.calls.append(("subpart_action", (name, action)))
         return FakeRemoteResult(action)
 
     def is_robot_up(self) -> FakeRemoteResult:
@@ -235,12 +234,12 @@ def test_robot_disconnects_remaining_arm_parts_after_camera_failure():
 def test_driver_views_expose_composed_part_api():
     """A method-shaped driver decomposes into parts without any remoting."""
     driver = FakeMethodDriver()
-    arm = DriverArm(
+    arm = MethodArm(
         driver,
         commands={"tcp_pose": "move_arm"},
         state_fields=("tcp_pose", "arm_joint_position"),
     )
-    end_effector = DriverGripper(driver, state_field="gripper_position")
+    end_effector = MethodGripper(driver, state_field="gripper_position")
     target = np.ones(7)
 
     assert set(arm.get_observation()) == {"tcp_pose", "arm_joint_position"}
@@ -258,7 +257,7 @@ def test_driver_views_expose_composed_part_api():
 
 def test_remote_handle_releases_its_worker_group():
     group = FakeWorkerGroup()
-    handle = RemoteDriverHandle(
+    handle = RemotePartHandle(
         group,
         {"arm": {"kind": "controllable", "observation": {}, "action": {}}},
     )
@@ -272,7 +271,7 @@ def test_remote_handle_releases_its_worker_group():
 def test_remote_handle_forwards_off_interface_driver_methods():
     """Methods outside the part interface reach the driver unchanged."""
     group = FakeWorkerGroup()
-    handle = RemoteDriverHandle(group, {})
+    handle = RemotePartHandle(group, {})
 
     assert handle.is_robot_up().wait()[0] is True
 
@@ -401,7 +400,7 @@ def test_robot_releases_driver_handles_after_parts():
             events.append("handle")
 
     arm = Arm(driver=FakeControllablePart("driver", events))
-    robot = Robot.single_arm(arm, drivers={"arm": FakeHandle()})
+    robot = Robot.single_arm(arm, handles={"arm": FakeHandle()})
     robot.connect()
     robot.disconnect()
 
@@ -410,20 +409,12 @@ def test_robot_releases_driver_handles_after_parts():
 
 
 def test_driver_rejects_actions_for_observation_only_parts():
-    class CameraOnlyDriver(Driver):
-        is_connected = True
-
-        def connect(self) -> None:
-            pass
-
-        def disconnect(self) -> None:
-            pass
-
-        def parts(self) -> dict[str, RobotPart]:
+    class CameraOnlyHost(FakePart):
+        def subparts(self) -> dict[str, RobotPart]:
             return {"wrist": FakeCamera("wrist", [])}
 
     with pytest.raises(TypeError, match="not controllable"):
-        CameraOnlyDriver().part_action("wrist", {})
+        CameraOnlyHost("host", []).subpart_action("wrist", {})
 
 
 def test_legacy_adapters_preserve_policy_facing_layouts():
@@ -519,11 +510,11 @@ def test_pure_drivers_construct_without_scheduler_or_vendor_sdks():
         Turtle2Driver(),
     ]
 
-    assert all(isinstance(driver, Driver) for driver in drivers)
+    assert all(isinstance(driver, RobotPart) for driver in drivers)
     assert all(isinstance(driver, ControllablePart) for driver in drivers)
     assert all(not driver.is_connected for driver in drivers)
-    # Every driver declares the parts it backs.
-    assert all(driver.parts() for driver in drivers)
+    # Each declares the subparts riding on its connection.
+    assert all(driver.subparts() for driver in drivers)
 
 
 def test_single_and_dual_franka_configs_project_onto_one_arm_shape():
@@ -564,7 +555,7 @@ def test_place_franka_arms_tears_down_arms_already_placed(monkeypatch):
         def __init__(self, name: str):
             self.name = name
 
-        def part(self, _name: str):
+        def subpart(self, _name: str):
             return FakeControllablePart(self.name, [])
 
         def disconnect(self) -> None:
@@ -577,7 +568,7 @@ def test_place_franka_arms_tears_down_arms_already_placed(monkeypatch):
                 raise RuntimeError("right arm is unreachable")
             return FakeHandle(robot_ip)
 
-    monkeypatch.setattr(franka_module, "_franka_driver_cls", lambda backend: FakeDriver)
+    monkeypatch.setattr(franka_module, "_franka_part_cls", lambda backend: FakeDriver)
 
     with pytest.raises(RuntimeError, match="unreachable"):
         place_franka_arms(
@@ -601,7 +592,7 @@ def test_place_franka_arms_scales_past_two(monkeypatch):
         def __init__(self, name: str):
             self.name = name
 
-        def part(self, _name: str):
+        def subpart(self, _name: str):
             return FakeControllablePart(self.name, [])
 
         def disconnect(self) -> None:
@@ -609,7 +600,7 @@ def test_place_franka_arms_scales_past_two(monkeypatch):
 
     monkeypatch.setattr(
         franka_module,
-        "_franka_driver_cls",
+        "_franka_part_cls",
         lambda backend: type(
             "FakeDriver",
             (),
@@ -630,4 +621,39 @@ def test_place_franka_arms_scales_past_two(monkeypatch):
 
     assert list(arms) == ["left", "right", "third"]
     assert list(handles) == ["left", "right", "third"]
-    assert isinstance(FrankaRobot(arms=arms, drivers=handles).arms["third"], Arm)
+    assert isinstance(FrankaRobot(arms=arms, handles=handles).arms["third"], Arm)
+
+
+def test_local_handle_subpart_returns_a_part_not_a_forwarded_call():
+    """The handle's accessors must win over its catch-all forwarding.
+
+    ``LocalPartHandle.__getattr__`` forwards unknown names to the hosted part
+    and wraps the result for call-shape symmetry. If an accessor like
+    ``subpart`` were missing from the handle, that forwarding would silently
+    return a result wrapper instead of a part, and the failure would surface
+    far away as a missing attribute on the composed arm.
+    """
+    events: list[str] = []
+
+    class HostWithSubparts(FakeControllablePart):
+        def subparts(self) -> dict[str, RobotPart]:
+            return {"arm": self, "end_effector": FakeEndEffector("ee", events)}
+
+    handle = HostWithSubparts.spawn("host", events)
+
+    assert isinstance(handle.subpart("arm"), RobotPart)
+    assert isinstance(handle.subpart("end_effector"), EndEffector)
+    assert set(handle.subparts) == {"arm", "end_effector"}
+    # Off-interface names still forward, and still wrap.
+    assert handle.get_observation().wait()[0]["state"].shape == (1,)
+
+
+def test_any_part_can_be_placed_not_only_arms():
+    """Placement is a property of parts, so a camera can be spawned alone."""
+    events: list[str] = []
+    handle = FakeCamera.spawn("wrist", events)
+
+    assert handle.part.is_connected
+    assert "connect:wrist" in events
+    handle.disconnect()
+    assert "disconnect:wrist" in events

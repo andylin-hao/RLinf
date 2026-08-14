@@ -37,7 +37,7 @@ if not ray.is_initialized():
 import numpy as np  # noqa: E402
 from scipy.spatial.transform import Rotation as R  # noqa: E402
 
-from rlinf.robotics.drivers.franky import FrankyDriver  # noqa: E402
+from rlinf.robotics.parts.arms.franky import FrankyDriver  # noqa: E402
 
 # Franka Emika Panda factory "ready" pose.
 HOME_JOINTS = [0.0, -0.785, 0.0, -2.356, 0.0, 1.571, 0.785]

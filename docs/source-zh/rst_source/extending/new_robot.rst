@@ -15,23 +15,21 @@
      - 职责
    * - ``RobotPart`` 和 ``ControllablePart``
      - 管理一个设备连接，并公开规范观测与动作。
-   * - ``Driver``
-     - 持有一条设备连接，并声明它支撑的部件。它是放置的基本单位。
    * - ``Arm``
      - 组合一个机械臂驱动、可选 ``EndEffector`` 和命名腕部相机。
    * - ``Robot``
      - 组合命名机械臂、机器人级相机，以及底盘等可选部件。
    * - ``RobotDiscovery``
      - 将调度器硬件配置转换为通用硬件资源。
-   * - ``DriverHandle``
-     - 以相同方式访问驱动，无论其运行在本地还是 worker 中。
+   * - ``PartHandle``
+     - 以相同方式访问部件，无论其运行在本地还是 worker 中。
    * - ``RobotTask`` 和 ``RobotTaskEnv``
      - 管理重置、奖励、终止、Gymnasium 空间和策略兼容逻辑。
 
-依赖方向必须保持严格。驱动、部件和相机都不得导入 Ray、Gymnasium 或 ``rlinf.scheduler``；导入驱动不应把调度器带入进程。只有 ``rlinf/robotics/drivers/worker.py`` 一个模块跨越这条边界，且 ``Driver.spawn`` 以惰性方式导入它。环境使用组合后的 ``Robot``，并将任务语义保留在设备驱动之外。该约束由 ``tests/unit_tests/test_robotics_boundaries.py`` 强制检查。
+依赖方向必须保持严格。部件不得导入 Ray、Gymnasium 或 ``rlinf.scheduler``；导入部件不应把调度器带入进程。只有 ``rlinf/robotics/placement.py`` 一个模块跨越这条边界，且 ``RobotPart.spawn`` 以惰性方式导入它。环境使用组合后的 ``Robot``，并将任务语义保留在硬件代码之外。该约束由 ``tests/unit_tests/test_robotics_boundaries.py`` 强制检查。
 
-实现纯驱动
-----------
+实现部件
+--------
 
 仅提供观测的设备继承 ``RobotPart``。机械臂、底盘和其他可接收命令的设备继承 ``ControllablePart``。将可选厂商 SDK 放在 ``connect()`` 内导入，使未安装该 SDK 的节点也能导入模块。
 
@@ -83,12 +81,12 @@
                self._client.close()
                self._client = None
 
-当存在更具体的接口时，使用 ``Camera``、``EndEffector``、``MobileBase`` 或 ``LeggedBase``。内置实现按类别归入 ``rlinf/robotics/parts``：``parts/cameras``、``parts/end_effectors/grippers`` 和 ``parts/end_effectors/hands``。设备连接位于相邻的 ``rlinf/robotics/drivers``。
+当存在更具体的接口时，使用 ``Camera``、``EndEffector``、``MobileBase`` 或 ``LeggedBase``。内置实现按类别归入 ``rlinf/robotics/parts``：``parts/arms``、``parts/cameras``、``parts/end_effectors/grippers``、``parts/end_effectors/hands``、``parts/teleop`` 和 ``parts/transports``。
 
 组合机器人
 ----------
 
-将每个机械臂驱动放入 ``Arm``。请使用稳定的机械臂名称，因为它们会成为规范观测和动作路径。单臂与双臂机器人使用相同结构。
+将每个机械臂部件放入 ``Arm``。请使用稳定的机械臂名称，因为它们会成为规范观测和动作路径。单臂与双臂机器人使用相同结构。
 
 .. code-block:: python
 
@@ -118,7 +116,7 @@
        }
    )
 
-左机械臂驱动的规范观测路径为 ``arms.left.state.joint_position``。末端执行器动作使用 ``arms.<name>.end_effector``。机器人级相机使用 ``cameras.<name>``；其他部件使用 ``parts.<name>``。
+左机械臂的规范观测路径为 ``arms.left.state.joint_position``。末端执行器动作使用 ``arms.<name>.end_effector``。机器人级相机使用 ``cameras.<name>``；其他部件使用 ``parts.<name>``。
 
 描述物理硬件
 ------------
@@ -153,7 +151,7 @@
        return ExampleRobot.dual_arm(
            Arm(handles["left"].part("arm")),
            Arm(handles["right"].part("arm")),
-           drivers=handles,
+           handles=handles,
        )
 
 机械臂数量属于组合方式，而非机器人类型：单臂型号使用同一个 builder，只是返回 ``ExampleRobot.single_arm(...)``。
@@ -232,10 +230,10 @@
                left_endpoint: tcp://left-arm:5000
                right_endpoint: tcp://right-arm:5000
 
-在节点上放置驱动
+在节点上放置部件
 ----------------
 
-``Driver.spawn`` 是唯一的放置入口。不传 ``node_rank`` 时驱动在当前进程内构造；传入时则托管在该节点的调度器 worker 中。两者返回的句柄 API 完全相同，因此调用方无需区分放置方式。
+``RobotPart.spawn`` 是唯一的放置入口，每个部件都具备。不传 ``node_rank`` 时部件在当前进程内构造；传入时则托管在该节点的调度器 worker 中。两者返回的句柄 API 完全相同，因此调用方无需区分放置方式。这不限于机械臂：相机可以运行在它所插接的机器上，而策略运行在别处。
 
 .. code-block:: python
 
@@ -248,16 +246,16 @@
    )
    robot = Robot.single_arm(
        Arm(handle.part("arm"), handle.part("end_effector")),
-       drivers={"arm": handle},
+       handles={"arm": handle},
    )
    robot.connect()
 
-无需为每种机器人编写 worker 类。RLinf 会依据驱动自动合成一个，``WorkerGroup`` 随即把驱动的每个公有方法绑定为 RPC。部件接口之外的方法仍可通过句柄调用，且本地与远程的调用形式一致::
+无需为每种机器人编写 worker 类。RLinf 会依据部件自动合成一个，``WorkerGroup`` 随即把该类的每个公有方法绑定为 RPC。部件接口之外的方法仍可通过句柄调用，且本地与远程的调用形式一致::
 
    handle.is_robot_up().wait()[0]
    handle.reset_joint(home_qpos).wait()
 
-把机器人持有的句柄通过 ``drivers=`` 传入；``Robot.disconnect`` 会在所有部件断开后释放它们。``Robot`` 会并行执行彼此独立的机械臂重置、观测和动作。内置硬件通过 ``build_franka_robot``、``build_dual_franka_robot``、``build_gim_arm_robot``、``build_turtle2_robot`` 和 ``build_dosw1_robot`` 使用同一条路径。
+把机器人持有的句柄通过 ``handles=`` 传入；``Robot.disconnect`` 会在所有部件断开后释放它们。``Robot`` 会并行执行彼此独立的机械臂重置、观测和动作。内置硬件通过 ``build_franka_robot``、``build_dual_franka_robot``、``build_gim_arm_robot``、``build_turtle2_robot`` 和 ``build_dosw1_robot`` 使用同一条路径。
 
 分离任务与兼容逻辑
 ------------------

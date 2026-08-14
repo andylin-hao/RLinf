@@ -15,7 +15,10 @@
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Callable, Optional, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, Optional, TypeVar
+
+if TYPE_CHECKING:
+    from ..placement import PartHandle
 
 KeyType = TypeVar("KeyType")
 ValueType = TypeVar("ValueType")
@@ -62,6 +65,102 @@ class RobotPart(ABC):
 
     def reset(self) -> None:
         """Reset the part when it has resettable state."""
+
+    # -- Composition ------------------------------------------------------
+
+    def subparts(self) -> dict[str, "RobotPart"]:
+        """Return the named parts this one exposes. Leaves expose none.
+
+        One piece of hardware often presents several components over a single
+        connection: a dual-arm controller exposes two arms, two end effectors,
+        and wrist cameras. Those are subparts of it. A part that also stands on
+        its own includes itself, conventionally under ``"arm"``.
+        """
+        return {}
+
+    def subpart(self, name: str) -> "RobotPart":
+        """Return one named subpart, or raise a clear configuration error."""
+        subparts = self.subparts()
+        if name not in subparts:
+            raise KeyError(
+                f"{type(self).__name__} has no subpart {name!r}. "
+                f"Available: {sorted(subparts)}."
+            )
+        return subparts[name]
+
+    # -- Subpart-addressed surface ----------------------------------------
+    # Public, so a hosted part exposes these as RPCs automatically and one
+    # generic proxy can reach any subpart.
+
+    def describe_subparts(self) -> dict[str, dict[str, Any]]:
+        """Describe every subpart: its kind and its feature dictionaries.
+
+        One call carries everything a remote handle needs to build correctly
+        typed proxies, so placement costs a single round trip rather than one
+        per subpart per property.
+        """
+        described: dict[str, dict[str, Any]] = {}
+        for name, part in self.subparts().items():
+            entry: dict[str, Any] = {
+                "kind": part_kind(part),
+                "observation": part.observation_features,
+            }
+            if isinstance(part, ControllablePart):
+                entry["action"] = part.action_features
+            described[name] = entry
+        return described
+
+    def subpart_observation(self, name: str) -> dict[str, Any]:
+        """Read one subpart's observation."""
+        return self.subpart(name).get_observation()
+
+    def subpart_action(self, name: str, action: dict[str, Any]) -> dict[str, Any]:
+        """Send an action to one controllable subpart."""
+        part = self.subpart(name)
+        if not isinstance(part, ControllablePart):
+            raise TypeError(f"Subpart {name!r} of {type(self).__name__} is not controllable.")
+        return part.send_action(action)
+
+    def subpart_reset(self, name: str) -> None:
+        """Reset one subpart."""
+        self.subpart(name).reset()
+
+    def shutdown(self) -> None:
+        """Disconnect during worker teardown."""
+        if self.is_connected:
+            self.disconnect()
+
+    # -- Placement --------------------------------------------------------
+
+    @classmethod
+    def spawn(
+        cls,
+        *args: Any,
+        node_rank: Optional[int] = None,
+        name: Optional[str] = None,
+        **kwargs: Any,
+    ) -> "PartHandle":
+        """Construct and connect this part, here or on a chosen node.
+
+        With ``node_rank`` unset the part is built in this process. Otherwise it
+        is hosted in a scheduler worker on that node and the returned handle
+        proxies to it. Both handles expose the same API, so callers never branch
+        on placement.
+
+        Any part can be placed, not only arms: a camera can run on the machine
+        it is plugged into while the policy runs elsewhere.
+
+        The scheduler is imported here rather than at module scope, so importing
+        a part never pulls Ray into the process.
+        """
+        from ..placement import LocalPartHandle, spawn_part_worker
+
+        if node_rank is None:
+            part = cls(*args, **kwargs)
+            part.connect()
+            return LocalPartHandle(part)
+
+        return spawn_part_worker(cls, args, kwargs, node_rank=node_rank, name=name)
 
 
 class ControllablePart(RobotPart):
@@ -196,3 +295,20 @@ class MobileBase(ControllablePart):
 
 class LeggedBase(ControllablePart):
     """Controllable legged base."""
+
+
+#: Ordered most specific first, so a part matches its narrowest kind.
+_PART_KINDS: tuple[tuple[str, type], ...] = (
+    ("end_effector", EndEffector),
+    ("camera", Camera),
+    ("controllable", ControllablePart),
+    ("part", RobotPart),
+)
+
+
+def part_kind(part: RobotPart) -> str:
+    """Classify a part so a remote proxy can mirror its interface."""
+    for kind, part_type in _PART_KINDS:
+        if isinstance(part, part_type):
+            return kind
+    raise TypeError(f"{type(part).__name__} is not a RobotPart.")

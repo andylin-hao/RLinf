@@ -20,15 +20,19 @@ subpackage named after it::
     parts/
       base.py                     RobotPart, ControllablePart, Camera,
                                   EndEffector, Arm, MobileBase, LeggedBase
+      arms/                       Franky, Franka ROS, GimArm, Turtle2, DOSW1
       cameras/                    RealSense, ZED, Lumos
       end_effectors/
         grippers/                 Franka, Robotiq
         hands/                    Ruiyan
+      teleop/                     Gello, glove, keyboard, Pico, spacemouse
+      transports/                 ROS
 
-A part says what a component means to the policy -- its observation and action
-contract. How that contract is fulfilled over a wire is a
-:class:`~rlinf.robotics.drivers.base.Driver`'s concern, and one driver may back
-several parts.
+A part says what a component means to the policy: its observation and action
+contract. Hardware that presents several components over one connection -- a
+dual-arm controller, a two-armed SDK session -- exposes them through
+:meth:`~.base.RobotPart.subparts`, so "owns a connection" is a property some
+parts have rather than a separate kind of thing.
 
 Subpackages are not imported here: a node needs only the vendor SDKs for the
 hardware it actually has. Import ``rlinf.robotics.parts.cameras`` directly.

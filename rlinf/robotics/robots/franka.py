@@ -339,7 +339,7 @@ def _franky_spawn_args(arm: FrankaArmConfig, robot_ip: str) -> tuple:
     return (robot_ip, arm.gripper_type, arm.gripper_connection)
 
 
-#: Backend name to the driver that speaks it. The backend is a per-robot
+#: Backend name to the arm part that speaks it. The backend is a per-robot
 #: choice, not a separate robot type.
 FRANKA_BACKENDS: dict[str, tuple[str, Any]] = {
     "franka_ros": ("FrankaROSDriver", _franka_ros_spawn_args),
@@ -347,18 +347,18 @@ FRANKA_BACKENDS: dict[str, tuple[str, Any]] = {
 }
 
 
-def _franka_driver_cls(backend: str):
+def _franka_part_cls(backend: str):
     if backend not in FRANKA_BACKENDS:
         raise ValueError(
             f"Unknown Franka backend {backend!r}. "
             f"Supported: {sorted(FRANKA_BACKENDS)}."
         )
-    driver_name, _ = FRANKA_BACKENDS[backend]
-    if driver_name == "FrankaROSDriver":
-        from ..drivers.franka_ros import FrankaROSDriver
+    part_name, _ = FRANKA_BACKENDS[backend]
+    if part_name == "FrankaROSDriver":
+        from ..parts.arms.franka_ros import FrankaROSDriver
 
         return FrankaROSDriver
-    from ..drivers.franky import FrankyDriver
+    from ..parts.arms.franky import FrankyDriver
 
     return FrankyDriver
 
@@ -384,7 +384,7 @@ def place_franka_arms(
     if not arms:
         raise ValueError("A Franka robot needs at least one arm.")
 
-    driver_cls = _franka_driver_cls(backend)
+    part_cls = _franka_part_cls(backend)
     _, spawn_args = FRANKA_BACKENDS[backend]
 
     handles: dict[str, Any] = {}
@@ -400,13 +400,13 @@ def place_franka_arms(
                 )
             # The arm name makes the worker name unique, so arms sharing a node
             # no longer need an env-index offset to avoid colliding.
-            handle = driver_cls.spawn(
+            handle = part_cls.spawn(
                 *spawn_args(arm, robot_ip),
                 node_rank=node_rank,
                 name=f"FrankaDriver-{name}-{worker_rank}-{env_idx}",
             )
             handles[name] = handle
-            composed[name] = Arm(handle.part("arm"), handle.part("end_effector"))
+            composed[name] = Arm(handle.subpart("arm"), handle.subpart("end_effector"))
     except Exception:
         for handle in reversed(list(handles.values())):
             handle.disconnect()
@@ -441,7 +441,7 @@ def build_franka_robot(
         worker_rank=worker_rank,
         env_idx=env_idx,
     )
-    return FrankaRobot(arms=arms, drivers=handles)
+    return FrankaRobot(arms=arms, handles=handles)
 
 
 register_robot(FrankaConfig, FrankaRobot, build=build_franka_robot)(

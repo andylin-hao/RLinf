@@ -19,7 +19,7 @@ import time
 import numpy as np
 
 from rlinf.envs.real.dosw1.dosw1_env import DOSW1Config
-from rlinf.robotics.drivers import DOSW1SDKAdapter
+from rlinf.robotics.parts.arms import DOSW1SDKAdapter
 
 
 def _parse_args() -> argparse.Namespace:

@@ -154,7 +154,7 @@ def build_gim_arm_robot(
     worker_rank: int,
 ) -> GimArmRobot:
     """Place one CAN-controlled GimArm and compose it into a robot."""
-    from ..drivers.gim_arm import GimArmDriver
+    from ..parts.arms.gim_arm import GimArmDriver
 
     handle = GimArmDriver.spawn(
         can_interface,
@@ -165,10 +165,10 @@ def build_gim_arm_robot(
         node_rank=node_rank,
         name=f"GimArmDriver-{worker_rank}-{env_idx}",
     )
-    end_effector = handle.part("end_effector") if enable_gripper else None
+    end_effector = handle.subpart("end_effector") if enable_gripper else None
     return GimArmRobot.single_arm(
-        Arm(handle.part("arm"), end_effector),
-        drivers={"arm": handle},
+        Arm(handle.subpart("arm"), end_effector),
+        handles={"arm": handle},
     )
 
 

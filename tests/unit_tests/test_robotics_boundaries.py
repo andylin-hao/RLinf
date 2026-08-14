@@ -55,7 +55,7 @@ def test_pure_driver_import_does_not_load_scheduler():
             "-c",
             (
                 "import sys; "
-                "from rlinf.robotics.drivers.franky import FrankyDriver; "
+                "from rlinf.robotics.parts.arms.franky import FrankyDriver; "
                 "assert 'rlinf.scheduler' not in sys.modules; "
                 "assert not FrankyDriver('10.0.0.1').is_connected"
             ),
@@ -73,7 +73,7 @@ def test_pure_driver_import_does_not_load_scheduler():
 #: The single file allowed to bridge robotics onto the scheduler. Driver
 #: implementations reach it only through ``Driver.spawn``, which imports it
 #: lazily, so importing a driver never pulls in Ray.
-_SCHEDULER_BRIDGE = Path("rlinf") / "robotics" / "drivers" / "worker.py"
+_SCHEDULER_BRIDGE = Path("rlinf") / "robotics" / "placement.py"
 
 
 def test_robotics_devices_do_not_depend_on_scheduler_ray_or_gym():
@@ -81,8 +81,8 @@ def test_robotics_devices_do_not_depend_on_scheduler_ray_or_gym():
     device_paths = [
         robotics_dir / "robot.py",
         robotics_dir / "adapters.py",
+        robotics_dir / "views.py",
         *robotics_dir.joinpath("parts").rglob("*.py"),
-        *robotics_dir.joinpath("drivers").rglob("*.py"),
         *robotics_dir.joinpath("states").glob("*.py"),
     ]
     forbidden = ("ray", "gymnasium", "rlinf.scheduler")
@@ -179,7 +179,7 @@ def test_moved_env_modules_still_import_under_their_old_paths():
 
 def test_teleop_devices_live_with_the_other_drivers():
     """A leader arm or glove is hardware, so it sits under drivers, not envs."""
-    teleop_dir = _ROOT / "rlinf" / "robotics" / "drivers" / "teleop"
+    teleop_dir = _ROOT / "rlinf" / "robotics" / "parts" / "teleop"
     modules = {path.stem for path in teleop_dir.glob("*.py")} - {"__init__"}
 
     assert modules == {"gello", "gello_joint", "glove", "keyboard", "pico", "spacemouse"}

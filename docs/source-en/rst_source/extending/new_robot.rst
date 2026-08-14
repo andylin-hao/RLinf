@@ -17,28 +17,28 @@ Keep each layer focused on one responsibility.
      - Responsibility
    * - ``RobotPart`` and ``ControllablePart``
      - Expose canonical observations and actions for one robot component.
-   * - ``Driver``
-     - Own one device connection and declare the parts it backs. The unit of placement.
+       Hardware presenting several components over one connection declares
+       them with ``subparts()``. Any part can be placed with ``spawn()``.
    * - ``Arm``
      - Compose one arm driver, an optional ``EndEffector``, and named wrist cameras.
    * - ``Robot``
      - Compose named arms, robot-level cameras, and optional parts such as a base.
    * - ``RobotDiscovery``
      - Translate scheduler hardware configuration into generic hardware resources.
-   * - ``DriverHandle``
+   * - ``PartHandle``
      - Access a driver identically whether it runs locally or in a worker.
    * - ``RobotTask`` and ``RobotTaskEnv``
      - Own reset, reward, termination, Gymnasium spaces, and policy compatibility.
 
-The dependency direction is strict. Drivers, parts, and cameras never import
-Ray, Gymnasium, or ``rlinf.scheduler``; importing a driver must not pull the
-scheduler into the process. Exactly one module bridges the two,
-``rlinf/robotics/drivers/worker.py``, and ``Driver.spawn`` imports it lazily.
-Environments consume the composed ``Robot`` and keep task semantics out of
-device drivers. ``tests/unit_tests/test_robotics_boundaries.py`` enforces this.
+The dependency direction is strict. Parts never import Ray, Gymnasium, or
+``rlinf.scheduler``; importing one must not pull the scheduler into the
+process. Exactly one module bridges the two, ``rlinf/robotics/placement.py``,
+and ``RobotPart.spawn`` imports it lazily. Environments consume the composed
+``Robot`` and keep task semantics out of hardware code.
+``tests/unit_tests/test_robotics_boundaries.py`` enforces this.
 
-Implement a Pure Driver
------------------------
+Implement a Part
+----------------
 
 Inherit from ``RobotPart`` for observation-only devices. Inherit from
 ``ControllablePart`` for arms, bases, and other devices that accept commands.
@@ -95,9 +95,9 @@ module without installing that SDK.
 
 Use ``Camera``, ``EndEffector``, ``MobileBase``, or ``LeggedBase`` when a more
 specific interface applies. Built-in implementations live under
-``rlinf/robotics/parts``, grouped by category: ``parts/cameras``,
-``parts/end_effectors/grippers``, and ``parts/end_effectors/hands``. Device
-connections live beside them in ``rlinf/robotics/drivers``.
+``rlinf/robotics/parts``, grouped by category: ``parts/arms``,
+``parts/cameras``, ``parts/end_effectors/grippers``,
+``parts/end_effectors/hands``, ``parts/teleop``, and ``parts/transports``.
 
 Compose the Robot
 -----------------
@@ -174,7 +174,7 @@ rewards, and episode horizons in the task config instead.
        return ExampleRobot.dual_arm(
            Arm(handles["left"].part("arm")),
            Arm(handles["right"].part("arm")),
-           drivers=handles,
+           handles=handles,
        )
 
 Arm count is composition, not a robot type: a single-arm variant is the same
@@ -259,12 +259,14 @@ class parses each item, and the registered builder composes the robot.
                left_endpoint: tcp://left-arm:5000
                right_endpoint: tcp://right-arm:5000
 
-Place a Driver on a Node
-------------------------
+Place a Part on a Node
+----------------------
 
-``Driver.spawn`` is the only placement call. Without ``node_rank`` the driver is
-built in this process; with one it is hosted in a scheduler worker on that node.
-Both return a handle with the same API, so callers never branch on placement.
+``RobotPart.spawn`` is the only placement call, and every part has it. Without
+``node_rank`` the part is built in this process; with one it is hosted in a
+scheduler worker on that node. Both return a handle with the same API, so
+callers never branch on placement. This is not limited to arms: a camera can run
+on the machine it is plugged into while the policy runs elsewhere.
 
 .. code-block:: python
 
@@ -277,19 +279,19 @@ Both return a handle with the same API, so callers never branch on placement.
    )
    robot = Robot.single_arm(
        Arm(handle.part("arm"), handle.part("end_effector")),
-       drivers={"arm": handle},
+       handles={"arm": handle},
    )
    robot.connect()
 
 There is no per-robot worker class to write. RLinf synthesizes one from the
-driver, so ``WorkerGroup`` binds every public driver method as an RPC. Methods
-outside the part interface stay reachable through the handle, with the same call
-shape locally and remotely::
+part, so ``WorkerGroup`` binds every public method as an RPC. Methods outside
+the part interface stay reachable through the handle, with the same call shape
+locally and remotely::
 
    handle.is_robot_up().wait()[0]
    handle.reset_joint(home_qpos).wait()
 
-Pass the handles a robot owns as ``drivers=``; ``Robot.disconnect`` releases them
+Pass the handles a robot owns as ``handles=``; ``Robot.disconnect`` releases them
 after every part is disconnected. ``Robot`` applies independent arm resets,
 observations, and actions in parallel. Built-in hardware uses this same path
 through ``build_franka_robot``, ``build_dual_franka_robot``,
@@ -313,7 +315,7 @@ task with a ``Robot``. Use ``LegacyObservationAdapter`` and
 Test the Integration
 --------------------
 
-Test pure drivers without vendor SDKs, composition paths, remote handle
+Test parts without vendor SDKs, composition paths, remote handle
 lifecycle, physical spec translation, discovery registration, and the exact
 legacy policy schema.
 

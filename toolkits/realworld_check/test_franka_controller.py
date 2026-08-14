@@ -20,7 +20,7 @@ import time
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
-from rlinf.robotics.drivers.franka_ros import FrankaROSDriver
+from rlinf.robotics.parts.arms.franka_ros import FrankaROSDriver
 
 
 def _parse_args():

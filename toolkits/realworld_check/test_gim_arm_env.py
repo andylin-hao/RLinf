@@ -72,7 +72,7 @@ def main():
     )
     args = parser.parse_args()
 
-    from rlinf.robotics.drivers.gim_arm import GimArmDriver
+    from rlinf.robotics.parts.arms.gim_arm import GimArmDriver
 
     passed = 0
     failed = 0
