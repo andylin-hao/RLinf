@@ -31,7 +31,7 @@ class FrankaRobot(Robot):
     """Composable Franka robot.
 
     Single-arm by default. :class:`~..dual_franka.DualFrankaRobot` inherits the
-    placement logic and only changes the backend and the arm count.
+    declaration logic and only changes the backend and the arm count.
     """
 
     ROBOT_TYPE = "Franka"
@@ -58,7 +58,7 @@ class FrankaRobot(Robot):
         return FrankyArm
 
     @classmethod
-    def place_arms(
+    def declare_arms(
         cls,
         arms: Mapping[str, "FrankaArmConfig"],
         *,
@@ -66,16 +66,11 @@ class FrankaRobot(Robot):
         worker_rank: int,
         env_idx: int,
         backend: Optional[str] = None,
-    ) -> tuple[dict[str, Arm], dict[str, Any]]:
-        """Place every configured arm and compose each into an :class:`Arm`.
+    ) -> dict[str, Arm]:
+        """Declare each configured arm, with the node it runs on.
 
-        Works for any number of arms. If a later arm fails to come up, the ones
-        already placed are torn down before the error propagates, so a partial
-        robot is never returned.
-
-        Returns:
-            The composed arms and the part handles backing them, both keyed by
-            arm name.
+        Nothing is built here. :meth:`Robot.connect` places every declaration,
+        once each, and rolls back if any of them fails.
         """
         if not arms:
             raise ValueError(f"A {cls.__name__} needs at least one arm.")
@@ -84,36 +79,27 @@ class FrankaRobot(Robot):
         part_cls = cls.arm_part_cls(backend)
         _, spawn_args = FRANKA_BACKENDS[backend]
 
-        handles: dict[str, Any] = {}
-        composed: dict[str, Arm] = {}
-        try:
-            for name, arm in arms.items():
-                node_rank = (
-                    arm.node_rank if arm.node_rank is not None else default_node_rank
+        declared: dict[str, Arm] = {}
+        for name, arm in arms.items():
+            node_rank = (
+                arm.node_rank if arm.node_rank is not None else default_node_rank
+            )
+            robot_ip = arm.robot_ip or resolve_robot_ip(node_rank)
+            if not robot_ip:
+                raise ValueError(
+                    f"Franka arm {name!r} has no 'robot_ip' and none could be "
+                    f"resolved from node rank {node_rank}'s hardware infos."
                 )
-                robot_ip = arm.robot_ip or resolve_robot_ip(node_rank)
-                if not robot_ip:
-                    raise ValueError(
-                        f"Franka arm {name!r} has no 'robot_ip' and none could be "
-                        f"resolved from node rank {node_rank}'s hardware infos."
-                    )
-                # The arm name makes the worker name unique, so arms sharing a
-                # node need no env-index offset to avoid colliding.
-                handle = part_cls.spawn(
+            # The arm name makes the worker name unique, so arms sharing a node
+            # need no env-index offset to avoid colliding.
+            declared[name] = Arm(
+                part_cls.at(
                     *spawn_args(arm, robot_ip),
                     node_rank=node_rank,
                     name=f"{cls.ROBOT_TYPE}Arm-{name}-{worker_rank}-{env_idx}",
                 )
-                handles[name] = handle
-                composed[name] = Arm(
-                    handle.subpart("arm"), handle.subpart("end_effector")
-                )
-        except Exception:
-            for handle in reversed(list(handles.values())):
-                handle.disconnect()
-            raise
-
-        return composed, handles
+            )
+        return declared
 
     @classmethod
     def build(
@@ -127,22 +113,23 @@ class FrankaRobot(Robot):
         end_effector_config: Optional[dict] = None,
         gripper_connection: Optional[str] = None,
     ) -> "FrankaRobot":
-        """Place one ROS-controlled Franka and compose it into a robot."""
-        arms, handles = cls.place_arms(
-            {
-                "arm": FrankaArmConfig(
-                    robot_ip=robot_ip,
-                    gripper_connection=gripper_connection,
-                    end_effector_type=end_effector_type,
-                    end_effector_config=end_effector_config,
-                    node_rank=node_rank,
-                )
-            },
-            default_node_rank=node_rank,
-            worker_rank=worker_rank,
-            env_idx=env_idx,
+        """Compose one ROS-controlled Franka. ``connect`` places it."""
+        return cls(
+            arms=cls.declare_arms(
+                {
+                    "arm": FrankaArmConfig(
+                        robot_ip=robot_ip,
+                        gripper_connection=gripper_connection,
+                        end_effector_type=end_effector_type,
+                        end_effector_config=end_effector_config,
+                        node_rank=node_rank,
+                    )
+                },
+                default_node_rank=node_rank,
+                worker_rank=worker_rank,
+                env_idx=env_idx,
+            )
         )
-        return cls(arms=arms, handles=handles)
 
 
 class FrankaDiscovery(RobotDiscovery):

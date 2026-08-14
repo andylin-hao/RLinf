@@ -362,6 +362,7 @@ class DualFrankaEnv(gym.Env):
             left_gripper_connection=self.config.left_gripper_connection,
             right_gripper_connection=self.config.right_gripper_connection,
         )
+        self.robot.connect()
         self._left_ctrl = self.robot.handles["left"]
         self._right_ctrl = self.robot.handles["right"]
 

@@ -63,6 +63,9 @@ class Robot:
         their connections, so the robot releases the handles once every part is
         disconnected."""
 
+        self._placement: Any = None
+        """Set by :meth:`connect` once declared parts have been placed."""
+
     @classmethod
     def single_arm(
         cls: type[RobotType],
@@ -97,14 +100,19 @@ class Robot:
         parts: Optional[Mapping[str, RobotPartType]],
         part_type: type[RobotPartType],
     ) -> dict[str, RobotPartType]:
+        from .specs import PartSpec, SubpartRef
+
         validated = dict(parts or {})
         invalid_names = [
             name for name in validated if not isinstance(name, str) or not name
         ]
         if invalid_names:
             raise ValueError(f"Robot {kind} names must be non-empty strings.")
+        # Declarations are accepted here and become parts in connect().
         invalid_parts = [
-            name for name, part in validated.items() if not isinstance(part, part_type)
+            name
+            for name, part in validated.items()
+            if not isinstance(part, (part_type, PartSpec, SubpartRef))
         ]
         if invalid_parts:
             raise TypeError(f"Invalid robot {kind}s: {sorted(invalid_parts)}")
@@ -112,8 +120,13 @@ class Robot:
 
     @property
     def is_connected(self) -> bool:
-        """Whether every configured part is connected."""
-        return all(part.is_connected for part in self._top_level_parts())
+        """Whether every configured part is placed and connected."""
+        from .specs import PartSpec, SubpartRef
+
+        parts = self._top_level_parts()
+        if any(isinstance(part, (PartSpec, SubpartRef)) for part in parts):
+            return False
+        return all(part.is_connected for part in parts)
 
     @property
     def observation_features(self) -> dict[str, Any]:
@@ -174,9 +187,32 @@ class Robot:
         return named
 
     def connect(self) -> None:
-        """Connect every part in configuration order."""
+        """Place any declared parts, then connect everything.
+
+        Parts declared with :meth:`~.parts.base.RobotPart.at` are built on their
+        node here, each distinct declaration exactly once. If anything fails,
+        whatever was already placed or connected is torn down, so a half-built
+        robot is never left behind.
+        """
+        from .specs import PartSpec, Placement, SubpartRef
+
+        placement = self._placement or Placement()
         connected: list[RobotPart] = []
         try:
+            for name, arm in self.arms.items():
+                used = arm.resolve(placement)
+                if used:
+                    # Named so callers can reach off-interface hardware methods
+                    # as robot.handles[<arm name>].
+                    self.handles.setdefault(name, used[0])
+            for named in (self.cameras, self.parts):
+                for name, value in list(named.items()):
+                    if isinstance(value, (PartSpec, SubpartRef)):
+                        spec = value.spec if isinstance(value, SubpartRef) else value
+                        self.handles.setdefault(name, placement.resolve_handle(spec))
+                        named[name] = placement.resolve(value)
+            self._placement = placement
+
             for part in self._top_level_parts():
                 if not part.is_connected:
                     part.connect()
@@ -184,6 +220,8 @@ class Robot:
         except Exception:
             for part in reversed(connected):
                 part.disconnect()
+            placement.release()
+            self._placement = None
             raise
 
     def attach_camera(
@@ -268,8 +306,20 @@ class Robot:
         for part in reversed(self._top_level_parts()):
             if isinstance(part, Arm) or part.is_connected:
                 part.disconnect()
+        placed = set()
+        if self._placement is not None:
+            placed = {id(handle) for handle in self._placement.handles}
         for handle in reversed(list(self.handles.values())):
-            handle.disconnect()
+            if id(handle) not in placed:
+                handle.disconnect()
+        if self._placement is not None:
+            self._placement.release()
+            self._placement = None
+        self.handles = {
+            name: handle
+            for name, handle in self.handles.items()
+            if id(handle) not in placed
+        }
 
     def _top_level_parts(self) -> list[RobotPart]:
         return [*self.arms.values(), *self.cameras.values(), *self.parts.values()]

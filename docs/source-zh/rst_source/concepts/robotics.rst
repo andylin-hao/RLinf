@@ -51,6 +51,8 @@
      - 组合机械臂本体、可选末端执行器和腕部相机的部件。
    * - ``Robot``
      - 由具名机械臂、机器人级相机、附加部件及其持有的句柄组成。
+   * - ``at()`` / ``PartSpec``
+     - 一条声明：部件类、构造参数，以及它要运行的节点。
    * - ``PartHandle``
      - 指向部件的引用。部件无论在本地还是 worker 中运行，接口都相同。
    * - ``MethodArm`` / ``MethodGripper`` / ``MethodCamera``
@@ -89,17 +91,37 @@
 放置是部件的属性
 ----------------
 
-只用 ``RobotPart.spawn`` 放置部件。这是唯一的放置入口。
+用 ``at()`` 声明部件运行在哪个节点。没有人需要调用放置函数：``Robot.connect``
+会把每条声明构建到它所属的节点上。
 
 .. code-block:: python
 
-   local = RealSenseCamera.spawn(camera_info)                    # 本地
-   remote = RealSenseCamera.spawn(camera_info, node_rank=2)      # 放到节点 2
+   robot = FrankaRobot(
+       arms={"left": Arm(FrankaROSArm.at("10.0.0.1", node_rank=1))},
+       cameras={"scene": RealSenseCamera.at(info, node_rank=3)},
+   )
+   robot.connect()
 
-两种调用都会返回 API 相同的 ``PartHandle``。调用方无需区分放置方式。你还可以让
-相机运行在它连接的机器上，让策略运行在其他位置。
+声明本身不做任何事。在 ``connect`` 之前不会碰硬件。``connect`` 会把每条不同的声明
+放置一次，把句柄发布为 ``robot.handles[<name>]``，并在后续部件失败时拆掉已经放置的
+部分。``disconnect`` 负责释放它们。
 
-无需为每种硬件编写 worker 类。RLinf 会根据部件类自动合成一个
+共享连接只声明一次，再引用它的 subparts。一条连接支撑两条机械臂和两个相机时，
+只会被打开一次，而不是四次：
+
+.. code-block:: python
+
+   hardware = Turtle2Hardware.at(50, camera_ids, node_rank=0)
+   robot = Turtle2Robot.dual_arm(
+       Arm(hardware.subpart("left"), hardware.subpart("left_end_effector")),
+       Arm(hardware.subpart("right"), hardware.subpart("right_end_effector")),
+       cameras={"wrist_1": hardware.subpart("wrist_1")},
+   )
+
+放置适用于所有部件，不只是机械臂。相机可以运行在它所插接的机器上，而策略运行在
+别处。``spawn()`` 是底层的即时形式，只在机器人之外使用，例如调试脚本。
+
+不要为每种硬件编写 worker 类。RLinf 会根据部件类自动合成一个
 （``type(name, (Worker, PartCls), ...)``）。``WorkerGroup`` 随后把每个公有方法绑定
 为 RPC。通过句柄调用部件接口之外的方法。本地和远程的调用形式相同::
 

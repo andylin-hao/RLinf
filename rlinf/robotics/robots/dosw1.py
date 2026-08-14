@@ -34,16 +34,15 @@ class DOSW1Robot(Robot):
     def build(cls, *, config) -> "DOSW1Robot":
         """Compose a DOSW1 dual-arm robot on one local SDK session.
 
-        Both arms share a single connection, so there is nothing to place: the
-        part is built in this process.
+        Both arms share a single SDK session, and it runs wherever the env
+        worker runs, so the declaration carries no node.
         """
         from ..parts.arms.dosw1 import DOSW1Hardware
 
-        handle = DOSW1Hardware.spawn(config)
+        sdk = DOSW1Hardware.at(config)
         return cls.dual_arm(
-            Arm(handle.subpart("left"), handle.subpart("left_end_effector")),
-            Arm(handle.subpart("right"), handle.subpart("right_end_effector")),
-            handles={"sdk": handle},
+            Arm(sdk.subpart("left"), sdk.subpart("left_end_effector")),
+            Arm(sdk.subpart("right"), sdk.subpart("right_end_effector")),
         )
 
 

@@ -145,9 +145,10 @@ class DOSW1Env(gym.Env):
         if not config.is_dummy:
             self._apply_hardware_info(hardware_info)
             self.robot = DOSW1Robot.build(config=config)
+            self.robot.connect()
             left_driver = cast(
                 DOSW1Arm,
-                self.robot.arms["left"].driver,
+                self.robot.arms["left"].manipulator,
             )
             self.sdk = left_driver.sdk
             self._go_to_home()

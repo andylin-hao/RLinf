@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any, Callable, Optional, TypeVar
 
 if TYPE_CHECKING:
     from ..placement import PartHandle
+    from ..specs import PartSpec
 
 KeyType = TypeVar("KeyType")
 ValueType = TypeVar("ValueType")
@@ -133,6 +134,25 @@ class RobotPart(ABC):
     # -- Placement --------------------------------------------------------
 
     @classmethod
+    def at(
+        cls,
+        *args: Any,
+        node_rank: Optional[int] = None,
+        name: Optional[str] = None,
+        **kwargs: Any,
+    ) -> "PartSpec":
+        """Declare this part and the node it runs on, without building it.
+
+        Compose the result exactly where you would compose a part;
+        :meth:`Robot.connect` places it. Prefer this over :meth:`spawn`: a part
+        whose SDK lives only on the target machine cannot be built here first,
+        and declaring lets the robot own teardown and roll back cleanly.
+        """
+        from ..specs import PartSpec
+
+        return PartSpec(cls, args, kwargs, node_rank=node_rank, name=name)
+
+    @classmethod
     def spawn(
         cls,
         *args: Any,
@@ -141,6 +161,10 @@ class RobotPart(ABC):
         **kwargs: Any,
     ) -> "PartHandle":
         """Construct and connect this part, here or on a chosen node.
+
+        This is the eager, low-level form and it hands you the handle to manage.
+        Prefer :meth:`at` inside a robot, which defers placement to
+        :meth:`Robot.connect` and lets the robot own the handle.
 
         With ``node_rank`` unset the part is built in this process. Otherwise it
         is hosted in a scheduler worker on that node and the returned handle
@@ -204,12 +228,54 @@ class Arm(ControllablePart):
         if any(not name for name in self.cameras):
             raise ValueError("Arm camera names must be non-empty strings.")
 
+    def resolve(self, placement: Any) -> list[Any]:
+        """Replace any declared slots with the parts they resolve to.
+
+        Called by :meth:`Robot.connect` before anything is connected. An arm
+        built from live parts is unaffected.
+
+        Returns:
+            The handles this arm's declarations were placed on, in order, so the
+            robot can publish them under the arm's name.
+        """
+        from ..specs import PartSpec, SubpartRef
+
+        used: list[Any] = []
+
+        def resolve(value: Any) -> Any:
+            if isinstance(value, (PartSpec, SubpartRef)):
+                spec = value.spec if isinstance(value, SubpartRef) else value
+                used.append(placement.resolve_handle(spec))
+                return placement.resolve(value)
+            return value
+
+        manipulator = self.manipulator
+        self.manipulator = resolve(manipulator)
+        # A declaration that also exposes an end effector fills an empty slot,
+        # so the common one-connection arm needs no second declaration.
+        if self.end_effector is None and isinstance(manipulator, PartSpec):
+            subparts = placement.resolve_handle(manipulator).subparts
+            if "end_effector" in subparts:
+                self.end_effector = subparts["end_effector"]
+        self.end_effector = resolve(self.end_effector)
+        self.cameras = {
+            name: resolve(camera) for name, camera in self.cameras.items()
+        }
+        return used
+
     @property
     def is_connected(self) -> bool:
-        """Whether the manipulator and every attached part are connected."""
-        parts: list[RobotPart] = [self.manipulator, *self.cameras.values()]
+        """Whether the manipulator and every attached part are connected.
+
+        An arm with slots still declared but not yet placed is not connected.
+        """
+        from ..specs import PartSpec, SubpartRef
+
+        parts: list[Any] = [self.manipulator, *self.cameras.values()]
         if self.end_effector is not None:
             parts.append(self.end_effector)
+        if any(isinstance(part, (PartSpec, SubpartRef)) for part in parts):
+            return False
         return all(part.is_connected for part in parts)
 
     @property

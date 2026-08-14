@@ -137,45 +137,43 @@ observation then costs one round trip rather than two.
 Place Parts on Nodes
 --------------------
 
-Call ``RobotPart.spawn`` to place any part. It is the only placement call, and
-every part has it. Omit ``node_rank`` to build the part in the current process.
-Set it to host the part in a scheduler worker on that node. Both forms return a
-handle with the same API, so callers never branch on placement. You can also run
-a camera on the machine where it is connected while the policy runs elsewhere.
+Declare where a part runs with ``at()``. Compose the declaration exactly where
+you would compose a part. ``Robot.connect`` builds it on its node; you never
+call a placement function.
 
 .. code-block:: python
 
    from rlinf.robotics import Arm, Robot
 
-   handle = ExampleArm.spawn(
-       "tcp://left-arm:5000",
-       node_rank=0,
-       name="ExampleArm-0",
-   )
-   robot = Robot.single_arm(
-       Arm(handle.subpart("arm"), handle.subpart("end_effector")),
-       handles={"arm": handle},
-   )
+   robot = Robot.single_arm(Arm(ExampleArm.at("tcp://left-arm:5000", node_rank=0)))
    robot.connect()
 
-What this does: 1) constructs and connects ``ExampleArm`` on node 0, 2) returns
-proxies for its subparts, and 3) composes them into a robot that owns the handle.
-Pass owned handles through ``handles=``. ``Robot.disconnect`` releases them after
-every part is disconnected.
+What this does: 1) declares ``ExampleArm`` for node 0, 2) builds and connects it
+when the robot connects, 3) fills the arm's end-effector slot from the same
+connection if the part exposes one. ``connect`` publishes each handle as
+``robot.handles[<name>]`` and ``disconnect`` releases them.
 
-Do not write a worker class for each robot. RLinf synthesizes one from the part
-class. ``WorkerGroup`` then binds every public method as an RPC. Call methods
-outside the part interface through the handle. The call shape stays the same
+Declaring works for every part, not only arms. A camera can run on the machine
+it is plugged into::
+
+   cameras={"scene": RealSenseCamera.at(info, node_rank=2)}
+
+When one connection backs several components, declare it once and refer to its
+subparts, so it is opened once::
+
+   hardware = ExampleHardware.at(node_rank=0)
+   Arm(hardware.subpart("left"), hardware.subpart("left_end_effector"))
+
+``spawn()`` is the eager form underneath. Use it only outside a robot, such as in
+a bench script, where you manage the handle yourself.
+
+There is no per-robot worker class to write. RLinf synthesizes one from the part
+class, so ``WorkerGroup`` binds every public method as an RPC. Methods outside the
+part interface stay reachable through the handle, with the same call shape
 locally and remotely::
 
    handle.is_robot_up().wait()[0]
    handle.reset_joint(home_qpos).wait()
-
-.. warning::
-
-   ``WorkerGroup`` reserves ``launch``, ``execute_on``, ``from_group_name``, and
-   ``WorkerRank``. Rename any public part method that uses one of these names.
-   Otherwise, the part cannot be hosted.
 
 Describe and Build the Robot
 ----------------------------
@@ -202,22 +200,20 @@ reset poses, rewards, and episode horizons in the task config.
 
        @classmethod
        def build(cls, *, config: ExampleRobotConfig) -> "ExampleRobot":
-           handles = {
-               side: ExampleArm.spawn(
-                   endpoint,
-                   node_rank=config.node_rank,
-                   name=f"ExampleArm-{side}",
+           arms = {
+               side: Arm(
+                   ExampleArm.at(
+                       endpoint,
+                       node_rank=config.node_rank,
+                       name=f"ExampleArm-{side}",
+                   )
                )
                for side, endpoint in (
                    ("left", config.left_endpoint),
                    ("right", config.right_endpoint),
                )
            }
-           return cls.dual_arm(
-               Arm(handles["left"].subpart("arm")),
-               Arm(handles["right"].subpart("arm")),
-               handles=handles,
-           )
+           return cls(arms=arms)
 
 Build a single-arm variant with the same builder, but return
 ``ExampleRobot.single_arm(...)``. If a later part fails to start, disconnect the
@@ -272,7 +268,7 @@ together. After registration, call ``build_robot("ExampleRobot", ...)`` to
 compose the robot by name without importing the class directly.
 
 Subclass a robot to reuse its construction. ``DualFrankaRobot`` extends
-``FrankaRobot``, inherits ``place_arms`` unchanged, and overrides only
+``FrankaRobot``, inherits ``declare_arms`` unchanged, and overrides only
 ``BACKEND`` and ``build``.
 
 Import the registration module before you construct ``Cluster``. RLinf

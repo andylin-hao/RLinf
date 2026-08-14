@@ -50,7 +50,7 @@ class DualFrankaRobot(FrankaRobot):
         """Place two independently located Franka arms and compose them.
 
         Arm count is the only thing separating this from the single-arm build:
-        it is the size of the mapping handed to ``place_arms``, inherited
+        it is the size of the mapping handed to ``declare_arms``, inherited
         unchanged from :class:`~..franka.FrankaRobot`.
         """
         if not left_robot_ip or not right_robot_ip:
@@ -58,7 +58,7 @@ class DualFrankaRobot(FrankaRobot):
                 "Both Franka robot IPs are required for a dual-arm robot."
             )
 
-        arms, handles = cls.place_arms(
+        arms = cls.declare_arms(
             {
                 "left": FrankaArmConfig(
                     robot_ip=left_robot_ip,
@@ -77,7 +77,7 @@ class DualFrankaRobot(FrankaRobot):
             worker_rank=worker_rank,
             env_idx=env_idx,
         )
-        return cls(arms=arms, handles=handles)
+        return cls(arms=arms)
 
 
 class DualFrankaDiscovery(RobotDiscovery):

@@ -43,10 +43,10 @@ class GimArmRobot(Robot):
         node_rank: int,
         worker_rank: int,
     ) -> "GimArmRobot":
-        """Place one CAN-controlled GimArm and compose it into a robot."""
+        """Compose one CAN-controlled GimArm. ``connect`` places it."""
         from ..parts.arms.gim_arm import GimArm
 
-        handle = GimArm.spawn(
+        arm = GimArm.at(
             can_interface,
             arm_variant,
             enable_gripper,
@@ -55,10 +55,11 @@ class GimArmRobot(Robot):
             node_rank=node_rank,
             name=f"GimArm-{worker_rank}-{env_idx}",
         )
-        end_effector = handle.subpart("end_effector") if enable_gripper else None
         return cls.single_arm(
-            Arm(handle.subpart("arm"), end_effector),
-            handles={"arm": handle},
+            Arm(
+                arm.subpart("arm"),
+                arm.subpart("end_effector") if enable_gripper else None,
+            )
         )
 
 

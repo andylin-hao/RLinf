@@ -57,6 +57,8 @@ The Abstractions
    * - ``Robot``
      - A composition of named arms, robot-level cameras, extra parts, and its
        owned handles.
+   * - ``at()`` / ``PartSpec``
+     - A declaration: a part class, its arguments, and the node to build it on.
    * - ``PartHandle``
      - A reference with the same interface whether the part runs locally or in a
        worker.
@@ -98,16 +100,37 @@ connections. A two-arm observation then costs one round trip, not two.
 Placement Is a Property of Parts
 --------------------------------
 
-Call ``RobotPart.spawn`` to place a part. It is the only placement call.
+Declare where a part runs with ``at()``. Nobody calls a placement function:
+:meth:`Robot.connect` builds every declaration on its node.
 
 .. code-block:: python
 
-   local = RealSenseCamera.spawn(camera_info)                    # here
-   remote = RealSenseCamera.spawn(camera_info, node_rank=2)      # on node 2
+   robot = FrankaRobot(
+       arms={"left": Arm(FrankaROSArm.at("10.0.0.1", node_rank=1))},
+       cameras={"scene": RealSenseCamera.at(info, node_rank=3)},
+   )
+   robot.connect()
 
-Both calls return a ``PartHandle`` with the same API. Callers never branch on
-placement. You can place more than arms. For example, run a camera on the machine
-where it is connected while the policy runs elsewhere.
+A declaration is inert. Nothing touches hardware until ``connect``, which places
+each distinct declaration exactly once, publishes its handle as
+``robot.handles[<name>]``, and tears down whatever it already placed if a later
+part fails. ``disconnect`` releases them.
+
+Declare a shared connection once and refer to its subparts. One connection
+backing two arms and two cameras is opened once, not four times:
+
+.. code-block:: python
+
+   hardware = Turtle2Hardware.at(50, camera_ids, node_rank=0)
+   robot = Turtle2Robot.dual_arm(
+       Arm(hardware.subpart("left"), hardware.subpart("left_end_effector")),
+       Arm(hardware.subpart("right"), hardware.subpart("right_end_effector")),
+       cameras={"wrist_1": hardware.subpart("wrist_1")},
+   )
+
+Placement applies to every part, not only arms. Run a camera on the machine it
+is plugged into while the policy runs elsewhere. ``spawn()`` is the eager form
+underneath; reach for it only outside a robot, such as in a bench script.
 
 Do not write a worker class for each hardware device. RLinf synthesizes one from
 the part class (``type(name, (Worker, PartCls), ...)``). ``WorkerGroup`` then

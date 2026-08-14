@@ -132,41 +132,38 @@ SDK 的节点也能导入模块。
 在节点上放置部件
 ----------------
 
-用 ``RobotPart.spawn`` 放置任意部件。这是唯一的放置入口，每个部件都有。不传
-``node_rank`` 时，部件在当前进程中构造。传入该参数时，部件会托管到指定节点的调度器
-worker 中。两种方式返回的句柄 API 相同，调用方无需区分。你也可以让相机运行在它连接
-的机器上，让策略运行在其他位置。
+用 ``at()`` 声明部件运行在哪个节点。把这条声明放在你原本放置部件的位置。
+``Robot.connect`` 会把它构建到该节点上，你无需调用任何放置函数。
 
 .. code-block:: python
 
    from rlinf.robotics import Arm, Robot
 
-   handle = ExampleArm.spawn(
-       "tcp://left-arm:5000",
-       node_rank=0,
-       name="ExampleArm-0",
-   )
-   robot = Robot.single_arm(
-       Arm(handle.subpart("arm"), handle.subpart("end_effector")),
-       handles={"arm": handle},
-   )
+   robot = Robot.single_arm(Arm(ExampleArm.at("tcp://left-arm:5000", node_rank=0)))
    robot.connect()
 
-这段代码会：1) 在节点 0 上构造并连接 ``ExampleArm``；2) 返回其 subparts 的代理；
-3) 将它们组合成持有该句柄的机器人。通过 ``handles=`` 传入机器人持有的句柄。
-``Robot.disconnect`` 会先断开所有部件，再释放这些句柄。
+这段代码的作用：1) 为节点 0 声明 ``ExampleArm``；2) 机器人 connect 时构建并连接它；
+3) 若该部件本身带末端执行器，就用同一条连接填充机械臂的末端执行器槽位。``connect``
+会把每个句柄发布为 ``robot.handles[<name>]``，``disconnect`` 负责释放。
 
-无需为每种机器人编写 worker 类。RLinf 会根据部件类自动合成一个。``WorkerGroup``
-随后把每个公有方法绑定为 RPC。通过句柄调用部件接口之外的方法。本地和远程的调用
-形式相同::
+声明适用于所有部件，不只是机械臂。相机可以运行在它所插接的机器上::
+
+   cameras={"scene": RealSenseCamera.at(info, node_rank=2)}
+
+当一条连接支撑多个组件时，只声明一次并引用它的 subparts，这条连接就只会打开一次::
+
+   hardware = ExampleHardware.at(node_rank=0)
+   Arm(hardware.subpart("left"), hardware.subpart("left_end_effector"))
+
+``spawn()`` 是底层的即时形式。只在机器人之外使用，例如调试脚本，此时句柄由你自己
+管理。
+
+无需为每种机器人编写 worker 类。RLinf 会依据部件类自动合成一个，``WorkerGroup``
+随即把该类的每个公有方法绑定为 RPC。部件接口之外的方法仍可通过句柄调用，且本地与
+远程的调用形式一致::
 
    handle.is_robot_up().wait()[0]
    handle.reset_joint(home_qpos).wait()
-
-.. warning::
-
-   ``WorkerGroup`` 保留了 ``launch``、``execute_on``、``from_group_name`` 和
-   ``WorkerRank``。如果部件的公有方法使用这些名称，请改名，否则无法托管该部件。
 
 描述并构建机器人
 ----------------
@@ -192,22 +189,20 @@ worker 中。两种方式返回的句柄 API 相同，调用方无需区分。�
 
        @classmethod
        def build(cls, *, config: ExampleRobotConfig) -> "ExampleRobot":
-           handles = {
-               side: ExampleArm.spawn(
-                   endpoint,
-                   node_rank=config.node_rank,
-                   name=f"ExampleArm-{side}",
+           arms = {
+               side: Arm(
+                   ExampleArm.at(
+                       endpoint,
+                       node_rank=config.node_rank,
+                       name=f"ExampleArm-{side}",
+                   )
                )
                for side, endpoint in (
                    ("left", config.left_endpoint),
                    ("right", config.right_endpoint),
                )
            }
-           return cls.dual_arm(
-               Arm(handles["left"].subpart("arm")),
-               Arm(handles["right"].subpart("arm")),
-               handles=handles,
-           )
+           return cls(arms=arms)
 
 单臂型号沿用同一个 ``build()``，只是改为返回 ``ExampleRobot.single_arm(...)``。如果后续部件
 启动失败，请先断开已经放置的句柄，再抛出错误。不要返回不完整的机器人。
@@ -258,7 +253,7 @@ worker 中。两种方式返回的句柄 API 相同，调用方无需区分。�
 按名称组合机器人，无需直接导入这个类。
 
 继承已有机器人即可复用它的构建逻辑。``DualFrankaRobot`` 继承 ``FrankaRobot``，
-原样沿用 ``place_arms``，只覆盖 ``BACKEND`` 和 ``build``。
+原样沿用 ``declare_arms``，只覆盖 ``BACKEND`` 和 ``build``。
 
 构造 ``Cluster`` 前，先导入注册模块。RLinf 会将已注册的硬件策略模块传给各节点的
 探测流程。确保每个节点配置的 Python 环境都能导入该模块。

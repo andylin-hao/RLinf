@@ -52,6 +52,7 @@ from rlinf.robotics.parts.arms import (
     Turtle2Hardware,
 )
 from rlinf.robotics.parts.arms.franka import FrankaRobotState
+from rlinf.robotics.specs import PartSpec
 from rlinf.scheduler.hardware import (
     Hardware,
     HardwareConfig,
@@ -492,6 +493,7 @@ def test_dosw1_dummy_runtime_uses_composed_dual_arm_interface():
         gripper_width_max: float = 0.07
 
     robot = DOSW1Robot.build(config=DummyDOSW1Config())
+    robot.connect()
 
     assert set(robot.arms) == {"left", "right"}
     observation = robot.get_observation()
@@ -545,85 +547,151 @@ def test_single_and_dual_franka_configs_project_onto_one_arm_shape():
     assert single_arms["arm"].node_rank == 0
 
 
-def test_place_arms_tears_down_arms_already_placed(monkeypatch):
-    """A partial robot is never returned when a later arm fails to come up."""
-    disconnected: list[str] = []
+def _fake_arm_backend(monkeypatch, *, failing_ip=None, disconnected=None):
+    """Point FrankaRobot at a fake arm class that records what it places."""
 
     class FakeHandle:
         def __init__(self, name: str):
             self.name = name
+            self.subparts = {"arm": FakeControllablePart(name, [])}
 
         def subpart(self, _name: str):
-            return FakeControllablePart(self.name, [])
+            return self.subparts["arm"]
 
         def disconnect(self) -> None:
-            disconnected.append(self.name)
+            if disconnected is not None:
+                disconnected.append(self.name)
 
-    class FakeDriver:
+    class FakeArm:
+        @classmethod
+        def at(cls, *args, node_rank=None, name=None, **kwargs):
+            return PartSpec(cls, args, kwargs, node_rank=node_rank, name=name)
+
         @staticmethod
-        def spawn(robot_ip, *args, node_rank=None, name=None):
-            if robot_ip == "10.0.0.2":
+        def spawn(robot_ip, *args, node_rank=None, name=None, **kwargs):
+            if failing_ip is not None and robot_ip == failing_ip:
                 raise RuntimeError("right arm is unreachable")
             return FakeHandle(robot_ip)
 
     monkeypatch.setattr(
-        FrankaRobot, "arm_part_cls", classmethod(lambda cls, backend=None: FakeDriver)
+        FrankaRobot, "arm_part_cls", classmethod(lambda cls, backend=None: FakeArm)
+    )
+    return FakeArm
+
+
+def test_declaring_arms_places_nothing_until_connect(monkeypatch):
+    """Declarations are inert. ``connect`` is what touches hardware."""
+
+    class NeverSpawns:
+        @classmethod
+        def at(cls, *args, node_rank=None, name=None, **kwargs):
+            return PartSpec(cls, args, kwargs, node_rank=node_rank, name=name)
+
+        @staticmethod
+        def spawn(*args, **kwargs):
+            raise AssertionError("spawn must not run while declaring")
+
+    monkeypatch.setattr(
+        FrankaRobot, "arm_part_cls", classmethod(lambda cls, backend=None: NeverSpawns)
     )
 
-    with pytest.raises(RuntimeError, match="unreachable"):
-        FrankaRobot.place_arms(
-            {
-                "left": FrankaArmConfig(robot_ip="10.0.0.1"),
-                "right": FrankaArmConfig(robot_ip="10.0.0.2"),
-            },
-            backend="franky",
+    robot = FrankaRobot(
+        arms=FrankaRobot.declare_arms(
+            {"left": FrankaArmConfig(robot_ip="10.0.0.1")},
             default_node_rank=0,
             worker_rank=0,
             env_idx=0,
         )
+    )
+
+    assert not robot.is_connected
+
+
+def test_connect_tears_down_parts_already_placed(monkeypatch):
+    """A half-placed robot is never left behind when a later part fails."""
+    disconnected: list[str] = []
+    _fake_arm_backend(monkeypatch, failing_ip="10.0.0.2", disconnected=disconnected)
+
+    robot = FrankaRobot(
+        arms=FrankaRobot.declare_arms(
+            {
+                "left": FrankaArmConfig(robot_ip="10.0.0.1"),
+                "right": FrankaArmConfig(robot_ip="10.0.0.2"),
+            },
+            default_node_rank=0,
+            worker_rank=0,
+            env_idx=0,
+        )
+    )
+
+    with pytest.raises(RuntimeError, match="unreachable"):
+        robot.connect()
 
     assert disconnected == ["10.0.0.1"]
 
 
-def test_place_arms_scales_past_two(monkeypatch):
-    """Nothing in placement is specific to one or two arms."""
+def test_declaring_arms_scales_past_two(monkeypatch):
+    """Nothing in declaration or placement is specific to one or two arms."""
+    _fake_arm_backend(monkeypatch)
+
+    robot = FrankaRobot(
+        arms=FrankaRobot.declare_arms(
+            {
+                name: FrankaArmConfig(robot_ip=f"10.0.0.{index}")
+                for index, name in enumerate(("left", "right", "third"), start=1)
+            },
+            default_node_rank=0,
+            worker_rank=0,
+            env_idx=0,
+        )
+    )
+    robot.connect()
+
+    assert list(robot.arms) == ["left", "right", "third"]
+    assert robot.is_connected
+
+
+def test_one_declaration_is_placed_once_however_often_referenced():
+    """A connection backing several components opens exactly once."""
+    placements: list[str] = []
 
     class FakeHandle:
-        def __init__(self, name: str):
-            self.name = name
+        def __init__(self):
+            self.subparts = {
+                "left": FakeControllablePart("left", []),
+                "right": FakeControllablePart("right", []),
+                "wrist": FakeCamera("wrist", []),
+            }
 
-        def subpart(self, _name: str):
-            return FakeControllablePart(self.name, [])
+        def subpart(self, name):
+            return self.subparts[name]
 
-        def disconnect(self) -> None:
+        def disconnect(self):
             pass
 
-    monkeypatch.setattr(
-        FrankaRobot,
-        "arm_part_cls",
-        classmethod(
-            lambda cls, backend=None: type(
-                "FakeDriver",
-                (),
-                {"spawn": staticmethod(lambda ip, *a, **k: FakeHandle(ip))},
-            )
-        ),
-    )
+    class CoupledHardware:
+        @classmethod
+        def at(cls, *args, node_rank=None, name=None, **kwargs):
+            return PartSpec(cls, args, kwargs, node_rank=node_rank, name=name)
 
-    arms, handles = FrankaRobot.place_arms(
-        {
-            name: FrankaArmConfig(robot_ip=f"10.0.0.{index}")
-            for index, name in enumerate(("left", "right", "third"), start=1)
+        @staticmethod
+        def spawn(*args, **kwargs):
+            placements.append("placed")
+            return FakeHandle()
+
+    hardware = CoupledHardware.at(node_rank=0)
+    robot = Robot(
+        arms={
+            "left": Arm(hardware.subpart("left")),
+            "right": Arm(hardware.subpart("right")),
         },
-        backend="franky",
-        default_node_rank=0,
-        worker_rank=0,
-        env_idx=0,
+        cameras={"wrist": hardware.subpart("wrist")},
     )
+    robot.connect()
 
-    assert list(arms) == ["left", "right", "third"]
-    assert list(handles) == ["left", "right", "third"]
-    assert isinstance(FrankaRobot(arms=arms, handles=handles).arms["third"], Arm)
+    assert placements == ["placed"], "the shared connection was opened more than once"
+    assert isinstance(robot.cameras["wrist"], Camera)
+    assert robot.is_connected
 
 
 def test_local_handle_subpart_returns_a_part_not_a_forwarded_call():
@@ -678,11 +746,14 @@ def test_every_robot_owns_its_construction():
         )
 
 
-def test_dual_franka_inherits_placement_from_franka():
+def test_dual_franka_inherits_declaration_from_franka():
     """Arm count and backend are the only differences between the two."""
     assert issubclass(DualFrankaRobot, FrankaRobot)
-    # place_arms is inherited, not duplicated.
-    assert DualFrankaRobot.place_arms.__func__ is FrankaRobot.place_arms.__func__
+    # declare_arms is inherited, not duplicated.
+    assert (
+        DualFrankaRobot.declare_arms.__func__
+        is FrankaRobot.declare_arms.__func__
+    )
     assert (FrankaRobot.BACKEND, DualFrankaRobot.BACKEND) == ("franka_ros", "franky")
     # build is specialised per robot.
     assert DualFrankaRobot.build.__func__ is not FrankaRobot.build.__func__

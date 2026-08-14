@@ -54,6 +54,7 @@ _MODULE_GROUPS: dict[str, tuple[str, ...]] = {
         "run_parallel",
     ),
     ".parts.base": ("part_kind",),
+    ".specs": ("PartSpec", "Placement", "SubpartRef"),
     ".parts.arms": ("ARM_STATE_FIELDS",),
     ".robot": ("Robot",),
     ".views": ("MethodArm", "MethodCamera", "MethodGripper"),

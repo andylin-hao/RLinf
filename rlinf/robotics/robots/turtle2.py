@@ -40,27 +40,28 @@ class Turtle2Robot(Robot):
     ) -> "Turtle2Robot":
         """Place the coupled Turtle2 controller and compose both arms from it.
 
-        One connection backs both arms, both grippers, and the wrist cameras;
-        the hardware part decomposes itself into those subparts.
+        One connection backs both arms, both grippers, and the wrist cameras.
+        Declaring it once means it is placed once, however many subparts refer
+        to it. ``connect`` does the placing.
         """
         from ..parts.arms.turtle2 import Turtle2Hardware
 
-        handle = Turtle2Hardware.spawn(
+        hardware = Turtle2Hardware.at(
             frequency,
             tuple(camera_ids),
             node_rank=node_rank,
             name=f"Turtle2Hardware-{worker_rank}-{env_idx}",
         )
+        # Every wrist camera rides the same connection, so they are subparts of
+        # the one declaration and cost one placement between them.
         cameras = {
-            name: part
-            for name, part in handle.subparts.items()
-            if name.startswith("wrist_")
+            f"wrist_{index + 1}": hardware.subpart(f"wrist_{index + 1}")
+            for index in range(len(camera_ids))
         }
         return cls.dual_arm(
-            Arm(handle.subpart("left"), handle.subpart("left_end_effector")),
-            Arm(handle.subpart("right"), handle.subpart("right_end_effector")),
+            Arm(hardware.subpart("left"), hardware.subpart("left_end_effector")),
+            Arm(hardware.subpart("right"), hardware.subpart("right_end_effector")),
             cameras=cameras,
-            handles={"controller": handle},
         )
 
 

@@ -251,6 +251,7 @@ class GimArmEnv(gym.Env):
             node_rank=controller_node_rank,
             worker_rank=self.env_worker_rank,
         )
+        self.robot.connect()
         # Off-interface driver calls (is_robot_up, reset_joint, ...) go
         # straight to the handle; no cast through a part proxy.
         self._controller = self.robot.handles["arm"]
