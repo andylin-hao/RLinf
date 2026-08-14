@@ -21,8 +21,15 @@
 
       理解 placement 策略、执行模式与 replay buffer。
 
+   .. grid-item-card:: 机器人模型
+      :link: robotics
+      :link-type: doc
+
+      理解物理硬件如何被建模、组合与放置。
+
 .. toctree::
    :hidden:
 
    执行模型 <execution-model/index>
    调度模型 <scheduling-model/index>
+   机器人模型 <robotics>

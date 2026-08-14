@@ -1,8 +1,8 @@
 Concepts
 ========
 
-Use Concepts to understand the execution and scheduling models before you tune
-placement, workers, or communication.
+Use Concepts to understand the execution, scheduling, and robotics models
+before you tune placement, workers, communication, or hardware.
 
 Choose a Concept Area
 ---------------------
@@ -22,8 +22,15 @@ Choose a Concept Area
 
       Understand placement strategies, execution modes, and replay buffers.
 
+   .. grid-item-card:: Robotics Model
+      :link: robotics
+      :link-type: doc
+
+      Understand how physical hardware is modeled, composed, and placed.
+
 .. toctree::
    :hidden:
 
    Execution Model <execution-model/index>
    Scheduling Model <scheduling-model/index>
+   Robotics Model <robotics>
