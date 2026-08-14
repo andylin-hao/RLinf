@@ -166,16 +166,11 @@ class DOSW1Hardware(RobotPart):
     @property
     def observation_features(self) -> dict:
         """Describe this session by its subparts; it has no state of its own."""
-        return {
-            name: part.observation_features
-            for name, part in self.parts.items()
-        }
+        return {name: part.observation_features for name, part in self.parts.items()}
 
     def get_observation(self) -> dict:
         """Read every part riding on this session."""
-        return {
-            name: part.get_observation() for name, part in self.parts.items()
-        }
+        return {name: part.get_observation() for name, part in self.parts.items()}
 
     def set_leader_arm_enabled(self, enabled: bool) -> None:
         """Toggle leader-arm linkage used by teleoperation."""
@@ -303,9 +298,7 @@ class DOSW1Hardware(RobotPart):
 
     def _require_connected(self) -> object:
         if not self._connected or self._robot is None:
-            raise RuntimeError(
-                "DOSW1Hardware is not connected. Call connect() first."
-            )
+            raise RuntimeError("DOSW1Hardware is not connected. Call connect() first.")
         return self._robot
 
     def _wait_for_initial_state(self) -> None:

@@ -273,9 +273,7 @@ class FrankaEnv(gym.Env):
             controller_node_rank = self.node_rank
         # The robot owns its cameras: it places them on the node they are
         # plugged into and opens them when it connects.
-        camera_node_rank = getattr(
-            self.hardware_info.config, "camera_node_rank", None
-        )
+        camera_node_rank = getattr(self.hardware_info.config, "camera_node_rank", None)
         self.robot = FrankaRobot.build(
             robot_ip=self.config.robot_ip,
             env_idx=self.env_idx,

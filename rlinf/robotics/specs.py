@@ -61,7 +61,9 @@ class PartSpec:
         Use it when one connection backs several components::
 
             hardware = Turtle2Hardware.at(50, node_rank=0)
-            left = Group(arm=hardware.part("left"), gripper=hardware.part("left_end_effector"))
+            left = Group(
+                arm=hardware.part("left"), gripper=hardware.part("left_end_effector")
+            )
         """
         return SubpartRef(self, name)
 
@@ -121,14 +123,15 @@ class Placement:
             # A leaf -- a camera, a gripper on its own port -- is its own part.
             if not parts:
                 return handle.part
+            # One part means the hardware is that part.
             if len(parts) == 1:
                 return next(iter(parts.values()))
-            if "arm" in parts:
-                return parts["arm"]
-            raise ValueError(
-                f"{value.part_cls.__name__} exposes {sorted(parts)}; "
-                "name the one you mean with .subpart(<name>)."
-            )
+            # Several means the hardware is a subtree. Hand back the whole
+            # thing: an arm that carries a gripper resolves to both, so a robot
+            # composing the arm never has to reach inside for the gripper.
+            from .parts.base import Group
+
+            return Group(parts)
         return value
 
     def resolve_handle(self, spec: PartSpec) -> Any:

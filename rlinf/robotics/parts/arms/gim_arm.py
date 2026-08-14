@@ -144,9 +144,7 @@ class GimArm(ControllablePart):
         """Expose the arm, plus the gripper when one is fitted."""
         parts: dict[str, RobotPart] = {"arm": self}
         if self._enable_gripper:
-            parts["end_effector"] = MethodGripper(
-                self, state_field="gripper_position"
-            )
+            parts["end_effector"] = MethodGripper(self, state_field="gripper_position")
         return parts
 
     def connect(self) -> None:
@@ -178,8 +176,7 @@ class GimArm(ControllablePart):
         self._sdk = _SDKController(sdk_config)
         if not self._sdk.start(return_to_zero=True):
             raise RuntimeError(
-                "Failed to start GimArm on CAN interface "
-                f"{self._can_interface!r}."
+                f"Failed to start GimArm on CAN interface {self._can_interface!r}."
             )
         self._sdk.set_mode(ControlMode[self._control_mode.upper()])
 

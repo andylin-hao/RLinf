@@ -23,8 +23,6 @@ from rlinf.scheduler.hardware import HardwareConfig, HardwareInfo, HardwareResou
 
 from ..config import RobotAutoConfig
 from ..discovery import RobotConfig, RobotDiscovery, RobotInfo
-from ..parts.base import Group
-from ..parts.cameras import declare_cameras
 from .franka import FrankaRobot
 
 
@@ -34,6 +32,51 @@ class DualFrankaRobot(FrankaRobot):
     ROBOT_TYPE = "DualFranka"
 
     BACKEND = "franky"
+
+    @classmethod
+    def build_arms(
+        cls,
+        *,
+        left_robot_ip: Optional[str] = None,
+        right_robot_ip: Optional[str] = None,
+        left_node_rank: int = 0,
+        right_node_rank: int = 0,
+        worker_rank: int = 0,
+        env_idx: int = 0,
+        left_gripper_type: str = "robotiq",
+        right_gripper_type: str = "robotiq",
+        left_gripper_connection: Optional[str] = None,
+        right_gripper_connection: Optional[str] = None,
+        **_: Any,
+    ) -> dict[str, Any]:
+        """Two arms instead of one. Nothing else about building changes."""
+        if not left_robot_ip or not right_robot_ip:
+            raise ValueError("Both Franka robot IPs are required for a dual-arm robot.")
+
+        sides = {
+            "left": (
+                left_robot_ip,
+                left_gripper_type,
+                left_gripper_connection,
+                left_node_rank,
+            ),
+            "right": (
+                right_robot_ip,
+                right_gripper_type,
+                right_gripper_connection,
+                right_node_rank,
+            ),
+        }
+        return {
+            side: cls.declare_arm(
+                robot_ip,
+                node_rank=node_rank,
+                name=f"{cls.ROBOT_TYPE}Arm-{side}-{worker_rank}-{env_idx}",
+                gripper_type=gripper_type,
+                gripper_connection=connection,
+            )
+            for side, (robot_ip, gripper_type, connection, node_rank) in sides.items()
+        }
 
     @classmethod
     def build(
@@ -49,42 +92,25 @@ class DualFrankaRobot(FrankaRobot):
         right_gripper_type: str,
         left_gripper_connection: Optional[str] = None,
         right_gripper_connection: Optional[str] = None,
-        arm_cameras: Optional[Mapping[str, Mapping[str, Any]]] = None,
         cameras: Optional[Mapping[str, Any]] = None,
         camera_node_rank: Optional[int] = None,
     ) -> "DualFrankaRobot":
-        """Compose two independently placed Franka arms, one group per side.
-
-        Arm count is not a property of the type: this is the same composition as
-        the single-arm build with another entry.
-        """
-        if not left_robot_ip or not right_robot_ip:
-            raise ValueError("Both Franka robot IPs are required for a dual-arm robot.")
-
-        sides = {
-            "left": (left_robot_ip, left_gripper_type, left_gripper_connection,
-                     left_node_rank),
-            "right": (right_robot_ip, right_gripper_type, right_gripper_connection,
-                      right_node_rank),
-        }
-        arm_cameras = arm_cameras or {}
-
-        groups = {}
-        for side, (robot_ip, gripper_type, connection, node_rank) in sides.items():
-            arm = cls.arm_at(
-                robot_ip,
-                node_rank=node_rank,
-                name=f"{cls.ROBOT_TYPE}Arm-{side}-{worker_rank}-{env_idx}",
-                gripper_type=gripper_type,
-                gripper_connection=connection,
-            )
-            groups[side] = Group(
-                arm=arm.part("arm"),
-                gripper=arm.part("end_effector"),
-                **declare_cameras(arm_cameras.get(side), node_rank=camera_node_rank),
-            )
-
-        return cls(**groups, **declare_cameras(cameras, node_rank=camera_node_rank))
+        """Compose this robot from the parts it is made of."""
+        return cls(
+            **cls.build_arms(
+                left_robot_ip=left_robot_ip,
+                right_robot_ip=right_robot_ip,
+                left_node_rank=left_node_rank,
+                right_node_rank=right_node_rank,
+                worker_rank=worker_rank,
+                env_idx=env_idx,
+                left_gripper_type=left_gripper_type,
+                right_gripper_type=right_gripper_type,
+                left_gripper_connection=left_gripper_connection,
+                right_gripper_connection=right_gripper_connection,
+            ),
+            **cls.build_cameras(cameras, node_rank=camera_node_rank),
+        )
 
 
 class DualFrankaDiscovery(RobotDiscovery):

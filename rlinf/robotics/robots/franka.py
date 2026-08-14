@@ -40,7 +40,7 @@ class FrankaRobot(Robot):
     """Arm implementation this robot drives. See :data:`FRANKA_BACKENDS`."""
 
     @classmethod
-    def arm_at(
+    def declare_arm(
         cls,
         robot_ip: Optional[str],
         *,
@@ -52,7 +52,11 @@ class FrankaRobot(Robot):
         end_effector_type: Optional[str] = None,
         end_effector_config: Optional[dict] = None,
     ):
-        """Declare one Franka arm, resolving its IP from its node when unset."""
+        """Declare one whole arm: its motion and the end effector it carries.
+
+        The end effector rides the arm's own connection, so it comes with the
+        arm rather than being composed beside it.
+        """
         backend = backend or cls.BACKEND
         resolved_ip = robot_ip or resolve_robot_ip(node_rank)
         if not resolved_ip:
@@ -74,6 +78,44 @@ class FrankaRobot(Robot):
         )
 
     @classmethod
+    def build_arms(
+        cls,
+        *,
+        robot_ip: Optional[str],
+        node_rank: int,
+        worker_rank: int = 0,
+        env_idx: int = 0,
+        end_effector_type: Optional[str] = None,
+        end_effector_config: Optional[dict] = None,
+        gripper_connection: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """The arms this robot carries, by name.
+
+        Override this to give a robot a different number of arms; everything
+        else about building stays the same.
+        """
+        return {
+            "arm": cls.declare_arm(
+                robot_ip,
+                node_rank=node_rank,
+                name=f"{cls.ROBOT_TYPE}Arm-{worker_rank}-{env_idx}",
+                gripper_connection=gripper_connection,
+                end_effector_type=end_effector_type,
+                end_effector_config=end_effector_config,
+            )
+        }
+
+    @classmethod
+    def build_cameras(
+        cls,
+        cameras: Optional[Mapping[str, Any]] = None,
+        *,
+        node_rank: Optional[int] = None,
+    ) -> dict[str, Any]:
+        """The cameras this robot carries, each placed where it is plugged in."""
+        return declare_cameras(cameras, node_rank=node_rank)
+
+    @classmethod
     def build(
         cls,
         *,
@@ -87,19 +129,18 @@ class FrankaRobot(Robot):
         cameras: Optional[Mapping[str, Any]] = None,
         camera_node_rank: Optional[int] = None,
     ) -> "FrankaRobot":
-        """Compose one ROS-controlled Franka. ``connect`` places every part."""
-        arm = cls.arm_at(
-            robot_ip,
-            node_rank=node_rank,
-            name=f"{cls.ROBOT_TYPE}Arm-{worker_rank}-{env_idx}",
-            gripper_connection=gripper_connection,
-            end_effector_type=end_effector_type,
-            end_effector_config=end_effector_config,
-        )
+        """Compose this robot from the parts it is made of."""
         return cls(
-            arm=arm.part("arm"),
-            gripper=arm.part("end_effector"),
-            **declare_cameras(cameras, node_rank=camera_node_rank),
+            **cls.build_arms(
+                robot_ip=robot_ip,
+                node_rank=node_rank,
+                worker_rank=worker_rank,
+                env_idx=env_idx,
+                end_effector_type=end_effector_type,
+                end_effector_config=end_effector_config,
+                gripper_connection=gripper_connection,
+            ),
+            **cls.build_cameras(cameras, node_rank=camera_node_rank),
         )
 
 
@@ -331,8 +372,6 @@ class FrankaConfig(RobotConfig):
             self.camera_serials = list(self.camera_serials)
 
 
-
-
 def resolve_robot_ip(node_rank: int) -> Optional[str]:
     """Read a robot IP off a node's enumerated hardware.
 
@@ -377,8 +416,7 @@ def franka_arm_cls(backend: str) -> type:
     """Return the arm class for a backend, imported lazily."""
     if backend not in FRANKA_BACKENDS:
         raise ValueError(
-            f"Unknown Franka backend {backend!r}. "
-            f"Supported: {sorted(FRANKA_BACKENDS)}."
+            f"Unknown Franka backend {backend!r}. Supported: {sorted(FRANKA_BACKENDS)}."
         )
     part_name, _ = FRANKA_BACKENDS[backend]
     if part_name == "FrankaROSArm":

@@ -32,6 +32,44 @@ class GimArmRobot(Robot):
     ROBOT_TYPE = "GimArm"
 
     @classmethod
+    def build_arms(
+        cls,
+        *,
+        can_interface: str,
+        arm_variant: str,
+        enable_gripper: bool,
+        gripper_type: str,
+        control_mode: str,
+        node_rank: int,
+        worker_rank: int = 0,
+        env_idx: int = 0,
+    ) -> dict[str, Any]:
+        """The one arm this robot carries, gripper included when fitted."""
+        from ..parts.arms.gim_arm import GimArm
+
+        return {
+            "arm": GimArm.at(
+                can_interface,
+                arm_variant,
+                enable_gripper,
+                gripper_type,
+                control_mode,
+                node_rank=node_rank,
+                name=f"GimArm-{worker_rank}-{env_idx}",
+            )
+        }
+
+    @classmethod
+    def build_cameras(
+        cls,
+        cameras: Optional[Mapping[str, Any]] = None,
+        *,
+        node_rank: Optional[int] = None,
+    ) -> dict[str, Any]:
+        """The cameras this robot carries."""
+        return declare_cameras(cameras, node_rank=node_rank)
+
+    @classmethod
     def build(
         cls,
         *,
@@ -46,23 +84,20 @@ class GimArmRobot(Robot):
         cameras: Optional[Mapping[str, Any]] = None,
         camera_node_rank: Optional[int] = None,
     ) -> "GimArmRobot":
-        """Compose one CAN-controlled GimArm. ``connect`` places every part."""
-        from ..parts.arms.gim_arm import GimArm
-
-        arm = GimArm.at(
-            can_interface,
-            arm_variant,
-            enable_gripper,
-            gripper_type,
-            control_mode,
-            node_rank=node_rank,
-            name=f"GimArm-{worker_rank}-{env_idx}",
+        """Compose this robot from the parts it is made of."""
+        return cls(
+            **cls.build_arms(
+                can_interface=can_interface,
+                arm_variant=arm_variant,
+                enable_gripper=enable_gripper,
+                gripper_type=gripper_type,
+                control_mode=control_mode,
+                node_rank=node_rank,
+                worker_rank=worker_rank,
+                env_idx=env_idx,
+            ),
+            **cls.build_cameras(cameras, node_rank=camera_node_rank),
         )
-        parts = {"arm": arm.part("arm")}
-        if enable_gripper:
-            parts["gripper"] = arm.part("end_effector")
-        parts.update(declare_cameras(cameras, node_rank=camera_node_rank))
-        return cls(parts)
 
 
 class GimArmDiscovery(RobotDiscovery):

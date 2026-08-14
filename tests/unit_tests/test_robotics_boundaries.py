@@ -182,5 +182,12 @@ def test_teleop_devices_live_with_the_other_drivers():
     teleop_dir = _ROOT / "rlinf" / "robotics" / "parts" / "teleop"
     modules = {path.stem for path in teleop_dir.glob("*.py")} - {"__init__"}
 
-    assert modules == {"gello", "gello_joint", "glove", "keyboard", "pico", "spacemouse"}
+    assert modules == {
+        "gello",
+        "gello_joint",
+        "glove",
+        "keyboard",
+        "pico",
+        "spacemouse",
+    }
     assert not (_ROOT / "rlinf" / "envs" / "real" / "common").exists()

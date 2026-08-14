@@ -154,27 +154,48 @@ Read :doc:`Placement <placement>` to map workers onto nodes and GPUs.
 Compose Every Part Kind
 -----------------------
 
-An arm, its end effector, and its cameras are separate parts. The robot's
-``build`` composes them by name, and each carries its own ``node_rank``:
+A robot is a tree. Compose the parts it carries; each part brings whatever it is
+made of. An arm that carries a gripper on its own connection arrives whole, so
+the robot never names the gripper:
 
 .. code-block:: python
 
-   arm = FrankaROSArm.at(robot_ip, node_rank=1)
    robot = FrankaRobot(
-       arm=arm.part("arm"),
-       gripper=RobotiqGripper.at(port="/dev/ttyUSB0", node_rank=2),
+       arm=FrankaROSArm.at(robot_ip, node_rank=1),
        wrist=RealSenseCamera.at(info, node_rank=3),
    )
 
-A Robotiq gripper is a serial device of its own and a camera holds its own USB
-link, so neither has to sit on the arm's machine. Take the end effector from
-``arm.part("end_effector")`` only when it genuinely rides the arm's connection,
-as a Franka hand does.
+   robot.part("arm").parts     # {"arm": ..., "gripper": ...}
 
-Composing is all a robot's ``build`` does. There is no per-part config class to
-write: a camera is ``declare_cameras({name: info}, node_rank=...)``, an arm is
-``at(...)`` with its arguments, and the robot's own ``RobotConfig`` -- the
-hardware YAML schema it already needs for discovery -- supplies the fields.
+Reach inside a declaration only when the hardware is not one part. A coupled
+controller driving two arms is a connection, not an arm, so name what you want
+from it with ``part(...)``.
+
+Build a robot from its kinds of part. ``build`` composes what the ``build_*``
+methods return, so a robot with a different number of arms overrides
+``build_arms`` and inherits everything else:
+
+.. code-block:: python
+
+   class FrankaRobot(Robot):
+       @classmethod
+       def build_arms(cls, **config) -> dict[str, RobotPart]:
+           return {"arm": cls.declare_arm(...)}
+
+       @classmethod
+       def build(cls, **config) -> "FrankaRobot":
+           return cls(**cls.build_arms(**config), **cls.build_cameras(...))
+
+
+   class DualFrankaRobot(FrankaRobot):
+       @classmethod
+       def build_arms(cls, **config) -> dict[str, RobotPart]:
+           return {"left": ..., "right": ...}      # the only difference
+
+There is no per-part config class to write. A camera is
+``declare_cameras({name: info}, node_rank=...)``, an arm is ``at(...)`` with its
+arguments, and the robot's own ``RobotConfig`` -- the hardware YAML schema it
+already needs for discovery -- supplies the fields.
 
 Lifecycle
 ---------

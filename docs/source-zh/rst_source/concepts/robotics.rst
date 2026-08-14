@@ -140,25 +140,44 @@
 组合所有部件
 ------------
 
-机械臂、末端执行器和相机是彼此独立的部件。机器人的 ``build`` 按名字把它们组合起来，
-每个部件都带有自己的 ``node_rank``：
+机器人是一棵树。组合它携带的部件，每个部件会把自己包含的部件一并带来。如果机械臂
+在自己的连接上带着夹爪，它就会整体到位，机器人无需再提这个夹爪：
 
 .. code-block:: python
 
-   arm = FrankaROSArm.at(robot_ip, node_rank=1)
    robot = FrankaRobot(
-       arm=arm.part("arm"),
-       gripper=RobotiqGripper.at(port="/dev/ttyUSB0", node_rank=2),
+       arm=FrankaROSArm.at(robot_ip, node_rank=1),
        wrist=RealSenseCamera.at(info, node_rank=3),
    )
 
-Robotiq 夹爪本身就是一台串口设备，相机也独占自己的 USB 链路，因此它们都不必和机械臂
-待在同一台机器上。只有当末端执行器确实依附于机械臂的连接时（例如 Franka 手），才用
-``arm.part("end_effector")`` 取它。
+   robot.part("arm").parts     # {"arm": ..., "gripper": ...}
 
-机器人的 ``build`` 只做组合这一件事。不需要为每种部件再写配置类：相机用
-``declare_cameras({name: info}, node_rank=...)``，机械臂用 ``at(...)`` 加它的参数，
-字段则来自机器人自己的 ``RobotConfig``——它本来就要为硬件发现提供这份 YAML 结构。
+只有当硬件本身不是单个部件时，才需要伸进声明里去取。联动控制器驱动两条机械臂时，
+它是一条连接而不是一条机械臂，此时用 ``part(...)`` 点名你要的部件。
+
+按部件种类来构建机器人。``build`` 负责把各个 ``build_*`` 方法返回的部件组合起来，
+因此机械臂数量不同的机器人只需覆盖 ``build_arms``，其余全部继承：
+
+.. code-block:: python
+
+   class FrankaRobot(Robot):
+       @classmethod
+       def build_arms(cls, **config) -> dict[str, RobotPart]:
+           return {"arm": cls.declare_arm(...)}
+
+       @classmethod
+       def build(cls, **config) -> "FrankaRobot":
+           return cls(**cls.build_arms(**config), **cls.build_cameras(...))
+
+
+   class DualFrankaRobot(FrankaRobot):
+       @classmethod
+       def build_arms(cls, **config) -> dict[str, RobotPart]:
+           return {"left": ..., "right": ...}      # 唯一的差别
+
+不需要为每种部件再写配置类：相机用 ``declare_cameras({name: info}, node_rank=...)``，
+机械臂用 ``at(...)`` 加它的参数，字段则来自机器人自己的 ``RobotConfig``——它本来就要
+为硬件发现提供这份 YAML 结构。
 
 生命周期
 --------

@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
 from rlinf.scheduler.hardware import HardwareConfig, HardwareInfo, HardwareResource
 
@@ -29,6 +29,36 @@ class Turtle2Robot(Robot):
     ROBOT_TYPE = "Turtle2"
 
     @classmethod
+    def declare_hardware(
+        cls, *, frequency: int, camera_ids: list[int], node_rank: int, name: str
+    ):
+        """Declare the one connection that drives everything on this robot."""
+        from ..parts.arms.turtle2 import Turtle2Hardware
+
+        return Turtle2Hardware.at(
+            frequency, tuple(camera_ids), node_rank=node_rank, name=name
+        )
+
+    @classmethod
+    def build_arms(cls, hardware) -> dict[str, Any]:
+        """Both arms, each whole, from the shared connection."""
+        return {
+            side: Group(
+                arm=hardware.part(side),
+                gripper=hardware.part(f"{side}_end_effector"),
+            )
+            for side in ("left", "right")
+        }
+
+    @classmethod
+    def build_cameras(cls, hardware, *, count: int) -> dict[str, Any]:
+        """The wrist cameras, from that same connection."""
+        return {
+            f"wrist_{index + 1}": hardware.part(f"wrist_{index + 1}")
+            for index in range(count)
+        }
+
+    @classmethod
     def build(
         cls,
         *,
@@ -38,31 +68,20 @@ class Turtle2Robot(Robot):
         node_rank: int,
         worker_rank: int,
     ) -> "Turtle2Robot":
-        """Compose the coupled Turtle2 hardware into a group per side.
+        """Compose this robot from the parts it is made of.
 
-        One connection backs both arms, both grippers, and the wrist cameras, so
-        declaring it once is enough: every part below refers to that one
-        declaration and it is placed once.
+        Everything hangs off one declaration, so the connection is opened once
+        however many parts refer to it.
         """
-        from ..parts.arms.turtle2 import Turtle2Hardware
-
-        hardware = Turtle2Hardware.at(
-            frequency,
-            tuple(camera_ids),
+        hardware = cls.declare_hardware(
+            frequency=frequency,
+            camera_ids=camera_ids,
             node_rank=node_rank,
             name=f"Turtle2Hardware-{worker_rank}-{env_idx}",
         )
         return cls(
-            left=Group(
-                arm=hardware.part("left"), gripper=hardware.part("left_end_effector")
-            ),
-            right=Group(
-                arm=hardware.part("right"), gripper=hardware.part("right_end_effector")
-            ),
-            **{
-                f"wrist_{index + 1}": hardware.part(f"wrist_{index + 1}")
-                for index in range(len(camera_ids))
-            },
+            **cls.build_arms(hardware),
+            **cls.build_cameras(hardware, count=len(camera_ids)),
         )
 
 

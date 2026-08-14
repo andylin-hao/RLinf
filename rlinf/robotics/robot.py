@@ -42,9 +42,7 @@ class Robot(Group):
 
     ROBOT_TYPE: ClassVar[str] = ""
 
-    def __init__(
-        self, parts: Optional[Mapping[str, Any]] = None, **named: Any
-    ) -> None:
+    def __init__(self, parts: Optional[Mapping[str, Any]] = None, **named: Any) -> None:
         super().__init__(parts, **named)
         self.handles: dict[str, Any] = {}
         """Connections this robot placed, keyed by the part that needed them.

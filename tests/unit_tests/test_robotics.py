@@ -549,7 +549,7 @@ def test_declaring_arms_places_nothing_until_connect(monkeypatch):
     monkeypatch.setattr(franka_module, "franka_arm_cls", lambda backend: NeverSpawns)
 
     robot = FrankaRobot(
-        arm=FrankaRobot.arm_at("10.0.0.1", node_rank=0, name="left")
+        arm=FrankaRobot.declare_arm("10.0.0.1", node_rank=0, name="left")
     )
 
     assert not robot.is_connected
@@ -561,8 +561,8 @@ def test_connect_tears_down_parts_already_placed(monkeypatch):
     _fake_arm_backend(monkeypatch, failing_ip="10.0.0.2", disconnected=disconnected)
 
     robot = FrankaRobot(
-        left=FrankaRobot.arm_at("10.0.0.1", node_rank=0, name="left"),
-        right=FrankaRobot.arm_at("10.0.0.2", node_rank=0, name="right"),
+        left=FrankaRobot.declare_arm("10.0.0.1", node_rank=0, name="left"),
+        right=FrankaRobot.declare_arm("10.0.0.2", node_rank=0, name="right"),
     )
 
     with pytest.raises(RuntimeError, match="unreachable"):
@@ -577,7 +577,7 @@ def test_declaring_arms_scales_past_two(monkeypatch):
 
     robot = FrankaRobot(
         **{
-            name: FrankaRobot.arm_at(f"10.0.0.{index}", node_rank=0, name=name)
+            name: FrankaRobot.declare_arm(f"10.0.0.{index}", node_rank=0, name=name)
             for index, name in enumerate(("left", "right", "third"), start=1)
         }
     )
@@ -684,8 +684,11 @@ def test_every_robot_owns_its_construction():
 def test_dual_franka_inherits_declaration_from_franka():
     """Arm count and backend are the only differences between the two."""
     assert issubclass(DualFrankaRobot, FrankaRobot)
-    # arm_at is inherited, not duplicated.
-    assert DualFrankaRobot.arm_at.__func__ is FrankaRobot.arm_at.__func__
+    # declare_arm is inherited; only build_arms differs.
+    assert DualFrankaRobot.declare_arm.__func__ is FrankaRobot.declare_arm.__func__
+    assert DualFrankaRobot.build_arms.__func__ is not FrankaRobot.build_arms.__func__, (
+        "only the arm count differs, and that is what build_arms says"
+    )
     assert (FrankaRobot.BACKEND, DualFrankaRobot.BACKEND) == ("franka_ros", "franky")
     # build is specialised per robot.
     assert DualFrankaRobot.build.__func__ is not FrankaRobot.build.__func__

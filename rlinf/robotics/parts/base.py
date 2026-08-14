@@ -26,7 +26,9 @@ KeyType = TypeVar("KeyType")
 ValueType = TypeVar("ValueType")
 
 
-def run_parallel(jobs: Mapping[KeyType, Callable[[], ValueType]]) -> dict[KeyType, ValueType]:
+def run_parallel(
+    jobs: Mapping[KeyType, Callable[[], ValueType]],
+) -> dict[KeyType, ValueType]:
     """Run independent part operations concurrently, keyed by component name.
 
     Parts on separate connections do not contend, so reading or commanding
@@ -135,7 +137,9 @@ class RobotPart(ABC):
         """Send an action to one controllable part."""
         part = self.part(name)
         if not isinstance(part, ControllablePart):
-            raise TypeError(f"Part {name!r} of {type(self).__name__} is not controllable.")
+            raise TypeError(
+                f"Part {name!r} of {type(self).__name__} is not controllable."
+            )
         return part.send_action(action)
 
     def part_reset(self, name: str) -> None:
@@ -240,7 +244,9 @@ class Group(ControllablePart):
     def __init__(self, parts: Optional[Mapping[str, Any]] = None, **named: Any) -> None:
         combined = {**(parts or {}), **named}
         if any(not name or not isinstance(name, str) for name in combined):
-            raise ValueError(f"{type(self).__name__} part names must be non-empty strings.")
+            raise ValueError(
+                f"{type(self).__name__} part names must be non-empty strings."
+            )
         self._parts: dict[str, Any] = combined
         self._handle_of: dict[str, int] = {}
         """Which connection each part came from, so sharing is respected."""

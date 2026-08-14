@@ -33,22 +33,36 @@ class DOSW1Robot(Robot):
     ROBOT_TYPE = "DOSW1"
 
     @classmethod
+    def build_arms(cls, sdk) -> dict[str, Any]:
+        """Both arms, each whole, from the shared SDK session."""
+        return {
+            side: Group(arm=sdk.part(side), gripper=sdk.part(f"{side}_end_effector"))
+            for side in ("left", "right")
+        }
+
+    @classmethod
+    def build_cameras(
+        cls,
+        cameras: Optional[Mapping[str, Any]] = None,
+        *,
+        node_rank: Optional[int] = None,
+    ) -> dict[str, Any]:
+        """The cameras this robot carries."""
+        return declare_cameras(cameras, node_rank=node_rank)
+
+    @classmethod
     def build(
         cls, *, config, cameras: Optional[Mapping[str, Any]] = None
     ) -> "DOSW1Robot":
-        """Compose a DOSW1 dual-arm robot from one local SDK session.
+        """Compose this robot from the parts it is made of.
 
-        Both arms share a single session, and it runs wherever the env worker
+        Both arms share one SDK session, and it runs wherever the env worker
         runs, so the declaration carries no node.
         """
         from ..parts.arms.dosw1 import DOSW1Hardware
 
         sdk = DOSW1Hardware.at(config)
-        return cls(
-            left=Group(arm=sdk.part("left"), gripper=sdk.part("left_end_effector")),
-            right=Group(arm=sdk.part("right"), gripper=sdk.part("right_end_effector")),
-            **declare_cameras(cameras),
-        )
+        return cls(**cls.build_arms(sdk), **cls.build_cameras(cameras))
 
 
 class DOSW1Discovery(RobotDiscovery):
