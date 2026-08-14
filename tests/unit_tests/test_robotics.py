@@ -18,6 +18,7 @@ from typing import Any, Optional, cast
 import numpy as np
 import pytest
 
+import rlinf.robotics.robots.franka as franka_module
 from rlinf.robotics import (
     Arm,
     Camera,
@@ -25,8 +26,11 @@ from rlinf.robotics import (
     DOSW1RobotConfig,
     DriverArm,
     DriverGripper,
+    DualFrankaConfig,
     DualFrankaRobot,
     EndEffector,
+    FrankaArmConfig,
+    FrankaConfig,
     FrankaRobot,
     GimArmConfig,
     LegacyObservationAdapter,
@@ -49,6 +53,7 @@ from rlinf.robotics.drivers import (
     Turtle2Driver,
 )
 from rlinf.robotics.drivers.base import Driver
+from rlinf.robotics.robots.franka import place_franka_arms
 from rlinf.robotics.states import FrankaRobotState
 from rlinf.scheduler.hardware import (
     Hardware,
@@ -519,3 +524,110 @@ def test_pure_drivers_construct_without_scheduler_or_vendor_sdks():
     assert all(not driver.is_connected for driver in drivers)
     # Every driver declares the parts it backs.
     assert all(driver.parts() for driver in drivers)
+
+
+def test_single_and_dual_franka_configs_project_onto_one_arm_shape():
+    """Arm count is the size of a mapping, not a difference in robot type.
+
+    Both configs keep their existing flat YAML keys; ``arms()`` is where those
+    keys stop being hand-written halves and become a uniform mapping that one
+    builder iterates.
+    """
+    single = FrankaConfig(node_rank=0, robot_ip="10.0.0.1", disable_validate=True)
+    dual = DualFrankaConfig(
+        node_rank=0,
+        left_robot_ip="10.0.0.1",
+        right_robot_ip="10.0.0.2",
+        right_controller_node_rank=3,
+    )
+
+    single_arms = single.arms()
+    dual_arms = dual.arms()
+
+    assert list(single_arms) == ["arm"]
+    assert list(dual_arms) == ["left", "right"]
+    assert all(
+        isinstance(arm, FrankaArmConfig)
+        for arm in (*single_arms.values(), *dual_arms.values())
+    )
+    # Per-arm placement is expressed identically in both.
+    assert dual_arms["left"].node_rank == 0
+    assert dual_arms["right"].node_rank == 3
+    assert single_arms["arm"].node_rank == 0
+
+
+def test_place_franka_arms_tears_down_arms_already_placed(monkeypatch):
+    """A partial robot is never returned when a later arm fails to come up."""
+    disconnected: list[str] = []
+
+    class FakeHandle:
+        def __init__(self, name: str):
+            self.name = name
+
+        def part(self, _name: str):
+            return FakeControllablePart(self.name, [])
+
+        def disconnect(self) -> None:
+            disconnected.append(self.name)
+
+    class FakeDriver:
+        @staticmethod
+        def spawn(robot_ip, *args, node_rank=None, name=None):
+            if robot_ip == "10.0.0.2":
+                raise RuntimeError("right arm is unreachable")
+            return FakeHandle(robot_ip)
+
+    monkeypatch.setattr(franka_module, "_franka_driver_cls", lambda backend: FakeDriver)
+
+    with pytest.raises(RuntimeError, match="unreachable"):
+        place_franka_arms(
+            {
+                "left": FrankaArmConfig(robot_ip="10.0.0.1"),
+                "right": FrankaArmConfig(robot_ip="10.0.0.2"),
+            },
+            backend="franky",
+            default_node_rank=0,
+            worker_rank=0,
+            env_idx=0,
+        )
+
+    assert disconnected == ["10.0.0.1"]
+
+
+def test_place_franka_arms_scales_past_two(monkeypatch):
+    """Nothing in placement is specific to one or two arms."""
+
+    class FakeHandle:
+        def __init__(self, name: str):
+            self.name = name
+
+        def part(self, _name: str):
+            return FakeControllablePart(self.name, [])
+
+        def disconnect(self) -> None:
+            pass
+
+    monkeypatch.setattr(
+        franka_module,
+        "_franka_driver_cls",
+        lambda backend: type(
+            "FakeDriver",
+            (),
+            {"spawn": staticmethod(lambda ip, *a, **k: FakeHandle(ip))},
+        ),
+    )
+
+    arms, handles = place_franka_arms(
+        {
+            name: FrankaArmConfig(robot_ip=f"10.0.0.{index}")
+            for index, name in enumerate(("left", "right", "third"), start=1)
+        },
+        backend="franky",
+        default_node_rank=0,
+        worker_rank=0,
+        env_idx=0,
+    )
+
+    assert list(arms) == ["left", "right", "third"]
+    assert list(handles) == ["left", "right", "third"]
+    assert isinstance(FrankaRobot(arms=arms, drivers=handles).arms["third"], Arm)

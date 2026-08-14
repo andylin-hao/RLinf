@@ -16,7 +16,13 @@
 
 from .dosw1 import DOSW1Robot, DOSW1RobotConfig, build_dosw1_robot
 from .dual_franka import DualFrankaConfig, DualFrankaRobot, build_dual_franka_robot
-from .franka import FrankaConfig, FrankaRobot, build_franka_robot
+from .franka import (
+    FrankaArmConfig,
+    FrankaConfig,
+    FrankaRobot,
+    build_franka_robot,
+    place_franka_arms,
+)
 from .gim_arm import GimArmConfig, GimArmRobot, build_gim_arm_robot
 from .turtle2 import Turtle2Config, Turtle2Robot, build_turtle2_robot
 
@@ -25,6 +31,7 @@ __all__ = [
     "DOSW1RobotConfig",
     "DualFrankaConfig",
     "DualFrankaRobot",
+    "FrankaArmConfig",
     "FrankaConfig",
     "FrankaRobot",
     "GimArmConfig",
@@ -36,4 +43,5 @@ __all__ = [
     "build_franka_robot",
     "build_gim_arm_robot",
     "build_turtle2_robot",
+    "place_franka_arms",
 ]

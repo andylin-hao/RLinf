@@ -22,8 +22,8 @@ from rlinf.scheduler.hardware import HardwareConfig, HardwareInfo, HardwareResou
 
 from ..config import RobotAutoConfig
 from ..discovery import RobotConfig, RobotDiscovery, RobotInfo, register_robot
-from ..parts.base import Arm
 from ..robot import Robot
+from .franka import FrankaArmConfig, place_franka_arms
 
 
 class DualFrankaRobot(Robot):
@@ -178,6 +178,27 @@ class DualFrankaConfig(RobotConfig):
         if self.base_camera_serials:
             self.base_camera_serials = list(self.base_camera_serials)
 
+    def arms(self) -> dict[str, FrankaArmConfig]:
+        """Project the flat left/right fields onto the shared per-arm shape.
+
+        The legacy ``left_*`` / ``right_*`` YAML keys stay the public schema;
+        this is where they stop being two hand-written halves and become a
+        mapping the builder iterates.
+        """
+        return {
+            side: FrankaArmConfig(
+                robot_ip=getattr(self, f"{side}_robot_ip"),
+                gripper_type=getattr(self, f"{side}_gripper_type"),
+                gripper_connection=getattr(self, f"{side}_gripper_connection"),
+                node_rank=(
+                    getattr(self, f"{side}_controller_node_rank")
+                    if getattr(self, f"{side}_controller_node_rank") is not None
+                    else self.node_rank
+                ),
+            )
+            for side in ("left", "right")
+        }
+
     @staticmethod
     def _validate_ip(label: str, ip: str) -> None:
         """Validate that ``ip`` is a valid IP address."""
@@ -190,16 +211,13 @@ class DualFrankaConfig(RobotConfig):
             )
 
 
-
-
 def build_dual_franka_robot(
     *,
     left_robot_ip: Optional[str],
     right_robot_ip: Optional[str],
-    left_env_idx: int,
-    right_env_idx: int,
     left_node_rank: int,
     right_node_rank: int,
+    env_idx: int,
     worker_rank: int,
     left_gripper_type: str,
     right_gripper_type: str,
@@ -208,45 +226,34 @@ def build_dual_franka_robot(
 ) -> DualFrankaRobot:
     """Place two independently located Franka arms and compose them.
 
-    Placement is per arm, so the halves may sit on different machines. If a
-    later arm fails to come up, the ones already placed are torn down before
-    the error propagates.
+    Arm count is the only thing separating this from the single-arm builder,
+    and it is now just the size of the mapping handed to
+    :func:`~rlinf.robotics.robots.franka.place_franka_arms`.
     """
-    from ..drivers.franky import FrankyDriver
-
     if not left_robot_ip or not right_robot_ip:
         raise ValueError("Both Franka robot IPs are required for a dual-arm robot.")
 
-    placements = (
-        ("left", left_robot_ip, left_gripper_type, left_gripper_connection,
-         left_node_rank, left_env_idx),
-        ("right", right_robot_ip, right_gripper_type, right_gripper_connection,
-         right_node_rank, right_env_idx),
+    arms, handles = place_franka_arms(
+        {
+            "left": FrankaArmConfig(
+                robot_ip=left_robot_ip,
+                gripper_type=left_gripper_type,
+                gripper_connection=left_gripper_connection,
+                node_rank=left_node_rank,
+            ),
+            "right": FrankaArmConfig(
+                robot_ip=right_robot_ip,
+                gripper_type=right_gripper_type,
+                gripper_connection=right_gripper_connection,
+                node_rank=right_node_rank,
+            ),
+        },
+        backend="franky",
+        default_node_rank=left_node_rank,
+        worker_rank=worker_rank,
+        env_idx=env_idx,
     )
-
-    handles = []
-    try:
-        for side, robot_ip, gripper_type, gripper_connection, node_rank, env_idx in placements:
-            handles.append(
-                FrankyDriver.spawn(
-                    robot_ip,
-                    gripper_type,
-                    gripper_connection,
-                    node_rank=node_rank,
-                    name=f"FrankyDriver-{side}-{worker_rank}-{env_idx}",
-                )
-            )
-    except Exception:
-        for handle in reversed(handles):
-            handle.disconnect()
-        raise
-
-    left_handle, right_handle = handles
-    return DualFrankaRobot.dual_arm(
-        Arm(left_handle.part("arm"), left_handle.part("end_effector")),
-        Arm(right_handle.part("arm"), right_handle.part("end_effector")),
-        drivers={"left": left_handle, "right": right_handle},
-    )
+    return DualFrankaRobot(arms=arms, drivers=handles)
 
 
 register_robot(

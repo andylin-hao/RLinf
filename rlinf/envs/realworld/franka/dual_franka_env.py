@@ -39,8 +39,6 @@ from rlinf.robotics.states import FrankaRobotState
 from rlinf.scheduler import WorkerInfo
 from rlinf.utils.logging import get_logger
 
-# Avoids Ray actor name collision when both arms land on the same node.
-_RIGHT_ARM_ENV_IDX_OFFSET = 1000
 # Per-camera get_frame timeout. Short so a stalled camera doesn't drag the
 # 10 Hz env loop; reconnection is handled by the camera's own capture thread.
 _CAMERA_FRAME_TIMEOUT_S = 0.5
@@ -353,8 +351,7 @@ class DualFrankaEnv(gym.Env):
         self.robot = build_dual_franka_robot(
             left_robot_ip=self.config.left_robot_ip,
             right_robot_ip=self.config.right_robot_ip,
-            left_env_idx=self.env_idx,
-            right_env_idx=self.env_idx + _RIGHT_ARM_ENV_IDX_OFFSET,
+            env_idx=self.env_idx,
             left_node_rank=left_node,
             right_node_rank=right_node,
             worker_rank=self.env_worker_rank,

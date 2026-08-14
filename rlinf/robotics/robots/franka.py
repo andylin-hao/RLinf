@@ -15,8 +15,9 @@
 import importlib
 import ipaddress
 import warnings
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
 from rlinf.scheduler.hardware import HardwareConfig, HardwareInfo, HardwareResource
 
@@ -254,6 +255,21 @@ class FrankaConfig(RobotConfig):
         if self.camera_serials:
             self.camera_serials = list(self.camera_serials)
 
+    def arms(self) -> dict[str, "FrankaArmConfig"]:
+        """Project the flat single-arm fields onto the shared per-arm shape."""
+        return {
+            "arm": FrankaArmConfig(
+                robot_ip=self.robot_ip,
+                gripper_type=self.gripper_type,
+                gripper_connection=self.gripper_connection,
+                node_rank=(
+                    self.controller_node_rank
+                    if self.controller_node_rank is not None
+                    else self.node_rank
+                ),
+            )
+        }
+
 
 
 
@@ -278,6 +294,127 @@ def resolve_robot_ip(node_rank: int) -> Optional[str]:
     return None
 
 
+@dataclass
+class FrankaArmConfig:
+    """One Franka arm: its connection, end effector, and placement.
+
+    Both the single-arm and dual-arm configs project their flat YAML fields
+    into this shape, so arm count stops being a property of the robot type and
+    becomes the length of a mapping.
+    """
+
+    robot_ip: Optional[str] = None
+    """IP address of this arm. Resolved from the arm's node when unset."""
+
+    gripper_type: str = "franka"
+    """Gripper backend for this arm."""
+
+    gripper_connection: Optional[str] = None
+    """Serial port for this arm's Robotiq gripper."""
+
+    end_effector_type: Optional[str] = None
+    """End effector for this arm. Falls back to *gripper_type* when unset."""
+
+    end_effector_config: Optional[dict] = None
+    """Extra end-effector constructor arguments."""
+
+    node_rank: Optional[int] = None
+    """Node wired to this arm. ``None`` co-locates it with the env worker."""
+
+
+def _franka_ros_spawn_args(arm: FrankaArmConfig, robot_ip: str) -> tuple:
+    """Positional arguments for :class:`FrankaROSDriver`."""
+    return (
+        robot_ip,
+        "serl_franka_controllers",
+        arm.end_effector_type or "franka_gripper",
+        arm.end_effector_config or {},
+        None,
+        arm.gripper_connection,
+    )
+
+
+def _franky_spawn_args(arm: FrankaArmConfig, robot_ip: str) -> tuple:
+    """Positional arguments for :class:`FrankyDriver`."""
+    return (robot_ip, arm.gripper_type, arm.gripper_connection)
+
+
+#: Backend name to the driver that speaks it. The backend is a per-robot
+#: choice, not a separate robot type.
+FRANKA_BACKENDS: dict[str, tuple[str, Any]] = {
+    "franka_ros": ("FrankaROSDriver", _franka_ros_spawn_args),
+    "franky": ("FrankyDriver", _franky_spawn_args),
+}
+
+
+def _franka_driver_cls(backend: str):
+    if backend not in FRANKA_BACKENDS:
+        raise ValueError(
+            f"Unknown Franka backend {backend!r}. "
+            f"Supported: {sorted(FRANKA_BACKENDS)}."
+        )
+    driver_name, _ = FRANKA_BACKENDS[backend]
+    if driver_name == "FrankaROSDriver":
+        from ..drivers.franka_ros import FrankaROSDriver
+
+        return FrankaROSDriver
+    from ..drivers.franky import FrankyDriver
+
+    return FrankyDriver
+
+
+def place_franka_arms(
+    arms: Mapping[str, FrankaArmConfig],
+    *,
+    backend: str,
+    default_node_rank: int,
+    worker_rank: int,
+    env_idx: int,
+) -> tuple[dict[str, Arm], dict[str, Any]]:
+    """Place every configured arm and compose each into an :class:`Arm`.
+
+    Works for any number of arms. If a later arm fails to come up, the ones
+    already placed are torn down before the error propagates, so a partial
+    robot is never returned.
+
+    Returns:
+        The composed arms and the driver handles backing them, both keyed by
+        arm name.
+    """
+    if not arms:
+        raise ValueError("A Franka robot needs at least one arm.")
+
+    driver_cls = _franka_driver_cls(backend)
+    _, spawn_args = FRANKA_BACKENDS[backend]
+
+    handles: dict[str, Any] = {}
+    composed: dict[str, Arm] = {}
+    try:
+        for name, arm in arms.items():
+            node_rank = arm.node_rank if arm.node_rank is not None else default_node_rank
+            robot_ip = arm.robot_ip or resolve_robot_ip(node_rank)
+            if not robot_ip:
+                raise ValueError(
+                    f"Franka arm {name!r} has no 'robot_ip' and none could be "
+                    f"resolved from node rank {node_rank}'s hardware infos."
+                )
+            # The arm name makes the worker name unique, so arms sharing a node
+            # no longer need an env-index offset to avoid colliding.
+            handle = driver_cls.spawn(
+                *spawn_args(arm, robot_ip),
+                node_rank=node_rank,
+                name=f"FrankaDriver-{name}-{worker_rank}-{env_idx}",
+            )
+            handles[name] = handle
+            composed[name] = Arm(handle.part("arm"), handle.part("end_effector"))
+    except Exception:
+        for handle in reversed(list(handles.values())):
+            handle.disconnect()
+        raise
+
+    return composed, handles
+
+
 def build_franka_robot(
     *,
     robot_ip: Optional[str],
@@ -287,32 +424,24 @@ def build_franka_robot(
     end_effector_type: str,
     end_effector_config: Optional[dict] = None,
     gripper_connection: Optional[str] = None,
-    ros_pkg: str = "serl_franka_controllers",
 ) -> FrankaRobot:
     """Place one ROS-controlled Franka and compose it into a robot."""
-    from ..drivers.franka_ros import FrankaROSDriver
-
-    resolved_ip = robot_ip or resolve_robot_ip(node_rank)
-    if not resolved_ip:
-        raise ValueError(
-            "Franka 'robot_ip' is not set and could not be resolved from "
-            f"node rank {node_rank}'s hardware infos."
-        )
-
-    handle = FrankaROSDriver.spawn(
-        resolved_ip,
-        ros_pkg,
-        end_effector_type,
-        end_effector_config or {},
-        None,
-        gripper_connection,
-        node_rank=node_rank,
-        name=f"FrankaDriver-{worker_rank}-{env_idx}",
+    arms, handles = place_franka_arms(
+        {
+            "arm": FrankaArmConfig(
+                robot_ip=robot_ip,
+                gripper_connection=gripper_connection,
+                end_effector_type=end_effector_type,
+                end_effector_config=end_effector_config,
+                node_rank=node_rank,
+            )
+        },
+        backend="franka_ros",
+        default_node_rank=node_rank,
+        worker_rank=worker_rank,
+        env_idx=env_idx,
     )
-    return FrankaRobot.single_arm(
-        Arm(handle.part("arm"), handle.part("end_effector")),
-        drivers={"arm": handle},
-    )
+    return FrankaRobot(arms=arms, drivers=handles)
 
 
 register_robot(FrankaConfig, FrankaRobot, build=build_franka_robot)(
