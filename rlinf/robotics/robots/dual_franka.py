@@ -22,7 +22,7 @@ from rlinf.scheduler.hardware import HardwareConfig, HardwareInfo, HardwareResou
 
 from ..config import RobotAutoConfig
 from ..discovery import RobotConfig, RobotDiscovery, RobotInfo
-from .franka import FrankaArmConfig, FrankaRobot
+from .franka import FrankaArmConfig, FrankaEndEffectorConfig, FrankaRobot
 
 
 class DualFrankaRobot(FrankaRobot):
@@ -50,7 +50,7 @@ class DualFrankaRobot(FrankaRobot):
         """Place two independently located Franka arms and compose them.
 
         Arm count is the only thing separating this from the single-arm build:
-        it is the size of the mapping handed to ``declare_arms``, inherited
+        it is the size of the mapping handed to ``compose_arms``, inherited
         unchanged from :class:`~..franka.FrankaRobot`.
         """
         if not left_robot_ip or not right_robot_ip:
@@ -58,26 +58,39 @@ class DualFrankaRobot(FrankaRobot):
                 "Both Franka robot IPs are required for a dual-arm robot."
             )
 
-        arms = cls.declare_arms(
-            {
-                "left": FrankaArmConfig(
-                    robot_ip=left_robot_ip,
-                    gripper_type=left_gripper_type,
-                    gripper_connection=left_gripper_connection,
-                    node_rank=left_node_rank,
-                ),
-                "right": FrankaArmConfig(
-                    robot_ip=right_robot_ip,
-                    gripper_type=right_gripper_type,
-                    gripper_connection=right_gripper_connection,
-                    node_rank=right_node_rank,
-                ),
-            },
-            default_node_rank=left_node_rank,
-            worker_rank=worker_rank,
-            env_idx=env_idx,
+        sides = {
+            "left": (left_robot_ip, left_gripper_type, left_gripper_connection,
+                     left_node_rank),
+            "right": (right_robot_ip, right_gripper_type, right_gripper_connection,
+                      right_node_rank),
+        }
+        return cls(
+            arms=cls.compose_arms(
+                {
+                    side: FrankaArmConfig(
+                        robot_ip=robot_ip,
+                        backend=cls.BACKEND,
+                        gripper_type=gripper_type,
+                        gripper_connection=gripper_connection,
+                        node_rank=node_rank,
+                    )
+                    for side, (robot_ip, gripper_type, gripper_connection, node_rank)
+                    in sides.items()
+                },
+                end_effectors={
+                    side: FrankaEndEffectorConfig(
+                        kind=gripper_type,
+                        connection=gripper_connection,
+                        node_rank=node_rank,
+                    )
+                    for side, (_, gripper_type, gripper_connection, node_rank)
+                    in sides.items()
+                },
+                default_node_rank=left_node_rank,
+                worker_rank=worker_rank,
+                env_idx=env_idx,
+            )
         )
-        return cls(arms=arms)
 
 
 class DualFrankaDiscovery(RobotDiscovery):

@@ -143,7 +143,7 @@ SDK 的节点也能导入模块。
    robot.connect()
 
 这段代码的作用：1) 为节点 0 声明 ``ExampleArm``；2) 机器人 connect 时构建并连接它；
-3) 若该部件本身带末端执行器，就用同一条连接填充机械臂的末端执行器槽位。``connect``
+末端执行器和相机需要显式组合，机械臂只持有你交给它的部件。``connect``
 会把每个句柄发布为 ``robot.handles[<name>]``，``disconnect`` 负责释放。
 
 声明适用于所有部件，不只是机械臂。相机可以运行在它所插接的机器上::
@@ -258,7 +258,7 @@ SDK 的节点也能导入模块。
 按名称组合机器人，无需直接导入这个类。
 
 继承已有机器人即可复用它的构建逻辑。``DualFrankaRobot`` 继承 ``FrankaRobot``，
-原样沿用 ``declare_arms``，只覆盖 ``BACKEND`` 和 ``build``。
+原样沿用 ``compose_arms``，只覆盖 ``BACKEND`` 和 ``build``。
 
 构造 ``Cluster`` 前，先导入注册模块。RLinf 会将已注册的硬件策略模块传给各节点的
 探测流程。确保每个节点配置的 Python 环境都能导入该模块。

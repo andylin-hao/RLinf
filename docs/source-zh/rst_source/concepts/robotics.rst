@@ -130,6 +130,47 @@
 
 要了解 worker 如何映射到节点和 GPU，请阅读 :doc:`放置策略 <placement>`。
 
+组合所有部件，不只是机械臂
+--------------------------
+
+机械臂、末端执行器和相机是彼此独立的部件。机器人的 ``build`` 负责把它们组合起来，
+每个部件都带有自己的 ``node_rank``：
+
+.. code-block:: python
+
+   arm = FrankaROSArm.at(robot_ip, node_rank=1)
+   robot = FrankaRobot.single_arm(
+       Arm(
+           arm,
+           RobotiqGripper.at(port="/dev/ttyUSB0", node_rank=2),
+           cameras={"wrist": RealSenseCamera.at(info, node_rank=3)},
+       )
+   )
+
+Robotiq 夹爪本身就是一台串口设备，相机也独占自己的 USB 链路，因此它们都不必和机械臂
+待在同一台机器上。只有当末端执行器确实依附于机械臂的连接时（例如 Franka 手），才用
+``arm.subpart("end_effector")`` 取它。
+
+让配置自己声明部件。继承 ``PartConfig``，写明要构建哪个类、用什么参数，
+``declare_all`` 就能把一组配置变成声明，与部件种类无关：
+
+.. code-block:: python
+
+   @dataclass
+   class CameraConfig(PartConfig):
+       info: CameraInfo = None
+
+       def part_cls(self):
+           return camera_cls(self.info.camera_type)
+
+       def part_args(self):
+           return (self.info,)
+
+
+   cameras = declare_all(configs, default_node_rank=node_rank)
+
+节点默认值、命名和声明都由基类继承，因此机器人的 ``build`` 只剩下组合。
+
 生命周期
 --------
 
@@ -192,7 +233,8 @@
    * - ``robots/``
      - 每台机器人对应一个模块，其中包含配置、发现逻辑和构建函数。
    * - ``specs.py``
-     - ``PartSpec`` 与 ``SubpartRef``：一条部件声明，以及指向其 subpart 的引用。
+     - ``PartSpec``、``SubpartRef`` 与 ``PartConfig``：部件声明、指向其 subpart
+       的引用，以及能声明自身部件的配置。
    * - ``placement.py``
      - ``PartHandle`` 与自动合成的 worker。只有这个模块导入调度器。
    * - ``views.py``

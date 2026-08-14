@@ -93,6 +93,20 @@ class RobotPart(ABC):
     # Public, so a hosted part exposes these as RPCs automatically and one
     # generic proxy can reach any subpart.
 
+    def describe_self(self) -> dict[str, Any]:
+        """Describe this part itself: its kind and its feature dictionaries.
+
+        A leaf part -- a camera, a gripper on its own port -- exposes no
+        subparts, so this is what a remote handle proxies.
+        """
+        described: dict[str, Any] = {
+            "kind": part_kind(self),
+            "observation": self.observation_features,
+        }
+        if isinstance(self, ControllablePart):
+            described["action"] = self.action_features
+        return described
+
     def describe_subparts(self) -> dict[str, dict[str, Any]]:
         """Describe every subpart: its kind and its feature dictionaries.
 
@@ -249,14 +263,9 @@ class Arm(ControllablePart):
                 return placement.resolve(value)
             return value
 
-        manipulator = self.manipulator
-        self.manipulator = resolve(manipulator)
-        # A declaration that also exposes an end effector fills an empty slot,
-        # so the common one-connection arm needs no second declaration.
-        if self.end_effector is None and isinstance(manipulator, PartSpec):
-            subparts = placement.resolve_handle(manipulator).subparts
-            if "end_effector" in subparts:
-                self.end_effector = subparts["end_effector"]
+        # Slots are resolved as given. An arm does not adopt an end effector
+        # it was not composed with: the robot's build says what it has.
+        self.manipulator = resolve(self.manipulator)
         self.end_effector = resolve(self.end_effector)
         self.cameras = {
             name: resolve(camera) for name, camera in self.cameras.items()

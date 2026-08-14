@@ -12,37 +12,74 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from dataclasses import dataclass
+from typing import Any, Optional
+
+from ...specs import PartConfig
 from .base import BaseCamera, CameraInfo
 from .realsense import RealSenseCamera
 
 __all__ = [
     "BaseCamera",
+    "CameraConfig",
     "CameraInfo",
     "RealSenseCamera",
+    "camera_cls",
     "create_camera",
 ]
 
 
-def create_camera(camera_info: CameraInfo) -> BaseCamera:
-    """Factory that instantiates the right camera backend from *camera_info*.
+def camera_cls(camera_type: str) -> type[BaseCamera]:
+    """Return the camera class for a backend, imported lazily.
 
-    Supported ``camera_info.camera_type`` values:
+    Supported ``camera_type`` values:
 
-    * ``"realsense"`` / ``"rs"`` — Intel RealSense (requires ``pyrealsense2``)
-    * ``"zed"`` — Stereolabs ZED (requires the ZED SDK / ``pyzed``)
-    * ``"lumos"`` — LUMOS V4L2 USB camera (requires ``opencv-python``)
+    * ``"realsense"`` / ``"rs"`` -- Intel RealSense (requires ``pyrealsense2``)
+    * ``"zed"`` -- Stereolabs ZED (requires the ZED SDK / ``pyzed``)
+    * ``"lumos"`` -- LUMOS V4L2 USB camera (requires ``opencv-python``)
     """
-    camera_type = camera_info.camera_type.lower()
-    if camera_type == "zed":
+    kind = camera_type.lower()
+    if kind == "zed":
         from .zed import ZEDCamera
 
-        return ZEDCamera(camera_info)
-    if camera_type in ("realsense", "rs"):
-        return RealSenseCamera(camera_info)
-    if camera_type == "lumos":
+        return ZEDCamera
+    if kind in ("realsense", "rs"):
+        return RealSenseCamera
+    if kind == "lumos":
         from .lumos import LumosCamera
 
-        return LumosCamera(camera_info)
+        return LumosCamera
     raise ValueError(
-        f"Unsupported camera_type={camera_type!r}. Supported types: 'realsense', 'zed', 'lumos'."
+        f"Unsupported camera_type={camera_type!r}. "
+        "Supported types: 'realsense', 'zed', 'lumos'."
     )
+
+
+@dataclass
+class CameraConfig(PartConfig):
+    """One camera and the node it is plugged into.
+
+    Declaring a camera is what makes it placeable: it can run on the machine
+    holding the USB or GigE link while the policy runs elsewhere.
+    """
+
+    info: Optional[CameraInfo] = None
+
+    def part_cls(self) -> type:
+        """Return the backend class named by the camera info."""
+        if self.info is None:
+            raise ValueError("CameraConfig needs a CameraInfo.")
+        return camera_cls(self.info.camera_type)
+
+    def part_args(self) -> tuple[Any, ...]:
+        """The camera constructor takes its descriptor."""
+        return (self.info,)
+
+
+def create_camera(camera_info: CameraInfo) -> BaseCamera:
+    """Build a camera of the backend named by *camera_info*, in this process.
+
+    Prefer :class:`CameraConfig` inside a robot, which declares the camera and
+    lets :meth:`Robot.connect` place it on the node it is plugged into.
+    """
+    return camera_cls(camera_info.camera_type)(camera_info)

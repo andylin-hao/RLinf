@@ -142,6 +142,50 @@ through the handle. The call shape stays the same locally and remotely::
 
 Read :doc:`Placement <placement>` to map workers onto nodes and GPUs.
 
+Compose Parts, Not Just Arms
+----------------------------
+
+An arm, its end effector, and its cameras are separate parts. The robot's
+``build`` composes them, and each carries its own ``node_rank``:
+
+.. code-block:: python
+
+   arm = FrankaROSArm.at(robot_ip, node_rank=1)
+   robot = FrankaRobot.single_arm(
+       Arm(
+           arm,
+           RobotiqGripper.at(port="/dev/ttyUSB0", node_rank=2),
+           cameras={"wrist": RealSenseCamera.at(info, node_rank=3)},
+       )
+   )
+
+A Robotiq gripper is a serial device of its own and a camera holds its own USB
+link, so neither has to sit on the arm's machine. Take the end effector from
+``arm.subpart("end_effector")`` only when it genuinely rides the arm's
+connection, as a Franka hand does.
+
+Let a config declare its own part. Subclass ``PartConfig``, say which class to
+build and with what, and ``declare_all`` turns a mapping of them into
+declarations, whatever the part kind:
+
+.. code-block:: python
+
+   @dataclass
+   class CameraConfig(PartConfig):
+       info: CameraInfo = None
+
+       def part_cls(self):
+           return camera_cls(self.info.camera_type)
+
+       def part_args(self):
+           return (self.info,)
+
+
+   cameras = declare_all(configs, default_node_rank=node_rank)
+
+Node defaulting, naming, and declaring are inherited, so a robot's ``build``
+is composition and nothing else.
+
 Lifecycle
 ---------
 
@@ -211,7 +255,8 @@ Where the Code Lives
    * - ``robots/``
      - One module per robot, containing its config, discovery, and builder.
    * - ``specs.py``
-     - ``PartSpec`` and ``SubpartRef``: a declared part and a reference into it.
+     - ``PartSpec``, ``SubpartRef``, and ``PartConfig``: a declared part, a
+       reference into it, and a config that declares its own.
    * - ``placement.py``
      - ``PartHandle`` and the synthesized worker. This is the only scheduler
        import.

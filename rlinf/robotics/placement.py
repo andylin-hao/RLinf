@@ -66,6 +66,11 @@ class PartHandle(ABC):
     def subparts(self) -> dict[str, RobotPart]:
         """Return the subparts of the hosted part, keyed by its local names."""
 
+    @property
+    @abstractmethod
+    def part(self) -> RobotPart:
+        """The hosted part itself, for hardware that is a single component."""
+
     @abstractmethod
     def disconnect(self) -> None:
         """Release the connection and, when hosted, its worker."""
@@ -119,8 +124,18 @@ class LocalPartHandle(PartHandle):
 class RemotePartHandle(PartHandle):
     """Handle for a part hosted in a one-worker scheduler group."""
 
-    def __init__(self, worker_group: Any, described: dict[str, dict[str, Any]]) -> None:
+    def __init__(
+        self,
+        worker_group: Any,
+        described: dict[str, dict[str, Any]],
+        described_self: Optional[dict[str, Any]] = None,
+    ) -> None:
         self._worker_group = worker_group
+        self._self_part = (
+            _make_remote_part(worker_group, None, described_self)
+            if described_self
+            else None
+        )
         self._parts: dict[str, RobotPart] = {
             name: _make_remote_part(worker_group, name, entry)
             for name, entry in described.items()
@@ -131,6 +146,13 @@ class RemotePartHandle(PartHandle):
     def subparts(self) -> dict[str, RobotPart]:
         """Return proxies for the hosted part's subparts."""
         return self._parts
+
+    @property
+    def part(self) -> RobotPart:
+        """A proxy for the hosted part itself."""
+        if self._self_part is None:
+            raise RuntimeError("The hosted part did not describe itself.")
+        return self._self_part
 
     @property
     def worker_group(self) -> Any:
@@ -199,10 +221,15 @@ class RemotePart(RobotPart):
 
     def reset(self) -> None:
         """Reset this subpart through its host."""
+        if self._part_name is None:
+            self._worker_group.reset().wait()
+            return
         self._worker_group.subpart_reset(self._part_name).wait()
 
     def get_observation(self) -> dict[str, Any]:
         """Read this subpart's observation through its host."""
+        if self._part_name is None:
+            return _first(self._worker_group.get_observation())
         return _first(self._worker_group.subpart_observation(self._part_name))
 
     def disconnect(self) -> None:
@@ -229,6 +256,8 @@ class RemoteControllablePart(RemotePart, ControllablePart):
 
     def send_action(self, action: dict[str, Any]) -> dict[str, Any]:
         """Send an action to this subpart through its host."""
+        if self._part_name is None:
+            return _first(self._worker_group.send_action(action))
         return _first(self._worker_group.subpart_action(self._part_name, action))
 
 
@@ -340,4 +369,8 @@ def spawn_part_worker(
         placement_strategy=NodePlacementStrategy(node_ranks=[node_rank]),
         name=name or f"{part_cls.__name__}-node{node_rank}",
     )
-    return RemotePartHandle(group, _first(group.describe_subparts()))
+    return RemotePartHandle(
+        group,
+        _first(group.describe_subparts()),
+        _first(group.describe_self()),
+    )

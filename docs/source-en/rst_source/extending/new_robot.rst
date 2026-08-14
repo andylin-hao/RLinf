@@ -149,8 +149,8 @@ call a placement function.
    robot.connect()
 
 What this does: 1) declares ``ExampleArm`` for node 0, 2) builds and connects it
-when the robot connects, 3) fills the arm's end-effector slot from the same
-connection if the part exposes one. ``connect`` publishes each handle as
+when the robot connects. Compose an end effector or cameras explicitly; an
+arm takes only what you give it. ``connect`` publishes each handle as
 ``robot.handles[<name>]`` and ``disconnect`` releases them.
 
 Declaring works for every part, not only arms. A camera can run on the machine
@@ -274,7 +274,7 @@ together. After registration, call ``build_robot("ExampleRobot", ...)`` to
 compose the robot by name without importing the class directly.
 
 Subclass a robot to reuse its construction. ``DualFrankaRobot`` extends
-``FrankaRobot``, inherits ``declare_arms`` unchanged, and overrides only
+``FrankaRobot``, inherits ``compose_arms`` unchanged, and overrides only
 ``BACKEND`` and ``build``.
 
 Import the registration module before you construct ``Cluster``. RLinf

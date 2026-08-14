@@ -18,6 +18,7 @@ from typing import Any, Optional, cast
 import numpy as np
 import pytest
 
+import rlinf.robotics.robots.franka as franka_module
 from rlinf.robotics import (
     Arm,
     Camera,
@@ -573,9 +574,7 @@ def _fake_arm_backend(monkeypatch, *, failing_ip=None, disconnected=None):
                 raise RuntimeError("right arm is unreachable")
             return FakeHandle(robot_ip)
 
-    monkeypatch.setattr(
-        FrankaRobot, "arm_part_cls", classmethod(lambda cls, backend=None: FakeArm)
-    )
+    monkeypatch.setattr(franka_module, "franka_arm_cls", lambda backend: FakeArm)
     return FakeArm
 
 
@@ -591,12 +590,10 @@ def test_declaring_arms_places_nothing_until_connect(monkeypatch):
         def spawn(*args, **kwargs):
             raise AssertionError("spawn must not run while declaring")
 
-    monkeypatch.setattr(
-        FrankaRobot, "arm_part_cls", classmethod(lambda cls, backend=None: NeverSpawns)
-    )
+    monkeypatch.setattr(franka_module, "franka_arm_cls", lambda backend: NeverSpawns)
 
     robot = FrankaRobot(
-        arms=FrankaRobot.declare_arms(
+        arms=FrankaRobot.compose_arms(
             {"left": FrankaArmConfig(robot_ip="10.0.0.1")},
             default_node_rank=0,
             worker_rank=0,
@@ -613,7 +610,7 @@ def test_connect_tears_down_parts_already_placed(monkeypatch):
     _fake_arm_backend(monkeypatch, failing_ip="10.0.0.2", disconnected=disconnected)
 
     robot = FrankaRobot(
-        arms=FrankaRobot.declare_arms(
+        arms=FrankaRobot.compose_arms(
             {
                 "left": FrankaArmConfig(robot_ip="10.0.0.1"),
                 "right": FrankaArmConfig(robot_ip="10.0.0.2"),
@@ -635,7 +632,7 @@ def test_declaring_arms_scales_past_two(monkeypatch):
     _fake_arm_backend(monkeypatch)
 
     robot = FrankaRobot(
-        arms=FrankaRobot.declare_arms(
+        arms=FrankaRobot.compose_arms(
             {
                 name: FrankaArmConfig(robot_ip=f"10.0.0.{index}")
                 for index, name in enumerate(("left", "right", "third"), start=1)
@@ -749,11 +746,138 @@ def test_every_robot_owns_its_construction():
 def test_dual_franka_inherits_declaration_from_franka():
     """Arm count and backend are the only differences between the two."""
     assert issubclass(DualFrankaRobot, FrankaRobot)
-    # declare_arms is inherited, not duplicated.
+    # compose_arms is inherited, not duplicated.
     assert (
-        DualFrankaRobot.declare_arms.__func__
-        is FrankaRobot.declare_arms.__func__
+        DualFrankaRobot.compose_arms.__func__
+        is FrankaRobot.compose_arms.__func__
     )
     assert (FrankaRobot.BACKEND, DualFrankaRobot.BACKEND) == ("franka_ros", "franky")
     # build is specialised per robot.
     assert DualFrankaRobot.build.__func__ is not FrankaRobot.build.__func__
+
+
+def test_every_part_kind_places_independently():
+    """Arm, end effector, and camera are separate parts, each with its own node.
+
+    A Robotiq gripper is a serial device of its own and a camera holds its own
+    USB link, so neither has to ride the arm's connection or its node.
+    """
+    placed: dict[str, int] = {}
+
+    class Handle:
+        subparts: dict[str, RobotPart] = {}
+
+        def __init__(self, part):
+            self._part = part
+
+        @property
+        def part(self):
+            return self._part
+
+        def subpart(self, name):
+            raise KeyError(name)
+
+        def disconnect(self):
+            pass
+
+    def fake(kind, base):
+        class Fake(base):
+            def __init__(self, *args, **kwargs):
+                self._connected = False
+
+            @property
+            def is_connected(self):
+                return self._connected
+
+            @property
+            def observation_features(self):
+                return {}
+
+            @property
+            def action_features(self):
+                return {}
+
+            def connect(self):
+                self._connected = True
+
+            def disconnect(self):
+                self._connected = False
+
+            def get_observation(self):
+                return {}
+
+            def send_action(self, action):
+                return action
+
+            @classmethod
+            def spawn(cls, *args, node_rank=None, name=None, **kwargs):
+                placed[kind] = node_rank
+                part = cls()
+                part.connect()
+                return Handle(part)
+
+        return Fake
+
+    robot = Robot(
+        arms={
+            "arm": Arm(
+                fake("arm", ControllablePart).at("10.0.0.1", node_rank=1),
+                fake("gripper", EndEffector).at(port="/dev/ttyUSB0", node_rank=2),
+                cameras={"wrist": fake("camera", Camera).at(node_rank=3)},
+            )
+        }
+    )
+    robot.connect()
+
+    assert placed == {"arm": 1, "gripper": 2, "camera": 3}
+    arm = robot.arms["arm"]
+    assert isinstance(arm.end_effector, EndEffector)
+    assert isinstance(arm.cameras["wrist"], Camera)
+    assert robot.is_connected
+
+
+def test_a_leaf_part_placed_remotely_still_exposes_itself():
+    """A camera has no subparts, so its handle must proxy the part itself.
+
+    Without this, declaring a camera on its own node would resolve to nothing.
+    """
+
+    class Leaf(Camera):
+        @property
+        def is_connected(self):
+            return True
+
+        @property
+        def observation_features(self):
+            return {"frame": {}}
+
+        def connect(self):
+            pass
+
+        def disconnect(self):
+            pass
+
+        def get_observation(self):
+            return {"frame": None}
+
+    described = Leaf().describe_self()
+
+    assert described["kind"] == "camera"
+    assert described["observation"] == {"frame": {}}
+    assert Leaf().subparts() == {}
+
+
+def test_a_config_declares_its_own_part():
+    """PartConfig is the reuse point: each part kind says what to build."""
+    from rlinf.robotics.parts.cameras import CameraConfig, CameraInfo
+
+    config = CameraConfig(
+        info=CameraInfo(name="scene", serial_number="123", camera_type="realsense"),
+        node_rank=4,
+    )
+    spec = config.declare(default_node_rank=0)
+
+    assert spec.node_rank == 4, "an explicit node wins over the robot's"
+    assert spec.part_cls.__name__ == "RealSenseCamera"
+    # and a config without its own node falls back to the robot's
+    assert CameraConfig(info=config.info).declare(default_node_rank=7).node_rank == 7
