@@ -1,20 +1,21 @@
 添加机器人
 ==========
 
-接入一台真实机器人，而不必把它的设备 SDK、集群放置和任务逻辑耦合在一起。你只需实现
-部件、组合成 ``Robot``、完成注册，再让集群配置指向它。其余的事情——把部件托管到正确
-的机器上、并行读取、暴露给策略——都由这一层负责。
+接入真实机器人，同时把设备 SDK、集群放置和任务逻辑分开。编写各部件，将它们组合成
+``Robot``，完成注册，再让集群配置指向它。RLinf 会把部件托管到正确的机器上，并行
+读取各部件，再向策略暴露它们。
 
-开始之前，请先阅读 :doc:`机器人模型 <../concepts/robotics>`，了解本指南所依据的
-设计：每个物理组件都是 ``RobotPart``；驱动多个组件的硬件用 ``subparts()`` 声明它们；
-``Robot`` 是具名组合；任何部件都可以用 ``spawn()`` 放置到节点上。该页同时给出了
-``rlinf/robotics`` 的代码结构。
+开始前先阅读 :doc:`机器人模型 <../concepts/robotics>`。这篇文档说明本指南采用的
+设计。每个物理组件都是 ``RobotPart``。驱动多个组件的硬件用 ``subparts()`` 声明
+这些组件。``Robot`` 是具名组合，``spawn()`` 可以把任何部件放到节点上。文档还介绍
+了 ``rlinf/robotics`` 的代码结构。
 
 实现部件
 --------
 
-仅提供观测的设备继承 ``RobotPart``；可接收命令的设备继承 ``ControllablePart``。
-把厂商 SDK 放在 ``connect()`` 内导入，使未安装该 SDK 的节点也能导入该模块。
+让只采集观测的设备继承 ``RobotPart``。让能接收命令的设备继承
+``ControllablePart``。把厂商 SDK 的导入语句放在 ``connect()`` 内。这样，未安装该
+SDK 的节点也能导入模块。
 
 .. code-block:: python
 
@@ -64,14 +65,14 @@
                self._client.close()
                self._client = None
 
-当存在更具体的接口时，使用 ``Camera``、``EndEffector``、``MobileBase`` 或
+如果设备符合更具体的接口，请使用 ``Camera``、``EndEffector``、``MobileBase`` 或
 ``LeggedBase``。
 
 在一条连接上暴露多个组件
 ------------------------
 
-当一个套接字、CAN 总线或 ROS 节点驱动多个组件时，用 ``subparts()`` 声明它们。
-按约定，部件自身对应 ``"arm"`` 条目。
+如果一个套接字、CAN 总线或 ROS 节点驱动多个组件，请用 ``subparts()`` 声明这些
+组件。按约定，把部件自身作为 ``"arm"`` 条目。
 
 .. code-block:: python
 
@@ -87,14 +88,15 @@
                "end_effector": MethodGripper(self, state_field="gripper_position"),
            }
 
-``MethodGripper``、``MethodArm`` 和 ``MethodCamera`` 负责把以命名方法暴露能力的
-硬件（``open_gripper``、``move_left_arm``、``get_camera(id)``）转换成部件，使组合
-层看到统一接口。请在 Python 中、紧挨着被包装的方法处声明它们。
+如果硬件通过 ``open_gripper``、``move_left_arm``、``get_camera(id)`` 等命名方法
+暴露能力，请用 ``MethodGripper``、``MethodArm`` 和 ``MethodCamera`` 将它适配成
+部件。这样，组合层只处理统一接口。在 Python 中，把这些视图声明在所包装的方法旁边。
 
 组合机器人
 ----------
 
-将每个本体放入 ``Arm``。机械臂名称会成为规范观测和动作路径，因此要保持稳定。
+用 ``Arm`` 包装每个机械臂本体。保持机械臂名称稳定，因为它们会成为规范观测和动作
+路径。
 
 .. code-block:: python
 
@@ -120,20 +122,20 @@
        }
    )
 
-左侧本体的规范观测路径为 ``arms.left.state.joint_position``，其动作路径为
-``arms.left.arm``。末端执行器动作使用 ``arms.<name>.end_effector``；机器人级相机
-使用 ``cameras.<name>``；其他部件使用 ``parts.<name>``。
+左臂本体的规范观测路径是 ``arms.left.state.joint_position``。动作路径是
+``arms.left.arm``。末端执行器动作使用 ``arms.<name>.end_effector``。机器人级相机
+使用 ``cameras.<name>``，其他部件使用 ``parts.<name>``。
 
-``Robot`` 会并行执行彼此独立的机械臂重置、读取和下发，因此双臂观测只需一个往返
-时间，而不是两个。
+``Robot`` 会并行重置、读取和控制彼此独立的机械臂。读取双臂观测只需一个往返时间，
+而不是两个。
 
 在节点上放置部件
 ----------------
 
-``RobotPart.spawn`` 是唯一的放置入口，每个部件都具备。不传 ``node_rank`` 时部件在
-当前进程内构造；传入时则托管在该节点的调度器 worker 中。两者返回的句柄 API 完全
-相同，因此调用方无需区分放置方式。这不限于机械臂：相机可以运行在它所插接的机器上，
-而策略运行在别处。
+用 ``RobotPart.spawn`` 放置任意部件。这是唯一的放置入口，每个部件都有。不传
+``node_rank`` 时，部件在当前进程中构造。传入该参数时，部件会托管到指定节点的调度器
+worker 中。两种方式返回的句柄 API 相同，调用方无需区分。你也可以让相机运行在它连接
+的机器上，让策略运行在其他位置。
 
 .. code-block:: python
 
@@ -150,13 +152,13 @@
    )
    robot.connect()
 
-这段代码的作用：1) 在节点 0 上构造 ``ExampleArm`` 并连接；2) 返回其 subparts 的
-代理；3) 组合成持有该句柄的机器人。把机器人持有的句柄通过 ``handles=`` 传入，
-``Robot.disconnect`` 会在所有部件断开后释放它们。
+这段代码会：1) 在节点 0 上构造并连接 ``ExampleArm``；2) 返回其 subparts 的代理；
+3) 将它们组合成持有该句柄的机器人。通过 ``handles=`` 传入机器人持有的句柄。
+``Robot.disconnect`` 会先断开所有部件，再释放这些句柄。
 
-无需为每种机器人编写 worker 类。RLinf 会依据部件类自动合成一个，``WorkerGroup``
-随即把该类的每个公有方法绑定为 RPC。部件接口之外的方法仍可通过句柄调用，且本地与
-远程的调用形式一致::
+无需为每种机器人编写 worker 类。RLinf 会根据部件类自动合成一个。``WorkerGroup``
+随后把每个公有方法绑定为 RPC。通过句柄调用部件接口之外的方法。本地和远程的调用
+形式相同::
 
    handle.is_robot_up().wait()[0]
    handle.reset_joint(home_qpos).wait()
@@ -164,13 +166,13 @@
 .. warning::
 
    ``WorkerGroup`` 保留了 ``launch``、``execute_on``、``from_group_name`` 和
-   ``WorkerRank`` 这几个名字。若部件的公有方法与其重名，将无法被托管，请改名。
+   ``WorkerRank``。如果部件的公有方法使用这些名称，请改名，否则无法托管该部件。
 
 描述并构建机器人
 ----------------
 
-把连接信息和放置信息放进 ``RobotConfig`` 数据类，并为它提供一个 builder，将这些
-字段组合成 ``Robot``。重置位姿、奖励和回合长度则保留在任务配置中。
+把连接和放置参数写入 ``RobotConfig`` 数据类。再写一个构建函数，用这些字段组合
+``Robot``。把重置位姿、奖励和回合长度留在任务配置中。
 
 .. code-block:: python
 
@@ -203,14 +205,13 @@
            handles=handles,
        )
 
-单臂型号使用同一个 builder，只是返回 ``ExampleRobot.single_arm(...)``。若后续某个
-部件启动失败，请在抛出错误前断开已经放置的句柄，避免返回一个不完整的机器人。
+单臂型号沿用同一个构建函数，但返回 ``ExampleRobot.single_arm(...)``。如果后续部件
+启动失败，请先断开已经放置的句柄，再抛出错误。不要返回不完整的机器人。
 
 注册机器人
 ----------
 
-在机器人自己的模块中，用一次调用完成配置、组合、发现逻辑和 builder 的注册。无需
-改动任何中心化的表。
+在机器人模块中，一次注册配置、组合、发现逻辑和构建函数。无需修改中央注册表。
 
 .. code-block:: python
 
@@ -250,18 +251,17 @@
        ExampleRobotConfig, ExampleRobot, build=build_example_robot
    )(ExampleRobotDiscovery)
 
-请把这次调用放在模块末尾，这样它才能引用到 builder。注册完成后，
-``build_robot("ExampleRobot", ...)`` 即可按名字组合出机器人，无需直接导入它的
-builder。
+把这次调用放在模块末尾，确保调用时构建函数已经定义。注册完成后，用
+``build_robot("ExampleRobot", ...)`` 按名称组合机器人。无需直接导入构建函数。
 
-请在构造 ``Cluster`` 之前导入该注册模块。RLinf 会把已注册的硬件策略模块传播到各
-节点的探测流程，因此该模块必须能在每个节点配置的 Python 环境中被导入。
+构造 ``Cluster`` 前，先导入注册模块。RLinf 会将已注册的硬件策略模块传给各节点的
+探测流程。确保每个节点配置的 Python 环境都能导入该模块。
 
 配置集群
 --------
 
-保留现有的 ``cluster.node_groups.hardware`` 数据结构。注册的配置类负责解析每一项，
-注册时提供的 builder 负责组合出机器人。
+沿用现有的 ``cluster.node_groups.hardware`` 数据结构。注册的配置类会解析每一项。
+注册的构建函数随后组合机器人。
 
 .. code-block:: yaml
 
@@ -281,21 +281,21 @@ builder。
 分离任务与兼容逻辑
 ------------------
 
-在 ``RobotTask`` 或真机环境中实现重置、奖励、成功判定、截断和 Gymnasium 空间。
-使用 ``RobotTaskEnv`` 组合任务与 ``Robot``。当现有策略需要扁平动作向量以及
-``state``/``frames`` 观测时，使用 ``LegacyObservationAdapter`` 和
+把重置、奖励、成功判定、截断和 Gymnasium 空间写在 ``RobotTask`` 或真机环境中。
+通过 ``RobotTaskEnv`` 组合任务与 ``Robot``。如果现有策略需要扁平动作向量以及
+``state``/``frames`` 观测，请使用 ``LegacyObservationAdapter`` 和
 ``VectorActionAdapter``。
 
 .. warning::
 
-   在引入规范接口时，请勿更改既有的 Gym ID、动作维度、观测键、相机名称或数据集
-   字段。应改为增加适配器和回归测试。
+   引入规范接口时，保留既有的 Gym ID、动作维度、观测键、相机名称和数据集字段。
+   请添加适配器和回归测试，不要改动这些内容。
 
 测试集成
 --------
 
-在没有厂商 SDK 的情况下测试部件、组合路径、句柄生命周期、发现注册，以及与旧策略
-完全一致的数据结构。
+在没有厂商 SDK 的环境中测试部件。还要测试组合路径、句柄生命周期、发现注册，以及
+与旧策略完全一致的数据结构。
 
 .. code-block:: bash
 
@@ -304,5 +304,5 @@ builder。
      tests/unit_tests/test_robot_task_env.py \
      tests/unit_tests/test_realworld_robotics_compatibility.py
 
-这段命令的作用：验证调度器边界、单臂与双臂组合、任务与机器人的分离，以及所有内置
-真机环境面向策略的数据结构；全部无需真实硬件。
+这条命令会验证调度器边界、单臂与双臂组合、任务与机器人的分离，以及所有内置真机
+环境面向策略的数据结构。这些测试都不需要真实硬件。

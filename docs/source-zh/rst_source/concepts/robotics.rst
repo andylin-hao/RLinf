@@ -1,19 +1,19 @@
 机器人模型
 ==========
 
-在接入硬件或排查真机运行问题之前，先理解 RLinf 如何为一台物理机器人建模。这一层回答
-三个问题：一个组件对策略而言 **是什么**、组件如何组合成机器人、以及每个组件在哪里
-运行。
+先掌握 RLinf 的机器人模型，再接入硬件或排查真机运行问题。你会明确三件事：策略如何
+理解组件、如何把组件组合成机器人，以及每个组件在哪里运行。
 
 核心思想
 --------
 
-**任何物理组件都是部件（part）。** 机械臂、夹爪、相机、移动底盘都是 ``RobotPart``：
-可以连接、报告观测，若可控还能接收动作。底下没有另一套独立的“驱动”概念。
+**把每个物理组件都建模为部件（part）。** 机械臂、夹爪、相机和移动底盘都是
+``RobotPart``。每个部件都能连接并报告观测。可控部件还能接收动作。无需再加一层独立
+的“驱动”抽象。
 
-这一点很重要，因为硬件很少与组件一一对应。一台联动的双臂控制器可能通过单条 ROS
-连接驱动两条机械臂、两个夹爪和两个腕部相机。与其为“持有连接的那个东西”再发明一层
-抽象，不如让这样的部件直接声明它暴露了什么：
+硬件与组件通常不是一一对应。例如，一台联动双臂控制器可能通过一条 ROS 连接驱动两条
+机械臂、两个夹爪和两个腕部相机。遇到这种情况，直接让部件声明它暴露的组件。不要为
+“持有连接的对象”再定义一层抽象：
 
 .. code-block:: python
 
@@ -24,10 +24,10 @@
            "left_end_effector": MethodGripper(self, state_field="follow1_pos"),
        }
 
-“持有一条连接”只是部分部件具备的属性，而不是另一类事物。
+把“持有连接”视为部件的属性，不要定义成另一种类型。
 
-**机器人是部件的具名组合**，而且 **任何部件都可以被放置到某个节点上**。整个模型就是
-这三句话。
+**用具名部件组合机器人。** **把任何部件放到所需节点。** 加上第一条规则，这三条规则
+共同构成机器人模型。
 
 抽象一览
 --------
@@ -39,34 +39,34 @@
    * - 抽象
      - 含义
    * - ``RobotPart``
-     - 任何物理组件：``connect``、``get_observation``、``disconnect``、``reset``，
-       以及描述返回内容的 ``observation_features``。
+     - 任意物理组件。它包含 ``connect``、``get_observation``、``disconnect`` 和
+       ``reset``。``observation_features`` 描述返回的数据。
    * - ``ControllablePart``
-     - 还能接收命令的部件：``send_action`` 与 ``action_features``。
+     - 还能通过 ``send_action`` 接收命令，并用 ``action_features`` 描述命令的部件。
    * - ``Camera`` / ``EndEffector`` / ``MobileBase`` / ``LeggedBase``
-     - 更具体的类别，便于组合层和远程代理区分它们。
+     - 更具体的部件类型。组合层和远程代理可以据此区分它们。
    * - ``subparts()``
-     - 一个部件所暴露的具名组件。叶子部件返回 ``{}``。
+     - 部件暴露的具名组件。叶子部件返回 ``{}``。
    * - ``Arm``
-     - 组合本体、可选末端执行器和腕部相机的部件。
+     - 组合机械臂本体、可选末端执行器和腕部相机的部件。
    * - ``Robot``
-     - 具名机械臂、机器人级相机、附加部件，以及它所持有的句柄。
+     - 由具名机械臂、机器人级相机、附加部件及其持有的句柄组成。
    * - ``PartHandle``
-     - 指向部件的引用；无论其运行在本地还是 worker 中，接口都一致。
+     - 指向部件的引用。部件无论在本地还是 worker 中运行，接口都相同。
    * - ``MethodArm`` / ``MethodGripper`` / ``MethodCamera``
-     - 把方法接口（``open_gripper``、``get_camera(id)``）转换成部件的视图。
+     - 把 ``open_gripper``、``get_camera(id)`` 等方法转换成部件的视图。
 
 组合，而非机器人类型
 --------------------
 
-机械臂数量只是映射的大小。单臂与双臂机器人属于同一个类：
+用映射大小决定机械臂数量。单臂和双臂机器人共用同一个类：
 
 .. code-block:: python
 
    single = FrankaRobot.single_arm(Arm(arm, gripper))
    dual = FrankaRobot.dual_arm(Arm(left, left_gripper), Arm(right, right_gripper))
 
-组合方式同时决定了策略看到的数据结构。名称会成为路径：
+用组合结构确定策略看到的数据形状。名称会成为路径：
 
 .. list-table::
    :header-rows: 1
@@ -83,41 +83,40 @@
    * - ``cameras.<name>`` / ``parts.<name>``
      - 机器人级相机与其他组件。
 
-由于各机械臂位于彼此独立的连接上，``Robot`` 会并行执行重置、读取和下发：双臂观测
-只需一个往返时间，而不是两个。
+各机械臂使用独立连接时，``Robot`` 会并行重置、读取和下发命令。读取双臂观测只需
+一个往返时间，而不是两个。
 
 放置是部件的属性
 ----------------
 
-``RobotPart.spawn`` 是唯一的放置入口。
+只用 ``RobotPart.spawn`` 放置部件。这是唯一的放置入口。
 
 .. code-block:: python
 
    local = RealSenseCamera.spawn(camera_info)                    # 本地
    remote = RealSenseCamera.spawn(camera_info, node_rank=2)      # 放到节点 2
 
-两者都返回 API 完全相同的 ``PartHandle``，因此调用方无需区分放置方式。这不限于机械
-臂：相机可以运行在它所插接的机器上，而策略运行在别处。
+两种调用都会返回 API 相同的 ``PartHandle``。调用方无需区分放置方式。你还可以让
+相机运行在它连接的机器上，让策略运行在其他位置。
 
-不存在按硬件编写的 worker 类。RLinf 会依据部件类自动合成一个
-（``type(name, (Worker, PartCls), ...)``），``WorkerGroup`` 随即把每个公有方法绑定
-为 RPC。部件接口之外的方法仍可通过句柄调用，且本地与远程的调用形式一致::
+无需为每种硬件编写 worker 类。RLinf 会根据部件类自动合成一个
+（``type(name, (Worker, PartCls), ...)``）。``WorkerGroup`` 随后把每个公有方法绑定
+为 RPC。通过句柄调用部件接口之外的方法。本地和远程的调用形式相同::
 
    handle.is_robot_up().wait()[0]
    handle.reset_joint(home_qpos).wait()
 
-worker 如何映射到节点和 GPU，参见 :doc:`放置策略 <placement>`。
+要了解 worker 如何映射到节点和 GPU，请阅读 :doc:`放置策略 <placement>`。
 
 边界
 ----
 
-部件不得导入 Ray、Gymnasium 或 ``rlinf.scheduler``。导入一个部件不应把调度器带入
-进程——正是这一点让 ``toolkits/realworld_check`` 下的调试脚本可以在完全没有集群的
-机器上运行。
+不要在部件中导入 Ray、Gymnasium 或 ``rlinf.scheduler``。导入部件时，不能把调度器
+加载到当前进程。这样，``toolkits/realworld_check`` 中的调试脚本即使没有集群也能
+运行。
 
-只有 ``rlinf/robotics/placement.py`` 一个模块跨越这条边界，且 ``spawn`` 以惰性方式
-导入它。反方向上，调度器从不导入 robotics。两个方向都由
-``tests/unit_tests/test_robotics_boundaries.py`` 强制检查。
+只有 ``rlinf/robotics/placement.py`` 跨过这条边界。``spawn`` 会惰性导入它。调度器
+不会导入 robotics。``tests/unit_tests/test_robotics_boundaries.py`` 会检查两个方向。
 
 代码位置
 --------
@@ -129,10 +128,10 @@ worker 如何映射到节点和 GPU，参见 :doc:`放置策略 <placement>`。
    * - 路径
      - 内容
    * - ``parts/base.py``
-     - 类型体系：``RobotPart``、``ControllablePart``、``Camera``、
+     - 部件类型体系：``RobotPart``、``ControllablePart``、``Camera``、
        ``EndEffector``、``Arm``、``MobileBase``、``LeggedBase``。
    * - ``parts/arms/``
-     - 机械臂硬件，以及各系列的 state 数据类。
+     - 机械臂硬件，以及每个系列的 state 数据类。
    * - ``parts/cameras/``
      - RealSense、ZED、Lumos。
    * - ``parts/end_effectors/``
@@ -142,25 +141,25 @@ worker 如何映射到节点和 GPU，参见 :doc:`放置策略 <placement>`。
    * - ``parts/transports/``
      - ROS 等共享传输层。它们不是部件，只为部件传递消息。
    * - ``robots/``
-     - 每台机器人一个模块：配置、发现逻辑和 builder。
+     - 每台机器人对应一个模块，其中包含配置、发现逻辑和构建函数。
    * - ``placement.py``
-     - ``PartHandle`` 与自动合成的 worker。唯一导入调度器的模块。
+     - ``PartHandle`` 与自动合成的 worker。只有这个模块导入调度器。
    * - ``views.py``
      - ``Method*`` 系列视图。
    * - ``robot.py``、``discovery.py``、``adapters.py``、``config.py``
-     - 组合、注册、旧策略适配器、环境变量配置。
+     - 组合、注册、旧策略适配器和环境变量配置。
 
 任务不进入硬件代码
 ------------------
 
-部件知道如何运动、能感知什么，但不知道什么算成功。重置行为、奖励、终止条件和
-Gymnasium 空间属于 ``RobotTask``，由 ``RobotTaskEnv`` 与 ``Robot`` 组合在一起。
-``LegacyObservationAdapter`` 和 ``VectorActionAdapter`` 负责把组合后的接口翻译成
-既有策略所需的扁平向量与 ``state``/``frames`` 观测，因此硬件代码永远不必了解策略的
-数据结构。
+把任务逻辑留在硬件代码之外。部件只知道如何运动和能感知什么，不判断是否成功。把
+重置行为、奖励、终止条件和 Gymnasium 空间写入 ``RobotTask``。再通过
+``RobotTaskEnv`` 与 ``Robot`` 组合。用 ``LegacyObservationAdapter`` 和
+``VectorActionAdapter`` 把组合接口转换成现有策略所需的扁平向量与
+``state``/``frames`` 观测。硬件代码无需了解策略的数据结构。
 
 下一步
 ------
 
-- :doc:`添加机器人 <../extending/new_robot>` —— 分步操作指南。
-- :doc:`放置策略 <placement>` —— worker 如何映射到节点和 GPU。
+- :doc:`添加机器人 <../extending/new_robot>`：按步骤接入新机器人。
+- :doc:`放置策略 <placement>`：了解 worker 如何映射到节点和 GPU。

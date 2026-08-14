@@ -1,21 +1,21 @@
 Robotics Model
 ==============
 
-Understand how RLinf models a physical robot before you add hardware or debug a
-real-world run. The layer answers three questions: what a component *is* to the
-policy, how components compose into a robot, and where each one runs.
+Use RLinf's robotics model to add hardware or debug a real-world run. Learn what
+a component *is* to the policy, how components form a robot, and where each
+component runs.
 
 The Core Idea
 -------------
 
-**Everything physical is a part.** An arm, a gripper, a camera, and a mobile base
-are all ``RobotPart``: they connect, report an observation, and — if controllable
-— accept an action. There is no separate "driver" concept sitting underneath.
+**Treat every physical component as a part.** An arm, gripper, camera, or mobile
+base is a ``RobotPart``. Each part connects and reports an observation. A
+controllable part also accepts an action. Do not add a separate "driver" layer.
 
-That matters because hardware rarely maps one-to-one onto components. A coupled
-dual-arm controller drives two arms, two grippers, and two wrist cameras over a
-single ROS connection. Rather than inventing a second abstraction for "the thing
-that owns the connection", such a part declares what it exposes:
+Declare subparts when hardware does not map one-to-one onto components. For
+example, a coupled dual-arm controller can drive two arms, two grippers, and two
+wrist cameras over one ROS connection. Let the part declare what it exposes
+instead of adding an abstraction for "the thing that owns the connection":
 
 .. code-block:: python
 
@@ -26,10 +26,10 @@ that owns the connection", such a part declares what it exposes:
            "left_end_effector": MethodGripper(self, state_field="follow1_pos"),
        }
 
-"Owns a connection" is a property some parts have, not a kind of thing.
+Treat "owns a connection" as a property of some parts, not as another type.
 
-**A robot is a named composition of parts**, and **any part can be placed on a
-node**. Those three sentences are the whole model.
+**Compose a robot from named parts.** **Place any part on a node.** Together with
+the first rule, these three rules define the model.
 
 The Abstractions
 ----------------
@@ -41,36 +41,41 @@ The Abstractions
    * - Abstraction
      - What it is
    * - ``RobotPart``
-     - Anything physical: ``connect``, ``get_observation``, ``disconnect``,
-       ``reset``, plus ``observation_features`` describing what it returns.
+     - Any physical component. It defines ``connect``, ``get_observation``,
+       ``disconnect``, and ``reset``. Its ``observation_features`` describes the
+       returned data.
    * - ``ControllablePart``
-     - A part that also takes commands: ``send_action`` and ``action_features``.
+     - A part that also accepts commands through ``send_action`` and describes
+       them with ``action_features``.
    * - ``Camera`` / ``EndEffector`` / ``MobileBase`` / ``LeggedBase``
-     - Narrower kinds, so composition and remote proxies can tell them apart.
+     - Specific part types that composition and remote proxies can distinguish.
    * - ``subparts()``
-     - The named components one part exposes. Leaves return ``{}``.
+     - The named components exposed by a part. Leaf parts return ``{}``.
    * - ``Arm``
-     - A part composing a manipulator, an optional end effector, and wrist cameras.
+     - A part that combines a manipulator, an optional end effector, and wrist
+       cameras.
    * - ``Robot``
-     - Named arms, robot-level cameras, and extra parts, with the handles it owns.
+     - A composition of named arms, robot-level cameras, extra parts, and its
+       owned handles.
    * - ``PartHandle``
-     - A reference to a part, identical whether it runs here or in a worker.
+     - A reference with the same interface whether the part runs locally or in a
+       worker.
    * - ``MethodArm`` / ``MethodGripper`` / ``MethodCamera``
-     - Views that turn a method surface (``open_gripper``, ``get_camera(id)``)
+     - Views that turn methods such as ``open_gripper`` and ``get_camera(id)``
        into parts.
 
 Composition, Not Robot Types
 ----------------------------
 
-Arm count is the size of a mapping. A single-arm and a dual-arm robot are the
-same class:
+Set the arm count through the size of a mapping. Use the same class for
+single-arm and dual-arm robots:
 
 .. code-block:: python
 
    single = FrankaRobot.single_arm(Arm(arm, gripper))
    dual = FrankaRobot.dual_arm(Arm(left, left_gripper), Arm(right, right_gripper))
 
-Composition also fixes the shape of what the policy sees. Names become paths:
+Use composition to define the data shape seen by the policy. Names become paths:
 
 .. list-table::
    :header-rows: 1
@@ -87,42 +92,42 @@ Composition also fixes the shape of what the policy sees. Names become paths:
    * - ``cameras.<name>`` / ``parts.<name>``
      - Robot-level cameras and extra components.
 
-Because arms sit on independent connections, ``Robot`` resets, reads, and
-commands them in parallel: a two-arm observation costs one round trip, not two.
+Let ``Robot`` reset, read, and command arms in parallel when they use independent
+connections. A two-arm observation then costs one round trip, not two.
 
 Placement Is a Property of Parts
 --------------------------------
 
-``RobotPart.spawn`` is the only placement call.
+Call ``RobotPart.spawn`` to place a part. It is the only placement call.
 
 .. code-block:: python
 
    local = RealSenseCamera.spawn(camera_info)                    # here
    remote = RealSenseCamera.spawn(camera_info, node_rank=2)      # on node 2
 
-Both return a ``PartHandle`` with the same API, so callers never branch on
-placement. This is not limited to arms — a camera can run on the machine it is
-plugged into while the policy runs elsewhere.
+Both calls return a ``PartHandle`` with the same API. Callers never branch on
+placement. You can place more than arms. For example, run a camera on the machine
+where it is connected while the policy runs elsewhere.
 
-There is no per-hardware worker class. RLinf synthesizes one from the part class
-(``type(name, (Worker, PartCls), ...)``), so ``WorkerGroup`` binds every public
-method as an RPC. Methods outside the part interface stay reachable through the
-handle, with the same call shape locally and remotely::
+Do not write a worker class for each hardware device. RLinf synthesizes one from
+the part class (``type(name, (Worker, PartCls), ...)``). ``WorkerGroup`` then
+binds every public method as an RPC. Call methods outside the part interface
+through the handle. The call shape stays the same locally and remotely::
 
    handle.is_robot_up().wait()[0]
    handle.reset_joint(home_qpos).wait()
 
-See :doc:`Placement <placement>` for how workers map onto nodes and GPUs.
+Read :doc:`Placement <placement>` to map workers onto nodes and GPUs.
 
 The Boundary
 ------------
 
-Parts never import Ray, Gymnasium, or ``rlinf.scheduler``. Importing a part must
-not pull the scheduler into the process, which is what lets the bench scripts in
-``toolkits/realworld_check`` run on a machine with no cluster at all.
+Keep Ray, Gymnasium, and ``rlinf.scheduler`` out of parts. Importing a part must
+not load the scheduler into the process. This boundary lets the bench scripts in
+``toolkits/realworld_check`` run on a machine without a cluster.
 
-Exactly one module crosses the line — ``rlinf/robotics/placement.py`` — and
-``spawn`` imports it lazily. The scheduler, in turn, never imports robotics.
+Only ``rlinf/robotics/placement.py`` crosses this boundary. ``spawn`` imports it
+lazily. The scheduler never imports robotics.
 ``tests/unit_tests/test_robotics_boundaries.py`` enforces both directions.
 
 Where the Code Lives
@@ -135,39 +140,44 @@ Where the Code Lives
    * - Path
      - Contents
    * - ``parts/base.py``
-     - The taxonomy: ``RobotPart``, ``ControllablePart``, ``Camera``,
+     - The part taxonomy: ``RobotPart``, ``ControllablePart``, ``Camera``,
        ``EndEffector``, ``Arm``, ``MobileBase``, ``LeggedBase``.
    * - ``parts/arms/``
-     - Arm hardware and each family's state dataclass.
+     - Arm hardware and the state dataclass for each family.
    * - ``parts/cameras/``
      - RealSense, ZED, Lumos.
    * - ``parts/end_effectors/``
      - ``grippers/`` and ``hands/``.
    * - ``parts/teleop/``
-     - Leader arms and input devices: GELLO, glove, keyboard, Pico, spacemouse.
+     - Leader arms and input devices: GELLO, glove, keyboard, Pico, and
+       spacemouse.
    * - ``parts/transports/``
-     - Shared transports such as ROS. Not parts — they carry messages for one.
+     - Shared transports such as ROS. They are not parts; they carry messages for
+       a part.
    * - ``robots/``
-     - One module per robot: its config, discovery, and builder.
+     - One module per robot, containing its config, discovery, and builder.
    * - ``placement.py``
-     - ``PartHandle`` and the synthesized worker. The only scheduler import.
+     - ``PartHandle`` and the synthesized worker. This is the only scheduler
+       import.
    * - ``views.py``
      - The ``Method*`` views.
    * - ``robot.py``, ``discovery.py``, ``adapters.py``, ``config.py``
-     - Composition, registration, legacy policy adapters, env-var config.
+     - Composition, registration, legacy policy adapters, and environment
+       variable config.
 
 Tasks Stay Out of Hardware
 --------------------------
 
-A part knows how to move and what it senses. It does not know what counts as
-success. Reset behavior, reward, termination, and Gymnasium spaces belong to a
-``RobotTask``, combined with a ``Robot`` by ``RobotTaskEnv``.
-``LegacyObservationAdapter`` and ``VectorActionAdapter`` translate the composed
-interface into the flat vectors and ``state``/``frames`` observations an existing
-policy expects, so hardware code never learns the policy's schema.
+Keep task logic out of hardware code. A part knows how to move and what it
+senses, but not what counts as success. Put reset behavior, reward, termination,
+and Gymnasium spaces in a ``RobotTask``. Combine it with a ``Robot`` through
+``RobotTaskEnv``. Use ``LegacyObservationAdapter`` and ``VectorActionAdapter``
+to translate the composed interface into the flat vectors and ``state``/``frames``
+observations expected by an existing policy. Hardware code never needs the
+policy schema.
 
 Next
 ----
 
-- :doc:`Adding a Robot <../extending/new_robot>` — the step-by-step how-to.
-- :doc:`Placement <placement>` — how workers map onto nodes and GPUs.
+- :doc:`Adding a Robot <../extending/new_robot>`: follow the step-by-step guide.
+- :doc:`Placement <placement>`: learn how workers map onto nodes and GPUs.
