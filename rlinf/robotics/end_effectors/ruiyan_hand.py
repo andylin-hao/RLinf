@@ -12,14 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from rlinf.robotics.hands.ruiyan_hand import RuiyanHand
 
-from rlinf.robotics.end_effectors.base import EndEffectorType
-
-from .franka_env import FrankaEnv, FrankaRobotConfig, FrankaRobotState
-
-__all__ = [
-    "EndEffectorType",
-    "FrankaEnv",
-    "FrankaRobotConfig",
-    "FrankaRobotState",
-]
+__all__ = ["RuiyanHand"]

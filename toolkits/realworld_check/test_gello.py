@@ -47,12 +47,12 @@ from gello.dynamixel.driver import DynamixelDriver  # noqa: E402
 from rlinf.envs.realworld.common.gello.gello_joint_expert import (  # noqa: E402
     GelloJointExpert,
 )
-from rlinf.envs.realworld.franka.franky_controller import (  # noqa: E402
+from rlinf.envs.realworld.franka.utils import wrap_to_pi  # noqa: E402
+from rlinf.robotics.runtime.franky import (  # noqa: E402
     JOINT_LIMITS_LOWER,
     JOINT_LIMITS_UPPER,
     FrankyController,
 )
-from rlinf.envs.realworld.franka.utils import wrap_to_pi  # noqa: E402
 
 # ───────────────────────── shared helpers ──────────────────────────────
 

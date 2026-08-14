@@ -26,8 +26,8 @@ import time
 
 import numpy as np
 
-from rlinf.envs.realworld.common.camera.base_camera import CameraInfo
-from rlinf.envs.realworld.common.camera.lumos_camera import LumosCamera
+from rlinf.robotics.cameras.base_camera import CameraInfo
+from rlinf.robotics.cameras.lumos_camera import LumosCamera
 
 
 def main():

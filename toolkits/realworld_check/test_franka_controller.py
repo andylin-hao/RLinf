@@ -20,7 +20,7 @@ import time
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
-from rlinf.envs.realworld.franka.franka_controller import FrankaController
+from rlinf.robotics.runtime.franka_ros import FrankaController
 
 
 def _parse_args():

@@ -20,21 +20,25 @@ import queue
 import time
 from dataclasses import dataclass, field
 from itertools import cycle
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 import cv2
 import gymnasium as gym
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
-from rlinf.envs.realworld.common.camera import BaseCamera, CameraInfo, create_camera
 from rlinf.envs.realworld.common.video_player import VideoPlayer
-from rlinf.robotics import DualFrankaConfig, RobotInfo
+from rlinf.robotics import (
+    DualFrankaConfig,
+    RemoteControllerArm,
+    RobotInfo,
+    RobotRuntime,
+    launch_dual_franka_runtime,
+)
+from rlinf.robotics.cameras import BaseCamera, CameraInfo, create_camera
+from rlinf.robotics.states import FrankaRobotState
 from rlinf.scheduler import WorkerInfo
 from rlinf.utils.logging import get_logger
-
-from .franka_robot_state import FrankaRobotState
-from .franky_controller import FrankyController
 
 # Avoids Ray actor name collision when both arms land on the same node.
 _RIGHT_ARM_ENV_IDX_OFFSET = 1000
@@ -147,6 +151,7 @@ class DualFrankaEnv(gym.Env):
         self._joint_reset_cycle = cycle(range(self.config.joint_reset_cycle))
         next(self._joint_reset_cycle)
         self._success_hold_counter = 0
+        self.robot_runtime: RobotRuntime | None = None
 
         if not self.config.is_dummy:
             self._setup_hardware()
@@ -192,6 +197,8 @@ class DualFrankaEnv(gym.Env):
             self._close_cameras()
         if hasattr(self, "camera_player"):
             self.camera_player.stop()
+        if self.robot_runtime is not None:
+            self.robot_runtime.disconnect()
 
     # ---------------------------------------------------------------- cameras
 
@@ -230,6 +237,13 @@ class DualFrankaEnv(gym.Env):
             camera = create_camera(info)
             camera.open()
             self._cameras.append(camera)
+            if self.robot_runtime is not None:
+                if info.name.startswith("left_wrist_"):
+                    self.robot_runtime.attach_camera(info.name, camera, arm="left")
+                elif info.name.startswith("right_wrist_"):
+                    self.robot_runtime.attach_camera(info.name, camera, arm="right")
+                else:
+                    self.robot_runtime.attach_camera(info.name, camera)
 
     def _close_cameras(self):
         for camera in self._cameras:
@@ -337,22 +351,31 @@ class DualFrankaEnv(gym.Env):
         self._resolve_hw_overrides()
         left_node, right_node = self._resolve_controller_node_ranks()
 
-        self._left_ctrl = FrankyController.launch_controller(
-            robot_ip=self.config.left_robot_ip,
-            env_idx=self.env_idx,
-            node_rank=left_node,
+        self.robot_runtime = launch_dual_franka_runtime(
+            left_robot_ip=self.config.left_robot_ip,
+            right_robot_ip=self.config.right_robot_ip,
+            left_env_idx=self.env_idx,
+            right_env_idx=self.env_idx + _RIGHT_ARM_ENV_IDX_OFFSET,
+            left_node_rank=left_node,
+            right_node_rank=right_node,
             worker_rank=self.env_worker_rank,
-            gripper_type=self.config.left_gripper_type or self._DEFAULT_GRIPPER_TYPE,
-            gripper_connection=self.config.left_gripper_connection,
+            left_gripper_type=self.config.left_gripper_type
+            or self._DEFAULT_GRIPPER_TYPE,
+            right_gripper_type=self.config.right_gripper_type
+            or self._DEFAULT_GRIPPER_TYPE,
+            left_gripper_connection=self.config.left_gripper_connection,
+            right_gripper_connection=self.config.right_gripper_connection,
         )
-        self._right_ctrl = FrankyController.launch_controller(
-            robot_ip=self.config.right_robot_ip,
-            env_idx=self.env_idx + _RIGHT_ARM_ENV_IDX_OFFSET,
-            node_rank=right_node,
-            worker_rank=self.env_worker_rank,
-            gripper_type=self.config.right_gripper_type or self._DEFAULT_GRIPPER_TYPE,
-            gripper_connection=self.config.right_gripper_connection,
+        left_driver = cast(
+            RemoteControllerArm,
+            self.robot_runtime.robot.arms["left"].driver,
         )
+        right_driver = cast(
+            RemoteControllerArm,
+            self.robot_runtime.robot.arms["right"].driver,
+        )
+        self._left_ctrl = left_driver.controller
+        self._right_ctrl = right_driver.controller
 
     # ---------------------------------------------------------------- reset/step
 
@@ -432,8 +455,8 @@ class DualFrankaEnv(gym.Env):
             if self._pace_between_action_and_state_read():
                 step_time = time.time() - start_time
                 time.sleep(max(0.0, (1.0 / self.config.step_frequency) - step_time))
-            left_st_f = ctrls[0].get_state()
-            right_st_f = ctrls[1].get_state()
+            left_st_f = self._left_ctrl.get_state()
+            right_st_f = self._right_ctrl.get_state()
             self._left_state = left_st_f.wait()[0]
             self._right_state = right_st_f.wait()[0]
 

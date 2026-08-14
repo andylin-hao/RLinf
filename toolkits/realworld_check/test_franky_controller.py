@@ -37,7 +37,7 @@ if not ray.is_initialized():
 import numpy as np  # noqa: E402
 from scipy.spatial.transform import Rotation as R  # noqa: E402
 
-from rlinf.envs.realworld.franka.franky_controller import (  # noqa: E402
+from rlinf.robotics.runtime.franky import (  # noqa: E402
     FrankyController,
 )
 

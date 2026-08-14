@@ -20,10 +20,18 @@ from typing import Optional
 from rlinf.scheduler.hardware import HardwareConfig, HardwareInfo, HardwareResource
 
 from ..config import RobotAutoConfig
-from ..robot import Robot, RobotConfig, RobotInfo
+from ..discovery import RobotConfig, RobotDiscovery, RobotInfo, register_robot
+from ..layout import ArmSpec, CameraSpec, EndEffectorSpec, RobotSpec
+from ..robot import Robot
 
 
 class DOSW1Robot(Robot):
+    """Composable DOS-W1 robot."""
+
+    ROBOT_TYPE = "DOSW1"
+
+
+class DOSW1Discovery(RobotDiscovery):
     """Hardware policy for the DOS-W1 dual-arm robot.
 
     Connection parameters (gRPC URL / ports) and RealSense camera serials
@@ -32,7 +40,7 @@ class DOSW1Robot(Robot):
     through :class:`~rlinf.robotics.RobotInfo`.
     """
 
-    HW_TYPE = "DOSW1"
+    HW_TYPE = DOSW1Robot.ROBOT_TYPE
 
     @classmethod
     def enumerate(
@@ -112,5 +120,42 @@ class DOSW1RobotConfig(RobotConfig):
         if self.camera_serials is not None:
             self.camera_serials = [str(s) for s in self.camera_serials]
 
+    def to_spec(self) -> RobotSpec:
+        """Translate the flat DOSW1 config into a dual-arm layout."""
+        shared_connection = {
+            "robot_url": self.robot_url,
+            "left_lead_port": self.left_lead_port,
+            "right_lead_port": self.right_lead_port,
+        }
+        left_arm = ArmSpec(
+            name="left",
+            driver="dosw1",
+            node_rank=self.node_rank,
+            connection={**shared_connection, "arm_port": self.left_arm_port},
+            end_effector=EndEffectorSpec(kind="parallel_gripper"),
+        )
+        right_arm = ArmSpec(
+            name="right",
+            driver="dosw1",
+            node_rank=self.node_rank,
+            connection={**shared_connection, "arm_port": self.right_arm_port},
+            end_effector=EndEffectorSpec(kind="parallel_gripper"),
+        )
+        cameras = tuple(
+            CameraSpec(
+                name=f"camera_{index}",
+                camera_type="realsense",
+                serial_number=serial,
+                node_rank=self.node_rank,
+            )
+            for index, serial in enumerate(self.camera_serials or [])
+        )
+        return RobotSpec(
+            robot_type=DOSW1Robot.ROBOT_TYPE,
+            node_rank=self.node_rank,
+            arms=(left_arm, right_arm),
+            cameras=cameras,
+        )
 
-Robot.register_robot(DOSW1RobotConfig)(DOSW1Robot)
+
+register_robot(DOSW1RobotConfig, DOSW1Robot)(DOSW1Discovery)

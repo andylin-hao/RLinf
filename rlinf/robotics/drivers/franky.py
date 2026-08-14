@@ -28,11 +28,10 @@ from typing import Optional
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
-from rlinf.envs.realworld.common.gripper import create_gripper
-from rlinf.scheduler import Cluster, NodePlacementStrategy, Worker
+from rlinf.robotics.grippers import create_gripper
+from rlinf.robotics.part import ControllablePart
+from rlinf.robotics.states import FrankaRobotState
 from rlinf.utils.logging import get_logger
-
-from .franka_robot_state import FrankaRobotState
 
 # Franka Panda joint position / velocity limits.
 JOINT_LIMITS_LOWER = np.array(
@@ -72,25 +71,8 @@ _RT_PRIORITY = 80
 _MCL_CURRENT, _MCL_FUTURE = 1, 2
 
 
-class FrankyController(Worker):
-    """One Franka arm. Spawned per-arm as a Ray actor by ``launch_controller``."""
-
-    @staticmethod
-    def launch_controller(
-        robot_ip: str,
-        env_idx: int = 0,
-        node_rank: int = 0,
-        worker_rank: int = 0,
-        gripper_type: str = "robotiq",
-        gripper_connection: Optional[str] = None,
-    ):
-        return FrankyController.create_group(
-            robot_ip, gripper_type, gripper_connection
-        ).launch(
-            cluster=Cluster(),
-            placement_strategy=NodePlacementStrategy(node_ranks=[node_rank]),
-            name=f"FrankyController-{worker_rank}-{env_idx}",
-        )
+class FrankyDriver(ControllablePart):
+    """Pure libfranka device driver with no scheduler dependency."""
 
     def __init__(
         self,
@@ -98,37 +80,95 @@ class FrankyController(Worker):
         gripper_type: str = "robotiq",
         gripper_connection: Optional[str] = None,
     ):
-        super().__init__()
         self._logger = get_logger()
+        self._robot_ip = robot_ip
+        self._gripper_type = gripper_type
+        self._gripper_connection = gripper_connection
+        self._connected = False
+        self._franky = None
+        self._robot = None
+        self._gripper = None
+        self._tracker = None
+        self._prev_target_q: Optional[np.ndarray] = None
+        self._prev_target_ts: Optional[float] = None
+        self._cart_tracker = None
+        self._prev_cart_target_xyz: Optional[np.ndarray] = None
+        self._prev_cart_target_quat: Optional[np.ndarray] = None
 
-        # Must precede the franky import so mlockall catches its allocations.
+    @property
+    def is_connected(self) -> bool:
+        """Whether the libfranka robot and gripper are connected."""
+        return self._connected
+
+    @property
+    def observation_features(self) -> dict:
+        """Describe the canonical Franka state fields."""
+        return {
+            name: {}
+            for name in (
+                "tcp_pose",
+                "tcp_vel",
+                "arm_joint_position",
+                "arm_joint_velocity",
+                "tcp_force",
+                "tcp_torque",
+                "arm_jacobian",
+                "gripper_position",
+                "gripper_open",
+            )
+        }
+
+    @property
+    def action_features(self) -> dict:
+        """Describe supported joint and Cartesian targets."""
+        return {"joint_position": {}, "tcp_pose": {}}
+
+    def connect(self) -> None:
+        """Connect the robot and gripper SDKs."""
+        if self._connected:
+            return
         self._apply_rt_hardening()
 
         import franky
 
         self._franky = franky
-        self._robot = franky.Robot(robot_ip)
+        self._robot = franky.Robot(self._robot_ip)
         self._robot.recover_from_errors()
         self._robot.relative_dynamics_factor = _DYNAMICS_FACTOR
         self._robot.set_collision_behavior(_TORQUE_THRESHOLD, _FORCE_THRESHOLD)
-
         self._gripper = self._build_gripper(
-            gripper_type=gripper_type,
-            gripper_connection=gripper_connection,
-            robot_ip=robot_ip,
+            gripper_type=self._gripper_type,
+            gripper_connection=self._gripper_connection,
+            robot_ip=self._robot_ip,
         )
+        self._connected = True
 
-        # Joint and Cartesian trackers are mutually exclusive; each
-        # _ensure_* stops the other before starting.
-        self._tracker = None
-        self._prev_target_q: Optional[np.ndarray] = None
-        self._prev_target_ts: Optional[float] = None
+        self._logger.info(f"FrankyDriver connected to robot at {self._robot_ip}")
 
-        self._cart_tracker = None
-        self._prev_cart_target_xyz: Optional[np.ndarray] = None
-        self._prev_cart_target_quat: Optional[np.ndarray] = None
+    def reset(self) -> None:
+        """Leave task-specific reset positions to the caller."""
 
-        self._logger.info(f"FrankyController connected to robot at {robot_ip}")
+    def get_observation(self) -> dict:
+        """Return the canonical arm state dictionary."""
+        return self.get_state().to_dict()
+
+    def send_action(self, action: dict) -> dict:
+        """Apply one or both canonical arm targets."""
+        unknown = set(action) - {"joint_position", "tcp_pose"}
+        if unknown:
+            raise KeyError(f"Unknown Franky actions: {sorted(unknown)}")
+        if "joint_position" in action:
+            self.move_joints(action["joint_position"])
+        if "tcp_pose" in action:
+            self.move_tcp_pose(action["tcp_pose"])
+        return action
+
+    def disconnect(self) -> None:
+        """Stop active motion and release the gripper connection."""
+        if not self._connected:
+            return
+        self.cleanup()
+        self._connected = False
 
     def _build_gripper(
         self,

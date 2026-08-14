@@ -21,7 +21,7 @@ import time
 
 import numpy as np
 
-from rlinf.envs.realworld.franka.franky_controller import (
+from rlinf.robotics.runtime.franky import (
     JOINT_LIMITS_LOWER,
     JOINT_LIMITS_UPPER,
 )

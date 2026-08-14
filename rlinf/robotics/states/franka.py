@@ -51,7 +51,7 @@ class FrankaRobotState:
     )  # ZeroJacobian.zero_jacobian
 
     # -- Franka built-in gripper -----------------------------------------
-    gripper_position: int = 0  # Sum(JointState.position)
+    gripper_position: float = 0.0  # Sum(JointState.position)
     gripper_open: bool = False
 
     # -- Dexterous hand --------------------------------------------------

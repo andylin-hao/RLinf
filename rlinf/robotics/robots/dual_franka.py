@@ -21,10 +21,18 @@ from typing import Optional
 from rlinf.scheduler.hardware import HardwareConfig, HardwareInfo, HardwareResource
 
 from ..config import RobotAutoConfig
-from ..robot import Robot, RobotConfig, RobotInfo
+from ..discovery import RobotConfig, RobotDiscovery, RobotInfo, register_robot
+from ..layout import ArmSpec, CameraSpec, EndEffectorSpec, RobotSpec
+from ..robot import Robot
 
 
 class DualFrankaRobot(Robot):
+    """Composable dual-arm Franka robot."""
+
+    ROBOT_TYPE = "DualFranka"
+
+
+class DualFrankaDiscovery(RobotDiscovery):
     """Hardware policy for dual-arm Franka robotic systems.
 
     Both arms are managed by a single :class:`DualFrankaEnv` instance
@@ -33,7 +41,7 @@ class DualFrankaRobot(Robot):
     node via ``left_controller_node_rank`` / ``right_controller_node_rank``.
     """
 
-    HW_TYPE = "DualFranka"
+    HW_TYPE = DualFrankaRobot.ROBOT_TYPE
 
     @classmethod
     def enumerate(
@@ -181,5 +189,71 @@ class DualFrankaConfig(RobotConfig):
                 f"But got {ip}."
             )
 
+    def to_spec(self) -> RobotSpec:
+        """Translate the flat dual-Franka config into two named arms."""
+        left_cameras = tuple(
+            CameraSpec(
+                name=f"wrist_{index}",
+                camera_type=self.left_camera_type or self.camera_type,
+                serial_number=serial,
+                node_rank=self.node_rank,
+            )
+            for index, serial in enumerate(self.left_camera_serials or [])
+        )
+        right_cameras = tuple(
+            CameraSpec(
+                name=f"wrist_{index}",
+                camera_type=self.right_camera_type or self.camera_type,
+                serial_number=serial,
+                node_rank=self.node_rank,
+            )
+            for index, serial in enumerate(self.right_camera_serials or [])
+        )
+        base_cameras = tuple(
+            CameraSpec(
+                name=f"base_{index}",
+                camera_type=self.base_camera_type or self.camera_type,
+                serial_number=serial,
+                node_rank=self.node_rank,
+            )
+            for index, serial in enumerate(self.base_camera_serials or [])
+        )
+        left_arm = ArmSpec(
+            name="left",
+            driver="franky",
+            node_rank=(
+                self.left_controller_node_rank
+                if self.left_controller_node_rank is not None
+                else self.node_rank
+            ),
+            connection={"robot_ip": self.left_robot_ip},
+            end_effector=EndEffectorSpec(
+                kind=self.left_gripper_type,
+                connection=self.left_gripper_connection,
+            ),
+            cameras=left_cameras,
+        )
+        right_arm = ArmSpec(
+            name="right",
+            driver="franky",
+            node_rank=(
+                self.right_controller_node_rank
+                if self.right_controller_node_rank is not None
+                else self.node_rank
+            ),
+            connection={"robot_ip": self.right_robot_ip},
+            end_effector=EndEffectorSpec(
+                kind=self.right_gripper_type,
+                connection=self.right_gripper_connection,
+            ),
+            cameras=right_cameras,
+        )
+        return RobotSpec(
+            robot_type=DualFrankaRobot.ROBOT_TYPE,
+            node_rank=self.node_rank,
+            arms=(left_arm, right_arm),
+            cameras=base_cameras,
+        )
 
-Robot.register_robot(DualFrankaConfig)(DualFrankaRobot)
+
+register_robot(DualFrankaConfig, DualFrankaRobot)(DualFrankaDiscovery)

@@ -12,8 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from rlinf.robotics.states import GimArmRobotState
+from typing import Any, Optional
 
-from .gim_arm_env import GimArmEnv, GimArmRobotConfig
+from ..part import ControllablePart
+from .part_runtime import PartRuntime
 
-__all__ = ["GimArmEnv", "GimArmRobotConfig", "GimArmRobotState"]
+
+class ArmRuntime(PartRuntime):
+    """Host one pure arm driver in an RLinf scheduler worker."""
+
+    def __init__(
+        self,
+        driver_cls: type[ControllablePart],
+        driver_kwargs: Optional[dict[str, Any]] = None,
+    ) -> None:
+        if not issubclass(driver_cls, ControllablePart):
+            raise TypeError("ArmRuntime requires a ControllablePart driver class.")
+        super().__init__(driver_cls, driver_kwargs)

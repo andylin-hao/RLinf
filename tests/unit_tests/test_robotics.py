@@ -19,13 +19,42 @@ import numpy as np
 import pytest
 
 from rlinf.robotics import (
+    Arm,
+    ArmRuntime,
+    ArmSpec,
+    Camera,
     ControllablePart,
+    DOSW1RobotConfig,
+    DualFrankaConfig,
+    DualFrankaRobot,
+    EndEffector,
+    FrankaConfig,
+    FrankaRobot,
+    GimArmConfig,
+    LegacyObservationAdapter,
     PartRuntime,
+    RemoteControllerArm,
+    RemoteControllerEndEffector,
     Robot,
     RobotAutoConfig,
     RobotConfig,
+    RobotDiscovery,
     RobotPart,
+    RobotRuntime,
+    RobotSpec,
+    Turtle2Config,
+    VectorActionAdapter,
+    VectorActionBinding,
+    build_dosw1_runtime,
+    register_robot,
 )
+from rlinf.robotics.drivers import (
+    FrankaROSDriver,
+    FrankyDriver,
+    GimArmDriver,
+    Turtle2Driver,
+)
+from rlinf.robotics.states import FrankaRobotState
 from rlinf.scheduler.hardware import (
     Hardware,
     HardwareConfig,
@@ -69,39 +98,201 @@ class FakeControllablePart(FakePart, ControllablePart):
         return action
 
 
+class FakeEndEffector(FakePart, EndEffector):
+    @property
+    def action_features(self) -> dict[str, dict]:
+        return {"target": {"shape": (1,)}}
+
+    def send_action(self, action: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+        return action
+
+
+class FakeCamera(FakePart, Camera):
+    pass
+
+
+class FakeRemoteResult:
+    def __init__(self, value: Any):
+        self.value = value
+
+    def wait(self) -> list[Any]:
+        return [self.value]
+
+
+class FakeControllerGroup:
+    def __init__(self):
+        self.state = FrankaRobotState(gripper_position=0, gripper_open=False)
+        self.calls: list[tuple[str, Any]] = []
+
+    def get_state(self) -> FakeRemoteResult:
+        return FakeRemoteResult(self.state)
+
+    def move_arm(self, target: np.ndarray) -> FakeRemoteResult:
+        self.calls.append(("move_arm", target))
+        return FakeRemoteResult(None)
+
+    def open_gripper(self) -> FakeRemoteResult:
+        self.calls.append(("open_gripper", None))
+        return FakeRemoteResult(None)
+
+    def close_gripper(self) -> FakeRemoteResult:
+        self.calls.append(("close_gripper", None))
+        return FakeRemoteResult(None)
+
+    def cleanup(self) -> FakeRemoteResult:
+        self.calls.append(("cleanup", None))
+        return FakeRemoteResult(None)
+
+    def _close(self) -> None:
+        self.calls.append(("_close", None))
+
+
 def test_robot_composes_and_namespaces_parts():
     events: list[str] = []
-    arm = FakeControllablePart("arm", events)
-    camera = FakePart("camera", events)
-    robot = Robot({"left_arm": arm, "front_camera": camera})
+    arm = Arm(
+        driver=FakeControllablePart("arm", events),
+        end_effector=FakeEndEffector("gripper", events),
+        cameras={"wrist": FakeCamera("wrist", events)},
+    )
+    robot = Robot(
+        arms={"left": arm},
+        cameras={"front": FakeCamera("front", events)},
+    )
 
     robot.connect()
 
     assert robot.is_connected
-    assert events == ["connect:arm", "connect:camera"]
-    assert set(robot.observation_features) == {"left_arm", "front_camera"}
-    assert set(robot.action_features) == {"left_arm"}
-    action = {"left_arm": {"target": np.array([0.5])}}
+    assert events == [
+        "connect:arm",
+        "connect:gripper",
+        "connect:wrist",
+        "connect:front",
+    ]
+    assert set(robot.observation_features) == {"arms", "cameras"}
+    assert set(robot.action_features) == {"arms"}
+    action = {
+        "arms": {
+            "left": {
+                "arm": {"target": np.array([0.5])},
+                "end_effector": {"target": np.array([1.0])},
+            }
+        }
+    }
     assert robot.send_action(action) == action
+    assert set(robot.parts_of_type(Camera)) == {
+        "arms.left.cameras.wrist",
+        "cameras.front",
+    }
 
     robot.disconnect()
-    assert events[-2:] == ["disconnect:camera", "disconnect:arm"]
+    assert events[-4:] == [
+        "disconnect:front",
+        "disconnect:wrist",
+        "disconnect:gripper",
+        "disconnect:arm",
+    ]
 
 
 def test_robot_rejects_actions_for_observation_only_parts():
-    robot = Robot({"camera": FakePart("camera", [])})
+    robot = Robot(parts={"camera": FakeCamera("camera", [])})
 
     with pytest.raises(TypeError, match="not controllable"):
-        robot.send_action({"camera": {"target": np.array([0.5])}})
+        robot.send_action({"parts": {"camera": {"target": np.array([0.5])}}})
+
+
+def test_robot_disconnects_remaining_arm_parts_after_camera_failure():
+    events: list[str] = []
+    camera = FakeCamera("wrist", events)
+    arm = Arm(FakeControllablePart("driver", events), cameras={"wrist": camera})
+    robot = Robot.single_arm(arm)
+    robot.connect()
+    camera.disconnect()
+
+    robot.disconnect()
+
+    assert "disconnect:driver" in events
+
+
+def test_remote_controller_proxies_expose_composed_part_api():
+    controller = FakeControllerGroup()
+    driver = RemoteControllerArm(
+        controller,
+        command_methods={"tcp_pose": "move_arm"},
+        state_fields=("tcp_pose", "arm_joint_position"),
+    )
+    end_effector = RemoteControllerEndEffector(
+        controller,
+        state_field="gripper_position",
+    )
+    target = np.ones(7)
+
+    assert set(driver.get_observation()) == {"tcp_pose", "arm_joint_position"}
+    assert end_effector.get_observation()["state"].tolist() == [0]
+    assert driver.send_action({"tcp_pose": target})["tcp_pose"] is target
+    end_effector.send_action({"target": np.array([1.0])})
+    end_effector.send_action({"target": np.array([-1.0])})
+
+    assert [name for name, _ in controller.calls] == [
+        "move_arm",
+        "open_gripper",
+        "close_gripper",
+    ]
+
+
+def test_remote_controller_owner_cleans_up_worker_group():
+    controller = FakeControllerGroup()
+    driver = RemoteControllerArm(
+        controller,
+        command_methods={"tcp_pose": "move_arm"},
+        owns_controller=True,
+    )
+
+    driver.disconnect()
+
+    assert [name for name, _ in controller.calls] == ["cleanup", "_close"]
+    assert not driver.is_connected
 
 
 def test_robot_requires_non_empty_string_part_names():
     with pytest.raises(ValueError, match="non-empty strings"):
-        Robot({0: FakePart("camera", [])})  # type: ignore[dict-item]
+        Robot(parts={0: FakePart("camera", [])})  # type: ignore[dict-item]
+
+
+def test_builtin_robots_expose_standard_composition_layouts():
+    events: list[str] = []
+    left_arm = Arm(
+        driver=FakeControllablePart("left_arm", events),
+        end_effector=FakeEndEffector("left_gripper", events),
+    )
+    right_arm = Arm(
+        driver=FakeControllablePart("right_arm", events),
+        end_effector=FakeEndEffector("right_gripper", events),
+    )
+    single = FrankaRobot.single_arm(
+        arm=left_arm,
+        cameras={"front_camera": FakeCamera("front_camera", events)},
+    )
+    dual = DualFrankaRobot.dual_arm(
+        left_arm=left_arm,
+        right_arm=right_arm,
+        cameras={"base_camera": FakeCamera("base_camera", events)},
+    )
+
+    assert set(single.arms) == {"arm"}
+    assert set(single.parts_of_type(Arm)) == {"arms.arm"}
+    assert set(single.parts_of_type(EndEffector)) == {"arms.arm.end_effector"}
+    assert set(single.parts_of_type(Camera)) == {"cameras.front_camera"}
+    assert set(dual.arms) == {"left", "right"}
+    assert set(dual.parts_of_type(Arm)) == {"arms.left", "arms.right"}
+
+
+def test_standard_layout_rejects_non_arm_driver():
+    with pytest.raises(TypeError, match="Invalid robot arms"):
+        Robot(arms={"arm": FakeCamera("camera", [])})  # type: ignore[dict-item]
 
 
 def test_register_robot_registers_policy_and_config(monkeypatch):
-    monkeypatch.setattr(Robot, "registry", Robot.registry.copy())
+    monkeypatch.setattr(RobotDiscovery, "registry", RobotDiscovery.registry.copy())
     monkeypatch.setattr(Hardware, "hw_types", Hardware.hw_types.copy())
     monkeypatch.setattr(Hardware, "policy_registry", Hardware.policy_registry.copy())
     monkeypatch.setattr(
@@ -115,6 +306,9 @@ def test_register_robot_registers_policy_and_config(monkeypatch):
         endpoint: str = "loopback"
 
     class TestRobot(Robot):
+        ROBOT_TYPE = "TestRobot"
+
+    class TestRobotDiscovery(RobotDiscovery):
         HW_TYPE = "TestRobot"
 
         @classmethod
@@ -125,20 +319,20 @@ def test_register_robot_registers_policy_and_config(monkeypatch):
         ) -> Optional[HardwareResource]:
             return None
 
-    registered = Robot.register_robot(TestRobotConfig)(TestRobot)
+    registered = register_robot(TestRobotConfig, TestRobot)(TestRobotDiscovery)
     parsed = NodeHardwareConfig(
         type="TestRobot",
         configs=cast(Any, [{"node_rank": 3, "endpoint": "robot.local"}]),
     )
 
-    assert registered is TestRobot
-    assert Robot.registry["TestRobot"] is TestRobot
-    assert TestRobot in Hardware.policy_registry
+    assert registered is TestRobotDiscovery
+    assert RobotDiscovery.registry["TestRobot"].robot_cls is TestRobot
+    assert TestRobotDiscovery in Hardware.policy_registry
     assert isinstance(parsed.configs[0], TestRobotConfig)
     assert parsed.configs[0].endpoint == "robot.local"
 
     with pytest.raises(ValueError, match="already registered"):
-        Robot.register_robot(TestRobotConfig)(TestRobot)
+        register_robot(TestRobotConfig, TestRobot)(TestRobotDiscovery)
     assert NodeHardwareConfig._hardware_config_registry["TestRobot"] is TestRobotConfig
 
 
@@ -173,3 +367,144 @@ def test_part_runtime_hosts_controllable_part():
     assert runtime.send_action(action) == action
     runtime.shutdown()
     assert runtime._part is None
+
+
+def test_robot_runtime_preserves_canonical_namespaces():
+    arm = Arm(driver=FakeControllablePart("arm", []))
+    runtime = RobotRuntime(Robot.single_arm(arm))
+    runtime.connect()
+
+    observation = runtime.get_observation()
+    action = {"arms": {"arm": {"arm": {"target": np.array([0.25])}}}}
+
+    assert observation["arms"]["arm"]["state"]["state"].shape == (1,)
+    assert runtime.send_action(action) == action
+    runtime.disconnect()
+
+
+def test_arm_runtime_rejects_observation_only_driver():
+    runtime = ArmRuntime.__new__(ArmRuntime)
+
+    with pytest.raises(TypeError, match="ControllablePart"):
+        ArmRuntime.__init__(runtime, cast(Any, FakeCamera))
+
+
+def test_legacy_adapters_preserve_policy_facing_layouts():
+    canonical_observation = {
+        "arms": {
+            "left": {"state": {"joint_position": np.arange(6)}},
+            "right": {"state": {"joint_position": np.arange(6, 12)}},
+        },
+        "cameras": {
+            "front": {"rgb": np.zeros((8, 8, 3), dtype=np.uint8)},
+        },
+    }
+    observation_adapter = LegacyObservationAdapter(
+        state_fields={
+            "left_joint_position": ("arms", "left", "state", "joint_position"),
+            "right_joint_position": (
+                "arms",
+                "right",
+                "state",
+                "joint_position",
+            ),
+        },
+        frame_fields={"front": ("cameras", "front", "rgb")},
+    )
+    action_adapter = VectorActionAdapter(
+        action_dim=12,
+        bindings=[
+            VectorActionBinding(("arms", "left", "arm", "target"), 0, 6),
+            VectorActionBinding(("arms", "right", "arm", "target"), 6, 12),
+        ],
+    )
+
+    legacy_observation = observation_adapter.adapt(canonical_observation)
+    canonical_action = action_adapter.adapt(np.arange(12))
+
+    assert set(legacy_observation) == {"state", "frames"}
+    assert legacy_observation["state"]["left_joint_position"].tolist() == list(range(6))
+    assert canonical_action["arms"]["right"]["arm"]["target"].tolist() == list(
+        range(6, 12)
+    )
+
+
+def test_legacy_configs_translate_to_composed_specs():
+    franka = FrankaConfig(
+        node_rank=1,
+        robot_ip="10.0.0.1",
+        camera_serials=["wrist"],
+        controller_node_rank=0,
+        disable_validate=True,
+    ).to_spec()
+    dual = DualFrankaConfig(
+        node_rank=0,
+        left_robot_ip="10.0.0.1",
+        right_robot_ip="10.0.0.2",
+        left_camera_serials=["left_cam"],
+        right_camera_serials=["right_cam"],
+        base_camera_serials=["base_cam"],
+        right_controller_node_rank=1,
+    ).to_spec()
+
+    assert [arm.name for arm in franka.arms] == ["arm"]
+    assert franka.arm("arm").node_rank == 0
+    assert franka.arm("arm").cameras[0].serial_number == "wrist"
+    assert [arm.name for arm in dual.arms] == ["left", "right"]
+    assert dual.arm("right").node_rank == 1
+    assert dual.cameras[0].name == "base_0"
+
+
+def test_all_builtin_configs_translate_to_physical_layouts():
+    gim_arm = GimArmConfig(node_rank=0).to_spec()
+    dosw1 = DOSW1RobotConfig(node_rank=0).to_spec()
+    turtle2 = Turtle2Config(node_rank=0).to_spec()
+
+    assert [arm.name for arm in gim_arm.arms] == ["arm"]
+    assert [arm.name for arm in dosw1.arms] == ["left", "right"]
+    assert [part.name for part in turtle2.parts] == ["base", "head", "lift"]
+
+
+def test_robot_spec_rejects_duplicate_component_names():
+    with pytest.raises(ValueError, match="duplicate arm names"):
+        RobotSpec(
+            robot_type="test",
+            node_rank=0,
+            arms=(
+                ArmSpec(name="arm", driver="first", node_rank=0),
+                ArmSpec(name="arm", driver="second", node_rank=0),
+            ),
+        )
+
+
+def test_dosw1_dummy_runtime_uses_composed_dual_arm_interface():
+    @dataclass
+    class DummyDOSW1Config:
+        robot_url: str = "localhost"
+        left_arm_port: int = 50051
+        right_arm_port: int = 50053
+        left_lead_port: int = 50050
+        right_lead_port: int = 50052
+        enable_human_in_loop: bool = False
+        is_dummy: bool = True
+        gripper_width_max: float = 0.07
+
+    runtime = build_dosw1_runtime(DummyDOSW1Config())
+
+    assert set(runtime.robot.arms) == {"left", "right"}
+    observation = runtime.get_observation()
+    assert observation["arms"]["left"]["state"]["joint_position"].shape == (6,)
+    runtime.disconnect()
+    assert not runtime.is_connected
+
+
+def test_pure_drivers_construct_without_scheduler_or_vendor_sdks():
+    drivers = [
+        FrankaROSDriver("10.0.0.1"),
+        FrankyDriver("10.0.0.1"),
+        GimArmDriver("can0", "gim_arm_xl", True, "parallel"),
+        Turtle2Driver(),
+    ]
+
+    assert all(isinstance(driver, ControllablePart) for driver in drivers)
+    assert all(not driver.is_connected for driver in drivers)

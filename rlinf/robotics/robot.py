@@ -12,107 +12,142 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from collections.abc import Callable, Mapping
-from dataclasses import dataclass
-from typing import ClassVar, Generic, Optional, TypeVar
+from collections.abc import Mapping
+from typing import Any, ClassVar, Optional, TypeVar
 
-import numpy as np
+from .part import Arm, Camera, ControllablePart, RobotPart
 
-from rlinf.scheduler.hardware import (
-    Hardware,
-    HardwareConfig,
-    HardwareInfo,
-    NodeHardwareConfig,
-)
-
-from .part import ControllablePart, RobotPart
-
-RobotConfigType = TypeVar("RobotConfigType", bound="RobotConfig", covariant=True)
+RobotPartType = TypeVar("RobotPartType", bound=RobotPart)
+RobotType = TypeVar("RobotType", bound="Robot")
 
 
-@dataclass
-class RobotConfig(HardwareConfig):
-    """Base configuration for a registered physical robot."""
+class Robot:
+    """Compose named arms, robot-level cameras, and additional parts."""
 
+    ROBOT_TYPE: ClassVar[str] = ""
 
-@dataclass
-class RobotInfo(HardwareInfo, Generic[RobotConfigType]):
-    """Scheduler resource information for a registered robot."""
-
-    config: RobotConfigType
-
-
-class Robot(Hardware):
-    """Compose named robot parts and register robot discovery policies.
-
-    A concrete robot integration sets ``HW_TYPE``, implements
-    :meth:`Hardware.enumerate`, and uses ``@Robot.register_robot(Config)``.
-    Runtime robot instances may compose arms, end effectors, cameras, or mobile
-    bases through the ``parts`` mapping.
-    """
-
-    CONFIG_CLS: ClassVar[type[RobotConfig]]
-    registry: ClassVar[dict[str, type["Robot"]]] = {}
-
-    def __init__(self, parts: Optional[Mapping[str, RobotPart]] = None) -> None:
-        self.parts = dict(parts or {})
-        if any(not isinstance(name, str) or not name for name in self.parts):
-            raise ValueError("Robot part names must be non-empty strings.")
+    def __init__(
+        self,
+        arms: Optional[Mapping[str, Arm]] = None,
+        cameras: Optional[Mapping[str, Camera]] = None,
+        parts: Optional[Mapping[str, RobotPart]] = None,
+    ) -> None:
+        self.arms = self._validate_named_parts("arm", arms, Arm)
+        self.cameras = self._validate_named_parts("camera", cameras, Camera)
+        self.parts = self._validate_named_parts("part", parts, RobotPart)
 
     @classmethod
-    def register_robot(
-        cls, config_cls: type[RobotConfig]
-    ) -> Callable[[type["Robot"]], type["Robot"]]:
-        """Register a concrete robot and its configuration with the scheduler."""
+    def single_arm(
+        cls: type[RobotType],
+        arm: Arm,
+        cameras: Optional[Mapping[str, Camera]] = None,
+        parts: Optional[Mapping[str, RobotPart]] = None,
+    ) -> RobotType:
+        """Compose a single-arm robot with stable part names."""
+        return cls(arms={"arm": arm}, cameras=cameras, parts=parts)
 
-        def decorator(robot_cls: type["Robot"]) -> type["Robot"]:
-            if not issubclass(robot_cls, cls):
-                raise TypeError(f"{robot_cls.__name__} must inherit from Robot.")
-            if not robot_cls.HW_TYPE:
-                raise ValueError(f"{robot_cls.__name__}.HW_TYPE must be set.")
-            if not issubclass(config_cls, RobotConfig):
-                raise TypeError(f"{config_cls.__name__} must inherit from RobotConfig.")
-            if (
-                robot_cls.HW_TYPE in cls.registry
-                or robot_cls.HW_TYPE in Hardware.hw_types
-                or robot_cls.HW_TYPE in NodeHardwareConfig._hardware_config_registry
-            ):
-                raise ValueError(
-                    f"Robot type {robot_cls.HW_TYPE!r} is already registered."
-                )
+    @classmethod
+    def dual_arm(
+        cls: type[RobotType],
+        left_arm: Arm,
+        right_arm: Arm,
+        cameras: Optional[Mapping[str, Camera]] = None,
+        parts: Optional[Mapping[str, RobotPart]] = None,
+    ) -> RobotType:
+        """Compose a dual-arm robot with stable left and right part names."""
+        return cls(
+            arms={"left": left_arm, "right": right_arm},
+            cameras=cameras,
+            parts=parts,
+        )
 
-            robot_cls.CONFIG_CLS = config_cls
-            Hardware.register()(robot_cls)
-            NodeHardwareConfig.register_hardware_config(robot_cls.HW_TYPE)(config_cls)
-            cls.registry[robot_cls.HW_TYPE] = robot_cls
-            return robot_cls
-
-        return decorator
+    @staticmethod
+    def _validate_named_parts(
+        kind: str,
+        parts: Optional[Mapping[str, RobotPartType]],
+        part_type: type[RobotPartType],
+    ) -> dict[str, RobotPartType]:
+        validated = dict(parts or {})
+        invalid_names = [
+            name for name in validated if not isinstance(name, str) or not name
+        ]
+        if invalid_names:
+            raise ValueError(f"Robot {kind} names must be non-empty strings.")
+        invalid_parts = [
+            name for name, part in validated.items() if not isinstance(part, part_type)
+        ]
+        if invalid_parts:
+            raise TypeError(f"Invalid robot {kind}s: {sorted(invalid_parts)}")
+        return validated
 
     @property
     def is_connected(self) -> bool:
         """Whether every configured part is connected."""
-        return all(part.is_connected for part in self.parts.values())
+        return all(part.is_connected for part in self._top_level_parts())
 
     @property
-    def observation_features(self) -> dict[str, dict]:
-        """Return observation features grouped by part name."""
-        return {name: part.observation_features for name, part in self.parts.items()}
+    def observation_features(self) -> dict[str, Any]:
+        """Return canonical features grouped by robot component."""
+        features: dict[str, Any] = {
+            "arms": {name: arm.observation_features for name, arm in self.arms.items()}
+        }
+        if self.cameras:
+            features["cameras"] = {
+                name: camera.observation_features
+                for name, camera in self.cameras.items()
+            }
+        if self.parts:
+            features["parts"] = {
+                name: part.observation_features for name, part in self.parts.items()
+            }
+        return features
 
     @property
-    def action_features(self) -> dict[str, dict]:
-        """Return action features for controllable parts."""
-        return {
+    def action_features(self) -> dict[str, Any]:
+        """Return canonical action features for controllable components."""
+        features: dict[str, Any] = {
+            "arms": {name: arm.action_features for name, arm in self.arms.items()}
+        }
+        controllable_parts = {
             name: part.action_features
             for name, part in self.parts.items()
             if isinstance(part, ControllablePart)
         }
+        if controllable_parts:
+            features["parts"] = controllable_parts
+        return features
+
+    def parts_of_type(self, part_type: type[RobotPartType]) -> dict[str, RobotPartType]:
+        """Return all named parts implementing ``part_type``."""
+        matches: dict[str, RobotPartType] = {}
+        for name, part in self.named_parts.items():
+            if isinstance(part, part_type):
+                matches[name] = part
+        return matches
+
+    @property
+    def named_parts(self) -> dict[str, RobotPart]:
+        """Return every part keyed by its canonical dotted path."""
+        named: dict[str, RobotPart] = {}
+        for arm_name, arm in self.arms.items():
+            prefix = f"arms.{arm_name}"
+            named[prefix] = arm
+            named[f"{prefix}.driver"] = arm.driver
+            if arm.end_effector is not None:
+                named[f"{prefix}.end_effector"] = arm.end_effector
+            for camera_name, camera in arm.cameras.items():
+                named[f"{prefix}.cameras.{camera_name}"] = camera
+        named.update(
+            {f"cameras.{name}": camera for name, camera in self.cameras.items()}
+        )
+        named.update({f"parts.{name}": part for name, part in self.parts.items()})
+        return named
 
     def connect(self) -> None:
         """Connect every part in configuration order."""
         connected: list[RobotPart] = []
         try:
-            for part in self.parts.values():
+            for part in self._top_level_parts():
                 if not part.is_connected:
                     part.connect()
                     connected.append(part)
@@ -121,28 +156,66 @@ class Robot(Hardware):
                 part.disconnect()
             raise
 
-    def get_observation(self) -> dict[str, dict[str, np.ndarray]]:
-        """Read observations grouped by part name."""
-        return {name: part.get_observation() for name, part in self.parts.items()}
+    def reset(self) -> None:
+        """Reset all arms and additional controllable parts."""
+        for arm in self.arms.values():
+            arm.reset()
+        for part in self.parts.values():
+            part.reset()
+
+    def get_observation(self) -> dict[str, Any]:
+        """Read a canonical namespaced robot observation."""
+        observation: dict[str, Any] = {
+            "arms": {name: arm.get_observation() for name, arm in self.arms.items()}
+        }
+        if self.cameras:
+            observation["cameras"] = {
+                name: camera.get_observation() for name, camera in self.cameras.items()
+            }
+        if self.parts:
+            observation["parts"] = {
+                name: part.get_observation() for name, part in self.parts.items()
+            }
+        return observation
 
     def send_action(
-        self, action: Mapping[str, dict[str, np.ndarray]]
-    ) -> dict[str, dict[str, np.ndarray]]:
-        """Dispatch actions by part name and return the applied actions."""
-        unknown_parts = set(action) - set(self.parts)
+        self, action: Mapping[str, Mapping[str, dict[str, Any]]]
+    ) -> dict[str, Any]:
+        """Dispatch canonical namespaced actions and return applied actions."""
+        unknown_sections = set(action) - {"arms", "parts"}
+        if unknown_sections:
+            raise KeyError(f"Unknown robot action sections: {sorted(unknown_sections)}")
+
+        applied: dict[str, Any] = {}
+        arm_actions = action.get("arms", {})
+        unknown_arms = set(arm_actions) - set(self.arms)
+        if unknown_arms:
+            raise KeyError(f"Unknown robot arms: {sorted(unknown_arms)}")
+        if arm_actions:
+            applied["arms"] = {
+                name: self.arms[name].send_action(dict(arm_action))
+                for name, arm_action in arm_actions.items()
+            }
+
+        part_actions = action.get("parts", {})
+        unknown_parts = set(part_actions) - set(self.parts)
         if unknown_parts:
             raise KeyError(f"Unknown robot parts: {sorted(unknown_parts)}")
-
-        applied = {}
-        for name, part_action in action.items():
-            part = self.parts[name]
-            if not isinstance(part, ControllablePart):
-                raise TypeError(f"Robot part {name!r} is not controllable.")
-            applied[name] = part.send_action(part_action)
+        if part_actions:
+            applied_parts: dict[str, Any] = {}
+            for name, part_action in part_actions.items():
+                part = self.parts[name]
+                if not isinstance(part, ControllablePart):
+                    raise TypeError(f"Robot part {name!r} is not controllable.")
+                applied_parts[name] = part.send_action(part_action)
+            applied["parts"] = applied_parts
         return applied
 
     def disconnect(self) -> None:
         """Disconnect every connected part in reverse order."""
-        for part in reversed(list(self.parts.values())):
-            if part.is_connected:
+        for part in reversed(self._top_level_parts()):
+            if isinstance(part, Arm) or part.is_connected:
                 part.disconnect()
+
+    def _top_level_parts(self) -> list[RobotPart]:
+        return [*self.arms.values(), *self.cameras.values(), *self.parts.values()]

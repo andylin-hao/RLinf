@@ -14,8 +14,6 @@
 
 from typing import Any, Optional
 
-import numpy as np
-
 from rlinf.scheduler import Worker
 
 from ..part import ControllablePart, RobotPart
@@ -46,11 +44,26 @@ class PartRuntime(Worker):
         """Return whether the hosted part is connected."""
         return self._require_part().is_connected
 
-    def get_observation(self) -> dict[str, np.ndarray]:
+    def get_observation(self) -> dict[str, Any]:
         """Read an observation from the hosted part."""
         return self._require_part().get_observation()
 
-    def send_action(self, action: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+    def get_observation_features(self) -> dict[str, Any]:
+        """Return the hosted part's observation feature description."""
+        return self._require_part().observation_features
+
+    def get_action_features(self) -> dict[str, Any]:
+        """Return the hosted part's action feature description."""
+        part = self._require_part()
+        if not isinstance(part, ControllablePart):
+            return {}
+        return part.action_features
+
+    def reset(self) -> None:
+        """Reset the hosted part."""
+        self._require_part().reset()
+
+    def send_action(self, action: dict[str, Any]) -> dict[str, Any]:
         """Send an action to a controllable hosted part."""
         part = self._require_part()
         if not isinstance(part, ControllablePart):

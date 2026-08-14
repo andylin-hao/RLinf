@@ -1,37 +1,39 @@
 添加机器人
 ==========
 
-通过实现可复用部件、将部件组合为 ``Robot`` 并注册发现配置来添加真机。将任务逻辑保留在真机环境中，不要放入机器人驱动。
+添加真机时，将设备 SDK、调度器放置和任务逻辑解耦。实现纯部件，描述物理布局，组合 ``Robot``，再将其规范接口适配到现有策略数据结构。
 
 架构
 ----
 
-每一层只承担一种职责：
+让每一层只承担一种职责。
 
 .. list-table::
    :header-rows: 1
 
    * - 层
      - 职责
-   * - ``RobotPart``
-     - 连接一个可观测设备并返回其观测。
-   * - ``ControllablePart``
-     - 为机械臂、夹爪或移动底盘等部件添加动作。
+   * - ``RobotPart`` 和 ``ControllablePart``
+     - 管理一个设备连接，并公开规范观测与动作。
+   * - ``Arm``
+     - 组合一个机械臂驱动、可选 ``EndEffector`` 和命名腕部相机。
    * - ``Robot``
-     - 组合命名部件，并公开带命名空间的观测和动作。
-   * - ``RobotConfig`` 和 ``RobotInfo``
-     - 描述物理连接配置和调度器发现结果。
-   * - 真机环境
-     - 定义重置、奖励、终止条件以及面向策略的空间。
-   * - ``PartRuntime``
-     - 可选地通过 RLinf ``Worker`` 在其他节点托管部件。
+     - 组合命名机械臂、机器人级相机，以及底盘等可选部件。
+   * - ``RobotSpec``
+     - 描述物理机械臂、相机、末端执行器、连接信息和节点 rank。
+   * - ``RobotDiscovery``
+     - 将调度器硬件配置转换为通用硬件资源。
+   * - ``RobotRuntime``
+     - 协调本地和远程部件，包括并行多臂操作。
+   * - ``RobotTask`` 和 ``RobotTaskEnv``
+     - 管理重置、奖励、终止、Gymnasium 空间和策略兼容逻辑。
 
-不要在部件实现中导入 Ray、Gymnasium 或调度器 API。这样，同一个部件可以在本地、组合机器人或 ``PartRuntime`` 中复用。
+依赖方向必须保持严格：驱动不得导入 Ray、Gymnasium 或 ``rlinf.scheduler``。运行时宿主可以导入调度器 API。环境使用组合后的运行时，并将任务语义保留在设备驱动之外。
 
-实现部件
---------
+实现纯驱动
+----------
 
-对于相机等仅提供观测的设备，继承 ``RobotPart``。对于还接收动作的设备，继承 ``ControllablePart``。
+仅提供观测的设备继承 ``RobotPart``。机械臂、底盘和其他可接收命令的设备继承 ``ControllablePart``。将可选厂商 SDK 放在 ``connect()`` 内导入，使未安装该 SDK 的节点也能导入模块。
 
 .. code-block:: python
 
@@ -40,14 +42,14 @@
    from rlinf.robotics import ControllablePart
 
 
-   class ExampleArm(ControllablePart):
+   class ExampleArmDriver(ControllablePart):
        def __init__(self, endpoint: str):
            self.endpoint = endpoint
-           self._connected = False
+           self._client = None
 
        @property
        def is_connected(self) -> bool:
-           return self._connected
+           return self._client is not None
 
        @property
        def observation_features(self) -> dict:
@@ -55,75 +57,131 @@
 
        @property
        def action_features(self) -> dict:
-           return {"joint_target": {"shape": (6,), "dtype": "float32"}}
+           return {"joint_position": {"shape": (6,), "dtype": "float32"}}
 
        def connect(self) -> None:
-           self._connected = True
+           from example_robot_sdk import Client
+
+           self._client = Client(self.endpoint)
+
+       def reset(self) -> None:
+           self._client.move_home()
 
        def get_observation(self) -> dict[str, np.ndarray]:
-           return {"joint_position": np.zeros(6, dtype=np.float32)}
+           return {"joint_position": self._client.get_joint_position()}
 
        def send_action(
            self, action: dict[str, np.ndarray]
        ) -> dict[str, np.ndarray]:
-           # 在此处通过厂商 SDK 发送 action["joint_target"]。
+           if set(action) != {"joint_position"}:
+               raise KeyError("Expected only 'joint_position'.")
+           self._client.move_joints(action["joint_position"])
            return action
 
        def disconnect(self) -> None:
-           self._connected = False
+           if self._client is not None:
+               self._client.close()
+               self._client = None
 
-如果只有机器人节点安装厂商 SDK，请将厂商 SDK 导入放在 ``connect()`` 或构造函数内部。
+当存在更具体的接口时，使用 ``Camera``、``EndEffector``、``MobileBase`` 或 ``LeggedBase``。内置实现位于 ``rlinf/robotics/cameras``、``drivers``、``end_effectors``、``grippers`` 和 ``hands``。
 
 组合机器人
 ----------
 
-为每个部件指定稳定名称。这些名称会成为观测和动作的顶层键，因此同一结构可以支持单臂、双臂、相机、灵巧手、轮式底盘或腿式底盘。
+将每个机械臂驱动放入 ``Arm``。请使用稳定的机械臂名称，因为它们会成为规范观测和动作路径。单臂与双臂机器人使用相同结构。
 
 .. code-block:: python
 
-   from rlinf.robotics import Robot
+   from rlinf.robotics import Arm, Robot, RobotRuntime
 
-   robot = Robot(
-       parts={
-           "left_arm": ExampleArm("tcp://left-arm:5000"),
-           "right_arm": ExampleArm("tcp://right-arm:5000"),
-       }
+
+   class ExampleRobot(Robot):
+       ROBOT_TYPE = "ExampleRobot"
+
+
+   robot = ExampleRobot.dual_arm(
+       left_arm=Arm(ExampleArmDriver("tcp://left-arm:5000")),
+       right_arm=Arm(ExampleArmDriver("tcp://right-arm:5000")),
    )
-   robot.connect()
-   observation = robot.get_observation()
-   robot.send_action(
+   runtime = RobotRuntime(robot)
+   runtime.connect()
+   observation = runtime.get_observation()
+   runtime.send_action(
        {
-           "left_arm": {"joint_target": left_target},
-           "right_arm": {"joint_target": right_target},
+           "arms": {
+               "left": {
+                   "arm": {"joint_position": left_target},
+               },
+               "right": {
+                   "arm": {"joint_position": right_target},
+               },
+           }
        }
    )
 
-注册发现逻辑
+左机械臂驱动的规范观测路径为 ``arms.left.state.joint_position``。末端执行器动作使用 ``arms.<name>.end_effector``。机器人级相机使用 ``cameras.<name>``；其他部件使用 ``parts.<name>``。
+
+描述物理硬件
 ------------
 
-为每种硬件类型注册一个 ``RobotConfig`` 和发现策略。调度器只使用通用的 ``HardwareResource`` 结果；机器人专用验证应保留在此模块中。
+将 ``RobotConfig.to_spec()`` 作为现有扁平 YAML 数据结构到规范物理布局的转换边界。连接和放置信息放入 ``RobotSpec``。重置位姿、奖励和回合长度保留在任务配置中。
 
 .. code-block:: python
 
    from dataclasses import dataclass
-   from typing import Optional
 
-   from rlinf.robotics import Robot, RobotConfig, RobotInfo
-   from rlinf.scheduler.hardware import (
-       HardwareConfig,
-       HardwareInfo,
-       HardwareResource,
-   )
+   from rlinf.robotics import ArmSpec, RobotConfig, RobotSpec
 
 
    @dataclass
    class ExampleRobotConfig(RobotConfig):
-       endpoint: str
+       left_endpoint: str
+       right_endpoint: str
+
+       def to_spec(self) -> RobotSpec:
+           return RobotSpec(
+               robot_type=ExampleRobot.ROBOT_TYPE,
+               node_rank=self.node_rank,
+               arms=(
+                   ArmSpec(
+                       name="left",
+                       driver="example",
+                       node_rank=self.node_rank,
+                       connection={"endpoint": self.left_endpoint},
+                   ),
+                   ArmSpec(
+                       name="right",
+                       driver="example",
+                       node_rank=self.node_rank,
+                       connection={"endpoint": self.right_endpoint},
+                   ),
+               ),
+           )
+
+机器人级或腕部相机使用 ``CameraSpec``，机械臂工具使用 ``EndEffectorSpec``，底盘、头部、升降机构或其他可选组件使用 ``PartSpec``。
+
+注册发现逻辑
+------------
+
+让调度器发现逻辑与 ``Robot`` 分离。实现 ``RobotDiscovery.enumerate()``，并将发现类、物理配置类和组合类一起注册。
+
+.. code-block:: python
+
+   from typing import Optional
+
+   from rlinf.robotics import (
+       RobotDiscovery,
+       RobotInfo,
+       register_robot,
+   )
+   from rlinf.scheduler.hardware import (
+       HardwareConfig,
+       HardwareResource,
+   )
 
 
-   @Robot.register_robot(ExampleRobotConfig)
-   class ExampleRobot(Robot):
-       HW_TYPE = "ExampleRobot"
+   class ExampleRobotDiscovery(RobotDiscovery):
+       HW_TYPE = ExampleRobot.ROBOT_TYPE
 
        @classmethod
        def enumerate(
@@ -139,31 +197,27 @@
            ]
            if not matching:
                return None
+           return HardwareResource(
+               type=cls.HW_TYPE,
+               infos=[
+                   RobotInfo(
+                       type=cls.HW_TYPE,
+                       model=cls.HW_TYPE,
+                       config=config,
+                   )
+                   for config in matching
+               ],
+           )
 
-           infos: list[HardwareInfo] = [
-               RobotInfo(
-                   type=cls.HW_TYPE,
-                   model=cls.HW_TYPE,
-                   config=config,
-               )
-               for config in matching
-           ]
-           return HardwareResource(type=cls.HW_TYPE, infos=infos)
 
-在构造 ``Cluster`` 之前导入集成模块。注册在导入时发生，并且该模块必须能在每个集群节点的 Python 环境中导入。
+   register_robot(ExampleRobotConfig, ExampleRobot)(ExampleRobotDiscovery)
 
-.. code-block:: python
-
-   import my_project.example_robot  # 注册 ExampleRobot。
-
-   from rlinf.scheduler import Cluster
-
-   cluster = Cluster(cluster_cfg=cfg.cluster)
+在构造 ``Cluster`` 之前导入注册模块。RLinf 会将已注册硬件策略模块传播到节点探针，因此每个节点配置的 Python 环境都必须能导入该模块。
 
 配置物理硬件
 ------------
 
-将物理连接配置放在 ``cluster.node_groups.hardware`` 下。将重置位姿、奖励和回合长度等任务参数保留在 ``env`` 下。
+保留现有 ``cluster.node_groups.hardware`` 数据结构。注册的配置类负责解析每一项，``to_spec()`` 提供规范布局。
 
 .. code-block:: yaml
 
@@ -177,35 +231,58 @@
            type: ExampleRobot
            configs:
              - node_rank: 0
-               endpoint: tcp://robot-arm:5000
+               left_endpoint: tcp://left-arm:5000
+               right_endpoint: tcp://right-arm:5000
 
-远程托管部件
+远程托管驱动
 ------------
 
-当设备必须在其他节点上运行时，使用 ``PartRuntime``。它是 RLinf ``Worker``，因此其放置和生命周期与其他 RLinf 组件使用相同的调度器 API。
+使用 ``ArmRuntime`` 在 RLinf ``Worker`` 中构造并连接纯机械臂驱动。将单 worker group 包装为 ``RemoteControllablePart``，再组合到本地 ``Robot``。
 
 .. code-block:: python
 
-   from rlinf.robotics import PartRuntime
+   from rlinf.robotics import (
+       Arm,
+       ArmRuntime,
+       RemoteControllablePart,
+       Robot,
+       RobotRuntime,
+   )
    from rlinf.scheduler import NodePlacementStrategy
 
-   arm_runtime = PartRuntime.create_group(
-       ExampleArm,
-       {"endpoint": "tcp://robot-arm:5000"},
+   group = ArmRuntime.create_group(
+       ExampleArmDriver,
+       {"endpoint": "tcp://left-arm:5000"},
    ).launch(
        cluster=cluster,
        placement_strategy=NodePlacementStrategy(node_ranks=[0]),
        name="ExampleArmRuntime",
    )
-   arm_runtime.initialize().wait()
+   remote_driver = RemoteControllablePart(group)
+   runtime = RobotRuntime(Robot.single_arm(Arm(remote_driver)))
+   runtime.connect()
+
+``RobotRuntime`` 会并行执行彼此独立的机械臂重置、观测和动作。内置硬件通过 ``launch_franka_runtime``、``launch_dual_franka_runtime``、``launch_gim_arm_runtime``、``launch_turtle2_runtime`` 和 ``build_dosw1_runtime`` 使用同一边界。
+
+分离任务与兼容逻辑
+------------------
+
+在 ``RobotTask`` 或真机环境中实现重置、奖励、成功判定、截断和 Gymnasium 空间。使用 ``RobotTaskEnv`` 组合任务与 ``RobotRuntime``。当现有策略需要扁平动作向量以及 ``state``/``frames`` 观测时，使用 ``LegacyObservationAdapter`` 和 ``VectorActionAdapter``。
+
+.. warning::
+
+   引入规范接口时，不要修改现有 Gym ID、动作维度、观测键、相机名称或数据集字段。请添加适配器和回归测试。
 
 测试集成
 --------
 
-使用模拟 SDK 或回环传输，在没有硬件的情况下测试部件。覆盖连接清理、观测键、动作分发、配置解析，以及每种支持布局的发现结果。
+测试无厂商 SDK 的纯驱动构造、组合路径、远程运行时生命周期、物理规格转换、发现注册，以及准确的旧策略数据结构。
 
 .. code-block:: bash
 
-   pytest tests/unit_tests/test_robotics.py
+   pytest tests/unit_tests/test_robotics.py \
+     tests/unit_tests/test_robotics_boundaries.py \
+     tests/unit_tests/test_robot_task_env.py \
+     tests/unit_tests/test_realworld_robotics_compatibility.py
 
-该命令会在不运行完整训练的情况下执行内置的组合与注册契约测试。请为你的部件添加同等的单元测试；如果验证需要物理设备或厂商 SDK，请再添加一个受硬件条件限制的端到端测试。
+该命令无需物理硬件即可验证调度器边界、嵌套单臂与双臂组合、任务与运行时分离，以及所有内置真机环境的兼容性。

@@ -16,63 +16,53 @@ import time
 import tracemalloc
 
 import numpy as np
-import rospy
-from cv_bridge import CvBridge
 
-# import rospkg
-# rospack = rospkg.RosPack()
-# package_path = rospack.get_path('turtle2_controller')
-# sys.path.append(os.path.join(rospack_path, 'turtle2_controller'))
-from turtle2_basic.turtle2_controller.Turtle2Controller import Turtle2Controller
-
-from rlinf.scheduler import Cluster, NodePlacementStrategy, Worker
+from rlinf.robotics.part import ControllablePart
+from rlinf.robotics.states import Turtle2RobotState
 from rlinf.utils.logging import get_logger
 
-from .turtle2_robot_state import Turtle2RobotState
 
-
-class Turtle2SmoothController(Worker):
-    """Controller for turtle2 robot, XSquare"""
-
-    @staticmethod
-    def launch_controller(
-        freq: int = 50,
-        env_idx: int = 0,
-        node_rank: int = 0,
-        worker_rank: int = 0,
-    ):
-        """Launch a Turtle2SmoothController on the specified worker's node.
-
-        Args:
-            freq (int): The interpolate frequency for the controller.
-            node_rank (int): The rank of the node to launch the controller on.
-            worker_rank (int): The rank of the env worker to the controller is associated with.
-
-        Returns:
-            Turtle2SmoothController: The launched Turtle2SmoothController instance.
-        """
-        cluster = Cluster()
-        placement = NodePlacementStrategy(node_ranks=[node_rank])
-        return Turtle2SmoothController.create_group(freq).launch(
-            cluster=cluster,
-            placement_strategy=placement,
-            name=f"Turtle2SmoothController-{worker_rank}-{env_idx}",
-        )
+class Turtle2Driver(ControllablePart):
+    """Pure ROS-backed Turtle2 device driver."""
 
     def __init__(self, freq=50):
-        super().__init__()
         self._logger = get_logger()
-        # FIXME: should move to roscontroller
+        self.freq = freq
+        self._state = Turtle2RobotState()
+        self._connected = False
+
+    @property
+    def is_connected(self) -> bool:
+        """Whether the ROS-backed controller is active."""
+        return self._connected
+
+    @property
+    def observation_features(self) -> dict:
+        """Describe the complete Turtle2 state."""
+        return {name: {} for name in self._state.to_dict()}
+
+    @property
+    def action_features(self) -> dict:
+        """Describe coupled left and right Cartesian targets."""
+        return {"left_tcp_pose": {}, "right_tcp_pose": {}}
+
+    def connect(self) -> None:
+        """Connect the ROS controller and start state/control timers."""
+        if self._connected:
+            return
+        import rospy
+        from cv_bridge import CvBridge
+        from turtle2_basic.turtle2_controller.Turtle2Controller import (
+            Turtle2Controller,
+        )
+
         rospy.init_node("Turtle2_Smooth_Controller_Node")
         self.bridge = CvBridge()
-        # FIXME: should rewrite with roscontroller
         self.controller = Turtle2Controller()
 
         self.controller.chassis_set_current_pose_as_virtual_zero()
 
-        self._state = Turtle2RobotState()
-
-        control_period = rospy.Duration(1 / freq)
+        control_period = rospy.Duration(1 / self.freq)
         state_period = rospy.Duration(1 / 200.0)
 
         self.left_arm_target = [0, 0, 0, 0, 0, 0, 0]
@@ -87,14 +77,36 @@ class Turtle2SmoothController(Worker):
         self.tol = [0.002, 0.005, 5]  # m, rad, cm
         self.xyz_speed = 0.5  # m/s
         self.rpy_speed = 1.5  # rad/s
-        self.freq = freq
-
-        # FIXME: should move to roscontroller
         rospy.Timer(control_period, self.smooth_action_callback)
         rospy.Timer(state_period, self.state_callback)
 
         tracemalloc.start(15)
         self.snapshot_base = tracemalloc.take_snapshot()
+        self._connected = True
+
+    def reset(self) -> None:
+        """Reset both arm targets to zero."""
+        self.reset_arms()
+
+    def get_observation(self) -> dict:
+        """Return the canonical Turtle2 state dictionary."""
+        return self.get_state().to_dict()
+
+    def send_action(self, action: dict) -> dict:
+        """Apply a coupled pair of Cartesian arm targets."""
+        if set(action) != {"left_tcp_pose", "right_tcp_pose"}:
+            raise KeyError(
+                "Turtle2 action requires 'left_tcp_pose' and 'right_tcp_pose'."
+            )
+        self.move_arm(
+            list(action["left_tcp_pose"]),
+            list(action["right_tcp_pose"]),
+        )
+        return action
+
+    def disconnect(self) -> None:
+        """Detach the driver from the shared ROS process."""
+        self._connected = False
 
     def state_callback(self, event):
         arms_data = self.controller.arms_data()
@@ -235,10 +247,34 @@ class Turtle2SmoothController(Worker):
         self.left_arm_target = left_arm_target
         self.right_arm_target = right_arm_target
 
+    def move_left_arm(self, target):
+        """Update the left arm target while preserving its gripper target."""
+        target = np.asarray(target).reshape(6)
+        self.left_arm_target = [*target.tolist(), self.left_arm_target[6]]
+
+    def move_right_arm(self, target):
+        """Update the right arm target while preserving its gripper target."""
+        target = np.asarray(target).reshape(6)
+        self.right_arm_target = [*target.tolist(), self.right_arm_target[6]]
+
+    def move_left_gripper(self, target):
+        """Update only the left gripper target."""
+        self.left_arm_target = [
+            *self.left_arm_target[:6],
+            float(np.asarray(target).reshape(1)[0]),
+        ]
+
+    def move_right_gripper(self, target):
+        """Update only the right gripper target."""
+        self.right_arm_target = [
+            *self.right_arm_target[:6],
+            float(np.asarray(target).reshape(1)[0]),
+        ]
+
     def reset_arms(self):
         self.left_arm_target = [0, 0, 0, 0, 0, 0, 0]
         self.right_arm_target = [0, 0, 0, 0, 0, 0, 0]
-        self.log_info("Reset target to zero.")
+        self._logger.info("Reset target to zero.")
         time.sleep(2.0)
 
     def check_cams(self, timeout=0.5):
@@ -262,3 +298,7 @@ class Turtle2SmoothController(Worker):
                 frames.append(frame3)
         assert len(frames) == len(ids), "get frames failed."
         return frames
+
+    def get_camera(self, camera_id):
+        """Return one camera frame by hardware camera ID."""
+        return self.get_cams([camera_id])[0]

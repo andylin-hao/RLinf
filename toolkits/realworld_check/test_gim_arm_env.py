@@ -72,7 +72,7 @@ def main():
     )
     args = parser.parse_args()
 
-    from rlinf.envs.realworld.gim_arm.gim_arm_controller import GimArmController
+    from rlinf.robotics.runtime.gim_arm import GimArmController
 
     passed = 0
     failed = 0

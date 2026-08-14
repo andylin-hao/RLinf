@@ -20,21 +20,25 @@ import copy
 import enum
 import time
 from dataclasses import dataclass, field
-from typing import Callable, Optional
+from typing import Callable, Optional, cast
 
 import cv2
 import gymnasium as gym
 import numpy as np
 
-from rlinf.envs.realworld.common.camera import BaseCamera, CameraInfo, create_camera
 from rlinf.envs.realworld.common.keyboard.keyboard_listener import KeyboardListener
 from rlinf.envs.realworld.common.video_player import VideoPlayer
-from rlinf.robotics import DOSW1RobotConfig, RobotInfo
+from rlinf.robotics import (
+    DOSW1RobotConfig,
+    RobotInfo,
+    RobotRuntime,
+    build_dosw1_runtime,
+)
+from rlinf.robotics.cameras import BaseCamera, CameraInfo, create_camera
+from rlinf.robotics.drivers import DOSW1ArmDriver, DOSW1SDKAdapter
+from rlinf.robotics.states import DOSW1RobotState
 from rlinf.scheduler import WorkerInfo
 from rlinf.utils.logging import get_logger
-
-from .dosw1_robot_state import DOSW1RobotState
-from .dosw1_sdk import DOSW1SDKAdapter
 
 
 class ControlMode(enum.IntEnum):
@@ -137,10 +141,15 @@ class DOSW1Env(gym.Env):
             self.env_worker_rank = worker_info.rank
 
         self.sdk: DOSW1SDKAdapter | None = None
+        self.robot_runtime: RobotRuntime | None = None
         if not config.is_dummy:
             self._apply_hardware_info(hardware_info)
-            self.sdk = DOSW1SDKAdapter(config)
-            self.sdk.connect()
+            self.robot_runtime = build_dosw1_runtime(config)
+            left_driver = cast(
+                DOSW1ArmDriver,
+                self.robot_runtime.robot.arms["left"].driver,
+            )
+            self.sdk = left_driver.sdk
             self._go_to_home()
             time.sleep(1.0)
 
@@ -272,7 +281,10 @@ class DOSW1Env(gym.Env):
                     pass
             self._keyboard = None
         if self.sdk is not None:
-            self.sdk.disconnect()
+            if self.robot_runtime is not None:
+                self.robot_runtime.disconnect()
+            else:
+                self.sdk.disconnect()
 
     def set_keyboard_event_callback(
         self, callback: Callable[[bool], object] | None
@@ -637,6 +649,8 @@ class DOSW1Env(gym.Env):
             camera = create_camera(CameraInfo(name=name, serial_number=serial))
             camera.open()
             self._cameras.append(camera)
+            if self.robot_runtime is not None:
+                self.robot_runtime.attach_camera(name, camera)
 
     def _close_cameras(self) -> None:
         for camera in self._cameras:

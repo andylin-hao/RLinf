@@ -17,21 +17,30 @@ import queue
 import time
 from dataclasses import dataclass, field
 from itertools import cycle
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 import cv2
 import gymnasium as gym
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
-from rlinf.envs.realworld.common.camera import BaseCamera, CameraInfo, create_camera
 from rlinf.envs.realworld.common.video_player import VideoPlayer
-from rlinf.robotics import FrankaConfig, RobotInfo
+from rlinf.robotics import (
+    FrankaConfig,
+    RemoteControllerArm,
+    RobotInfo,
+    RobotRuntime,
+    launch_franka_runtime,
+)
+from rlinf.robotics.cameras import BaseCamera, CameraInfo, create_camera
+from rlinf.robotics.end_effectors.base import (
+    EndEffectorType,
+    normalize_end_effector_type,
+)
+from rlinf.robotics.states import FrankaRobotState
 from rlinf.scheduler import WorkerInfo
 from rlinf.utils.logging import get_logger
 
-from .end_effectors.base import EndEffectorType, normalize_end_effector_type
-from .franka_robot_state import FrankaRobotState
 from .utils import (
     clip_euler_to_target_window,
     construct_adjoint_matrix,
@@ -182,6 +191,7 @@ class FrankaEnv(gym.Env):
         self._success_hold_counter = 0  # Initialize the success hold counter
         self._last_hand_command: np.ndarray | None = None
         self._reward_worker = None
+        self.robot_runtime: RobotRuntime | None = None
 
         if not self.config.is_dummy:
             self._setup_hardware()
@@ -221,8 +231,6 @@ class FrankaEnv(gym.Env):
         return self._task_description
 
     def _setup_hardware(self):
-        from .franka_controller import FrankaController
-
         assert self.env_idx >= 0, "env_idx must be set for FrankaEnv."
 
         # Setup Franka IP and camera serials
@@ -261,7 +269,7 @@ class FrankaEnv(gym.Env):
         )
         if controller_node_rank is None:
             controller_node_rank = self.node_rank
-        self._controller = FrankaController.launch_controller(
+        self.robot_runtime = launch_franka_runtime(
             robot_ip=self.config.robot_ip,
             env_idx=self.env_idx,
             node_rank=controller_node_rank,
@@ -270,6 +278,11 @@ class FrankaEnv(gym.Env):
             end_effector_config=self.config.end_effector_config,
             gripper_connection=self.config.gripper_connection,
         )
+        driver = cast(
+            RemoteControllerArm,
+            self.robot_runtime.robot.arms["arm"].driver,
+        )
+        self._controller = driver.controller
 
     def _setup_reward_worker(self):
         if not self.config.use_reward_model:
@@ -698,6 +711,8 @@ class FrankaEnv(gym.Env):
             if not self.config.is_dummy:
                 camera.open()
             self._cameras.append(camera)
+            if self.robot_runtime is not None:
+                self.robot_runtime.attach_camera(info.name, camera, arm="arm")
 
     def close(self):
         """Release all hardware resources including cameras and video player."""
@@ -705,6 +720,8 @@ class FrankaEnv(gym.Env):
             self.camera_player.stop()
         if not self.config.is_dummy and hasattr(self, "_cameras"):
             self._close_cameras()
+        if self.robot_runtime is not None:
+            self.robot_runtime.disconnect()
         super().close()
 
     def _close_cameras(self):

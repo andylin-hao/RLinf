@@ -20,48 +20,19 @@ import numpy as np
 import psutil
 from scipy.spatial.transform import Rotation as R
 
-from rlinf.scheduler import Cluster, NodePlacementStrategy, Worker
-from rlinf.utils.logging import get_logger
-
-from .end_effectors import (
+from rlinf.robotics.end_effectors import (
     EndEffector,
     EndEffectorType,
     create_end_effector,
     normalize_end_effector_type,
 )
-from .franka_robot_state import FrankaRobotState
+from rlinf.robotics.part import ControllablePart
+from rlinf.robotics.states import FrankaRobotState
+from rlinf.utils.logging import get_logger
 
 
-class FrankaController(Worker):
-    """Franka robot arm controller."""
-
-    @staticmethod
-    def launch_controller(
-        robot_ip: str,
-        env_idx: int = 0,
-        node_rank: int = 0,
-        worker_rank: int = 0,
-        ros_pkg: str = "serl_franka_controllers",
-        end_effector_type: str = "franka_gripper",
-        end_effector_config: Optional[dict] = None,
-        gripper_type: Optional[str] = None,
-        gripper_connection: Optional[str] = None,
-    ):
-        """Launch a FrankaController on the specified worker's node."""
-        cluster = Cluster()
-        placement = NodePlacementStrategy(node_ranks=[node_rank])
-        return FrankaController.create_group(
-            robot_ip,
-            ros_pkg,
-            end_effector_type,
-            end_effector_config or {},
-            gripper_type,
-            gripper_connection,
-        ).launch(
-            cluster=cluster,
-            placement_strategy=placement,
-            name=f"FrankaController-{worker_rank}-{env_idx}",
-        )
+class FrankaROSDriver(ControllablePart):
+    """Pure ROS-backed Franka driver with no scheduler dependency."""
 
     def __init__(
         self,
@@ -72,18 +43,10 @@ class FrankaController(Worker):
         gripper_type: Optional[str] = None,
         gripper_connection: Optional[str] = None,
     ):
-        super().__init__()
         self._logger = get_logger()
-        # A remote arm's IP may not reach the env worker; resolve it from this
-        # node's hardware infos instead.
-        if not robot_ip:
-            robot_ip = self._resolve_robot_ip_from_node()
         if not robot_ip:
             raise ValueError(
-                "Franka 'robot_ip' is not set and could not be resolved from "
-                f"node rank {self._cluster_node_rank}'s hardware infos. Provide "
-                "it in the env config, the Franka hardware config, or set the "
-                "'ROBOT_IP' environment variable on the controller's node."
+                "Franka 'robot_ip' must be resolved before constructing the driver."
             )
         self._robot_ip = robot_ip
         self._ros_pkg = ros_pkg
@@ -91,13 +54,41 @@ class FrankaController(Worker):
             end_effector_type,
             gripper_type,
         )
+        self._end_effector_config = end_effector_config or {}
+        self._gripper_connection = gripper_connection
+        self._state = FrankaRobotState()
+        self._end_effector: EndEffector | None = None
+        self._gripper = None
+        self._impedance: psutil.Process | None = None
+        self._joint: psutil.Process | None = None
+        self._connected = False
 
-        # Lazy-import ROS packages so the module can be imported on non-ROS nodes.
+    @property
+    def is_connected(self) -> bool:
+        """Whether ROS channels and the impedance controller are active."""
+        return self._connected
+
+    @property
+    def observation_features(self) -> dict:
+        """Describe canonical Franka state fields."""
+        return {name: {} for name in self._state.to_dict()}
+
+    @property
+    def action_features(self) -> dict:
+        """Describe the Cartesian pose command."""
+        return {"tcp_pose": {}}
+
+    def connect(self) -> None:
+        """Connect ROS channels, controller processes, and the end effector."""
+        if self._connected:
+            return
         import geometry_msgs.msg as geom_msg
         import rospy
         from dynamic_reconfigure.client import Client as ReconfClient
         from franka_msgs.msg import ErrorRecoveryActionGoal, FrankaState
         from serl_franka_controllers.msg import ZeroJacobian
+
+        from rlinf.robotics.ros import ROSController
 
         self._geom_msg = geom_msg
         self._rospy = rospy
@@ -105,45 +96,42 @@ class FrankaController(Worker):
         self._FrankaState = FrankaState
         self._ZeroJacobian = ZeroJacobian
         self._ReconfClient = ReconfClient
-
-        self._state = FrankaRobotState()
-        self._end_effector: EndEffector | None = None
-        self._gripper = None
-
-        from rlinf.envs.realworld.common.ros import ROSController
-
         self._ros = ROSController()
         self._init_ros_channels()
-        self._init_end_effector(end_effector_config or {}, gripper_connection)
-
-        self._impedance: psutil.Process | None = None
-        self._joint: psutil.Process | None = None
-
+        self._init_end_effector(
+            self._end_effector_config,
+            self._gripper_connection,
+        )
         self.start_impedance()
         self._reconf_client = self._ReconfClient(
             "cartesian_impedance_controllerdynamic_reconfigure_compliance_param_node"
         )
+        self._connected = True
 
-    def _resolve_robot_ip_from_node(self) -> Optional[str]:
-        """Return the first ``robot_ip`` in this node's hardware infos, if any.
+    def reset(self) -> None:
+        """Leave task-specific reset positions to the caller."""
 
-        The controller's node enumerates the arm and resolves ``robot_ip`` from
-        its local ``ROBOT_IP``, so the value is available here even when the env
-        worker on another node could not detect it.
-        """
-        try:
-            node_info = Cluster().get_node_info(self._cluster_node_rank)
-        except Exception as exc:  # pragma: no cover - defensive
-            self._logger.warning(
-                "Could not access node info to resolve robot_ip: %s", exc
-            )
-            return None
-        for resource in node_info.hardware_resources:
-            for info in resource.infos:
-                robot_ip = getattr(getattr(info, "config", None), "robot_ip", None)
-                if robot_ip:
-                    return robot_ip
-        return None
+    def get_observation(self) -> dict:
+        """Return the canonical arm state dictionary."""
+        return self.get_state().to_dict()
+
+    def send_action(self, action: dict) -> dict:
+        """Apply one Cartesian pose target."""
+        if set(action) != {"tcp_pose"}:
+            raise KeyError("Franka ROS action must contain only 'tcp_pose'.")
+        self.move_arm(action["tcp_pose"])
+        return action
+
+    def disconnect(self) -> None:
+        """Stop impedance control and release end-effector resources."""
+        if not self._connected:
+            return
+        self.stop_impedance()
+        if self._end_effector is not None:
+            self._end_effector.shutdown()
+        if self._gripper is not None:
+            self._gripper.cleanup()
+        self._connected = False
 
     def _init_end_effector(
         self,
@@ -151,7 +139,7 @@ class FrankaController(Worker):
         gripper_connection: Optional[str],
     ) -> None:
         if self._end_effector_type.is_gripper:
-            from rlinf.envs.realworld.common.gripper import create_gripper
+            from rlinf.robotics.grippers import create_gripper
 
             self._gripper = create_gripper(
                 gripper_type=self._end_effector_type.gripper_backend,
@@ -232,7 +220,7 @@ class FrankaController(Worker):
 
     def reconfigure_compliance_params(self, params: dict[str, float]):
         self._reconf_client.update_configuration(params)
-        self.log_debug(f"Reconfigure compliance parameters: {params}")
+        self._logger.debug(f"Reconfigure compliance parameters: {params}")
 
     def is_robot_up(self) -> bool:
         """Check whether the arm and active end-effector are ready."""
@@ -272,14 +260,14 @@ class FrankaController(Worker):
         )
 
         self._wait_robot()
-        self.log_debug(f"Start Impedance controller: {self._impedance.status()}")
+        self._logger.debug(f"Start Impedance controller: {self._impedance.status()}")
 
     def stop_impedance(self):
         if self._impedance:
             self._impedance.terminate()
             self._impedance = None
             self._wait_robot()
-        self.log_debug("Stop Impedance controller")
+        self._logger.debug("Stop Impedance controller")
 
     def clear_errors(self):
         self._ros.put_channel(self._arm_reset_channel, self._ErrorRecoveryActionGoal())
@@ -338,7 +326,7 @@ class FrankaController(Worker):
         )
 
         self._ros.put_channel(self._arm_equilibrium_channel, pose_msg)
-        self.log_debug(f"Move arm to position: {position}")
+        self._logger.debug(f"Move arm to position: {position}")
 
     def command_end_effector(self, action: np.ndarray) -> bool:
         """Send an action to the active end-effector."""
@@ -369,13 +357,13 @@ class FrankaController(Worker):
         if self._end_effector_type.is_gripper:
             self._gripper.open()
             self._state.gripper_open = True
-        self.log_debug("Open gripper")
+        self._logger.debug("Open gripper")
 
     def close_gripper(self):
         if self._end_effector_type.is_gripper:
             self._gripper.close()
             self._state.gripper_open = False
-        self.log_debug("Close gripper")
+        self._logger.debug("Close gripper")
 
     def move_gripper(self, position: int, speed: float = 0.3):
         assert 0 <= position <= 255, (
@@ -383,7 +371,7 @@ class FrankaController(Worker):
         )
         if self._end_effector_type.is_gripper:
             self._gripper.move(position, speed)
-        self.log_debug(f"Move gripper to position: {position}")
+        self._logger.debug(f"Move gripper to position: {position}")
 
     def _wait_robot(self, sleep_time: int = 1):
         time.sleep(sleep_time)

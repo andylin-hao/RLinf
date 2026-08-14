@@ -21,6 +21,7 @@ from typing import Optional
 
 import numpy as np
 
+from rlinf.robotics.part import Camera
 from rlinf.utils.logging import get_logger
 
 _logger = get_logger()
@@ -39,7 +40,7 @@ class CameraInfo:
     crop_region: Optional[tuple[float, float, float, float]] = None
 
 
-class BaseCamera(ABC):
+class BaseCamera(Camera, ABC):
     """Abstract base class for threaded camera capture.
 
     Subclasses must implement ``_read_frame`` (hardware-specific frame
@@ -60,6 +61,40 @@ class BaseCamera(ABC):
     def name(self) -> str:
         return self._camera_info.name
 
+    @property
+    def camera_info(self) -> CameraInfo:
+        """Return the immutable camera connection descriptor."""
+        return self._camera_info
+
+    @property
+    def is_connected(self) -> bool:
+        """Whether frame capture is active."""
+        return self._frame_capturing_start
+
+    @property
+    def observation_features(self) -> dict:
+        """Describe the raw BGR frame returned by this camera."""
+        width, height = self._camera_info.resolution
+        channels = 4 if self._camera_info.enable_depth else 3
+        return {
+            "frame": {
+                "shape": (height, width, channels),
+                "dtype": "uint16" if self._camera_info.enable_depth else "uint8",
+            }
+        }
+
+    def connect(self) -> None:
+        """Connect the camera and start frame capture."""
+        self.open()
+
+    def disconnect(self) -> None:
+        """Stop frame capture and disconnect the camera."""
+        self.close()
+
+    def get_observation(self) -> dict[str, np.ndarray]:
+        """Return the latest raw frame under the canonical camera key."""
+        return {"frame": self.get_frame()}
+
     def open(self):
         """Start the background frame-capturing thread."""
         self._frame_capturing_start = True
@@ -72,7 +107,7 @@ class BaseCamera(ABC):
         if self._frame_capturing_thread.is_alive():
             self._frame_capturing_thread.join(timeout=2.0)
 
-    def get_frame(self, timeout: int = 5) -> np.ndarray:
+    def get_frame(self, timeout: float = 5) -> np.ndarray:
         """Return the most recent frame (blocks up to *timeout* seconds).
 
         Args:

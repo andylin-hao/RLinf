@@ -17,16 +17,27 @@
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING
+from typing import Protocol
 
 import numpy as np
 
+from rlinf.robotics.part import ControllablePart, EndEffector
+from rlinf.robotics.states import DOSW1RobotState
 from rlinf.utils.logging import get_logger
 
-from .dosw1_robot_state import DOSW1RobotState
 
-if TYPE_CHECKING:
-    from .dosw1_env import DOSW1Config
+class DOSW1ConnectionConfig(Protocol):
+    """Connection fields required by :class:`DOSW1SDKAdapter`."""
+
+    robot_url: str
+    left_arm_port: int
+    right_arm_port: int
+    left_lead_port: int
+    right_lead_port: int
+    enable_human_in_loop: bool
+    is_dummy: bool
+    gripper_width_max: float
+
 
 try:
     from airbot_sdk.Airbot import AirbotRobot as _AirbotRobot
@@ -42,12 +53,17 @@ _STATE_READY_TIMEOUT_S = 5.0
 class DOSW1SDKAdapter:
     """Thin wrapper around ``airbot_sdk.AirbotRobot`` for RLinf."""
 
-    def __init__(self, config: "DOSW1Config") -> None:
+    def __init__(self, config: DOSW1ConnectionConfig) -> None:
         self._logger = get_logger()
         self._config = config
         self._leader_arm_enabled = bool(config.enable_human_in_loop)
         self._connected = False
         self._robot: object | None = None
+
+    @property
+    def is_connected(self) -> bool:
+        """Whether the underlying dual-arm SDK is connected."""
+        return self._connected
 
     def connect(self) -> None:
         """Connect to follower and optional leader arms."""
@@ -294,3 +310,121 @@ class DOSW1SDKAdapter:
         if use_lead_arms:
             _disconnect_arm(getattr(robot, "left_lead_arm", None))
             _disconnect_arm(getattr(robot, "right_lead_arm", None))
+
+
+class DOSW1ArmDriver(ControllablePart):
+    """Present one side of a shared DOSW1 SDK as an arm driver."""
+
+    def __init__(
+        self,
+        sdk: DOSW1SDKAdapter,
+        side: str,
+        *,
+        owns_connection: bool = False,
+    ) -> None:
+        if side not in {"left", "right"}:
+            raise ValueError("DOSW1 arm side must be 'left' or 'right'.")
+        self.sdk = sdk
+        self.side = side
+        self.owns_connection = owns_connection
+
+    @property
+    def is_connected(self) -> bool:
+        """Whether the shared SDK is connected."""
+        return self.sdk.is_connected
+
+    @property
+    def observation_features(self) -> dict:
+        """Describe the DOSW1 joint and end-effector pose state."""
+        return {
+            "joint_position": {"shape": (6,), "dtype": "float64"},
+            "tcp_pose": {"shape": (6,), "dtype": "float64"},
+        }
+
+    @property
+    def action_features(self) -> dict:
+        """Describe the absolute joint-position command."""
+        return {"joint_position": {"shape": (6,), "dtype": "float64"}}
+
+    def connect(self) -> None:
+        """Connect the shared SDK once for both arms."""
+        if not self.sdk.is_connected:
+            self.sdk.connect()
+
+    def reset(self) -> None:
+        """Leave reset targets to the task configuration."""
+
+    def get_observation(self) -> dict[str, np.ndarray]:
+        """Read this arm's joint state and end-effector pose."""
+        get_joint = getattr(self.sdk, f"get_{self.side}_joint")
+        get_pose = getattr(self.sdk, f"get_{self.side}_pose")
+        return {
+            "joint_position": get_joint()[:6].copy(),
+            "tcp_pose": get_pose().copy(),
+        }
+
+    def send_action(self, action: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+        """Apply an absolute joint target while retaining gripper width."""
+        if set(action) != {"joint_position"}:
+            raise KeyError("DOSW1 arm action must contain only 'joint_position'.")
+        target = np.asarray(action["joint_position"], dtype=np.float64).reshape(6)
+        current = getattr(self.sdk, f"get_{self.side}_joint")()
+        command = getattr(self.sdk, f"{self.side}_go_joint")
+        command(target.tolist(), float(current[6]))
+        return {"joint_position": target}
+
+    def disconnect(self) -> None:
+        """Disconnect the shared SDK from its owning arm only."""
+        if self.owns_connection and self.sdk.is_connected:
+            self.sdk.disconnect()
+
+
+class DOSW1EndEffector(EndEffector):
+    """Present one DOSW1 gripper through the common end-effector API."""
+
+    def __init__(self, sdk: DOSW1SDKAdapter, side: str) -> None:
+        if side not in {"left", "right"}:
+            raise ValueError("DOSW1 gripper side must be 'left' or 'right'.")
+        self.sdk = sdk
+        self.side = side
+
+    @property
+    def is_connected(self) -> bool:
+        """Whether the shared SDK is connected."""
+        return self.sdk.is_connected
+
+    @property
+    def observation_features(self) -> dict:
+        """Describe the scalar gripper width."""
+        return {"state": {"shape": (1,), "dtype": "float64"}}
+
+    @property
+    def action_features(self) -> dict:
+        """Describe the scalar gripper target width."""
+        return {"target": {"shape": (1,), "dtype": "float64"}}
+
+    def connect(self) -> None:
+        """Connect the shared SDK when needed."""
+        if not self.sdk.is_connected:
+            self.sdk.connect()
+
+    def reset(self) -> None:
+        """Leave reset width to the task configuration."""
+
+    def get_observation(self) -> dict[str, np.ndarray]:
+        """Read this gripper's current width."""
+        current = getattr(self.sdk, f"get_{self.side}_joint")()
+        return {"state": np.asarray(current[6:7], dtype=np.float64)}
+
+    def send_action(self, action: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+        """Apply a gripper target while retaining joint positions."""
+        if set(action) != {"target"}:
+            raise KeyError("DOSW1 end-effector action must contain only 'target'.")
+        target = np.asarray(action["target"], dtype=np.float64).reshape(1)
+        current = getattr(self.sdk, f"get_{self.side}_joint")()
+        command = getattr(self.sdk, f"{self.side}_go_joint")
+        command(current[:6].tolist(), float(target[0]))
+        return {"target": target}
+
+    def disconnect(self) -> None:
+        """Leave connection shutdown to the owning arm driver."""

@@ -17,20 +17,25 @@ import queue
 import time
 from dataclasses import dataclass, field
 from itertools import cycle
-from typing import Optional
+from typing import Optional, cast
 
 import cv2
 import gymnasium as gym
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
-from rlinf.envs.realworld.common.camera import BaseCamera, CameraInfo, create_camera
 from rlinf.envs.realworld.common.video_player import VideoPlayer
-from rlinf.robotics import GimArmConfig, RobotInfo
+from rlinf.robotics import (
+    GimArmConfig,
+    RemoteControllerArm,
+    RobotInfo,
+    RobotRuntime,
+    launch_gim_arm_runtime,
+)
+from rlinf.robotics.cameras import BaseCamera, CameraInfo, create_camera
+from rlinf.robotics.states import GimArmRobotState
 from rlinf.scheduler import WorkerInfo
 from rlinf.utils.logging import get_logger
-
-from .gim_arm_robot_state import GimArmRobotState
 
 # GIM_ARM_XL joint limits (rad) from gim_arm_control SDK
 # (arm_config.hpp position_min_limits_ / position_max_limits_).
@@ -172,6 +177,7 @@ class GimArmEnv(gym.Env):
         self._joint_reset_cycle = cycle(range(self.config.joint_reset_cycle))
         next(self._joint_reset_cycle)
         self._success_hold_counter = 0
+        self.robot_runtime: RobotRuntime | None = None
 
         if not self.config.is_dummy:
             self._setup_hardware()
@@ -210,8 +216,6 @@ class GimArmEnv(gym.Env):
     # ── Setup ────────────────────────────────────────────────────────────────
 
     def _setup_hardware(self):
-        from .gim_arm_controller import GimArmController
-
         assert self.env_idx >= 0, "env_idx must be set for GimArmEnv."
         assert isinstance(self.hardware_info, RobotInfo) and isinstance(
             self.hardware_info.config, GimArmConfig
@@ -238,7 +242,7 @@ class GimArmEnv(gym.Env):
         if controller_node_rank is None:
             controller_node_rank = self.node_rank
 
-        self._controller = GimArmController.launch_controller(
+        self.robot_runtime = launch_gim_arm_runtime(
             can_interface=self.config.can_interface,
             arm_variant=self.config.arm_variant,
             enable_gripper=self.config.enable_gripper,
@@ -248,6 +252,11 @@ class GimArmEnv(gym.Env):
             node_rank=controller_node_rank,
             worker_rank=self.env_worker_rank,
         )
+        driver = cast(
+            RemoteControllerArm,
+            self.robot_runtime.robot.arms["arm"].driver,
+        )
+        self._controller = driver.controller
 
     def _init_action_obs_spaces(self):
         """Initialise action and observation spaces."""
@@ -282,7 +291,7 @@ class GimArmEnv(gym.Env):
                         f"wrist_{k + 1}": gym.spaces.Box(
                             0, 255, shape=(128, 128, 3), dtype=np.uint8
                         )
-                        for k in range(len(self.config.camera_serials))
+                        for k in range(len(self.config.camera_serials or []))
                     }
                 ),
             }
@@ -447,11 +456,23 @@ class GimArmEnv(gym.Env):
             if not self.config.is_dummy:
                 camera.open()
             self._cameras.append(camera)
+            if self.robot_runtime is not None:
+                self.robot_runtime.attach_camera(info.name, camera, arm="arm")
 
     def _close_cameras(self):
         for camera in self._cameras:
             camera.close()
         self._cameras = []
+
+    def close(self):
+        """Release cameras and detach the composed robot runtime."""
+        if hasattr(self, "_cameras"):
+            self._close_cameras()
+        if hasattr(self, "camera_player"):
+            self.camera_player.stop()
+        if self.robot_runtime is not None:
+            self.robot_runtime.disconnect()
+        super().close()
 
     def _crop_frame(
         self, frame: np.ndarray, reshape_size: tuple[int, int]

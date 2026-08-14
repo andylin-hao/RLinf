@@ -14,7 +14,7 @@
 
 import time
 
-from rlinf.envs.realworld.xsquare.turtle2_smooth_controller import (
+from rlinf.robotics.runtime.turtle2 import (
     Turtle2SmoothController,
 )
 

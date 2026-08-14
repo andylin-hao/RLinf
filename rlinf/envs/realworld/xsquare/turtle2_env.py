@@ -17,15 +17,21 @@ from __future__ import annotations
 import copy
 import time
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, cast
 
 import cv2
 import gymnasium as gym
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
-from rlinf.envs.realworld.xsquare.turtle2_robot_state import Turtle2RobotState
-from rlinf.robotics import RobotInfo, Turtle2Config
+from rlinf.robotics import (
+    RemoteControllerArm,
+    RobotInfo,
+    RobotRuntime,
+    Turtle2Config,
+    launch_turtle2_runtime,
+)
+from rlinf.robotics.states import Turtle2RobotState
 from rlinf.scheduler import WorkerInfo
 from rlinf.utils.logging import get_logger
 
@@ -119,6 +125,7 @@ class Turtle2Env(gym.Env):
         ), "please choose camera IDs from [0, 1, 2]."
         self._turtle2_state = Turtle2RobotState()
         self._num_steps = 0
+        self.robot_runtime: RobotRuntime | None = None
 
         if not self.config.is_dummy:
             self._setup_hardware()
@@ -138,17 +145,26 @@ class Turtle2Env(gym.Env):
         # Video player for displaying camera frames
 
     def _setup_hardware(self):
-        from .turtle2_smooth_controller import Turtle2SmoothController
-
         assert self.env_idx >= 0, "env_idx must be set for Turtle2Env."
 
-        # Launch Turtle controller
-        self._controller = Turtle2SmoothController.launch_controller(
-            freq=self.config.smooth_frequency,
+        self.robot_runtime = launch_turtle2_runtime(
+            frequency=self.config.smooth_frequency,
+            camera_ids=self.config.use_camera_ids,
             env_idx=self.env_idx,
             node_rank=self.node_rank,
             worker_rank=self.env_worker_rank,
         )
+        driver = cast(
+            RemoteControllerArm,
+            self.robot_runtime.robot.arms["left"].driver,
+        )
+        self._controller = driver.controller
+
+    def close(self) -> None:
+        """Detach all composed Turtle2 runtime proxies."""
+        if self.robot_runtime is not None:
+            self.robot_runtime.disconnect()
+        super().close()
 
     def _init_action_obs_spaces(self):
         """Initialize action and observation spaces, including arm safety box."""

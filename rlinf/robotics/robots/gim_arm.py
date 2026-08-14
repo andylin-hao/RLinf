@@ -20,13 +20,21 @@ from typing import Optional
 from rlinf.scheduler.hardware import HardwareConfig, HardwareInfo, HardwareResource
 
 from ..config import RobotAutoConfig
-from ..robot import Robot, RobotConfig, RobotInfo
+from ..discovery import RobotConfig, RobotDiscovery, RobotInfo, register_robot
+from ..layout import ArmSpec, CameraSpec, EndEffectorSpec, RobotSpec
+from ..robot import Robot
 
 
 class GimArmRobot(Robot):
+    """Composable GimArm robot."""
+
+    ROBOT_TYPE = "GimArm"
+
+
+class GimArmDiscovery(RobotDiscovery):
     """Hardware policy for GimArm robots (CAN bus, 6-DOF)."""
 
-    HW_TYPE = "GimArm"
+    HW_TYPE = GimArmRobot.ROBOT_TYPE
 
     @classmethod
     def enumerate(
@@ -131,5 +139,37 @@ class GimArmConfig(RobotConfig):
         if self.camera_serials:
             self.camera_serials = list(self.camera_serials)
 
+    def to_spec(self) -> RobotSpec:
+        """Translate the flat GimArm config into a single-arm layout."""
+        cameras = tuple(
+            CameraSpec(
+                name=f"camera_{index}",
+                camera_type=self.camera_type,
+                serial_number=serial,
+                node_rank=self.node_rank,
+            )
+            for index, serial in enumerate(self.camera_serials or [])
+        )
+        end_effector = None
+        if self.enable_gripper:
+            end_effector = EndEffectorSpec(kind=self.gripper_type)
+        arm = ArmSpec(
+            name="arm",
+            driver=self.arm_variant,
+            node_rank=(
+                self.controller_node_rank
+                if self.controller_node_rank is not None
+                else self.node_rank
+            ),
+            connection={"can_interface": self.can_interface},
+            end_effector=end_effector,
+            cameras=cameras,
+        )
+        return RobotSpec(
+            robot_type=GimArmRobot.ROBOT_TYPE,
+            node_rank=self.node_rank,
+            arms=(arm,),
+        )
 
-Robot.register_robot(GimArmConfig)(GimArmRobot)
+
+register_robot(GimArmConfig, GimArmRobot)(GimArmDiscovery)

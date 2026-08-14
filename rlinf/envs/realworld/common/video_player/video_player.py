@@ -34,6 +34,15 @@ class VideoPlayer:
         if self.is_running:
             self.queue.put(frame)
 
+    def stop(self):
+        """Stop the display thread if it was started."""
+        thread = getattr(self, "_run_thread", None)
+        if thread is None:
+            return
+        self.queue.put(None)
+        thread.join(timeout=2.0)
+        self.is_running = False
+
     def _play(self):
         if os.environ.get("DISPLAY") is None:
             warnings.warn(

@@ -18,13 +18,21 @@ from typing import Optional
 from rlinf.scheduler.hardware import HardwareConfig, HardwareInfo, HardwareResource
 
 from ..config import RobotAutoConfig
-from ..robot import Robot, RobotConfig, RobotInfo
+from ..discovery import RobotConfig, RobotDiscovery, RobotInfo, register_robot
+from ..layout import ArmSpec, PartSpec, RobotSpec
+from ..robot import Robot
 
 
 class Turtle2Robot(Robot):
-    """Hardware policy for robotic systems."""
+    """Composable Turtle2 robot."""
 
-    HW_TYPE = "Turtle2"
+    ROBOT_TYPE = "Turtle2"
+
+
+class Turtle2Discovery(RobotDiscovery):
+    """Discover configured Turtle2 robots."""
+
+    HW_TYPE = Turtle2Robot.ROBOT_TYPE
 
     @classmethod
     def enumerate(
@@ -75,5 +83,46 @@ class Turtle2Config(RobotConfig):
             f"'node_rank' in Turtle2 config must be an integer. But got {type(self.node_rank)}."
         )
 
+    def to_spec(self) -> RobotSpec:
+        """Return the Turtle2 dual-arm physical layout."""
+        return RobotSpec(
+            robot_type=Turtle2Robot.ROBOT_TYPE,
+            node_rank=self.node_rank,
+            arms=(
+                ArmSpec(
+                    name="left",
+                    driver="turtle2",
+                    node_rank=self.node_rank,
+                    connection={"arm_id": 0},
+                ),
+                ArmSpec(
+                    name="right",
+                    driver="turtle2",
+                    node_rank=self.node_rank,
+                    connection={"arm_id": 1},
+                ),
+            ),
+            parts=(
+                PartSpec(
+                    name="base",
+                    kind="mobile_base",
+                    driver="turtle2",
+                    node_rank=self.node_rank,
+                ),
+                PartSpec(
+                    name="head",
+                    kind="head",
+                    driver="turtle2",
+                    node_rank=self.node_rank,
+                ),
+                PartSpec(
+                    name="lift",
+                    kind="lift",
+                    driver="turtle2",
+                    node_rank=self.node_rank,
+                ),
+            ),
+        )
 
-Robot.register_robot(Turtle2Config)(Turtle2Robot)
+
+register_robot(Turtle2Config, Turtle2Robot)(Turtle2Discovery)

@@ -198,7 +198,7 @@ A quick sanity check (run on the NUC):
 .. code-block:: bash
 
    python -c "
-   from rlinf.envs.realworld.common.gripper.robotiq_gripper import RobotiqGripper
+   from rlinf.robotics.grippers.robotiq_gripper import RobotiqGripper
    g = RobotiqGripper(port='/dev/ttyUSB0')
    print(f'Position: {g.position:.4f} m, Ready: {g.is_ready}')
    g.open()

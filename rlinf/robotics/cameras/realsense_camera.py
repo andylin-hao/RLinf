@@ -70,12 +70,13 @@ class RealSenseCamera(BaseCamera):
         frames = self._pipeline.wait_for_frames()
         aligned_frames = self._align.process(frames)
         color_frame = aligned_frames.get_color_frame()
+        depth_frame = None
         if self._enable_depth:
             depth_frame = aligned_frames.get_depth_frame()
 
         if color_frame.is_video_frame():
             frame = np.asarray(color_frame.get_data())
-            if self._enable_depth and depth_frame.is_depth_frame():
+            if depth_frame is not None and depth_frame.is_depth_frame():
                 depth = np.expand_dims(np.asarray(depth_frame.get_data()), axis=2)
                 return True, np.concatenate((frame, depth), axis=-1)
             else:

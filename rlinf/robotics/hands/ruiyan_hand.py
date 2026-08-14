@@ -23,7 +23,7 @@ from typing import Optional
 
 import numpy as np
 
-from rlinf.envs.realworld.franka.end_effectors.base import EndEffector
+from rlinf.robotics.end_effectors.base import EndEffector
 from rlinf.utils.logging import get_logger
 
 

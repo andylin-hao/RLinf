@@ -25,8 +25,9 @@ from dataclasses import dataclass, field
 import gymnasium as gym
 import numpy as np
 
+from rlinf.robotics.runtime.franky import JOINT_LIMITS_LOWER, JOINT_LIMITS_UPPER
+
 from ..dual_franka_env import DualFrankaEnv, DualFrankaRobotConfig
-from ..franky_controller import JOINT_LIMITS_LOWER, JOINT_LIMITS_UPPER
 
 ACTION_DIM_PER_ARM = 8  # 7 joints + 1 gripper trigger
 

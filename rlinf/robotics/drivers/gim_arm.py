@@ -17,10 +17,9 @@ import time
 
 import numpy as np
 
-from rlinf.scheduler import Cluster, NodePlacementStrategy, Worker
+from rlinf.robotics.part import ControllablePart
+from rlinf.robotics.states import GimArmRobotState
 from rlinf.utils.logging import get_logger
-
-from .gim_arm_robot_state import GimArmRobotState
 
 # End-effector frame name in gim_arm URDF.
 _EEF_FRAME = "arm6_tool0"
@@ -37,11 +36,10 @@ def _smoothstep(t: float) -> float:
     return 10 * t**3 - 15 * t**4 + 6 * t**5
 
 
-class GimArmController(Worker):
+class GimArmDriver(ControllablePart):
     """GimArm robot arm controller.
 
-    Wraps the ``gim_arm_control`` SDK (CAN bus) as a distributed
-    :class:`Worker` so it can be placed on any node in the cluster.
+    Wraps the ``gim_arm_control`` SDK (CAN bus) independently of scheduling.
 
     Runs in **MOMENTUM_OBSERVER** mode by default.  A background feedforward
     control thread at 100 Hz computes Butterworth-filtered velocity and
@@ -51,35 +49,9 @@ class GimArmController(Worker):
     compensation).
 
     All ``gim_arm_control`` and ``pinocchio`` imports are deferred to
-    :meth:`__init__` so this module can be imported on GPU-only nodes that
+    :meth:`connect` so this module can be imported on GPU-only nodes that
     do not have the robot SDK installed.
     """
-
-    @staticmethod
-    def launch_controller(
-        can_interface: str,
-        arm_variant: str,
-        enable_gripper: bool,
-        gripper_type: str,
-        control_mode: str = "momentum_observer",
-        env_idx: int = 0,
-        node_rank: int = 0,
-        worker_rank: int = 0,
-    ):
-        """Launch a :class:`GimArmController` on the specified node.
-
-        Returns:
-            GimArmController: The launched remote controller instance.
-        """
-        cluster = Cluster()
-        placement = NodePlacementStrategy(node_ranks=[node_rank])
-        return GimArmController.create_group(
-            can_interface, arm_variant, enable_gripper, gripper_type, control_mode
-        ).launch(
-            cluster=cluster,
-            placement_strategy=placement,
-            name=f"GimArmController-{worker_rank}-{env_idx}",
-        )
 
     def __init__(
         self,
@@ -89,10 +61,46 @@ class GimArmController(Worker):
         gripper_type: str,
         control_mode: str = "momentum_observer",
     ):
-        super().__init__()
         self._logger = get_logger()
+        self._can_interface = can_interface
+        self._arm_variant = arm_variant
+        self._enable_gripper = enable_gripper
+        self._gripper_type = gripper_type
+        self._control_mode = control_mode
+        self._connected = False
 
-        # Lazy imports — keep this module importable on nodes without the SDK.
+    @property
+    def is_connected(self) -> bool:
+        """Whether the CAN controller and feedforward loop are active."""
+        return self._connected
+
+    @property
+    def observation_features(self) -> dict:
+        """Describe canonical GimArm state fields."""
+        return {
+            name: {}
+            for name in (
+                "tcp_pose",
+                "tcp_vel",
+                "arm_joint_position",
+                "arm_joint_velocity",
+                "tcp_force",
+                "tcp_torque",
+                "arm_jacobian",
+                "gripper_position",
+                "gripper_open",
+            )
+        }
+
+    @property
+    def action_features(self) -> dict:
+        """Describe the absolute joint target."""
+        return {"joint_position": {}}
+
+    def connect(self) -> None:
+        """Connect the CAN SDK and start the feedforward control loop."""
+        if self._connected:
+            return
         import pinocchio as pin
         from gim_arm_control import (
             ButterworthFilter,
@@ -109,24 +117,21 @@ class GimArmController(Worker):
 
         self._ControlMode = ControlMode
         self._ButterworthFilter = ButterworthFilter
-
         sdk_config = ControllerConfig(
-            can_interface=can_interface,
-            arm_variant=arm_variant,
-            enable_gripper=enable_gripper,
-            gripper_type=gripper_type,
+            can_interface=self._can_interface,
+            arm_variant=self._arm_variant,
+            enable_gripper=self._enable_gripper,
+            gripper_type=self._gripper_type,
         )
         self._sdk = _SDKController(sdk_config)
-
         if not self._sdk.start(return_to_zero=True):
             raise RuntimeError(
-                f"Failed to start GimArmController on CAN interface '{can_interface}'."
+                "Failed to start GimArmDriver on CAN interface "
+                f"{self._can_interface!r}."
             )
+        self._sdk.set_mode(ControlMode[self._control_mode.upper()])
 
-        self._sdk.set_mode(ControlMode[control_mode.upper()])
-
-        # Pinocchio model for FK and Jacobian computation.
-        urdf_path = get_urdf_path(arm_variant)
+        urdf_path = get_urdf_path(self._arm_variant)
         self._pin_model, self._pin_data = load_arm6_model(urdf_path)
         assert self._pin_model.nv >= 6, (
             f"Pinocchio model nv={self._pin_model.nv}, expected >= 6 for GimArm."
@@ -140,24 +145,41 @@ class GimArmController(Worker):
             )
         self._pin = pin
 
-        # ── Feedforward control thread state ─────────────────────────────
         reading = self._sdk.get_reading()
         initial_q = np.array(reading.position) if reading is not None else np.zeros(6)
-
         self._lock = threading.Lock()
         self._target_q = initial_q.copy()
         self._prev_q = initial_q.copy()
         self._prev_dq = np.zeros(6)
-
         dof = self._sdk.get_dof()
         self._velocity_filter = ButterworthFilter(_VEL_CUTOFF_HZ, _CONTROL_DT, dof)
         self._accel_filter = ButterworthFilter(_ACCEL_CUTOFF_HZ, _CONTROL_DT, dof)
-
         self._control_running = True
         self._control_thread = threading.Thread(
             target=self._feedforward_loop, daemon=True
         )
         self._control_thread.start()
+        self._connected = True
+
+    def reset(self) -> None:
+        """Leave task-specific reset positions to the caller."""
+
+    def get_observation(self) -> dict:
+        """Return the canonical arm state dictionary."""
+        return self.get_state().to_dict()
+
+    def send_action(self, action: dict) -> dict:
+        """Apply one absolute joint target."""
+        if set(action) != {"joint_position"}:
+            raise KeyError("GimArm action must contain only 'joint_position'.")
+        self.move_joints(action["joint_position"])
+        return action
+
+    def disconnect(self) -> None:
+        """Stop the control loop and disconnect the SDK."""
+        if self._connected:
+            self.stop()
+            self._connected = False
 
     # ── Feedforward control loop ─────────────────────────────────────────
 

@@ -13,9 +13,14 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
+from typing import Any
+
+import numpy as np
+
+from rlinf.robotics.part import EndEffector
 
 
-class BaseGripper(ABC):
+class BaseGripper(EndEffector, ABC):
     """Abstract base class for robot gripper control.
 
     All gripper implementations (Franka parallel gripper, Robotiq 2F, …)
@@ -72,3 +77,45 @@ class BaseGripper(ABC):
 
     def cleanup(self) -> None:
         """Release hardware resources (serial port, ROS channels, …)."""
+
+    @property
+    def is_connected(self) -> bool:
+        """Whether the backend is ready to accept commands."""
+        return self.is_ready()
+
+    @property
+    def observation_features(self) -> dict[str, Any]:
+        """Describe the scalar gripper position."""
+        return {"position": {"shape": (1,), "dtype": "float32"}}
+
+    @property
+    def action_features(self) -> dict[str, Any]:
+        """Describe the scalar absolute-position command."""
+        return {"target": {"shape": (1,), "dtype": "float32"}}
+
+    def connect(self) -> None:
+        """Validate the connection established by the backend constructor."""
+        if not self.is_ready():
+            raise RuntimeError(f"{type(self).__name__} is not ready.")
+
+    def disconnect(self) -> None:
+        """Release backend resources."""
+        self.cleanup()
+
+    def reset(self) -> None:
+        """Reset the gripper to its open state."""
+        self.open()
+
+    def get_observation(self) -> dict[str, np.ndarray]:
+        """Return the current gripper position."""
+        return {"position": np.asarray([self.position], dtype=np.float32)}
+
+    def send_action(self, action: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+        """Apply one absolute-position target."""
+        if set(action) != {"target"}:
+            raise KeyError("Gripper action must contain only 'target'.")
+        target = np.asarray(action["target"], dtype=np.float32).reshape(-1)
+        if target.size != 1:
+            raise ValueError(f"Gripper target must have one value, got {target.size}.")
+        self.move(float(target[0]))
+        return {"target": target}

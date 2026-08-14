@@ -19,6 +19,8 @@ from enum import Enum
 
 import numpy as np
 
+from rlinf.robotics.part import EndEffector as RoboticsEndEffector
+
 
 class EndEffectorType(str, Enum):
     """Supported end-effector types for the Franka robot arm."""
@@ -70,7 +72,7 @@ def normalize_end_effector_type(
     )
 
 
-class EndEffector(ABC):
+class EndEffector(RoboticsEndEffector, ABC):
     """Abstract interface for a robot end-effector.
 
     Every end-effector must expose its state and action dimensions so
@@ -140,6 +142,42 @@ class EndEffector(ABC):
             "positions": state.tolist(),
             "finger_names": self.finger_names,
         }
+
+    @property
+    def is_connected(self) -> bool:
+        """Whether the end effector was initialized through the part API."""
+        return getattr(self, "_rlinf_connected", False)
+
+    @property
+    def observation_features(self) -> dict:
+        """Describe the canonical end-effector state."""
+        return {"state": {"shape": (self.state_dim,), "dtype": "float32"}}
+
+    @property
+    def action_features(self) -> dict:
+        """Describe the canonical end-effector command."""
+        return {"target": {"shape": (self.action_dim,), "dtype": "float32"}}
+
+    def connect(self) -> None:
+        """Initialize the hardware through the robotics lifecycle API."""
+        self.initialize()
+        self._rlinf_connected = True
+
+    def disconnect(self) -> None:
+        """Shut down the hardware through the robotics lifecycle API."""
+        self.shutdown()
+        self._rlinf_connected = False
+
+    def get_observation(self) -> dict[str, np.ndarray]:
+        """Return the end-effector state under its canonical key."""
+        return {"state": self.get_state()}
+
+    def send_action(self, action: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+        """Apply the canonical target command."""
+        if set(action) != {"target"}:
+            raise KeyError("End-effector action must contain only 'target'.")
+        self.command(action["target"])
+        return {"target": action["target"]}
 
     # ------------------------------------------------------------------
     # Commands
