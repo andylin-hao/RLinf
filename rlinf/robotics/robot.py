@@ -218,21 +218,6 @@ class Robot:
             self._restore_declarations()
             raise
 
-    def attach_camera(
-        self,
-        name: str,
-        camera: Camera,
-        *,
-        arm: Optional[str] = None,
-    ) -> None:
-        """Attach an already constructed camera to the robot or to one arm."""
-        if not name:
-            raise ValueError("Camera name must be a non-empty string.")
-        cameras = self.cameras if arm is None else self.arms[arm].cameras
-        if name in cameras:
-            raise ValueError(f"Camera {name!r} is already attached.")
-        cameras[name] = camera
-
     def reset(self) -> None:
         """Reset all arms in parallel, then additional controllable parts."""
         run_parallel({name: arm.reset for name, arm in self.arms.items()})

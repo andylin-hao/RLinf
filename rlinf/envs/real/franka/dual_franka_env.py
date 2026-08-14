@@ -35,7 +35,12 @@ from rlinf.robotics import (
     RobotInfo,
 )
 from rlinf.robotics.parts.arms.franka import FrankaRobotState
-from rlinf.robotics.parts.cameras import BaseCamera, CameraInfo, create_camera
+from rlinf.robotics.parts.cameras import (
+    BaseCamera,
+    CameraConfig,
+    CameraInfo,
+    create_camera,
+)
 from rlinf.scheduler import WorkerInfo
 from rlinf.utils.logging import get_logger
 
@@ -224,27 +229,46 @@ class DualFrankaEnv(gym.Env):
     def _all_camera_serials(self) -> list[str]:
         return [serial for _, serial, _ in self._all_camera_specs()]
 
-    def _open_cameras(self):
-        self._cameras: list[BaseCamera] = []
-        camera_infos = [
+    def _camera_infos(self) -> list[CameraInfo]:
+        """Describe every camera on this robot, wrist and base alike."""
+        return [
             CameraInfo(name=name, serial_number=serial, camera_type=ct)
             for name, serial, ct in self._all_camera_specs()
         ]
-        for info in camera_infos:
-            camera = create_camera(info)
-            camera.open()
-            self._cameras.append(camera)
-            if self.robot is not None:
-                if info.name.startswith("left_wrist_"):
-                    self.robot.attach_camera(info.name, camera, arm="left")
-                elif info.name.startswith("right_wrist_"):
-                    self.robot.attach_camera(info.name, camera, arm="right")
-                else:
-                    self.robot.attach_camera(info.name, camera)
+
+    def _camera_declarations(self):
+        """Split the cameras by the component they belong to.
+
+        Wrist cameras go to their arm; anything else is a robot-level camera.
+        """
+        per_arm: dict[str, dict] = {"left": {}, "right": {}}
+        robot_level: dict = {}
+        for info in self._camera_infos():
+            config = CameraConfig(info=info)
+            if info.name.startswith("left_wrist_"):
+                per_arm["left"][info.name] = config
+            elif info.name.startswith("right_wrist_"):
+                per_arm["right"][info.name] = config
+            else:
+                robot_level[info.name] = config
+        return per_arm, robot_level
+
+    def _open_cameras(self):
+        """Take the cameras from the robot, which placed and opened them."""
+        if self.robot is not None:
+            self._cameras: list[BaseCamera] = [
+                camera
+                for arm in self.robot.arms.values()
+                for camera in arm.cameras.values()
+            ] + list(self.robot.cameras.values())
+            return
+        self._cameras = [create_camera(info) for info in self._camera_infos()]
 
     def _close_cameras(self):
-        for camera in self._cameras:
-            camera.close()
+        """Close only cameras this env owns; the robot closes its own."""
+        if self.robot is None:
+            for camera in self._cameras:
+                camera.close()
         self._cameras = []
 
     def _crop_frame(
@@ -348,6 +372,7 @@ class DualFrankaEnv(gym.Env):
         self._resolve_hw_overrides()
         left_node, right_node = self._resolve_controller_node_ranks()
 
+        arm_cameras, base_cameras = self._camera_declarations()
         self.robot = DualFrankaRobot.build(
             left_robot_ip=self.config.left_robot_ip,
             right_robot_ip=self.config.right_robot_ip,
@@ -361,6 +386,8 @@ class DualFrankaEnv(gym.Env):
             or self._DEFAULT_GRIPPER_TYPE,
             left_gripper_connection=self.config.left_gripper_connection,
             right_gripper_connection=self.config.right_gripper_connection,
+            arm_cameras=arm_cameras,
+            cameras=base_cameras,
         )
         self.robot.connect()
         self._left_ctrl = self.robot.handles["left"]

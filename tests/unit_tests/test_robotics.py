@@ -1005,3 +1005,68 @@ def test_an_arm_that_owns_its_end_effector_rejects_a_second_one():
             },
             default_node_rank=0,
         )
+
+
+def test_a_robot_owned_camera_is_placed_opened_and_closed():
+    """Cameras follow the same lifecycle as every other part.
+
+    They used to be built by the environment and bolted on after connect, which
+    meant a camera could never sit on the node it was plugged into.
+    """
+    events: list[str] = []
+
+    class Cam(Camera):
+        def __init__(self, *args, **kwargs):
+            self._connected = False
+
+        @property
+        def is_connected(self):
+            return self._connected
+
+        @property
+        def observation_features(self):
+            return {"frame": {}}
+
+        def connect(self):
+            self._connected = True
+            events.append("open")
+
+        def disconnect(self):
+            self._connected = False
+            events.append("close")
+
+        def get_observation(self):
+            return {"frame": None}
+
+        @classmethod
+        def spawn(cls, *args, node_rank=None, name=None, **kwargs):
+            events.append(f"placed@{node_rank}")
+            part = cls()
+
+            class Handle:
+                subparts: dict = {}
+
+                @property
+                def part(self):
+                    return part
+
+                def subpart(self, name):
+                    raise KeyError(name)
+
+                def disconnect(self):
+                    events.append("released")
+
+            return Handle()
+
+    robot = Robot(
+        arms={
+            "arm": Arm(
+                FakeControllablePart("arm", []),
+                cameras={"wrist": Cam.at(node_rank=5)},
+            )
+        }
+    )
+    robot.connect()
+    robot.disconnect()
+
+    assert events == ["placed@5", "open", "close", "released"]

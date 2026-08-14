@@ -32,7 +32,12 @@ from rlinf.robotics import (
     RobotInfo,
 )
 from rlinf.robotics.parts.arms.gim_arm import GimArmRobotState
-from rlinf.robotics.parts.cameras import BaseCamera, CameraInfo, create_camera
+from rlinf.robotics.parts.cameras import (
+    BaseCamera,
+    CameraConfig,
+    CameraInfo,
+    create_camera,
+)
 from rlinf.scheduler import WorkerInfo
 from rlinf.utils.logging import get_logger
 
@@ -250,6 +255,9 @@ class GimArmEnv(gym.Env):
             env_idx=self.env_idx,
             node_rank=controller_node_rank,
             worker_rank=self.env_worker_rank,
+            cameras={
+                info.name: CameraConfig(info=info) for info in self._camera_infos()
+            },
         )
         self.robot.connect()
         # Off-interface driver calls (is_robot_up, reset_joint, ...) go
@@ -439,27 +447,35 @@ class GimArmEnv(gym.Env):
 
     # ── Cameras ──────────────────────────────────────────────────────────────
 
-    def _open_cameras(self):
-        self._cameras: list[BaseCamera] = []
-        if not self.config.camera_serials:
-            return
+    def _camera_infos(self) -> list[CameraInfo]:
+        """Describe the wrist cameras this arm carries."""
         camera_type = self.config.camera_type or "realsense"
-        for i, serial in enumerate(self.config.camera_serials):
-            info = CameraInfo(
-                name=f"wrist_{i + 1}",
+        return [
+            CameraInfo(
+                name=f"wrist_{index + 1}",
                 serial_number=serial,
                 camera_type=camera_type,
             )
-            camera = create_camera(info)
-            if not self.config.is_dummy:
-                camera.open()
-            self._cameras.append(camera)
-            if self.robot is not None:
-                self.robot.attach_camera(info.name, camera, arm="arm")
+            for index, serial in enumerate(self.config.camera_serials or [])
+        ]
+
+    def _open_cameras(self):
+        """Take the cameras from the robot, which placed and opened them.
+
+        A dummy run has no robot, so it builds unopened cameras locally.
+        """
+        if self.robot is not None:
+            self._cameras: list[BaseCamera] = list(
+                self.robot.arms["arm"].cameras.values()
+            )
+            return
+        self._cameras = [create_camera(info) for info in self._camera_infos()]
 
     def _close_cameras(self):
-        for camera in self._cameras:
-            camera.close()
+        """Close only cameras this env owns; the robot closes its own."""
+        if self.robot is None:
+            for camera in self._cameras:
+                camera.close()
         self._cameras = []
 
     def close(self):

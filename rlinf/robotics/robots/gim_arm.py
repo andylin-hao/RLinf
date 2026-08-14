@@ -14,8 +14,9 @@
 
 import os
 import warnings
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
 from rlinf.scheduler.hardware import HardwareConfig, HardwareInfo, HardwareResource
 
@@ -23,6 +24,7 @@ from ..config import RobotAutoConfig
 from ..discovery import RobotConfig, RobotDiscovery, RobotInfo
 from ..parts.base import Arm
 from ..robot import Robot
+from ..specs import declare_all
 
 
 class GimArmRobot(Robot):
@@ -42,6 +44,7 @@ class GimArmRobot(Robot):
         env_idx: int,
         node_rank: int,
         worker_rank: int,
+        cameras: Optional[Mapping[str, Any]] = None,
     ) -> "GimArmRobot":
         """Compose one CAN-controlled GimArm. ``connect`` places it."""
         from ..parts.arms.gim_arm import GimArm
@@ -60,6 +63,11 @@ class GimArmRobot(Robot):
                 "arm": Arm(
                     arm.subpart("arm"),
                     arm.subpart("end_effector") if enable_gripper else None,
+                    cameras=declare_all(
+                        cameras or {},
+                        default_node_rank=node_rank,
+                        name=lambda key: f"GimArmCamera-{key}-{worker_rank}-{env_idx}",
+                    ),
                 )
             }
         )

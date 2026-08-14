@@ -15,13 +15,15 @@
 from __future__ import annotations
 
 import ipaddress
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
 from rlinf.scheduler.hardware import HardwareConfig, HardwareInfo, HardwareResource
 
 from ..config import RobotAutoConfig
 from ..discovery import RobotConfig, RobotDiscovery, RobotInfo
+from ..specs import declare_all
 from .franka import FrankaArmConfig, FrankaRobot
 
 
@@ -46,6 +48,8 @@ class DualFrankaRobot(FrankaRobot):
         right_gripper_type: str,
         left_gripper_connection: Optional[str] = None,
         right_gripper_connection: Optional[str] = None,
+        arm_cameras: Optional[Mapping[str, Mapping[str, Any]]] = None,
+        cameras: Optional[Mapping[str, Any]] = None,
     ) -> "DualFrankaRobot":
         """Place two independently located Franka arms and compose them.
 
@@ -79,10 +83,12 @@ class DualFrankaRobot(FrankaRobot):
                 },
                 # FrankyArm opens the Robotiq gripper on its own
                 # connection, so the end effector comes from its subparts.
+                cameras=arm_cameras,
                 default_node_rank=left_node_rank,
                 worker_rank=worker_rank,
                 env_idx=env_idx,
-            )
+            ),
+            cameras=declare_all(cameras or {}, default_node_rank=left_node_rank),
         )
 
 

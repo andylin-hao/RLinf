@@ -325,6 +325,11 @@ class FrankaConfig(RobotConfig):
     """Serial port for Robotiq grippers (e.g. ``"/dev/ttyUSB0"``).
     Ignored when *gripper_type* is ``"franka"``."""
 
+    camera_node_rank: Optional[int] = None
+    """Node the cameras are plugged into.
+    ``None`` (default) co-locates them with the env worker. Set this when the
+    cameras hang off a different machine than the one running the policy."""
+
     controller_node_rank: Optional[int] = None
     """Node rank where :class:`FrankaController` should run.
     When ``None`` (default), the controller is co-located with the env

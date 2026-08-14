@@ -32,7 +32,12 @@ from rlinf.robotics import (
     RobotInfo,
 )
 from rlinf.robotics.parts.arms.franka import FrankaRobotState
-from rlinf.robotics.parts.cameras import BaseCamera, CameraInfo, create_camera
+from rlinf.robotics.parts.cameras import (
+    BaseCamera,
+    CameraConfig,
+    CameraInfo,
+    create_camera,
+)
 from rlinf.robotics.parts.end_effectors.base import (
     EndEffectorType,
     normalize_end_effector_type,
@@ -193,10 +198,12 @@ class FrankaEnv(gym.Env):
         self.robot: Robot | None = None
 
         if not self.config.is_dummy:
+            self._camera_infos = self._build_camera_infos()
             self._setup_hardware()
             self._setup_reward_worker()
 
-        self._camera_infos = self._build_camera_infos()
+        if not hasattr(self, "_camera_infos"):
+            self._camera_infos = self._build_camera_infos()
 
         # Init action and observation spaces
         assert self._camera_infos, (
@@ -268,6 +275,11 @@ class FrankaEnv(gym.Env):
         )
         if controller_node_rank is None:
             controller_node_rank = self.node_rank
+        # The robot owns its cameras: it places them on the node they are
+        # plugged into and opens them when it connects.
+        camera_node_rank = getattr(
+            self.hardware_info.config, "camera_node_rank", None
+        )
         self.robot = FrankaRobot.build(
             robot_ip=self.config.robot_ip,
             env_idx=self.env_idx,
@@ -276,6 +288,10 @@ class FrankaEnv(gym.Env):
             end_effector_type=self.config.end_effector_type,
             end_effector_config=self.config.end_effector_config,
             gripper_connection=self.config.gripper_connection,
+            cameras={
+                info.name: CameraConfig(info=info, node_rank=camera_node_rank)
+                for info in self._camera_infos
+            },
         )
         self.robot.connect()
         self._controller = self.robot.handles["arm"]
@@ -699,16 +715,17 @@ class FrankaEnv(gym.Env):
         return camera_infos
 
     def _open_cameras(self):
-        self._cameras: list[BaseCamera] = []
-        if not self._camera_infos:
+        """Take the cameras from the robot, which built, placed and opened them.
+
+        A dummy run has no robot, so it builds unopened cameras locally to keep
+        the observation shapes right.
+        """
+        if self.robot is not None:
+            self._cameras: list[BaseCamera] = list(
+                self.robot.arms["arm"].cameras.values()
+            )
             return
-        for info in self._camera_infos:
-            camera = create_camera(info)
-            if not self.config.is_dummy:
-                camera.open()
-            self._cameras.append(camera)
-            if self.robot is not None:
-                self.robot.attach_camera(info.name, camera, arm="arm")
+        self._cameras = [create_camera(info) for info in self._camera_infos]
 
     def close(self):
         """Release all hardware resources including cameras and video player."""
@@ -721,8 +738,10 @@ class FrankaEnv(gym.Env):
         super().close()
 
     def _close_cameras(self):
-        for camera in self._cameras:
-            camera.close()
+        """Close only cameras this env owns; the robot closes its own."""
+        if self.robot is None:
+            for camera in self._cameras:
+                camera.close()
         self._cameras = []
 
     def _crop_frame(
@@ -790,8 +809,8 @@ class FrankaEnv(gym.Env):
                     f"Camera {camera._camera_info.name} is not producing frames. Wait 5 seconds and try again."
                 )
                 time.sleep(5)
-                camera.close()
-                self._open_cameras()
+                camera.disconnect()
+                camera.connect()
                 return self._get_camera_frames()
 
         self.camera_player.put_frame(display_frames)

@@ -35,7 +35,12 @@ from rlinf.robotics import (
 )
 from rlinf.robotics.parts.arms import DOSW1Arm, DOSW1Hardware
 from rlinf.robotics.parts.arms.dosw1 import DOSW1RobotState
-from rlinf.robotics.parts.cameras import BaseCamera, CameraInfo, create_camera
+from rlinf.robotics.parts.cameras import (
+    BaseCamera,
+    CameraConfig,
+    CameraInfo,
+    create_camera,
+)
 from rlinf.robotics.parts.teleop.keyboard import KeyboardListener
 from rlinf.scheduler import WorkerInfo
 from rlinf.utils.logging import get_logger
@@ -144,7 +149,13 @@ class DOSW1Env(gym.Env):
         self.robot: Robot | None = None
         if not config.is_dummy:
             self._apply_hardware_info(hardware_info)
-            self.robot = DOSW1Robot.build(config=config)
+            self.robot = DOSW1Robot.build(
+                config=config,
+                cameras={
+                    info.name: CameraConfig(info=info)
+                    for info in self._camera_infos()
+                },
+            )
             self.robot.connect()
             left_driver = cast(
                 DOSW1Arm,
@@ -641,21 +652,34 @@ class DOSW1Env(gym.Env):
         names = self.config.camera_names or []
         return names[: len(serials)] if serials else names
 
-    def _open_cameras(self) -> None:
+    def _camera_infos(self) -> list[CameraInfo]:
+        """Describe this robot's cameras, discovering serials if unset."""
         serials = self.config.camera_serials or self._discover_camera_serials()
         self.config.camera_serials = list(serials)
         names = self.config.camera_names or []
-        for index, serial in enumerate(serials):
-            name = names[index] if index < len(names) else f"cam_{index}"
-            camera = create_camera(CameraInfo(name=name, serial_number=serial))
+        return [
+            CameraInfo(
+                name=names[index] if index < len(names) else f"cam_{index}",
+                serial_number=serial,
+            )
+            for index, serial in enumerate(serials)
+        ]
+
+    def _open_cameras(self) -> None:
+        """Take the cameras from the robot, which placed and opened them."""
+        if self.robot is not None:
+            self._cameras = list(self.robot.cameras.values())
+            return
+        for info in self._camera_infos():
+            camera = create_camera(info)
             camera.open()
             self._cameras.append(camera)
-            if self.robot is not None:
-                self.robot.attach_camera(name, camera)
 
     def _close_cameras(self) -> None:
-        for camera in self._cameras:
-            camera.close()
+        """Close only cameras this env owns; the robot closes its own."""
+        if self.robot is None:
+            for camera in self._cameras:
+                camera.close()
         self._cameras.clear()
 
     def _get_camera_frames(self) -> dict[str, np.ndarray]:

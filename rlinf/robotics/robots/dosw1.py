@@ -14,8 +14,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
 from rlinf.scheduler.hardware import HardwareConfig, HardwareInfo, HardwareResource
 
@@ -23,6 +24,7 @@ from ..config import RobotAutoConfig
 from ..discovery import RobotConfig, RobotDiscovery, RobotInfo
 from ..parts.base import Arm
 from ..robot import Robot
+from ..specs import declare_all
 
 
 class DOSW1Robot(Robot):
@@ -31,7 +33,9 @@ class DOSW1Robot(Robot):
     ROBOT_TYPE = "DOSW1"
 
     @classmethod
-    def build(cls, *, config) -> "DOSW1Robot":
+    def build(
+        cls, *, config, cameras: Optional[Mapping[str, Any]] = None
+    ) -> "DOSW1Robot":
         """Compose a DOSW1 dual-arm robot on one local SDK session.
 
         Both arms share a single SDK session, and it runs wherever the env
@@ -44,7 +48,8 @@ class DOSW1Robot(Robot):
             arms={
                 side: Arm(sdk.subpart(side), sdk.subpart(f"{side}_end_effector"))
                 for side in ("left", "right")
-            }
+            },
+            cameras=declare_all(cameras or {}),
         )
 
 

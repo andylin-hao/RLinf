@@ -133,8 +133,11 @@ backing two arms and two cameras is opened once, not four times:
        cameras={"wrist_1": hardware.subpart("wrist_1")},
    )
 
-Placement applies to every part, not only arms. Run a camera on the machine it
-is plugged into while the policy runs elsewhere. ``spawn()`` is the eager form
+Placement applies to every part, not only arms. A robot owns its cameras and
+places them like anything else, so a camera runs on the machine it is plugged
+into while the policy runs elsewhere. Give it a node with
+``CameraConfig(info=info, node_rank=...)`` and the robot opens it on ``connect``
+and closes it on ``disconnect``. ``spawn()`` is the eager form
 underneath; reach for it only outside a robot, such as in a bench script.
 
 Do not write a worker class for each hardware device. RLinf synthesizes one from
