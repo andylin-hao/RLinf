@@ -14,12 +14,12 @@
 
 import threading
 import time
+from dataclasses import asdict, dataclass, field
 
 import numpy as np
 
 from rlinf.robotics.parts.arms import ARM_STATE_FIELDS
 from rlinf.robotics.parts.base import ControllablePart, RobotPart
-from rlinf.robotics.states import GimArmRobotState
 from rlinf.robotics.views import MethodGripper
 from rlinf.utils.logging import get_logger
 
@@ -36,6 +36,52 @@ def _smoothstep(t: float) -> float:
     """Quintic smoothstep for smooth trajectory interpolation."""
     t = max(0.0, min(1.0, t))
     return 10 * t**3 - 15 * t**4 + 6 * t**5
+
+
+@dataclass
+class GimArmRobotState:
+    """State snapshot for the GimArm 6-DOF robot.
+
+    All Cartesian quantities are expressed in the robot base frame.
+    """
+
+    tcp_pose: np.ndarray = field(default_factory=lambda: np.zeros(7))
+    """End-effector pose ``[x, y, z, qx, qy, qz, qw]`` (m / quaternion).
+    Computed via Pinocchio FK from joint positions."""
+
+    tcp_vel: np.ndarray = field(default_factory=lambda: np.zeros(6))
+    """End-effector Cartesian velocity ``[vx, vy, vz, wx, wy, wz]`` (m/s, rad/s).
+    Computed as ``J @ dq``."""
+
+    arm_joint_position: np.ndarray = field(default_factory=lambda: np.zeros(6))
+    """Joint positions ``[q1, ..., q6]`` in radians."""
+
+    arm_joint_velocity: np.ndarray = field(default_factory=lambda: np.zeros(6))
+    """Joint velocities ``[dq1, ..., dq6]`` in rad/s."""
+
+    tcp_force: np.ndarray = field(default_factory=lambda: np.zeros(3))
+    """Estimated Cartesian force at EEF ``[fx, fy, fz]`` in N.
+    Mapped from momentum-observer external torque via ``J^{-T}``.
+    Zero when momentum observer is not active."""
+
+    tcp_torque: np.ndarray = field(default_factory=lambda: np.zeros(3))
+    """Estimated Cartesian torque at EEF ``[tx, ty, tz]`` in N-m.
+    Mapped from momentum-observer external torque via ``J^{-T}``.
+    Zero when momentum observer is not active."""
+
+    arm_jacobian: np.ndarray = field(default_factory=lambda: np.zeros((6, 6)))
+    """Body Jacobian ``(6, 6)`` in LOCAL_WORLD_ALIGNED frame.
+    Computed via Pinocchio at current joint positions."""
+
+    gripper_position: float = 0.0
+    """Gripper joint position in radians (hardware units)."""
+
+    gripper_open: bool = False
+    """``True`` when the gripper position is closer to open than closed."""
+
+    def to_dict(self):
+        """Convert the dataclass to a serializable dictionary."""
+        return asdict(self)
 
 
 class GimArmDriver(ControllablePart):

@@ -30,7 +30,7 @@ from rlinf.robotics import (
     Turtle2Config,
     build_turtle2_robot,
 )
-from rlinf.robotics.states import Turtle2RobotState
+from rlinf.robotics.parts.arms.turtle2 import Turtle2RobotState
 from rlinf.scheduler import WorkerInfo
 from rlinf.utils.logging import get_logger
 

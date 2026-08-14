@@ -12,6 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""State vocabulary shared by the Franka arm backends.
+
+Both the ROS-backed and libfranka-backed arms report the same fields, so the
+dataclass lives beside them rather than inside either one.
+"""
+
 from dataclasses import asdict, dataclass, field
 from typing import Optional
 

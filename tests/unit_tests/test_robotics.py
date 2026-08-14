@@ -52,8 +52,8 @@ from rlinf.robotics.parts.arms import (
     GimArmDriver,
     Turtle2Driver,
 )
+from rlinf.robotics.parts.arms.franka import FrankaRobotState
 from rlinf.robotics.robots.franka import place_franka_arms
-from rlinf.robotics.states import FrankaRobotState
 from rlinf.scheduler.hardware import (
     Hardware,
     HardwareConfig,

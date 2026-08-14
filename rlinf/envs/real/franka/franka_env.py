@@ -31,12 +31,12 @@ from rlinf.robotics import (
     RobotInfo,
     build_franka_robot,
 )
+from rlinf.robotics.parts.arms.franka import FrankaRobotState
 from rlinf.robotics.parts.cameras import BaseCamera, CameraInfo, create_camera
 from rlinf.robotics.parts.end_effectors.base import (
     EndEffectorType,
     normalize_end_effector_type,
 )
-from rlinf.robotics.states import FrankaRobotState
 from rlinf.scheduler import WorkerInfo
 from rlinf.utils.logging import get_logger
 

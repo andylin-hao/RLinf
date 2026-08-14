@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from rlinf.robotics.states import GimArmRobotState
+from rlinf.robotics.parts.arms.gim_arm import GimArmRobotState
 
 from .gim_arm_env import GimArmEnv, GimArmRobotConfig
 

@@ -31,8 +31,8 @@ from rlinf.robotics import (
     RobotInfo,
     build_gim_arm_robot,
 )
+from rlinf.robotics.parts.arms.gim_arm import GimArmRobotState
 from rlinf.robotics.parts.cameras import BaseCamera, CameraInfo, create_camera
-from rlinf.robotics.states import GimArmRobotState
 from rlinf.scheduler import WorkerInfo
 from rlinf.utils.logging import get_logger
 

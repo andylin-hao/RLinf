@@ -29,9 +29,9 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 
 from rlinf.robotics.parts.arms import ARM_STATE_FIELDS
+from rlinf.robotics.parts.arms.franka import FrankaRobotState
 from rlinf.robotics.parts.base import ControllablePart, RobotPart
 from rlinf.robotics.parts.end_effectors.grippers import create_gripper
-from rlinf.robotics.states import FrankaRobotState
 from rlinf.robotics.views import MethodGripper
 from rlinf.utils.logging import get_logger
 

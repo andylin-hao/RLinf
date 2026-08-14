@@ -83,7 +83,6 @@ def test_robotics_devices_do_not_depend_on_scheduler_ray_or_gym():
         robotics_dir / "adapters.py",
         robotics_dir / "views.py",
         *robotics_dir.joinpath("parts").rglob("*.py"),
-        *robotics_dir.joinpath("states").glob("*.py"),
     ]
     forbidden = ("ray", "gymnasium", "rlinf.scheduler")
     offenders = {
@@ -100,8 +99,9 @@ def test_robotics_devices_do_not_depend_on_scheduler_ray_or_gym():
 def test_scheduler_use_is_confined_to_the_composition_layer():
     """Only composition code may see the scheduler; hardware code never does.
 
-    ``rlinf.robotics`` is two layers. Hardware -- parts, drivers, cameras,
-    end effectors, states -- is scheduler-free so it runs from plain scripts.
+    ``rlinf.robotics`` is two layers. Hardware -- parts: arms, cameras, end
+    effectors, teleop devices -- is scheduler-free so it runs from plain
+    scripts.
     Composition -- the placement bridge, robot builders, and hardware discovery
     -- is allowed to use the scheduler. This pins the boundary between them, so
     a new driver cannot quietly reach for ``Cluster``.

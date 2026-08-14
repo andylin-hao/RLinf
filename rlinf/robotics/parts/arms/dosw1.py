@@ -17,16 +17,38 @@
 from __future__ import annotations
 
 import time
+from dataclasses import dataclass, field
 from typing import Protocol
 
 import numpy as np
 
 from rlinf.robotics.parts.base import ControllablePart, EndEffector, RobotPart
-from rlinf.robotics.states import DOSW1RobotState
 from rlinf.utils.logging import get_logger
 
 #: Arm sides exposed by one DOSW1 SDK session.
 _ARM_SIDES: tuple[str, ...] = ("left", "right")
+
+
+NUM_JOINTS = 6
+
+
+@dataclass
+class DOSW1RobotState:
+    """Snapshot of the dual-arm DOSW1 robot at a single timestep.
+
+    Each arm has 6 revolute joints (radians) and 1 gripper value in metres.
+    Control and state are joint-space only.
+    """
+
+    left_joint_positions: np.ndarray = field(
+        default_factory=lambda: np.zeros(NUM_JOINTS)
+    )
+    left_gripper: float = 0.0
+    right_joint_positions: np.ndarray = field(
+        default_factory=lambda: np.zeros(NUM_JOINTS)
+    )
+    right_gripper: float = 0.0
+    timestamp: float = field(default_factory=time.time)
 
 
 class DOSW1ConnectionConfig(Protocol):

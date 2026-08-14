@@ -14,11 +14,11 @@
 
 import time
 import tracemalloc
+from dataclasses import asdict, dataclass, field
 
 import numpy as np
 
 from rlinf.robotics.parts.base import ControllablePart, RobotPart
-from rlinf.robotics.states import Turtle2RobotState
 from rlinf.robotics.views import MethodArm, MethodCamera, MethodGripper
 from rlinf.utils.logging import get_logger
 
@@ -27,6 +27,38 @@ _ARM_SIDES: dict[str, str] = {"left": "follow1", "right": "follow2"}
 
 #: Index of the gripper value inside an arm's pose vector.
 _GRIPPER_STATE_INDEX = 6
+
+
+@dataclass
+class Turtle2RobotState:
+    """Turtle2 robot state including followers, head, lift, and car pose.
+
+    Attributes:
+        follow1_pos: Follower 1 position (7-dim).
+        follow1_joints: Follower 1 joint angles (7-dim).
+        follow1_cur_data: Follower 1 current data (7-dim).
+        follow2_pos: Follower 2 position (7-dim).
+        follow2_joints: Follower 2 joint angles (7-dim).
+        follow2_cur_data: Follower 2 current data (7-dim).
+        head_pos: Head position (2-dim).
+        lift: Lift height.
+        car_pose: Car pose [x, y, theta] (3-dim).
+    """
+
+    follow1_pos: np.ndarray = field(default_factory=lambda: np.zeros(7))
+    follow1_joints: np.ndarray = field(default_factory=lambda: np.zeros(7))
+    follow1_cur_data: np.ndarray = field(default_factory=lambda: np.zeros(7))
+    follow2_pos: np.ndarray = field(default_factory=lambda: np.zeros(7))
+    follow2_joints: np.ndarray = field(default_factory=lambda: np.zeros(7))
+    follow2_cur_data: np.ndarray = field(default_factory=lambda: np.zeros(7))
+
+    head_pos: np.ndarray = field(default_factory=lambda: np.zeros(2))
+    lift: float = 0.0
+    car_pose: np.ndarray = field(default_factory=lambda: np.zeros(3))
+
+    def to_dict(self):
+        """Convert the dataclass to a serializable dictionary."""
+        return asdict(self)
 
 
 class Turtle2Driver(ControllablePart):
