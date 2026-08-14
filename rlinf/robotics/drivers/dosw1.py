@@ -22,7 +22,7 @@ from typing import Protocol
 import numpy as np
 
 from rlinf.robotics.drivers.base import Driver
-from rlinf.robotics.part import ControllablePart, EndEffector, RobotPart
+from rlinf.robotics.parts.base import ControllablePart, EndEffector, RobotPart
 from rlinf.robotics.states import DOSW1RobotState
 from rlinf.utils.logging import get_logger
 

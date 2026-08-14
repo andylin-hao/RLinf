@@ -54,7 +54,7 @@ import numpy as np
 
 from rlinf.utils.logging import get_logger
 
-from .base_gripper import BaseGripper
+from .base import BaseGripper
 
 # Modbus constants
 _SLAVE_ID = 0x09

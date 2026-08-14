@@ -27,7 +27,7 @@ call sites read identically local or remote::
 from abc import ABC, abstractmethod
 from typing import Any, Callable
 
-from ..part import Camera, ControllablePart, EndEffector, RobotPart
+from ..parts.base import Camera, ControllablePart, EndEffector, RobotPart
 
 
 class LocalResult:

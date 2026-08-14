@@ -16,7 +16,7 @@ from typing import Optional
 
 import numpy as np
 
-from .base_camera import BaseCamera, CameraInfo
+from .base import BaseCamera, CameraInfo
 
 
 class RealSenseCamera(BaseCamera):

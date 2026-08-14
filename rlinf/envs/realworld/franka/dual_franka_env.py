@@ -34,7 +34,7 @@ from rlinf.robotics import (
     RobotInfo,
     build_dual_franka_robot,
 )
-from rlinf.robotics.cameras import BaseCamera, CameraInfo, create_camera
+from rlinf.robotics.parts.cameras import BaseCamera, CameraInfo, create_camera
 from rlinf.robotics.states import FrankaRobotState
 from rlinf.scheduler import WorkerInfo
 from rlinf.utils.logging import get_logger

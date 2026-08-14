@@ -21,7 +21,7 @@ from typing import Optional
 
 import numpy as np
 
-from rlinf.robotics.part import Camera
+from rlinf.robotics.parts.base import Camera
 from rlinf.utils.logging import get_logger
 
 _logger = get_logger()

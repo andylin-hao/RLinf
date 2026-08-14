@@ -31,7 +31,7 @@ scheduler lazily, so driver modules stay importable from plain scripts such as
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, Optional
 
-from ..part import Camera, ControllablePart, EndEffector, RobotPart
+from ..parts.base import Camera, ControllablePart, EndEffector, RobotPart
 
 if TYPE_CHECKING:
     from .handle import DriverHandle

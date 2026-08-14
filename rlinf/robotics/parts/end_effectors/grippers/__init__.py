@@ -14,7 +14,7 @@
 
 from typing import Optional
 
-from .base_gripper import BaseGripper
+from .base import BaseGripper
 
 __all__ = [
     "BaseGripper",
@@ -45,7 +45,7 @@ def create_gripper(
                 "gripper_connection (serial port) must be specified "
                 "for Robotiq grippers."
             )
-        from .robotiq_gripper import RobotiqGripper
+        from .robotiq import RobotiqGripper
 
         return RobotiqGripper(port=port, **kwargs)
     if gt == "franka":
@@ -53,7 +53,7 @@ def create_gripper(
             raise ValueError(
                 "ROSController instance must be provided for Franka gripper."
             )
-        from .franka_gripper import FrankaGripper
+        from .franka import FrankaGripper
 
         return FrankaGripper(ros=ros, **kwargs)
     raise ValueError(

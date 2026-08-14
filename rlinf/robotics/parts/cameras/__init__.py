@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .base_camera import BaseCamera, CameraInfo
-from .realsense_camera import RealSenseCamera
+from .base import BaseCamera, CameraInfo
+from .realsense import RealSenseCamera
 
 __all__ = [
     "BaseCamera",
@@ -34,13 +34,13 @@ def create_camera(camera_info: CameraInfo) -> BaseCamera:
     """
     camera_type = camera_info.camera_type.lower()
     if camera_type == "zed":
-        from .zed_camera import ZEDCamera
+        from .zed import ZEDCamera
 
         return ZEDCamera(camera_info)
     if camera_type in ("realsense", "rs"):
         return RealSenseCamera(camera_info)
     if camera_type == "lumos":
-        from .lumos_camera import LumosCamera
+        from .lumos import LumosCamera
 
         return LumosCamera(camera_info)
     raise ValueError(

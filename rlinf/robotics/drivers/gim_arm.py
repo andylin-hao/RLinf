@@ -19,7 +19,7 @@ import numpy as np
 
 from rlinf.robotics.drivers.base import ARM_STATE_FIELDS, SinglePartDriver
 from rlinf.robotics.drivers.views import DriverGripper
-from rlinf.robotics.part import RobotPart
+from rlinf.robotics.parts.base import RobotPart
 from rlinf.robotics.states import GimArmRobotState
 from rlinf.utils.logging import get_logger
 

@@ -85,7 +85,7 @@
                self._client.close()
                self._client = None
 
-当存在更具体的接口时，使用 ``Camera``、``EndEffector``、``MobileBase`` 或 ``LeggedBase``。内置实现位于 ``rlinf/robotics/cameras``、``drivers``、``end_effectors``、``grippers`` 和 ``hands``。
+当存在更具体的接口时，使用 ``Camera``、``EndEffector``、``MobileBase`` 或 ``LeggedBase``。内置实现按类别归入 ``rlinf/robotics/parts``：``parts/cameras``、``parts/end_effectors/grippers`` 和 ``parts/end_effectors/hands``。设备连接位于相邻的 ``rlinf/robotics/drivers``。
 
 组合机器人
 ----------

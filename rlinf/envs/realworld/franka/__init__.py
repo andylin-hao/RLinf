@@ -13,7 +13,7 @@
 # limitations under the License.
 
 
-from rlinf.robotics.end_effectors.base import EndEffectorType
+from rlinf.robotics.parts.end_effectors.base import EndEffectorType
 
 from .franka_env import FrankaEnv, FrankaRobotConfig, FrankaRobotState
 

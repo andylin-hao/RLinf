@@ -79,16 +79,11 @@ _SCHEDULER_BRIDGE = Path("rlinf") / "robotics" / "drivers" / "worker.py"
 def test_robotics_devices_do_not_depend_on_scheduler_ray_or_gym():
     robotics_dir = _ROOT / "rlinf" / "robotics"
     device_paths = [
-        robotics_dir / "part.py",
         robotics_dir / "robot.py",
         robotics_dir / "adapters.py",
         robotics_dir / "layout.py",
-        *robotics_dir.joinpath("cameras").glob("*.py"),
-        *robotics_dir.joinpath("drivers").glob("*.py"),
-        *robotics_dir.joinpath("drivers", "ros").glob("*.py"),
-        *robotics_dir.joinpath("end_effectors").glob("*.py"),
-        *robotics_dir.joinpath("grippers").glob("*.py"),
-        *robotics_dir.joinpath("hands").glob("*.py"),
+        *robotics_dir.joinpath("parts").rglob("*.py"),
+        *robotics_dir.joinpath("drivers").rglob("*.py"),
         *robotics_dir.joinpath("states").glob("*.py"),
     ]
     forbidden = ("ray", "gymnasium", "rlinf.scheduler")

@@ -22,13 +22,13 @@ from scipy.spatial.transform import Rotation as R
 
 from rlinf.robotics.drivers.base import ARM_STATE_FIELDS, SinglePartDriver
 from rlinf.robotics.drivers.views import DriverGripper
-from rlinf.robotics.end_effectors import (
-    EndEffector,
+from rlinf.robotics.parts.base import RobotPart
+from rlinf.robotics.parts.end_effectors import (
+    BaseEndEffector,
     EndEffectorType,
     create_end_effector,
     normalize_end_effector_type,
 )
-from rlinf.robotics.part import RobotPart
 from rlinf.robotics.states import FrankaRobotState
 from rlinf.utils.logging import get_logger
 
@@ -59,7 +59,7 @@ class FrankaROSDriver(SinglePartDriver):
         self._end_effector_config = end_effector_config or {}
         self._gripper_connection = gripper_connection
         self._state = FrankaRobotState()
-        self._end_effector: EndEffector | None = None
+        self._end_effector: BaseEndEffector | None = None
         self._gripper = None
         self._impedance: psutil.Process | None = None
         self._joint: psutil.Process | None = None
@@ -158,7 +158,7 @@ class FrankaROSDriver(SinglePartDriver):
         gripper_connection: Optional[str],
     ) -> None:
         if self._end_effector_type.is_gripper:
-            from rlinf.robotics.grippers import create_gripper
+            from rlinf.robotics.parts.end_effectors.grippers import create_gripper
 
             self._gripper = create_gripper(
                 gripper_type=self._end_effector_type.gripper_backend,

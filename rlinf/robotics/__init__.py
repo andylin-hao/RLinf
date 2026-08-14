@@ -17,7 +17,7 @@
 Three concepts, and the boundary between them is what keeps this layer small:
 
 * **Part** -- a robot-semantic view with a policy-facing contract: an arm, an
-  end effector, a camera. See :mod:`rlinf.robotics.part`.
+  end effector, a camera. See :mod:`rlinf.robotics.parts.base`.
 * **Driver** -- a connection to one physical device, backing one or more parts.
   It is the unit of placement. See :mod:`rlinf.robotics.drivers.base`.
 * **Robot** -- a named composition of parts. See :mod:`rlinf.robotics.robot`.
@@ -96,7 +96,7 @@ __all__ = [
 #: Symbols are grouped by the module that defines them, so adding one is a
 #: single-line change in the group it belongs to.
 _MODULE_GROUPS: dict[str, tuple[str, ...]] = {
-    ".part": (
+    ".parts": (
         "Arm",
         "Camera",
         "ControllablePart",

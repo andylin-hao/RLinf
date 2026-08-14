@@ -30,8 +30,8 @@ from scipy.spatial.transform import Rotation as R
 
 from rlinf.robotics.drivers.base import ARM_STATE_FIELDS, SinglePartDriver
 from rlinf.robotics.drivers.views import DriverGripper
-from rlinf.robotics.grippers import create_gripper
-from rlinf.robotics.part import RobotPart
+from rlinf.robotics.parts.base import RobotPart
+from rlinf.robotics.parts.end_effectors.grippers import create_gripper
 from rlinf.robotics.states import FrankaRobotState
 from rlinf.utils.logging import get_logger
 

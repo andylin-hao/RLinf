@@ -19,7 +19,7 @@ from enum import Enum
 
 import numpy as np
 
-from rlinf.robotics.part import EndEffector as RoboticsEndEffector
+from rlinf.robotics.parts.base import EndEffector
 
 
 class EndEffectorType(str, Enum):
@@ -72,7 +72,7 @@ def normalize_end_effector_type(
     )
 
 
-class EndEffector(RoboticsEndEffector, ABC):
+class BaseEndEffector(EndEffector, ABC):
     """Abstract interface for a robot end-effector.
 
     Every end-effector must expose its state and action dimensions so

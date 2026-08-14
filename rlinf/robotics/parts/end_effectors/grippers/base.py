@@ -17,7 +17,7 @@ from typing import Any
 
 import numpy as np
 
-from rlinf.robotics.part import EndEffector
+from rlinf.robotics.parts.base import EndEffector
 
 
 class BaseGripper(EndEffector, ABC):

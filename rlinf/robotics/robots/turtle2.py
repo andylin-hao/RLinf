@@ -20,7 +20,7 @@ from rlinf.scheduler.hardware import HardwareConfig, HardwareInfo, HardwareResou
 from ..config import RobotAutoConfig
 from ..discovery import RobotConfig, RobotDiscovery, RobotInfo, register_robot
 from ..layout import ArmSpec, PartSpec, RobotSpec
-from ..part import Arm
+from ..parts.base import Arm
 from ..robot import Robot
 
 

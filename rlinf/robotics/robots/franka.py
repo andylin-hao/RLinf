@@ -23,7 +23,7 @@ from rlinf.scheduler.hardware import HardwareConfig, HardwareInfo, HardwareResou
 from ..config import RobotAutoConfig
 from ..discovery import RobotConfig, RobotDiscovery, RobotInfo, register_robot
 from ..layout import ArmSpec, CameraSpec, EndEffectorSpec, RobotSpec
-from ..part import Arm
+from ..parts.base import Arm
 from ..robot import Robot
 
 
@@ -160,7 +160,7 @@ class FrankaDiscovery(RobotDiscovery):
             for dev in sl.Camera.get_device_list():
                 cameras.add(str(dev.serial_number))
         elif ct == "lumos":
-            from rlinf.robotics.cameras.lumos_camera import LumosCamera
+            from rlinf.robotics.parts.cameras.lumos import LumosCamera
 
             cameras.update(LumosCamera.get_device_serial_numbers())
         else:

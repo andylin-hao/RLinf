@@ -97,8 +97,9 @@ module without installing that SDK.
 
 Use ``Camera``, ``EndEffector``, ``MobileBase``, or ``LeggedBase`` when a more
 specific interface applies. Built-in implementations live under
-``rlinf/robotics/cameras``, ``drivers``, ``end_effectors``, ``grippers``, and
-``hands``.
+``rlinf/robotics/parts``, grouped by category: ``parts/cameras``,
+``parts/end_effectors/grippers``, and ``parts/end_effectors/hands``. Device
+connections live beside them in ``rlinf/robotics/drivers``.
 
 Compose the Robot
 -----------------

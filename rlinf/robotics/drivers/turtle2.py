@@ -19,7 +19,7 @@ import numpy as np
 
 from rlinf.robotics.drivers.base import Driver
 from rlinf.robotics.drivers.views import DriverArm, DriverCamera, DriverGripper
-from rlinf.robotics.part import ControllablePart, RobotPart
+from rlinf.robotics.parts.base import ControllablePart, RobotPart
 from rlinf.robotics.states import Turtle2RobotState
 from rlinf.utils.logging import get_logger
 

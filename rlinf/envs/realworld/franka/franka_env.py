@@ -31,8 +31,8 @@ from rlinf.robotics import (
     RobotInfo,
     build_franka_robot,
 )
-from rlinf.robotics.cameras import BaseCamera, CameraInfo, create_camera
-from rlinf.robotics.end_effectors.base import (
+from rlinf.robotics.parts.cameras import BaseCamera, CameraInfo, create_camera
+from rlinf.robotics.parts.end_effectors.base import (
     EndEffectorType,
     normalize_end_effector_type,
 )

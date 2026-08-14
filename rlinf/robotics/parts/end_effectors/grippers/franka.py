@@ -20,7 +20,7 @@ were previously embedded in :class:`FrankaController`.
 
 import numpy as np
 
-from .base_gripper import BaseGripper
+from .base import BaseGripper
 
 
 class FrankaGripper(BaseGripper):

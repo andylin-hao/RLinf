@@ -16,7 +16,7 @@ from collections.abc import Mapping
 from functools import partial
 from typing import Any, ClassVar, Optional, TypeVar
 
-from .part import Arm, Camera, ControllablePart, RobotPart, run_parallel
+from .parts.base import Arm, Camera, ControllablePart, RobotPart, run_parallel
 
 RobotPartType = TypeVar("RobotPartType", bound=RobotPart)
 RobotType = TypeVar("RobotType", bound="Robot")

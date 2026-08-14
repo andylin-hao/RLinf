@@ -12,12 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .base import EndEffector, EndEffectorType, normalize_end_effector_type
+from rlinf.robotics.parts.base import EndEffector
+
+from .base import BaseEndEffector, EndEffectorType, normalize_end_effector_type
+from .grippers import BaseGripper, create_gripper
 
 __all__ = [
+    "BaseEndEffector",
+    "BaseGripper",
     "EndEffector",
     "EndEffectorType",
     "create_end_effector",
+    "create_gripper",
     "normalize_end_effector_type",
 ]
 
@@ -25,7 +31,7 @@ __all__ = [
 def create_end_effector(
     end_effector_type: str | EndEffectorType,
     **kwargs,
-) -> EndEffector:
+) -> BaseEndEffector:
     """Factory function to create an end-effector instance.
 
     Args:
@@ -35,7 +41,7 @@ def create_end_effector(
             constructor.
 
     Returns:
-        An ``EndEffector`` instance of the requested type.
+        A ``BaseEndEffector`` instance of the requested type.
 
     Raises:
         ValueError: If the end-effector type is not recognized.
@@ -44,7 +50,7 @@ def create_end_effector(
         end_effector_type = EndEffectorType(end_effector_type)
 
     if end_effector_type == EndEffectorType.RUIYAN_HAND:
-        from .ruiyan_hand import RuiyanHand
+        from .hands.ruiyan import RuiyanHand
 
         return RuiyanHand(**kwargs)  # noqa: F811
 
