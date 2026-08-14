@@ -52,7 +52,7 @@ class DOSW1RobotState:
 
 
 class DOSW1ConnectionConfig(Protocol):
-    """Connection fields required by :class:`DOSW1SDKAdapter`."""
+    """Connection fields required by :class:`DOSW1Hardware`."""
 
     robot_url: str
     left_arm_port: int
@@ -75,7 +75,7 @@ _CONTROL_LOOP_DT = 0.02
 _STATE_READY_TIMEOUT_S = 5.0
 
 
-class DOSW1SDKAdapter(RobotPart):
+class DOSW1Hardware(RobotPart):
     """Thin wrapper around ``airbot_sdk.AirbotRobot`` for RLinf."""
 
     def __init__(self, config: DOSW1ConnectionConfig) -> None:
@@ -158,7 +158,7 @@ class DOSW1SDKAdapter(RobotPart):
         """
         parts: dict[str, RobotPart] = {}
         for side in _ARM_SIDES:
-            parts[side] = DOSW1ArmDriver(self, side)
+            parts[side] = DOSW1Arm(self, side)
             parts[f"{side}_end_effector"] = DOSW1EndEffector(self, side)
         return parts
 
@@ -303,7 +303,7 @@ class DOSW1SDKAdapter(RobotPart):
     def _require_connected(self) -> object:
         if not self._connected or self._robot is None:
             raise RuntimeError(
-                "DOSW1SDKAdapter is not connected. Call connect() first."
+                "DOSW1Hardware is not connected. Call connect() first."
             )
         return self._robot
 
@@ -326,7 +326,7 @@ class DOSW1SDKAdapter(RobotPart):
 
     def _require_connected_candidate(self) -> object:
         if self._robot is None:
-            raise RuntimeError("DOSW1SDKAdapter failed to create AirbotRobot.")
+            raise RuntimeError("DOSW1Hardware failed to create AirbotRobot.")
         return self._robot
 
     @staticmethod
@@ -363,12 +363,12 @@ class DOSW1SDKAdapter(RobotPart):
             _disconnect_arm(getattr(robot, "right_lead_arm", None))
 
 
-class DOSW1ArmDriver(ControllablePart):
-    """Present one side of a shared DOSW1 SDK as an arm driver."""
+class DOSW1Arm(ControllablePart):
+    """Present one side of a shared DOSW1 SDK session as an arm."""
 
     def __init__(
         self,
-        sdk: DOSW1SDKAdapter,
+        sdk: DOSW1Hardware,
         side: str,
         *,
         owns_connection: bool = False,
@@ -433,7 +433,7 @@ class DOSW1ArmDriver(ControllablePart):
 class DOSW1EndEffector(EndEffector):
     """Present one DOSW1 gripper through the common end-effector API."""
 
-    def __init__(self, sdk: DOSW1SDKAdapter, side: str) -> None:
+    def __init__(self, sdk: DOSW1Hardware, side: str) -> None:
         if side not in {"left", "right"}:
             raise ValueError("DOSW1 gripper side must be 'left' or 'right'.")
         self.sdk = sdk
@@ -478,4 +478,4 @@ class DOSW1EndEffector(EndEffector):
         return {"target": target}
 
     def disconnect(self) -> None:
-        """Leave connection shutdown to the owning arm driver."""
+        """Leave connection shutdown to the owning session."""

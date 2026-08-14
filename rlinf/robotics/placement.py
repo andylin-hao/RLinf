@@ -154,7 +154,7 @@ class RemotePartHandle(PartHandle):
 
         ``WorkerGroup`` binds every public method of the hosted class, so this
         reaches ``is_robot_up``, ``reset_joint``, ``clear_errors`` and friends
-        with no per-driver declaration.
+        with no per-hardware declaration.
         """
         if name.startswith("_"):
             raise AttributeError(name)
@@ -191,7 +191,7 @@ class RemotePart(RobotPart):
 
     @property
     def observation_features(self) -> dict[str, Any]:
-        """Return the features captured when the driver was described."""
+        """Return the features captured when the host was described."""
         return self._observation_features
 
     def connect(self) -> None:
@@ -269,7 +269,7 @@ def _make_remote_part(
 class WorkerPartMeta(WorkerMeta, ABCMeta):
     """Reconcile ``Worker``'s metaclass with the ``ABCMeta`` drivers carry.
 
-    ``Worker`` uses ``WorkerMeta(type)`` and every driver is an ABC, so a class
+    ``Worker`` uses ``WorkerMeta(type)`` and every part is an ABC, so a class
     deriving from both needs a metaclass deriving from both.
     """
 
@@ -295,10 +295,10 @@ def part_worker_cls(part_cls: type) -> type:
         "__doc__": f"Scheduler host for :class:`{part_cls.__name__}`.",
     }
 
-    # Re-declare the driver's public methods in the new class body so
+    # Re-declare the part's public methods in the new class body so
     # ``WorkerMeta`` wraps them for failure capture; inherited attributes are
     # invisible to it. This is a loop, not hand-written delegation, and the
-    # bodies stay in the driver.
+    # bodies stay in the part.
     for name, func in inspect.getmembers(part_cls, inspect.isfunction):
         if not name.startswith("_") and name not in namespace:
             namespace[name] = func
@@ -320,19 +320,19 @@ def spawn_part_worker(
     node_rank: int,
     name: Optional[str] = None,
 ) -> RemotePartHandle:
-    """Host one driver on ``node_rank`` and return a handle to it.
+    """Host one part on ``node_rank`` and return a handle to it.
 
     Args:
-        part_cls: The driver class to construct on the target node.
-        args: Positional arguments for the driver constructor.
-        kwargs: Keyword arguments for the driver constructor.
+        part_cls: The part class to construct on the target node.
+        args: Positional arguments for the part constructor.
+        kwargs: Keyword arguments for the part constructor.
         node_rank: Cluster node rank that is physically wired to the device.
         name: Worker-group name. Must be unique across concurrently running
-            drivers; callers that spawn one driver per environment should
+            parts; callers that spawn one part per environment should
             include the environment index.
 
     Returns:
-        RemotePartHandle: Handle whose parts proxy to the hosted driver.
+        RemotePartHandle: Handle whose parts proxy to the hosted part.
     """
     worker_cls = part_worker_cls(part_cls)
     group = worker_cls.create_group(*args, **kwargs).launch(

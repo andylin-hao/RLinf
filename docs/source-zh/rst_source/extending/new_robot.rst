@@ -40,7 +40,7 @@
    from rlinf.robotics import ControllablePart
 
 
-   class ExampleArmDriver(ControllablePart):
+   class ExampleArm(ControllablePart):
        def __init__(self, endpoint: str):
            self.endpoint = endpoint
            self._client = None
@@ -98,8 +98,8 @@
 
 
    robot = ExampleRobot.dual_arm(
-       left_arm=Arm(ExampleArmDriver("tcp://left-arm:5000")),
-       right_arm=Arm(ExampleArmDriver("tcp://right-arm:5000")),
+       left_arm=Arm(ExampleArm("tcp://left-arm:5000")),
+       right_arm=Arm(ExampleArm("tcp://right-arm:5000")),
    )
    robot.connect()
    observation = robot.get_observation()
@@ -138,10 +138,10 @@
 
    def build_example_robot(config: ExampleRobotConfig) -> ExampleRobot:
        handles = {
-           side: ExampleArmDriver.spawn(
+           side: ExampleArm.spawn(
                endpoint=endpoint,
                node_rank=config.node_rank,
-               name=f"ExampleArmDriver-{side}",
+               name=f"ExampleArm-{side}",
            )
            for side, endpoint in (
                ("left", config.left_endpoint),
@@ -239,10 +239,10 @@
 
    from rlinf.robotics import Arm, Robot
 
-   handle = ExampleArmDriver.spawn(
+   handle = ExampleArm.spawn(
        endpoint="tcp://left-arm:5000",
        node_rank=0,
-       name="ExampleArmDriver-0",
+       name="ExampleArm-0",
    )
    robot = Robot.single_arm(
        Arm(handle.part("arm"), handle.part("end_effector")),

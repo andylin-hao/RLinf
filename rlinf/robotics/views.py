@@ -50,11 +50,11 @@ class MethodArm(ControllablePart):
 
     Args:
         host: The part owning the connection.
-        commands: Map from canonical action field to driver method name, e.g.
+        commands: Map from canonical action field to host method name, e.g.
             ``{"tcp_pose": "move_left_arm"}``.
         state_fields: Canonical observation names, either a tuple selecting
-            driver state fields verbatim or a map from canonical name to the
-            driver's own field name.
+            host state fields verbatim or a map from canonical name to the
+            host's own field name.
     """
 
     def __init__(
@@ -196,7 +196,7 @@ class MethodGripper(EndEffector):
 
 
 class MethodCamera(Camera):
-    """A camera frame returned by one driver method.
+    """A camera frame returned by one host method.
 
     Args:
         host: The part owning the connection.
@@ -216,7 +216,7 @@ class MethodCamera(Camera):
 
     @property
     def observation_features(self) -> dict[str, Any]:
-        """Describe the raw frame returned by the driver."""
+        """Describe the raw frame returned by the host."""
         return {"frame": {}}
 
     def connect(self) -> None:

@@ -141,7 +141,7 @@ class Robot:
         for arm_name, arm in self.arms.items():
             prefix = f"arms.{arm_name}"
             named[prefix] = arm
-            named[f"{prefix}.driver"] = arm.driver
+            named[f"{prefix}.arm"] = arm.manipulator
             if arm.end_effector is not None:
                 named[f"{prefix}.end_effector"] = arm.end_effector
             for camera_name, camera in arm.cameras.items():
@@ -220,7 +220,7 @@ class Robot:
             raise KeyError(f"Unknown robot arms: {sorted(unknown_arms)}")
         if arm_actions:
             # Arms are independent, so their commands are dispatched together;
-            # within one arm the driver and end effector stay ordered.
+            # within one arm the manipulator and end effector stay ordered.
             applied["arms"] = run_parallel(
                 {
                     name: partial(self.arms[name].send_action, dict(arm_action))

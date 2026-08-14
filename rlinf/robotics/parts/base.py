@@ -185,15 +185,20 @@ class Camera(RobotPart):
 
 
 class Arm(ControllablePart):
-    """Compose an arm driver with an end effector and wrist cameras."""
+    """Compose a manipulator with an end effector and wrist cameras.
+
+    The three slots line up with the namespaces the policy sees: the
+    manipulator's own action appears under ``"arm"``, its observation under
+    ``"state"``, then ``"end_effector"`` and ``"cameras"``.
+    """
 
     def __init__(
         self,
-        driver: ControllablePart,
+        manipulator: ControllablePart,
         end_effector: Optional[EndEffector] = None,
         cameras: Optional[Mapping[str, Camera]] = None,
     ) -> None:
-        self.driver = driver
+        self.manipulator = manipulator
         self.end_effector = end_effector
         self.cameras = dict(cameras or {})
         if any(not name for name in self.cameras):
@@ -201,8 +206,8 @@ class Arm(ControllablePart):
 
     @property
     def is_connected(self) -> bool:
-        """Whether the driver and every attached part are connected."""
-        parts: list[RobotPart] = [self.driver, *self.cameras.values()]
+        """Whether the manipulator and every attached part are connected."""
+        parts: list[RobotPart] = [self.manipulator, *self.cameras.values()]
         if self.end_effector is not None:
             parts.append(self.end_effector)
         return all(part.is_connected for part in parts)
@@ -210,7 +215,7 @@ class Arm(ControllablePart):
     @property
     def observation_features(self) -> dict[str, Any]:
         """Describe the arm, end-effector, and camera observations."""
-        features: dict[str, Any] = {"state": self.driver.observation_features}
+        features: dict[str, Any] = {"state": self.manipulator.observation_features}
         if self.end_effector is not None:
             features["end_effector"] = self.end_effector.observation_features
         if self.cameras:
@@ -223,15 +228,15 @@ class Arm(ControllablePart):
     @property
     def action_features(self) -> dict[str, Any]:
         """Describe arm and optional end-effector actions."""
-        features: dict[str, Any] = {"arm": self.driver.action_features}
+        features: dict[str, Any] = {"arm": self.manipulator.action_features}
         if self.end_effector is not None:
             features["end_effector"] = self.end_effector.action_features
         return features
 
     def connect(self) -> None:
-        """Connect the driver and attached parts with rollback on failure."""
+        """Connect the manipulator and attached parts with rollback on failure."""
         connected: list[RobotPart] = []
-        parts: list[RobotPart] = [self.driver]
+        parts: list[RobotPart] = [self.manipulator]
         if self.end_effector is not None:
             parts.append(self.end_effector)
         parts.extend(self.cameras.values())
@@ -246,14 +251,14 @@ class Arm(ControllablePart):
             raise
 
     def reset(self) -> None:
-        """Reset the driver and attached end effector."""
-        self.driver.reset()
+        """Reset the manipulator and attached end effector."""
+        self.manipulator.reset()
         if self.end_effector is not None:
             self.end_effector.reset()
 
     def get_observation(self) -> dict[str, Any]:
         """Read a namespaced observation from the complete arm."""
-        observation: dict[str, Any] = {"state": self.driver.get_observation()}
+        observation: dict[str, Any] = {"state": self.manipulator.get_observation()}
         if self.end_effector is not None:
             observation["end_effector"] = self.end_effector.get_observation()
         if self.cameras:
@@ -269,7 +274,7 @@ class Arm(ControllablePart):
             raise KeyError(f"Unknown arm action fields: {sorted(unknown)}")
         applied: dict[str, Any] = {}
         if "arm" in action:
-            applied["arm"] = self.driver.send_action(action["arm"])
+            applied["arm"] = self.manipulator.send_action(action["arm"])
         if "end_effector" in action:
             if self.end_effector is None:
                 raise ValueError("Arm has no end effector.")
@@ -279,8 +284,8 @@ class Arm(ControllablePart):
         return applied
 
     def disconnect(self) -> None:
-        """Disconnect cameras, the end effector, and the driver."""
-        parts: list[RobotPart] = [self.driver]
+        """Disconnect cameras, the end effector, and the manipulator."""
+        parts: list[RobotPart] = [self.manipulator]
         if self.end_effector is not None:
             parts.append(self.end_effector)
         parts.extend(self.cameras.values())

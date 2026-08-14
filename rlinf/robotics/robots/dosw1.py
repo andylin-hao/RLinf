@@ -127,11 +127,11 @@ def build_dosw1_robot(config) -> DOSW1Robot:
     """Compose a DOSW1 dual-arm robot on one local SDK session.
 
     Both arms share a single connection, so there is nothing to place: the
-    driver is built in this process.
+    part is built in this process.
     """
-    from ..parts.arms.dosw1 import DOSW1SDKAdapter
+    from ..parts.arms.dosw1 import DOSW1Hardware
 
-    handle = DOSW1SDKAdapter.spawn(config)
+    handle = DOSW1Hardware.spawn(config)
     return DOSW1Robot.dual_arm(
         Arm(handle.subpart("left"), handle.subpart("left_end_effector")),
         Arm(handle.subpart("right"), handle.subpart("right_end_effector")),

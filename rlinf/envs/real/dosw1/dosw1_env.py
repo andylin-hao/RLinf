@@ -33,7 +33,7 @@ from rlinf.robotics import (
     RobotInfo,
     build_dosw1_robot,
 )
-from rlinf.robotics.parts.arms import DOSW1ArmDriver, DOSW1SDKAdapter
+from rlinf.robotics.parts.arms import DOSW1Arm, DOSW1Hardware
 from rlinf.robotics.parts.arms.dosw1 import DOSW1RobotState
 from rlinf.robotics.parts.cameras import BaseCamera, CameraInfo, create_camera
 from rlinf.robotics.parts.teleop.keyboard import KeyboardListener
@@ -140,13 +140,13 @@ class DOSW1Env(gym.Env):
             self.node_rank = worker_info.cluster_node_rank
             self.env_worker_rank = worker_info.rank
 
-        self.sdk: DOSW1SDKAdapter | None = None
+        self.sdk: DOSW1Hardware | None = None
         self.robot: Robot | None = None
         if not config.is_dummy:
             self._apply_hardware_info(hardware_info)
             self.robot = build_dosw1_robot(config)
             left_driver = cast(
-                DOSW1ArmDriver,
+                DOSW1Arm,
                 self.robot.arms["left"].driver,
             )
             self.sdk = left_driver.sdk

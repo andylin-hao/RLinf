@@ -61,12 +61,12 @@ class Turtle2RobotState:
         return asdict(self)
 
 
-class Turtle2Driver(ControllablePart):
-    """Pure ROS-backed Turtle2 device driver.
+class Turtle2Hardware(ControllablePart):
+    """Turtle2 hardware over ROS, with no scheduler dependency.
 
     One ROS connection drives both arms, both grippers, and the wrist cameras.
     :meth:`parts` decomposes it into those views; the coupled
-    :meth:`send_action` on the driver itself remains for callers that command
+    :meth:`send_action` on the hardware itself remains for callers that command
     both arms in one shot.
     """
 
@@ -174,7 +174,7 @@ class Turtle2Driver(ControllablePart):
         return action
 
     def disconnect(self) -> None:
-        """Detach the driver from the shared ROS process."""
+        """Detach from the shared ROS process."""
         self._connected = False
 
     def state_callback(self, event):

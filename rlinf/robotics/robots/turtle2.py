@@ -97,15 +97,15 @@ def build_turtle2_robot(
     """Place the coupled Turtle2 controller and compose both arms from it.
 
     One connection backs both arms, both grippers, and the wrist cameras; the
-    driver decomposes itself into those parts.
+    hardware part decomposes itself into those subparts.
     """
-    from ..parts.arms.turtle2 import Turtle2Driver
+    from ..parts.arms.turtle2 import Turtle2Hardware
 
-    handle = Turtle2Driver.spawn(
+    handle = Turtle2Hardware.spawn(
         frequency,
         tuple(camera_ids),
         node_rank=node_rank,
-        name=f"Turtle2Driver-{worker_rank}-{env_idx}",
+        name=f"Turtle2Hardware-{worker_rank}-{env_idx}",
     )
     cameras = {
         name: part for name, part in handle.parts.items() if name.startswith("wrist_")

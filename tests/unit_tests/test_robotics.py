@@ -47,10 +47,10 @@ from rlinf.robotics import (
     register_robot,
 )
 from rlinf.robotics.parts.arms import (
-    FrankaROSDriver,
-    FrankyDriver,
-    GimArmDriver,
-    Turtle2Driver,
+    FrankaROSArm,
+    FrankyArm,
+    GimArm,
+    Turtle2Hardware,
 )
 from rlinf.robotics.parts.arms.franka import FrankaRobotState
 from rlinf.robotics.robots.franka import place_franka_arms
@@ -168,7 +168,7 @@ class FakeWorkerGroup:
 def test_robot_composes_and_namespaces_parts():
     events: list[str] = []
     arm = Arm(
-        driver=FakeControllablePart("arm", events),
+        manipulator=FakeControllablePart("arm", events),
         end_effector=FakeEndEffector("gripper", events),
         cameras={"wrist": FakeCamera("wrist", events)},
     )
@@ -284,11 +284,11 @@ def test_robot_requires_non_empty_string_part_names():
 def test_builtin_robots_expose_standard_composition_layouts():
     events: list[str] = []
     left_arm = Arm(
-        driver=FakeControllablePart("left_arm", events),
+        manipulator=FakeControllablePart("left_arm", events),
         end_effector=FakeEndEffector("left_gripper", events),
     )
     right_arm = Arm(
-        driver=FakeControllablePart("right_arm", events),
+        manipulator=FakeControllablePart("right_arm", events),
         end_effector=FakeEndEffector("right_gripper", events),
     )
     single = FrankaRobot.single_arm(
@@ -379,7 +379,7 @@ def test_robot_auto_config_supports_pep604_optional(monkeypatch):
 
 def test_robot_preserves_canonical_namespaces():
     """Robot alone carries the namespaces the old RobotRuntime wrapped."""
-    arm = Arm(driver=FakeControllablePart("arm", []))
+    arm = Arm(manipulator=FakeControllablePart("arm", []))
     robot = Robot.single_arm(arm)
     robot.connect()
 
@@ -399,7 +399,7 @@ def test_robot_releases_driver_handles_after_parts():
         def disconnect(self) -> None:
             events.append("handle")
 
-    arm = Arm(driver=FakeControllablePart("driver", events))
+    arm = Arm(manipulator=FakeControllablePart("driver", events))
     robot = Robot.single_arm(arm, handles={"arm": FakeHandle()})
     robot.connect()
     robot.disconnect()
@@ -504,10 +504,10 @@ def test_dosw1_dummy_runtime_uses_composed_dual_arm_interface():
 
 def test_pure_drivers_construct_without_scheduler_or_vendor_sdks():
     drivers = [
-        FrankaROSDriver("10.0.0.1"),
-        FrankyDriver("10.0.0.1"),
-        GimArmDriver("can0", "gim_arm_xl", True, "parallel"),
-        Turtle2Driver(),
+        FrankaROSArm("10.0.0.1"),
+        FrankyArm("10.0.0.1"),
+        GimArm("can0", "gim_arm_xl", True, "parallel"),
+        Turtle2Hardware(),
     ]
 
     assert all(isinstance(driver, RobotPart) for driver in drivers)

@@ -73,8 +73,8 @@ _RT_PRIORITY = 80
 _MCL_CURRENT, _MCL_FUTURE = 1, 2
 
 
-class FrankyDriver(ControllablePart):
-    """Pure libfranka device driver with no scheduler dependency."""
+class FrankyArm(ControllablePart):
+    """Franka arm over libfranka, with no scheduler dependency."""
 
     def __init__(
         self,
@@ -143,7 +143,7 @@ class FrankyDriver(ControllablePart):
         )
         self._connected = True
 
-        self._logger.info(f"FrankyDriver connected to robot at {self._robot_ip}")
+        self._logger.info(f"FrankyArm connected to robot at {self._robot_ip}")
 
     def reset(self) -> None:
         """Leave task-specific reset positions to the caller."""

@@ -20,7 +20,7 @@ import time
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
-from rlinf.robotics.parts.arms.franka_ros import FrankaROSDriver
+from rlinf.robotics.parts.arms.franka_ros import FrankaROSArm
 
 
 def _parse_args():
@@ -72,7 +72,7 @@ def main():
             "motor_ids": tuple(args.hand_motor_ids),
         }
 
-    controller = FrankaROSDriver.spawn(
+    controller = FrankaROSArm.spawn(
         robot_ip=robot_ip,
         end_effector_type=args.end_effector_type,
         end_effector_config=end_effector_config,

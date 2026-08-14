@@ -55,9 +55,9 @@ def test_pure_driver_import_does_not_load_scheduler():
             "-c",
             (
                 "import sys; "
-                "from rlinf.robotics.parts.arms.franky import FrankyDriver; "
+                "from rlinf.robotics.parts.arms.franky import FrankyArm; "
                 "assert 'rlinf.scheduler' not in sys.modules; "
-                "assert not FrankyDriver('10.0.0.1').is_connected"
+                "assert not FrankyArm('10.0.0.1').is_connected"
             ),
         ],
         cwd=_ROOT,

@@ -14,11 +14,11 @@
 
 import time
 
-from rlinf.robotics.parts.arms.turtle2 import Turtle2Driver
+from rlinf.robotics.parts.arms.turtle2 import Turtle2Hardware
 
 
 def main():
-    controller = Turtle2Driver.spawn(freq=50, node_rank=0)
+    controller = Turtle2Hardware.spawn(freq=50, node_rank=0)
 
     while True:
         try:

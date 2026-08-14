@@ -278,7 +278,7 @@ def resolve_robot_ip(node_rank: int) -> Optional[str]:
 
     A remote arm may leave ``robot_ip`` unset in YAML because only the node
     wired to it knows the address. Any process in the cluster can ask, so this
-    resolves before placement rather than inside the hosted driver.
+    resolves before placement rather than inside the hosted part.
     """
     from rlinf.scheduler import Cluster
 
@@ -323,7 +323,7 @@ class FrankaArmConfig:
 
 
 def _franka_ros_spawn_args(arm: FrankaArmConfig, robot_ip: str) -> tuple:
-    """Positional arguments for :class:`FrankaROSDriver`."""
+    """Positional arguments for :class:`FrankaROSArm`."""
     return (
         robot_ip,
         "serl_franka_controllers",
@@ -335,15 +335,15 @@ def _franka_ros_spawn_args(arm: FrankaArmConfig, robot_ip: str) -> tuple:
 
 
 def _franky_spawn_args(arm: FrankaArmConfig, robot_ip: str) -> tuple:
-    """Positional arguments for :class:`FrankyDriver`."""
+    """Positional arguments for :class:`FrankyArm`."""
     return (robot_ip, arm.gripper_type, arm.gripper_connection)
 
 
 #: Backend name to the arm part that speaks it. The backend is a per-robot
 #: choice, not a separate robot type.
 FRANKA_BACKENDS: dict[str, tuple[str, Any]] = {
-    "franka_ros": ("FrankaROSDriver", _franka_ros_spawn_args),
-    "franky": ("FrankyDriver", _franky_spawn_args),
+    "franka_ros": ("FrankaROSArm", _franka_ros_spawn_args),
+    "franky": ("FrankyArm", _franky_spawn_args),
 }
 
 
@@ -354,13 +354,13 @@ def _franka_part_cls(backend: str):
             f"Supported: {sorted(FRANKA_BACKENDS)}."
         )
     part_name, _ = FRANKA_BACKENDS[backend]
-    if part_name == "FrankaROSDriver":
-        from ..parts.arms.franka_ros import FrankaROSDriver
+    if part_name == "FrankaROSArm":
+        from ..parts.arms.franka_ros import FrankaROSArm
 
-        return FrankaROSDriver
-    from ..parts.arms.franky import FrankyDriver
+        return FrankaROSArm
+    from ..parts.arms.franky import FrankyArm
 
-    return FrankyDriver
+    return FrankyArm
 
 
 def place_franka_arms(
@@ -378,7 +378,7 @@ def place_franka_arms(
     robot is never returned.
 
     Returns:
-        The composed arms and the driver handles backing them, both keyed by
+        The composed arms and the part handles backing them, both keyed by
         arm name.
     """
     if not arms:

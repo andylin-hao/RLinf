@@ -33,8 +33,8 @@ from rlinf.robotics.views import MethodGripper
 from rlinf.utils.logging import get_logger
 
 
-class FrankaROSDriver(ControllablePart):
-    """Pure ROS-backed Franka driver with no scheduler dependency."""
+class FrankaROSArm(ControllablePart):
+    """Franka arm over ROS, with no scheduler dependency."""
 
     def __init__(
         self,
@@ -48,7 +48,7 @@ class FrankaROSDriver(ControllablePart):
         self._logger = get_logger()
         if not robot_ip:
             raise ValueError(
-                "Franka 'robot_ip' must be resolved before constructing the driver."
+                "Franka 'robot_ip' must be resolved before constructing the arm."
             )
         self._robot_ip = robot_ip
         self._ros_pkg = ros_pkg

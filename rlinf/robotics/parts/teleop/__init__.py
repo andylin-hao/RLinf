@@ -15,9 +15,9 @@
 """Teleoperation devices.
 
 A leader arm, glove, motion controller, or spacemouse is hardware the operator
-drives, so it belongs with the other device drivers rather than with the
+drives, so it belongs with the other parts rather than with the
 environments that happen to read it. These modules stay free of Gymnasium and
-the scheduler like every other driver; the wrappers that turn their output into
+the scheduler like every other part; the wrappers that turn their output into
 interventions live in ``rlinf.envs.real.wrappers``.
 
 Imports are left to callers: each device needs its own vendor package.

@@ -84,7 +84,7 @@ class GimArmRobotState:
         return asdict(self)
 
 
-class GimArmDriver(ControllablePart):
+class GimArm(ControllablePart):
     """GimArm robot arm controller.
 
     Wraps the ``gim_arm_control`` SDK (CAN bus) independently of scheduling.
@@ -173,7 +173,7 @@ class GimArmDriver(ControllablePart):
         self._sdk = _SDKController(sdk_config)
         if not self._sdk.start(return_to_zero=True):
             raise RuntimeError(
-                "Failed to start GimArmDriver on CAN interface "
+                "Failed to start GimArm on CAN interface "
                 f"{self._can_interface!r}."
             )
         self._sdk.set_mode(ControlMode[self._control_mode.upper()])

@@ -14,7 +14,7 @@
 
 """GimArm env-level hardware test.
 
-Tests the RLinf GimArmDriver integration layer on real hardware:
+Tests the RLinf GimArm integration layer on real hardware:
 feedforward control thread, Butterworth filtering, smooth reset,
 move_joints, get_state (FK), and gripper — the same code path that
 GimArmEnv.step() and reset() use.
@@ -72,7 +72,7 @@ def main():
     )
     args = parser.parse_args()
 
-    from rlinf.robotics.parts.arms.gim_arm import GimArmDriver
+    from rlinf.robotics.parts.arms.gim_arm import GimArm
 
     passed = 0
     failed = 0
@@ -87,8 +87,8 @@ def main():
             print(f"  FAIL  {name}  {detail}")
 
     # ── 1. Launch controller via distributed Worker ──────────────────────────
-    print(f"\n[1] Launching GimArmDriver on '{args.can}' ...")
-    controller = GimArmDriver.spawn(
+    print(f"\n[1] Launching GimArm on '{args.can}' ...")
+    controller = GimArm.spawn(
         can_interface=args.can,
         arm_variant=args.variant,
         enable_gripper=not args.no_gripper,

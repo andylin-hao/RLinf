@@ -48,7 +48,7 @@ class RobotRegistration:
     config_cls: type[RobotConfig]
     discovery_cls: type["RobotDiscovery"]
     build: Optional[Callable[..., Robot]] = None
-    """Builder that places the robot's drivers and composes them."""
+    """Builder that places the robot's parts and composes them."""
 
 
 class RobotDiscovery(Hardware):

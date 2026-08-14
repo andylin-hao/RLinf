@@ -41,17 +41,17 @@ ARM_STATE_FIELDS: tuple[str, ...] = (
 )
 
 _MODULE_BY_NAME: dict[str, str] = {
-    "DOSW1ArmDriver": ".dosw1",
+    "DOSW1Arm": ".dosw1",
     "DOSW1RobotState": ".dosw1",
     "DOSW1ConnectionConfig": ".dosw1",
     "DOSW1EndEffector": ".dosw1",
-    "DOSW1SDKAdapter": ".dosw1",
-    "FrankaROSDriver": ".franka_ros",
+    "DOSW1Hardware": ".dosw1",
+    "FrankaROSArm": ".franka_ros",
     "FrankaRobotState": ".franka",
-    "FrankyDriver": ".franky",
-    "GimArmDriver": ".gim_arm",
+    "FrankyArm": ".franky",
+    "GimArm": ".gim_arm",
     "GimArmRobotState": ".gim_arm",
-    "Turtle2Driver": ".turtle2",
+    "Turtle2Hardware": ".turtle2",
     "Turtle2RobotState": ".turtle2",
 }
 
