@@ -18,11 +18,11 @@ from typing import Any, Optional, cast
 import numpy as np
 import pytest
 
-import rlinf.robotics.robots.franka as franka_module
 from rlinf.robotics import (
     Arm,
     Camera,
     ControllablePart,
+    DOSW1Robot,
     DOSW1RobotConfig,
     DualFrankaConfig,
     DualFrankaRobot,
@@ -43,7 +43,6 @@ from rlinf.robotics import (
     Turtle2Config,
     VectorActionAdapter,
     VectorActionBinding,
-    build_dosw1_robot,
     register_robot,
 )
 from rlinf.robotics.parts.arms import (
@@ -53,7 +52,6 @@ from rlinf.robotics.parts.arms import (
     Turtle2Hardware,
 )
 from rlinf.robotics.parts.arms.franka import FrankaRobotState
-from rlinf.robotics.robots.franka import place_franka_arms
 from rlinf.scheduler.hardware import (
     Hardware,
     HardwareConfig,
@@ -493,7 +491,7 @@ def test_dosw1_dummy_runtime_uses_composed_dual_arm_interface():
         is_dummy: bool = True
         gripper_width_max: float = 0.07
 
-    robot = build_dosw1_robot(DummyDOSW1Config())
+    robot = DOSW1Robot.build(config=DummyDOSW1Config())
 
     assert set(robot.arms) == {"left", "right"}
     observation = robot.get_observation()
@@ -547,7 +545,7 @@ def test_single_and_dual_franka_configs_project_onto_one_arm_shape():
     assert single_arms["arm"].node_rank == 0
 
 
-def test_place_franka_arms_tears_down_arms_already_placed(monkeypatch):
+def test_place_arms_tears_down_arms_already_placed(monkeypatch):
     """A partial robot is never returned when a later arm fails to come up."""
     disconnected: list[str] = []
 
@@ -568,10 +566,12 @@ def test_place_franka_arms_tears_down_arms_already_placed(monkeypatch):
                 raise RuntimeError("right arm is unreachable")
             return FakeHandle(robot_ip)
 
-    monkeypatch.setattr(franka_module, "_franka_part_cls", lambda backend: FakeDriver)
+    monkeypatch.setattr(
+        FrankaRobot, "arm_part_cls", classmethod(lambda cls, backend=None: FakeDriver)
+    )
 
     with pytest.raises(RuntimeError, match="unreachable"):
-        place_franka_arms(
+        FrankaRobot.place_arms(
             {
                 "left": FrankaArmConfig(robot_ip="10.0.0.1"),
                 "right": FrankaArmConfig(robot_ip="10.0.0.2"),
@@ -585,7 +585,7 @@ def test_place_franka_arms_tears_down_arms_already_placed(monkeypatch):
     assert disconnected == ["10.0.0.1"]
 
 
-def test_place_franka_arms_scales_past_two(monkeypatch):
+def test_place_arms_scales_past_two(monkeypatch):
     """Nothing in placement is specific to one or two arms."""
 
     class FakeHandle:
@@ -599,16 +599,18 @@ def test_place_franka_arms_scales_past_two(monkeypatch):
             pass
 
     monkeypatch.setattr(
-        franka_module,
-        "_franka_part_cls",
-        lambda backend: type(
-            "FakeDriver",
-            (),
-            {"spawn": staticmethod(lambda ip, *a, **k: FakeHandle(ip))},
+        FrankaRobot,
+        "arm_part_cls",
+        classmethod(
+            lambda cls, backend=None: type(
+                "FakeDriver",
+                (),
+                {"spawn": staticmethod(lambda ip, *a, **k: FakeHandle(ip))},
+            )
         ),
     )
 
-    arms, handles = place_franka_arms(
+    arms, handles = FrankaRobot.place_arms(
         {
             name: FrankaArmConfig(robot_ip=f"10.0.0.{index}")
             for index, name in enumerate(("left", "right", "third"), start=1)
@@ -657,3 +659,30 @@ def test_any_part_can_be_placed_not_only_arms():
     assert "connect:wrist" in events
     handle.disconnect()
     assert "disconnect:wrist" in events
+
+
+def test_every_robot_owns_its_construction():
+    """Construction and registration are the robot class's own behaviour.
+
+    ``build`` must be a classmethod bound to the registered class, not a loose
+    module function handed to the registry, so a subclass overriding it is what
+    ``build_robot`` dispatches to.
+    """
+    registry = RobotDiscovery.registry
+
+    for name, registration in registry.items():
+        build = registration.build
+        assert build is not None, f"{name} registered no builder"
+        assert getattr(build, "__self__", None) is registration.robot_cls, (
+            f"{name}'s builder is not bound to {registration.robot_cls.__name__}"
+        )
+
+
+def test_dual_franka_inherits_placement_from_franka():
+    """Arm count and backend are the only differences between the two."""
+    assert issubclass(DualFrankaRobot, FrankaRobot)
+    # place_arms is inherited, not duplicated.
+    assert DualFrankaRobot.place_arms.__func__ is FrankaRobot.place_arms.__func__
+    assert (FrankaRobot.BACKEND, DualFrankaRobot.BACKEND) == ("franka_ros", "franky")
+    # build is specialised per robot.
+    assert DualFrankaRobot.build.__func__ is not FrankaRobot.build.__func__

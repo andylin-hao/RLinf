@@ -20,7 +20,7 @@ from typing import Optional
 from rlinf.scheduler.hardware import HardwareConfig, HardwareInfo, HardwareResource
 
 from ..config import RobotAutoConfig
-from ..discovery import RobotConfig, RobotDiscovery, RobotInfo, register_robot
+from ..discovery import RobotConfig, RobotDiscovery, RobotInfo
 from ..parts.base import Arm
 from ..robot import Robot
 
@@ -29,6 +29,37 @@ class GimArmRobot(Robot):
     """Composable GimArm robot."""
 
     ROBOT_TYPE = "GimArm"
+
+    @classmethod
+    def build(
+        cls,
+        *,
+        can_interface: str,
+        arm_variant: str,
+        enable_gripper: bool,
+        gripper_type: str,
+        control_mode: str,
+        env_idx: int,
+        node_rank: int,
+        worker_rank: int,
+    ) -> "GimArmRobot":
+        """Place one CAN-controlled GimArm and compose it into a robot."""
+        from ..parts.arms.gim_arm import GimArm
+
+        handle = GimArm.spawn(
+            can_interface,
+            arm_variant,
+            enable_gripper,
+            gripper_type,
+            control_mode,
+            node_rank=node_rank,
+            name=f"GimArm-{worker_rank}-{env_idx}",
+        )
+        end_effector = handle.subpart("end_effector") if enable_gripper else None
+        return cls.single_arm(
+            Arm(handle.subpart("arm"), end_effector),
+            handles={"arm": handle},
+        )
 
 
 class GimArmDiscovery(RobotDiscovery):
@@ -140,38 +171,4 @@ class GimArmConfig(RobotConfig):
             self.camera_serials = list(self.camera_serials)
 
 
-
-
-def build_gim_arm_robot(
-    *,
-    can_interface: str,
-    arm_variant: str,
-    enable_gripper: bool,
-    gripper_type: str,
-    control_mode: str,
-    env_idx: int,
-    node_rank: int,
-    worker_rank: int,
-) -> GimArmRobot:
-    """Place one CAN-controlled GimArm and compose it into a robot."""
-    from ..parts.arms.gim_arm import GimArm
-
-    handle = GimArm.spawn(
-        can_interface,
-        arm_variant,
-        enable_gripper,
-        gripper_type,
-        control_mode,
-        node_rank=node_rank,
-        name=f"GimArm-{worker_rank}-{env_idx}",
-    )
-    end_effector = handle.subpart("end_effector") if enable_gripper else None
-    return GimArmRobot.single_arm(
-        Arm(handle.subpart("arm"), end_effector),
-        handles={"arm": handle},
-    )
-
-
-register_robot(GimArmConfig, GimArmRobot, build=build_gim_arm_robot)(
-    GimArmDiscovery
-)
+GimArmRobot.register(GimArmConfig, GimArmDiscovery)

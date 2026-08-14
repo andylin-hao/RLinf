@@ -27,9 +27,9 @@ from scipy.spatial.transform import Rotation as R
 from rlinf.envs.real.video_player import VideoPlayer
 from rlinf.robotics import (
     GimArmConfig,
+    GimArmRobot,
     Robot,
     RobotInfo,
-    build_gim_arm_robot,
 )
 from rlinf.robotics.parts.arms.gim_arm import GimArmRobotState
 from rlinf.robotics.parts.cameras import BaseCamera, CameraInfo, create_camera
@@ -241,7 +241,7 @@ class GimArmEnv(gym.Env):
         if controller_node_rank is None:
             controller_node_rank = self.node_rank
 
-        self.robot = build_gim_arm_robot(
+        self.robot = GimArmRobot.build(
             can_interface=self.config.can_interface,
             arm_variant=self.config.arm_variant,
             enable_gripper=self.config.enable_gripper,

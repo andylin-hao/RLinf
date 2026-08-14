@@ -21,15 +21,63 @@ from typing import Optional
 from rlinf.scheduler.hardware import HardwareConfig, HardwareInfo, HardwareResource
 
 from ..config import RobotAutoConfig
-from ..discovery import RobotConfig, RobotDiscovery, RobotInfo, register_robot
-from ..robot import Robot
-from .franka import FrankaArmConfig, place_franka_arms
+from ..discovery import RobotConfig, RobotDiscovery, RobotInfo
+from .franka import FrankaArmConfig, FrankaRobot
 
 
-class DualFrankaRobot(Robot):
+class DualFrankaRobot(FrankaRobot):
     """Composable dual-arm Franka robot."""
 
     ROBOT_TYPE = "DualFranka"
+
+    BACKEND = "franky"
+
+    @classmethod
+    def build(
+        cls,
+        *,
+        left_robot_ip: Optional[str],
+        right_robot_ip: Optional[str],
+        left_node_rank: int,
+        right_node_rank: int,
+        env_idx: int,
+        worker_rank: int,
+        left_gripper_type: str,
+        right_gripper_type: str,
+        left_gripper_connection: Optional[str] = None,
+        right_gripper_connection: Optional[str] = None,
+    ) -> "DualFrankaRobot":
+        """Place two independently located Franka arms and compose them.
+
+        Arm count is the only thing separating this from the single-arm build:
+        it is the size of the mapping handed to ``place_arms``, inherited
+        unchanged from :class:`~..franka.FrankaRobot`.
+        """
+        if not left_robot_ip or not right_robot_ip:
+            raise ValueError(
+                "Both Franka robot IPs are required for a dual-arm robot."
+            )
+
+        arms, handles = cls.place_arms(
+            {
+                "left": FrankaArmConfig(
+                    robot_ip=left_robot_ip,
+                    gripper_type=left_gripper_type,
+                    gripper_connection=left_gripper_connection,
+                    node_rank=left_node_rank,
+                ),
+                "right": FrankaArmConfig(
+                    robot_ip=right_robot_ip,
+                    gripper_type=right_gripper_type,
+                    gripper_connection=right_gripper_connection,
+                    node_rank=right_node_rank,
+                ),
+            },
+            default_node_rank=left_node_rank,
+            worker_rank=worker_rank,
+            env_idx=env_idx,
+        )
+        return cls(arms=arms, handles=handles)
 
 
 class DualFrankaDiscovery(RobotDiscovery):
@@ -211,51 +259,4 @@ class DualFrankaConfig(RobotConfig):
             )
 
 
-def build_dual_franka_robot(
-    *,
-    left_robot_ip: Optional[str],
-    right_robot_ip: Optional[str],
-    left_node_rank: int,
-    right_node_rank: int,
-    env_idx: int,
-    worker_rank: int,
-    left_gripper_type: str,
-    right_gripper_type: str,
-    left_gripper_connection: Optional[str] = None,
-    right_gripper_connection: Optional[str] = None,
-) -> DualFrankaRobot:
-    """Place two independently located Franka arms and compose them.
-
-    Arm count is the only thing separating this from the single-arm builder,
-    and it is now just the size of the mapping handed to
-    :func:`~rlinf.robotics.robots.franka.place_franka_arms`.
-    """
-    if not left_robot_ip or not right_robot_ip:
-        raise ValueError("Both Franka robot IPs are required for a dual-arm robot.")
-
-    arms, handles = place_franka_arms(
-        {
-            "left": FrankaArmConfig(
-                robot_ip=left_robot_ip,
-                gripper_type=left_gripper_type,
-                gripper_connection=left_gripper_connection,
-                node_rank=left_node_rank,
-            ),
-            "right": FrankaArmConfig(
-                robot_ip=right_robot_ip,
-                gripper_type=right_gripper_type,
-                gripper_connection=right_gripper_connection,
-                node_rank=right_node_rank,
-            ),
-        },
-        backend="franky",
-        default_node_rank=left_node_rank,
-        worker_rank=worker_rank,
-        env_idx=env_idx,
-    )
-    return DualFrankaRobot(arms=arms, handles=handles)
-
-
-register_robot(
-    DualFrankaConfig, DualFrankaRobot, build=build_dual_franka_robot
-)(DualFrankaDiscovery)
+DualFrankaRobot.register(DualFrankaConfig, DualFrankaDiscovery)

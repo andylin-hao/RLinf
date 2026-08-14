@@ -78,12 +78,7 @@ _MODULE_GROUPS: dict[str, tuple[str, ...]] = {
         "GimArmRobot",
         "Turtle2Config",
         "Turtle2Robot",
-        "build_dosw1_robot",
-        "build_dual_franka_robot",
-        "build_franka_robot",
-        "build_gim_arm_robot",
-        "build_turtle2_robot",
-        "place_franka_arms",
+        "FRANKA_BACKENDS",
     ),
     ".adapters": (
         "LegacyObservationAdapter",

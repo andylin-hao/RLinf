@@ -187,25 +187,29 @@ worker 中。两种方式返回的句柄 API 相同，调用方无需区分。�
        right_endpoint: str = ""
 
 
-   def build_example_robot(config: ExampleRobotConfig) -> ExampleRobot:
-       handles = {
-           side: ExampleArm.spawn(
-               endpoint,
-               node_rank=config.node_rank,
-               name=f"ExampleArm-{side}",
-           )
-           for side, endpoint in (
-               ("left", config.left_endpoint),
-               ("right", config.right_endpoint),
-           )
-       }
-       return ExampleRobot.dual_arm(
-           Arm(handles["left"].subpart("arm")),
-           Arm(handles["right"].subpart("arm")),
-           handles=handles,
-       )
+   class ExampleRobot(Robot):
+       ROBOT_TYPE = "ExampleRobot"
 
-单臂型号沿用同一个构建函数，但返回 ``ExampleRobot.single_arm(...)``。如果后续部件
+       @classmethod
+       def build(cls, *, config: ExampleRobotConfig) -> "ExampleRobot":
+           handles = {
+               side: ExampleArm.spawn(
+                   endpoint,
+                   node_rank=config.node_rank,
+                   name=f"ExampleArm-{side}",
+               )
+               for side, endpoint in (
+                   ("left", config.left_endpoint),
+                   ("right", config.right_endpoint),
+               )
+           }
+           return cls.dual_arm(
+               Arm(handles["left"].subpart("arm")),
+               Arm(handles["right"].subpart("arm")),
+               handles=handles,
+           )
+
+单臂型号沿用同一个 ``build()``，只是改为返回 ``ExampleRobot.single_arm(...)``。如果后续部件
 启动失败，请先断开已经放置的句柄，再抛出错误。不要返回不完整的机器人。
 
 注册机器人
@@ -217,7 +221,7 @@ worker 中。两种方式返回的句柄 API 相同，调用方无需区分。�
 
    from typing import Optional
 
-   from rlinf.robotics import RobotDiscovery, RobotInfo, register_robot
+   from rlinf.robotics import RobotDiscovery, RobotInfo
    from rlinf.scheduler.hardware import HardwareConfig, HardwareResource
 
 
@@ -247,12 +251,14 @@ worker 中。两种方式返回的句柄 API 相同，调用方无需区分。�
            )
 
 
-   register_robot(
-       ExampleRobotConfig, ExampleRobot, build=build_example_robot
-   )(ExampleRobotDiscovery)
+   ExampleRobot.register(ExampleRobotConfig, ExampleRobotDiscovery)
 
-把这次调用放在模块末尾，确保调用时构建函数已经定义。注册完成后，用
-``build_robot("ExampleRobot", ...)`` 按名称组合机器人。无需直接导入构建函数。
+把这次调用放在模块末尾，确保配置类和发现类都已定义。它会一次性注册机器人类、
+配置、发现逻辑和 ``build``。注册完成后，用 ``build_robot("ExampleRobot", ...)``
+按名称组合机器人，无需直接导入这个类。
+
+继承已有机器人即可复用它的构建逻辑。``DualFrankaRobot`` 继承 ``FrankaRobot``，
+原样沿用 ``place_arms``，只覆盖 ``BACKEND`` 和 ``build``。
 
 构造 ``Cluster`` 前，先导入注册模块。RLinf 会将已注册的硬件策略模块传给各节点的
 探测流程。确保每个节点配置的 Python 环境都能导入该模块。

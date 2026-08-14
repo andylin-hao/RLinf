@@ -27,6 +27,27 @@ class Robot:
 
     ROBOT_TYPE: ClassVar[str] = ""
 
+    @classmethod
+    def build(cls, **kwargs: Any) -> "Robot":
+        """Place this robot's parts and compose them into an instance.
+
+        Subclasses implement this. It is what ``register`` hands to the
+        registry, so :func:`~rlinf.robotics.discovery.build_robot` can compose a
+        robot from its type name alone.
+        """
+        raise NotImplementedError(f"{cls.__name__} does not implement build().")
+
+    @classmethod
+    def register(cls, config_cls: type, discovery_cls: type) -> type:
+        """Register this robot's config, discovery, and builder in one call.
+
+        Call it at the end of the robot's own module, once the config and
+        discovery classes exist. Nothing central needs editing.
+        """
+        from .discovery import register_robot
+
+        return register_robot(config_cls, cls, build=cls.build)(discovery_cls)
+
     def __init__(
         self,
         arms: Optional[Mapping[str, Arm]] = None,

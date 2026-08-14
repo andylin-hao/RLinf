@@ -180,9 +180,9 @@ locally and remotely::
 Describe and Build the Robot
 ----------------------------
 
-Store connections and placement in a ``RobotConfig`` dataclass. Add a builder
-that composes a ``Robot`` from those fields. Keep reset poses, rewards, and
-episode horizons in the task config.
+Store connections and placement in a ``RobotConfig`` dataclass. Implement
+``build()`` on your robot class to compose a ``Robot`` from those fields. Keep
+reset poses, rewards, and episode horizons in the task config.
 
 .. code-block:: python
 
@@ -197,23 +197,27 @@ episode horizons in the task config.
        right_endpoint: str = ""
 
 
-   def build_example_robot(config: ExampleRobotConfig) -> ExampleRobot:
-       handles = {
-           side: ExampleArm.spawn(
-               endpoint,
-               node_rank=config.node_rank,
-               name=f"ExampleArm-{side}",
+   class ExampleRobot(Robot):
+       ROBOT_TYPE = "ExampleRobot"
+
+       @classmethod
+       def build(cls, *, config: ExampleRobotConfig) -> "ExampleRobot":
+           handles = {
+               side: ExampleArm.spawn(
+                   endpoint,
+                   node_rank=config.node_rank,
+                   name=f"ExampleArm-{side}",
+               )
+               for side, endpoint in (
+                   ("left", config.left_endpoint),
+                   ("right", config.right_endpoint),
+               )
+           }
+           return cls.dual_arm(
+               Arm(handles["left"].subpart("arm")),
+               Arm(handles["right"].subpart("arm")),
+               handles=handles,
            )
-           for side, endpoint in (
-               ("left", config.left_endpoint),
-               ("right", config.right_endpoint),
-           )
-       }
-       return ExampleRobot.dual_arm(
-           Arm(handles["left"].subpart("arm")),
-           Arm(handles["right"].subpart("arm")),
-           handles=handles,
-       )
 
 Build a single-arm variant with the same builder, but return
 ``ExampleRobot.single_arm(...)``. If a later part fails to start, disconnect the
@@ -230,7 +234,7 @@ robot's module. Do not edit a central registry.
 
    from typing import Optional
 
-   from rlinf.robotics import RobotDiscovery, RobotInfo, register_robot
+   from rlinf.robotics import RobotDiscovery, RobotInfo
    from rlinf.scheduler.hardware import HardwareConfig, HardwareResource
 
 
@@ -260,13 +264,16 @@ robot's module. Do not edit a central registry.
            )
 
 
-   register_robot(
-       ExampleRobotConfig, ExampleRobot, build=build_example_robot
-   )(ExampleRobotDiscovery)
+   ExampleRobot.register(ExampleRobotConfig, ExampleRobotDiscovery)
 
-Place this call at the end of the module so it can reference the builder. After
-registration, call ``build_robot("ExampleRobot", ...)`` to compose the robot by
-name without importing its builder directly.
+Place this call at the end of the module, once the config and discovery classes
+exist. It registers the class, its config, its discovery, and its ``build``
+together. After registration, call ``build_robot("ExampleRobot", ...)`` to
+compose the robot by name without importing the class directly.
+
+Subclass a robot to reuse its construction. ``DualFrankaRobot`` extends
+``FrankaRobot``, inherits ``place_arms`` unchanged, and overrides only
+``BACKEND`` and ``build``.
 
 Import the registration module before you construct ``Cluster``. RLinf
 propagates registered hardware policy modules to node probes. Make the module

@@ -12,21 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Supported robots: one module each, holding its config, discovery, and builder."""
+"""Supported robots: one module each, holding its config, discovery, and class.
 
-from .dosw1 import DOSW1Robot, DOSW1RobotConfig, build_dosw1_robot
-from .dual_franka import DualFrankaConfig, DualFrankaRobot, build_dual_franka_robot
-from .franka import (
-    FrankaArmConfig,
-    FrankaConfig,
-    FrankaRobot,
-    build_franka_robot,
-    place_franka_arms,
-)
-from .gim_arm import GimArmConfig, GimArmRobot, build_gim_arm_robot
-from .turtle2 import Turtle2Config, Turtle2Robot, build_turtle2_robot
+Each robot class owns its own construction: ``build()`` places its parts and
+composes them, and ``register()`` wires the class, its config, and its discovery
+into the registry. Importing this package performs those registrations.
+"""
+
+from .dosw1 import DOSW1Robot, DOSW1RobotConfig
+from .dual_franka import DualFrankaConfig, DualFrankaRobot
+from .franka import FRANKA_BACKENDS, FrankaArmConfig, FrankaConfig, FrankaRobot
+from .gim_arm import GimArmConfig, GimArmRobot
+from .turtle2 import Turtle2Config, Turtle2Robot
 
 __all__ = [
+    "FRANKA_BACKENDS",
     "DOSW1Robot",
     "DOSW1RobotConfig",
     "DualFrankaConfig",
@@ -38,10 +38,4 @@ __all__ = [
     "GimArmRobot",
     "Turtle2Config",
     "Turtle2Robot",
-    "build_dosw1_robot",
-    "build_dual_franka_robot",
-    "build_franka_robot",
-    "build_gim_arm_robot",
-    "build_turtle2_robot",
-    "place_franka_arms",
 ]

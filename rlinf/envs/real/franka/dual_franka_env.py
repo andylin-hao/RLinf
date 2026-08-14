@@ -30,9 +30,9 @@ from scipy.spatial.transform import Rotation as R
 from rlinf.envs.real.video_player import VideoPlayer
 from rlinf.robotics import (
     DualFrankaConfig,
+    DualFrankaRobot,
     Robot,
     RobotInfo,
-    build_dual_franka_robot,
 )
 from rlinf.robotics.parts.arms.franka import FrankaRobotState
 from rlinf.robotics.parts.cameras import BaseCamera, CameraInfo, create_camera
@@ -348,7 +348,7 @@ class DualFrankaEnv(gym.Env):
         self._resolve_hw_overrides()
         left_node, right_node = self._resolve_controller_node_ranks()
 
-        self.robot = build_dual_franka_robot(
+        self.robot = DualFrankaRobot.build(
             left_robot_ip=self.config.left_robot_ip,
             right_robot_ip=self.config.right_robot_ip,
             env_idx=self.env_idx,

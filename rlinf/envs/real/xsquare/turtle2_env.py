@@ -28,7 +28,7 @@ from rlinf.robotics import (
     Robot,
     RobotInfo,
     Turtle2Config,
-    build_turtle2_robot,
+    Turtle2Robot,
 )
 from rlinf.robotics.parts.arms.turtle2 import Turtle2RobotState
 from rlinf.scheduler import WorkerInfo
@@ -146,7 +146,7 @@ class Turtle2Env(gym.Env):
     def _setup_hardware(self):
         assert self.env_idx >= 0, "env_idx must be set for Turtle2Env."
 
-        self.robot = build_turtle2_robot(
+        self.robot = Turtle2Robot.build(
             frequency=self.config.smooth_frequency,
             camera_ids=self.config.use_camera_ids,
             env_idx=self.env_idx,

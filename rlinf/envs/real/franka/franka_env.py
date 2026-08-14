@@ -27,9 +27,9 @@ from scipy.spatial.transform import Rotation as R
 from rlinf.envs.real.video_player import VideoPlayer
 from rlinf.robotics import (
     FrankaConfig,
+    FrankaRobot,
     Robot,
     RobotInfo,
-    build_franka_robot,
 )
 from rlinf.robotics.parts.arms.franka import FrankaRobotState
 from rlinf.robotics.parts.cameras import BaseCamera, CameraInfo, create_camera
@@ -268,7 +268,7 @@ class FrankaEnv(gym.Env):
         )
         if controller_node_rank is None:
             controller_node_rank = self.node_rank
-        self.robot = build_franka_robot(
+        self.robot = FrankaRobot.build(
             robot_ip=self.config.robot_ip,
             env_idx=self.env_idx,
             node_rank=controller_node_rank,

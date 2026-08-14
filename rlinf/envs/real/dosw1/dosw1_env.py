@@ -28,10 +28,10 @@ import numpy as np
 
 from rlinf.envs.real.video_player import VideoPlayer
 from rlinf.robotics import (
+    DOSW1Robot,
     DOSW1RobotConfig,
     Robot,
     RobotInfo,
-    build_dosw1_robot,
 )
 from rlinf.robotics.parts.arms import DOSW1Arm, DOSW1Hardware
 from rlinf.robotics.parts.arms.dosw1 import DOSW1RobotState
@@ -144,7 +144,7 @@ class DOSW1Env(gym.Env):
         self.robot: Robot | None = None
         if not config.is_dummy:
             self._apply_hardware_info(hardware_info)
-            self.robot = build_dosw1_robot(config)
+            self.robot = DOSW1Robot.build(config=config)
             left_driver = cast(
                 DOSW1Arm,
                 self.robot.arms["left"].driver,

@@ -20,7 +20,7 @@ from typing import Optional
 from rlinf.scheduler.hardware import HardwareConfig, HardwareInfo, HardwareResource
 
 from ..config import RobotAutoConfig
-from ..discovery import RobotConfig, RobotDiscovery, RobotInfo, register_robot
+from ..discovery import RobotConfig, RobotDiscovery, RobotInfo
 from ..parts.base import Arm
 from ..robot import Robot
 
@@ -29,6 +29,22 @@ class DOSW1Robot(Robot):
     """Composable DOS-W1 robot."""
 
     ROBOT_TYPE = "DOSW1"
+
+    @classmethod
+    def build(cls, *, config) -> "DOSW1Robot":
+        """Compose a DOSW1 dual-arm robot on one local SDK session.
+
+        Both arms share a single connection, so there is nothing to place: the
+        part is built in this process.
+        """
+        from ..parts.arms.dosw1 import DOSW1Hardware
+
+        handle = DOSW1Hardware.spawn(config)
+        return cls.dual_arm(
+            Arm(handle.subpart("left"), handle.subpart("left_end_effector")),
+            Arm(handle.subpart("right"), handle.subpart("right_end_effector")),
+            handles={"sdk": handle},
+        )
 
 
 class DOSW1Discovery(RobotDiscovery):
@@ -121,24 +137,4 @@ class DOSW1RobotConfig(RobotConfig):
             self.camera_serials = [str(s) for s in self.camera_serials]
 
 
-
-
-def build_dosw1_robot(config) -> DOSW1Robot:
-    """Compose a DOSW1 dual-arm robot on one local SDK session.
-
-    Both arms share a single connection, so there is nothing to place: the
-    part is built in this process.
-    """
-    from ..parts.arms.dosw1 import DOSW1Hardware
-
-    handle = DOSW1Hardware.spawn(config)
-    return DOSW1Robot.dual_arm(
-        Arm(handle.subpart("left"), handle.subpart("left_end_effector")),
-        Arm(handle.subpart("right"), handle.subpart("right_end_effector")),
-        handles={"sdk": handle},
-    )
-
-
-register_robot(DOSW1RobotConfig, DOSW1Robot, build=build_dosw1_robot)(
-    DOSW1Discovery
-)
+DOSW1Robot.register(DOSW1RobotConfig, DOSW1Discovery)

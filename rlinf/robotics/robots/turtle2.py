@@ -18,7 +18,7 @@ from typing import Optional
 from rlinf.scheduler.hardware import HardwareConfig, HardwareInfo, HardwareResource
 
 from ..config import RobotAutoConfig
-from ..discovery import RobotConfig, RobotDiscovery, RobotInfo, register_robot
+from ..discovery import RobotConfig, RobotDiscovery, RobotInfo
 from ..parts.base import Arm
 from ..robot import Robot
 
@@ -27,6 +27,41 @@ class Turtle2Robot(Robot):
     """Composable Turtle2 robot."""
 
     ROBOT_TYPE = "Turtle2"
+
+    @classmethod
+    def build(
+        cls,
+        *,
+        frequency: int,
+        camera_ids: list[int],
+        env_idx: int,
+        node_rank: int,
+        worker_rank: int,
+    ) -> "Turtle2Robot":
+        """Place the coupled Turtle2 controller and compose both arms from it.
+
+        One connection backs both arms, both grippers, and the wrist cameras;
+        the hardware part decomposes itself into those subparts.
+        """
+        from ..parts.arms.turtle2 import Turtle2Hardware
+
+        handle = Turtle2Hardware.spawn(
+            frequency,
+            tuple(camera_ids),
+            node_rank=node_rank,
+            name=f"Turtle2Hardware-{worker_rank}-{env_idx}",
+        )
+        cameras = {
+            name: part
+            for name, part in handle.subparts.items()
+            if name.startswith("wrist_")
+        }
+        return cls.dual_arm(
+            Arm(handle.subpart("left"), handle.subpart("left_end_effector")),
+            Arm(handle.subpart("right"), handle.subpart("right_end_effector")),
+            cameras=cameras,
+            handles={"controller": handle},
+        )
 
 
 class Turtle2Discovery(RobotDiscovery):
@@ -84,40 +119,4 @@ class Turtle2Config(RobotConfig):
         )
 
 
-
-
-def build_turtle2_robot(
-    *,
-    frequency: int,
-    camera_ids: list[int],
-    env_idx: int,
-    node_rank: int,
-    worker_rank: int,
-) -> Turtle2Robot:
-    """Place the coupled Turtle2 controller and compose both arms from it.
-
-    One connection backs both arms, both grippers, and the wrist cameras; the
-    hardware part decomposes itself into those subparts.
-    """
-    from ..parts.arms.turtle2 import Turtle2Hardware
-
-    handle = Turtle2Hardware.spawn(
-        frequency,
-        tuple(camera_ids),
-        node_rank=node_rank,
-        name=f"Turtle2Hardware-{worker_rank}-{env_idx}",
-    )
-    cameras = {
-        name: part for name, part in handle.parts.items() if name.startswith("wrist_")
-    }
-    return Turtle2Robot.dual_arm(
-        Arm(handle.subpart("left"), handle.subpart("left_end_effector")),
-        Arm(handle.subpart("right"), handle.subpart("right_end_effector")),
-        cameras=cameras,
-        handles={"controller": handle},
-    )
-
-
-register_robot(Turtle2Config, Turtle2Robot, build=build_turtle2_robot)(
-    Turtle2Discovery
-)
+Turtle2Robot.register(Turtle2Config, Turtle2Discovery)
