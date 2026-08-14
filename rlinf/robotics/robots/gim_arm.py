@@ -21,7 +21,6 @@ from rlinf.scheduler.hardware import HardwareConfig, HardwareInfo, HardwareResou
 
 from ..config import RobotAutoConfig
 from ..discovery import RobotConfig, RobotDiscovery, RobotInfo, register_robot
-from ..layout import ArmSpec, CameraSpec, EndEffectorSpec, RobotSpec
 from ..parts.base import Arm
 from ..robot import Robot
 
@@ -140,40 +139,7 @@ class GimArmConfig(RobotConfig):
         if self.camera_serials:
             self.camera_serials = list(self.camera_serials)
 
-    def to_spec(self) -> RobotSpec:
-        """Translate the flat GimArm config into a single-arm layout."""
-        cameras = tuple(
-            CameraSpec(
-                name=f"camera_{index}",
-                camera_type=self.camera_type,
-                serial_number=serial,
-                node_rank=self.node_rank,
-            )
-            for index, serial in enumerate(self.camera_serials or [])
-        )
-        end_effector = None
-        if self.enable_gripper:
-            end_effector = EndEffectorSpec(kind=self.gripper_type)
-        arm = ArmSpec(
-            name="arm",
-            driver=self.arm_variant,
-            node_rank=(
-                self.controller_node_rank
-                if self.controller_node_rank is not None
-                else self.node_rank
-            ),
-            connection={"can_interface": self.can_interface},
-            end_effector=end_effector,
-            cameras=cameras,
-        )
-        return RobotSpec(
-            robot_type=GimArmRobot.ROBOT_TYPE,
-            node_rank=self.node_rank,
-            arms=(arm,),
-        )
 
-
-register_robot(GimArmConfig, GimArmRobot)(GimArmDiscovery)
 
 
 def build_gim_arm_robot(
@@ -204,3 +170,8 @@ def build_gim_arm_robot(
         Arm(handle.part("arm"), end_effector),
         drivers={"arm": handle},
     )
+
+
+register_robot(GimArmConfig, GimArmRobot, build=build_gim_arm_robot)(
+    GimArmDiscovery
+)

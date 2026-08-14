@@ -22,7 +22,6 @@ from rlinf.scheduler.hardware import HardwareConfig, HardwareInfo, HardwareResou
 
 from ..config import RobotAutoConfig
 from ..discovery import RobotConfig, RobotDiscovery, RobotInfo, register_robot
-from ..layout import ArmSpec, CameraSpec, EndEffectorSpec, RobotSpec
 from ..parts.base import Arm
 from ..robot import Robot
 
@@ -255,40 +254,7 @@ class FrankaConfig(RobotConfig):
         if self.camera_serials:
             self.camera_serials = list(self.camera_serials)
 
-    def to_spec(self) -> RobotSpec:
-        """Translate the flat Franka config into a single-arm layout."""
-        cameras = tuple(
-            CameraSpec(
-                name=f"camera_{index}",
-                camera_type=self.camera_type,
-                serial_number=serial,
-                node_rank=self.node_rank,
-            )
-            for index, serial in enumerate(self.camera_serials or [])
-        )
-        arm = ArmSpec(
-            name="arm",
-            driver="franka_ros",
-            node_rank=(
-                self.controller_node_rank
-                if self.controller_node_rank is not None
-                else self.node_rank
-            ),
-            connection={"robot_ip": self.robot_ip},
-            end_effector=EndEffectorSpec(
-                kind=self.gripper_type,
-                connection=self.gripper_connection,
-            ),
-            cameras=cameras,
-        )
-        return RobotSpec(
-            robot_type=FrankaRobot.ROBOT_TYPE,
-            node_rank=self.node_rank,
-            arms=(arm,),
-        )
 
-
-register_robot(FrankaConfig, FrankaRobot)(FrankaDiscovery)
 
 
 def resolve_robot_ip(node_rank: int) -> Optional[str]:
@@ -347,3 +313,8 @@ def build_franka_robot(
         Arm(handle.part("arm"), handle.part("end_effector")),
         drivers={"arm": handle},
     )
+
+
+register_robot(FrankaConfig, FrankaRobot, build=build_franka_robot)(
+    FrankaDiscovery
+)

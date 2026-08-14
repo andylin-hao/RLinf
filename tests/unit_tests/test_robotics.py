@@ -20,16 +20,13 @@ import pytest
 
 from rlinf.robotics import (
     Arm,
-    ArmSpec,
     Camera,
     ControllablePart,
     DOSW1RobotConfig,
     DriverArm,
     DriverGripper,
-    DualFrankaConfig,
     DualFrankaRobot,
     EndEffector,
-    FrankaConfig,
     FrankaRobot,
     GimArmConfig,
     LegacyObservationAdapter,
@@ -39,7 +36,6 @@ from rlinf.robotics import (
     RobotConfig,
     RobotDiscovery,
     RobotPart,
-    RobotSpec,
     Turtle2Config,
     VectorActionAdapter,
     VectorActionBinding,
@@ -465,52 +461,28 @@ def test_legacy_adapters_preserve_policy_facing_layouts():
     )
 
 
-def test_legacy_configs_translate_to_composed_specs():
-    franka = FrankaConfig(
-        node_rank=1,
-        robot_ip="10.0.0.1",
-        camera_serials=["wrist"],
-        controller_node_rank=0,
-        disable_validate=True,
-    ).to_spec()
-    dual = DualFrankaConfig(
-        node_rank=0,
-        left_robot_ip="10.0.0.1",
-        right_robot_ip="10.0.0.2",
-        left_camera_serials=["left_cam"],
-        right_camera_serials=["right_cam"],
-        base_camera_serials=["base_cam"],
-        right_controller_node_rank=1,
-    ).to_spec()
+def test_all_builtin_configs_construct_from_a_node_rank_alone():
+    """Every built-in robot config is usable with only its placement set."""
+    configs = [
+        GimArmConfig(node_rank=0),
+        DOSW1RobotConfig(node_rank=0),
+        Turtle2Config(node_rank=0),
+    ]
 
-    assert [arm.name for arm in franka.arms] == ["arm"]
-    assert franka.arm("arm").node_rank == 0
-    assert franka.arm("arm").cameras[0].serial_number == "wrist"
-    assert [arm.name for arm in dual.arms] == ["left", "right"]
-    assert dual.arm("right").node_rank == 1
-    assert dual.cameras[0].name == "base_0"
+    assert all(config.node_rank == 0 for config in configs)
 
 
-def test_all_builtin_configs_translate_to_physical_layouts():
-    gim_arm = GimArmConfig(node_rank=0).to_spec()
-    dosw1 = DOSW1RobotConfig(node_rank=0).to_spec()
-    turtle2 = Turtle2Config(node_rank=0).to_spec()
+def test_every_registered_robot_carries_a_builder():
+    """Registration is the single source of truth for a robot type.
 
-    assert [arm.name for arm in gim_arm.arms] == ["arm"]
-    assert [arm.name for arm in dosw1.arms] == ["left", "right"]
-    assert [part.name for part in turtle2.parts] == ["base", "head", "lift"]
+    A robot module registers its config, robot, discovery, and builder in one
+    call, so composing by type name never needs a central dispatch table.
+    """
+    registry = RobotDiscovery.registry
 
-
-def test_robot_spec_rejects_duplicate_component_names():
-    with pytest.raises(ValueError, match="duplicate arm names"):
-        RobotSpec(
-            robot_type="test",
-            node_rank=0,
-            arms=(
-                ArmSpec(name="arm", driver="first", node_rank=0),
-                ArmSpec(name="arm", driver="second", node_rank=0),
-            ),
-        )
+    assert set(registry) >= {"Franka", "DualFranka", "GimArm", "Turtle2", "DOSW1"}
+    missing = sorted(name for name, reg in registry.items() if reg.build is None)
+    assert missing == []
 
 
 def test_dosw1_dummy_runtime_uses_composed_dual_arm_interface():

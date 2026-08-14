@@ -14,7 +14,7 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, ClassVar, Generic, TypeVar
+from typing import Any, ClassVar, Generic, Optional, TypeVar
 
 from rlinf.scheduler.hardware import (
     Hardware,
@@ -25,19 +25,12 @@ from rlinf.scheduler.hardware import (
 
 from .robot import Robot
 
-if TYPE_CHECKING:
-    from .layout import RobotSpec
-
 RobotConfigType = TypeVar("RobotConfigType", bound="RobotConfig", covariant=True)
 
 
 @dataclass
 class RobotConfig(HardwareConfig):
     """Base physical configuration for a registered robot."""
-
-    def to_spec(self) -> "RobotSpec":
-        """Translate a legacy physical config into a composed robot layout."""
-        raise NotImplementedError(f"{type(self).__name__} must implement to_spec().")
 
 
 @dataclass
@@ -49,11 +42,13 @@ class RobotInfo(HardwareInfo, Generic[RobotConfigType]):
 
 @dataclass(frozen=True)
 class RobotRegistration:
-    """Classes associated with one registered physical robot type."""
+    """Everything one registered robot type contributes."""
 
     robot_cls: type[Robot]
     config_cls: type[RobotConfig]
     discovery_cls: type["RobotDiscovery"]
+    build: Optional[Callable[..., Robot]] = None
+    """Builder that places the robot's drivers and composes them."""
 
 
 class RobotDiscovery(Hardware):
@@ -62,11 +57,33 @@ class RobotDiscovery(Hardware):
     registry: ClassVar[dict[str, RobotRegistration]] = {}
 
 
+def build_robot(robot_type: str, **kwargs: Any) -> Robot:
+    """Build a registered robot by type name.
+
+    Lets a caller compose a robot from configuration alone, without importing
+    that robot's builder directly.
+    """
+    registration = RobotDiscovery.registry.get(robot_type)
+    if registration is None:
+        raise KeyError(
+            f"Unknown robot type {robot_type!r}. "
+            f"Registered: {sorted(RobotDiscovery.registry)}."
+        )
+    if registration.build is None:
+        raise NotImplementedError(f"Robot type {robot_type!r} registered no builder.")
+    return registration.build(**kwargs)
+
+
 def register_robot(
     config_cls: type[RobotConfig],
     robot_cls: type[Robot],
+    build: Optional[Callable[..., Robot]] = None,
 ) -> Callable[[type[RobotDiscovery]], type[RobotDiscovery]]:
-    """Register composition, config, and discovery classes for one robot type."""
+    """Register composition, config, discovery, and builder for one robot type.
+
+    One call per robot, made from that robot's own module, so adding hardware
+    does not edit a central table.
+    """
 
     def decorator(discovery_cls: type[RobotDiscovery]) -> type[RobotDiscovery]:
         if not issubclass(discovery_cls, RobotDiscovery):
@@ -98,6 +115,7 @@ def register_robot(
             robot_cls=robot_cls,
             config_cls=config_cls,
             discovery_cls=discovery_cls,
+            build=build,
         )
         return discovery_cls
 

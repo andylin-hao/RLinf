@@ -23,8 +23,6 @@ Keep each layer focused on one responsibility.
      - Compose one arm driver, an optional ``EndEffector``, and named wrist cameras.
    * - ``Robot``
      - Compose named arms, robot-level cameras, and optional parts such as a base.
-   * - ``RobotSpec``
-     - Describe physical arms, cameras, end effectors, connections, and node ranks.
    * - ``RobotDiscovery``
      - Translate scheduler hardware configuration into generic hardware resources.
    * - ``DriverHandle``
@@ -144,15 +142,15 @@ additional components use ``parts.<name>``.
 Describe Physical Hardware
 --------------------------
 
-Make ``RobotConfig.to_spec()`` the translation boundary from an existing flat
-YAML schema to the canonical physical layout. Put connections and placement in
-``RobotSpec``. Keep reset poses, rewards, and episode horizons in the task config.
+Put connections and placement in a ``RobotConfig`` dataclass, and give it a
+builder that turns those fields into a composed ``Robot``. Keep reset poses,
+rewards, and episode horizons in the task config instead.
 
 .. code-block:: python
 
    from dataclasses import dataclass
 
-   from rlinf.robotics import ArmSpec, RobotConfig, RobotSpec
+   from rlinf.robotics import Arm, Robot, RobotConfig
 
 
    @dataclass
@@ -160,29 +158,27 @@ YAML schema to the canonical physical layout. Put connections and placement in
        left_endpoint: str
        right_endpoint: str
 
-       def to_spec(self) -> RobotSpec:
-           return RobotSpec(
-               robot_type=ExampleRobot.ROBOT_TYPE,
-               node_rank=self.node_rank,
-               arms=(
-                   ArmSpec(
-                       name="left",
-                       driver="example",
-                       node_rank=self.node_rank,
-                       connection={"endpoint": self.left_endpoint},
-                   ),
-                   ArmSpec(
-                       name="right",
-                       driver="example",
-                       node_rank=self.node_rank,
-                       connection={"endpoint": self.right_endpoint},
-                   ),
-               ),
-           )
 
-Use ``CameraSpec`` for robot-level or wrist cameras, ``EndEffectorSpec`` for a
-tool attached to an arm, and ``PartSpec`` for a base, head, lift, or another
-optional component.
+   def build_example_robot(config: ExampleRobotConfig) -> ExampleRobot:
+       handles = {
+           side: ExampleArmDriver.spawn(
+               endpoint=endpoint,
+               node_rank=config.node_rank,
+               name=f"ExampleArmDriver-{side}",
+           )
+           for side, endpoint in (
+               ("left", config.left_endpoint),
+               ("right", config.right_endpoint),
+           )
+       }
+       return ExampleRobot.dual_arm(
+           Arm(handles["left"].part("arm")),
+           Arm(handles["right"].part("arm")),
+           drivers=handles,
+       )
+
+Arm count is composition, not a robot type: a single-arm variant is the same
+builder returning ``ExampleRobot.single_arm(...)``.
 
 Register Discovery
 ------------------
@@ -246,7 +242,7 @@ Configure Physical Hardware
 ---------------------------
 
 Keep the existing ``cluster.node_groups.hardware`` schema. The registered config
-class parses each item and ``to_spec()`` supplies the canonical layout.
+class parses each item, and the registered builder composes the robot.
 
 .. code-block:: yaml
 

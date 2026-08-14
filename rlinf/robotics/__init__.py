@@ -77,17 +77,13 @@ __all__ = [
     "build_gim_arm_robot",
     "build_turtle2_robot",
     # Configuration and discovery
-    "ArmSpec",
-    "CameraSpec",
-    "EndEffectorSpec",
     "LegacyObservationAdapter",
-    "PartSpec",
     "RobotAutoConfig",
     "RobotConfig",
     "RobotDiscovery",
     "RobotInfo",
     "RobotRegistration",
-    "RobotSpec",
+    "build_robot",
     "VectorActionAdapter",
     "VectorActionBinding",
     "register_robot",
@@ -146,6 +142,7 @@ _MODULE_GROUPS: dict[str, tuple[str, ...]] = {
     ),
     ".config": ("RobotAutoConfig",),
     ".discovery": (
+        "build_robot",
         "RobotConfig",
         "RobotDiscovery",
         "RobotInfo",
@@ -153,12 +150,7 @@ _MODULE_GROUPS: dict[str, tuple[str, ...]] = {
         "register_robot",
     ),
     ".layout": (
-        "ArmSpec",
-        "CameraSpec",
-        "EndEffectorSpec",
-        "PartSpec",
-        "RobotSpec",
-    ),
+                        ),
 }
 
 _MODULE_BY_NAME: dict[str, str] = {

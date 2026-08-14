@@ -81,7 +81,6 @@ def test_robotics_devices_do_not_depend_on_scheduler_ray_or_gym():
     device_paths = [
         robotics_dir / "robot.py",
         robotics_dir / "adapters.py",
-        robotics_dir / "layout.py",
         *robotics_dir.joinpath("parts").rglob("*.py"),
         *robotics_dir.joinpath("drivers").rglob("*.py"),
         *robotics_dir.joinpath("states").glob("*.py"),

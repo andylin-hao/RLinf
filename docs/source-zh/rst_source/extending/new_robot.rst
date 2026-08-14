@@ -21,8 +21,6 @@
      - 组合一个机械臂驱动、可选 ``EndEffector`` 和命名腕部相机。
    * - ``Robot``
      - 组合命名机械臂、机器人级相机，以及底盘等可选部件。
-   * - ``RobotSpec``
-     - 描述物理机械臂、相机、末端执行器、连接信息和节点 rank。
    * - ``RobotDiscovery``
      - 将调度器硬件配置转换为通用硬件资源。
    * - ``DriverHandle``
@@ -125,13 +123,13 @@
 描述物理硬件
 ------------
 
-将 ``RobotConfig.to_spec()`` 作为现有扁平 YAML 数据结构到规范物理布局的转换边界。连接和放置信息放入 ``RobotSpec``。重置位姿、奖励和回合长度保留在任务配置中。
+把连接信息和放置信息放进 ``RobotConfig`` 数据类，并为它提供一个 builder，将这些字段组合成 ``Robot``。重置位姿、奖励和回合长度则保留在任务配置中。
 
 .. code-block:: python
 
    from dataclasses import dataclass
 
-   from rlinf.robotics import ArmSpec, RobotConfig, RobotSpec
+   from rlinf.robotics import Arm, Robot, RobotConfig
 
 
    @dataclass
@@ -139,27 +137,26 @@
        left_endpoint: str
        right_endpoint: str
 
-       def to_spec(self) -> RobotSpec:
-           return RobotSpec(
-               robot_type=ExampleRobot.ROBOT_TYPE,
-               node_rank=self.node_rank,
-               arms=(
-                   ArmSpec(
-                       name="left",
-                       driver="example",
-                       node_rank=self.node_rank,
-                       connection={"endpoint": self.left_endpoint},
-                   ),
-                   ArmSpec(
-                       name="right",
-                       driver="example",
-                       node_rank=self.node_rank,
-                       connection={"endpoint": self.right_endpoint},
-                   ),
-               ),
-           )
 
-机器人级或腕部相机使用 ``CameraSpec``，机械臂工具使用 ``EndEffectorSpec``，底盘、头部、升降机构或其他可选组件使用 ``PartSpec``。
+   def build_example_robot(config: ExampleRobotConfig) -> ExampleRobot:
+       handles = {
+           side: ExampleArmDriver.spawn(
+               endpoint=endpoint,
+               node_rank=config.node_rank,
+               name=f"ExampleArmDriver-{side}",
+           )
+           for side, endpoint in (
+               ("left", config.left_endpoint),
+               ("right", config.right_endpoint),
+           )
+       }
+       return ExampleRobot.dual_arm(
+           Arm(handles["left"].part("arm")),
+           Arm(handles["right"].part("arm")),
+           drivers=handles,
+       )
+
+机械臂数量属于组合方式，而非机器人类型：单臂型号使用同一个 builder，只是返回 ``ExampleRobot.single_arm(...)``。
 
 注册发现逻辑
 ------------
@@ -218,7 +215,7 @@
 配置物理硬件
 ------------
 
-保留现有 ``cluster.node_groups.hardware`` 数据结构。注册的配置类负责解析每一项，``to_spec()`` 提供规范布局。
+保留现有 ``cluster.node_groups.hardware`` 数据结构。注册的配置类负责解析每一项，注册时提供的 builder 负责组合出机器人。
 
 .. code-block:: yaml
 
