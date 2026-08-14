@@ -26,10 +26,8 @@ from scipy.spatial.transform import Rotation as R
 
 from rlinf.envs.realworld.common.camera import BaseCamera, CameraInfo, create_camera
 from rlinf.envs.realworld.common.video_player import VideoPlayer
-from rlinf.scheduler import (
-    FrankaHWInfo,
-    WorkerInfo,
-)
+from rlinf.robotics import FrankaConfig, RobotInfo
+from rlinf.scheduler import WorkerInfo
 from rlinf.utils.logging import get_logger
 
 from .end_effectors.base import EndEffectorType, normalize_end_effector_type
@@ -148,7 +146,7 @@ class FrankaEnv(gym.Env):
         self,
         override_cfg: dict[str, Any],
         worker_info: Optional[WorkerInfo],
-        hardware_info: Optional[FrankaHWInfo],
+        hardware_info: Optional[RobotInfo[FrankaConfig]],
         env_idx: int,
     ):
         config = self.CONFIG_CLS(**override_cfg)
@@ -228,8 +226,11 @@ class FrankaEnv(gym.Env):
         assert self.env_idx >= 0, "env_idx must be set for FrankaEnv."
 
         # Setup Franka IP and camera serials
-        assert isinstance(self.hardware_info, FrankaHWInfo), (
-            f"hardware_info must be FrankaHWInfo, but got {type(self.hardware_info)}."
+        assert isinstance(self.hardware_info, RobotInfo) and isinstance(
+            self.hardware_info.config, FrankaConfig
+        ), (
+            "hardware_info must contain a FrankaConfig, "
+            f"but got {type(self.hardware_info)}."
         )
         if self.config.robot_ip is None:
             self.config.robot_ip = self.hardware_info.config.robot_ip

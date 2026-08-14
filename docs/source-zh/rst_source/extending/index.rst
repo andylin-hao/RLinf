@@ -18,6 +18,12 @@
 
       添加一个新的 RL 环境并接入环境注册表。
 
+   .. grid-item-card:: 新机器人
+      :link: new_robot
+      :link-type: doc
+
+      组合机器人部件并注册真机硬件发现逻辑。
+
    .. grid-item-card:: FSDP 新模型
       :link: new_model_fsdp
       :link-type: doc
@@ -53,6 +59,7 @@
 
    扩展概览 <overview>
    新环境 <new_env>
+   新机器人 <new_robot>
    FSDP 新模型 <new_model_fsdp>
    Megatron 新模型 <new_model_megatron>
    新 SFT 模型 <new_model_sft>

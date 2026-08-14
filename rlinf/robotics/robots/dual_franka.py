@@ -18,25 +18,13 @@ import ipaddress
 from dataclasses import dataclass
 from typing import Optional
 
-from ..hardware import (
-    Hardware,
-    HardwareConfig,
-    HardwareInfo,
-    HardwareResource,
-    NodeHardwareConfig,
-)
-from .auto_config import RobotAutoConfig
+from rlinf.scheduler.hardware import HardwareConfig, HardwareInfo, HardwareResource
+
+from ..config import RobotAutoConfig
+from ..robot import Robot, RobotConfig, RobotInfo
 
 
-@dataclass
-class DualFrankaHWInfo(HardwareInfo):
-    """Hardware information for a dual-arm Franka robotic system."""
-
-    config: "DualFrankaConfig"
-
-
-@Hardware.register()
-class DualFrankaRobot(Hardware):
+class DualFrankaRobot(Robot):
     """Hardware policy for dual-arm Franka robotic systems.
 
     Both arms are managed by a single :class:`DualFrankaEnv` instance
@@ -49,7 +37,7 @@ class DualFrankaRobot(Hardware):
 
     @classmethod
     def enumerate(
-        cls, node_rank: int, configs: Optional[list["DualFrankaConfig"]] = None
+        cls, node_rank: int, configs: Optional[list[HardwareConfig]] = None
     ) -> Optional[HardwareResource]:
         """Enumerate the dual-arm robot resources on a node.
 
@@ -84,10 +72,10 @@ class DualFrankaRobot(Hardware):
         if not robot_configs:
             return None
 
-        dual_infos: list[DualFrankaHWInfo] = []
+        dual_infos: list[HardwareInfo] = []
         for config in robot_configs:
             dual_infos.append(
-                DualFrankaHWInfo(
+                RobotInfo(
                     type=cls.HW_TYPE,
                     model=cls.HW_TYPE,
                     config=config,
@@ -97,9 +85,8 @@ class DualFrankaRobot(Hardware):
         return HardwareResource(type=cls.HW_TYPE, infos=dual_infos)
 
 
-@NodeHardwareConfig.register_hardware_config(DualFrankaRobot.HW_TYPE)
 @dataclass
-class DualFrankaConfig(HardwareConfig):
+class DualFrankaConfig(RobotConfig):
     """Configuration for a dual-arm Franka robotic system.
 
     The env process (cameras + teleop) always runs on the node indicated
@@ -193,3 +180,6 @@ class DualFrankaConfig(HardwareConfig):
                 f"'{label}' in DualFranka config must be a valid IP address. "
                 f"But got {ip}."
             )
+
+
+Robot.register_robot(DualFrankaConfig)(DualFrankaRobot)

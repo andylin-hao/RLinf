@@ -26,7 +26,8 @@ from scipy.spatial.transform import Rotation as R
 
 from rlinf.envs.realworld.common.camera import BaseCamera, CameraInfo, create_camera
 from rlinf.envs.realworld.common.video_player import VideoPlayer
-from rlinf.scheduler import GimArmHWInfo, WorkerInfo
+from rlinf.robotics import GimArmConfig, RobotInfo
+from rlinf.scheduler import WorkerInfo
 from rlinf.utils.logging import get_logger
 
 from .gim_arm_robot_state import GimArmRobotState
@@ -44,7 +45,7 @@ class GimArmRobotConfig:
     """Configuration for :class:`GimArmEnv`.
 
     Hardware connection fields (``can_interface``, ``arm_variant``, etc.) are
-    populated automatically from :class:`GimArmHWInfo` when ``None``.
+    populated automatically from :class:`~rlinf.robotics.RobotInfo` when ``None``.
     """
 
     can_interface: Optional[str] = None
@@ -153,7 +154,7 @@ class GimArmEnv(gym.Env):
         self,
         config: GimArmRobotConfig,
         worker_info: Optional[WorkerInfo],
-        hardware_info: Optional[GimArmHWInfo],
+        hardware_info: Optional[RobotInfo[GimArmConfig]],
         env_idx: int,
     ):
         self._logger = get_logger()
@@ -212,8 +213,11 @@ class GimArmEnv(gym.Env):
         from .gim_arm_controller import GimArmController
 
         assert self.env_idx >= 0, "env_idx must be set for GimArmEnv."
-        assert isinstance(self.hardware_info, GimArmHWInfo), (
-            f"hardware_info must be GimArmHWInfo, but got {type(self.hardware_info)}."
+        assert isinstance(self.hardware_info, RobotInfo) and isinstance(
+            self.hardware_info.config, GimArmConfig
+        ), (
+            "hardware_info must contain a GimArmConfig, "
+            f"but got {type(self.hardware_info)}."
         )
 
         # Fill in connection fields from hardware info when not set by the user.

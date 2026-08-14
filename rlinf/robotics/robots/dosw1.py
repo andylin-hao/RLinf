@@ -17,38 +17,26 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from ..hardware import (
-    Hardware,
-    HardwareConfig,
-    HardwareInfo,
-    HardwareResource,
-    NodeHardwareConfig,
-)
-from .auto_config import RobotAutoConfig
+from rlinf.scheduler.hardware import HardwareConfig, HardwareInfo, HardwareResource
+
+from ..config import RobotAutoConfig
+from ..robot import Robot, RobotConfig, RobotInfo
 
 
-@dataclass
-class DOSW1HWInfo(HardwareInfo):
-    """Hardware information for a DOS-W1 dual-arm robot."""
-
-    config: "DOSW1HWConfig"
-
-
-@Hardware.register()
-class DOSW1Robot(Hardware):
+class DOSW1Robot(Robot):
     """Hardware policy for the DOS-W1 dual-arm robot.
 
     Connection parameters (gRPC URL / ports) and RealSense camera serials
     are placed here so that they are managed by the scheduler via
     ``cluster.node_groups.hardware`` and injected into the env worker
-    through :class:`DOSW1HWInfo`.
+    through :class:`~rlinf.robotics.RobotInfo`.
     """
 
     HW_TYPE = "DOSW1"
 
     @classmethod
     def enumerate(
-        cls, node_rank: int, configs: Optional[list["DOSW1HWConfig"]] = None
+        cls, node_rank: int, configs: Optional[list[HardwareConfig]] = None
     ) -> Optional[HardwareResource]:
         """Enumerate the DOS-W1 robot resources on a node.
 
@@ -64,9 +52,9 @@ class DOSW1Robot(Hardware):
             "DOSW1 hardware requires explicit configurations for robot URL, "
             "gRPC ports and camera serials."
         )
-        robot_configs: list["DOSW1HWConfig"] = []
+        robot_configs: list["DOSW1RobotConfig"] = []
         for config in configs:
-            if isinstance(config, DOSW1HWConfig) and config.node_rank == node_rank:
+            if isinstance(config, DOSW1RobotConfig) and config.node_rank == node_rank:
                 robot_configs.append(config)
 
         # Fill unset fields from env vars (e.g. ``ROBOT_URL``), one value per
@@ -74,7 +62,7 @@ class DOSW1Robot(Hardware):
         # create one per comma-separated ``ROBOT_URL``.
         robot_configs = RobotAutoConfig.resolve(
             robot_configs,
-            config_cls=DOSW1HWConfig,
+            config_cls=DOSW1RobotConfig,
             node_rank=node_rank,
             count_fields=("robot_url",),
         )
@@ -82,16 +70,15 @@ class DOSW1Robot(Hardware):
         if not robot_configs:
             return None
 
-        infos: list[DOSW1HWInfo] = [
-            DOSW1HWInfo(type=cls.HW_TYPE, model=cls.HW_TYPE, config=cfg)
+        infos: list[HardwareInfo] = [
+            RobotInfo(type=cls.HW_TYPE, model=cls.HW_TYPE, config=cfg)
             for cfg in robot_configs
         ]
         return HardwareResource(type=cls.HW_TYPE, infos=infos)
 
 
-@NodeHardwareConfig.register_hardware_config(DOSW1Robot.HW_TYPE)
 @dataclass
-class DOSW1HWConfig(HardwareConfig):
+class DOSW1RobotConfig(RobotConfig):
     """Configuration for a DOS-W1 dual-arm robot.
 
     The env process runs on the node indicated by :attr:`node_rank`, and
@@ -124,3 +111,6 @@ class DOSW1HWConfig(HardwareConfig):
         )
         if self.camera_serials is not None:
             self.camera_serials = [str(s) for s in self.camera_serials]
+
+
+Robot.register_robot(DOSW1RobotConfig)(DOSW1Robot)

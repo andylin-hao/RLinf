@@ -29,7 +29,8 @@ from scipy.spatial.transform import Rotation as R
 
 from rlinf.envs.realworld.common.camera import BaseCamera, CameraInfo, create_camera
 from rlinf.envs.realworld.common.video_player import VideoPlayer
-from rlinf.scheduler import DualFrankaHWInfo, WorkerInfo
+from rlinf.robotics import DualFrankaConfig, RobotInfo
+from rlinf.scheduler import WorkerInfo
 from rlinf.utils.logging import get_logger
 
 from .franka_robot_state import FrankaRobotState
@@ -124,7 +125,7 @@ class DualFrankaEnv(gym.Env):
         self,
         override_cfg: dict[str, Any],
         worker_info: Optional[WorkerInfo],
-        hardware_info: Optional[DualFrankaHWInfo],
+        hardware_info: Optional[RobotInfo[DualFrankaConfig]],
         env_idx: int,
     ):
         config = self.CONFIG_CLS(**override_cfg)
@@ -286,8 +287,11 @@ class DualFrankaEnv(gym.Env):
     def _resolve_hw_overrides(self) -> None:
         if self.hardware_info is None:
             return
-        assert isinstance(self.hardware_info, DualFrankaHWInfo), (
-            f"hardware_info must be DualFrankaHWInfo, got {type(self.hardware_info)}."
+        assert isinstance(self.hardware_info, RobotInfo) and isinstance(
+            self.hardware_info.config, DualFrankaConfig
+        ), (
+            "hardware_info must contain a DualFrankaConfig, "
+            f"but got {type(self.hardware_info)}."
         )
         hw = self.hardware_info.config
         # (field_name, default if hw lacks the attr)

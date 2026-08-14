@@ -16,9 +16,12 @@ from __future__ import annotations
 
 import dataclasses
 import os
-from typing import Any, Sequence, Union, get_args, get_origin, get_type_hints
+from types import UnionType
+from typing import Any, Sequence, TypeVar, Union, get_args, get_origin, get_type_hints
 
-from ..hardware import HardwareConfig
+from .robot import RobotConfig
+
+RobotConfigType = TypeVar("RobotConfigType", bound=RobotConfig)
 
 
 class RobotAutoConfig:
@@ -44,11 +47,11 @@ class RobotAutoConfig:
     @classmethod
     def resolve(
         cls,
-        configs: list[HardwareConfig],
-        config_cls: type[HardwareConfig] | None = None,
+        configs: list[RobotConfigType],
+        config_cls: type[RobotConfigType] | None = None,
         node_rank: int | None = None,
         count_fields: Sequence[str] = (),
-    ) -> list[HardwareConfig]:
+    ) -> list[RobotConfigType]:
         """Fill the configs' unset fields from env vars in place and return them.
 
         Fields already set in the YAML are left untouched. With multiple
@@ -100,10 +103,10 @@ class RobotAutoConfig:
 
     @staticmethod
     def _create_from_env(
-        config_cls: type[HardwareConfig] | None,
+        config_cls: type[RobotConfigType] | None,
         node_rank: int | None,
         count_fields: Sequence[str],
-    ) -> list[HardwareConfig]:
+    ) -> list[RobotConfigType]:
         """Create configs from env vars, sized by an identifier env var.
 
         Returns an empty list unless ``config_cls``/``node_rank`` are given and
@@ -145,7 +148,7 @@ class RobotAutoConfig:
     @staticmethod
     def _unwrap_optional(type_hint: Any) -> Any:
         """Strip ``Optional[...]`` down to the inner type."""
-        if get_origin(type_hint) is Union:
+        if get_origin(type_hint) in (Union, UnionType):
             non_none = [a for a in get_args(type_hint) if a is not type(None)]
             if len(non_none) == 1:
                 return non_none[0]

@@ -15,32 +15,20 @@
 from dataclasses import dataclass
 from typing import Optional
 
-from ..hardware import (
-    Hardware,
-    HardwareConfig,
-    HardwareInfo,
-    HardwareResource,
-    NodeHardwareConfig,
-)
-from .auto_config import RobotAutoConfig
+from rlinf.scheduler.hardware import HardwareConfig, HardwareInfo, HardwareResource
+
+from ..config import RobotAutoConfig
+from ..robot import Robot, RobotConfig, RobotInfo
 
 
-@dataclass
-class Turtle2HWInfo(HardwareInfo):
-    """Hardware information for a robotic system."""
-
-    config: "Turtle2Config"
-
-
-@Hardware.register()
-class Turtle2Robot(Hardware):
+class Turtle2Robot(Robot):
     """Hardware policy for robotic systems."""
 
     HW_TYPE = "Turtle2"
 
     @classmethod
     def enumerate(
-        cls, node_rank: int, configs: Optional[list["Turtle2Config"]] = None
+        cls, node_rank: int, configs: Optional[list[HardwareConfig]] = None
     ) -> Optional[HardwareResource]:
         """Enumerate the robot resources on a node.
 
@@ -61,10 +49,10 @@ class Turtle2Robot(Hardware):
             # Auto-detect any unset fields from environment variables.
             RobotAutoConfig.resolve(robot_configs)
 
-            turtle2_infos = []
+            turtle2_infos: list[HardwareInfo] = []
             for config in robot_configs:
                 turtle2_infos.append(
-                    Turtle2HWInfo(
+                    RobotInfo(
                         type=cls.HW_TYPE,
                         model=cls.HW_TYPE,
                         config=config,
@@ -75,9 +63,8 @@ class Turtle2Robot(Hardware):
         return None
 
 
-@NodeHardwareConfig.register_hardware_config(Turtle2Robot.HW_TYPE)
 @dataclass
-class Turtle2Config(HardwareConfig):
+class Turtle2Config(RobotConfig):
     """Configuration for a robotic system."""
 
     # empty config
@@ -87,3 +74,6 @@ class Turtle2Config(HardwareConfig):
         assert isinstance(self.node_rank, int), (
             f"'node_rank' in Turtle2 config must be an integer. But got {type(self.node_rank)}."
         )
+
+
+Robot.register_robot(Turtle2Config)(Turtle2Robot)

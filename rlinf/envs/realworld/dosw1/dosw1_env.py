@@ -29,7 +29,8 @@ import numpy as np
 from rlinf.envs.realworld.common.camera import BaseCamera, CameraInfo, create_camera
 from rlinf.envs.realworld.common.keyboard.keyboard_listener import KeyboardListener
 from rlinf.envs.realworld.common.video_player import VideoPlayer
-from rlinf.scheduler import DOSW1HWInfo, WorkerInfo
+from rlinf.robotics import DOSW1RobotConfig, RobotInfo
+from rlinf.scheduler import WorkerInfo
 from rlinf.utils.logging import get_logger
 
 from .dosw1_robot_state import DOSW1RobotState
@@ -123,7 +124,7 @@ class DOSW1Env(gym.Env):
         self,
         config: DOSW1Config,
         worker_info: Optional[WorkerInfo],
-        hardware_info: Optional[DOSW1HWInfo],
+        hardware_info: Optional[RobotInfo[DOSW1RobotConfig]],
         env_idx: int,
     ) -> None:
         self._logger = get_logger()
@@ -670,11 +671,16 @@ class DOSW1Env(gym.Env):
             serials.append(device.get_info(rs.camera_info.serial_number))
         return serials
 
-    def _apply_hardware_info(self, hardware_info: Optional[DOSW1HWInfo]) -> None:
+    def _apply_hardware_info(
+        self, hardware_info: Optional[RobotInfo[DOSW1RobotConfig]]
+    ) -> None:
         if hardware_info is None:
             return
-        assert isinstance(hardware_info, DOSW1HWInfo), (
-            f"hardware_info must be DOSW1HWInfo, got {type(hardware_info)}."
+        assert isinstance(hardware_info, RobotInfo) and isinstance(
+            hardware_info.config, DOSW1RobotConfig
+        ), (
+            "hardware_info must contain a DOSW1RobotConfig, "
+            f"but got {type(hardware_info)}."
         )
         hw = hardware_info.config
         if hw.camera_serials:

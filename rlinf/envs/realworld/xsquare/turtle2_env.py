@@ -25,10 +25,8 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 
 from rlinf.envs.realworld.xsquare.turtle2_robot_state import Turtle2RobotState
-from rlinf.scheduler import (
-    Turtle2HWInfo,
-    WorkerInfo,
-)
+from rlinf.robotics import RobotInfo, Turtle2Config
+from rlinf.scheduler import WorkerInfo
 from rlinf.utils.logging import get_logger
 
 
@@ -92,7 +90,7 @@ class Turtle2Env(gym.Env):
         self,
         config: Turtle2RobotConfig,
         worker_info: Optional[WorkerInfo],
-        hardware_info: Optional[Turtle2HWInfo],
+        hardware_info: Optional[RobotInfo[Turtle2Config]],
         env_idx: int,
     ) -> None:
         """Initialize Turtle2Env.

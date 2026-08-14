@@ -18,25 +18,13 @@ import warnings
 from dataclasses import dataclass
 from typing import Optional
 
-from ..hardware import (
-    Hardware,
-    HardwareConfig,
-    HardwareInfo,
-    HardwareResource,
-    NodeHardwareConfig,
-)
-from .auto_config import RobotAutoConfig
+from rlinf.scheduler.hardware import HardwareConfig, HardwareInfo, HardwareResource
+
+from ..config import RobotAutoConfig
+from ..robot import Robot, RobotConfig, RobotInfo
 
 
-@dataclass
-class FrankaHWInfo(HardwareInfo):
-    """Hardware information for a robotic system."""
-
-    config: "FrankaConfig"
-
-
-@Hardware.register()
-class FrankaRobot(Hardware):
+class FrankaRobot(Robot):
     """Hardware policy for robotic systems."""
 
     HW_TYPE = "Franka"
@@ -45,7 +33,7 @@ class FrankaRobot(Hardware):
 
     @classmethod
     def enumerate(
-        cls, node_rank: int, configs: Optional[list["FrankaConfig"]] = None
+        cls, node_rank: int, configs: Optional[list[HardwareConfig]] = None
     ) -> Optional[HardwareResource]:
         """Enumerate the robot resources on a node.
 
@@ -77,7 +65,7 @@ class FrankaRobot(Hardware):
         )
 
         if robot_configs:
-            franka_infos = []
+            franka_infos: list[HardwareInfo] = []
 
             for config in robot_configs:
                 camera_type = getattr(config, "camera_type", "realsense")
@@ -88,7 +76,7 @@ class FrankaRobot(Hardware):
                     config.camera_serials = list(cameras)
 
                 franka_infos.append(
-                    FrankaHWInfo(
+                    RobotInfo(
                         type=cls.HW_TYPE,
                         model=cls.HW_TYPE,
                         config=config,
@@ -204,9 +192,8 @@ class FrankaRobot(Hardware):
                 )
 
 
-@NodeHardwareConfig.register_hardware_config(FrankaRobot.HW_TYPE)
 @dataclass
-class FrankaConfig(HardwareConfig):
+class FrankaConfig(RobotConfig):
     """Configuration for a robotic system."""
 
     robot_ip: Optional[str] = None
@@ -258,3 +245,6 @@ class FrankaConfig(HardwareConfig):
 
         if self.camera_serials:
             self.camera_serials = list(self.camera_serials)
+
+
+Robot.register_robot(FrankaConfig)(FrankaRobot)

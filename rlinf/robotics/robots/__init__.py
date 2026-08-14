@@ -1,4 +1,4 @@
-# Copyright 2025 The RLinf Authors.
+# Copyright 2026 The RLinf Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,23 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .auto_config import RobotAutoConfig
-from .dosw1 import DOSW1HWConfig, DOSW1HWInfo
-from .dual_franka import DualFrankaConfig, DualFrankaHWInfo
-from .franka import FrankaConfig, FrankaHWInfo
-from .gim_arm import GimArmConfig, GimArmHWInfo
-from .xsquare import Turtle2Config, Turtle2HWInfo
+from .dosw1 import DOSW1Robot, DOSW1RobotConfig
+from .dual_franka import DualFrankaConfig, DualFrankaRobot
+from .franka import FrankaConfig, FrankaRobot
+from .gim_arm import GimArmConfig, GimArmRobot
+from .turtle2 import Turtle2Config, Turtle2Robot
 
 __all__ = [
-    "RobotAutoConfig",
-    "DOSW1HWConfig",
-    "DOSW1HWInfo",
+    "DOSW1Robot",
+    "DOSW1RobotConfig",
     "DualFrankaConfig",
-    "DualFrankaHWInfo",
+    "DualFrankaRobot",
     "FrankaConfig",
-    "FrankaHWInfo",
+    "FrankaRobot",
     "GimArmConfig",
-    "GimArmHWInfo",
+    "GimArmRobot",
     "Turtle2Config",
-    "Turtle2HWInfo",
+    "Turtle2Robot",
 ]

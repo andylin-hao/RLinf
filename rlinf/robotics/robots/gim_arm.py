@@ -17,32 +17,20 @@ import warnings
 from dataclasses import dataclass
 from typing import Optional
 
-from ..hardware import (
-    Hardware,
-    HardwareConfig,
-    HardwareInfo,
-    HardwareResource,
-    NodeHardwareConfig,
-)
-from .auto_config import RobotAutoConfig
+from rlinf.scheduler.hardware import HardwareConfig, HardwareInfo, HardwareResource
+
+from ..config import RobotAutoConfig
+from ..robot import Robot, RobotConfig, RobotInfo
 
 
-@dataclass
-class GimArmHWInfo(HardwareInfo):
-    """Hardware information for a GimArm robotic system."""
-
-    config: "GimArmConfig"
-
-
-@Hardware.register()
-class GimArmRobot(Hardware):
+class GimArmRobot(Robot):
     """Hardware policy for GimArm robots (CAN bus, 6-DOF)."""
 
     HW_TYPE = "GimArm"
 
     @classmethod
     def enumerate(
-        cls, node_rank: int, configs: Optional[list["GimArmConfig"]] = None
+        cls, node_rank: int, configs: Optional[list[HardwareConfig]] = None
     ) -> Optional[HardwareResource]:
         """Enumerate GimArm robot resources on a node.
 
@@ -72,13 +60,13 @@ class GimArmRobot(Hardware):
         )
 
         if robot_configs:
-            gim_arm_infos = []
+            gim_arm_infos: list[HardwareInfo] = []
             for config in robot_configs:
                 if not config.disable_validate:
                     cls._validate_can_interface(config.can_interface, node_rank)
 
                 gim_arm_infos.append(
-                    GimArmHWInfo(
+                    RobotInfo(
                         type=cls.HW_TYPE,
                         model=f"{cls.HW_TYPE}_{config.arm_variant}",
                         config=config,
@@ -99,9 +87,8 @@ class GimArmRobot(Hardware):
             )
 
 
-@NodeHardwareConfig.register_hardware_config(GimArmRobot.HW_TYPE)
 @dataclass
-class GimArmConfig(HardwareConfig):
+class GimArmConfig(RobotConfig):
     """Configuration for a GimArm robot."""
 
     can_interface: str = "can0"
@@ -143,3 +130,6 @@ class GimArmConfig(HardwareConfig):
         )
         if self.camera_serials:
             self.camera_serials = list(self.camera_serials)
+
+
+Robot.register_robot(GimArmConfig)(GimArmRobot)
