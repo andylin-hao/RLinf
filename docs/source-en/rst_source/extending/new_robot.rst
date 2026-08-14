@@ -128,7 +128,7 @@ canonical observation and action paths.
    )
 
 Use ``arms.left.state.joint_position`` as the canonical observation path for the
-left manipulator. Its action path is ``arms.left.arm``. Use
+left arm. Its action path is ``left.arm``. Use
 ``arms.<name>.end_effector`` for end-effector actions. Use ``cameras.<name>`` for
 robot-level cameras and ``parts.<name>`` for extra components.
 
@@ -157,7 +157,7 @@ arm takes only what you give it. ``connect`` publishes each handle as
 Declaring works for every part, not only arms. A camera can run on the machine
 it is plugged into::
 
-   cameras={"scene": RealSenseCamera.at(info, node_rank=2)}
+   scene=RealSenseCamera.at(info, node_rank=2)
 
 When one connection backs several components, declare it once and refer to its
 parts, so it is opened once::
@@ -274,7 +274,7 @@ together. After registration, call ``build_robot("ExampleRobot", ...)`` to
 compose the robot by name without importing the class directly.
 
 Subclass a robot to reuse its construction. ``DualFrankaRobot`` extends
-``FrankaRobot``, inherits ``compose_arms`` unchanged, and overrides only
+``FrankaRobot`` and overrides only ``build_arms`` and
 ``BACKEND`` and ``build``.
 
 Import the registration module before you construct ``Cluster``. RLinf

@@ -76,10 +76,6 @@ _MCL_CURRENT, _MCL_FUTURE = 1, 2
 class FrankyArm(ControllablePart):
     """Franka arm over libfranka, with no scheduler dependency."""
 
-    OWNS_END_EFFECTOR = True
-    """This arm builds its end effector on its own connection during
-    ``connect``, so it must not also be declared as a separate part."""
-
     def __init__(
         self,
         robot_ip: str,

@@ -98,7 +98,7 @@
 .. code-block:: python
 
    robot = FrankaRobot(
-       left=FrankaROSArm.at("10.0.0.1", node_rank=1).part("arm"),
+       left=FrankaROSArm.at("10.0.0.1", node_rank=1),
        scene=RealSenseCamera.at(info, node_rank=3),
    )
    robot.connect()
@@ -207,10 +207,6 @@
 因此你可以排除原因后重新调用 ``connect``。``disconnect`` 同样会恢复声明，所以机器人
 可以连接、断开、再连接。
 
-只有当机械臂本身不会打开末端执行器时，才能把末端执行器声明为独立部件。Franka 系列的
-机械臂会在 ``connect`` 时用自己的连接构建夹爪，此时再声明一个 Robotiq 夹爪就会重复
-打开同一个串口；``compose_arms`` 会直接报错，而不是留到真机上才失败。
-
 
 边界
 ----
@@ -233,7 +229,7 @@
      - 内容
    * - ``parts/base.py``
      - 部件类型体系：``RobotPart``、``ControllablePart``、``Camera``、
-       ``EndEffector``、``Arm``、``MobileBase``、``LeggedBase``。
+       ``EndEffector``、``Group``、``MobileBase``、``LeggedBase``。
    * - ``parts/arms/``
      - 机械臂硬件，以及每个系列的 state 数据类。
    * - ``parts/cameras/``

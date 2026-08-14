@@ -96,7 +96,7 @@ SDK 的节点也能导入模块。
 组合机器人
 ----------
 
-用 ``Arm`` 包装每个机械臂本体。保持机械臂名称稳定，因为它们会成为规范观测和动作
+按你想要的名字组合部件。保持名称稳定，因为它们会成为规范观测和动作
 路径。
 
 .. code-block:: python
@@ -149,7 +149,7 @@ SDK 的节点也能导入模块。
 
 声明适用于所有部件，不只是机械臂。相机可以运行在它所插接的机器上::
 
-   cameras={"scene": RealSenseCamera.at(info, node_rank=2)}
+   scene=RealSenseCamera.at(info, node_rank=2)
 
 当一条连接支撑多个组件时，只声明一次并引用它的 部件，这条连接就只会打开一次::
 
@@ -258,7 +258,7 @@ SDK 的节点也能导入模块。
 按名称组合机器人，无需直接导入这个类。
 
 继承已有机器人即可复用它的构建逻辑。``DualFrankaRobot`` 继承 ``FrankaRobot``，
-原样沿用 ``compose_arms``，只覆盖 ``BACKEND`` 和 ``build``。
+只覆盖 ``build_arms`` 和 ``BACKEND``，其余全部继承。
 
 构造 ``Cluster`` 前，先导入注册模块。RLinf 会将已注册的硬件策略模块传给各节点的
 探测流程。确保每个节点配置的 Python 环境都能导入该模块。

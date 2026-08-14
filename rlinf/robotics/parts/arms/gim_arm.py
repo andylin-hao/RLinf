@@ -101,10 +101,6 @@ class GimArm(ControllablePart):
     do not have the robot SDK installed.
     """
 
-    OWNS_END_EFFECTOR = True
-    """This arm builds its end effector on its own connection during
-    ``connect``, so it must not also be declared as a separate part."""
-
     def __init__(
         self,
         can_interface: str,

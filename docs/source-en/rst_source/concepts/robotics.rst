@@ -108,7 +108,7 @@ Declare where a part runs with ``at()``. Nobody calls a placement function:
 .. code-block:: python
 
    robot = FrankaRobot(
-       left=FrankaROSArm.at("10.0.0.1", node_rank=1).part("arm"),
+       left=FrankaROSArm.at("10.0.0.1", node_rank=1),
        scene=RealSenseCamera.at(info, node_rank=3),
    )
    robot.connect()
@@ -230,12 +230,6 @@ down and the slots go back to their declarations, so you can fix the cause and
 call ``connect`` again. ``disconnect`` restores them too, so a robot can be
 connected, disconnected, and connected again.
 
-An end effector may be declared as its own part only when the arm does not
-already open one. The Franka arms build their gripper on their own connection
-during ``connect``, so declaring a Robotiq gripper alongside would open the same
-serial port twice; ``compose_arms`` rejects that rather than letting it fail on
-hardware.
-
 
 The Boundary
 ------------
@@ -259,7 +253,7 @@ Where the Code Lives
      - Contents
    * - ``parts/base.py``
      - The part taxonomy: ``RobotPart``, ``ControllablePart``, ``Camera``,
-       ``EndEffector``, ``Arm``, ``MobileBase``, ``LeggedBase``.
+       ``EndEffector``, ``Group``, ``MobileBase``, ``LeggedBase``.
    * - ``parts/arms/``
      - Arm hardware and the state dataclass for each family.
    * - ``parts/cameras/``
