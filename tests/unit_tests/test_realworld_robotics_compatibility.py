@@ -12,13 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from rlinf.envs.realworld.dosw1.dosw1_env import DOSW1Config, DOSW1Env
-from rlinf.envs.realworld.franka.franka_env import FrankaEnv
-from rlinf.envs.realworld.franka.tasks.dual_franka_joint_env import (
+from rlinf.envs.real.dosw1.dosw1_env import DOSW1Config, DOSW1Env
+from rlinf.envs.real.franka.franka_env import FrankaEnv
+from rlinf.envs.real.franka.tasks.dual_franka_joint_env import (
     DualFrankaJointEnv,
 )
-from rlinf.envs.realworld.gim_arm.gim_arm_env import GimArmEnv, GimArmRobotConfig
-from rlinf.envs.realworld.xsquare.turtle2_env import Turtle2Env, Turtle2RobotConfig
+from rlinf.envs.real.gim_arm.gim_arm_env import GimArmEnv, GimArmRobotConfig
+from rlinf.envs.real.xsquare.turtle2_env import Turtle2Env, Turtle2RobotConfig
 
 
 def _assert_legacy_transition(env) -> None:

@@ -17,7 +17,7 @@ from typing import Any, Optional
 import gymnasium as gym
 import numpy as np
 
-from rlinf.envs.realworld.robot_task_env import RobotTask, RobotTaskEnv
+from rlinf.envs.real.robot_task_env import RobotTask, RobotTaskEnv
 from rlinf.robotics import Arm, ControllablePart, Robot
 
 

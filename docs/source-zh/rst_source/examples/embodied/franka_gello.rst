@@ -177,7 +177,7 @@ Dynamixel SDK 用于与 GELLO 设备内部的 Dynamixel 舵机通信。
 .. code-block:: bash
 
    export PYTHONPATH=$PWD:${PYTHONPATH:-}
-   python -m rlinf.envs.realworld.common.gello.gello_expert \
+   python -m rlinf.robotics.drivers.teleop.gello \
        --port /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTA0OUKN-if00-port0
 
 你应该看到持续更新的输出，类似于：

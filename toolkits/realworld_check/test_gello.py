@@ -44,14 +44,14 @@ if not ray.is_initialized():
 
 from gello.dynamixel.driver import DynamixelDriver  # noqa: E402
 
-from rlinf.envs.realworld.common.gello.gello_joint_expert import (  # noqa: E402
-    GelloJointExpert,
-)
-from rlinf.envs.realworld.franka.utils import wrap_to_pi  # noqa: E402
+from rlinf.envs.real.franka.utils import wrap_to_pi  # noqa: E402
 from rlinf.robotics.drivers.franky import (  # noqa: E402
     JOINT_LIMITS_LOWER,
     JOINT_LIMITS_UPPER,
     FrankyDriver,
+)
+from rlinf.robotics.drivers.teleop.gello_joint import (  # noqa: E402
+    GelloJointExpert,
 )
 
 # ───────────────────────── shared helpers ──────────────────────────────

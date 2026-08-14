@@ -138,3 +138,49 @@ def test_realworld_environments_do_not_own_controller_workers():
     assert not any(
         realworld_dir.joinpath(path).exists() for path in legacy_controller_files
     )
+
+
+def test_moved_env_modules_still_import_under_their_old_paths():
+    """The pre-split module paths keep working, and resolve to one module.
+
+    The alias has to precede the path finder on ``sys.meta_path``: an aliased
+    package's ``__path__`` points into the new directory, so a later finder
+    would load a second copy of each submodule under the old name and identity
+    checks would silently fail.
+    """
+    env = os.environ.copy()
+    env["PYTHONPATH"] = os.pathsep.join(
+        value for value in (str(_ROOT), env.get("PYTHONPATH")) if value
+    )
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-W",
+            "ignore::DeprecationWarning",
+            "-c",
+            (
+                "from rlinf.envs.realworld.robot_task_env import RobotTaskEnv as old; "
+                "from rlinf.envs.real.robot_task_env import RobotTaskEnv as new; "
+                "assert old is new, 'alias loaded a second copy'; "
+                "import rlinf.envs.realworld as p, rlinf.envs.real as n; "
+                "assert p is n; "
+                "import rlinf.envs.utils"  # a name that did not move
+            ),
+        ],
+        cwd=_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_teleop_devices_live_with_the_other_drivers():
+    """A leader arm or glove is hardware, so it sits under drivers, not envs."""
+    teleop_dir = _ROOT / "rlinf" / "robotics" / "drivers" / "teleop"
+    modules = {path.stem for path in teleop_dir.glob("*.py")} - {"__init__"}
+
+    assert modules == {"gello", "gello_joint", "glove", "keyboard", "pico", "spacemouse"}
+    assert not (_ROOT / "rlinf" / "envs" / "real" / "common").exists()
