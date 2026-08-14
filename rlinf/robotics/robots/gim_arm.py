@@ -55,11 +55,13 @@ class GimArmRobot(Robot):
             node_rank=node_rank,
             name=f"GimArm-{worker_rank}-{env_idx}",
         )
-        return cls.single_arm(
-            Arm(
-                arm.subpart("arm"),
-                arm.subpart("end_effector") if enable_gripper else None,
-            )
+        return cls(
+            arms={
+                "arm": Arm(
+                    arm.subpart("arm"),
+                    arm.subpart("end_effector") if enable_gripper else None,
+                )
+            }
         )
 
 

@@ -107,9 +107,11 @@ SDK 的节点也能导入模块。
        ROBOT_TYPE = "ExampleRobot"
 
 
-   robot = ExampleRobot.dual_arm(
-       left_arm=Arm(ExampleArm("tcp://left-arm:5000")),
-       right_arm=Arm(ExampleArm("tcp://right-arm:5000")),
+   robot = ExampleRobot(
+       arms={
+           "left": Arm(ExampleArm("tcp://left-arm:5000")),
+           "right": Arm(ExampleArm("tcp://right-arm:5000")),
+       }
    )
    robot.connect()
    observation = robot.get_observation()
@@ -139,7 +141,7 @@ SDK 的节点也能导入模块。
 
    from rlinf.robotics import Arm, Robot
 
-   robot = Robot.single_arm(Arm(ExampleArm.at("tcp://left-arm:5000", node_rank=0)))
+   robot = Robot(arms={"arm": Arm(ExampleArm.at("tcp://left-arm:5000", node_rank=0))})
    robot.connect()
 
 这段代码的作用：1) 为节点 0 声明 ``ExampleArm``；2) 机器人 connect 时构建并连接它；
@@ -204,7 +206,7 @@ SDK 的节点也能导入模块。
            }
            return cls(arms=arms)
 
-单臂型号沿用同一个 ``build()``，只是改为返回 ``ExampleRobot.single_arm(...)``。如果后续部件
+单臂型号沿用同一个 ``build()``，只是 ``arms`` 映射里只有一条。如果后续部件
 启动失败，请先断开已经放置的句柄，再抛出错误。不要返回不完整的机器人。
 
 .. warning::

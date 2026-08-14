@@ -58,9 +58,14 @@ class Turtle2Robot(Robot):
             f"wrist_{index + 1}": hardware.subpart(f"wrist_{index + 1}")
             for index in range(len(camera_ids))
         }
-        return cls.dual_arm(
-            Arm(hardware.subpart("left"), hardware.subpart("left_end_effector")),
-            Arm(hardware.subpart("right"), hardware.subpart("right_end_effector")),
+        return cls(
+            arms={
+                side: Arm(
+                    hardware.subpart(side),
+                    hardware.subpart(f"{side}_end_effector"),
+                )
+                for side in ("left", "right")
+            },
             cameras=cameras,
         )
 

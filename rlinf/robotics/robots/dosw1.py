@@ -40,9 +40,11 @@ class DOSW1Robot(Robot):
         from ..parts.arms.dosw1 import DOSW1Hardware
 
         sdk = DOSW1Hardware.at(config)
-        return cls.dual_arm(
-            Arm(sdk.subpart("left"), sdk.subpart("left_end_effector")),
-            Arm(sdk.subpart("right"), sdk.subpart("right_end_effector")),
+        return cls(
+            arms={
+                side: Arm(sdk.subpart(side), sdk.subpart(f"{side}_end_effector"))
+                for side in ("left", "right")
+            }
         )
 
 

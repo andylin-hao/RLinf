@@ -61,12 +61,14 @@
 组合，而非机器人类型
 --------------------
 
-用映射大小决定机械臂数量。单臂和双臂机器人共用同一个类：
+机器人只有一个 ``arms`` 映射，它的大小就是机械臂数量。不需要在单臂和双臂两种变体
+之间选择，也没有“最多两条”的限制：
 
 .. code-block:: python
 
-   single = FrankaRobot.single_arm(Arm(arm, gripper))
-   dual = FrankaRobot.dual_arm(Arm(left, left_gripper), Arm(right, right_gripper))
+   one = FrankaRobot(arms={"arm": Arm(arm, gripper)})
+   two = FrankaRobot(arms={"left": Arm(left, lg), "right": Arm(right, rg)})
+   three = FrankaRobot(arms={"left": ..., "right": ..., "third": ...})
 
 用组合结构确定策略看到的数据形状。名称会成为路径：
 
@@ -112,9 +114,13 @@
 .. code-block:: python
 
    hardware = Turtle2Hardware.at(50, camera_ids, node_rank=0)
-   robot = Turtle2Robot.dual_arm(
-       Arm(hardware.subpart("left"), hardware.subpart("left_end_effector")),
-       Arm(hardware.subpart("right"), hardware.subpart("right_end_effector")),
+   robot = Turtle2Robot(
+       arms={
+           side: Arm(
+               hardware.subpart(side), hardware.subpart(f"{side}_end_effector")
+           )
+           for side in ("left", "right")
+       },
        cameras={"wrist_1": hardware.subpart("wrist_1")},
    )
 
@@ -139,12 +145,14 @@
 .. code-block:: python
 
    arm = FrankaROSArm.at(robot_ip, node_rank=1)
-   robot = FrankaRobot.single_arm(
-       Arm(
-           arm,
-           RobotiqGripper.at(port="/dev/ttyUSB0", node_rank=2),
-           cameras={"wrist": RealSenseCamera.at(info, node_rank=3)},
-       )
+   robot = FrankaRobot(
+       arms={
+           "arm": Arm(
+               arm,
+               RobotiqGripper.at(port="/dev/ttyUSB0", node_rank=2),
+               cameras={"wrist": RealSenseCamera.at(info, node_rank=3)},
+           )
+       }
    )
 
 Robotiq 夹爪本身就是一台串口设备，相机也独占自己的 USB 链路，因此它们都不必和机械臂

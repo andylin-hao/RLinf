@@ -111,9 +111,11 @@ canonical observation and action paths.
        ROBOT_TYPE = "ExampleRobot"
 
 
-   robot = ExampleRobot.dual_arm(
-       left_arm=Arm(ExampleArm("tcp://left-arm:5000")),
-       right_arm=Arm(ExampleArm("tcp://right-arm:5000")),
+   robot = ExampleRobot(
+       arms={
+           "left": Arm(ExampleArm("tcp://left-arm:5000")),
+           "right": Arm(ExampleArm("tcp://right-arm:5000")),
+       }
    )
    robot.connect()
    observation = robot.get_observation()
@@ -145,7 +147,7 @@ call a placement function.
 
    from rlinf.robotics import Arm, Robot
 
-   robot = Robot.single_arm(Arm(ExampleArm.at("tcp://left-arm:5000", node_rank=0)))
+   robot = Robot(arms={"arm": Arm(ExampleArm.at("tcp://left-arm:5000", node_rank=0))})
    robot.connect()
 
 What this does: 1) declares ``ExampleArm`` for node 0, 2) builds and connects it
@@ -216,7 +218,7 @@ reset poses, rewards, and episode horizons in the task config.
            return cls(arms=arms)
 
 Build a single-arm variant with the same builder, but return
-``ExampleRobot.single_arm(...)``. If a later part fails to start, disconnect the
+an ``arms`` mapping with one entry. If a later part fails to start, disconnect the
 handles that are already placed before propagating the error. Never return a
 partial robot.
 

@@ -222,7 +222,7 @@ def test_robot_disconnects_remaining_arm_parts_after_camera_failure():
     events: list[str] = []
     camera = FakeCamera("wrist", events)
     arm = Arm(FakeControllablePart("driver", events), cameras={"wrist": camera})
-    robot = Robot.single_arm(arm)
+    robot = Robot(arms={"arm": arm})
     robot.connect()
     camera.disconnect()
 
@@ -291,14 +291,19 @@ def test_builtin_robots_expose_standard_composition_layouts():
         manipulator=FakeControllablePart("right_arm", events),
         end_effector=FakeEndEffector("right_gripper", events),
     )
-    single = FrankaRobot.single_arm(
-        arm=left_arm,
+    third_arm = Arm(manipulator=FakeControllablePart("third_arm", events))
+
+    single = FrankaRobot(
+        arms={"arm": left_arm},
         cameras={"front_camera": FakeCamera("front_camera", events)},
     )
-    dual = DualFrankaRobot.dual_arm(
-        left_arm=left_arm,
-        right_arm=right_arm,
+    dual = DualFrankaRobot(
+        arms={"left": left_arm, "right": right_arm},
         cameras={"base_camera": FakeCamera("base_camera", events)},
+    )
+    # Arm count is the size of the mapping, so nothing caps it at two.
+    triple = FrankaRobot(
+        arms={"left": left_arm, "right": right_arm, "third": third_arm}
     )
 
     assert set(single.arms) == {"arm"}
@@ -307,6 +312,12 @@ def test_builtin_robots_expose_standard_composition_layouts():
     assert set(single.parts_of_type(Camera)) == {"cameras.front_camera"}
     assert set(dual.arms) == {"left", "right"}
     assert set(dual.parts_of_type(Arm)) == {"arms.left", "arms.right"}
+    assert set(triple.arms) == {"left", "right", "third"}
+    assert set(triple.parts_of_type(Arm)) == {
+        "arms.left",
+        "arms.right",
+        "arms.third",
+    }
 
 
 def test_standard_layout_rejects_non_arm_driver():
@@ -380,7 +391,7 @@ def test_robot_auto_config_supports_pep604_optional(monkeypatch):
 def test_robot_preserves_canonical_namespaces():
     """Robot alone carries the namespaces the old RobotRuntime wrapped."""
     arm = Arm(manipulator=FakeControllablePart("arm", []))
-    robot = Robot.single_arm(arm)
+    robot = Robot(arms={"arm": arm})
     robot.connect()
 
     observation = robot.get_observation()
@@ -400,7 +411,7 @@ def test_robot_releases_driver_handles_after_parts():
             events.append("handle")
 
     arm = Arm(manipulator=FakeControllablePart("driver", events))
-    robot = Robot.single_arm(arm, handles={"arm": FakeHandle()})
+    robot = Robot(arms={"arm": arm}, handles={"arm": FakeHandle()})
     robot.connect()
     robot.disconnect()
 

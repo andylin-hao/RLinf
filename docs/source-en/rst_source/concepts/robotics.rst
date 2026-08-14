@@ -69,13 +69,14 @@ The Abstractions
 Composition, Not Robot Types
 ----------------------------
 
-Set the arm count through the size of a mapping. Use the same class for
-single-arm and dual-arm robots:
+A robot has one ``arms`` mapping, and its size is the arm count. There is no
+single-arm or dual-arm variant to pick, and nothing caps it at two:
 
 .. code-block:: python
 
-   single = FrankaRobot.single_arm(Arm(arm, gripper))
-   dual = FrankaRobot.dual_arm(Arm(left, left_gripper), Arm(right, right_gripper))
+   one = FrankaRobot(arms={"arm": Arm(arm, gripper)})
+   two = FrankaRobot(arms={"left": Arm(left, lg), "right": Arm(right, rg)})
+   three = FrankaRobot(arms={"left": ..., "right": ..., "third": ...})
 
 Use composition to define the data shape seen by the policy. Names become paths:
 
@@ -122,9 +123,13 @@ backing two arms and two cameras is opened once, not four times:
 .. code-block:: python
 
    hardware = Turtle2Hardware.at(50, camera_ids, node_rank=0)
-   robot = Turtle2Robot.dual_arm(
-       Arm(hardware.subpart("left"), hardware.subpart("left_end_effector")),
-       Arm(hardware.subpart("right"), hardware.subpart("right_end_effector")),
+   robot = Turtle2Robot(
+       arms={
+           side: Arm(
+               hardware.subpart(side), hardware.subpart(f"{side}_end_effector")
+           )
+           for side in ("left", "right")
+       },
        cameras={"wrist_1": hardware.subpart("wrist_1")},
    )
 
@@ -151,12 +156,14 @@ An arm, its end effector, and its cameras are separate parts. The robot's
 .. code-block:: python
 
    arm = FrankaROSArm.at(robot_ip, node_rank=1)
-   robot = FrankaRobot.single_arm(
-       Arm(
-           arm,
-           RobotiqGripper.at(port="/dev/ttyUSB0", node_rank=2),
-           cameras={"wrist": RealSenseCamera.at(info, node_rank=3)},
-       )
+   robot = FrankaRobot(
+       arms={
+           "arm": Arm(
+               arm,
+               RobotiqGripper.at(port="/dev/ttyUSB0", node_rank=2),
+               cameras={"wrist": RealSenseCamera.at(info, node_rank=3)},
+           )
+       }
    )
 
 A Robotiq gripper is a serial device of its own and a camera holds its own USB

@@ -113,7 +113,7 @@ class DummyTask(RobotTask):
 
 def test_robot_task_env_composes_task_and_robot_lifecycles():
     driver = DummyDriver()
-    robot = Robot.single_arm(Arm(driver))
+    robot = Robot(arms={"arm": Arm(driver)})
     env = RobotTaskEnv(robot, DummyTask())
     action = {"arms": {"arm": {"arm": {"target": np.array([0.5])}}}}
 

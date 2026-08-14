@@ -23,7 +23,13 @@ RobotType = TypeVar("RobotType", bound="Robot")
 
 
 class Robot:
-    """Compose named arms, robot-level cameras, and additional parts."""
+    """Compose named arms, robot-level cameras, and additional parts.
+
+    ``arms`` is a mapping, so a robot has as many arms as it has entries. The
+    names become the paths a policy sees, so pick them for the hardware: one
+    arm is conventionally ``"arm"``, two are ``"left"`` and ``"right"``, and
+    anything beyond that is just more entries.
+    """
 
     ROBOT_TYPE: ClassVar[str] = ""
 
@@ -65,34 +71,6 @@ class Robot:
 
         self._placement: Any = None
         """Set by :meth:`connect` once declared parts have been placed."""
-
-    @classmethod
-    def single_arm(
-        cls: type[RobotType],
-        arm: Arm,
-        cameras: Optional[Mapping[str, Camera]] = None,
-        parts: Optional[Mapping[str, RobotPart]] = None,
-        handles: Optional[Mapping[str, Any]] = None,
-    ) -> RobotType:
-        """Compose a single-arm robot with stable part names."""
-        return cls(arms={"arm": arm}, cameras=cameras, parts=parts, handles=handles)
-
-    @classmethod
-    def dual_arm(
-        cls: type[RobotType],
-        left_arm: Arm,
-        right_arm: Arm,
-        cameras: Optional[Mapping[str, Camera]] = None,
-        parts: Optional[Mapping[str, RobotPart]] = None,
-        handles: Optional[Mapping[str, Any]] = None,
-    ) -> RobotType:
-        """Compose a dual-arm robot with stable left and right part names."""
-        return cls(
-            arms={"left": left_arm, "right": right_arm},
-            cameras=cameras,
-            parts=parts,
-            handles=handles,
-        )
 
     @staticmethod
     def _validate_named_parts(
