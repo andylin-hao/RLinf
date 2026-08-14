@@ -220,6 +220,12 @@ Build a single-arm variant with the same builder, but return
 handles that are already placed before propagating the error. Never return a
 partial robot.
 
+.. warning::
+
+   ``build()`` composes declarations; it does not connect. Call ``connect()`` on
+   the result before reading or commanding anything, and ``disconnect()`` when
+   you are done. Environments do this in their hardware setup.
+
 Register the Robot
 ------------------
 

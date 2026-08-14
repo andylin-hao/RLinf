@@ -142,6 +142,37 @@ through the handle. The call shape stays the same locally and remotely::
 
 Read :doc:`Placement <placement>` to map workers onto nodes and GPUs.
 
+Lifecycle
+---------
+
+Four steps, in order.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 22 78
+
+   * - Step
+     - What happens
+   * - Declare
+     - ``at()`` records a part class, its arguments, and its node. Nothing is
+       built and no hardware is touched.
+   * - Connect
+     - ``Robot.connect`` builds each distinct declaration on its node, connects
+       every part, and publishes handles as ``robot.handles[<name>]``.
+   * - Use
+     - ``get_observation`` and ``send_action`` fan out across independent
+       connections in parallel.
+   * - Disconnect
+     - ``Robot.disconnect`` disconnects the parts, then releases the connections
+       behind them.
+
+Building a robot does not connect it. ``Robot.build`` composes declarations and
+returns; call ``connect`` before you read or command anything. Until you do,
+``is_connected`` is ``False`` and the slots still hold declarations.
+
+If a part fails while connecting, everything already placed or connected is torn
+down before the error reaches you, so there is no half-built robot to clean up.
+
 The Boundary
 ------------
 
@@ -179,6 +210,8 @@ Where the Code Lives
        a part.
    * - ``robots/``
      - One module per robot, containing its config, discovery, and builder.
+   * - ``specs.py``
+     - ``PartSpec`` and ``SubpartRef``: a declared part and a reference into it.
    * - ``placement.py``
      - ``PartHandle`` and the synthesized worker. This is the only scheduler
        import.
