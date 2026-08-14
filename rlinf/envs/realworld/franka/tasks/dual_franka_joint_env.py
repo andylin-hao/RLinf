@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 import gymnasium as gym
 import numpy as np
 
-from rlinf.robotics.runtime.franky import JOINT_LIMITS_LOWER, JOINT_LIMITS_UPPER
+from rlinf.robotics.drivers.franky import JOINT_LIMITS_LOWER, JOINT_LIMITS_UPPER
 
 from ..dual_franka_env import DualFrankaEnv, DualFrankaRobotConfig
 

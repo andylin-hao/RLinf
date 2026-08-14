@@ -13,9 +13,10 @@
 # limitations under the License.
 
 from collections.abc import Mapping
+from functools import partial
 from typing import Any, ClassVar, Optional, TypeVar
 
-from .part import Arm, Camera, ControllablePart, RobotPart
+from .part import Arm, Camera, ControllablePart, RobotPart, run_parallel
 
 RobotPartType = TypeVar("RobotPartType", bound=RobotPart)
 RobotType = TypeVar("RobotType", bound="Robot")
@@ -31,10 +32,15 @@ class Robot:
         arms: Optional[Mapping[str, Arm]] = None,
         cameras: Optional[Mapping[str, Camera]] = None,
         parts: Optional[Mapping[str, RobotPart]] = None,
+        drivers: Optional[Mapping[str, Any]] = None,
     ) -> None:
         self.arms = self._validate_named_parts("arm", arms, Arm)
         self.cameras = self._validate_named_parts("camera", cameras, Camera)
         self.parts = self._validate_named_parts("part", parts, RobotPart)
+        self.drivers = dict(drivers or {})
+        """Driver handles this robot owns, keyed by name. Parts borrow their
+        connections, so the robot releases them once every part is
+        disconnected."""
 
     @classmethod
     def single_arm(
@@ -42,9 +48,10 @@ class Robot:
         arm: Arm,
         cameras: Optional[Mapping[str, Camera]] = None,
         parts: Optional[Mapping[str, RobotPart]] = None,
+        drivers: Optional[Mapping[str, Any]] = None,
     ) -> RobotType:
         """Compose a single-arm robot with stable part names."""
-        return cls(arms={"arm": arm}, cameras=cameras, parts=parts)
+        return cls(arms={"arm": arm}, cameras=cameras, parts=parts, drivers=drivers)
 
     @classmethod
     def dual_arm(
@@ -53,12 +60,14 @@ class Robot:
         right_arm: Arm,
         cameras: Optional[Mapping[str, Camera]] = None,
         parts: Optional[Mapping[str, RobotPart]] = None,
+        drivers: Optional[Mapping[str, Any]] = None,
     ) -> RobotType:
         """Compose a dual-arm robot with stable left and right part names."""
         return cls(
             arms={"left": left_arm, "right": right_arm},
             cameras=cameras,
             parts=parts,
+            drivers=drivers,
         )
 
     @staticmethod
@@ -156,26 +165,44 @@ class Robot:
                 part.disconnect()
             raise
 
+    def attach_camera(
+        self,
+        name: str,
+        camera: Camera,
+        *,
+        arm: Optional[str] = None,
+    ) -> None:
+        """Attach an already constructed camera to the robot or to one arm."""
+        if not name:
+            raise ValueError("Camera name must be a non-empty string.")
+        cameras = self.cameras if arm is None else self.arms[arm].cameras
+        if name in cameras:
+            raise ValueError(f"Camera {name!r} is already attached.")
+        cameras[name] = camera
+
     def reset(self) -> None:
-        """Reset all arms and additional controllable parts."""
-        for arm in self.arms.values():
-            arm.reset()
+        """Reset all arms in parallel, then additional controllable parts."""
+        run_parallel({name: arm.reset for name, arm in self.arms.items()})
         for part in self.parts.values():
             part.reset()
 
     def get_observation(self) -> dict[str, Any]:
-        """Read a canonical namespaced robot observation."""
-        observation: dict[str, Any] = {
-            "arms": {name: arm.get_observation() for name, arm in self.arms.items()}
-        }
-        if self.cameras:
-            observation["cameras"] = {
-                name: camera.get_observation() for name, camera in self.cameras.items()
-            }
-        if self.parts:
-            observation["parts"] = {
-                name: part.get_observation() for name, part in self.parts.items()
-            }
+        """Read a canonical namespaced robot observation.
+
+        Arms, robot-level cameras, and extra parts sit on independent
+        connections, so they are read concurrently.
+        """
+        jobs: dict[tuple[str, str], Any] = {}
+        for name, arm in self.arms.items():
+            jobs[("arms", name)] = arm.get_observation
+        for name, camera in self.cameras.items():
+            jobs[("cameras", name)] = camera.get_observation
+        for name, part in self.parts.items():
+            jobs[("parts", name)] = part.get_observation
+
+        observation: dict[str, Any] = {"arms": {}}
+        for (section, name), value in run_parallel(jobs).items():
+            observation.setdefault(section, {})[name] = value
         return observation
 
     def send_action(
@@ -192,10 +219,14 @@ class Robot:
         if unknown_arms:
             raise KeyError(f"Unknown robot arms: {sorted(unknown_arms)}")
         if arm_actions:
-            applied["arms"] = {
-                name: self.arms[name].send_action(dict(arm_action))
-                for name, arm_action in arm_actions.items()
-            }
+            # Arms are independent, so their commands are dispatched together;
+            # within one arm the driver and end effector stay ordered.
+            applied["arms"] = run_parallel(
+                {
+                    name: partial(self.arms[name].send_action, dict(arm_action))
+                    for name, arm_action in arm_actions.items()
+                }
+            )
 
         part_actions = action.get("parts", {})
         unknown_parts = set(part_actions) - set(self.parts)
@@ -212,10 +243,12 @@ class Robot:
         return applied
 
     def disconnect(self) -> None:
-        """Disconnect every connected part in reverse order."""
+        """Disconnect every part, then release the connections behind them."""
         for part in reversed(self._top_level_parts()):
             if isinstance(part, Arm) or part.is_connected:
                 part.disconnect()
+        for handle in reversed(list(self.drivers.values())):
+            handle.disconnect()
 
     def _top_level_parts(self) -> list[RobotPart]:
         return [*self.arms.values(), *self.cameras.values(), *self.parts.values()]

@@ -28,8 +28,10 @@ from typing import Optional
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
+from rlinf.robotics.drivers.base import ARM_STATE_FIELDS, SinglePartDriver
+from rlinf.robotics.drivers.views import DriverGripper
 from rlinf.robotics.grippers import create_gripper
-from rlinf.robotics.part import ControllablePart
+from rlinf.robotics.part import RobotPart
 from rlinf.robotics.states import FrankaRobotState
 from rlinf.utils.logging import get_logger
 
@@ -71,7 +73,7 @@ _RT_PRIORITY = 80
 _MCL_CURRENT, _MCL_FUTURE = 1, 2
 
 
-class FrankyDriver(ControllablePart):
+class FrankyDriver(SinglePartDriver):
     """Pure libfranka device driver with no scheduler dependency."""
 
     def __init__(
@@ -102,26 +104,24 @@ class FrankyDriver(ControllablePart):
 
     @property
     def observation_features(self) -> dict:
-        """Describe the canonical Franka state fields."""
-        return {
-            name: {}
-            for name in (
-                "tcp_pose",
-                "tcp_vel",
-                "arm_joint_position",
-                "arm_joint_velocity",
-                "tcp_force",
-                "tcp_torque",
-                "arm_jacobian",
-                "gripper_position",
-                "gripper_open",
-            )
-        }
+        """Describe the canonical Franka arm state fields.
+
+        Gripper fields are deliberately absent: they belong to the end-effector
+        part returned by :meth:`parts`, not to the arm.
+        """
+        return {name: {} for name in ARM_STATE_FIELDS}
 
     @property
     def action_features(self) -> dict:
         """Describe supported joint and Cartesian targets."""
         return {"joint_position": {}, "tcp_pose": {}}
+
+    def parts(self) -> dict[str, RobotPart]:
+        """Expose the arm and the gripper riding on the same connection."""
+        return {
+            "arm": self,
+            "end_effector": DriverGripper(self, state_field="gripper_position"),
+        }
 
     def connect(self) -> None:
         """Connect the robot and gripper SDKs."""
@@ -149,8 +149,9 @@ class FrankyDriver(ControllablePart):
         """Leave task-specific reset positions to the caller."""
 
     def get_observation(self) -> dict:
-        """Return the canonical arm state dictionary."""
-        return self.get_state().to_dict()
+        """Return the canonical arm state, without end-effector fields."""
+        state = self.get_state().to_dict()
+        return {name: state[name] for name in ARM_STATE_FIELDS}
 
     def send_action(self, action: dict) -> dict:
         """Apply one or both canonical arm targets."""

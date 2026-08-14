@@ -18,7 +18,7 @@ import gymnasium as gym
 import numpy as np
 
 from rlinf.envs.realworld.robot_task_env import RobotTask, RobotTaskEnv
-from rlinf.robotics import Arm, ControllablePart, Robot, RobotRuntime
+from rlinf.robotics import Arm, ControllablePart, Robot
 
 
 class DummyDriver(ControllablePart):
@@ -93,7 +93,7 @@ class DummyTask(RobotTask):
 
     def reset(
         self,
-        robot: RobotRuntime,
+        robot: Robot,
         *,
         seed: Optional[int] = None,
         options: Optional[dict[str, Any]] = None,
@@ -104,7 +104,7 @@ class DummyTask(RobotTask):
 
     def step(
         self,
-        robot: RobotRuntime,
+        robot: Robot,
         action: dict[str, Any],
     ) -> tuple[dict[str, Any], float, bool, bool, dict[str, Any]]:
         robot.send_action(action)
@@ -113,8 +113,8 @@ class DummyTask(RobotTask):
 
 def test_robot_task_env_composes_task_and_robot_lifecycles():
     driver = DummyDriver()
-    runtime = RobotRuntime(Robot.single_arm(Arm(driver)))
-    env = RobotTaskEnv(runtime, DummyTask())
+    robot = Robot.single_arm(Arm(driver))
+    env = RobotTaskEnv(robot, DummyTask())
     action = {"arms": {"arm": {"arm": {"target": np.array([0.5])}}}}
 
     observation, _ = env.reset(seed=3)

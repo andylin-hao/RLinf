@@ -17,19 +17,57 @@ import tracemalloc
 
 import numpy as np
 
-from rlinf.robotics.part import ControllablePart
+from rlinf.robotics.drivers.base import Driver
+from rlinf.robotics.drivers.views import DriverArm, DriverCamera, DriverGripper
+from rlinf.robotics.part import ControllablePart, RobotPart
 from rlinf.robotics.states import Turtle2RobotState
 from rlinf.utils.logging import get_logger
 
+#: Driver state prefix backing each arm, and the method suffix commanding it.
+_ARM_SIDES: dict[str, str] = {"left": "follow1", "right": "follow2"}
 
-class Turtle2Driver(ControllablePart):
-    """Pure ROS-backed Turtle2 device driver."""
+#: Index of the gripper value inside an arm's pose vector.
+_GRIPPER_STATE_INDEX = 6
 
-    def __init__(self, freq=50):
+
+class Turtle2Driver(Driver, ControllablePart):
+    """Pure ROS-backed Turtle2 device driver.
+
+    One ROS connection drives both arms, both grippers, and the wrist cameras.
+    :meth:`parts` decomposes it into those views; the coupled
+    :meth:`send_action` on the driver itself remains for callers that command
+    both arms in one shot.
+    """
+
+    def __init__(self, freq=50, camera_ids=()):
         self._logger = get_logger()
         self.freq = freq
+        self.camera_ids = tuple(camera_ids)
         self._state = Turtle2RobotState()
         self._connected = False
+
+    def parts(self) -> dict[str, RobotPart]:
+        """Decompose the shared connection into per-side arms and cameras."""
+        parts: dict[str, RobotPart] = {}
+        for side, prefix in _ARM_SIDES.items():
+            parts[side] = DriverArm(
+                self,
+                commands={"tcp_pose": f"move_{side}_arm"},
+                state_fields={
+                    "tcp_pose": f"{prefix}_pos",
+                    "joint_position": f"{prefix}_joints",
+                    "joint_current": f"{prefix}_cur_data",
+                },
+            )
+            parts[f"{side}_end_effector"] = DriverGripper(
+                self,
+                state_field=f"{prefix}_pos",
+                command=f"move_{side}_gripper",
+                state_index=_GRIPPER_STATE_INDEX,
+            )
+        for index, camera_id in enumerate(self.camera_ids):
+            parts[f"wrist_{index + 1}"] = DriverCamera(self, "get_camera", camera_id)
+        return parts
 
     @property
     def is_connected(self) -> bool:

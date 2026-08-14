@@ -14,7 +14,25 @@
 
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
-from typing import Any, Optional
+from concurrent.futures import ThreadPoolExecutor
+from typing import Any, Callable, Optional, TypeVar
+
+KeyType = TypeVar("KeyType")
+ValueType = TypeVar("ValueType")
+
+
+def run_parallel(jobs: Mapping[KeyType, Callable[[], ValueType]]) -> dict[KeyType, ValueType]:
+    """Run independent part operations concurrently, keyed by component name.
+
+    Parts on separate connections do not contend, so reading or commanding
+    several of them costs one round trip rather than the sum. A single job runs
+    inline to keep the common one-arm case free of thread overhead.
+    """
+    if len(jobs) <= 1:
+        return {key: job() for key, job in jobs.items()}
+    with ThreadPoolExecutor(max_workers=len(jobs)) as executor:
+        futures = {key: executor.submit(job) for key, job in jobs.items()}
+        return {key: future.result() for key, future in futures.items()}
 
 
 class RobotPart(ABC):

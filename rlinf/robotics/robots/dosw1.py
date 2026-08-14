@@ -22,6 +22,7 @@ from rlinf.scheduler.hardware import HardwareConfig, HardwareInfo, HardwareResou
 from ..config import RobotAutoConfig
 from ..discovery import RobotConfig, RobotDiscovery, RobotInfo, register_robot
 from ..layout import ArmSpec, CameraSpec, EndEffectorSpec, RobotSpec
+from ..part import Arm
 from ..robot import Robot
 
 
@@ -159,3 +160,19 @@ class DOSW1RobotConfig(RobotConfig):
 
 
 register_robot(DOSW1RobotConfig, DOSW1Robot)(DOSW1Discovery)
+
+
+def build_dosw1_robot(config) -> DOSW1Robot:
+    """Compose a DOSW1 dual-arm robot on one local SDK session.
+
+    Both arms share a single connection, so there is nothing to place: the
+    driver is built in this process.
+    """
+    from ..drivers.dosw1 import DOSW1SDKAdapter
+
+    handle = DOSW1SDKAdapter.spawn(config)
+    return DOSW1Robot.dual_arm(
+        Arm(handle.part("left"), handle.part("left_end_effector")),
+        Arm(handle.part("right"), handle.part("right_end_effector")),
+        drivers={"sdk": handle},
+    )

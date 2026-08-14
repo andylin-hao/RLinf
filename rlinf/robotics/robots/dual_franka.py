@@ -23,6 +23,7 @@ from rlinf.scheduler.hardware import HardwareConfig, HardwareInfo, HardwareResou
 from ..config import RobotAutoConfig
 from ..discovery import RobotConfig, RobotDiscovery, RobotInfo, register_robot
 from ..layout import ArmSpec, CameraSpec, EndEffectorSpec, RobotSpec
+from ..part import Arm
 from ..robot import Robot
 
 
@@ -257,3 +258,60 @@ class DualFrankaConfig(RobotConfig):
 
 
 register_robot(DualFrankaConfig, DualFrankaRobot)(DualFrankaDiscovery)
+
+
+def build_dual_franka_robot(
+    *,
+    left_robot_ip: Optional[str],
+    right_robot_ip: Optional[str],
+    left_env_idx: int,
+    right_env_idx: int,
+    left_node_rank: int,
+    right_node_rank: int,
+    worker_rank: int,
+    left_gripper_type: str,
+    right_gripper_type: str,
+    left_gripper_connection: Optional[str] = None,
+    right_gripper_connection: Optional[str] = None,
+) -> DualFrankaRobot:
+    """Place two independently located Franka arms and compose them.
+
+    Placement is per arm, so the halves may sit on different machines. If a
+    later arm fails to come up, the ones already placed are torn down before
+    the error propagates.
+    """
+    from ..drivers.franky import FrankyDriver
+
+    if not left_robot_ip or not right_robot_ip:
+        raise ValueError("Both Franka robot IPs are required for a dual-arm robot.")
+
+    placements = (
+        ("left", left_robot_ip, left_gripper_type, left_gripper_connection,
+         left_node_rank, left_env_idx),
+        ("right", right_robot_ip, right_gripper_type, right_gripper_connection,
+         right_node_rank, right_env_idx),
+    )
+
+    handles = []
+    try:
+        for side, robot_ip, gripper_type, gripper_connection, node_rank, env_idx in placements:
+            handles.append(
+                FrankyDriver.spawn(
+                    robot_ip,
+                    gripper_type,
+                    gripper_connection,
+                    node_rank=node_rank,
+                    name=f"FrankyDriver-{side}-{worker_rank}-{env_idx}",
+                )
+            )
+    except Exception:
+        for handle in reversed(handles):
+            handle.disconnect()
+        raise
+
+    left_handle, right_handle = handles
+    return DualFrankaRobot.dual_arm(
+        Arm(left_handle.part("arm"), left_handle.part("end_effector")),
+        Arm(right_handle.part("arm"), right_handle.part("end_effector")),
+        drivers={"left": left_handle, "right": right_handle},
+    )

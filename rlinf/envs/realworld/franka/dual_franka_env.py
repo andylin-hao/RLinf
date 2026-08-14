@@ -20,7 +20,7 @@ import queue
 import time
 from dataclasses import dataclass, field
 from itertools import cycle
-from typing import Any, Optional, cast
+from typing import Any, Optional
 
 import cv2
 import gymnasium as gym
@@ -30,10 +30,9 @@ from scipy.spatial.transform import Rotation as R
 from rlinf.envs.realworld.common.video_player import VideoPlayer
 from rlinf.robotics import (
     DualFrankaConfig,
-    RemoteControllerArm,
+    Robot,
     RobotInfo,
-    RobotRuntime,
-    launch_dual_franka_runtime,
+    build_dual_franka_robot,
 )
 from rlinf.robotics.cameras import BaseCamera, CameraInfo, create_camera
 from rlinf.robotics.states import FrankaRobotState
@@ -151,7 +150,7 @@ class DualFrankaEnv(gym.Env):
         self._joint_reset_cycle = cycle(range(self.config.joint_reset_cycle))
         next(self._joint_reset_cycle)
         self._success_hold_counter = 0
-        self.robot_runtime: RobotRuntime | None = None
+        self.robot: Robot | None = None
 
         if not self.config.is_dummy:
             self._setup_hardware()
@@ -197,8 +196,8 @@ class DualFrankaEnv(gym.Env):
             self._close_cameras()
         if hasattr(self, "camera_player"):
             self.camera_player.stop()
-        if self.robot_runtime is not None:
-            self.robot_runtime.disconnect()
+        if self.robot is not None:
+            self.robot.disconnect()
 
     # ---------------------------------------------------------------- cameras
 
@@ -237,13 +236,13 @@ class DualFrankaEnv(gym.Env):
             camera = create_camera(info)
             camera.open()
             self._cameras.append(camera)
-            if self.robot_runtime is not None:
+            if self.robot is not None:
                 if info.name.startswith("left_wrist_"):
-                    self.robot_runtime.attach_camera(info.name, camera, arm="left")
+                    self.robot.attach_camera(info.name, camera, arm="left")
                 elif info.name.startswith("right_wrist_"):
-                    self.robot_runtime.attach_camera(info.name, camera, arm="right")
+                    self.robot.attach_camera(info.name, camera, arm="right")
                 else:
-                    self.robot_runtime.attach_camera(info.name, camera)
+                    self.robot.attach_camera(info.name, camera)
 
     def _close_cameras(self):
         for camera in self._cameras:
@@ -351,7 +350,7 @@ class DualFrankaEnv(gym.Env):
         self._resolve_hw_overrides()
         left_node, right_node = self._resolve_controller_node_ranks()
 
-        self.robot_runtime = launch_dual_franka_runtime(
+        self.robot = build_dual_franka_robot(
             left_robot_ip=self.config.left_robot_ip,
             right_robot_ip=self.config.right_robot_ip,
             left_env_idx=self.env_idx,
@@ -366,16 +365,8 @@ class DualFrankaEnv(gym.Env):
             left_gripper_connection=self.config.left_gripper_connection,
             right_gripper_connection=self.config.right_gripper_connection,
         )
-        left_driver = cast(
-            RemoteControllerArm,
-            self.robot_runtime.robot.arms["left"].driver,
-        )
-        right_driver = cast(
-            RemoteControllerArm,
-            self.robot_runtime.robot.arms["right"].driver,
-        )
-        self._left_ctrl = left_driver.controller
-        self._right_ctrl = right_driver.controller
+        self._left_ctrl = self.robot.drivers["left"]
+        self._right_ctrl = self.robot.drivers["right"]
 
     # ---------------------------------------------------------------- reset/step
 

@@ -48,10 +48,10 @@ from rlinf.envs.realworld.common.gello.gello_joint_expert import (  # noqa: E402
     GelloJointExpert,
 )
 from rlinf.envs.realworld.franka.utils import wrap_to_pi  # noqa: E402
-from rlinf.robotics.runtime.franky import (  # noqa: E402
+from rlinf.robotics.drivers.franky import (  # noqa: E402
     JOINT_LIMITS_LOWER,
     JOINT_LIMITS_UPPER,
-    FrankyController,
+    FrankyDriver,
 )
 
 # ───────────────────────── shared helpers ──────────────────────────────
@@ -121,18 +121,16 @@ def fmt_deg(q: np.ndarray) -> str:
     return "[" + ", ".join(f"{math.degrees(v):+.1f}°" for v in q) + "]"
 
 
-def setup_franky() -> FrankyController:
-    """Connect to the local Franka via FrankyController and wait until it is up."""
+def setup_franky():
+    """Connect to the local Franka via FrankyDriver and wait until it is up."""
     robot_ip = os.environ.get("FRANKA_ROBOT_IP", "172.16.0.2")
     gripper_port = _resolve_local_robotiq_port()
     print(f"Connecting to Franka at {robot_ip} ...", flush=True)
-    controller = FrankyController.launch_controller(
+    controller = FrankyDriver.spawn(
         robot_ip=robot_ip,
-        env_idx=0,
-        node_rank=0,
-        worker_rank=0,
         gripper_type="robotiq",
         gripper_connection=gripper_port,
+        node_rank=0,
     )
     for _ in range(60):
         if controller.is_robot_up().wait()[0]:
@@ -164,7 +162,7 @@ def setup_gello_expert() -> GelloJointExpert:
     return gello
 
 
-def safe_reset_to(controller: FrankyController, q_target: Sequence[float]) -> None:
+def safe_reset_to(controller, q_target: Sequence[float]) -> None:
     """Move robot to ``q_target`` via the slow safe path with actionable errors.
 
     Bails out with a hint if the robot is too far from ``q_target`` (the

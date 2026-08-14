@@ -23,6 +23,7 @@ from rlinf.scheduler.hardware import HardwareConfig, HardwareInfo, HardwareResou
 from ..config import RobotAutoConfig
 from ..discovery import RobotConfig, RobotDiscovery, RobotInfo, register_robot
 from ..layout import ArmSpec, CameraSpec, EndEffectorSpec, RobotSpec
+from ..part import Arm
 from ..robot import Robot
 
 
@@ -288,3 +289,61 @@ class FrankaConfig(RobotConfig):
 
 
 register_robot(FrankaConfig, FrankaRobot)(FrankaDiscovery)
+
+
+def resolve_robot_ip(node_rank: int) -> Optional[str]:
+    """Read a robot IP off a node's enumerated hardware.
+
+    A remote arm may leave ``robot_ip`` unset in YAML because only the node
+    wired to it knows the address. Any process in the cluster can ask, so this
+    resolves before placement rather than inside the hosted driver.
+    """
+    from rlinf.scheduler import Cluster
+
+    try:
+        node_info = Cluster().get_node_info(node_rank)
+    except Exception:
+        return None
+    for resource in node_info.hardware_resources:
+        for info in resource.infos:
+            robot_ip = getattr(getattr(info, "config", None), "robot_ip", None)
+            if robot_ip:
+                return robot_ip
+    return None
+
+
+def build_franka_robot(
+    *,
+    robot_ip: Optional[str],
+    env_idx: int,
+    node_rank: int,
+    worker_rank: int,
+    end_effector_type: str,
+    end_effector_config: Optional[dict] = None,
+    gripper_connection: Optional[str] = None,
+    ros_pkg: str = "serl_franka_controllers",
+) -> FrankaRobot:
+    """Place one ROS-controlled Franka and compose it into a robot."""
+    from ..drivers.franka_ros import FrankaROSDriver
+
+    resolved_ip = robot_ip or resolve_robot_ip(node_rank)
+    if not resolved_ip:
+        raise ValueError(
+            "Franka 'robot_ip' is not set and could not be resolved from "
+            f"node rank {node_rank}'s hardware infos."
+        )
+
+    handle = FrankaROSDriver.spawn(
+        resolved_ip,
+        ros_pkg,
+        end_effector_type,
+        end_effector_config or {},
+        None,
+        gripper_connection,
+        node_rank=node_rank,
+        name=f"FrankaDriver-{worker_rank}-{env_idx}",
+    )
+    return FrankaRobot.single_arm(
+        Arm(handle.part("arm"), handle.part("end_effector")),
+        drivers={"arm": handle},
+    )

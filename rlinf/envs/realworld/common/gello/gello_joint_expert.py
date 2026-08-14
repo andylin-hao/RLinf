@@ -21,7 +21,7 @@ import time
 
 import numpy as np
 
-from rlinf.robotics.runtime.franky import (
+from rlinf.robotics.drivers.franky import (
     JOINT_LIMITS_LOWER,
     JOINT_LIMITS_UPPER,
 )

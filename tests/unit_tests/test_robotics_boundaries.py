@@ -70,6 +70,12 @@ def test_pure_driver_import_does_not_load_scheduler():
     assert result.returncode == 0, result.stderr
 
 
+#: The single file allowed to bridge robotics onto the scheduler. Driver
+#: implementations reach it only through ``Driver.spawn``, which imports it
+#: lazily, so importing a driver never pulls in Ray.
+_SCHEDULER_BRIDGE = Path("rlinf") / "robotics" / "drivers" / "worker.py"
+
+
 def test_robotics_devices_do_not_depend_on_scheduler_ray_or_gym():
     robotics_dir = _ROOT / "rlinf" / "robotics"
     device_paths = [
@@ -79,6 +85,7 @@ def test_robotics_devices_do_not_depend_on_scheduler_ray_or_gym():
         robotics_dir / "layout.py",
         *robotics_dir.joinpath("cameras").glob("*.py"),
         *robotics_dir.joinpath("drivers").glob("*.py"),
+        *robotics_dir.joinpath("drivers", "ros").glob("*.py"),
         *robotics_dir.joinpath("end_effectors").glob("*.py"),
         *robotics_dir.joinpath("grippers").glob("*.py"),
         *robotics_dir.joinpath("hands").glob("*.py"),
@@ -88,11 +95,41 @@ def test_robotics_devices_do_not_depend_on_scheduler_ray_or_gym():
     offenders = {
         path.relative_to(_ROOT): module
         for path in device_paths
+        if path.relative_to(_ROOT) != _SCHEDULER_BRIDGE
         for module in _imports(path)
         if module == forbidden or module.startswith(forbidden)
     }
 
     assert offenders == {}
+
+
+def test_scheduler_use_is_confined_to_the_composition_layer():
+    """Only composition code may see the scheduler; hardware code never does.
+
+    ``rlinf.robotics`` is two layers. Hardware -- parts, drivers, cameras,
+    end effectors, states -- is scheduler-free so it runs from plain scripts.
+    Composition -- the placement bridge, robot builders, and hardware discovery
+    -- is allowed to use the scheduler. This pins the boundary between them, so
+    a new driver cannot quietly reach for ``Cluster``.
+    """
+    robotics_dir = _ROOT / "rlinf" / "robotics"
+    allowed = {
+        _SCHEDULER_BRIDGE,
+        Path("rlinf") / "robotics" / "discovery.py",
+    }
+    importers = {
+        path.relative_to(_ROOT)
+        for path in robotics_dir.rglob("*.py")
+        for module in _imports(path)
+        if module == "rlinf.scheduler" or module.startswith("rlinf.scheduler.")
+    }
+    leaks = {
+        path
+        for path in importers
+        if path not in allowed and path.parent.name != "robots"
+    }
+
+    assert leaks == set()
 
 
 def test_realworld_environments_do_not_own_controller_workers():

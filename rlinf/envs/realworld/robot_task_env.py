@@ -17,7 +17,7 @@ from typing import Any, Optional, Protocol
 
 import gymnasium as gym
 
-from rlinf.robotics import RobotRuntime
+from rlinf.robotics import Robot
 
 
 class ValueAdapter(Protocol):
@@ -48,7 +48,7 @@ class RobotTask(ABC):
     @abstractmethod
     def reset(
         self,
-        robot: RobotRuntime,
+        robot: Robot,
         *,
         seed: Optional[int] = None,
         options: Optional[dict[str, Any]] = None,
@@ -58,7 +58,7 @@ class RobotTask(ABC):
     @abstractmethod
     def step(
         self,
-        robot: RobotRuntime,
+        robot: Robot,
         action: dict[str, Any],
     ) -> tuple[dict[str, Any], float, bool, bool, dict[str, Any]]:
         """Apply a canonical action and return a canonical transition."""
@@ -71,7 +71,7 @@ class RobotTaskEnv(gym.Env):
 
     def __init__(
         self,
-        robot: RobotRuntime,
+        robot: Robot,
         task: RobotTask,
         observation_adapter: Optional[ValueAdapter] = None,
         action_adapter: Optional[ValueAdapter] = None,

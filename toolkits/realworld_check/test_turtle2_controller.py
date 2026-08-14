@@ -14,14 +14,11 @@
 
 import time
 
-from rlinf.robotics.runtime.turtle2 import (
-    Turtle2SmoothController,
-)
+from rlinf.robotics.drivers.turtle2 import Turtle2Driver
 
 
 def main():
-    controller = Turtle2SmoothController.launch_controller(freq=50)
-    # controller = Turtle2SmoothController()
+    controller = Turtle2Driver.spawn(freq=50, node_rank=0)
 
     while True:
         try:

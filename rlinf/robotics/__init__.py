@@ -12,122 +12,165 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""RLinf's robotics layer: parts, drivers, and the robots composed from them.
+
+Three concepts, and the boundary between them is what keeps this layer small:
+
+* **Part** -- a robot-semantic view with a policy-facing contract: an arm, an
+  end effector, a camera. See :mod:`rlinf.robotics.part`.
+* **Driver** -- a connection to one physical device, backing one or more parts.
+  It is the unit of placement. See :mod:`rlinf.robotics.drivers.base`.
+* **Robot** -- a named composition of parts. See :mod:`rlinf.robotics.robot`.
+
+The scheduler never imports this package; drivers never import the scheduler
+except through :meth:`~rlinf.robotics.drivers.base.Driver.spawn`.
+
+Symbols load lazily so a node without a given robot's SDK can still import
+``rlinf.robotics``.
+"""
+
 # ruff: noqa: F822
 
 from importlib import import_module
 from typing import Any
 
 __all__ = [
+    # Parts
     "Arm",
-    "ArmRuntime",
-    "ArmSpec",
     "Camera",
-    "CameraSpec",
     "ControllablePart",
+    "EndEffector",
+    "LeggedBase",
+    "MobileBase",
+    "RobotPart",
+    "run_parallel",
+    # Drivers
+    "ARM_STATE_FIELDS",
+    "Driver",
+    "DriverArm",
+    "DriverCamera",
+    "DriverGripper",
+    "DriverHandle",
+    "LocalDriverHandle",
+    "RemoteCamera",
+    "RemoteControllablePart",
+    "RemoteDriverHandle",
+    "RemoteEndEffector",
+    "RemotePart",
+    "SinglePartDriver",
+    # Composition
+    "Robot",
+    # Robots
     "DOSW1Robot",
     "DOSW1RobotConfig",
     "DualFrankaConfig",
     "DualFrankaRobot",
-    "EndEffector",
-    "EndEffectorSpec",
     "FrankaConfig",
     "FrankaRobot",
     "GimArmConfig",
     "GimArmRobot",
-    "LeggedBase",
+    "Turtle2Config",
+    "Turtle2Robot",
+    "build_dosw1_robot",
+    "build_dual_franka_robot",
+    "build_franka_robot",
+    "build_gim_arm_robot",
+    "build_turtle2_robot",
+    # Configuration and discovery
+    "ArmSpec",
+    "CameraSpec",
+    "EndEffectorSpec",
     "LegacyObservationAdapter",
-    "MobileBase",
-    "PartRuntime",
     "PartSpec",
-    "RemoteCamera",
-    "RemoteControllablePart",
-    "RemoteControllerArm",
-    "RemoteControllerEndEffector",
-    "RemoteEndEffector",
-    "RemoteMethodCamera",
-    "RemotePart",
-    "Robot",
     "RobotAutoConfig",
     "RobotConfig",
     "RobotDiscovery",
     "RobotInfo",
-    "RobotPart",
     "RobotRegistration",
-    "RobotRuntime",
     "RobotSpec",
-    "Turtle2Config",
-    "Turtle2Robot",
     "VectorActionAdapter",
     "VectorActionBinding",
-    "build_dosw1_runtime",
-    "launch_dual_franka_runtime",
-    "launch_franka_runtime",
-    "launch_gim_arm_runtime",
-    "launch_turtle2_runtime",
     "register_robot",
 ]
 
-_MODULE_BY_NAME = {
-    "LegacyObservationAdapter": ".adapters",
-    "VectorActionAdapter": ".adapters",
-    "VectorActionBinding": ".adapters",
-    "RobotAutoConfig": ".config",
-    "RobotConfig": ".discovery",
-    "RobotDiscovery": ".discovery",
-    "RobotInfo": ".discovery",
-    "RobotRegistration": ".discovery",
-    "register_robot": ".discovery",
-    "ArmSpec": ".layout",
-    "CameraSpec": ".layout",
-    "EndEffectorSpec": ".layout",
-    "PartSpec": ".layout",
-    "RobotSpec": ".layout",
-    "Arm": ".part",
-    "Camera": ".part",
-    "ControllablePart": ".part",
-    "EndEffector": ".part",
-    "LeggedBase": ".part",
-    "MobileBase": ".part",
-    "RobotPart": ".part",
-    "Robot": ".robot",
-    "DOSW1Robot": ".robots",
-    "DOSW1RobotConfig": ".robots",
-    "DualFrankaConfig": ".robots",
-    "DualFrankaRobot": ".robots",
-    "FrankaConfig": ".robots",
-    "FrankaRobot": ".robots",
-    "GimArmConfig": ".robots",
-    "GimArmRobot": ".robots",
-    "Turtle2Config": ".robots",
-    "Turtle2Robot": ".robots",
-    "ArmRuntime": ".runtime",
-    "PartRuntime": ".runtime",
-    "RemoteCamera": ".runtime",
-    "RemoteControllablePart": ".runtime",
-    "RemoteControllerArm": ".runtime",
-    "RemoteControllerEndEffector": ".runtime",
-    "RemoteEndEffector": ".runtime",
-    "RemoteMethodCamera": ".runtime",
-    "RemotePart": ".runtime",
-    "RobotRuntime": ".runtime",
-    "build_dosw1_runtime": ".runtime",
-    "launch_dual_franka_runtime": ".runtime",
-    "launch_franka_runtime": ".runtime",
-    "launch_gim_arm_runtime": ".runtime",
-    "launch_turtle2_runtime": ".runtime",
+#: Symbols are grouped by the module that defines them, so adding one is a
+#: single-line change in the group it belongs to.
+_MODULE_GROUPS: dict[str, tuple[str, ...]] = {
+    ".part": (
+        "Arm",
+        "Camera",
+        "ControllablePart",
+        "EndEffector",
+        "LeggedBase",
+        "MobileBase",
+        "RobotPart",
+        "run_parallel",
+    ),
+    ".robot": ("Robot",),
+    ".drivers.base": (
+        "ARM_STATE_FIELDS",
+        "Driver",
+        "SinglePartDriver",
+    ),
+    ".drivers.views": ("DriverArm", "DriverCamera", "DriverGripper"),
+    ".drivers.handle": (
+        "DriverHandle",
+        "LocalDriverHandle",
+        "RemoteCamera",
+        "RemoteControllablePart",
+        "RemoteDriverHandle",
+        "RemoteEndEffector",
+        "RemotePart",
+    ),
+    ".robots": (
+        "DOSW1Robot",
+        "DOSW1RobotConfig",
+        "DualFrankaConfig",
+        "DualFrankaRobot",
+        "FrankaConfig",
+        "FrankaRobot",
+        "GimArmConfig",
+        "GimArmRobot",
+        "Turtle2Config",
+        "Turtle2Robot",
+        "build_dosw1_robot",
+        "build_dual_franka_robot",
+        "build_franka_robot",
+        "build_gim_arm_robot",
+        "build_turtle2_robot",
+    ),
+    ".adapters": (
+        "LegacyObservationAdapter",
+        "VectorActionAdapter",
+        "VectorActionBinding",
+    ),
+    ".config": ("RobotAutoConfig",),
+    ".discovery": (
+        "RobotConfig",
+        "RobotDiscovery",
+        "RobotInfo",
+        "RobotRegistration",
+        "register_robot",
+    ),
+    ".layout": (
+        "ArmSpec",
+        "CameraSpec",
+        "EndEffectorSpec",
+        "PartSpec",
+        "RobotSpec",
+    ),
 }
 
-_DISCOVERY_NAMES = {
-    "RobotConfig",
-    "RobotDiscovery",
-    "RobotInfo",
-    "RobotRegistration",
-    "register_robot",
+_MODULE_BY_NAME: dict[str, str] = {
+    name: module for module, names in _MODULE_GROUPS.items() for name in names
 }
+
+#: Discovery classes only exist once every robot module has registered itself.
+_DISCOVERY_NAMES = frozenset(_MODULE_GROUPS[".discovery"])
 
 
 def __getattr__(name: str) -> Any:
-    """Load scheduler-dependent robotics layers only when requested."""
+    """Import the module owning ``name`` on first access."""
     module_name = _MODULE_BY_NAME.get(name)
     if module_name is None:
         raise AttributeError(name)

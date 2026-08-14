@@ -20,11 +20,12 @@ import pytest
 
 from rlinf.robotics import (
     Arm,
-    ArmRuntime,
     ArmSpec,
     Camera,
     ControllablePart,
     DOSW1RobotConfig,
+    DriverArm,
+    DriverGripper,
     DualFrankaConfig,
     DualFrankaRobot,
     EndEffector,
@@ -32,20 +33,17 @@ from rlinf.robotics import (
     FrankaRobot,
     GimArmConfig,
     LegacyObservationAdapter,
-    PartRuntime,
-    RemoteControllerArm,
-    RemoteControllerEndEffector,
+    RemoteDriverHandle,
     Robot,
     RobotAutoConfig,
     RobotConfig,
     RobotDiscovery,
     RobotPart,
-    RobotRuntime,
     RobotSpec,
     Turtle2Config,
     VectorActionAdapter,
     VectorActionBinding,
-    build_dosw1_runtime,
+    build_dosw1_robot,
     register_robot,
 )
 from rlinf.robotics.drivers import (
@@ -54,6 +52,7 @@ from rlinf.robotics.drivers import (
     GimArmDriver,
     Turtle2Driver,
 )
+from rlinf.robotics.drivers.base import Driver
 from rlinf.robotics.states import FrankaRobotState
 from rlinf.scheduler.hardware import (
     Hardware,
@@ -119,29 +118,48 @@ class FakeRemoteResult:
         return [self.value]
 
 
-class FakeControllerGroup:
+class FakeMethodDriver:
+    """A driver whose components are reachable only through named methods."""
+
     def __init__(self):
         self.state = FrankaRobotState(gripper_position=0, gripper_open=False)
         self.calls: list[tuple[str, Any]] = []
+        self.is_connected = True
 
-    def get_state(self) -> FakeRemoteResult:
-        return FakeRemoteResult(self.state)
+    def get_state(self) -> FrankaRobotState:
+        return self.state
 
-    def move_arm(self, target: np.ndarray) -> FakeRemoteResult:
+    def move_arm(self, target: np.ndarray) -> None:
         self.calls.append(("move_arm", target))
-        return FakeRemoteResult(None)
 
-    def open_gripper(self) -> FakeRemoteResult:
+    def open_gripper(self) -> None:
         self.calls.append(("open_gripper", None))
-        return FakeRemoteResult(None)
 
-    def close_gripper(self) -> FakeRemoteResult:
+    def close_gripper(self) -> None:
         self.calls.append(("close_gripper", None))
+
+
+class FakeWorkerGroup:
+    """Stand-in for the one-worker group behind a RemoteDriverHandle."""
+
+    def __init__(self):
+        self.calls: list[tuple[str, Any]] = []
+
+    def shutdown(self) -> FakeRemoteResult:
+        self.calls.append(("shutdown", None))
         return FakeRemoteResult(None)
 
-    def cleanup(self) -> FakeRemoteResult:
-        self.calls.append(("cleanup", None))
-        return FakeRemoteResult(None)
+    def part_observation(self, name: str) -> FakeRemoteResult:
+        self.calls.append(("part_observation", name))
+        return FakeRemoteResult({"tcp_pose": np.zeros(7)})
+
+    def part_action(self, name: str, action: Any) -> FakeRemoteResult:
+        self.calls.append(("part_action", (name, action)))
+        return FakeRemoteResult(action)
+
+    def is_robot_up(self) -> FakeRemoteResult:
+        self.calls.append(("is_robot_up", None))
+        return FakeRemoteResult(True)
 
     def _close(self) -> None:
         self.calls.append(("_close", None))
@@ -213,44 +231,49 @@ def test_robot_disconnects_remaining_arm_parts_after_camera_failure():
     assert "disconnect:driver" in events
 
 
-def test_remote_controller_proxies_expose_composed_part_api():
-    controller = FakeControllerGroup()
-    driver = RemoteControllerArm(
-        controller,
-        command_methods={"tcp_pose": "move_arm"},
+def test_driver_views_expose_composed_part_api():
+    """A method-shaped driver decomposes into parts without any remoting."""
+    driver = FakeMethodDriver()
+    arm = DriverArm(
+        driver,
+        commands={"tcp_pose": "move_arm"},
         state_fields=("tcp_pose", "arm_joint_position"),
     )
-    end_effector = RemoteControllerEndEffector(
-        controller,
-        state_field="gripper_position",
-    )
+    end_effector = DriverGripper(driver, state_field="gripper_position")
     target = np.ones(7)
 
-    assert set(driver.get_observation()) == {"tcp_pose", "arm_joint_position"}
+    assert set(arm.get_observation()) == {"tcp_pose", "arm_joint_position"}
     assert end_effector.get_observation()["state"].tolist() == [0]
-    assert driver.send_action({"tcp_pose": target})["tcp_pose"] is target
+    assert arm.send_action({"tcp_pose": target})["tcp_pose"] is target
     end_effector.send_action({"target": np.array([1.0])})
     end_effector.send_action({"target": np.array([-1.0])})
 
-    assert [name for name, _ in controller.calls] == [
+    assert [name for name, _ in driver.calls] == [
         "move_arm",
         "open_gripper",
         "close_gripper",
     ]
 
 
-def test_remote_controller_owner_cleans_up_worker_group():
-    controller = FakeControllerGroup()
-    driver = RemoteControllerArm(
-        controller,
-        command_methods={"tcp_pose": "move_arm"},
-        owns_controller=True,
+def test_remote_handle_releases_its_worker_group():
+    group = FakeWorkerGroup()
+    handle = RemoteDriverHandle(
+        group,
+        {"arm": {"kind": "controllable", "observation": {}, "action": {}}},
     )
 
-    driver.disconnect()
+    handle.disconnect()
+    handle.disconnect()  # idempotent
 
-    assert [name for name, _ in controller.calls] == ["cleanup", "_close"]
-    assert not driver.is_connected
+    assert [name for name, _ in group.calls] == ["shutdown", "_close"]
+
+
+def test_remote_handle_forwards_off_interface_driver_methods():
+    """Methods outside the part interface reach the driver unchanged."""
+    group = FakeWorkerGroup()
+    handle = RemoteDriverHandle(group, {})
+
+    assert handle.is_robot_up().wait()[0] is True
 
 
 def test_robot_requires_non_empty_string_part_names():
@@ -354,39 +377,52 @@ def test_robot_auto_config_supports_pep604_optional(monkeypatch):
     assert RobotAutoConfig.resolve([config])[0].port == 5000
 
 
-def test_part_runtime_hosts_controllable_part():
-    runtime = PartRuntime.__new__(PartRuntime)
-    runtime._part_cls = FakeControllablePart
-    runtime._part_kwargs = {"name": "arm", "events": []}
-    runtime._part = None
-
-    runtime.initialize()
-
-    assert runtime.is_connected()
-    action = {"target": np.array([0.5])}
-    assert runtime.send_action(action) == action
-    runtime.shutdown()
-    assert runtime._part is None
-
-
-def test_robot_runtime_preserves_canonical_namespaces():
+def test_robot_preserves_canonical_namespaces():
+    """Robot alone carries the namespaces the old RobotRuntime wrapped."""
     arm = Arm(driver=FakeControllablePart("arm", []))
-    runtime = RobotRuntime(Robot.single_arm(arm))
-    runtime.connect()
+    robot = Robot.single_arm(arm)
+    robot.connect()
 
-    observation = runtime.get_observation()
+    observation = robot.get_observation()
     action = {"arms": {"arm": {"arm": {"target": np.array([0.25])}}}}
 
     assert observation["arms"]["arm"]["state"]["state"].shape == (1,)
-    assert runtime.send_action(action) == action
-    runtime.disconnect()
+    assert robot.send_action(action) == action
+    robot.disconnect()
 
 
-def test_arm_runtime_rejects_observation_only_driver():
-    runtime = ArmRuntime.__new__(ArmRuntime)
+def test_robot_releases_driver_handles_after_parts():
+    """Parts borrow a connection; the robot closes it once they are done."""
+    events: list[str] = []
 
-    with pytest.raises(TypeError, match="ControllablePart"):
-        ArmRuntime.__init__(runtime, cast(Any, FakeCamera))
+    class FakeHandle:
+        def disconnect(self) -> None:
+            events.append("handle")
+
+    arm = Arm(driver=FakeControllablePart("driver", events))
+    robot = Robot.single_arm(arm, drivers={"arm": FakeHandle()})
+    robot.connect()
+    robot.disconnect()
+
+    assert events[-1] == "handle"
+    assert "disconnect:driver" in events
+
+
+def test_driver_rejects_actions_for_observation_only_parts():
+    class CameraOnlyDriver(Driver):
+        is_connected = True
+
+        def connect(self) -> None:
+            pass
+
+        def disconnect(self) -> None:
+            pass
+
+        def parts(self) -> dict[str, RobotPart]:
+            return {"wrist": FakeCamera("wrist", [])}
+
+    with pytest.raises(TypeError, match="not controllable"):
+        CameraOnlyDriver().part_action("wrist", {})
 
 
 def test_legacy_adapters_preserve_policy_facing_layouts():
@@ -489,13 +525,13 @@ def test_dosw1_dummy_runtime_uses_composed_dual_arm_interface():
         is_dummy: bool = True
         gripper_width_max: float = 0.07
 
-    runtime = build_dosw1_runtime(DummyDOSW1Config())
+    robot = build_dosw1_robot(DummyDOSW1Config())
 
-    assert set(runtime.robot.arms) == {"left", "right"}
-    observation = runtime.get_observation()
+    assert set(robot.arms) == {"left", "right"}
+    observation = robot.get_observation()
     assert observation["arms"]["left"]["state"]["joint_position"].shape == (6,)
-    runtime.disconnect()
-    assert not runtime.is_connected
+    robot.disconnect()
+    assert not robot.is_connected
 
 
 def test_pure_drivers_construct_without_scheduler_or_vendor_sdks():
@@ -506,5 +542,8 @@ def test_pure_drivers_construct_without_scheduler_or_vendor_sdks():
         Turtle2Driver(),
     ]
 
+    assert all(isinstance(driver, Driver) for driver in drivers)
     assert all(isinstance(driver, ControllablePart) for driver in drivers)
     assert all(not driver.is_connected for driver in drivers)
+    # Every driver declares the parts it backs.
+    assert all(driver.parts() for driver in drivers)

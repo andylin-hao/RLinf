@@ -20,6 +20,7 @@ from rlinf.scheduler.hardware import HardwareConfig, HardwareInfo, HardwareResou
 from ..config import RobotAutoConfig
 from ..discovery import RobotConfig, RobotDiscovery, RobotInfo, register_robot
 from ..layout import ArmSpec, PartSpec, RobotSpec
+from ..part import Arm
 from ..robot import Robot
 
 
@@ -126,3 +127,35 @@ class Turtle2Config(RobotConfig):
 
 
 register_robot(Turtle2Config, Turtle2Robot)(Turtle2Discovery)
+
+
+def build_turtle2_robot(
+    *,
+    frequency: int,
+    camera_ids: list[int],
+    env_idx: int,
+    node_rank: int,
+    worker_rank: int,
+) -> Turtle2Robot:
+    """Place the coupled Turtle2 controller and compose both arms from it.
+
+    One connection backs both arms, both grippers, and the wrist cameras; the
+    driver decomposes itself into those parts.
+    """
+    from ..drivers.turtle2 import Turtle2Driver
+
+    handle = Turtle2Driver.spawn(
+        frequency,
+        tuple(camera_ids),
+        node_rank=node_rank,
+        name=f"Turtle2Driver-{worker_rank}-{env_idx}",
+    )
+    cameras = {
+        name: part for name, part in handle.parts.items() if name.startswith("wrist_")
+    }
+    return Turtle2Robot.dual_arm(
+        Arm(handle.part("left"), handle.part("left_end_effector")),
+        Arm(handle.part("right"), handle.part("right_end_effector")),
+        cameras=cameras,
+        drivers={"controller": handle},
+    )

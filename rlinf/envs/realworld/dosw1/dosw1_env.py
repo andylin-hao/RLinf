@@ -30,9 +30,9 @@ from rlinf.envs.realworld.common.keyboard.keyboard_listener import KeyboardListe
 from rlinf.envs.realworld.common.video_player import VideoPlayer
 from rlinf.robotics import (
     DOSW1RobotConfig,
+    Robot,
     RobotInfo,
-    RobotRuntime,
-    build_dosw1_runtime,
+    build_dosw1_robot,
 )
 from rlinf.robotics.cameras import BaseCamera, CameraInfo, create_camera
 from rlinf.robotics.drivers import DOSW1ArmDriver, DOSW1SDKAdapter
@@ -141,13 +141,13 @@ class DOSW1Env(gym.Env):
             self.env_worker_rank = worker_info.rank
 
         self.sdk: DOSW1SDKAdapter | None = None
-        self.robot_runtime: RobotRuntime | None = None
+        self.robot: Robot | None = None
         if not config.is_dummy:
             self._apply_hardware_info(hardware_info)
-            self.robot_runtime = build_dosw1_runtime(config)
+            self.robot = build_dosw1_robot(config)
             left_driver = cast(
                 DOSW1ArmDriver,
-                self.robot_runtime.robot.arms["left"].driver,
+                self.robot.arms["left"].driver,
             )
             self.sdk = left_driver.sdk
             self._go_to_home()
@@ -281,8 +281,8 @@ class DOSW1Env(gym.Env):
                     pass
             self._keyboard = None
         if self.sdk is not None:
-            if self.robot_runtime is not None:
-                self.robot_runtime.disconnect()
+            if self.robot is not None:
+                self.robot.disconnect()
             else:
                 self.sdk.disconnect()
 
@@ -649,8 +649,8 @@ class DOSW1Env(gym.Env):
             camera = create_camera(CameraInfo(name=name, serial_number=serial))
             camera.open()
             self._cameras.append(camera)
-            if self.robot_runtime is not None:
-                self.robot_runtime.attach_camera(name, camera)
+            if self.robot is not None:
+                self.robot.attach_camera(name, camera)
 
     def _close_cameras(self) -> None:
         for camera in self._cameras:

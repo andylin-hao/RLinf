@@ -17,7 +17,9 @@ import time
 
 import numpy as np
 
-from rlinf.robotics.part import ControllablePart
+from rlinf.robotics.drivers.base import ARM_STATE_FIELDS, SinglePartDriver
+from rlinf.robotics.drivers.views import DriverGripper
+from rlinf.robotics.part import RobotPart
 from rlinf.robotics.states import GimArmRobotState
 from rlinf.utils.logging import get_logger
 
@@ -36,7 +38,7 @@ def _smoothstep(t: float) -> float:
     return 10 * t**3 - 15 * t**4 + 6 * t**5
 
 
-class GimArmDriver(ControllablePart):
+class GimArmDriver(SinglePartDriver):
     """GimArm robot arm controller.
 
     Wraps the ``gim_arm_control`` SDK (CAN bus) independently of scheduling.
@@ -76,26 +78,25 @@ class GimArmDriver(ControllablePart):
 
     @property
     def observation_features(self) -> dict:
-        """Describe canonical GimArm state fields."""
-        return {
-            name: {}
-            for name in (
-                "tcp_pose",
-                "tcp_vel",
-                "arm_joint_position",
-                "arm_joint_velocity",
-                "tcp_force",
-                "tcp_torque",
-                "arm_jacobian",
-                "gripper_position",
-                "gripper_open",
-            )
-        }
+        """Describe canonical GimArm arm state fields.
+
+        Gripper fields belong to the end-effector part from :meth:`parts`.
+        """
+        return {name: {} for name in ARM_STATE_FIELDS}
 
     @property
     def action_features(self) -> dict:
         """Describe the absolute joint target."""
         return {"joint_position": {}}
+
+    def parts(self) -> dict[str, RobotPart]:
+        """Expose the arm, plus the gripper when one is fitted."""
+        parts: dict[str, RobotPart] = {"arm": self}
+        if self._enable_gripper:
+            parts["end_effector"] = DriverGripper(
+                self, state_field="gripper_position"
+            )
+        return parts
 
     def connect(self) -> None:
         """Connect the CAN SDK and start the feedforward control loop."""
@@ -165,8 +166,9 @@ class GimArmDriver(ControllablePart):
         """Leave task-specific reset positions to the caller."""
 
     def get_observation(self) -> dict:
-        """Return the canonical arm state dictionary."""
-        return self.get_state().to_dict()
+        """Return the canonical arm state, without end-effector fields."""
+        state = self.get_state().to_dict()
+        return {name: state[name] for name in ARM_STATE_FIELDS}
 
     def send_action(self, action: dict) -> dict:
         """Apply one absolute joint target."""

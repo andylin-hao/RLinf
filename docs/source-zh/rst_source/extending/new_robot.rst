@@ -15,6 +15,8 @@
      - 职责
    * - ``RobotPart`` 和 ``ControllablePart``
      - 管理一个设备连接，并公开规范观测与动作。
+   * - ``Driver``
+     - 持有一条设备连接，并声明它支撑的部件。它是放置的基本单位。
    * - ``Arm``
      - 组合一个机械臂驱动、可选 ``EndEffector`` 和命名腕部相机。
    * - ``Robot``
@@ -23,12 +25,12 @@
      - 描述物理机械臂、相机、末端执行器、连接信息和节点 rank。
    * - ``RobotDiscovery``
      - 将调度器硬件配置转换为通用硬件资源。
-   * - ``RobotRuntime``
-     - 协调本地和远程部件，包括并行多臂操作。
+   * - ``DriverHandle``
+     - 以相同方式访问驱动，无论其运行在本地还是 worker 中。
    * - ``RobotTask`` 和 ``RobotTaskEnv``
      - 管理重置、奖励、终止、Gymnasium 空间和策略兼容逻辑。
 
-依赖方向必须保持严格：驱动不得导入 Ray、Gymnasium 或 ``rlinf.scheduler``。运行时宿主可以导入调度器 API。环境使用组合后的运行时，并将任务语义保留在设备驱动之外。
+依赖方向必须保持严格。驱动、部件和相机都不得导入 Ray、Gymnasium 或 ``rlinf.scheduler``；导入驱动不应把调度器带入进程。只有 ``rlinf/robotics/drivers/worker.py`` 一个模块跨越这条边界，且 ``Driver.spawn`` 以惰性方式导入它。环境使用组合后的 ``Robot``，并将任务语义保留在设备驱动之外。该约束由 ``tests/unit_tests/test_robotics_boundaries.py`` 强制检查。
 
 实现纯驱动
 ----------
@@ -92,7 +94,7 @@
 
 .. code-block:: python
 
-   from rlinf.robotics import Arm, Robot, RobotRuntime
+   from rlinf.robotics import Arm, Robot
 
 
    class ExampleRobot(Robot):
@@ -103,10 +105,9 @@
        left_arm=Arm(ExampleArmDriver("tcp://left-arm:5000")),
        right_arm=Arm(ExampleArmDriver("tcp://right-arm:5000")),
    )
-   runtime = RobotRuntime(robot)
-   runtime.connect()
-   observation = runtime.get_observation()
-   runtime.send_action(
+   robot.connect()
+   observation = robot.get_observation()
+   robot.send_action(
        {
            "arms": {
                "left": {
@@ -234,40 +235,37 @@
                left_endpoint: tcp://left-arm:5000
                right_endpoint: tcp://right-arm:5000
 
-远程托管驱动
-------------
+在节点上放置驱动
+----------------
 
-使用 ``ArmRuntime`` 在 RLinf ``Worker`` 中构造并连接纯机械臂驱动。将单 worker group 包装为 ``RemoteControllablePart``，再组合到本地 ``Robot``。
+``Driver.spawn`` 是唯一的放置入口。不传 ``node_rank`` 时驱动在当前进程内构造；传入时则托管在该节点的调度器 worker 中。两者返回的句柄 API 完全相同，因此调用方无需区分放置方式。
 
 .. code-block:: python
 
-   from rlinf.robotics import (
-       Arm,
-       ArmRuntime,
-       RemoteControllablePart,
-       Robot,
-       RobotRuntime,
-   )
-   from rlinf.scheduler import NodePlacementStrategy
+   from rlinf.robotics import Arm, Robot
 
-   group = ArmRuntime.create_group(
-       ExampleArmDriver,
-       {"endpoint": "tcp://left-arm:5000"},
-   ).launch(
-       cluster=cluster,
-       placement_strategy=NodePlacementStrategy(node_ranks=[0]),
-       name="ExampleArmRuntime",
+   handle = ExampleArmDriver.spawn(
+       endpoint="tcp://left-arm:5000",
+       node_rank=0,
+       name="ExampleArmDriver-0",
    )
-   remote_driver = RemoteControllablePart(group)
-   runtime = RobotRuntime(Robot.single_arm(Arm(remote_driver)))
-   runtime.connect()
+   robot = Robot.single_arm(
+       Arm(handle.part("arm"), handle.part("end_effector")),
+       drivers={"arm": handle},
+   )
+   robot.connect()
 
-``RobotRuntime`` 会并行执行彼此独立的机械臂重置、观测和动作。内置硬件通过 ``launch_franka_runtime``、``launch_dual_franka_runtime``、``launch_gim_arm_runtime``、``launch_turtle2_runtime`` 和 ``build_dosw1_runtime`` 使用同一边界。
+无需为每种机器人编写 worker 类。RLinf 会依据驱动自动合成一个，``WorkerGroup`` 随即把驱动的每个公有方法绑定为 RPC。部件接口之外的方法仍可通过句柄调用，且本地与远程的调用形式一致::
+
+   handle.is_robot_up().wait()[0]
+   handle.reset_joint(home_qpos).wait()
+
+把机器人持有的句柄通过 ``drivers=`` 传入；``Robot.disconnect`` 会在所有部件断开后释放它们。``Robot`` 会并行执行彼此独立的机械臂重置、观测和动作。内置硬件通过 ``build_franka_robot``、``build_dual_franka_robot``、``build_gim_arm_robot``、``build_turtle2_robot`` 和 ``build_dosw1_robot`` 使用同一条路径。
 
 分离任务与兼容逻辑
 ------------------
 
-在 ``RobotTask`` 或真机环境中实现重置、奖励、成功判定、截断和 Gymnasium 空间。使用 ``RobotTaskEnv`` 组合任务与 ``RobotRuntime``。当现有策略需要扁平动作向量以及 ``state``/``frames`` 观测时，使用 ``LegacyObservationAdapter`` 和 ``VectorActionAdapter``。
+在 ``RobotTask`` 或真机环境中实现重置、奖励、成功判定、截断和 Gymnasium 空间。使用 ``RobotTaskEnv`` 组合任务与 ``Robot``。当现有策略需要扁平动作向量以及 ``state``/``frames`` 观测时，使用 ``LegacyObservationAdapter`` 和 ``VectorActionAdapter``。
 
 .. warning::
 

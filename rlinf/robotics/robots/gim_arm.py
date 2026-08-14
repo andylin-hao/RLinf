@@ -22,6 +22,7 @@ from rlinf.scheduler.hardware import HardwareConfig, HardwareInfo, HardwareResou
 from ..config import RobotAutoConfig
 from ..discovery import RobotConfig, RobotDiscovery, RobotInfo, register_robot
 from ..layout import ArmSpec, CameraSpec, EndEffectorSpec, RobotSpec
+from ..part import Arm
 from ..robot import Robot
 
 
@@ -173,3 +174,33 @@ class GimArmConfig(RobotConfig):
 
 
 register_robot(GimArmConfig, GimArmRobot)(GimArmDiscovery)
+
+
+def build_gim_arm_robot(
+    *,
+    can_interface: str,
+    arm_variant: str,
+    enable_gripper: bool,
+    gripper_type: str,
+    control_mode: str,
+    env_idx: int,
+    node_rank: int,
+    worker_rank: int,
+) -> GimArmRobot:
+    """Place one CAN-controlled GimArm and compose it into a robot."""
+    from ..drivers.gim_arm import GimArmDriver
+
+    handle = GimArmDriver.spawn(
+        can_interface,
+        arm_variant,
+        enable_gripper,
+        gripper_type,
+        control_mode,
+        node_rank=node_rank,
+        name=f"GimArmDriver-{worker_rank}-{env_idx}",
+    )
+    end_effector = handle.part("end_effector") if enable_gripper else None
+    return GimArmRobot.single_arm(
+        Arm(handle.part("arm"), end_effector),
+        drivers={"arm": handle},
+    )

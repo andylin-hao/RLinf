@@ -45,7 +45,7 @@ def test_franka_dummy_preserves_legacy_policy_schema():
     )
 
     assert env.action_space.shape == (7,)
-    assert env.robot_runtime is None
+    assert env.robot is None
     _assert_legacy_transition(env)
 
 
@@ -63,7 +63,7 @@ def test_dual_franka_dummy_preserves_legacy_policy_schema():
     )
 
     assert env.action_space.shape == (16,)
-    assert env.robot_runtime is None
+    assert env.robot is None
     _assert_legacy_transition(env)
 
 
@@ -81,7 +81,7 @@ def test_gim_arm_dummy_preserves_legacy_policy_schema():
     )
 
     assert env.action_space.shape == (7,)
-    assert env.robot_runtime is None
+    assert env.robot is None
     _assert_legacy_transition(env)
 
 
@@ -100,7 +100,7 @@ def test_dosw1_dummy_preserves_legacy_policy_schema():
     )
 
     assert env.action_space.shape == (14,)
-    assert env.robot_runtime is None
+    assert env.robot is None
     _assert_legacy_transition(env)
 
 
@@ -116,5 +116,5 @@ def test_turtle2_dummy_preserves_legacy_policy_schema():
     )
 
     assert env.action_space.shape == (7,)
-    assert env.robot_runtime is None
+    assert env.robot is None
     _assert_legacy_transition(env)

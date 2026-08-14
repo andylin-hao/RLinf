@@ -21,9 +21,13 @@ from typing import Protocol
 
 import numpy as np
 
-from rlinf.robotics.part import ControllablePart, EndEffector
+from rlinf.robotics.drivers.base import Driver
+from rlinf.robotics.part import ControllablePart, EndEffector, RobotPart
 from rlinf.robotics.states import DOSW1RobotState
 from rlinf.utils.logging import get_logger
+
+#: Arm sides exposed by one DOSW1 SDK session.
+_ARM_SIDES: tuple[str, ...] = ("left", "right")
 
 
 class DOSW1ConnectionConfig(Protocol):
@@ -50,7 +54,7 @@ _CONTROL_LOOP_DT = 0.02
 _STATE_READY_TIMEOUT_S = 5.0
 
 
-class DOSW1SDKAdapter:
+class DOSW1SDKAdapter(Driver):
     """Thin wrapper around ``airbot_sdk.AirbotRobot`` for RLinf."""
 
     def __init__(self, config: DOSW1ConnectionConfig) -> None:
@@ -124,6 +128,18 @@ class DOSW1SDKAdapter:
             self._shutdown_robot(robot)
         except Exception:
             self._logger.exception("[DOSW1SDK] Failed to disconnect cleanly")
+
+    def parts(self) -> dict[str, RobotPart]:
+        """Expose both arms and both end effectors on this one SDK session.
+
+        The parts borrow the session; the driver itself owns connecting and
+        disconnecting it.
+        """
+        parts: dict[str, RobotPart] = {}
+        for side in _ARM_SIDES:
+            parts[side] = DOSW1ArmDriver(self, side)
+            parts[f"{side}_end_effector"] = DOSW1EndEffector(self, side)
+        return parts
 
     def set_leader_arm_enabled(self, enabled: bool) -> None:
         """Toggle leader-arm linkage used by teleoperation."""

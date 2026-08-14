@@ -20,18 +20,20 @@ import numpy as np
 import psutil
 from scipy.spatial.transform import Rotation as R
 
+from rlinf.robotics.drivers.base import ARM_STATE_FIELDS, SinglePartDriver
+from rlinf.robotics.drivers.views import DriverGripper
 from rlinf.robotics.end_effectors import (
     EndEffector,
     EndEffectorType,
     create_end_effector,
     normalize_end_effector_type,
 )
-from rlinf.robotics.part import ControllablePart
+from rlinf.robotics.part import RobotPart
 from rlinf.robotics.states import FrankaRobotState
 from rlinf.utils.logging import get_logger
 
 
-class FrankaROSDriver(ControllablePart):
+class FrankaROSDriver(SinglePartDriver):
     """Pure ROS-backed Franka driver with no scheduler dependency."""
 
     def __init__(
@@ -70,13 +72,29 @@ class FrankaROSDriver(ControllablePart):
 
     @property
     def observation_features(self) -> dict:
-        """Describe canonical Franka state fields."""
-        return {name: {} for name in self._state.to_dict()}
+        """Describe canonical Franka arm state fields.
+
+        End-effector fields belong to the part returned by :meth:`parts`.
+        """
+        return {name: {} for name in ARM_STATE_FIELDS}
 
     @property
     def action_features(self) -> dict:
         """Describe the Cartesian pose command."""
         return {"tcp_pose": {}}
+
+    def parts(self) -> dict[str, RobotPart]:
+        """Expose the arm and whichever end effector is configured."""
+        if self._end_effector_type.is_hand:
+            end_effector = DriverGripper(
+                self,
+                state_field="hand_position",
+                action_dim=6,
+                command="command_end_effector",
+            )
+        else:
+            end_effector = DriverGripper(self, state_field="gripper_position")
+        return {"arm": self, "end_effector": end_effector}
 
     def connect(self) -> None:
         """Connect ROS channels, controller processes, and the end effector."""
@@ -88,7 +106,7 @@ class FrankaROSDriver(ControllablePart):
         from franka_msgs.msg import ErrorRecoveryActionGoal, FrankaState
         from serl_franka_controllers.msg import ZeroJacobian
 
-        from rlinf.robotics.ros import ROSController
+        from rlinf.robotics.drivers.ros import ROSController
 
         self._geom_msg = geom_msg
         self._rospy = rospy
@@ -112,8 +130,9 @@ class FrankaROSDriver(ControllablePart):
         """Leave task-specific reset positions to the caller."""
 
     def get_observation(self) -> dict:
-        """Return the canonical arm state dictionary."""
-        return self.get_state().to_dict()
+        """Return the canonical arm state, without end-effector fields."""
+        state = self.get_state().to_dict()
+        return {name: state[name] for name in ARM_STATE_FIELDS}
 
     def send_action(self, action: dict) -> dict:
         """Apply one Cartesian pose target."""

@@ -16,7 +16,9 @@ Keep each layer focused on one responsibility.
    * - Layer
      - Responsibility
    * - ``RobotPart`` and ``ControllablePart``
-     - Own one device connection and expose canonical observations and actions.
+     - Expose canonical observations and actions for one robot component.
+   * - ``Driver``
+     - Own one device connection and declare the parts it backs. The unit of placement.
    * - ``Arm``
      - Compose one arm driver, an optional ``EndEffector``, and named wrist cameras.
    * - ``Robot``
@@ -25,14 +27,17 @@ Keep each layer focused on one responsibility.
      - Describe physical arms, cameras, end effectors, connections, and node ranks.
    * - ``RobotDiscovery``
      - Translate scheduler hardware configuration into generic hardware resources.
-   * - ``RobotRuntime``
-     - Coordinate local and remote parts, including parallel multi-arm operations.
+   * - ``DriverHandle``
+     - Access a driver identically whether it runs locally or in a worker.
    * - ``RobotTask`` and ``RobotTaskEnv``
      - Own reset, reward, termination, Gymnasium spaces, and policy compatibility.
 
-The dependency direction is strict: drivers do not import Ray, Gymnasium, or
-``rlinf.scheduler``. Runtime hosts may import scheduler APIs. Environments consume
-the composed runtime and keep task semantics out of device drivers.
+The dependency direction is strict. Drivers, parts, and cameras never import
+Ray, Gymnasium, or ``rlinf.scheduler``; importing a driver must not pull the
+scheduler into the process. Exactly one module bridges the two,
+``rlinf/robotics/drivers/worker.py``, and ``Driver.spawn`` imports it lazily.
+Environments consume the composed ``Robot`` and keep task semantics out of
+device drivers. ``tests/unit_tests/test_robotics_boundaries.py`` enforces this.
 
 Implement a Pure Driver
 -----------------------
@@ -104,7 +109,7 @@ same structure.
 
 .. code-block:: python
 
-   from rlinf.robotics import Arm, Robot, RobotRuntime
+   from rlinf.robotics import Arm, Robot
 
 
    class ExampleRobot(Robot):
@@ -115,10 +120,9 @@ same structure.
        left_arm=Arm(ExampleArmDriver("tcp://left-arm:5000")),
        right_arm=Arm(ExampleArmDriver("tcp://right-arm:5000")),
    )
-   runtime = RobotRuntime(robot)
-   runtime.connect()
-   observation = runtime.get_observation()
-   runtime.send_action(
+   robot.connect()
+   observation = robot.get_observation()
+   robot.send_action(
        {
            "arms": {
                "left": {
@@ -258,48 +262,48 @@ class parses each item and ``to_spec()`` supplies the canonical layout.
                left_endpoint: tcp://left-arm:5000
                right_endpoint: tcp://right-arm:5000
 
-Host a Driver Remotely
-----------------------
+Place a Driver on a Node
+------------------------
 
-Use ``ArmRuntime`` to construct and connect a pure arm driver in an RLinf
-``Worker``. Wrap the one-worker group with ``RemoteControllablePart`` before
-composing it into a local ``Robot``.
+``Driver.spawn`` is the only placement call. Without ``node_rank`` the driver is
+built in this process; with one it is hosted in a scheduler worker on that node.
+Both return a handle with the same API, so callers never branch on placement.
 
 .. code-block:: python
 
-   from rlinf.robotics import (
-       Arm,
-       ArmRuntime,
-       RemoteControllablePart,
-       Robot,
-       RobotRuntime,
-   )
-   from rlinf.scheduler import NodePlacementStrategy
+   from rlinf.robotics import Arm, Robot
 
-   group = ArmRuntime.create_group(
-       ExampleArmDriver,
-       {"endpoint": "tcp://left-arm:5000"},
-   ).launch(
-       cluster=cluster,
-       placement_strategy=NodePlacementStrategy(node_ranks=[0]),
-       name="ExampleArmRuntime",
+   handle = ExampleArmDriver.spawn(
+       endpoint="tcp://left-arm:5000",
+       node_rank=0,
+       name="ExampleArmDriver-0",
    )
-   remote_driver = RemoteControllablePart(group)
-   runtime = RobotRuntime(Robot.single_arm(Arm(remote_driver)))
-   runtime.connect()
+   robot = Robot.single_arm(
+       Arm(handle.part("arm"), handle.part("end_effector")),
+       drivers={"arm": handle},
+   )
+   robot.connect()
 
-``RobotRuntime`` applies independent arm resets, observations, and actions in
-parallel. Built-in hardware uses the same boundary through
-``launch_franka_runtime``, ``launch_dual_franka_runtime``,
-``launch_gim_arm_runtime``, ``launch_turtle2_runtime``, and
-``build_dosw1_runtime``.
+There is no per-robot worker class to write. RLinf synthesizes one from the
+driver, so ``WorkerGroup`` binds every public driver method as an RPC. Methods
+outside the part interface stay reachable through the handle, with the same call
+shape locally and remotely::
+
+   handle.is_robot_up().wait()[0]
+   handle.reset_joint(home_qpos).wait()
+
+Pass the handles a robot owns as ``drivers=``; ``Robot.disconnect`` releases them
+after every part is disconnected. ``Robot`` applies independent arm resets,
+observations, and actions in parallel. Built-in hardware uses this same path
+through ``build_franka_robot``, ``build_dual_franka_robot``,
+``build_gim_arm_robot``, ``build_turtle2_robot``, and ``build_dosw1_robot``.
 
 Keep Tasks and Compatibility Separate
 -------------------------------------
 
 Implement reset, reward, success, truncation, and Gymnasium spaces in a
 ``RobotTask`` or the real-world environment. Use ``RobotTaskEnv`` to combine a
-task with a ``RobotRuntime``. Use ``LegacyObservationAdapter`` and
+task with a ``Robot``. Use ``LegacyObservationAdapter`` and
 ``VectorActionAdapter`` when an existing policy expects flat action vectors and
 ``state``/``frames`` observations.
 
@@ -312,7 +316,7 @@ task with a ``RobotRuntime``. Use ``LegacyObservationAdapter`` and
 Test the Integration
 --------------------
 
-Test pure drivers without vendor SDKs, composition paths, remote runtime
+Test pure drivers without vendor SDKs, composition paths, remote handle
 lifecycle, physical spec translation, discovery registration, and the exact
 legacy policy schema.
 
@@ -324,5 +328,5 @@ legacy policy schema.
      tests/unit_tests/test_realworld_robotics_compatibility.py
 
 What this does: it verifies the scheduler boundary, nested single-arm and
-dual-arm composition, task/runtime separation, and compatibility of all built-in
+dual-arm composition, task/robot separation, and compatibility of all built-in
 real-world environments without requiring physical hardware.

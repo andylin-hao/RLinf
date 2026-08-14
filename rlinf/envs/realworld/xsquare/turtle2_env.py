@@ -17,7 +17,7 @@ from __future__ import annotations
 import copy
 import time
 from dataclasses import dataclass, field
-from typing import Optional, cast
+from typing import Optional
 
 import cv2
 import gymnasium as gym
@@ -25,11 +25,10 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 
 from rlinf.robotics import (
-    RemoteControllerArm,
+    Robot,
     RobotInfo,
-    RobotRuntime,
     Turtle2Config,
-    launch_turtle2_runtime,
+    build_turtle2_robot,
 )
 from rlinf.robotics.states import Turtle2RobotState
 from rlinf.scheduler import WorkerInfo
@@ -125,7 +124,7 @@ class Turtle2Env(gym.Env):
         ), "please choose camera IDs from [0, 1, 2]."
         self._turtle2_state = Turtle2RobotState()
         self._num_steps = 0
-        self.robot_runtime: RobotRuntime | None = None
+        self.robot: Robot | None = None
 
         if not self.config.is_dummy:
             self._setup_hardware()
@@ -147,23 +146,20 @@ class Turtle2Env(gym.Env):
     def _setup_hardware(self):
         assert self.env_idx >= 0, "env_idx must be set for Turtle2Env."
 
-        self.robot_runtime = launch_turtle2_runtime(
+        self.robot = build_turtle2_robot(
             frequency=self.config.smooth_frequency,
             camera_ids=self.config.use_camera_ids,
             env_idx=self.env_idx,
             node_rank=self.node_rank,
             worker_rank=self.env_worker_rank,
         )
-        driver = cast(
-            RemoteControllerArm,
-            self.robot_runtime.robot.arms["left"].driver,
-        )
-        self._controller = driver.controller
+        # Both arms ride one connection, so there is a single handle.
+        self._controller = self.robot.drivers["controller"]
 
     def close(self) -> None:
         """Detach all composed Turtle2 runtime proxies."""
-        if self.robot_runtime is not None:
-            self.robot_runtime.disconnect()
+        if self.robot is not None:
+            self.robot.disconnect()
         super().close()
 
     def _init_action_obs_spaces(self):
