@@ -18,8 +18,8 @@ The taxonomy lives in :mod:`.base`; each category's implementations live in the
 subpackage named after it::
 
     parts/
-      base.py                     RobotPart, ControllablePart, Camera,
-                                  EndEffector, Arm, MobileBase, LeggedBase
+      base.py                     RobotPart, ControllablePart, Group, Camera,
+                                  EndEffector, MobileBase, LeggedBase
       arms/                       Franky, Franka ROS, GimArm, Turtle2, DOSW1
       cameras/                    RealSense, ZED, Lumos
       end_effectors/
@@ -39,10 +39,10 @@ hardware it actually has. Import ``rlinf.robotics.parts.cameras`` directly.
 """
 
 from .base import (
-    Arm,
     Camera,
     ControllablePart,
     EndEffector,
+    Group,
     LeggedBase,
     MobileBase,
     RobotPart,
@@ -50,7 +50,7 @@ from .base import (
 )
 
 __all__ = [
-    "Arm",
+    "Group",
     "Camera",
     "ControllablePart",
     "EndEffector",

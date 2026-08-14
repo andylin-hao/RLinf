@@ -77,7 +77,8 @@ class Turtle2Hardware(ControllablePart):
         self._state = Turtle2RobotState()
         self._connected = False
 
-    def subparts(self) -> dict[str, RobotPart]:
+    @property
+    def parts(self) -> dict[str, RobotPart]:
         """Decompose the shared connection into per-side arms and cameras."""
         parts: dict[str, RobotPart] = {}
         for side, prefix in _ARM_SIDES.items():

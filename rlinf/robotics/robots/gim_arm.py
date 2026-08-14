@@ -22,9 +22,8 @@ from rlinf.scheduler.hardware import HardwareConfig, HardwareInfo, HardwareResou
 
 from ..config import RobotAutoConfig
 from ..discovery import RobotConfig, RobotDiscovery, RobotInfo
-from ..parts.base import Arm
+from ..parts.cameras import declare_cameras
 from ..robot import Robot
-from ..specs import declare_all
 
 
 class GimArmRobot(Robot):
@@ -45,8 +44,9 @@ class GimArmRobot(Robot):
         node_rank: int,
         worker_rank: int,
         cameras: Optional[Mapping[str, Any]] = None,
+        camera_node_rank: Optional[int] = None,
     ) -> "GimArmRobot":
-        """Compose one CAN-controlled GimArm. ``connect`` places it."""
+        """Compose one CAN-controlled GimArm. ``connect`` places every part."""
         from ..parts.arms.gim_arm import GimArm
 
         arm = GimArm.at(
@@ -58,19 +58,11 @@ class GimArmRobot(Robot):
             node_rank=node_rank,
             name=f"GimArm-{worker_rank}-{env_idx}",
         )
-        return cls(
-            arms={
-                "arm": Arm(
-                    arm.subpart("arm"),
-                    arm.subpart("end_effector") if enable_gripper else None,
-                    cameras=declare_all(
-                        cameras or {},
-                        default_node_rank=node_rank,
-                        name=lambda key: f"GimArmCamera-{key}-{worker_rank}-{env_idx}",
-                    ),
-                )
-            }
-        )
+        parts = {"arm": arm.part("arm")}
+        if enable_gripper:
+            parts["gripper"] = arm.part("end_effector")
+        parts.update(declare_cameras(cameras, node_rank=camera_node_rank))
+        return cls(parts)
 
 
 class GimArmDiscovery(RobotDiscovery):

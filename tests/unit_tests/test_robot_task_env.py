@@ -18,7 +18,7 @@ import gymnasium as gym
 import numpy as np
 
 from rlinf.envs.real.robot_task_env import RobotTask, RobotTaskEnv
-from rlinf.robotics import Arm, ControllablePart, Robot
+from rlinf.robotics import ControllablePart, Group, Robot
 
 
 class DummyDriver(ControllablePart):
@@ -113,9 +113,9 @@ class DummyTask(RobotTask):
 
 def test_robot_task_env_composes_task_and_robot_lifecycles():
     driver = DummyDriver()
-    robot = Robot(arms={"arm": Arm(driver)})
+    robot = Robot(arm=Group(arm=driver))
     env = RobotTaskEnv(robot, DummyTask())
-    action = {"arms": {"arm": {"arm": {"target": np.array([0.5])}}}}
+    action = {"arm": {"arm": {"target": np.array([0.5])}}}
 
     observation, _ = env.reset(seed=3)
     transition = env.step(action)

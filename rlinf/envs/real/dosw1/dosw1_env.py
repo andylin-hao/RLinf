@@ -28,6 +28,7 @@ import numpy as np
 
 from rlinf.envs.real.video_player import VideoPlayer
 from rlinf.robotics import (
+    Camera,
     DOSW1Robot,
     DOSW1RobotConfig,
     Robot,
@@ -35,12 +36,7 @@ from rlinf.robotics import (
 )
 from rlinf.robotics.parts.arms import DOSW1Arm, DOSW1Hardware
 from rlinf.robotics.parts.arms.dosw1 import DOSW1RobotState
-from rlinf.robotics.parts.cameras import (
-    BaseCamera,
-    CameraConfig,
-    CameraInfo,
-    create_camera,
-)
+from rlinf.robotics.parts.cameras import BaseCamera, CameraInfo, create_camera
 from rlinf.robotics.parts.teleop.keyboard import KeyboardListener
 from rlinf.scheduler import WorkerInfo
 from rlinf.utils.logging import get_logger
@@ -151,15 +147,12 @@ class DOSW1Env(gym.Env):
             self._apply_hardware_info(hardware_info)
             self.robot = DOSW1Robot.build(
                 config=config,
-                cameras={
-                    info.name: CameraConfig(info=info)
-                    for info in self._camera_infos()
-                },
+                cameras={info.name: info for info in self._camera_infos()},
             )
             self.robot.connect()
             left_driver = cast(
                 DOSW1Arm,
-                self.robot.arms["left"].manipulator,
+                self.robot.part("left").part("arm"),
             )
             self.sdk = left_driver.sdk
             self._go_to_home()
@@ -668,7 +661,7 @@ class DOSW1Env(gym.Env):
     def _open_cameras(self) -> None:
         """Take the cameras from the robot, which placed and opened them."""
         if self.robot is not None:
-            self._cameras = list(self.robot.cameras.values())
+            self._cameras = list(self.robot.parts_of_type(Camera).values())
             return
         for info in self._camera_infos():
             camera = create_camera(info)

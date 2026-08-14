@@ -8,7 +8,7 @@ machines, reads them in parallel, and exposes them to a policy.
 
 Read :doc:`Robotics Model <../concepts/robotics>` before you start. It explains
 the design used here. Every physical component is a ``RobotPart``. Hardware that
-drives several components declares them with ``subparts()``. A ``Robot`` is a
+drives several components declares them through ``parts``. A ``Robot`` is a
 named composition, and ``spawn()`` places any part on a node. The page also maps
 the ``rlinf/robotics`` package.
 
@@ -73,7 +73,7 @@ device matches a more specific interface.
 Expose Several Components on One Connection
 -------------------------------------------
 
-Declare components with ``subparts()`` when one socket, CAN bus, or ROS node
+Declare components through ``parts`` when one socket, CAN bus, or ROS node
 drives more than one of them. By convention, use the part itself as the ``"arm"``
 entry.
 
@@ -85,7 +85,8 @@ entry.
    class ExampleArm(ControllablePart):
        ...
 
-       def subparts(self) -> dict[str, RobotPart]:
+       @property
+       def parts(self) -> dict[str, RobotPart]:
            return {
                "arm": self,
                "end_effector": MethodGripper(self, state_field="gripper_position"),
@@ -99,12 +100,12 @@ uniform interface. Declare the views in Python next to the methods they wrap.
 Compose the Robot
 -----------------
 
-Wrap every manipulator in an ``Arm``. Keep arm names stable because they become
+Compose parts under the names you want. Keep them stable because they become
 canonical observation and action paths.
 
 .. code-block:: python
 
-   from rlinf.robotics import Arm, Robot
+   from rlinf.robotics import Group, Robot
 
 
    class ExampleRobot(Robot):
@@ -112,10 +113,8 @@ canonical observation and action paths.
 
 
    robot = ExampleRobot(
-       arms={
-           "left": Arm(ExampleArm("tcp://left-arm:5000")),
-           "right": Arm(ExampleArm("tcp://right-arm:5000")),
-       }
+       left=ExampleArm("tcp://left-arm:5000"),
+       right=ExampleArm("tcp://right-arm:5000"),
    )
    robot.connect()
    observation = robot.get_observation()
@@ -145,9 +144,9 @@ call a placement function.
 
 .. code-block:: python
 
-   from rlinf.robotics import Arm, Robot
+   from rlinf.robotics import Group, Robot
 
-   robot = Robot(arms={"arm": Arm(ExampleArm.at("tcp://left-arm:5000", node_rank=0))})
+   robot = Robot(arm=ExampleArm.at("tcp://left-arm:5000", node_rank=0))
    robot.connect()
 
 What this does: 1) declares ``ExampleArm`` for node 0, 2) builds and connects it
@@ -161,10 +160,10 @@ it is plugged into::
    cameras={"scene": RealSenseCamera.at(info, node_rank=2)}
 
 When one connection backs several components, declare it once and refer to its
-subparts, so it is opened once::
+parts, so it is opened once::
 
    hardware = ExampleHardware.at(node_rank=0)
-   Arm(hardware.subpart("left"), hardware.subpart("left_end_effector"))
+   Group(arm=hardware.part("left"), gripper=hardware.part("left_end_effector"))
 
 ``spawn()`` is the eager form underneath. Use it only outside a robot, such as in
 a bench script, where you manage the handle yourself.
@@ -188,7 +187,7 @@ reset poses, rewards, and episode horizons in the task config.
 
    from dataclasses import dataclass
 
-   from rlinf.robotics import Arm, RobotConfig
+   from rlinf.robotics import Group, RobotConfig
 
 
    @dataclass
@@ -202,23 +201,22 @@ reset poses, rewards, and episode horizons in the task config.
 
        @classmethod
        def build(cls, *, config: ExampleRobotConfig) -> "ExampleRobot":
-           arms = {
-               side: Arm(
-                   ExampleArm.at(
+           return cls(
+               **{
+                   side: ExampleArm.at(
                        endpoint,
                        node_rank=config.node_rank,
                        name=f"ExampleArm-{side}",
                    )
-               )
-               for side, endpoint in (
-                   ("left", config.left_endpoint),
-                   ("right", config.right_endpoint),
-               )
-           }
-           return cls(arms=arms)
+                   for side, endpoint in (
+                       ("left", config.left_endpoint),
+                       ("right", config.right_endpoint),
+                   )
+               }
+           )
 
 Build a single-arm variant with the same builder, but return
-an ``arms`` mapping with one entry. If a later part fails to start, disconnect the
+one entry instead of two. If a later part fails to start, disconnect the
 handles that are already placed before propagating the error. Never return a
 partial robot.
 

@@ -20,18 +20,15 @@ import pytest
 
 import rlinf.robotics.robots.franka as franka_module
 from rlinf.robotics import (
-    Arm,
     Camera,
     ControllablePart,
     DOSW1Robot,
     DOSW1RobotConfig,
-    DualFrankaConfig,
     DualFrankaRobot,
     EndEffector,
-    FrankaArmConfig,
-    FrankaConfig,
     FrankaRobot,
     GimArmConfig,
+    Group,
     LegacyObservationAdapter,
     MethodArm,
     MethodGripper,
@@ -149,12 +146,12 @@ class FakeWorkerGroup:
         self.calls.append(("shutdown", None))
         return FakeRemoteResult(None)
 
-    def subpart_observation(self, name: str) -> FakeRemoteResult:
-        self.calls.append(("subpart_observation", name))
+    def part_observation(self, name: str) -> FakeRemoteResult:
+        self.calls.append(("part_observation", name))
         return FakeRemoteResult({"tcp_pose": np.zeros(7)})
 
-    def subpart_action(self, name: str, action: Any) -> FakeRemoteResult:
-        self.calls.append(("subpart_action", (name, action)))
+    def part_action(self, name: str, action: Any) -> FakeRemoteResult:
+        self.calls.append(("part_action", (name, action)))
         return FakeRemoteResult(action)
 
     def is_robot_up(self) -> FakeRemoteResult:
@@ -167,15 +164,12 @@ class FakeWorkerGroup:
 
 def test_robot_composes_and_namespaces_parts():
     events: list[str] = []
-    arm = Arm(
-        manipulator=FakeControllablePart("arm", events),
-        end_effector=FakeEndEffector("gripper", events),
-        cameras={"wrist": FakeCamera("wrist", events)},
+    arm = Group(
+        arm=FakeControllablePart("arm", events),
+        gripper=FakeEndEffector("gripper", events),
+        wrist=FakeCamera("wrist", events),
     )
-    robot = Robot(
-        arms={"left": arm},
-        cameras={"front": FakeCamera("front", events)},
-    )
+    robot = Robot(left=arm, front=FakeCamera("front", events))
 
     robot.connect()
 
@@ -186,21 +180,17 @@ def test_robot_composes_and_namespaces_parts():
         "connect:wrist",
         "connect:front",
     ]
-    assert set(robot.observation_features) == {"arms", "cameras"}
-    assert set(robot.action_features) == {"arms"}
+    # The observation mirrors the composition: names, not fixed categories.
+    assert set(robot.observation_features) == {"left", "front"}
+    assert set(robot.action_features) == {"left"}, "a camera takes no action"
     action = {
-        "arms": {
-            "left": {
-                "arm": {"target": np.array([0.5])},
-                "end_effector": {"target": np.array([1.0])},
-            }
+        "left": {
+            "arm": {"target": np.array([0.5])},
+            "gripper": {"target": np.array([1.0])},
         }
     }
     assert robot.send_action(action) == action
-    assert set(robot.parts_of_type(Camera)) == {
-        "arms.left.cameras.wrist",
-        "cameras.front",
-    }
+    assert set(robot.parts_of_type(Camera)) == {"left.wrist", "front"}
 
     robot.disconnect()
     assert events[-4:] == [
@@ -212,17 +202,17 @@ def test_robot_composes_and_namespaces_parts():
 
 
 def test_robot_rejects_actions_for_observation_only_parts():
-    robot = Robot(parts={"camera": FakeCamera("camera", [])})
+    robot = Robot(camera=FakeCamera("camera", []))
 
     with pytest.raises(TypeError, match="not controllable"):
-        robot.send_action({"parts": {"camera": {"target": np.array([0.5])}}})
+        robot.send_action({"camera": {"target": np.array([0.5])}})
 
 
 def test_robot_disconnects_remaining_arm_parts_after_camera_failure():
     events: list[str] = []
     camera = FakeCamera("wrist", events)
-    arm = Arm(FakeControllablePart("driver", events), cameras={"wrist": camera})
-    robot = Robot(arms={"arm": arm})
+    arm = Group(arm=FakeControllablePart("driver", events), wrist=camera)
+    robot = Robot(arm=arm)
     robot.connect()
     camera.disconnect()
 
@@ -283,46 +273,31 @@ def test_robot_requires_non_empty_string_part_names():
 
 def test_builtin_robots_expose_standard_composition_layouts():
     events: list[str] = []
-    left_arm = Arm(
-        manipulator=FakeControllablePart("left_arm", events),
-        end_effector=FakeEndEffector("left_gripper", events),
+    left_arm = Group(
+        arm=FakeControllablePart("left_arm", events),
+        gripper=FakeEndEffector("left_gripper", events),
     )
-    right_arm = Arm(
-        manipulator=FakeControllablePart("right_arm", events),
-        end_effector=FakeEndEffector("right_gripper", events),
+    right_arm = Group(
+        arm=FakeControllablePart("right_arm", events),
+        gripper=FakeEndEffector("right_gripper", events),
     )
-    third_arm = Arm(manipulator=FakeControllablePart("third_arm", events))
+    third_arm = Group(arm=FakeControllablePart("third_arm", events))
 
-    single = FrankaRobot(
-        arms={"arm": left_arm},
-        cameras={"front_camera": FakeCamera("front_camera", events)},
-    )
+    single = FrankaRobot(arm=left_arm, front_camera=FakeCamera("front", events))
     dual = DualFrankaRobot(
-        arms={"left": left_arm, "right": right_arm},
-        cameras={"base_camera": FakeCamera("base_camera", events)},
+        left=left_arm, right=right_arm, base_camera=FakeCamera("base", events)
     )
-    # Arm count is the size of the mapping, so nothing caps it at two.
-    triple = FrankaRobot(
-        arms={"left": left_arm, "right": right_arm, "third": third_arm}
-    )
+    # Names are the composition, so nothing caps the count or the kind.
+    triple = FrankaRobot(left=left_arm, right=right_arm, third=third_arm)
 
-    assert set(single.arms) == {"arm"}
-    assert set(single.parts_of_type(Arm)) == {"arms.arm"}
-    assert set(single.parts_of_type(EndEffector)) == {"arms.arm.end_effector"}
-    assert set(single.parts_of_type(Camera)) == {"cameras.front_camera"}
-    assert set(dual.arms) == {"left", "right"}
-    assert set(dual.parts_of_type(Arm)) == {"arms.left", "arms.right"}
-    assert set(triple.arms) == {"left", "right", "third"}
-    assert set(triple.parts_of_type(Arm)) == {
-        "arms.left",
-        "arms.right",
-        "arms.third",
-    }
-
-
-def test_standard_layout_rejects_non_arm_driver():
-    with pytest.raises(TypeError, match="Invalid robot arms"):
-        Robot(arms={"arm": FakeCamera("camera", [])})  # type: ignore[dict-item]
+    assert set(single.parts) == {"arm", "front_camera"}
+    assert set(single.parts_of_type(Group)) == {"arm"}
+    assert set(single.parts_of_type(EndEffector)) == {"arm.gripper"}
+    assert set(single.parts_of_type(Camera)) == {"front_camera"}
+    assert set(dual.parts) == {"left", "right", "base_camera"}
+    assert set(dual.parts_of_type(Group)) == {"left", "right"}
+    assert set(triple.parts) == {"left", "right", "third"}
+    assert set(triple.parts_of_type(Group)) == {"left", "right", "third"}
 
 
 def test_register_robot_registers_policy_and_config(monkeypatch):
@@ -388,16 +363,15 @@ def test_robot_auto_config_supports_pep604_optional(monkeypatch):
     assert RobotAutoConfig.resolve([config])[0].port == 5000
 
 
-def test_robot_preserves_canonical_namespaces():
-    """Robot alone carries the namespaces the old RobotRuntime wrapped."""
-    arm = Arm(manipulator=FakeControllablePart("arm", []))
-    robot = Robot(arms={"arm": arm})
+def test_namespaces_follow_the_composition():
+    """Observation and action keys are the names the robot was composed with."""
+    robot = Robot(arm=Group(arm=FakeControllablePart("arm", [])))
     robot.connect()
 
     observation = robot.get_observation()
-    action = {"arms": {"arm": {"arm": {"target": np.array([0.25])}}}}
+    action = {"arm": {"arm": {"target": np.array([0.25])}}}
 
-    assert observation["arms"]["arm"]["state"]["state"].shape == (1,)
+    assert observation["arm"]["arm"]["state"].shape == (1,)
     assert robot.send_action(action) == action
     robot.disconnect()
 
@@ -410,8 +384,8 @@ def test_robot_releases_driver_handles_after_parts():
         def disconnect(self) -> None:
             events.append("handle")
 
-    arm = Arm(manipulator=FakeControllablePart("driver", events))
-    robot = Robot(arms={"arm": arm}, handles={"arm": FakeHandle()})
+    robot = Robot(arm=Group(arm=FakeControllablePart("driver", events)))
+    robot.handles["arm"] = FakeHandle()
     robot.connect()
     robot.disconnect()
 
@@ -421,11 +395,12 @@ def test_robot_releases_driver_handles_after_parts():
 
 def test_driver_rejects_actions_for_observation_only_parts():
     class CameraOnlyHost(FakePart):
-        def subparts(self) -> dict[str, RobotPart]:
+        @property
+        def parts(self) -> dict[str, RobotPart]:
             return {"wrist": FakeCamera("wrist", [])}
 
     with pytest.raises(TypeError, match="not controllable"):
-        CameraOnlyHost("host", []).subpart_action("wrist", {})
+        CameraOnlyHost("host", []).part_action("wrist", {})
 
 
 def test_legacy_adapters_preserve_policy_facing_layouts():
@@ -507,9 +482,9 @@ def test_dosw1_dummy_runtime_uses_composed_dual_arm_interface():
     robot = DOSW1Robot.build(config=DummyDOSW1Config())
     robot.connect()
 
-    assert set(robot.arms) == {"left", "right"}
+    assert set(robot.parts) == {"left", "right"}
     observation = robot.get_observation()
-    assert observation["arms"]["left"]["state"]["joint_position"].shape == (6,)
+    assert observation["left"]["arm"]["joint_position"].shape == (6,)
     robot.disconnect()
     assert not robot.is_connected
 
@@ -525,38 +500,8 @@ def test_pure_drivers_construct_without_scheduler_or_vendor_sdks():
     assert all(isinstance(driver, RobotPart) for driver in drivers)
     assert all(isinstance(driver, ControllablePart) for driver in drivers)
     assert all(not driver.is_connected for driver in drivers)
-    # Each declares the subparts riding on its connection.
-    assert all(driver.subparts() for driver in drivers)
-
-
-def test_single_and_dual_franka_configs_project_onto_one_arm_shape():
-    """Arm count is the size of a mapping, not a difference in robot type.
-
-    Both configs keep their existing flat YAML keys; ``arms()`` is where those
-    keys stop being hand-written halves and become a uniform mapping that one
-    builder iterates.
-    """
-    single = FrankaConfig(node_rank=0, robot_ip="10.0.0.1", disable_validate=True)
-    dual = DualFrankaConfig(
-        node_rank=0,
-        left_robot_ip="10.0.0.1",
-        right_robot_ip="10.0.0.2",
-        right_controller_node_rank=3,
-    )
-
-    single_arms = single.arms()
-    dual_arms = dual.arms()
-
-    assert list(single_arms) == ["arm"]
-    assert list(dual_arms) == ["left", "right"]
-    assert all(
-        isinstance(arm, FrankaArmConfig)
-        for arm in (*single_arms.values(), *dual_arms.values())
-    )
-    # Per-arm placement is expressed identically in both.
-    assert dual_arms["left"].node_rank == 0
-    assert dual_arms["right"].node_rank == 3
-    assert single_arms["arm"].node_rank == 0
+    # Each declares the parts riding on its connection.
+    assert all(driver.parts for driver in drivers)
 
 
 def _fake_arm_backend(monkeypatch, *, failing_ip=None, disconnected=None):
@@ -565,10 +510,10 @@ def _fake_arm_backend(monkeypatch, *, failing_ip=None, disconnected=None):
     class FakeHandle:
         def __init__(self, name: str):
             self.name = name
-            self.subparts = {"arm": FakeControllablePart(name, [])}
+            self.parts = {"arm": FakeControllablePart(name, [])}
 
-        def subpart(self, _name: str):
-            return self.subparts["arm"]
+        def part_named(self, _name: str):
+            return self.parts["arm"]
 
         def disconnect(self) -> None:
             if disconnected is not None:
@@ -604,12 +549,7 @@ def test_declaring_arms_places_nothing_until_connect(monkeypatch):
     monkeypatch.setattr(franka_module, "franka_arm_cls", lambda backend: NeverSpawns)
 
     robot = FrankaRobot(
-        arms=FrankaRobot.compose_arms(
-            {"left": FrankaArmConfig(robot_ip="10.0.0.1")},
-            default_node_rank=0,
-            worker_rank=0,
-            env_idx=0,
-        )
+        arm=FrankaRobot.arm_at("10.0.0.1", node_rank=0, name="left")
     )
 
     assert not robot.is_connected
@@ -621,15 +561,8 @@ def test_connect_tears_down_parts_already_placed(monkeypatch):
     _fake_arm_backend(monkeypatch, failing_ip="10.0.0.2", disconnected=disconnected)
 
     robot = FrankaRobot(
-        arms=FrankaRobot.compose_arms(
-            {
-                "left": FrankaArmConfig(robot_ip="10.0.0.1"),
-                "right": FrankaArmConfig(robot_ip="10.0.0.2"),
-            },
-            default_node_rank=0,
-            worker_rank=0,
-            env_idx=0,
-        )
+        left=FrankaRobot.arm_at("10.0.0.1", node_rank=0, name="left"),
+        right=FrankaRobot.arm_at("10.0.0.2", node_rank=0, name="right"),
     )
 
     with pytest.raises(RuntimeError, match="unreachable"):
@@ -643,19 +576,14 @@ def test_declaring_arms_scales_past_two(monkeypatch):
     _fake_arm_backend(monkeypatch)
 
     robot = FrankaRobot(
-        arms=FrankaRobot.compose_arms(
-            {
-                name: FrankaArmConfig(robot_ip=f"10.0.0.{index}")
-                for index, name in enumerate(("left", "right", "third"), start=1)
-            },
-            default_node_rank=0,
-            worker_rank=0,
-            env_idx=0,
-        )
+        **{
+            name: FrankaRobot.arm_at(f"10.0.0.{index}", node_rank=0, name=name)
+            for index, name in enumerate(("left", "right", "third"), start=1)
+        }
     )
     robot.connect()
 
-    assert list(robot.arms) == ["left", "right", "third"]
+    assert list(robot.parts) == ["left", "right", "third"]
     assert robot.is_connected
 
 
@@ -665,14 +593,14 @@ def test_one_declaration_is_placed_once_however_often_referenced():
 
     class FakeHandle:
         def __init__(self):
-            self.subparts = {
+            self.parts = {
                 "left": FakeControllablePart("left", []),
                 "right": FakeControllablePart("right", []),
                 "wrist": FakeCamera("wrist", []),
             }
 
-        def subpart(self, name):
-            return self.subparts[name]
+        def part_named(self, name):
+            return self.parts[name]
 
         def disconnect(self):
             pass
@@ -689,16 +617,14 @@ def test_one_declaration_is_placed_once_however_often_referenced():
 
     hardware = CoupledHardware.at(node_rank=0)
     robot = Robot(
-        arms={
-            "left": Arm(hardware.subpart("left")),
-            "right": Arm(hardware.subpart("right")),
-        },
-        cameras={"wrist": hardware.subpart("wrist")},
+        left=hardware.part("left"),
+        right=hardware.part("right"),
+        wrist=hardware.part("wrist"),
     )
     robot.connect()
 
     assert placements == ["placed"], "the shared connection was opened more than once"
-    assert isinstance(robot.cameras["wrist"], Camera)
+    assert isinstance(robot.part("wrist"), Camera)
     assert robot.is_connected
 
 
@@ -714,14 +640,15 @@ def test_local_handle_subpart_returns_a_part_not_a_forwarded_call():
     events: list[str] = []
 
     class HostWithSubparts(FakeControllablePart):
-        def subparts(self) -> dict[str, RobotPart]:
+        @property
+        def parts(self) -> dict[str, RobotPart]:
             return {"arm": self, "end_effector": FakeEndEffector("ee", events)}
 
     handle = HostWithSubparts.spawn("host", events)
 
-    assert isinstance(handle.subpart("arm"), RobotPart)
-    assert isinstance(handle.subpart("end_effector"), EndEffector)
-    assert set(handle.subparts) == {"arm", "end_effector"}
+    assert isinstance(handle.part_named("arm"), RobotPart)
+    assert isinstance(handle.part_named("end_effector"), EndEffector)
+    assert set(handle.parts) == {"arm", "end_effector"}
     # Off-interface names still forward, and still wrap.
     assert handle.get_observation().wait()[0]["state"].shape == (1,)
 
@@ -757,11 +684,8 @@ def test_every_robot_owns_its_construction():
 def test_dual_franka_inherits_declaration_from_franka():
     """Arm count and backend are the only differences between the two."""
     assert issubclass(DualFrankaRobot, FrankaRobot)
-    # compose_arms is inherited, not duplicated.
-    assert (
-        DualFrankaRobot.compose_arms.__func__
-        is FrankaRobot.compose_arms.__func__
-    )
+    # arm_at is inherited, not duplicated.
+    assert DualFrankaRobot.arm_at.__func__ is FrankaRobot.arm_at.__func__
     assert (FrankaRobot.BACKEND, DualFrankaRobot.BACKEND) == ("franka_ros", "franky")
     # build is specialised per robot.
     assert DualFrankaRobot.build.__func__ is not FrankaRobot.build.__func__
@@ -776,7 +700,7 @@ def test_every_part_kind_places_independently():
     placed: dict[str, int] = {}
 
     class Handle:
-        subparts: dict[str, RobotPart] = {}
+        parts: dict[str, RobotPart] = {}
 
         def __init__(self, part):
             self._part = part
@@ -785,7 +709,7 @@ def test_every_part_kind_places_independently():
         def part(self):
             return self._part
 
-        def subpart(self, name):
+        def part_named(self, name):
             raise KeyError(name)
 
         def disconnect(self):
@@ -830,25 +754,27 @@ def test_every_part_kind_places_independently():
         return Fake
 
     robot = Robot(
-        arms={
-            "arm": Arm(
-                fake("arm", ControllablePart).at("10.0.0.1", node_rank=1),
-                fake("gripper", EndEffector).at(port="/dev/ttyUSB0", node_rank=2),
-                cameras={"wrist": fake("camera", Camera).at(node_rank=3)},
+        **{
+            "arm": Group(
+                arm=fake("arm", ControllablePart).at("10.0.0.1", node_rank=1),
+                gripper=fake("gripper", EndEffector).at(
+                    port="/dev/ttyUSB0", node_rank=2
+                ),
+                wrist=fake("camera", Camera).at(node_rank=3),
             )
         }
     )
     robot.connect()
 
     assert placed == {"arm": 1, "gripper": 2, "camera": 3}
-    arm = robot.arms["arm"]
-    assert isinstance(arm.end_effector, EndEffector)
-    assert isinstance(arm.cameras["wrist"], Camera)
+    arm = robot.part("arm")
+    assert isinstance(arm.part("gripper"), EndEffector)
+    assert isinstance(arm.part("wrist"), Camera)
     assert robot.is_connected
 
 
 def test_a_leaf_part_placed_remotely_still_exposes_itself():
-    """A camera has no subparts, so its handle must proxy the part itself.
+    """A camera has no parts, so its handle must proxy the part itself.
 
     Without this, declaring a camera on its own node would resolve to nothing.
     """
@@ -875,23 +801,20 @@ def test_a_leaf_part_placed_remotely_still_exposes_itself():
 
     assert described["kind"] == "camera"
     assert described["observation"] == {"frame": {}}
-    assert Leaf().subparts() == {}
+    assert Leaf().parts == {}
 
 
-def test_a_config_declares_its_own_part():
-    """PartConfig is the reuse point: each part kind says what to build."""
-    from rlinf.robotics.parts.cameras import CameraConfig, CameraInfo
+def test_declaring_cameras_needs_no_config_class():
+    """A camera descriptor plus a node is all a declaration needs."""
+    from rlinf.robotics.parts.cameras import CameraInfo, declare_cameras
 
-    config = CameraConfig(
-        info=CameraInfo(name="scene", serial_number="123", camera_type="realsense"),
-        node_rank=4,
-    )
-    spec = config.declare(default_node_rank=0)
+    info = CameraInfo(name="scene", serial_number="123", camera_type="realsense")
+    declared = declare_cameras({"scene": info}, node_rank=4)
 
-    assert spec.node_rank == 4, "an explicit node wins over the robot's"
-    assert spec.part_cls.__name__ == "RealSenseCamera"
-    # and a config without its own node falls back to the robot's
-    assert CameraConfig(info=config.info).declare(default_node_rank=7).node_rank == 7
+    assert set(declared) == {"scene"}
+    assert declared["scene"].node_rank == 4
+    assert declared["scene"].part_cls.__name__ == "RealSenseCamera"
+    assert declare_cameras(None) == {}
 
 
 def test_failed_connect_can_be_retried():
@@ -904,7 +827,7 @@ def test_failed_connect_can_be_retried():
     state = {"failing": True}
 
     class Handle:
-        subparts: dict = {}
+        parts: dict = {}
 
         def __init__(self, part):
             self._part = part
@@ -913,7 +836,7 @@ def test_failed_connect_can_be_retried():
         def part(self):
             return self._part
 
-        def subpart(self, name):
+        def part_named(self, name):
             raise KeyError(name)
 
         def disconnect(self):
@@ -960,9 +883,9 @@ def test_failed_connect_can_be_retried():
         return Made
 
     robot = Robot(
-        arms={
-            "left": Arm(maker("left").at(node_rank=1)),
-            "right": Arm(maker("right", flaky=True).at(node_rank=2)),
+        **{
+            "left": maker("left").at(node_rank=1),
+            "right": maker("right", flaky=True).at(node_rank=2),
         }
     )
 
@@ -970,7 +893,7 @@ def test_failed_connect_can_be_retried():
         robot.connect()
 
     assert robot.handles == {}, "handles from the aborted attempt were kept"
-    assert isinstance(robot.arms["left"].manipulator, PartSpec), (
+    assert isinstance(robot.part("left"), PartSpec), (
         "the successful arm kept a part whose handle was released"
     )
 
@@ -981,30 +904,9 @@ def test_failed_connect_can_be_retried():
     assert robot.is_connected
 
     robot.disconnect()
-    assert isinstance(robot.arms["left"].manipulator, PartSpec)
+    assert isinstance(robot.part("left"), PartSpec)
     robot.connect()
     assert robot.is_connected, "a disconnected robot must be connectable again"
-
-
-def test_an_arm_that_owns_its_end_effector_rejects_a_second_one():
-    """Two owners of one device would contend for it.
-
-    The Franka arms open their gripper on their own connection during
-    ``connect``. Declaring a Robotiq gripper as well would open the same serial
-    port twice, which only fails on real hardware.
-    """
-    from rlinf.robotics.robots.franka import FrankaEndEffectorConfig
-
-    with pytest.raises(ValueError, match="must not declare one as well"):
-        FrankaRobot.compose_arms(
-            {"arm": FrankaArmConfig(robot_ip="10.0.0.1", backend="franky")},
-            end_effectors={
-                "arm": FrankaEndEffectorConfig(
-                    kind="robotiq", connection="/dev/ttyUSB0"
-                )
-            },
-            default_node_rank=0,
-        )
 
 
 def test_a_robot_owned_camera_is_placed_opened_and_closed():
@@ -1044,13 +946,13 @@ def test_a_robot_owned_camera_is_placed_opened_and_closed():
             part = cls()
 
             class Handle:
-                subparts: dict = {}
+                parts: dict = {}
 
                 @property
                 def part(self):
                     return part
 
-                def subpart(self, name):
+                def part_named(self, name):
                     raise KeyError(name)
 
                 def disconnect(self):
@@ -1059,12 +961,7 @@ def test_a_robot_owned_camera_is_placed_opened_and_closed():
             return Handle()
 
     robot = Robot(
-        arms={
-            "arm": Arm(
-                FakeControllablePart("arm", []),
-                cameras={"wrist": Cam.at(node_rank=5)},
-            )
-        }
+        arm=Group(arm=FakeControllablePart("arm", []), wrist=Cam.at(node_rank=5))
     )
     robot.connect()
     robot.disconnect()

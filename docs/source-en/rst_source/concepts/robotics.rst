@@ -12,14 +12,15 @@ The Core Idea
 base is a ``RobotPart``. Each part connects and reports an observation. A
 controllable part also accepts an action. Do not add a separate "driver" layer.
 
-Declare subparts when hardware does not map one-to-one onto components. For
+Declare parts when hardware does not map one-to-one onto components. For
 example, a coupled dual-arm controller can drive two arms, two grippers, and two
 wrist cameras over one ROS connection. Let the part declare what it exposes
 instead of adding an abstraction for "the thing that owns the connection":
 
 .. code-block:: python
 
-   def subparts(self) -> dict[str, RobotPart]:
+   @property
+   def parts(self) -> dict[str, RobotPart]:
        return {
            "left": MethodArm(self, commands={"tcp_pose": "move_left_arm"}),
            "right": MethodArm(self, commands={"tcp_pose": "move_right_arm"}),
@@ -49,14 +50,16 @@ The Abstractions
        them with ``action_features``.
    * - ``Camera`` / ``EndEffector`` / ``MobileBase`` / ``LeggedBase``
      - Specific part types that composition and remote proxies can distinguish.
-   * - ``subparts()``
-     - The named components exposed by a part. Leaf parts return ``{}``.
-   * - ``Arm``
-     - A part that combines a manipulator, an optional end effector, and wrist
-       cameras.
+   * - ``parts``
+     - The named parts belonging to a part. One mechanism for both directions of
+       composition: hardware returns what its connection drives, a ``Group``
+       returns what it was composed of, a leaf returns ``{}``.
+   * - ``Group``
+     - A part made of named parts. An arm, a torso, or a whole robot is the same
+       construct with different names.
    * - ``Robot``
-     - A composition of named arms, robot-level cameras, extra parts, and its
-       owned handles.
+     - The outermost group. It knows its registered type, builds itself from a
+       hardware config, and owns the connections it places.
    * - ``at()`` / ``PartSpec``
      - A declaration: a part class, its arguments, and the node to build it on.
    * - ``PartHandle``
@@ -69,16 +72,18 @@ The Abstractions
 Composition, Not Robot Types
 ----------------------------
 
-A robot has one ``arms`` mapping, and its size is the arm count. There is no
-single-arm or dual-arm variant to pick, and nothing caps it at two:
+A robot is named parts, and nothing more. There are no arm, camera, or base
+slots to fit hardware into, so a lift or a head needs no new concept -- just
+another name:
 
 .. code-block:: python
 
-   one = FrankaRobot(arms={"arm": Arm(arm, gripper)})
-   two = FrankaRobot(arms={"left": Arm(left, lg), "right": Arm(right, rg)})
-   three = FrankaRobot(arms={"left": ..., "right": ..., "third": ...})
+   one = FrankaRobot(arm=arm, gripper=gripper)
+   two = FrankaRobot(left=Group(arm=l, gripper=lg), right=Group(arm=r, gripper=rg))
+   lifted = FrankaRobot(left=..., right=..., lift=lift, head=head_camera)
 
-Use composition to define the data shape seen by the policy. Names become paths:
+The observation and the action mirror the composition exactly. Names become
+paths, at any depth:
 
 .. list-table::
    :header-rows: 1
@@ -86,14 +91,10 @@ Use composition to define the data shape seen by the policy. Names become paths:
 
    * - Path
      - Meaning
-   * - ``arms.<name>.state``
-     - That arm's manipulator observation.
-   * - ``arms.<name>.arm``
-     - That arm's manipulator action.
-   * - ``arms.<name>.end_effector``
-     - Its end-effector observation and action.
-   * - ``cameras.<name>`` / ``parts.<name>``
-     - Robot-level cameras and extra components.
+   * - ``<name>``
+     - A part of the robot, by the name you composed it under.
+   * - ``<group>.<name>``
+     - A part of a group, nested as deeply as the composition goes.
 
 Let ``Robot`` reset, read, and command arms in parallel when they use independent
 connections. A two-arm observation then costs one round trip, not two.
@@ -107,8 +108,8 @@ Declare where a part runs with ``at()``. Nobody calls a placement function:
 .. code-block:: python
 
    robot = FrankaRobot(
-       arms={"left": Arm(FrankaROSArm.at("10.0.0.1", node_rank=1))},
-       cameras={"scene": RealSenseCamera.at(info, node_rank=3)},
+       left=FrankaROSArm.at("10.0.0.1", node_rank=1).part("arm"),
+       scene=RealSenseCamera.at(info, node_rank=3),
    )
    robot.connect()
 
@@ -117,27 +118,27 @@ each distinct declaration exactly once, publishes its handle as
 ``robot.handles[<name>]``, and tears down whatever it already placed if a later
 part fails. ``disconnect`` releases them.
 
-Declare a shared connection once and refer to its subparts. One connection
-backing two arms and two cameras is opened once, not four times:
+Declare a shared connection once and refer to its parts. One connection backing
+two arms and two cameras is opened once, not four times:
 
 .. code-block:: python
 
    hardware = Turtle2Hardware.at(50, camera_ids, node_rank=0)
    robot = Turtle2Robot(
-       arms={
-           side: Arm(
-               hardware.subpart(side), hardware.subpart(f"{side}_end_effector")
-           )
-           for side in ("left", "right")
-       },
-       cameras={"wrist_1": hardware.subpart("wrist_1")},
+       left=Group(
+           arm=hardware.part("left"), gripper=hardware.part("left_end_effector")
+       ),
+       right=Group(
+           arm=hardware.part("right"), gripper=hardware.part("right_end_effector")
+       ),
+       wrist_1=hardware.part("wrist_1"),
    )
 
 Placement applies to every part, not only arms. A robot owns its cameras and
 places them like anything else, so a camera runs on the machine it is plugged
 into while the policy runs elsewhere. Give it a node with
-``CameraConfig(info=info, node_rank=...)`` and the robot opens it on ``connect``
-and closes it on ``disconnect``. ``spawn()`` is the eager form
+``declare_cameras({name: info}, node_rank=...)`` and the robot opens it on
+``connect`` and closes it on ``disconnect``. ``spawn()`` is the eager form
 underneath; reach for it only outside a robot, such as in a bench script.
 
 Do not write a worker class for each hardware device. RLinf synthesizes one from
@@ -150,51 +151,30 @@ through the handle. The call shape stays the same locally and remotely::
 
 Read :doc:`Placement <placement>` to map workers onto nodes and GPUs.
 
-Compose Parts, Not Just Arms
-----------------------------
+Compose Every Part Kind
+-----------------------
 
 An arm, its end effector, and its cameras are separate parts. The robot's
-``build`` composes them, and each carries its own ``node_rank``:
+``build`` composes them by name, and each carries its own ``node_rank``:
 
 .. code-block:: python
 
    arm = FrankaROSArm.at(robot_ip, node_rank=1)
    robot = FrankaRobot(
-       arms={
-           "arm": Arm(
-               arm,
-               RobotiqGripper.at(port="/dev/ttyUSB0", node_rank=2),
-               cameras={"wrist": RealSenseCamera.at(info, node_rank=3)},
-           )
-       }
+       arm=arm.part("arm"),
+       gripper=RobotiqGripper.at(port="/dev/ttyUSB0", node_rank=2),
+       wrist=RealSenseCamera.at(info, node_rank=3),
    )
 
 A Robotiq gripper is a serial device of its own and a camera holds its own USB
 link, so neither has to sit on the arm's machine. Take the end effector from
-``arm.subpart("end_effector")`` only when it genuinely rides the arm's
-connection, as a Franka hand does.
+``arm.part("end_effector")`` only when it genuinely rides the arm's connection,
+as a Franka hand does.
 
-Let a config declare its own part. Subclass ``PartConfig``, say which class to
-build and with what, and ``declare_all`` turns a mapping of them into
-declarations, whatever the part kind:
-
-.. code-block:: python
-
-   @dataclass
-   class CameraConfig(PartConfig):
-       info: CameraInfo = None
-
-       def part_cls(self):
-           return camera_cls(self.info.camera_type)
-
-       def part_args(self):
-           return (self.info,)
-
-
-   cameras = declare_all(configs, default_node_rank=node_rank)
-
-Node defaulting, naming, and declaring are inherited, so a robot's ``build``
-is composition and nothing else.
+Composing is all a robot's ``build`` does. There is no per-part config class to
+write: a camera is ``declare_cameras({name: info}, node_rank=...)``, an arm is
+``at(...)`` with its arguments, and the robot's own ``RobotConfig`` -- the
+hardware YAML schema it already needs for discovery -- supplies the fields.
 
 Lifecycle
 ---------
@@ -274,8 +254,8 @@ Where the Code Lives
    * - ``robots/``
      - One module per robot, containing its config, discovery, and builder.
    * - ``specs.py``
-     - ``PartSpec``, ``SubpartRef``, and ``PartConfig``: a declared part, a
-       reference into it, and a config that declares its own.
+     - ``PartSpec`` and ``SubpartRef``: a declared part, and a reference into
+       one of its parts.
    * - ``placement.py``
      - ``PartHandle`` and the synthesized worker. This is the only scheduler
        import.

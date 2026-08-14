@@ -19,7 +19,7 @@ from rlinf.scheduler.hardware import HardwareConfig, HardwareInfo, HardwareResou
 
 from ..config import RobotAutoConfig
 from ..discovery import RobotConfig, RobotDiscovery, RobotInfo
-from ..parts.base import Arm
+from ..parts.base import Group
 from ..robot import Robot
 
 
@@ -38,11 +38,11 @@ class Turtle2Robot(Robot):
         node_rank: int,
         worker_rank: int,
     ) -> "Turtle2Robot":
-        """Place the coupled Turtle2 controller and compose both arms from it.
+        """Compose the coupled Turtle2 hardware into a group per side.
 
-        One connection backs both arms, both grippers, and the wrist cameras.
-        Declaring it once means it is placed once, however many subparts refer
-        to it. ``connect`` does the placing.
+        One connection backs both arms, both grippers, and the wrist cameras, so
+        declaring it once is enough: every part below refers to that one
+        declaration and it is placed once.
         """
         from ..parts.arms.turtle2 import Turtle2Hardware
 
@@ -52,21 +52,17 @@ class Turtle2Robot(Robot):
             node_rank=node_rank,
             name=f"Turtle2Hardware-{worker_rank}-{env_idx}",
         )
-        # Every wrist camera rides the same connection, so they are subparts of
-        # the one declaration and cost one placement between them.
-        cameras = {
-            f"wrist_{index + 1}": hardware.subpart(f"wrist_{index + 1}")
-            for index in range(len(camera_ids))
-        }
         return cls(
-            arms={
-                side: Arm(
-                    hardware.subpart(side),
-                    hardware.subpart(f"{side}_end_effector"),
-                )
-                for side in ("left", "right")
+            left=Group(
+                arm=hardware.part("left"), gripper=hardware.part("left_end_effector")
+            ),
+            right=Group(
+                arm=hardware.part("right"), gripper=hardware.part("right_end_effector")
+            ),
+            **{
+                f"wrist_{index + 1}": hardware.part(f"wrist_{index + 1}")
+                for index in range(len(camera_ids))
             },
-            cameras=cameras,
         )
 
 

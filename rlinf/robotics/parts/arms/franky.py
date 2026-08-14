@@ -120,7 +120,8 @@ class FrankyArm(ControllablePart):
         """Describe supported joint and Cartesian targets."""
         return {"joint_position": {}, "tcp_pose": {}}
 
-    def subparts(self) -> dict[str, RobotPart]:
+    @property
+    def parts(self) -> dict[str, RobotPart]:
         """Expose the arm and the gripper riding on the same connection."""
         return {
             "arm": self,

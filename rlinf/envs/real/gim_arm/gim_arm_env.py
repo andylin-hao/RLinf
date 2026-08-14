@@ -26,18 +26,14 @@ from scipy.spatial.transform import Rotation as R
 
 from rlinf.envs.real.video_player import VideoPlayer
 from rlinf.robotics import (
+    Camera,
     GimArmConfig,
     GimArmRobot,
     Robot,
     RobotInfo,
 )
 from rlinf.robotics.parts.arms.gim_arm import GimArmRobotState
-from rlinf.robotics.parts.cameras import (
-    BaseCamera,
-    CameraConfig,
-    CameraInfo,
-    create_camera,
-)
+from rlinf.robotics.parts.cameras import BaseCamera, CameraInfo, create_camera
 from rlinf.scheduler import WorkerInfo
 from rlinf.utils.logging import get_logger
 
@@ -255,9 +251,7 @@ class GimArmEnv(gym.Env):
             env_idx=self.env_idx,
             node_rank=controller_node_rank,
             worker_rank=self.env_worker_rank,
-            cameras={
-                info.name: CameraConfig(info=info) for info in self._camera_infos()
-            },
+            cameras={info.name: info for info in self._camera_infos()},
         )
         self.robot.connect()
         # Off-interface driver calls (is_robot_up, reset_joint, ...) go
@@ -466,7 +460,7 @@ class GimArmEnv(gym.Env):
         """
         if self.robot is not None:
             self._cameras: list[BaseCamera] = list(
-                self.robot.arms["arm"].cameras.values()
+                self.robot.parts_of_type(Camera).values()
             )
             return
         self._cameras = [create_camera(info) for info in self._camera_infos()]

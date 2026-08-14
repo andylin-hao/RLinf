@@ -23,8 +23,9 @@ from rlinf.scheduler.hardware import HardwareConfig, HardwareInfo, HardwareResou
 
 from ..config import RobotAutoConfig
 from ..discovery import RobotConfig, RobotDiscovery, RobotInfo
-from ..specs import declare_all
-from .franka import FrankaArmConfig, FrankaRobot
+from ..parts.base import Group
+from ..parts.cameras import declare_cameras
+from .franka import FrankaRobot
 
 
 class DualFrankaRobot(FrankaRobot):
@@ -50,17 +51,15 @@ class DualFrankaRobot(FrankaRobot):
         right_gripper_connection: Optional[str] = None,
         arm_cameras: Optional[Mapping[str, Mapping[str, Any]]] = None,
         cameras: Optional[Mapping[str, Any]] = None,
+        camera_node_rank: Optional[int] = None,
     ) -> "DualFrankaRobot":
-        """Place two independently located Franka arms and compose them.
+        """Compose two independently placed Franka arms, one group per side.
 
-        Arm count is the only thing separating this from the single-arm build:
-        it is the size of the mapping handed to ``compose_arms``, inherited
-        unchanged from :class:`~..franka.FrankaRobot`.
+        Arm count is not a property of the type: this is the same composition as
+        the single-arm build with another entry.
         """
         if not left_robot_ip or not right_robot_ip:
-            raise ValueError(
-                "Both Franka robot IPs are required for a dual-arm robot."
-            )
+            raise ValueError("Both Franka robot IPs are required for a dual-arm robot.")
 
         sides = {
             "left": (left_robot_ip, left_gripper_type, left_gripper_connection,
@@ -68,28 +67,24 @@ class DualFrankaRobot(FrankaRobot):
             "right": (right_robot_ip, right_gripper_type, right_gripper_connection,
                       right_node_rank),
         }
-        return cls(
-            arms=cls.compose_arms(
-                {
-                    side: FrankaArmConfig(
-                        robot_ip=robot_ip,
-                        backend=cls.BACKEND,
-                        gripper_type=gripper_type,
-                        gripper_connection=gripper_connection,
-                        node_rank=node_rank,
-                    )
-                    for side, (robot_ip, gripper_type, gripper_connection, node_rank)
-                    in sides.items()
-                },
-                # FrankyArm opens the Robotiq gripper on its own
-                # connection, so the end effector comes from its subparts.
-                cameras=arm_cameras,
-                default_node_rank=left_node_rank,
-                worker_rank=worker_rank,
-                env_idx=env_idx,
-            ),
-            cameras=declare_all(cameras or {}, default_node_rank=left_node_rank),
-        )
+        arm_cameras = arm_cameras or {}
+
+        groups = {}
+        for side, (robot_ip, gripper_type, connection, node_rank) in sides.items():
+            arm = cls.arm_at(
+                robot_ip,
+                node_rank=node_rank,
+                name=f"{cls.ROBOT_TYPE}Arm-{side}-{worker_rank}-{env_idx}",
+                gripper_type=gripper_type,
+                gripper_connection=connection,
+            )
+            groups[side] = Group(
+                arm=arm.part("arm"),
+                gripper=arm.part("end_effector"),
+                **declare_cameras(arm_cameras.get(side), node_rank=camera_node_rank),
+            )
+
+        return cls(**groups, **declare_cameras(cameras, node_rank=camera_node_rank))
 
 
 class DualFrankaDiscovery(RobotDiscovery):
@@ -237,27 +232,6 @@ class DualFrankaConfig(RobotConfig):
             self.right_camera_serials = list(self.right_camera_serials)
         if self.base_camera_serials:
             self.base_camera_serials = list(self.base_camera_serials)
-
-    def arms(self) -> dict[str, FrankaArmConfig]:
-        """Project the flat left/right fields onto the shared per-arm shape.
-
-        The legacy ``left_*`` / ``right_*`` YAML keys stay the public schema;
-        this is where they stop being two hand-written halves and become a
-        mapping the builder iterates.
-        """
-        return {
-            side: FrankaArmConfig(
-                robot_ip=getattr(self, f"{side}_robot_ip"),
-                gripper_type=getattr(self, f"{side}_gripper_type"),
-                gripper_connection=getattr(self, f"{side}_gripper_connection"),
-                node_rank=(
-                    getattr(self, f"{side}_controller_node_rank")
-                    if getattr(self, f"{side}_controller_node_rank") is not None
-                    else self.node_rank
-                ),
-            )
-            for side in ("left", "right")
-        }
 
     @staticmethod
     def _validate_ip(label: str, ip: str) -> None:

@@ -139,7 +139,8 @@ class GimArm(ControllablePart):
         """Describe the absolute joint target."""
         return {"joint_position": {}}
 
-    def subparts(self) -> dict[str, RobotPart]:
+    @property
+    def parts(self) -> dict[str, RobotPart]:
         """Expose the arm, plus the gripper when one is fitted."""
         parts: dict[str, RobotPart] = {"arm": self}
         if self._enable_gripper:

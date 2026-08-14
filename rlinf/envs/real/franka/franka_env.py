@@ -26,18 +26,14 @@ from scipy.spatial.transform import Rotation as R
 
 from rlinf.envs.real.video_player import VideoPlayer
 from rlinf.robotics import (
+    Camera,
     FrankaConfig,
     FrankaRobot,
     Robot,
     RobotInfo,
 )
 from rlinf.robotics.parts.arms.franka import FrankaRobotState
-from rlinf.robotics.parts.cameras import (
-    BaseCamera,
-    CameraConfig,
-    CameraInfo,
-    create_camera,
-)
+from rlinf.robotics.parts.cameras import BaseCamera, CameraInfo, create_camera
 from rlinf.robotics.parts.end_effectors.base import (
     EndEffectorType,
     normalize_end_effector_type,
@@ -288,10 +284,8 @@ class FrankaEnv(gym.Env):
             end_effector_type=self.config.end_effector_type,
             end_effector_config=self.config.end_effector_config,
             gripper_connection=self.config.gripper_connection,
-            cameras={
-                info.name: CameraConfig(info=info, node_rank=camera_node_rank)
-                for info in self._camera_infos
-            },
+            cameras={info.name: info for info in self._camera_infos},
+            camera_node_rank=camera_node_rank,
         )
         self.robot.connect()
         self._controller = self.robot.handles["arm"]
@@ -722,7 +716,7 @@ class FrankaEnv(gym.Env):
         """
         if self.robot is not None:
             self._cameras: list[BaseCamera] = list(
-                self.robot.arms["arm"].cameras.values()
+                self.robot.parts_of_type(Camera).values()
             )
             return
         self._cameras = [create_camera(info) for info in self._camera_infos]

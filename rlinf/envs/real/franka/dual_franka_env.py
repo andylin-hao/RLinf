@@ -29,18 +29,14 @@ from scipy.spatial.transform import Rotation as R
 
 from rlinf.envs.real.video_player import VideoPlayer
 from rlinf.robotics import (
+    Camera,
     DualFrankaConfig,
     DualFrankaRobot,
     Robot,
     RobotInfo,
 )
 from rlinf.robotics.parts.arms.franka import FrankaRobotState
-from rlinf.robotics.parts.cameras import (
-    BaseCamera,
-    CameraConfig,
-    CameraInfo,
-    create_camera,
-)
+from rlinf.robotics.parts.cameras import BaseCamera, CameraInfo, create_camera
 from rlinf.scheduler import WorkerInfo
 from rlinf.utils.logging import get_logger
 
@@ -244,23 +240,20 @@ class DualFrankaEnv(gym.Env):
         per_arm: dict[str, dict] = {"left": {}, "right": {}}
         robot_level: dict = {}
         for info in self._camera_infos():
-            config = CameraConfig(info=info)
             if info.name.startswith("left_wrist_"):
-                per_arm["left"][info.name] = config
+                per_arm["left"][info.name] = info
             elif info.name.startswith("right_wrist_"):
-                per_arm["right"][info.name] = config
+                per_arm["right"][info.name] = info
             else:
-                robot_level[info.name] = config
+                robot_level[info.name] = info
         return per_arm, robot_level
 
     def _open_cameras(self):
         """Take the cameras from the robot, which placed and opened them."""
         if self.robot is not None:
-            self._cameras: list[BaseCamera] = [
-                camera
-                for arm in self.robot.arms.values()
-                for camera in arm.cameras.values()
-            ] + list(self.robot.cameras.values())
+            self._cameras: list[BaseCamera] = list(
+                self.robot.parts_of_type(Camera).values()
+            )
             return
         self._cameras = [create_camera(info) for info in self._camera_infos()]
 

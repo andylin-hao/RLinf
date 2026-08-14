@@ -21,7 +21,7 @@ into the registry. Importing this package performs those registrations.
 
 from .dosw1 import DOSW1Robot, DOSW1RobotConfig
 from .dual_franka import DualFrankaConfig, DualFrankaRobot
-from .franka import FRANKA_BACKENDS, FrankaArmConfig, FrankaConfig, FrankaRobot
+from .franka import FRANKA_BACKENDS, FrankaConfig, FrankaRobot
 from .gim_arm import GimArmConfig, GimArmRobot
 from .turtle2 import Turtle2Config, Turtle2Robot
 
@@ -31,7 +31,6 @@ __all__ = [
     "DOSW1RobotConfig",
     "DualFrankaConfig",
     "DualFrankaRobot",
-    "FrankaArmConfig",
     "FrankaConfig",
     "FrankaRobot",
     "GimArmConfig",

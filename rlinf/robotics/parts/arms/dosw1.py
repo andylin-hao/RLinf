@@ -150,7 +150,8 @@ class DOSW1Hardware(RobotPart):
         except Exception:
             self._logger.exception("[DOSW1SDK] Failed to disconnect cleanly")
 
-    def subparts(self) -> dict[str, RobotPart]:
+    @property
+    def parts(self) -> dict[str, RobotPart]:
         """Expose both arms and both end effectors on this one SDK session.
 
         The subparts borrow the session; this part owns connecting and
@@ -167,13 +168,13 @@ class DOSW1Hardware(RobotPart):
         """Describe this session by its subparts; it has no state of its own."""
         return {
             name: part.observation_features
-            for name, part in self.subparts().items()
+            for name, part in self.parts.items()
         }
 
     def get_observation(self) -> dict:
         """Read every part riding on this session."""
         return {
-            name: part.get_observation() for name, part in self.subparts().items()
+            name: part.get_observation() for name, part in self.parts.items()
         }
 
     def set_leader_arm_enabled(self, enabled: bool) -> None:

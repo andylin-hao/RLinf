@@ -12,12 +12,13 @@
 的“驱动”抽象。
 
 硬件与组件通常不是一一对应。例如，一台联动双臂控制器可能通过一条 ROS 连接驱动两条
-机械臂、两个夹爪和两个腕部相机。遇到这种情况，直接让部件声明它暴露的组件。不要为
+机械臂、两个夹爪和两个腕部相机。遇到这种情况，直接让部件声明它包含的部件。不要为
 “持有连接的对象”再定义一层抽象：
 
 .. code-block:: python
 
-   def subparts(self) -> dict[str, RobotPart]:
+   @property
+   def parts(self) -> dict[str, RobotPart]:
        return {
            "left": MethodArm(self, commands={"tcp_pose": "move_left_arm"}),
            "right": MethodArm(self, commands={"tcp_pose": "move_right_arm"}),
@@ -45,12 +46,14 @@
      - 还能通过 ``send_action`` 接收命令，并用 ``action_features`` 描述命令的部件。
    * - ``Camera`` / ``EndEffector`` / ``MobileBase`` / ``LeggedBase``
      - 更具体的部件类型。组合层和远程代理可以据此区分它们。
-   * - ``subparts()``
-     - 部件暴露的具名组件。叶子部件返回 ``{}``。
-   * - ``Arm``
-     - 组合机械臂本体、可选末端执行器和腕部相机的部件。
+   * - ``parts``
+     - 一个部件所包含的具名部件。组合的两个方向共用这一套机制：硬件返回它那条
+       连接驱动的部件，``Group`` 返回被组合进来的部件，叶子返回 ``{}``。
+   * - ``Group``
+     - 由具名部件构成的部件。机械臂、躯干乃至整台机器人都是同一种构造，只是名字
+       不同。
    * - ``Robot``
-     - 由具名机械臂、机器人级相机、附加部件及其持有的句柄组成。
+     - 最外层的组。它知道自己注册的类型，能从硬件配置构建自身，并持有它放置的连接。
    * - ``at()`` / ``PartSpec``
      - 一条声明：部件类、构造参数，以及它要运行的节点。
    * - ``PartHandle``
@@ -61,16 +64,16 @@
 组合，而非机器人类型
 --------------------
 
-机器人只有一个 ``arms`` 映射，它的大小就是机械臂数量。不需要在单臂和双臂两种变体
-之间选择，也没有“最多两条”的限制：
+机器人就是一组具名部件，仅此而已。没有机械臂、相机或底盘这类固定槽位需要硬件去
+迁就，因此升降机构或云台也不需要新概念，只需要再起一个名字：
 
 .. code-block:: python
 
-   one = FrankaRobot(arms={"arm": Arm(arm, gripper)})
-   two = FrankaRobot(arms={"left": Arm(left, lg), "right": Arm(right, rg)})
-   three = FrankaRobot(arms={"left": ..., "right": ..., "third": ...})
+   one = FrankaRobot(arm=arm, gripper=gripper)
+   two = FrankaRobot(left=Group(arm=l, gripper=lg), right=Group(arm=r, gripper=rg))
+   lifted = FrankaRobot(left=..., right=..., lift=lift, head=head_camera)
 
-用组合结构确定策略看到的数据形状。名称会成为路径：
+观测和动作与组合结构完全一致。名称会成为路径，任意层级皆然：
 
 .. list-table::
    :header-rows: 1
@@ -78,14 +81,10 @@
 
    * - 路径
      - 含义
-   * - ``arms.<name>.state``
-     - 该机械臂本体的观测。
-   * - ``arms.<name>.arm``
-     - 该机械臂本体的动作。
-   * - ``arms.<name>.end_effector``
-     - 其末端执行器的观测与动作。
-   * - ``cameras.<name>`` / ``parts.<name>``
-     - 机器人级相机与其他组件。
+   * - ``<name>``
+     - 机器人的一个部件，名字就是你组合时给它的名字。
+   * - ``<group>.<name>``
+     - 组内的部件，组合有多深就能嵌多深。
 
 各机械臂使用独立连接时，``Robot`` 会并行重置、读取和下发命令。读取双臂观测只需
 一个往返时间，而不是两个。
@@ -99,8 +98,8 @@
 .. code-block:: python
 
    robot = FrankaRobot(
-       arms={"left": Arm(FrankaROSArm.at("10.0.0.1", node_rank=1))},
-       cameras={"scene": RealSenseCamera.at(info, node_rank=3)},
+       left=FrankaROSArm.at("10.0.0.1", node_rank=1).part("arm"),
+       scene=RealSenseCamera.at(info, node_rank=3),
    )
    robot.connect()
 
@@ -108,26 +107,26 @@
 放置一次，把句柄发布为 ``robot.handles[<name>]``，并在后续部件失败时拆掉已经放置的
 部分。``disconnect`` 负责释放它们。
 
-共享连接只声明一次，再引用它的 subparts。一条连接支撑两条机械臂和两个相机时，
+共享连接只声明一次，再引用它的部件。一条连接支撑两条机械臂和两个相机时，
 只会被打开一次，而不是四次：
 
 .. code-block:: python
 
    hardware = Turtle2Hardware.at(50, camera_ids, node_rank=0)
    robot = Turtle2Robot(
-       arms={
-           side: Arm(
-               hardware.subpart(side), hardware.subpart(f"{side}_end_effector")
-           )
-           for side in ("left", "right")
-       },
-       cameras={"wrist_1": hardware.subpart("wrist_1")},
+       left=Group(
+           arm=hardware.part("left"), gripper=hardware.part("left_end_effector")
+       ),
+       right=Group(
+           arm=hardware.part("right"), gripper=hardware.part("right_end_effector")
+       ),
+       wrist_1=hardware.part("wrist_1"),
    )
 
 放置适用于所有部件，不只是机械臂。机器人持有自己的相机，并像放置其他部件一样放置
 它们，因此相机可以运行在它所插接的机器上，而策略运行在别处。用
-``CameraConfig(info=info, node_rank=...)`` 指定节点，机器人会在 ``connect`` 时打开
-它、在 ``disconnect`` 时关闭它。``spawn()`` 是底层的即时形式，只在机器人之外使用，例如调试脚本。
+``declare_cameras({name: info}, node_rank=...)`` 指定节点，机器人会在 ``connect``
+时打开它、在 ``disconnect`` 时关闭它。``spawn()`` 是底层的即时形式，只在机器人之外使用，例如调试脚本。
 
 不要为每种硬件编写 worker 类。RLinf 会根据部件类自动合成一个
 （``type(name, (Worker, PartCls), ...)``）。``WorkerGroup`` 随后把每个公有方法绑定
@@ -138,48 +137,28 @@
 
 要了解 worker 如何映射到节点和 GPU，请阅读 :doc:`放置策略 <placement>`。
 
-组合所有部件，不只是机械臂
---------------------------
+组合所有部件
+------------
 
-机械臂、末端执行器和相机是彼此独立的部件。机器人的 ``build`` 负责把它们组合起来，
+机械臂、末端执行器和相机是彼此独立的部件。机器人的 ``build`` 按名字把它们组合起来，
 每个部件都带有自己的 ``node_rank``：
 
 .. code-block:: python
 
    arm = FrankaROSArm.at(robot_ip, node_rank=1)
    robot = FrankaRobot(
-       arms={
-           "arm": Arm(
-               arm,
-               RobotiqGripper.at(port="/dev/ttyUSB0", node_rank=2),
-               cameras={"wrist": RealSenseCamera.at(info, node_rank=3)},
-           )
-       }
+       arm=arm.part("arm"),
+       gripper=RobotiqGripper.at(port="/dev/ttyUSB0", node_rank=2),
+       wrist=RealSenseCamera.at(info, node_rank=3),
    )
 
 Robotiq 夹爪本身就是一台串口设备，相机也独占自己的 USB 链路，因此它们都不必和机械臂
 待在同一台机器上。只有当末端执行器确实依附于机械臂的连接时（例如 Franka 手），才用
-``arm.subpart("end_effector")`` 取它。
+``arm.part("end_effector")`` 取它。
 
-让配置自己声明部件。继承 ``PartConfig``，写明要构建哪个类、用什么参数，
-``declare_all`` 就能把一组配置变成声明，与部件种类无关：
-
-.. code-block:: python
-
-   @dataclass
-   class CameraConfig(PartConfig):
-       info: CameraInfo = None
-
-       def part_cls(self):
-           return camera_cls(self.info.camera_type)
-
-       def part_args(self):
-           return (self.info,)
-
-
-   cameras = declare_all(configs, default_node_rank=node_rank)
-
-节点默认值、命名和声明都由基类继承，因此机器人的 ``build`` 只剩下组合。
+机器人的 ``build`` 只做组合这一件事。不需要为每种部件再写配置类：相机用
+``declare_cameras({name: info}, node_rank=...)``，机械臂用 ``at(...)`` 加它的参数，
+字段则来自机器人自己的 ``RobotConfig``——它本来就要为硬件发现提供这份 YAML 结构。
 
 生命周期
 --------
@@ -249,8 +228,7 @@ Robotiq 夹爪本身就是一台串口设备，相机也独占自己的 USB 链�
    * - ``robots/``
      - 每台机器人对应一个模块，其中包含配置、发现逻辑和构建函数。
    * - ``specs.py``
-     - ``PartSpec``、``SubpartRef`` 与 ``PartConfig``：部件声明、指向其 subpart
-       的引用，以及能声明自身部件的配置。
+     - ``PartSpec`` 与 ``SubpartRef``：一条部件声明，以及指向其中某个部件的引用。
    * - ``placement.py``
      - ``PartHandle`` 与自动合成的 worker。只有这个模块导入调度器。
    * - ``views.py``

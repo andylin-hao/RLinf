@@ -15,6 +15,7 @@
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from typing import TYPE_CHECKING, Any, Callable, Optional, TypeVar
 
 if TYPE_CHECKING:
@@ -69,25 +70,26 @@ class RobotPart(ABC):
 
     # -- Composition ------------------------------------------------------
 
-    def subparts(self) -> dict[str, "RobotPart"]:
-        """Return the named parts this one exposes. Leaves expose none.
+    @property
+    def parts(self) -> dict[str, "RobotPart"]:
+        """The named parts belonging to this one. A leaf has none.
 
-        One piece of hardware often presents several components over a single
-        connection: a dual-arm controller exposes two arms, two end effectors,
-        and wrist cameras. Those are subparts of it. A part that also stands on
-        its own includes itself, conventionally under ``"arm"``.
+        One mechanism serves both directions of composition. Hardware whose
+        single connection drives several components returns them here; a
+        :class:`Group` returns what it was composed of. Nothing in the layer
+        needs to know which case it is looking at.
         """
         return {}
 
-    def subpart(self, name: str) -> "RobotPart":
-        """Return one named subpart, or raise a clear configuration error."""
-        subparts = self.subparts()
-        if name not in subparts:
+    def part(self, name: str) -> "RobotPart":
+        """Return one named part, or raise a clear configuration error."""
+        parts = self.parts
+        if name not in parts:
             raise KeyError(
-                f"{type(self).__name__} has no subpart {name!r}. "
-                f"Available: {sorted(subparts)}."
+                f"{type(self).__name__} has no part {name!r}. "
+                f"Available: {sorted(parts)}."
             )
-        return subparts[name]
+        return parts[name]
 
     # -- Subpart-addressed surface ----------------------------------------
     # Public, so a hosted part exposes these as RPCs automatically and one
@@ -107,15 +109,15 @@ class RobotPart(ABC):
             described["action"] = self.action_features
         return described
 
-    def describe_subparts(self) -> dict[str, dict[str, Any]]:
-        """Describe every subpart: its kind and its feature dictionaries.
+    def describe_parts(self) -> dict[str, dict[str, Any]]:
+        """Describe every part: its kind and its feature dictionaries.
 
         One call carries everything a remote handle needs to build correctly
         typed proxies, so placement costs a single round trip rather than one
         per subpart per property.
         """
         described: dict[str, dict[str, Any]] = {}
-        for name, part in self.subparts().items():
+        for name, part in self.parts.items():
             entry: dict[str, Any] = {
                 "kind": part_kind(part),
                 "observation": part.observation_features,
@@ -125,20 +127,20 @@ class RobotPart(ABC):
             described[name] = entry
         return described
 
-    def subpart_observation(self, name: str) -> dict[str, Any]:
-        """Read one subpart's observation."""
-        return self.subpart(name).get_observation()
+    def part_observation(self, name: str) -> dict[str, Any]:
+        """Read one part's observation."""
+        return self.part(name).get_observation()
 
-    def subpart_action(self, name: str, action: dict[str, Any]) -> dict[str, Any]:
-        """Send an action to one controllable subpart."""
-        part = self.subpart(name)
+    def part_action(self, name: str, action: dict[str, Any]) -> dict[str, Any]:
+        """Send an action to one controllable part."""
+        part = self.part(name)
         if not isinstance(part, ControllablePart):
-            raise TypeError(f"Subpart {name!r} of {type(self).__name__} is not controllable.")
+            raise TypeError(f"Part {name!r} of {type(self).__name__} is not controllable.")
         return part.send_action(action)
 
-    def subpart_reset(self, name: str) -> None:
-        """Reset one subpart."""
-        self.subpart(name).reset()
+    def part_reset(self, name: str) -> None:
+        """Reset one part."""
+        self.part(name).reset()
 
     def shutdown(self) -> None:
         """Disconnect during worker teardown."""
@@ -222,101 +224,89 @@ class Camera(RobotPart):
     """Observation-only camera part."""
 
 
-class Arm(ControllablePart):
-    """Compose a manipulator with an end effector and wrist cameras.
+class Group(ControllablePart):
+    """A part made of named parts.
 
-    The three slots line up with the namespaces the policy sees: the
-    manipulator's own action appears under ``"arm"``, its observation under
-    ``"state"``, then ``"end_effector"`` and ``"cameras"``.
+    Names are the composition: they become the keys of the observation and the
+    action, and the path a policy sees. A group holds whatever you give it, so
+    an arm, a torso, or a whole robot is the same construct with different
+    names.
+
+    Reads fan out across parts that sit on different connections. Parts sharing
+    one connection are read and commanded in their declared order, because a
+    vendor SDK behind a single link is rarely safe to call concurrently.
     """
 
-    def __init__(
-        self,
-        manipulator: ControllablePart,
-        end_effector: Optional[EndEffector] = None,
-        cameras: Optional[Mapping[str, Camera]] = None,
-    ) -> None:
-        self.manipulator = manipulator
-        self.end_effector = end_effector
-        self.cameras = dict(cameras or {})
-        if any(not name for name in self.cameras):
-            raise ValueError("Arm camera names must be non-empty strings.")
+    def __init__(self, parts: Optional[Mapping[str, Any]] = None, **named: Any) -> None:
+        combined = {**(parts or {}), **named}
+        if any(not name or not isinstance(name, str) for name in combined):
+            raise ValueError(f"{type(self).__name__} part names must be non-empty strings.")
+        self._parts: dict[str, Any] = combined
+        self._handle_of: dict[str, int] = {}
+        """Which connection each part came from, so sharing is respected."""
 
-    def resolve(self, placement: Any) -> list[Any]:
-        """Replace any declared slots with the parts they resolve to.
-
-        Called by :meth:`Robot.connect` before anything is connected. An arm
-        built from live parts is unaffected.
-
-        Returns:
-            The handles this arm's declarations were placed on, in order, so the
-            robot can publish them under the arm's name.
-        """
-        from ..specs import PartSpec, SubpartRef
-
-        used: list[Any] = []
-
-        def resolve(value: Any) -> Any:
-            if isinstance(value, (PartSpec, SubpartRef)):
-                spec = value.spec if isinstance(value, SubpartRef) else value
-                used.append(placement.resolve_handle(spec))
-                return placement.resolve(value)
-            return value
-
-        # Slots are resolved as given. An arm does not adopt an end effector
-        # it was not composed with: the robot's build says what it has.
-        self.manipulator = resolve(self.manipulator)
-        self.end_effector = resolve(self.end_effector)
-        self.cameras = {
-            name: resolve(camera) for name, camera in self.cameras.items()
-        }
-        return used
+    @property
+    def parts(self) -> dict[str, Any]:
+        """The parts this group is composed of."""
+        return self._parts
 
     @property
     def is_connected(self) -> bool:
-        """Whether the manipulator and every attached part are connected.
-
-        An arm with slots still declared but not yet placed is not connected.
-        """
+        """Whether every part is placed and connected."""
         from ..specs import PartSpec, SubpartRef
 
-        parts: list[Any] = [self.manipulator, *self.cameras.values()]
-        if self.end_effector is not None:
-            parts.append(self.end_effector)
-        if any(isinstance(part, (PartSpec, SubpartRef)) for part in parts):
+        values = list(self._parts.values())
+        if any(isinstance(v, (PartSpec, SubpartRef)) for v in values):
             return False
-        return all(part.is_connected for part in parts)
+        return all(part.is_connected for part in values)
 
     @property
     def observation_features(self) -> dict[str, Any]:
-        """Describe the arm, end-effector, and camera observations."""
-        features: dict[str, Any] = {"state": self.manipulator.observation_features}
-        if self.end_effector is not None:
-            features["end_effector"] = self.end_effector.observation_features
-        if self.cameras:
-            features["cameras"] = {
-                name: camera.observation_features
-                for name, camera in self.cameras.items()
-            }
-        return features
+        """Describe each part's observation under its name."""
+        return {name: part.observation_features for name, part in self._parts.items()}
 
     @property
     def action_features(self) -> dict[str, Any]:
-        """Describe arm and optional end-effector actions."""
-        features: dict[str, Any] = {"arm": self.manipulator.action_features}
-        if self.end_effector is not None:
-            features["end_effector"] = self.end_effector.action_features
-        return features
+        """Describe each controllable part's action under its name."""
+        return {
+            name: part.action_features
+            for name, part in self._parts.items()
+            if isinstance(part, ControllablePart)
+        }
+
+    def _batches(self) -> list[list[str]]:
+        """Group part names by connection: distinct ones may run together."""
+        order: list[list[str]] = []
+        index: dict[int, int] = {}
+        for position, name in enumerate(self._parts):
+            key = self._handle_of.get(name, -position - 1)
+            if key in index:
+                order[index[key]].append(name)
+            else:
+                index[key] = len(order)
+                order.append([name])
+        return order
+
+    def _fan_out(self, call) -> dict[str, Any]:
+        """Run *call* over every part, concurrently where connections differ."""
+
+        def run(names: list[str]) -> dict[str, Any]:
+            return {name: call(self._parts[name]) for name in names}
+
+        batches = self._batches()
+        results = run_parallel(
+            {position: partial(run, names) for position, names in enumerate(batches)}
+        )
+        merged: dict[str, Any] = {}
+        for position in range(len(batches)):
+            merged.update(results[position])
+        return merged
 
     def connect(self) -> None:
-        """Connect the manipulator and attached parts with rollback on failure."""
+        """Connect every part, rolling back the ones already connected."""
         connected: list[RobotPart] = []
-        parts: list[RobotPart] = [self.manipulator]
-        if self.end_effector is not None:
-            parts.append(self.end_effector)
-        parts.extend(self.cameras.values())
         try:
-            for part in parts:
+            for part in self._parts.values():
                 if not part.is_connected:
                     part.connect()
                     connected.append(part)
@@ -325,48 +315,96 @@ class Arm(ControllablePart):
                 part.disconnect()
             raise
 
+    def disconnect(self) -> None:
+        """Disconnect every connected part, in reverse order."""
+        for part in reversed(list(self._parts.values())):
+            if isinstance(part, Group) or part.is_connected:
+                part.disconnect()
+
     def reset(self) -> None:
-        """Reset the manipulator and attached end effector."""
-        self.manipulator.reset()
-        if self.end_effector is not None:
-            self.end_effector.reset()
+        """Reset every part."""
+        self._fan_out(lambda part: part.reset())
 
     def get_observation(self) -> dict[str, Any]:
-        """Read a namespaced observation from the complete arm."""
-        observation: dict[str, Any] = {"state": self.manipulator.get_observation()}
-        if self.end_effector is not None:
-            observation["end_effector"] = self.end_effector.get_observation()
-        if self.cameras:
-            observation["cameras"] = {
-                name: camera.get_observation() for name, camera in self.cameras.items()
-            }
-        return observation
+        """Read every part, namespaced by name."""
+        return self._fan_out(lambda part: part.get_observation())
 
-    def send_action(self, action: dict[str, Any]) -> dict[str, Any]:
-        """Dispatch arm and end-effector actions independently."""
-        unknown = set(action) - {"arm", "end_effector"}
+    def send_action(self, action: Mapping[str, Any]) -> dict[str, Any]:
+        """Dispatch each named action to the part that owns it."""
+        unknown = set(action) - set(self._parts)
         if unknown:
-            raise KeyError(f"Unknown arm action fields: {sorted(unknown)}")
-        applied: dict[str, Any] = {}
-        if "arm" in action:
-            applied["arm"] = self.manipulator.send_action(action["arm"])
-        if "end_effector" in action:
-            if self.end_effector is None:
-                raise ValueError("Arm has no end effector.")
-            applied["end_effector"] = self.end_effector.send_action(
-                action["end_effector"]
+            raise KeyError(
+                f"{type(self).__name__} has no parts {sorted(unknown)}; "
+                f"available: {sorted(self._parts)}."
             )
+        not_controllable = [
+            name
+            for name in action
+            if not isinstance(self._parts[name], ControllablePart)
+        ]
+        if not_controllable:
+            raise TypeError(f"Parts {sorted(not_controllable)} are not controllable.")
+
+        requested = dict(action)
+        batches = [[n for n in names if n in requested] for names in self._batches()]
+
+        def run(names: list[str]) -> dict[str, Any]:
+            return {
+                name: self._parts[name].send_action(requested[name]) for name in names
+            }
+
+        results = run_parallel(
+            {
+                position: partial(run, names)
+                for position, names in enumerate(batches)
+                if names
+            }
+        )
+        applied: dict[str, Any] = {}
+        for value in results.values():
+            applied.update(value)
         return applied
 
-    def disconnect(self) -> None:
-        """Disconnect cameras, the end effector, and the manipulator."""
-        parts: list[RobotPart] = [self.manipulator]
-        if self.end_effector is not None:
-            parts.append(self.end_effector)
-        parts.extend(self.cameras.values())
-        for part in reversed(parts):
-            if part.is_connected:
-                part.disconnect()
+    def resolve(self, placement: Any) -> dict[str, list[Any]]:
+        """Replace declared parts with the parts they resolve to.
+
+        Returns the handles used, keyed by the part name that needed them, so a
+        robot can publish them and so sharing is visible to :meth:`_batches`.
+        """
+        from ..specs import PartSpec, SubpartRef
+
+        used: dict[str, list[Any]] = {}
+        for name, value in list(self._parts.items()):
+            if isinstance(value, (PartSpec, SubpartRef)):
+                spec = value.spec if isinstance(value, SubpartRef) else value
+                handle = placement.resolve_handle(spec)
+                used[name] = [handle]
+                self._handle_of[name] = id(handle)
+                self._parts[name] = placement.resolve(value)
+            elif isinstance(value, Group):
+                nested = value.resolve(placement)
+                flat = [h for handles in nested.values() for h in handles]
+                if flat:
+                    used[name] = flat
+                    self._handle_of[name] = id(flat[0])
+        return used
+
+    def declarations(self) -> dict[str, Any]:
+        """Snapshot the parts as composed, so placement can be undone."""
+        return {
+            name: value.declarations() if isinstance(value, Group) else value
+            for name, value in self._parts.items()
+        }
+
+    def restore(self, declared: Mapping[str, Any]) -> None:
+        """Put every part back to what it was composed with."""
+        for name, value in declared.items():
+            current = self._parts.get(name)
+            if isinstance(value, dict) and isinstance(current, Group):
+                current.restore(value)
+            else:
+                self._parts[name] = value
+        self._handle_of.clear()
 
 
 class MobileBase(ControllablePart):

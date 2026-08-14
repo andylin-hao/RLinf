@@ -44,7 +44,7 @@ from typing import Any
 #: single-line change in the group it belongs to.
 _MODULE_GROUPS: dict[str, tuple[str, ...]] = {
     ".parts": (
-        "Arm",
+        "Group",
         "Camera",
         "ControllablePart",
         "EndEffector",
@@ -55,13 +55,12 @@ _MODULE_GROUPS: dict[str, tuple[str, ...]] = {
     ),
     ".parts.base": ("part_kind",),
     ".specs": (
-        "PartConfig",
         "PartSpec",
         "Placement",
         "SubpartRef",
-        "declare_all",
     ),
     ".parts.arms": ("ARM_STATE_FIELDS",),
+    ".parts.cameras": ("camera_cls", "declare_cameras"),
     ".robot": ("Robot",),
     ".views": ("MethodArm", "MethodCamera", "MethodGripper"),
     ".placement": (
@@ -78,7 +77,6 @@ _MODULE_GROUPS: dict[str, tuple[str, ...]] = {
         "DOSW1RobotConfig",
         "DualFrankaConfig",
         "DualFrankaRobot",
-        "FrankaArmConfig",
         "FrankaConfig",
         "FrankaRobot",
         "GimArmConfig",

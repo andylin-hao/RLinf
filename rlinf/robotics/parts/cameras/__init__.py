@@ -12,19 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from dataclasses import dataclass
 from typing import Any, Optional
 
-from ...specs import PartConfig
 from .base import BaseCamera, CameraInfo
 from .realsense import RealSenseCamera
 
 __all__ = [
     "BaseCamera",
-    "CameraConfig",
     "CameraInfo",
     "RealSenseCamera",
     "camera_cls",
+    "declare_cameras",
     "create_camera",
 ]
 
@@ -55,27 +53,6 @@ def camera_cls(camera_type: str) -> type[BaseCamera]:
     )
 
 
-@dataclass
-class CameraConfig(PartConfig):
-    """One camera and the node it is plugged into.
-
-    Declaring a camera is what makes it placeable: it can run on the machine
-    holding the USB or GigE link while the policy runs elsewhere.
-    """
-
-    info: Optional[CameraInfo] = None
-
-    def part_cls(self) -> type:
-        """Return the backend class named by the camera info."""
-        if self.info is None:
-            raise ValueError("CameraConfig needs a CameraInfo.")
-        return camera_cls(self.info.camera_type)
-
-    def part_args(self) -> tuple[Any, ...]:
-        """The camera constructor takes its descriptor."""
-        return (self.info,)
-
-
 def create_camera(camera_info: CameraInfo) -> BaseCamera:
     """Build a camera of the backend named by *camera_info*, in this process.
 
@@ -83,3 +60,19 @@ def create_camera(camera_info: CameraInfo) -> BaseCamera:
     lets :meth:`Robot.connect` place it on the node it is plugged into.
     """
     return camera_cls(camera_info.camera_type)(camera_info)
+
+
+def declare_cameras(
+    cameras: "Optional[dict[str, Any]]" = None,
+    *,
+    node_rank: Optional[int] = None,
+) -> dict[str, Any]:
+    """Declare a camera per descriptor, ready to compose into a robot.
+
+    Each becomes a part placed on ``node_rank`` -- the machine it is plugged
+    into -- and opened when the robot connects. Pass ``{name: CameraInfo}``.
+    """
+    return {
+        name: camera_cls(info.camera_type).at(info, node_rank=node_rank)
+        for name, info in (cameras or {}).items()
+    }

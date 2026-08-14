@@ -32,7 +32,6 @@ One spec is placed once, however many times it is referenced, so a driver whose
 single connection backs several components is not opened twice.
 """
 
-from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
@@ -56,13 +55,13 @@ class PartSpec:
     node_rank: Optional[int] = None
     name: Optional[str] = None
 
-    def subpart(self, name: str) -> "SubpartRef":
-        """Refer to one subpart of this spec, resolved after placement.
+    def part(self, name: str) -> "SubpartRef":
+        """Refer to one part of this declaration, resolved after placement.
 
         Use it when one connection backs several components::
 
             hardware = Turtle2Hardware.at(50, node_rank=0)
-            left = Arm(hardware.subpart("left"), hardware.subpart("left_end_effector"))
+            left = Group(arm=hardware.part("left"), gripper=hardware.part("left_end_effector"))
         """
         return SubpartRef(self, name)
 
@@ -82,7 +81,7 @@ class PartSpec:
 
 @dataclass(frozen=True)
 class SubpartRef:
-    """A reference to one subpart of a :class:`PartSpec`."""
+    """A reference to one part of a :class:`PartSpec`."""
 
     spec: PartSpec
     name: str
@@ -115,19 +114,19 @@ class Placement:
         local and placed parts together needs no special case.
         """
         if isinstance(value, SubpartRef):
-            return self._handle_for(value.spec).subpart(value.name)
+            return self._handle_for(value.spec).part_named(value.name)
         if isinstance(value, PartSpec):
             handle = self._handle_for(value)
-            subparts = handle.subparts
+            parts = handle.parts
             # A leaf -- a camera, a gripper on its own port -- is its own part.
-            if not subparts:
+            if not parts:
                 return handle.part
-            if len(subparts) == 1:
-                return next(iter(subparts.values()))
-            if "arm" in subparts:
-                return subparts["arm"]
+            if len(parts) == 1:
+                return next(iter(parts.values()))
+            if "arm" in parts:
+                return parts["arm"]
             raise ValueError(
-                f"{value.part_cls.__name__} exposes {sorted(subparts)}; "
+                f"{value.part_cls.__name__} exposes {sorted(parts)}; "
                 "name the one you mean with .subpart(<name>)."
             )
         return value
@@ -151,73 +150,3 @@ class Placement:
             handle = self._order.pop()
             handle.disconnect()
         self._handles.clear()
-
-
-@dataclass
-class PartConfig:
-    """Configuration for one part, including the node it runs on.
-
-    Subclass it per part kind and say which class to build and with what. The
-    declaring, node defaulting, and naming are inherited, so a robot's
-    ``build`` is composition and nothing else::
-
-        @dataclass
-        class CameraConfig(PartConfig):
-            info: CameraInfo = None
-
-            def part_cls(self):
-                return camera_cls(self.info.camera_type)
-
-            def part_args(self):
-                return (self.info,)
-    """
-
-    node_rank: Optional[int] = None
-    """Node to build this part on. ``None`` falls back to the robot's node."""
-
-    def part_cls(self) -> type:
-        """Return the part class to build. Subclasses implement this."""
-        raise NotImplementedError(f"{type(self).__name__} must implement part_cls().")
-
-    def part_args(self) -> tuple[Any, ...]:
-        """Positional arguments for the part's constructor."""
-        return ()
-
-    def part_kwargs(self) -> dict[str, Any]:
-        """Keyword arguments for the part's constructor."""
-        return {}
-
-    def declare(
-        self,
-        *,
-        default_node_rank: Optional[int] = None,
-        name: Optional[str] = None,
-    ) -> PartSpec:
-        """Declare this part, defaulting its node to the robot's."""
-        node_rank = self.node_rank if self.node_rank is not None else default_node_rank
-        return self.part_cls().at(
-            *self.part_args(),
-            node_rank=node_rank,
-            name=name,
-            **self.part_kwargs(),
-        )
-
-
-def declare_all(
-    configs: "Mapping[str, PartConfig]",
-    *,
-    default_node_rank: Optional[int] = None,
-    name: Optional[Callable[[str], str]] = None,
-) -> dict[str, PartSpec]:
-    """Declare a mapping of part configs, keeping their names.
-
-    Works for arms, cameras, end effectors, or anything else: the part kind is
-    the config's business, not this function's.
-    """
-    return {
-        key: config.declare(
-            default_node_rank=default_node_rank,
-            name=name(key) if name is not None else None,
-        )
-        for key, config in configs.items()
-    }

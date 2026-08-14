@@ -16,16 +16,15 @@ import importlib
 import ipaddress
 import warnings
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Optional
 
 from rlinf.scheduler.hardware import HardwareConfig, HardwareInfo, HardwareResource
 
 from ..config import RobotAutoConfig
 from ..discovery import RobotConfig, RobotDiscovery, RobotInfo
-from ..parts.base import Arm
+from ..parts.cameras import declare_cameras
 from ..robot import Robot
-from ..specs import PartConfig, declare_all
 
 
 class FrankaRobot(Robot):
@@ -41,61 +40,38 @@ class FrankaRobot(Robot):
     """Arm implementation this robot drives. See :data:`FRANKA_BACKENDS`."""
 
     @classmethod
-    def compose_arms(
+    def arm_at(
         cls,
-        arms: "Mapping[str, FrankaArmConfig]",
-        end_effectors: "Optional[Mapping[str, FrankaEndEffectorConfig]]" = None,
-        cameras: "Optional[Mapping[str, Mapping[str, Any]]]" = None,
+        robot_ip: Optional[str],
         *,
-        default_node_rank: int,
-        worker_rank: int = 0,
-        env_idx: int = 0,
-    ) -> dict[str, Arm]:
-        """Compose each named arm from its parts, every one of them placeable.
-
-        The arm, its end effector, and its wrist cameras are separate parts. An
-        end effector with a connection of its own is declared and can sit on its
-        own node; one that rides the arm's connection comes from the arm's
-        subparts. Nothing is built here -- ``connect`` places it all.
-        """
-        end_effectors = end_effectors or {}
-        cameras = cameras or {}
-
-        arm_specs = declare_all(
-            arms,
-            default_node_rank=default_node_rank,
-            name=lambda key: f"{cls.ROBOT_TYPE}Arm-{key}-{worker_rank}-{env_idx}",
-        )
-
-        composed: dict[str, Arm] = {}
-        for name, spec in arm_specs.items():
-            config = end_effectors.get(name)
-            if config is not None and config.has_own_connection:
-                if getattr(spec.part_cls, "OWNS_END_EFFECTOR", False):
-                    raise ValueError(
-                        f"{spec.part_cls.__name__} opens its own end effector "
-                        f"during connect, so arm {name!r} must not declare one "
-                        "as well: they would contend for the same device."
-                    )
-                end_effector = config.declare(
-                    default_node_rank=default_node_rank,
-                    name=f"{cls.ROBOT_TYPE}EndEffector-{name}-{worker_rank}-{env_idx}",
-                )
-            else:
-                end_effector = spec.subpart("end_effector")
-
-            composed[name] = Arm(
-                spec,
-                end_effector,
-                cameras=declare_all(
-                    cameras.get(name) or {},
-                    default_node_rank=default_node_rank,
-                    name=lambda key, arm=name: (
-                        f"{cls.ROBOT_TYPE}Camera-{arm}-{key}-{worker_rank}-{env_idx}"
-                    ),
-                ),
+        node_rank: int,
+        name: str,
+        backend: Optional[str] = None,
+        gripper_type: str = "franka",
+        gripper_connection: Optional[str] = None,
+        end_effector_type: Optional[str] = None,
+        end_effector_config: Optional[dict] = None,
+    ):
+        """Declare one Franka arm, resolving its IP from its node when unset."""
+        backend = backend or cls.BACKEND
+        resolved_ip = robot_ip or resolve_robot_ip(node_rank)
+        if not resolved_ip:
+            raise ValueError(
+                f"Franka arm {name!r} has no 'robot_ip' and none could be "
+                f"resolved from node rank {node_rank}'s hardware infos."
             )
-        return composed
+        part_cls, spawn_args = franka_arm_cls(backend), FRANKA_BACKENDS[backend][1]
+        return part_cls.at(
+            *spawn_args(
+                resolved_ip,
+                gripper_type=gripper_type,
+                gripper_connection=gripper_connection,
+                end_effector_type=end_effector_type,
+                end_effector_config=end_effector_config,
+            ),
+            node_rank=node_rank,
+            name=name,
+        )
 
     @classmethod
     def build(
@@ -108,29 +84,23 @@ class FrankaRobot(Robot):
         end_effector_type: str,
         end_effector_config: Optional[dict] = None,
         gripper_connection: Optional[str] = None,
-        cameras: "Optional[Mapping[str, Any]]" = None,
+        cameras: Optional[Mapping[str, Any]] = None,
+        camera_node_rank: Optional[int] = None,
     ) -> "FrankaRobot":
         """Compose one ROS-controlled Franka. ``connect`` places every part."""
-        return cls(
-            arms=cls.compose_arms(
-                {
-                    "arm": FrankaArmConfig(
-                        robot_ip=robot_ip,
-                        backend=cls.BACKEND,
-                        gripper_connection=gripper_connection,
-                        end_effector_type=end_effector_type,
-                        end_effector_config=end_effector_config,
-                        node_rank=node_rank,
-                    )
-                },
-                cameras={"arm": cameras or {}},
-                default_node_rank=node_rank,
-                worker_rank=worker_rank,
-                env_idx=env_idx,
-            )
+        arm = cls.arm_at(
+            robot_ip,
+            node_rank=node_rank,
+            name=f"{cls.ROBOT_TYPE}Arm-{worker_rank}-{env_idx}",
+            gripper_connection=gripper_connection,
+            end_effector_type=end_effector_type,
+            end_effector_config=end_effector_config,
         )
-
-
+        return cls(
+            arm=arm.part("arm"),
+            gripper=arm.part("end_effector"),
+            **declare_cameras(cameras, node_rank=camera_node_rank),
+        )
 
 
 class FrankaDiscovery(RobotDiscovery):
@@ -360,21 +330,6 @@ class FrankaConfig(RobotConfig):
         if self.camera_serials:
             self.camera_serials = list(self.camera_serials)
 
-    def arms(self) -> dict[str, "FrankaArmConfig"]:
-        """Project the flat single-arm fields onto the shared per-arm shape."""
-        return {
-            "arm": FrankaArmConfig(
-                robot_ip=self.robot_ip,
-                gripper_type=self.gripper_type,
-                gripper_connection=self.gripper_connection,
-                node_rank=(
-                    self.controller_node_rank
-                    if self.controller_node_rank is not None
-                    else self.node_rank
-                ),
-            )
-        }
-
 
 
 
@@ -399,107 +354,21 @@ def resolve_robot_ip(node_rank: int) -> Optional[str]:
     return None
 
 
-@dataclass
-class FrankaArmConfig(PartConfig):
-    """One Franka arm: its connection, its backend, and its placement.
-
-    Both the single-arm and dual-arm configs project their flat YAML fields
-    into this shape, so arm count stops being a property of the robot type and
-    becomes the length of a mapping. Being a
-    :class:`~rlinf.robotics.specs.PartConfig`, it declares its own part.
-    """
-
-    robot_ip: Optional[str] = None
-    """IP address of this arm. Resolved from the arm's node when unset."""
-
-    backend: str = "franka_ros"
-    """Arm implementation. See :data:`FRANKA_BACKENDS`."""
-
-    gripper_type: str = "franka"
-    """Gripper backend for this arm."""
-
-    gripper_connection: Optional[str] = None
-    """Serial port for this arm's Robotiq gripper."""
-
-    end_effector_type: Optional[str] = None
-    """End effector for this arm. Falls back to *gripper_type* when unset."""
-
-    end_effector_config: Optional[dict] = None
-    """Extra end-effector constructor arguments."""
-
-    def part_cls(self) -> type:
-        """Return the arm class for this config's backend."""
-        return franka_arm_cls(self.backend)
-
-    def declare(self, *, default_node_rank=None, name=None):
-        """Declare this arm, resolving its IP from its node when unset."""
-        node_rank = self.node_rank if self.node_rank is not None else default_node_rank
-        robot_ip = self.robot_ip or resolve_robot_ip(node_rank)
-        if not robot_ip:
-            raise ValueError(
-                "A Franka arm has no 'robot_ip' and none could be resolved "
-                f"from node rank {node_rank}'s hardware infos."
-            )
-        _, spawn_args = FRANKA_BACKENDS[self.backend]
-        return self.part_cls().at(
-            *spawn_args(self, robot_ip), node_rank=node_rank, name=name
-        )
-
-
-@dataclass
-class FrankaEndEffectorConfig(PartConfig):
-    """An end effector, and whether it has a connection of its own.
-
-    A Robotiq gripper is a serial device in its own right, so it is a part that
-    can be placed on the machine holding that port. A Franka hand or gripper
-    rides the arm's own connection, so it comes from the arm's subparts.
-    """
-
-    kind: str = "franka"
-    """``"franka"``, ``"robotiq"``, or a hand such as ``"ruiyan_hand"``."""
-
-    connection: Optional[str] = None
-    """Serial port, for an end effector that has one."""
-
-    options: dict = field(default_factory=dict)
-    """Extra constructor arguments."""
-
-    @property
-    def has_own_connection(self) -> bool:
-        """Whether this end effector can be placed independently of the arm."""
-        return self.kind.lower() == "robotiq"
-
-    def part_cls(self) -> type:
-        """Return the end-effector class. Only own-connection kinds have one."""
-        if not self.has_own_connection:
-            raise ValueError(
-                f"A {self.kind!r} end effector rides the arm's connection; "
-                "take it from the arm's subparts instead of declaring it."
-            )
-        from ..parts.end_effectors.grippers.robotiq import RobotiqGripper
-
-        return RobotiqGripper
-
-    def part_kwargs(self) -> dict:
-        """Pass the serial port and any extra options."""
-        return {"port": self.connection, **self.options}
-
-
-def _franka_ros_spawn_args(arm: FrankaArmConfig, robot_ip: str) -> tuple:
+def _franka_ros_spawn_args(robot_ip: str, **arm) -> tuple:
     """Positional arguments for :class:`FrankaROSArm`."""
     return (
         robot_ip,
         "serl_franka_controllers",
-        arm.end_effector_type or "franka_gripper",
-        arm.end_effector_config or {},
+        arm.get("end_effector_type") or "franka_gripper",
+        arm.get("end_effector_config") or {},
         None,
-        arm.gripper_connection,
+        arm.get("gripper_connection"),
     )
 
 
-def _franky_spawn_args(arm: FrankaArmConfig, robot_ip: str) -> tuple:
+def _franky_spawn_args(robot_ip: str, **arm) -> tuple:
     """Positional arguments for :class:`FrankyArm`."""
-    return (robot_ip, arm.gripper_type, arm.gripper_connection)
+    return (robot_ip, arm.get("gripper_type", "franka"), arm.get("gripper_connection"))
 
 
 #: Backend name to the arm part that speaks it. The backend is a per-robot

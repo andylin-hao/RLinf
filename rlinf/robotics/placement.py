@@ -63,7 +63,7 @@ class PartHandle(ABC):
 
     @property
     @abstractmethod
-    def subparts(self) -> dict[str, RobotPart]:
+    def parts(self) -> dict[str, RobotPart]:
         """Return the subparts of the hosted part, keyed by its local names."""
 
     @property
@@ -75,14 +75,14 @@ class PartHandle(ABC):
     def disconnect(self) -> None:
         """Release the connection and, when hosted, its worker."""
 
-    def subpart(self, name: str) -> RobotPart:
+    def part_named(self, name: str) -> RobotPart:
         """Return one named subpart, or raise a clear configuration error."""
-        if name not in self.subparts:
+        if name not in self.parts:
             raise KeyError(
                 f"Hosted part exposes no subpart {name!r}. "
-                f"Available: {sorted(self.subparts)}."
+                f"Available: {sorted(self.parts)}."
             )
-        return self.subparts[name]
+        return self.parts[name]
 
 
 class LocalPartHandle(PartHandle):
@@ -90,10 +90,10 @@ class LocalPartHandle(PartHandle):
 
     def __init__(self, part: Any) -> None:
         self._part = part
-        self._parts = dict(part.subparts())
+        self._parts = dict(part.parts)
 
     @property
-    def subparts(self) -> dict[str, RobotPart]:
+    def parts(self) -> dict[str, RobotPart]:
         """Return the local part's own subpart objects."""
         return self._parts
 
@@ -143,7 +143,7 @@ class RemotePartHandle(PartHandle):
         self._connected = True
 
     @property
-    def subparts(self) -> dict[str, RobotPart]:
+    def parts(self) -> dict[str, RobotPart]:
         """Return proxies for the hosted part's subparts."""
         return self._parts
 
@@ -224,13 +224,13 @@ class RemotePart(RobotPart):
         if self._part_name is None:
             self._worker_group.reset().wait()
             return
-        self._worker_group.subpart_reset(self._part_name).wait()
+        self._worker_group.part_reset(self._part_name).wait()
 
     def get_observation(self) -> dict[str, Any]:
         """Read this subpart's observation through its host."""
         if self._part_name is None:
             return _first(self._worker_group.get_observation())
-        return _first(self._worker_group.subpart_observation(self._part_name))
+        return _first(self._worker_group.part_observation(self._part_name))
 
     def disconnect(self) -> None:
         """No-op: the handle owns the hosted part's lifetime."""
@@ -258,7 +258,7 @@ class RemoteControllablePart(RemotePart, ControllablePart):
         """Send an action to this subpart through its host."""
         if self._part_name is None:
             return _first(self._worker_group.send_action(action))
-        return _first(self._worker_group.subpart_action(self._part_name, action))
+        return _first(self._worker_group.part_action(self._part_name, action))
 
 
 class RemoteEndEffector(RemoteControllablePart, EndEffector):
@@ -371,6 +371,6 @@ def spawn_part_worker(
     )
     return RemotePartHandle(
         group,
-        _first(group.describe_subparts()),
+        _first(group.describe_parts()),
         _first(group.describe_self()),
     )

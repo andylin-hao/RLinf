@@ -6,7 +6,7 @@
 读取各部件，再向策略暴露它们。
 
 开始前先阅读 :doc:`机器人模型 <../concepts/robotics>`。这篇文档说明本指南采用的
-设计。每个物理组件都是 ``RobotPart``。驱动多个组件的硬件用 ``subparts()`` 声明
+设计。每个物理组件都是 ``RobotPart``。驱动多个组件的硬件用 ``parts`` 声明
 这些组件。``Robot`` 是具名组合，``spawn()`` 可以把任何部件放到节点上。文档还介绍
 了 ``rlinf/robotics`` 的代码结构。
 
@@ -71,7 +71,7 @@ SDK 的节点也能导入模块。
 在一条连接上暴露多个组件
 ------------------------
 
-如果一个套接字、CAN 总线或 ROS 节点驱动多个组件，请用 ``subparts()`` 声明这些
+如果一个套接字、CAN 总线或 ROS 节点驱动多个组件，请用 ``parts`` 声明这些
 组件。按约定，把部件自身作为 ``"arm"`` 条目。
 
 .. code-block:: python
@@ -82,7 +82,8 @@ SDK 的节点也能导入模块。
    class ExampleArm(ControllablePart):
        ...
 
-       def subparts(self) -> dict[str, RobotPart]:
+       @property
+       def parts(self) -> dict[str, RobotPart]:
            return {
                "arm": self,
                "end_effector": MethodGripper(self, state_field="gripper_position"),
@@ -100,7 +101,7 @@ SDK 的节点也能导入模块。
 
 .. code-block:: python
 
-   from rlinf.robotics import Arm, Robot
+   from rlinf.robotics import Group, Robot
 
 
    class ExampleRobot(Robot):
@@ -108,10 +109,8 @@ SDK 的节点也能导入模块。
 
 
    robot = ExampleRobot(
-       arms={
-           "left": Arm(ExampleArm("tcp://left-arm:5000")),
-           "right": Arm(ExampleArm("tcp://right-arm:5000")),
-       }
+       left=ExampleArm("tcp://left-arm:5000"),
+       right=ExampleArm("tcp://right-arm:5000"),
    )
    robot.connect()
    observation = robot.get_observation()
@@ -139,9 +138,9 @@ SDK 的节点也能导入模块。
 
 .. code-block:: python
 
-   from rlinf.robotics import Arm, Robot
+   from rlinf.robotics import Group, Robot
 
-   robot = Robot(arms={"arm": Arm(ExampleArm.at("tcp://left-arm:5000", node_rank=0))})
+   robot = Robot(arm=ExampleArm.at("tcp://left-arm:5000", node_rank=0))
    robot.connect()
 
 这段代码的作用：1) 为节点 0 声明 ``ExampleArm``；2) 机器人 connect 时构建并连接它；
@@ -152,10 +151,10 @@ SDK 的节点也能导入模块。
 
    cameras={"scene": RealSenseCamera.at(info, node_rank=2)}
 
-当一条连接支撑多个组件时，只声明一次并引用它的 subparts，这条连接就只会打开一次::
+当一条连接支撑多个组件时，只声明一次并引用它的 部件，这条连接就只会打开一次::
 
    hardware = ExampleHardware.at(node_rank=0)
-   Arm(hardware.subpart("left"), hardware.subpart("left_end_effector"))
+   Group(arm=hardware.part("left"), gripper=hardware.part("left_end_effector"))
 
 ``spawn()`` 是底层的即时形式。只在机器人之外使用，例如调试脚本，此时句柄由你自己
 管理。
@@ -177,7 +176,7 @@ SDK 的节点也能导入模块。
 
    from dataclasses import dataclass
 
-   from rlinf.robotics import Arm, RobotConfig
+   from rlinf.robotics import Group, RobotConfig
 
 
    @dataclass
@@ -191,22 +190,21 @@ SDK 的节点也能导入模块。
 
        @classmethod
        def build(cls, *, config: ExampleRobotConfig) -> "ExampleRobot":
-           arms = {
-               side: Arm(
-                   ExampleArm.at(
+           return cls(
+               **{
+                   side: ExampleArm.at(
                        endpoint,
                        node_rank=config.node_rank,
                        name=f"ExampleArm-{side}",
                    )
-               )
-               for side, endpoint in (
-                   ("left", config.left_endpoint),
-                   ("right", config.right_endpoint),
-               )
-           }
-           return cls(arms=arms)
+                   for side, endpoint in (
+                       ("left", config.left_endpoint),
+                       ("right", config.right_endpoint),
+                   )
+               }
+           )
 
-单臂型号沿用同一个 ``build()``，只是 ``arms`` 映射里只有一条。如果后续部件
+单臂型号沿用同一个 ``build()``，只是少一个条目。如果后续部件
 启动失败，请先断开已经放置的句柄，再抛出错误。不要返回不完整的机器人。
 
 .. warning::
