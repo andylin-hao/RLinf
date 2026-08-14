@@ -71,6 +71,12 @@ class FrankaRobot(Robot):
         for name, spec in arm_specs.items():
             config = end_effectors.get(name)
             if config is not None and config.has_own_connection:
+                if getattr(spec.part_cls, "OWNS_END_EFFECTOR", False):
+                    raise ValueError(
+                        f"{spec.part_cls.__name__} opens its own end effector "
+                        f"during connect, so arm {name!r} must not declare one "
+                        "as well: they would contend for the same device."
+                    )
                 end_effector = config.declare(
                     default_node_rank=default_node_rank,
                     name=f"{cls.ROBOT_TYPE}EndEffector-{name}-{worker_rank}-{env_idx}",

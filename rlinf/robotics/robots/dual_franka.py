@@ -22,7 +22,7 @@ from rlinf.scheduler.hardware import HardwareConfig, HardwareInfo, HardwareResou
 
 from ..config import RobotAutoConfig
 from ..discovery import RobotConfig, RobotDiscovery, RobotInfo
-from .franka import FrankaArmConfig, FrankaEndEffectorConfig, FrankaRobot
+from .franka import FrankaArmConfig, FrankaRobot
 
 
 class DualFrankaRobot(FrankaRobot):
@@ -77,15 +77,8 @@ class DualFrankaRobot(FrankaRobot):
                     for side, (robot_ip, gripper_type, gripper_connection, node_rank)
                     in sides.items()
                 },
-                end_effectors={
-                    side: FrankaEndEffectorConfig(
-                        kind=gripper_type,
-                        connection=gripper_connection,
-                        node_rank=node_rank,
-                    )
-                    for side, (_, gripper_type, gripper_connection, node_rank)
-                    in sides.items()
-                },
+                # FrankyArm opens the Robotiq gripper on its own
+                # connection, so the end effector comes from its subparts.
                 default_node_rank=left_node_rank,
                 worker_rank=worker_rank,
                 env_idx=env_idx,

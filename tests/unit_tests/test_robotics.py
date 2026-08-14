@@ -892,3 +892,116 @@ def test_a_config_declares_its_own_part():
     assert spec.part_cls.__name__ == "RealSenseCamera"
     # and a config without its own node falls back to the robot's
     assert CameraConfig(info=config.info).declare(default_node_rank=7).node_rank == 7
+
+
+def test_failed_connect_can_be_retried():
+    """A failed connect restores declarations instead of poisoning the robot.
+
+    Without this, an arm that placed successfully would keep a part whose
+    handle was released during rollback, and a retry would place nothing.
+    """
+    placed: list[str] = []
+    state = {"failing": True}
+
+    class Handle:
+        subparts: dict = {}
+
+        def __init__(self, part):
+            self._part = part
+
+        @property
+        def part(self):
+            return self._part
+
+        def subpart(self, name):
+            raise KeyError(name)
+
+        def disconnect(self):
+            pass
+
+    def maker(tag, flaky=False):
+        class Made(ControllablePart):
+            def __init__(self, *args, **kwargs):
+                self._connected = False
+
+            @property
+            def is_connected(self):
+                return self._connected
+
+            @property
+            def observation_features(self):
+                return {}
+
+            @property
+            def action_features(self):
+                return {}
+
+            def connect(self):
+                self._connected = True
+
+            def disconnect(self):
+                self._connected = False
+
+            def get_observation(self):
+                return {}
+
+            def send_action(self, action):
+                return action
+
+            @classmethod
+            def spawn(cls, *args, node_rank=None, name=None, **kwargs):
+                if flaky and state["failing"]:
+                    raise RuntimeError("hardware unreachable")
+                placed.append(tag)
+                part = cls()
+                part.connect()
+                return Handle(part)
+
+        return Made
+
+    robot = Robot(
+        arms={
+            "left": Arm(maker("left").at(node_rank=1)),
+            "right": Arm(maker("right", flaky=True).at(node_rank=2)),
+        }
+    )
+
+    with pytest.raises(RuntimeError, match="unreachable"):
+        robot.connect()
+
+    assert robot.handles == {}, "handles from the aborted attempt were kept"
+    assert isinstance(robot.arms["left"].manipulator, PartSpec), (
+        "the successful arm kept a part whose handle was released"
+    )
+
+    state["failing"] = False
+    robot.connect()
+
+    assert placed == ["left", "left", "right"], "the retry did not re-place"
+    assert robot.is_connected
+
+    robot.disconnect()
+    assert isinstance(robot.arms["left"].manipulator, PartSpec)
+    robot.connect()
+    assert robot.is_connected, "a disconnected robot must be connectable again"
+
+
+def test_an_arm_that_owns_its_end_effector_rejects_a_second_one():
+    """Two owners of one device would contend for it.
+
+    The Franka arms open their gripper on their own connection during
+    ``connect``. Declaring a Robotiq gripper as well would open the same serial
+    port twice, which only fails on real hardware.
+    """
+    from rlinf.robotics.robots.franka import FrankaEndEffectorConfig
+
+    with pytest.raises(ValueError, match="must not declare one as well"):
+        FrankaRobot.compose_arms(
+            {"arm": FrankaArmConfig(robot_ip="10.0.0.1", backend="franky")},
+            end_effectors={
+                "arm": FrankaEndEffectorConfig(
+                    kind="robotiq", connection="/dev/ttyUSB0"
+                )
+            },
+            default_node_rank=0,
+        )

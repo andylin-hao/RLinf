@@ -72,6 +72,9 @@ class Robot:
         self._placement: Any = None
         """Set by :meth:`connect` once declared parts have been placed."""
 
+        self._declared: Optional[dict[str, Any]] = None
+        """Slots as first composed, so placement can be undone and redone."""
+
     @staticmethod
     def _validate_named_parts(
         kind: str,
@@ -174,6 +177,7 @@ class Robot:
         """
         from .specs import PartSpec, Placement, SubpartRef
 
+        self._snapshot_declarations()
         placement = self._placement or Placement()
         connected: list[RobotPart] = []
         try:
@@ -198,8 +202,20 @@ class Robot:
         except Exception:
             for part in reversed(connected):
                 part.disconnect()
+            # Forget handles published during this attempt; they are about to
+            # be released and must not be mistaken for live ones.
+            aborted = {id(handle) for handle in placement.handles}
+            self.handles = {
+                name: handle
+                for name, handle in self.handles.items()
+                if id(handle) not in aborted
+            }
             placement.release()
             self._placement = None
+            # Put the declarations back. Otherwise the slots would still hold
+            # parts whose handles were just released, and a retry would place
+            # nothing because it would see no declarations left.
+            self._restore_declarations()
             raise
 
     def attach_camera(
@@ -280,10 +296,16 @@ class Robot:
         return applied
 
     def disconnect(self) -> None:
-        """Disconnect every part, then release the handles behind them."""
+        """Disconnect every part, release the handles, and restore declarations.
+
+        A disconnected robot can be connected again: the slots go back to the
+        declarations they were composed with, so ``connect`` places fresh parts
+        rather than reusing ones whose handles are gone.
+        """
         for part in reversed(self._top_level_parts()):
             if isinstance(part, Arm) or part.is_connected:
                 part.disconnect()
+
         placed = set()
         if self._placement is not None:
             placed = {id(handle) for handle in self._placement.handles}
@@ -293,11 +315,36 @@ class Robot:
         if self._placement is not None:
             self._placement.release()
             self._placement = None
-        self.handles = {
-            name: handle
-            for name, handle in self.handles.items()
-            if id(handle) not in placed
+
+        self.handles.clear()
+        self._restore_declarations()
+
+    def _snapshot_declarations(self) -> None:
+        """Record the slots as first composed, once."""
+        if self._declared is not None:
+            return
+        self._declared = {
+            "arms": {
+                name: (arm.manipulator, arm.end_effector, dict(arm.cameras))
+                for name, arm in self.arms.items()
+            },
+            "cameras": dict(self.cameras),
+            "parts": dict(self.parts),
         }
+
+    def _restore_declarations(self) -> None:
+        """Put every slot back to what it was composed with."""
+        if self._declared is None:
+            return
+        for name, (manipulator, end_effector, cameras) in self._declared[
+            "arms"
+        ].items():
+            arm = self.arms[name]
+            arm.manipulator = manipulator
+            arm.end_effector = end_effector
+            arm.cameras = dict(cameras)
+        self.cameras = dict(self._declared["cameras"])
+        self.parts = dict(self._declared["parts"])
 
     def _top_level_parts(self) -> list[RobotPart]:
         return [*self.arms.values(), *self.cameras.values(), *self.parts.values()]

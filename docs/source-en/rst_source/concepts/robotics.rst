@@ -222,7 +222,16 @@ returns; call ``connect`` before you read or command anything. Until you do,
 ``is_connected`` is ``False`` and the slots still hold declarations.
 
 If a part fails while connecting, everything already placed or connected is torn
-down before the error reaches you, so there is no half-built robot to clean up.
+down and the slots go back to their declarations, so you can fix the cause and
+call ``connect`` again. ``disconnect`` restores them too, so a robot can be
+connected, disconnected, and connected again.
+
+An end effector may be declared as its own part only when the arm does not
+already open one. The Franka arms build their gripper on their own connection
+during ``connect``, so declaring a Robotiq gripper alongside would open the same
+serial port twice; ``compose_arms`` rejects that rather than letting it fail on
+hardware.
+
 
 The Boundary
 ------------
