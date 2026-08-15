@@ -73,8 +73,19 @@ class TeleopDevice(ABC):
     def read(self, env: gym.Env, policy_action: np.ndarray) -> TeleopSample:
         """Return what the operator is asking for, in ``env``'s action space."""
 
+    def before_reset(self, env: gym.Env, kwargs: dict[str, Any]) -> dict[str, Any]:
+        """Adjust the reset arguments, and quiet the device while it runs.
+
+        A device that is already commanding the robot has to stop before the env
+        drives it home, or the two fight over the same controller.
+        """
+        return kwargs
+
     def reset(self, env: gym.Env) -> None:
         """Re-sync with the robot after an episode reset."""
+
+    def after_reset(self, env: gym.Env) -> None:
+        """Run once the reset is over, whether or not it succeeded."""
 
     def before_step(self, env: gym.Env) -> None:
         """Hook that runs before the wrapped env steps."""
@@ -123,11 +134,20 @@ class TeleopIntervention(gym.Wrapper):
         return time.monotonic() - self._last_active < self.device.timeout
 
     def reset(self, **kwargs: Any):
-        """Reset the env, then let the device re-sync with it."""
-        result = self.env.reset(**kwargs)
-        self._last_active = -float("inf")
-        self.device.reset(self)
-        return result
+        """Reset the env, then let the device re-sync with it.
+
+        ``after_reset`` runs even when the reset fails, because a device that
+        paused itself in ``before_reset`` would otherwise stay paused for the
+        rest of the session.
+        """
+        kwargs = self.device.before_reset(self, kwargs)
+        try:
+            result = self.env.reset(**kwargs)
+            self._last_active = -float("inf")
+            self.device.reset(self)
+            return result
+        finally:
+            self.device.after_reset(self)
 
     def step(self, action: np.ndarray):
         """Step with the operator's action when they are driving."""

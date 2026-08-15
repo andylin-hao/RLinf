@@ -23,6 +23,7 @@ target pose becomes a delta, and what counts as the operator actually moving.
 
 from __future__ import annotations
 
+import time
 from typing import Any, Optional
 
 import gymnasium as gym
@@ -30,6 +31,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 
 from .intervention import TeleopDevice, TeleopSample
+from .streaming import StreamingTeleopDevice
 
 
 def sample_gripper_action(is_open: bool) -> np.ndarray:
@@ -296,5 +298,134 @@ class GelloJointTeleop(TeleopDevice):
 
     def close(self) -> None:
         """Release both leader arms."""
+        self.left_expert.close()
+        self.right_expert.close()
+
+
+class DualGelloJointTeleop(StreamingTeleopDevice):
+    """A pair of leader arms driving both arms in joint space.
+
+    Two ways to send targets. Step-gated, the default, returns an action from
+    :meth:`read` like any other device. Direct-stream instead pushes joint
+    targets to each controller at ``stream_period``, because a leader arm
+    tracked at the policy's step rate feels laggy to the operator; ``env.step``
+    then reads state and grippers but stops forwarding motion, so only one
+    writer touches the motion queue.
+
+    Args:
+        left_port: Serial port of the left leader arm.
+        right_port: Serial port of the right leader arm.
+        gripper_enabled: Whether each arm's action carries a gripper channel.
+        use_delta: Whether the env takes joint deltas or absolute targets.
+        action_scale: Divisor turning a joint delta into a normalized action.
+        direct_stream: Push targets from the device's own thread.
+        stream_period: Seconds between pushes when streaming.
+    """
+
+    def __init__(
+        self,
+        left_port: str,
+        right_port: str,
+        gripper_enabled: bool = True,
+        use_delta: bool = False,
+        action_scale: float = 0.1,
+        direct_stream: bool = False,
+        stream_period: float = 0.001,
+    ) -> None:
+        from .devices.gello_joint import GelloJointExpert
+
+        super().__init__(period=stream_period, enabled=direct_stream)
+        self.left_expert = GelloJointExpert(port=left_port)
+        self.right_expert = GelloJointExpert(port=right_port)
+        self.gripper_enabled = gripper_enabled
+        self.use_delta = use_delta
+        self.action_scale = action_scale
+        self._joints = GelloJointTeleop(
+            left=self.left_expert,
+            right=self.right_expert,
+            action_scale=action_scale,
+            use_delta=use_delta,
+            gripper_enabled=gripper_enabled,
+        )
+        # Gripper commands are edge-triggered: an open/close RPC takes ~100 ms,
+        # and repeating it every tick would starve the serial channel.
+        self._last_open: list[Optional[bool]] = [None, None]
+
+    def read(self, env: gym.Env, policy_action: np.ndarray) -> TeleopSample:
+        """Difference both leader arms against the followers' joint positions."""
+        sample = self._joints.read(env, policy_action)
+        if sample.action is None:
+            return sample
+        return TeleopSample(
+            action=sample.action,
+            active=sample.active,
+            info={"intervene_flag": np.ones(1)} if sample.active else {},
+        )
+
+    def before_reset(self, env: gym.Env, kwargs: dict[str, Any]) -> dict[str, Any]:
+        """Skip the env's slew home; aligning to the leader arms replaces it.
+
+        Homing first and then aligning would move the robot twice, and the
+        second move starts from wherever the first one left it.
+        """
+        kwargs = super().before_reset(env, kwargs)
+        options = dict(kwargs.get("options") or {})
+        options.setdefault("skip_reset_to_home", True)
+        kwargs["options"] = options
+        return kwargs
+
+    def _controllers(self, env: gym.Env):
+        inner = env.unwrapped
+        return getattr(inner, "_left_ctrl", None), getattr(inner, "_right_ctrl", None)
+
+    def ready_to_stream(self, env: gym.Env) -> bool:
+        """Both controllers must exist before a tick can command them."""
+        return self._controllers(env) != (None, None)
+
+    def align(self, env: gym.Env) -> bool:
+        """Move each follower onto its leader's current joint pose."""
+        if not (self.left_expert.ready and self.right_expert.ready):
+            return False
+        left_ctrl, right_ctrl = self._controllers(env)
+        if left_ctrl is None or right_ctrl is None:
+            return False
+        left_q, _ = self.left_expert.get_action()
+        right_q, _ = self.right_expert.get_action()
+        left_ctrl.reset_joint(np.asarray(left_q, dtype=np.float64).tolist()).wait()
+        right_ctrl.reset_joint(np.asarray(right_q, dtype=np.float64).tolist()).wait()
+        inner = env.unwrapped
+        inner._left_state = left_ctrl.get_state().wait()[0]
+        inner._right_state = right_ctrl.get_state().wait()[0]
+        return True
+
+    def stream_once(self, env: gym.Env) -> None:
+        """Push one set of joint targets, and any gripper edge, to both arms."""
+        if not (self.left_expert.ready and self.right_expert.ready):
+            time.sleep(self._period)
+            return
+        left_ctrl, right_ctrl = self._controllers(env)
+        if left_ctrl is None or right_ctrl is None:
+            return
+
+        left_q, left_g = self.left_expert.get_action()
+        right_q, right_g = self.right_expert.get_action()
+        left_ctrl.move_joints(left_q.astype(np.float32)).wait()
+        right_ctrl.move_joints(right_q.astype(np.float32)).wait()
+
+        if not self.gripper_enabled:
+            return
+        for index, (ctrl, grip) in enumerate(
+            zip((left_ctrl, right_ctrl), (left_g, right_g))
+        ):
+            is_open = grip.item() < 0.5
+            if self._last_open[index] is None:
+                self._last_open[index] = is_open
+            elif is_open != self._last_open[index]:
+                ctrl.open_gripper() if is_open else ctrl.close_gripper()
+                self._last_open[index] = is_open
+
+    def close(self) -> None:
+        """Stop the loop, then release both leader arms."""
+        super().close()
         self.left_expert.close()
         self.right_expert.close()
