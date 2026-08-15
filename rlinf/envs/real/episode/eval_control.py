@@ -18,39 +18,35 @@ Pedal: ``a`` starts a rollout from idle; ``c`` ends with reward=1
 ``terminated=True`` and lets the outer ``auto_reset`` drive home.
 """
 
-import math
 import time
 from typing import Any, SupportsFloat
 
-import gymnasium as gym
 from gymnasium.core import ActType, ObsType
 
-from rlinf.envs.real.teleop.devices.keyboard import KeyboardListener
+from .session import KeyboardSession
 
 
-class KeyboardEvalControlWrapper(gym.Wrapper):
+class KeyboardEvalControlWrapper(KeyboardSession):
     """Foot-pedal-gated start/stop for autonomous policy eval rollouts."""
 
     IDLE_POLL_S = 0.05
-    PEDAL_DEBOUNCE_S = 0.2
     WAIT_HEARTBEAT_S = 10.0
 
-    def __init__(self, env: gym.Env):
+    def __init__(self, env):
         super().__init__(env)
-        self.listener = KeyboardListener()
         self._running = False
         self._last_obs: Any = None
-        self._last_press_ts: dict[str, float] = {}
 
     def reset(self, *, seed=None, options=None):
-        self._last_press_ts.clear()
-        self.listener.pop_pressed_keys()
+        # Not KeyboardSession.reset: this one blocks after the env reset,
+        # waiting for the operator to start the rollout.
+        self.drain()
         obs, info = self.env.reset(seed=seed, options=options)
         self._last_obs = obs
         # Block until the operator has arranged the scene and presses 'a'.
         # This is intentional (the arms are homed and idle); log on entry and
         # emit a periodic heartbeat so the wait is not mistaken for a hang.
-        self._log_info(
+        self.log(
             "Arms homed and idle. Arrange the scene, then press pedal 'a' "
             "to start the next rollout (Ctrl-C to abort)."
         )
@@ -60,11 +56,11 @@ class KeyboardEvalControlWrapper(gym.Wrapper):
             now = time.monotonic()
             if now - last_heartbeat >= self.WAIT_HEARTBEAT_S:
                 last_heartbeat = now
-                self._log_info("Still waiting for pedal 'a' to start the rollout...")
+                self.log("Still waiting for pedal 'a' to start the rollout...")
             for key in self.listener.pop_pressed_keys():
                 if key == "a":
                     self._running = True
-                    self._log_info("Pedal 'a' pressed; starting rollout.")
+                    self.log("Pedal 'a' pressed; starting rollout.")
                     return obs, info
 
     def step(
@@ -73,14 +69,7 @@ class KeyboardEvalControlWrapper(gym.Wrapper):
         if not self._running:
             # Idle: poll pedal, hold robot via the controller's last target.
             time.sleep(self.IDLE_POLL_S)
-            for key in self.listener.pop_pressed_keys():
-                now = time.monotonic()
-                if (
-                    now - self._last_press_ts.get(key, -math.inf)
-                    < self.PEDAL_DEBOUNCE_S
-                ):
-                    continue
-                self._last_press_ts[key] = now
+            for key in self.presses():
                 if key == "a":
                     self._running = True
                     return self._idle_response(event="start")
@@ -94,11 +83,7 @@ class KeyboardEvalControlWrapper(gym.Wrapper):
         truncated = False
 
         result: str | None = None
-        for key in self.listener.pop_pressed_keys():
-            now = time.monotonic()
-            if now - self._last_press_ts.get(key, -math.inf) < self.PEDAL_DEBOUNCE_S:
-                continue
-            self._last_press_ts[key] = now
+        for key in self.presses():
             if key == "c":
                 terminated = True
                 reward = 1.0
@@ -119,11 +104,3 @@ class KeyboardEvalControlWrapper(gym.Wrapper):
     def _idle_response(self, event: str | None):
         info = {"eval_phase": "pre", "eval_event": event, "eval_result": None}
         return self._last_obs, 0.0, False, False, info
-
-    def _log_info(self, message: str) -> None:
-        logger = getattr(self._base_env(), "_logger", None)
-        if logger is not None:
-            logger.info(message)
-
-    def _base_env(self):
-        return getattr(self.env, "unwrapped", self.env)

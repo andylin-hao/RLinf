@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import importlib
+import re
 import sys
 import time
 from pathlib import Path
@@ -769,3 +770,89 @@ def test_streaming_device_lifecycle_without_hardware():
     device.close()
 
     assert not device.streaming
+
+
+# --- keyboard sessions -----------------------------------------------------
+
+
+def _keyboard_session(monkeypatch, queued):
+    """A KeyboardSession over a fake listener replaying `queued` key batches."""
+    from rlinf.envs.real.episode import session as session_module
+
+    class FakeListener:
+        def __init__(self):
+            self.batches = list(queued)
+
+        def pop_pressed_keys(self):
+            return self.batches.pop(0) if self.batches else []
+
+        def get_key(self):
+            batch = self.pop_pressed_keys()
+            return batch[0] if batch else None
+
+    monkeypatch.setattr(session_module, "KeyboardListener", FakeListener)
+
+    class Env:
+        def __init__(self):
+            self.resets = 0
+
+        def reset(self, seed=None, options=None):
+            self.resets += 1
+            return {}, {}
+
+        def step(self, action):
+            return {}, 0.0, False, False, {}
+
+    return session_module.KeyboardSession(Env())
+
+
+def test_repeat_presses_within_the_debounce_window_are_dropped(monkeypatch):
+    """Foot pedals bounce, and a USB key-down burst arrives as several presses."""
+    session = _keyboard_session(monkeypatch, [["a"], ["a"], ["b"]])
+
+    assert list(session.presses()) == ["a"]
+    assert list(session.presses()) == []  # same key, still inside the window
+    assert list(session.presses()) == ["b"]  # different key passes
+
+
+def test_presses_queued_between_episodes_do_not_leak(monkeypatch):
+    """A pedal tapped while the arm homes must not start the next episode."""
+    session = _keyboard_session(monkeypatch, [["c"], ["a"]])
+
+    session.reset()
+
+    assert session.env.resets == 1
+    assert list(session.presses()) == ["a"]  # the queued "c" was dropped
+
+
+def test_every_keyboard_wrapper_shares_the_session(monkeypatch):
+    """One place owns the listener, the debounce, and the drain."""
+    from rlinf.envs.real.episode import (
+        KeyboardEvalControlWrapper,
+        KeyboardRewardDoneMultiStageWrapper,
+        KeyboardRewardDoneWrapper,
+        KeyboardRLTPolicySwitchWrapper,
+        KeyboardStartEndWrapper,
+    )
+    from rlinf.envs.real.episode.session import KeyboardSession
+
+    for wrapper in (
+        KeyboardEvalControlWrapper,
+        KeyboardRLTPolicySwitchWrapper,
+        KeyboardStartEndWrapper,
+        KeyboardRewardDoneWrapper,
+        KeyboardRewardDoneMultiStageWrapper,
+    ):
+        assert issubclass(wrapper, KeyboardSession), wrapper.__name__
+
+
+def test_episode_wrappers_report_through_the_logger():
+    """These run beside a robot; a stray print is not where an operator looks."""
+    episode_dir = _ROOT / "rlinf" / "envs" / "real" / "episode"
+    offenders = sorted(
+        path.name
+        for path in episode_dir.glob("*.py")
+        if re.search(r"^\s*print\(", path.read_text(), re.M)
+    )
+
+    assert offenders == []

@@ -17,14 +17,20 @@ from typing import Any, SupportsFloat
 import gymnasium as gym
 from gymnasium.core import ActType, ObsType
 
-from rlinf.envs.real.teleop.devices.keyboard import KeyboardListener
+from .session import KeyboardSession
 
 
-class BaseKeyboardRewardDoneWrapper(gym.Wrapper):
+class BaseKeyboardRewardDoneWrapper(KeyboardSession):
+    """The operator scores the episode; the key pressed says what it earned.
+
+    This family reads one key per step rather than draining the queue: a reward
+    is a standing judgement, so the latest press wins and there is nothing to
+    debounce.
+    """
+
     def __init__(self, env: gym.Env, reward_mode: str = "always_replace"):
         super().__init__(env)
         self.reward_modifier = 0
-        self.listener = KeyboardListener()
         self.reward_mode = reward_mode
         assert self.reward_mode in ["always_replace"]
 
@@ -55,7 +61,7 @@ class KeyboardRewardDoneWrapper(BaseKeyboardRewardDoneWrapper):
         reward = 0
         key = self.listener.get_key()
         if key is not None:
-            print(f"Key pressed: {key}")
+            self.log("Key pressed: %s", key)
         if key not in ["a", "b", "c"]:
             return last_intervened, done, reward
 
@@ -75,13 +81,18 @@ class KeyboardRewardDoneWrapper(BaseKeyboardRewardDoneWrapper):
 
 
 class KeyboardRewardDoneMultiStageWrapper(BaseKeyboardRewardDoneWrapper):
+    """Score an episode in stages: ``a``/``b``/``c`` select how far it got."""
+
     def __init__(self, env):
         super().__init__(env)
         self.stage_rewards = [0, 0.1, 1]
-
-    def reset(self, *, seed=None, options=None):
+        # Set here as well as in begin_episode: a caller that steps before
+        # resetting would otherwise hit an attribute that does not exist yet.
         self.reward_stage = 0
-        return super().reset(seed=seed, options=options)
+
+    def begin_episode(self) -> None:
+        """Every episode starts back at stage zero."""
+        self.reward_stage = 0
 
     def _check_keypress(self) -> tuple[bool, bool, float]:
         last_intervened = False
@@ -89,7 +100,7 @@ class KeyboardRewardDoneMultiStageWrapper(BaseKeyboardRewardDoneWrapper):
         reward = 0
         key = self.listener.get_key()
         if key is not None:
-            print(f"Key pressed: {key}")
+            self.log("Key pressed: %s", key)
         if key == "a":
             self.reward_stage = 0
         elif key == "b":

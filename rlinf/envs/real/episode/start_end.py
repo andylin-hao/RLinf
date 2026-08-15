@@ -16,13 +16,12 @@ import math
 import time
 from typing import Any, SupportsFloat
 
-import gymnasium as gym
 from gymnasium.core import ActType, ObsType
 
-from rlinf.envs.real.teleop.devices.keyboard import KeyboardListener
+from .session import KeyboardSession
 
 
-class KeyboardStartEndWrapper(gym.Wrapper):
+class KeyboardStartEndWrapper(KeyboardSession):
     """Foot-pedal data-collection wrapper. Pedal binding (``a`` / ``b`` / ``c``):
 
     * ``a``        — start a rec episode (pre) or abort the current one (rec).
@@ -36,22 +35,16 @@ class KeyboardStartEndWrapper(gym.Wrapper):
     """
 
     SEGMENT_DEBOUNCE_S = 1.0
-    PEDAL_DEBOUNCE_S = 0.2
 
-    def __init__(self, env: gym.Env):
+    def __init__(self, env):
         super().__init__(env)
-        self.listener = KeyboardListener()
         self._recording = False
         self._last_segment_ts = -math.inf
-        self._last_press_ts: dict[str, float] = {}
 
-    def reset(self, *, seed=None, options=None):
+    def begin_episode(self) -> None:
+        """A new episode starts before recording, with no segment history."""
         self._recording = False
         self._last_segment_ts = -math.inf
-        self._last_press_ts.clear()
-        # Drain queued presses so they don't leak into the next episode.
-        self.listener.pop_pressed_keys()
-        return self.env.reset(seed=seed, options=options)
 
     def step(
         self, action: ActType
@@ -66,14 +59,8 @@ class KeyboardStartEndWrapper(gym.Wrapper):
         segment_advance = False
         event: str | None = None
 
-        for key in self.listener.pop_pressed_keys():
+        for key in self.presses():
             now = time.monotonic()
-            # Anti-bounce: drop same-key repeats within PEDAL_DEBOUNCE_S
-            # (covers operator double-taps and flaky USB key-down bursts).
-            if now - self._last_press_ts.get(key, -math.inf) < self.PEDAL_DEBOUNCE_S:
-                continue
-            self._last_press_ts[key] = now
-
             if key == "a":
                 if self._recording:
                     # Drop the in-progress episode but stay where we are.
