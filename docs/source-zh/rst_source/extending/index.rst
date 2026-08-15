@@ -24,6 +24,12 @@
 
       组合机器人部件并注册真机硬件发现逻辑。
 
+   .. grid-item-card:: 新任务
+      :link: new_task
+      :link-type: doc
+
+      在 RLinf 已支持的硬件上新增一个任务。
+
    .. grid-item-card:: FSDP 新模型
       :link: new_model_fsdp
       :link-type: doc
@@ -60,6 +66,7 @@
    扩展概览 <overview>
    新环境 <new_env>
    新机器人 <new_robot>
+   新任务 <new_task>
    FSDP 新模型 <new_model_fsdp>
    Megatron 新模型 <new_model_megatron>
    新 SFT 模型 <new_model_sft>

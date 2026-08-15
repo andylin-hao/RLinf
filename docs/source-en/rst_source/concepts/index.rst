@@ -28,9 +28,16 @@ Choose a Concept Area
 
       Understand how physical hardware is modeled, composed, and placed.
 
+   .. grid-item-card:: Real-World Environment Model
+      :link: realworld_envs
+      :link-type: doc
+
+      Understand how tasks, teleoperation, and wrappers fit around a robot.
+
 .. toctree::
    :hidden:
 
    Execution Model <execution-model/index>
    Scheduling Model <scheduling-model/index>
    Robotics Model <robotics>
+   Real-World Environment Model <realworld_envs>

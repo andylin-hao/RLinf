@@ -27,9 +27,16 @@
 
       理解物理硬件如何被建模、组合与放置。
 
+   .. grid-item-card:: 真机环境模型
+      :link: realworld_envs
+      :link-type: doc
+
+      理解任务、遥操作与各类 wrapper 如何围绕机器人组织。
+
 .. toctree::
    :hidden:
 
    执行模型 <execution-model/index>
    调度模型 <scheduling-model/index>
    机器人模型 <robotics>
+   真机环境模型 <realworld_envs>
