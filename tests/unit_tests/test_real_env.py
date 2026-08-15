@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import importlib
 import sys
+import time
 from pathlib import Path
 from typing import Any, Optional
 
@@ -696,3 +697,75 @@ def test_unknown_compliance_gain_is_refused():
 
     with pytest.raises(KeyError, match="Unknown compliance gains"):
         compliance(translational_stifness=1000)
+
+
+# --- wrapper families ------------------------------------------------------
+
+
+def test_wrappers_are_split_by_what_they_change():
+    """Three families, each with an obvious home for a new wrapper.
+
+    teleop replaces the action, transforms rewrite how it is expressed, and
+    episode decides when a rollout starts, ends, and what it scored. The old
+    flat wrappers/ package mixed all three.
+    """
+    real = _ROOT / "rlinf" / "envs" / "real"
+
+    assert not (real / "wrappers").is_dir(), "wrappers/ became wrappers.py"
+    assert (real / "wrappers.py").exists()
+    for family in ("teleop", "transforms", "episode"):
+        assert (real / family / "__init__.py").exists(), family
+
+
+def test_no_teleop_wrapper_is_left_outside_teleop():
+    """Every intervention lives with the devices it reads."""
+    real = _ROOT / "rlinf" / "envs" / "real"
+    strays = sorted(
+        path.name
+        for family in ("transforms", "episode")
+        for path in (real / family).glob("*.py")
+        if "intervention" in path.name and "leader_follower" not in path.name
+    )
+
+    assert strays == []
+
+
+def test_a_held_button_device_does_not_keep_control_after_release():
+    """PICO says exactly when it is driving, so it sets no hold window.
+
+    The window exists for devices that sample faster than a person moves;
+    applying it here would keep commanding the robot after the grip is released.
+    """
+    from rlinf.envs.real.teleop.pico import DualFrankaTcpPicoTeleop, PicoTeleop
+
+    assert PicoTeleop.timeout == 0.0
+    assert DualFrankaTcpPicoTeleop.timeout == 0.0
+
+
+def test_streaming_device_lifecycle_without_hardware():
+    """The command thread starts once aligned and is joined on close."""
+    from rlinf.envs.real.teleop.intervention import TeleopSample
+    from rlinf.envs.real.teleop.streaming import StreamingTeleopDevice
+
+    ticks = []
+
+    class Fake(StreamingTeleopDevice):
+        def read(self, env, policy_action):
+            return TeleopSample(action=None, active=False)
+
+        def stream_once(self, env):
+            ticks.append(1)
+
+    device = Fake(period=0.001, enabled=True)
+    device.before_reset(None, {})
+    device.reset(None)
+    device.after_reset(None)
+    deadline = time.monotonic() + 1.0
+    while not ticks and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert ticks, "stream thread never ran"
+    assert device.streaming
+
+    device.close()
+
+    assert not device.streaming

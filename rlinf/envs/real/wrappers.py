@@ -20,53 +20,43 @@ from typing import Any, Mapping, Optional
 
 import gymnasium as gym
 
-from rlinf.envs.real.teleop.config import resolve_teleop_device
-from rlinf.envs.real.wrappers.dual_gello_joint_intervention import (
-    DualGelloJointIntervention,
-)
-from rlinf.envs.real.wrappers.euler_obs import Quat2EulerWrapper
-from rlinf.envs.real.wrappers.gello_intervention import (
-    GelloIntervention,
-)
-from rlinf.envs.real.wrappers.gripper_close import GripperCloseEnv
-from rlinf.envs.real.wrappers.keyboard_eval_control_wrapper import (
+from rlinf.envs.real.episode import (
     KeyboardEvalControlWrapper,
-)
-from rlinf.envs.real.wrappers.keyboard_rlt_policy_switch_wrapper import (
-    KeyboardRLTPolicySwitchWrapper,
-)
-from rlinf.envs.real.wrappers.keyboard_start_end_wrapper import (
-    KeyboardStartEndWrapper,
-)
-from rlinf.envs.real.wrappers.pico_intervention import (
-    DualFrankaTcpPicoIntervention,
-    PicoIntervention,
-)
-from rlinf.envs.real.wrappers.relative_frame import RelativeFrame
-from rlinf.envs.real.wrappers.reward_done_wrapper import (
     KeyboardRewardDoneMultiStageWrapper,
     KeyboardRewardDoneWrapper,
+    KeyboardRLTPolicySwitchWrapper,
+    KeyboardStartEndWrapper,
 )
-from rlinf.envs.real.wrappers.spacemouse_intervention import (
-    SpacemouseIntervention,
+from rlinf.envs.real.teleop.adapters import (
+    DualGelloJointTeleop,
+    GelloTeleop,
+    SpaceMouseTeleop,
+)
+from rlinf.envs.real.teleop.config import resolve_teleop_device
+from rlinf.envs.real.teleop.intervention import TeleopIntervention
+from rlinf.envs.real.teleop.pico import (
+    DualFrankaTcpPicoIntervention,
+    PicoTeleop,
+)
+from rlinf.envs.real.transforms import (
+    GripperCloseEnv,
+    Quat2EulerWrapper,
+    RelativeFrame,
 )
 
 
-def _load_dexhand_intervention():
-    """Import DexHandIntervention only when dex-hand teleop is requested."""
+def _dexhand_teleop(**kwargs):
+    """Build the dex-hand device, which needs an optional vendor package."""
     try:
-        from rlinf.envs.real.wrappers.dexhand_intervention import (
-            DexHandIntervention,
-        )
+        from rlinf.envs.real.teleop.adapters import DexHandTeleop
     except ModuleNotFoundError as exc:
         if exc.name and exc.name.split(".")[0] == "rlinf_dexhand":
             raise ModuleNotFoundError(
-                "DexHandIntervention requires optional dependency "
-                "'rlinf_dexhand'. Install it before enabling "
-                "dexterous-hand teleoperation."
+                "Dex-hand teleoperation requires optional dependency "
+                "'rlinf_dexhand'. Install it before enabling it."
             ) from exc
         raise
-    return DexHandIntervention
+    return DexHandTeleop(**kwargs)
 
 
 def _apply_keyboard_wrapper(env: gym.Env, mode: Optional[str]) -> gym.Env:
@@ -111,16 +101,23 @@ def apply_single_arm_wrappers(env: gym.Env, cfg: Mapping[str, Any]) -> gym.Env:
     if not env.config.is_dummy and use_spacemouse:
         if is_dex_hand:
             glove_cfg = cfg.get("glove_config", {})
-            DexHandIntervention = _load_dexhand_intervention()
-            env = DexHandIntervention(
+            assert env.action_space.shape == (12,), (
+                f"Dex-hand teleop expects a 12-D action space, "
+                f"got {env.action_space.shape}"
+            )
+            env = TeleopIntervention(
                 env,
-                left_port=glove_cfg.get("left_port", "/dev/ttyACM0"),
-                right_port=glove_cfg.get("right_port", None),
-                glove_frequency=glove_cfg.get("frequency", 60),
-                glove_config_file=glove_cfg.get("config_file", None),
+                _dexhand_teleop(
+                    left_port=glove_cfg.get("left_port", "/dev/ttyACM0"),
+                    right_port=glove_cfg.get("right_port", None),
+                    glove_frequency=glove_cfg.get("frequency", 60),
+                    glove_config_file=glove_cfg.get("config_file", None),
+                ),
             )
         else:
-            env = SpacemouseIntervention(env, gripper_enabled=gripper_enabled)
+            env = TeleopIntervention(
+                env, SpaceMouseTeleop(gripper_enabled=gripper_enabled)
+            )
 
     if not env.config.is_dummy and use_gello:
         if is_dex_hand:
@@ -131,7 +128,9 @@ def apply_single_arm_wrappers(env: gym.Env, cfg: Mapping[str, Any]) -> gym.Env:
                 "teleop_device: gello requires 'gello_port' in the env config "
                 "(e.g. env.eval.gello_port)."
             )
-        env = GelloIntervention(env, port=gello_port, gripper_enabled=gripper_enabled)
+        env = TeleopIntervention(
+            env, GelloTeleop(port=gello_port, gripper_enabled=gripper_enabled)
+        )
 
     if not env.config.is_dummy and use_pico:
         if is_dex_hand:
@@ -139,7 +138,9 @@ def apply_single_arm_wrappers(env: gym.Env, cfg: Mapping[str, Any]) -> gym.Env:
                 "teleop_device: pico is not supported for dexterous hands."
             )
         pico_cfg = dict(cfg.get("pico", {}))
-        env = PicoIntervention(env, gripper_enabled=gripper_enabled, **pico_cfg)
+        env = TeleopIntervention(
+            env, PicoTeleop(gripper_enabled=gripper_enabled, **pico_cfg)
+        )
 
     env = _apply_keyboard_wrapper(env, cfg.get("keyboard_reward_wrapper", None))
 
@@ -171,15 +172,18 @@ def apply_dual_franka_joint_wrappers(env: gym.Env, cfg: Mapping[str, Any]) -> gy
                 "teleop_device: gello_joint requires both "
                 "'left_gello_port' and 'right_gello_port' in the env config."
             )
-        env = DualGelloJointIntervention(
+        env = TeleopIntervention(
             env,
-            left_port=left_port,
-            right_port=right_port,
-            gripper_enabled=True,
-            use_delta=getattr(config, "joint_action_mode", None) == "delta",
-            action_scale=getattr(config, "joint_action_scale", 0.1),
-            direct_stream=getattr(config, "teleop_direct_stream", False),
-            stream_period=cfg.get("gello_joint_stream_period", 0.001),
+            DualGelloJointTeleop(
+                left_port=left_port,
+                right_port=right_port,
+                gripper_enabled=True,
+                use_delta=getattr(config, "joint_action_mode", None) == "delta",
+                action_scale=getattr(config, "joint_action_scale", 0.1),
+                direct_stream=getattr(config, "teleop_direct_stream", False),
+                stream_period=cfg.get("gello_joint_stream_period", 0.001),
+            ),
+            mark_flag=True,
         )
 
     if not config.is_dummy and use_pico:

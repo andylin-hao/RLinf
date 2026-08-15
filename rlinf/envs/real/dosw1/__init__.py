@@ -20,8 +20,8 @@ from typing import Any, Mapping
 
 import gymnasium as gym
 
+from rlinf.envs.real.episode import LeaderFollowerKeyboardIntervention
 from rlinf.envs.real.registry import register_tasks
-from rlinf.envs.real.wrappers import LeaderFollowerKeyboardIntervention
 
 from .base import ControlMode, DOSW1Config, DOSW1Env
 from .pick import PickEnv

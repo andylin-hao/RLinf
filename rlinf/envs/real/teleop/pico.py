@@ -12,11 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""PICO intervention wrappers for Franka environments."""
+
+"""PICO controllers, as teleop devices.
+
+A PICO is held, and the grip button says exactly when the operator is driving,
+so these devices set ``timeout = 0``: the shared hold window exists for devices
+that sample faster than a person moves, and stretching a released grip by half a
+second would keep commanding the robot after they let go.
+
+Two layouts. :class:`PicoTeleop` maps one or both controllers onto an env's own
+action space. :class:`DualFrankaTcpPicoTeleop` targets the dual-arm absolute
+rot6d layout, where a delta from the controller has to be composed onto the
+measured TCP pose.
+"""
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+from typing import Any, Mapping, Optional
 
 import gymnasium as gym
 import numpy as np
@@ -24,6 +36,8 @@ from scipy.spatial.transform import Rotation as R
 
 from rlinf.envs.real.teleop.devices.pico import PicoExpert
 from rlinf.utils.rot6d import matrix_to_rot6d
+
+from .intervention import TeleopDevice, TeleopIntervention, TeleopSample
 
 
 def _match_action_space(
@@ -106,28 +120,26 @@ def _split_dual_pico_config(pico_config: Mapping[str, Any]) -> tuple[dict, dict]
     return left_cfg, right_cfg
 
 
-class PicoIntervention(gym.ActionWrapper):
-    """Override policy actions with PICO controller input.
+class PicoTeleop(TeleopDevice):
+    """One or both PICO controllers driving an env's own action space.
 
-    ``hand="left"`` or ``hand="right"`` creates one PICO controller.  On a
-    single-arm env it controls the whole action; on a dual-arm env it controls
-    only that arm's action slice.  ``hand="dual"`` creates both controllers and
-    maps left/right controller input to left/right arm respectively.
+    Args:
+        gripper_enabled: Whether the action space has a gripper channel.
+        pico_config: Forwarded to ``PicoExpert``. ``hand`` selects ``"left"``,
+            ``"right"``, or ``"dual"``.
     """
+
+    timeout = 0.0
 
     def __init__(
         self,
-        env,
         gripper_enabled: bool = True,
         **pico_config: Any,
     ):
-        super().__init__(env)
         self.gripper_enabled = gripper_enabled
         self.hand = str(pico_config.get("hand", "right")).lower()
         if self.hand not in ("left", "right", "dual"):
-            raise ValueError(
-                "PicoIntervention hand must be 'left', 'right', or 'dual'."
-            )
+            raise ValueError("PicoTeleop hand must be 'left', 'right', or 'dual'.")
 
         if self.hand == "dual":
             left_cfg, right_cfg = _split_dual_pico_config(pico_config)
@@ -145,12 +157,6 @@ class PicoIntervention(gym.ActionWrapper):
             self.experts = {self.hand: PicoExpert(**single_cfg)}
         self.left = False
         self.right = False
-
-    def reset(self, **kwargs):
-        obs, info = self.env.reset(**kwargs)
-        self.left = False
-        self.right = False
-        return obs, info
 
     def _arm_action_slice(self, arm_idx: int, per_arm_dim: int) -> slice:
         start = arm_idx * per_arm_dim
@@ -174,19 +180,20 @@ class PicoIntervention(gym.ActionWrapper):
         else:
             self.right = active
 
-    def _action_shape(self) -> tuple[tuple[int, ...], int]:
-        target_shape = self.env.action_space.shape
+    def _action_shape(self, env) -> tuple[tuple[int, ...], int]:
+        target_shape = env.action_space.shape
         target_dim = int(np.prod(target_shape))
         return target_shape, target_dim
 
     def _single_action(
         self,
+        env,
         action: np.ndarray,
         tcp_pose: np.ndarray,
         action_scale: np.ndarray,
     ) -> tuple[np.ndarray, bool, dict[str, Any]]:
         side, expert = next(iter(self.experts.items()))
-        target_shape, target_dim = self._action_shape()
+        target_shape, target_dim = self._action_shape(env)
         action_flat = np.asarray(action, dtype=np.float32).reshape(-1)
 
         if tcp_pose.size == 7:
@@ -252,6 +259,7 @@ class PicoIntervention(gym.ActionWrapper):
 
     def _dual_action(
         self,
+        env,
         action: np.ndarray,
         tcp_pose: np.ndarray,
         action_scale: np.ndarray,
@@ -263,7 +271,7 @@ class PicoIntervention(gym.ActionWrapper):
                 f"(two xyz+quat poses), got shape {tcp_pose.shape}."
             )
 
-        target_shape = self.env.action_space.shape
+        target_shape = env.action_space.shape
         target_dim = int(np.prod(target_shape))
         if target_dim % 2 != 0:
             raise ValueError(
@@ -314,57 +322,68 @@ class PicoIntervention(gym.ActionWrapper):
         )
         return new_action.reshape(target_shape), replaced_any, pico_info
 
-    def action(self, action: np.ndarray) -> tuple[np.ndarray, bool, dict[str, Any]]:
-        tcp_pose = np.asarray(self.get_wrapper_attr("get_tcp_pose")(), dtype=np.float32)
-        action_scale = self.get_wrapper_attr("get_action_scale")()
+    def read(self, env, policy_action):
+        """Read the controller(s) and map them onto this env's action."""
+        tcp_pose = np.asarray(env.get_wrapper_attr("get_tcp_pose")(), dtype=np.float32)
+        action_scale = env.get_wrapper_attr("get_action_scale")()
         if self.hand == "dual":
-            return self._dual_action(action, tcp_pose, action_scale)
-        return self._single_action(action, tcp_pose, action_scale)
+            new_action, replaced, info = self._dual_action(
+                env, policy_action, tcp_pose, action_scale
+            )
+        else:
+            new_action, replaced, info = self._single_action(
+                env, policy_action, tcp_pose, action_scale
+            )
+        return TeleopSample(
+            action=new_action,
+            active=replaced,
+            info={**info, "left": self.left, "right": self.right},
+        )
 
-    def step(self, action):
-        new_action, replaced, pico_info = self.action(action)
+    def reset(self, env) -> None:
+        """Forget which hands were active in the previous episode."""
+        self.left = False
+        self.right = False
 
-        obs, rew, done, truncated, info = self.env.step(new_action)
-        if replaced:
-            info["intervene_action"] = new_action
-        info.update(pico_info)
-        info["left"] = self.left
-        info["right"] = self.right
-        return obs, rew, done, truncated, info
-
-    def close(self):
+    def close(self) -> None:
+        """Stop every controller thread."""
         for expert in self.experts.values():
             expert.stop()
-        return super().close()
 
 
-class DualFrankaTcpPicoIntervention(gym.ActionWrapper):
-    """PICO teleoperation for ``DualFrankaTcpEnv`` absolute rot6d actions.
+class DualFrankaTcpPicoTeleop(TeleopDevice):
+    """PICO driving the dual-arm absolute rot6d TCP layout.
 
-    ``PicoExpert`` emits a 7D delta-TCP action with rotation as a normalized
-    rotvec.  This wrapper adapts that output to the dual TCP env layout:
-    ``[L_xyz, L_rot6d, L_grip, R_xyz, R_rot6d, R_grip]``.
+    ``PicoExpert`` reports a 7-D delta with rotation as a normalized rotvec, but
+    this env takes an absolute pose per arm with rotation as rot6d, so each
+    delta is composed onto the measured TCP pose.
 
-    When ``hold_current_when_inactive`` is False, releasing grip keeps the last
-    intervened TCP command for the rest of the current action chunk (not marked
-    as intervention). ``on_action_chunk_begin`` clears that latch so the next
-    chunk can resume policy actions cleanly.
+    Releasing the grip mid-chunk holds the last commanded pose rather than
+    snapping back to the policy's, which would jerk the arm partway through a
+    motion. :meth:`on_action_chunk_begin` clears that latch at the next chunk
+    boundary.
+
+    Args:
+        gripper_enabled: Whether each arm's action carries a gripper channel.
+        hold_current_when_inactive: Command the measured pose while nobody is
+            driving, instead of passing the policy action through.
+        pico_config: Forwarded to ``PicoExpert``.
     """
+
+    timeout = 0.0
 
     def __init__(
         self,
-        env,
         gripper_enabled: bool = True,
         hold_current_when_inactive: bool = True,
         **pico_config: Any,
     ):
-        super().__init__(env)
         self.gripper_enabled = gripper_enabled
         self.hold_current_when_inactive = bool(hold_current_when_inactive)
         self.hand = str(pico_config.get("hand", "dual")).lower()
         if self.hand not in ("left", "right", "dual"):
             raise ValueError(
-                "DualFrankaTcpPicoIntervention hand must be 'left', 'right', or 'dual'."
+                "DualFrankaTcpPicoTeleop hand must be 'left', 'right', or 'dual'."
             )
 
         if self.hand == "dual":
@@ -393,19 +412,9 @@ class DualFrankaTcpPicoIntervention(gym.ActionWrapper):
         """Clear mid-chunk hold latches so the next chunk can resume policy actions."""
         self._post_intervene_hold = dict.fromkeys(self.experts, False)
 
-    def reset(self, **kwargs):
-        obs, info = self.env.reset(**kwargs)
-        self.left = False
-        self.right = False
-        self.on_action_chunk_begin()
-        self._last_arm_action = dict.fromkeys(self.experts)
-        return obs, info
-
-    @staticmethod
     def _arm_index(side: str) -> int:
         return 0 if side == "left" else 1
 
-    @staticmethod
     def _tcp_pose_to_rot6d_action(
         tcp_pose: np.ndarray,
         gripper_action: float = 0.0,
@@ -422,6 +431,7 @@ class DualFrankaTcpPicoIntervention(gym.ActionWrapper):
 
     def _current_tcp_action(
         self,
+        env,
         tcp_pose: np.ndarray,
         fallback_action: np.ndarray,
         arm_idx: int,
@@ -436,6 +446,7 @@ class DualFrankaTcpPicoIntervention(gym.ActionWrapper):
 
     def _expert_delta_to_tcp_action(
         self,
+        env,
         expert_action: np.ndarray,
         tcp_pose: np.ndarray,
         action_scale: np.ndarray,
@@ -463,14 +474,16 @@ class DualFrankaTcpPicoIntervention(gym.ActionWrapper):
         target_pose = np.concatenate([target_pos, target_rot.as_quat()])
         return self._tcp_pose_to_rot6d_action(target_pose, gripper_action)
 
-    def get_hold_action(self, fallback_action: np.ndarray | None = None) -> np.ndarray:
+    def get_hold_action(
+        self, env, fallback_action: np.ndarray | None = None
+    ) -> np.ndarray:
         """Return absolute TCP hold actions for both arms.
 
         Used by smooth-intervene dummy chunks so inactive arms keep the measured
         TCP pose when ``hold_current_when_inactive`` is False. Gripper commands
         are taken from ``fallback_action`` when provided.
         """
-        target_shape = self.env.action_space.shape
+        target_shape = env.action_space.shape
         target_dim = int(np.prod(target_shape))
         if target_dim != 20:
             raise ValueError(
@@ -478,7 +491,7 @@ class DualFrankaTcpPicoIntervention(gym.ActionWrapper):
                 f"action space, got action_space.shape={target_shape}."
             )
 
-        tcp_pose = np.asarray(self.get_wrapper_attr("get_tcp_pose")(), dtype=np.float32)
+        tcp_pose = np.asarray(env.get_wrapper_attr("get_tcp_pose")(), dtype=np.float32)
         if tcp_pose.size != 14:
             raise ValueError(
                 "DualFrankaTcpPicoIntervention expects get_tcp_pose() to return "
@@ -503,13 +516,35 @@ class DualFrankaTcpPicoIntervention(gym.ActionWrapper):
         ).astype(np.float32)
         hold_action = np.clip(
             hold_action,
-            self.env.action_space.low.reshape(-1),
-            self.env.action_space.high.reshape(-1),
+            env.action_space.low.reshape(-1),
+            env.action_space.high.reshape(-1),
         )
         return hold_action.reshape(target_shape)
 
-    def action(self, action: np.ndarray) -> tuple[np.ndarray, bool, dict[str, Any]]:
-        target_shape = self.env.action_space.shape
+    def read(self, env, policy_action):
+        """Compose each controller's delta onto the arm's measured TCP pose."""
+        new_action, replaced, info = self._compute(env, policy_action)
+        return TeleopSample(
+            action=new_action,
+            active=replaced or self.hold_current_when_inactive,
+            info={**info, "left": self.left, "right": self.right},
+        )
+
+    def reset(self, env) -> None:
+        """Drop the hold latches and hand flags from the previous episode."""
+        self.left = False
+        self.right = False
+        self.on_action_chunk_begin()
+
+    def close(self) -> None:
+        """Stop every controller thread."""
+        for expert in self.experts.values():
+            expert.stop()
+
+    def _compute(
+        self, env, action: np.ndarray
+    ) -> tuple[np.ndarray, bool, dict[str, Any]]:
+        target_shape = env.action_space.shape
         target_dim = int(np.prod(target_shape))
         if target_dim != 20:
             raise ValueError(
@@ -517,14 +552,14 @@ class DualFrankaTcpPicoIntervention(gym.ActionWrapper):
                 f"action space, got action_space.shape={target_shape}."
             )
 
-        tcp_pose = np.asarray(self.get_wrapper_attr("get_tcp_pose")(), dtype=np.float32)
+        tcp_pose = np.asarray(env.get_wrapper_attr("get_tcp_pose")(), dtype=np.float32)
         if tcp_pose.size != 14:
             raise ValueError(
                 "DualFrankaTcpPicoIntervention expects get_tcp_pose() to return "
                 f"14 values, got shape {tcp_pose.shape}."
             )
 
-        action_scale = self.get_wrapper_attr("get_action_scale")()
+        action_scale = env.get_wrapper_attr("get_action_scale")()
         action_flat = np.asarray(action, dtype=np.float32).reshape(-1)
         if action_flat.size != target_dim:
             action_flat = _match_action_space(action_flat, action_flat, (target_dim,))
@@ -602,24 +637,97 @@ class DualFrankaTcpPicoIntervention(gym.ActionWrapper):
 
         new_action = np.clip(
             new_action,
-            self.env.action_space.low.reshape(-1),
-            self.env.action_space.high.reshape(-1),
+            env.action_space.low.reshape(-1),
+            env.action_space.high.reshape(-1),
         )
         return new_action.reshape(target_shape), replaced_any, pico_info
 
-    def step(self, action):
-        new_action, replaced, pico_info = self.action(action)
 
-        obs, rew, done, truncated, info = self.env.step(new_action)
-        if replaced or self.hold_current_when_inactive:
-            info["intervene_action"] = new_action
-            info["intervene_flag"] = np.ones(1)
-        info.update(pico_info)
-        info["left"] = self.left
-        info["right"] = self.right
-        return obs, rew, done, truncated, info
+class PicoIntervention(TeleopIntervention):
+    """Override policy actions with PICO controller input.
 
-    def close(self):
-        for expert in self.experts.values():
-            expert.stop()
-        return super().close()
+    Args:
+        env: The environment to wrap.
+        gripper_enabled: Whether the action space has a gripper channel.
+        pico_config: Forwarded to the device. ``hand`` selects ``"left"``,
+            ``"right"``, or ``"dual"``; a single controller on a dual-arm env
+            drives only that arm's slice of the action.
+    """
+
+    def __init__(
+        self,
+        env: gym.Env,
+        gripper_enabled: bool = True,
+        **pico_config: Any,
+    ) -> None:
+        super().__init__(
+            env, PicoTeleop(gripper_enabled=gripper_enabled, **pico_config)
+        )
+
+    @property
+    def left(self) -> bool:
+        """Whether the left controller is driving."""
+        return self.device.left
+
+    @property
+    def right(self) -> bool:
+        """Whether the right controller is driving."""
+        return self.device.right
+
+
+class DualFrankaTcpPicoIntervention(TeleopIntervention):
+    """PICO teleoperation for ``DualFrankaTcpEnv`` absolute rot6d actions.
+
+    ``get_hold_action`` and ``on_action_chunk_begin`` stay on the wrapper
+    because :mod:`rlinf.envs.real.realworld_env` finds them by name through
+    ``get_wrapper_attr``.
+
+    Args:
+        env: The environment to wrap.
+        gripper_enabled: Whether each arm's action carries a gripper channel.
+        hold_current_when_inactive: Command the measured pose while nobody is
+            driving, rather than passing the policy action through.
+        pico_config: Forwarded to the device.
+    """
+
+    def __init__(
+        self,
+        env: gym.Env,
+        gripper_enabled: bool = True,
+        hold_current_when_inactive: bool = True,
+        **pico_config: Any,
+    ) -> None:
+        super().__init__(
+            env,
+            DualFrankaTcpPicoTeleop(
+                gripper_enabled=gripper_enabled,
+                hold_current_when_inactive=hold_current_when_inactive,
+                **pico_config,
+            ),
+            mark_flag=True,
+        )
+
+    @property
+    def left(self) -> bool:
+        """Whether the left controller is driving."""
+        return self.device.left
+
+    @property
+    def right(self) -> bool:
+        """Whether the right controller is driving."""
+        return self.device.right
+
+    @property
+    def hold_current_when_inactive(self) -> bool:
+        """Whether the measured pose is commanded when nobody is driving."""
+        return self.device.hold_current_when_inactive
+
+    def on_action_chunk_begin(self) -> None:
+        """Clear the mid-chunk hold latches so the next chunk resumes policy actions."""
+        self.device.on_action_chunk_begin()
+
+    def get_hold_action(
+        self, fallback_action: Optional[np.ndarray] = None
+    ) -> np.ndarray:
+        """Return the absolute TCP command that holds the arms where they are."""
+        return self.device.get_hold_action(self, fallback_action)

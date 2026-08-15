@@ -67,6 +67,11 @@ class TeleopDevice(ABC):
     #: How long the operator keeps control after their last active sample.
     #: Devices sample faster than a person moves, so without this the action
     #: would flicker between operator and policy inside a single motion.
+    #:
+    #: Set it to ``0`` for a device the operator holds down to take over -- a
+    #: trigger or a grip button says exactly when they are driving, and
+    #: stretching that by half a second would keep commanding the robot after
+    #: they let go.
     timeout: float = 0.5
 
     @abstractmethod
@@ -156,13 +161,14 @@ class TeleopIntervention(gym.Wrapper):
 
         if sample.action is None:
             applied, overridden = action, False
+        elif sample.active:
+            self._last_active = time.monotonic()
+            applied, overridden = sample.action, True
+        elif self.intervening:
+            # Quiet sample, but still inside the hold window.
+            applied, overridden = sample.action, True
         else:
-            if sample.active:
-                self._last_active = time.monotonic()
-            if self.intervening:
-                applied, overridden = sample.action, True
-            else:
-                applied, overridden = self.device.fallback(self, action), False
+            applied, overridden = self.device.fallback(self, action), False
 
         obs, reward, terminated, truncated, info = self.env.step(applied)
 
