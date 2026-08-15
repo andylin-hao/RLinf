@@ -12,98 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import importlib
-import importlib.abc
-import importlib.util
-import sys
-import warnings
 from enum import Enum
-from typing import Optional
 
 from rlinf.utils.robosuite_compat import install_robosuite_egl_device_shim
 
 # Must run before any simulator is imported, in worker processes and in the
 # simulator subprocesses they spawn alike. See ``rlinf.utils.robosuite_compat``.
 install_robosuite_egl_device_shim()
-
-
-#: Environments used to sit directly under ``rlinf.envs``; simulated ones now
-#: live under ``sim`` and real-world ones under ``real``. Environments are
-#: selected by the ``env_type`` string, so configs are unaffected -- this only
-#: covers code that imported a module path directly.
-_MOVED_ENV_PACKAGES: dict[str, str] = {
-    name: f"rlinf.envs.sim.{name}"
-    for name in (
-        "behavior",
-        "calvin",
-        "d4rl",
-        "embodichain",
-        "frankasim",
-        "genesis",
-        "habitat",
-        "isaaclab",
-        "libero",
-        "maniskill",
-        "metaworld",
-        "polaris",
-        "robocasa",
-        "robocasa365",
-        "robotwin",
-        "roboverse",
-        "world_model",
-    )
-}
-_MOVED_ENV_PACKAGES["realworld"] = "rlinf.envs.real"
-
-
-class _MovedModuleLoader(importlib.abc.Loader):
-    """Bind an old module path to the module now living at the new path."""
-
-    def __init__(self, target: str) -> None:
-        self._target = target
-
-    def create_module(self, spec):
-        """Return the module from its new location rather than a fresh one."""
-        return importlib.import_module(self._target)
-
-    def exec_module(self, module) -> None:
-        """No-op: the target module executed when it was imported."""
-
-
-class _MovedEnvFinder(importlib.abc.MetaPathFinder):
-    """Resolve pre-split ``rlinf.envs.<name>`` paths to their new homes.
-
-    Installed at the front of ``sys.meta_path``. It has to precede the path
-    finder: once an old package name is aliased, its ``__path__`` points into
-    the new directory, so the path finder would happily load a *second* copy of
-    each submodule under the old name, and identity checks against the new name
-    would fail. Names outside the moved set fall through untouched.
-
-    Deprecated: it will be removed once downstream code has moved.
-    """
-
-    _PREFIX = "rlinf.envs."
-
-    def find_spec(self, fullname: str, path=None, target=None) -> Optional[object]:
-        """Map a moved module name onto a loader for its new location."""
-        if not fullname.startswith(self._PREFIX):
-            return None
-        head, _, tail = fullname[len(self._PREFIX) :].partition(".")
-        new_head = _MOVED_ENV_PACKAGES.get(head)
-        if new_head is None:
-            return None
-        new_name = f"{new_head}.{tail}" if tail else new_head
-        warnings.warn(
-            f"{fullname!r} moved to {new_name!r}; update the import. "
-            "The compatibility alias will be removed in a future release.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return importlib.util.spec_from_loader(fullname, _MovedModuleLoader(new_name))
-
-
-if not any(isinstance(finder, _MovedEnvFinder) for finder in sys.meta_path):
-    sys.meta_path.insert(0, _MovedEnvFinder())
 
 
 class SupportedEnvType(Enum):

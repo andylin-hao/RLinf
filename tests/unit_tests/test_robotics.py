@@ -1116,14 +1116,24 @@ def test_realworld_environments_do_not_own_controller_workers():
     )
 
 
-def test_moved_env_modules_still_import_under_their_old_paths():
-    """The pre-split module paths keep working, and resolve to one module.
+def test_env_packages_live_under_sim_or_real():
+    """Every environment sits in one of the two halves, with no alias behind it.
 
-    The alias has to precede the path finder on ``sys.meta_path``: an aliased
-    package's ``__path__`` points into the new directory, so a later finder
-    would load a second copy of each submodule under the old name and identity
-    checks would silently fail.
+    The pre-split paths were kept working by a ``sys.meta_path`` alias while
+    callers moved over. Nothing imports them now, so the alias is gone and the
+    old names resolve to nothing.
     """
+    envs = _ROOT / "rlinf" / "envs"
+    stray = sorted(
+        path.name
+        for path in envs.iterdir()
+        if path.is_dir()
+        and path.name not in {"sim", "real", "venv", "wrappers", "__pycache__"}
+    )
+
+    assert stray == []
+    assert "_MovedEnvFinder" not in (envs / "__init__.py").read_text()
+
     env = os.environ.copy()
     env["PYTHONPATH"] = os.pathsep.join(
         value for value in (str(_ROOT), env.get("PYTHONPATH")) if value
@@ -1131,17 +1141,15 @@ def test_moved_env_modules_still_import_under_their_old_paths():
     result = subprocess.run(
         [
             sys.executable,
-            "-W",
-            "ignore::DeprecationWarning",
             "-c",
-            (
-                "from rlinf.envs.realworld.robot_task_env import RobotTaskEnv as old; "
-                "from rlinf.envs.real.robot_task_env import RobotTaskEnv as new; "
-                "assert old is new, 'alias loaded a second copy'; "
-                "import rlinf.envs.realworld as p, rlinf.envs.real as n; "
-                "assert p is n; "
-                "import rlinf.envs.utils"  # a name that did not move
-            ),
+            "import importlib\n"
+            "for name in ('rlinf.envs.realworld', 'rlinf.envs.maniskill'):\n"
+            "    try:\n"
+            "        importlib.import_module(name)\n"
+            "    except ModuleNotFoundError:\n"
+            "        continue\n"
+            "    raise AssertionError(name + ' still resolves')\n"
+            "import rlinf.envs.real, rlinf.envs.sim.maniskill, rlinf.envs.utils\n",
         ],
         cwd=_ROOT,
         env=env,
