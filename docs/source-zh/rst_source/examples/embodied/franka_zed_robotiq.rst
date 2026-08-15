@@ -316,9 +316,9 @@ Robotiq 夹爪通过 USB 转 RS485 适配器使用 **Modbus RTU** 协议通信�
    * - ``runner.num_data_episodes``
      - ``20``
      - 采集的 episode 数量，达到后脚本自动退出。
-   * - ``env.eval.use_spacemouse``
-     - ``True``
-     - 在采集过程中启用 SpaceMouse 遥操作。
+   * - ``env.eval.teleop_device``
+     - ``spacemouse``
+     - 采集过程中由哪种设备驱动机械臂。
    * - ``env.eval.data_collection.save_dir``
      - ``${runner.logger.log_path}/collected_data``
      - 采集数据的保存目录。

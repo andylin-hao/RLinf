@@ -214,8 +214,7 @@ The key configuration is:
 
    env:
      eval:
-       use_spacemouse: False
-       use_pico: True
+       teleop_device: pico
 
        pico:
          zmq_addr: "tcp://<vr_publisher_ip>:<port>"
@@ -362,7 +361,7 @@ Troubleshooting
 
 **The robot does not move when holding grip**
 
-- Confirm that ``use_spacemouse: False`` and ``use_pico: True``.
+- Confirm that ``teleop_device: pico``.
 - Confirm that the current code creates ``PicoIntervention`` in ``apply.py``.
 - Confirm that the ``grip`` value exceeds ``control_threshold``.
 - Confirm that calibration has completed. If ``calibration.required=True`` and

@@ -324,9 +324,9 @@ Key data-collection settings in the same file:
    * - ``runner.num_data_episodes``
      - ``20``
      - Number of episodes to collect before the script exits.
-   * - ``env.eval.use_spacemouse``
-     - ``True``
-     - Enable SpaceMouse teleoperation during collection.
+   * - ``env.eval.teleop_device``
+     - ``spacemouse``
+     - Which device drives the arm during collection.
    * - ``env.eval.data_collection.save_dir``
      - ``${runner.logger.log_path}/collected_data``
      - Directory where collected trajectories are saved.
