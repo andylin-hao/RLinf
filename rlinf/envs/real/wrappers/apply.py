@@ -20,6 +20,7 @@ from typing import Any, Mapping, Optional
 
 import gymnasium as gym
 
+from rlinf.envs.real.teleop.config import resolve_teleop_device
 from rlinf.envs.real.wrappers.dual_gello_joint_intervention import (
     DualGelloJointIntervention,
 )
@@ -68,15 +69,6 @@ def _load_dexhand_intervention():
     return DexHandIntervention
 
 
-def _validate_teleop_mode(**modes: bool) -> None:
-    active_modes = [name for name, enabled in modes.items() if bool(enabled)]
-    if len(active_modes) > 1:
-        raise ValueError(
-            "Only one teleop mode can be active at a time. "
-            f"Active modes: {', '.join(active_modes)}."
-        )
-
-
 def _apply_keyboard_wrapper(env: gym.Env, mode: Optional[str]) -> gym.Env:
     config = env.get_wrapper_attr("config")
     if config.is_dummy or not mode:
@@ -105,14 +97,14 @@ def apply_single_arm_wrappers(env: gym.Env, cfg: Mapping[str, Any]) -> gym.Env:
     if no_gripper and not is_dex_hand:
         env = GripperCloseEnv(env)
 
-    use_spacemouse = cfg.get("use_spacemouse", True)
-    use_gello = cfg.get("use_gello", False)
-    use_pico = cfg.get("use_pico", False)
-    _validate_teleop_mode(
-        use_spacemouse=use_spacemouse,
-        use_gello=use_gello,
-        use_pico=use_pico,
+    device = resolve_teleop_device(
+        cfg,
+        supported=("spacemouse", "gello", "pico"),
+        default="spacemouse",
     )
+    use_spacemouse = device == "spacemouse"
+    use_gello = device == "gello"
+    use_pico = device == "pico"
 
     gripper_enabled = not no_gripper
 
@@ -132,18 +124,20 @@ def apply_single_arm_wrappers(env: gym.Env, cfg: Mapping[str, Any]) -> gym.Env:
 
     if not env.config.is_dummy and use_gello:
         if is_dex_hand:
-            raise ValueError("use_gello=True is not supported for ruiyan_hand.")
+            raise ValueError("teleop_device: gello is not supported for ruiyan_hand.")
         gello_port = cfg.get("gello_port", None)
         if gello_port is None:
             raise ValueError(
-                "use_gello=True requires 'gello_port' in the env config "
+                "teleop_device: gello requires 'gello_port' in the env config "
                 "(e.g. env.eval.gello_port)."
             )
         env = GelloIntervention(env, port=gello_port, gripper_enabled=gripper_enabled)
 
     if not env.config.is_dummy and use_pico:
         if is_dex_hand:
-            raise ValueError("use_pico=True is not supported for dexterous hands.")
+            raise ValueError(
+                "teleop_device: pico is not supported for dexterous hands."
+            )
         pico_cfg = dict(cfg.get("pico", {}))
         env = PicoIntervention(env, gripper_enabled=gripper_enabled, **pico_cfg)
 
@@ -163,22 +157,18 @@ def apply_dual_franka_joint_wrappers(env: gym.Env, cfg: Mapping[str, Any]) -> gy
             "no_gripper=True not supported for dual-arm envs (no DualGripperCloseEnv)."
         )
 
-    use_pico = cfg.get("use_pico", False)
-    use_gello_joint = cfg.get("use_gello_joint", False)
-    if cfg.get("use_spacemouse", False) or cfg.get("use_gello", False):
-        raise ValueError(
-            "Dual-arm Franka envs do not support use_spacemouse=True or "
-            "use_gello=True. Use use_gello_joint=True for GELLO-joint teleop "
-            "or use_pico=True for dual-arm PICO teleop."
-        )
-    _validate_teleop_mode(use_gello_joint=use_gello_joint, use_pico=use_pico)
+    # A dual-arm Franka has no single-arm Cartesian teleop path, so naming one
+    # here is a mistake worth reporting rather than a setting to ignore.
+    device = resolve_teleop_device(cfg, supported=("gello_joint", "pico"))
+    use_gello_joint = device == "gello_joint"
+    use_pico = device == "pico"
 
     if not config.is_dummy and use_gello_joint:
         left_port = cfg.get("left_gello_port", None)
         right_port = cfg.get("right_gello_port", None)
         if left_port is None or right_port is None:
             raise ValueError(
-                "use_gello_joint=True requires both "
+                "teleop_device: gello_joint requires both "
                 "'left_gello_port' and 'right_gello_port' in the env config."
             )
         env = DualGelloJointIntervention(
@@ -195,7 +185,7 @@ def apply_dual_franka_joint_wrappers(env: gym.Env, cfg: Mapping[str, Any]) -> gy
     if not config.is_dummy and use_pico:
         if getattr(env.unwrapped, "PER_ARM_ACTION_DIM", None) != 10:
             raise ValueError(
-                "use_pico=True for dual-arm Franka is implemented for "
+                "teleop_device: pico for dual-arm Franka is implemented for "
                 "DualFrankaTcpEnv-v1 only. Use env/realworld_dual_franka_tcp_rot6d."
             )
         pico_cfg = dict(cfg.get("pico", {}))

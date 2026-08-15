@@ -116,7 +116,7 @@ env:
     ignore_terminations: False
     total_num_envs: 1
     no_gripper: False
-    use_spacemouse: True
+    teleop_device: spacemouse
     glove_config:
       left_port: "/dev/ttyACM0"
       frequency: 30

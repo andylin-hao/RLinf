@@ -170,15 +170,18 @@ class SmoothInterveneController:
                 raise ValueError(
                     "smooth_intervene requires exactly one env per EnvWorker stage"
                 )
-            if not bool(OmegaConf.select(cfg, "env.train.use_pico", default=False)):
+            # Imported here so a worker that never touches real hardware does
+            # not pay for the realworld env package at import time.
+            from rlinf.envs.real.teleop.config import resolve_teleop_device
+
+            device = resolve_teleop_device(
+                OmegaConf.select(cfg, "env.train") or {},
+                supported=("spacemouse", "gello", "pico", "gello_joint"),
+            )
+            if device != "pico":
                 raise ValueError(
-                    "smooth_intervene requires env.train.use_pico=True "
-                    "(PICO-only; SpaceMouse is not supported)"
-                )
-            if bool(OmegaConf.select(cfg, "env.train.use_spacemouse", default=False)):
-                raise ValueError(
-                    "smooth_intervene does not support SpaceMouse; "
-                    "set env.train.use_spacemouse=False and use_pico=True"
+                    "smooth_intervene requires env.train.teleop_device=pico "
+                    f"(PICO-only; got {device!r})"
                 )
         return cls(stage_num=stage_num, enabled=enabled)
 
