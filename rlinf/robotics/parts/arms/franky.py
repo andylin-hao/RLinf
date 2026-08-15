@@ -182,14 +182,14 @@ class FrankyArm(ControllablePart):
         gt = (gripper_type or "robotiq").lower()
         if gt == "franka":
             raise NotImplementedError(
-                "FrankyController: the libfranka backend for the original "
+                "FrankyArm: the libfranka backend for the original "
                 "Franka Hand is not yet supported. Use gripper_type='robotiq' "
                 "for now."
             )
         if gt == "robotiq":
             return create_gripper(gripper_type="robotiq", port=gripper_connection)
         raise ValueError(
-            f"FrankyController: unsupported gripper_type={gripper_type!r}. "
+            f"FrankyArm: unsupported gripper_type={gripper_type!r}. "
             f"Supported: 'robotiq'."
         )
 

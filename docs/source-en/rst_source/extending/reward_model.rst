@@ -911,7 +911,7 @@ How It Works
 Inside ``TeleopWorker``:
 
 1. ``RealWorldEnv`` is initialized with ``teleop_device: spacemouse``, wrapping the gym env with
-   ``SpacemouseIntervention``. Non-zero SpaceMouse input (or a button press) overrides the
+   a SpaceMouse teleop intervention. Non-zero SpaceMouse input (or a button press) overrides the
    zero dummy action for 0.5 seconds.
 2. ``EmbodiedRewardWorker`` is launched on the GPU node via
    ``EmbodiedRewardWorker.launch_for_realworld(...)`` and initialized once at startup.

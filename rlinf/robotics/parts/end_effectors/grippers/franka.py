@@ -15,7 +15,7 @@
 """Franka parallel-jaw gripper controlled via ROS topics.
 
 This module encapsulates the ROS channel setup and message publishing that
-were previously embedded in :class:`FrankaController`.
+were previously embedded in the arm's controller worker.
 """
 
 import numpy as np

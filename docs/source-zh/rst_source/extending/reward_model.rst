@@ -889,7 +889,7 @@ SpaceMouse 控制说明：
 
 ``TeleopWorker`` 内部流程：
 
-1. ``RealWorldEnv`` 以 ``teleop_device: spacemouse`` 初始化，包装了 ``SpacemouseIntervention``。
+1. ``RealWorldEnv`` 以 ``teleop_device: spacemouse`` 初始化，并套上 SpaceMouse 遥操作 wrapper。
    当 SpaceMouse 输入非零（或按下按钮）时，用 SpaceMouse 动作覆盖零 dummy 动作，持续 0.5 秒。
 2. ``EmbodiedRewardWorker`` 通过 ``EmbodiedRewardWorker.launch_for_realworld(...)``
    在 GPU 节点上启动，在启动时一次性完成初始化。

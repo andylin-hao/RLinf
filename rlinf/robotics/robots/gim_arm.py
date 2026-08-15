@@ -189,7 +189,7 @@ class GimArmConfig(RobotConfig):
     """Gripper type: ``"parallel"`` or ``"single_side"``."""
 
     controller_node_rank: Optional[int] = None
-    """Node rank where :class:`GimArmController` should run.
+    """Node rank where the arm part should run.
     When ``None`` (default), co-located with the env worker."""
 
     disable_validate: bool = False

@@ -333,8 +333,8 @@ class FrankaConfig(RobotConfig):
     cameras hang off a different machine than the one running the policy."""
 
     controller_node_rank: Optional[int] = None
-    """Node rank where :class:`FrankaController` should run.
-    When ``None`` (default), the controller is co-located with the env
+    """Node rank where the arm part should run.
+    When ``None`` (default), the arm is co-located with the env
     worker.  Set this when the arm/gripper and cameras are on different
     machines (e.g. cameras on a GPU server, arm on a NUC)."""
 

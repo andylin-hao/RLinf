@@ -33,7 +33,7 @@ end-effector delta actions for the Franka environment.
      - Actor, rollout, optional camera capture
      - NVIDIA GPU, RLinf
    * - **Franka controller node** (node 1 or single-node setup)
-     - FrankaController, env worker, VR data subscriber
+     - Franka arm part, env worker, VR data subscriber
      - Franka, ROS Noetic, serl_franka_controllers, pyzmq
    * - **VR / PICO PC**
      - Runs XRoboToolkit and the VR data publisher

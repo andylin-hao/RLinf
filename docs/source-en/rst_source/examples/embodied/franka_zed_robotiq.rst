@@ -246,7 +246,7 @@ the new ``camera_type``, ``gripper_type``, ``gripper_connection``, and
                camera_type: zed            # "realsense" or "zed"
                gripper_type: robotiq       # "franka" or "robotiq"
                gripper_connection: "/dev/ttyUSB0"
-               controller_node_rank: 1     # FrankaController runs on the NUC
+               controller_node_rank: 1     # the arm part runs on the NUC
                disable_validate: false
 
 .. list-table:: New hardware config fields
@@ -268,7 +268,7 @@ the new ``camera_type``, ``gripper_type``, ``gripper_connection``, and
        ``gripper_type`` is ``"franka"``.
    * - ``controller_node_rank``
      - ``null``
-     - Node rank where ``FrankaController`` runs.  When ``null``, it
+     - Node rank where the arm part runs.  When ``null``, it
        co-locates with the env worker.  Set this when the arm and cameras
        are on different machines.
 

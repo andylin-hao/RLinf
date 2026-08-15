@@ -24,7 +24,7 @@ class BaseGripper(EndEffector, ABC):
     """Abstract base class for robot gripper control.
 
     All gripper implementations (Franka parallel gripper, Robotiq 2F, …)
-    must implement this interface so that :class:`FrankaController` can
+    must implement this interface so that the arm part can
     use them interchangeably.
     """
 
