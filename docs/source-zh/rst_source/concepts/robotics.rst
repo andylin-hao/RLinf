@@ -375,7 +375,7 @@ SDK 往往不允许在一条链路上并发调用。Franka 类本身不参与这
 
 只有 ``rlinf/robotics/placement.py`` 可以跨过这条边界，``spawn`` 也只在确实需要放置
 时才惰性导入它。另一个方向同样受限：调度器不会导入 robotics。
-``tests/unit_tests/test_robotics_boundaries.py`` 会检查这两条规则。
+``tests/unit_tests/test_robotics.py`` 会检查这两条规则。
 
 代码位置
 --------

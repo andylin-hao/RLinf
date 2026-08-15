@@ -431,7 +431,7 @@ hardware machine without a cluster.
 ``rlinf/robotics/placement.py`` is the sole module allowed to cross the boundary,
 and ``spawn`` imports it lazily when placement is requested. Imports do not run
 in the other direction: the scheduler never imports robotics.
-``tests/unit_tests/test_robotics_boundaries.py`` checks both rules.
+``tests/unit_tests/test_robotics.py`` checks both rules.
 
 Where the Code Lives
 --------------------
