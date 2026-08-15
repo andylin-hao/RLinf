@@ -19,7 +19,7 @@ import os
 from types import UnionType
 from typing import Any, Sequence, TypeVar, Union, get_args, get_origin, get_type_hints
 
-from .discovery import RobotConfig
+from .registry import RobotConfig
 
 RobotConfigType = TypeVar("RobotConfigType", bound=RobotConfig)
 

@@ -428,7 +428,7 @@ loading a device driver also loads cluster dependencies. The bench scripts in
 ``toolkits/realworld_check`` rely on that separation when they run directly on a
 hardware machine without a cluster.
 
-``rlinf/robotics/placement.py`` is the sole module allowed to cross the boundary,
+``rlinf/robotics/placement/handles.py`` is the sole module allowed to cross it,
 and ``spawn`` imports it lazily when placement is requested. Imports do not run
 in the other direction: the scheduler never imports robotics.
 ``tests/unit_tests/test_robotics.py`` checks both rules.
@@ -457,17 +457,16 @@ Where the Code Lives
    * - ``robots/``
      - One module per robot, containing its config, discovery logic, and
        builder.
-   * - ``specs.py``
-     - ``PartSpec`` declarations and ``SubpartRef`` references to exposed
-       components.
-   * - ``placement.py``
-     - ``PartHandle`` and synthesized workers. This is the only module that
-       imports the scheduler.
-   * - ``views.py``
-     - The ``Method*`` views.
-   * - ``robot.py``, ``discovery.py``, ``adapters.py``, ``config.py``
-     - Composition, registration, legacy policy adapters, and environment
-       variable configuration.
+   * - ``parts/views.py``
+     - The ``Method*`` views, which present a vendor SDK's methods as parts.
+   * - ``placement/``
+     - ``specs.py`` declares where a part runs; ``handles.py`` builds it there
+       and is the only module that imports the scheduler.
+   * - ``discovery/``
+     - ``registry.py`` maps a robot type to its config, discovery, and builder;
+       ``autoconfig.py`` fills that config from the environment.
+   * - ``robot.py``, ``adapters.py``
+     - Composition, and the adapters for policies that expect flat vectors.
 
 Tasks Stay Out of Hardware
 --------------------------

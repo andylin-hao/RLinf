@@ -373,7 +373,7 @@ SDK 往往不允许在一条链路上并发调用。Franka 类本身不参与这
 ``toolkits/realworld_check`` 中的调试脚本依靠这条边界，才能脱离集群直接运行在硬件机器
 上。
 
-只有 ``rlinf/robotics/placement.py`` 可以跨过这条边界，``spawn`` 也只在确实需要放置
+只有 ``rlinf/robotics/placement/handles.py`` 可以跨过这条边界，``spawn`` 也只在确实需要放置
 时才惰性导入它。另一个方向同样受限：调度器不会导入 robotics。
 ``tests/unit_tests/test_robotics.py`` 会检查这两条规则。
 
@@ -399,14 +399,16 @@ SDK 往往不允许在一条链路上并发调用。Franka 类本身不参与这
      - ROS 等共享传输层。它替部件传递消息，但本身不是部件。
    * - ``robots/``
      - 每台机器人一个模块，其中包含配置、发现逻辑和构建函数。
-   * - ``specs.py``
-     - ``PartSpec`` 表示部件声明，``SubpartRef`` 引用声明暴露的子部件。
-   * - ``placement.py``
-     - ``PartHandle`` 与自动合成的 worker；整个 robotics 包只有这里导入调度器。
-   * - ``views.py``
-     - ``Method*`` 系列视图。
-   * - ``robot.py``、``discovery.py``、``adapters.py``、``config.py``
-     - 组合、注册、旧策略适配器和环境变量配置。
+   * - ``parts/views.py``
+     - ``Method*`` 系列视图，把厂商 SDK 的方法呈现为部件。
+   * - ``placement/``
+     - ``specs.py`` 声明部件跑在哪，``handles.py`` 负责在那里构建；整个 robotics 包
+       只有它导入调度器。
+   * - ``discovery/``
+     - ``registry.py`` 把机器人类型对应到配置、发现逻辑和构建函数，
+       ``autoconfig.py`` 从环境变量填充这份配置。
+   * - ``robot.py``、``adapters.py``
+     - 组合，以及给扁平向量策略用的适配器。
 
 任务不进入硬件代码
 ------------------

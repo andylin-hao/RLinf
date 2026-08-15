@@ -96,7 +96,7 @@ class Robot(Group):
         and the parts go back to their declarations, so you can fix the cause and
         call ``connect`` again.
         """
-        from .specs import Placement
+        from .placement import Placement
 
         if self._declared is None:
             self._declared = self.declarations()

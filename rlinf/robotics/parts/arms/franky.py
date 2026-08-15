@@ -32,7 +32,7 @@ from rlinf.robotics.parts.arms import ARM_STATE_FIELDS
 from rlinf.robotics.parts.arms.franka import FrankaRobotState
 from rlinf.robotics.parts.base import ControllablePart, RobotPart
 from rlinf.robotics.parts.end_effectors.grippers import create_gripper
-from rlinf.robotics.views import MethodGripper
+from rlinf.robotics.parts.views import MethodGripper
 from rlinf.utils.logging import get_logger
 
 # Franka Panda joint position / velocity limits.

@@ -30,7 +30,7 @@ from typing import Any, Optional, Union, cast
 
 import numpy as np
 
-from .parts.base import Camera, ControllablePart, EndEffector
+from .base import Camera, ControllablePart, EndEffector
 
 
 def state_to_dict(state: Any) -> dict[str, Any]:

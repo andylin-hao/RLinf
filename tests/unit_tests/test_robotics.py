@@ -60,7 +60,7 @@ from rlinf.robotics.parts.arms import (
     Turtle2Hardware,
 )
 from rlinf.robotics.parts.arms.franka import FrankaRobotState
-from rlinf.robotics.specs import PartSpec
+from rlinf.robotics.placement.specs import PartSpec
 from rlinf.scheduler.hardware import (
     Hardware,
     HardwareConfig,
@@ -1049,7 +1049,7 @@ def test_pure_driver_import_does_not_load_scheduler():
     assert result.returncode == 0, result.stderr
 
 
-_SCHEDULER_BRIDGE = Path("rlinf") / "robotics" / "placement.py"
+_SCHEDULER_BRIDGE = Path("rlinf") / "robotics" / "placement" / "handles.py"
 
 
 def test_robotics_devices_do_not_depend_on_scheduler_ray_or_gym():
@@ -1057,7 +1057,6 @@ def test_robotics_devices_do_not_depend_on_scheduler_ray_or_gym():
     device_paths = [
         robotics_dir / "robot.py",
         robotics_dir / "adapters.py",
-        robotics_dir / "views.py",
         *robotics_dir.joinpath("parts").rglob("*.py"),
     ]
     forbidden = ("ray", "gymnasium", "rlinf.scheduler")
@@ -1085,7 +1084,7 @@ def test_scheduler_use_is_confined_to_the_composition_layer():
     robotics_dir = _ROOT / "rlinf" / "robotics"
     allowed = {
         _SCHEDULER_BRIDGE,
-        Path("rlinf") / "robotics" / "discovery.py",
+        Path("rlinf") / "robotics" / "discovery" / "registry.py",
     }
     importers = {
         path.relative_to(_ROOT)
@@ -1267,7 +1266,7 @@ def test_building_a_real_robot_touches_no_hardware():
     hardware, so nothing may be opened until ``connect``.
     """
     from rlinf.robotics.parts.base import Group
-    from rlinf.robotics.specs import PartSpec, SubpartRef
+    from rlinf.robotics.placement.specs import PartSpec, SubpartRef
 
     robot = _dosw1_robot()
 

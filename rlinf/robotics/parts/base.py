@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any, Callable, Optional, TypeVar
 
 if TYPE_CHECKING:
     from ..placement import PartHandle
-    from ..specs import PartSpec
+    from ..placement.specs import PartSpec
 
 KeyType = TypeVar("KeyType")
 ValueType = TypeVar("ValueType")
@@ -168,7 +168,7 @@ class RobotPart(ABC):
         whose SDK lives only on the target machine cannot be built here first,
         and declaring lets the robot own teardown and roll back cleanly.
         """
-        from ..specs import PartSpec
+        from ..placement.specs import PartSpec
 
         return PartSpec(cls, args, kwargs, node_rank=node_rank, name=name)
 
@@ -259,7 +259,7 @@ class Group(ControllablePart):
     @property
     def is_connected(self) -> bool:
         """Whether every part is placed and connected."""
-        from ..specs import PartSpec, SubpartRef
+        from ..placement.specs import PartSpec, SubpartRef
 
         values = list(self._parts.values())
         if any(isinstance(v, (PartSpec, SubpartRef)) for v in values):
@@ -377,7 +377,7 @@ class Group(ControllablePart):
         Returns the handles used, keyed by the part name that needed them, so a
         robot can publish them and so sharing is visible to :meth:`_batches`.
         """
-        from ..specs import PartSpec, SubpartRef
+        from ..placement.specs import PartSpec, SubpartRef
 
         used: dict[str, list[Any]] = {}
         for name, value in list(self._parts.items()):

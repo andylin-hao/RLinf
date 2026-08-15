@@ -44,7 +44,7 @@ from typing import Any, Callable, Optional
 from rlinf.scheduler import Cluster, NodePlacementStrategy, Worker
 from rlinf.scheduler.worker.worker import WorkerMeta
 
-from .parts.base import Camera, ControllablePart, EndEffector, RobotPart
+from ..parts.base import Camera, ControllablePart, EndEffector, RobotPart
 
 
 class LocalResult:

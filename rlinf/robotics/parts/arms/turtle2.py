@@ -19,7 +19,7 @@ from dataclasses import asdict, dataclass, field
 import numpy as np
 
 from rlinf.robotics.parts.base import ControllablePart, RobotPart
-from rlinf.robotics.views import MethodArm, MethodCamera, MethodGripper
+from rlinf.robotics.parts.views import MethodArm, MethodCamera, MethodGripper
 from rlinf.utils.logging import get_logger
 
 #: State-field prefix backing each arm, and the method suffix commanding it.

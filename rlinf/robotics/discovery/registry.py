@@ -23,7 +23,7 @@ from rlinf.scheduler.hardware import (
     NodeHardwareConfig,
 )
 
-from .robot import Robot
+from ..robot import Robot
 
 RobotConfigType = TypeVar("RobotConfigType", bound="RobotConfig", covariant=True)
 

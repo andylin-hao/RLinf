@@ -17,8 +17,12 @@ from typing import Any, Optional
 
 from rlinf.scheduler.hardware import HardwareConfig, HardwareInfo, HardwareResource
 
-from ..config import RobotAutoConfig
-from ..discovery import RobotConfig, RobotDiscovery, RobotInfo
+from ..discovery import (
+    RobotAutoConfig,
+    RobotConfig,
+    RobotDiscovery,
+    RobotInfo,
+)
 from ..parts.base import Group
 from ..robot import Robot
 

@@ -29,7 +29,7 @@ from rlinf.robotics.parts.end_effectors import (
     create_end_effector,
     normalize_end_effector_type,
 )
-from rlinf.robotics.views import MethodGripper
+from rlinf.robotics.parts.views import MethodGripper
 from rlinf.utils.logging import get_logger
 
 

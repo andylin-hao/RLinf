@@ -20,7 +20,7 @@ import numpy as np
 
 from rlinf.robotics.parts.arms import ARM_STATE_FIELDS
 from rlinf.robotics.parts.base import ControllablePart, RobotPart
-from rlinf.robotics.views import MethodGripper
+from rlinf.robotics.parts.views import MethodGripper
 from rlinf.utils.logging import get_logger
 
 # End-effector frame name in gim_arm URDF.
