@@ -22,8 +22,8 @@ everything and registers every task, so ``from rlinf.envs.real import
 RealWorldEnv`` behaves exactly as it did.
 """
 
-from importlib import import_module
-from typing import Any
+import importlib
+import typing
 
 #: Exported name -> the module that defines it.
 _EXPORTS: dict[str, str] = {
@@ -80,17 +80,17 @@ def _load_all() -> None:
         return
     _loaded = True
     for module in (".dosw1", ".franka", ".gim_arm", ".xsquare", ".robot_task_env"):
-        import_module(module, __name__)
-    realworld_env = import_module(".realworld_env", __name__)
+        importlib.import_module(module, __name__)
+    realworld_env = importlib.import_module(".realworld_env", __name__)
     realworld_env.RealWorldEnv.realworld_setup()
 
 
-def __getattr__(name: str) -> Any:
+def __getattr__(name: str) -> "typing.Any":
     """Load the real-world envs the first time one of their names is used."""
     module_name = _EXPORTS.get(name)
     if module_name is None:
         raise AttributeError(name)
     _load_all()
-    value = getattr(import_module(module_name, __name__), name)
+    value = getattr(importlib.import_module(module_name, __name__), name)
     globals()[name] = value
     return value
