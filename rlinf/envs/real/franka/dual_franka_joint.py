@@ -27,7 +27,7 @@ import numpy as np
 
 from rlinf.robotics.parts.arms.franky import JOINT_LIMITS_LOWER, JOINT_LIMITS_UPPER
 
-from ..dual_franka_env import DualFrankaEnv, DualFrankaRobotConfig
+from .dual_base import DualFrankaEnv, DualFrankaRobotConfig
 
 ACTION_DIM_PER_ARM = 8  # 7 joints + 1 gripper trigger
 

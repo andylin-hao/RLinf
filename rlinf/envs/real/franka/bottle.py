@@ -13,49 +13,51 @@
 # limitations under the License.
 
 import copy
+import time
 from dataclasses import dataclass, field
 
 import numpy as np
 
-from ..franka_env import FrankaEnv, FrankaRobotConfig
+from .base import FrankaEnv, FrankaRobotConfig
 
 
 @dataclass
-class PegInsertionConfig(FrankaRobotConfig):
-    task_description: str = "peg and insertion"
+class BottleConfig(FrankaRobotConfig):
+    task_description: str = "screw the bottle cap onto the bottle"
     target_ee_pose: np.ndarray = field(default_factory=lambda: np.zeros(6))
     reward_threshold: np.ndarray = field(
         default_factory=lambda: np.array([0.01, 0.01, 0.01, 0.2, 0.2, 0.2])
     )
-    random_xy_range: float = 0.05
-    clip_x_range: float = 0.05
-    clip_y_range: float = 0.05
-    clip_z_range_low: float = 0.0
-    clip_z_range_high: float = 0.1
+    random_xy_range: float = 0.01
+    clip_x_range: float = 0.01
+    clip_y_range: float = 0.01
+    clip_z_range_low: float = 0.001
+    clip_z_range_high: float = 0.02
     random_rz_range: float = np.pi / 6
     clip_rz_range: float = np.pi / 6
     enable_random_reset: bool = True
-    add_gripper_penalty: bool = False
+    enable_gripper_penalty: bool = False
+    step_frequency: float = 5.0
 
     def __post_init__(self):
         self.compliance_param = {
-            "translational_stiffness": 2000,
+            "translational_stiffness": 1000,
             "translational_damping": 89,
             "rotational_stiffness": 150,
             "rotational_damping": 7,
             "translational_Ki": 0,
-            "translational_clip_x": 0.003,
-            "translational_clip_y": 0.003,
-            "translational_clip_z": 0.01,
-            "translational_clip_neg_x": 0.003,
-            "translational_clip_neg_y": 0.003,
-            "translational_clip_neg_z": 0.01,
+            "translational_clip_x": 0.001,
+            "translational_clip_y": 0.001,
+            "translational_clip_z": 0.001,
+            "translational_clip_neg_x": 0.001,
+            "translational_clip_neg_y": 0.001,
+            "translational_clip_neg_z": 0.001,
             "rotational_clip_x": 0.02,
             "rotational_clip_y": 0.02,
-            "rotational_clip_z": 0.02,
+            "rotational_clip_z": 0.5,
             "rotational_clip_neg_x": 0.02,
             "rotational_clip_neg_y": 0.02,
-            "rotational_clip_neg_z": 0.02,
+            "rotational_clip_neg_z": 0.5,
             "rotational_Ki": 0,
         }
         self.precision_param = {
@@ -83,7 +85,7 @@ class PegInsertionConfig(FrankaRobotConfig):
             [0.0, 0.0, self.clip_z_range_high, 0.0, 0.0, 0.0]
         )
         self.reward_threshold = np.array(self.reward_threshold)
-        self.action_scale = np.array([0.02, 0.1, 1])
+        self.action_scale = np.array([0.01, 0.5, 1])
         self.ee_pose_limit_min = np.array(
             [
                 self.target_ee_pose[0] - self.clip_x_range,
@@ -106,21 +108,26 @@ class PegInsertionConfig(FrankaRobotConfig):
         )
 
 
-class PegInsertionEnv(FrankaEnv):
-    CONFIG_CLS = PegInsertionConfig
+class BottleEnv(FrankaEnv):
+    CONFIG_CLS = BottleConfig
 
     def go_to_rest(self, joint_reset=False):
         """
         Move to the rest position defined in base class.
         Add a small z offset before going to rest to avoid collision with object.
         """
-        self._end_effector_action(np.array([-1.0]))
+        self._end_effector_action(np.array([1.0]))
         self._franka_state = self._controller.get_state().wait()[0]
         self._move_action(self._franka_state.tcp_pose)
+
         self._franka_state = self._controller.get_state().wait()[0]
         # Move up to clear the slot
         reset_pose = copy.deepcopy(self._franka_state.tcp_pose)
-        reset_pose[2] += 0.10
+        reset_pose[2] += 0.03
+        time.sleep(5)
+        self._interpolate_move(reset_pose, timeout=1)
+        time.sleep(2)
+        reset_pose[2] += 0.02
         self._interpolate_move(reset_pose, timeout=1)
 
         super().go_to_rest(joint_reset)

@@ -12,6 +12,43 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from rlinf.envs.real.dosw1.dosw1_env import ControlMode, DOSW1Config, DOSW1Env
+"""DOSW1 tasks, and the dual-arm env they are built on."""
 
-__all__ = ["ControlMode", "DOSW1Config", "DOSW1Env"]
+from __future__ import annotations
+
+from typing import Any, Mapping
+
+import gymnasium as gym
+
+from rlinf.envs.real.registry import register_tasks
+from rlinf.envs.real.wrappers import LeaderFollowerKeyboardIntervention
+
+from .base import ControlMode, DOSW1Config, DOSW1Env
+from .pick import PickEnv
+
+
+def apply_dosw1_wrappers(env: gym.Env, env_cfg: Mapping[str, Any]) -> gym.Env:
+    """Hand the leader arms to the operator when the task asks for it."""
+    if (
+        env_cfg.get("keyboard_intervention_wrapper", False)
+        and getattr(env.config, "enable_human_in_loop", False)
+        and not getattr(env.config, "is_dummy", False)
+    ):
+        env = LeaderFollowerKeyboardIntervention(env)
+    return env
+
+
+#: Gym id -> the env class behind it and the wrapper stack it takes.
+TASKS = {"DOSW1PickEnv-v1": (PickEnv, apply_dosw1_wrappers)}
+
+_ENTRY_POINTS = register_tasks(__name__, globals(), TASKS)
+
+__all__ = [
+    "TASKS",
+    "ControlMode",
+    "DOSW1Config",
+    "DOSW1Env",
+    "PickEnv",
+    "apply_dosw1_wrappers",
+    *_ENTRY_POINTS,
+]

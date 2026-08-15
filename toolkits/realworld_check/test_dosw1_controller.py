@@ -18,7 +18,7 @@ import time
 
 import numpy as np
 
-from rlinf.envs.real.dosw1.dosw1_env import DOSW1Config
+from rlinf.envs.real.dosw1.base import DOSW1Config
 from rlinf.robotics.parts.arms import DOSW1Hardware
 
 

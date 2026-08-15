@@ -41,7 +41,7 @@ from rlinf.robotics.parts.end_effectors.base import (
 from rlinf.scheduler import WorkerInfo
 from rlinf.utils.logging import get_logger
 
-from .utils import (
+from ..pose_utils import (
     clip_euler_to_target_window,
     construct_adjoint_matrix,
     construct_homogeneous_matrix,

@@ -1,4 +1,4 @@
-# Copyright 2025 The RLinf Authors.
+# Copyright 2026 The RLinf Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,7 +12,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""Turtle2 tasks, and the mobile-manipulator env they are built on."""
 
-from .turtle2_env import Turtle2Env, Turtle2RobotConfig, Turtle2RobotState
+from __future__ import annotations
 
-__all__ = ["Turtle2Env", "Turtle2RobotState", "Turtle2RobotConfig"]
+from rlinf.envs.real.registry import register_tasks
+from rlinf.envs.real.wrappers import apply_single_arm_wrappers
+
+from .base import Turtle2Env, Turtle2RobotConfig, Turtle2RobotState
+from .button import ButtonEnv
+
+#: Gym id -> the env class behind it and the wrapper stack it takes.
+TASKS = {"ButtonEnv-v1": (ButtonEnv, apply_single_arm_wrappers)}
+
+_ENTRY_POINTS = register_tasks(__name__, globals(), TASKS)
+
+__all__ = [
+    "TASKS",
+    "ButtonEnv",
+    "Turtle2Env",
+    "Turtle2RobotConfig",
+    "Turtle2RobotState",
+    *_ENTRY_POINTS,
+]

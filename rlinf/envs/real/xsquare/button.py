@@ -16,7 +16,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from rlinf.envs.real.xsquare.turtle2_env import Turtle2Env, Turtle2RobotConfig
+from rlinf.envs.real.xsquare.base import Turtle2Env, Turtle2RobotConfig
 
 
 @dataclass

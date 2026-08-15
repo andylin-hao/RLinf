@@ -31,7 +31,7 @@ from scipy.spatial.transform import Rotation as R
 
 from rlinf.utils.rot6d import matrix_to_rot6d, rot6d_to_quat_xyzw_safe
 
-from ..dual_franka_env import DualFrankaEnv, DualFrankaRobotConfig
+from .dual_base import DualFrankaEnv, DualFrankaRobotConfig
 
 ACTION_DIM_PER_ARM = 10  # xyz(3) + rot6d(6) + gripper(1)
 PROPRIO_DIM_PER_ARM = 9  # xyz(3) + rot6d(6); gripper has its own slot

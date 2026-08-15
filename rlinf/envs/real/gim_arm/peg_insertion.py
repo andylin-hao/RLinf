@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from ..gim_arm_env import GimArmEnv, GimArmRobotConfig
+from .base import GimArmEnv, GimArmRobotConfig
 
 
 @dataclass

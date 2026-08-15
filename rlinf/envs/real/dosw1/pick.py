@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from rlinf.envs.real.dosw1.dosw1_env import ControlMode, DOSW1Config, DOSW1Env
+from rlinf.envs.real.dosw1.base import ControlMode, DOSW1Config, DOSW1Env
 
 
 def _default_grasp_joint() -> np.ndarray:

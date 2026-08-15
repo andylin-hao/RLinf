@@ -12,8 +12,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""GimArm tasks, and the env they are built on."""
+
+from __future__ import annotations
+
+from gymnasium.envs.registration import register
+
 from rlinf.robotics.parts.arms.gim_arm import GimArmRobotState
 
-from .gim_arm_env import GimArmEnv, GimArmRobotConfig
+from .base import GimArmEnv, GimArmRobotConfig
+from .peg_insertion import GimArmPegInsertionEnv
 
-__all__ = ["GimArmEnv", "GimArmRobotConfig", "GimArmRobotState"]
+# This task takes no wrapper stack, so Gymnasium constructs the env class
+# directly rather than going through rlinf.envs.real.registry.
+register(
+    id="GimArmPegInsertionEnv-v1",
+    entry_point="rlinf.envs.real.gim_arm:GimArmPegInsertionEnv",
+)
+
+__all__ = [
+    "GimArmEnv",
+    "GimArmPegInsertionEnv",
+    "GimArmRobotConfig",
+    "GimArmRobotState",
+]

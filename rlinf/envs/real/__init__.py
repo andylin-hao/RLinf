@@ -12,25 +12,31 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .dosw1 import DOSW1Config, DOSW1Env
-from .dosw1 import tasks as dosw1_tasks
-from .franka import FrankaEnv, FrankaRobotConfig, FrankaRobotState
-from .franka import tasks as franka_tasks
-from .franka.dual_franka_env import DualFrankaEnv, DualFrankaRobotConfig
-from .franka.tasks.dual_franka_joint_env import (
+from .dosw1 import DOSW1Config, DOSW1Env, PickEnv
+from .franka import (
+    BottleEnv,
+    DexpnpEnv,
+    DualFrankaEnv,
     DualFrankaJointEnv,
     DualFrankaJointRobotConfig,
-)
-from .franka.tasks.dual_franka_tcp_env import (
+    DualFrankaRobotConfig,
     DualFrankaTCPEnv,
     DualFrankaTCPRobotConfig,
+    FrankaBinRelocationEnv,
+    FrankaEnv,
+    FrankaRobotConfig,
+    FrankaRobotState,
+    PegInsertionEnv,
 )
-from .gim_arm import GimArmEnv, GimArmRobotConfig, GimArmRobotState
-from .gim_arm import tasks as gim_arm_tasks
+from .gim_arm import (
+    GimArmEnv,
+    GimArmPegInsertionEnv,
+    GimArmRobotConfig,
+    GimArmRobotState,
+)
 from .realworld_env import RealWorldEnv
 from .robot_task_env import RobotTask, RobotTaskEnv
-from .xsquare import Turtle2Env, Turtle2RobotConfig, Turtle2RobotState
-from .xsquare import tasks as xsquare_tasks
+from .xsquare import ButtonEnv, Turtle2Env, Turtle2RobotConfig, Turtle2RobotState
 
 RealWorldEnv.realworld_setup()
 
@@ -41,22 +47,25 @@ __all__ = [
     "DualFrankaTCPEnv",
     "DualFrankaTCPRobotConfig",
     "DualFrankaRobotConfig",
+    "BottleEnv",
+    "ButtonEnv",
     "DOSW1Config",
     "DOSW1Env",
-    "dosw1_tasks",
+    "DexpnpEnv",
+    "FrankaBinRelocationEnv",
     "FrankaEnv",
     "FrankaRobotConfig",
     "FrankaRobotState",
-    "franka_tasks",
     "GimArmEnv",
+    "GimArmPegInsertionEnv",
     "GimArmRobotConfig",
     "GimArmRobotState",
-    "gim_arm_tasks",
     "Turtle2Env",
     "Turtle2RobotConfig",
     "Turtle2RobotState",
-    "xsquare_tasks",
     "RealWorldEnv",
     "RobotTask",
     "RobotTaskEnv",
+    "PegInsertionEnv",
+    "PickEnv",
 ]
