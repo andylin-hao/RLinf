@@ -184,6 +184,8 @@ episode 控制不算遥操作
      - 把三类 wrapper 组装起来的构建函数。
    * - ``real/registry.py``
      - ``task_factory`` 与 ``register_tasks``。
+   * - ``real/env.py``
+     - ``RealWorldEnv``，框架根据 ``env_type: realworld`` 创建的向量化环境。
    * - ``real/robot_task_env.py``
      - ``RobotTask`` 和 ``RobotTaskEnv`` 划定任务逻辑与硬件代码的边界。
 

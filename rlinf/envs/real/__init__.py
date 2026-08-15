@@ -57,7 +57,7 @@ _EXPORTS: dict[str, str] = {
             "Turtle2RobotConfig",
             "Turtle2RobotState",
         ),
-        ".realworld_env": ("RealWorldEnv",),
+        ".env": ("RealWorldEnv",),
         ".robot_task_env": ("RobotTask", "RobotTaskEnv"),
     }.items()
     for name in names
@@ -81,8 +81,8 @@ def _load_all() -> None:
     _loaded = True
     for module in (".dosw1", ".franka", ".gim_arm", ".xsquare", ".robot_task_env"):
         importlib.import_module(module, __name__)
-    realworld_env = importlib.import_module(".realworld_env", __name__)
-    realworld_env.RealWorldEnv.realworld_setup()
+    env_module = importlib.import_module(".env", __name__)
+    env_module.RealWorldEnv.realworld_setup()
 
 
 def __getattr__(name: str) -> "typing.Any":

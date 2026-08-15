@@ -204,6 +204,9 @@ Where the Code Lives
      - The stack builders that compose the three families.
    * - ``real/registry.py``
      - ``task_factory`` and ``register_tasks``.
+   * - ``real/env.py``
+     - ``RealWorldEnv``, the vectorized env the framework instantiates from
+       ``env_type: realworld``.
    * - ``real/robot_task_env.py``
      - ``RobotTask`` and ``RobotTaskEnv`` define the boundary between task logic
        and hardware.

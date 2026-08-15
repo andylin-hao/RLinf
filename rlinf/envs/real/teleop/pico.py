@@ -679,7 +679,7 @@ class DualFrankaTcpPicoIntervention(TeleopIntervention):
     """PICO teleoperation for ``DualFrankaTcpEnv`` absolute rot6d actions.
 
     ``get_hold_action`` and ``on_action_chunk_begin`` stay on the wrapper
-    because :mod:`rlinf.envs.real.realworld_env` finds them by name through
+    because :mod:`rlinf.envs.real.env` finds them by name through
     ``get_wrapper_attr``.
 
     Args:
