@@ -18,7 +18,7 @@ import gymnasium as gym
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
-from rlinf.robotics.parts.teleop.gello import GelloExpert
+from rlinf.envs.real.teleop.gello import GelloExpert
 
 
 class GelloIntervention(gym.ActionWrapper):

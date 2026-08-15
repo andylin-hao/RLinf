@@ -395,8 +395,6 @@ SDK 往往不允许在一条链路上并发调用。Franka 类本身不参与这
      - RealSense、ZED、Lumos。
    * - ``parts/end_effectors/``
      - ``grippers/`` 与 ``hands/``。
-   * - ``parts/teleop/``
-     - 主臂和输入设备，包括 GELLO、数据手套、键盘、Pico、SpaceMouse。
    * - ``parts/transports/``
      - ROS 等共享传输层。它替部件传递消息，但本身不是部件。
    * - ``robots/``

@@ -14,6 +14,7 @@
 
 import ast
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -177,9 +178,14 @@ def test_moved_env_modules_still_import_under_their_old_paths():
     assert result.returncode == 0, result.stderr
 
 
-def test_teleop_devices_live_with_the_other_drivers():
-    """A leader arm or glove is hardware, so it sits under drivers, not envs."""
-    teleop_dir = _ROOT / "rlinf" / "robotics" / "parts" / "teleop"
+def test_teleop_devices_live_with_the_envs_that_read_them():
+    """A teleop device reads the operator, not the robot, so it is not a part.
+
+    No policy ever observes a leader arm or a glove, and no ``Robot`` composes
+    one, so these modules belong beside the wrappers that turn their output into
+    an intervention rather than under ``robotics/parts``.
+    """
+    teleop_dir = _ROOT / "rlinf" / "envs" / "real" / "teleop"
     modules = {path.stem for path in teleop_dir.glob("*.py")} - {"__init__"}
 
     assert modules == {
@@ -190,4 +196,16 @@ def test_teleop_devices_live_with_the_other_drivers():
         "pico",
         "spacemouse",
     }
-    assert not (_ROOT / "rlinf" / "envs" / "real" / "common").exists()
+    assert not (_ROOT / "rlinf" / "robotics" / "parts" / "teleop").exists()
+
+
+def test_teleop_devices_do_not_import_gymnasium():
+    """A device only reads hardware, so a bench script can drive one directly."""
+    teleop_dir = _ROOT / "rlinf" / "envs" / "real" / "teleop"
+    offenders = {
+        path.name
+        for path in teleop_dir.glob("*.py")
+        if re.search(r"^\s*(import|from)\s+gymnasium\b", path.read_text(), re.M)
+    }
+
+    assert offenders == set()

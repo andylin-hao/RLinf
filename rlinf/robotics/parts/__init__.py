@@ -25,7 +25,6 @@ subpackage named after it::
       end_effectors/
         grippers/                 Franka, Robotiq
         hands/                    Ruiyan
-      teleop/                     Gello, glove, keyboard, Pico, spacemouse
       transports/                 ROS
 
 A part says what a component means to the policy: its observation and action

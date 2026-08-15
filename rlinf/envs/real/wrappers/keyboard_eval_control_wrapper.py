@@ -25,7 +25,7 @@ from typing import Any, SupportsFloat
 import gymnasium as gym
 from gymnasium.core import ActType, ObsType
 
-from rlinf.robotics.parts.teleop.keyboard import KeyboardListener
+from rlinf.envs.real.teleop.keyboard import KeyboardListener
 
 
 class KeyboardEvalControlWrapper(gym.Wrapper):

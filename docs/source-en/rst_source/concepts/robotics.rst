@@ -451,9 +451,6 @@ Where the Code Lives
      - RealSense, ZED, Lumos.
    * - ``parts/end_effectors/``
      - ``grippers/`` and ``hands/``.
-   * - ``parts/teleop/``
-     - Leader arms and input devices such as GELLO, gloves, keyboards, Pico, and
-       spacemouse.
    * - ``parts/transports/``
      - Shared transports such as ROS. A transport carries a part's messages but
        is not a part itself.

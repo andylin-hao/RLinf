@@ -22,8 +22,8 @@ from typing import Optional
 import gymnasium as gym
 import numpy as np
 
-from rlinf.robotics.parts.teleop.glove import GloveExpert
-from rlinf.robotics.parts.teleop.spacemouse import SpaceMouseExpert
+from rlinf.envs.real.teleop.glove import GloveExpert
+from rlinf.envs.real.teleop.spacemouse import SpaceMouseExpert
 
 
 class DexHandIntervention(gym.ActionWrapper):
