@@ -92,7 +92,6 @@ class DualFrankaRobotConfig:
     )
 
     compliance_param: dict[str, float] = field(default_factory=dict)
-    precision_param: dict[str, float] = field(default_factory=dict)
     binary_gripper_threshold: float = 0.5
     enable_gripper_penalty: bool = True
     gripper_penalty: float = 0.1

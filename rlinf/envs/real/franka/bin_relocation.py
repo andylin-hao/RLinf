@@ -21,7 +21,7 @@ import cv2
 import gymnasium as gym
 import numpy as np
 
-from .base import FrankaEnv, FrankaRobotConfig
+from .base import FrankaEnv, FrankaRobotConfig, compliance
 
 
 @dataclass
@@ -42,46 +42,19 @@ class BinEnvConfig(FrankaRobotConfig):
     )
 
     def __post_init__(self):
-        self.compliance_param = {
-            "translational_stiffness": 2800,
-            "translational_damping": 89,
-            "rotational_stiffness": 150,
-            "rotational_damping": 7,
-            "translational_Ki": 0,
-            "translational_clip_x": 0.004,
-            "translational_clip_y": 0.004,
-            "translational_clip_z": 0.004,
-            "translational_clip_neg_x": 0.004,
-            "translational_clip_neg_y": 0.004,
-            "translational_clip_neg_z": 0.004,
-            "rotational_clip_x": 0.04,
-            "rotational_clip_y": 0.04,
-            "rotational_clip_z": 0.02,
-            "rotational_clip_neg_x": 0.04,
-            "rotational_clip_neg_y": 0.04,
-            "rotational_clip_neg_z": 0.02,
-            "rotational_Ki": 0,
-        }
-        self.precision_param = {
-            "translational_stiffness": 3000,
-            "translational_damping": 89,
-            "rotational_stiffness": 300,
-            "rotational_damping": 9,
-            "translational_Ki": 0.1,
-            "translational_clip_x": 0.01,
-            "translational_clip_y": 0.01,
-            "translational_clip_z": 0.01,
-            "translational_clip_neg_x": 0.01,
-            "translational_clip_neg_y": 0.01,
-            "translational_clip_neg_z": 0.01,
-            "rotational_clip_x": 0.05,
-            "rotational_clip_y": 0.05,
-            "rotational_clip_z": 0.05,
-            "rotational_clip_neg_x": 0.05,
-            "rotational_clip_neg_y": 0.05,
-            "rotational_clip_neg_z": 0.05,
-            "rotational_Ki": 0.1,
-        }
+        self.compliance_param = compliance(
+            rotational_clip_neg_x=0.04,
+            rotational_clip_neg_y=0.04,
+            rotational_clip_x=0.04,
+            rotational_clip_y=0.04,
+            translational_clip_neg_x=0.004,
+            translational_clip_neg_y=0.004,
+            translational_clip_neg_z=0.004,
+            translational_clip_x=0.004,
+            translational_clip_y=0.004,
+            translational_clip_z=0.004,
+            translational_stiffness=2800,
+        )
         self.target_ee_pose = np.array(self.target_ee_pose)
         self.reset_ee_pose = self.target_ee_pose + np.array(
             [0.0, 0.0, self.clip_z_range_high, 0.0, 0.0, 0.0]

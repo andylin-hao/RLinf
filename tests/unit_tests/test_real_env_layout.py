@@ -102,3 +102,45 @@ def test_pose_math_is_not_filed_under_a_robot():
 
     assert hasattr(pose_utils, "construct_adjoint_matrix")
     assert not (_REAL / "franka" / "utils.py").exists()
+
+
+def test_task_configs_state_only_their_compliance_deltas():
+    """A task's config should show its tuning, not eighteen repeated gains.
+
+    Every Franka task used to carry a full copy of the impedance gains, so the
+    handful of numbers that actually differed were invisible.
+    """
+    from rlinf.envs.real.franka.base import COMPLIANCE_DEFAULTS
+    from rlinf.envs.real.franka.bin_relocation import BinEnvConfig
+    from rlinf.envs.real.franka.bottle import BottleConfig
+    from rlinf.envs.real.franka.dex_pnp import DexpnpConfig
+    from rlinf.envs.real.franka.peg_insertion import PegInsertionConfig
+
+    deltas = {
+        cls.__name__: {
+            key
+            for key, value in cls().compliance_param.items()
+            if COMPLIANCE_DEFAULTS[key] != value
+        }
+        for cls in (PegInsertionConfig, BottleConfig, BinEnvConfig, DexpnpConfig)
+    }
+
+    # Every task keeps the full set of gains; only some are task-specific.
+    for cls in (PegInsertionConfig, BottleConfig, BinEnvConfig, DexpnpConfig):
+        assert set(cls().compliance_param) == set(COMPLIANCE_DEFAULTS)
+    assert {name: len(keys) for name, keys in deltas.items()} == {
+        "PegInsertionConfig": 1,
+        "BottleConfig": 8,
+        "BinEnvConfig": 11,
+        "DexpnpConfig": 6,
+    }
+
+
+def test_unknown_compliance_gain_is_refused():
+    """A misspelled gain reaches the impedance controller and is ignored there."""
+    import pytest
+
+    from rlinf.envs.real.franka.base import compliance
+
+    with pytest.raises(KeyError, match="Unknown compliance gains"):
+        compliance(translational_stifness=1000)

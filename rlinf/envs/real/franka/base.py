@@ -48,6 +48,47 @@ from ..pose_utils import (
     quat_slerp,
 )
 
+#: Cartesian impedance gains that suit most Franka tasks. A task states only
+#: what it needs differently, so its config shows the tuning rather than burying
+#: it in eighteen keys that are the same everywhere.
+COMPLIANCE_DEFAULTS: dict[str, float] = {
+    "translational_stiffness": 1000,
+    "translational_damping": 89,
+    "rotational_stiffness": 150,
+    "rotational_damping": 7,
+    "translational_Ki": 0,
+    "rotational_Ki": 0,
+    "translational_clip_x": 0.003,
+    "translational_clip_y": 0.003,
+    "translational_clip_z": 0.01,
+    "translational_clip_neg_x": 0.003,
+    "translational_clip_neg_y": 0.003,
+    "translational_clip_neg_z": 0.01,
+    "rotational_clip_x": 0.02,
+    "rotational_clip_y": 0.02,
+    "rotational_clip_z": 0.02,
+    "rotational_clip_neg_x": 0.02,
+    "rotational_clip_neg_y": 0.02,
+    "rotational_clip_neg_z": 0.02,
+}
+
+
+def compliance(**overrides: float) -> dict[str, float]:
+    """Return :data:`COMPLIANCE_DEFAULTS` with ``overrides`` applied.
+
+    Raises:
+        KeyError: If an override names a gain the controller does not take,
+            which otherwise reaches the impedance controller as a silently
+            ignored key.
+    """
+    unknown = set(overrides) - set(COMPLIANCE_DEFAULTS)
+    if unknown:
+        raise KeyError(
+            f"Unknown compliance gains {sorted(unknown)}. "
+            f"Known: {sorted(COMPLIANCE_DEFAULTS)}."
+        )
+    return {**COMPLIANCE_DEFAULTS, **overrides}
+
 
 @dataclass
 class FrankaRobotConfig:
@@ -99,7 +140,6 @@ class FrankaRobotConfig:
     ee_pose_limit_min: np.ndarray = field(default_factory=lambda: np.zeros(6))
     ee_pose_limit_max: np.ndarray = field(default_factory=lambda: np.zeros(6))
     compliance_param: dict[str, float] = field(default_factory=dict)
-    precision_param: dict[str, float] = field(default_factory=dict)
     binary_gripper_threshold: float = 0.5
     enable_gripper_penalty: bool = True
     gripper_penalty: float = 0.1
