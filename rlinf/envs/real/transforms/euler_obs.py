@@ -41,11 +41,15 @@ class Quat2EulerWrapper(gym.ObservationWrapper):
     QUAT_DIM = 7
     EULER_DIM = 6
 
+    #: Matches the pose dtype the envs declare, so the converted pose stays
+    #: inside the observation space. SciPy returns float64 from ``as_euler``.
+    DTYPE = np.float32
+
     def __init__(self, env: Env, arms: Optional[int] = None) -> None:
         super().__init__(env)
         self.arms = self.ARMS if arms is None else arms
         self.observation_space["state"]["tcp_pose"] = spaces.Box(
-            -np.inf, np.inf, shape=(self.EULER_DIM * self.arms,)
+            -np.inf, np.inf, shape=(self.EULER_DIM * self.arms,), dtype=self.DTYPE
         )
 
     def observation(self, observation: dict) -> dict:
@@ -56,7 +60,7 @@ class Quat2EulerWrapper(gym.ObservationWrapper):
                 np.concatenate((pose[:3], R.from_quat(pose[3:].copy()).as_euler("xyz")))
                 for pose in np.split(tcp_pose, self.arms)
             ]
-        )
+        ).astype(self.DTYPE)
         return observation
 
 

@@ -889,3 +889,167 @@ def test_euler_conversion_is_one_wrapper_for_any_arm_count():
 
     both = dual.observation({"state": {"tcp_pose": np.concatenate([one, one])}})
     assert np.allclose(both["state"]["tcp_pose"], [1.0, 2.0, 3.0, 0, 0, 0] * 2)
+
+
+# --- the stack an env actually gets, built by the real builders --------------
+#
+# The tests above drive scripted devices and fake envs. These run the dummy
+# envs through apply_single_arm_wrappers, so the wrapper stack, the transforms,
+# and the task configs are the ones a rollout would see.
+
+
+def _dummy_franka(env_cls=None, **overrides):
+    from rlinf.envs.real.franka.base import FrankaEnv
+
+    cfg = {
+        "is_dummy": True,
+        "camera_serials": ["dummy"],
+        "enable_camera_player": False,
+        "step_frequency": 10000.0,
+    }
+    cfg.update(overrides)
+    return (env_cls or FrankaEnv)(
+        override_cfg=cfg, worker_info=None, hardware_info=None, env_idx=0
+    )
+
+
+def _chain(env):
+    """Wrapper class names from the outside in."""
+    names = []
+    while hasattr(env, "env"):
+        names.append(type(env).__name__)
+        env = env.env
+    return names
+
+
+def test_wrapper_stack_converts_the_pose_it_hands_the_policy():
+    """The quaternion the arm reports is not what the policy receives.
+
+    A policy trained on Euler angles needs the conversion at rollout, so the
+    stack is what makes the observation match the training data.
+    """
+    from rlinf.envs.real.wrappers import apply_single_arm_wrappers
+
+    env = _dummy_franka()
+    raw, _ = env.reset()
+    assert raw["state"]["tcp_pose"].shape == (7,)
+
+    wrapped = apply_single_arm_wrappers(
+        env, {"teleop_device": "none", "no_gripper": False, "use_relative_frame": True}
+    )
+    observation, _ = wrapped.reset()
+
+    assert _chain(wrapped) == ["Quat2EulerWrapper", "RelativeFrame"]
+    assert observation["state"]["tcp_pose"].shape == (6,)
+    wrapped.close()
+
+
+def test_no_teleop_device_leaves_no_intervention_in_the_stack():
+    """An autonomous rollout must not carry a wrapper waiting on hardware."""
+    from rlinf.envs.real.wrappers import apply_single_arm_wrappers
+
+    wrapped = apply_single_arm_wrappers(
+        _dummy_franka(),
+        {"teleop_device": "none", "no_gripper": False, "use_relative_frame": False},
+    )
+
+    assert not any("Intervention" in name for name in _chain(wrapped))
+    wrapped.close()
+
+
+def test_no_gripper_narrows_the_action_the_policy_must_produce():
+    """``no_gripper`` drops the gripper channel rather than ignoring it."""
+    from rlinf.envs.real.wrappers import apply_single_arm_wrappers
+
+    env = _dummy_franka()
+    assert env.action_space.shape == (7,)
+
+    wrapped = apply_single_arm_wrappers(
+        env,
+        {"teleop_device": "none", "no_gripper": True, "use_relative_frame": False},
+    )
+
+    assert "GripperCloseEnv" in _chain(wrapped)
+    assert wrapped.action_space.shape == (6,)
+    wrapped.close()
+
+
+def test_a_task_env_runs_with_its_own_config():
+    """A task is its config plus a hook or two, and it steps like any env."""
+    from rlinf.envs.real.franka.base import COMPLIANCE_DEFAULTS
+    from rlinf.envs.real.franka.peg_insertion import PegInsertionEnv
+
+    env = _dummy_franka(
+        PegInsertionEnv, target_ee_pose=[0.5, 0.0, 0.1, -3.14, 0.0, 0.0]
+    )
+
+    assert env.config.task_description == "peg and insertion"
+    # The task states one gain; the rest come from the shared defaults.
+    assert set(env.config.compliance_param) == set(COMPLIANCE_DEFAULTS)
+    assert env.config.compliance_param["translational_stiffness"] == 2000
+
+    env.reset()
+    observation, reward, terminated, truncated, info = env.step(
+        env.action_space.sample()
+    )
+
+    assert set(observation) == {"state", "frames"}
+    assert isinstance(bool(terminated), bool)
+    env.close()
+
+
+def test_every_registered_task_builds_through_its_entry_point():
+    """A registered id whose factory raises fails only at rollout time."""
+    import gymnasium as gym
+
+    from rlinf.envs.real import RealWorldEnv  # noqa: F401  (registers the tasks)
+
+    cfg = {
+        "teleop_device": "none",
+        "no_gripper": False,
+        "use_relative_frame": False,
+    }
+    built = []
+    for env_id in ("FrankaEnv-v1", "PegInsertionEnv-v1", "BottleEnv-v1"):
+        env = gym.make(
+            env_id,
+            override_cfg={
+                "is_dummy": True,
+                "camera_serials": ["dummy"],
+                "enable_camera_player": False,
+                "step_frequency": 10000.0,
+            },
+            worker_info=None,
+            hardware_info=None,
+            env_idx=0,
+            env_cfg=cfg,
+        )
+        env.reset()
+        env.close()
+        built.append(env_id)
+
+    assert built == ["FrankaEnv-v1", "PegInsertionEnv-v1", "BottleEnv-v1"]
+
+
+def test_converted_pose_stays_inside_the_observation_space():
+    """The wrapper's output dtype has to match the space it declares.
+
+    SciPy returns float64 from ``as_euler`` while the envs declare float32
+    poses, so the converted observation used to fall outside its own space.
+    Anything allocating buffers from the space, or checking ``contains``, sees
+    that.
+    """
+    from rlinf.envs.real.wrappers import apply_single_arm_wrappers
+
+    wrapped = apply_single_arm_wrappers(
+        _dummy_franka(),
+        {"teleop_device": "none", "no_gripper": False, "use_relative_frame": False},
+    )
+    observation, _ = wrapped.reset()
+
+    assert (
+        observation["state"]["tcp_pose"].dtype
+        == wrapped.observation_space["state"]["tcp_pose"].dtype
+    )
+    assert wrapped.observation_space.contains(observation)
+    wrapped.close()

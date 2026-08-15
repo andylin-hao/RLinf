@@ -1227,3 +1227,144 @@ def test_importing_a_teleop_device_does_not_load_the_env_stack():
     )
 
     assert result.returncode == 0, result.stderr
+
+
+# --- the real composition, exercised through DOSW1's dummy SDK ---------------
+#
+# Everything above this line drives fakes, which pins the contracts but cannot
+# catch a robot whose own parts, placement, or lifecycle is wrong. DOSW1 ships a
+# dummy mode that runs the real arm, gripper, and SDK-adapter code without
+# hardware, so these tests go through production paths end to end.
+
+
+def _dosw1_config():
+    from dataclasses import dataclass
+
+    @dataclass
+    class DummyDOSW1Config:
+        robot_url: str = "localhost"
+        left_arm_port: int = 50051
+        right_arm_port: int = 50053
+        left_lead_port: int = 50050
+        right_lead_port: int = 50052
+        enable_human_in_loop: bool = False
+        is_dummy: bool = True
+        gripper_width_max: float = 0.07
+
+    return DummyDOSW1Config()
+
+
+def _dosw1_robot():
+    from rlinf.robotics.robots import DOSW1Robot
+
+    return DOSW1Robot.build(config=_dosw1_config())
+
+
+def test_building_a_real_robot_touches_no_hardware():
+    """``build`` leaves declarations, so a robot can be described anywhere.
+
+    The machine assembling a robot config is often not the machine holding the
+    hardware, so nothing may be opened until ``connect``.
+    """
+    from rlinf.robotics.parts.base import Group
+    from rlinf.robotics.specs import PartSpec, SubpartRef
+
+    robot = _dosw1_robot()
+
+    assert not robot.is_connected
+    # Both arms reference one declaration, because one SDK session drives them
+    # all; the references resolve against it when connect places it.
+    leaves = [
+        leaf
+        for part in robot.parts.values()
+        for leaf in (part.parts.values() if isinstance(part, Group) else [part])
+    ]
+    assert leaves, "the robot declared no parts"
+    assert all(isinstance(leaf, (PartSpec, SubpartRef)) for leaf in leaves)
+    # Compared by identity, not equality: a PartSpec carries its constructor
+    # kwargs, which routinely hold unhashable values, so Placement dedupes on
+    # id() too.
+    specs = [leaf.spec for leaf in leaves if isinstance(leaf, SubpartRef)]
+    assert specs and all(spec is specs[0] for spec in specs)
+
+
+def test_real_robot_lifecycle_without_hardware():
+    """Connect, read, command, reset, disconnect, and connect again."""
+    robot = _dosw1_robot()
+
+    assert not robot.is_connected
+    robot.connect()
+    assert robot.is_connected
+
+    observation = robot.get_observation()
+    assert set(observation) == {"left", "right"}
+    assert set(observation["left"]) == {"arm", "gripper"}
+    assert observation["left"]["arm"]["joint_position"].shape == (6,)
+
+    applied = robot.send_action(
+        {
+            "left": {
+                "arm": {"joint_position": observation["left"]["arm"]["joint_position"]}
+            }
+        }
+    )
+    assert set(applied) == {"left"}
+
+    robot.reset()
+    robot.disconnect()
+    assert not robot.is_connected
+
+    # A disconnected robot goes back to its declarations and can run again.
+    robot.connect()
+    assert robot.is_connected
+    robot.disconnect()
+
+
+def test_one_connection_is_opened_once_for_every_part_it_drives():
+    """DOSW1 drives both arms over a single SDK session.
+
+    Placing the declaration twice would open that session twice, which the
+    hardware does not allow. Both arms therefore share one handle.
+    """
+    robot = _dosw1_robot()
+    robot.connect()
+
+    assert robot.handles["left"] is robot.handles["right"]
+
+    robot.disconnect()
+
+
+def test_coupled_hardware_exposes_its_components_as_parts():
+    """One connection, four components, named by the robot that composed them."""
+    from rlinf.robotics import EndEffector
+
+    robot = _dosw1_robot()
+    robot.connect()
+
+    assert sorted(robot.named_parts) == [
+        "left",
+        "left.arm",
+        "left.gripper",
+        "right",
+        "right.arm",
+        "right.gripper",
+    ]
+    assert sorted(robot.parts_of_type(EndEffector)) == ["left.gripper", "right.gripper"]
+    assert type(robot.part("left").part("arm")).__name__ == "DOSW1Arm"
+
+    robot.disconnect()
+
+
+def test_observation_tree_follows_the_composition_on_real_parts():
+    """Every path in the observation is a name the robot was composed with."""
+    robot = _dosw1_robot()
+    robot.connect()
+
+    observation = robot.get_observation()
+    paths = {
+        f"{group}.{part}" for group, parts in observation.items() for part in parts
+    }
+
+    assert paths == set(robot.named_parts) - set(robot.parts)
+
+    robot.disconnect()
