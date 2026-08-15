@@ -12,12 +12,51 @@ correctness, use the **`docs-check`** skill.
 
 ## Voice and tone
 
+These apply to every page:
+
 - **Second person, imperative.** "You'll fine-tune…", "Run the script", "Set `cluster.num_nodes`".
   Never "RLinf provides a comprehensive guide to launching and managing…".
 - **Outcome first.** Open every page and section with what the reader gets, then how.
 - **No throat-clearing.** Cut "This section provides a comprehensive guide to … within the RLinf framework, focusing on…". Start with the verb or the result.
-- **Short sentences.** One idea each. Prefer lists, cards, and tables to run-on paragraphs.
 - **Annotate commands.** After any non-trivial command, say what it does ("What this does: 1… 2…") and point to where to configure it further.
+- **Name what you mean.** Prefer `Robot.connect`, `Group`, `Placement` to "the
+  common layer", "the robotics machinery", "the rest of the system".
+- **Avoid the usual tells:** "it is worth noting", "simply", "seamlessly",
+  "powerful", "leverage", "robust", "in order to", "a wide range of", and
+  paragraphs that all open the same way.
+
+### Explanatory pages: Concepts and Guides
+
+Recipes, index pages, and reference tables should stay terse — a reader scanning
+for a command wants the command. Concepts and Guides are different: they exist to
+make someone understand a design, and terse prose actively fails at that. Write
+them like a colleague explaining the system at a whiteboard to an engineer who
+has to use it — concrete, willing to say why a choice was made, willing to name a
+sharp edge, and not selling anything.
+
+- **Concise, not clipped.** The rule that goes wrong most often, because "cut
+  throat-clearing" reads as licence to write telegraphically. A page where every
+  sentence starts cold and stops the instant the fact lands reads like a spec
+  sheet, not an explanation. Vary sentence length. Let a sentence finish its
+  thought instead of ending at the first period that would parse, and carry one
+  paragraph into the next with a real transition instead of restarting from zero.
+- **Take the reader with you.** Guiding words earn their place here: "Let's build
+  a Franka from the ground up", "Say your gripper hangs off the arm's own
+  connection", "Now that the parts are declared…", "We'll come back to placement
+  below". A few per page give it a spine; one in every paragraph becomes its own
+  tic.
+- **Vary paragraph shape.** If every paragraph is three sentences with the same
+  rhythm, the page sounds machine-written even when no individual sentence is
+  wrong. Some paragraphs are a single sentence; some run five. A code block that
+  explains itself may need a line of setup and nothing after it.
+- **Explain the mechanism, skip the pitch.** Don't end paragraph after paragraph
+  with a sentence whose only job is to say the design is good — "This keeps the
+  common behavior in one place", "That split prevents details from leaking",
+  "You get concurrency without having to coordinate it". A reader who has just
+  seen the mechanism can see the benefit. Two or three per page, where the payoff
+  genuinely isn't obvious from the mechanism.
+- **Say the thing; don't announce it.** "`build` never mentions the gripper"
+  beats "Notice that `build` never mentions the gripper".
 
 ## Information architecture
 
@@ -327,6 +366,30 @@ Visualization and Results → TensorBoard / video / logger + link to Training me
   render it and a literal `**` leaks into the page. Use a space-bounded boundary,
   Chinese quotes, or drop the emphasis.
 
+### Writing the Chinese pages
+
+Parity covers structure and technical content, not sentence order. A ZH
+paragraph that reads better with a different number of sentences than its EN
+counterpart is correct, not a defect — mirroring the English clause by clause is
+exactly what makes a page read as a translation. Write the Chinese as Chinese:
+decide what the paragraph needs to say, then say it the way a Chinese engineer
+would say it to a colleague.
+
+Conventions, on every page:
+
+- 全角标点：，。、；：（）「」。中文句子里不要混用半角逗号句号。
+- 中文与英文、数字之间空一格，例如「在 node_rank 指定的节点上」。
+- 英文技术名词保留原文，不要硬译；术语前后统一。
+- 不要滥用「的」；少用「进行/实现/提供/负责/使得」这类空动词。
+- 被动改主动；长定语从句拆成短句：中文靠短句和动词推进，不靠从句堆叠。
+
+On Concepts and Guides pages, where the English follows the explanatory rules
+above, the Chinese needs the same treatment in its own idiom:
+
+- 用「我们」「先……再……」「不妨」「接下来」把读者带着走，段落之间要有过渡。
+- 去掉翻译腔和英文语序，例如「这就是全部的接入工作」「它由 X 负责读取」。
+- 破折号「——」少用，多用分句、冒号或直接断句。
+
 ## Review gate
 
 After each change:
@@ -337,3 +400,17 @@ After each change:
 - Run the **`docs-check`** skill (doc-to-code correctness + EN/ZH parity).
 - Confirm no new bullet-list index pages, no throat-clearing intros, and no
   `**bold**` glued between CJK characters.
+
+For Concepts and Guides pages, also read the page top to bottom in both
+languages before merging, and rewrite if any of these are true:
+
+- Most paragraphs are the same length and end in a sentence about why the design
+  is good.
+- Sentences begin cold and stop the moment the fact lands, with no transition
+  between paragraphs or sections.
+- The ZH page tracks the EN sentence for sentence.
+
+Cadence is the hardest thing to hear in your own prose, so a second pass by a
+different writer — human or model — catches what a self-review will not. Give
+that reviewer specific examples of what reads wrong, not a general request to
+improve the writing; a vague brief comes back with the same cadence reworded.

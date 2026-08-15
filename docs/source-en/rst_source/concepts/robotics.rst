@@ -1,17 +1,18 @@
 Robotics Model
 ==============
 
-Build a robot as a set of named parts, and RLinf can place those parts, read
-independent connections in parallel, and clean everything up afterward. Start
-with the Franka examples below to see the payoff, then use the rest of the page
-to understand the model behind them.
+Start with a robot's named parts rather than a fixed list of device slots.
+``Robot.connect`` can then place those parts on the nodes beside their hardware,
+while ``Robot`` presents one observation and action tree to the caller. We'll
+build a Franka first, then trace that example back to the underlying classes and
+lifecycle.
 
 Assemble a Robot
 ----------------
 
-For each robot, describe the parts it carries. The shared robotics layer handles
-their lifecycle and placement, so the robot definition stays focused on its
-hardware:
+Let's build a Franka from the ground up. Its class describes which arms and
+cameras it carries; connection and placement happen later, when the caller has
+a complete robot to start.
 
 .. code-block:: python
 
@@ -34,10 +35,9 @@ hardware:
 
    FrankaRobot.register(FrankaConfig, FrankaDiscovery)
 
-Every ``build_*`` method answers the same question -- *which parts of this kind
-does the robot carry, and under what names* -- by returning a
-``{name: part}`` mapping. The inherited ``build`` is then just the merge, which
-is why a new Franka variant never rewrites it:
+Each ``build_*`` method returns a ``{name: part}`` mapping for one kind of
+hardware. The inherited ``build`` only has to merge those mappings, so Franka
+variants can change one category without copying the whole builder:
 
 .. code-block:: python
 
@@ -48,15 +48,16 @@ is why a new Franka variant never rewrites it:
            **cls.build_cameras(cameras, node_rank=camera_node_rank),
        )
 
-Those names become the robot's parts. From there, ``connect`` builds each part
-on the node it asked for and ``disconnect`` releases it. Both live in the common
-layer, so no robot reimplements them.
+The mapping keys become the robot's part names. Once assembly is complete,
+``connect`` builds each part on its requested node; ``disconnect`` releases the
+same resources.
 
 Use a Robot
 -----------
 
-Driving a robot is five calls, and they are the same five whatever it is made
-of. Build it from its registered type, connect once, then read and command it:
+Now that the Franka is declared, the caller can use it without knowing how the
+parts were assembled. Build the registered type, connect it once, then read its
+state and send commands through the same interface used by other robots:
 
 .. code-block:: python
 
@@ -74,31 +75,31 @@ of. Build it from its registered type, connect once, then read and command it:
    robot.reset()
    robot.disconnect()
 
-Observations and actions are nested dictionaries keyed by the names you composed
-the robot with, so the data has the same shape as the hardware. Reading a
-dual-arm robot uses the same call; only the names differ:
+Observations and actions are nested dictionaries whose keys come from the robot
+composition. A dual-arm robot uses the same calls, with ``left`` and ``right``
+occupying separate branches:
 
 .. code-block:: python
 
    observation["left"]["arm"]["arm_joint_position"]
    observation["right"]["end_effector"]["state"]
 
-Notice what the calling code does not mention: where anything runs. An arm
-declared on another node reports its reading in the same place as a local one,
-and parts on independent connections are read in parallel, so a two-arm
-observation costs one round trip instead of two.
+Nothing in the calling code says where a part runs. An arm declared on another
+node still reports its reading at the same path as a local arm. If the two arms
+use independent connections, ``Robot.get_observation`` reads them concurrently,
+so the caller waits for one round trip rather than two.
 
-To learn that tree without touching hardware, read ``observation_features`` and
-``action_features``. They describe the same nesting and are what ``RobotTaskEnv``
-turns into Gymnasium spaces; see `Tasks Stay Out of Hardware`_ for how a policy
-that expects flat vectors plugs in.
+You can inspect the tree before connecting any hardware through
+``observation_features`` and ``action_features``. ``RobotTaskEnv`` uses those
+descriptions to construct Gymnasium spaces. If a policy expects flat vectors,
+we'll return to the adapter boundary in `Tasks Stay Out of Hardware`_.
 
 One Arm or Many Is the Same Code
 --------------------------------
 
-The dual-arm Franka does not need a second implementation of the robotics
-machinery. It inherits the single-arm version and changes only the list returned
-by ``build_arms``:
+With that calling convention in place, moving from one arm to two changes only
+the composition. ``DualFrankaRobot`` inherits the single-arm class and replaces
+the mapping returned by ``build_arms``:
 
 .. code-block:: python
 
@@ -116,17 +117,17 @@ by ``build_arms``:
                                         name="right"),
            }
 
-It inherits ``declare_arm``, ``build_cameras``, ``build``, placement, parallel
-reads, and teardown. Adding a third arm would mean adding a third entry, not
-inventing another control path. This keeps the common behavior in one place,
-regardless of how many arms the hardware has.
+``DualFrankaRobot`` still uses the inherited ``declare_arm``, ``build_cameras``,
+and ``build`` methods, as well as the same placement and lifecycle code. A
+third arm would be another entry in this mapping rather than another control
+path.
 
 Switching the Control Backend Is One Line
 -----------------------------------------
 
-Set ``BACKEND`` to choose the arm implementation created by a declaration.
-Because every robot variant goes through ``declare_arm``, the same backend works
-whether the robot has one arm or six:
+Franka ships with two control stacks, and the robot class selects one through
+``BACKEND``. ``declare_arm`` reads that attribute whenever it creates an arm,
+whether the class declares one arm or several:
 
 .. list-table::
    :header-rows: 1
@@ -139,15 +140,16 @@ whether the robot has one arm or six:
    * - ``"franky"``
      - ``FrankyArm`` -- joint and Cartesian control over libfranka.
 
-To add a third backend, implement one arm part and add one entry to
-``FRANKA_BACKENDS``. The robot classes do not change because they never name a
-concrete arm class; that decision belongs to the backend mapping.
+A third backend needs an arm implementation and an entry in
+``FRANKA_BACKENDS``. Robot classes continue to call ``declare_arm`` rather than
+naming the concrete arm class themselves.
 
 An Arm Arrives Whole
 --------------------
 
-The Franka gripper uses the arm's connection, so the arm owns it. Once you add
-the arm to a robot, the gripper comes along as its ``end_effector`` part:
+The gripper raises a related composition question: it shares the Franka arm's
+connection, so it belongs to the arm. When the arm joins a robot, the gripper is
+already present as its ``end_effector`` part:
 
 .. code-block:: python
 
@@ -156,15 +158,15 @@ the arm to a robot, the gripper comes along as its ``end_effector`` part:
    robot.parts                  # {"arm": ...}
    robot.part("arm").parts      # {"arm": ..., "end_effector": ...}
 
-Notice that ``build`` never mentions the gripper. The arm describes what its
-connection exposes, while the robot only decides which top-level hardware it
-carries. That split prevents connection details from leaking into every robot
-definition.
+``build`` never mentions the gripper. The arm describes the components available
+through its connection, while the robot chooses only its top-level hardware.
 
 Any Part Runs Anywhere
 ----------------------
 
-Placement follows the device, not its category. Pass ``node_rank`` to any part:
+We'll get to the full placement lifecycle below. For now, the important point is
+that ``node_rank`` belongs to a part declaration, so an arm and a camera can run
+on different nodes:
 
 .. code-block:: python
 
@@ -173,25 +175,24 @@ Placement follows the device, not its category. Pass ``node_rank`` to any part:
        wrist=RealSenseCamera.at(info, node_rank=3),     # where it is plugged in
    )
 
-RLinf reads parts on independent connections in parallel. Parts that share a
-connection keep their declared order, since vendor SDKs rarely allow concurrent
-calls through the same link. You get concurrency where it is safe without
-having to coordinate it in each robot class.
+``Robot`` reads independent connections in parallel. Parts on the same
+connection keep their declared order, because vendor SDKs often reject
+concurrent calls over one link; the Franka class does not need to schedule those
+calls itself.
 
 The Core Idea
 -------------
 
-**Treat every physical component as a part.** An arm, gripper, camera, or mobile
-base is a ``RobotPart``. Every part knows how to connect and report an
-observation; a controllable part also accepts an action. There is no separate
-"driver" layer because the part already represents the physical capability the
-rest of the system needs.
+The examples above follow one rule: **treat every physical component as a
+part.** An arm, gripper, camera, or mobile base is a ``RobotPart``. Each part
+knows how to connect and report an observation, and a controllable part also
+accepts an action. The device-facing behavior lives on that object rather than
+behind a second "driver" abstraction.
 
-Hardware connections do not always map one-to-one to physical components. A
-coupled dual-arm controller, for example, may drive two arms, two grippers, and
-two wrist cameras through one ROS connection. In that case, let the connected
-part declare everything it exposes instead of creating another abstraction for
-"the thing that owns the connection":
+One connection does not always correspond to one physical component. Suppose a
+coupled controller drives two arms, two grippers, and two wrist cameras through
+one ROS connection. The connected part lists each exposed component through
+``parts``:
 
 .. code-block:: python
 
@@ -203,12 +204,11 @@ part declare everything it exposes instead of creating another abstraction for
            "left_end_effector": MethodGripper(self, state_field="follow1_pos"),
        }
 
-Connection ownership is a detail of some parts, not a new category in the type
-system.
+Connection ownership remains an implementation detail of the part.
 
-**Compose a robot from named parts.** **Place any part on a node.** Together with
-the first rule, these choices keep composition, hardware access, and placement
-independent without adding more layers.
+The two remaining rules are **compose a robot from named parts** and **place any
+part on a node**. They account for the nesting and ``node_rank`` declarations in
+the Franka examples.
 
 The Abstractions
 ----------------
@@ -220,42 +220,41 @@ The Abstractions
    * - Abstraction
      - What it is
    * - ``RobotPart``
-     - The base for any physical component. It defines ``connect``,
-       ``get_observation``, ``disconnect``, and ``reset``;
-       ``observation_features`` describes the data it returns.
+     - Base class for a physical component. It defines ``connect``,
+       ``get_observation``, ``disconnect``, and ``reset``. Its
+       ``observation_features`` property describes the returned data.
    * - ``ControllablePart``
-     - A part that accepts commands through ``send_action`` and describes those
-       commands with ``action_features``.
+     - A part with a ``send_action`` method and an ``action_features``
+       description of the accepted commands.
    * - ``Camera`` / ``EndEffector`` / ``MobileBase`` / ``LeggedBase``
-     - More specific part types, used when composition or a remote proxy needs
-       to distinguish the device category.
+     - Specific part types used when a composition or remote proxy must retain
+       the device category.
    * - ``parts``
-     - The named parts exposed by a part. Hardware uses it to describe everything
-       driven by one connection, a ``Group`` returns what you composed into it,
-       and a leaf returns ``{}``.
+     - Named components exposed by a part. Connected hardware lists everything
+       driven through that connection; a ``Group`` lists its members; a leaf
+       returns ``{}``.
    * - ``Group``
-     - A part composed of other named parts. The same construct can represent an
-       arm, a torso, or an entire robot.
+     - A part composed from other named parts, whether they form an arm, a
+       torso, or an entire robot.
    * - ``Robot``
-     - The outermost group. It knows its registered type, builds itself from the
-       hardware config, and owns the connections created during placement.
+     - The outermost ``Group``. It has a registered type, builds from the
+       hardware config, and owns connections created during placement.
    * - ``at()`` / ``PartSpec``
-     - An inert declaration containing a part class, its arguments, and the node
-       where it should be built.
+     - An inert declaration of a part class, its constructor arguments, and its
+       target node.
    * - ``PartHandle``
-     - A reference that keeps the same interface whether the part runs locally
-       or inside a worker.
+     - A reference with the same call interface for a local part and a part
+       hosted by a worker.
    * - ``MethodArm`` / ``MethodGripper`` / ``MethodCamera``
-     - Views that expose methods such as ``open_gripper`` and ``get_camera(id)``
-       through the part interface.
+     - Views that present methods such as ``open_gripper`` and
+       ``get_camera(id)`` through the part interface.
 
 Composition, Not Robot Types
 ----------------------------
 
-A robot is a collection of named parts rather than a fixed set of arm, camera,
-or base slots. That is why an unusual device such as a lift or a head does not
-need a new framework concept; you give it a name and compose it like any other
-part:
+Now let's apply those abstractions without assuming a particular robot shape.
+A robot has named parts rather than fixed slots for arms, cameras, and bases, so
+a lift or head joins the composition under its own name:
 
 .. code-block:: python
 
@@ -263,8 +262,8 @@ part:
    two = FrankaRobot(left=Group(arm=l, gripper=lg), right=Group(arm=r, gripper=rg))
    lifted = FrankaRobot(left=..., right=..., lift=lift, head=head_camera)
 
-Observations and actions follow the same tree as the hardware. Each name becomes
-a path segment, no matter how deeply you nest the groups:
+The observation and action dictionaries follow the same tree. Each part name
+adds one path segment, including names nested inside a ``Group``:
 
 .. list-table::
    :header-rows: 1
@@ -277,16 +276,16 @@ a path segment, no matter how deeply you nest the groups:
    * - ``<group>.<name>``
      - A part of a group, nested as deeply as the composition goes.
 
-When arms use independent connections, ``Robot`` can reset, read, and command
-them in parallel. A two-arm observation therefore takes one round trip instead
-of two, without exposing that scheduling detail to the policy.
+If the arms have independent connections, ``Robot`` resets, reads, and commands
+them concurrently. The policy still reads the same nested dictionary; it does
+not coordinate the two requests.
 
 Placement Is a Property of Parts
 --------------------------------
 
-Use ``at()`` to record where a part should run. You do not call a separate
-placement function; :meth:`Robot.connect` finds each declaration and builds it
-on the requested node.
+Composition tells us what the robot contains; placement tells
+:meth:`Robot.connect` where to create each part. Call ``at()`` with the target
+node while declaring the part, then connect the assembled robot:
 
 .. code-block:: python
 
@@ -296,15 +295,15 @@ on the requested node.
    )
    robot.connect()
 
-A declaration is intentionally inert, so assembling a robot has no hardware
-side effects. When you call ``connect``, RLinf places each distinct declaration
-once and publishes its handle as ``robot.handles[<name>]``. If a later part
-fails, it tears down anything already placed; ``disconnect`` performs the same
-cleanup during a normal shutdown.
+The calls to ``at()`` above only record declarations; they neither create a
+worker nor open hardware. ``Robot.connect`` places each distinct declaration
+once and publishes the resulting handle as ``robot.handles[<name>]``. If a later
+part fails to start, it tears down the earlier ones. During a normal shutdown,
+``disconnect`` follows the same cleanup path.
 
-For shared hardware, declare the connection once and refer to the parts it
-exposes. A connection backing two arms and two cameras is then opened once
-rather than four times:
+Shared hardware needs one more step. Declare its connection once, then refer to
+the components exposed through ``parts``. In this example, one declaration
+backs both arms and the cameras:
 
 .. code-block:: python
 
@@ -319,32 +318,32 @@ rather than four times:
        wrist_1=hardware.part("wrist_1"),
    )
 
-Placement applies to every part, not just arms. For example, the robot can keep a
-camera on the machine where it is physically plugged in while the policy runs
-elsewhere. Assign its node with
-``declare_cameras({name: info}, node_rank=...)``; the robot opens the camera on
-``connect`` and closes it on ``disconnect``. Underneath this flow, ``spawn()``
-does the eager placement. Use it directly only when there is no robot managing
-the lifecycle, such as in a bench script.
+Cameras use the same placement path as arms. A camera may stay on the machine
+where it is plugged in while the policy runs elsewhere; pass its node to
+``declare_cameras({name: info}, node_rank=...)``. ``Robot.connect`` opens the
+camera and ``Robot.disconnect`` closes it. The lower-level ``spawn()`` function
+performs placement immediately and is intended for cases such as bench scripts,
+where no ``Robot`` owns the lifecycle.
 
-You do not need a worker class for every hardware device. RLinf synthesizes one
-from the part class (``type(name, (Worker, PartCls), ...)``), and ``WorkerGroup``
-binds its public methods as RPCs. If you need a method outside the standard part
-interface, call it through the handle; the call has the same shape locally and
-remotely::
+A placed part does not require a hand-written worker class. Placement synthesizes
+one from the part class (``type(name, (Worker, PartCls), ...)``), and
+``WorkerGroup`` binds the public methods as RPCs. A vendor-specific method that
+falls outside the standard part interface remains callable through the handle,
+with the same expression for a local or remote part::
 
    handle.is_robot_up().wait()[0]
    handle.reset_joint(home_qpos).wait()
 
-Read :doc:`Placement <placement>` to map workers onto nodes and GPUs.
+For the worker-to-node and worker-to-GPU rules, continue with
+:doc:`Placement <placement>`.
 
 Compose Every Part Kind
 -----------------------
 
-Think of a robot as a tree. You compose its top-level parts, and each of those
-parts contributes the components exposed by its own connection. An arm with a
-gripper therefore arrives as a complete unit; the robot never has to name that
-gripper separately:
+Placement does not change the composition tree. Start with the robot's top-level
+parts, then let each connected part contribute its own components. When an arm
+and gripper share a connection, adding the arm also adds its
+``end_effector``:
 
 .. code-block:: python
 
@@ -355,13 +354,13 @@ gripper separately:
 
    robot.part("arm").parts     # {"arm": ..., "end_effector": ...}
 
-Reach into a declaration only when one hardware connection exposes several
-peer components. A coupled controller that drives two arms is not itself an
-arm, so select the component you need with ``part(...)``.
+Use ``part(...)`` when one hardware declaration exposes several peer
+components. For example, a coupled controller may drive two arms without being
+an arm itself; the robot selects each arm from that declaration.
 
-Organize the builder by part kind. ``build`` combines the results of the
-``build_*`` methods, which lets a robot with a different arm count override
-``build_arms`` while inheriting the rest of the construction logic:
+For robot classes, organize the builder by part kind. ``build`` combines the
+``build_*`` mappings, while a variant with another arm count can replace only
+``build_arms``:
 
 .. code-block:: python
 
@@ -380,17 +379,16 @@ Organize the builder by part kind. ``build`` combines the results of the
        def build_arms(cls, **config) -> dict[str, RobotPart]:
            return {"left": ..., "right": ...}      # the only difference
 
-This design does not require a config class for every part. Declare a camera with
-``declare_cameras({name: info}, node_rank=...)`` and an arm with ``at(...)`` plus
-its constructor arguments. The fields come from the robot's existing
-``RobotConfig``, which already defines the hardware YAML used during discovery.
+You do not need a separate config class for each part. Declare cameras with
+``declare_cameras({name: info}, node_rank=...)`` and arms with ``at(...)`` plus
+their constructor arguments. Both read their fields from the robot's existing
+``RobotConfig``, the same config used by hardware discovery.
 
 Lifecycle
 ---------
 
-The lifecycle has four explicit phases. Keeping declaration separate from
-connection makes robot construction predictable and gives failures a clean
-rollback point.
+At this point, the distinction between assembly and connection matters. A robot
+moves through four phases, and no hardware is opened during the first one:
 
 .. list-table::
    :header-rows: 1
@@ -411,29 +409,29 @@ rollback point.
      - ``Robot.disconnect`` disconnects the parts before releasing their
        underlying connections.
 
-Building a robot only assembles declarations. After ``Robot.build`` returns,
-call ``connect`` before reading observations or sending commands. Until then,
-``is_connected`` remains ``False`` and the robot's slots still contain the
-declarations rather than live parts.
+After ``Robot.build`` returns, the robot still contains declarations rather than
+live parts, and ``is_connected`` remains ``False``. Call ``connect`` before
+reading observations or sending commands.
 
-If one part fails during connection, RLinf tears down everything it has already
-placed or connected and restores the declarations. You can correct the problem
-and call ``connect`` again. A normal ``disconnect`` also restores that state, so
-the same robot object can connect, disconnect, and reconnect safely.
+If one part fails during connection, ``Robot.connect`` tears down every part it
+has already placed or connected and restores the declarations. After correcting
+the hardware problem, you can call ``connect`` again. A normal ``disconnect``
+returns the robot to that same state, ready for another connection attempt.
 
 
 The Boundary
 ------------
 
-Keep Ray, Gymnasium, and ``rlinf.scheduler`` out of part implementations.
-Importing a device driver should not pull the scheduler into the process. This
-boundary is what lets the bench scripts in ``toolkits/realworld_check`` talk to
-hardware on a machine that is not running a cluster.
+There is one import boundary to preserve when implementing these classes. Part
+modules must not import Ray, Gymnasium, or ``rlinf.scheduler``; otherwise, merely
+loading a device driver also loads cluster dependencies. The bench scripts in
+``toolkits/realworld_check`` rely on that separation when they run directly on a
+hardware machine without a cluster.
 
-Only ``rlinf/robotics/placement.py`` crosses the boundary, and ``spawn`` imports
-it lazily when placement is actually needed. The scheduler never imports
-robotics. ``tests/unit_tests/test_robotics_boundaries.py`` checks both sides of
-this contract.
+``rlinf/robotics/placement.py`` is the sole module allowed to cross the boundary,
+and ``spawn`` imports it lazily when placement is requested. Imports do not run
+in the other direction: the scheduler never imports robotics.
+``tests/unit_tests/test_robotics_boundaries.py`` checks both rules.
 
 Where the Code Lives
 --------------------
@@ -445,44 +443,46 @@ Where the Code Lives
    * - Path
      - Contents
    * - ``parts/base.py``
-     - The core part types: ``RobotPart``, ``ControllablePart``, ``Camera``,
+     - Core part types: ``RobotPart``, ``ControllablePart``, ``Camera``,
        ``EndEffector``, ``Group``, ``MobileBase``, ``LeggedBase``.
    * - ``parts/arms/``
-     - Arm implementations and the state dataclass for each hardware family.
+     - Arm implementations and each hardware family's state dataclass.
    * - ``parts/cameras/``
      - RealSense, ZED, Lumos.
    * - ``parts/end_effectors/``
      - ``grippers/`` and ``hands/``.
    * - ``parts/teleop/``
-     - Leader arms and input devices such as GELLO, glove, keyboard, Pico, and
+     - Leader arms and input devices such as GELLO, gloves, keyboards, Pico, and
        spacemouse.
    * - ``parts/transports/``
-     - Shared transports such as ROS. A transport carries messages for a part
-       but is not itself a part.
+     - Shared transports such as ROS. A transport carries a part's messages but
+       is not a part itself.
    * - ``robots/``
-     - One module per robot, with its config, discovery logic, and builder.
+     - One module per robot, containing its config, discovery logic, and
+       builder.
    * - ``specs.py``
-     - ``PartSpec`` and ``SubpartRef``: the declaration for a part and a
-       reference to one of the components it exposes.
+     - ``PartSpec`` declarations and ``SubpartRef`` references to exposed
+       components.
    * - ``placement.py``
-     - ``PartHandle`` and the synthesized worker. This is the only module that
+     - ``PartHandle`` and synthesized workers. This is the only module that
        imports the scheduler.
    * - ``views.py``
      - The ``Method*`` views.
    * - ``robot.py``, ``discovery.py``, ``adapters.py``, ``config.py``
-     - Robot composition, registration, legacy policy adapters, and environment
+     - Composition, registration, legacy policy adapters, and environment
        variable configuration.
 
 Tasks Stay Out of Hardware
 --------------------------
 
-A part should know how to move and what it can sense, but not what the task calls
-success. Put reset behavior, reward, termination, and Gymnasium spaces in a
-``RobotTask``, then combine it with a ``Robot`` through ``RobotTaskEnv``. If an
-existing policy expects flat vectors and ``state``/``frames`` observations, use
-``LegacyObservationAdapter`` and ``VectorActionAdapter`` at that boundary. This
-keeps hardware code independent of the policy schema and lets you reuse the same
-robot across tasks.
+The last boundary separates hardware behavior from task semantics. A part knows
+how to move and what it can sense; it does not decide whether an episode has
+succeeded. Put reset behavior, reward, termination, and Gymnasium spaces in a
+``RobotTask``, then pair the task with a ``Robot`` through ``RobotTaskEnv``. For
+an existing policy that consumes flat vectors and ``state``/``frames``
+observations, add ``LegacyObservationAdapter`` and ``VectorActionAdapter`` at
+that boundary. The robot can then serve another task without changing its
+device code.
 
 Next
 ----

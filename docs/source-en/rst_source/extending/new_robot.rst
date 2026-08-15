@@ -1,28 +1,26 @@
 Adding a Robot
 ==============
 
-Add a physical robot without tying its device SDK to cluster placement or task
-logic. You will model the hardware as parts, compose those parts into a
-``Robot``, register the result, and reference it from the cluster config. Once
-that boundary is in place, RLinf can host each part near its device, read
-independent connections in parallel, and present one coherent interface to the
-policy.
+To add a physical robot, describe its devices as parts and compose them into a
+``Robot``. The steps on this page take that class through registration and into
+the cluster config, while keeping the vendor SDK out of task and placement code.
 
-Read :doc:`Robotics Model <../concepts/robotics>` first for the reasoning behind
-this design. In short, every physical component is a ``RobotPart``; hardware
-that drives several components lists them through ``parts``. A ``Robot`` gives
-those parts stable names, while ``spawn()`` can place any of them on another
-node. That page also maps the ``rlinf/robotics`` package when you need to find
-the implementation.
+If the part model is new to you, start with
+:doc:`Robotics Model <../concepts/robotics>`. We'll use its three main ideas
+throughout this guide: a physical component is a ``RobotPart``; one connection
+may expose several components through ``parts``; and a ``Robot`` assigns stable
+names to the resulting tree. The concept page also maps the
+``rlinf/robotics`` package and explains how ``spawn()`` places a part on another
+node.
 
 Implement a Part
 ----------------
 
-Choose the narrowest part interface that matches the device. Inherit
-``RobotPart`` when it only produces observations, or ``ControllablePart`` when
-it also accepts commands. Import the vendor SDK inside ``connect()`` so the
-module remains importable on nodes that do not have that SDK installed. Only the
-node that opens the hardware connection needs the dependency.
+Begin with one device and choose the narrowest interface that describes it.
+Inherit ``RobotPart`` for an observation-only device, or ``ControllablePart``
+when the device also accepts commands. Keep the vendor SDK import inside
+``connect()``: other nodes can then import the part module without installing
+the SDK, while the node that opens the connection still loads it normally.
 
 .. code-block:: python
 
@@ -72,17 +70,17 @@ node that opens the hardware connection needs the dependency.
                self._client.close()
                self._client = None
 
-If the device already fits ``Camera``, ``EndEffector``, ``MobileBase``, or
-``LeggedBase``, inherit that more specific interface. Doing so preserves the
-device category when the part is composed or accessed remotely.
+When the device fits ``Camera``, ``EndEffector``, ``MobileBase``, or
+``LeggedBase``, inherit that specific interface instead. Compositions and remote
+proxies can then retain its device category.
 
 Expose Several Components on One Connection
 -------------------------------------------
 
-When one socket, CAN bus, or ROS node drives several physical components,
-describe all of them through ``parts``. The connection is opened once, while
-the rest of the system can still address each capability separately. By
-convention, expose the part itself under the ``"arm"`` entry.
+Next, account for the connection boundary. A socket, CAN bus, or ROS node may
+drive several physical components; list them all through ``parts`` so callers
+can address each one even though the device connection opens only once. For an
+arm, the convention is to expose the part itself under ``"arm"``.
 
 .. code-block:: python
 
@@ -99,18 +97,19 @@ convention, expose the part itself under the ``"arm"`` entry.
                "end_effector": MethodGripper(self, state_field="gripper_position"),
            }
 
-Use ``MethodGripper``, ``MethodArm``, and ``MethodCamera`` when an SDK exposes
-capabilities as named methods such as ``open_gripper``, ``move_left_arm``, and
-``get_camera(id)``. These views turn the methods into ordinary parts, which
-keeps the composition layer independent of the vendor API. Define each view in
-Python beside the methods it adapts, where that mapping is easiest to maintain.
+Some SDKs expose those capabilities as methods such as ``open_gripper``,
+``move_left_arm``, and ``get_camera(id)``. Wrap them with ``MethodGripper``,
+``MethodArm``, or ``MethodCamera`` and define the view beside the adapted
+methods. The robot composition then sees ordinary parts rather than vendor
+method names.
 
 Compose the Robot
 -----------------
 
-Choose part names as carefully as you would choose public API fields. They
-become the canonical observation and action paths, so keep them stable once
-policies and datasets depend on them.
+Once the individual devices are represented, compose the robot and choose each
+part name as if it were a public API field. The names become canonical
+observation and action paths; changing one later also changes the schema used by
+policies and datasets.
 
 .. code-block:: python
 
@@ -136,23 +135,23 @@ policies and datasets depend on them.
        }
    )
 
-In this layout, ``arms.left.state.joint_position`` is the canonical observation
-path for the left arm, and ``left.arm`` is its action path. End-effector actions
-use ``arms.<name>.end_effector``. Robot-level cameras appear under
-``cameras.<name>``, while additional components use ``parts.<name>``. Following
-these conventions keeps the policy-facing schema consistent across robots.
+In this layout, the left arm's canonical observation path is
+``arms.left.state.joint_position``, and its action path is ``left.arm``.
+End-effector actions use ``arms.<name>.end_effector``; robot-level cameras use
+``cameras.<name>``; other components use ``parts.<name>``. Keep these names
+stable across the environment, policy, and dataset code.
 
-Because ``Robot`` knows which arms use independent connections, it can reset,
-read, and command them in parallel. Reading a two-arm observation therefore
-takes one round trip rather than two, without putting concurrency code in the
-robot implementation.
+``Robot`` resets, reads, and commands arms on independent connections in
+parallel. A two-arm observation therefore waits for one round trip, and the
+robot subclass does not contain its own concurrency code.
 
 Place Parts on Nodes
 --------------------
 
-Use ``at()`` to declare the node for a part, then compose that declaration in
-the same place you would put a local part. When ``Robot.connect`` runs, it builds
-the part on that node. There is no separate placement call to coordinate.
+Now we can decide where each part runs. Call ``at()`` with a node, then place the
+returned declaration wherever you would otherwise put a local part.
+``Robot.connect`` builds it on that node as part of the normal connection
+sequence.
 
 .. code-block:: python
 
@@ -161,31 +160,31 @@ the part on that node. There is no separate placement call to coordinate.
    robot = Robot(arm=ExampleArm.at("tcp://left-arm:5000", node_rank=0))
    robot.connect()
 
-What this does: 1) records an ``ExampleArm`` declaration for node 0; 2) builds
-and connects that arm when the robot connects. Compose an end effector or
-cameras explicitly, because an arm contains only the parts you give it. During
-startup, ``connect`` publishes each handle as ``robot.handles[<name>]``;
-``disconnect`` releases those handles during teardown.
+The call to ``at()`` records an ``ExampleArm`` declaration for node 0. No part is
+built until ``connect`` runs; at that point, the handle appears under
+``robot.handles[<name>]`` and remains there until ``disconnect`` tears it down.
+Compose end effectors and cameras explicitly, because this example arm contains
+only the parts supplied to it.
 
-The same declaration works for every part, not just arms. A camera, for example,
-can stay on the machine where it is plugged in::
+The declaration is not arm-specific. For example, a camera can remain on the
+machine where it is physically connected::
 
    scene=RealSenseCamera.at(info, node_rank=2)
 
-If one connection backs several components, declare it once and refer to the
-parts it exposes. This ensures that the underlying device is opened only once::
+If one connection backs several components, declare that connection once and
+select the exposed parts from it::
 
    hardware = ExampleHardware.at(node_rank=0)
    Group(arm=hardware.part("left"), gripper=hardware.part("left_end_effector"))
 
-Underneath the declaration flow, ``spawn()`` performs placement immediately.
-Use it directly only outside a robot, such as in a bench script where you also
-manage the handle's lifecycle.
+Underneath this flow, ``spawn()`` performs placement immediately. Call it
+directly only outside a robot, for example in a bench script that also takes
+care of the handle's lifecycle.
 
-You do not need to write a worker class for each robot. RLinf synthesizes one
-from the part class, and ``WorkerGroup`` binds its public methods as RPCs. Methods
-outside the standard part interface remain available through the handle, with
-the same call shape locally and remotely::
+There is no separate worker class to write for the part. Placement synthesizes
+one from its class, and ``WorkerGroup`` binds public methods as RPCs. A method
+outside the standard part interface remains available through the handle, using
+the same expression locally and remotely::
 
    handle.is_robot_up().wait()[0]
    handle.reset_joint(home_qpos).wait()
@@ -193,10 +192,11 @@ the same call shape locally and remotely::
 Describe and Build the Robot
 ----------------------------
 
-Put hardware connections and placement in a ``RobotConfig`` dataclass, then
-implement ``build()`` on the robot class to compose a ``Robot`` from those
-fields. Keep reset poses, rewards, and episode horizons in the task config; they
-describe how you use the robot, not how to find its hardware.
+With the parts in place, describe the robot's hardware inputs in a
+``RobotConfig`` dataclass and implement ``build()`` to assemble them. Connection
+addresses and placement belong here. Reset poses, rewards, and episode horizons
+remain in the task config because they describe an episode rather than hardware
+discovery.
 
 .. code-block:: python
 
@@ -230,10 +230,10 @@ describe how you use the robot, not how to find its hardware.
                }
            )
 
-The same builder can cover a single-arm variant by returning one entry instead
-of two. Treat startup as an all-or-nothing operation: if a later part fails,
-disconnect any handles already placed before propagating the error. Returning a
-partial robot would make the policy-facing schema depend on startup order.
+A single-arm variant can reuse this builder shape and return one entry instead
+of two. Startup must remain all-or-nothing: if a later part fails, disconnect
+the handles already placed before propagating the error. Otherwise, callers
+could receive a partial schema whose contents depend on the failure order.
 
 .. warning::
 
@@ -245,9 +245,9 @@ partial robot would make the policy-facing schema depend on startup order.
 Register the Robot
 ------------------
 
-Register the robot from its own module once the config, discovery logic, and
-builder are defined. Keeping this information together means a new robot does
-not require edits to a central registry.
+After defining the config, builder, and discovery logic, register them from the
+robot's own module. Registration happens locally rather than through an edit to
+a central table.
 
 .. code-block:: python
 
@@ -285,27 +285,28 @@ not require edits to a central registry.
 
    ExampleRobot.register(ExampleRobotConfig, ExampleRobotDiscovery)
 
-Place the call at the end of the module, after the config and discovery classes
-exist. Registration ties the robot class to its config, discovery logic, and
-``build`` method. You can then call ``build_robot("ExampleRobot", ...)`` to
-compose the robot by name instead of importing its class at every call site.
+Put the registration call at the end of the module, after the config and
+discovery classes exist. It associates the robot class with its config,
+discovery logic, and ``build`` method. Callers can then use
+``build_robot("ExampleRobot", ...)`` without importing the concrete class.
 
-Subclass an existing robot when the hardware shares most of its construction.
-``DualFrankaRobot`` extends ``FrankaRobot`` and only changes ``build_arms`` and
-``BACKEND``; it inherits ``build`` along with the rest of the lifecycle.
+If the new hardware is a variant of an existing robot, subclass that robot
+instead. For example, ``DualFrankaRobot`` changes ``build_arms`` and ``BACKEND``
+on ``FrankaRobot`` but inherits ``build`` and the lifecycle methods.
 
-Import the registration module before constructing ``Cluster`` so the robot is
-known when hardware discovery begins. RLinf passes registered hardware policy
-modules to the node probes, so every node's configured Python environment must
-be able to import the module.
+Import the registration module before constructing ``Cluster``; hardware
+discovery cannot identify the robot until that import has run. The registered
+hardware policy modules are also passed to node probes, so every node's
+configured Python environment must be able to import this one.
 
 Configure the Cluster
 ---------------------
 
-Describe the hardware with the existing ``cluster.node_groups.hardware``
-schema. The registered config class parses each entry, and the registered
-builder turns it into the robot composition. This keeps deployment details in
-YAML instead of hard-coding endpoints or node ranks in Python.
+The final construction input comes from the existing
+``cluster.node_groups.hardware`` schema. Its entries are parsed by the
+registered config class and passed to the registered builder. Put endpoints and
+node ranks in this YAML rather than embedding a particular deployment in
+Python:
 
 .. code-block:: yaml
 
@@ -325,12 +326,12 @@ YAML instead of hard-coding endpoints or node ranks in Python.
 Keep Tasks and Compatibility Separate
 -------------------------------------
 
-Put reset behavior, reward, success, truncation, and Gymnasium spaces in a
-``RobotTask`` or the real-world environment. Combine that task with a ``Robot``
-through ``RobotTaskEnv``. If an existing policy expects flat action vectors and
-``state``/``frames`` observations, adapt the boundary with
-``LegacyObservationAdapter`` and ``VectorActionAdapter`` rather than teaching
-the hardware about a particular policy schema.
+At this stage, the robot knows how to find and operate its hardware, but it
+should not define the task. Put reset behavior, reward, success, truncation, and
+Gymnasium spaces in a ``RobotTask`` or the real-world environment, then combine
+the task and ``Robot`` through ``RobotTaskEnv``. When an existing policy expects
+flat action vectors and ``state``/``frames`` observations, use
+``LegacyObservationAdapter`` and ``VectorActionAdapter`` at that boundary.
 
 .. warning::
 
@@ -342,9 +343,9 @@ the hardware about a particular policy schema.
 Test the Integration
 --------------------
 
-Most integration behavior can be tested without a vendor SDK or physical
-hardware. Cover the part contract, composition paths, handle lifecycle,
-discovery registration, and the exact schema expected by legacy policies.
+Most of the integration is testable before the vendor SDK or robot is
+available. Cover the part contract, composition paths, handle lifecycle,
+discovery registration, and the exact schema expected by legacy policies:
 
 .. code-block:: bash
 
@@ -353,7 +354,6 @@ discovery registration, and the exact schema expected by legacy policies.
      tests/unit_tests/test_robot_task_env.py \
      tests/unit_tests/test_realworld_robotics_compatibility.py
 
-What this does: verifies the scheduler boundary, single-arm and dual-arm
-composition, separation between tasks and robots, and the policy-facing schema
-of every built-in real-world environment. None of these tests requires physical
-hardware.
+These tests exercise the scheduler import boundary, single-arm and dual-arm
+composition, the task/robot split, and the policy-facing schema of every
+built-in real-world environment. They do not require physical hardware.
