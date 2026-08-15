@@ -1,14 +1,13 @@
 Adding a Task
 =============
 
-A task says what the robot is being asked to do: where the target is, how the arm
-should comply on the way, what counts as success, and how the scene is
-randomized between episodes. The robot, its placement, and the wrapper stack are
-already handled, so a new task on hardware RLinf already supports is a config
-dataclass, an env class, and one line in a table.
+On hardware RLinf already supports, a new task takes a config dataclass, an env
+class, and one row in the task table. The task records the target and compliance
+settings as well as success and reset rules. Robot construction and placement
+remain unchanged, as does the wrapper stack.
 
-If the robot itself is new, do :doc:`new_robot` first -- a task needs something
-to run on.
+If the robot itself is new, add it through :doc:`new_robot` before defining its
+task.
 
 Steps
 -----
@@ -16,9 +15,8 @@ Steps
 1. Write the config
 ~~~~~~~~~~~~~~~~~~~
 
-Add a module beside the other tasks for that robot, at
-``rlinf/envs/real/<robot>/<task>.py``. Start from the robot's config dataclass
-and add the fields your task needs:
+Create ``rlinf/envs/real/<robot>/<task>.py`` beside the other tasks for that
+robot. Inherit its config dataclass and add the fields required by your task:
 
 .. code-block:: python
 
@@ -47,23 +45,24 @@ and add the fields your task needs:
            self.action_scale = np.array([0.02, 0.1, 1])
 
 State only the gains that differ. ``compliance()`` merges them onto
-``COMPLIANCE_DEFAULTS`` and raises on a gain the controller does not take, which
-catches a typo that would otherwise reach the impedance controller and be
-ignored there.
+``COMPLIANCE_DEFAULTS`` and raises on any gain the controller does not accept. A
+misspelled gain stops here instead of reaching the impedance controller and
+being ignored.
 
 2. Write the env
 ~~~~~~~~~~~~~~~~
 
-Point the env class at your config. Often that is the whole class:
+Set the env class's config type. For many tasks, that is the whole class:
 
 .. code-block:: python
 
    class WipeEnv(FrankaEnv):
        CONFIG_CLS = WipeConfig
 
-Override a hook when the task needs different behavior. ``go_to_rest`` is the
-common one, because homing from a task's end pose is task-specific -- peg
-insertion lifts clear of the slot first, or the peg catches on the way up:
+Override a hook only when the task needs different behavior. ``go_to_rest`` is
+the common case because homing depends on the task's end pose. Peg insertion,
+for example, lifts clear of the slot first; otherwise the peg catches on the way
+up:
 
 .. code-block:: python
 
@@ -77,8 +76,8 @@ insertion lifts clear of the slot first, or the peg catches on the way up:
 ~~~~~~~~~~~~~~
 
 Add one entry to the robot's ``TASKS`` table in
-``rlinf/envs/real/<robot>/__init__.py``, naming the env class and the wrapper
-stack its action space needs:
+``rlinf/envs/real/<robot>/__init__.py``. Name the env class and the wrapper stack
+required by its action space:
 
 .. code-block:: python
 
@@ -93,14 +92,15 @@ stack its action space needs:
 Single-arm Franka and Turtle2 envs take ``apply_single_arm_wrappers``; the
 dual-arm Franka envs take ``apply_dual_franka_joint_wrappers``.
 
-The gym id goes into user configs and dataset metadata, so pick it once and leave
-it alone.
+User configs and dataset metadata store the gym id. Changing it later breaks
+those references. Choose the name before collecting data.
 
 4. Add the env config
 ~~~~~~~~~~~~~~~~~~~~~
 
-Add a YAML under ``examples/embodiment/config/env/`` describing the hardware and
-the task fields. ``override_cfg`` carries whatever your config dataclass defines:
+Add a YAML file under ``examples/embodiment/config/env/``. Keep the registered
+id at the path shown below and describe the task fields in ``override_cfg``;
+these fields come from your config dataclass:
 
 .. code-block:: yaml
 
@@ -116,7 +116,8 @@ the task fields. ``override_cfg`` carries whatever your config dataclass defines
 5. Check it
 ~~~~~~~~~~~
 
-Confirm the id registers and its entry point resolves before involving hardware:
+Before connecting hardware, confirm that the id is registered and its entry
+point resolves:
 
 .. code-block:: python
 
@@ -125,8 +126,8 @@ Confirm the id registers and its entry point resolves before involving hardware:
 
    assert "WipeEnv-v1" in registry
 
-``tests/unit_tests/test_real_env.py`` asserts this for every shipped task; add
-yours to ``EXPECTED_IDS`` there.
+``tests/unit_tests/test_real_env.py`` makes the same assertion for every shipped
+task. Add your id to ``EXPECTED_IDS`` there.
 
 What You Do Not Need to Write
 -----------------------------
@@ -152,9 +153,8 @@ What You Do Not Need to Write
 Adding a Wrapper Instead
 ------------------------
 
-If what you need is behavior around a rollout rather than a new task, add it to
-the family that matches what it changes: ``teleop/`` if it replaces the action,
-``transforms/`` if it rewrites how an observation or action is expressed, and
-``episode/`` if it decides when a rollout starts, ends, or what it scored. A new
-teleop device implements ``read``; a new keyboard mode subclasses
-``KeyboardSession``. :doc:`../concepts/realworld_envs` describes both.
+When the new behavior surrounds a rollout, add a wrapper. Put action replacement
+in ``teleop/`` and representation changes in ``transforms/``;
+rollout boundaries and scores belong in ``episode/``. A new teleop device
+implements ``read``. For a new keyboard mode, subclass ``KeyboardSession``.
+:doc:`../concepts/realworld_envs` describes both extension points.

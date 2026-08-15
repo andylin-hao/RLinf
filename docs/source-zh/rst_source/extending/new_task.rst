@@ -1,11 +1,11 @@
 新增任务
 ========
 
-任务说明的是「让机器人做什么」：目标在哪、沿途要多柔顺、怎样算成功、每一条之间场景
-如何随机化。机器人、放置和 wrapper 栈都已经有人管了，所以在 RLinf 已支持的硬件上新增
-一个任务，只需要写一份配置 dataclass、一个 env 类，再在表里加一行。
+在 RLinf 已支持的硬件上新增任务，需要改三处：写一份配置 dataclass，定义一个 env 类，
+再向任务表加一行。任务里说明目标、阻抗参数、成功条件和复位规则；机器人怎样构建与
+放置，外层套哪些 wrapper，都沿用现有逻辑。
 
-如果机器人本身也是新的，先做 :doc:`new_robot`，任务总得跑在什么东西上面。
+如果连机器人也是新的，先按 :doc:`new_robot` 接入硬件，再来定义任务。
 
 步骤
 ----
@@ -13,8 +13,8 @@
 1. 写配置
 ~~~~~~~~~
 
-在这台机器人的任务旁边新建模块 ``rlinf/envs/real/<robot>/<task>.py``，从机器人的配置
-dataclass 继承，补上任务需要的字段：
+在 ``rlinf/envs/real/<robot>/<task>.py`` 新建模块，与这台机器人的其他任务放在一起。
+从机器人配置 dataclass 继承，再补上当前任务所需的字段：
 
 .. code-block:: python
 
@@ -42,22 +42,22 @@ dataclass 继承，补上任务需要的字段：
            self.target_ee_pose = np.array(self.target_ee_pose)
            self.action_scale = np.array([0.02, 0.1, 1])
 
-只写和默认值不同的那几项阻抗参数。``compliance()`` 会把它们合并到
-``COMPLIANCE_DEFAULTS`` 上，遇到控制器不接受的参数直接抛错；否则拼错的键会一路传到
-阻抗控制器，在那里被静默忽略。
+阻抗参数只写与默认值不同的项。``compliance()`` 会把它们合并到
+``COMPLIANCE_DEFAULTS`` 上，遇到控制器不接受的参数就直接抛错。参数名一旦拼错，会在
+这里停下来，不会传到阻抗控制器后被静默忽略。
 
 2. 写 env 类
 ~~~~~~~~~~~~
 
-把 env 类指向你的配置。很多时候整个类就这么两行：
+接下来把 env 类的配置类型设为刚才的 dataclass。对很多任务来说，整个类只有这两行：
 
 .. code-block:: python
 
    class WipeEnv(FrankaEnv):
        CONFIG_CLS = WipeConfig
 
-任务行为不同时再覆盖对应的钩子。最常覆盖的是 ``go_to_rest``：从任务结束位姿回原位这件
-事本身就和任务有关，比如插销任务要先抬离插孔，不然销子会在抬升时卡住。
+只有任务行为确实不同时，才覆盖相应钩子。最常见的是 ``go_to_rest``，因为回原位的路径
+取决于任务结束时的位姿。比如插销任务要先抬离插孔，否则销子会在上升途中卡住。
 
 .. code-block:: python
 
@@ -70,8 +70,8 @@ dataclass 继承，补上任务需要的字段：
 3. 注册
 ~~~~~~~
 
-在 ``rlinf/envs/real/<robot>/__init__.py`` 的 ``TASKS`` 表里加一行，写明 env 类和它的
-动作空间所需的 wrapper 栈：
+到 ``rlinf/envs/real/<robot>/__init__.py`` 的 ``TASKS`` 表里加一行。这里要写明 env 类，
+以及它的动作空间所需的 wrapper 栈：
 
 .. code-block:: python
 
@@ -86,13 +86,14 @@ dataclass 继承，补上任务需要的字段：
 Turtle2 用 ``apply_single_arm_wrappers``，双臂 Franka 用
 ``apply_dual_franka_joint_wrappers``。
 
-gym id 会写进用户配置和数据集，取好之后就别再改了。
+用户配置和数据集元数据都会保存 gym id。后续改名会让这些引用失效，采集数据前先把名字
+定下来。
 
 4. 加环境配置
 ~~~~~~~~~~~~~
 
-在 ``examples/embodiment/config/env/`` 下新增 YAML，描述硬件和任务字段。
-``override_cfg`` 里放的就是你在配置 dataclass 里定义的那些字段：
+在 ``examples/embodiment/config/env/`` 下新增 YAML。注册好的 id 按下面的路径填写，任务
+字段放进 ``override_cfg``；这些字段来自前面的配置 dataclass：
 
 .. code-block:: yaml
 
@@ -108,7 +109,7 @@ gym id 会写进用户配置和数据集，取好之后就别再改了。
 5. 验证
 ~~~~~~~
 
-接硬件之前，先确认 id 已注册、entry point 能解析：
+接硬件之前，先确认 id 已经注册，并且 entry point 可以解析：
 
 .. code-block:: python
 
@@ -117,8 +118,8 @@ gym id 会写进用户配置和数据集，取好之后就别再改了。
 
    assert "WipeEnv-v1" in registry
 
-``tests/unit_tests/test_real_env.py`` 会对所有内置任务做这项检查，把你的 id 加进
-``EXPECTED_IDS`` 即可。
+``tests/unit_tests/test_real_env.py`` 会对每个内置任务做同样的检查。把新 id 加进
+``EXPECTED_IDS``。
 
 这些你都不用写
 --------------
@@ -143,7 +144,7 @@ gym id 会写进用户配置和数据集，取好之后就别再改了。
 如果要加的是 wrapper
 --------------------
 
-如果你要加的不是新任务，而是 rollout 周围的某种行为，就按「它改什么」放进对应的包：
-改动作放 ``teleop/``，改观测或动作的表示方式放 ``transforms/``，决定 rollout 何时开始、
-何时结束、拿多少分放 ``episode/``。新增遥操作设备实现 ``read``，新增键盘模式继承
-``KeyboardSession``。两者都在 :doc:`../concepts/realworld_envs` 中有说明。
+如果要改的是 rollout 周围的行为，就该新增 wrapper，而不是任务。替换动作的逻辑放进
+``teleop/``，观测或动作的表示转换放进 ``transforms/``；rollout 的起止与得分归
+``episode/``。新增遥操作设备时实现 ``read``，新增键盘模式时继承
+``KeyboardSession``。两个扩展点都在 :doc:`../concepts/realworld_envs` 中说明。

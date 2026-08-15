@@ -1,23 +1,22 @@
 Real-World Environment Model
 ============================
 
-A real-world environment is a robot, a task, and a stack of wrappers. The robot
-knows how to move and what it senses; the task knows what counts as success; the
-wrappers cover everything a person adds around a rollout -- taking over with a
-leader arm, marking an episode successful, changing how a pose is written down.
-We'll follow one task from its config to its gym id, then look at where each kind
-of wrapper lives and why the split is where it is.
+A real-world environment joins a robot to a task, then wraps that pair with the
+behavior needed during a rollout. The robot supplies motion and sensing. The
+task owns target poses and reward rules, including reset behavior. Wrappers
+handle operator intervention and manual outcome labels; they also adapt how
+observations or actions are represented.
 
-For how a robot is composed from parts and placed on nodes, start with
-:doc:`robotics`. This page picks up where that one stops, at the environment.
+If you need the part and placement model underneath the robot, start with
+:doc:`robotics`. Here we stay at the environment boundary.
 
 A Task Is a Config and a Few Overrides
 --------------------------------------
 
-Open ``rlinf/envs/real/franka/`` and you see the tasks a Franka can be asked to
-do, one module each, beside the ``base.py`` they share. A task is usually a
-dataclass saying where the target is and how the arm should comply, plus whatever
-reset behavior that task needs:
+Look in ``rlinf/envs/real/franka/``. Each Franka task has its own module beside
+the shared ``base.py``. Most tasks start with a dataclass that records the target
+and compliance settings; the env class adds any reset behavior specific to that
+task:
 
 .. code-block:: python
 
@@ -40,18 +39,18 @@ reset behavior that task needs:
            # Lift clear of the slot before homing, or the peg catches.
            ...
 
-``compliance()`` merges your overrides onto ``COMPLIANCE_DEFAULTS`` and rejects a
-gain the controller does not take, so a misspelled key is an error rather than a
-setting that quietly does nothing. Peg insertion states one gain; bin relocation
-states eleven. The rest of each config is the task: poses, reward thresholds, and
-the randomization applied at reset.
+``compliance()`` merges your overrides onto ``COMPLIANCE_DEFAULTS`` and rejects
+any gain the controller does not accept. A misspelled key fails here instead of
+reaching the impedance controller and being ignored. Peg insertion states one
+gain; bin relocation states eleven. Everything else in the config describes the
+task itself: poses, reward thresholds, and reset randomization.
 
 Registering It Is One Line
 --------------------------
 
-Every task is built the same way -- construct the env class with the worker's
-config, then wrap it in the stack that robot's action space needs -- so that is
-all a task declares:
+The task table records two things for each task: the env class constructed from
+the worker's config and the wrapper stack required by that robot's action space.
+One row is enough:
 
 .. code-block:: python
 
@@ -63,15 +62,14 @@ all a task declares:
 
    _ENTRY_POINTS = register_tasks(__name__, globals(), TASKS)
 
-``register_tasks`` generates each Gymnasium entry point and registers it. The gym
-id is what a config and a dataset refer to, so it is worth choosing once and
-leaving alone.
+``register_tasks`` generates each Gymnasium entry point and registers it. User
+configs and dataset metadata both store the gym id. Renaming it later leaves
+those references stale.
 
 Three Kinds of Wrapper
 ----------------------
 
-Everything wrapped around a task env falls into one of three groups, and the
-group is decided by what the wrapper changes:
+What a wrapper changes determines its package:
 
 .. list-table::
    :header-rows: 1
@@ -86,11 +84,11 @@ group is decided by what the wrapper changes:
      - How an observation or action is written down, never what it means. A
        relative frame moves the same motion into end-effector coordinates.
    * - ``episode/``
-     - When a rollout starts, when it ends, and what it scored -- the judgements
-       a person watching makes, which no sensor reports.
+     - When a rollout starts or ends, and what it scored. These are judgements
+       made by the person watching; no sensor reports them.
 
-``wrappers.py`` composes them. It reads the env config, decides which teleop
-device is in play, and returns the stack:
+``wrappers.py`` reads the env config, selects the teleop device, and composes the
+wrapper stack:
 
 .. code-block:: python
 
@@ -99,9 +97,9 @@ device is in play, and returns the stack:
 Teleop: One Wrapper, Many Devices
 ---------------------------------
 
-Every teleop device answers the same question -- what would the operator do right
-now -- and the answer is handled the same way whatever produced it. So the
-reading is the only thing a device implements:
+Teleop devices differ in how they read the operator, but they all return the
+same answer: what the operator would do right now. A device only implements that
+read:
 
 .. code-block:: python
 
@@ -114,21 +112,20 @@ reading is the only thing a device implements:
                info={"left": buttons[0], "right": buttons[1]},
            )
 
-``TeleopIntervention`` owns everything around it: the hold window that keeps the
-operator in control between samples, the fallback when they let go, and the
-``intervene_action`` key a dataset collector reads back.
+``TeleopIntervention`` handles the rest. It keeps control active between samples
+for a hold window and chooses the fallback after release. Dataset collectors
+read the resulting action from ``intervene_action``.
 
-The ``active`` flag, not the action, is what says the operator is driving.
-Devices report small residual motion constantly, so each one sets its own
-threshold. A device the operator holds down -- a PICO grip, a trigger -- sets
-``timeout = 0`` instead, because the button already says exactly when they are
-driving and half a second of carry-over would keep commanding the robot after
-they let go.
+``active`` says whether the operator is driving; the action itself does not.
+Most devices report small residual motion even at rest, and each device sets its
+own threshold. A held control such as a PICO grip or trigger marks the interval
+exactly and sets ``timeout = 0``. Carrying that signal over for another half
+second would continue commanding the robot after release.
 
-A leader arm tracks well only if the follower receives targets continuously, far
-faster than ``env.step`` runs. :class:`StreamingTeleopDevice` gives such a device
-its own thread and owns the awkward parts of having one: pause while the env
-drives the robot home, align before the first target, join on shutdown.
+A leader arm needs to send targets continuously, much faster than ``env.step``
+runs. :class:`StreamingTeleopDevice` gives it a dedicated thread. The thread
+pauses while the env drives the robot home and aligns before sending its first
+target; shutdown joins it.
 
 Choosing a device is one config key:
 
@@ -142,31 +139,31 @@ Choosing a device is one config key:
 Devices and Readers Are Separate
 --------------------------------
 
-Inside ``teleop/`` there is one more split, and it is the reason a bench script
-works. ``devices/`` holds the readers -- the code that talks to a serial port or
-a headset -- and imports no Gymnasium. ``adapters.py`` turns a reading into an
-action for a particular env.
+Inside ``teleop/``, device I/O is kept apart from env-specific action
+conversion. ``devices/`` contains the readers that talk to a serial port or a
+headset and imports no Gymnasium. ``adapters.py`` turns their readings into
+actions for a particular env.
 
-That is what lets you check a leader arm is wired correctly before involving a
-robot at all:
+You can therefore check a leader arm's wiring without involving a robot:
 
 .. code-block:: bash
 
    python -m rlinf.envs.real.teleop.devices.gello --port /dev/ttyUSB0
 
 A teleop device is not a :class:`~rlinf.robotics.parts.base.RobotPart`. A part
-answers what a component means to the policy, and a leader arm has no such
-answer: no policy observes one, and no robot composes one. It reads the operator,
-not the robot, which is why it lives on the environment side.
+describes a component as the policy sees it. A leader arm never appears in that
+view: policies do not observe it, and robots do not include it in their
+composition. It reads the operator, not the robot, and belongs on the
+environment side.
 
 Episode Control Is Not Teleop
 -----------------------------
 
-Marking a success, aborting a take, switching policies mid-rollout: the operator
-is the only one who knows, but none of it touches the action. Those wrappers live
-in ``episode/`` and share :class:`KeyboardSession`, which owns the listener, drops
-repeat presses inside a debounce window, and clears the queue on reset so a pedal
-tapped while the arm homes does not start the next episode.
+The operator may also mark a success or abort a take, and can switch policies
+mid-rollout. None of those choices changes the action. Their wrappers live in
+``episode/`` and share :class:`KeyboardSession`. It owns the listener and drops
+repeat presses inside a debounce window; on reset, it clears the queue before a
+pedal tapped during homing can start the next episode.
 
 A new mode reads ``presses()`` and decides what each key means:
 
@@ -208,7 +205,8 @@ Where the Code Lives
    * - ``real/registry.py``
      - ``task_factory`` and ``register_tasks``.
    * - ``real/robot_task_env.py``
-     - ``RobotTask`` and ``RobotTaskEnv``, which keep task logic out of hardware.
+     - ``RobotTask`` and ``RobotTaskEnv`` define the boundary between task logic
+       and hardware.
 
 Next
 ----

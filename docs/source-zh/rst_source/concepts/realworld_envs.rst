@@ -1,20 +1,19 @@
 真机环境模型
 ============
 
-一个真机环境由三部分组成：机器人、任务，以及一层层 wrapper。机器人管运动和感知，
-任务判断怎样算成功，wrapper 则涵盖人在一次 rollout 周围所做的事情：用主臂接管、标记
-这一条成功、换一种方式表示位姿。下面先跟着一个任务从配置走到 gym id，再看看各类
-wrapper 各自放在哪里、为什么这样分。
+真机环境把机器人和任务接到一起，外面再套上 rollout 期间需要的 wrapper。机器人给出
+运动与感知能力，目标位姿、奖励规则和复位行为则写在任务里。人来接管、手动标记结果，
+或要转换位姿表示时，都由 wrapper 处理。
 
-机器人本身如何由部件组合、如何放到节点上，请先看 :doc:`robotics`。这一页从环境这一层
-接着讲。
+如果还不清楚机器人怎样组合部件、怎样放到各个节点，先看 :doc:`robotics`。这里我们只看
+环境这一层。
 
 一个任务 = 一份配置 + 几个覆盖
 ------------------------------
 
-打开 ``rlinf/envs/real/franka/``，里面就是 Franka 能做的各项任务，一个任务一个模块，
-旁边是它们共用的 ``base.py``。任务通常是一个 dataclass：写清目标在哪、机械臂沿途要
-多柔顺，再加上这个任务特有的复位动作。
+打开 ``rlinf/envs/real/franka/``，每个 Franka 任务各占一个模块，旁边的 ``base.py``
+存放公共逻辑。大多数任务先用 dataclass 写下目标和阻抗参数，env 类再补充这个任务特有
+的复位行为。
 
 .. code-block:: python
 
@@ -37,16 +36,16 @@ wrapper 各自放在哪里、为什么这样分。
            # 先抬离插孔再回原位，否则销子会卡住。
            ...
 
-``compliance()`` 把你写的这几项合并到 ``COMPLIANCE_DEFAULTS`` 上，遇到控制器不认识的
-参数直接报错，拼错的键不会一路传到阻抗控制器再被悄悄丢掉。插销任务只改一项，
-bin relocation 改十一项。配置里剩下的部分就是任务本身：位姿、奖励阈值，以及复位时的
-随机化范围。
+``compliance()`` 把这些覆盖项合并到 ``COMPLIANCE_DEFAULTS`` 上。控制器不接受的参数
+会直接抛错，拼错的键也不会传到阻抗控制器后被静默忽略。插销任务只改一项，bin
+relocation 改十一项。配置的其余部分描述任务本身，包括位姿、奖励阈值和复位时的随机化
+范围。
 
 注册只要一行
 ------------
 
-每个任务的构建方式都一样：用 worker 传来的配置构造 env 类，再套上这台机器人动作空间
-所需的 wrapper。所以任务需要声明的也就这两样：
+任务表的每一行只记两件事：用 worker 配置构造哪个 env 类，以及这台机器人的动作空间
+需要哪套 wrapper。新增任务时加一行即可：
 
 .. code-block:: python
 
@@ -58,13 +57,13 @@ bin relocation 改十一项。配置里剩下的部分就是任务本身：位�
 
    _ENTRY_POINTS = register_tasks(__name__, globals(), TASKS)
 
-``register_tasks`` 会生成对应的 Gymnasium entry point 并完成注册。gym id 会写进用户
-配置和数据集，所以取名时想清楚，之后尽量别改。
+``register_tasks`` 会生成对应的 Gymnasium entry point 并完成注册。用户配置和数据集
+元数据都会保存 gym id；以后改名，这些引用也得跟着改。最好在采集数据前把名字定下来。
 
 三类 wrapper
 ------------
 
-套在任务 env 外面的东西都能归进三类，归哪一类取决于这个 wrapper 改的是什么：
+看 wrapper 改了什么，就知道它该放在哪个包：
 
 .. list-table::
    :header-rows: 1
@@ -73,14 +72,13 @@ bin relocation 改十一项。配置里剩下的部分就是任务本身：位�
    * - 包
      - 它的 wrapper 改什么
    * - ``teleop/``
-     - 改动作本身。人接管的这段时间里，他的指令替换掉策略的输出。
+     - 改动作本身。操作者接管期间，他的指令会替换策略输出。
    * - ``transforms/``
-     - 改观测或动作的表示方式，不改含义。相对坐标系只是把同一个运动换到末端坐标下。
+     - 改观测或动作的表示，不改含义。相对坐标系只是把同一个运动写到末端坐标下。
    * - ``episode/``
-     - 决定一次 rollout 何时开始、何时结束、拿到多少分。这些判断只有旁边的人知道，
-       传感器不会告诉你。
+     - 决定 rollout 的起止和得分。这些判断来自现场操作者，传感器不会上报。
 
-``wrappers.py`` 把它们组装起来：读环境配置，确定用哪种遥操作设备，返回整个栈。
+``wrappers.py`` 读取环境配置，选定遥操作设备，再把这些 wrapper 组装成完整的栈。
 
 .. code-block:: python
 
@@ -89,8 +87,8 @@ bin relocation 改十一项。配置里剩下的部分就是任务本身：位�
 遥操作：一个 wrapper，多种设备
 ------------------------------
 
-所有遥操作设备回答的都是同一个问题：此刻操作者想让机器人做什么。拿到答案之后的处理
-也完全一样。所以设备只需要实现「怎么读」这一件事：
+遥操作设备各有不同的读取方式，返回的却是同一种信息：操作者此刻想让机器人做什么。
+设备只实现读取这一步：
 
 .. code-block:: python
 
@@ -103,16 +101,16 @@ bin relocation 改十一项。配置里剩下的部分就是任务本身：位�
                info={"left": buttons[0], "right": buttons[1]},
            )
 
-其余都交给 ``TeleopIntervention``：两次采样之间维持接管状态的保持窗口、松手后的回退
-动作，以及数据采集要读的 ``intervene_action``。
+接下来的事交给 ``TeleopIntervention``。它用保持窗口维持两次采样之间的接管状态，处理
+松手后的回退动作，并写入数据采集器要读取的 ``intervene_action``。
 
-判断「人在操作」看的是 ``active``，不是动作本身。设备总会有细小的抖动读数，所以阈值由
-每个设备自己定。像 PICO 扳机这种按住才生效的设备则把 ``timeout`` 设为 0：按键已经精确
-表示了操作区间，再多留半秒，就会在人松手之后继续给机器人发指令。
+``active`` 表示操作者是否正在接管，动作本身不作这个判断。大多数设备静止时仍有细小
+抖动，因此各自设定阈值。PICO 握把或扳机这类按住才生效的设备能准确标出接管区间，直接
+把 ``timeout`` 设为 0。如果再延续半秒，操作者松手后机器人仍会收到指令。
 
-主臂要跟得顺，从臂必须持续收到目标，频率远高于 ``env.step``。这类设备用
-:class:`StreamingTeleopDevice`，它自带一个线程，也替你收拾线程带来的那些麻烦事：环境
-复位时暂停、发第一个目标前先对齐、退出时 join。
+主臂要跟得顺，从臂就得持续接收目标，更新频率远高于 ``env.step``。
+:class:`StreamingTeleopDevice` 为这类设备单独开一个线程。环境复位时，线程先暂停；发送
+第一个目标前还会完成对齐，退出时再 join。
 
 选设备就是一个配置项：
 
@@ -126,26 +124,27 @@ bin relocation 改十一项。配置里剩下的部分就是任务本身：位�
 设备读取与动作转换分开
 ----------------------
 
-``teleop/`` 内部还有一层划分，正是它让工装脚本能单独跑起来。``devices/`` 只放读取代码，
-也就是和串口、头显打交道的部分，不 import Gymnasium；``adapters.py`` 才把读数换算成
-某个环境的动作。
+``teleop/`` 内部还把设备 I/O 与环境动作转换分开。``devices/`` 只和串口、头显打交道，
+不导入 Gymnasium；``adapters.py`` 再把设备读数换算成某个环境的动作。工装脚本因此可以
+脱离环境单独运行。
 
-于是接机器人之前，可以先确认主臂接线是否正常：
+接机器人之前，先用下面的命令检查主臂接线：
 
 .. code-block:: bash
 
    python -m rlinf.envs.real.teleop.devices.gello --port /dev/ttyUSB0
 
-遥操作设备不是 :class:`~rlinf.robotics.parts.base.RobotPart`。部件描述的是「这个组件对
-策略意味着什么」，而主臂给不出这个答案：没有策略会观测它，也没有机器人会把它组合进来。
-它读的是人，不是机器人，所以归在环境这一侧。
+遥操作设备不是 :class:`~rlinf.robotics.parts.base.RobotPart`。部件描述策略看到的物理
+组件，主臂不在这棵部件树里：策略不观测它，机器人也不会组合它。主臂读取的是操作者
+指令，代码归在环境这一侧。
 
 episode 控制不算遥操作
 ----------------------
 
-标记成功、放弃这一条、rollout 中途切换策略：这些同样只有人知道，但都不碰动作。相关
-wrapper 放在 ``episode/``，共用 :class:`KeyboardSession`。它持有监听器，在防抖窗口内
-丢掉重复按键，并在复位时清空队列，免得回原位时踩到的踏板把下一个 episode 提前打开。
+操作者还会标记成功、放弃当前这条，或者在 rollout 中途切换策略。这些选择都不改动作，
+相关 wrapper 放在 ``episode/``，并共用 :class:`KeyboardSession`。它持有按键监听器，
+防抖窗口内的重复输入会被丢弃。环境复位时，队列也会清空，免得回原位期间踩到的踏板
+提前开始下一个 episode。
 
 新增一种模式，只要读 ``presses()`` 并规定每个键的含义：
 
@@ -173,7 +172,7 @@ wrapper 放在 ``episode/``，共用 :class:`KeyboardSession`。它持有监听�
      - 一个任务一个模块，另有存放公共逻辑的 ``base.py``，以及写着 ``TASKS`` 表的
        ``__init__.py``。
    * - ``real/teleop/devices/``
-     - GELLO、数据手套、键盘、PICO、SpaceMouse 的读取实现，不含 Gymnasium。
+     - GELLO、数据手套、键盘、PICO、SpaceMouse 的读取实现，不导入 Gymnasium。
    * - ``real/teleop/``
      - ``intervention.py``、``adapters.py``、``streaming.py``、``pico.py``，以及选设备用的
        ``config.py``。
@@ -186,7 +185,7 @@ wrapper 放在 ``episode/``，共用 :class:`KeyboardSession`。它持有监听�
    * - ``real/registry.py``
      - ``task_factory`` 与 ``register_tasks``。
    * - ``real/robot_task_env.py``
-     - ``RobotTask`` 和 ``RobotTaskEnv``，把任务逻辑挡在硬件之外。
+     - ``RobotTask`` 和 ``RobotTaskEnv`` 划定任务逻辑与硬件代码的边界。
 
 下一步
 ------
