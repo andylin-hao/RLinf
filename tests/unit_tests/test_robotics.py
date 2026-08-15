@@ -689,9 +689,17 @@ def test_dual_franka_inherits_declaration_from_franka():
     assert DualFrankaRobot.build_arms.__func__ is not FrankaRobot.build_arms.__func__, (
         "only the arm count differs, and that is what build_arms says"
     )
+    # Switching the control backend is one class attribute, and it serves any
+    # arm count because declare_arm is shared.
     assert (FrankaRobot.BACKEND, DualFrankaRobot.BACKEND) == ("franka_ros", "franky")
-    # build is specialised per robot.
-    assert DualFrankaRobot.build.__func__ is not FrankaRobot.build.__func__
+    # build_arms carries the entire difference; everything else is inherited.
+    overridden = [
+        name
+        for name in ("declare_arm", "build_arms", "build_cameras", "build")
+        if getattr(DualFrankaRobot, name).__func__
+        is not getattr(FrankaRobot, name).__func__
+    ]
+    assert overridden == ["build_arms"]
 
 
 def test_every_part_kind_places_independently():

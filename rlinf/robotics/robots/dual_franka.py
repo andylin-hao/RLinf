@@ -15,7 +15,6 @@
 from __future__ import annotations
 
 import ipaddress
-from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -77,40 +76,6 @@ class DualFrankaRobot(FrankaRobot):
             )
             for side, (robot_ip, gripper_type, connection, node_rank) in sides.items()
         }
-
-    @classmethod
-    def build(
-        cls,
-        *,
-        left_robot_ip: Optional[str],
-        right_robot_ip: Optional[str],
-        left_node_rank: int,
-        right_node_rank: int,
-        env_idx: int,
-        worker_rank: int,
-        left_gripper_type: str,
-        right_gripper_type: str,
-        left_gripper_connection: Optional[str] = None,
-        right_gripper_connection: Optional[str] = None,
-        cameras: Optional[Mapping[str, Any]] = None,
-        camera_node_rank: Optional[int] = None,
-    ) -> "DualFrankaRobot":
-        """Compose this robot from the parts it is made of."""
-        return cls(
-            **cls.build_arms(
-                left_robot_ip=left_robot_ip,
-                right_robot_ip=right_robot_ip,
-                left_node_rank=left_node_rank,
-                right_node_rank=right_node_rank,
-                worker_rank=worker_rank,
-                env_idx=env_idx,
-                left_gripper_type=left_gripper_type,
-                right_gripper_type=right_gripper_type,
-                left_gripper_connection=left_gripper_connection,
-                right_gripper_connection=right_gripper_connection,
-            ),
-            **cls.build_cameras(cameras, node_rank=camera_node_rank),
-        )
 
 
 class DualFrankaDiscovery(RobotDiscovery):

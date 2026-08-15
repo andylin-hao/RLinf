@@ -119,27 +119,18 @@ class FrankaRobot(Robot):
     def build(
         cls,
         *,
-        robot_ip: Optional[str],
-        env_idx: int,
-        node_rank: int,
-        worker_rank: int,
-        end_effector_type: str,
-        end_effector_config: Optional[dict] = None,
-        gripper_connection: Optional[str] = None,
         cameras: Optional[Mapping[str, Any]] = None,
         camera_node_rank: Optional[int] = None,
+        **config: Any,
     ) -> "FrankaRobot":
-        """Compose this robot from the parts it is made of."""
+        """Compose this robot from the parts it is made of.
+
+        Everything that varies between Franka robots lives in ``build_arms``, so
+        a variant with a different number of arms overrides that alone and
+        inherits this.
+        """
         return cls(
-            **cls.build_arms(
-                robot_ip=robot_ip,
-                node_rank=node_rank,
-                worker_rank=worker_rank,
-                env_idx=env_idx,
-                end_effector_type=end_effector_type,
-                end_effector_config=end_effector_config,
-                gripper_connection=gripper_connection,
-            ),
+            **cls.build_arms(**config),
             **cls.build_cameras(cameras, node_rank=camera_node_rank),
         )
 
