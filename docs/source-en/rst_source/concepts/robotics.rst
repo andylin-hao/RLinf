@@ -16,20 +16,82 @@ hardware:
 .. code-block:: python
 
    class FrankaRobot(Robot):
-       ROBOT_TYPE = "Franka"
-       BACKEND = "franka_ros"
+       ROBOT_TYPE = "Franka"       # the name build_robot() looks up
+       BACKEND = "franka_ros"      # which arm implementation declare_arm creates
 
        @classmethod
        def build_arms(cls, *, robot_ip, node_rank, **config) -> dict[str, RobotPart]:
+           # declare_arm returns one part: the arm at robot_ip, to be built on
+           # node_rank, carrying whatever end effector its connection exposes.
+           # It only records that description -- no hardware is touched yet.
            return {"arm": cls.declare_arm(robot_ip, node_rank=node_rank, name="arm")}
+
+       @classmethod
+       def build_cameras(cls, cameras=None, *, node_rank=None) -> dict[str, RobotPart]:
+           # Same contract, for a different kind of part.
+           return declare_cameras(cameras, node_rank=node_rank)
 
 
    FrankaRobot.register(FrankaConfig, FrankaDiscovery)
 
-``build`` combines the parts returned by the ``build_*`` methods. Later,
-``connect`` constructs each part on the requested node, and ``disconnect``
-releases it. Because those steps live in the common layer, you do not have to
-reimplement them for every robot.
+Every ``build_*`` method answers the same question -- *which parts of this kind
+does the robot carry, and under what names* -- by returning a
+``{name: part}`` mapping. The inherited ``build`` is then just the merge, which
+is why a new Franka variant never rewrites it:
+
+.. code-block:: python
+
+   @classmethod
+   def build(cls, *, cameras=None, camera_node_rank=None, **config) -> "FrankaRobot":
+       return cls(
+           **cls.build_arms(**config),
+           **cls.build_cameras(cameras, node_rank=camera_node_rank),
+       )
+
+Those names become the robot's parts. From there, ``connect`` builds each part
+on the node it asked for and ``disconnect`` releases it. Both live in the common
+layer, so no robot reimplements them.
+
+Use a Robot
+-----------
+
+Driving a robot is five calls, and they are the same five whatever it is made
+of. Build it from its registered type, connect once, then read and command it:
+
+.. code-block:: python
+
+   robot = build_robot("Franka", robot_ip="10.0.0.1", node_rank=1)
+   robot.connect()
+
+   observation = robot.get_observation()
+   observation["arm"]["arm"]["tcp_pose"]            # Cartesian pose
+   observation["arm"]["end_effector"]["state"]      # gripper width
+
+   robot.send_action(
+       {"arm": {"arm": {"tcp_pose": target}, "end_effector": {"target": width}}}
+   )
+
+   robot.reset()
+   robot.disconnect()
+
+Observations and actions are nested dictionaries keyed by the names you composed
+the robot with, so the data has the same shape as the hardware. Reading a
+dual-arm robot uses the same call; only the names differ:
+
+.. code-block:: python
+
+   observation["left"]["arm"]["arm_joint_position"]
+   observation["right"]["end_effector"]["state"]
+
+Notice what the calling code does not mention: where anything runs. An arm
+declared on another node reports its reading in the same place as a local one,
+and parts on independent connections are read in parallel, so a two-arm
+observation costs one round trip instead of two.
+
+To learn that tree without touching hardware, read ``observation_features`` and
+``action_features``. They describe the same nesting and are what ``RobotTaskEnv``
+turns into Gymnasium spaces; see `Tasks Stay Out of Hardware`_ for how a policy
+that expects flat vectors plugs in.
 
 One Arm or Many Is the Same Code
 --------------------------------
@@ -85,14 +147,14 @@ An Arm Arrives Whole
 --------------------
 
 The Franka gripper uses the arm's connection, so the arm owns it. Once you add
-the arm to a robot, its gripper comes along with it:
+the arm to a robot, the gripper comes along as its ``end_effector`` part:
 
 .. code-block:: python
 
    robot = FrankaRobot.build(robot_ip="10.0.0.1", node_rank=1, ...)
 
    robot.parts                  # {"arm": ...}
-   robot.part("arm").parts      # {"arm": ..., "gripper": ...}
+   robot.part("arm").parts      # {"arm": ..., "end_effector": ...}
 
 Notice that ``build`` never mentions the gripper. The arm describes what its
 connection exposes, while the robot only decides which top-level hardware it
@@ -291,7 +353,7 @@ gripper separately:
        wrist=RealSenseCamera.at(info, node_rank=3),
    )
 
-   robot.part("arm").parts     # {"arm": ..., "gripper": ...}
+   robot.part("arm").parts     # {"arm": ..., "end_effector": ...}
 
 Reach into a declaration only when one hardware connection exposes several
 peer components. A coupled controller that drives two arms is not itself an

@@ -14,19 +14,76 @@
 .. code-block:: python
 
    class FrankaRobot(Robot):
-       ROBOT_TYPE = "Franka"
-       BACKEND = "franka_ros"
+       ROBOT_TYPE = "Franka"       # build_robot() 按这个名字查找
+       BACKEND = "franka_ros"      # declare_arm 据此选择机械臂实现
 
        @classmethod
        def build_arms(cls, *, robot_ip, node_rank, **config) -> dict[str, RobotPart]:
+           # declare_arm 返回一个部件：位于 robot_ip、待在 node_rank 上构建的机械臂，
+           # 连同这条连接所暴露的末端执行器。这里只是把描述记下来，不碰硬件。
            return {"arm": cls.declare_arm(robot_ip, node_rank=node_rank, name="arm")}
+
+       @classmethod
+       def build_cameras(cls, cameras=None, *, node_rank=None) -> dict[str, RobotPart]:
+           # 换一类部件，约定完全一样。
+           return declare_cameras(cameras, node_rank=node_rank)
 
 
    FrankaRobot.register(FrankaConfig, FrankaDiscovery)
 
-``build`` 汇总各个 ``build_*`` 方法返回的部件；随后，``connect`` 在指定节点上构建并
-连接这些部件，``disconnect`` 再统一释放资源。这套流程写在公共层，每接一款机器人都
-能直接复用。
+每个 ``build_*`` 方法回答的是同一个问题：这台机器人带有哪些这类部件、各自叫什么名字。
+答案统一是一个 ``{名字: 部件}`` 映射。剩下的 ``build`` 无非是把它们合到一起，所以新
+增一款 Franka 变体时不必重写：
+
+.. code-block:: python
+
+   @classmethod
+   def build(cls, *, cameras=None, camera_node_rank=None, **config) -> "FrankaRobot":
+       return cls(
+           **cls.build_arms(**config),
+           **cls.build_cameras(cameras, node_rank=camera_node_rank),
+       )
+
+这些名字就是机器人的部件名。之后调用 ``connect``，每个部件会在它申请的节点上构建，
+``disconnect`` 负责释放。两者都在公共层实现，不用逐款机器人重写。
+
+怎么用一台机器人
+----------------
+
+开起来只有五个调用，而且不管机器人由什么部件拼成，都是这五个。按注册名建好，连一次，
+然后读状态、发指令：
+
+.. code-block:: python
+
+   robot = build_robot("Franka", robot_ip="10.0.0.1", node_rank=1)
+   robot.connect()
+
+   observation = robot.get_observation()
+   observation["arm"]["arm"]["tcp_pose"]            # 末端笛卡尔位姿
+   observation["arm"]["end_effector"]["state"]      # 夹爪开合
+
+   robot.send_action(
+       {"arm": {"arm": {"tcp_pose": target}, "end_effector": {"target": width}}}
+   )
+
+   robot.reset()
+   robot.disconnect()
+
+观测和动作都是嵌套字典，键就是组装时给部件起的名字，数据结构因此和硬件结构一致。读
+双臂机器人用的还是这一个调用，区别只在名字：
+
+.. code-block:: python
+
+   observation["left"]["arm"]["arm_joint_position"]
+   observation["right"]["end_effector"]["state"]
+
+值得留意的是这段代码里没出现的东西：部件跑在哪。机械臂即使被放到别的节点，读数照样
+出现在同一个位置；连接互相独立的部件还会并行读取，双臂取一次观测只花一个来回，而不
+是两个。
+
+想在不连硬件的情况下先看清这棵树，可以读 ``observation_features`` 和
+``action_features``，它们描述的是同一套嵌套结构，也是 ``RobotTaskEnv`` 转成 Gymnasium
+空间的依据。策略只认扁平向量时怎么接，见 `任务不进入硬件代码`_。
 
 单臂和多臂是同一套代码
 ----------------------
@@ -77,14 +134,14 @@
 --------------
 
 Franka 夹爪与机械臂共用连接，所以应当归在机械臂下面。把机械臂装进机器人时，夹爪会
-作为它的子部件一起出现：
+作为它的 ``end_effector`` 子部件一起出现：
 
 .. code-block:: python
 
    robot = FrankaRobot.build(robot_ip="10.0.0.1", node_rank=1, ...)
 
    robot.parts                  # {"arm": ...}
-   robot.part("arm").parts      # {"arm": ..., "gripper": ...}
+   robot.part("arm").parts      # {"arm": ..., "end_effector": ...}
 
 这里的 ``build`` 完全不用关心夹爪。机械臂描述这条连接能访问哪些组件，机器人只选择
 要带哪些顶层硬件。连接细节因此不会散落到各个机器人定义里。
@@ -251,7 +308,7 @@ worker 与节点、GPU 的映射方式见 :doc:`放置策略 <placement>`。
        wrist=RealSenseCamera.at(info, node_rank=3),
    )
 
-   robot.part("arm").parts     # {"arm": ..., "gripper": ...}
+   robot.part("arm").parts     # {"arm": ..., "end_effector": ...}
 
 只有一条硬件连接暴露多个同级组件时，才需要从声明中选取子部件。比如，联动控制器能
 驱动两条机械臂，但它本身并不是机械臂；这时用 ``part(...)`` 选出要组合的那一个。
