@@ -185,8 +185,8 @@ def test_teleop_devices_live_with_the_envs_that_read_them():
     one, so these modules belong beside the wrappers that turn their output into
     an intervention rather than under ``robotics/parts``.
     """
-    teleop_dir = _ROOT / "rlinf" / "envs" / "real" / "teleop"
-    modules = {path.stem for path in teleop_dir.glob("*.py")} - {"__init__"}
+    devices_dir = _ROOT / "rlinf" / "envs" / "real" / "teleop" / "devices"
+    modules = {path.stem for path in devices_dir.glob("*.py")} - {"__init__"}
 
     assert modules == {
         "gello",
@@ -199,12 +199,16 @@ def test_teleop_devices_live_with_the_envs_that_read_them():
     assert not (_ROOT / "rlinf" / "robotics" / "parts" / "teleop").exists()
 
 
-def test_teleop_devices_do_not_import_gymnasium():
-    """A device only reads hardware, so a bench script can drive one directly."""
-    teleop_dir = _ROOT / "rlinf" / "envs" / "real" / "teleop"
+def test_teleop_device_readers_do_not_import_gymnasium():
+    """A reader only talks to hardware, so a bench script can drive one directly.
+
+    Turning a reading into an action is the adapters' job, and those may import
+    Gymnasium freely; this holds the line one level down, at the readers.
+    """
+    devices_dir = _ROOT / "rlinf" / "envs" / "real" / "teleop" / "devices"
     offenders = {
         path.name
-        for path in teleop_dir.glob("*.py")
+        for path in devices_dir.glob("*.py")
         if re.search(r"^\s*(import|from)\s+gymnasium\b", path.read_text(), re.M)
     }
 

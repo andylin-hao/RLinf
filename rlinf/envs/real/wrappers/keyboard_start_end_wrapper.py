@@ -19,7 +19,7 @@ from typing import Any, SupportsFloat
 import gymnasium as gym
 from gymnasium.core import ActType, ObsType
 
-from rlinf.envs.real.teleop.keyboard import KeyboardListener
+from rlinf.envs.real.teleop.devices.keyboard import KeyboardListener
 
 
 class KeyboardStartEndWrapper(gym.Wrapper):

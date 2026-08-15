@@ -45,7 +45,7 @@ if not ray.is_initialized():
 from gello.dynamixel.driver import DynamixelDriver  # noqa: E402
 
 from rlinf.envs.real.franka.utils import wrap_to_pi  # noqa: E402
-from rlinf.envs.real.teleop.gello_joint import (  # noqa: E402
+from rlinf.envs.real.teleop.devices.gello_joint import (  # noqa: E402
     GelloJointExpert,
 )
 from rlinf.robotics.parts.arms.franky import (  # noqa: E402

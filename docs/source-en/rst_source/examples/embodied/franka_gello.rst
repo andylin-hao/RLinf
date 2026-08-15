@@ -187,7 +187,7 @@ communicating correctly and producing valid TCP target readings:
 .. code-block:: bash
 
    export PYTHONPATH=$PWD:${PYTHONPATH:-}
-   python -m rlinf.envs.real.teleop.gello \
+   python -m rlinf.envs.real.teleop.devices.gello \
        --port /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTA0OUKN-if00-port0
 
 You should see continuously updating output like:

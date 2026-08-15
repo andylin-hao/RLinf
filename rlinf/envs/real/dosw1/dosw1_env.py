@@ -26,7 +26,7 @@ import cv2
 import gymnasium as gym
 import numpy as np
 
-from rlinf.envs.real.teleop.keyboard import KeyboardListener
+from rlinf.envs.real.teleop.devices.keyboard import KeyboardListener
 from rlinf.envs.real.video_player import VideoPlayer
 from rlinf.robotics import (
     Camera,

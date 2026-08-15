@@ -26,7 +26,7 @@ import time
 import gymnasium as gym
 import numpy as np
 
-from rlinf.envs.real.teleop.gello_joint import GelloJointExpert
+from rlinf.envs.real.teleop.devices.gello_joint import GelloJointExpert
 
 
 class DualGelloJointIntervention(gym.ActionWrapper):
