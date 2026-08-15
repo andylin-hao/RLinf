@@ -856,3 +856,36 @@ def test_episode_wrappers_report_through_the_logger():
     )
 
     assert offenders == []
+
+
+def test_euler_conversion_is_one_wrapper_for_any_arm_count():
+    """One arm and two differ only in how many poses tcp_pose carries."""
+    import numpy as np
+    from gymnasium import spaces
+
+    from rlinf.envs.real.transforms import DualQuat2EulerWrapper, Quat2EulerWrapper
+
+    class Env:
+        def __init__(self, dim):
+            self.observation_space = spaces.Dict(
+                {
+                    "state": spaces.Dict(
+                        {"tcp_pose": spaces.Box(-np.inf, np.inf, (dim,))}
+                    )
+                }
+            )
+
+    identity_quat = np.array([0.0, 0.0, 0.0, 1.0])
+    one = np.concatenate([np.array([1.0, 2.0, 3.0]), identity_quat])
+
+    single = Quat2EulerWrapper(Env(7))
+    dual = DualQuat2EulerWrapper(Env(14))
+
+    assert single.observation_space["state"]["tcp_pose"].shape == (6,)
+    assert dual.observation_space["state"]["tcp_pose"].shape == (12,)
+
+    got = single.observation({"state": {"tcp_pose": one.copy()}})["state"]["tcp_pose"]
+    assert np.allclose(got, [1.0, 2.0, 3.0, 0.0, 0.0, 0.0])
+
+    both = dual.observation({"state": {"tcp_pose": np.concatenate([one, one])}})
+    assert np.allclose(both["state"]["tcp_pose"], [1.0, 2.0, 3.0, 0, 0, 0] * 2)

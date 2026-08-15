@@ -20,9 +20,8 @@ needs the matching wrapper at rollout, which is why they belong together rather
 than scattered among the wrappers that decide what the robot does.
 """
 
-from .dual_euler_obs import DualQuat2EulerWrapper
 from .dual_relative_frame import DualRelativeFrame, DualRelativeTargetFrame
-from .euler_obs import Quat2EulerWrapper
+from .euler_obs import DualQuat2EulerWrapper, Quat2EulerWrapper
 from .gripper_close import GripperCloseEnv
 from .relative_frame import RelativeFrame, RelativeTargetFrame
 

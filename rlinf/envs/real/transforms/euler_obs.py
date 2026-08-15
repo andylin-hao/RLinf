@@ -12,6 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""Writing the TCP pose as Euler angles instead of a quaternion."""
+
+from typing import Optional
+
 import gymnasium as gym
 import numpy as np
 from gymnasium import Env, spaces
@@ -19,21 +23,44 @@ from scipy.spatial.transform import Rotation as R
 
 
 class Quat2EulerWrapper(gym.ObservationWrapper):
-    """
-    Convert the quaternion representation of the tcp pose to euler angles
+    """Convert each arm's TCP pose from ``xyz + quat`` to ``xyz + euler``.
+
+    The rotation is the same either way; only its representation changes, which
+    is what a policy trained on Euler angles expects to receive.
+
+    Args:
+        env: The environment to wrap.
+        arms: How many 7-element poses ``tcp_pose`` carries. Defaults to
+            :attr:`ARMS`, so a subclass can fix the count for its robot.
     """
 
-    def __init__(self, env: Env):
+    #: Arms this wrapper reads unless told otherwise.
+    ARMS: int = 1
+
+    #: Length of one pose, before and after the conversion.
+    QUAT_DIM = 7
+    EULER_DIM = 6
+
+    def __init__(self, env: Env, arms: Optional[int] = None) -> None:
         super().__init__(env)
-        # from xyz + quat to xyz + euler
+        self.arms = self.ARMS if arms is None else arms
         self.observation_space["state"]["tcp_pose"] = spaces.Box(
-            -np.inf, np.inf, shape=(6,)
+            -np.inf, np.inf, shape=(self.EULER_DIM * self.arms,)
         )
 
-    def observation(self, observation):
-        # convert tcp pose from quat to euler
+    def observation(self, observation: dict) -> dict:
+        """Rewrite ``tcp_pose`` in place, one arm at a time."""
         tcp_pose = observation["state"]["tcp_pose"]
         observation["state"]["tcp_pose"] = np.concatenate(
-            (tcp_pose[:3], R.from_quat(tcp_pose[3:].copy()).as_euler("xyz"))
+            [
+                np.concatenate((pose[:3], R.from_quat(pose[3:].copy()).as_euler("xyz")))
+                for pose in np.split(tcp_pose, self.arms)
+            ]
         )
         return observation
+
+
+class DualQuat2EulerWrapper(Quat2EulerWrapper):
+    """The same conversion for a robot whose ``tcp_pose`` holds both arms."""
+
+    ARMS = 2
