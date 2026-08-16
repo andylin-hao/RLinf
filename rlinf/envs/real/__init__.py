@@ -58,7 +58,7 @@ _EXPORTS: dict[str, str] = {
             "Turtle2RobotState",
         ),
         ".env": ("RealWorldEnv",),
-        ".robot_task_env": ("RobotTask", "RobotTaskEnv"),
+        ".task_env": ("RobotTask", "RobotTaskEnv"),
     }.items()
     for name in names
 }
@@ -79,7 +79,7 @@ def _load_all() -> None:
     if _loaded:
         return
     _loaded = True
-    for module in (".dosw1", ".franka", ".gim_arm", ".xsquare", ".robot_task_env"):
+    for module in (".dosw1", ".franka", ".gim_arm", ".xsquare", ".task_env"):
         importlib.import_module(module, __name__)
     env_module = importlib.import_module(".env", __name__)
     env_module.RealWorldEnv.realworld_setup()

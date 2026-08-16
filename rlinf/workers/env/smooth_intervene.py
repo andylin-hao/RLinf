@@ -172,7 +172,7 @@ class SmoothInterveneController:
                 )
             # Imported here so a worker that never touches real hardware does
             # not pay for the realworld env package at import time.
-            from rlinf.envs.real.teleop.config import resolve_teleop_device
+            from rlinf.envs.real.wrappers.teleop.config import resolve_teleop_device
 
             device = resolve_teleop_device(
                 OmegaConf.select(cfg, "env.train") or {},

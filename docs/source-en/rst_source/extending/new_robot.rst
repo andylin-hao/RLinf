@@ -351,7 +351,7 @@ discovery registration, and the exact schema expected by legacy policies:
 
    pytest tests/unit_tests/test_robotics.py \
      tests/unit_tests/test_robotics_boundaries.py \
-     tests/unit_tests/test_robot_task_env.py \
+     tests/unit_tests/test_real_env.py \
      tests/unit_tests/test_realworld_robotics_compatibility.py
 
 These tests exercise the scheduler import boundary, single-arm and dual-arm

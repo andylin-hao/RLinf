@@ -137,7 +137,7 @@ Turtle2 用 ``apply_single_arm_wrappers``，双臂 Franka 用
    * - 手动标记奖励、手动结束 episode
      - 环境配置里的 ``keyboard_reward_wrapper``。
    * - 相对坐标系、欧拉角转换、夹爪维度裁剪
-     - ``real/transforms/``，由 wrapper 栈套上。
+     - ``real/wrappers/transforms/``，由 wrapper 栈套上。
    * - 各任务共用的阻抗参数
      - ``COMPLIANCE_DEFAULTS``，你只写差异项。
 

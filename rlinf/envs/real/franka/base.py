@@ -24,7 +24,7 @@ import gymnasium as gym
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
-from rlinf.envs.real.video_player import VideoPlayer
+from rlinf.envs.real.utils.video import VideoPlayer
 from rlinf.robotics import (
     Camera,
     FrankaConfig,
@@ -41,7 +41,7 @@ from rlinf.robotics.parts.end_effectors.base import (
 from rlinf.scheduler import WorkerInfo
 from rlinf.utils.logging import get_logger
 
-from ..pose_utils import (
+from ..utils.pose import (
     clip_euler_to_target_window,
     construct_adjoint_matrix,
     construct_homogeneous_matrix,

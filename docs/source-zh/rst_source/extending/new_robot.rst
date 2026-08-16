@@ -318,7 +318,7 @@ YAML 中，不要写死在 Python 代码里：
 
    pytest tests/unit_tests/test_robotics.py \
      tests/unit_tests/test_robotics_boundaries.py \
-     tests/unit_tests/test_robot_task_env.py \
+     tests/unit_tests/test_real_env.py \
      tests/unit_tests/test_realworld_robotics_compatibility.py
 
 这组测试覆盖调度器导入边界、单臂与双臂组合、任务与机器人的分界，以及所有内置真机

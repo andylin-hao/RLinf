@@ -17,7 +17,7 @@ import numpy as np
 from gymnasium import Env
 from scipy.spatial.transform import Rotation as R
 
-from rlinf.envs.real.pose_utils import (
+from rlinf.envs.real.utils.pose import (
     construct_adjoint_matrix,
     construct_homogeneous_matrix,
 )

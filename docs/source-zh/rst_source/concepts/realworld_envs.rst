@@ -174,20 +174,20 @@ episode 控制不算遥操作
    * - ``robotics/parts/teleop/``
      - 操作者驱动的设备，本身是部件；底下 ``readers/`` 里的厂商读取实现不导入
        Gymnasium。
-   * - ``real/teleop/``
+   * - ``real/wrappers/teleop/``
      - ``intervention.py``、``adapters.py``、``streaming.py``、``pico.py``，以及选设备用的
        ``config.py``。
-   * - ``real/transforms/``
+   * - ``real/wrappers/transforms/``
      - 相对坐标系、四元数转欧拉角、夹爪维度裁剪。
-   * - ``real/episode/``
+   * - ``real/wrappers/episode/``
      - 各类键盘会话：奖励与结束、开始与结束、评测控制、策略切换、主从臂。
-   * - ``real/wrappers.py``
+   * - ``real/wrappers/__init__.py``
      - 把三类 wrapper 组装起来的构建函数。
    * - ``real/registry.py``
      - ``task_factory`` 与 ``register_tasks``。
    * - ``real/env.py``
      - ``RealWorldEnv``，框架根据 ``env_type: realworld`` 创建的向量化环境。
-   * - ``real/robot_task_env.py``
+   * - ``real/task_env.py``
      - ``RobotTask`` 和 ``RobotTaskEnv`` 划定任务逻辑与硬件代码的边界。
 
 下一步

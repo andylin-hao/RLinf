@@ -26,7 +26,7 @@ import cv2
 import gymnasium as gym
 import numpy as np
 
-from rlinf.envs.real.video_player import VideoPlayer
+from rlinf.envs.real.utils.video import VideoPlayer
 from rlinf.robotics import (
     Camera,
     DOSW1Robot,
@@ -744,6 +744,6 @@ class DOSW1Env(gym.Env):
             return ()
         if getattr(self.config, "is_dummy", False):
             return ()
-        from rlinf.envs.real.episode import LeaderFollowerKeyboardIntervention
+        from rlinf.envs.real.wrappers.episode import LeaderFollowerKeyboardIntervention
 
         return (LeaderFollowerKeyboardIntervention,)

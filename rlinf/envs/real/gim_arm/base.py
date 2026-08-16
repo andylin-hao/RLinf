@@ -24,7 +24,7 @@ import gymnasium as gym
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
-from rlinf.envs.real.video_player import VideoPlayer
+from rlinf.envs.real.utils.video import VideoPlayer
 from rlinf.robotics import (
     Camera,
     GimArmConfig,

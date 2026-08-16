@@ -146,7 +146,7 @@ What You Do Not Need to Write
    * - Marking reward or ending an episode by hand
      - ``keyboard_reward_wrapper`` in the env config.
    * - Relative frames, Euler conversion, gripper narrowing
-     - ``real/transforms/``, applied by the wrapper stack.
+     - ``real/wrappers/transforms/``, applied by the wrapper stack.
    * - Impedance gains that every task shares
      - ``COMPLIANCE_DEFAULTS``; state only your deltas.
 

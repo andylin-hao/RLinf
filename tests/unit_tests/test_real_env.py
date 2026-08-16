@@ -33,12 +33,12 @@ from rlinf.envs.real.franka.dual_franka_joint import (
     DualFrankaJointEnv,
 )
 from rlinf.envs.real.gim_arm.base import GimArmEnv, GimArmRobotConfig
-from rlinf.envs.real.robot_task_env import RobotTask, RobotTaskEnv
-from rlinf.envs.real.teleop.config import (  # noqa: E402
+from rlinf.envs.real.task_env import RobotTask, RobotTaskEnv
+from rlinf.envs.real.wrappers.teleop.config import (  # noqa: E402
     NO_DEVICE,
     resolve_teleop_device,
 )
-from rlinf.envs.real.teleop.intervention import (  # noqa: E402
+from rlinf.envs.real.wrappers.teleop.intervention import (  # noqa: E402
     TeleopDevice,
     TeleopIntervention,
     TeleopSample,
@@ -383,7 +383,7 @@ def test_an_unfilled_part_keeps_the_policy_action():
     """
     import numpy as np
 
-    from rlinf.envs.real.teleop.composed import ComposedTeleop
+    from rlinf.envs.real.wrappers.teleop.composed import ComposedTeleop
     from rlinf.robotics.teleop import TeleopEntry, TeleopGroup
 
     class Fixed:
@@ -699,9 +699,9 @@ def test_pose_math_is_not_filed_under_a_robot():
     Leaving it in the Franka package made every wrapper importing it pull that
     package in, which is what turned the task registry into an import cycle.
     """
-    from rlinf.envs.real import pose_utils
+    from rlinf.envs.real.utils import pose
 
-    assert hasattr(pose_utils, "construct_adjoint_matrix")
+    assert hasattr(pose, "construct_adjoint_matrix")
     assert not (_REAL / "franka" / "utils.py").exists()
 
 
@@ -758,11 +758,17 @@ def test_wrappers_are_split_by_what_they_change():
     flat wrappers/ package mixed all three.
     """
     real = _ROOT / "rlinf" / "envs" / "real"
+    wrappers = real / "wrappers"
 
-    assert not (real / "wrappers").is_dir(), "wrappers/ became wrappers.py"
-    assert (real / "wrappers.py").exists()
+    assert wrappers.is_dir(), "the three families live under one parent"
     for family in ("teleop", "transforms", "episode"):
-        assert (real / family / "__init__.py").exists(), family
+        assert (wrappers / family / "__init__.py").exists(), family
+
+    # The top level is robot folders and the env machinery, nothing else.
+    loose = sorted(
+        path.stem for path in real.glob("*.py") if path.name != "__init__.py"
+    )
+    assert loose == ["env", "registry", "task_env", "venv"], loose
 
 
 def test_no_teleop_wrapper_is_left_outside_teleop():
@@ -771,7 +777,7 @@ def test_no_teleop_wrapper_is_left_outside_teleop():
     strays = sorted(
         path.name
         for family in ("transforms", "episode")
-        for path in (real / family).glob("*.py")
+        for path in (real / "wrappers" / family).glob("*.py")
         if "intervention" in path.name and "leader_follower" not in path.name
     )
 
@@ -784,7 +790,7 @@ def test_a_held_button_device_does_not_keep_control_after_release():
     The window exists for devices that sample faster than a person moves;
     applying it here would keep commanding the robot after the grip is released.
     """
-    from rlinf.envs.real.teleop.pico import DualFrankaTcpPicoTeleop, PicoTeleop
+    from rlinf.envs.real.wrappers.teleop.pico import DualFrankaTcpPicoTeleop, PicoTeleop
 
     assert PicoTeleop.timeout == 0.0
     assert DualFrankaTcpPicoTeleop.timeout == 0.0
@@ -792,8 +798,8 @@ def test_a_held_button_device_does_not_keep_control_after_release():
 
 def test_streaming_device_lifecycle_without_hardware():
     """The command thread starts once aligned and is joined on close."""
-    from rlinf.envs.real.teleop.intervention import TeleopSample
-    from rlinf.envs.real.teleop.streaming import TeleopStreamer
+    from rlinf.envs.real.wrappers.teleop.intervention import TeleopSample
+    from rlinf.envs.real.wrappers.teleop.streaming import TeleopStreamer
 
     ticks = []
 
@@ -824,7 +830,7 @@ def test_streaming_device_lifecycle_without_hardware():
 
 def _keyboard_session(monkeypatch, queued):
     """A KeyboardSession over a fake listener replaying `queued` key batches."""
-    from rlinf.envs.real.episode import session as session_module
+    from rlinf.envs.real.wrappers.episode import session as session_module
 
     class FakeListener:
         def __init__(self):
@@ -874,14 +880,14 @@ def test_presses_queued_between_episodes_do_not_leak(monkeypatch):
 
 def test_every_keyboard_wrapper_shares_the_session(monkeypatch):
     """One place owns the listener, the debounce, and the drain."""
-    from rlinf.envs.real.episode import (
+    from rlinf.envs.real.wrappers.episode import (
         KeyboardEvalControlWrapper,
         KeyboardRewardDoneMultiStageWrapper,
         KeyboardRewardDoneWrapper,
         KeyboardRLTPolicySwitchWrapper,
         KeyboardStartEndWrapper,
     )
-    from rlinf.envs.real.episode.session import KeyboardSession
+    from rlinf.envs.real.wrappers.episode.session import KeyboardSession
 
     for wrapper in (
         KeyboardEvalControlWrapper,
@@ -910,7 +916,10 @@ def test_euler_conversion_is_one_wrapper_for_any_arm_count():
     import numpy as np
     from gymnasium import spaces
 
-    from rlinf.envs.real.transforms import DualQuat2EulerWrapper, Quat2EulerWrapper
+    from rlinf.envs.real.wrappers.transforms import (
+        DualQuat2EulerWrapper,
+        Quat2EulerWrapper,
+    )
 
     class Env:
         def __init__(self, dim):

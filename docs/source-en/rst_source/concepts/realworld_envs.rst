@@ -193,22 +193,22 @@ Where the Code Lives
    * - ``robotics/parts/teleop/``
      - The devices an operator drives, as parts, over vendor readers in
        ``readers/`` that import no Gymnasium.
-   * - ``real/teleop/``
+   * - ``real/wrappers/teleop/``
      - ``intervention.py``, ``adapters.py``, ``streaming.py``, ``pico.py``, and
        ``config.py`` for device selection.
-   * - ``real/transforms/``
+   * - ``real/wrappers/transforms/``
      - Relative frames, quaternion-to-Euler, gripper narrowing.
-   * - ``real/episode/``
+   * - ``real/wrappers/episode/``
      - Keyboard sessions: reward and done, start and end, eval control, policy
        switch, leader-follower.
-   * - ``real/wrappers.py``
+   * - ``real/wrappers/__init__.py``
      - The stack builders that compose the three families.
    * - ``real/registry.py``
      - ``task_factory`` and ``register_tasks``.
    * - ``real/env.py``
      - ``RealWorldEnv``, the vectorized env the framework instantiates from
        ``env_type: realworld``.
-   * - ``real/robot_task_env.py``
+   * - ``real/task_env.py``
      - ``RobotTask`` and ``RobotTaskEnv`` define the boundary between task logic
        and hardware.
 

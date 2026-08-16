@@ -27,22 +27,22 @@ from typing import Any, Mapping
 
 import gymnasium as gym
 
-from rlinf.envs.real.episode import (
+from rlinf.envs.real.wrappers.episode import (
     KeyboardEvalControlWrapper,
     KeyboardRewardDoneMultiStageWrapper,
     KeyboardRewardDoneWrapper,
     KeyboardRLTPolicySwitchWrapper,
     KeyboardStartEndWrapper,
 )
-from rlinf.envs.real.teleop.adapters import DualGelloJointStream
-from rlinf.envs.real.teleop.builder import build_teleop
-from rlinf.envs.real.teleop.config import NO_DEVICE, resolve_teleop_device
-from rlinf.envs.real.teleop.intervention import TeleopIntervention
-from rlinf.envs.real.teleop.pico import (
+from rlinf.envs.real.wrappers.teleop.adapters import DualGelloJointStream
+from rlinf.envs.real.wrappers.teleop.builder import build_teleop
+from rlinf.envs.real.wrappers.teleop.config import NO_DEVICE, resolve_teleop_device
+from rlinf.envs.real.wrappers.teleop.intervention import TeleopIntervention
+from rlinf.envs.real.wrappers.teleop.pico import (
     DualFrankaTcpPicoIntervention,
     PicoTeleop,
 )
-from rlinf.envs.real.transforms import (
+from rlinf.envs.real.wrappers.transforms import (
     GripperCloseEnv,
     Quat2EulerWrapper,
     RelativeFrame,

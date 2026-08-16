@@ -16,7 +16,7 @@
 None of these touch the action. They decide when an episode starts, when it ends,
 what reward it earned, and which policy is in charge -- the judgements a person
 watching the robot makes, which no sensor reports. Teleop is the other half of
-that story and lives in :mod:`rlinf.envs.real.teleop`.
+that story and lives in :mod:`rlinf.envs.real.wrappers.teleop`.
 """
 
 from .eval_control import KeyboardEvalControlWrapper
