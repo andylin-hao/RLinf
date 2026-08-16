@@ -112,13 +112,7 @@ EXTERNAL = {
 #: Real drift: the docs name something this repository used to have. Listed so
 #: the gate stays green for *new* drift while the backlog stays countable. The
 #: fix is to correct the page, then delete the entry -- not to grow this set.
-KNOWN_DRIFT = {
-    # concepts/channel.rst describes create_channel() parameters that do not
-    # exist; the real signature is (channel_name, maxsize, distributed,
-    # node_rank, local).
-    "group_affinity",
-    "group_rank_affinity",
-}
+KNOWN_DRIFT: set[str] = set()
 
 #: A literal worth checking looks like a Python name, not a sentence.
 IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z_0-9]*$")
