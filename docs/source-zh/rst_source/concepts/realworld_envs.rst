@@ -84,35 +84,22 @@ relocation 改十一项。配置的其余部分描述任务本身，包括位姿
 
    env = apply_single_arm_wrappers(PegInsertionEnv(...), cfg)
 
-遥操作：一个 wrapper，多种设备
-------------------------------
+遥操作：留在这一侧的部分
+------------------------
 
-遥操作设备各有不同的读取方式，返回的却是同一种信息：操作者此刻想让机器人做什么。
-设备只实现读取这一步：
+操作者用哪些设备、读数对机器人意味着什么，都在 :doc:`robotics` 里解决。只有两件事和
+环境有关，留在这一侧。
 
-.. code-block:: python
+一是什么时候用操作者的动作替换策略的。``TeleopIntervention`` 会在两次采样之间维持一段
+接管窗口：设备的采样比人动作快得多，没有这个窗口，一次动作中途就会在人和策略之间来回
+跳。像 PICO 扳机这种按住才生效的设备则把 ``timeout`` 设为 0，因为按键已经精确标出了
+接管区间，再多留一段就会在人松手后继续发指令。数据采集从 ``intervene_action`` 读结果。
 
-   class SpaceMouseTeleop(TeleopDevice):
-       def read(self, env, policy_action) -> TeleopSample:
-           expert, buttons = self.expert.get_action()
-           return TeleopSample(
-               action=expert,
-               active=bool(np.linalg.norm(expert) > 0.001),
-               info={"left": buttons[0], "right": buttons[1]},
-           )
+二是形状。group 产出的是具名部件，环境要的是一个扁平向量，``ComposedTeleop`` 按环境
+声明的布局把每个部件写进去。没人驱动的部件保留策略给的值——摆好的手能停在原处，就是
+这个道理。
 
-接下来的事交给 ``TeleopIntervention``。它用保持窗口维持两次采样之间的接管状态，处理
-松手后的回退动作，并写入数据采集器要读取的 ``intervene_action``。
-
-``active`` 表示操作者是否正在接管，动作本身不作这个判断。大多数设备静止时仍有细小
-抖动，因此各自设定阈值。PICO 握把或扳机这类按住才生效的设备能准确标出接管区间，直接
-把 ``timeout`` 设为 0。如果再延续半秒，操作者松手后机器人仍会收到指令。
-
-主臂要跟得顺，从臂就得持续接收目标，更新频率远高于 ``env.step``。
-:class:`StreamingTeleopDevice` 为这类设备单独开一个线程。环境复位时，线程先暂停；发送
-第一个目标前还会完成对齐，退出时再 join。
-
-选设备就是一个配置项：
+选设备是一个配置项；多个设备一起用时写成列表：
 
 .. code-block:: yaml
 
@@ -120,6 +107,12 @@ relocation 改十一项。配置的其余部分描述任务本身，包括位姿
      eval:
        teleop_device: spacemouse   # 也可以是 gello、pico、gello_joint、none
        gello_port: /dev/serial/by-id/...
+
+.. code-block:: yaml
+
+   env:
+     eval:
+       teleop: [spacemouse, glove]
 
 设备读取与动作转换分开
 ----------------------

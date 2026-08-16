@@ -141,6 +141,55 @@ Turtle2 用 ``apply_single_arm_wrappers``，双臂 Franka 用
    * - 各任务共用的阻抗参数
      - ``COMPLIANCE_DEFAULTS``，你只写差异项。
 
+新增遥操作设备
+--------------
+
+设备本身和它的读数意味着什么是两件事，所以接一种设备要写三样：一个部件、一个 binding，
+以及把两者配起来的一条登记。
+
+部件只管读硬件，写在 ``rlinf/robotics/parts/teleop/devices.py``：
+
+.. code-block:: python
+
+   class Pedal(TeleopPart):
+       def _open(self):
+           from .readers.pedal import PedalReader
+
+           return PedalReader(port=self._port)
+
+       @property
+       def observation_features(self):
+           return {"pressed": {"shape": (1,), "dtype": "bool"}}
+
+       def get_observation(self):
+           return {"pressed": np.asarray([self._reader.is_pressed()])}
+
+在 ``_open`` 而不是 ``__init__`` 里打开硬件，设备才能在一台机器上声明、在另一台上构建。
+
+binding 说明它填机器人动作里的哪些部件，写在
+``rlinf/robotics/teleop/bindings.py``：
+
+.. code-block:: python
+
+   class PedalGripperBinding(TeleopBinding):
+       PRODUCES = ("end_effector",)
+
+       def action(self, reading, context):
+           return {"end_effector": np.array([-1.0 if reading["pressed"] else 1.0])}
+
+       def is_driving(self, reading):
+           return bool(reading["pressed"])
+
+最后在 ``rlinf/envs/real/wrappers/teleop/builder.py`` 的 ``DEVICES`` 里把两者配起来，
+再在能驱动它的环境里写上这个设备名：
+
+.. code-block:: python
+
+   DEVICES = {..., "pedal": _pedal}
+
+其他地方都不用改。stack builder 始终不知道有这个设备；配置里写了就能用，而机器人没有
+``end_effector`` 时会直接拒绝，而不是搭出一半。
+
 如果要加的是 wrapper
 --------------------
 

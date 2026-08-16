@@ -410,6 +410,69 @@ SDK 往往不允许在一条链路上并发调用。Franka 类本身不参与这
    * - ``robot.py``、``adapters.py``
      - 组合，以及给扁平向量策略用的适配器。
 
+操作者也是一组部件
+------------------
+
+主臂就是一条带编码器的机械臂，数据手套报告手指角度，SpaceMouse 报告一个 twist。
+它们都要连接、读数、断开，而且各自插在某台机器上，所以它们和被操纵的硬件一样是
+``RobotPart``，放置和生命周期直接沿用：
+
+.. code-block:: python
+
+   leader = TeleopLeaderArm.at("/dev/ttyUSB0", node_rank=1)   # 放在 NUC 上
+   mouse = SpaceMouse()                                       # 放在本机
+
+读数意味着什么则是另一个问题，答案属于机器人而不是设备。binding 负责回答，返回机器人
+动作中的一部分：
+
+.. code-block:: python
+
+   class SpaceMouseBinding(TeleopBinding):
+       PRODUCES = ("arm", "end_effector")
+
+       def action(self, reading, context):
+           return {"arm": reading["twist"], "end_effector": self._grip(reading)}
+
+两者分开之后，同一个 SpaceMouse 既能驱动这里的笛卡尔机械臂，也能拿去驱动别的东西。
+
+设备的组合方式和部件一样
+------------------------
+
+设备既然填的是具名部件，几个设备就能各填各的，由 ``TeleopGroup`` 合并结果。灵巧手
+那套装置，就是 SpaceMouse 管机械臂、数据手套管手：
+
+.. code-block:: yaml
+
+   teleop: [spacemouse, glove]
+
+.. code-block:: python
+
+   parts, driving, _ = group.action(context)
+   # {"arm": array(6), "hand": array(6)}
+
+没有任何地方算下标，配置里也不会出现动作向量的区间。binding 想填的部件机器人若是
+没有，就不填——机械臂末端装的是灵巧手而不是夹爪时，SpaceMouse 就只管机械臂。
+
+有两类错误在构建 group 时就报出来，而不是等机器人动起来才发现：两个设备抢同一个
+部件，以及某个设备什么都填不上。
+
+同一套装置里的设备未必互相独立。灵巧手这套里，是 SpaceMouse 的按键把控制权交给手套，
+所以 binding 可以给排在后面的设备发布上下文：
+
+.. code-block:: python
+
+   def publish(self, reading):
+       return {"hand_driving": bool(reading["buttons"][1])}
+
+双臂机器人上两条主臂产出的都是 arm，这时用 ``drives`` 指明各自填哪一支。这也是配置里
+唯一会出现部件名的地方：
+
+.. code-block:: yaml
+
+   teleop:
+     - {gello_joint: {port: /dev/left,  drives: left}}
+     - {gello_joint: {port: /dev/right, drives: right}}
+
 任务不进入硬件代码
 ------------------
 

@@ -150,6 +150,59 @@ What You Do Not Need to Write
    * - Impedance gains that every task shares
      - ``COMPLIANCE_DEFAULTS``; state only your deltas.
 
+Adding a Teleop Device
+----------------------
+
+A device and what its readings mean are two separate things, so adding one is a
+part, a binding, and an entry pairing them.
+
+The part reads hardware and nothing else, in
+``rlinf/robotics/parts/teleop/devices.py``:
+
+.. code-block:: python
+
+   class Pedal(TeleopPart):
+       def _open(self):
+           from .readers.pedal import PedalReader
+
+           return PedalReader(port=self._port)
+
+       @property
+       def observation_features(self):
+           return {"pressed": {"shape": (1,), "dtype": "bool"}}
+
+       def get_observation(self):
+           return {"pressed": np.asarray([self._reader.is_pressed()])}
+
+Opening in ``_open`` rather than ``__init__`` is what lets the device be
+declared on one machine and built on another.
+
+The binding says which parts of a robot's action it fills, in
+``rlinf/robotics/teleop/bindings.py``:
+
+.. code-block:: python
+
+   class PedalGripperBinding(TeleopBinding):
+       PRODUCES = ("end_effector",)
+
+       def action(self, reading, context):
+           return {"end_effector": np.array([-1.0 if reading["pressed"] else 1.0])}
+
+       def is_driving(self, reading):
+           return bool(reading["pressed"])
+
+Then pair them in ``DEVICES`` in
+``rlinf/envs/real/wrappers/teleop/builder.py``, and name the device in any env
+that can drive it:
+
+.. code-block:: python
+
+   DEVICES = {..., "pedal": _pedal}
+
+Nothing else changes. The stack builder never learns the device exists; a config
+naming it gets it, and a robot without an ``end_effector`` refuses the rig rather
+than half-building one.
+
 Adding a Wrapper Instead
 ------------------------
 

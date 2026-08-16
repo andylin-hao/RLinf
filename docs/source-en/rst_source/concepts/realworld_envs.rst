@@ -94,40 +94,27 @@ wrapper stack:
 
    env = apply_single_arm_wrappers(PegInsertionEnv(...), cfg)
 
-Teleop: One Wrapper, Many Devices
----------------------------------
+Teleop: What Stays on This Side
+-------------------------------
 
-Teleop devices differ in how they read the operator, but they all return the
-same answer: what the operator would do right now. A device only implements that
-read:
+Which devices the operator drives, and what their readings mean for the robot,
+is worked out in :doc:`robotics`. Two things depend on the environment and stay
+here.
 
-.. code-block:: python
+The first is when the operator's action replaces the policy's.
+``TeleopIntervention`` holds control between samples for a window, because
+devices sample faster than a person moves and the action would otherwise flicker
+mid-motion. A held control such as a PICO grip marks the interval exactly and
+sets ``timeout = 0``; carrying that over would keep commanding the robot after
+the operator lets go. Dataset collectors read the result from
+``intervene_action``.
 
-   class SpaceMouseTeleop(TeleopDevice):
-       def read(self, env, policy_action) -> TeleopSample:
-           expert, buttons = self.expert.get_action()
-           return TeleopSample(
-               action=expert,
-               active=bool(np.linalg.norm(expert) > 0.001),
-               info={"left": buttons[0], "right": buttons[1]},
-           )
+The second is the shape. A group produces named parts, an env takes one flat
+vector, and ``ComposedTeleop`` writes each part into the layout the env
+declares. Parts nobody drives keep whatever the policy asked for, which is how a
+posed hand stays where it was put.
 
-``TeleopIntervention`` handles the rest. It keeps control active between samples
-for a hold window and chooses the fallback after release. Dataset collectors
-read the resulting action from ``intervene_action``.
-
-``active`` says whether the operator is driving; the action itself does not.
-Most devices report small residual motion even at rest, and each device sets its
-own threshold. A held control such as a PICO grip or trigger marks the interval
-exactly and sets ``timeout = 0``. Carrying that signal over for another half
-second would continue commanding the robot after release.
-
-A leader arm needs to send targets continuously, much faster than ``env.step``
-runs. :class:`StreamingTeleopDevice` gives it a dedicated thread. The thread
-pauses while the env drives the robot home and aligns before sending its first
-target; shutdown joins it.
-
-Choosing a device is one config key:
+Choosing devices is one config key, or a list when several take part:
 
 .. code-block:: yaml
 
@@ -135,6 +122,12 @@ Choosing a device is one config key:
      eval:
        teleop_device: spacemouse   # or gello, pico, gello_joint, none
        gello_port: /dev/serial/by-id/...
+
+.. code-block:: yaml
+
+   env:
+     eval:
+       teleop: [spacemouse, glove]
 
 Devices and Readers Are Separate
 --------------------------------

@@ -468,6 +468,78 @@ Where the Code Lives
    * - ``robot.py``, ``adapters.py``
      - Composition, and the adapters for policies that expect flat vectors.
 
+An Operator Is Another Set of Parts
+-----------------------------------
+
+A leader arm is an arm with encoders. A glove reports finger angles, a
+spacemouse reports a twist. They connect, they report a reading, they
+disconnect, and each is plugged into a particular machine, so they are
+``RobotPart`` implementations like the hardware they drive, and they get
+placement and lifecycle without asking:
+
+.. code-block:: python
+
+   leader = TeleopLeaderArm.at("/dev/ttyUSB0", node_rank=1)   # on the NUC
+   mouse = SpaceMouse()                                       # here
+
+What a reading means is a separate question, and it belongs to the robot rather
+than the device. A binding answers it, returning part of a robot's action:
+
+.. code-block:: python
+
+   class SpaceMouseBinding(TeleopBinding):
+       PRODUCES = ("arm", "end_effector")
+
+       def action(self, reading, context):
+           return {"arm": reading["twist"], "end_effector": self._grip(reading)}
+
+Keeping those apart is what lets the same spacemouse drive a Cartesian arm here
+and something else elsewhere.
+
+Devices Compose the Way Parts Do
+--------------------------------
+
+Once a device fills named parts, several of them fill different ones, and
+``TeleopGroup`` merges what they return. A dexterous-hand setup is a spacemouse
+on the arm and a glove on the hand:
+
+.. code-block:: yaml
+
+   teleop: [spacemouse, glove]
+
+.. code-block:: python
+
+   parts, driving, _ = group.action(context)
+   # {"arm": array(6), "hand": array(6)}
+
+Nothing computes a slice, and the configuration never names a region of an
+action vector. A binding offering a part the robot does not have simply does not
+fill it, which is how a spacemouse drives the arm of a robot whose end effector
+is a hand rather than a gripper.
+
+Two mistakes are refused when the group is built, rather than at the first step
+with a robot already moving: two devices driving the same part, and a device
+that fills nothing at all.
+
+Devices in one rig are not always independent. On the dex-hand setup the
+spacemouse's button is what puts the glove in control, so a binding can publish
+context for the ones listed after it:
+
+.. code-block:: python
+
+   def publish(self, reading):
+       return {"hand_driving": bool(reading["buttons"][1])}
+
+Two identical leaders on a two-armed robot both produce an arm, so ``drives``
+says which branch each fills. It is the only place a part name appears in
+configuration:
+
+.. code-block:: yaml
+
+   teleop:
+     - {gello_joint: {port: /dev/left,  drives: left}}
+     - {gello_joint: {port: /dev/right, drives: right}}
+
 Tasks Stay Out of Hardware
 --------------------------
 
