@@ -12,7 +12,7 @@ use_fixed_reset_state_ids: False
 max_steps_per_rollout_epoch: 300
 max_episode_steps: 300
 # No teleop during autonomous policy rollout.
-teleop_device: none
+teleop: none
 # Skip DualRelativeFrame / DualQuat2EulerWrapper — rot6d TCP obs can't be
 # euler'd without hitting gimbal on wrist pitch ≈ ±90°.
 use_relative_frame: False

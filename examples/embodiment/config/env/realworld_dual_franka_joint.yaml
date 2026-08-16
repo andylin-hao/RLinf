@@ -12,13 +12,13 @@ use_fixed_reset_state_ids: False
 max_steps_per_rollout_epoch: 300
 max_episode_steps: 300
 # Policy-only eval by default; env.step drives the arms through
-# _dispatch_arm_motion. Set teleop_device: gello_joint to hand control to a pair
-# of leader arms, which also needs the GELLO ports below.
-teleop_device: none
+# _dispatch_arm_motion. List one gello_joint entry per arm to hand control to
+# a pair of leader arms, which also needs the GELLO ports below.
+teleop: none
 use_relative_frame: False  # Not applicable for joint-space control
 no_gripper: False
 # Pre-wired GELLO serial ports (by-id paths are stable across reboots).
-# Read by DualGelloJointTeleop when teleop_device is gello_joint.
+# Read by the gello_joint entries listed under 'teleop'.
 # Both ports must be plugged into the env-worker machine (cluster node 0).
 left_gello_port: LEFT_GELLO_PORT    # Replace: /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_*-if00-port0
 right_gello_port: RIGHT_GELLO_PORT  # Replace: /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_*-if00-port0
@@ -63,6 +63,6 @@ override_cfg:
   # pushes joint targets straight to each controller, bypassing env.step's rate
   # gate. env.step still reads state / obs at step_frequency but does NOT forward
   # move_joints, so two writers never race franky's motion queue. Only meaningful
-  # with teleop_device: gello_joint; with any other device it stops joint
+  # with the gello_joint leader arms; with any other device it stops joint
   # dispatch entirely.
   teleop_direct_stream: false

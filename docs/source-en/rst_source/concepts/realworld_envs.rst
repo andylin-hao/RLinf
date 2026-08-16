@@ -97,30 +97,31 @@ wrapper stack:
 Teleop: What Stays on This Side
 -------------------------------
 
-Which devices the operator drives, and what their readings mean for the robot,
-is worked out in :doc:`robotics`. Two things depend on the environment and stay
-here.
+Device selection and the meaning of each reading belong to :doc:`robotics`. The
+environment boundary handles two remaining decisions: how long an intervention
+stays active, and how named part actions enter the environment's flat vector.
 
-The first is when the operator's action replaces the policy's.
-``TeleopIntervention`` holds control between samples for a window, because
-devices sample faster than a person moves and the action would otherwise flicker
-mid-motion. A held control such as a PICO grip marks the interval exactly and
-sets ``timeout = 0``; carrying that over would keep commanding the robot after
-the operator lets go. Dataset collectors read the result from
-``intervene_action``.
+``TeleopIntervention`` keeps the latest operator action active for a short window
+between samples. Without that window, the action could flicker between operator
+and policy while the person is still moving. A held control such as a PICO grip
+already marks the interval exactly and uses ``timeout = 0``. Any hold after
+release would continue to command the robot. Dataset collectors read the action
+selected by this arbitration from ``intervene_action``.
 
-The second is the shape. A group produces named parts, an env takes one flat
-vector, and ``ComposedTeleop`` writes each part into the layout the env
-declares. Parts nobody drives keep whatever the policy asked for, which is how a
-posed hand stays where it was put.
+Once arbitration selects the action, its shape still has to change. A group
+produces named parts, while an environment accepts one flat vector.
+``ComposedTeleop`` writes each part into the layout declared by the environment.
+Parts that nobody drives retain the values requested by the policy; a posed hand
+stays at its last commanded position.
 
-Choosing devices is one config key, or a list when several take part:
+A single device uses one config key. When several devices share the rig, use a
+list:
 
 .. code-block:: yaml
 
    env:
      eval:
-       teleop_device: spacemouse   # or gello, pico, gello_joint, none
+       teleop: spacemouse   # or gello, pico, none
        gello_port: /dev/serial/by-id/...
 
 .. code-block:: yaml

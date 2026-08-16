@@ -108,7 +108,7 @@ these fields come from your config dataclass:
    init_params:
      id: "WipeEnv-v1"      # the gym id you registered
      num_envs: null
-   teleop_device: spacemouse
+   teleop: spacemouse
    override_cfg:
      target_ee_pose: [0.5, 0.0, 0.1, -3.14, 0.0, 0.0]
      random_xy_range: 0.03
@@ -141,7 +141,7 @@ What You Do Not Need to Write
    * - Connecting and placing hardware
      - ``Robot.connect``; see :doc:`../concepts/robotics`.
    * - Teleoperation
-     - ``teleop_device`` in the env config selects one; the wrapper stack builds
+     - ``teleop`` in the env config selects one; the wrapper stack builds
        it.
    * - Marking reward or ending an episode by hand
      - ``keyboard_reward_wrapper`` in the env config.
@@ -153,11 +153,12 @@ What You Do Not Need to Write
 Adding a Teleop Device
 ----------------------
 
-A device and what its readings mean are two separate things, so adding one is a
-part, a binding, and an entry pairing them.
+Adding a teleop device touches three layers: a part reads the hardware, a binding
+maps its readings to named robot action parts, and a registry entry pairs the
+two.
 
-The part reads hardware and nothing else, in
-``rlinf/robotics/parts/teleop/devices.py``:
+The part belongs in ``rlinf/robotics/parts/teleop/devices.py`` and reads only the
+device hardware:
 
 .. code-block:: python
 
@@ -174,11 +175,12 @@ The part reads hardware and nothing else, in
        def get_observation(self):
            return {"pressed": np.asarray([self._reader.is_pressed()])}
 
-Opening in ``_open`` rather than ``__init__`` is what lets the device be
-declared on one machine and built on another.
+``_open`` opens the hardware when the part connects; ``__init__`` only records
+the declaration. Declaration and construction may happen on different machines.
 
-The binding says which parts of a robot's action it fills, in
-``rlinf/robotics/teleop/bindings.py``:
+The binding goes in ``rlinf/robotics/teleop/bindings.py``. Its ``PRODUCES`` tuple
+declares which parts of the robot action it fills, and ``action`` returns those
+named values:
 
 .. code-block:: python
 
@@ -191,17 +193,17 @@ The binding says which parts of a robot's action it fills, in
        def is_driving(self, reading):
            return bool(reading["pressed"])
 
-Then pair them in ``DEVICES`` in
-``rlinf/envs/real/wrappers/teleop/builder.py``, and name the device in any env
-that can drive it:
+Pair the part and binding in ``DEVICES`` in
+``rlinf/envs/real/wrappers/teleop/builder.py``. Add the device name to every
+environment that can use it:
 
 .. code-block:: python
 
    DEVICES = {..., "pedal": _pedal}
 
-Nothing else changes. The stack builder never learns the device exists; a config
-naming it gets it, and a robot without an ``end_effector`` refuses the rig rather
-than half-building one.
+The stack builder needs no device-specific branch. A config naming the device
+selects the registry entry, while a robot without an ``end_effector`` rejects
+the rig at build time.
 
 Adding a Wrapper Instead
 ------------------------

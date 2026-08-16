@@ -413,17 +413,17 @@ SDK 往往不允许在一条链路上并发调用。Franka 类本身不参与这
 操作者也是一组部件
 ------------------
 
-主臂就是一条带编码器的机械臂，数据手套报告手指角度，SpaceMouse 报告一个 twist。
-它们都要连接、读数、断开，而且各自插在某台机器上，所以它们和被操纵的硬件一样是
-``RobotPart``，放置和生命周期直接沿用：
+操作者使用的硬件也沿用同一套部件模型。主臂报告编码器状态，数据手套报告手指角度，
+SpaceMouse 报告 twist。这些硬件都要连接、读数和断开；设备插在哪台机器上，就运行在哪台
+机器上。RLinf 也把它们建模为 ``RobotPart``，生命周期和放置方式与机器人硬件一致：
 
 .. code-block:: python
 
    leader = TeleopLeaderArm.at("/dev/ttyUSB0", node_rank=1)   # 放在 NUC 上
    mouse = SpaceMouse()                                       # 放在本机
 
-读数意味着什么则是另一个问题，答案属于机器人而不是设备。binding 负责回答，返回机器人
-动作中的一部分：
+设备只上报原始读数，binding 再针对具体机器人解释它。binding 用 ``PRODUCES`` 声明要填
+哪些具名动作部件，并返回这些部件对应的值：
 
 .. code-block:: python
 
@@ -433,13 +433,14 @@ SDK 往往不允许在一条链路上并发调用。Franka 类本身不参与这
        def action(self, reading, context):
            return {"arm": reading["twist"], "end_effector": self._grip(reading)}
 
-两者分开之后，同一个 SpaceMouse 既能驱动这里的笛卡尔机械臂，也能拿去驱动别的东西。
+SpaceMouse 部件本身不预设笛卡尔机械臂；换一个 binding，同一台硬件就能采用另一种动作
+映射。
 
 设备的组合方式和部件一样
 ------------------------
 
-设备既然填的是具名部件，几个设备就能各填各的，由 ``TeleopGroup`` 合并结果。灵巧手
-那套装置，就是 SpaceMouse 管机械臂、数据手套管手：
+binding 的输出仍带着部件名，多个设备的结果交给 ``TeleopGroup``。灵巧手装置中，
+SpaceMouse 生成机械臂动作，数据手套生成手部动作：
 
 .. code-block:: yaml
 
@@ -450,22 +451,23 @@ SDK 往往不允许在一条链路上并发调用。Franka 类本身不参与这
    parts, driving, _ = group.action(context)
    # {"arm": array(6), "hand": array(6)}
 
-没有任何地方算下标，配置里也不会出现动作向量的区间。binding 想填的部件机器人若是
-没有，就不填——机械臂末端装的是灵巧手而不是夹爪时，SpaceMouse 就只管机械臂。
+``TeleopGroup`` 按部件名合并这些结果，不需要计算动作向量的切片。binding 声明的部件若
+不在机器人上，group 会跳过它；机械臂末端装的是灵巧手而不是夹爪时，SpaceMouse 仍然
+可以只控制机械臂。
 
-有两类错误在构建 group 时就报出来，而不是等机器人动起来才发现：两个设备抢同一个
-部件，以及某个设备什么都填不上。
+group 会在构建时检查兼容性：两台设备不能声明同一个部件，每台设备也必须至少匹配机器人
+上的一个部件。
 
-同一套装置里的设备未必互相独立。灵巧手这套里，是 SpaceMouse 的按键把控制权交给手套，
-所以 binding 可以给排在后面的设备发布上下文：
+同一套装置中的设备还可以通过上下文协作。灵巧手装置里，SpaceMouse binding 会发布第二个
+按键是否按下；数据手套 binding 读取这个状态，只在按键按住时驱动手部：
 
 .. code-block:: python
 
    def publish(self, reading):
        return {"hand_driving": bool(reading["buttons"][1])}
 
-双臂机器人上两条主臂产出的都是 arm，这时用 ``drives`` 指明各自填哪一支。这也是配置里
-唯一会出现部件名的地方：
+同类部件出现多次时还要区分分支。双臂机器人的两条主臂都生成 arm 动作，由 ``drives``
+指定各自填入哪一支；配置中只有这里会出现机器人部件名：
 
 .. code-block:: yaml
 

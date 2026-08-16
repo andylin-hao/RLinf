@@ -64,6 +64,12 @@ def _gello(cfg: Mapping[str, Any], options: Mapping[str, Any]) -> TeleopEntry:
 
 def _gello_joint(cfg: Mapping[str, Any], options: Mapping[str, Any]) -> TeleopEntry:
     drives = options.get("drives")
+    if drives is None:
+        raise ValueError(
+            "teleop device 'gello_joint' drives one arm, so it says which. List "
+            "one entry per arm, e.g. teleop: [{gello_joint: {drives: left}}, "
+            "{gello_joint: {drives: right}}]."
+        )
     port = options.get("port") or cfg.get(f"{drives}_gello_port")
     if port is None:
         raise ValueError(

@@ -200,7 +200,7 @@ Dynamixel SDK 用于与 GELLO 设备内部的 Dynamixel 舵机通信。
 
    env:
      eval:
-       teleop_device: gello
+       teleop: gello
        gello_port: "/dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTA0OUKN-if00-port0"
 
 .. list-table:: GELLO 相关配置字段
@@ -210,12 +210,12 @@ Dynamixel SDK 用于与 GELLO 设备内部的 Dynamixel 舵机通信。
    * - 字段
      - 默认值
      - 说明
-   * - ``teleop_device``
+   * - ``teleop``
      - ``spacemouse``
      - 改成 ``gello``，就把机械臂交给主臂来带。
    * - ``gello_port``
      - ``null``
-     - GELLO 设备的串口路径，``teleop_device`` 为 ``gello`` 时必须指定。
+     - GELLO 设备的串口路径，``teleop`` 为 ``gello`` 时必须指定。
 
 有关完整的数据采集流程，请参考 :doc:`franka` 中的
 **使用 GELLO 进行数据采集** 章节。

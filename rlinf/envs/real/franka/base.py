@@ -192,7 +192,7 @@ class FrankaEnv(gym.Env):
     #: Teleop devices this env can be driven with, and the one a config gets
     #: when it says nothing. Declared here because it is a fact about the
     #: robot's action space, not about any particular task.
-    TELEOP = ("spacemouse", "gello", "pico")
+    TELEOP = ("spacemouse", "gello", "glove", "pico")
     TELEOP_DEFAULT = "spacemouse"
 
     #: Narrowing applied before teleop, so the operator drives the same action

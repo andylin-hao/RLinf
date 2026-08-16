@@ -195,7 +195,7 @@ consumer 连接地址。
 
    env:
      eval:
-       teleop_device: pico
+       teleop: pico
 
        pico:
          zmq_addr: "tcp://<vr_publisher_ip>:<port>"
@@ -315,7 +315,7 @@ VR 操作步骤
 
 **按住 grip 机械臂不动**
 
-- 确认 ``teleop_device: pico``。
+- 确认 ``teleop: pico``。
 - 确认当前代码已经在 ``apply.py`` 中接入 ``PicoIntervention``。
 - 确认 ``grip`` 数值超过 ``control_threshold``。
 - 确认已经完成标定；若 ``calibration.required=True`` 且未标定，PICO 不会接管。

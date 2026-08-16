@@ -211,7 +211,7 @@ The key differences from the standard SpaceMouse config are:
 
    env:
      eval:
-       teleop_device: gello
+       teleop: gello
        gello_port: "/dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTA0OUKN-if00-port0"
 
 .. list-table:: GELLO-specific configuration fields
@@ -221,12 +221,12 @@ The key differences from the standard SpaceMouse config are:
    * - Field
      - Default
      - Description
-   * - ``teleop_device``
+   * - ``teleop``
      - ``spacemouse``
      - Set to ``gello`` to hand control to a leader arm.
    * - ``gello_port``
      - ``null``
-     - Serial port path of the GELLO device. Required when ``teleop_device``
+     - Serial port path of the GELLO device. Required when ``teleop``
        is ``gello``.
 
 For full data collection instructions, refer to the

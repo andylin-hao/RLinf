@@ -303,7 +303,7 @@ wrapper 从 info 字典中按以下优先级推断 episode 是否成功（从最
    * - ``cluster.node_groups.hardware.configs.robot_ip``
      - —
      - Franka 机器人 IP 地址
-   * - ``env.eval.teleop_device``
+   * - ``env.eval.teleop``
      - ``spacemouse``
      - 由谁从策略手中接管：``spacemouse``、``gello``、``pico`` 或 ``none``
    * - ``env.eval.no_gripper``
@@ -311,7 +311,7 @@ wrapper 从 info 字典中按以下优先级推断 episode 是否成功（从最
      - 是否使用不带夹爪维度的 6 维真机动作
    * - ``env.eval.gello_port``
      - —
-     - GELLO 设备串口路径（``teleop_device`` 为 ``gello`` 时必填）
+     - GELLO 设备串口路径（``teleop`` 为 ``gello`` 时必填）
    * - ``env.eval.override_cfg.target_ee_pose``
      - —
      - 任务目标末端位姿 ``[x, y, z, rx, ry, rz]``
@@ -405,7 +405,7 @@ wrapper 从 info 字典中按以下优先级推断 episode 是否成功（从最
 
       env:
         eval:
-          teleop_device: spacemouse
+          teleop: spacemouse
           override_cfg:
             target_ee_pose: [0.5, 0.0, 0.3, 0.0, 3.14, 0.0]
             success_hold_steps: 3

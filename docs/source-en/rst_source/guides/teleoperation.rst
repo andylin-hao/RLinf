@@ -1,24 +1,23 @@
 Teleoperation
 =============
 
-Set up the devices an operator drives, so a person can take over from the policy
-mid-rollout: to collect demonstrations, to recover from a failure, or to run
-DAgger. This guide covers choosing devices in configuration, running several
-together, checking one before a robot is involved, and putting a device on the
-machine it is plugged into.
+Teleoperation lets an operator replace the policy's action during a rollout,
+whether the goal is to collect demonstrations, recover from a failure, or run
+DAgger. A rig may consist of one device beside the robot or several devices
+spread across different machines; both use the same device and placement model.
 
-For the model behind it, see :doc:`../concepts/robotics`.
+The underlying part model is described in :doc:`../concepts/robotics`.
 
 Choose a Device
 ---------------
 
-One key names the device:
+For a single device, set its name:
 
 .. code-block:: yaml
 
    env:
      eval:
-       teleop_device: spacemouse
+       teleop: spacemouse
 
 .. list-table::
    :header-rows: 1
@@ -28,30 +27,34 @@ One key names the device:
      - What the operator does
      - Extra config
    * - ``spacemouse``
-     - Pushes a 6-DoF puck for the arm; buttons latch the gripper.
-     - none
+     - Moves the arm with a 6-DoF puck; its buttons latch the gripper.
+     - None
    * - ``gello``
-     - Poses a leader arm; the follower matches its pose.
+     - Poses a leader arm for the follower to track.
      - ``gello_port``
    * - ``gello_joint``
-     - Poses a leader arm, matched joint for joint.
+     - Poses a leader arm for joint-by-joint tracking, one entry per arm.
      - ``left_gello_port`` / ``right_gello_port``
    * - ``pico``
-     - Holds a VR controller; the grip says when it is driving.
+     - Uses a handheld VR controller whose grip marks when it is driving.
      - ``pico:`` block
+   * - ``glove``
+     - Bends the fingers of a dexterous hand, alongside a device on the arm.
+     - ``glove_config:`` block
    * - ``none``
-     - Nothing takes over; the policy runs alone.
-     - none
+     - Leaves the policy in control with no operator device.
+     - None
 
-Not every robot accepts every device. A dual-arm Franka has no single-arm
-Cartesian path, so naming ``spacemouse`` there is refused rather than ignored.
-Each env declares what it accepts, and the error lists them.
+An environment accepts only devices that match the robot's control paths. A
+dual-arm Franka, for example, has no single-arm Cartesian path, so it rejects
+``spacemouse`` instead of ignoring the setting. The error also lists the devices
+that the environment accepts.
 
 Run Several Together
 --------------------
 
-A device fills the parts it can drive, so several devices fill different ones.
-Write a list instead of a name:
+Each device contributes actions for the named robot parts it can drive. A list
+lets several devices divide those parts between them:
 
 .. code-block:: yaml
 
@@ -59,11 +62,12 @@ Write a list instead of a name:
      eval:
        teleop: [spacemouse, glove]
 
-That is the dexterous-hand setup: the puck drives the arm, the glove drives the
-hand, and holding the spacemouse's second button is what puts the glove in
-control. Let go and the hand stays where you posed it.
+In this dexterous-hand rig, the puck drives the arm and the glove drives the
+hand. The glove takes control only while the spacemouse's second button is held;
+releasing it leaves the hand at its last pose.
 
-On a robot with two of the same thing, say which branch each device drives:
+When a robot has two branches of the same kind, ``drives`` selects the branch for
+each device. This is the only configuration field that names a robot part:
 
 .. code-block:: yaml
 
@@ -73,44 +77,46 @@ On a robot with two of the same thing, say which branch each device drives:
          - {gello_joint: {port: /dev/serial/by-id/...-left,  drives: left}}
          - {gello_joint: {port: /dev/serial/by-id/...-right, drives: right}}
 
-A device that ends up driving nothing is an error when the rig is built, not a
-surprise once the robot is moving. So is two devices claiming the same part.
+A binding leaves any part the robot does not have unfilled. The builder rejects
+the rig if a device matches no part at all, or if two devices claim the same
+part.
 
 Check a Device First
 --------------------
 
-Every device can be read on its own, with no robot and no cluster:
+Every device reader can run without a robot or cluster:
 
 .. code-block:: bash
 
    python -m rlinf.robotics.parts.teleop.readers.gello --port /dev/ttyUSB0
 
-Use this when a leader arm reads zero or a spacemouse does nothing: it separates
-a wiring or permissions problem from a configuration one. The bench scripts in
-``toolkits/realworld_check`` cover the same ground for a whole robot.
+When a leader arm reports only zeros or a spacemouse does not respond, this
+command isolates wiring and permission problems from environment configuration.
+The bench scripts in ``toolkits/realworld_check`` perform the corresponding
+checks for a complete robot.
 
 Put a Device Where It Is Plugged In
 -----------------------------------
 
-A teleop device is a part, so it takes a node like any other. Give it a
-``node_rank`` when the operator's hardware hangs off a different machine than the
-one running the policy:
+A teleop device follows the same placement model as any other part. When the
+operator's hardware is attached to a different machine from the policy, assign
+the device a ``node_rank``:
 
 .. code-block:: python
 
    leader = TeleopLeaderArm.at("/dev/ttyUSB0", node_rank=1)
 
-Devices on independent connections are read in parallel. One device listed under
-two parts is opened once, so a spacemouse driving both an arm and a gripper does
-not fight itself for the HID handle.
+Devices on independent connections are read in parallel. If one device
+contributes to two parts, it is still opened only once; a spacemouse driving both
+an arm and a gripper therefore uses a single HID handle.
 
 When the Rate Is the Problem
 ----------------------------
 
-A leader arm tracks badly if the follower only hears from it at the policy's
-step rate. Turn on direct streaming and a thread pushes joint targets to the
-controllers at roughly 1 kHz, while ``env.step`` keeps reading state and stops
-forwarding motion:
+A follower tracks poorly when it receives leader-arm targets only at the
+policy's step rate. Direct streaming moves that path onto a thread that pushes
+joint targets to the controllers at roughly 1 kHz. ``env.step`` continues to
+read state but no longer forwards motion:
 
 .. code-block:: yaml
 
@@ -119,17 +125,18 @@ forwarding motion:
        override_cfg:
          teleop_direct_stream: true
 
-Leave it off unless tracking is visibly laggy. With it on, ``env.step`` no longer
-dispatches joint targets, so a misconfigured rig stops moving rather than moving
-badly.
+Enable direct streaming only when tracking visibly lags. Because ``env.step`` no
+longer dispatches joint targets in this mode, a misconfigured rig remains still
+instead of receiving malformed motion.
 
 Retired Spellings
 -----------------
 
-``use_spacemouse``, ``use_gello``, ``use_gello_joint``, and ``use_pico`` still
-work and warn. A config carrying both a retired flag and ``teleop_device`` is an
-error when the two disagree, because choosing either one silently would hand
-somebody the wrong device with a robot already moving.
+``teleop_device`` named a single device, and the booleans ``use_spacemouse``,
+``use_gello``, ``use_gello_joint``, and ``use_pico`` each switched one on. All
+of them still work and warn. Where ``teleop`` appears alongside one of them --
+which happens when a run config sits on an older base -- ``teleop`` is the one
+that takes effect, and the warning names what it replaced.
 
 Next
 ----

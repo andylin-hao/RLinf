@@ -15,7 +15,7 @@
 """Realworld smooth-intervene helpers for EnvWorker orchestration.
 
 Bypasses policy inference across action-chunk boundaries while human teleop
-continues. Requires PICO (``env.train.use_pico=True``); SpaceMouse is not
+continues. Requires PICO (``env.train.teleop: pico``); SpaceMouse is not
 supported. Env only supplies hold actions; this module owns PolicyOutput dummy
 construction and per-stage continue/skip state.
 """
@@ -172,16 +172,18 @@ class SmoothInterveneController:
                 )
             # Imported here so a worker that never touches real hardware does
             # not pay for the realworld env package at import time.
-            from rlinf.envs.real.wrappers.teleop.config import resolve_teleop_device
+            from rlinf.envs.real.wrappers.teleop.config import (
+                resolve_teleop_devices,
+            )
 
-            device = resolve_teleop_device(
+            devices = resolve_teleop_devices(
                 OmegaConf.select(cfg, "env.train") or {},
                 supported=("spacemouse", "gello", "pico", "gello_joint"),
             )
-            if device != "pico":
+            if devices != ["pico"]:
                 raise ValueError(
-                    "smooth_intervene requires env.train.teleop_device=pico "
-                    f"(PICO-only; got {device!r})"
+                    "smooth_intervene requires env.train.teleop=pico "
+                    f"(PICO-only; got {devices!r})"
                 )
         return cls(stage_num=stage_num, enabled=enabled)
 

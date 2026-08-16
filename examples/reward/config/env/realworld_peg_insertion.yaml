@@ -12,7 +12,7 @@ use_fixed_reset_state_ids: False
 max_steps_per_rollout_epoch: 100
 max_episode_steps: 10000
 keyboard_reward_wrapper: single_stage
-teleop_device: spacemouse
+teleop: spacemouse
 main_image_key: wrist_1
 
 video_cfg:

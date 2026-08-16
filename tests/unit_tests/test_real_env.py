@@ -21,6 +21,7 @@ import re
 import sys
 import time
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Optional
 
 import gymnasium as gym
@@ -34,9 +35,11 @@ from rlinf.envs.real.franka.dual_franka_joint import (
 )
 from rlinf.envs.real.gim_arm.base import GimArmEnv, GimArmRobotConfig
 from rlinf.envs.real.task_env import RobotTask, RobotTaskEnv
+from rlinf.envs.real.wrappers import _teleop_entries  # noqa: E402
 from rlinf.envs.real.wrappers.teleop.config import (  # noqa: E402
     NO_DEVICE,
     resolve_teleop_device,
+    resolve_teleop_devices,
 )
 from rlinf.envs.real.wrappers.teleop.intervention import (  # noqa: E402
     TeleopDevice,
@@ -511,11 +514,11 @@ def test_read_is_abstract():
 SINGLE_ARM = ("spacemouse", "gello", "pico")
 
 
-def test_named_device_is_used():
-    assert (
-        resolve_teleop_device({"teleop_device": "gello"}, supported=SINGLE_ARM)
-        == "gello"
-    )
+def test_retired_single_key_still_selects_its_device_and_warns():
+    with pytest.warns(DeprecationWarning, match="'teleop_device' is retired"):
+        device = resolve_teleop_device({"teleop_device": "gello"}, supported=SINGLE_ARM)
+
+    assert device == "gello"
 
 
 def test_missing_config_falls_back_to_the_default():
@@ -584,14 +587,14 @@ def test_device_the_env_cannot_drive_is_refused():
 
 
 def test_none_is_always_allowed():
-    assert (
-        resolve_teleop_device({"teleop_device": "none"}, supported=("pico",))
-        == NO_DEVICE
-    )
+    with pytest.warns(DeprecationWarning):
+        device = resolve_teleop_device({"teleop_device": "none"}, supported=("pico",))
+
+    assert device == NO_DEVICE
 
 
 def test_shipped_configs_use_the_new_key():
-    """The retired booleans are gone from every config in the repo."""
+    """Every retired spelling is gone from every config in the repo."""
     roots = [_ROOT / "examples", _ROOT / "evaluations", _ROOT / "tests"]
     offenders = []
     for root in roots:
@@ -603,6 +606,7 @@ def test_shipped_configs_use_the_new_key():
                 if any(
                     stripped.startswith(f"{flag}:")
                     for flag in (
+                        "teleop_device",
                         "use_spacemouse",
                         "use_gello",
                         "use_gello_joint",
@@ -991,7 +995,7 @@ def test_wrapper_stack_converts_the_pose_it_hands_the_policy():
     assert raw["state"]["tcp_pose"].shape == (7,)
 
     wrapped = apply_single_arm_wrappers(
-        env, {"teleop_device": "none", "no_gripper": False, "use_relative_frame": True}
+        env, {"teleop": "none", "no_gripper": False, "use_relative_frame": True}
     )
     observation, _ = wrapped.reset()
 
@@ -1006,7 +1010,7 @@ def test_no_teleop_device_leaves_no_intervention_in_the_stack():
 
     wrapped = apply_single_arm_wrappers(
         _dummy_franka(),
-        {"teleop_device": "none", "no_gripper": False, "use_relative_frame": False},
+        {"teleop": "none", "no_gripper": False, "use_relative_frame": False},
     )
 
     assert not any("Intervention" in name for name in _chain(wrapped))
@@ -1022,7 +1026,7 @@ def test_no_gripper_narrows_the_action_the_policy_must_produce():
 
     wrapped = apply_single_arm_wrappers(
         env,
-        {"teleop_device": "none", "no_gripper": True, "use_relative_frame": False},
+        {"teleop": "none", "no_gripper": True, "use_relative_frame": False},
     )
 
     assert "GripperCloseEnv" in _chain(wrapped)
@@ -1061,7 +1065,7 @@ def test_every_registered_task_builds_through_its_entry_point():
     from rlinf.envs.real import RealWorldEnv  # noqa: F401  (registers the tasks)
 
     cfg = {
-        "teleop_device": "none",
+        "teleop": "none",
         "no_gripper": False,
         "use_relative_frame": False,
     }
@@ -1099,7 +1103,7 @@ def test_converted_pose_stays_inside_the_observation_space():
 
     wrapped = apply_single_arm_wrappers(
         _dummy_franka(),
-        {"teleop_device": "none", "no_gripper": False, "use_relative_frame": False},
+        {"teleop": "none", "no_gripper": False, "use_relative_frame": False},
     )
     observation, _ = wrapped.reset()
 
@@ -1109,3 +1113,138 @@ def test_converted_pose_stays_inside_the_observation_space():
     )
     assert wrapped.observation_space.contains(observation)
     wrapped.close()
+
+
+# --- composing several teleop devices ---------------------------------
+
+
+class _FakeInner:
+    """Just the env attributes the teleop builders read."""
+
+    def __init__(self, **config: Any) -> None:
+        self.config = SimpleNamespace(**config)
+
+
+def test_one_named_device_resolves_to_one_entry():
+    assert resolve_teleop_devices({"teleop": "gello"}, supported=SINGLE_ARM) == [
+        "gello"
+    ]
+
+
+def test_saying_nothing_resolves_to_no_entries():
+    assert resolve_teleop_devices({}, supported=SINGLE_ARM) == []
+    assert resolve_teleop_devices({"teleop": "none"}, supported=SINGLE_ARM) == []
+
+
+def test_a_list_keeps_every_device_it_names():
+    assert resolve_teleop_devices(
+        {"teleop": ["spacemouse", "glove"]}, supported=("spacemouse", "glove")
+    ) == ["spacemouse", "glove"]
+
+
+def test_an_entry_carries_its_own_options():
+    entries = resolve_teleop_devices(
+        {"teleop": [{"gello_joint": {"port": "/dev/left", "drives": "left"}}]},
+        supported=("gello_joint",),
+    )
+
+    assert entries == [{"gello_joint": {"port": "/dev/left", "drives": "left"}}]
+
+
+def test_one_device_may_appear_twice_on_different_branches():
+    """Two leader arms are the same device driving different halves."""
+    entries = resolve_teleop_devices(
+        {
+            "teleop": [
+                {"gello_joint": {"drives": "left"}},
+                {"gello_joint": {"drives": "right"}},
+            ]
+        },
+        supported=("gello_joint",),
+    )
+
+    assert [entry["gello_joint"]["drives"] for entry in entries] == ["left", "right"]
+
+
+def test_a_listed_device_the_env_cannot_drive_is_refused():
+    with pytest.raises(ValueError, match="Unsupported teleop device"):
+        resolve_teleop_devices(
+            {"teleop": ["spacemouse", "glove"]}, supported=("gello_joint", "pico")
+        )
+
+
+def test_a_list_supersedes_a_retired_key_underneath_it():
+    """Env configs layer, so a run config often sits on an older base."""
+    with pytest.warns(DeprecationWarning, match="supersedes"):
+        entries = resolve_teleop_devices(
+            {"teleop": ["spacemouse"], "teleop_device": "none"},
+            supported=SINGLE_ARM,
+        )
+
+    assert entries == ["spacemouse"]
+
+
+def test_a_list_supersedes_a_retired_boolean():
+    with pytest.warns(DeprecationWarning, match="supersedes"):
+        entries = resolve_teleop_devices(
+            {"teleop": ["spacemouse"], "use_pico": True}, supported=SINGLE_ARM
+        )
+
+    assert entries == ["spacemouse"]
+
+
+def test_an_empty_list_is_refused():
+    with pytest.raises(ValueError, match="'teleop' is empty"):
+        resolve_teleop_devices({"teleop": []}, supported=SINGLE_ARM)
+
+
+def test_none_cannot_share_the_list():
+    with pytest.raises(ValueError, match="cannot share the list"):
+        resolve_teleop_devices({"teleop": ["none", "spacemouse"]}, supported=SINGLE_ARM)
+
+
+def test_none_alone_in_a_list_means_nobody_takes_over():
+    assert resolve_teleop_devices({"teleop": ["none"]}, supported=SINGLE_ARM) == []
+
+
+def test_a_two_key_entry_is_refused():
+    with pytest.raises(ValueError, match="mapping of one name"):
+        resolve_teleop_devices(
+            {"teleop": [{"spacemouse": {}, "glove": {}}]},
+            supported=("spacemouse", "glove"),
+        )
+
+
+def test_nothing_is_added_to_the_group_the_config_names():
+    """A hand robot gets a glove because the config says so, not the wrapper."""
+    entries = _teleop_entries(
+        ["spacemouse"], {}, _FakeInner(end_effector_type="ruiyan_hand")
+    )
+
+    assert entries == ["spacemouse"]
+    assert _teleop_entries(
+        ["spacemouse", "glove"], {}, _FakeInner(end_effector_type="ruiyan_hand")
+    ) == ["spacemouse", "glove"]
+
+
+def test_a_listed_leader_arm_still_inherits_the_env_defaults():
+    """How joint targets are read belongs to the env, not to the operator."""
+    inner = _FakeInner(joint_action_mode="delta", joint_action_scale=0.25)
+    entries = _teleop_entries(
+        [{"gello_joint": {"drives": "left"}}, {"gello_joint": {"drives": "right"}}],
+        {},
+        inner,
+    )
+
+    assert all(entry["gello_joint"]["use_delta"] for entry in entries)
+    assert all(entry["gello_joint"]["action_scale"] == 0.25 for entry in entries)
+
+
+def test_an_entry_option_wins_over_the_env_default():
+    inner = _FakeInner(joint_action_mode="delta", joint_action_scale=0.25)
+    (entry,) = _teleop_entries(
+        [{"gello_joint": {"drives": "left", "action_scale": 0.5}}], {}, inner
+    )
+
+    assert entry["gello_joint"]["action_scale"] == 0.5
+    assert entry["gello_joint"]["use_delta"] is True

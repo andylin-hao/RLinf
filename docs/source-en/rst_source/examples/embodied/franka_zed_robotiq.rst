@@ -324,7 +324,7 @@ Key data-collection settings in the same file:
    * - ``runner.num_data_episodes``
      - ``20``
      - Number of episodes to collect before the script exits.
-   * - ``env.eval.teleop_device``
+   * - ``env.eval.teleop``
      - ``spacemouse``
      - Which device drives the arm during collection.
    * - ``env.eval.data_collection.save_dir``

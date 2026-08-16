@@ -101,7 +101,7 @@ Turtle2 用 ``apply_single_arm_wrappers``，双臂 Franka 用
    init_params:
      id: "WipeEnv-v1"      # 上一步注册的 gym id
      num_envs: null
-   teleop_device: spacemouse
+   teleop: spacemouse
    override_cfg:
      target_ee_pose: [0.5, 0.0, 0.1, -3.14, 0.0, 0.0]
      random_xy_range: 0.03
@@ -133,7 +133,7 @@ Turtle2 用 ``apply_single_arm_wrappers``，双臂 Franka 用
    * - 连接硬件、放置部件
      - ``Robot.connect``，见 :doc:`../concepts/robotics`。
    * - 遥操作
-     - 环境配置里的 ``teleop_device`` 选设备，wrapper 栈把它装上。
+     - 环境配置里的 ``teleop`` 选设备，wrapper 栈把它装上。
    * - 手动标记奖励、手动结束 episode
      - 环境配置里的 ``keyboard_reward_wrapper``。
    * - 相对坐标系、欧拉角转换、夹爪维度裁剪
@@ -144,10 +144,10 @@ Turtle2 用 ``apply_single_arm_wrappers``，双臂 Franka 用
 新增遥操作设备
 --------------
 
-设备本身和它的读数意味着什么是两件事，所以接一种设备要写三样：一个部件、一个 binding，
-以及把两者配起来的一条登记。
+一种新的遥操作设备需要三样东西：读取硬件的部件、把读数映射到具名机器人动作部件的
+binding，以及把两者配对的注册表条目。
 
-部件只管读硬件，写在 ``rlinf/robotics/parts/teleop/devices.py``：
+部件写在 ``rlinf/robotics/parts/teleop/devices.py``，只读取设备硬件：
 
 .. code-block:: python
 
@@ -164,10 +164,11 @@ Turtle2 用 ``apply_single_arm_wrappers``，双臂 Franka 用
        def get_observation(self):
            return {"pressed": np.asarray([self._reader.is_pressed()])}
 
-在 ``_open`` 而不是 ``__init__`` 里打开硬件，设备才能在一台机器上声明、在另一台上构建。
+``_open`` 在部件连接时打开硬件，``__init__`` 只记录声明。因此，设备可以在一台机器上
+声明，再到另一台机器上构建。
 
-binding 说明它填机器人动作里的哪些部件，写在
-``rlinf/robotics/teleop/bindings.py``：
+binding 写在 ``rlinf/robotics/teleop/bindings.py``。它通过 ``PRODUCES`` 列出要填的
+机器人动作部件，再由 ``action`` 返回这些具名部件的值：
 
 .. code-block:: python
 
@@ -180,15 +181,15 @@ binding 说明它填机器人动作里的哪些部件，写在
        def is_driving(self, reading):
            return bool(reading["pressed"])
 
-最后在 ``rlinf/envs/real/wrappers/teleop/builder.py`` 的 ``DEVICES`` 里把两者配起来，
-再在能驱动它的环境里写上这个设备名：
+在 ``rlinf/envs/real/wrappers/teleop/builder.py`` 的 ``DEVICES`` 中登记部件与 binding 的
+组合。能够使用该设备的环境也要加入这个设备名：
 
 .. code-block:: python
 
    DEVICES = {..., "pedal": _pedal}
 
-其他地方都不用改。stack builder 始终不知道有这个设备；配置里写了就能用，而机器人没有
-``end_effector`` 时会直接拒绝，而不是搭出一半。
+stack builder 不需要增加设备专用分支。配置中写入设备名后，系统会选中对应的注册表条目；
+机器人若没有 ``end_effector``，装置会在构建时报错。
 
 如果要加的是 wrapper
 --------------------

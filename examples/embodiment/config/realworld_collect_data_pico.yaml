@@ -39,7 +39,7 @@ env:
   eval:
     ignore_terminations: False
     auto_reset: False
-    teleop_device: pico
+    teleop: pico
     no_gripper: False
     pico:
       zmq_addr: "ipc:///tmp/vr_data.ipc"
