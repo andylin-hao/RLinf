@@ -12,18 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Devices that command the robot faster than the environment steps.
+"""Commanding the robot faster than the environment steps.
 
 A leader arm tracks well only if the follower receives targets continuously, and
 ``env.step`` runs at the policy's rate -- often 10 Hz against the ~1 kHz the
-controller can accept. Such a device owns a thread that pushes targets straight
-to the controller, while ``env.step`` keeps reading state and stops forwarding
+controller can accept. A streamer owns a thread that pushes targets straight to
+the controller, while ``env.step`` keeps reading state and stops forwarding
 motion, so the two never race for the same motion queue.
 
-The thread is the whole reason this class exists, and it is also the whole risk:
-it outlives a single step, it must pause while the env drives the robot home,
-and it must be joined on shutdown. :class:`StreamingTeleopDevice` owns that
-lifecycle so each device only writes what one tick sends.
+This is not an alternative to composition; it sits beside it. What the operator
+is asking for still comes from a group of devices and their bindings. The thread
+is the whole reason the class exists and the whole risk: it outlives a single
+step, it must pause while the env drives the robot home, and it must be joined on
+shutdown. :class:`TeleopStreamer` owns that lifecycle so a subclass only writes
+what one tick sends.
 """
 
 from __future__ import annotations
@@ -35,21 +37,22 @@ from typing import Any, Optional
 
 import gymnasium as gym
 
-from .intervention import TeleopDevice
 
+class TeleopStreamer:
+    """A command loop that runs beside the action, not instead of it.
 
-class StreamingTeleopDevice(TeleopDevice):
-    """A teleop device with its own command loop.
-
-    Subclasses implement :meth:`stream_once` -- one iteration of the loop -- and
+    What the operator is asking for comes from composition, the same as any
+    other rig. This delivers it a second way, straight to the controllers, for
+    hardware that tracks badly at the policy's step rate. Subclasses implement
+    :meth:`stream_once` -- one iteration of the loop -- and
     :meth:`ready_to_stream`, which decides whether the hardware is in a state
     where streaming is safe to begin.
 
     Args:
         period: Seconds between ticks. The loop targets this rate and skips the
             sleep when a tick already took longer.
-        enabled: Whether to stream at all. When ``False`` the device behaves
-            like any other, sending its action through ``env.step``.
+        enabled: Whether to stream at all. When ``False`` nothing runs and the
+            action reaches the robot through ``env.step`` like any other rig.
     """
 
     def __init__(self, period: float = 0.001, enabled: bool = False) -> None:

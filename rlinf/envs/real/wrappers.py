@@ -27,9 +27,7 @@ from rlinf.envs.real.episode import (
     KeyboardRLTPolicySwitchWrapper,
     KeyboardStartEndWrapper,
 )
-from rlinf.envs.real.teleop.adapters import (
-    DualGelloJointTeleop,
-)
+from rlinf.envs.real.teleop.adapters import DualGelloJointStream
 from rlinf.envs.real.teleop.config import resolve_teleop_device
 from rlinf.envs.real.teleop.intervention import TeleopIntervention
 from rlinf.envs.real.teleop.pico import (
@@ -147,19 +145,48 @@ def apply_dual_franka_joint_wrappers(env: gym.Env, cfg: Mapping[str, Any]) -> gy
                 "teleop_device: gello_joint requires both "
                 "'left_gello_port' and 'right_gello_port' in the env config."
             )
-        env = TeleopIntervention(
-            env,
-            DualGelloJointTeleop(
+        from rlinf.envs.real.teleop.builder import build_teleop
+
+        use_delta = getattr(config, "joint_action_mode", None) == "delta"
+        action_scale = getattr(config, "joint_action_scale", 0.1)
+        direct_stream = bool(getattr(config, "teleop_direct_stream", False))
+        streamer = (
+            DualGelloJointStream(
                 left_port=left_port,
                 right_port=right_port,
                 gripper_enabled=True,
-                use_delta=getattr(config, "joint_action_mode", None) == "delta",
-                action_scale=getattr(config, "joint_action_scale", 0.1),
-                direct_stream=getattr(config, "teleop_direct_stream", False),
+                use_delta=use_delta,
+                action_scale=action_scale,
+                direct_stream=True,
                 stream_period=cfg.get("gello_joint_stream_period", 0.001),
-            ),
-            mark_flag=True,
+            )
+            if direct_stream
+            else None
         )
+        teleop = build_teleop(
+            env,
+            cfg,
+            [
+                {
+                    "gello_joint": {
+                        "port": left_port,
+                        "drives": "left",
+                        "use_delta": use_delta,
+                        "action_scale": action_scale,
+                    }
+                },
+                {
+                    "gello_joint": {
+                        "port": right_port,
+                        "drives": "right",
+                        "use_delta": use_delta,
+                        "action_scale": action_scale,
+                    }
+                },
+            ],
+        )
+        teleop.streamer = streamer
+        env = TeleopIntervention(env, teleop, mark_flag=True)
 
     if not config.is_dummy and use_pico:
         if getattr(env.unwrapped, "PER_ARM_ACTION_DIM", None) != 10:

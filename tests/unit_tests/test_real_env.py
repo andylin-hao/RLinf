@@ -374,17 +374,64 @@ def test_control_is_held_between_samples_then_released():
     assert np.array_equal(env.stepped[2], POLICY)
 
 
-def test_release_uses_the_device_fallback():
-    """A device holding state the policy does not command keeps it on release."""
-    env = FakeEnv()
-    device = ScriptedDevice([TeleopSample(action=EXPERT, active=False)])
-    device.timeout = 0.0
-    device.fallback_action = np.array([9.0, 9.0, 9.0])
-    wrapper = TeleopIntervention(env, device)
+def test_an_unfilled_part_keeps_the_policy_action():
+    """Composition replaced the per-device fallback hook.
 
-    wrapper.step(POLICY)
+    A group starts from the action the policy asked for and overwrites only the
+    parts its devices fill, so anything unfilled is the policy's, and a device
+    holding state it commands keeps it by filling that part every step.
+    """
+    import numpy as np
 
-    assert np.array_equal(env.stepped[0], device.fallback_action)
+    from rlinf.envs.real.teleop.composed import ComposedTeleop
+    from rlinf.robotics.teleop import TeleopEntry, TeleopGroup
+
+    class Fixed:
+        PRODUCES = ("hand",)
+        MOVEMENT_EPSILON = 0.001
+
+        def action(self, reading, context):
+            return {"hand": np.full(6, 0.5)}
+
+        def publish(self, reading):
+            return {}
+
+        def is_driving(self, reading):
+            return True
+
+        def reset(self):
+            pass
+
+    class Device:
+        is_connected = True
+
+        def get_observation(self):
+            return {}
+
+        def connect(self):
+            pass
+
+        def disconnect(self):
+            pass
+
+    layout = {"arm": slice(0, 6), "hand": slice(6, 12)}
+    group = TeleopGroup([TeleopEntry(Device(), Fixed())], available=layout)
+    device = ComposedTeleop(group, layout)
+
+    policy = np.arange(12, dtype=np.float64)
+    sample = device.read(_FakeLayoutEnv(), policy)
+
+    assert np.allclose(sample.action[:6], policy[:6])  # untouched by any device
+    assert np.allclose(sample.action[6:], 0.5)  # filled by the glove
+
+
+class _FakeLayoutEnv:
+    """Just enough env for context gathering, which finds nothing here."""
+
+    unwrapped = None
+
+    def get_wrapper_attr(self, name):
+        raise AttributeError(name)
 
 
 def test_mark_flag_is_opt_in():
@@ -746,11 +793,11 @@ def test_a_held_button_device_does_not_keep_control_after_release():
 def test_streaming_device_lifecycle_without_hardware():
     """The command thread starts once aligned and is joined on close."""
     from rlinf.envs.real.teleop.intervention import TeleopSample
-    from rlinf.envs.real.teleop.streaming import StreamingTeleopDevice
+    from rlinf.envs.real.teleop.streaming import TeleopStreamer
 
     ticks = []
 
-    class Fake(StreamingTeleopDevice):
+    class Fake(TeleopStreamer):
         def read(self, env, policy_action):
             return TeleopSample(action=None, active=False)
 

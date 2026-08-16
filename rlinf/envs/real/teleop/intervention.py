@@ -22,8 +22,10 @@ records that it was overridden. Only the reading differs.
 So the reading is the only thing a device implements. :class:`TeleopDevice`
 turns hardware into a :class:`TeleopSample`, and :class:`TeleopIntervention`
 owns the part that used to be copied into every wrapper: the hold window that
-keeps the operator in control between samples, the fallback when they let go,
-and the ``info`` keys a dataset collector reads back.
+keeps the operator in control between samples, and the ``info`` keys a dataset
+collector reads back. Holding state the policy does not command is a matter for
+the composed group, which starts from the policy's action and overwrites only
+what its devices fill.
 """
 
 from __future__ import annotations
@@ -95,15 +97,6 @@ class TeleopDevice(ABC):
     def before_step(self, env: gym.Env) -> None:
         """Hook that runs before the wrapped env steps."""
 
-    def fallback(self, env: gym.Env, policy_action: np.ndarray) -> np.ndarray:
-        """The action to apply once the operator has let go.
-
-        Usually the policy's own action. A device that holds state the policy
-        does not command -- a hand pose the operator posed by hand, say --
-        overrides this so releasing the device does not snap that state back.
-        """
-        return policy_action
-
     def close(self) -> None:
         """Release the device."""
 
@@ -168,7 +161,7 @@ class TeleopIntervention(gym.Wrapper):
             # Quiet sample, but still inside the hold window.
             applied, overridden = sample.action, True
         else:
-            applied, overridden = self.device.fallback(self, action), False
+            applied, overridden = action, False
 
         obs, reward, terminated, truncated, info = self.env.step(applied)
 

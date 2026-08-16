@@ -70,6 +70,9 @@ class ComposedTeleop(TeleopDevice):
         timeout: How long the operator keeps control after their last active
             reading. Zero for rigs whose devices say exactly when they are
             driving.
+        streamer: A device that also commands the robot on its own thread,
+            faster than ``env.step`` runs. Composition says what the action is;
+            this says it is delivered a second way, so the two are separate.
     """
 
     def __init__(
@@ -77,6 +80,7 @@ class ComposedTeleop(TeleopDevice):
         group: TeleopGroup,
         layout: Mapping[str, slice],
         timeout: Optional[float] = None,
+        streamer: Optional[Any] = None,
     ) -> None:
         unknown = set(group.parts) - set(layout)
         if unknown:
@@ -86,12 +90,31 @@ class ComposedTeleop(TeleopDevice):
             )
         self.group = group
         self.layout = dict(layout)
+        self.streamer = streamer
         if timeout is not None:
             self.timeout = timeout
 
+    def before_reset(self, env: gym.Env, kwargs: dict[str, Any]) -> dict[str, Any]:
+        """Let a streamer quiet itself, and adjust the reset if it needs to."""
+        if self.streamer is not None:
+            return self.streamer.before_reset(env, kwargs)
+        return kwargs
+
     def reset(self, env: gym.Env) -> None:
-        """Let every binding drop what it held from the previous episode."""
+        """Let every binding drop what it held, and a streamer re-align."""
         self.group.reset()
+        if self.streamer is not None:
+            self.streamer.reset(env)
+
+    def after_reset(self, env: gym.Env) -> None:
+        """Let a streamer resume, whether or not the reset succeeded."""
+        if self.streamer is not None:
+            self.streamer.after_reset(env)
+
+    def before_step(self, env: gym.Env) -> None:
+        """Give a streamer its chance to start."""
+        if self.streamer is not None:
+            self.streamer.before_step(env)
 
     def read(self, env: gym.Env, policy_action: np.ndarray) -> TeleopSample:
         """Read every device, then write each part into the action."""
@@ -105,5 +128,7 @@ class ComposedTeleop(TeleopDevice):
         return TeleopSample(action=action, active=driving, info=info)
 
     def close(self) -> None:
-        """Release every device in the group."""
+        """Stop the stream, then release every device in the group."""
+        if self.streamer is not None:
+            self.streamer.close()
         self.group.disconnect()
