@@ -185,7 +185,7 @@ episode 控制不算遥操作
    * - ``real/registry.py``
      - ``task_factory`` 与 ``register_tasks``。
    * - ``real/env.py``
-     - ``RealWorldEnv``，框架根据 ``env_type: realworld`` 创建的向量化环境。
+     - ``RealWorldEnv``，框架根据 ``env_type: real`` 创建的向量化环境。
    * - ``real/task_env.py``
      - ``RobotTask`` 和 ``RobotTaskEnv`` 划定任务逻辑与硬件代码的边界。
 

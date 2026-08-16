@@ -193,11 +193,28 @@ class TeleopGroup:
         for entry in self.entries:
             reading = readings[id(entry.device)]
             running.update(entry.binding.publish(reading))
-            produced = entry.binding.action(reading, running)
-            parts.update(self._claimed(entry, produced))
-            driving |= entry.binding.is_driving(reading)
-            info.update(self._reported(entry, entry.binding.info()))
+            self._require_context(entry, running)
+            asked = entry.binding.action(reading, running)
+            parts.update(self._claimed(entry, asked.parts))
+            driving |= asked.driving
+            info.update(self._reported(entry, asked.info))
         return parts, driving, info
+
+    @staticmethod
+    def _require_context(entry: TeleopEntry, context: Mapping[str, Any]) -> None:
+        """Refuse to call a binding the robot cannot answer for.
+
+        A missing key would otherwise surface as a ``KeyError`` from inside the
+        binding's arithmetic, naming the key but not the device that wanted it
+        or the robot that could not supply it.
+        """
+        missing = [key for key in entry.binding.NEEDS if key not in context]
+        if missing:
+            raise ValueError(
+                f"{type(entry.binding).__name__} needs {missing} from the robot "
+                f"it drives, which this env does not report. It offers "
+                f"{sorted(context)}."
+            )
 
     def _claimed(
         self, entry: TeleopEntry, produced: Mapping[str, np.ndarray]

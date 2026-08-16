@@ -58,13 +58,27 @@ class EnvFacts:
         layout: Where each named part sits in the action vector.
         kinds: What each part's numbers mean, which is what decides whether a
             device can drive it at all.
-        config: The env's own config, for settings that belong to the robot
-            rather than to the operator.
+        joint_action_scale: The divisor turning a joint delta into a normalized
+            action. Belongs to the robot rather than to the operator.
+        direct_stream: Whether this env wants joint targets pushed on their own
+            thread rather than dispatched by ``step``.
     """
 
     layout: Mapping[str, slice]
     kinds: Mapping[str, ActionKind]
-    config: Any
+    joint_action_scale: float = 0.1
+    direct_stream: bool = False
+
+    @classmethod
+    def about(cls, env: gym.Env, layout, kinds) -> "EnvFacts":
+        """Read the facts a device builder may ask for off an env."""
+        config = getattr(env.unwrapped, "config", None)
+        return cls(
+            layout=layout,
+            kinds=kinds,
+            joint_action_scale=float(getattr(config, "joint_action_scale", 0.1)),
+            direct_stream=bool(getattr(config, "teleop_direct_stream", False)),
+        )
 
 
 #: Builder for one entry, given the env config, this entry's own options, and
@@ -119,20 +133,15 @@ def _gello_joint(
             f"'{drives}_gello_port' in the env config."
         )
     side = {"left": 0, "right": 1}.get(str(drives), 0)
-    config = facts.config
+    # Whether the env reads a target or a change is what it declared its arm
+    # command to be; there is no second place to ask.
+    arm = facts.kinds.get(f"{drives}.arm", facts.kinds.get("arm"))
     return TeleopEntry(
         TeleopLeaderArm(port=port, joint_space=True),
         LeaderJointBinding(
             side=side,
-            use_delta=bool(
-                options.get(
-                    "use_delta",
-                    getattr(config, "joint_action_mode", None) == "delta",
-                )
-            ),
-            action_scale=float(
-                options.get("action_scale", getattr(config, "joint_action_scale", 0.1))
-            ),
+            use_delta=bool(options.get("use_delta", arm is ActionKind.JOINT_DELTA)),
+            action_scale=float(options.get("action_scale", facts.joint_action_scale)),
         ),
         drives=drives,
     )
@@ -203,14 +212,14 @@ def _gello_joint_stream(cfg: Mapping[str, Any], facts: EnvFacts) -> Optional[Any
     Follower tracking is unstable at the policy's step rate, so the joint
     targets go straight to the controllers on their own thread.
     """
-    if not getattr(facts.config, "teleop_direct_stream", False):
+    if not facts.direct_stream:
         return None
     return DualGelloJointStream(
         left_port=cfg.get("left_gello_port"),
         right_port=cfg.get("right_gello_port"),
         gripper_enabled=True,
-        use_delta=getattr(facts.config, "joint_action_mode", None) == "delta",
-        action_scale=getattr(facts.config, "joint_action_scale", 0.1),
+        use_delta=facts.kinds.get("left.arm") is ActionKind.JOINT_DELTA,
+        action_scale=facts.joint_action_scale,
         direct_stream=True,
         stream_period=cfg.get("gello_joint_stream_period", 0.001),
     )
@@ -251,11 +260,7 @@ def build_teleop(
             down to take over asks for none.
     """
     spec = action_spec(env)
-    facts = EnvFacts(
-        layout=spec.layout,
-        kinds=spec.kinds,
-        config=getattr(env.unwrapped, "config", None),
-    )
+    facts = EnvFacts.about(env, spec.layout, spec.kinds)
 
     entries, streamer = [], None
     for item in devices:

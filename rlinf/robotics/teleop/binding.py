@@ -17,21 +17,40 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
 from typing import Any, Mapping
 
 import numpy as np
 
 from .kinds import ActionKind
 
-#: Keys a binding may read from its context. The caller supplies whichever the
-#: bindings in play need; a missing key that a binding requires is an error at
-#: the point of use rather than a silent zero.
+#: What a binding may ask about the robot it drives. A binding lists the ones
+#: it cannot work without in :attr:`TeleopBinding.NEEDS`, and the group checks
+#: them before calling it, so an env that cannot answer is refused by name
+#: rather than raising a ``KeyError`` from inside somebody's arithmetic.
 #:
 #: tcp_pose        the arm's measured pose, xyz + quat
 #: action_scale    the env's [position, rotation, gripper] divisors
 #: joint_positions measured joint positions, one row per arm
 #: gripper_open    whether the gripper is currently open
 CONTEXT_KEYS = ("tcp_pose", "action_scale", "joint_positions", "gripper_open")
+
+
+@dataclass
+class TeleopAction:
+    """What one device is asking for, this step.
+
+    Attributes:
+        parts: The action parts this device fills, by name.
+        driving: Whether the operator is actually driving. Devices report small
+            residual motion constantly, so each binding decides its own
+            threshold.
+        info: Device state worth recording alongside the step it produced.
+    """
+
+    parts: dict[str, np.ndarray] = field(default_factory=dict)
+    driving: bool = False
+    info: dict[str, Any] = field(default_factory=dict)
 
 
 class TeleopBinding(ABC):
@@ -64,15 +83,20 @@ class TeleopBinding(ABC):
     #: space. Absolute commands can leave it; normalised deltas cannot.
     CLIPS_TO_ACTION_SPACE: bool = False
 
+    #: Context keys this binding cannot work without, from :data:`CONTEXT_KEYS`.
+    NEEDS: tuple[str, ...] = ()
+
     @abstractmethod
     def action(
         self, reading: Mapping[str, Any], context: Mapping[str, Any]
-    ) -> dict[str, np.ndarray]:
-        """Return the action parts this device fills, by name."""
+    ) -> TeleopAction:
+        """Say what this device asks for, given one reading.
 
-    def is_driving(self, reading: Mapping[str, Any]) -> bool:
-        """Whether the operator is actually moving this device."""
-        return True
+        Everything about a reading is answered here at once. A binding whose
+        answer depends on state it computed -- as one holding a pose does --
+        would otherwise have to leave that state behind for a second call, and
+        nothing would enforce the order the two are made in.
+        """
 
     def publish(self, reading: Mapping[str, Any]) -> dict[str, Any]:
         """Context this device offers the bindings listed after it.
@@ -82,10 +106,6 @@ class TeleopBinding(ABC):
         here keeps that coupling visible and ordered, rather than hidden in a
         class that reads both devices.
         """
-        return {}
-
-    def info(self) -> dict[str, Any]:
-        """Device state worth recording alongside the step it produced."""
         return {}
 
     def hold(self, context: Mapping[str, Any]) -> dict[str, np.ndarray]:

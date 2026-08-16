@@ -88,6 +88,14 @@ class ComposedTeleop(TeleopDevice):
         self.group = group
         self.layout = dict(layout)
         self.streamer = streamer
+        if streamer is not None:
+            unknown = set(getattr(streamer, "DELIVERS", ())) - set(self.layout)
+            if unknown:
+                raise ValueError(
+                    f"{type(streamer).__name__} says it delivers "
+                    f"{sorted(unknown)}, which this env's action layout does "
+                    f"not have. It has {sorted(self.layout)}."
+                )
         if timeout is not None:
             self.timeout = timeout
 
@@ -138,6 +146,10 @@ class ComposedTeleop(TeleopDevice):
         parts, driving, info = self.group.action(context_from(env))
         if not parts:
             return TeleopSample(action=None, active=False, info=info)
+        if self.streamer is not None and self.streamer.streaming:
+            # Recorded so a dataset can tell which parts of this action the
+            # robot was already given, rather than dispatched by step().
+            info = {**info, "streamed_parts": list(self.streamer.DELIVERS)}
         return TeleopSample(
             action=self._write(env, policy_action, parts), active=driving, info=info
         )

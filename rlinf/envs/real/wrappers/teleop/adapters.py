@@ -50,6 +50,9 @@ class DualGelloJointStream(TeleopStreamer):
         stream_period: Seconds between pushes when streaming.
     """
 
+    #: Both arms' joint targets go straight to the controllers.
+    DELIVERS = ("left.arm", "right.arm")
+
     def __init__(
         self,
         left_port: str,

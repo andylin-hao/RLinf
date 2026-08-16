@@ -55,6 +55,12 @@ class TeleopStreamer:
             action reaches the robot through ``env.step`` like any other rig.
     """
 
+    #: The action parts this loop delivers itself. While it streams, ``step``
+    #: does not dispatch them, so the composed vector still carries them but
+    #: the robot has already been told. Naming them is what keeps that visible
+    #: rather than leaving the two paths to be inferred from a config flag.
+    DELIVERS: tuple[str, ...] = ()
+
     def __init__(self, period: float = 0.001, enabled: bool = False) -> None:
         self._period = period
         self._enabled = enabled

@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import warnings
 from enum import Enum
 
 from rlinf.utils.robosuite_compat import install_robosuite_egl_device_shim
@@ -32,7 +33,7 @@ class SupportedEnvType(Enum):
     CALVIN = "calvin"
     ROBOCASA = "robocasa"
     ROBOCASA365 = "robocasa365"
-    REALWORLD = "realworld"
+    REAL = "real"
     FRANKASIM = "frankasim"
     HABITAT = "habitat"
     OPENSORAWM = "opensora_wm"
@@ -42,6 +43,22 @@ class SupportedEnvType(Enum):
     ROBOVERSE = "roboverse"
     D4RL = "d4rl"
     POLARIS = "polaris"
+
+    @classmethod
+    def _missing_(cls, value: object) -> "SupportedEnvType | None":
+        """Accept the spellings this enum used to have.
+
+        The real-world package was ``envs/realworld`` and is now ``envs/real``;
+        configs that named the old one keep working and say so.
+        """
+        if value == "realworld":
+            warnings.warn(
+                "env_type 'realworld' is retired. Use 'real'.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            return cls.REAL
+        return None
 
 
 def get_env_cls(env_type: str, env_cfg=None):
@@ -116,7 +133,7 @@ def get_env_cls(env_type: str, env_cfg=None):
         from rlinf.envs.sim.robocasa365.robocasa365_env import Robocasa365Env
 
         return Robocasa365Env
-    elif env_type == SupportedEnvType.REALWORLD:
+    elif env_type == SupportedEnvType.REAL:
         from rlinf.envs.real import RealWorldEnv
 
         return RealWorldEnv

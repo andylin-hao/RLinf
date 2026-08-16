@@ -27,12 +27,7 @@ named parts into this env's action vector, using the layout from
 """
 
 from .composed import ComposedTeleop, context_from
-from .config import (
-    LEGACY_FLAGS,
-    NO_DEVICE,
-    resolve_teleop_device,
-    resolve_teleop_devices,
-)
+from .config import LEGACY_FLAGS, NO_DEVICE, resolve_teleop_devices
 from .intervention import TeleopDevice, TeleopIntervention, TeleopSample
 from .layout import action_layout
 from .streaming import TeleopStreamer
@@ -47,6 +42,5 @@ __all__ = [
     "TeleopStreamer",
     "action_layout",
     "context_from",
-    "resolve_teleop_device",
     "resolve_teleop_devices",
 ]

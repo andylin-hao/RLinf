@@ -108,7 +108,7 @@
 
 .. code-block:: yaml
 
-   env_type: realworld
+   env_type: real
    init_params:
      id: "WipeEnv-v1"      # 上一步注册的 gym id
      num_envs: null

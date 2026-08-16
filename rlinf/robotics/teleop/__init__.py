@@ -20,7 +20,7 @@ into one action. Composing here is what removes the hand-written classes that
 used to splice a spacemouse and a glove, or two leader arms, together.
 """
 
-from .binding import CONTEXT_KEYS, TeleopBinding
+from .binding import CONTEXT_KEYS, TeleopAction, TeleopBinding
 from .bindings import (
     GloveBinding,
     LeaderArmBinding,
@@ -36,6 +36,7 @@ from .kinds import ActionKind, ActionPart
 __all__ = [
     "CONTEXT_KEYS",
     "ActionKind",
+    "TeleopAction",
     "ActionPart",
     "GloveBinding",
     "LeaderArmBinding",

@@ -21,7 +21,7 @@ from typing import Any, Mapping, Optional
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
-from .binding import TeleopBinding
+from .binding import TeleopAction, TeleopBinding
 from .kinds import ActionKind
 
 
@@ -48,6 +48,9 @@ class SpaceMouseBinding(TeleopBinding):
         "end_effector": ActionKind.GRIPPER,
     }
 
+    # gripper_open is read with a fallback, so it is not required.
+    NEEDS = ()
+
     def __init__(self) -> None:
         self._grip: Optional[np.ndarray] = None
         self.left = False
@@ -60,7 +63,7 @@ class SpaceMouseBinding(TeleopBinding):
 
     def action(
         self, reading: Mapping[str, Any], context: Mapping[str, Any]
-    ) -> dict[str, np.ndarray]:
+    ) -> TeleopAction:
         """Map the twist onto the arm, and the buttons onto the gripper."""
         buttons = reading["buttons"]
         self.left, self.right = bool(buttons[0]), bool(buttons[1])
@@ -74,7 +77,9 @@ class SpaceMouseBinding(TeleopBinding):
         elif self._grip is None:
             self._grip = jittered_grip(is_open=bool(context.get("gripper_open", True)))
         parts["end_effector"] = self._grip.copy()
-        return parts
+
+        moved = float(np.linalg.norm(reading["twist"])) > self.MOVEMENT_EPSILON
+        return TeleopAction(parts=parts, driving=moved or self.left or self.right)
 
     def publish(self, reading: Mapping[str, Any]) -> dict[str, Any]:
         """Hold the second button to put a glove in control of the hand.
@@ -84,11 +89,6 @@ class SpaceMouseBinding(TeleopBinding):
         have always behaved; the difference is stated rather than inherited.
         """
         return {"hand_driving": bool(reading["buttons"][1])}
-
-    def is_driving(self, reading: Mapping[str, Any]) -> bool:
-        """Moving the puck, or pressing either button."""
-        moved = float(np.linalg.norm(reading["twist"])) > self.MOVEMENT_EPSILON
-        return moved or bool(reading["buttons"][0]) or bool(reading["buttons"][1])
 
 
 class LeaderArmBinding(TeleopBinding):
@@ -104,9 +104,11 @@ class LeaderArmBinding(TeleopBinding):
         "end_effector": ActionKind.GRIPPER,
     }
 
+    NEEDS = ("tcp_pose", "action_scale")
+
     def action(
         self, reading: Mapping[str, Any], context: Mapping[str, Any]
-    ) -> dict[str, np.ndarray]:
+    ) -> TeleopAction:
         """Difference the leader's pose against the follower's."""
         tcp_pose = np.asarray(context["tcp_pose"])
         scale = np.asarray(context["action_scale"])
@@ -125,11 +127,8 @@ class LeaderArmBinding(TeleopBinding):
         }
         grip = np.asarray(reading["grip"]) / scale[2]
         parts["end_effector"] = np.clip(-(2 * grip - 1.0), -1.0, 1.0)
-        return parts
-
-    def is_driving(self, reading: Mapping[str, Any]) -> bool:
-        """The leader arm is always driving once it is streaming."""
-        return True
+        # A leader arm is posed by hand, so it is driving whenever it streams.
+        return TeleopAction(parts=parts, driving=True)
 
 
 class LeaderJointBinding(TeleopBinding):
@@ -147,12 +146,16 @@ class LeaderJointBinding(TeleopBinding):
         "end_effector": ActionKind.GRIPPER,
     }
 
+    NEEDS = ()
+
     def __init__(
         self, side: int = 0, use_delta: bool = False, action_scale: float = 0.1
     ) -> None:
         self.side = side
         self.use_delta = use_delta
         self.action_scale = action_scale
+        # Only a delta needs the follower's joints to difference against.
+        self.NEEDS = ("joint_positions",) if use_delta else ()
         # Differencing against the follower makes this a delta, not a target.
         self.PRODUCES = {
             "arm": ActionKind.JOINT_DELTA if use_delta else ActionKind.JOINT_POSITION,
@@ -161,7 +164,7 @@ class LeaderJointBinding(TeleopBinding):
 
     def action(
         self, reading: Mapping[str, Any], context: Mapping[str, Any]
-    ) -> dict[str, np.ndarray]:
+    ) -> TeleopAction:
         """Difference the leader's joints against the follower's."""
         target = np.asarray(reading["joint_position"])
         if self.use_delta:
@@ -171,14 +174,13 @@ class LeaderJointBinding(TeleopBinding):
             arm = target.copy()
 
         grip = np.asarray(reading["grip"])
-        return {
-            "arm": arm,
-            "end_effector": np.clip(-(2 * grip - 1.0), -1.0, 1.0),
-        }
-
-    def is_driving(self, reading: Mapping[str, Any]) -> bool:
-        """Streaming leader arms are always driving."""
-        return True
+        return TeleopAction(
+            parts={
+                "arm": arm,
+                "end_effector": np.clip(-(2 * grip - 1.0), -1.0, 1.0),
+            },
+            driving=True,
+        )
 
 
 class GloveBinding(TeleopBinding):
@@ -219,7 +221,7 @@ class GloveBinding(TeleopBinding):
 
     def action(
         self, reading: Mapping[str, Any], context: Mapping[str, Any]
-    ) -> dict[str, np.ndarray]:
+    ) -> TeleopAction:
         """Track the operator's fingers, or hold where they left them."""
         angles = np.asarray(reading["angles"], dtype=np.float64)
         # Held by default: a glove with nothing gating it stays where the
@@ -233,11 +235,8 @@ class GloveBinding(TeleopBinding):
             self._commanded = np.clip(self._base + (angles - self._baseline), 0.0, 1.0)
         else:
             self._baseline = None  # re-zero next time control is taken
-        return {"hand": self._commanded.copy()}
-
-    def is_driving(self, reading: Mapping[str, Any]) -> bool:
-        """The glove follows the arm device's button rather than deciding."""
-        return False
+        # The arm device's button decides who is driving, not the glove.
+        return TeleopAction(parts={"hand": self._commanded.copy()}, driving=False)
 
 
 def _rotvec_to_euler(action: np.ndarray, action_scale: Any) -> np.ndarray:
@@ -278,14 +277,14 @@ class _PicoArmBinding(TeleopBinding):
         "end_effector": ActionKind.GRIPPER,
     }
 
+    NEEDS = ("tcp_pose", "action_scale")
+
     #: The grip says exactly when the operator is driving, so no hold window.
     HOLD_WINDOW = 0.0
 
     def __init__(self, gripper: bool = True, side: int = 0) -> None:
         self.gripper = bool(gripper)
         self.side = int(side)
-        self._driving = False
-        self._info: dict[str, Any] = {}
         self._held_from: Optional[tuple[np.ndarray, R]] = None
 
     def _measured_pose(self, context: Mapping[str, Any]) -> np.ndarray:
@@ -303,8 +302,6 @@ class _PicoArmBinding(TeleopBinding):
         """Turn the operator's motion into a command for where this arm is."""
         pose = self._measured_pose(context)
         held = bool(reading.get("held", False))
-        self._driving = held
-        self._info = self._reported(reading)
 
         if not held:
             self._held_from = None
@@ -382,18 +379,8 @@ class _PicoArmBinding(TeleopBinding):
             info["pico_gripper_close"] = bool(close)
         return info
 
-    def is_driving(self, reading: Mapping[str, Any]) -> bool:
-        """Whether the grip was held on the reading just taken."""
-        return self._driving
-
-    def info(self) -> dict[str, Any]:
-        """What the reader reported, for a collector to record."""
-        return dict(self._info)
-
     def reset(self) -> None:
         """Forget the previous episode's grip and where it started."""
-        self._driving = False
-        self._info = {}
         self._held_from = None
 
 
@@ -406,17 +393,18 @@ class PicoBinding(_PicoArmBinding):
 
     def action(
         self, reading: Mapping[str, Any], context: Mapping[str, Any]
-    ) -> dict[str, np.ndarray]:
+    ) -> TeleopAction:
         """Return the arm delta, and the gripper when the reader sends one."""
-        _, action, replaced = self._read(reading, context)
-        if not replaced:
-            return {}
+        _, action, held = self._read(reading, context)
+        info = self._reported(reading)
+        if not held:
+            return TeleopAction(info=info)
 
         action = _rotvec_to_euler(action, context["action_scale"])
         parts = {"arm": action[:6]}
         if self.gripper and action.size >= 7:
             parts["end_effector"] = action[6:7]
-        return parts
+        return TeleopAction(parts=parts, driving=True, info=info)
 
 
 class PicoTcpBinding(_PicoArmBinding):
@@ -500,16 +488,16 @@ class PicoTcpBinding(_PicoArmBinding):
 
     def action(
         self, reading: Mapping[str, Any], context: Mapping[str, Any]
-    ) -> dict[str, np.ndarray]:
+    ) -> TeleopAction:
         """Return the pose to command, whoever is deciding it right now."""
-        pose, action, replaced = self._read(reading, context)
-        self._info["pico_replaced"] = replaced
+        pose, action, held = self._read(reading, context)
+        info = {**self._reported(reading), "pico_replaced": held}
 
-        if replaced:
+        if held:
             command = self._compose(action, pose, context["action_scale"])
             self._last_command = command.copy()
             self._holding_after_release = True
-            return self._split(command)
+            return TeleopAction(parts=self._split(command), driving=True, info=info)
 
         if (
             self._holding_after_release
@@ -518,13 +506,15 @@ class PicoTcpBinding(_PicoArmBinding):
         ):
             # Released mid-chunk. Stay where the operator left the arm, and do
             # not mark it as intervention so training skips these frames.
-            return self._split(self._last_command)
+            return TeleopAction(parts=self._split(self._last_command), info=info)
 
         if self.hold_current_when_inactive:
             # The gripper is left out so the policy's own command stands.
-            return {"arm": self._pose_to_command(pose)[:-1]}
+            return TeleopAction(
+                parts={"arm": self._pose_to_command(pose)[:-1]}, info=info
+            )
 
-        return {}
+        return TeleopAction(info=info)
 
     def hold(self, context: Mapping[str, Any]) -> dict[str, np.ndarray]:
         """The pose that keeps this arm where it is, for a skipped chunk."""

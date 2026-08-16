@@ -208,7 +208,7 @@ Where the Code Lives
      - ``task_factory`` and ``register_tasks``.
    * - ``real/env.py``
      - ``RealWorldEnv``, the vectorized env the framework instantiates from
-       ``env_type: realworld``.
+       ``env_type: real``.
    * - ``real/task_env.py``
      - ``RobotTask`` and ``RobotTaskEnv`` define the boundary between task logic
        and hardware.

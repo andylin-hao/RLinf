@@ -118,7 +118,7 @@ these fields come from your config dataclass:
 
 .. code-block:: yaml
 
-   env_type: realworld
+   env_type: real
    init_params:
      id: "WipeEnv-v1"      # the gym id you registered
      num_envs: null

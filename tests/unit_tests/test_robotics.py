@@ -1414,7 +1414,9 @@ def _binding(produces, value, driving=True):
         PRODUCES = _kinds(*produces)
 
         def action(self, reading, context):
-            return dict.fromkeys(produces, value)
+            from rlinf.robotics.teleop import TeleopAction
+
+            return TeleopAction(parts=dict.fromkeys(produces, value), driving=driving)
 
         def is_driving(self, reading):
             return driving
@@ -1551,8 +1553,10 @@ def test_the_glove_holds_what_the_operator_posed():
     glove = GloveBinding()
     glove.reset(np.zeros(6))
 
-    posed = glove.action({"angles": np.full(6, 0.4)}, {"hand_driving": True})["hand"]
-    released = glove.action({"angles": np.full(6, 0.9)}, {"hand_driving": False})[
+    posed = glove.action({"angles": np.full(6, 0.4)}, {"hand_driving": True}).parts[
+        "hand"
+    ]
+    released = glove.action({"angles": np.full(6, 0.9)}, {"hand_driving": False}).parts[
         "hand"
     ]
 
@@ -1581,11 +1585,13 @@ def test_the_glove_tracks_only_while_its_gate_is_held():
 
     # Held: the first reading re-zeros, a later one moves the hand.
     glove.action({"angles": np.zeros(6)}, held)
-    moved = glove.action({"angles": np.full(6, 0.3)}, held)["hand"]
+    moved = glove.action({"angles": np.full(6, 0.3)}, held).parts["hand"]
     assert np.allclose(moved, 0.3)
 
     # Released: the hand stays where it was posed.
-    assert np.allclose(glove.action({"angles": np.full(6, 0.9)}, released)["hand"], 0.3)
+    assert np.allclose(
+        glove.action({"angles": np.full(6, 0.9)}, released).parts["hand"], 0.3
+    )
 
 
 # --- PICO, as a device and a binding ----------------------------------
@@ -1641,13 +1647,13 @@ def test_a_controller_drives_the_arm_to_a_pose_it_can_reach():
     binding = PicoTcpBinding(gripper=True, side=0)
     device = _ScriptedController([((0.025, 0.0, 0.0), (0.0, 0.0, 0.0), True, -1)])
 
-    parts = binding.action(device.get_observation(), _pico_context())
+    parts = binding.action(device.get_observation(), _pico_context()).parts
 
     # The arm goes where the operator moved from where it was when they grabbed.
     assert parts["arm"].size == 9
     assert np.isclose(parts["arm"][0], 0.3 + 0.025)
     assert np.isclose(parts["end_effector"][0], -1.0)
-    assert binding.is_driving(device.get_observation())
+    assert binding.action(device.get_observation(), _pico_context()).driving
 
 
 def test_releasing_the_grip_mid_chunk_holds_the_arm_where_it_was_left():
@@ -1665,13 +1671,13 @@ def test_releasing_the_grip_mid_chunk_holds_the_arm_where_it_was_left():
     )
     context = _pico_context()
 
-    driven = binding.action(device.get_observation(), context)["arm"].copy()
-    held = binding.action(device.get_observation(), context)["arm"]
+    driven = binding.action(device.get_observation(), context).parts["arm"].copy()
+    held = binding.action(device.get_observation(), context).parts["arm"]
     assert np.allclose(held, driven)
 
     # The next chunk of policy actions releases it.
     binding.on_action_chunk_begin()
-    assert binding.action(device.get_observation(), context) == {}
+    assert binding.action(device.get_observation(), context).parts == {}
 
 
 def test_holding_the_current_pose_leaves_the_gripper_to_the_policy():
@@ -1681,7 +1687,7 @@ def test_holding_the_current_pose_leaves_the_gripper_to_the_policy():
     binding = PicoTcpBinding(gripper=True, side=0, hold_current_when_inactive=True)
     device = _ScriptedController([((0.0, 0.0, 0.0), (0.0, 0.0, 0.0), False, 0)])
 
-    parts = binding.action(device.get_observation(), _pico_context())
+    parts = binding.action(device.get_observation(), _pico_context()).parts
 
     assert set(parts) == {"arm"}
 
@@ -1783,9 +1789,9 @@ def test_the_arm_anchors_where_it_was_when_the_operator_took_hold():
     )
     context = _pico_context()
 
-    first = binding.action(device.get_observation(), context)["arm"][0]
+    first = binding.action(device.get_observation(), context).parts["arm"][0]
     binding.action(device.get_observation(), context)
-    again = binding.action(device.get_observation(), context)["arm"][0]
+    again = binding.action(device.get_observation(), context).parts["arm"][0]
 
     # Same motion from the same measured pose, so the same command both times.
     assert np.isclose(first, again)
@@ -1913,7 +1919,7 @@ def test_the_binding_turns_a_reading_into_a_command_for_this_arm():
 
     reader._snapshot = lambda: _pico_packet(0.0, 0.0, -0.04, 0.0, grip=0.95)
     reading = reader.get_reading()
-    parts = binding.action(reading, context)
+    parts = binding.action(reading, context).parts
 
     # The arm is asked for where it was when they grabbed, plus their motion.
     expected = np.asarray(context["tcp_pose"][:3]) + reading["position_delta"]

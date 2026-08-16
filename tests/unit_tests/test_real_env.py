@@ -398,10 +398,9 @@ def test_an_unfilled_part_keeps_the_policy_action():
         PRODUCES = {"hand": ActionKind.HAND}
 
         def action(self, reading, context):
-            return {"hand": np.full(6, 0.5)}
+            from rlinf.robotics.teleop import TeleopAction
 
-        def is_driving(self, reading):
-            return True
+            return TeleopAction(parts={"hand": np.full(6, 0.5)}, driving=True)
 
         def reset(self):
             pass
@@ -1241,7 +1240,7 @@ def test_a_leader_arm_reads_the_joint_convention_from_the_env():
             "left.arm": ActionKind.JOINT_DELTA,
             "left.end_effector": ActionKind.GRIPPER,
         },
-        config=SimpleNamespace(joint_action_mode="delta", joint_action_scale=0.25),
+        joint_action_scale=0.25,
     )
     entry = DEVICES["gello_joint"](
         {"left_gello_port": "/dev/left"}, {"drives": "left"}, facts
@@ -1261,7 +1260,7 @@ def test_an_entry_option_wins_over_the_env_default():
             "left.arm": ActionKind.JOINT_DELTA,
             "left.end_effector": ActionKind.GRIPPER,
         },
-        config=SimpleNamespace(joint_action_mode="delta", joint_action_scale=0.25),
+        joint_action_scale=0.25,
     )
     entry = DEVICES["gello_joint"](
         {"left_gello_port": "/dev/left"},
@@ -1275,10 +1274,10 @@ def test_an_entry_option_wins_over_the_env_default():
 
 def test_the_streamer_comes_from_the_registry_not_the_stack():
     """A device that also commands the robot says so where it is built."""
-    from rlinf.envs.real.wrappers.teleop.builder import STREAMERS
+    from rlinf.envs.real.wrappers.teleop.builder import STREAMERS, EnvFacts
 
-    facts_off = SimpleNamespace(teleop_direct_stream=False)
-    assert STREAMERS["gello_joint"]({}, SimpleNamespace(config=facts_off)) is None
+    quiet = EnvFacts(layout={}, kinds={}, direct_stream=False)
+    assert STREAMERS["gello_joint"]({}, quiet) is None
 
 
 # --- an env says what its action means --------------------------------
@@ -1431,7 +1430,7 @@ def _env_configs():
                 continue
             env_id = (doc.get("init_params") or {}).get("id")
             # Simulated envs register elsewhere and have no teleop to check.
-            if env_id and str(doc.get("env_type", "")).startswith("realworld"):
+            if env_id and str(doc.get("env_type", "")) in ("real", "realworld"):
                 env_files[path.stem] = (path, doc, str(env_id))
 
     for path, doc, env_id in env_files.values():
@@ -1496,3 +1495,23 @@ def test_every_shipped_config_names_a_registered_task():
     )
 
     assert unknown == []
+
+
+def test_the_retired_env_type_still_resolves_and_warns():
+    """The package is `real`; configs that still say `realworld` keep working."""
+    from rlinf.envs import SupportedEnvType
+
+    assert SupportedEnvType("real") is SupportedEnvType.REAL
+    with pytest.warns(DeprecationWarning, match="'realworld' is retired"):
+        assert SupportedEnvType("realworld") is SupportedEnvType.REAL
+
+
+def test_no_worker_compares_the_env_type_to_a_bare_string():
+    """A literal would have gone quietly wrong when the value was renamed."""
+    offenders = []
+    for path in (_ROOT / "rlinf" / "workers").rglob("*.py"):
+        for number, line in enumerate(path.read_text().splitlines(), 1):
+            if re.search(r'env_type\s*[!=]=\s*["\']', line):
+                offenders.append(f"{path.relative_to(_ROOT)}:{number}")
+
+    assert offenders == []

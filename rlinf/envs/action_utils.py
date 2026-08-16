@@ -395,7 +395,7 @@ def prepare_actions(
             action_dim=action_dim,
             action_space=policy,
         )
-    elif env_type == SupportedEnvType.REALWORLD:
+    elif env_type == SupportedEnvType.REAL:
         chunk_actions = raw_chunk_actions
     elif env_type == SupportedEnvType.GENESIS:
         chunk_actions = prepare_actions_for_genesis(

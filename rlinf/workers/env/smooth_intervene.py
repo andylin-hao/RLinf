@@ -29,6 +29,7 @@ import torch
 from omegaconf import DictConfig, OmegaConf
 
 from rlinf.data.schema.embodied_types import PolicyOutput
+from rlinf.envs import SupportedEnvType
 from rlinf.envs.utils import get_env_attr
 
 # Maps forward_inputs observation keys → env_obs keys (from obs_processor).
@@ -162,7 +163,10 @@ class SmoothInterveneController:
             and OmegaConf.select(cfg, "env.train.smooth_intervene", default=False)
         )
         if enabled:
-            if OmegaConf.select(cfg, "env.train.env_type") != "realworld":
+            if (
+                SupportedEnvType(OmegaConf.select(cfg, "env.train.env_type"))
+                is not SupportedEnvType.REAL
+            ):
                 raise ValueError(
                     "smooth_intervene requires env.train.env_type to be 'realworld'"
                 )
