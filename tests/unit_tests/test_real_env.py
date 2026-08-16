@@ -20,6 +20,7 @@ import importlib
 import re
 import sys
 import time
+import warnings
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Optional
@@ -1397,3 +1398,101 @@ def test_a_device_that_means_something_else_is_refused():
     }
     with pytest.raises(ValueError, match="mean different things"):
         TeleopGroup([TeleopEntry(Device(), SpaceMouseBinding())], available=joint_arm)
+
+
+# --- every shipped config names devices its robot can drive -----------
+
+
+def _task_classes():
+    """Gym id -> env class, across every robot that declares tasks."""
+    from rlinf.envs.real import dosw1, franka, gim_arm, xsquare
+
+    classes = {}
+    for module in (franka, dosw1, xsquare, gim_arm):
+        classes.update(getattr(module, "TASKS", {}))
+    return classes
+
+
+def _env_configs():
+    """Every shipped env config: its path, its section, and its gym id.
+
+    A run config layers an ``env/<name>`` file into ``env.train`` or
+    ``env.eval`` and may override the device there, so both halves are read.
+    """
+    import yaml
+
+    roots = [_ROOT / "examples", _ROOT / "evaluations"]
+    env_files = {}
+    for root in roots:
+        for path in root.rglob("env/*.yaml"):
+            try:
+                doc = yaml.safe_load(path.read_text()) or {}
+            except yaml.YAMLError:
+                continue
+            env_id = (doc.get("init_params") or {}).get("id")
+            # Simulated envs register elsewhere and have no teleop to check.
+            if env_id and str(doc.get("env_type", "")).startswith("realworld"):
+                env_files[path.stem] = (path, doc, str(env_id))
+
+    for path, doc, env_id in env_files.values():
+        yield path, doc, env_id
+
+    pattern = re.compile(r"env/([\w-]+)@env\.(train|eval)")
+    for root in roots:
+        for path in root.rglob("*.yaml"):
+            if path.parent.name == "env":
+                continue
+            try:
+                doc = yaml.safe_load(path.read_text()) or {}
+            except yaml.YAMLError:
+                continue
+            for entry in doc.get("defaults") or []:
+                match = pattern.search(str(entry))
+                if not match:
+                    continue
+                base = env_files.get(match.group(1))
+                if base is None:
+                    continue
+                section = ((doc.get("env") or {}).get(match.group(2))) or {}
+                if any(key in section for key in ("teleop", "teleop_device")):
+                    yield path, section, base[2]
+
+
+def test_shipped_configs_name_devices_their_env_can_drive():
+    """A device an env cannot drive is only discovered with a robot moving.
+
+    Every config in the repo is resolved against the env class its gym id
+    names, so a typo or an unsupported device fails here instead of there.
+    """
+    classes = _task_classes()
+    offenders = []
+    for path, section, env_id in _env_configs():
+        env_cls = classes.get(env_id)
+        if env_cls is None:
+            continue
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", DeprecationWarning)
+                resolve_teleop_devices(
+                    section,
+                    supported=getattr(env_cls, "TELEOP", ()),
+                    default=getattr(env_cls, "TELEOP_DEFAULT", NO_DEVICE),
+                )
+        except ValueError as error:
+            offenders.append(f"{path.relative_to(_ROOT)} ({env_id}): {error}")
+
+    assert offenders == []
+
+
+def test_every_shipped_config_names_a_registered_task():
+    """A gym id nobody registers is a config that cannot start."""
+    classes = _task_classes()
+    unknown = sorted(
+        {
+            env_id
+            for _, _, env_id in _env_configs()
+            if env_id not in classes and env_id.endswith("-v1")
+        }
+    )
+
+    assert unknown == []

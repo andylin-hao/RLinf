@@ -1789,3 +1789,133 @@ def test_the_arm_anchors_where_it_was_when_the_operator_took_hold():
 
     # Same motion from the same measured pose, so the same command both times.
     assert np.isclose(first, again)
+
+
+# --- the controller reader, from packets ------------------------------
+
+
+def _pico_packet(x, y, z, yaw, grip, close=False, open_=False):
+    """One frame as the headset publishes it."""
+    from scipy.spatial.transform import Rotation as R
+
+    return {
+        "right_controller": {
+            "position": [x, y, z],
+            "orientation": list(R.from_euler("xyz", [0.0, 0.0, yaw]).as_quat()),
+            "grip": grip,
+            "trigger": 0.0,
+        },
+        "buttons": {"A": close, "B": open_},
+    }
+
+
+def _pico_reader(**overrides):
+    """A reader wired to scripted packets rather than to a headset."""
+    from rlinf.robotics.parts.teleop.readers.pico import PicoExpert
+
+    config = {
+        "hand": "right",
+        "control_trigger": "grip",
+        "control_threshold": 0.85,
+        "gripper_close_button": "A",
+        "gripper_open_button": "B",
+        "position_scale": 1.0,
+        "rotation_scale": 0.5,
+        "calibration": {"enabled": False, "required": False},
+    }
+    config.update(overrides)
+    PicoExpert.start = lambda self: None
+    return PicoExpert(**config)
+
+
+def test_a_reading_is_empty_until_the_operator_takes_hold():
+    import numpy as np
+
+    reader = _pico_reader()
+    reader._snapshot = lambda: _pico_packet(0.1, 0.2, 0.3, 0.4, grip=0.0)
+
+    reading = reader.get_reading()
+
+    assert reading["held"] is False
+    assert np.allclose(reading["position_delta"], 0.0)
+
+
+def test_motion_is_measured_from_where_the_operator_took_hold():
+    """Not from the origin: grabbing at an arbitrary pose must not jump.
+
+    The headset's axes are not the robot's. Its ``-z`` is the robot's ``+x``,
+    so this also pins down the mapping the reader applies.
+    """
+    import numpy as np
+
+    reader = _pico_reader(operator_to_robot_yaw=0.0)
+    reader._snapshot = lambda: _pico_packet(0.5, 0.5, 0.5, 0.0, grip=0.95)
+    reader.get_reading()  # takes hold here, at (0.5, 0.5, 0.5)
+
+    reader._snapshot = lambda: _pico_packet(0.5, 0.5, 0.47, 0.0, grip=0.95)
+    reading = reader.get_reading()
+
+    assert reading["held"] is True
+    assert np.allclose(reading["position_delta"], [0.03, 0.0, 0.0], atol=1e-9)
+
+
+def test_letting_go_and_grabbing_again_re_anchors():
+    import numpy as np
+
+    reader = _pico_reader(operator_to_robot_yaw=0.0)
+    for position, grip in (
+        ((0.0, 0.0, 0.0), 0.95),
+        ((0.30, 0.0, 0.0), 0.95),
+        ((0.30, 0.0, 0.0), 0.0),
+        ((0.30, 0.0, 0.0), 0.95),
+    ):
+        reader._snapshot = lambda p=position, g=grip: _pico_packet(*p, 0.0, grip=g)
+        reading = reader.get_reading()
+
+    # The last frame re-took hold where it stands, so nothing has moved yet.
+    assert reading["held"] is True
+    assert np.allclose(reading["position_delta"], 0.0, atol=1e-9)
+
+
+def test_the_gripper_buttons_are_reported_separately():
+    reader = _pico_reader()
+    reader._snapshot = lambda: _pico_packet(0, 0, 0, 0, grip=0.95, close=True)
+
+    reading = reader.get_reading()
+
+    assert reading["grip_close"] is True
+    assert reading["grip_open"] is False
+
+
+def test_a_dropped_link_reports_stale_rather_than_stale_motion():
+    reader = _pico_reader()
+    reader._snapshot = lambda: None
+
+    reading = reader.get_reading()
+
+    assert reading["held"] is False
+    assert reading["ready"] is False
+    assert reading["stale"] is True
+
+
+def test_the_binding_turns_a_reading_into_a_command_for_this_arm():
+    """The whole path, from packet to the numbers the env receives."""
+    import numpy as np
+
+    from rlinf.robotics.teleop import PicoTcpBinding
+
+    reader = _pico_reader(operator_to_robot_yaw=0.0)
+    binding = PicoTcpBinding(gripper=True, side=0)
+    context = _pico_context()
+
+    reader._snapshot = lambda: _pico_packet(0.0, 0.0, 0.0, 0.0, grip=0.95)
+    binding.action(reader.get_reading(), context)
+
+    reader._snapshot = lambda: _pico_packet(0.0, 0.0, -0.04, 0.0, grip=0.95)
+    reading = reader.get_reading()
+    parts = binding.action(reading, context)
+
+    # The arm is asked for where it was when they grabbed, plus their motion.
+    expected = np.asarray(context["tcp_pose"][:3]) + reading["position_delta"]
+    assert np.allclose(parts["arm"][:3], expected, atol=1e-6)
+    assert np.isclose(reading["position_delta"][0], 0.04, atol=1e-9)
