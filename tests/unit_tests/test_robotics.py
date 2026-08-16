@@ -1592,7 +1592,7 @@ def test_the_glove_tracks_only_while_its_gate_is_held():
 
 
 class _ScriptedController:
-    """A controller part whose reader replays a fixed sequence."""
+    """A controller part replaying a fixed sequence of readings."""
 
     def __init__(self, steps):
         self._steps = list(steps)
@@ -1600,18 +1600,21 @@ class _ScriptedController:
         self.is_connected = True
 
     def get_observation(self):
-        return {"packet": self}
-
-    def get_action(self, tcp_pose, action_scale, gripper_enabled=True):
         import numpy as np
 
-        action, replaced = self._steps[min(self._index, len(self._steps) - 1)]
+        moved, turned, held, grip = self._steps[min(self._index, len(self._steps) - 1)]
         self._index += 1
-        return (
-            np.asarray(action, dtype=np.float32),
-            bool(replaced),
-            {"pico_active": bool(replaced), "pico_ready": True},
-        )
+        return {
+            "held": held,
+            "ready": True,
+            "hand": "right",
+            "calibrated": True,
+            "control_value": 1.0 if held else 0.0,
+            "position_delta": np.asarray(moved, dtype=np.float64),
+            "rotation_delta": np.asarray(turned, dtype=np.float64),
+            "grip_close": grip < 0,
+            "grip_open": grip > 0,
+        }
 
     def connect(self):
         pass
@@ -1636,14 +1639,14 @@ def test_a_controller_drives_the_arm_to_a_pose_it_can_reach():
     from rlinf.robotics.teleop import PicoTcpBinding
 
     binding = PicoTcpBinding(gripper=True, side=0)
-    device = _ScriptedController([([0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.4], True)])
+    device = _ScriptedController([((0.025, 0.0, 0.0), (0.0, 0.0, 0.0), True, -1)])
 
     parts = binding.action(device.get_observation(), _pico_context())
 
-    # x moves by the delta times the position scale; the rest of the pose holds.
+    # The arm goes where the operator moved from where it was when they grabbed.
     assert parts["arm"].size == 9
-    assert np.isclose(parts["arm"][0], 0.3 + 0.5 * 0.05)
-    assert np.isclose(parts["end_effector"][0], 0.4)
+    assert np.isclose(parts["arm"][0], 0.3 + 0.025)
+    assert np.isclose(parts["end_effector"][0], -1.0)
     assert binding.is_driving(device.get_observation())
 
 
@@ -1655,7 +1658,10 @@ def test_releasing_the_grip_mid_chunk_holds_the_arm_where_it_was_left():
 
     binding = PicoTcpBinding(gripper=True, side=0, hold_current_when_inactive=False)
     device = _ScriptedController(
-        [([0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.4], True), ([0.0] * 7, False)]
+        [
+            ((0.025, 0.0, 0.0), (0.0, 0.0, 0.0), True, -1),
+            ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0), False, 0),
+        ]
     )
     context = _pico_context()
 
@@ -1673,7 +1679,7 @@ def test_holding_the_current_pose_leaves_the_gripper_to_the_policy():
     from rlinf.robotics.teleop import PicoTcpBinding
 
     binding = PicoTcpBinding(gripper=True, side=0, hold_current_when_inactive=True)
-    device = _ScriptedController([([0.0] * 7, False)])
+    device = _ScriptedController([((0.0, 0.0, 0.0), (0.0, 0.0, 0.0), False, 0)])
 
     parts = binding.action(device.get_observation(), _pico_context())
 
@@ -1714,7 +1720,9 @@ def test_each_side_reports_its_own_state():
     }
     entries = [
         TeleopEntry(
-            _ScriptedController([([0.5] + [0.0] * 5 + [0.2], side == "left")]),
+            _ScriptedController(
+                [((0.02, 0.0, 0.0), (0.0, 0.0, 0.0), side == "left", 1)]
+            ),
             PicoTcpBinding(gripper=True, side=index),
             drives=side,
         )
@@ -1727,3 +1735,57 @@ def test_each_side_reports_its_own_state():
     assert driving
     assert info["left_pico_active"] is True
     assert info["right_pico_active"] is False
+
+
+def test_reading_a_controller_does_not_need_the_robot():
+    """The part reports data, so nothing about the robot reaches the reader."""
+    import inspect
+
+    from rlinf.robotics.parts.teleop.devices import PicoController
+    from rlinf.robotics.parts.teleop.readers import pico
+
+    source = inspect.getsource(pico.PicoExpert)
+    for name in ("tcp_pose", "_ref_tcp"):
+        assert name not in source, f"the reader still refers to {name!r}"
+
+    observation = PicoController.get_observation
+    assert "get_reading" in inspect.getsource(observation)
+
+
+def test_a_controller_reading_is_data_not_a_handle():
+    """An observation another part could record, rather than an object."""
+    from rlinf.robotics.parts.teleop.devices import PicoController
+
+    features = PicoController(hand="right").observation_features
+
+    assert set(features) == {
+        "held",
+        "position_delta",
+        "rotation_delta",
+        "grip_close",
+        "grip_open",
+    }
+
+
+def test_the_arm_anchors_where_it_was_when_the_operator_took_hold():
+    """Re-taking hold re-anchors, so the arm does not jump."""
+    import numpy as np
+
+    from rlinf.robotics.teleop import PicoTcpBinding
+
+    binding = PicoTcpBinding(gripper=True, side=0)
+    device = _ScriptedController(
+        [
+            ((0.02, 0.0, 0.0), (0.0, 0.0, 0.0), True, 0),
+            ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0), False, 0),
+            ((0.02, 0.0, 0.0), (0.0, 0.0, 0.0), True, 0),
+        ]
+    )
+    context = _pico_context()
+
+    first = binding.action(device.get_observation(), context)["arm"][0]
+    binding.action(device.get_observation(), context)
+    again = binding.action(device.get_observation(), context)["arm"][0]
+
+    # Same motion from the same measured pose, so the same command both times.
+    assert np.isclose(first, again)

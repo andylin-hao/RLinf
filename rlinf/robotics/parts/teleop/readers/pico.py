@@ -181,15 +181,11 @@ class PicoExpert:
         self._active = False
         self._ref_controller_pos: Optional[np.ndarray] = None
         self._ref_controller_rot: Optional[R] = None
-        self._ref_tcp_pos: Optional[np.ndarray] = None
-        self._ref_tcp_rot: Optional[R] = None
 
         self._calibrated = False
         self._calibration_rot = R.identity()
         self._calibration_t = np.zeros(3, dtype=np.float64)
         self._prev_calibration_button = False
-        self._last_action = np.zeros(7, dtype=np.float32)
-        self._last_info: dict[str, Any] = {}
 
         self.start()
 
@@ -235,26 +231,34 @@ class PicoExpert:
             self._context.term()
             self._context = None
 
-    def get_action(
-        self,
-        tcp_pose: np.ndarray,
-        action_scale: np.ndarray,
-        *,
-        gripper_enabled: bool = True,
-    ) -> tuple[np.ndarray, bool, dict[str, Any]]:
+    def get_reading(self) -> dict[str, Any]:
+        """What the operator is doing, said without reference to the robot.
+
+        The controller's own anchor is set here, on the edge where the operator
+        takes hold, because it is controller state. Where the *robot* was at
+        that moment is the binding's to remember: this reader never sees it.
+
+        Returns:
+            ``held`` and, while held, the motion since the operator took hold,
+            already in the robot's frame and scaled. Plus the gripper buttons
+            and whatever the link and the calibration have to report.
+        """
+        idle = {
+            "held": False,
+            "ready": False,
+            "hand": self.hand,
+            "calibrated": self._calibrated,
+            "control_value": 0.0,
+            "position_delta": np.zeros(3, dtype=np.float64),
+            "rotation_delta": np.zeros(3, dtype=np.float64),
+            "grip_close": False,
+            "grip_open": False,
+        }
+
         data = self._snapshot()
         if data is None:
             self._deactivate()
-            return (
-                self._last_action.copy(),
-                False,
-                {
-                    "pico_active": False,
-                    "pico_ready": False,
-                    "pico_stale": True,
-                    "pico_hand": self.hand,
-                },
-            )
+            return {**idle, "stale": True}
 
         self._maybe_update_calibration(data)
         if (
@@ -263,109 +267,50 @@ class PicoExpert:
             and not self._calibrated
         ):
             self._deactivate()
-            return (
-                self._last_action.copy(),
-                False,
-                {
-                    "pico_active": False,
-                    "pico_ready": True,
-                    "pico_calibrated": False,
-                    "pico_hand": self.hand,
-                },
-            )
+            return {**idle, "ready": True, "calibrated": False}
 
-        controller_pose = self._controller_pose(data, self.hand)
-        if not _is_valid_pose(controller_pose):
+        pose = self._controller_pose(data, self.hand)
+        if not _is_valid_pose(pose):
             self._deactivate()
-            return (
-                self._last_action.copy(),
-                False,
-                {
-                    "pico_active": False,
-                    "pico_ready": True,
-                    "pico_invalid_pose": True,
-                    "pico_hand": self.hand,
-                },
-            )
+            return {**idle, "ready": True, "invalid_pose": True}
 
         control_value = self._control_value(data, self.hand, self.control_trigger)
-        active = control_value >= self.control_threshold
-        controller_pos, controller_rot = self._transform_raw_pose_to_world(
-            controller_pose
-        )
+        held = control_value >= self.control_threshold
+        position, rotation = self._transform_raw_pose_to_world(pose)
 
-        if active and not self._active:
-            self._activate(controller_pos, controller_rot, tcp_pose)
-        elif not active and self._active:
+        if held and not self._active:
+            self._activate(position, rotation)
+        elif not held and self._active:
             self._deactivate()
-        self._active = active
+        self._active = held
 
-        info = {
-            "pico_active": active,
-            "pico_ready": True,
-            "pico_hand": self.hand,
-            "pico_control_value": control_value,
-            "pico_calibrated": self._calibrated,
+        reading = {
+            **idle,
+            "held": held,
+            "ready": True,
+            "control_value": control_value,
+            "calibrated": self._calibrated,
         }
-        if not active:
-            self._last_info = info
-            return self._last_action.copy(), False, info
+        if not held:
+            return reading
 
-        target_pos, target_rot = self._target_tcp_pose(controller_pos, controller_rot)
-        current_pos = np.asarray(tcp_pose[:3], dtype=np.float64)
-        current_rot = R.from_quat(np.asarray(tcp_pose[3:7], dtype=np.float64))
-        action_scale = np.asarray(action_scale, dtype=np.float64)
+        moved, turned = self._motion_since_hold(position, rotation)
+        close_pressed = self._control_pressed(
+            data, self.hand, self.gripper_close_button, self.gripper_close_threshold
+        )
+        open_pressed = self._control_pressed(
+            data, self.hand, self.gripper_open_button, self.gripper_close_threshold
+        )
+        if self.gripper_invert:
+            close_pressed, open_pressed = open_pressed, close_pressed
 
-        delta_pos = (target_pos - current_pos) / float(action_scale[0])
-        delta_rot = target_rot * current_rot.inv()
-        max_rot = float(action_scale[1])
-        delta_rotvec = delta_rot.as_rotvec()
-        if max_rot > 1e-9:
-            angle = float(np.linalg.norm(delta_rotvec))
-            if angle > max_rot:
-                delta_rotvec = delta_rotvec * (max_rot / angle)
-            delta_rot_action = delta_rotvec / max_rot
-        else:
-            delta_rot_action = np.zeros(3, dtype=np.float64)
-        expert_action = np.concatenate((delta_pos, delta_rot_action), axis=0)
-        expert_action = np.clip(expert_action, -1.0, 1.0)
-
-        gripper_close = False
-        if gripper_enabled:
-            close_pressed = self._control_pressed(
-                data,
-                self.hand,
-                self.gripper_close_button,
-                self.gripper_close_threshold,
-            )
-            open_pressed = self._control_pressed(
-                data,
-                self.hand,
-                self.gripper_open_button,
-                self.gripper_close_threshold,
-            )
-            if self.gripper_invert:
-                close_pressed, open_pressed = open_pressed, close_pressed
-
-            gripper_action = 0.0
-            if close_pressed:
-                gripper_action = -1.0
-            elif open_pressed:
-                gripper_action = 1.0
-            gripper_close = gripper_action < 0.0
-            expert_action = np.concatenate(
-                (expert_action, np.array([gripper_action], dtype=np.float64)),
-                axis=0,
-            )
-            info["pico_gripper_close_pressed"] = close_pressed
-            info["pico_gripper_open_pressed"] = open_pressed
-            info["pico_gripper_action"] = gripper_action
-            info["pico_gripper_close"] = gripper_close
-
-        expert_action = expert_action.astype(np.float32)
-        self._last_action = expert_action.copy()
-        self._last_info = info
-        return expert_action, True, info
+        return {
+            **reading,
+            "position_delta": moved,
+            "rotation_delta": turned,
+            "grip_close": close_pressed,
+            "grip_open": open_pressed,
+        }
 
     def _recv_loop(self) -> None:
         while self._running:
@@ -391,16 +336,9 @@ class PicoExpert:
                 return None
             return dict(self._latest_data)
 
-    def _activate(
-        self,
-        controller_pos: np.ndarray,
-        controller_rot: R,
-        tcp_pose: np.ndarray,
-    ) -> None:
+    def _activate(self, controller_pos: np.ndarray, controller_rot: R) -> None:
         self._ref_controller_pos = controller_pos.copy()
         self._ref_controller_rot = controller_rot
-        self._ref_tcp_pos = np.asarray(tcp_pose[:3], dtype=np.float64).copy()
-        self._ref_tcp_rot = R.from_quat(np.asarray(tcp_pose[3:7], dtype=np.float64))
         logger.info("PICO %s controller activated", self.hand)
 
     def _deactivate(self) -> None:
@@ -409,38 +347,27 @@ class PicoExpert:
         self._active = False
         self._ref_controller_pos = None
         self._ref_controller_rot = None
-        self._ref_tcp_pos = None
-        self._ref_tcp_rot = None
 
-    def _target_tcp_pose(
+    def _motion_since_hold(
         self,
         controller_pos: np.ndarray,
         controller_rot: R,
-    ) -> tuple[np.ndarray, R]:
-        if (
-            self._ref_controller_pos is None
-            or self._ref_controller_rot is None
-            or self._ref_tcp_pos is None
-            or self._ref_tcp_rot is None
-        ):
-            raise RuntimeError("PICO reference poses are not initialized.")
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """How far the operator has moved since taking hold, in robot axes."""
+        if self._ref_controller_pos is None or self._ref_controller_rot is None:
+            raise RuntimeError("PICO reference pose is not initialized.")
 
-        delta_world = controller_pos - self._ref_controller_pos
-        command_delta = delta_world * self.position_scale
-        command_delta = self._operator_vector_to_robot_vector(command_delta)
-        target_pos = self._ref_tcp_pos + command_delta
-
-        delta_local_rot = self._ref_controller_rot.inv() * controller_rot
-        command_rotvec = (
+        moved = self._operator_vector_to_robot_vector(
+            (controller_pos - self._ref_controller_pos) * self.position_scale
+        )
+        turned_local = (self._ref_controller_rot.inv() * controller_rot).as_rotvec()
+        turned = (
             self._operator_vector_to_robot_vector(
-                self._controller_local_vector_to_command_vector(
-                    delta_local_rot.as_rotvec()
-                )
+                self._controller_local_vector_to_command_vector(turned_local)
             )
             * self.rotation_scale
         )
-        target_rot = R.from_rotvec(command_rotvec) * self._ref_tcp_rot
-        return target_pos, target_rot
+        return moved, turned
 
     def _maybe_update_calibration(self, data: Mapping[str, Any]) -> None:
         if not self.calibration_enabled:

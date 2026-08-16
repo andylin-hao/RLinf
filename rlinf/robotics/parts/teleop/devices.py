@@ -213,12 +213,11 @@ class Glove(TeleopPart):
 
 
 class PicoController(TeleopPart):
-    """A VR controller reporting a pose delta and its grip.
+    """A VR controller reporting how far the operator has moved it.
 
-    The reader needs the robot's current pose to produce a delta, so unlike the
-    other devices this one is read through
-    :meth:`~rlinf.robotics.teleop.binding.TeleopBinding.action` rather than
-    :meth:`get_observation` alone. ``get_observation`` returns the raw packet.
+    The reading is the motion since the operator took hold, in the robot's
+    axes, plus the grip and gripper buttons. Where the robot was when they took
+    hold is not the controller's business, so the binding remembers that.
 
     Args:
         pico_config: Forwarded to the vendor reader; ``hand`` selects a side.
@@ -235,9 +234,15 @@ class PicoController(TeleopPart):
 
     @property
     def observation_features(self) -> dict[str, Any]:
-        """The controller's own packet, whose shape the vendor defines."""
-        return {"packet": {}}
+        """Whether the operator is driving, and how far they have moved."""
+        return {
+            "held": {"dtype": "bool", "shape": ()},
+            "position_delta": {"dtype": "float64", "shape": (3,)},
+            "rotation_delta": {"dtype": "float64", "shape": (3,)},
+            "grip_close": {"dtype": "bool", "shape": ()},
+            "grip_open": {"dtype": "bool", "shape": ()},
+        }
 
     def get_observation(self) -> dict[str, Any]:
-        """Return the reader itself, which the binding queries with robot state."""
-        return {"packet": self._reader}
+        """Read the controller."""
+        return self._reader.get_reading()

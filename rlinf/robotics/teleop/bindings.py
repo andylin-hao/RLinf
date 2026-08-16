@@ -264,8 +264,9 @@ def _rotvec_to_euler(action: np.ndarray, action_scale: Any) -> np.ndarray:
 class _PicoArmBinding(TeleopBinding):
     """What the two PICO bindings share: one controller, one arm.
 
-    The reader needs the arm's measured pose to turn a headset packet into a
-    delta, so it is queried here rather than in the device.
+    The controller says how far the operator has moved since taking hold. Where
+    the arm was at that moment is what turns that into a command, and only this
+    side knows it, so the anchor is kept here.
 
     Args:
         gripper: Whether this arm's action carries a gripper channel.
@@ -285,6 +286,7 @@ class _PicoArmBinding(TeleopBinding):
         self.side = int(side)
         self._driving = False
         self._info: dict[str, Any] = {}
+        self._held_from: Optional[tuple[np.ndarray, R]] = None
 
     def _measured_pose(self, context: Mapping[str, Any]) -> np.ndarray:
         pose = np.asarray(context["tcp_pose"], dtype=np.float32).reshape(-1)
@@ -298,14 +300,87 @@ class _PicoArmBinding(TeleopBinding):
         )
 
     def _read(self, reading: Mapping[str, Any], context: Mapping[str, Any]):
-        """Ask the reader what the operator did, given where the arm is."""
+        """Turn the operator's motion into a command for where this arm is."""
         pose = self._measured_pose(context)
-        action, replaced, info = reading["packet"].get_action(
-            pose, context["action_scale"], gripper_enabled=self.gripper
+        held = bool(reading.get("held", False))
+        self._driving = held
+        self._info = self._reported(reading)
+
+        if not held:
+            self._held_from = None
+            return pose, np.zeros(0, dtype=np.float32), False
+
+        if self._held_from is None:
+            # They just took hold: the arm is where the motion starts from.
+            self._held_from = (
+                np.asarray(pose[:3], dtype=np.float64).copy(),
+                R.from_quat(np.asarray(pose[3:7], dtype=np.float64)),
+            )
+
+        action = self._command(reading, pose, context["action_scale"])
+        return pose, action, True
+
+    def _command(
+        self,
+        reading: Mapping[str, Any],
+        pose: np.ndarray,
+        action_scale: Any,
+    ) -> np.ndarray:
+        """The normalized delta from where the arm is to where it should go."""
+        anchor_pos, anchor_rot = self._held_from
+        target_pos = anchor_pos + np.asarray(
+            reading["position_delta"], dtype=np.float64
         )
-        self._driving = bool(replaced)
-        self._info = dict(info)
-        return pose, np.asarray(action, dtype=np.float32).reshape(-1), bool(replaced)
+        target_rot = (
+            R.from_rotvec(np.asarray(reading["rotation_delta"], dtype=np.float64))
+            * anchor_rot
+        )
+
+        scale = np.asarray(action_scale, dtype=np.float64)
+        current_pos = np.asarray(pose[:3], dtype=np.float64)
+        current_rot = R.from_quat(np.asarray(pose[3:7], dtype=np.float64))
+
+        moved = (target_pos - current_pos) / float(scale[0])
+        turn = (target_rot * current_rot.inv()).as_rotvec()
+        max_turn = float(scale[1])
+        if max_turn > 1e-9:
+            angle = float(np.linalg.norm(turn))
+            if angle > max_turn:
+                turn = turn * (max_turn / angle)
+            turned = turn / max_turn
+        else:
+            turned = np.zeros(3, dtype=np.float64)
+
+        action = np.clip(np.concatenate((moved, turned)), -1.0, 1.0)
+        if self.gripper:
+            grip = 0.0
+            if reading.get("grip_close", False):
+                grip = -1.0
+            elif reading.get("grip_open", False):
+                grip = 1.0
+            action = np.concatenate((action, np.array([grip], dtype=np.float64)))
+        return action.astype(np.float32)
+
+    @staticmethod
+    def _reported(reading: Mapping[str, Any]) -> dict[str, Any]:
+        """The reading, under the names a collector already records."""
+        info = {
+            "pico_active": bool(reading.get("held", False)),
+            "pico_ready": bool(reading.get("ready", False)),
+            "pico_hand": reading.get("hand"),
+            "pico_calibrated": bool(reading.get("calibrated", False)),
+            "pico_control_value": reading.get("control_value", 0.0),
+        }
+        for key in ("stale", "invalid_pose"):
+            if reading.get(key):
+                info[f"pico_{key}"] = True
+        if reading.get("held", False):
+            close, opened = reading.get("grip_close"), reading.get("grip_open")
+            info["pico_gripper_close_pressed"] = bool(close)
+            info["pico_gripper_open_pressed"] = bool(opened)
+            info["pico_gripper_action"] = -1.0 if close else (1.0 if opened else 0.0)
+            info["pico_gripper_close"] = bool(close)
+        return info
 
     def is_driving(self, reading: Mapping[str, Any]) -> bool:
         """Whether the grip was held on the reading just taken."""
@@ -316,9 +391,10 @@ class _PicoArmBinding(TeleopBinding):
         return dict(self._info)
 
     def reset(self) -> None:
-        """Forget the previous episode's grip."""
+        """Forget the previous episode's grip and where it started."""
         self._driving = False
         self._info = {}
+        self._held_from = None
 
 
 class PicoBinding(_PicoArmBinding):
