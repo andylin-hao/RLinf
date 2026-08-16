@@ -296,7 +296,7 @@ class DualFrankaEnv(gym.Env):
         """Close only cameras this env owns; the robot closes its own."""
         if self.robot is None:
             for camera in self._cameras:
-                camera.close()
+                camera.disconnect()
         self._cameras = []
 
     def _crop_frame(
@@ -330,9 +330,9 @@ class DualFrankaEnv(gym.Env):
                         f"Camera {name} stalled with no cached frame to fall back to."
                     )
                 self._logger.error("Camera %s stalled; replacing.", name)
-                camera.close()
+                camera.disconnect()
                 self._cameras[i] = create_camera(camera._camera_info)
-                self._cameras[i].open()
+                self._cameras[i].connect()
                 frame = cached
 
             reshape_size = self.observation_space["frames"][name].shape[:2][::-1]

@@ -103,11 +103,17 @@ class BaseEndEffector(EndEffector, ABC):
     # ------------------------------------------------------------------
 
     @abstractmethod
-    def initialize(self) -> None:
-        """Perform any hardware-level initialization (serial open, etc.)."""
+    def _open(self) -> None:
+        """Perform any hardware-level initialization (serial open, etc.).
+
+        Named for the part lifecycle rather than for this device family. The
+        old name, ``shutdown``, collided with :meth:`RobotPart.shutdown`, which
+        is worker teardown: a released end effector still reported itself
+        connected because teardown never reached ``disconnect``.
+        """
 
     @abstractmethod
-    def shutdown(self) -> None:
+    def _close(self) -> None:
         """Gracefully release hardware resources."""
 
     # ------------------------------------------------------------------
@@ -144,11 +150,6 @@ class BaseEndEffector(EndEffector, ABC):
         }
 
     @property
-    def is_connected(self) -> bool:
-        """Whether the end effector was initialized through the part API."""
-        return getattr(self, "_rlinf_connected", False)
-
-    @property
     def observation_features(self) -> dict:
         """Describe the canonical end-effector state."""
         return {"state": {"shape": (self.state_dim,), "dtype": "float32"}}
@@ -157,16 +158,6 @@ class BaseEndEffector(EndEffector, ABC):
     def action_features(self) -> dict:
         """Describe the canonical end-effector command."""
         return {"target": {"shape": (self.action_dim,), "dtype": "float32"}}
-
-    def connect(self) -> None:
-        """Initialize the hardware through the robotics lifecycle API."""
-        self.initialize()
-        self._rlinf_connected = True
-
-    def disconnect(self) -> None:
-        """Shut down the hardware through the robotics lifecycle API."""
-        self.shutdown()
-        self._rlinf_connected = False
 
     def get_observation(self) -> dict[str, np.ndarray]:
         """Return the end-effector state under its canonical key."""

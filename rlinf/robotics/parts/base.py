@@ -43,29 +43,64 @@ def run_parallel(
 
 
 class RobotPart(ABC):
-    """Observable part of a physical robot, such as an arm or camera."""
+    """Observable part of a physical robot, such as an arm or camera.
+
+    A part answers three questions, and every kind of part answers them the
+    same way: :meth:`_open` reaches the hardware, :meth:`get_observation` reads
+    it, and :meth:`_close` lets it go. Connecting and disconnecting are handled
+    here, once, so a part is written by saying what its hardware is rather than
+    by re-implementing a lifecycle.
+
+    Opening in :meth:`_open` rather than ``__init__`` is what lets a part be
+    declared on one machine and built on another with :meth:`at`.
+
+    A part with a lifecycle of its own -- an arm that must home before it is
+    usable -- may override :meth:`connect` and :meth:`disconnect` instead.
+    """
+
+    #: The vendor object this part talks to, or ``None`` before it is opened.
+    _device: Any = None
+
+    def _open(self) -> Any:
+        """Reach the hardware and return whatever speaks to it."""
+        raise NotImplementedError(
+            f"{type(self).__name__} does not say how to open its hardware. "
+            "Implement _open(), or override connect() for a part whose "
+            "lifecycle is more than opening a device."
+        )
+
+    def _close(self) -> None:
+        """Let the hardware go. The default has nothing to release."""
 
     @property
-    @abstractmethod
     def is_connected(self) -> bool:
         """Whether the part is ready for observations."""
+        return self._device is not None
 
     @property
     @abstractmethod
     def observation_features(self) -> dict[str, Any]:
         """Describe the values returned by :meth:`get_observation`."""
 
-    @abstractmethod
     def connect(self) -> None:
-        """Connect to the physical part."""
+        """Connect to the physical part, once.
+
+        A part that opens in place rather than returning a handle still counts
+        as connected, so ``_open`` may return nothing.
+        """
+        if self._device is None:
+            self._device = self._open() or self
 
     @abstractmethod
     def get_observation(self) -> dict[str, Any]:
         """Read the current part observation."""
 
-    @abstractmethod
     def disconnect(self) -> None:
-        """Release resources owned by the part."""
+        """Release resources owned by the part, once."""
+        if self._device is None:
+            return
+        self._device = None
+        self._close()
 
     def reset(self) -> None:
         """Reset the part when it has resettable state."""

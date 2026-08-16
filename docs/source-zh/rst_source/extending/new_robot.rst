@@ -14,8 +14,12 @@
 --------
 
 先挑一台设备，从最窄的接口写起。只采集观测的设备继承 ``RobotPart``；还要接收命令，
-则继承 ``ControllablePart``。厂商 SDK 应当在 ``connect()`` 内导入。这样，只有打开
-硬件连接的节点需要安装 SDK，其他节点仍可导入部件模块。
+则继承 ``ControllablePart``。
+
+每个部件都回答同样的三个问题：``_open`` 连上硬件，``get_observation`` 读它，
+``_close`` 放开它。连接和断开由基类统一处理，所以写一个部件就是说清楚它的硬件是什么。
+厂商 SDK 应当在 ``_open`` 内导入：这样只有真正打开连接的节点需要安装 SDK，其他节点
+仍可导入部件模块。
 
 .. code-block:: python
 
@@ -27,11 +31,14 @@
    class ExampleArm(ControllablePart):
        def __init__(self, endpoint: str):
            self.endpoint = endpoint
-           self._client = None
 
-       @property
-       def is_connected(self) -> bool:
-           return self._client is not None
+       def _open(self):
+           from example_robot_sdk import Client
+
+           return Client(self.endpoint)
+
+       def _close(self) -> None:
+           self._device.close()
 
        @property
        def observation_features(self) -> dict:
@@ -41,29 +48,24 @@
        def action_features(self) -> dict:
            return {"joint_position": {"shape": (6,), "dtype": "float32"}}
 
-       def connect(self) -> None:
-           from example_robot_sdk import Client
-
-           self._client = Client(self.endpoint)
-
        def reset(self) -> None:
-           self._client.move_home()
+           self._device.move_home()
 
        def get_observation(self) -> dict[str, np.ndarray]:
-           return {"joint_position": self._client.get_joint_position()}
+           return {"joint_position": self._device.get_joint_position()}
 
        def send_action(
            self, action: dict[str, np.ndarray]
        ) -> dict[str, np.ndarray]:
            if set(action) != {"joint_position"}:
                raise KeyError("Expected only 'joint_position'.")
-           self._client.move_joints(action["joint_position"])
+           self._device.move_joints(action["joint_position"])
            return action
 
-       def disconnect(self) -> None:
-           if self._client is not None:
-               self._client.close()
-               self._client = None
+``_open`` 返回什么，就能通过 ``self._device`` 拿到什么，``is_connected`` 也据此判断。
+在 ``_open`` 而不是 ``__init__`` 里打开硬件，部件才能在一台机器上声明、到另一台机器上
+构建。如果某个部件的生命周期不止“打开一个设备”——比如机械臂上电后必须先回零——可以
+改为重写 ``connect`` 和 ``disconnect``。
 
 设备若符合 ``Camera``、``EndEffector``、``MobileBase`` 或 ``LeggedBase`` 的接口，
 就继承对应的具体类型。后续组合部件或创建远程代理时，代码仍能识别它的设备类别。
@@ -97,6 +99,24 @@
 
 组合机器人
 ----------
+
+机器人就是一组具名部件，没有别的东西。直接构造的话，全部内容就是这些：
+
+.. code-block:: python
+
+   from rlinf.robotics import Robot
+
+
+   class Bench(Robot):
+       ROBOT_TYPE = "Bench"
+
+
+   robot = Bench(arm=ExampleArm.at("10.0.0.2", node_rank=1))
+   robot.connect()
+
+这里没有硬件配置，也没有 discovery。它们的存在是为了仅凭类型名就能组装出机器人——
+配置文件需要这一点，脚本不需要。本页后面的内容才会用到它们。
+
 
 部件准备好后，就可以开始组装机器人。命名时请把每个名字当成公开 API 字段，因为它会
 进入规范观测和动作路径；一旦策略和数据集开始使用这些路径，再改名就等于修改数据结构。

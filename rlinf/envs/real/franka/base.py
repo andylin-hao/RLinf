@@ -803,7 +803,7 @@ class FrankaEnv(gym.Env):
         """Close only cameras this env owns; the robot closes its own."""
         if self.robot is None:
             for camera in self._cameras:
-                camera.close()
+                camera.disconnect()
         self._cameras = []
 
     def _crop_frame(

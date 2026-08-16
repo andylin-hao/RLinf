@@ -170,7 +170,7 @@ class FrankaBinRelocationEnv(FrankaEnv):
                     display_images[camera.name + "_full"] = cropped_rgb
             except queue.Empty:
                 time.sleep(5)
-                camera.close()
+                camera.disconnect()
                 self._open_cameras()
                 return self._get_camera_frames()
 

@@ -55,11 +55,25 @@ class Robot(Group):
     def build(cls, **kwargs: Any) -> "Robot":
         """Compose this robot from its hardware config.
 
-        Subclasses implement this. It is what ``register`` hands to the
-        registry, so :func:`~rlinf.robotics.discovery.build_robot` can compose a
-        robot from its type name alone. Composing does not connect.
+        Only robots reached through the registry need this: it is what
+        ``register`` hands to :func:`~rlinf.robotics.discovery.build_robot`, so
+        a robot can be composed from its type name alone. A robot you construct
+        yourself does not need it -- name the parts and connect::
+
+            class Bench(Robot):
+                ROBOT_TYPE = "Bench"
+
+
+            robot = Bench(arm=MyArm.at(port, node_rank=1), eye=MyCamera.at(info))
+            robot.connect()
+
+        Composing does not connect.
         """
-        raise NotImplementedError(f"{cls.__name__} does not implement build().")
+        raise NotImplementedError(
+            f"{cls.__name__} does not implement build(), which only robots "
+            "composed from the registry by type name need. Construct "
+            f"{cls.__name__}(part=..., ...) directly instead."
+        )
 
     @classmethod
     def register(cls, config_cls: type, discovery_cls: type) -> type:

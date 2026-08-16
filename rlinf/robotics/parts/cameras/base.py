@@ -43,10 +43,10 @@ class CameraInfo:
 class BaseCamera(Camera, ABC):
     """Abstract base class for threaded camera capture.
 
-    Subclasses must implement ``_read_frame`` (hardware-specific frame
-    acquisition) and ``_close_device`` (hardware-specific cleanup).
-    The threading, queue management, and public API (``open``, ``close``,
-    ``get_frame``) are handled here.
+    A camera is a part like any other: :meth:`_open` reaches the hardware,
+    :meth:`_read_frame` reads one frame from it, and :meth:`_close` lets it go.
+    The capture thread and its queue are handled here, started and stopped
+    around those by :meth:`connect` and :meth:`disconnect`.
     """
 
     def __init__(self, camera_info: CameraInfo):
@@ -68,8 +68,8 @@ class BaseCamera(Camera, ABC):
 
     @property
     def is_connected(self) -> bool:
-        """Whether frame capture is active."""
-        return self._frame_capturing_start
+        """Whether the camera is opened and its capture thread is running."""
+        return self._device is not None
 
     @property
     def observation_features(self) -> dict:
@@ -84,28 +84,22 @@ class BaseCamera(Camera, ABC):
         }
 
     def connect(self) -> None:
-        """Connect the camera and start frame capture."""
-        self.open()
+        """Open the camera, then start capturing frames from it."""
+        super().connect()
+        if not self._frame_capturing_start:
+            self._frame_capturing_start = True
+            self._frame_capturing_thread.start()
 
     def disconnect(self) -> None:
-        """Stop frame capture and disconnect the camera."""
-        self.close()
+        """Stop capturing, then let the camera go."""
+        self._frame_capturing_start = False
+        if self._frame_capturing_thread.is_alive():
+            self._frame_capturing_thread.join(timeout=2.0)
+        super().disconnect()
 
     def get_observation(self) -> dict[str, np.ndarray]:
         """Return the latest raw frame under the canonical camera key."""
         return {"frame": self.get_frame()}
-
-    def open(self):
-        """Start the background frame-capturing thread."""
-        self._frame_capturing_start = True
-        self._frame_capturing_thread.start()
-
-    def close(self):
-        """Stop the capture thread and release hardware resources."""
-        self._frame_capturing_start = False
-        self._close_device()
-        if self._frame_capturing_thread.is_alive():
-            self._frame_capturing_thread.join(timeout=2.0)
 
     def get_frame(self, timeout: float = 5) -> np.ndarray:
         """Return the most recent frame (blocks up to *timeout* seconds).
@@ -114,7 +108,7 @@ class BaseCamera(Camera, ABC):
             timeout: Maximum seconds to wait for a frame.
         """
         assert self._frame_capturing_start, (
-            "Frame capturing is not started. Call open() first."
+            "Frame capturing is not started. Call connect() first."
         )
         return self._frame_queue.get(timeout=timeout)
 
@@ -157,6 +151,6 @@ class BaseCamera(Camera, ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def _close_device(self) -> None:
+    def _close(self) -> None:
         """Release hardware-specific resources (pipeline, SDK handle, …)."""
         raise NotImplementedError

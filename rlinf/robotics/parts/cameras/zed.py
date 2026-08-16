@@ -40,21 +40,25 @@ class ZEDCamera(BaseCamera):
     """
 
     def __init__(self, camera_info: CameraInfo):
+        super().__init__(camera_info)
+        self._camera = None
+
+    def _open(self):
+        """Open the ZED and configure its streams."""
         import pyzed.sl as sl
 
-        super().__init__(camera_info)
         self._sl = sl
 
         self._camera = sl.Camera()
 
         init_params = sl.InitParameters()
-        init_params.set_from_serial_number(int(camera_info.serial_number))
+        init_params.set_from_serial_number(int(self._camera_info.serial_number))
         init_params.camera_resolution = self._find_closest_resolution(
-            camera_info.resolution
+            self._camera_info.resolution
         )
-        init_params.camera_fps = camera_info.fps
+        init_params.camera_fps = self._camera_info.fps
 
-        if camera_info.enable_depth:
+        if self._camera_info.enable_depth:
             init_params.depth_mode = sl.DEPTH_MODE.ULTRA
         else:
             init_params.depth_mode = sl.DEPTH_MODE.NONE
@@ -66,18 +70,19 @@ class ZEDCamera(BaseCamera):
             _logger.warning(
                 "ZED camera (serial=%s) opened with warning: %s. "
                 "Run ZED Calibration tool to resolve.",
-                camera_info.serial_number,
+                self._camera_info.serial_number,
                 status,
             )
         else:
             raise RuntimeError(
                 f"Failed to open ZED camera "
-                f"(serial={camera_info.serial_number}): {status}"
+                f"(serial={self._camera_info.serial_number}): {status}"
             )
 
         self._image = sl.Mat()
-        self._depth = sl.Mat() if camera_info.enable_depth else None
+        self._depth = sl.Mat() if self._camera_info.enable_depth else None
         self._runtime_params = sl.RuntimeParameters()
+        return self._camera
 
     def _read_frame(self) -> tuple[bool, Optional[np.ndarray]]:
         if self._camera.grab(self._runtime_params) != self._sl.ERROR_CODE.SUCCESS:
@@ -95,8 +100,9 @@ class ZEDCamera(BaseCamera):
 
         return True, frame
 
-    def _close_device(self) -> None:
+    def _close(self) -> None:
         self._camera.close()
+        self._camera = None
 
     _resolution_map: Optional[dict] = None
 

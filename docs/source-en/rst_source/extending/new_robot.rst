@@ -18,9 +18,14 @@ Implement a Part
 
 Begin with one device and choose the narrowest interface that describes it.
 Inherit ``RobotPart`` for an observation-only device, or ``ControllablePart``
-when the device also accepts commands. Keep the vendor SDK import inside
-``connect()``: other nodes can then import the part module without installing
-the SDK, while the node that opens the connection still loads it normally.
+when the device also accepts commands.
+
+Every part answers the same three questions: ``_open`` reaches the hardware,
+``get_observation`` reads it, and ``_close`` lets it go. Connecting and
+disconnecting are handled for you, so a part is written by saying what its
+hardware is. Keep the vendor SDK import inside ``_open``: other nodes can then
+import the part module without installing the SDK, while the node that opens
+the connection still loads it normally.
 
 .. code-block:: python
 
@@ -32,11 +37,14 @@ the SDK, while the node that opens the connection still loads it normally.
    class ExampleArm(ControllablePart):
        def __init__(self, endpoint: str):
            self.endpoint = endpoint
-           self._client = None
 
-       @property
-       def is_connected(self) -> bool:
-           return self._client is not None
+       def _open(self):
+           from example_robot_sdk import Client
+
+           return Client(self.endpoint)
+
+       def _close(self) -> None:
+           self._device.close()
 
        @property
        def observation_features(self) -> dict:
@@ -46,29 +54,25 @@ the SDK, while the node that opens the connection still loads it normally.
        def action_features(self) -> dict:
            return {"joint_position": {"shape": (6,), "dtype": "float32"}}
 
-       def connect(self) -> None:
-           from example_robot_sdk import Client
-
-           self._client = Client(self.endpoint)
-
        def reset(self) -> None:
-           self._client.move_home()
+           self._device.move_home()
 
        def get_observation(self) -> dict[str, np.ndarray]:
-           return {"joint_position": self._client.get_joint_position()}
+           return {"joint_position": self._device.get_joint_position()}
 
        def send_action(
            self, action: dict[str, np.ndarray]
        ) -> dict[str, np.ndarray]:
            if set(action) != {"joint_position"}:
                raise KeyError("Expected only 'joint_position'.")
-           self._client.move_joints(action["joint_position"])
+           self._device.move_joints(action["joint_position"])
            return action
 
-       def disconnect(self) -> None:
-           if self._client is not None:
-               self._client.close()
-               self._client = None
+Whatever ``_open`` returns is available as ``self._device`` and decides
+``is_connected``. Opening there rather than in ``__init__`` is what lets a part
+be declared on one machine and built on another. A part whose lifecycle is more
+than opening a device -- an arm that must home before it is usable -- may
+override ``connect`` and ``disconnect`` instead.
 
 When the device fits ``Camera``, ``EndEffector``, ``MobileBase``, or
 ``LeggedBase``, inherit that specific interface instead. Compositions and remote
@@ -105,6 +109,26 @@ method names.
 
 Compose the Robot
 -----------------
+
+A robot is named parts and nothing else. Constructed directly, that is the whole
+of it:
+
+.. code-block:: python
+
+   from rlinf.robotics import Robot
+
+
+   class Bench(Robot):
+       ROBOT_TYPE = "Bench"
+
+
+   robot = Bench(arm=ExampleArm.at("10.0.0.2", node_rank=1))
+   robot.connect()
+
+There is no hardware config and no discovery in that. Those exist so a robot can
+be composed from its type name alone, which a config file needs and a script
+does not. The rest of this page adds them.
+
 
 Once the individual devices are represented, compose the robot and choose each
 part name as if it were a public API field. The names become canonical

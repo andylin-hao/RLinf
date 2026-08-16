@@ -148,7 +148,7 @@ class FrankaROSArm(ControllablePart):
             return
         self.stop_impedance()
         if self._end_effector is not None:
-            self._end_effector.shutdown()
+            self._end_effector.disconnect()
         if self._gripper is not None:
             self._gripper.cleanup()
         self._connected = False
@@ -177,7 +177,7 @@ class FrankaROSArm(ControllablePart):
             self._end_effector_type,
             **end_effector_config,
         )
-        self._end_effector.initialize()
+        self._end_effector.connect()
         self._logger.info(
             "End-effector initialised: %s",
             self._end_effector_type.value,

@@ -685,14 +685,14 @@ class DOSW1Env(gym.Env):
             return
         for info in self._camera_infos():
             camera = create_camera(info)
-            camera.open()
+            camera.connect()
             self._cameras.append(camera)
 
     def _close_cameras(self) -> None:
         """Close only cameras this env owns; the robot closes its own."""
         if self.robot is None:
             for camera in self._cameras:
-                camera.close()
+                camera.disconnect()
         self._cameras.clear()
 
     def _get_camera_frames(self) -> dict[str, np.ndarray]:

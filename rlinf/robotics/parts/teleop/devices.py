@@ -37,35 +37,15 @@ from ..base import RobotPart
 class TeleopPart(RobotPart):
     """A device the operator drives.
 
-    Subclasses open their reader in :meth:`_open` and translate it in
-    :meth:`get_observation`. The reader is what the vendor SDK hands back; it is
-    created on connect and dropped on disconnect.
+    Like every part, it says what its hardware is in :meth:`_open` and reads it
+    in :meth:`get_observation`. Vendor readers vary in how they are released,
+    so :meth:`_close` tries the two names they use.
     """
 
-    def __init__(self) -> None:
-        self._reader: Any = None
-
-    @property
-    def is_connected(self) -> bool:
-        """Whether the device has been opened."""
-        return self._reader is not None
-
-    def _open(self) -> Any:
-        """Create and return the vendor reader."""
-        raise NotImplementedError
-
-    def connect(self) -> None:
-        """Open the device."""
-        if self._reader is None:
-            self._reader = self._open()
-
-    def disconnect(self) -> None:
-        """Close the device, if its reader has anything to release."""
-        reader, self._reader = self._reader, None
-        if reader is None:
-            return
+    def _close(self) -> None:
+        """Release the reader by whichever name its vendor gave the method."""
         for method in ("close", "stop"):
-            release = getattr(reader, method, None)
+            release = getattr(self._device, method, None)
             if callable(release):
                 release()
                 return
@@ -77,7 +57,7 @@ class TeleopPart(RobotPart):
         Leader arms stream, so the first reads after connecting can be empty.
         A device whose reader says nothing about this is ready once connected.
         """
-        return bool(getattr(self._reader, "ready", self.is_connected))
+        return bool(getattr(self._device, "ready", self.is_connected))
 
 
 class SpaceMouse(TeleopPart):
@@ -88,7 +68,6 @@ class SpaceMouse(TeleopPart):
     """
 
     def __init__(self, device_index: int = 0) -> None:
-        super().__init__()
         self._device_index = device_index
 
     def _open(self) -> Any:
@@ -106,7 +85,7 @@ class SpaceMouse(TeleopPart):
 
     def get_observation(self) -> dict[str, Any]:
         """Read the puck and the buttons."""
-        twist, buttons = self._reader.get_action()
+        twist, buttons = self._device.get_action()
         return {
             "twist": np.asarray(twist, dtype=np.float32),
             "buttons": np.asarray(buttons, dtype=bool),
@@ -126,7 +105,6 @@ class TeleopLeaderArm(TeleopPart):
     """
 
     def __init__(self, port: str, joint_space: bool = False) -> None:
-        super().__init__()
         self._port = port
         self._joint_space = joint_space
 
@@ -156,12 +134,12 @@ class TeleopLeaderArm(TeleopPart):
     def get_observation(self) -> dict[str, Any]:
         """Read the arm the operator is holding."""
         if self._joint_space:
-            joints, grip = self._reader.get_action()
+            joints, grip = self._device.get_action()
             return {
                 "joint_position": np.asarray(joints, dtype=np.float32),
                 "grip": np.asarray(grip, dtype=np.float32).reshape(1),
             }
-        position, orientation, grip = self._reader.get_action()
+        position, orientation, grip = self._device.get_action()
         return {
             "position": np.asarray(position, dtype=np.float32),
             "orientation": np.asarray(orientation, dtype=np.float32),
@@ -186,7 +164,6 @@ class Glove(TeleopPart):
         frequency: int = 60,
         config_file: Optional[str] = None,
     ) -> None:
-        super().__init__()
         self._left_port = left_port
         self._right_port = right_port
         self._frequency = frequency
@@ -209,7 +186,7 @@ class Glove(TeleopPart):
 
     def get_observation(self) -> dict[str, Any]:
         """Read the operator's finger angles."""
-        return {"angles": np.asarray(self._reader.get_angles(), dtype=np.float32)}
+        return {"angles": np.asarray(self._device.get_angles(), dtype=np.float32)}
 
 
 class PicoController(TeleopPart):
@@ -224,7 +201,6 @@ class PicoController(TeleopPart):
     """
 
     def __init__(self, **pico_config: Any) -> None:
-        super().__init__()
         self._config = pico_config
 
     def _open(self) -> Any:
@@ -245,4 +221,4 @@ class PicoController(TeleopPart):
 
     def get_observation(self) -> dict[str, Any]:
         """Read the controller."""
-        return self._reader.get_reading()
+        return self._device.get_reading()

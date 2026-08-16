@@ -28,43 +28,48 @@ class RealSenseCamera(BaseCamera):
     """
 
     def __init__(self, camera_info: CameraInfo):
+        super().__init__(camera_info)
+        self._serial_number = camera_info.serial_number
+        self._enable_depth = camera_info.enable_depth
+        self._pipeline = None
+        self._config = None
+        self._align = None
+
+    def _open(self):
+        """Start the RealSense pipeline for this serial number."""
         import pyrealsense2 as rs
 
-        super().__init__(camera_info)
+        devices = {
+            device.get_info(rs.camera_info.serial_number): device
+            for device in rs.context().devices
+        }
+        assert self._serial_number in devices, f"{devices.keys()=}"
+        self._device_info = devices
 
-        self._device_info = {}
-        for device in rs.context().devices:
-            self._device_info[device.get_info(rs.camera_info.serial_number)] = device
-        assert camera_info.serial_number in self._device_info.keys(), (
-            f"{self._device_info.keys()=}"
-        )
-
-        self._serial_number = camera_info.serial_number
-        self._device = self._device_info[self._serial_number]
-        self._enable_depth = camera_info.enable_depth
-
+        info = self._camera_info
         self._pipeline = rs.pipeline()
-        self._config = rs.config()
-        self._config.enable_device(self._serial_number)
-        self._config.enable_stream(
+        config = self._config = rs.config()
+        config.enable_device(self._serial_number)
+        config.enable_stream(
             rs.stream.color,
-            camera_info.resolution[0],
-            camera_info.resolution[1],
+            info.resolution[0],
+            info.resolution[1],
             rs.format.bgr8,
-            camera_info.fps,
+            info.fps,
         )
         if self._enable_depth:
-            self._config.enable_stream(
+            config.enable_stream(
                 rs.stream.depth,
-                camera_info.resolution[0],
-                camera_info.resolution[1],
+                info.resolution[0],
+                info.resolution[1],
                 rs.format.z16,
-                camera_info.fps,
+                info.fps,
             )
-        self.profile = self._pipeline.start(self._config)
+        self.profile = self._pipeline.start(config)
 
         # rs.align allows us to perform alignment of depth frames to color frames
         self._align = rs.align(rs.stream.color)
+        return self._pipeline
 
     def _read_frame(self) -> tuple[bool, Optional[np.ndarray]]:
         frames = self._pipeline.wait_for_frames()
@@ -84,9 +89,10 @@ class RealSenseCamera(BaseCamera):
         else:
             return False, None
 
-    def _close_device(self) -> None:
+    def _close(self) -> None:
         self._pipeline.stop()
         self._config.disable_all_streams()
+        self._pipeline = None
 
     @staticmethod
     def get_device_serial_numbers() -> set[str]:

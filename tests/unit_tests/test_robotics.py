@@ -1925,3 +1925,139 @@ def test_the_binding_turns_a_reading_into_a_command_for_this_arm():
     expected = np.asarray(context["tcp_pose"][:3]) + reading["position_delta"]
     assert np.allclose(parts["arm"][:3], expected, atol=1e-6)
     assert np.isclose(reading["position_delta"][0], 0.04, atol=1e-9)
+
+
+# --- one lifecycle, whatever kind of part it is -----------------------
+
+
+def test_every_part_family_opens_and_closes_the_same_way():
+    """A part author learns _open/_close once, not once per device family."""
+    import inspect
+
+    from rlinf.robotics.parts.base import RobotPart
+    from rlinf.robotics.parts.cameras.base import BaseCamera
+    from rlinf.robotics.parts.end_effectors.base import BaseEndEffector
+    from rlinf.robotics.parts.teleop.devices import TeleopPart
+
+    for family in (TeleopPart, BaseCamera, BaseEndEffector):
+        assert hasattr(family, "_open"), f"{family.__name__} has no _open"
+        assert hasattr(family, "_close"), f"{family.__name__} has no _close"
+
+    # The names the families used to use are gone.
+    for family in (BaseCamera, BaseEndEffector):
+        source = inspect.getsource(family)
+        for retired in ("_close_device", "def initialize", "def shutdown"):
+            assert retired not in source, f"{family.__name__} still has {retired}"
+
+    assert RobotPart.shutdown.__qualname__ == "RobotPart.shutdown"
+    assert BaseEndEffector.shutdown.__qualname__ == "RobotPart.shutdown"
+
+
+class _Part(RobotPart):
+    """A part whose hardware is a list of what happened to it."""
+
+    def __init__(self):
+        self.log = []
+
+    def _open(self):
+        self.log.append("open")
+        return "device"
+
+    def _close(self):
+        self.log.append("close")
+
+    @property
+    def observation_features(self):
+        return {}
+
+    def get_observation(self):
+        return {}
+
+
+def test_connecting_twice_opens_once():
+    part = _Part()
+    part.connect()
+    part.connect()
+
+    assert part.log == ["open"]
+    assert part.is_connected
+
+
+def test_disconnecting_what_was_never_opened_does_nothing():
+    part = _Part()
+    part.disconnect()
+
+    assert part.log == []
+    assert not part.is_connected
+
+
+def test_teardown_goes_through_disconnect():
+    """RobotPart.shutdown is worker teardown, not a hardware method.
+
+    An end effector used to override it, so teardown released the hardware
+    without ever passing through disconnect: the part stayed 'connected'.
+    """
+    part = _Part()
+    part.connect()
+    part.shutdown()
+
+    assert part.log == ["open", "close"]
+    assert not part.is_connected
+
+
+def test_a_part_that_says_nothing_about_its_hardware_fails_clearly():
+    class Bare(RobotPart):
+        @property
+        def observation_features(self):
+            return {}
+
+        def get_observation(self):
+            return {}
+
+    with pytest.raises(NotImplementedError, match="does not say how to open"):
+        Bare().connect()
+
+
+# --- the smallest robot that works ------------------------------------
+
+
+def test_a_robot_is_named_parts_and_nothing_else():
+    """The whole of a working robot, with no registry and no hardware config.
+
+    The shipped robots all declare discovery and a hardware config because they
+    are reached by type name from a config file. A robot you construct yourself
+    needs neither, and this is what that costs.
+    """
+    from rlinf.robotics import Robot
+
+    class Gripper(_Part):
+        @property
+        def observation_features(self):
+            return {"width": {"shape": (1,), "dtype": "float32"}}
+
+        def get_observation(self):
+            return {"width": 0.5}
+
+    class Bench(Robot):
+        ROBOT_TYPE = "Bench"
+
+    robot = Bench(arm=_Part(), hand=Gripper())
+    robot.connect()
+
+    assert robot.is_connected
+    assert set(robot.get_observation()) == {"arm", "hand"}
+    assert robot.get_observation()["hand"] == {"width": 0.5}
+
+    robot.disconnect()
+    assert not robot.is_connected
+
+
+def test_build_is_only_for_robots_reached_by_name():
+    """A robot you construct yourself never needs build(), and is told so."""
+    from rlinf.robotics import Robot
+
+    class Bench(Robot):
+        ROBOT_TYPE = "Bench"
+
+    with pytest.raises(NotImplementedError, match="Construct Bench"):
+        Bench.build()
