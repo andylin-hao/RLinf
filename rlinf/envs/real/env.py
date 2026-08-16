@@ -131,17 +131,14 @@ class RealWorldEnv(gym.Env):
             if fallback_actions is not None:
                 fallback = np.asarray(fallback_actions[env_id], dtype=np.float32)
 
-            get_hold_action = None
+            # A stack with no operator has no such method; one driving with
+            # deltas has the method but nothing to say, and raises.
             try:
-                get_hold_action = env.get_wrapper_attr("get_hold_action")
+                hold = np.asarray(
+                    env.get_wrapper_attr("get_hold_action")(fallback),
+                    dtype=np.float32,
+                ).reshape(-1)
             except AttributeError:
-                get_hold_action = None
-
-            if callable(get_hold_action):
-                hold = np.asarray(get_hold_action(fallback), dtype=np.float32).reshape(
-                    -1
-                )
-            else:
                 hold = np.zeros(action_dim, dtype=np.float32)
 
             if hold.size != action_dim:

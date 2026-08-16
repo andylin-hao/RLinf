@@ -173,6 +173,28 @@ class TeleopIntervention(gym.Wrapper):
 
         return obs, reward, terminated, truncated, info
 
+    def on_action_chunk_begin(self) -> None:
+        """Tell the device a fresh chunk of policy actions starts here.
+
+        Found by name through ``get_wrapper_attr``, which is why it is on the
+        wrapper: the env runs the chunk, and the device holds what it means.
+        """
+        begin = getattr(self.device, "on_action_chunk_begin", None)
+        if callable(begin):
+            begin()
+
+    def get_hold_action(
+        self, fallback_action: Optional[np.ndarray] = None
+    ) -> np.ndarray:
+        """The action that keeps the robot where it is, for a skipped chunk."""
+        hold = getattr(self.device, "get_hold_action", None)
+        if not callable(hold):
+            raise AttributeError(
+                f"{type(self.device).__name__} cannot say what holds the robot "
+                "still; only a device commanding absolute poses can."
+            )
+        return hold(self, fallback_action)
+
     def close(self):
         """Release the device, then the wrapped env."""
         self.device.close()

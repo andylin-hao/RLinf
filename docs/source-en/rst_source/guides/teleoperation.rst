@@ -36,7 +36,8 @@ For a single device, set its name:
      - Poses a leader arm for joint-by-joint tracking, one entry per arm.
      - ``left_gello_port`` / ``right_gello_port``
    * - ``pico``
-     - Uses a handheld VR controller whose grip marks when it is driving.
+     - Uses a handheld VR controller whose grip marks when it is driving; one
+       entry per arm on a two-armed robot.
      - ``pico:`` block
    * - ``glove``
      - Bends the fingers of a dexterous hand, alongside a device on the arm.

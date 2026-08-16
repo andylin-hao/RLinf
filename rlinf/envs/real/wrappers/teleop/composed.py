@@ -116,16 +116,57 @@ class ComposedTeleop(TeleopDevice):
         if self.streamer is not None:
             self.streamer.before_step(env)
 
+    def _write(
+        self, env: gym.Env, policy_action: np.ndarray, parts: Mapping[str, np.ndarray]
+    ) -> np.ndarray:
+        """Put each named part into a copy of the action the policy asked for."""
+        action = np.array(policy_action, dtype=np.float64, copy=True)
+        clipped = set(self.group.clipped_parts) & set(parts)
+        bounds = None
+        if clipped:
+            bounds = (
+                env.action_space.low.reshape(-1),
+                env.action_space.high.reshape(-1),
+            )
+        for name, value in parts.items():
+            where = self.layout[name]
+            value = np.asarray(value, dtype=np.float64)
+            if name in clipped:
+                value = np.clip(value, bounds[0][where], bounds[1][where])
+            action[where] = value
+        return action
+
     def read(self, env: gym.Env, policy_action: np.ndarray) -> TeleopSample:
         """Read every device, then write each part into the action."""
         parts, driving, info = self.group.action(context_from(env))
         if not parts:
             return TeleopSample(action=None, active=False, info=info)
+        return TeleopSample(
+            action=self._write(env, policy_action, parts), active=driving, info=info
+        )
 
-        action = np.array(policy_action, dtype=np.float64, copy=True)
-        for name, value in parts.items():
-            action[self.layout[name]] = np.asarray(value, dtype=np.float64)
-        return TeleopSample(action=action, active=driving, info=info)
+    def get_hold_action(
+        self, env: gym.Env, fallback_action: Optional[np.ndarray] = None
+    ) -> np.ndarray:
+        """The action that keeps the robot where it is.
+
+        Used when a chunk of policy actions is skipped and the robot still has
+        to be told something. Parts nobody holds keep ``fallback_action``.
+        """
+        parts = self.group.hold(context_from(env))
+        if not parts:
+            raise AttributeError(
+                "No device in this group commands an absolute pose, so none can "
+                "hold the robot anywhere. A delta of zero already does that."
+            )
+        if fallback_action is None:
+            fallback_action = np.zeros(env.action_space.shape, dtype=np.float32)
+        action = self._write(env, np.asarray(fallback_action).reshape(-1), parts)
+        return action.reshape(env.action_space.shape)
+
+    def on_action_chunk_begin(self) -> None:
+        """Tell the group a fresh chunk of policy actions starts here."""
+        self.group.on_action_chunk_begin()
 
     def close(self) -> None:
         """Stop the stream, then release every device in the group."""

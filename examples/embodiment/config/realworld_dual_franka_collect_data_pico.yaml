@@ -55,7 +55,9 @@ env:
     no_gripper: False
     ignore_terminations: False
     auto_reset: False
-    teleop: pico
+    teleop:
+      - {pico: {drives: left}}
+      - {pico: {drives: right}}
 
     # Keep long enough for manual collection. The keyboard wrapper normally
     # terminates successful episodes before this limit.

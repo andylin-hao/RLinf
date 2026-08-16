@@ -223,3 +223,220 @@ class GloveBinding(TeleopBinding):
     def is_driving(self, reading: Mapping[str, Any]) -> bool:
         """The glove follows the arm device's button rather than deciding."""
         return False
+
+
+def _rotvec_to_euler(action: np.ndarray, action_scale: Any) -> np.ndarray:
+    """Re-express a rotvec delta as the Euler delta a Franka env expects.
+
+    The controller reports rotation as a scaled rotvec; the env reads Euler.
+    Both are divided by the same rotation scale, so the round trip through a
+    rotation is what keeps the two conventions equal rather than merely close.
+    """
+    out = np.asarray(action, dtype=np.float32).reshape(-1).copy()
+    if out.size < 6:
+        return out
+
+    scale = float(np.asarray(action_scale, dtype=np.float64)[1])
+    if scale <= 1e-9:
+        out[3:6] = 0.0
+        return out
+
+    delta = R.from_rotvec(np.asarray(out[3:6], dtype=np.float64) * scale)
+    out[3:6] = np.clip(delta.as_euler("xyz") / scale, -1.0, 1.0)
+    return out
+
+
+class _PicoArmBinding(TeleopBinding):
+    """What the two PICO bindings share: one controller, one arm.
+
+    The reader needs the arm's measured pose to turn a headset packet into a
+    delta, so it is queried here rather than in the device.
+
+    Args:
+        gripper: Whether this arm's action carries a gripper channel.
+        side: Which arm's pose to read out of a dual-arm ``tcp_pose``.
+    """
+
+    PRODUCES = ("arm", "end_effector")
+
+    #: The grip says exactly when the operator is driving, so no hold window.
+    HOLD_WINDOW = 0.0
+
+    def __init__(self, gripper: bool = True, side: int = 0) -> None:
+        self.gripper = bool(gripper)
+        self.side = int(side)
+        self._driving = False
+        self._info: dict[str, Any] = {}
+
+    def _measured_pose(self, context: Mapping[str, Any]) -> np.ndarray:
+        pose = np.asarray(context["tcp_pose"], dtype=np.float32).reshape(-1)
+        if pose.size == 7:
+            return pose
+        if pose.size == 14:
+            return pose[self.side * 7 : self.side * 7 + 7]
+        raise ValueError(
+            f"{type(self).__name__} expects get_tcp_pose() to return 7 or 14 "
+            f"values, got {pose.size}."
+        )
+
+    def _read(self, reading: Mapping[str, Any], context: Mapping[str, Any]):
+        """Ask the reader what the operator did, given where the arm is."""
+        pose = self._measured_pose(context)
+        action, replaced, info = reading["packet"].get_action(
+            pose, context["action_scale"], gripper_enabled=self.gripper
+        )
+        self._driving = bool(replaced)
+        self._info = dict(info)
+        return pose, np.asarray(action, dtype=np.float32).reshape(-1), bool(replaced)
+
+    def is_driving(self, reading: Mapping[str, Any]) -> bool:
+        """Whether the grip was held on the reading just taken."""
+        return self._driving
+
+    def info(self) -> dict[str, Any]:
+        """What the reader reported, for a collector to record."""
+        return dict(self._info)
+
+    def reset(self) -> None:
+        """Forget the previous episode's grip."""
+        self._driving = False
+        self._info = {}
+
+
+class PicoBinding(_PicoArmBinding):
+    """A VR controller driving an arm through pose deltas.
+
+    The env reads deltas directly, so the controller's own reading is the
+    action, once its rotation is re-expressed as Euler.
+    """
+
+    def action(
+        self, reading: Mapping[str, Any], context: Mapping[str, Any]
+    ) -> dict[str, np.ndarray]:
+        """Return the arm delta, and the gripper when the reader sends one."""
+        _, action, replaced = self._read(reading, context)
+        if not replaced:
+            return {}
+
+        action = _rotvec_to_euler(action, context["action_scale"])
+        parts = {"arm": action[:6]}
+        if self.gripper and action.size >= 7:
+            parts["end_effector"] = action[6:7]
+        return parts
+
+
+class PicoTcpBinding(_PicoArmBinding):
+    """A VR controller driving an arm that takes absolute poses.
+
+    The controller reports a delta and the env wants a pose, so each delta is
+    composed onto the measured TCP pose and sent as position plus rot6d.
+
+    Releasing the grip part-way through an action chunk holds the last commanded
+    pose rather than returning to the policy's, which would jerk the arm mid
+    motion. :meth:`on_action_chunk_begin` releases that hold at the next chunk.
+
+    Args:
+        gripper: Whether this arm's action carries a gripper channel.
+        side: Which arm's pose to read out of a dual-arm ``tcp_pose``.
+        hold_current_when_inactive: Command the measured pose while nobody is
+            driving, instead of passing the policy's action through.
+    """
+
+    #: Absolute poses can leave the env's action space, so they are clipped
+    #: back into it. Deltas from the other devices are already normalised.
+    CLIPS_TO_ACTION_SPACE = True
+
+    def __init__(
+        self,
+        gripper: bool = True,
+        side: int = 0,
+        hold_current_when_inactive: bool = True,
+    ) -> None:
+        super().__init__(gripper=gripper, side=side)
+        self.hold_current_when_inactive = bool(hold_current_when_inactive)
+        self._holding_after_release = False
+        self._last_command: Optional[np.ndarray] = None
+
+    @staticmethod
+    def _pose_to_command(pose: np.ndarray, grip: float = 0.0) -> np.ndarray:
+        """A pose as the env spells it: position, rot6d, gripper."""
+        from rlinf.utils.rot6d import matrix_to_rot6d
+
+        rot6d = matrix_to_rot6d(R.from_quat(pose[3:7]).as_matrix())
+        return np.concatenate(
+            [
+                np.asarray(pose[:3], dtype=np.float32),
+                rot6d.astype(np.float32),
+                np.array([grip], dtype=np.float32),
+            ]
+        )
+
+    def _compose(
+        self, action: np.ndarray, pose: np.ndarray, action_scale: Any
+    ) -> np.ndarray:
+        """Put the operator's delta on top of where the arm actually is."""
+        if action.size < 6:
+            raise ValueError(
+                "PicoTcpBinding expects at least 6 motion dims from the reader, "
+                f"got {action.size}."
+            )
+
+        scale = np.asarray(action_scale, dtype=np.float64)
+        position = np.asarray(pose[:3], dtype=np.float64) + action[:3] * float(scale[0])
+
+        rotation = np.asarray(action[3:6], dtype=np.float64)
+        norm = float(np.linalg.norm(rotation))
+        if norm > 1.0:
+            rotation = rotation / norm
+        turned = R.from_rotvec(rotation * float(scale[1])) * R.from_quat(
+            np.asarray(pose[3:7], dtype=np.float64)
+        )
+
+        grip = float(action[6]) if action.size >= 7 else 0.0
+        return self._pose_to_command(np.concatenate([position, turned.as_quat()]), grip)
+
+    @staticmethod
+    def _split(command: np.ndarray) -> dict[str, np.ndarray]:
+        return {"arm": command[:-1], "end_effector": command[-1:]}
+
+    def action(
+        self, reading: Mapping[str, Any], context: Mapping[str, Any]
+    ) -> dict[str, np.ndarray]:
+        """Return the pose to command, whoever is deciding it right now."""
+        pose, action, replaced = self._read(reading, context)
+        self._info["pico_replaced"] = replaced
+
+        if replaced:
+            command = self._compose(action, pose, context["action_scale"])
+            self._last_command = command.copy()
+            self._holding_after_release = True
+            return self._split(command)
+
+        if (
+            self._holding_after_release
+            and not self.hold_current_when_inactive
+            and self._last_command is not None
+        ):
+            # Released mid-chunk. Stay where the operator left the arm, and do
+            # not mark it as intervention so training skips these frames.
+            return self._split(self._last_command)
+
+        if self.hold_current_when_inactive:
+            # The gripper is left out so the policy's own command stands.
+            return {"arm": self._pose_to_command(pose)[:-1]}
+
+        return {}
+
+    def hold(self, context: Mapping[str, Any]) -> dict[str, np.ndarray]:
+        """The pose that keeps this arm where it is, for a skipped chunk."""
+        return {"arm": self._pose_to_command(self._measured_pose(context))[:-1]}
+
+    def on_action_chunk_begin(self) -> None:
+        """Let go of a pose held since the operator released mid-chunk."""
+        self._holding_after_release = False
+
+    def reset(self) -> None:
+        """Drop the held pose along with the previous episode's grip."""
+        super().reset()
+        self._holding_after_release = False
+        self._last_command = None

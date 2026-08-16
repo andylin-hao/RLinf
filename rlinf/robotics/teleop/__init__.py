@@ -25,6 +25,8 @@ from .bindings import (
     GloveBinding,
     LeaderArmBinding,
     LeaderJointBinding,
+    PicoBinding,
+    PicoTcpBinding,
     SpaceMouseBinding,
     jittered_grip,
 )
@@ -35,6 +37,8 @@ __all__ = [
     "GloveBinding",
     "LeaderArmBinding",
     "LeaderJointBinding",
+    "PicoBinding",
+    "PicoTcpBinding",
     "SpaceMouseBinding",
     "TeleopBinding",
     "TeleopEntry",

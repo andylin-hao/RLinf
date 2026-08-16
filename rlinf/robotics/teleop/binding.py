@@ -49,6 +49,15 @@ class TeleopBinding(ABC):
     #: driving. Devices jitter; a person moving does not.
     MOVEMENT_EPSILON: float = 0.001
 
+    #: How long the operator keeps control after their last active reading.
+    #: ``None`` accepts the shared default; ``0`` suits a device held down to
+    #: take over, where the button already says exactly when they are driving.
+    HOLD_WINDOW: float | None = None
+
+    #: Whether the parts this binding fills are clipped into the env's action
+    #: space. Absolute commands can leave it; normalised deltas cannot.
+    CLIPS_TO_ACTION_SPACE: bool = False
+
     @abstractmethod
     def action(
         self, reading: Mapping[str, Any], context: Mapping[str, Any]
@@ -68,6 +77,22 @@ class TeleopBinding(ABC):
         class that reads both devices.
         """
         return {}
+
+    def info(self) -> dict[str, Any]:
+        """Device state worth recording alongside the step it produced."""
+        return {}
+
+    def hold(self, context: Mapping[str, Any]) -> dict[str, np.ndarray]:
+        """The parts that keep this device's share of the robot where it is.
+
+        Asked for when a chunk of policy actions is skipped and something still
+        has to be commanded. A binding that fills a part with a delta has
+        nothing to say here: zero motion is already the policy's own action.
+        """
+        return {}
+
+    def on_action_chunk_begin(self) -> None:
+        """Let go of anything held only until the next chunk of actions."""
 
     def reset(self) -> None:
         """Forget anything held from the previous episode."""

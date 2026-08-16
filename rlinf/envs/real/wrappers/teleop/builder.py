@@ -25,11 +25,18 @@ from typing import Any, Callable, Mapping, Optional, Sequence
 
 import gymnasium as gym
 
-from rlinf.robotics.parts.teleop import Glove, SpaceMouse, TeleopLeaderArm
+from rlinf.robotics.parts.teleop import (
+    Glove,
+    PicoController,
+    SpaceMouse,
+    TeleopLeaderArm,
+)
 from rlinf.robotics.teleop import (
     GloveBinding,
     LeaderArmBinding,
     LeaderJointBinding,
+    PicoBinding,
+    PicoTcpBinding,
     SpaceMouseBinding,
     TeleopEntry,
     TeleopGroup,
@@ -37,12 +44,20 @@ from rlinf.robotics.teleop import (
 
 from .composed import ComposedTeleop
 from .layout import action_layout
+from .pico_config import split_dual_config
 
-#: Builder for one entry, given the env config and this entry's own options.
-EntryBuilder = Callable[[Mapping[str, Any], Mapping[str, Any]], TeleopEntry]
+#: Builder for one entry, given the env config, this entry's own options, and
+#: the env's action layout -- which says what a command for a part means.
+EntryBuilder = Callable[
+    [Mapping[str, Any], Mapping[str, Any], Mapping[str, slice]], TeleopEntry
+]
 
 
-def _spacemouse(cfg: Mapping[str, Any], options: Mapping[str, Any]) -> TeleopEntry:
+def _spacemouse(
+    cfg: Mapping[str, Any],
+    options: Mapping[str, Any],
+    layout: Mapping[str, slice],
+) -> TeleopEntry:
     return TeleopEntry(
         SpaceMouse(device_index=int(options.get("device_index", 0))),
         SpaceMouseBinding(),
@@ -50,7 +65,11 @@ def _spacemouse(cfg: Mapping[str, Any], options: Mapping[str, Any]) -> TeleopEnt
     )
 
 
-def _gello(cfg: Mapping[str, Any], options: Mapping[str, Any]) -> TeleopEntry:
+def _gello(
+    cfg: Mapping[str, Any],
+    options: Mapping[str, Any],
+    layout: Mapping[str, slice],
+) -> TeleopEntry:
     port = options.get("port", cfg.get("gello_port"))
     if port is None:
         raise ValueError(
@@ -62,7 +81,11 @@ def _gello(cfg: Mapping[str, Any], options: Mapping[str, Any]) -> TeleopEntry:
     )
 
 
-def _gello_joint(cfg: Mapping[str, Any], options: Mapping[str, Any]) -> TeleopEntry:
+def _gello_joint(
+    cfg: Mapping[str, Any],
+    options: Mapping[str, Any],
+    layout: Mapping[str, slice],
+) -> TeleopEntry:
     drives = options.get("drives")
     if drives is None:
         raise ValueError(
@@ -88,7 +111,11 @@ def _gello_joint(cfg: Mapping[str, Any], options: Mapping[str, Any]) -> TeleopEn
     )
 
 
-def _glove(cfg: Mapping[str, Any], options: Mapping[str, Any]) -> TeleopEntry:
+def _glove(
+    cfg: Mapping[str, Any],
+    options: Mapping[str, Any],
+    layout: Mapping[str, slice],
+) -> TeleopEntry:
     glove_cfg = dict(cfg.get("glove_config", {}))
     glove_cfg.update(options)
     return TeleopEntry(
@@ -103,12 +130,54 @@ def _glove(cfg: Mapping[str, Any], options: Mapping[str, Any]) -> TeleopEntry:
     )
 
 
+def _pico(
+    cfg: Mapping[str, Any],
+    options: Mapping[str, Any],
+    layout: Mapping[str, slice],
+) -> TeleopEntry:
+    drives = options.get("drives")
+    pico_cfg = dict(cfg.get("pico", {}))
+    hold = bool(
+        options.get(
+            "hold_current_when_inactive",
+            pico_cfg.pop("hold_current_when_inactive", True),
+        )
+    )
+    gripper = bool(options.get("gripper", not bool(cfg.get("no_gripper", True))))
+
+    # A 9-wide arm command is a position and a rot6d rotation, so it is a pose
+    # to reach rather than a delta to apply.
+    arm = layout.get("arm" if drives is None else f"{drives}.arm")
+    absolute = arm is not None and (arm.stop - arm.start) == 9
+
+    if drives in ("left", "right"):
+        left_cfg, right_cfg = split_dual_config(pico_cfg)
+        device_cfg = left_cfg if drives == "left" else right_cfg
+        side = 0 if drives == "left" else 1
+    else:
+        device_cfg = {
+            key: value
+            for key, value in pico_cfg.items()
+            if key not in ("left", "right")
+        }
+        device_cfg.setdefault("hand", "right")
+        side = 0 if str(device_cfg["hand"]).lower() == "left" else 1
+
+    binding = (
+        PicoTcpBinding(gripper=gripper, side=side, hold_current_when_inactive=hold)
+        if absolute
+        else PicoBinding(gripper=gripper, side=side)
+    )
+    return TeleopEntry(PicoController(**device_cfg), binding, drives=drives)
+
+
 #: Device name -> how to build its entry.
 DEVICES: dict[str, EntryBuilder] = {
     "spacemouse": _spacemouse,
     "gello": _gello,
     "gello_joint": _gello_joint,
     "glove": _glove,
+    "pico": _pico,
 }
 
 
@@ -125,7 +194,8 @@ def build_teleop(
         cfg: The env config section, for options devices share.
         devices: Device names, or single-key mappings carrying options, e.g.
             ``{"gello_joint": {"port": "/dev/left", "drives": "left"}}``.
-        timeout: Hold window, when the rig wants one other than the default.
+        timeout: Hold window. Left out, the bindings decide: a device held
+            down to take over asks for none.
     """
     layout = action_layout(env)
     entries = []
@@ -138,8 +208,10 @@ def build_teleop(
             raise ValueError(
                 f"Unknown teleop device {name!r}. Known: {sorted(DEVICES)}."
             )
-        entries.append(DEVICES[name](cfg, dict(options or {})))
+        entries.append(DEVICES[name](cfg, dict(options or {}), layout))
 
     group = TeleopGroup(entries, available=layout)
     group.connect()
+    if timeout is None:
+        timeout = group.hold_window
     return ComposedTeleop(group, layout, timeout=timeout)

@@ -387,17 +387,13 @@ def test_an_unfilled_part_keeps_the_policy_action():
     import numpy as np
 
     from rlinf.envs.real.wrappers.teleop.composed import ComposedTeleop
-    from rlinf.robotics.teleop import TeleopEntry, TeleopGroup
+    from rlinf.robotics.teleop import TeleopBinding, TeleopEntry, TeleopGroup
 
-    class Fixed:
+    class Fixed(TeleopBinding):
         PRODUCES = ("hand",)
-        MOVEMENT_EPSILON = 0.001
 
         def action(self, reading, context):
             return {"hand": np.full(6, 0.5)}
-
-        def publish(self, reading):
-            return {}
 
         def is_driving(self, reading):
             return True
@@ -794,10 +790,10 @@ def test_a_held_button_device_does_not_keep_control_after_release():
     The window exists for devices that sample faster than a person moves;
     applying it here would keep commanding the robot after the grip is released.
     """
-    from rlinf.envs.real.wrappers.teleop.pico import DualFrankaTcpPicoTeleop, PicoTeleop
+    from rlinf.robotics.teleop import PicoBinding, PicoTcpBinding
 
-    assert PicoTeleop.timeout == 0.0
-    assert DualFrankaTcpPicoTeleop.timeout == 0.0
+    assert PicoBinding.HOLD_WINDOW == 0.0
+    assert PicoTcpBinding.HOLD_WINDOW == 0.0
 
 
 def test_streaming_device_lifecycle_without_hardware():

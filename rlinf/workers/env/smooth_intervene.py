@@ -180,10 +180,11 @@ class SmoothInterveneController:
                 OmegaConf.select(cfg, "env.train") or {},
                 supported=("spacemouse", "gello", "pico", "gello_joint"),
             )
-            if devices != ["pico"]:
+            named = [d if isinstance(d, str) else next(iter(dict(d))) for d in devices]
+            if not named or any(name != "pico" for name in named):
                 raise ValueError(
-                    "smooth_intervene requires env.train.teleop=pico "
-                    f"(PICO-only; got {devices!r})"
+                    "smooth_intervene requires every env.train.teleop entry to be "
+                    f"pico (PICO-only; got {named!r})"
                 )
         return cls(stage_num=stage_num, enabled=enabled)
 

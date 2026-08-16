@@ -188,8 +188,8 @@ Where the Code Lives
      - The devices an operator drives, as parts, over vendor readers in
        ``readers/`` that import no Gymnasium.
    * - ``real/wrappers/teleop/``
-     - ``intervention.py``, ``adapters.py``, ``streaming.py``, ``pico.py``, and
-       ``config.py`` for device selection.
+     - ``intervention.py``, ``adapters.py``, ``streaming.py``, ``composed.py``,
+       and ``config.py`` for device selection.
    * - ``real/wrappers/transforms/``
      - Relative frames, quaternion-to-Euler, gripper narrowing.
    * - ``real/wrappers/episode/``

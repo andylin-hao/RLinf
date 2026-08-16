@@ -168,7 +168,7 @@ episode 控制不算遥操作
      - 操作者驱动的设备，本身是部件；底下 ``readers/`` 里的厂商读取实现不导入
        Gymnasium。
    * - ``real/wrappers/teleop/``
-     - ``intervention.py``、``adapters.py``、``streaming.py``、``pico.py``，以及选设备用的
+     - ``intervention.py``、``adapters.py``、``streaming.py``、``composed.py``，以及选设备用的
        ``config.py``。
    * - ``real/wrappers/transforms/``
      - 相对坐标系、四元数转欧拉角、夹爪维度裁剪。

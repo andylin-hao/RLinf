@@ -38,10 +38,6 @@ from rlinf.envs.real.wrappers.teleop.adapters import DualGelloJointStream
 from rlinf.envs.real.wrappers.teleop.builder import build_teleop
 from rlinf.envs.real.wrappers.teleop.config import NO_DEVICE, resolve_teleop_devices
 from rlinf.envs.real.wrappers.teleop.intervention import TeleopIntervention
-from rlinf.envs.real.wrappers.teleop.pico import (
-    DualFrankaTcpPicoIntervention,
-    PicoTeleop,
-)
 from rlinf.envs.real.wrappers.transforms import (
     GripperCloseEnv,
     Quat2EulerWrapper,
@@ -126,28 +122,6 @@ def _apply_teleop(env: gym.Env, cfg: Mapping[str, Any], inner: Any) -> gym.Env:
 
     names = [_entry_name(entry) for entry in devices]
     mark_flag = bool(getattr(inner, "TELEOP_MARK_FLAG", False))
-
-    # PICO is still a device rather than a binding: its dual-arm TCP variant
-    # carries rot6d hold logic and an API the env finds by name.
-    if "pico" in names:
-        if len(names) > 1:
-            raise ValueError(
-                "'pico' cannot share a 'teleop' list with other devices yet: it "
-                "holds the last commanded pose across an action chunk, which no "
-                f"binding expresses. Drive it alone, or drop it from {names}."
-            )
-        pico_cfg = dict(cfg.get("pico", {}))
-        if getattr(inner, "PER_ARM_ACTION_DIM", 0):
-            if getattr(inner, "PER_ARM_ACTION_DIM", None) != 10:
-                raise ValueError(
-                    "teleop_device: pico for dual-arm Franka is implemented for "
-                    "DualFrankaTcpEnv-v1 only. Use env/realworld_dual_franka_tcp_rot6d."
-                )
-            return DualFrankaTcpPicoIntervention(env, gripper_enabled=True, **pico_cfg)
-        gripper_enabled = not bool(cfg.get("no_gripper", True))
-        return TeleopIntervention(
-            env, PicoTeleop(gripper_enabled=gripper_enabled, **pico_cfg)
-        )
 
     teleop = build_teleop(env, cfg, _teleop_entries(devices, cfg, inner))
 

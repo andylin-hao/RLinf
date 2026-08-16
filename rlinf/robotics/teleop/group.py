@@ -164,10 +164,57 @@ class TeleopGroup:
             reading = readings[id(entry.device)]
             running.update(entry.binding.publish(reading))
             produced = entry.binding.action(reading, running)
-            for name, value in produced.items():
-                qualified = name if entry.drives is None else f"{entry.drives}.{name}"
-                if self.available is not None and qualified not in self.available:
-                    continue
-                parts[qualified] = value
+            parts.update(self._claimed(entry, produced))
             driving |= entry.binding.is_driving(reading)
+            info.update(self._reported(entry, entry.binding.info()))
         return parts, driving, info
+
+    def _claimed(
+        self, entry: TeleopEntry, produced: Mapping[str, np.ndarray]
+    ) -> dict[str, np.ndarray]:
+        """Qualify what an entry produced, dropping parts this robot lacks."""
+        claimed = {}
+        for name, value in produced.items():
+            qualified = name if entry.drives is None else f"{entry.drives}.{name}"
+            if self.available is not None and qualified not in self.available:
+                continue
+            claimed[qualified] = value
+        return claimed
+
+    @staticmethod
+    def _reported(entry: TeleopEntry, info: Mapping[str, Any]) -> dict[str, Any]:
+        """Name an entry's info after the branch it drives, so sides differ."""
+        if entry.drives is None:
+            return dict(info)
+        return {f"{entry.drives}_{key}": value for key, value in info.items()}
+
+    @property
+    def clipped_parts(self) -> tuple[str, ...]:
+        """Parts whose binding wants them clipped into the env's action space."""
+        return tuple(
+            part
+            for part, entry in self._filled.items()
+            if entry.binding.CLIPS_TO_ACTION_SPACE
+        )
+
+    @property
+    def hold_window(self) -> Optional[float]:
+        """The shortest hold window any binding asks for, if any asks."""
+        windows = [
+            entry.binding.HOLD_WINDOW
+            for entry in self.entries
+            if entry.binding.HOLD_WINDOW is not None
+        ]
+        return min(windows) if windows else None
+
+    def on_action_chunk_begin(self) -> None:
+        """Tell every binding a fresh chunk of policy actions starts here."""
+        for entry in self.entries:
+            entry.binding.on_action_chunk_begin()
+
+    def hold(self, context: Mapping[str, Any]) -> dict[str, np.ndarray]:
+        """The parts that keep the robot where it is, by name."""
+        parts: dict[str, np.ndarray] = {}
+        for entry in self.entries:
+            parts.update(self._claimed(entry, entry.binding.hold(context)))
+        return parts

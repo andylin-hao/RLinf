@@ -1572,3 +1572,139 @@ def test_the_glove_tracks_only_while_its_gate_is_held():
 
     # Released: the hand stays where it was posed.
     assert np.allclose(glove.action({"angles": np.full(6, 0.9)}, released)["hand"], 0.3)
+
+
+# --- PICO, as a device and a binding ----------------------------------
+
+
+class _ScriptedController:
+    """A controller part whose reader replays a fixed sequence."""
+
+    def __init__(self, steps):
+        self._steps = list(steps)
+        self._index = 0
+        self.is_connected = True
+
+    def get_observation(self):
+        return {"packet": self}
+
+    def get_action(self, tcp_pose, action_scale, gripper_enabled=True):
+        import numpy as np
+
+        action, replaced = self._steps[min(self._index, len(self._steps) - 1)]
+        self._index += 1
+        return (
+            np.asarray(action, dtype=np.float32),
+            bool(replaced),
+            {"pico_active": bool(replaced), "pico_ready": True},
+        )
+
+    def connect(self):
+        pass
+
+    def disconnect(self):
+        pass
+
+
+def _pico_context():
+    import numpy as np
+
+    return {
+        "tcp_pose": np.array([0.3, 0.1, 0.4, 0.0, 0.0, 0.0, 1.0], dtype=np.float32),
+        "action_scale": np.array([0.05, 0.3, 1.0]),
+    }
+
+
+def test_a_controller_drives_the_arm_to_a_pose_it_can_reach():
+    """An absolute binding turns a delta into where the arm should end up."""
+    import numpy as np
+
+    from rlinf.robotics.teleop import PicoTcpBinding
+
+    binding = PicoTcpBinding(gripper=True, side=0)
+    device = _ScriptedController([([0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.4], True)])
+
+    parts = binding.action(device.get_observation(), _pico_context())
+
+    # x moves by the delta times the position scale; the rest of the pose holds.
+    assert parts["arm"].size == 9
+    assert np.isclose(parts["arm"][0], 0.3 + 0.5 * 0.05)
+    assert np.isclose(parts["end_effector"][0], 0.4)
+    assert binding.is_driving(device.get_observation())
+
+
+def test_releasing_the_grip_mid_chunk_holds_the_arm_where_it_was_left():
+    """Snapping back to the policy's pose would jerk the arm mid-motion."""
+    import numpy as np
+
+    from rlinf.robotics.teleop import PicoTcpBinding
+
+    binding = PicoTcpBinding(gripper=True, side=0, hold_current_when_inactive=False)
+    device = _ScriptedController(
+        [([0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.4], True), ([0.0] * 7, False)]
+    )
+    context = _pico_context()
+
+    driven = binding.action(device.get_observation(), context)["arm"].copy()
+    held = binding.action(device.get_observation(), context)["arm"]
+    assert np.allclose(held, driven)
+
+    # The next chunk of policy actions releases it.
+    binding.on_action_chunk_begin()
+    assert binding.action(device.get_observation(), context) == {}
+
+
+def test_holding_the_current_pose_leaves_the_gripper_to_the_policy():
+    """The operator is not touching the gripper, so the policy still owns it."""
+    from rlinf.robotics.teleop import PicoTcpBinding
+
+    binding = PicoTcpBinding(gripper=True, side=0, hold_current_when_inactive=True)
+    device = _ScriptedController([([0.0] * 7, False)])
+
+    parts = binding.action(device.get_observation(), _pico_context())
+
+    assert set(parts) == {"arm"}
+
+
+def test_a_delta_binding_has_no_pose_to_hold():
+    """Zero motion already holds a robot that takes deltas."""
+    from rlinf.robotics.teleop import PicoBinding, PicoTcpBinding
+
+    assert PicoBinding(gripper=True).hold(_pico_context()) == {}
+    assert "arm" in PicoTcpBinding(gripper=True).hold(_pico_context())
+
+
+def test_absolute_commands_are_clipped_but_deltas_are_not():
+    """A pose can leave the action space; a normalised delta cannot."""
+    from rlinf.robotics.teleop import PicoBinding, PicoTcpBinding, SpaceMouseBinding
+
+    assert PicoTcpBinding.CLIPS_TO_ACTION_SPACE
+    assert not PicoBinding.CLIPS_TO_ACTION_SPACE
+    assert not SpaceMouseBinding.CLIPS_TO_ACTION_SPACE
+
+
+def test_each_side_reports_its_own_state():
+    """Two controllers report separately, so a collector can tell them apart."""
+    from rlinf.robotics.teleop import PicoTcpBinding, TeleopEntry, TeleopGroup
+
+    layout = {
+        "left.arm": slice(0, 9),
+        "left.end_effector": slice(9, 10),
+        "right.arm": slice(10, 19),
+        "right.end_effector": slice(19, 20),
+    }
+    entries = [
+        TeleopEntry(
+            _ScriptedController([([0.5] + [0.0] * 5 + [0.2], side == "left")]),
+            PicoTcpBinding(gripper=True, side=index),
+            drives=side,
+        )
+        for index, side in enumerate(("left", "right"))
+    ]
+    group = TeleopGroup(entries, available=layout)
+
+    _, driving, info = group.action(_pico_context())
+
+    assert driving
+    assert info["left_pico_active"] is True
+    assert info["right_pico_active"] is False
