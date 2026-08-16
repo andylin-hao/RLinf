@@ -12,11 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Wrapper-stack builders shared by realworld task factories."""
+"""Building the wrapper stack an env asks for.
+
+There used to be one builder per arm count, each with an if-chain over device
+names inside it. What varies between robots is not the procedure -- narrow the
+action, hand it to an operator, let someone mark the episode, change the
+representation -- but which pieces take part. So the env says which, and there
+is one builder.
+"""
 
 from __future__ import annotations
 
-from typing import Any, Mapping, Optional
+from typing import Any, Mapping
 
 import gymnasium as gym
 
@@ -28,7 +35,8 @@ from rlinf.envs.real.episode import (
     KeyboardStartEndWrapper,
 )
 from rlinf.envs.real.teleop.adapters import DualGelloJointStream
-from rlinf.envs.real.teleop.config import resolve_teleop_device
+from rlinf.envs.real.teleop.builder import build_teleop
+from rlinf.envs.real.teleop.config import NO_DEVICE, resolve_teleop_device
 from rlinf.envs.real.teleop.intervention import TeleopIntervention
 from rlinf.envs.real.teleop.pico import (
     DualFrankaTcpPicoIntervention,
@@ -40,166 +48,139 @@ from rlinf.envs.real.transforms import (
     RelativeFrame,
 )
 
+#: Wrappers an env may name in ``ACTION_WRAPPERS`` or ``TRANSFORMS``. Named
+#: rather than imported there so an env module does not depend on the wrappers
+#: it happens to use.
+WRAPPERS: dict[str, type] = {
+    "GripperCloseEnv": GripperCloseEnv,
+    "Quat2EulerWrapper": Quat2EulerWrapper,
+    "RelativeFrame": RelativeFrame,
+}
 
-def _teleop(env, cfg, devices):
-    """Build a composed teleop, reporting a missing vendor package plainly."""
-    from rlinf.envs.real.teleop.builder import build_teleop
-
-    try:
-        return build_teleop(env, cfg, devices)
-    except ModuleNotFoundError as exc:
-        if exc.name and exc.name.split(".")[0] == "rlinf_dexhand":
-            raise ModuleNotFoundError(
-                "Dex-hand teleoperation requires optional dependency "
-                "'rlinf_dexhand'. Install it before enabling it."
-            ) from exc
-        raise
-
-
-def _apply_keyboard_wrapper(env: gym.Env, mode: Optional[str]) -> gym.Env:
-    config = env.get_wrapper_attr("config")
-    if config.is_dummy or not mode:
-        return env
-    if mode == "multi_stage":
-        return KeyboardRewardDoneMultiStageWrapper(env)
-    if mode == "single_stage":
-        return KeyboardRewardDoneWrapper(env)
-    if mode == "start_end":
-        return KeyboardStartEndWrapper(env)
-    if mode == "eval_control":
-        return KeyboardEvalControlWrapper(env)
-    if mode == "rlt_policy_switch":
-        return KeyboardRLTPolicySwitchWrapper(env)
-    return env
+#: Keyboard modes, by the ``keyboard_reward_wrapper`` value that selects them.
+KEYBOARD_MODES: dict[str, type] = {
+    "multi_stage": KeyboardRewardDoneMultiStageWrapper,
+    "single_stage": KeyboardRewardDoneWrapper,
+    "start_end": KeyboardStartEndWrapper,
+    "eval_control": KeyboardEvalControlWrapper,
+    "rlt_policy_switch": KeyboardRLTPolicySwitchWrapper,
+}
 
 
-def apply_single_arm_wrappers(env: gym.Env, cfg: Mapping[str, Any]) -> gym.Env:
-    """Wrapper stack for single-arm realworld envs (franka single, xsquare)."""
-    end_effector_type = str(
-        getattr(getattr(env, "config", None), "end_effector_type", "franka_gripper")
+def _wanted(wrapper: type, cfg: Mapping[str, Any]) -> bool:
+    """Whether ``cfg`` switches this wrapper on.
+
+    A wrapper with no flag is always applied; one with a flag says its own
+    name and default, so this does not grow a branch per wrapper.
+    """
+    flag = getattr(wrapper, "CONFIG_FLAG", None)
+    if flag is None:
+        return True
+    return bool(cfg.get(flag, getattr(wrapper, "CONFIG_DEFAULT", True)))
+
+
+def _teleop_entries(device: str, cfg: Mapping[str, Any], inner: Any) -> list[Any]:
+    """The devices making up a rig, for the one named in the config."""
+    if device == "gello_joint":
+        use_delta = getattr(inner, "config", None) and (
+            getattr(inner.config, "joint_action_mode", None) == "delta"
+        )
+        scale = getattr(getattr(inner, "config", None), "joint_action_scale", 0.1)
+        shared = {"use_delta": bool(use_delta), "action_scale": scale}
+        return [
+            {"gello_joint": {"drives": "left", **shared}},
+            {"gello_joint": {"drives": "right", **shared}},
+        ]
+
+    end_effector = str(
+        getattr(getattr(inner, "config", None), "end_effector_type", "franka_gripper")
     )
-    is_dex_hand = end_effector_type.endswith("hand")
+    if device == "spacemouse" and end_effector.endswith("hand"):
+        # A hand needs the glove alongside the mouse; a gripper does not.
+        return ["spacemouse", "glove"]
+    return [device]
 
-    no_gripper = cfg.get("no_gripper", True)
-    if no_gripper and not is_dex_hand:
-        env = GripperCloseEnv(env)
 
+def _apply_teleop(env: gym.Env, cfg: Mapping[str, Any], inner: Any) -> gym.Env:
+    """Hand the action to an operator, if this env config asks for one."""
     device = resolve_teleop_device(
         cfg,
-        supported=("spacemouse", "gello", "pico"),
-        default="spacemouse",
+        supported=getattr(inner, "TELEOP", ()),
+        default=getattr(inner, "TELEOP_DEFAULT", NO_DEVICE),
     )
-    use_spacemouse = device == "spacemouse"
-    use_gello = device == "gello"
-    use_pico = device == "pico"
+    if device == NO_DEVICE or getattr(inner.config, "is_dummy", False):
+        return env
 
-    gripper_enabled = not no_gripper
+    mark_flag = bool(getattr(inner, "TELEOP_MARK_FLAG", False))
 
-    if not env.config.is_dummy and use_spacemouse:
-        # A hand needs the glove alongside the mouse; a gripper does not.
-        devices = ["spacemouse", "glove"] if is_dex_hand else ["spacemouse"]
-        env = TeleopIntervention(env, _teleop(env, cfg, devices))
-
-    if not env.config.is_dummy and use_gello:
-        if is_dex_hand:
-            raise ValueError("teleop_device: gello is not supported for ruiyan_hand.")
-        env = TeleopIntervention(env, _teleop(env, cfg, ["gello"]))
-
-    if not env.config.is_dummy and use_pico:
-        if is_dex_hand:
-            raise ValueError(
-                "teleop_device: pico is not supported for dexterous hands."
-            )
+    # PICO is still a device rather than a binding: its dual-arm TCP variant
+    # carries rot6d hold logic and an API realworld_env finds by name.
+    if device == "pico":
         pico_cfg = dict(cfg.get("pico", {}))
-        env = TeleopIntervention(
+        if getattr(inner, "PER_ARM_ACTION_DIM", 0):
+            if getattr(inner, "PER_ARM_ACTION_DIM", None) != 10:
+                raise ValueError(
+                    "teleop_device: pico for dual-arm Franka is implemented for "
+                    "DualFrankaTcpEnv-v1 only. Use env/realworld_dual_franka_tcp_rot6d."
+                )
+            return DualFrankaTcpPicoIntervention(env, gripper_enabled=True, **pico_cfg)
+        gripper_enabled = not bool(cfg.get("no_gripper", True))
+        return TeleopIntervention(
             env, PicoTeleop(gripper_enabled=gripper_enabled, **pico_cfg)
         )
 
-    env = _apply_keyboard_wrapper(env, cfg.get("keyboard_reward_wrapper", None))
+    teleop = build_teleop(env, cfg, _teleop_entries(device, cfg, inner))
 
-    if cfg.get("use_relative_frame", True):
-        env = RelativeFrame(env)
-    env = Quat2EulerWrapper(env)
-    return env
-
-
-def apply_dual_franka_joint_wrappers(env: gym.Env, cfg: Mapping[str, Any]) -> gym.Env:
-    config = env.get_wrapper_attr("config")
-    if cfg.get("no_gripper", True):
-        # No DualGripperCloseEnv yet, so a 12D action would blow up as reshape(2,7).
-        raise NotImplementedError(
-            "no_gripper=True not supported for dual-arm envs (no DualGripperCloseEnv)."
-        )
-
-    # A dual-arm Franka has no single-arm Cartesian teleop path, so naming one
-    # here is a mistake worth reporting rather than a setting to ignore.
-    device = resolve_teleop_device(cfg, supported=("gello_joint", "pico"))
-    use_gello_joint = device == "gello_joint"
-    use_pico = device == "pico"
-
-    if not config.is_dummy and use_gello_joint:
-        left_port = cfg.get("left_gello_port", None)
-        right_port = cfg.get("right_gello_port", None)
-        if left_port is None or right_port is None:
-            raise ValueError(
-                "teleop_device: gello_joint requires both "
-                "'left_gello_port' and 'right_gello_port' in the env config."
-            )
-        from rlinf.envs.real.teleop.builder import build_teleop
-
-        use_delta = getattr(config, "joint_action_mode", None) == "delta"
-        action_scale = getattr(config, "joint_action_scale", 0.1)
-        direct_stream = bool(getattr(config, "teleop_direct_stream", False))
-        streamer = (
-            DualGelloJointStream(
-                left_port=left_port,
-                right_port=right_port,
-                gripper_enabled=True,
-                use_delta=use_delta,
-                action_scale=action_scale,
-                direct_stream=True,
-                stream_period=cfg.get("gello_joint_stream_period", 0.001),
-            )
-            if direct_stream
-            else None
-        )
-        teleop = build_teleop(
-            env,
-            cfg,
-            [
-                {
-                    "gello_joint": {
-                        "port": left_port,
-                        "drives": "left",
-                        "use_delta": use_delta,
-                        "action_scale": action_scale,
-                    }
-                },
-                {
-                    "gello_joint": {
-                        "port": right_port,
-                        "drives": "right",
-                        "use_delta": use_delta,
-                        "action_scale": action_scale,
-                    }
-                },
-            ],
-        )
-        teleop.streamer = streamer
-        env = TeleopIntervention(env, teleop, mark_flag=True)
-
-    if not config.is_dummy and use_pico:
-        if getattr(env.unwrapped, "PER_ARM_ACTION_DIM", None) != 10:
-            raise ValueError(
-                "teleop_device: pico for dual-arm Franka is implemented for "
-                "DualFrankaTcpEnv-v1 only. Use env/realworld_dual_franka_tcp_rot6d."
-            )
-        pico_cfg = dict(cfg.get("pico", {}))
-        env = DualFrankaTcpPicoIntervention(
-            env,
+    if device == "gello_joint" and getattr(inner.config, "teleop_direct_stream", False):
+        teleop.streamer = DualGelloJointStream(
+            left_port=cfg.get("left_gello_port"),
+            right_port=cfg.get("right_gello_port"),
             gripper_enabled=True,
-            **pico_cfg,
+            use_delta=getattr(inner.config, "joint_action_mode", None) == "delta",
+            action_scale=getattr(inner.config, "joint_action_scale", 0.1),
+            direct_stream=True,
+            stream_period=cfg.get("gello_joint_stream_period", 0.001),
         )
+    return TeleopIntervention(env, teleop, mark_flag=mark_flag)
 
-    env = _apply_keyboard_wrapper(env, cfg.get("keyboard_reward_wrapper", None))
+
+def build_stack(env: gym.Env, cfg: Mapping[str, Any]) -> gym.Env:
+    """Wrap ``env`` in what it declares and this config asks for.
+
+    Order matters and is the same for every robot: narrow the action first so
+    the operator drives what the policy drives, then teleop, then whoever marks
+    the episode, then the representation the policy expects.
+    """
+    inner = env.unwrapped
+
+    for flag in getattr(inner, "REFUSE_FLAGS", ()):
+        if cfg.get(flag, False):
+            raise NotImplementedError(
+                f"{type(inner).__name__} does not support {flag!r}."
+            )
+
+    for name in getattr(inner, "ACTION_WRAPPERS", ()):
+        wrapper = WRAPPERS[name]
+        if _wanted(wrapper, cfg):
+            env = wrapper(env)
+
+    env = _apply_teleop(env, cfg, inner)
+
+    mode = cfg.get("keyboard_reward_wrapper", None)
+    if mode and not getattr(inner.config, "is_dummy", False):
+        env = KEYBOARD_MODES[mode](env)
+
+    for extra in getattr(inner, "episode_wrappers", lambda cfg: ())(cfg):
+        env = extra(env)
+
+    for name in getattr(inner, "TRANSFORMS", ()):
+        wrapper = WRAPPERS[name]
+        if _wanted(wrapper, cfg):
+            env = wrapper(env)
+
     return env
+
+
+#: The three per-robot builders were the same procedure with different pieces.
+apply_single_arm_wrappers = build_stack
+apply_dual_franka_joint_wrappers = build_stack

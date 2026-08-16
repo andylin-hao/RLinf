@@ -117,6 +117,19 @@ class DualFrankaEnv(gym.Env):
     ``_dispatch_arm_motion``.
     """
 
+    #: A dual-arm Franka has no single-arm Cartesian teleop path, so naming one
+    #: is a mistake worth reporting rather than a setting to ignore.
+    TELEOP = ("gello_joint", "pico")
+    TELEOP_DEFAULT = "none"
+    TELEOP_MARK_FLAG = True
+
+    #: No DualGripperCloseEnv exists, and a 12-D action would blow up as
+    #: reshape(2, 7), so narrowing is refused rather than silently skipped.
+    ACTION_WRAPPERS = ()
+    REFUSE_FLAGS = ("no_gripper",)
+
+    TRANSFORMS = ()
+
     CONFIG_CLS: type[DualFrankaRobotConfig] = DualFrankaRobotConfig
     PER_ARM_ACTION_DIM: int = 0
     GRIPPER_IDX_IN_ARM: int = 0

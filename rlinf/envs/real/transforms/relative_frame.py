@@ -43,6 +43,11 @@ class RelativeFrame(gym.Wrapper):
 
     """
 
+    #: Applied when this env-config flag is set. A wrapper knowing its own
+    #: switch is what lets one stack builder serve every robot.
+    CONFIG_FLAG = "use_relative_frame"
+    CONFIG_DEFAULT = True
+
     def __init__(self, env: Env, include_relative_pose=True):
         super().__init__(env)
         self.adjoint_matrix = np.zeros((6, 6))

@@ -155,6 +155,11 @@ class GimArmEnv(gym.Env):
     pose to ``target_ee_pose``, identical to :class:`FrankaEnv`.
     """
 
+    TELEOP = ("spacemouse", "gello", "pico")
+    TELEOP_DEFAULT = "spacemouse"
+    ACTION_WRAPPERS = ("GripperCloseEnv",)
+    TRANSFORMS = ("RelativeFrame", "Quat2EulerWrapper")
+
     def __init__(
         self,
         config: GimArmRobotConfig,

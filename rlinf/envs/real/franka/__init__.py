@@ -25,11 +25,7 @@ class and whether it takes the single- or dual-arm wrapper stack.
 
 from __future__ import annotations
 
-from rlinf.envs.real.registry import WrapperStack, register_tasks
-from rlinf.envs.real.wrappers import (
-    apply_dual_franka_joint_wrappers,
-    apply_single_arm_wrappers,
-)
+from rlinf.envs.real.registry import register_tasks
 from rlinf.robotics.parts.end_effectors.base import EndEffectorType
 
 from .base import FrankaEnv, FrankaRobotConfig, FrankaRobotState
@@ -41,16 +37,16 @@ from .dual_franka_joint import DualFrankaJointEnv, DualFrankaJointRobotConfig
 from .dual_franka_tcp import DualFrankaTCPEnv, DualFrankaTCPRobotConfig
 from .peg_insertion import PegInsertionEnv
 
-#: Gym id -> the env class behind it and the wrapper stack it takes. A new task
-#: is an entry here plus the module implementing it.
-TASKS: dict[str, tuple[type, WrapperStack]] = {
-    "FrankaEnv-v1": (FrankaEnv, apply_single_arm_wrappers),
-    "PegInsertionEnv-v1": (PegInsertionEnv, apply_single_arm_wrappers),
-    "FrankaBinRelocationEnv-v1": (FrankaBinRelocationEnv, apply_single_arm_wrappers),
-    "BottleEnv-v1": (BottleEnv, apply_single_arm_wrappers),
-    "DexpnpEnv-v1": (DexpnpEnv, apply_single_arm_wrappers),
-    "DualFrankaJointEnv-v1": (DualFrankaJointEnv, apply_dual_franka_joint_wrappers),
-    "DualFrankaTCPEnv-v1": (DualFrankaTCPEnv, apply_dual_franka_joint_wrappers),
+#: Gym id -> the env class behind it. The wrapper stack comes from the env,
+#: which declares what it accepts, so a new task is one entry plus its module.
+TASKS: dict[str, type] = {
+    "FrankaEnv-v1": FrankaEnv,
+    "PegInsertionEnv-v1": PegInsertionEnv,
+    "FrankaBinRelocationEnv-v1": FrankaBinRelocationEnv,
+    "BottleEnv-v1": BottleEnv,
+    "DexpnpEnv-v1": DexpnpEnv,
+    "DualFrankaJointEnv-v1": DualFrankaJointEnv,
+    "DualFrankaTCPEnv-v1": DualFrankaTCPEnv,
 }
 
 _ENTRY_POINTS = register_tasks(__name__, globals(), TASKS)

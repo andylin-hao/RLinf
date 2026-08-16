@@ -91,6 +91,11 @@ class Turtle2Env(gym.Env):
     dense/sparse rewards, safety-box clipping, and a dummy mode for offline use.
     """
 
+    TELEOP = ("spacemouse", "gello", "pico")
+    TELEOP_DEFAULT = "spacemouse"
+    ACTION_WRAPPERS = ("GripperCloseEnv",)
+    TRANSFORMS = ("RelativeFrame", "Quat2EulerWrapper")
+
     def __init__(
         self,
         config: Turtle2RobotConfig,

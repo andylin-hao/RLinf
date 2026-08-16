@@ -121,6 +121,13 @@ class DOSW1Config:
 class DOSW1Env(gym.Env):
     """Dual-arm DOSW1 gymnasium environment with optional human-in-the-loop."""
 
+    #: DOSW1 is driven by its own leader arms through the env, not by a teleop
+    #: device the stack builds.
+    TELEOP = ()
+    TELEOP_DEFAULT = "none"
+    ACTION_WRAPPERS = ()
+    TRANSFORMS = ()
+
     metadata = {"render_modes": []}
     supports_relative_frame = False
     supports_leader_follower_keyboard_intervention = True
@@ -728,3 +735,15 @@ class DOSW1Env(gym.Env):
             value = getattr(hw, attr, None)
             if value is not None:
                 setattr(self.config, attr, int(value))
+
+    def episode_wrappers(self, cfg):
+        """Hand the leader arms to the operator when the task asks for it."""
+        if not cfg.get("keyboard_intervention_wrapper", False):
+            return ()
+        if not getattr(self.config, "enable_human_in_loop", False):
+            return ()
+        if getattr(self.config, "is_dummy", False):
+            return ()
+        from rlinf.envs.real.episode import LeaderFollowerKeyboardIntervention
+
+        return (LeaderFollowerKeyboardIntervention,)

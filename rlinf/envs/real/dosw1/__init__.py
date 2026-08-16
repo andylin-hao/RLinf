@@ -16,30 +16,13 @@
 
 from __future__ import annotations
 
-from typing import Any, Mapping
-
-import gymnasium as gym
-
-from rlinf.envs.real.episode import LeaderFollowerKeyboardIntervention
 from rlinf.envs.real.registry import register_tasks
 
 from .base import ControlMode, DOSW1Config, DOSW1Env
 from .pick import PickEnv
 
-
-def apply_dosw1_wrappers(env: gym.Env, env_cfg: Mapping[str, Any]) -> gym.Env:
-    """Hand the leader arms to the operator when the task asks for it."""
-    if (
-        env_cfg.get("keyboard_intervention_wrapper", False)
-        and getattr(env.config, "enable_human_in_loop", False)
-        and not getattr(env.config, "is_dummy", False)
-    ):
-        env = LeaderFollowerKeyboardIntervention(env)
-    return env
-
-
 #: Gym id -> the env class behind it and the wrapper stack it takes.
-TASKS = {"DOSW1PickEnv-v1": (PickEnv, apply_dosw1_wrappers)}
+TASKS = {"DOSW1PickEnv-v1": PickEnv}
 
 _ENTRY_POINTS = register_tasks(__name__, globals(), TASKS)
 
@@ -49,6 +32,5 @@ __all__ = [
     "DOSW1Config",
     "DOSW1Env",
     "PickEnv",
-    "apply_dosw1_wrappers",
     *_ENTRY_POINTS,
 ]

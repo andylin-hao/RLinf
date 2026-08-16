@@ -17,13 +17,12 @@
 from __future__ import annotations
 
 from rlinf.envs.real.registry import register_tasks
-from rlinf.envs.real.wrappers import apply_single_arm_wrappers
 
 from .base import Turtle2Env, Turtle2RobotConfig, Turtle2RobotState
 from .button import ButtonEnv
 
 #: Gym id -> the env class behind it and the wrapper stack it takes.
-TASKS = {"ButtonEnv-v1": (ButtonEnv, apply_single_arm_wrappers)}
+TASKS = {"ButtonEnv-v1": ButtonEnv}
 
 _ENTRY_POINTS = register_tasks(__name__, globals(), TASKS)
 

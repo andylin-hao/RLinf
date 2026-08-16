@@ -189,6 +189,19 @@ class FrankaRobotConfig:
 class FrankaEnv(gym.Env):
     """Franka robot arm environment."""
 
+    #: Teleop devices this env can be driven with, and the one a config gets
+    #: when it says nothing. Declared here because it is a fact about the
+    #: robot's action space, not about any particular task.
+    TELEOP = ("spacemouse", "gello", "pico")
+    TELEOP_DEFAULT = "spacemouse"
+
+    #: Narrowing applied before teleop, so the operator drives the same action
+    #: the policy does.
+    ACTION_WRAPPERS = ("GripperCloseEnv",)
+
+    #: Applied last, so the policy sees the representation it trained on.
+    TRANSFORMS = ("RelativeFrame", "Quat2EulerWrapper")
+
     CONFIG_CLS: type[FrankaRobotConfig] = FrankaRobotConfig
 
     def __init__(

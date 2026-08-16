@@ -22,6 +22,11 @@ class GripperCloseEnv(gym.ActionWrapper):
     Use this wrapper to task that requires the gripper to be closed
     """
 
+    #: Applied when this env-config flag is set. A wrapper knowing its own
+    #: switch is what lets one stack builder serve every robot.
+    CONFIG_FLAG = "no_gripper"
+    CONFIG_DEFAULT = True
+
     def __init__(self, env):
         super().__init__(env)
         ub = self.env.action_space
