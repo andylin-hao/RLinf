@@ -453,6 +453,10 @@ class FrankaEnv(gym.Env):
         """Return the action scale ``[pos_scale, ori_scale, gripper_scale]``."""
         return self.config.action_scale
 
+    def get_gripper_open(self) -> bool:
+        """Whether the gripper is currently open."""
+        return bool(self._franka_state.gripper_open)
+
     def _calc_step_reward(
         self,
         observation: dict[str, np.ndarray | FrankaRobotState],

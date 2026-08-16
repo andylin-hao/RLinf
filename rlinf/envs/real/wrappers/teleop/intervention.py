@@ -97,6 +97,22 @@ class TeleopDevice(ABC):
     def before_step(self, env: gym.Env) -> None:
         """Hook that runs before the wrapped env steps."""
 
+    def on_action_chunk_begin(self) -> None:
+        """Let go of anything held only until the next chunk of actions."""
+
+    def get_hold_action(
+        self, env: gym.Env, fallback_action: Optional[np.ndarray] = None
+    ) -> np.ndarray:
+        """The action that keeps the robot where it is, for a skipped chunk.
+
+        Raises:
+            AttributeError: If this device commands deltas, where a zero motion
+                is already the action that holds a robot still.
+        """
+        raise AttributeError(
+            f"{type(self).__name__} commands deltas, so it has no pose to hold."
+        )
+
     def close(self) -> None:
         """Release the device."""
 
@@ -176,24 +192,17 @@ class TeleopIntervention(gym.Wrapper):
     def on_action_chunk_begin(self) -> None:
         """Tell the device a fresh chunk of policy actions starts here.
 
-        Found by name through ``get_wrapper_attr``, which is why it is on the
-        wrapper: the env runs the chunk, and the device holds what it means.
+        On the wrapper because :mod:`rlinf.envs.real.env` finds it by name
+        through ``get_wrapper_attr``: the env runs the chunk, and the device
+        holds what it means.
         """
-        begin = getattr(self.device, "on_action_chunk_begin", None)
-        if callable(begin):
-            begin()
+        self.device.on_action_chunk_begin()
 
     def get_hold_action(
         self, fallback_action: Optional[np.ndarray] = None
     ) -> np.ndarray:
         """The action that keeps the robot where it is, for a skipped chunk."""
-        hold = getattr(self.device, "get_hold_action", None)
-        if not callable(hold):
-            raise AttributeError(
-                f"{type(self.device).__name__} cannot say what holds the robot "
-                "still; only a device commanding absolute poses can."
-            )
-        return hold(self, fallback_action)
+        return self.device.get_hold_action(self, fallback_action)
 
     def close(self):
         """Release the device, then the wrapped env."""

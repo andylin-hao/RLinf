@@ -44,15 +44,15 @@ relocation 改十一项。配置的其余部分描述任务本身，包括位姿
 注册只要一行
 ------------
 
-任务表的每一行只记两件事：用 worker 配置构造哪个 env 类，以及这台机器人的动作空间
-需要哪套 wrapper。新增任务时加一行即可：
+任务表的每一行只记一件事：用 worker 配置构造哪个 env 类。外面套哪些 wrapper 由
+env 自己声明，所以新增任务只要加一行：
 
 .. code-block:: python
 
    TASKS = {
-       "FrankaEnv-v1": (FrankaEnv, apply_single_arm_wrappers),
-       "PegInsertionEnv-v1": (PegInsertionEnv, apply_single_arm_wrappers),
-       "DualFrankaTCPEnv-v1": (DualFrankaTCPEnv, apply_dual_franka_joint_wrappers),
+       "FrankaEnv-v1": FrankaEnv,
+       "PegInsertionEnv-v1": PegInsertionEnv,
+       "DualFrankaTcpEnv-v1": DualFrankaTcpEnv,
    }
 
    _ENTRY_POINTS = register_tasks(__name__, globals(), TASKS)
@@ -78,11 +78,12 @@ relocation 改十一项。配置的其余部分描述任务本身，包括位姿
    * - ``episode/``
      - 决定 rollout 的起止和得分。这些判断来自现场操作者，传感器不会上报。
 
-``wrappers.py`` 读取环境配置，选定遥操作设备，再把这些 wrapper 组装成完整的栈。
+``build_stack`` 读取环境配置，按 env 自己的声明把 wrapper 逐层套上；无论哪台机器人
+都走这一条路径。
 
 .. code-block:: python
 
-   env = apply_single_arm_wrappers(PegInsertionEnv(...), cfg)
+   env = build_stack(PegInsertionEnv(...), cfg)
 
 遥操作：留在这一侧的部分
 ------------------------

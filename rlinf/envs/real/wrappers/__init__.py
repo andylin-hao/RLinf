@@ -23,7 +23,7 @@ is one builder.
 
 from __future__ import annotations
 
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping
 
 import gymnasium as gym
 
@@ -34,7 +34,6 @@ from rlinf.envs.real.wrappers.episode import (
     KeyboardRLTPolicySwitchWrapper,
     KeyboardStartEndWrapper,
 )
-from rlinf.envs.real.wrappers.teleop.adapters import DualGelloJointStream
 from rlinf.envs.real.wrappers.teleop.builder import build_teleop
 from rlinf.envs.real.wrappers.teleop.config import NO_DEVICE, resolve_teleop_devices
 from rlinf.envs.real.wrappers.teleop.intervention import TeleopIntervention
@@ -75,43 +74,12 @@ def _wanted(wrapper: type, cfg: Mapping[str, Any]) -> bool:
     return bool(cfg.get(flag, getattr(wrapper, "CONFIG_DEFAULT", True)))
 
 
-def _entry_name(entry: Any) -> str:
-    """The device an entry names, whether it is bare or carries options."""
-    return entry if isinstance(entry, str) else next(iter(dict(entry)))
-
-
-def _with_env_defaults(entry: Any, inner: Any) -> Any:
-    """Fill in options a leader arm takes from the env rather than the config.
-
-    How joint targets are read belongs to the env, not to the operator, so a
-    leader arm inherits it instead of repeating it per entry. An entry that
-    sets either option keeps its own value.
-    """
-    if _entry_name(entry) != "gello_joint":
-        return entry
-
-    config = getattr(inner, "config", None)
-    defaults = {
-        "use_delta": getattr(config, "joint_action_mode", None) == "delta",
-        "action_scale": getattr(config, "joint_action_scale", 0.1),
-    }
-    options = {} if isinstance(entry, str) else dict(dict(entry)["gello_joint"])
-    return {"gello_joint": {**defaults, **options}}
-
-
-def _teleop_entries(
-    devices: Sequence[Any], cfg: Mapping[str, Any], inner: Any
-) -> list[Any]:
-    """The devices making up a group, for the ones this config selects.
-
-    Which devices make up a group is a config question, so the config answers
-    it. Nothing is added to the list on the robot's behalf.
-    """
-    return [_with_env_defaults(entry, inner) for entry in devices]
-
-
 def _apply_teleop(env: gym.Env, cfg: Mapping[str, Any], inner: Any) -> gym.Env:
-    """Hand the action to an operator, if this env config asks for one."""
+    """Hand the action to an operator, if this env config asks for one.
+
+    Which devices those are, and what each one needs, is settled by the config
+    and the device registry. No device is named here.
+    """
     devices = resolve_teleop_devices(
         cfg,
         supported=getattr(inner, "TELEOP", ()),
@@ -120,22 +88,11 @@ def _apply_teleop(env: gym.Env, cfg: Mapping[str, Any], inner: Any) -> gym.Env:
     if not devices or getattr(inner.config, "is_dummy", False):
         return env
 
-    names = [_entry_name(entry) for entry in devices]
-    mark_flag = bool(getattr(inner, "TELEOP_MARK_FLAG", False))
-
-    teleop = build_teleop(env, cfg, _teleop_entries(devices, cfg, inner))
-
-    if "gello_joint" in names and getattr(inner.config, "teleop_direct_stream", False):
-        teleop.streamer = DualGelloJointStream(
-            left_port=cfg.get("left_gello_port"),
-            right_port=cfg.get("right_gello_port"),
-            gripper_enabled=True,
-            use_delta=getattr(inner.config, "joint_action_mode", None) == "delta",
-            action_scale=getattr(inner.config, "joint_action_scale", 0.1),
-            direct_stream=True,
-            stream_period=cfg.get("gello_joint_stream_period", 0.001),
-        )
-    return TeleopIntervention(env, teleop, mark_flag=mark_flag)
+    return TeleopIntervention(
+        env,
+        build_teleop(env, cfg, devices),
+        mark_flag=bool(getattr(inner, "TELEOP_MARK_FLAG", False)),
+    )
 
 
 def build_stack(env: gym.Env, cfg: Mapping[str, Any]) -> gym.Env:
@@ -173,8 +130,3 @@ def build_stack(env: gym.Env, cfg: Mapping[str, Any]) -> gym.Env:
             env = wrapper(env)
 
     return env
-
-
-#: The three per-robot builders were the same procedure with different pieces.
-apply_single_arm_wrappers = build_stack
-apply_dual_franka_joint_wrappers = build_stack

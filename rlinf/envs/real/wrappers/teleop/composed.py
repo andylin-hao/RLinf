@@ -46,6 +46,7 @@ def context_from(env: gym.Env) -> dict[str, Any]:
         ("tcp_pose", "get_tcp_pose"),
         ("action_scale", "get_action_scale"),
         ("joint_positions", "get_joint_positions"),
+        ("gripper_open", "get_gripper_open"),
     ):
         try:
             value = env.get_wrapper_attr(getter)
@@ -53,10 +54,6 @@ def context_from(env: gym.Env) -> dict[str, Any]:
             continue
         if callable(value):
             context[key] = value()
-
-    state = getattr(env.unwrapped, "_franka_state", None)
-    if state is not None:
-        context["gripper_open"] = bool(getattr(state, "gripper_open", True))
     return context
 
 

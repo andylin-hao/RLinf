@@ -70,8 +70,7 @@
 3. 注册
 ~~~~~~~
 
-到 ``rlinf/envs/real/<robot>/__init__.py`` 的 ``TASKS`` 表里加一行。这里要写明 env 类，
-以及它的动作空间所需的 wrapper 栈：
+到 ``rlinf/envs/real/<robot>/__init__.py`` 的 ``TASKS`` 表里加一行，写明 env 类：
 
 .. code-block:: python
 
@@ -79,12 +78,11 @@
 
    TASKS = {
        ...
-       "WipeEnv-v1": (WipeEnv, apply_single_arm_wrappers),
+       "WipeEnv-v1": WipeEnv,
    }
 
-``register_tasks`` 会生成 entry point 并把这个 id 注册到 Gymnasium。单臂 Franka 和
-Turtle2 用 ``apply_single_arm_wrappers``，双臂 Franka 用
-``apply_dual_franka_joint_wrappers``。
+``register_tasks`` 会生成 entry point 并把这个 id 注册到 Gymnasium。这里不写 wrapper
+栈：env 在上面已经声明过，``build_stack`` 读的就是那份声明。
 
 用户配置和数据集元数据都会保存 gym id。后续改名会让这些引用失效，采集数据前先把名字
 定下来。

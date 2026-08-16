@@ -76,8 +76,7 @@ up:
 ~~~~~~~~~~~~~~
 
 Add one entry to the robot's ``TASKS`` table in
-``rlinf/envs/real/<robot>/__init__.py``. Name the env class and the wrapper stack
-required by its action space:
+``rlinf/envs/real/<robot>/__init__.py``, naming the env class:
 
 .. code-block:: python
 
@@ -85,12 +84,12 @@ required by its action space:
 
    TASKS = {
        ...
-       "WipeEnv-v1": (WipeEnv, apply_single_arm_wrappers),
+       "WipeEnv-v1": WipeEnv,
    }
 
 ``register_tasks`` builds the entry point and registers the id with Gymnasium.
-Single-arm Franka and Turtle2 envs take ``apply_single_arm_wrappers``; the
-dual-arm Franka envs take ``apply_dual_franka_joint_wrappers``.
+The wrapper stack does not appear here: the env declared it above, and
+``build_stack`` reads that declaration.
 
 User configs and dataset metadata store the gym id. Changing it later breaks
 those references. Choose the name before collecting data.

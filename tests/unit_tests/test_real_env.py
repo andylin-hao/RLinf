@@ -35,7 +35,6 @@ from rlinf.envs.real.franka.dual_franka_joint import (
 )
 from rlinf.envs.real.gim_arm.base import GimArmEnv, GimArmRobotConfig
 from rlinf.envs.real.task_env import RobotTask, RobotTaskEnv
-from rlinf.envs.real.wrappers import _teleop_entries  # noqa: E402
 from rlinf.envs.real.wrappers.teleop.config import (  # noqa: E402
     NO_DEVICE,
     resolve_teleop_device,
@@ -950,7 +949,7 @@ def test_euler_conversion_is_one_wrapper_for_any_arm_count():
 # --- the stack an env actually gets, built by the real builders --------------
 #
 # The tests above drive scripted devices and fake envs. These run the dummy
-# envs through apply_single_arm_wrappers, so the wrapper stack, the transforms,
+# envs through build_stack, so the wrapper stack, the transforms,
 # and the task configs are the ones a rollout would see.
 
 
@@ -984,13 +983,13 @@ def test_wrapper_stack_converts_the_pose_it_hands_the_policy():
     A policy trained on Euler angles needs the conversion at rollout, so the
     stack is what makes the observation match the training data.
     """
-    from rlinf.envs.real.wrappers import apply_single_arm_wrappers
+    from rlinf.envs.real.wrappers import build_stack
 
     env = _dummy_franka()
     raw, _ = env.reset()
     assert raw["state"]["tcp_pose"].shape == (7,)
 
-    wrapped = apply_single_arm_wrappers(
+    wrapped = build_stack(
         env, {"teleop": "none", "no_gripper": False, "use_relative_frame": True}
     )
     observation, _ = wrapped.reset()
@@ -1002,9 +1001,9 @@ def test_wrapper_stack_converts_the_pose_it_hands_the_policy():
 
 def test_no_teleop_device_leaves_no_intervention_in_the_stack():
     """An autonomous rollout must not carry a wrapper waiting on hardware."""
-    from rlinf.envs.real.wrappers import apply_single_arm_wrappers
+    from rlinf.envs.real.wrappers import build_stack
 
-    wrapped = apply_single_arm_wrappers(
+    wrapped = build_stack(
         _dummy_franka(),
         {"teleop": "none", "no_gripper": False, "use_relative_frame": False},
     )
@@ -1015,12 +1014,12 @@ def test_no_teleop_device_leaves_no_intervention_in_the_stack():
 
 def test_no_gripper_narrows_the_action_the_policy_must_produce():
     """``no_gripper`` drops the gripper channel rather than ignoring it."""
-    from rlinf.envs.real.wrappers import apply_single_arm_wrappers
+    from rlinf.envs.real.wrappers import build_stack
 
     env = _dummy_franka()
     assert env.action_space.shape == (7,)
 
-    wrapped = apply_single_arm_wrappers(
+    wrapped = build_stack(
         env,
         {"teleop": "none", "no_gripper": True, "use_relative_frame": False},
     )
@@ -1095,9 +1094,9 @@ def test_converted_pose_stays_inside_the_observation_space():
     Anything allocating buffers from the space, or checking ``contains``, sees
     that.
     """
-    from rlinf.envs.real.wrappers import apply_single_arm_wrappers
+    from rlinf.envs.real.wrappers import build_stack
 
-    wrapped = apply_single_arm_wrappers(
+    wrapped = build_stack(
         _dummy_franka(),
         {"teleop": "none", "no_gripper": False, "use_relative_frame": False},
     )
@@ -1211,36 +1210,53 @@ def test_a_two_key_entry_is_refused():
         )
 
 
-def test_nothing_is_added_to_the_group_the_config_names():
-    """A hand robot gets a glove because the config says so, not the wrapper."""
-    entries = _teleop_entries(
-        ["spacemouse"], {}, _FakeInner(end_effector_type="ruiyan_hand")
-    )
+def test_no_device_is_named_in_the_wrapper_stack():
+    """Composition is a config question, so the builder answers it alone."""
+    import inspect
 
-    assert entries == ["spacemouse"]
-    assert _teleop_entries(
-        ["spacemouse", "glove"], {}, _FakeInner(end_effector_type="ruiyan_hand")
-    ) == ["spacemouse", "glove"]
+    from rlinf.envs.real import wrappers
+
+    source = inspect.getsource(wrappers)
+    for device in ("spacemouse", "glove", "gello_joint", "pico"):
+        assert device not in source, f"the wrapper stack still names {device!r}"
 
 
-def test_a_listed_leader_arm_still_inherits_the_env_defaults():
+def test_a_leader_arm_reads_the_joint_convention_from_the_env():
     """How joint targets are read belongs to the env, not to the operator."""
-    inner = _FakeInner(joint_action_mode="delta", joint_action_scale=0.25)
-    entries = _teleop_entries(
-        [{"gello_joint": {"drives": "left"}}, {"gello_joint": {"drives": "right"}}],
-        {},
-        inner,
+    from rlinf.envs.real.wrappers.teleop.builder import DEVICES, EnvFacts
+
+    facts = EnvFacts(
+        layout={"left.arm": slice(0, 7), "left.end_effector": slice(7, 8)},
+        config=SimpleNamespace(joint_action_mode="delta", joint_action_scale=0.25),
+    )
+    entry = DEVICES["gello_joint"](
+        {"left_gello_port": "/dev/left"}, {"drives": "left"}, facts
     )
 
-    assert all(entry["gello_joint"]["use_delta"] for entry in entries)
-    assert all(entry["gello_joint"]["action_scale"] == 0.25 for entry in entries)
+    assert entry.binding.use_delta is True
+    assert entry.binding.action_scale == 0.25
 
 
 def test_an_entry_option_wins_over_the_env_default():
-    inner = _FakeInner(joint_action_mode="delta", joint_action_scale=0.25)
-    (entry,) = _teleop_entries(
-        [{"gello_joint": {"drives": "left", "action_scale": 0.5}}], {}, inner
+    from rlinf.envs.real.wrappers.teleop.builder import DEVICES, EnvFacts
+
+    facts = EnvFacts(
+        layout={"left.arm": slice(0, 7), "left.end_effector": slice(7, 8)},
+        config=SimpleNamespace(joint_action_mode="delta", joint_action_scale=0.25),
+    )
+    entry = DEVICES["gello_joint"](
+        {"left_gello_port": "/dev/left"},
+        {"drives": "left", "action_scale": 0.5},
+        facts,
     )
 
-    assert entry["gello_joint"]["action_scale"] == 0.5
-    assert entry["gello_joint"]["use_delta"] is True
+    assert entry.binding.action_scale == 0.5
+    assert entry.binding.use_delta is True
+
+
+def test_the_streamer_comes_from_the_registry_not_the_stack():
+    """A device that also commands the robot says so where it is built."""
+    from rlinf.envs.real.wrappers.teleop.builder import STREAMERS
+
+    facts_off = SimpleNamespace(teleop_direct_stream=False)
+    assert STREAMERS["gello_joint"]({}, SimpleNamespace(config=facts_off)) is None

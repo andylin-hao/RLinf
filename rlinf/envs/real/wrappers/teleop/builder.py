@@ -21,6 +21,7 @@ rather than another branch in the wrapper stack.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Callable, Mapping, Optional, Sequence
 
 import gymnasium as gym
@@ -42,21 +43,36 @@ from rlinf.robotics.teleop import (
     TeleopGroup,
 )
 
+from .adapters import DualGelloJointStream
 from .composed import ComposedTeleop
 from .layout import action_layout
 from .pico_config import split_dual_config
 
+
+@dataclass(frozen=True)
+class EnvFacts:
+    """What the env tells a device builder about the robot it will drive.
+
+    Attributes:
+        layout: Where each named part sits in the action vector, which is also
+            what a command for that part means.
+        config: The env's own config, for settings that belong to the robot
+            rather than to the operator.
+    """
+
+    layout: Mapping[str, slice]
+    config: Any
+
+
 #: Builder for one entry, given the env config, this entry's own options, and
-#: the env's action layout -- which says what a command for a part means.
-EntryBuilder = Callable[
-    [Mapping[str, Any], Mapping[str, Any], Mapping[str, slice]], TeleopEntry
-]
+#: what the env says about itself.
+EntryBuilder = Callable[[Mapping[str, Any], Mapping[str, Any], EnvFacts], TeleopEntry]
 
 
 def _spacemouse(
     cfg: Mapping[str, Any],
     options: Mapping[str, Any],
-    layout: Mapping[str, slice],
+    facts: EnvFacts,
 ) -> TeleopEntry:
     return TeleopEntry(
         SpaceMouse(device_index=int(options.get("device_index", 0))),
@@ -68,7 +84,7 @@ def _spacemouse(
 def _gello(
     cfg: Mapping[str, Any],
     options: Mapping[str, Any],
-    layout: Mapping[str, slice],
+    facts: EnvFacts,
 ) -> TeleopEntry:
     port = options.get("port", cfg.get("gello_port"))
     if port is None:
@@ -84,7 +100,7 @@ def _gello(
 def _gello_joint(
     cfg: Mapping[str, Any],
     options: Mapping[str, Any],
-    layout: Mapping[str, slice],
+    facts: EnvFacts,
 ) -> TeleopEntry:
     drives = options.get("drives")
     if drives is None:
@@ -100,12 +116,20 @@ def _gello_joint(
             f"'{drives}_gello_port' in the env config."
         )
     side = {"left": 0, "right": 1}.get(str(drives), 0)
+    config = facts.config
     return TeleopEntry(
         TeleopLeaderArm(port=port, joint_space=True),
         LeaderJointBinding(
             side=side,
-            use_delta=bool(options.get("use_delta", False)),
-            action_scale=float(options.get("action_scale", 0.1)),
+            use_delta=bool(
+                options.get(
+                    "use_delta",
+                    getattr(config, "joint_action_mode", None) == "delta",
+                )
+            ),
+            action_scale=float(
+                options.get("action_scale", getattr(config, "joint_action_scale", 0.1))
+            ),
         ),
         drives=drives,
     )
@@ -114,7 +138,7 @@ def _gello_joint(
 def _glove(
     cfg: Mapping[str, Any],
     options: Mapping[str, Any],
-    layout: Mapping[str, slice],
+    facts: EnvFacts,
 ) -> TeleopEntry:
     glove_cfg = dict(cfg.get("glove_config", {}))
     glove_cfg.update(options)
@@ -133,7 +157,7 @@ def _glove(
 def _pico(
     cfg: Mapping[str, Any],
     options: Mapping[str, Any],
-    layout: Mapping[str, slice],
+    facts: EnvFacts,
 ) -> TeleopEntry:
     drives = options.get("drives")
     pico_cfg = dict(cfg.get("pico", {}))
@@ -147,7 +171,7 @@ def _pico(
 
     # A 9-wide arm command is a position and a rot6d rotation, so it is a pose
     # to reach rather than a delta to apply.
-    arm = layout.get("arm" if drives is None else f"{drives}.arm")
+    arm = facts.layout.get("arm" if drives is None else f"{drives}.arm")
     absolute = arm is not None and (arm.stop - arm.start) == 9
 
     if drives in ("left", "right"):
@@ -169,6 +193,33 @@ def _pico(
         else PicoBinding(gripper=gripper, side=side)
     )
     return TeleopEntry(PicoController(**device_cfg), binding, drives=drives)
+
+
+def _gello_joint_stream(cfg: Mapping[str, Any], facts: EnvFacts) -> Optional[Any]:
+    """The 1 kHz thread a pair of leader arms uses, when this env asks for it.
+
+    Follower tracking is unstable at the policy's step rate, so the joint
+    targets go straight to the controllers on their own thread.
+    """
+    if not getattr(facts.config, "teleop_direct_stream", False):
+        return None
+    return DualGelloJointStream(
+        left_port=cfg.get("left_gello_port"),
+        right_port=cfg.get("right_gello_port"),
+        gripper_enabled=True,
+        use_delta=getattr(facts.config, "joint_action_mode", None) == "delta",
+        action_scale=getattr(facts.config, "joint_action_scale", 0.1),
+        direct_stream=True,
+        stream_period=cfg.get("gello_joint_stream_period", 0.001),
+    )
+
+
+#: Device name -> the streamer it also commands the robot through, if any. A
+#: device is here as well as in :data:`DEVICES` when composition alone does not
+#: describe it: the action is one thing, the rate it is delivered at another.
+STREAMERS: dict[str, Callable[[Mapping[str, Any], EnvFacts], Optional[Any]]] = {
+    "gello_joint": _gello_joint_stream,
+}
 
 
 #: Device name -> how to build its entry.
@@ -197,8 +248,11 @@ def build_teleop(
         timeout: Hold window. Left out, the bindings decide: a device held
             down to take over asks for none.
     """
-    layout = action_layout(env)
-    entries = []
+    facts = EnvFacts(
+        layout=action_layout(env), config=getattr(env.unwrapped, "config", None)
+    )
+
+    entries, streamer = [], None
     for item in devices:
         if isinstance(item, str):
             name, options = item, {}
@@ -208,10 +262,13 @@ def build_teleop(
             raise ValueError(
                 f"Unknown teleop device {name!r}. Known: {sorted(DEVICES)}."
             )
-        entries.append(DEVICES[name](cfg, dict(options or {}), layout))
+        options = dict(options or {})
+        entries.append(DEVICES[name](cfg, options, facts))
+        if name in STREAMERS and streamer is None:
+            streamer = STREAMERS[name](cfg, facts)
 
-    group = TeleopGroup(entries, available=layout)
+    group = TeleopGroup(entries, available=facts.layout)
     group.connect()
     if timeout is None:
         timeout = group.hold_window
-    return ComposedTeleop(group, layout, timeout=timeout)
+    return ComposedTeleop(group, facts.layout, timeout=timeout, streamer=streamer)

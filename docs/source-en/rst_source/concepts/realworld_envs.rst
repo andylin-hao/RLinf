@@ -48,16 +48,16 @@ task itself: poses, reward thresholds, and reset randomization.
 Registering It Is One Line
 --------------------------
 
-The task table records two things for each task: the env class constructed from
-the worker's config and the wrapper stack required by that robot's action space.
-One row is enough:
+The task table records one thing for each task: the env class to construct from
+the worker's config. Which wrappers go around it is the env's own declaration,
+so a task is one row:
 
 .. code-block:: python
 
    TASKS = {
-       "FrankaEnv-v1": (FrankaEnv, apply_single_arm_wrappers),
-       "PegInsertionEnv-v1": (PegInsertionEnv, apply_single_arm_wrappers),
-       "DualFrankaTCPEnv-v1": (DualFrankaTCPEnv, apply_dual_franka_joint_wrappers),
+       "FrankaEnv-v1": FrankaEnv,
+       "PegInsertionEnv-v1": PegInsertionEnv,
+       "DualFrankaTcpEnv-v1": DualFrankaTcpEnv,
    }
 
    _ENTRY_POINTS = register_tasks(__name__, globals(), TASKS)
@@ -87,12 +87,12 @@ What a wrapper changes determines its package:
      - When a rollout starts or ends, and what it scored. These are judgements
        made by the person watching; no sensor reports them.
 
-``wrappers.py`` reads the env config, selects the teleop device, and composes the
-wrapper stack:
+``build_stack`` reads the env config and wraps the env in what the env declares,
+whichever robot it runs on:
 
 .. code-block:: python
 
-   env = apply_single_arm_wrappers(PegInsertionEnv(...), cfg)
+   env = build_stack(PegInsertionEnv(...), cfg)
 
 Teleop: What Stays on This Side
 -------------------------------
