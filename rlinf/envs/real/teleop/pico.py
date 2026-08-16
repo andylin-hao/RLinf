@@ -34,7 +34,7 @@ import gymnasium as gym
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
-from rlinf.envs.real.teleop.devices.pico import PicoExpert
+from rlinf.robotics.parts.teleop.readers.pico import PicoExpert
 from rlinf.utils.rot6d import matrix_to_rot6d
 
 from .intervention import TeleopDevice, TeleopIntervention, TeleopSample

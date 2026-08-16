@@ -32,7 +32,7 @@ from typing import Any, Iterator, Optional
 
 import gymnasium as gym
 
-from rlinf.envs.real.teleop.devices.keyboard import KeyboardListener
+from rlinf.robotics.parts.teleop.readers.keyboard import KeyboardListener
 
 
 class KeyboardSession(gym.Wrapper):

@@ -12,17 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Raw readers for the hardware an operator drives.
+"""Vendor-facing readers for the hardware an operator drives.
 
-These modules talk to a serial port, an HID device, or a headset, and nothing
-else. They import no Gymnasium, so the bench scripts in
-``toolkits/realworld_check`` can drive a device on a machine with no environment
-and no cluster -- which is how you check a leader arm is wired correctly before
-involving a robot at all.
+Each module here talks to one device -- a serial port, an HID handle, a headset
+-- and exposes whatever shape that vendor's SDK gives back. They import no
+Gymnasium and no scheduler, so a bench script can drive one directly:
 
-Turning a reading into an action for an environment is the job of
-:mod:`rlinf.envs.real.teleop.adapters`. Keeping that split is what lets the same
-device serve a single-arm Cartesian env and a dual-arm joint-space one.
+.. code-block:: bash
+
+   python -m rlinf.robotics.parts.teleop.readers.gello --port /dev/ttyUSB0
+
+:mod:`rlinf.robotics.parts.teleop.devices` wraps them as parts, which is what
+gives them a lifecycle, placement, and a uniform observation.
 
 Imports are left to callers: each device needs its own vendor package.
 """

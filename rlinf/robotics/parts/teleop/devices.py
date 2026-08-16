@@ -1,0 +1,243 @@
+# Copyright 2026 The RLinf Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""The devices an operator drives, as parts.
+
+Each class here wraps one vendor reader from :mod:`.readers` and presents it the
+way every other part is presented: connect, report an observation, disconnect.
+The observation is whatever the operator did, in the device's own terms -- a
+twist, a set of joint angles, a grip. Turning that into a command for a robot is
+the job of a binding, in :mod:`rlinf.robotics.teleop`.
+
+Opening the hardware happens in ``connect`` rather than ``__init__``, so a device
+can be declared on one machine and built on another with
+``SpaceMouse.at(node_rank=1)``.
+"""
+
+from __future__ import annotations
+
+from typing import Any, Optional
+
+import numpy as np
+
+from ..base import RobotPart
+
+
+class TeleopPart(RobotPart):
+    """A device the operator drives.
+
+    Subclasses open their reader in :meth:`_open` and translate it in
+    :meth:`get_observation`. The reader is what the vendor SDK hands back; it is
+    created on connect and dropped on disconnect.
+    """
+
+    def __init__(self) -> None:
+        self._reader: Any = None
+
+    @property
+    def is_connected(self) -> bool:
+        """Whether the device has been opened."""
+        return self._reader is not None
+
+    def _open(self) -> Any:
+        """Create and return the vendor reader."""
+        raise NotImplementedError
+
+    def connect(self) -> None:
+        """Open the device."""
+        if self._reader is None:
+            self._reader = self._open()
+
+    def disconnect(self) -> None:
+        """Close the device, if its reader has anything to release."""
+        reader, self._reader = self._reader, None
+        if reader is None:
+            return
+        for method in ("close", "stop"):
+            release = getattr(reader, method, None)
+            if callable(release):
+                release()
+                return
+
+    @property
+    def ready(self) -> bool:
+        """Whether the device has produced a usable reading yet.
+
+        Leader arms stream, so the first reads after connecting can be empty.
+        A device whose reader says nothing about this is ready once connected.
+        """
+        return bool(getattr(self._reader, "ready", self.is_connected))
+
+
+class SpaceMouse(TeleopPart):
+    """A 6-DoF mouse: a twist from the puck, and two buttons.
+
+    Args:
+        device_index: Which HID device to open when several are attached.
+    """
+
+    def __init__(self, device_index: int = 0) -> None:
+        super().__init__()
+        self._device_index = device_index
+
+    def _open(self) -> Any:
+        from .readers.spacemouse import SpaceMouseExpert
+
+        return SpaceMouseExpert(device_index=self._device_index)
+
+    @property
+    def observation_features(self) -> dict[str, Any]:
+        """A twist and the button states."""
+        return {
+            "twist": {"shape": (6,), "dtype": "float32"},
+            "buttons": {"shape": (2,), "dtype": "bool"},
+        }
+
+    def get_observation(self) -> dict[str, Any]:
+        """Read the puck and the buttons."""
+        twist, buttons = self._reader.get_action()
+        return {
+            "twist": np.asarray(twist, dtype=np.float32),
+            "buttons": np.asarray(buttons, dtype=bool),
+        }
+
+
+class TeleopLeaderArm(TeleopPart):
+    """A leader arm the operator poses by hand.
+
+    Two readers exist for the GELLO hardware and they report different things:
+    the Cartesian one gives a target pose, the joint one gives joint positions.
+    ``joint_space`` picks between them.
+
+    Args:
+        port: Serial port of the leader arm.
+        joint_space: Report joint positions rather than a Cartesian target.
+    """
+
+    def __init__(self, port: str, joint_space: bool = False) -> None:
+        super().__init__()
+        self._port = port
+        self._joint_space = joint_space
+
+    def _open(self) -> Any:
+        if self._joint_space:
+            from .readers.gello_joint import GelloJointExpert
+
+            return GelloJointExpert(port=self._port)
+        from .readers.gello import GelloExpert
+
+        return GelloExpert(port=self._port)
+
+    @property
+    def observation_features(self) -> dict[str, Any]:
+        """Joint positions, or a Cartesian target, plus the grip."""
+        if self._joint_space:
+            return {
+                "joint_position": {"shape": (7,), "dtype": "float32"},
+                "grip": {"shape": (1,), "dtype": "float32"},
+            }
+        return {
+            "position": {"shape": (3,), "dtype": "float32"},
+            "orientation": {"shape": (4,), "dtype": "float32"},
+            "grip": {"shape": (1,), "dtype": "float32"},
+        }
+
+    def get_observation(self) -> dict[str, Any]:
+        """Read the arm the operator is holding."""
+        if self._joint_space:
+            joints, grip = self._reader.get_action()
+            return {
+                "joint_position": np.asarray(joints, dtype=np.float32),
+                "grip": np.asarray(grip, dtype=np.float32).reshape(1),
+            }
+        position, orientation, grip = self._reader.get_action()
+        return {
+            "position": np.asarray(position, dtype=np.float32),
+            "orientation": np.asarray(orientation, dtype=np.float32),
+            "grip": np.asarray(grip, dtype=np.float32).reshape(1),
+        }
+
+
+class Glove(TeleopPart):
+    """A data glove reporting finger angles.
+
+    Args:
+        left_port: Serial port of the left glove.
+        right_port: Serial port of the right glove.
+        frequency: Polling rate in Hz.
+        config_file: Optional calibration file.
+    """
+
+    def __init__(
+        self,
+        left_port: Optional[str] = "/dev/ttyACM0",
+        right_port: Optional[str] = None,
+        frequency: int = 60,
+        config_file: Optional[str] = None,
+    ) -> None:
+        super().__init__()
+        self._left_port = left_port
+        self._right_port = right_port
+        self._frequency = frequency
+        self._config_file = config_file
+
+    def _open(self) -> Any:
+        from .readers.glove import GloveExpert
+
+        return GloveExpert(
+            left_port=self._left_port,
+            right_port=self._right_port,
+            frequency=self._frequency,
+            config_file=self._config_file,
+        )
+
+    @property
+    def observation_features(self) -> dict[str, Any]:
+        """One angle per finger joint."""
+        return {"angles": {"shape": (6,), "dtype": "float32"}}
+
+    def get_observation(self) -> dict[str, Any]:
+        """Read the operator's finger angles."""
+        return {"angles": np.asarray(self._reader.get_angles(), dtype=np.float32)}
+
+
+class PicoController(TeleopPart):
+    """A VR controller reporting a pose delta and its grip.
+
+    The reader needs the robot's current pose to produce a delta, so unlike the
+    other devices this one is read through
+    :meth:`~rlinf.robotics.teleop.binding.TeleopBinding.action` rather than
+    :meth:`get_observation` alone. ``get_observation`` returns the raw packet.
+
+    Args:
+        pico_config: Forwarded to the vendor reader; ``hand`` selects a side.
+    """
+
+    def __init__(self, **pico_config: Any) -> None:
+        super().__init__()
+        self._config = pico_config
+
+    def _open(self) -> Any:
+        from .readers.pico import PicoExpert
+
+        return PicoExpert(**self._config)
+
+    @property
+    def observation_features(self) -> dict[str, Any]:
+        """The controller's own packet, whose shape the vendor defines."""
+        return {"packet": {}}
+
+    def get_observation(self) -> dict[str, Any]:
+        """Return the reader itself, which the binding queries with robot state."""
+        return {"packet": self._reader}

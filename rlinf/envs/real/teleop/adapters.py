@@ -53,7 +53,7 @@ class SpaceMouseTeleop(TeleopDevice):
     """
 
     def __init__(self, gripper_enabled: bool = True) -> None:
-        from .devices.spacemouse import SpaceMouseExpert
+        from rlinf.robotics.parts.teleop.readers.spacemouse import SpaceMouseExpert
 
         self.expert = SpaceMouseExpert()
         self.gripper_enabled = gripper_enabled
@@ -111,7 +111,7 @@ class GelloTeleop(TeleopDevice):
     """
 
     def __init__(self, port: str, gripper_enabled: bool = True) -> None:
-        from .devices.gello import GelloExpert
+        from rlinf.robotics.parts.teleop.readers.gello import GelloExpert
 
         self.expert = GelloExpert(port=port)
         self.gripper_enabled = gripper_enabled
@@ -165,8 +165,8 @@ class DexHandTeleop(TeleopDevice):
         glove_frequency: int = 60,
         glove_config_file: Optional[str] = None,
     ) -> None:
-        from .devices.glove import GloveExpert
-        from .devices.spacemouse import SpaceMouseExpert
+        from rlinf.robotics.parts.teleop.readers.glove import GloveExpert
+        from rlinf.robotics.parts.teleop.readers.spacemouse import SpaceMouseExpert
 
         self._spacemouse = SpaceMouseExpert()
         self._glove = GloveExpert(
@@ -332,7 +332,7 @@ class DualGelloJointTeleop(StreamingTeleopDevice):
         direct_stream: bool = False,
         stream_period: float = 0.001,
     ) -> None:
-        from .devices.gello_joint import GelloJointExpert
+        from rlinf.robotics.parts.teleop.readers.gello_joint import GelloJointExpert
 
         super().__init__(period=stream_period, enabled=direct_stream)
         self.left_expert = GelloJointExpert(port=left_port)

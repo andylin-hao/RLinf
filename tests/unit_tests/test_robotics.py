@@ -1160,37 +1160,39 @@ def test_env_packages_live_under_sim_or_real():
     assert result.returncode == 0, result.stderr
 
 
-def test_teleop_devices_live_with_the_envs_that_read_them():
-    """A teleop device reads the operator, not the robot, so it is not a part.
+def test_teleop_devices_are_parts_like_any_other_hardware():
+    """A leader arm is an arm with encoders, so it is a part.
 
-    No policy ever observes a leader arm or a glove, and no ``Robot`` composes
-    one, so these modules belong beside the wrappers that turn their output into
-    an intervention rather than under ``robotics/parts``.
+    What makes something robotics here is that it talks to hardware without
+    importing Ray or Gymnasium, not whether a policy observes it. As parts these
+    devices get placement, the connect and disconnect lifecycle, and one
+    connection opened once -- none of which they had as env-side helpers.
     """
-    devices_dir = _ROOT / "rlinf" / "envs" / "real" / "teleop" / "devices"
-    modules = {path.stem for path in devices_dir.glob("*.py")} - {"__init__"}
+    from rlinf.robotics.parts.base import RobotPart
+    from rlinf.robotics.parts.teleop import (
+        Glove,
+        PicoController,
+        SpaceMouse,
+        TeleopLeaderArm,
+    )
 
-    assert modules == {
-        "gello",
-        "gello_joint",
-        "glove",
-        "keyboard",
-        "pico",
-        "spacemouse",
-    }
-    assert not (_ROOT / "rlinf" / "robotics" / "parts" / "teleop").exists()
+    devices = (SpaceMouse, TeleopLeaderArm, Glove, PicoController)
+
+    assert all(issubclass(device, RobotPart) for device in devices)
+    assert not (_ROOT / "rlinf" / "envs" / "real" / "teleop" / "devices").exists()
+
+    # Declaring one opens nothing, so a device can be described anywhere.
+    mouse = SpaceMouse()
+    assert not mouse.is_connected
+    assert sorted(mouse.observation_features) == ["buttons", "twist"]
 
 
-def test_teleop_device_readers_do_not_import_gymnasium():
-    """A reader only talks to hardware, so a bench script can drive one directly.
-
-    Turning a reading into an action is the adapters' job, and those may import
-    Gymnasium freely; this holds the line one level down, at the readers.
-    """
-    devices_dir = _ROOT / "rlinf" / "envs" / "real" / "teleop" / "devices"
+def test_teleop_readers_do_not_import_gymnasium():
+    """A reader only talks to its vendor SDK, so a bench script can drive it."""
+    readers = _ROOT / "rlinf" / "robotics" / "parts" / "teleop" / "readers"
     offenders = {
         path.name
-        for path in devices_dir.glob("*.py")
+        for path in readers.glob("*.py")
         if re.search(r"^\s*(import|from)\s+gymnasium\b", path.read_text(), re.M)
     }
 
@@ -1201,9 +1203,8 @@ def test_importing_a_teleop_device_does_not_load_the_env_stack():
     """A bench script driving one serial device should not need the env stack.
 
     ``toolkits/realworld_check`` runs on the machine the device is plugged into,
-    which may have no Gymnasium, no OpenCV, and no cluster. Python executes every
-    parent package on the way to a submodule, so this holds
-    ``rlinf.envs.real.__init__`` to lazy loading.
+    which may have no Gymnasium, no OpenCV, and no cluster. Reaching a reader
+    goes through ``rlinf.robotics`` alone now, and that package loads lazily.
     """
     env = os.environ.copy()
     env["PYTHONPATH"] = os.pathsep.join(
@@ -1214,7 +1215,7 @@ def test_importing_a_teleop_device_does_not_load_the_env_stack():
             sys.executable,
             "-c",
             "import sys\n"
-            "import rlinf.envs.real.teleop.devices.gello\n"
+            "import rlinf.robotics.parts.teleop.readers.gello\n"
             "leaked = {m.split('.')[0] for m in sys.modules} & {'gymnasium', 'cv2', 'ray'}\n"
             "assert not leaked, sorted(leaked)\n",
         ],

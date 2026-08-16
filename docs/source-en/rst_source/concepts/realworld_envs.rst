@@ -148,7 +148,7 @@ You can therefore check a leader arm's wiring without involving a robot:
 
 .. code-block:: bash
 
-   python -m rlinf.envs.real.teleop.devices.gello --port /dev/ttyUSB0
+   python -m rlinf.robotics.parts.teleop.readers.gello --port /dev/ttyUSB0
 
 A teleop device is not a :class:`~rlinf.robotics.parts.base.RobotPart`. A part
 describes a component as the policy sees it. A leader arm never appears in that
@@ -190,8 +190,9 @@ Where the Code Lives
    * - ``real/<robot>/``
      - One module per task, plus ``base.py`` with the machinery they share and
        ``__init__.py`` with the ``TASKS`` table.
-   * - ``real/teleop/devices/``
-     - Readers for GELLO, gloves, keyboards, PICO, and SpaceMouse. No Gymnasium.
+   * - ``robotics/parts/teleop/``
+     - The devices an operator drives, as parts, over vendor readers in
+       ``readers/`` that import no Gymnasium.
    * - ``real/teleop/``
      - ``intervention.py``, ``adapters.py``, ``streaming.py``, ``pico.py``, and
        ``config.py`` for device selection.

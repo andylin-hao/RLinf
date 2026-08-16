@@ -132,7 +132,7 @@ relocation 改十一项。配置的其余部分描述任务本身，包括位姿
 
 .. code-block:: bash
 
-   python -m rlinf.envs.real.teleop.devices.gello --port /dev/ttyUSB0
+   python -m rlinf.robotics.parts.teleop.readers.gello --port /dev/ttyUSB0
 
 遥操作设备不是 :class:`~rlinf.robotics.parts.base.RobotPart`。部件描述策略看到的物理
 组件，主臂不在这棵部件树里：策略不观测它，机器人也不会组合它。主臂读取的是操作者
@@ -171,8 +171,9 @@ episode 控制不算遥操作
    * - ``real/<robot>/``
      - 一个任务一个模块，另有存放公共逻辑的 ``base.py``，以及写着 ``TASKS`` 表的
        ``__init__.py``。
-   * - ``real/teleop/devices/``
-     - GELLO、数据手套、键盘、PICO、SpaceMouse 的读取实现，不导入 Gymnasium。
+   * - ``robotics/parts/teleop/``
+     - 操作者驱动的设备，本身是部件；底下 ``readers/`` 里的厂商读取实现不导入
+       Gymnasium。
    * - ``real/teleop/``
      - ``intervention.py``、``adapters.py``、``streaming.py``、``pico.py``，以及选设备用的
        ``config.py``。
