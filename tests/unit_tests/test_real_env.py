@@ -1515,3 +1515,94 @@ def test_no_worker_compares_the_env_type_to_a_bare_string():
                 offenders.append(f"{path.relative_to(_ROOT)}:{number}")
 
     assert offenders == []
+
+
+def _resolved(doc, value):
+    """Follow a ``${a.b.c}`` interpolation within the same document."""
+    if not isinstance(value, str) or not value.startswith("${"):
+        return value
+    node = doc
+    for key in value[2:-1].split("."):
+        if not isinstance(node, dict) or key not in node:
+            return None
+        node = node[key]
+    return _resolved(doc, node)
+
+
+def _merged_sections(path, doc):
+    """Each env section of a run config, as Hydra composes it.
+
+    A section layers its own keys over the ``env/<name>`` file its ``defaults``
+    names, and ``override_cfg`` merges key by key rather than wholesale. What
+    the section leaves out it inherits, which is how a task ends up on a
+    different robot than the one it trained on.
+    """
+    import yaml
+
+    pattern = re.compile(r"env/([\w-]+)@env\.(train|eval)")
+    for entry in doc.get("defaults") or []:
+        match = pattern.search(str(entry))
+        if not match:
+            continue
+        base_path = path.parent / "env" / f"{match.group(1)}.yaml"
+        if not base_path.exists():
+            continue
+        try:
+            base = yaml.safe_load(base_path.read_text()) or {}
+        except yaml.YAMLError:
+            continue
+        section = ((doc.get("env") or {}).get(match.group(2))) or {}
+        merged = {**base, **section}
+        merged["override_cfg"] = {
+            **(base.get("override_cfg") or {}),
+            **(section.get("override_cfg") or {}),
+        }
+        yield match.group(2), merged, str((base.get("init_params") or {}).get("id"))
+
+
+def test_shipped_configs_give_the_policy_the_action_width_it_expects():
+    """An env whose action is a different width than the model's is unusable.
+
+    ``realworld_dexpnp_rlpd_cnn_async`` configured a dexterous hand for
+    training and left evaluation to inherit the default gripper, so the same
+    policy faced a 12-wide action in one section and a 7-wide one in the other.
+    """
+    import yaml
+
+    from rlinf.envs.real.franka.base import FrankaEnv
+
+    classes = _task_classes()
+    offenders = []
+    for path in (_ROOT / "examples").rglob("*.yaml"):
+        if path.parent.name == "env":
+            continue
+        try:
+            doc = yaml.safe_load(path.read_text()) or {}
+        except yaml.YAMLError:
+            continue
+        if not isinstance(doc, dict):
+            continue
+        action_dim = _resolved(
+            doc, ((doc.get("rollout") or {}).get("model") or {}).get("action_dim")
+        )
+        if not isinstance(action_dim, int):
+            continue
+        for name, section, env_id in _merged_sections(path, doc):
+            # Only a single-arm Franka lays its action out this way.
+            env_cls = classes.get(env_id)
+            if env_cls is None or not issubclass(env_cls, FrankaEnv):
+                continue
+            end_effector = str(
+                section["override_cfg"].get("end_effector_type", "franka_gripper")
+            )
+            parts = FrankaEnv.action_parts(
+                SimpleNamespace(_is_hand=end_effector.endswith("hand"))
+            )
+            width = sum(part.width for part in parts)
+            if width != action_dim:
+                offenders.append(
+                    f"{path.relative_to(_ROOT)} env.{name}: {end_effector} gives "
+                    f"{width}, model wants {action_dim}"
+                )
+
+    assert offenders == []
