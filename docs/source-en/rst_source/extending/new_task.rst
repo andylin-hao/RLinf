@@ -72,6 +72,21 @@ up:
            self._interpolate_move(reset_pose, timeout=1)
            super().go_to_rest(joint_reset)
 
+A task that keeps its robot's action space inherits how that action is read. A
+task that changes the action space declares the change, because a teleop device
+is matched against what each part means rather than how wide it is:
+
+.. code-block:: python
+
+       def action_parts(self):
+           return (
+               ActionPart("arm", 6, ActionKind.CARTESIAN_DELTA),
+               ActionPart("end_effector", 1, ActionKind.GRIPPER),
+           )
+
+The declared widths must add up to the action space exactly; a mismatch is an
+error rather than a slice that lands somewhere unintended.
+
 3. Register it
 ~~~~~~~~~~~~~~
 

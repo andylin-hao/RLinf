@@ -34,6 +34,7 @@ from rlinf.robotics import (
 )
 from rlinf.robotics.parts.arms.gim_arm import GimArmRobotState
 from rlinf.robotics.parts.cameras import BaseCamera, CameraInfo, create_camera
+from rlinf.robotics.teleop import ActionKind, ActionPart
 from rlinf.scheduler import WorkerInfo
 from rlinf.utils.logging import get_logger
 
@@ -155,8 +156,11 @@ class GimArmEnv(gym.Env):
     pose to ``target_ee_pose``, identical to :class:`FrankaEnv`.
     """
 
-    TELEOP = ("spacemouse", "gello", "pico")
-    TELEOP_DEFAULT = "spacemouse"
+    # Every device shipped today produces a Cartesian command, and this arm
+    # takes joint angles, so none of them can drive it. The group would refuse
+    # them anyway; saying so here makes the config error the clearer one.
+    TELEOP = ()
+    TELEOP_DEFAULT = "none"
     ACTION_WRAPPERS = ("GripperCloseEnv",)
     TRANSFORMS = ("RelativeFrame", "Quat2EulerWrapper")
 
@@ -304,6 +308,13 @@ class GimArmEnv(gym.Env):
         self._base_observation_space = copy.deepcopy(self.observation_space)
 
     # ── Core gym API ─────────────────────────────────────────────────────────
+
+    def action_parts(self) -> tuple[ActionPart, ...]:
+        """Six absolute joint angles, then the gripper."""
+        return (
+            ActionPart("arm", 6, ActionKind.JOINT_POSITION),
+            ActionPart("end_effector", 1, ActionKind.GRIPPER),
+        )
 
     def step(self, action: np.ndarray):
         """Execute one environment step.

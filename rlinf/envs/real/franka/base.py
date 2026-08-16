@@ -38,6 +38,7 @@ from rlinf.robotics.parts.end_effectors.base import (
     EndEffectorType,
     normalize_end_effector_type,
 )
+from rlinf.robotics.teleop import ActionKind, ActionPart
 from rlinf.scheduler import WorkerInfo
 from rlinf.utils.logging import get_logger
 
@@ -456,6 +457,18 @@ class FrankaEnv(gym.Env):
     def get_gripper_open(self) -> bool:
         """Whether the gripper is currently open."""
         return bool(self._franka_state.gripper_open)
+
+    def action_parts(self) -> tuple[ActionPart, ...]:
+        """A Cartesian twist, then whatever the arm is holding things with."""
+        if self._is_hand:
+            return (
+                ActionPart("arm", 6, ActionKind.CARTESIAN_DELTA),
+                ActionPart("hand", 6, ActionKind.HAND),
+            )
+        return (
+            ActionPart("arm", 6, ActionKind.CARTESIAN_DELTA),
+            ActionPart("end_effector", 1, ActionKind.GRIPPER),
+        )
 
     def _calc_step_reward(
         self,

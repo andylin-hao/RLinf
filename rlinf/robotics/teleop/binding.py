@@ -21,6 +21,8 @@ from typing import Any, Mapping
 
 import numpy as np
 
+from .kinds import ActionKind
+
 #: Keys a binding may read from its context. The caller supplies whichever the
 #: bindings in play need; a missing key that a binding requires is an error at
 #: the point of use rather than a silent zero.
@@ -40,10 +42,14 @@ class TeleopBinding(ABC):
     same spacemouse drive a Cartesian arm here and something else elsewhere.
     """
 
-    #: Action parts this binding can fill. Matched against what the robot
-    #: actually has, so a binding that offers a gripper to an arm carrying a
-    #: hand simply does not fill it.
-    PRODUCES: tuple[str, ...] = ()
+    #: Action parts this binding can fill, and what each command means.
+    #: Matched against what the robot actually has, so a binding that offers a
+    #: gripper to an arm carrying a hand simply does not fill it -- and one that
+    #: offers a twist to a joint-space arm is refused rather than obeyed.
+    #:
+    #: A binding whose meaning depends on how it was built sets this on the
+    #: instance instead, as a leader arm does for deltas versus targets.
+    PRODUCES: Mapping[str, "ActionKind"] = {}
 
     #: Below this, motion is the device resting rather than the operator
     #: driving. Devices jitter; a person moving does not.

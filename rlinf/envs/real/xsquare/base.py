@@ -31,6 +31,7 @@ from rlinf.robotics import (
     Turtle2Robot,
 )
 from rlinf.robotics.parts.arms.turtle2 import Turtle2RobotState
+from rlinf.robotics.teleop import ActionKind, ActionPart
 from rlinf.scheduler import WorkerInfo
 from rlinf.utils.logging import get_logger
 
@@ -350,6 +351,18 @@ class Turtle2Env(gym.Env):
         """
         action[:6] = np.linalg.inv(self.adjoint_matrix) @ action[:6]
         return action
+
+    def action_parts(self) -> tuple[ActionPart, ...]:
+        """A twist and a gripper for each arm in use."""
+        from rlinf.envs.real.wrappers.teleop.layout import mirrored
+
+        per_arm = (
+            ActionPart("arm", 6, ActionKind.CARTESIAN_DELTA),
+            ActionPart("end_effector", 1, ActionKind.GRIPPER),
+        )
+        if len(self.config.use_arm_ids) == 1:
+            return per_arm
+        return mirrored(per_arm, ("left", "right"))
 
     def step(self, action: np.ndarray) -> tuple[dict, float, bool, bool, dict]:
         """Take a step in the environment.

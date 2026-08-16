@@ -38,6 +38,7 @@ from rlinf.robotics.parts.arms import DOSW1Arm, DOSW1Hardware
 from rlinf.robotics.parts.arms.dosw1 import DOSW1RobotState
 from rlinf.robotics.parts.cameras import BaseCamera, CameraInfo, create_camera
 from rlinf.robotics.parts.teleop.readers.keyboard import KeyboardListener
+from rlinf.robotics.teleop import ActionKind, ActionPart
 from rlinf.scheduler import WorkerInfo
 from rlinf.utils.logging import get_logger
 
@@ -243,6 +244,18 @@ class DOSW1Env(gym.Env):
         self.robot_state = self.sdk.get_state()
 
         return self._get_observation(), {}
+
+    def action_parts(self) -> tuple[ActionPart, ...]:
+        """Six absolute joint angles and a gripper, for each arm."""
+        from rlinf.envs.real.wrappers.teleop.layout import mirrored
+
+        return mirrored(
+            (
+                ActionPart("arm", 6, ActionKind.JOINT_POSITION),
+                ActionPart("end_effector", 1, ActionKind.GRIPPER),
+            ),
+            ("left", "right"),
+        )
 
     def step(self, action: np.ndarray) -> tuple[dict, float, bool, bool, dict]:
         t0 = time.time()

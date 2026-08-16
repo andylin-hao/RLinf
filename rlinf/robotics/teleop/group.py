@@ -33,6 +33,7 @@ import numpy as np
 
 from ..parts.teleop.devices import TeleopPart
 from .binding import TeleopBinding
+from .kinds import ActionKind
 
 
 @dataclass
@@ -53,9 +54,17 @@ class TeleopEntry:
     @property
     def parts(self) -> tuple[str, ...]:
         """Action parts this entry fills, qualified by its branch."""
+        return tuple(self.produces)
+
+    @property
+    def produces(self) -> dict[str, ActionKind]:
+        """What this entry fills and what each command means, by qualified name."""
         if self.drives is None:
-            return self.binding.PRODUCES
-        return tuple(f"{self.drives}.{part}" for part in self.binding.PRODUCES)
+            return dict(self.binding.PRODUCES)
+        return {
+            f"{self.drives}.{part}": kind
+            for part, kind in self.binding.PRODUCES.items()
+        }
 
 
 class TeleopGroup:
@@ -77,10 +86,10 @@ class TeleopGroup:
     def __init__(
         self,
         entries: Iterable[TeleopEntry],
-        available: Optional[Iterable[str]] = None,
+        available: Optional[Mapping[str, ActionKind]] = None,
     ) -> None:
         self.entries = list(entries)
-        self.available = None if available is None else set(available)
+        self.available = None if available is None else dict(available)
         self._filled = self._resolve()
 
     def _resolve(self) -> dict[str, TeleopEntry]:
@@ -98,6 +107,7 @@ class TeleopGroup:
                     f"action parts. It offers {list(entry.parts)}; the robot has "
                     f"{sorted(self.available or [])}."
                 )
+            self._check_kinds(entry, claimed)
             for part in claimed:
                 if part in filled:
                     raise ValueError(
@@ -107,6 +117,26 @@ class TeleopGroup:
                     )
                 filled[part] = entry
         return filled
+
+    def _check_kinds(self, entry: TeleopEntry, claimed: list[str]) -> None:
+        """Refuse a device whose commands this robot would misread.
+
+        Widths match far more often than meanings do: six numbers are a twist
+        to one arm and six joint angles to another. Obeying the wrong one moves
+        a real robot somewhere nobody asked for, so it is refused here.
+        """
+        if self.available is None:
+            return
+        produced = entry.produces
+        for part in claimed:
+            wanted, offered = self.available[part], produced[part]
+            if wanted != offered:
+                raise ValueError(
+                    f"{type(entry.binding).__name__} produces "
+                    f"{offered.value!r} for {part!r}, but this env's action "
+                    f"expects {wanted.value!r} there. The two mean different "
+                    "things by the same numbers."
+                )
 
     @property
     def parts(self) -> tuple[str, ...]:

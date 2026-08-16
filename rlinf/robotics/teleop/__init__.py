@@ -31,9 +31,12 @@ from .bindings import (
     jittered_grip,
 )
 from .group import TeleopEntry, TeleopGroup
+from .kinds import ActionKind, ActionPart
 
 __all__ = [
     "CONTEXT_KEYS",
+    "ActionKind",
+    "ActionPart",
     "GloveBinding",
     "LeaderArmBinding",
     "LeaderJointBinding",

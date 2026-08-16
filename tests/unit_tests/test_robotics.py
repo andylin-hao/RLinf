@@ -1393,11 +1393,25 @@ def _scripted_device(reading):
     return device
 
 
+def _kinds(*names):
+    """What a robot with these parts expects, for a group's `available`."""
+    from rlinf.robotics.teleop import ActionKind
+
+    per_name = {
+        "hand": ActionKind.HAND,
+        "end_effector": ActionKind.GRIPPER,
+    }
+    return {
+        name: per_name.get(name.rsplit(".", 1)[-1], ActionKind.CARTESIAN_DELTA)
+        for name in names
+    }
+
+
 def _binding(produces, value, driving=True):
     from rlinf.robotics.teleop import TeleopBinding
 
     class Fixed(TeleopBinding):
-        PRODUCES = produces
+        PRODUCES = _kinds(*produces)
 
         def action(self, reading, context):
             return dict.fromkeys(produces, value)
@@ -1421,7 +1435,7 @@ def test_two_devices_merge_into_one_action():
                 _scripted_device({"angles": 2}), _binding(("hand",), np.ones(6) * 2)
             ),
         ],
-        available=("arm", "hand"),
+        available=_kinds(*("arm", "hand")),
     )
 
     parts, driving, _ = group.action({})
@@ -1444,7 +1458,7 @@ def test_a_part_the_robot_lacks_is_not_filled():
                 _binding(("arm", "end_effector"), np.ones(6)),
             )
         ],
-        available=("arm", "hand"),
+        available=_kinds(*("arm", "hand")),
     )
 
     assert group.parts == ("arm",)
@@ -1463,7 +1477,7 @@ def test_two_devices_claiming_one_part_is_refused():
                 TeleopEntry(_scripted_device({}), _binding(("arm",), np.ones(6))),
                 TeleopEntry(_scripted_device({}), _binding(("arm",), np.ones(6))),
             ],
-            available=("arm",),
+            available=_kinds(*("arm",)),
         )
 
 
@@ -1477,7 +1491,7 @@ def test_a_device_that_fills_nothing_is_refused():
     with pytest.raises(ValueError, match="fills none"):
         TeleopGroup(
             [TeleopEntry(_scripted_device({}), _binding(("hand",), np.ones(6)))],
-            available=("arm", "end_effector"),
+            available=_kinds(*("arm", "end_effector")),
         )
 
 
@@ -1496,7 +1510,7 @@ def test_drives_separates_two_identical_leaders():
                 _scripted_device({}), _binding(("arm",), np.ones(7) * 2), drives="right"
             ),
         ],
-        available=("left.arm", "right.arm"),
+        available=_kinds(*("left.arm", "right.arm")),
     )
 
     parts, _, _ = group.action({})
@@ -1517,7 +1531,7 @@ def test_one_device_listed_twice_is_read_once():
             TeleopEntry(device, _binding(("arm",), np.ones(6))),
             TeleopEntry(device, _binding(("end_effector",), np.ones(1))),
         ],
-        available=("arm", "end_effector"),
+        available=_kinds(*("arm", "end_effector")),
     )
 
     assert len(group.devices) == 1
@@ -1685,13 +1699,18 @@ def test_absolute_commands_are_clipped_but_deltas_are_not():
 
 def test_each_side_reports_its_own_state():
     """Two controllers report separately, so a collector can tell them apart."""
-    from rlinf.robotics.teleop import PicoTcpBinding, TeleopEntry, TeleopGroup
+    from rlinf.robotics.teleop import (
+        ActionKind,
+        PicoTcpBinding,
+        TeleopEntry,
+        TeleopGroup,
+    )
 
     layout = {
-        "left.arm": slice(0, 9),
-        "left.end_effector": slice(9, 10),
-        "right.arm": slice(10, 19),
-        "right.end_effector": slice(19, 20),
+        "left.arm": ActionKind.CARTESIAN_POSE,
+        "left.end_effector": ActionKind.GRIPPER,
+        "right.arm": ActionKind.CARTESIAN_POSE,
+        "right.end_effector": ActionKind.GRIPPER,
     }
     entries = [
         TeleopEntry(

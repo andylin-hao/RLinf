@@ -26,6 +26,7 @@ import gymnasium as gym
 import numpy as np
 
 from rlinf.robotics.parts.arms.franky import JOINT_LIMITS_LOWER, JOINT_LIMITS_UPPER
+from rlinf.robotics.teleop import ActionKind
 
 from .dual_base import DualFrankaEnv, DualFrankaRobotConfig
 
@@ -62,6 +63,12 @@ class DualFrankaJointEnv(DualFrankaEnv):
 
     PER_ARM_ACTION_DIM = ACTION_DIM_PER_ARM
     GRIPPER_IDX_IN_ARM = 7  # gripper slot after the 7 arm joints
+
+    def arm_action_kind(self) -> ActionKind:
+        """Joint targets, or changes to them, as this env was configured."""
+        if self.config.joint_action_mode == "delta":
+            return ActionKind.JOINT_DELTA
+        return ActionKind.JOINT_POSITION
 
     def _init_action_obs_spaces(self):
         self._cartesian_safety_boxes()

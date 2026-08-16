@@ -37,6 +37,7 @@ from rlinf.robotics import (
 )
 from rlinf.robotics.parts.arms.franka import FrankaRobotState
 from rlinf.robotics.parts.cameras import BaseCamera, CameraInfo, create_camera
+from rlinf.robotics.teleop import ActionKind, ActionPart
 from rlinf.scheduler import WorkerInfo
 from rlinf.utils.logging import get_logger
 
@@ -133,6 +134,28 @@ class DualFrankaEnv(gym.Env):
     CONFIG_CLS: type[DualFrankaRobotConfig] = DualFrankaRobotConfig
     PER_ARM_ACTION_DIM: int = 0
     GRIPPER_IDX_IN_ARM: int = 0
+
+    def arm_action_kind(self) -> ActionKind:
+        """What this env reads the arm half of each side's action as."""
+        raise NotImplementedError
+
+    def action_parts(self) -> tuple[ActionPart, ...]:
+        """The same parts for each arm, named by the side they drive."""
+        from rlinf.envs.real.wrappers.teleop.layout import mirrored
+
+        gripper_at = self.GRIPPER_IDX_IN_ARM
+        return mirrored(
+            (
+                ActionPart("arm", gripper_at, self.arm_action_kind()),
+                ActionPart(
+                    "end_effector",
+                    self.PER_ARM_ACTION_DIM - gripper_at,
+                    ActionKind.GRIPPER,
+                ),
+            ),
+            ("left", "right"),
+        )
+
     _DEFAULT_GRIPPER_TYPE: str = "robotiq"
 
     def __init__(

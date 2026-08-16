@@ -12,53 +12,101 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Where each named part sits in an env's action vector.
+"""Where each named part sits in an env's action vector, and what it means.
 
-An env already knows this -- ``FrankaEnv.step`` documents
-``[x, y, z, rx, ry, rz, gripper]`` and splits ``action[:6]`` from the rest, and
-the dual-arm envs reshape by ``PER_ARM_ACTION_DIM``. Naming it is what lets a
-teleop group say "the arm" instead of computing a slice.
+An env builds its own action space, so it is the only thing that knows what the
+numbers in it are: ``FrankaEnv.step`` reads ``action[:6]`` as a twist, while
+``GimArmEnv.step`` reads the same six as joint angles. Saying so is what lets a
+teleop group ask for "the arm" instead of computing a slice -- and what stops a
+spacemouse driving an arm that would read its twist as joint targets.
 
-An env may declare :attr:`ACTION_PARTS` itself. This module derives it for the
-envs that have not, from the same values their ``step`` uses.
+This used to be inferred from the width of the action space. Widths agree far
+more often than meanings do, so a robot could accept a device it would misread.
+An env declares :meth:`action_parts` instead, and one that does not cannot be
+teleoperated.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import gymnasium as gym
 
-#: Cartesian arm commands, before any end effector.
-ARM_DIM = 6
+from rlinf.robotics.teleop import ActionKind, ActionPart
+
+
+@dataclass(frozen=True)
+class ActionSpec:
+    """An env's action vector, part by part.
+
+    Attributes:
+        layout: Where each named part sits.
+        kinds: What each part's numbers mean.
+    """
+
+    layout: dict[str, slice]
+    kinds: dict[str, ActionKind]
+
+
+def action_spec(env: gym.Env) -> ActionSpec:
+    """Return what ``env`` says its action is made of.
+
+    Raises:
+        AttributeError: If the env does not declare ``action_parts``. Guessing
+            here would hand an operator's commands to a robot that reads them
+            as something else.
+        ValueError: If the declared parts do not tile the action space exactly,
+            which means the declaration and ``step`` disagree.
+    """
+    try:
+        declare = env.get_wrapper_attr("action_parts")
+    except AttributeError:
+        raise AttributeError(
+            f"{type(env.unwrapped).__name__} does not declare action_parts(), so "
+            "there is no way to know what a command for its arm means. Declare "
+            "it to use teleoperation."
+        ) from None
+    # Called outside the guard: an AttributeError raised inside the env's own
+    # declaration is a bug in it, not a missing declaration.
+    parts = declare()
+
+    layout: dict[str, slice] = {}
+    kinds: dict[str, ActionKind] = {}
+    start = 0
+    for part in parts:
+        if part.name in layout:
+            raise ValueError(
+                f"{type(env.unwrapped).__name__} declares {part.name!r} twice."
+            )
+        layout[part.name] = slice(start, start + part.width)
+        kinds[part.name] = part.kind
+        start += part.width
+
+    total = int(env.action_space.shape[0])
+    if start != total:
+        raise ValueError(
+            f"{type(env.unwrapped).__name__} declares parts covering {start} "
+            f"numbers, but its action space has {total}. The declaration and "
+            "step() disagree about the action."
+        )
+    return ActionSpec(layout=layout, kinds=kinds)
 
 
 def action_layout(env: gym.Env) -> dict[str, slice]:
-    """Return the action layout for ``env``, by part name.
+    """Return the action layout for ``env``, by part name."""
+    return action_spec(env).layout
 
-    An env that declares ``ACTION_PARTS`` gets that. Otherwise the layout comes
-    from its action space and, for dual-arm envs, ``PER_ARM_ACTION_DIM``.
+
+def mirrored(
+    per_arm: tuple[ActionPart, ...], sides: tuple[str, ...]
+) -> tuple[ActionPart, ...]:
+    """Repeat one arm's parts for each side, qualified by side name.
+
+    A two-armed robot lays the same parts out twice, so it says what one arm
+    takes and names the sides.
     """
-    inner = env.unwrapped
-    declared = getattr(inner, "ACTION_PARTS", None)
-    if declared:
-        return dict(declared)
-
-    total = int(env.action_space.shape[0])
-    per_arm = getattr(inner, "PER_ARM_ACTION_DIM", 0) or 0
-
-    if per_arm and total == 2 * per_arm:
-        # Dual arm: each side is an arm followed by its end effector.
-        layout: dict[str, slice] = {}
-        for index, side in enumerate(("left", "right")):
-            start = index * per_arm
-            arm_end = start + per_arm - 1
-            layout[f"{side}.arm"] = slice(start, arm_end)
-            layout[f"{side}.end_effector"] = slice(arm_end, start + per_arm)
-        return layout
-
-    if total == ARM_DIM:
-        return {"arm": slice(0, ARM_DIM)}
-
-    config = getattr(inner, "config", None)
-    end_effector = str(getattr(config, "end_effector_type", "franka_gripper"))
-    tail = "hand" if end_effector.endswith("hand") else "end_effector"
-    return {"arm": slice(0, ARM_DIM), tail: slice(ARM_DIM, total)}
+    return tuple(
+        ActionPart(f"{side}.{part.name}", part.width, part.kind)
+        for side in sides
+        for part in per_arm
+    )

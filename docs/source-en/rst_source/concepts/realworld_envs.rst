@@ -114,6 +114,13 @@ produces named parts, while an environment accepts one flat vector.
 Parts that nobody drives retain the values requested by the policy; a posed hand
 stays at its last commanded position.
 
+That declaration says what each part means, not only where it sits.
+``FrankaEnv`` reads its first six numbers as a twist and ``GimArmEnv`` reads its
+first six as joint angles, so a spacemouse can drive one and not the other. The
+widths are identical, which is why the width is not what decides. A device whose
+commands the robot would misread is refused when the group is built, and an
+environment that declares nothing cannot be teleoperated at all.
+
 A single device uses one config key. When several devices share the rig, use a
 list:
 

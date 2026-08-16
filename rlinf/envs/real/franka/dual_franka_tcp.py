@@ -29,6 +29,7 @@ import gymnasium as gym
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
+from rlinf.robotics.teleop import ActionKind
 from rlinf.utils.rot6d import matrix_to_rot6d, rot6d_to_quat_xyzw_safe
 
 from .dual_base import DualFrankaEnv, DualFrankaRobotConfig
@@ -52,6 +53,10 @@ class DualFrankaTCPEnv(DualFrankaEnv):
 
     PER_ARM_ACTION_DIM = ACTION_DIM_PER_ARM
     GRIPPER_IDX_IN_ARM = 9  # xyz(3) + rot6d(6) then gripper
+
+    def arm_action_kind(self) -> ActionKind:
+        """An absolute pose: position and a rot6d rotation."""
+        return ActionKind.CARTESIAN_POSE
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

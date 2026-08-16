@@ -67,6 +67,19 @@
            self._interpolate_move(reset_pose, timeout=1)
            super().go_to_rest(joint_reset)
 
+如果任务沿用机器人原有的动作空间，动作的读法也一并继承。任务若改动了动作空间，就要把改动
+声明出来：遥操作设备匹配的是每个部件的含义，而不是它有多宽。
+
+.. code-block:: python
+
+       def action_parts(self):
+           return (
+               ActionPart("arm", 6, ActionKind.CARTESIAN_DELTA),
+               ActionPart("end_effector", 1, ActionKind.GRIPPER),
+           )
+
+声明的宽度之和必须与动作空间完全一致；对不上会直接报错，而不是让某一段悄悄落到别处。
+
 3. 注册
 ~~~~~~~
 

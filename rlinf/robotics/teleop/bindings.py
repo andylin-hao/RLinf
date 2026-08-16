@@ -22,6 +22,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 
 from .binding import TeleopBinding
+from .kinds import ActionKind
 
 
 def jittered_grip(is_open: bool) -> np.ndarray:
@@ -42,7 +43,10 @@ class SpaceMouseBinding(TeleopBinding):
     the right opens it, and it stays there until the other button is pressed.
     """
 
-    PRODUCES = ("arm", "end_effector")
+    PRODUCES = {
+        "arm": ActionKind.CARTESIAN_DELTA,
+        "end_effector": ActionKind.GRIPPER,
+    }
 
     def __init__(self) -> None:
         self._grip: Optional[np.ndarray] = None
@@ -95,7 +99,10 @@ class LeaderArmBinding(TeleopBinding):
     the env's own scale.
     """
 
-    PRODUCES = ("arm", "end_effector")
+    PRODUCES = {
+        "arm": ActionKind.CARTESIAN_DELTA,
+        "end_effector": ActionKind.GRIPPER,
+    }
 
     def action(
         self, reading: Mapping[str, Any], context: Mapping[str, Any]
@@ -135,7 +142,10 @@ class LeaderJointBinding(TeleopBinding):
         action_scale: Divisor turning a joint delta into a normalized action.
     """
 
-    PRODUCES = ("arm", "end_effector")
+    PRODUCES = {
+        "arm": ActionKind.JOINT_POSITION,
+        "end_effector": ActionKind.GRIPPER,
+    }
 
     def __init__(
         self, side: int = 0, use_delta: bool = False, action_scale: float = 0.1
@@ -143,6 +153,11 @@ class LeaderJointBinding(TeleopBinding):
         self.side = side
         self.use_delta = use_delta
         self.action_scale = action_scale
+        # Differencing against the follower makes this a delta, not a target.
+        self.PRODUCES = {
+            "arm": ActionKind.JOINT_DELTA if use_delta else ActionKind.JOINT_POSITION,
+            "end_effector": ActionKind.GRIPPER,
+        }
 
     def action(
         self, reading: Mapping[str, Any], context: Mapping[str, Any]
@@ -179,7 +194,7 @@ class GloveBinding(TeleopBinding):
     than left to fall out of the wrapper.
     """
 
-    PRODUCES = ("hand",)
+    PRODUCES = {"hand": ActionKind.HAND}
 
     def __init__(self, hold: bool = True) -> None:
         self.hold = hold
@@ -257,7 +272,10 @@ class _PicoArmBinding(TeleopBinding):
         side: Which arm's pose to read out of a dual-arm ``tcp_pose``.
     """
 
-    PRODUCES = ("arm", "end_effector")
+    PRODUCES = {
+        "arm": ActionKind.CARTESIAN_DELTA,
+        "end_effector": ActionKind.GRIPPER,
+    }
 
     #: The grip says exactly when the operator is driving, so no hold window.
     HOLD_WINDOW = 0.0
@@ -341,6 +359,11 @@ class PicoTcpBinding(_PicoArmBinding):
         hold_current_when_inactive: Command the measured pose while nobody is
             driving, instead of passing the policy's action through.
     """
+
+    PRODUCES = {
+        "arm": ActionKind.CARTESIAN_POSE,
+        "end_effector": ActionKind.GRIPPER,
+    }
 
     #: Absolute poses can leave the env's action space, so they are clipped
     #: back into it. Deltas from the other devices are already normalised.

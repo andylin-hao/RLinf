@@ -386,10 +386,15 @@ def test_an_unfilled_part_keeps_the_policy_action():
     import numpy as np
 
     from rlinf.envs.real.wrappers.teleop.composed import ComposedTeleop
-    from rlinf.robotics.teleop import TeleopBinding, TeleopEntry, TeleopGroup
+    from rlinf.robotics.teleop import (
+        ActionKind,
+        TeleopBinding,
+        TeleopEntry,
+        TeleopGroup,
+    )
 
     class Fixed(TeleopBinding):
-        PRODUCES = ("hand",)
+        PRODUCES = {"hand": ActionKind.HAND}
 
         def action(self, reading, context):
             return {"hand": np.full(6, 0.5)}
@@ -413,7 +418,10 @@ def test_an_unfilled_part_keeps_the_policy_action():
             pass
 
     layout = {"arm": slice(0, 6), "hand": slice(6, 12)}
-    group = TeleopGroup([TeleopEntry(Device(), Fixed())], available=layout)
+    group = TeleopGroup(
+        [TeleopEntry(Device(), Fixed())],
+        available={"arm": ActionKind.CARTESIAN_DELTA, "hand": ActionKind.HAND},
+    )
     device = ComposedTeleop(group, layout)
 
     policy = np.arange(12, dtype=np.float64)
@@ -1224,9 +1232,14 @@ def test_no_device_is_named_in_the_wrapper_stack():
 def test_a_leader_arm_reads_the_joint_convention_from_the_env():
     """How joint targets are read belongs to the env, not to the operator."""
     from rlinf.envs.real.wrappers.teleop.builder import DEVICES, EnvFacts
+    from rlinf.robotics.teleop import ActionKind
 
     facts = EnvFacts(
         layout={"left.arm": slice(0, 7), "left.end_effector": slice(7, 8)},
+        kinds={
+            "left.arm": ActionKind.JOINT_DELTA,
+            "left.end_effector": ActionKind.GRIPPER,
+        },
         config=SimpleNamespace(joint_action_mode="delta", joint_action_scale=0.25),
     )
     entry = DEVICES["gello_joint"](
@@ -1239,9 +1252,14 @@ def test_a_leader_arm_reads_the_joint_convention_from_the_env():
 
 def test_an_entry_option_wins_over_the_env_default():
     from rlinf.envs.real.wrappers.teleop.builder import DEVICES, EnvFacts
+    from rlinf.robotics.teleop import ActionKind
 
     facts = EnvFacts(
         layout={"left.arm": slice(0, 7), "left.end_effector": slice(7, 8)},
+        kinds={
+            "left.arm": ActionKind.JOINT_DELTA,
+            "left.end_effector": ActionKind.GRIPPER,
+        },
         config=SimpleNamespace(joint_action_mode="delta", joint_action_scale=0.25),
     )
     entry = DEVICES["gello_joint"](
@@ -1260,3 +1278,122 @@ def test_the_streamer_comes_from_the_registry_not_the_stack():
 
     facts_off = SimpleNamespace(teleop_direct_stream=False)
     assert STREAMERS["gello_joint"]({}, SimpleNamespace(config=facts_off)) is None
+
+
+# --- an env says what its action means --------------------------------
+
+
+def _declared(cls, **attrs):
+    """The parts a class declares, given only what its declaration reads."""
+    return cls.action_parts(SimpleNamespace(**attrs))
+
+
+def test_every_env_declares_parts_that_tile_its_action():
+    """A declaration that disagrees with step() is worse than none at all."""
+    from rlinf.envs.real.dosw1.base import DOSW1Env
+    from rlinf.envs.real.franka.base import FrankaEnv
+    from rlinf.envs.real.gim_arm.base import GimArmEnv
+    from rlinf.envs.real.xsquare.base import Turtle2Env
+
+    cases = [
+        (7, _declared(FrankaEnv, _is_hand=False)),
+        (12, _declared(FrankaEnv, _is_hand=True)),
+        (7, _declared(GimArmEnv)),
+        (7, _declared(Turtle2Env, config=SimpleNamespace(use_arm_ids=[1]))),
+        (14, _declared(Turtle2Env, config=SimpleNamespace(use_arm_ids=[0, 1]))),
+        (14, _declared(DOSW1Env)),
+    ]
+    for width, parts in cases:
+        assert sum(part.width for part in parts) == width
+
+
+def test_a_two_armed_robot_names_both_arms():
+    """Inferring this from the action width gave one arm and a huge gripper."""
+    from rlinf.envs.real.xsquare.base import Turtle2Env
+
+    parts = _declared(Turtle2Env, config=SimpleNamespace(use_arm_ids=[0, 1]))
+
+    assert [part.name for part in parts] == [
+        "left.arm",
+        "left.end_effector",
+        "right.arm",
+        "right.end_effector",
+    ]
+
+
+def test_two_arms_of_the_same_width_can_mean_different_things():
+    """Six numbers are a twist to one robot and joint angles to another."""
+    from rlinf.envs.real.franka.base import FrankaEnv
+    from rlinf.envs.real.gim_arm.base import GimArmEnv
+    from rlinf.robotics.teleop import ActionKind
+
+    franka_arm = _declared(FrankaEnv, _is_hand=False)[0]
+    gim_arm = _declared(GimArmEnv)[0]
+
+    assert franka_arm.width == gim_arm.width == 6
+    assert franka_arm.kind is ActionKind.CARTESIAN_DELTA
+    assert gim_arm.kind is ActionKind.JOINT_POSITION
+
+
+def test_an_env_that_declares_nothing_cannot_be_teleoperated():
+    from rlinf.envs.real.wrappers.teleop.layout import action_spec
+
+    class Bare:
+        unwrapped = None
+
+        def get_wrapper_attr(self, name):
+            raise AttributeError(name)
+
+    Bare.unwrapped = Bare()
+    with pytest.raises(AttributeError, match="does not declare action_parts"):
+        action_spec(Bare())
+
+
+def test_a_declaration_that_does_not_tile_the_action_is_refused():
+    import gymnasium as gym
+
+    from rlinf.envs.real.wrappers.teleop.layout import action_spec
+    from rlinf.robotics.teleop import ActionKind, ActionPart
+
+    class Wrong:
+        action_space = gym.spaces.Box(-1, 1, (7,), np.float32)
+
+        def action_parts(self):
+            return (ActionPart("arm", 6, ActionKind.CARTESIAN_DELTA),)
+
+        def get_wrapper_attr(self, name):
+            return getattr(self, name)
+
+    env = Wrong()
+    env.unwrapped = env
+    with pytest.raises(ValueError, match="declares parts covering 6"):
+        action_spec(env)
+
+
+def test_a_device_that_means_something_else_is_refused():
+    """The failure this whole declaration exists to prevent."""
+    from rlinf.robotics.teleop import (
+        ActionKind,
+        SpaceMouseBinding,
+        TeleopEntry,
+        TeleopGroup,
+    )
+
+    class Device:
+        is_connected = True
+
+        def get_observation(self):
+            return {}
+
+        def connect(self):
+            pass
+
+        def disconnect(self):
+            pass
+
+    joint_arm = {
+        "arm": ActionKind.JOINT_POSITION,
+        "end_effector": ActionKind.GRIPPER,
+    }
+    with pytest.raises(ValueError, match="mean different things"):
+        TeleopGroup([TeleopEntry(Device(), SpaceMouseBinding())], available=joint_arm)

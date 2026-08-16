@@ -33,6 +33,7 @@ from rlinf.robotics.parts.teleop import (
     TeleopLeaderArm,
 )
 from rlinf.robotics.teleop import (
+    ActionKind,
     GloveBinding,
     LeaderArmBinding,
     LeaderJointBinding,
@@ -45,7 +46,7 @@ from rlinf.robotics.teleop import (
 
 from .adapters import DualGelloJointStream
 from .composed import ComposedTeleop
-from .layout import action_layout
+from .layout import action_spec
 from .pico_config import split_dual_config
 
 
@@ -54,13 +55,15 @@ class EnvFacts:
     """What the env tells a device builder about the robot it will drive.
 
     Attributes:
-        layout: Where each named part sits in the action vector, which is also
-            what a command for that part means.
+        layout: Where each named part sits in the action vector.
+        kinds: What each part's numbers mean, which is what decides whether a
+            device can drive it at all.
         config: The env's own config, for settings that belong to the robot
             rather than to the operator.
     """
 
     layout: Mapping[str, slice]
+    kinds: Mapping[str, ActionKind]
     config: Any
 
 
@@ -169,10 +172,9 @@ def _pico(
     )
     gripper = bool(options.get("gripper", not bool(cfg.get("no_gripper", True))))
 
-    # A 9-wide arm command is a position and a rot6d rotation, so it is a pose
-    # to reach rather than a delta to apply.
-    arm = facts.layout.get("arm" if drives is None else f"{drives}.arm")
-    absolute = arm is not None and (arm.stop - arm.start) == 9
+    # The env says whether its arm takes a pose to reach or a delta to apply.
+    arm = facts.kinds.get("arm" if drives is None else f"{drives}.arm")
+    absolute = arm is ActionKind.CARTESIAN_POSE
 
     if drives in ("left", "right"):
         left_cfg, right_cfg = split_dual_config(pico_cfg)
@@ -248,8 +250,11 @@ def build_teleop(
         timeout: Hold window. Left out, the bindings decide: a device held
             down to take over asks for none.
     """
+    spec = action_spec(env)
     facts = EnvFacts(
-        layout=action_layout(env), config=getattr(env.unwrapped, "config", None)
+        layout=spec.layout,
+        kinds=spec.kinds,
+        config=getattr(env.unwrapped, "config", None),
     )
 
     entries, streamer = [], None
@@ -267,7 +272,7 @@ def build_teleop(
         if name in STREAMERS and streamer is None:
             streamer = STREAMERS[name](cfg, facts)
 
-    group = TeleopGroup(entries, available=facts.layout)
+    group = TeleopGroup(entries, available=facts.kinds)
     group.connect()
     if timeout is None:
         timeout = group.hold_window
