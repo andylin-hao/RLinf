@@ -47,7 +47,7 @@ class DualFrankaJointRobotConfig(DualFrankaRobotConfig):
     joint_action_mode: str = "absolute"  # "absolute" | "delta"
     joint_action_scale: float = 0.1  # rad per unit action (delta mode)
 
-    # When True, a 1 kHz daemon (DualGelloJointTeleop) owns the controllers.
+    # When True, a 1 kHz daemon (DualGelloJointStream) owns the controllers.
     teleop_direct_stream: bool = False
 
     def __post_init__(self):

@@ -58,7 +58,7 @@ override_cfg:
     - [0.7,  0.0, 0.6, 3.1416, 3.1416, 3.1416]
     - [0.7,  0.4, 0.6, 3.1416, 3.1416, 3.1416]
   success_hold_steps: 1
-  # GELLO direct-stream: when True, a 1 kHz daemon in DualGelloJointTeleop
+  # GELLO direct-stream: when True, a 1 kHz daemon in DualGelloJointStream
   # pushes joint targets straight to each controller, bypassing env.step's rate
   # gate. env.step still reads state / obs at step_frequency but does NOT forward
   # move_joints, so two writers never race franky's motion queue. Only meaningful

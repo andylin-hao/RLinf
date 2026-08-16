@@ -75,8 +75,8 @@ env:
     # Shared keys are copied to both PicoExpert instances. The per-hand blocks
     # below only override values that differ between controllers:
     # left controller -> left arm action slice, right controller -> right arm
-    # action slice. DualFrankaTcpPicoIntervention adapts the 7D PicoExpert
-    # delta TCP command into the 20D DualFrankaTcpEnv rot6d action.
+    # action slice. PicoTcpBinding composes each controller's delta onto the
+    # measured TCP pose, as the 20D DualFrankaTCPEnv rot6d action.
     pico:
       # Address of the external VR publisher. It should publish one JSON stream
       # containing headset_pose, left_controller, right_controller, and buttons.
