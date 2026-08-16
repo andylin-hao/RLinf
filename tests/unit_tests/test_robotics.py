@@ -1368,3 +1368,178 @@ def test_observation_tree_follows_the_composition_on_real_parts():
     assert paths == set(robot.named_parts) - set(robot.parts)
 
     robot.disconnect()
+
+
+# --- teleop composition ------------------------------------------------------
+
+
+def _scripted_device(reading):
+    """A teleop part that always reports `reading`."""
+    from rlinf.robotics.parts.teleop.devices import TeleopPart
+
+    class Scripted(TeleopPart):
+        def _open(self):
+            return object()
+
+        @property
+        def observation_features(self):
+            return {key: {} for key in reading}
+
+        def get_observation(self):
+            return dict(reading)
+
+    device = Scripted()
+    device.connect()
+    return device
+
+
+def _binding(produces, value, driving=True):
+    from rlinf.robotics.teleop import TeleopBinding
+
+    class Fixed(TeleopBinding):
+        PRODUCES = produces
+
+        def action(self, reading, context):
+            return dict.fromkeys(produces, value)
+
+        def is_driving(self, reading):
+            return driving
+
+    return Fixed()
+
+
+def test_two_devices_merge_into_one_action():
+    """A dex-hand rig is a spacemouse on the arm and a glove on the hand."""
+    import numpy as np
+
+    from rlinf.robotics.teleop import TeleopEntry, TeleopGroup
+
+    group = TeleopGroup(
+        [
+            TeleopEntry(_scripted_device({"twist": 1}), _binding(("arm",), np.ones(6))),
+            TeleopEntry(
+                _scripted_device({"angles": 2}), _binding(("hand",), np.ones(6) * 2)
+            ),
+        ],
+        available=("arm", "hand"),
+    )
+
+    parts, driving, _ = group.action({})
+
+    assert sorted(parts) == ["arm", "hand"]
+    assert driving
+    assert np.allclose(parts["hand"], 2.0)
+
+
+def test_a_part_the_robot_lacks_is_not_filled():
+    """A spacemouse offers a gripper; an arm carrying a hand has none."""
+    import numpy as np
+
+    from rlinf.robotics.teleop import TeleopEntry, TeleopGroup
+
+    group = TeleopGroup(
+        [
+            TeleopEntry(
+                _scripted_device({"twist": 1}),
+                _binding(("arm", "end_effector"), np.ones(6)),
+            )
+        ],
+        available=("arm", "hand"),
+    )
+
+    assert group.parts == ("arm",)
+
+
+def test_two_devices_claiming_one_part_is_refused():
+    """Silently letting one win would move the robot from the wrong device."""
+    import numpy as np
+    import pytest
+
+    from rlinf.robotics.teleop import TeleopEntry, TeleopGroup
+
+    with pytest.raises(ValueError, match="both drive"):
+        TeleopGroup(
+            [
+                TeleopEntry(_scripted_device({}), _binding(("arm",), np.ones(6))),
+                TeleopEntry(_scripted_device({}), _binding(("arm",), np.ones(6))),
+            ],
+            available=("arm",),
+        )
+
+
+def test_a_device_that_fills_nothing_is_refused():
+    """A rig that cannot drive anything is a configuration mistake."""
+    import numpy as np
+    import pytest
+
+    from rlinf.robotics.teleop import TeleopEntry, TeleopGroup
+
+    with pytest.raises(ValueError, match="fills none"):
+        TeleopGroup(
+            [TeleopEntry(_scripted_device({}), _binding(("hand",), np.ones(6)))],
+            available=("arm", "end_effector"),
+        )
+
+
+def test_drives_separates_two_identical_leaders():
+    """Both leaders produce an arm; `drives` says which branch each fills."""
+    import numpy as np
+
+    from rlinf.robotics.teleop import TeleopEntry, TeleopGroup
+
+    group = TeleopGroup(
+        [
+            TeleopEntry(
+                _scripted_device({}), _binding(("arm",), np.ones(7)), drives="left"
+            ),
+            TeleopEntry(
+                _scripted_device({}), _binding(("arm",), np.ones(7) * 2), drives="right"
+            ),
+        ],
+        available=("left.arm", "right.arm"),
+    )
+
+    parts, _, _ = group.action({})
+
+    assert sorted(parts) == ["left.arm", "right.arm"]
+    assert np.allclose(parts["right.arm"], 2.0)
+
+
+def test_one_device_listed_twice_is_read_once():
+    """A spacemouse drives an arm and a gripper over one HID handle."""
+    import numpy as np
+
+    from rlinf.robotics.teleop import TeleopEntry, TeleopGroup
+
+    device = _scripted_device({"twist": 1})
+    group = TeleopGroup(
+        [
+            TeleopEntry(device, _binding(("arm",), np.ones(6))),
+            TeleopEntry(device, _binding(("end_effector",), np.ones(1))),
+        ],
+        available=("arm", "end_effector"),
+    )
+
+    assert len(group.devices) == 1
+    assert group.parts == ("arm", "end_effector")
+
+
+def test_the_glove_holds_what_the_operator_posed():
+    """Releasing the arm device leaves the hand where it was put.
+
+    Under composition an unbound part would keep the policy's value, so the
+    hold the dex-hand setup has always had is stated in the binding.
+    """
+    import numpy as np
+
+    from rlinf.robotics.teleop import GloveBinding
+
+    glove = GloveBinding()
+    glove.reset(np.zeros(6))
+
+    posed = glove.action({"angles": np.full(6, 0.4)}, {"hand_driving": True})["hand"]
+    released = glove.action({"angles": np.full(6, 0.9)}, {"hand_driving": False})[
+        "hand"
+    ]
+
+    assert np.allclose(posed, released)
