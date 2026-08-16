@@ -1543,3 +1543,32 @@ def test_the_glove_holds_what_the_operator_posed():
     ]
 
     assert np.allclose(posed, released)
+
+
+def test_the_glove_tracks_only_while_its_gate_is_held():
+    """A spacemouse button is what puts the glove in control.
+
+    Devices in one rig are not independent. Stating the gate as published
+    context keeps that ordered and visible, rather than hidden inside a class
+    that reads both devices.
+    """
+    import numpy as np
+
+    from rlinf.robotics.teleop import GloveBinding, SpaceMouseBinding
+
+    mouse, glove = SpaceMouseBinding(), GloveBinding()
+    glove.reset(np.zeros(6))
+
+    released = mouse.publish({"twist": np.zeros(6), "buttons": [False, False]})
+    held = mouse.publish({"twist": np.zeros(6), "buttons": [False, True]})
+
+    assert released == {"hand_driving": False}
+    assert held == {"hand_driving": True}
+
+    # Held: the first reading re-zeros, a later one moves the hand.
+    glove.action({"angles": np.zeros(6)}, held)
+    moved = glove.action({"angles": np.full(6, 0.3)}, held)["hand"]
+    assert np.allclose(moved, 0.3)
+
+    # Released: the hand stays where it was posed.
+    assert np.allclose(glove.action({"angles": np.full(6, 0.9)}, released)["hand"], 0.3)

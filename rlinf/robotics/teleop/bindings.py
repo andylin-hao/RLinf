@@ -72,6 +72,15 @@ class SpaceMouseBinding(TeleopBinding):
         parts["end_effector"] = self._grip.copy()
         return parts
 
+    def publish(self, reading: Mapping[str, Any]) -> dict[str, Any]:
+        """Hold the second button to put a glove in control of the hand.
+
+        The dex-hand setup reads that button as its "left". The gripper latch
+        above reads the buttons the other way round, which is how the two rigs
+        have always behaved; the difference is stated rather than inherited.
+        """
+        return {"hand_driving": bool(reading["buttons"][1])}
+
     def is_driving(self, reading: Mapping[str, Any]) -> bool:
         """Moving the puck, or pressing either button."""
         moved = float(np.linalg.norm(reading["twist"])) > self.MOVEMENT_EPSILON
@@ -198,12 +207,17 @@ class GloveBinding(TeleopBinding):
     ) -> dict[str, np.ndarray]:
         """Track the operator's fingers, or hold where they left them."""
         angles = np.asarray(reading["angles"], dtype=np.float64)
-        if context.get("hand_driving", True):
+        # Held by default: a glove with nothing gating it stays where the
+        # operator last posed it rather than tracking their resting hand.
+        if context.get("hand_driving", False):
             if self._rebaseline or self._baseline is None:
+                # Re-zero on the edge, so taking control does not jump the hand.
                 self._baseline = angles.copy()
                 self._base = self._commanded.copy()
                 self._rebaseline = False
             self._commanded = np.clip(self._base + (angles - self._baseline), 0.0, 1.0)
+        else:
+            self._baseline = None  # re-zero next time control is taken
         return {"hand": self._commanded.copy()}
 
     def is_driving(self, reading: Mapping[str, Any]) -> bool:

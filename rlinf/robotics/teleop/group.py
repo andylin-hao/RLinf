@@ -157,9 +157,13 @@ class TeleopGroup:
         info: dict[str, Any] = {}
 
         readings = {id(device): device.get_observation() for device in self.devices}
+        # Entries are processed in order so a binding can gate the ones after
+        # it, which is how a spacemouse button puts a glove in control.
+        running = dict(context)
         for entry in self.entries:
             reading = readings[id(entry.device)]
-            produced = entry.binding.action(reading, context)
+            running.update(entry.binding.publish(reading))
+            produced = entry.binding.action(reading, running)
             for name, value in produced.items():
                 qualified = name if entry.drives is None else f"{entry.drives}.{name}"
                 if self.available is not None and qualified not in self.available:

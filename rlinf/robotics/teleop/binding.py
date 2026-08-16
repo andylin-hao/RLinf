@@ -59,5 +59,15 @@ class TeleopBinding(ABC):
         """Whether the operator is actually moving this device."""
         return True
 
+    def publish(self, reading: Mapping[str, Any]) -> dict[str, Any]:
+        """Context this device offers the bindings listed after it.
+
+        Devices in one rig are not independent: on the dex-hand setup the
+        spacemouse's left button is what puts the glove in control. Saying so
+        here keeps that coupling visible and ordered, rather than hidden in a
+        class that reads both devices.
+        """
+        return {}
+
     def reset(self) -> None:
         """Forget anything held from the previous episode."""

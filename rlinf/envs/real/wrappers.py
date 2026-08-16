@@ -29,8 +29,6 @@ from rlinf.envs.real.episode import (
 )
 from rlinf.envs.real.teleop.adapters import (
     DualGelloJointTeleop,
-    GelloTeleop,
-    SpaceMouseTeleop,
 )
 from rlinf.envs.real.teleop.config import resolve_teleop_device
 from rlinf.envs.real.teleop.intervention import TeleopIntervention
@@ -45,10 +43,12 @@ from rlinf.envs.real.transforms import (
 )
 
 
-def _dexhand_teleop(**kwargs):
-    """Build the dex-hand device, which needs an optional vendor package."""
+def _teleop(env, cfg, devices):
+    """Build a composed teleop, reporting a missing vendor package plainly."""
+    from rlinf.envs.real.teleop.builder import build_teleop
+
     try:
-        from rlinf.envs.real.teleop.adapters import DexHandTeleop
+        return build_teleop(env, cfg, devices)
     except ModuleNotFoundError as exc:
         if exc.name and exc.name.split(".")[0] == "rlinf_dexhand":
             raise ModuleNotFoundError(
@@ -56,7 +56,6 @@ def _dexhand_teleop(**kwargs):
                 "'rlinf_dexhand'. Install it before enabling it."
             ) from exc
         raise
-    return DexHandTeleop(**kwargs)
 
 
 def _apply_keyboard_wrapper(env: gym.Env, mode: Optional[str]) -> gym.Env:
@@ -99,38 +98,14 @@ def apply_single_arm_wrappers(env: gym.Env, cfg: Mapping[str, Any]) -> gym.Env:
     gripper_enabled = not no_gripper
 
     if not env.config.is_dummy and use_spacemouse:
-        if is_dex_hand:
-            glove_cfg = cfg.get("glove_config", {})
-            assert env.action_space.shape == (12,), (
-                f"Dex-hand teleop expects a 12-D action space, "
-                f"got {env.action_space.shape}"
-            )
-            env = TeleopIntervention(
-                env,
-                _dexhand_teleop(
-                    left_port=glove_cfg.get("left_port", "/dev/ttyACM0"),
-                    right_port=glove_cfg.get("right_port", None),
-                    glove_frequency=glove_cfg.get("frequency", 60),
-                    glove_config_file=glove_cfg.get("config_file", None),
-                ),
-            )
-        else:
-            env = TeleopIntervention(
-                env, SpaceMouseTeleop(gripper_enabled=gripper_enabled)
-            )
+        # A hand needs the glove alongside the mouse; a gripper does not.
+        devices = ["spacemouse", "glove"] if is_dex_hand else ["spacemouse"]
+        env = TeleopIntervention(env, _teleop(env, cfg, devices))
 
     if not env.config.is_dummy and use_gello:
         if is_dex_hand:
             raise ValueError("teleop_device: gello is not supported for ruiyan_hand.")
-        gello_port = cfg.get("gello_port", None)
-        if gello_port is None:
-            raise ValueError(
-                "teleop_device: gello requires 'gello_port' in the env config "
-                "(e.g. env.eval.gello_port)."
-            )
-        env = TeleopIntervention(
-            env, GelloTeleop(port=gello_port, gripper_enabled=gripper_enabled)
-        )
+        env = TeleopIntervention(env, _teleop(env, cfg, ["gello"]))
 
     if not env.config.is_dummy and use_pico:
         if is_dex_hand:
