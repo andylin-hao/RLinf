@@ -61,8 +61,8 @@ class Turtle2RobotState:
         return asdict(self)
 
 
-class Turtle2Hardware(Connection):
-    """Turtle2 hardware over ROS, with no scheduler dependency.
+class Turtle2Connection(Connection):
+    """Turtle2's ROS connection, with no scheduler dependency.
 
     One ROS connection drives both arms, both grippers, and the wrist cameras.
     None of those is the connection, so it is a :class:`Connection` rather than

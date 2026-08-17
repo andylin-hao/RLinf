@@ -33,32 +33,32 @@ class Turtle2Robot(Robot):
     ROBOT_TYPE = "Turtle2"
 
     @classmethod
-    def declare_hardware(
+    def declare_connection(
         cls, *, frequency: int, camera_ids: list[int], node_rank: int, name: str
     ):
         """Declare the one connection that drives everything on this robot."""
-        from ..parts.arms.turtle2 import Turtle2Hardware
+        from ..parts.arms.turtle2 import Turtle2Connection
 
-        return Turtle2Hardware.at(
+        return Turtle2Connection.at(
             frequency, tuple(camera_ids), node_rank=node_rank, name=name
         )
 
     @classmethod
-    def build_arms(cls, hardware) -> dict[str, Any]:
+    def build_arms(cls, connection) -> dict[str, Any]:
         """Both arms, each whole, from the shared connection."""
         return {
             side: Group(
-                arm=hardware.part(side),
-                gripper=hardware.part(f"{side}_end_effector"),
+                arm=connection.part(side),
+                gripper=connection.part(f"{side}_end_effector"),
             )
             for side in ("left", "right")
         }
 
     @classmethod
-    def build_cameras(cls, hardware, *, count: int) -> dict[str, Any]:
+    def build_cameras(cls, connection, *, count: int) -> dict[str, Any]:
         """The wrist cameras, from that same connection."""
         return {
-            f"wrist_{index + 1}": hardware.part(f"wrist_{index + 1}")
+            f"wrist_{index + 1}": connection.part(f"wrist_{index + 1}")
             for index in range(count)
         }
 
@@ -77,15 +77,15 @@ class Turtle2Robot(Robot):
         Everything hangs off one declaration, so the connection is opened once
         however many parts refer to it.
         """
-        hardware = cls.declare_hardware(
+        connection = cls.declare_connection(
             frequency=frequency,
             camera_ids=camera_ids,
             node_rank=node_rank,
-            name=f"Turtle2Hardware-{worker_rank}-{env_idx}",
+            name=f"Turtle2Connection-{worker_rank}-{env_idx}",
         )
         return cls(
-            **cls.build_arms(hardware),
-            **cls.build_cameras(hardware, count=len(camera_ids)),
+            **cls.build_arms(connection),
+            **cls.build_cameras(connection, count=len(camera_ids)),
         )
 
 

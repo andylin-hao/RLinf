@@ -177,8 +177,8 @@
 
 一条连接支撑多个组件时，只声明一次连接，再从中选取暴露的部件::
 
-   hardware = ExampleHardware.at(node_rank=0)
-   Group(arm=hardware.part("left"), gripper=hardware.part("left_end_effector"))
+   connection = ExampleConnection.at(node_rank=0)
+   Group(arm=connection.part("left"), gripper=connection.part("left_end_effector"))
 
 更底层的 ``spawn()`` 会立即放置部件。它适合机器人之外的场景，例如调试脚本；脚本
 此时也要自行管理句柄的生命周期。

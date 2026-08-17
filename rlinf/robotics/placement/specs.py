@@ -60,9 +60,10 @@ class PartSpec:
 
         Use it when one connection backs several components::
 
-            hardware = Turtle2Hardware.at(50, node_rank=0)
+            connection = Turtle2Connection.at(50, node_rank=0)
             left = Group(
-                arm=hardware.part("left"), gripper=hardware.part("left_end_effector")
+                arm=connection.part("left"),
+                gripper=connection.part("left_end_effector"),
             )
         """
         return SubpartRef(self, name)

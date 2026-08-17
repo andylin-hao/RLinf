@@ -308,20 +308,20 @@ part fails to start, it tears down the earlier ones. During a normal shutdown,
 
 Every robot composes this way, whether or not the hardware is shared. Declare
 the connection once, then name the components it exposes through ``parts``.
-``Turtle2Hardware`` is a ``Connection``: one declaration backs both arms, both
+``Turtle2Connection`` is a ``Connection``: one declaration backs both arms, both
 grippers and the cameras, and none of them is the connection itself:
 
 .. code-block:: python
 
-   hardware = Turtle2Hardware.at(50, camera_ids, node_rank=0)
+   connection = Turtle2Connection.at(50, camera_ids, node_rank=0)
    robot = Turtle2Robot(
        left=Group(
-           arm=hardware.part("left"), gripper=hardware.part("left_end_effector")
+           arm=connection.part("left"), gripper=connection.part("left_end_effector")
        ),
        right=Group(
-           arm=hardware.part("right"), gripper=hardware.part("right_end_effector")
+           arm=connection.part("right"), gripper=connection.part("right_end_effector")
        ),
-       wrist_1=hardware.part("wrist_1"),
+       wrist_1=connection.part("wrist_1"),
    )
 
 Cameras use the same placement path as arms. A camera may stay on the machine

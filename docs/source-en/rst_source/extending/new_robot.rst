@@ -198,8 +198,8 @@ machine where it is physically connected::
 If one connection backs several components, declare that connection once and
 select the exposed parts from it::
 
-   hardware = ExampleHardware.at(node_rank=0)
-   Group(arm=hardware.part("left"), gripper=hardware.part("left_end_effector"))
+   connection = ExampleConnection.at(node_rank=0)
+   Group(arm=connection.part("left"), gripper=connection.part("left_end_effector"))
 
 Underneath this flow, ``spawn()`` performs placement immediately. Call it
 directly only outside a robot, for example in a bench script that also takes

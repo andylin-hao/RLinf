@@ -51,7 +51,7 @@ _MODULE_BY_NAME: dict[str, str] = {
     "FrankyArm": ".franky",
     "GimArm": ".gim_arm",
     "GimArmRobotState": ".gim_arm",
-    "Turtle2Hardware": ".turtle2",
+    "Turtle2Connection": ".turtle2",
     "Turtle2RobotState": ".turtle2",
 }
 

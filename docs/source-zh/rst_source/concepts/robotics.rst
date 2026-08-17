@@ -268,20 +268,20 @@ SDK 往往不允许在一条链路上并发调用。Franka 类本身不参与这
 退出时，``disconnect`` 走同一套清理流程。
 
 无论硬件是否共享，机器人都按这种方式组装：连接只声明一次，组合时再点名它通过
-``parts`` 暴露的组件。``Turtle2Hardware`` 就是一个 ``Connection``——一条声明同时支撑
+``parts`` 暴露的组件。``Turtle2Connection`` 就是一个 ``Connection``——一条声明同时支撑
 两条机械臂、两个夹爪和相机，而它们当中没有一个是这条连接本身：
 
 .. code-block:: python
 
-   hardware = Turtle2Hardware.at(50, camera_ids, node_rank=0)
+   connection = Turtle2Connection.at(50, camera_ids, node_rank=0)
    robot = Turtle2Robot(
        left=Group(
-           arm=hardware.part("left"), gripper=hardware.part("left_end_effector")
+           arm=connection.part("left"), gripper=connection.part("left_end_effector")
        ),
        right=Group(
-           arm=hardware.part("right"), gripper=hardware.part("right_end_effector")
+           arm=connection.part("right"), gripper=connection.part("right_end_effector")
        ),
-       wrist_1=hardware.part("wrist_1"),
+       wrist_1=connection.part("wrist_1"),
    )
 
 相机和机械臂走同一套放置流程。比如，相机留在实际插接的机器上，策略运行在别处；此时
