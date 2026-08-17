@@ -395,8 +395,13 @@ Walk your robot's composition against them:
 
 It reports what the robot is made of, which connection backs each part and
 where it was placed, then reads every part and disconnects. It fails when a
-part observes something it never declared, when a connection ends up in the
-tree, or when anything still claims to be connected afterwards.
+part observes something it never declared, when a value comes back a different
+shape from the one declared, when a connection ends up in the tree, or when
+anything still claims to be connected afterwards.
+
+The shape check is the quiet one worth having: an env builds its observation
+space from what a part declares, so a value one number wider reaches a policy
+as data rather than as an error.
 
 Add ``--remote`` to host the parts in scheduler workers instead of this
 process. That is what catches a part that cannot be placed at all -- a method

@@ -42,7 +42,7 @@ import ast
 import pathlib
 import sys
 import traceback
-from typing import Any
+from typing import Any, Optional
 
 from rlinf.robotics.parts.base import Connection, Group
 
@@ -137,6 +137,19 @@ def _as_build_arguments(robot_type, kwargs, registry_cls):
     return {"config": config, **rest}
 
 
+def _declared_shape(feature: Any) -> Optional[tuple]:
+    """The shape a feature descriptor promises, when it states one.
+
+    Features are plain dictionaries, and a part may describe a subtree rather
+    than an array. Only a stated shape is worth comparing.
+    """
+    if isinstance(feature, dict):
+        shape = feature.get("shape")
+        if isinstance(shape, (tuple, list)):
+            return tuple(shape)
+    return None
+
+
 def check(robot_type: str, kwargs: dict[str, Any]) -> int:
     print(f"[1/5] composing {robot_type} with {kwargs}")
     # Importing the robots is what registers them.
@@ -173,7 +186,8 @@ def check(robot_type: str, kwargs: dict[str, Any]) -> int:
             key: getattr(value, "shape", type(value).__name__)
             for key, value in observation.items()
         }
-        declared = set(part.observation_features)
+        features = part.observation_features
+        declared = set(features)
         extra = set(observation) - declared
         missing = declared - set(observation)
         note = ""
@@ -181,6 +195,19 @@ def check(robot_type: str, kwargs: dict[str, Any]) -> int:
             note = f"  MISMATCH extra={sorted(extra)} missing={sorted(missing)}"
             failures.append(
                 f"{path} observes {sorted(observation)}, declares {sorted(declared)}"
+            )
+        # The right keys carrying the wrong widths is the quieter failure: an
+        # env builds its observation space from what a part declares, so a
+        # value one number wider reaches a policy as data rather than an error.
+        for key in sorted(declared & set(observation)):
+            wanted = _declared_shape(features[key])
+            actual = getattr(observation[key], "shape", None)
+            if wanted is None or actual is None or tuple(actual) == tuple(wanted):
+                continue
+            note += f"  SHAPE {key}: declares {tuple(wanted)}, observes {tuple(actual)}"
+            failures.append(
+                f"{path} observes {key} with shape {tuple(actual)}, "
+                f"declares {tuple(wanted)}"
             )
         print(f"    {path:24} {shapes}{note}")
 

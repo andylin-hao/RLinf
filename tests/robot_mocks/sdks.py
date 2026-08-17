@@ -299,8 +299,9 @@ def airbot() -> dict[str, types.ModuleType]:
         right_get_end = left_get_end
 
         def left_get_pose(self):
-            # xyz + quaternion, which is what the driver converts to a TCP pose.
-            return [0.3, 0.0, 0.2, 0.0, 1.0, 0.0, 0.0]
+            # xyz + euler: DOSW1Arm hands this straight back as tcp_pose, and
+            # declares it six wide.
+            return [0.3, 0.0, 0.2, 0.0, 0.0, 0.0]
 
         right_get_pose = left_get_pose
 
