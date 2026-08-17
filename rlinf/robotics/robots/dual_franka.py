@@ -220,6 +220,15 @@ class DualFrankaConfig(RobotConfig):
     """Node rank for the right arm part.
     ``None`` means co-located with the env worker."""
 
+    disable_validate: bool = False
+    """Whether to skip validation of the arm addresses.
+
+    Unlike :class:`~rlinf.robotics.robots.franka.FrankaConfig`, this covers only
+    the address format: enumeration never pings a dual-arm robot, so there is no
+    reachability check to switch off. Set it when the addresses in a config are
+    placeholders or belong to hardware that is not there -- an offline run, or a
+    bench check against faked SDKs."""
+
     def __post_init__(self):  # noqa: D105
         assert isinstance(self.node_rank, int), (
             f"'node_rank' in DualFranka config must be an integer. "
@@ -227,12 +236,13 @@ class DualFrankaConfig(RobotConfig):
         )
         # IPs may be left unset here and resolved later from environment
         # variables during enumeration; only validate the ones present.
-        for label, ip in [
-            ("left_robot_ip", self.left_robot_ip),
-            ("right_robot_ip", self.right_robot_ip),
-        ]:
-            if ip is not None:
-                self._validate_ip(label, ip)
+        if not self.disable_validate:
+            for label, ip in [
+                ("left_robot_ip", self.left_robot_ip),
+                ("right_robot_ip", self.right_robot_ip),
+            ]:
+                if ip is not None:
+                    self._validate_ip(label, ip)
         if self.left_camera_serials:
             self.left_camera_serials = list(self.left_camera_serials)
         if self.right_camera_serials:

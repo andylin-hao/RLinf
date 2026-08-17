@@ -42,6 +42,7 @@ cluster:
         # the robot as arm_cameras.
         configs:
           - node_rank: 0
+            disable_validate: true
             left_robot_ip: 0.0.0.0
             right_robot_ip: 0.0.0.1
             left_camera_serials: ["MOCK0001"]

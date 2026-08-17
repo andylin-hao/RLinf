@@ -279,10 +279,9 @@ class RemoteCamera(RemotePart, Camera):
     def get_frame(self, timeout: float = 5) -> Any:
         """Read one frame through the host, waiting up to ``timeout`` seconds.
 
-        Raises:
-            queue.Empty: If the hosted camera produced nothing in time. Raised
-                on its node and re-raised here, so a stalled camera reads the
-                same whether it is placed or local.
+        A camera that produced nothing in time raises ``queue.Empty`` on its own
+        node, and the call re-raises it here, so a stall reads the same whether
+        the camera is placed or local.
         """
         if self._part_name is None:
             return _first(self._worker_group.get_frame(timeout))

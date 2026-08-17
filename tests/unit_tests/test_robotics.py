@@ -57,7 +57,7 @@ from rlinf.robotics.parts.arms import (
     FrankaROSArm,
     FrankyArm,
     GimArm,
-    Turtle2Hardware,
+    Turtle2Connection,
 )
 from rlinf.robotics.parts.arms.franka import FrankaRobotState
 from rlinf.robotics.placement.specs import PartSpec
@@ -516,7 +516,7 @@ def test_pure_drivers_construct_without_scheduler_or_vendor_sdks():
         GimArm("can0", "gim_arm_xl", True, "parallel"),
     ]
     # A bus driving several components is no one of them.
-    buses = [Turtle2Hardware()]
+    buses = [Turtle2Connection()]
 
     assert all(isinstance(driver, ControllablePart) for driver in arms)
     assert all(isinstance(driver, Connection) for driver in buses)
@@ -2077,13 +2077,13 @@ def test_a_connection_backing_several_parts_is_not_observable():
     It used to satisfy the part interface with an observation of the whole
     robot and a coupled two-arm action that nothing called.
     """
-    from rlinf.robotics.parts.arms.turtle2 import Turtle2Hardware
+    from rlinf.robotics.parts.arms.turtle2 import Turtle2Connection
     from rlinf.robotics.parts.base import Connection, ControllablePart
 
-    assert issubclass(Turtle2Hardware, Connection)
-    assert not issubclass(Turtle2Hardware, ControllablePart)
+    assert issubclass(Turtle2Connection, Connection)
+    assert not issubclass(Turtle2Connection, ControllablePart)
 
-    hardware = Turtle2Hardware()
+    hardware = Turtle2Connection()
     assert set(hardware.parts) == {
         "left",
         "left_end_effector",
@@ -2549,3 +2549,22 @@ def test_every_real_task_is_registered_through_the_shared_factory():
                 offenders.append(f"{path.relative_to(_ROOT)}:{number}")
 
     assert offenders == [], f"these register a task outside register_tasks: {offenders}"
+
+
+def test_a_dual_arm_config_can_switch_its_address_check_off():
+    """Every other robot config can; this one rejected the field outright.
+
+    A config whose addresses are placeholders, or whose arms are faked, has
+    nothing to validate, and being unable to say so is what stopped a dual-arm
+    config from being written at all.
+    """
+    from rlinf.robotics.robots.dual_franka import DualFrankaConfig
+
+    with pytest.raises(ValueError, match="valid IP address"):
+        DualFrankaConfig(node_rank=0, left_robot_ip="LEFT_ROBOT_IP")
+
+    relaxed = DualFrankaConfig(
+        node_rank=0, left_robot_ip="LEFT_ROBOT_IP", disable_validate=True
+    )
+
+    assert relaxed.left_robot_ip == "LEFT_ROBOT_IP"
