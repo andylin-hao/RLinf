@@ -147,6 +147,16 @@ def ros() -> dict[str, types.ModuleType]:
         set_param=lambda *a, **k: None,
         get_param=lambda *a, **k: None,
         Time=types.SimpleNamespace(now=lambda: 0.0),
+        Duration=lambda seconds: seconds,
+        # A timer fires nothing: a mocked run drives state by calling the
+        # callbacks itself, so a background thread would only add flakiness.
+        Timer=lambda period, callback, **_k: types.SimpleNamespace(
+            period=period, callback=callback, shutdown=lambda: None
+        ),
+        Rate=lambda _hz: types.SimpleNamespace(sleep=lambda: None),
+        sleep=lambda _seconds: None,
+        loginfo=lambda *_a, **_k: None,
+        logwarn=lambda *_a, **_k: None,
         is_shutdown=lambda: False,
         signal_shutdown=lambda *_a: None,
     )

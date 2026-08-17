@@ -38,11 +38,13 @@ that verifies a real robot also runs in CI.
 from __future__ import annotations
 
 import contextlib
+import os
+import pathlib
 import sys
 import types
 from typing import Any, Iterator
 
-from . import arms, cameras, grippers
+from . import arms, cameras, grippers, sdks, teleop
 from ._fakes import Recorder, module
 
 __all__ = ["Recorder", "mocked_sdks", "module", "sdk_modules"]
@@ -53,12 +55,14 @@ _PATCHES: dict[str, dict[str, Any]] = {}
 
 
 def _no_processes() -> Any:
-    """A ``psutil`` whose Popen starts nothing.
+    """A ``psutil`` that starts no processes but is otherwise the real one.
 
-    The Franka ROS arm launches its impedance controller with
-    ``psutil.Popen(["roslaunch", ...])``. Faking the SDK is not enough when the
-    part also starts a process, so this stands in for one.
+    The Franka ROS arm launches its impedance controller and the ROS transport
+    launches roscore, both through ``psutil.Popen``. Only that has to be
+    stubbed: the scheduler uses the rest of psutil, so everything else is
+    delegated rather than faked.
     """
+    import psutil as real
 
     class Popen:
         def __init__(self, args, **_kwargs):
@@ -90,13 +94,18 @@ def _no_processes() -> Any:
         def children(self, recursive=False):
             return []
 
-    return types.SimpleNamespace(
-        Popen=Popen,
-        NoSuchProcess=Exception,
-        # Nothing is running, so nothing has to be found or waited for.
-        process_iter=lambda *_a, **_k: iter(()),
-        pid_exists=lambda _pid: False,
-    )
+    class _Psutil(types.ModuleType):
+        """The real psutil, minus the ability to start anything."""
+
+        def __getattr__(self, name: str) -> Any:
+            return getattr(real, name)
+
+    fake = _Psutil("psutil")
+    fake.Popen = Popen
+    # Nothing of ours is running, so the roscore search finds nothing and the
+    # transport starts its own -- which is the stub above.
+    fake.process_iter = lambda *_a, **_k: iter(())
+    return fake
 
 
 def sdk_modules() -> dict[str, types.ModuleType]:
@@ -108,15 +117,37 @@ def sdk_modules() -> dict[str, types.ModuleType]:
     made.update(cameras.modules())
     made.update(arms.modules())
     made.update(grippers.modules())
+    made.update(sdks.modules())
+    made.update(teleop.modules())
     return made
 
 
+def _reach_worker_processes() -> dict[str, str]:
+    """Environment that makes a scheduler worker install the fakes too.
+
+    A worker is a separate process, and a fake in this one's ``sys.modules``
+    never reaches it. Putting this package on ``PYTHONPATH`` lets the worker
+    import ``sitecustomize`` from it at interpreter start, and the flag is what
+    tells that hook to act.
+    """
+    here = str(pathlib.Path(__file__).resolve().parent)
+    tests = str(pathlib.Path(__file__).resolve().parents[1])
+    existing = os.environ.get("PYTHONPATH", "")
+    parts = [here, tests, *(p for p in existing.split(os.pathsep) if p)]
+    return {"PYTHONPATH": os.pathsep.join(parts), "RLINF_ROBOT_MOCKS": "1"}
+
+
 @contextlib.contextmanager
-def mocked_sdks(*, extra: dict[str, Any] | None = None) -> Iterator[dict[str, Any]]:
+def mocked_sdks(
+    *, extra: dict[str, Any] | None = None, remote: bool = False
+) -> Iterator[dict[str, Any]]:
     """Install the fake SDKs for the duration of the block.
 
     Args:
         extra: More modules to install, by dotted name.
+        remote: Place parts on nodes, as a real run does, with each worker
+            installing the fakes for itself. Left False, every part is built
+            in this process, which is faster and needs no cluster.
 
     Yields:
         The installed modules, so a test can assert on what a part did to them.
@@ -129,26 +160,47 @@ def mocked_sdks(*, extra: dict[str, Any] | None = None) -> Iterator[dict[str, An
     sys.modules.update(made)
 
     patches: list[tuple[Any, str, Any]] = []
+    saved_environ = {}
 
-    # A faked SDK lives in this process, and a part placed on a node is built
-    # in another one that never saw it. Mocked runs therefore build every part
-    # here: what they check is the code, not the cluster.
-    from rlinf.robotics.placement import specs as _specs
+    if remote:
+        # Workers install the fakes for themselves, so placement runs for real.
+        for name, value in _reach_worker_processes().items():
+            saved_environ[name] = os.environ.get(name)
+            os.environ[name] = value
+    else:
+        # A faked SDK lives in this process, and a part placed on a node is
+        # built in another one that never saw it. Build every part here: what
+        # this checks is the code, not the cluster.
+        from rlinf.robotics.placement import specs as _specs
 
-    def _place_here(self):
-        return self.part_cls.spawn(
-            *self.args, node_rank=None, name=self.name, **self.kwargs
-        )
+        def _place_here(self):
+            return self.part_cls.spawn(
+                *self.args, node_rank=None, name=self.name, **self.kwargs
+            )
 
-    patches.append((_specs.PartSpec, "place", _specs.PartSpec.place))
-    _specs.PartSpec.place = _place_here
+        patches.append((_specs.PartSpec, "place", _specs.PartSpec.place))
+        _specs.PartSpec.place = _place_here
     # Modules that start processes rather than only talking to an SDK. A fake
     # module in sys.modules arrives too late for these, because they import
     # psutil at module scope.
     processes = _no_processes()
+
+    # DOSW1 binds its SDK at module scope inside a try/except, so a module that
+    # was already imported holds None however early the fake is installed.
+    airbot = made.get("airbot_sdk.Airbot")
+    airbot_config = made.get("airbot_sdk.configs.config")
+    dosw1_patch = (
+        {
+            "_AirbotRobot": airbot.AirbotRobot,
+            "_AirbotSDKConfig": airbot_config.DosW1Config,
+        }
+        if airbot is not None and airbot_config is not None
+        else {}
+    )
     for dotted, attributes in {
         "rlinf.robotics.parts.arms.franka_ros": {"psutil": processes},
         "rlinf.robotics.parts.transports.ros.ros_controller": {"psutil": processes},
+        "rlinf.robotics.parts.arms.dosw1": dosw1_patch,
         **_PATCHES,
     }.items():
         target = sys.modules.get(dotted)
@@ -171,3 +223,8 @@ def mocked_sdks(*, extra: dict[str, Any] | None = None) -> Iterator[dict[str, An
                 sys.modules.pop(name, None)
             else:
                 sys.modules[name] = original
+        for name, original in saved_environ.items():
+            if original is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = original

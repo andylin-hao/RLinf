@@ -2377,3 +2377,87 @@ def test_the_bench_check_runs_a_whole_robot_on_fakes():
             )
             == 0
         )
+
+
+def test_every_shipped_robot_runs_on_faked_sdks():
+    """All five, through compose, connect, observe and disconnect.
+
+    Building the fakes is itself the check: each field a part reads has to be
+    there, with the shape the part expects, or this fails.
+    """
+    from robot_mocks import mocked_sdks
+
+    from toolkits.realworld_check.check_robot_parts import check
+
+    robots = {
+        "Franka": {"robot_ip": "10.0.0.1", "node_rank": 0},
+        "DualFranka": {
+            "left_robot_ip": "10.0.0.1",
+            "right_robot_ip": "10.0.0.2",
+            "left_gripper_connection": "/dev/ttyUSB0",
+            "right_gripper_connection": "/dev/ttyUSB1",
+        },
+        "GimArm": {
+            "node_rank": 0,
+            "can_interface": "can0",
+            "arm_variant": "gim_arm_xl",
+            "enable_gripper": True,
+            "gripper_type": "parallel",
+            "control_mode": "joint",
+            "env_idx": 0,
+            "worker_rank": 0,
+        },
+        "Turtle2": {
+            "frequency": 50,
+            "camera_ids": [1],
+            "env_idx": 0,
+            "node_rank": 0,
+            "worker_rank": 0,
+        },
+        "DOSW1": {
+            "node_rank": 0,
+            "robot_url": "localhost",
+            "left_arm_port": 1,
+            "right_arm_port": 2,
+            "left_lead_port": 3,
+            "right_lead_port": 4,
+            "enable_human_in_loop": False,
+            "is_dummy": False,
+            "gripper_width_max": 0.08,
+        },
+    }
+    with mocked_sdks():
+        import rlinf.robotics.robots  # noqa: F401
+
+        failed = [name for name, args in robots.items() if check(name, args) != 0]
+
+    assert failed == []
+
+
+def test_a_worker_installs_the_fakes_for_itself():
+    """A part placed on a node is built in a process that never saw them.
+
+    ``sitecustomize`` in the mock package is what closes that gap, so a mocked
+    run can exercise real placement rather than only in-process construction.
+    """
+    import subprocess
+    import sys
+
+    from robot_mocks import _reach_worker_processes
+
+    environment = {**os.environ, **_reach_worker_processes()}
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys, psutil;"
+            "print('pyrealsense2' in sys.modules, type(psutil).__name__)",
+        ],
+        capture_output=True,
+        text=True,
+        env=environment,
+        cwd="/tmp",
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "True _Psutil"

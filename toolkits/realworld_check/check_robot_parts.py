@@ -47,14 +47,14 @@ from typing import Any
 from rlinf.robotics.parts.base import Connection, Group
 
 
-def _mocked_sdks():
+def _mocked_sdks(remote=False):
     """The fake vendor SDKs, which live with the tests rather than the package."""
     tests = pathlib.Path(__file__).resolve().parents[2] / "tests" / "unit_tests"
     if str(tests) not in sys.path:
         sys.path.insert(0, str(tests))
     from robot_mocks import mocked_sdks
 
-    return mocked_sdks()
+    return mocked_sdks(remote=remote)
 
 
 def literal(text: str) -> Any:
@@ -87,12 +87,63 @@ def describe(robot: Any) -> list[str]:
     return lines
 
 
+def _as_build_arguments(robot_type, kwargs, registry_cls):
+    """Pack the arguments the way this robot's ``build`` wants them.
+
+    Most robots take their settings as keywords. Some take a config object
+    instead, and that object is the one the registry already knows about, so
+    the same ``--arg name=value`` works for both.
+    """
+    import dataclasses
+    import inspect
+
+    registration = registry_cls.registry.get(robot_type)
+    if registration is None or registration.build is None:
+        return kwargs
+    parameters = inspect.signature(registration.build).parameters
+    config_parameter = parameters.get("config")
+    # Franka spells its settings ``**config``, which is the keywords it already
+    # takes. Only a robot asking for one config *object* needs packing.
+    wants_object = (
+        config_parameter is not None
+        and config_parameter.kind is not inspect.Parameter.VAR_KEYWORD
+    )
+    if not wants_object or "config" in kwargs:
+        return kwargs
+
+    config_cls = registration.config_cls
+    fields = {f.name for f in dataclasses.fields(config_cls)}
+    build_parameters = set(parameters)
+    settings = {name: value for name, value in kwargs.items() if name in fields}
+    rest = {
+        name: value
+        for name, value in kwargs.items()
+        if name not in fields and name in build_parameters
+    }
+    # A robot may want more of its config than the registered class declares:
+    # DOSW1's hardware reads the env's config, which carries the ports and the
+    # human-in-the-loop switch. Anything left over is set on the config so the
+    # same --arg reaches it.
+    extra = {
+        name: value
+        for name, value in kwargs.items()
+        if name not in fields and name not in build_parameters
+    }
+    config = config_cls(**settings)
+    for name, value in extra.items():
+        setattr(config, name, value)
+    packed = sorted(settings) + [f"{name}*" for name in sorted(extra)]
+    print(f"      packing {packed} into {config_cls.__name__}")
+    return {"config": config, **rest}
+
+
 def check(robot_type: str, kwargs: dict[str, Any]) -> int:
     print(f"[1/5] composing {robot_type} with {kwargs}")
     # Importing the robots is what registers them.
     import rlinf.robotics.robots  # noqa: F401
-    from rlinf.robotics.discovery import build_robot
+    from rlinf.robotics.discovery import RobotDiscovery, build_robot
 
+    kwargs = _as_build_arguments(robot_type, kwargs, RobotDiscovery)
     robot = build_robot(robot_type, **kwargs)
 
     print("[2/5] parts, before connecting")
@@ -160,6 +211,12 @@ def main() -> int:
         "command works on a laptop and on the bench",
     )
     parser.add_argument(
+        "--remote",
+        action="store_true",
+        help="with --mock, place parts on nodes as a real run does, each "
+        "worker installing the fakes for itself",
+    )
+    parser.add_argument(
         "--arg",
         action="append",
         default=[],
@@ -178,7 +235,7 @@ def main() -> int:
     try:
         if args.mock:
             print("[mock] vendor SDKs are faked; this checks the code, not a robot")
-            with _mocked_sdks():
+            with _mocked_sdks(remote=args.remote):
                 return check(args.robot_type, kwargs)
         return check(args.robot_type, kwargs)
     except Exception:  # noqa: BLE001 - a bench check reports anything
