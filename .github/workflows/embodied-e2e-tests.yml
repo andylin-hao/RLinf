@@ -123,13 +123,37 @@ jobs:
           export UV_PYTHON_INSTALL_DIR=/workspace/dataset/.uv_python
           bash requirements/install.sh embodied --model openvla --env maniskill_libero
 
-      - name: ManiSkill SAC test
+      - name: Franka SAC dummy test
         timeout-minutes: 20
         run: |
           unset PYTHONPATH
           export REPO_PATH=$(pwd)
           source .venv/bin/activate
           bash tests/e2e_tests/embodied/run.sh realworld_dummy_sac_cnn
+
+      - name: Franka SAC mock-robot test
+        timeout-minutes: 20
+        run: |
+          unset PYTHONPATH
+          export REPO_PATH=$(pwd)
+          source .venv/bin/activate
+          bash tests/e2e_tests/embodied/run.sh realworld_mock_sac_cnn
+
+      - name: Dual Franka SAC mock-robot test
+        timeout-minutes: 20
+        run: |
+          unset PYTHONPATH
+          export REPO_PATH=$(pwd)
+          source .venv/bin/activate
+          bash tests/e2e_tests/embodied/run.sh realworld_dual_franka_mock_sac_cnn
+
+      - name: GimArm SAC mock-robot test
+        timeout-minutes: 20
+        run: |
+          unset PYTHONPATH
+          export REPO_PATH=$(pwd)
+          source .venv/bin/activate
+          bash tests/e2e_tests/embodied/run.sh gim_arm_mock_sac_cnn
 
       - name: Clean up
         run: |
@@ -159,6 +183,14 @@ jobs:
           source .venv/bin/activate
           bash tests/e2e_tests/embodied/run.sh realworld_xsquare_turtle2_dummy_sac_cnn
 
+      - name: Xsquare-turtle2 SAC mock-robot test
+        timeout-minutes: 20
+        run: |
+          unset PYTHONPATH
+          export REPO_PATH=$(pwd)
+          source .venv/bin/activate
+          bash tests/e2e_tests/embodied/run.sh realworld_xsquare_turtle2_mock_sac_cnn
+
       - name: Clean up
         run: |
           rm -rf .venv
@@ -186,6 +218,14 @@ jobs:
           export REPO_PATH=$(pwd)
           source .venv/bin/activate
           bash tests/e2e_tests/embodied/run.sh dosw1_dummy_sac_mlp_pick
+
+      - name: DOSW1 Pick SAC mock-robot test
+        timeout-minutes: 20
+        run: |
+          unset PYTHONPATH
+          export REPO_PATH=$(pwd)
+          source .venv/bin/activate
+          bash tests/e2e_tests/embodied/run.sh dosw1_mock_sac_mlp_pick
 
       - name: Clean up
         run: |

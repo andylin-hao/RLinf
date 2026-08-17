@@ -341,15 +341,59 @@ YAML 中，不要写死在 Python 代码里：
 这组测试覆盖调度器导入边界、单臂与双臂组合、任务与机器人的分界，以及所有内置真机
 环境暴露给策略的数据结构；运行时不需要真实硬件。
 
-剩下的部分必须有机器人才能验证。等机器人上电、网络可达之后，同一条路径可以直接跑在
-它上面：
+用假 SDK 跑一遍
+~~~~~~~~~~~~~~~
+
+部件只在打开时才导入厂商 SDK，不在模块导入时导入，所以只要往 ``sys.modules`` 里放一份
+假的，真实的部件类就能在线缆另一端空无一物的情况下跑起来。``tests/robot_mocks``
+为每个 SDK 提供了一份。
+
+让机器人的组合过程跑在假 SDK 上：
+
+.. code-block:: bash
+
+   python -m toolkits.realworld_check.check_robot_parts MyRobot --mock \
+       --arg robot_ip=10.0.0.1 --arg node_rank=0
+
+它会列出机器人由哪些部件组成、每个部件挂在哪条连接上、被放到了哪个节点，然后逐个读取
+观测并断开。以下情况会判定失败：某个部件返回了它没有声明过的观测；连接本身出现在部件
+树里；断开之后仍有东西声称自己是连着的。
+
+加上 ``--remote``，部件会被托管到调度器 worker 里，而不是留在当前进程。这一步专门用来
+暴露根本放不出去的部件：方法名和 worker 自己的撞车，或者状态跨不过进程边界。
+
+完整的训练同样可以这么跑。配置名里带 ``mock`` 时，``run.sh`` 会先装好这些假 SDK：
+
+.. code-block:: bash
+
+   bash tests/e2e_tests/embodied/run.sh realworld_mock_sac_cnn
+
+每种机器人都有一份，因此组合、wrapper 栈、观测空间和 runner 都会按上真机时的样子跑一遍：
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - 机器人
+     - 配置
+   * - Franka
+     - ``realworld_mock_sac_cnn``
+   * - 双臂 Franka
+     - ``realworld_dual_franka_mock_sac_cnn``
+   * - GimArm
+     - ``gim_arm_mock_sac_cnn``
+   * - Turtle2
+     - ``realworld_xsquare_turtle2_mock_sac_cnn``
+   * - DOSW1
+     - ``dosw1_mock_sac_mlp_pick``
+
+用真机跑一遍
+~~~~~~~~~~~~
+
+剩下的部分必须有硬件才能验证：时序、标定，以及设备文档里没写的那些行为。等机器人上电、
+网络可达之后，去掉 ``--mock``，同一条检查就跑在它上面：
 
 .. code-block:: bash
 
    python -m toolkits.realworld_check.check_robot_parts MyRobot \
        --arg robot_ip=10.0.0.1 --arg node_rank=1
-
-它会列出机器人由哪些部件组成、每个部件挂在哪条连接上、被放到了哪个节点，然后逐个读取
-观测并断开。以下情况会判定失败：某个部件返回了它没有声明过的观测；连接本身出现在部件
-树里；断开之后仍有东西声称自己是连着的。这些错误用假部件复现不出来，只有真设备接在
-另一端时才会显形。

@@ -16,6 +16,8 @@
 
 from __future__ import annotations
 
+import threading
+import time
 import types
 from typing import Any
 
@@ -112,6 +114,12 @@ def franky() -> types.ModuleType:
         CartesianImpedanceTracker=_Tracker,
         JointMotion=lambda *a, **k: ("joint", a, k),
         CartesianMotion=lambda *a, **k: ("cartesian", a, k),
+        # A joint waypoint, which a reset motion is built from.
+        JointState=lambda position=None, **_k: types.SimpleNamespace(
+            position=np.asarray(
+                HOME_JOINTS if position is None else position, dtype=np.float64
+            )
+        ),
         ReferenceType=types.SimpleNamespace(Absolute="Absolute"),
     )
 
@@ -149,6 +157,35 @@ def ros() -> dict[str, types.ModuleType]:
             """Deliver a message, defaulting to a fresh one of this type."""
             self.callback(message if message is not None else self.data_class())
 
+    class _Timer:
+        """A ROS timer that actually fires.
+
+        Parts drive themselves from timers: Turtle2 interpolates toward its
+        commanded pose on one, and an arm that never moves leaves the env
+        waiting for a reset that cannot converge. The thread is a daemon and
+        stops on ``shutdown``, as rospy's does.
+        """
+
+        def __init__(self, period, callback, oneshot=False, **_kwargs):
+            self.period = float(period)
+            self.callback = callback
+            self._running = True
+            self._thread = threading.Thread(target=self._tick, daemon=True)
+            self._thread.start()
+
+        def _tick(self):
+            while self._running:
+                time.sleep(max(self.period, 0.001))
+                if not self._running:
+                    return
+                try:
+                    self.callback(types.SimpleNamespace(current_real=0.0))
+                except Exception:  # pragma: no cover - a timer must not die
+                    return
+
+        def shutdown(self):
+            self._running = False
+
     def _message(**fields):
         """A message *class*: the transport isinstance-checks what it publishes."""
 
@@ -175,11 +212,7 @@ def ros() -> dict[str, types.ModuleType]:
         get_param=lambda *a, **k: None,
         Time=types.SimpleNamespace(now=lambda: 0.0),
         Duration=lambda seconds: seconds,
-        # A timer fires nothing: a mocked run drives state by calling the
-        # callbacks itself, so a background thread would only add flakiness.
-        Timer=lambda period, callback, **_k: types.SimpleNamespace(
-            period=period, callback=callback, shutdown=lambda: None
-        ),
+        Timer=_Timer,
         Rate=lambda _hz: types.SimpleNamespace(sleep=lambda: None),
         sleep=lambda _seconds: None,
         loginfo=lambda *_a, **_k: None,

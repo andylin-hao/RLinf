@@ -27,7 +27,10 @@ import numpy as np
 
 from ._fakes import module
 
-SERIAL = "MOCK0001"
+#: Serials the fake reports. A robot may carry several cameras, and each is
+#: opened by serial, so one device would leave the others unopenable.
+SERIALS = ("MOCK0001", "MOCK0002", "MOCK0003")
+SERIAL = SERIALS[0]
 
 
 class _Frames:
@@ -97,13 +100,16 @@ def realsense(width: int = 64, height: int = 48) -> types.ModuleType:
         def process(self, frames):
             return frames
 
-    device = types.SimpleNamespace(get_info=lambda _key: SERIAL)
+    devices = [
+        types.SimpleNamespace(get_info=lambda _key, serial=serial: serial)
+        for serial in SERIALS
+    ]
     fake = module(
         "pyrealsense2",
         pipeline=Pipeline,
         config=Config,
         align=Align,
-        context=lambda: types.SimpleNamespace(devices=[device]),
+        context=lambda: types.SimpleNamespace(devices=devices),
         camera_info=types.SimpleNamespace(serial_number="serial_number"),
         stream=types.SimpleNamespace(color="color", depth="depth"),
         format=types.SimpleNamespace(bgr8="bgr8", z16="z16"),

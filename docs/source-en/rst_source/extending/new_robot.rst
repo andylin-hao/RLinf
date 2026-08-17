@@ -379,17 +379,65 @@ These exercise the scheduler import boundary, single-arm and dual-arm
 composition, the task and robot split, and the policy-facing schema of every
 built-in real-world environment. None of it requires physical hardware.
 
-What is left needs the robot. Once it is powered and reachable, the same path
-runs against it:
+Run It Against Faked SDKs
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A part imports its vendor SDK when it opens, never at import time, so a fake in
+``sys.modules`` is enough to run the real part classes with nothing on the
+other end of the cable. ``tests/robot_mocks`` holds one fake per SDK.
+
+Walk your robot's composition against them:
+
+.. code-block:: bash
+
+   python -m toolkits.realworld_check.check_robot_parts MyRobot --mock \
+       --arg robot_ip=10.0.0.1 --arg node_rank=0
+
+It reports what the robot is made of, which connection backs each part and
+where it was placed, then reads every part and disconnects. It fails when a
+part observes something it never declared, when a connection ends up in the
+tree, or when anything still claims to be connected afterwards.
+
+Add ``--remote`` to host the parts in scheduler workers instead of this
+process. That is what catches a part that cannot be placed at all -- a method
+whose name collides with the worker's own, or state that does not survive the
+process boundary.
+
+A whole training run works the same way. ``run.sh`` installs the fakes when the
+config name contains ``mock``:
+
+.. code-block:: bash
+
+   bash tests/e2e_tests/embodied/run.sh realworld_mock_sac_cnn
+
+Every shipped robot has one, so the composition, the wrapper stack, the
+observation space and the runner all run as they would on a bench:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Robot
+     - Config
+   * - Franka
+     - ``realworld_mock_sac_cnn``
+   * - Dual Franka
+     - ``realworld_dual_franka_mock_sac_cnn``
+   * - GimArm
+     - ``gim_arm_mock_sac_cnn``
+   * - Turtle2
+     - ``realworld_xsquare_turtle2_mock_sac_cnn``
+   * - DOSW1
+     - ``dosw1_mock_sac_mlp_pick``
+
+Run It Against the Robot
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+What is left needs the hardware: timing, calibration, and whatever the device
+does that its documentation does not. Once it is powered and reachable, drop
+``--mock`` and the same check runs against it:
 
 .. code-block:: bash
 
    python -m toolkits.realworld_check.check_robot_parts MyRobot \
        --arg robot_ip=10.0.0.1 --arg node_rank=1
-
-It reports what the robot is made of, which connection backs each part and
-where it was placed, then reads every part and disconnects. It fails when a
-part observes something it never declared, when a connection ends up in the
-tree, or when anything still claims to be connected afterwards. Those are the
-mistakes that a fake cannot reproduce, because they only appear once a real
-device is on the other end.
