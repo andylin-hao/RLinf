@@ -34,7 +34,7 @@ from rlinf.robotics import (
     Robot,
     RobotInfo,
 )
-from rlinf.robotics.parts.arms import DOSW1Arm, DOSW1Hardware
+from rlinf.robotics.parts.arms import DOSW1Arm, DOSW1Connection
 from rlinf.robotics.parts.arms.dosw1 import DOSW1RobotState
 from rlinf.robotics.parts.cameras import BaseCamera, CameraInfo, create_camera
 from rlinf.robotics.parts.teleop.readers.keyboard import KeyboardListener
@@ -137,7 +137,7 @@ class DOSW1Env(gym.Env):
         self,
         config: DOSW1Config,
         worker_info: Optional[WorkerInfo],
-        hardware_info: Optional[RobotInfo[DOSW1RobotConfig]],
+        robot_info: Optional[RobotInfo[DOSW1RobotConfig]],
         env_idx: int,
     ) -> None:
         self._logger = get_logger()
@@ -149,10 +149,10 @@ class DOSW1Env(gym.Env):
             self.node_rank = worker_info.cluster_node_rank
             self.env_worker_rank = worker_info.rank
 
-        self.sdk: DOSW1Hardware | None = None
+        self.sdk: DOSW1Connection | None = None
         self.robot: Robot | None = None
         if not config.is_dummy:
-            self._apply_hardware_info(hardware_info)
+            self._apply_robot_info(robot_info)
             self.robot = DOSW1Robot.build(
                 config=config,
                 cameras={info.name: info for info in self._camera_infos()},
@@ -723,18 +723,15 @@ class DOSW1Env(gym.Env):
             serials.append(device.get_info(rs.camera_info.serial_number))
         return serials
 
-    def _apply_hardware_info(
-        self, hardware_info: Optional[RobotInfo[DOSW1RobotConfig]]
+    def _apply_robot_info(
+        self, robot_info: Optional[RobotInfo[DOSW1RobotConfig]]
     ) -> None:
-        if hardware_info is None:
+        if robot_info is None:
             return
-        assert isinstance(hardware_info, RobotInfo) and isinstance(
-            hardware_info.config, DOSW1RobotConfig
-        ), (
-            "hardware_info must contain a DOSW1RobotConfig, "
-            f"but got {type(hardware_info)}."
-        )
-        hw = hardware_info.config
+        assert isinstance(robot_info, RobotInfo) and isinstance(
+            robot_info.config, DOSW1RobotConfig
+        ), f"robot_info must contain a DOSW1RobotConfig, but got {type(robot_info)}."
+        hw = robot_info.config
         if hw.camera_serials:
             self.config.camera_serials = list(hw.camera_serials)
         if hw.robot_url and str(hw.robot_url).strip():

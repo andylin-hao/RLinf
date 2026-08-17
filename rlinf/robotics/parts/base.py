@@ -42,20 +42,23 @@ def run_parallel(
         return {key: future.result() for key, future in futures.items()}
 
 
-class RobotPart(ABC):
-    """Observable part of a physical robot, such as an arm or camera.
+class Endpoint(ABC):
+    """Something the robot opens on a machine and later closes.
 
-    A part answers three questions, and every kind of part answers them the
-    same way: :meth:`_open` reaches the hardware, :meth:`get_observation` reads
-    it, and :meth:`_release` lets it go. Connecting and disconnecting are handled
-    here, once, so a part is written by saying what its hardware is rather than
-    by re-implementing a lifecycle.
+    An endpoint has two properties and nothing else: a location, so it can be
+    declared here and built there with :meth:`at`, and a lifecycle, so
+    :meth:`_open` reaches the hardware and :meth:`_release` lets it go.
+    Connecting and disconnecting are handled here, once, so an endpoint is
+    written by saying what its hardware is rather than by re-implementing a
+    lifecycle.
 
-    Opening in :meth:`_open` rather than ``__init__`` is what lets a part be
-    declared on one machine and built on another with :meth:`at`.
+    Being observable is a separate matter, and it is what :class:`RobotPart`
+    adds. A camera and the ROS link that drives four other components are both
+    opened and closed the same way; only one of them means anything when you
+    read it.
 
-    A part with a lifecycle of its own -- an arm that must home before it is
-    usable -- may override :meth:`connect` and :meth:`disconnect` instead.
+    An endpoint with a lifecycle of its own -- an arm that must home before it
+    is usable -- may override :meth:`connect` and :meth:`disconnect` instead.
     """
 
     #: The vendor object this part talks to, or ``None`` before it is opened.
@@ -77,11 +80,6 @@ class RobotPart(ABC):
         """Whether the part is ready for observations."""
         return self._device is not None
 
-    @property
-    @abstractmethod
-    def observation_features(self) -> dict[str, Any]:
-        """Describe the values returned by :meth:`get_observation`."""
-
     def connect(self) -> None:
         """Connect to the physical part, once.
 
@@ -91,10 +89,6 @@ class RobotPart(ABC):
         if self._device is None:
             self._device = self._open() or self
 
-    @abstractmethod
-    def get_observation(self) -> dict[str, Any]:
-        """Read the current part observation."""
-
     def disconnect(self) -> None:
         """Release resources owned by the part, once."""
         if self._device is None:
@@ -103,18 +97,19 @@ class RobotPart(ABC):
         self._release()
 
     def reset(self) -> None:
-        """Reset the part when it has resettable state."""
+        """Reset this endpoint when it has resettable state."""
 
     # -- Composition ------------------------------------------------------
 
     @property
     def parts(self) -> dict[str, "RobotPart"]:
-        """The named parts belonging to this one. A leaf has none.
+        """The named parts this endpoint offers. A leaf has none.
 
-        One mechanism serves both directions of composition. Hardware whose
-        single connection drives several components returns them here; a
-        :class:`Group` returns what it was composed of. Nothing in the layer
-        needs to know which case it is looking at.
+        One mechanism serves both directions of composition. A
+        :class:`Connection` returns everything riding on it, a part that is
+        also a link returns itself and its siblings, and a :class:`Group`
+        returns what it was composed of. Nothing in the layer needs to know
+        which case it is looking at.
         """
         return {}
 
@@ -138,10 +133,9 @@ class RobotPart(ABC):
         A leaf part -- a camera, a gripper on its own port -- exposes no
         subparts, so this is what a remote handle proxies.
         """
-        described: dict[str, Any] = {
-            "kind": part_kind(self),
-            "observation": self.observation_features,
-        }
+        described: dict[str, Any] = {"kind": part_kind(self)}
+        if isinstance(self, RobotPart):
+            described["observation"] = self.observation_features
         if isinstance(self, ControllablePart):
             described["action"] = self.action_features
         return described
@@ -240,6 +234,25 @@ class RobotPart(ABC):
             return LocalPartHandle(part)
 
         return spawn_part_worker(cls, args, kwargs, node_rank=node_rank, name=name)
+
+
+class RobotPart(Endpoint):
+    """An endpoint you can read: a component of the robot itself.
+
+    An arm, a camera, a gripper. What separates a part from a bare
+    :class:`Endpoint` is that reading it means something, so a part says what
+    it observes and answers with it. Everything else -- declaring it, placing
+    it, opening and closing it -- it gets from being an endpoint.
+    """
+
+    @property
+    @abstractmethod
+    def observation_features(self) -> dict[str, Any]:
+        """Describe the values returned by :meth:`get_observation`."""
+
+    @abstractmethod
+    def get_observation(self) -> dict[str, Any]:
+        """Read the current part observation."""
 
 
 class ControllablePart(RobotPart):
@@ -448,31 +461,24 @@ class Group(ControllablePart):
         self._handle_of.clear()
 
 
-class Connection(RobotPart):
-    """Hardware that backs several parts without being one of them.
+class Connection(Endpoint):
+    """One link that backs several parts without being one of them.
 
     A ROS node, a CAN bus or an SDK session often drives more than one
     component: two arms, their grippers, and the wrist cameras on one link.
-    Such a connection has a location and a lifecycle, which is why it is
-    declared and placed like a part, but it has no observation of its own --
-    :meth:`parts` says what it backs, and a robot composes those.
+    Such a connection has a location and a lifecycle, which is what makes it an
+    :class:`Endpoint`, but reading it would mean nothing -- :meth:`parts` says
+    what it backs, and a robot composes those.
+
+    It is deliberately not a :class:`RobotPart`. A connection that had to be
+    one could only answer ``get_observation`` by refusing, or by repeating what
+    its parts already say; being a sibling instead means a robot cannot compose
+    it into the tree by accident, and there is nothing to refuse.
 
     A connection that *is* one component, like a ROS link to a single arm, is
     an ordinary part that lists itself in :meth:`parts`. The distinction is
     whether an observation of the whole thing means anything.
     """
-
-    @property
-    def observation_features(self) -> dict[str, Any]:
-        """Nothing: a connection is observed through the parts it backs."""
-        return {}
-
-    def get_observation(self) -> dict[str, Any]:
-        """Refuse: compose the parts this connection backs instead."""
-        raise TypeError(
-            f"{type(self).__name__} is a connection, not a part. Compose the "
-            f"parts it backs -- {sorted(self.parts)} -- and observe those."
-        )
 
 
 class MobileBase(ControllablePart):
@@ -489,12 +495,13 @@ _PART_KINDS: tuple[tuple[str, type], ...] = (
     ("camera", Camera),
     ("controllable", ControllablePart),
     ("part", RobotPart),
+    ("connection", Connection),
 )
 
 
-def part_kind(part: RobotPart) -> str:
-    """Classify a part so a remote proxy can mirror its interface."""
-    for kind, part_type in _PART_KINDS:
-        if isinstance(part, part_type):
+def part_kind(endpoint: Endpoint) -> str:
+    """Classify an endpoint so a remote proxy can mirror its interface."""
+    for kind, endpoint_type in _PART_KINDS:
+        if isinstance(endpoint, endpoint_type):
             return kind
-    raise TypeError(f"{type(part).__name__} is not a RobotPart.")
+    raise TypeError(f"{type(endpoint).__name__} is not an Endpoint.")

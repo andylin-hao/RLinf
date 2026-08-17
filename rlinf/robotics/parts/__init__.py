@@ -12,13 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Robot parts: what a component *is* to the policy.
+r"""Robot parts: what a component *is* to the policy.
 
 The taxonomy lives in :mod:`.base`; each category's implementations live in the
 subpackage named after it::
 
     parts/
-      base.py                     RobotPart, ControllablePart, Group, Camera,
+      base.py                     Endpoint, RobotPart, Connection,
+                                  ControllablePart, Group, Camera,
                                   EndEffector, MobileBase, LeggedBase
       arms/                       Franky, Franka ROS, GimArm, Turtle2, DOSW1
       cameras/                    RealSense, ZED, Lumos
@@ -28,10 +29,11 @@ subpackage named after it::
       transports/                 ROS
 
 A part says what a component means to the policy: its observation and action
-contract. Hardware that presents several components over one connection -- a
-dual-arm controller, a two-armed SDK session -- exposes them through
-:meth:`~.base.RobotPart.subparts`, so "owns a connection" is a property some
-parts have rather than a separate kind of thing.
+contract. A link that presents several components at once -- a dual-arm
+controller, a two-armed SDK session -- is a :class:`~.base.Connection` rather
+than a part: it lists what rides on it in :meth:`~.base.Endpoint.parts`, and
+the robot composes those. Both are :class:`~.base.Endpoint`\ s, so both are
+declared, placed, opened and closed the same way.
 
 Subpackages are not imported here: a node needs only the vendor SDKs for the
 hardware it actually has. Import ``rlinf.robotics.parts.cameras`` directly.
@@ -42,6 +44,7 @@ from .base import (
     Connection,
     ControllablePart,
     EndEffector,
+    Endpoint,
     Group,
     LeggedBase,
     MobileBase,
@@ -51,6 +54,7 @@ from .base import (
 
 __all__ = [
     "Connection",
+    "Endpoint",
     "Group",
     "Camera",
     "ControllablePart",

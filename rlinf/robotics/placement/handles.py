@@ -266,6 +266,26 @@ class RemoteEndEffector(RemoteControllablePart, EndEffector):
     """Hosted end effector."""
 
 
+class RemoteConnection(RemotePart):
+    """Hosted connection: opened and closed, never read.
+
+    Its parts are proxied individually, which is the only way anything reaches
+    what it backs.
+    """
+
+    @property
+    def observation_features(self) -> dict[str, Any]:
+        """Nothing. A connection is reached through the parts it backs."""
+        return {}
+
+    def get_observation(self) -> dict[str, Any]:
+        """Refuse, the same way the hosted connection would."""
+        raise TypeError(
+            f"{self._part_name or 'This endpoint'} is a connection, not a "
+            "part. Read the parts it backs instead."
+        )
+
+
 class RemoteCamera(RemotePart, Camera):
     """Hosted camera.
 
@@ -295,6 +315,7 @@ _REMOTE_PART_BY_KIND: dict[str, Callable[..., RemotePart]] = {
     "camera": RemoteCamera,
     "controllable": RemoteControllablePart,
     "part": RemotePart,
+    "connection": RemoteConnection,
 }
 
 
@@ -313,7 +334,8 @@ def _make_remote_part(
             described["observation"],
             described["action"],
         )
-    return part_cls(worker_group, name, described["observation"])
+    # A connection describes no observation, because reading it means nothing.
+    return part_cls(worker_group, name, described.get("observation", {}))
 
 
 class WorkerPartMeta(WorkerMeta, ABCMeta):

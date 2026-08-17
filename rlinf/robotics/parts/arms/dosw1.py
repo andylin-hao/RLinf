@@ -22,7 +22,12 @@ from typing import Protocol
 
 import numpy as np
 
-from rlinf.robotics.parts.base import ControllablePart, EndEffector, RobotPart
+from rlinf.robotics.parts.base import (
+    Connection,
+    ControllablePart,
+    EndEffector,
+    RobotPart,
+)
 from rlinf.utils.logging import get_logger
 
 #: Arm sides exposed by one DOSW1 SDK session.
@@ -52,7 +57,7 @@ class DOSW1RobotState:
 
 
 class DOSW1ConnectionConfig(Protocol):
-    """Connection fields required by :class:`DOSW1Hardware`."""
+    """Connection fields required by :class:`DOSW1Connection`."""
 
     robot_url: str
     left_arm_port: int
@@ -75,8 +80,14 @@ _CONTROL_LOOP_DT = 0.02
 _STATE_READY_TIMEOUT_S = 5.0
 
 
-class DOSW1Hardware(RobotPart):
-    """Thin wrapper around ``airbot_sdk.AirbotRobot`` for RLinf."""
+class DOSW1Connection(Connection):
+    """One ``airbot_sdk.AirbotRobot`` session, backing both arms.
+
+    The session drives four components and is none of them, so it is a
+    :class:`~rlinf.robotics.parts.base.Connection`: it owns connecting and
+    disconnecting, :meth:`parts` says what rides on it, and the robot composes
+    those.
+    """
 
     def __init__(self, config: DOSW1ConnectionConfig) -> None:
         self._logger = get_logger()
@@ -162,15 +173,6 @@ class DOSW1Hardware(RobotPart):
             parts[side] = DOSW1Arm(self, side)
             parts[f"{side}_end_effector"] = DOSW1EndEffector(self, side)
         return parts
-
-    @property
-    def observation_features(self) -> dict:
-        """Describe this session by its subparts; it has no state of its own."""
-        return {name: part.observation_features for name, part in self.parts.items()}
-
-    def get_observation(self) -> dict:
-        """Read every part riding on this session."""
-        return {name: part.get_observation() for name, part in self.parts.items()}
 
     def set_leader_arm_enabled(self, enabled: bool) -> None:
         """Toggle leader-arm linkage used by teleoperation."""
@@ -298,7 +300,9 @@ class DOSW1Hardware(RobotPart):
 
     def _require_connected(self) -> object:
         if not self._connected or self._robot is None:
-            raise RuntimeError("DOSW1Hardware is not connected. Call connect() first.")
+            raise RuntimeError(
+                "DOSW1Connection is not connected. Call connect() first."
+            )
         return self._robot
 
     def _wait_for_initial_state(self) -> None:
@@ -320,7 +324,7 @@ class DOSW1Hardware(RobotPart):
 
     def _require_connected_candidate(self) -> object:
         if self._robot is None:
-            raise RuntimeError("DOSW1Hardware failed to create AirbotRobot.")
+            raise RuntimeError("DOSW1Connection failed to create AirbotRobot.")
         return self._robot
 
     @staticmethod
@@ -362,7 +366,7 @@ class DOSW1Arm(ControllablePart):
 
     def __init__(
         self,
-        sdk: DOSW1Hardware,
+        sdk: DOSW1Connection,
         side: str,
         *,
         owns_connection: bool = False,
@@ -427,7 +431,7 @@ class DOSW1Arm(ControllablePart):
 class DOSW1EndEffector(EndEffector):
     """Present one DOSW1 gripper through the common end-effector API."""
 
-    def __init__(self, sdk: DOSW1Hardware, side: str) -> None:
+    def __init__(self, sdk: DOSW1Connection, side: str) -> None:
         if side not in {"left", "right"}:
             raise ValueError("DOSW1 gripper side must be 'left' or 'right'.")
         self.sdk = sdk

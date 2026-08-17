@@ -45,7 +45,7 @@ _MODULE_BY_NAME: dict[str, str] = {
     "DOSW1RobotState": ".dosw1",
     "DOSW1ConnectionConfig": ".dosw1",
     "DOSW1EndEffector": ".dosw1",
-    "DOSW1Hardware": ".dosw1",
+    "DOSW1Connection": ".dosw1",
     "FrankaROSArm": ".franka_ros",
     "FrankaRobotState": ".franka",
     "FrankyArm": ".franky",

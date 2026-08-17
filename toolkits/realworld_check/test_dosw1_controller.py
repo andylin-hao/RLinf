@@ -19,7 +19,7 @@ import time
 import numpy as np
 
 from rlinf.envs.real.dosw1.base import DOSW1Config
-from rlinf.robotics.parts.arms import DOSW1Hardware
+from rlinf.robotics.parts.arms import DOSW1Connection
 
 
 def _parse_args() -> argparse.Namespace:
@@ -113,7 +113,7 @@ def _fmt(arr: np.ndarray) -> str:
 def main() -> None:
     args = _parse_args()
     cfg = _build_config(args)
-    sdk = DOSW1Hardware(cfg)
+    sdk = DOSW1Connection(cfg)
 
     control_dt = 1.0 / max(args.control_hz, 1e-6)
     print_dt = 1.0 / max(args.print_hz, 1e-6)

@@ -36,6 +36,7 @@ from rlinf.robotics import (
     DOSW1RobotConfig,
     DualFrankaRobot,
     EndEffector,
+    Endpoint,
     FrankaRobot,
     GimArmConfig,
     Group,
@@ -520,7 +521,11 @@ def test_pure_drivers_construct_without_scheduler_or_vendor_sdks():
 
     assert all(isinstance(driver, ControllablePart) for driver in arms)
     assert all(isinstance(driver, Connection) for driver in buses)
-    assert all(isinstance(driver, RobotPart) for driver in arms + buses)
+    # Every one of them is an endpoint -- declared, placed, opened, closed --
+    # but only the arms are parts, because only they mean something when read.
+    assert all(isinstance(driver, Endpoint) for driver in arms + buses)
+    assert all(isinstance(driver, RobotPart) for driver in arms)
+    assert not any(isinstance(driver, RobotPart) for driver in buses)
     assert all(not driver.is_connected for driver in arms + buses)
     # Each declares the parts riding on its connection.
     assert all(driver.parts for driver in arms + buses)
@@ -1954,8 +1959,9 @@ def test_every_part_family_opens_and_closes_the_same_way():
         for retired in ("_close_device", "def initialize", "def shutdown"):
             assert retired not in source, f"{family.__name__} still has {retired}"
 
-    assert RobotPart.shutdown.__qualname__ == "RobotPart.shutdown"
-    assert BaseEndEffector.shutdown.__qualname__ == "RobotPart.shutdown"
+    # Teardown belongs to the endpoint, so a connection gets it too.
+    assert RobotPart.shutdown.__qualname__ == "Endpoint.shutdown"
+    assert BaseEndEffector.shutdown.__qualname__ == "Endpoint.shutdown"
 
 
 class _Part(RobotPart):
@@ -2090,8 +2096,12 @@ def test_a_connection_backing_several_parts_is_not_observable():
         "right",
         "right_end_effector",
     }
-    with pytest.raises(TypeError, match="is a connection, not a part"):
-        hardware.get_observation()
+    # Not "refuses to be read" but "is not the kind of thing you read": the
+    # methods are absent, so a robot cannot compose it into the tree and find
+    # out at the first step.
+    assert not isinstance(hardware, RobotPart)
+    assert not hasattr(hardware, "get_observation")
+    assert not hasattr(hardware, "observation_features")
 
 
 def test_every_robot_composes_from_named_parts():
@@ -2568,3 +2578,29 @@ def test_a_dual_arm_config_can_switch_its_address_check_off():
     )
 
     assert relaxed.left_robot_ip == "LEFT_ROBOT_IP"
+
+
+def test_a_connection_cannot_be_composed_into_a_robot():
+    """The tree holds parts. A connection backs them and is not one.
+
+    Before the split this was a policy: ``Connection`` inherited
+    ``get_observation`` and overrode it to raise, so a connection composed into
+    a robot by mistake type-checked fine and failed at the first read. Now the
+    method does not exist on it, and the two shapes that used to disagree --
+    a connection that refused to be read, and one that answered by repeating
+    its own parts -- are the same shape.
+    """
+    from rlinf.robotics.parts.arms.dosw1 import DOSW1Connection
+    from rlinf.robotics.parts.arms.turtle2 import Turtle2Connection
+    from rlinf.robotics.parts.base import Connection, Endpoint, RobotPart
+
+    for cls in (Turtle2Connection, DOSW1Connection):
+        assert issubclass(cls, Connection)
+        assert issubclass(cls, Endpoint), f"{cls.__name__} must still be placeable"
+        assert not issubclass(cls, RobotPart), (
+            f"{cls.__name__} is a connection; it must not be composable as a part"
+        )
+        for absent in ("get_observation", "observation_features"):
+            assert not hasattr(cls, absent), (
+                f"{cls.__name__}.{absent} exists, so a robot can compose it"
+            )

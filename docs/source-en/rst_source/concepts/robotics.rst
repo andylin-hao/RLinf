@@ -163,8 +163,9 @@ many parts refer to it.
 
 A connection is never in the tree itself, only the parts it backs. A link to a
 single arm *is* that arm and appears under its own name; a bus driving several
-components is none of them, and has no observation of its own to give. That is
-what ``Connection`` marks.
+components is none of them, and reading it would mean nothing. That is what
+``Connection`` marks, and it is a separate type rather than a part that declines
+to be read: a robot cannot compose a ``Connection`` into its tree at all.
 
 Any Part Runs Anywhere
 ----------------------
@@ -193,6 +194,13 @@ part.** An arm, gripper, camera, or mobile base is a ``RobotPart``. Each part
 knows how to connect and report an observation, and a controllable part also
 accepts an action. The device-facing behavior lives on that object rather than
 behind a second "driver" abstraction.
+
+Underneath a part sits a smaller idea. An ``Endpoint`` is anything the robot
+opens on a machine and later closes: it has a location, so it can be declared
+here and built there, and a lifecycle. A ``RobotPart`` is an endpoint that also
+means something when you read it. A ``Connection`` is an endpoint that does
+not -- which is why the two are siblings rather than one inheriting from the
+other.
 
 One connection does not always correspond to one physical component. Suppose a
 coupled controller drives two arms, two grippers, and two wrist cameras through
@@ -224,10 +232,18 @@ The Abstractions
 
    * - Abstraction
      - What it is
+   * - ``Endpoint``
+     - Anything the robot opens and closes: a location and a lifecycle, and
+       nothing else. It defines ``connect``, ``disconnect``, ``reset``, and
+       ``at()``. Both parts and connections are endpoints.
    * - ``RobotPart``
-     - Base class for a physical component. It defines ``connect``,
-       ``get_observation``, ``disconnect``, and ``reset``. Its
-       ``observation_features`` property describes the returned data.
+     - An endpoint you can read, which is what makes it a physical component of
+       the robot. It adds ``get_observation`` and the ``observation_features``
+       property that describes the returned data.
+   * - ``Connection``
+     - An endpoint that backs several parts without being one. It adds nothing
+       to ``Endpoint``: ``parts`` says what rides on it, and the robot composes
+       those.
    * - ``ControllablePart``
      - A part with a ``send_action`` method and an ``action_features``
        description of the accepted commands.

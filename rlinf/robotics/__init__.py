@@ -16,16 +16,22 @@
 
 Two concepts:
 
-* **Part** -- anything physical, with a policy-facing observation and action
-  contract: an arm, an end effector, a camera. Hardware that presents several
-  components over one connection -- a coupled dual-arm controller, a two-armed
-  SDK session -- exposes them through
-  :meth:`~rlinf.robotics.parts.base.RobotPart.subparts`. "Owns a connection" is
-  therefore a property some parts have, not a separate kind of thing.
+* **Endpoint** -- anything the robot opens on a machine and later closes. It
+  has a location and a lifecycle, and that is all. Both of the following are
+  endpoints.
+* **Part** -- an endpoint you can read, which is what makes it a component of
+  the robot: an arm, an end effector, a camera. It has a policy-facing
+  observation and action contract.
+* **Connection** -- an endpoint that backs several parts without being one. A
+  coupled dual-arm controller, a two-armed SDK session:
+  :meth:`~rlinf.robotics.parts.base.Endpoint.parts` says what rides on it, and
+  the robot composes those. Reading it would mean nothing, so it is a sibling
+  of ``Part`` rather than a part that declines to answer -- which is what keeps
+  it out of the robot's tree.
 * **Robot** -- a named composition of parts. See :mod:`rlinf.robotics.robot`.
 
-Any part can be placed on a node with
-:meth:`~rlinf.robotics.parts.base.RobotPart.spawn`, so a camera can run on the
+Any endpoint can be placed on a node with
+:meth:`~rlinf.robotics.parts.base.Endpoint.spawn`, so a camera can run on the
 machine it is plugged into while the policy runs elsewhere.
 
 The scheduler never imports this package, and parts never import the scheduler
@@ -49,6 +55,7 @@ _MODULE_GROUPS: dict[str, tuple[str, ...]] = {
         "Connection",
         "ControllablePart",
         "EndEffector",
+        "Endpoint",
         "LeggedBase",
         "MobileBase",
         "RobotPart",

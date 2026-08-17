@@ -63,9 +63,9 @@ class DOSW1Robot(Robot):
         Both arms share one SDK session, and it runs wherever the env worker
         runs, so the declaration carries no node.
         """
-        from ..parts.arms.dosw1 import DOSW1Hardware
+        from ..parts.arms.dosw1 import DOSW1Connection
 
-        sdk = DOSW1Hardware.at(config)
+        sdk = DOSW1Connection.at(config)
         return cls(**cls.build_arms(sdk), **cls.build_cameras(cameras))
 
 
