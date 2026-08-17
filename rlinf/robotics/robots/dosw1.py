@@ -56,16 +56,50 @@ class DOSW1Robot(Robot):
 
     @classmethod
     def build(
-        cls, *, config, cameras: Optional[Mapping[str, Any]] = None
+        cls,
+        *,
+        robot_url: str = "localhost",
+        left_arm_port: int = 50051,
+        right_arm_port: int = 50053,
+        left_lead_port: int = 50050,
+        right_lead_port: int = 50052,
+        enable_human_in_loop: bool = False,
+        gripper_width_max: float = 0.07,
+        is_dummy: bool = False,
+        cameras: Optional[Mapping[str, Any]] = None,
+        **_: Any,
     ) -> "DOSW1Robot":
         """Compose this robot from the parts it is made of.
 
         Both arms share one SDK session, and it runs wherever the env worker
         runs, so the declaration carries no node.
+
+        The settings are named rather than taken as one config object, the way
+        every other robot names them. Handing the whole object over meant the
+        session read fields that live on the env's config, so it could only be
+        built by an env -- never from a bench script or a test.
         """
         from ..parts.arms.dosw1 import DOSW1Connection
 
-        sdk = DOSW1Connection.at(config)
+        if "config" in _:
+            raise TypeError(
+                "DOSW1Robot.build no longer takes a config object; name the "
+                "settings instead, as every other robot does. Passing one "
+                "would land in **_ and quietly leave every setting at its "
+                "default -- including is_dummy, so the session would reach for "
+                "an SDK the caller meant to skip."
+            )
+
+        sdk = DOSW1Connection.at(
+            robot_url=robot_url,
+            left_arm_port=left_arm_port,
+            right_arm_port=right_arm_port,
+            left_lead_port=left_lead_port,
+            right_lead_port=right_lead_port,
+            enable_human_in_loop=enable_human_in_loop,
+            gripper_width_max=gripper_width_max,
+            is_dummy=is_dummy,
+        )
         return cls(**cls.build_arms(sdk), **cls.build_cameras(cameras))
 
 

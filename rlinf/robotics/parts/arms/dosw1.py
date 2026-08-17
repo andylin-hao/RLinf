@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from typing import Protocol
 
 import numpy as np
 
@@ -56,19 +55,6 @@ class DOSW1RobotState:
     timestamp: float = field(default_factory=time.time)
 
 
-class DOSW1ConnectionConfig(Protocol):
-    """Connection fields required by :class:`DOSW1Connection`."""
-
-    robot_url: str
-    left_arm_port: int
-    right_arm_port: int
-    left_lead_port: int
-    right_lead_port: int
-    enable_human_in_loop: bool
-    is_dummy: bool
-    gripper_width_max: float
-
-
 try:
     from airbot_sdk.Airbot import AirbotRobot as _AirbotRobot
     from airbot_sdk.configs.config import DosW1Config as _AirbotSDKConfig
@@ -89,10 +75,42 @@ class DOSW1Connection(Connection):
     those.
     """
 
-    def __init__(self, config: DOSW1ConnectionConfig) -> None:
+    def __init__(
+        self,
+        *,
+        robot_url: str = "localhost",
+        left_arm_port: int = 50051,
+        right_arm_port: int = 50053,
+        left_lead_port: int = 50050,
+        right_lead_port: int = 50052,
+        enable_human_in_loop: bool = False,
+        gripper_width_max: float = 0.07,
+        is_dummy: bool = False,
+    ) -> None:
+        """Say where the arms are, the way every other part does.
+
+        Args:
+            robot_url: Host of the AirBot gRPC endpoint.
+            left_arm_port: gRPC port of the left follower arm.
+            right_arm_port: gRPC port of the right follower arm.
+            left_lead_port: gRPC port of the left leader arm.
+            right_lead_port: gRPC port of the right leader arm.
+            enable_human_in_loop: Bring the leader arms up alongside the
+                followers, so an operator can take over.
+            gripper_width_max: Travel a gripper command is scaled against, in
+                metres.
+            is_dummy: Answer without touching the SDK.
+        """
         self._logger = get_logger()
-        self._config = config
-        self._leader_arm_enabled = bool(config.enable_human_in_loop)
+        self._robot_url = robot_url
+        self._left_arm_port = left_arm_port
+        self._right_arm_port = right_arm_port
+        self._left_lead_port = left_lead_port
+        self._right_lead_port = right_lead_port
+        self._enable_human_in_loop = enable_human_in_loop
+        self._gripper_width_max = gripper_width_max
+        self._is_dummy = is_dummy
+        self._leader_arm_enabled = bool(enable_human_in_loop)
         self._connected = False
         self._robot: object | None = None
 
@@ -103,7 +121,7 @@ class DOSW1Connection(Connection):
 
     def connect(self) -> None:
         """Connect to follower and optional leader arms."""
-        if self._config.is_dummy:
+        if self._is_dummy:
             self._connected = True
             return
 
@@ -112,31 +130,30 @@ class DOSW1Connection(Connection):
                 "airbot_sdk is not installed. Install it or set is_dummy=True."
             )
 
-        cfg = self._config
         sdk_cfg = _AirbotSDKConfig()
         sdk_cfg.USE_CAM = False
         sdk_cfg.USE_CAR = False
-        sdk_cfg.USE_LEAD_ARMS = bool(cfg.enable_human_in_loop)
+        sdk_cfg.USE_LEAD_ARMS = self._enable_human_in_loop
 
         self._logger.info(
             "[DOSW1SDK] Connecting via AirbotRobot (url=%s, ports=%s/%s/%s/%s) ...",
-            cfg.robot_url,
-            cfg.left_arm_port,
-            cfg.right_arm_port,
-            cfg.left_lead_port,
-            cfg.right_lead_port,
+            self._robot_url,
+            self._left_arm_port,
+            self._right_arm_port,
+            self._left_lead_port,
+            self._right_lead_port,
         )
 
         self._robot = _AirbotRobot(
             config_=sdk_cfg,
-            left_lead_port=cfg.left_lead_port,
-            left_lead_url=cfg.robot_url,
-            right_lead_port=cfg.right_lead_port,
-            right_lead_url=cfg.robot_url,
-            left_port=cfg.left_arm_port,
-            left_url=cfg.robot_url,
-            right_port=cfg.right_arm_port,
-            right_url=cfg.robot_url,
+            left_lead_port=self._left_lead_port,
+            left_lead_url=self._robot_url,
+            right_lead_port=self._right_lead_port,
+            right_lead_url=self._robot_url,
+            left_port=self._left_arm_port,
+            left_url=self._robot_url,
+            right_port=self._right_arm_port,
+            right_url=self._robot_url,
         )
         try:
             self._wait_for_initial_state()
@@ -178,7 +195,7 @@ class DOSW1Connection(Connection):
         """Toggle leader-arm linkage used by teleoperation."""
         enabled = bool(enabled)
         self._leader_arm_enabled = enabled
-        if self._config.is_dummy:
+        if self._is_dummy:
             return
         robot = self._require_connected()
         config_ = getattr(robot, "config_", None)
@@ -191,7 +208,7 @@ class DOSW1Connection(Connection):
 
     def get_left_joint(self) -> np.ndarray:
         """Return left follower arm state ``(7,)``."""
-        if self._config.is_dummy:
+        if self._is_dummy:
             return np.zeros(7)
         robot = self._require_connected()
         return np.asarray(
@@ -201,7 +218,7 @@ class DOSW1Connection(Connection):
 
     def get_right_joint(self) -> np.ndarray:
         """Return right follower arm state ``(7,)``."""
-        if self._config.is_dummy:
+        if self._is_dummy:
             return np.zeros(7)
         robot = self._require_connected()
         return np.asarray(
@@ -223,9 +240,9 @@ class DOSW1Connection(Connection):
 
     def open_gripper(self) -> None:
         """Open both grippers while holding current joint positions."""
-        if self._config.is_dummy:
+        if self._is_dummy:
             return
-        open_width = float(getattr(self._config, "gripper_width_max", 0.07))
+        open_width = float(self._gripper_width_max)
         left = self.get_left_joint()
         right = self.get_right_joint()
         self.left_go_joint(left[:6].tolist(), open_width)
@@ -233,7 +250,7 @@ class DOSW1Connection(Connection):
 
     def get_left_lead_joint(self) -> np.ndarray:
         """Return left leader arm state ``(7,)``."""
-        if self._config.is_dummy or not self._leader_arm_enabled:
+        if self._is_dummy or not self._leader_arm_enabled:
             return np.zeros(7)
         robot = self._require_connected()
         return np.asarray(
@@ -243,7 +260,7 @@ class DOSW1Connection(Connection):
 
     def get_right_lead_joint(self) -> np.ndarray:
         """Return right leader arm state ``(7,)``."""
-        if self._config.is_dummy or not self._leader_arm_enabled:
+        if self._is_dummy or not self._leader_arm_enabled:
             return np.zeros(7)
         robot = self._require_connected()
         return np.asarray(
@@ -259,7 +276,7 @@ class DOSW1Connection(Connection):
         interp: bool = False,
     ) -> None:
         """Command the left follower arm to target joint positions."""
-        if self._config.is_dummy:
+        if self._is_dummy:
             return
         robot = self._require_connected()
         robot.left_go_joint(list(joint), float(gripper), interp=interp)
@@ -272,28 +289,28 @@ class DOSW1Connection(Connection):
         interp: bool = False,
     ) -> None:
         """Command the right follower arm to target joint positions."""
-        if self._config.is_dummy:
+        if self._is_dummy:
             return
         robot = self._require_connected()
         robot.right_go_joint(list(joint), float(gripper), interp=interp)
 
     def forward_kinematics(self, joint: list[float]) -> np.ndarray:
         """Compute ee_pose from joint angles via SDK FK (arm-agnostic)."""
-        if self._config.is_dummy:
+        if self._is_dummy:
             return np.zeros(6)
         robot = self._require_connected()
         return np.asarray(robot.fk(joint), dtype=np.float64)
 
     def get_left_pose(self) -> np.ndarray:
         """Return current left arm ee_pose."""
-        if self._config.is_dummy:
+        if self._is_dummy:
             return np.zeros(6)
         robot = self._require_connected()
         return np.asarray(robot.left_get_pose(), dtype=np.float64)
 
     def get_right_pose(self) -> np.ndarray:
         """Return current right arm ee_pose."""
-        if self._config.is_dummy:
+        if self._is_dummy:
             return np.zeros(6)
         robot = self._require_connected()
         return np.asarray(robot.right_get_pose(), dtype=np.float64)
@@ -312,7 +329,7 @@ class DOSW1Connection(Connection):
             left_ready = len(self._get_robot_joint(robot, "left_get_joint")) == 7
             right_ready = len(self._get_robot_joint(robot, "right_get_joint")) == 7
             lead_ready = True
-            if self._config.enable_human_in_loop:
+            if self._enable_human_in_loop:
                 lead_ready = (
                     len(self._get_robot_joint(robot, "lead_left_get_joint")) == 7
                     and len(self._get_robot_joint(robot, "lead_right_get_joint")) == 7

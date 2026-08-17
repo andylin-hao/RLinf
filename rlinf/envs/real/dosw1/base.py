@@ -154,7 +154,14 @@ class DOSW1Env(gym.Env):
         if not config.is_dummy:
             self._apply_robot_info(robot_info)
             self.robot = DOSW1Robot.build(
-                config=config,
+                robot_url=config.robot_url,
+                left_arm_port=config.left_arm_port,
+                right_arm_port=config.right_arm_port,
+                left_lead_port=config.left_lead_port,
+                right_lead_port=config.right_lead_port,
+                enable_human_in_loop=config.enable_human_in_loop,
+                gripper_width_max=config.gripper_width_max,
+                is_dummy=config.is_dummy,
                 cameras={info.name: info for info in self._camera_infos()},
             )
             self.robot.connect()

@@ -113,7 +113,16 @@ def _fmt(arr: np.ndarray) -> str:
 def main() -> None:
     args = _parse_args()
     cfg = _build_config(args)
-    sdk = DOSW1Connection(cfg)
+    sdk = DOSW1Connection(
+        robot_url=cfg.robot_url,
+        left_arm_port=cfg.left_arm_port,
+        right_arm_port=cfg.right_arm_port,
+        left_lead_port=cfg.left_lead_port,
+        right_lead_port=cfg.right_lead_port,
+        enable_human_in_loop=cfg.enable_human_in_loop,
+        gripper_width_max=cfg.gripper_width_max,
+        is_dummy=cfg.is_dummy,
+    )
 
     control_dt = 1.0 / max(args.control_hz, 1e-6)
     print_dt = 1.0 / max(args.print_hz, 1e-6)

@@ -486,18 +486,7 @@ def test_every_registered_robot_carries_a_builder():
 
 
 def test_dosw1_dummy_runtime_uses_composed_dual_arm_interface():
-    @dataclass
-    class DummyDOSW1Config:
-        robot_url: str = "localhost"
-        left_arm_port: int = 50051
-        right_arm_port: int = 50053
-        left_lead_port: int = 50050
-        right_lead_port: int = 50052
-        enable_human_in_loop: bool = False
-        is_dummy: bool = True
-        gripper_width_max: float = 0.07
-
-    robot = DOSW1Robot.build(config=DummyDOSW1Config())
+    robot = DOSW1Robot.build(is_dummy=True)
     robot.connect()
 
     assert set(robot.parts) == {"left", "right"}
@@ -1247,27 +1236,10 @@ def test_importing_a_teleop_device_does_not_load_the_env_stack():
 # hardware, so these tests go through production paths end to end.
 
 
-def _dosw1_config():
-    from dataclasses import dataclass
-
-    @dataclass
-    class DummyDOSW1Config:
-        robot_url: str = "localhost"
-        left_arm_port: int = 50051
-        right_arm_port: int = 50053
-        left_lead_port: int = 50050
-        right_lead_port: int = 50052
-        enable_human_in_loop: bool = False
-        is_dummy: bool = True
-        gripper_width_max: float = 0.07
-
-    return DummyDOSW1Config()
-
-
 def _dosw1_robot():
     from rlinf.robotics.robots import DOSW1Robot
 
-    return DOSW1Robot.build(config=_dosw1_config())
+    return DOSW1Robot.build(is_dummy=True)
 
 
 def test_building_a_real_robot_touches_no_hardware():
@@ -2604,3 +2576,17 @@ def test_a_connection_cannot_be_composed_into_a_robot():
             assert not hasattr(cls, absent), (
                 f"{cls.__name__}.{absent} exists, so a robot can compose it"
             )
+
+
+def test_a_retired_dosw1_config_object_is_refused_not_ignored():
+    """``build`` absorbs unknown keywords, which is how a caller goes quiet.
+
+    It used to take one config object. A call still passing ``config=`` would
+    land in ``**_`` and leave every setting at its default -- ``is_dummy``
+    included, so a session meant to skip the SDK would reach for it and fail
+    somewhere else entirely.
+    """
+    from rlinf.robotics.robots import DOSW1Robot
+
+    with pytest.raises(TypeError, match="no longer takes a config object"):
+        DOSW1Robot.build(config=object())
