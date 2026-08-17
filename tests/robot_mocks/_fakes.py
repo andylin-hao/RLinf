@@ -21,13 +21,19 @@ to. Nothing about the part is stubbed: its own code runs.
 
 from __future__ import annotations
 
+import importlib.machinery
 import types
 from typing import Any
 
 
 def module(name: str, **members: Any) -> types.ModuleType:
-    """A module with these members, registered under a dotted name."""
+    """A module with these members, registered under a dotted name.
+
+    It carries a ``__spec__`` because libraries check for a package with
+    ``importlib.util.find_spec``, which raises on a module that has none.
+    """
     fake = types.ModuleType(name)
+    fake.__spec__ = importlib.machinery.ModuleSpec(name, loader=None)
     for key, value in members.items():
         setattr(fake, key, value)
     return fake

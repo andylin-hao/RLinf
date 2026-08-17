@@ -101,6 +101,8 @@ def _no_processes() -> Any:
             return getattr(real, name)
 
     fake = _Psutil("psutil")
+    # Keep the real spec: libraries ask find_spec whether psutil is installed.
+    fake.__spec__ = real.__spec__
     fake.Popen = Popen
     # Nothing of ours is running, so the roscore search finds nothing and the
     # transport starts its own -- which is the stub above.

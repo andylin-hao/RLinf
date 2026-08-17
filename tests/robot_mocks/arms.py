@@ -121,22 +121,49 @@ def ros() -> dict[str, types.ModuleType]:
     published: list[tuple[str, Any]] = []
 
     class Publisher:
+        """Keeps its message type: the transport checks what is put on it."""
+
         def __init__(self, name, data_class, **_kwargs):
             self.name = name
+            self.data_class = data_class
 
         def publish(self, message):
             published.append((self.name, message))
 
     class Subscriber:
+        """Delivers one message as soon as it subscribes.
+
+        A ROS channel counts as up once its callback has fired, so a
+        subscriber that never delivers leaves the arm waiting for a robot that
+        looks switched off. One message is what a live robot publishing state
+        looks like from here.
+        """
+
         def __init__(self, name, data_class, callback, **_kwargs):
             self.name = name
             self.callback = callback
+            self.data_class = data_class
+            self.publish()
+
+        def publish(self, message=None):
+            """Deliver a message, defaulting to a fresh one of this type."""
+            self.callback(message if message is not None else self.data_class())
 
     def _message(**fields):
-        def make(*_args, **_kwargs):
-            return types.SimpleNamespace(**fields)
+        """A message *class*: the transport isinstance-checks what it publishes."""
 
-        return make
+        names = list(fields)
+
+        def __init__(self, *positional, **overrides):
+            # ROS message types take their fields positionally too, which is
+            # how geometry_msgs.Point(x, y, z) is spelled at the call site.
+            values = dict(fields)
+            values.update(dict(zip(names, positional)))
+            values.update(overrides)
+            for name, value in values.items():
+                setattr(self, name, value)
+
+        return type("Message", (), {"__init__": __init__, "_fields": fields})
 
     rospy = module(
         "rospy",
@@ -179,9 +206,13 @@ def ros() -> dict[str, types.ModuleType]:
     franka_msgs = module(
         "franka_msgs.msg",
         FrankaState=_message(
-            O_T_EE=list(np.eye(4).flatten()),
+            # Column-major, as libfranka publishes it.
+            O_T_EE=list(np.eye(4).flatten(order="F")),
             q=list(HOME_JOINTS),
             dq=[0.0] * 7,
+            # Wrench in the stiffness frame; the arm reads force and torque
+            # out of this one message.
+            K_F_ext_hat_K=[0.0] * 6,
             O_F_ext_hat_K=[0.0] * 6,
             robot_mode=2,
         ),
@@ -196,10 +227,20 @@ def ros() -> dict[str, types.ModuleType]:
             update_configuration=lambda *_: None
         ),
     )
+
+    def _gripper_goal():
+        """The goal a grasp or move message carries, with room for its fields."""
+        return types.SimpleNamespace(
+            width=0.0,
+            speed=0.0,
+            force=0.0,
+            epsilon=types.SimpleNamespace(inner=0.0, outer=0.0),
+        )
+
     gripper_msgs = module(
         "franka_gripper.msg",
-        GraspActionGoal=_message(goal=types.SimpleNamespace()),
-        MoveActionGoal=_message(goal=types.SimpleNamespace()),
+        GraspActionGoal=_message(goal=_gripper_goal()),
+        MoveActionGoal=_message(goal=_gripper_goal()),
     )
     sensor_msgs = module("sensor_msgs.msg", JointState=_message(position=[0.0, 0.0]))
     bridge = module(

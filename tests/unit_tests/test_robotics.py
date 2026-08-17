@@ -2461,3 +2461,27 @@ def test_a_worker_installs_the_fakes_for_itself():
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "True _Psutil"
+
+
+def test_a_wrapper_that_narrows_the_action_declares_it():
+    """The teleop layout is read from the wrapped env, not the bare one.
+
+    ``GripperCloseEnv`` holds the gripper shut and drops that channel, so an
+    env declaring seven numbers presents six. Composing teleop above it raised
+    "the declaration and step() disagree" until the wrapper said what it took
+    away -- which only a full stack shows, because that is where wrappers are
+    applied before teleop.
+    """
+    from types import SimpleNamespace
+
+    from rlinf.envs.real.franka.base import FrankaEnv
+    from rlinf.envs.real.wrappers.transforms import GripperCloseEnv
+
+    inner = SimpleNamespace(
+        action_parts=lambda: FrankaEnv.action_parts(SimpleNamespace(_is_hand=False))
+    )
+    wrapper = GripperCloseEnv.__new__(GripperCloseEnv)
+    wrapper.env = SimpleNamespace(get_wrapper_attr=lambda name: getattr(inner, name))
+
+    assert [part.name for part in wrapper.action_parts()] == ["arm"]
+    assert sum(part.width for part in wrapper.action_parts()) == 6
