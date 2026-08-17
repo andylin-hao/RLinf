@@ -105,6 +105,9 @@ jobs:
               - 'examples/reward/**'
               - 'tests/e2e_tests/embodied/**'
               - 'tests/e2e_tests/evaluations/**'
+              # The mock-robot e2e runs are these fakes; a change to one of
+              # them changes what those tests exercise.
+              - 'tests/robot_mocks/**'
               - 'evaluations/**'
               - '.github/workflows/embodied-e2e-tests.yml'
             toolkits_no_ci_filter: &toolkits_no_ci
