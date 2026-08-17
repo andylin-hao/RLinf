@@ -65,11 +65,11 @@ state and send commands through the same interface used by other robots:
    robot.connect()
 
    observation = robot.get_observation()
-   observation["arm"]["arm"]["tcp_pose"]            # Cartesian pose
-   observation["arm"]["end_effector"]["state"]      # gripper width
+   observation["arm"]["tcp_pose"]                   # Cartesian pose
+   observation["end_effector"]["state"]             # gripper width
 
    robot.send_action(
-       {"arm": {"arm": {"tcp_pose": target}, "end_effector": {"target": width}}}
+       {"arm": {"tcp_pose": target}, "end_effector": {"target": width}}
    )
 
    robot.reset()
@@ -144,22 +144,27 @@ A third backend needs an arm implementation and an entry in
 ``FRANKA_BACKENDS``. Robot classes continue to call ``declare_arm`` rather than
 naming the concrete arm class themselves.
 
-An Arm Arrives Whole
---------------------
+One Connection, Named Parts
+---------------------------
 
 The gripper raises a related composition question: it shares the Franka arm's
-connection, so it belongs to the arm. When the arm joins a robot, the gripper is
-already present as its ``end_effector`` part:
+connection. A connection often backs more than one component -- an arm and its
+gripper here, a ROS node driving two arms and their cameras elsewhere -- so the
+connection says which parts ride on it, and the robot names them:
 
 .. code-block:: python
 
    robot = FrankaRobot.build(robot_ip="10.0.0.1", node_rank=1, ...)
 
-   robot.parts                  # {"arm": ...}
-   robot.part("arm").parts      # {"arm": ..., "end_effector": ...}
+   robot.parts                  # {"arm": ..., "end_effector": ...}
 
-``build`` never mentions the gripper. The arm describes the components available
-through its connection, while the robot chooses only its top-level hardware.
+Both names come from one declaration, so the connection is opened once however
+many parts refer to it.
+
+A connection is never in the tree itself, only the parts it backs. A link to a
+single arm *is* that arm and appears under its own name; a bus driving several
+components is none of them, and has no observation of its own to give. That is
+what ``Connection`` marks.
 
 Any Part Runs Anywhere
 ----------------------
@@ -347,16 +352,16 @@ and gripper share a connection, adding the arm also adds its
 
 .. code-block:: python
 
+   link = FrankaROSArm.at(robot_ip, node_rank=1)
    robot = FrankaRobot(
-       arm=FrankaROSArm.at(robot_ip, node_rank=1),
+       arm=link.part("arm"),
+       end_effector=link.part("end_effector"),
        wrist=RealSenseCamera.at(info, node_rank=3),
    )
 
-   robot.part("arm").parts     # {"arm": ..., "end_effector": ...}
-
-Use ``part(...)`` when one hardware declaration exposes several peer
-components. For example, a coupled controller may drive two arms without being
-an arm itself; the robot selects each arm from that declaration.
+``part(...)`` names one component of a declaration, and every robot composes
+this way. A coupled controller driving two arms without being an arm itself is
+the same shape: the robot selects each arm from that one declaration.
 
 For robot classes, organize the builder by part kind. ``build`` combines the
 ``build_*`` mappings, while a variant with another arm count can replace only

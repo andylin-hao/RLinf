@@ -58,11 +58,11 @@
    robot.connect()
 
    observation = robot.get_observation()
-   observation["arm"]["arm"]["tcp_pose"]            # 末端笛卡尔位姿
-   observation["arm"]["end_effector"]["state"]      # 夹爪开合
+   observation["arm"]["tcp_pose"]                   # 末端笛卡尔位姿
+   observation["end_effector"]["state"]             # 夹爪开合
 
    robot.send_action(
-       {"arm": {"arm": {"tcp_pose": target}, "end_effector": {"target": width}}}
+       {"arm": {"tcp_pose": target}, "end_effector": {"target": width}}
    )
 
    robot.reset()
@@ -129,20 +129,24 @@ Franka 有两套控制后端，机器人类通过 ``BACKEND`` 选择其中一套
 接入第三种后端时，新增一个机械臂部件，再把它登记到 ``FRANKA_BACKENDS``。机器人类
 继续调用 ``declare_arm``，不直接写具体的机械臂类名。
 
-机械臂整体到位
---------------
+一条连接，多个具名部件
+----------------------
 
-接下来看看夹爪。Franka 夹爪与机械臂共用一条连接，因此它属于机械臂；把机械臂加入
-机器人时，夹爪已经作为 ``end_effector`` 子部件包含在内：
+接下来看看夹爪。Franka 夹爪与机械臂共用一条连接。一条连接往往支撑不止一个组件——
+这里是机械臂和它的夹爪，别处则可能是一个 ROS 节点带着两条手臂和几个相机——所以由
+连接说明哪些部件挂在它上面，再由机器人给这些部件命名：
 
 .. code-block:: python
 
    robot = FrankaRobot.build(robot_ip="10.0.0.1", node_rank=1, ...)
 
-   robot.parts                  # {"arm": ...}
-   robot.part("arm").parts      # {"arm": ..., "end_effector": ...}
+   robot.parts                  # {"arm": ..., "end_effector": ...}
 
-``build`` 没有提到夹爪。机械臂列出这条连接能够访问的组件，机器人只选择顶层硬件。
+两个名字来自同一份声明，因此无论多少部件引用它，这条连接只会打开一次。
+
+连接本身不会进入部件树，进去的只有它支撑的部件。通往单条手臂的连接*就是*那条手臂，
+以自己的名字出现；而驱动多个组件的总线不是其中任何一个，也就没有自己的观测可给。
+``Connection`` 标记的正是后者。
 
 任何部件都能放在任何节点
 ------------------------
@@ -306,9 +310,14 @@ SDK 往往不允许在一条链路上并发调用。Franka 类本身不参与这
        wrist=RealSenseCamera.at(info, node_rank=3),
    )
 
-   robot.part("arm").parts     # {"arm": ..., "end_effector": ...}
+   link = FrankaROSArm.at(robot_ip, node_rank=1)
+   robot = FrankaRobot(
+       arm=link.part("arm"),
+       end_effector=link.part("end_effector"),
+       wrist=RealSenseCamera.at(info, node_rank=3),
+   )
 
-一条硬件声明若暴露多个同级组件，再用 ``part(...)`` 逐个选取。比如，联动控制器可以
+``part(...)`` 用来点名一份声明里的某个组件，所有机器人都按这种方式组装。比如，联动控制器可以
 驱动两条机械臂，但它本身不是机械臂；机器人应从声明中选出左右臂。
 
 机器人类的构建逻辑按部件类别拆开。``build`` 汇总各个 ``build_*`` 映射，机械臂数量

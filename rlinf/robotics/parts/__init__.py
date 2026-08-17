@@ -39,6 +39,7 @@ hardware it actually has. Import ``rlinf.robotics.parts.cameras`` directly.
 
 from .base import (
     Camera,
+    Connection,
     ControllablePart,
     EndEffector,
     Group,
@@ -49,6 +50,7 @@ from .base import (
 )
 
 __all__ = [
+    "Connection",
     "Group",
     "Camera",
     "ControllablePart",

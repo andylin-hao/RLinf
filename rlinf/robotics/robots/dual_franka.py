@@ -26,6 +26,7 @@ from ..discovery import (
     RobotDiscovery,
     RobotInfo,
 )
+from ..parts.base import Group
 from .franka import FrankaRobot
 
 
@@ -70,16 +71,20 @@ class DualFrankaRobot(FrankaRobot):
                 right_node_rank,
             ),
         }
-        return {
-            side: cls.declare_arm(
+        arms = {}
+        for side, (robot_ip, gripper_type, connection, node_rank) in sides.items():
+            declared = cls.declare_arm(
                 robot_ip,
                 node_rank=node_rank,
                 name=f"{cls.ROBOT_TYPE}Arm-{side}-{worker_rank}-{env_idx}",
                 gripper_type=gripper_type,
                 gripper_connection=connection,
             )
-            for side, (robot_ip, gripper_type, connection, node_rank) in sides.items()
-        }
+            arms[side] = Group(
+                arm=declared.part("arm"),
+                end_effector=declared.part("end_effector"),
+            )
+        return arms
 
 
 class DualFrankaDiscovery(RobotDiscovery):

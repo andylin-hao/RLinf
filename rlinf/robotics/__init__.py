@@ -46,6 +46,7 @@ _MODULE_GROUPS: dict[str, tuple[str, ...]] = {
     ".parts": (
         "Group",
         "Camera",
+        "Connection",
         "ControllablePart",
         "EndEffector",
         "LeggedBase",

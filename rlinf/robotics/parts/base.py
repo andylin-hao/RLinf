@@ -448,6 +448,33 @@ class Group(ControllablePart):
         self._handle_of.clear()
 
 
+class Connection(RobotPart):
+    """Hardware that backs several parts without being one of them.
+
+    A ROS node, a CAN bus or an SDK session often drives more than one
+    component: two arms, their grippers, and the wrist cameras on one link.
+    Such a connection has a location and a lifecycle, which is why it is
+    declared and placed like a part, but it has no observation of its own --
+    :meth:`parts` says what it backs, and a robot composes those.
+
+    A connection that *is* one component, like a ROS link to a single arm, is
+    an ordinary part that lists itself in :meth:`parts`. The distinction is
+    whether an observation of the whole thing means anything.
+    """
+
+    @property
+    def observation_features(self) -> dict[str, Any]:
+        """Nothing: a connection is observed through the parts it backs."""
+        return {}
+
+    def get_observation(self) -> dict[str, Any]:
+        """Refuse: compose the parts this connection backs instead."""
+        raise TypeError(
+            f"{type(self).__name__} is a connection, not a part. Compose the "
+            f"parts it backs -- {sorted(self.parts)} -- and observe those."
+        )
+
+
 class MobileBase(ControllablePart):
     """Controllable wheeled or tracked base."""
 

@@ -18,7 +18,7 @@ from dataclasses import asdict, dataclass, field
 
 import numpy as np
 
-from rlinf.robotics.parts.base import ControllablePart, RobotPart
+from rlinf.robotics.parts.base import Connection, RobotPart
 from rlinf.robotics.parts.views import MethodArm, MethodCamera, MethodGripper
 from rlinf.utils.logging import get_logger
 
@@ -61,13 +61,12 @@ class Turtle2RobotState:
         return asdict(self)
 
 
-class Turtle2Hardware(ControllablePart):
+class Turtle2Hardware(Connection):
     """Turtle2 hardware over ROS, with no scheduler dependency.
 
     One ROS connection drives both arms, both grippers, and the wrist cameras.
-    :meth:`parts` decomposes it into those views; the coupled
-    :meth:`send_action` on the hardware itself remains for callers that command
-    both arms in one shot.
+    None of those is the connection, so it is a :class:`Connection` rather than
+    a part: :meth:`parts` says what it backs, and the robot composes those.
     """
 
     def __init__(self, freq=50, camera_ids=()):
@@ -105,16 +104,6 @@ class Turtle2Hardware(ControllablePart):
     def is_connected(self) -> bool:
         """Whether the ROS-backed controller is active."""
         return self._connected
-
-    @property
-    def observation_features(self) -> dict:
-        """Describe the complete Turtle2 state."""
-        return {name: {} for name in self._state.to_dict()}
-
-    @property
-    def action_features(self) -> dict:
-        """Describe coupled left and right Cartesian targets."""
-        return {"left_tcp_pose": {}, "right_tcp_pose": {}}
 
     def connect(self) -> None:
         """Connect the ROS controller and start state/control timers."""
@@ -157,22 +146,6 @@ class Turtle2Hardware(ControllablePart):
     def reset(self) -> None:
         """Reset both arm targets to zero."""
         self.reset_arms()
-
-    def get_observation(self) -> dict:
-        """Return the canonical Turtle2 state dictionary."""
-        return self.get_state().to_dict()
-
-    def send_action(self, action: dict) -> dict:
-        """Apply a coupled pair of Cartesian arm targets."""
-        if set(action) != {"left_tcp_pose", "right_tcp_pose"}:
-            raise KeyError(
-                "Turtle2 action requires 'left_tcp_pose' and 'right_tcp_pose'."
-            )
-        self.move_arm(
-            list(action["left_tcp_pose"]),
-            list(action["right_tcp_pose"]),
-        )
-        return action
 
     def disconnect(self) -> None:
         """Detach from the shared ROS process."""

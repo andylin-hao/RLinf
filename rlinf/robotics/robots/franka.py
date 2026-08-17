@@ -98,15 +98,17 @@ class FrankaRobot(Robot):
         Override this to give a robot a different number of arms; everything
         else about building stays the same.
         """
+        connection = cls.declare_arm(
+            robot_ip,
+            node_rank=node_rank,
+            name=f"{cls.ROBOT_TYPE}Arm-{worker_rank}-{env_idx}",
+            gripper_connection=gripper_connection,
+            end_effector_type=end_effector_type,
+            end_effector_config=end_effector_config,
+        )
         return {
-            "arm": cls.declare_arm(
-                robot_ip,
-                node_rank=node_rank,
-                name=f"{cls.ROBOT_TYPE}Arm-{worker_rank}-{env_idx}",
-                gripper_connection=gripper_connection,
-                end_effector_type=end_effector_type,
-                end_effector_config=end_effector_config,
-            )
+            "arm": connection.part("arm"),
+            "end_effector": connection.part("end_effector"),
         }
 
     @classmethod

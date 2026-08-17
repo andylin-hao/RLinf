@@ -507,18 +507,23 @@ def test_dosw1_dummy_runtime_uses_composed_dual_arm_interface():
 
 
 def test_pure_drivers_construct_without_scheduler_or_vendor_sdks():
-    drivers = [
+    from rlinf.robotics.parts.base import Connection
+
+    # A link to one arm is that arm, and commands it.
+    arms = [
         FrankaROSArm("10.0.0.1"),
         FrankyArm("10.0.0.1"),
         GimArm("can0", "gim_arm_xl", True, "parallel"),
-        Turtle2Hardware(),
     ]
+    # A bus driving several components is no one of them.
+    buses = [Turtle2Hardware()]
 
-    assert all(isinstance(driver, RobotPart) for driver in drivers)
-    assert all(isinstance(driver, ControllablePart) for driver in drivers)
-    assert all(not driver.is_connected for driver in drivers)
+    assert all(isinstance(driver, ControllablePart) for driver in arms)
+    assert all(isinstance(driver, Connection) for driver in buses)
+    assert all(isinstance(driver, RobotPart) for driver in arms + buses)
+    assert all(not driver.is_connected for driver in arms + buses)
     # Each declares the parts riding on its connection.
-    assert all(driver.parts for driver in drivers)
+    assert all(driver.parts for driver in arms + buses)
 
 
 def _fake_arm_backend(monkeypatch, *, failing_ip=None, disconnected=None):
@@ -2061,3 +2066,106 @@ def test_build_is_only_for_robots_reached_by_name():
 
     with pytest.raises(NotImplementedError, match="Construct Bench"):
         Bench.build()
+
+
+# --- a connection is not a part ---------------------------------------
+
+
+def test_a_connection_backing_several_parts_is_not_observable():
+    """One ROS node driving two arms is no part, and says so.
+
+    It used to satisfy the part interface with an observation of the whole
+    robot and a coupled two-arm action that nothing called.
+    """
+    from rlinf.robotics.parts.arms.turtle2 import Turtle2Hardware
+    from rlinf.robotics.parts.base import Connection, ControllablePart
+
+    assert issubclass(Turtle2Hardware, Connection)
+    assert not issubclass(Turtle2Hardware, ControllablePart)
+
+    hardware = Turtle2Hardware()
+    assert set(hardware.parts) == {
+        "left",
+        "left_end_effector",
+        "right",
+        "right_end_effector",
+    }
+    with pytest.raises(TypeError, match="is a connection, not a part"):
+        hardware.get_observation()
+
+
+def test_every_robot_composes_from_named_parts():
+    """No robot puts a whole connection in its tree.
+
+    A connection that also happens to be a part -- a ROS link to one arm --
+    then lands under its own name rather than under a name that repeats it.
+    """
+    from rlinf.robotics.placement.specs import PartSpec
+    from rlinf.robotics.robots.dual_franka import DualFrankaRobot
+    from rlinf.robotics.robots.franka import FrankaRobot
+    from rlinf.robotics.robots.gim_arm import GimArmRobot
+
+    built = [
+        FrankaRobot.build_arms(robot_ip="1.2.3.4", node_rank=0),
+        GimArmRobot.build_arms(
+            node_rank=0,
+            can_interface="can0",
+            arm_variant="xl",
+            enable_gripper=True,
+            gripper_type="default",
+            control_mode="joint",
+        ),
+        DualFrankaRobot.build_arms(left_robot_ip="1.2.3.4", right_robot_ip="1.2.3.5"),
+    ]
+    for arms in built:
+        for name, value in arms.items():
+            values = list(value.parts.values()) if hasattr(value, "parts") else [value]
+            assert not any(isinstance(v, PartSpec) for v in values), (
+                f"{name} holds a whole connection rather than its parts"
+            )
+
+
+def test_one_connection_backs_every_part_that_names_it():
+    """Both halves of an arm share a link; two arms do not share one."""
+    from rlinf.robotics.robots.dual_franka import DualFrankaRobot
+    from rlinf.robotics.robots.franka import FrankaRobot
+
+    single = FrankaRobot.build_arms(robot_ip="1.2.3.4", node_rank=0)
+    assert len({id(ref.spec) for ref in single.values()}) == 1
+
+    dual = DualFrankaRobot.build_arms(left_robot_ip="1.2.3.4", right_robot_ip="1.2.3.5")
+    sides = {
+        side: {id(ref.spec) for ref in group.parts.values()}
+        for side, group in dual.items()
+    }
+    assert len(sides["left"]) == 1 and len(sides["right"]) == 1
+    assert sides["left"] != sides["right"]
+
+
+def test_a_connection_with_several_parts_resolves_to_all_of_them():
+    """The path a robot takes when it does hold a whole declaration.
+
+    Its import was wrong from the move that split placement into a package, so
+    this raised ModuleNotFoundError rather than composing anything.
+    """
+    from rlinf.robotics.parts.base import Group
+    from rlinf.robotics.placement.specs import Placement
+
+    class Pair(RobotPart):
+        def _open(self):
+            return "link"
+
+        @property
+        def observation_features(self):
+            return {}
+
+        def get_observation(self):
+            return {}
+
+        @property
+        def parts(self):
+            return {"a": _Part(), "b": _Part()}
+
+    resolved = Placement().resolve(Pair.at())
+    assert isinstance(resolved, Group)
+    assert set(resolved.parts) == {"a", "b"}

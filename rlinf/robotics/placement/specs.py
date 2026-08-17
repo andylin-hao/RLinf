@@ -129,7 +129,7 @@ class Placement:
             # Several means the hardware is a subtree. Hand back the whole
             # thing: an arm that carries a gripper resolves to both, so a robot
             # composing the arm never has to reach inside for the gripper.
-            from .parts.base import Group
+            from ..parts.base import Group
 
             return Group(parts)
         return value

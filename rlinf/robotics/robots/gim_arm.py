@@ -51,17 +51,19 @@ class GimArmRobot(Robot):
         """The one arm this robot carries, gripper included when fitted."""
         from ..parts.arms.gim_arm import GimArm
 
-        return {
-            "arm": GimArm.at(
-                can_interface,
-                arm_variant,
-                enable_gripper,
-                gripper_type,
-                control_mode,
-                node_rank=node_rank,
-                name=f"GimArm-{worker_rank}-{env_idx}",
-            )
-        }
+        connection = GimArm.at(
+            can_interface,
+            arm_variant,
+            enable_gripper,
+            gripper_type,
+            control_mode,
+            node_rank=node_rank,
+            name=f"GimArm-{worker_rank}-{env_idx}",
+        )
+        parts = {"arm": connection.part("arm")}
+        if enable_gripper:
+            parts["end_effector"] = connection.part("end_effector")
+        return parts
 
     @classmethod
     def build_cameras(
