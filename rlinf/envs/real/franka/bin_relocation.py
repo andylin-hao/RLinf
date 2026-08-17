@@ -86,8 +86,8 @@ class BinEnvConfig(FrankaRobotConfig):
 class FrankaBinRelocationEnv(FrankaEnv):
     CONFIG_CLS = BinEnvConfig
 
-    def __init__(self, override_cfg, worker_info=None, hardware_info=None, env_idx=0):
-        super().__init__(override_cfg, worker_info, hardware_info, env_idx)
+    def __init__(self, override_cfg, worker_info=None, robot_info=None, env_idx=0):
+        super().__init__(override_cfg, worker_info, robot_info, env_idx)
         self.task_id = 0  # 0 for forward task, 1 for backward task
         """
         the inner safety box is used to prevent the gripper from hitting the two walls of the bins in the center.

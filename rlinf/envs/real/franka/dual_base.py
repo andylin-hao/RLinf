@@ -162,14 +162,14 @@ class DualFrankaEnv(gym.Env):
         self,
         override_cfg: dict[str, Any],
         worker_info: Optional[WorkerInfo],
-        hardware_info: Optional[RobotInfo[DualFrankaConfig]],
+        robot_info: Optional[RobotInfo[DualFrankaConfig]],
         env_idx: int,
     ):
         config = self.CONFIG_CLS(**override_cfg)
         self._logger = get_logger()
         self.config = config
         self._task_description = config.task_description
-        self.hardware_info = hardware_info
+        self.robot_info = robot_info
         self.env_idx = env_idx
         self.node_rank = 0
         self.env_worker_rank = 0
@@ -368,15 +368,15 @@ class DualFrankaEnv(gym.Env):
     # ---------------------------------------------------------------- hardware
 
     def _resolve_hw_overrides(self) -> None:
-        if self.hardware_info is None:
+        if self.robot_info is None:
             return
-        assert isinstance(self.hardware_info, RobotInfo) and isinstance(
-            self.hardware_info.config, DualFrankaConfig
+        assert isinstance(self.robot_info, RobotInfo) and isinstance(
+            self.robot_info.config, DualFrankaConfig
         ), (
-            "hardware_info must contain a DualFrankaConfig, "
-            f"but got {type(self.hardware_info)}."
+            "robot_info must contain a DualFrankaConfig, "
+            f"but got {type(self.robot_info)}."
         )
-        hw = self.hardware_info.config
+        hw = self.robot_info.config
         # (field_name, default if hw lacks the attr)
         hw_fallback_fields: tuple[tuple[str, object], ...] = (
             ("left_robot_ip", None),
@@ -406,8 +406,8 @@ class DualFrankaEnv(gym.Env):
         """Return per-arm node ranks, honoring the hw config overrides."""
         left_node = self.node_rank
         right_node = self.node_rank
-        if self.hardware_info is not None:
-            hw = self.hardware_info.config
+        if self.robot_info is not None:
+            hw = self.robot_info.config
             if hw.left_controller_node_rank is not None:
                 left_node = hw.left_controller_node_rank
             if hw.right_controller_node_rank is not None:

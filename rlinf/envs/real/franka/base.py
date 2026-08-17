@@ -209,7 +209,7 @@ class FrankaEnv(gym.Env):
         self,
         override_cfg: dict[str, Any],
         worker_info: Optional[WorkerInfo],
-        hardware_info: Optional[RobotInfo[FrankaConfig]],
+        robot_info: Optional[RobotInfo[FrankaConfig]],
         env_idx: int,
     ):
         config = self.CONFIG_CLS(**override_cfg)
@@ -220,7 +220,7 @@ class FrankaEnv(gym.Env):
             self.config.gripper_type,
         ).value
         self._task_description = config.task_description
-        self.hardware_info = hardware_info
+        self.robot_info = robot_info
         self.env_idx = env_idx
         self.node_rank = 0
         self.env_worker_rank = 0
@@ -290,27 +290,24 @@ class FrankaEnv(gym.Env):
         assert self.env_idx >= 0, "env_idx must be set for FrankaEnv."
 
         # Setup Franka IP and camera serials
-        assert isinstance(self.hardware_info, RobotInfo) and isinstance(
-            self.hardware_info.config, FrankaConfig
-        ), (
-            "hardware_info must contain a FrankaConfig, "
-            f"but got {type(self.hardware_info)}."
-        )
+        assert isinstance(self.robot_info, RobotInfo) and isinstance(
+            self.robot_info.config, FrankaConfig
+        ), f"robot_info must contain a FrankaConfig, but got {type(self.robot_info)}."
         if self.config.robot_ip is None:
-            self.config.robot_ip = self.hardware_info.config.robot_ip
+            self.config.robot_ip = self.robot_info.config.robot_ip
         if self.config.camera_serials is None:
-            self.config.camera_serials = self.hardware_info.config.camera_serials
+            self.config.camera_serials = self.robot_info.config.camera_serials
         if self.config.camera_type is None:
             self.config.camera_type = getattr(
-                self.hardware_info.config, "camera_type", "realsense"
+                self.robot_info.config, "camera_type", "realsense"
             )
         if self.config.gripper_type is None:
             self.config.gripper_type = getattr(
-                self.hardware_info.config, "gripper_type", "franka"
+                self.robot_info.config, "gripper_type", "franka"
             )
         if self.config.gripper_connection is None:
             self.config.gripper_connection = getattr(
-                self.hardware_info.config, "gripper_connection", None
+                self.robot_info.config, "gripper_connection", None
             )
         self.config.end_effector_type = normalize_end_effector_type(
             self.config.end_effector_type,
@@ -321,13 +318,13 @@ class FrankaEnv(gym.Env):
         # different machine (e.g. cameras on GPU server, arm on NUC).
         # Falls back to the env worker's own node when not specified.
         controller_node_rank = getattr(
-            self.hardware_info.config, "controller_node_rank", None
+            self.robot_info.config, "controller_node_rank", None
         )
         if controller_node_rank is None:
             controller_node_rank = self.node_rank
         # The robot owns its cameras: it places them on the node they are
         # plugged into and opens them when it connects.
-        camera_node_rank = getattr(self.hardware_info.config, "camera_node_rank", None)
+        camera_node_rank = getattr(self.robot_info.config, "camera_node_rank", None)
         self.robot = FrankaRobot.build(
             robot_ip=self.config.robot_ip,
             env_idx=self.env_idx,

@@ -86,9 +86,9 @@ class GimArmPegInsertionEnv(GimArmEnv):
     to the target pose.
     """
 
-    def __init__(self, override_cfg, worker_info=None, hardware_info=None, env_idx=0):
+    def __init__(self, override_cfg, worker_info=None, robot_info=None, env_idx=0):
         config = GimArmPegInsertionConfig(**override_cfg)
-        super().__init__(config, worker_info, hardware_info, env_idx)
+        super().__init__(config, worker_info, robot_info, env_idx)
         self._base_reset_joint_qpos = list(self.config.reset_joint_qpos)
         self._perturbed_reset_qpos = None
 

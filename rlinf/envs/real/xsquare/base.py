@@ -101,7 +101,7 @@ class Turtle2Env(gym.Env):
         self,
         config: Turtle2RobotConfig,
         worker_info: Optional[WorkerInfo],
-        hardware_info: Optional[RobotInfo[Turtle2Config]],
+        robot_info: Optional[RobotInfo[Turtle2Config]],
         env_idx: int,
     ) -> None:
         """Initialize Turtle2Env.
@@ -109,12 +109,12 @@ class Turtle2Env(gym.Env):
         Args:
             config: Robot and environment configuration.
             worker_info: Scheduler worker info used to resolve node/worker rank.
-            hardware_info: Hardware descriptor for the Turtle2 platform.
+            robot_info: Hardware descriptor for the Turtle2 platform.
             env_idx: Index of this environment instance within its worker.
         """
         self._logger = get_logger()
         self.config = config
-        self.hardware_info = hardware_info
+        self.robot_info = robot_info
         self.env_idx = env_idx
         self.node_rank = 0
         self.env_worker_rank = 0

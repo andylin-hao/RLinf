@@ -168,12 +168,12 @@ class GimArmEnv(gym.Env):
         self,
         config: GimArmRobotConfig,
         worker_info: Optional[WorkerInfo],
-        hardware_info: Optional[RobotInfo[GimArmConfig]],
+        robot_info: Optional[RobotInfo[GimArmConfig]],
         env_idx: int,
     ):
         self._logger = get_logger()
         self.config = config
-        self.hardware_info = hardware_info
+        self.robot_info = robot_info
         self.env_idx = env_idx
         self.node_rank = 0
         self.env_worker_rank = 0
@@ -226,27 +226,24 @@ class GimArmEnv(gym.Env):
 
     def _setup_hardware(self):
         assert self.env_idx >= 0, "env_idx must be set for GimArmEnv."
-        assert isinstance(self.hardware_info, RobotInfo) and isinstance(
-            self.hardware_info.config, GimArmConfig
-        ), (
-            "hardware_info must contain a GimArmConfig, "
-            f"but got {type(self.hardware_info)}."
-        )
+        assert isinstance(self.robot_info, RobotInfo) and isinstance(
+            self.robot_info.config, GimArmConfig
+        ), f"robot_info must contain a GimArmConfig, but got {type(self.robot_info)}."
 
         # Fill in connection fields from hardware info when not set by the user.
         if self.config.can_interface is None:
-            self.config.can_interface = self.hardware_info.config.can_interface
+            self.config.can_interface = self.robot_info.config.can_interface
         if self.config.arm_variant is None:
-            self.config.arm_variant = self.hardware_info.config.arm_variant
+            self.config.arm_variant = self.robot_info.config.arm_variant
         if self.config.camera_serials is None:
-            self.config.camera_serials = self.hardware_info.config.camera_serials
+            self.config.camera_serials = self.robot_info.config.camera_serials
         if self.config.camera_type is None:
             self.config.camera_type = getattr(
-                self.hardware_info.config, "camera_type", "realsense"
+                self.robot_info.config, "camera_type", "realsense"
             )
 
         controller_node_rank = getattr(
-            self.hardware_info.config, "controller_node_rank", None
+            self.robot_info.config, "controller_node_rank", None
         )
         if controller_node_rank is None:
             controller_node_rank = self.node_rank

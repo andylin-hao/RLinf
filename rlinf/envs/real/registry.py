@@ -35,14 +35,14 @@ def task_factory(env_cls: type) -> Callable[..., gym.Env]:
     def create(
         override_cfg: dict[str, Any],
         worker_info: Any,
-        hardware_info: Any,
+        robot_info: Any,
         env_idx: int,
         env_cfg: Mapping[str, Any],
     ) -> gym.Env:
         env = env_cls(
             override_cfg=override_cfg,
             worker_info=worker_info,
-            hardware_info=hardware_info,
+            robot_info=robot_info,
             env_idx=env_idx,
         )
         return build_stack(env, env_cfg)

@@ -67,15 +67,15 @@ class RealWorldEnv(gym.Env):
 
     def _create_env(self, env_idx: int):
         worker_info: WorkerInfo = self.worker_info
-        hardware_info = None
+        robot_info = None
         if worker_info is not None and env_idx < len(worker_info.hardware_infos):
-            hardware_info = worker_info.hardware_infos[env_idx]
+            robot_info = worker_info.hardware_infos[env_idx]
         override_cfg = copy.deepcopy(self.override_cfg)
         env = gym.make(
             id=self.cfg.init_params.id,
             override_cfg=override_cfg,
             worker_info=worker_info,
-            hardware_info=hardware_info,
+            robot_info=robot_info,
             env_idx=env_idx,
             env_cfg=self.cfg,
         )

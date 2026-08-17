@@ -63,13 +63,13 @@ class PickEnv(DOSW1Env):
         self,
         override_cfg: dict,
         worker_info=None,
-        hardware_info=None,
+        robot_info=None,
         env_idx: int = 0,
     ) -> None:
         super().__init__(
             PickConfig(**override_cfg),
             worker_info,
-            hardware_info,
+            robot_info,
             env_idx,
         )
         self.phase = "reach"

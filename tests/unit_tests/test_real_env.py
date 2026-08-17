@@ -187,7 +187,7 @@ def test_franka_dummy_preserves_legacy_policy_schema():
             "step_frequency": 10000.0,
         },
         worker_info=None,
-        hardware_info=None,
+        robot_info=None,
         env_idx=0,
     )
 
@@ -205,7 +205,7 @@ def test_dual_franka_dummy_preserves_legacy_policy_schema():
             "step_frequency": 10000.0,
         },
         worker_info=None,
-        hardware_info=None,
+        robot_info=None,
         env_idx=0,
     )
 
@@ -223,7 +223,7 @@ def test_gim_arm_dummy_preserves_legacy_policy_schema():
             step_frequency=10000.0,
         ),
         worker_info=None,
-        hardware_info=None,
+        robot_info=None,
         env_idx=0,
     )
 
@@ -242,7 +242,7 @@ def test_dosw1_dummy_preserves_legacy_policy_schema():
             step_frequency=10000.0,
         ),
         worker_info=None,
-        hardware_info=None,
+        robot_info=None,
         env_idx=0,
     )
 
@@ -258,7 +258,7 @@ def test_turtle2_dummy_preserves_legacy_policy_schema():
             step_frequency=10000.0,
         ),
         worker_info=None,
-        hardware_info=None,
+        robot_info=None,
         env_idx=0,
     )
 
@@ -972,7 +972,7 @@ def _dummy_franka(env_cls=None, **overrides):
     }
     cfg.update(overrides)
     return (env_cls or FrankaEnv)(
-        override_cfg=cfg, worker_info=None, hardware_info=None, env_idx=0
+        override_cfg=cfg, worker_info=None, robot_info=None, env_idx=0
     )
 
 
@@ -1083,7 +1083,7 @@ def test_every_registered_task_builds_through_its_entry_point():
                 "step_frequency": 10000.0,
             },
             worker_info=None,
-            hardware_info=None,
+            robot_info=None,
             env_idx=0,
             env_cfg=cfg,
         )
