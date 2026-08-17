@@ -131,7 +131,7 @@ def _reach_worker_processes() -> dict[str, str]:
     tells that hook to act.
     """
     here = str(pathlib.Path(__file__).resolve().parent)
-    tests = str(pathlib.Path(__file__).resolve().parents[1])
+    tests = str(pathlib.Path(__file__).resolve().parent.parent)
     existing = os.environ.get("PYTHONPATH", "")
     parts = [here, tests, *(p for p in existing.split(os.pathsep) if p)]
     return {"PYTHONPATH": os.pathsep.join(parts), "RLINF_ROBOT_MOCKS": "1"}

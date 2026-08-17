@@ -49,7 +49,7 @@ from rlinf.robotics.parts.base import Connection, Group
 
 def _mocked_sdks(remote=False):
     """The fake vendor SDKs, which live with the tests rather than the package."""
-    tests = pathlib.Path(__file__).resolve().parents[2] / "tests" / "unit_tests"
+    tests = pathlib.Path(__file__).resolve().parents[2] / "tests"
     if str(tests) not in sys.path:
         sys.path.insert(0, str(tests))
     from robot_mocks import mocked_sdks
