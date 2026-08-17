@@ -41,7 +41,7 @@ cluster:
 runner:
   task_type: embodied
   logger:
-    log_path: /workspace/results/realworld_dummy_button_sac_cnn
+    log_path: /workspace/results/realworld_xsquare_turtle2_mock_sac_cnn
     project_name: rlinf
     experiment_name: "ci-test"
     logger_backends: ["tensorboard"] # wandb, swanlab
