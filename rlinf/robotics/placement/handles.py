@@ -40,6 +40,7 @@ This is the only module in ``rlinf.robotics`` that imports the scheduler.
 import inspect
 from abc import ABC, ABCMeta, abstractmethod
 from typing import Any, Callable, Optional
+from uuid import uuid4
 
 from rlinf.scheduler import Cluster, NodePlacementStrategy, Worker
 from rlinf.scheduler.worker.worker import WorkerMeta
@@ -266,7 +267,28 @@ class RemoteEndEffector(RemoteControllablePart, EndEffector):
 
 
 class RemoteCamera(RemotePart, Camera):
-    """Hosted camera."""
+    """Hosted camera.
+
+    Adds :meth:`get_frame` to what a part proxies. A frame is what a camera is
+    for, and callers ask for it with their own timeout rather than taking the
+    one baked into ``get_observation``: an env that reads several cameras a
+    step wants to know quickly that one has stalled, not to wait the default
+    on each.
+    """
+
+    def get_frame(self, timeout: float = 5) -> Any:
+        """Read one frame through the host, waiting up to ``timeout`` seconds.
+
+        Raises:
+            queue.Empty: If the hosted camera produced nothing in time. Raised
+                on its node and re-raised here, so a stalled camera reads the
+                same whether it is placed or local.
+        """
+        if self._part_name is None:
+            return _first(self._worker_group.get_frame(timeout))
+        # A camera reached through a multi-part connection has no frame call of
+        # its own; its observation carries the frame under the canonical key.
+        return self.get_observation()["frame"]
 
 
 _REMOTE_PART_BY_KIND: dict[str, Callable[..., RemotePart]] = {
@@ -341,6 +363,18 @@ def part_worker_cls(part_cls: type) -> type:
     return worker_cls
 
 
+def default_part_name(part_cls: type, node_rank: int) -> str:
+    """Name a hosted part so no two of them collide.
+
+    The class and the node are not enough on their own: a robot with a camera
+    on each wrist places two of the same class on the same node, and the same
+    robot built in two env workers places the whole tree twice. Ray refuses a
+    duplicate name rather than placing the second part, so the fresh suffix is
+    what lets either happen at all.
+    """
+    return f"{part_cls.__name__}-node{node_rank}-{uuid4().hex[:8]}"
+
+
 def spawn_part_worker(
     part_cls: type,
     args: tuple[Any, ...],
@@ -356,9 +390,11 @@ def spawn_part_worker(
         args: Positional arguments for the part constructor.
         kwargs: Keyword arguments for the part constructor.
         node_rank: Cluster node rank that is physically wired to the device.
-        name: Worker-group name. Must be unique across concurrently running
-            parts; callers that spawn one part per environment should
-            include the environment index.
+        name: Worker-group name. Defaults to one derived from the class, the
+            node, and a fresh suffix. The suffix is what makes two cameras on
+            one arm -- or the same robot built in two env workers -- distinct;
+            a name built from the class alone would collide, and Ray refuses a
+            duplicate rather than placing the second part.
 
     Returns:
         RemotePartHandle: Handle whose parts proxy to the hosted part.
@@ -367,7 +403,7 @@ def spawn_part_worker(
     group = worker_cls.create_group(*args, **kwargs).launch(
         cluster=Cluster(),
         placement_strategy=NodePlacementStrategy(node_ranks=[node_rank]),
-        name=name or f"{part_cls.__name__}-node{node_rank}",
+        name=name or default_part_name(part_cls, node_rank),
     )
     return RemotePartHandle(
         group,

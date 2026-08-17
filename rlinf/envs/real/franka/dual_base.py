@@ -284,20 +284,39 @@ class DualFrankaEnv(gym.Env):
         return per_arm, robot_level
 
     def _open_cameras(self):
-        """Take the cameras from the robot, which placed and opened them."""
+        """Take the cameras from the robot, which placed and opened them.
+
+        Kept by name rather than by position: a camera the robot placed on
+        another node is a proxy, and asking it what it is called would mean
+        reaching through it for a descriptor that stayed behind on that node.
+        The robot already names every part it holds.
+
+        The robot names a wrist camera for where it hangs -- ``left.``
+        something -- because that is where it is bolted. The observation space
+        was built from the declared names, which already say which side they
+        are on, so the branch is dropped here rather than doubled.
+        """
         if self.robot is not None:
-            self._cameras: list[BaseCamera] = list(
-                self.robot.parts_of_type(Camera).values()
-            )
+            self._cameras: dict[str, BaseCamera] = {}
+            for path, camera in self.robot.parts_of_type(Camera).items():
+                declared = path.rsplit(".", 1)[-1]
+                assert declared not in self._cameras, (
+                    f"Two cameras on this robot are both called {declared!r} "
+                    f"({path} collides). Camera names come from the env's own "
+                    "declarations, which have to be unique across the robot."
+                )
+                self._cameras[declared] = camera
             return
-        self._cameras = [create_camera(info) for info in self._camera_infos()]
+        self._cameras = {
+            info.name: create_camera(info) for info in self._camera_infos()
+        }
 
     def _close_cameras(self):
         """Close only cameras this env owns; the robot closes its own."""
         if self.robot is None:
-            for camera in self._cameras:
+            for camera in self._cameras.values():
                 camera.disconnect()
-        self._cameras = []
+        self._cameras = {}
 
     def _crop_frame(
         self, frame: np.ndarray, reshape_size: tuple[int, int]
@@ -319,8 +338,7 @@ class DualFrankaEnv(gym.Env):
         frames: dict[str, np.ndarray] = {}
         display_frames: dict[str, np.ndarray] = {}
 
-        for i, camera in enumerate(self._cameras):
-            name = camera._camera_info.name
+        for name, camera in self._cameras.items():
             try:
                 frame = camera.get_frame(timeout=_CAMERA_FRAME_TIMEOUT_S)
             except queue.Empty:
@@ -329,10 +347,12 @@ class DualFrankaEnv(gym.Env):
                     raise RuntimeError(
                         f"Camera {name} stalled with no cached frame to fall back to."
                     )
-                self._logger.error("Camera %s stalled; replacing.", name)
+                self._logger.error("Camera %s stalled; reopening.", name)
+                # Reopened rather than rebuilt: the camera may be hosted on the
+                # node it is plugged into, and building a replacement here
+                # would look for the device on the wrong machine.
                 camera.disconnect()
-                self._cameras[i] = create_camera(camera._camera_info)
-                self._cameras[i].connect()
+                camera.connect()
                 frame = cached
 
             reshape_size = self.observation_space["frames"][name].shape[:2][::-1]

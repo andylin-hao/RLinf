@@ -32,6 +32,7 @@ from .handles import (
     RemoteEndEffector,
     RemotePart,
     RemotePartHandle,
+    default_part_name,
     part_worker_cls,
     spawn_part_worker,
 )
@@ -49,5 +50,6 @@ __all__ = [
     "RemotePartHandle",
     "SubpartRef",
     "part_worker_cls",
+    "default_part_name",
     "spawn_part_worker",
 ]

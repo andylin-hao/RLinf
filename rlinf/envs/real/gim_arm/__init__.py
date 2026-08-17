@@ -16,23 +16,25 @@
 
 from __future__ import annotations
 
-from gymnasium.envs.registration import register
-
+from rlinf.envs.real.registry import register_tasks
 from rlinf.robotics.parts.arms.gim_arm import GimArmRobotState
 
 from .base import GimArmEnv, GimArmRobotConfig
 from .peg_insertion import GimArmPegInsertionEnv
 
-# This task takes no wrapper stack, so Gymnasium constructs the env class
-# directly rather than going through rlinf.envs.real.registry.
-register(
-    id="GimArmPegInsertionEnv-v1",
-    entry_point="rlinf.envs.real.gim_arm:GimArmPegInsertionEnv",
-)
+# Registered the same way as every other task. This env declares no wrappers,
+# which the shared stack already handles; registering it directly instead meant
+# the env worker's call -- which passes env_cfg -- did not fit its constructor,
+# so the task could be built by hand and never by the runner.
+TASKS = {"GimArmPegInsertionEnv-v1": GimArmPegInsertionEnv}
+
+_ENTRY_POINTS = register_tasks(__name__, globals(), TASKS)
 
 __all__ = [
+    "TASKS",
     "GimArmEnv",
     "GimArmPegInsertionEnv",
     "GimArmRobotConfig",
     "GimArmRobotState",
+    *_ENTRY_POINTS,
 ]

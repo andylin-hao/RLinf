@@ -2403,7 +2403,7 @@ def test_every_shipped_robot_runs_on_faked_sdks():
             "arm_variant": "gim_arm_xl",
             "enable_gripper": True,
             "gripper_type": "parallel",
-            "control_mode": "joint",
+            "control_mode": "momentum_observer",
             "env_idx": 0,
             "worker_rank": 0,
         },
@@ -2485,3 +2485,67 @@ def test_a_wrapper_that_narrows_the_action_declares_it():
 
     assert [part.name for part in wrapper.action_parts()] == ["arm"]
     assert sum(part.width for part in wrapper.action_parts()) == 6
+
+
+def test_a_dual_arm_robot_is_given_its_wrist_cameras():
+    """``arm_cameras`` is declared, passed, and consumed by nobody.
+
+    ``DualFrankaEnv`` splits its cameras into per-arm and robot-level, then
+    hands the per-arm ones to ``DualFrankaRobot.build(arm_cameras=...)``. That
+    builder takes ``**config`` and forwards it to ``build_arms``, which ignores
+    what it does not recognise, so the wrist cameras are dropped in silence and
+    the env's observation space asks for frames no part produces.
+
+    Found by an end-to-end run on faked SDKs, where reset returned no
+    observation at all.
+    """
+    import inspect
+
+    from rlinf.robotics.robots.dual_franka import DualFrankaRobot
+
+    accepted = set()
+    for method in (DualFrankaRobot.build, DualFrankaRobot.build_arms):
+        accepted |= set(inspect.signature(method).parameters)
+
+    assert "arm_cameras" in accepted, (
+        "DualFrankaEnv passes arm_cameras to build(); nothing accepts it, so "
+        "wrist cameras never reach the robot"
+    )
+
+
+def test_two_parts_of_one_class_on_one_node_get_different_names():
+    """A dual-arm robot places a camera per wrist, both on the same node.
+
+    A name built from the class and the node alone is the same string twice,
+    and Ray refuses the second actor rather than placing it, so the robot comes
+    up with one wrist camera and an observation space asking for two.
+    """
+    from rlinf.robotics.parts.cameras.realsense import RealSenseCamera
+    from rlinf.robotics.placement import default_part_name
+
+    names = {default_part_name(RealSenseCamera, 0) for _ in range(8)}
+
+    assert len(names) == 8, f"names repeat: {sorted(names)}"
+    assert all(name.startswith("RealSenseCamera-node0-") for name in names), (
+        f"a name should still say what it is and where: {sorted(names)}"
+    )
+
+
+def test_every_real_task_is_registered_through_the_shared_factory():
+    """A task registered by hand does not fit the call the env worker makes.
+
+    ``task_factory`` is what passes ``env_cfg`` to the wrapper stack and keeps
+    it out of the env's constructor. A package that calls ``register`` itself
+    builds an entry point taking different arguments, so the task can be
+    constructed by hand and never by the runner.
+    """
+    import re
+
+    offenders = []
+    for path in (_ROOT / "rlinf" / "envs" / "real").rglob("__init__.py"):
+        text = path.read_text()
+        for number, line in enumerate(text.splitlines(), 1):
+            if re.match(r"\s*register\(", line):
+                offenders.append(f"{path.relative_to(_ROOT)}:{number}")
+
+    assert offenders == [], f"these register a task outside register_tasks: {offenders}"

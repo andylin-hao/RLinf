@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import ipaddress
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, Mapping, Optional
 
 from rlinf.scheduler.hardware import HardwareConfig, HardwareInfo, HardwareResource
 
@@ -27,6 +27,7 @@ from ..discovery import (
     RobotInfo,
 )
 from ..parts.base import Group
+from ..parts.cameras import declare_cameras
 from .franka import FrankaRobot
 
 
@@ -51,9 +52,14 @@ class DualFrankaRobot(FrankaRobot):
         right_gripper_type: str = "robotiq",
         left_gripper_connection: Optional[str] = None,
         right_gripper_connection: Optional[str] = None,
+        arm_cameras: Optional[Mapping[str, Mapping[str, Any]]] = None,
         **_: Any,
     ) -> dict[str, Any]:
-        """Two arms instead of one. Nothing else about building changes."""
+        """Two arms instead of one, each with whatever rides on its wrist.
+
+        A wrist camera belongs to the arm it is bolted to, so it is named
+        inside that arm's group rather than at the top of the robot.
+        """
         if not left_robot_ip or not right_robot_ip:
             raise ValueError("Both Franka robot IPs are required for a dual-arm robot.")
 
@@ -83,6 +89,7 @@ class DualFrankaRobot(FrankaRobot):
             arms[side] = Group(
                 arm=declared.part("arm"),
                 end_effector=declared.part("end_effector"),
+                **declare_cameras((arm_cameras or {}).get(side), node_rank=node_rank),
             )
         return arms
 

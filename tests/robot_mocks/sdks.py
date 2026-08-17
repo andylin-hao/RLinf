@@ -139,7 +139,18 @@ def gim_arm() -> dict[str, types.ModuleType]:
         GimArmController=GimArmController,
         ButterworthFilter=ButterworthFilter,
         ControllerConfig=lambda **kwargs: types.SimpleNamespace(**kwargs),
-        ControlMode={"JOINT": "JOINT", "TORQUE": "TORQUE", "POSITION": "POSITION"},
+        # The modes GimArmRobotConfig.control_mode documents, keyed the way
+        # the driver looks them up: ControlMode[mode.upper()].
+        ControlMode={
+            name: name
+            for name in (
+                "IDLE",
+                "GRAVITY_COMP",
+                "MOMENTUM_OBSERVER",
+                "POSITION",
+                "TORQUE",
+            )
+        },
     )
     loader = module(
         "gim_arm_control.utils.urdf_loader",
@@ -176,16 +187,26 @@ def turtle2() -> dict[str, types.ModuleType]:
         get_cam2_data = get_cam1_data
         get_cam3_data = get_cam1_data
 
+    REST = [0.3, 0.0, 0.2, 0.0, 1.0, 0.0, 0.0]
+
     class Turtle2Controller:
+        """Arms that go where they are told.
+
+        Reset waits for the reported pose to reach the commanded one, so an
+        arm reporting a fixed pose never converges and the env times out. A
+        real arm moves; this one arrives immediately.
+        """
+
         def __init__(self, *_args, **_kwargs):
             self.cam = Cameras()
             self.commanded: list[tuple] = []
+            self._pose = [list(REST), list(REST)]
 
         def chassis_set_current_pose_as_virtual_zero(self):
             return True
 
         def arms_data(self):
-            return [[0.3, 0.0, 0.2, 0.0, 1.0, 0.0, 0.0]] * 2
+            return [list(pose) for pose in self._pose]
 
         def arms_joint_data(self):
             return [[0.0] * 7] * 2
@@ -204,8 +225,10 @@ def turtle2() -> dict[str, types.ModuleType]:
 
         def arms_control(self, left, right):
             self.commanded.append((list(left), list(right)))
+            self._pose = [list(left), list(right)]
 
         def reset_arms(self):
+            self._pose = [list(REST), list(REST)]
             return True
 
     controller = module(
@@ -257,6 +280,7 @@ def airbot() -> dict[str, types.ModuleType]:
             self.running = True
             self.use_lead_arms = False
             self.config_ = types.SimpleNamespace()
+            self.commanded: list[Any] = []
             self.left_arm = Arm()
             self.right_arm = Arm()
             self.left_lead_arm = Arm()
@@ -279,6 +303,17 @@ def airbot() -> dict[str, types.ModuleType]:
             return [0.3, 0.0, 0.2, 0.0, 1.0, 0.0, 0.0]
 
         right_get_pose = left_get_pose
+
+        def left_go_joint(self, joint, gripper, interp=None):
+            """Command one arm; a real one moves, so the readings follow."""
+            self.commanded.append(("left", list(joint), gripper))
+
+        def right_go_joint(self, joint, gripper, interp=None):
+            self.commanded.append(("right", list(joint), gripper))
+
+        def fk(self, joint, *_args, **_kwargs):
+            """Forward kinematics: a pose for a joint vector."""
+            return [0.3, 0.0, 0.2, 0.0, 1.0, 0.0, 0.0]
 
         def shutdown(self):
             self.running = False
