@@ -89,7 +89,7 @@ class RealSenseCamera(BaseCamera):
         else:
             return False, None
 
-    def _close(self) -> None:
+    def _release(self) -> None:
         self._pipeline.stop()
         self._config.disable_all_streams()
         self._pipeline = None

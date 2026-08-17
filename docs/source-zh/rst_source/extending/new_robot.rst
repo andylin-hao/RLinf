@@ -17,7 +17,7 @@
 则继承 ``ControllablePart``。
 
 每个部件都回答同样的三个问题：``_open`` 连上硬件，``get_observation`` 读它，
-``_close`` 放开它。连接和断开由基类统一处理，所以写一个部件就是说清楚它的硬件是什么。
+``_release`` 放开它。连接和断开由基类统一处理，所以写一个部件就是说清楚它的硬件是什么。
 厂商 SDK 应当在 ``_open`` 内导入：这样只有真正打开连接的节点需要安装 SDK，其他节点
 仍可导入部件模块。
 
@@ -37,7 +37,7 @@
 
            return Client(self.endpoint)
 
-       def _close(self) -> None:
+       def _release(self) -> None:
            self._device.close()
 
        @property

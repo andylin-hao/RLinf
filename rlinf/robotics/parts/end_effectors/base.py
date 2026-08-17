@@ -113,7 +113,7 @@ class BaseEndEffector(EndEffector, ABC):
         """
 
     @abstractmethod
-    def _close(self) -> None:
+    def _release(self) -> None:
         """Gracefully release hardware resources."""
 
     # ------------------------------------------------------------------

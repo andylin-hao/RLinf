@@ -21,7 +21,7 @@ Inherit ``RobotPart`` for an observation-only device, or ``ControllablePart``
 when the device also accepts commands.
 
 Every part answers the same three questions: ``_open`` reaches the hardware,
-``get_observation`` reads it, and ``_close`` lets it go. Connecting and
+``get_observation`` reads it, and ``_release`` lets it go. Connecting and
 disconnecting are handled for you, so a part is written by saying what its
 hardware is. Keep the vendor SDK import inside ``_open``: other nodes can then
 import the part module without installing the SDK, while the node that opens
@@ -43,7 +43,7 @@ the connection still loads it normally.
 
            return Client(self.endpoint)
 
-       def _close(self) -> None:
+       def _release(self) -> None:
            self._device.close()
 
        @property

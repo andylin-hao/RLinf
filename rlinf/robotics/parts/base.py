@@ -47,7 +47,7 @@ class RobotPart(ABC):
 
     A part answers three questions, and every kind of part answers them the
     same way: :meth:`_open` reaches the hardware, :meth:`get_observation` reads
-    it, and :meth:`_close` lets it go. Connecting and disconnecting are handled
+    it, and :meth:`_release` lets it go. Connecting and disconnecting are handled
     here, once, so a part is written by saying what its hardware is rather than
     by re-implementing a lifecycle.
 
@@ -69,7 +69,7 @@ class RobotPart(ABC):
             "lifecycle is more than opening a device."
         )
 
-    def _close(self) -> None:
+    def _release(self) -> None:
         """Let the hardware go. The default has nothing to release."""
 
     @property
@@ -100,7 +100,7 @@ class RobotPart(ABC):
         if self._device is None:
             return
         self._device = None
-        self._close()
+        self._release()
 
     def reset(self) -> None:
         """Reset the part when it has resettable state."""

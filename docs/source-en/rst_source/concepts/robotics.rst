@@ -306,9 +306,10 @@ once and publishes the resulting handle as ``robot.handles[<name>]``. If a later
 part fails to start, it tears down the earlier ones. During a normal shutdown,
 ``disconnect`` follows the same cleanup path.
 
-Shared hardware needs one more step. Declare its connection once, then refer to
-the components exposed through ``parts``. In this example, one declaration
-backs both arms and the cameras:
+Every robot composes this way, whether or not the hardware is shared. Declare
+the connection once, then name the components it exposes through ``parts``.
+``Turtle2Hardware`` is a ``Connection``: one declaration backs both arms, both
+grippers and the cameras, and none of them is the connection itself:
 
 .. code-block:: python
 

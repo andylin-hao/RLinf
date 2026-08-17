@@ -1936,7 +1936,7 @@ def test_the_binding_turns_a_reading_into_a_command_for_this_arm():
 
 
 def test_every_part_family_opens_and_closes_the_same_way():
-    """A part author learns _open/_close once, not once per device family."""
+    """A part author learns _open/_release once, not once per device family."""
     import inspect
 
     from rlinf.robotics.parts.base import RobotPart
@@ -1946,7 +1946,7 @@ def test_every_part_family_opens_and_closes_the_same_way():
 
     for family in (TeleopPart, BaseCamera, BaseEndEffector):
         assert hasattr(family, "_open"), f"{family.__name__} has no _open"
-        assert hasattr(family, "_close"), f"{family.__name__} has no _close"
+        assert hasattr(family, "_release"), f"{family.__name__} has no _release"
 
     # The names the families used to use are gone.
     for family in (BaseCamera, BaseEndEffector):
@@ -1968,7 +1968,7 @@ class _Part(RobotPart):
         self.log.append("open")
         return "device"
 
-    def _close(self):
+    def _release(self):
         self.log.append("close")
 
     @property
@@ -2271,3 +2271,109 @@ def test_the_bench_check_catches_an_observation_that_was_never_declared():
 
 def test_the_bench_check_catches_a_connection_left_in_the_tree():
     assert _run_bench(_fake_robot_type("Connection")) == 1
+
+
+# --- real parts, faked SDKs -------------------------------------------
+
+
+def test_no_part_hook_collides_with_the_worker_group():
+    """A placed part becomes a worker, and its private methods are attached.
+
+    `_close` was the obvious name for the lifecycle hook and it is taken:
+    `WorkerGroup._close` already exists, so every remotely placed part failed
+    to launch. Only placement caught it, which no unit test did.
+    """
+    import inspect
+
+    from rlinf.robotics.parts.base import RobotPart
+    from rlinf.scheduler.worker.worker_group import WorkerGroup
+
+    taken = {
+        name
+        for name in dir(WorkerGroup)
+        if name.startswith("_") and not name.startswith("__")
+    }
+    for family in (RobotPart, *RobotPart.__subclasses__()):
+        ours = {
+            name
+            for name, value in inspect.getmembers(family, callable)
+            if name.startswith("_") and not name.startswith("__")
+        }
+        assert not (ours & taken), (
+            f"{family.__name__} defines {sorted(ours & taken)}, which the "
+            "scheduler already attaches to a WorkerGroup"
+        )
+
+
+def test_a_real_camera_runs_against_a_faked_sdk():
+    """The camera class itself, from connect to frame to disconnect."""
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        from rlinf.robotics.parts.cameras.base import CameraInfo
+        from rlinf.robotics.parts.cameras.realsense import RealSenseCamera
+
+        camera = RealSenseCamera(
+            CameraInfo(
+                name="wrist",
+                serial_number="MOCK0001",
+                camera_type="realsense",
+                fps=30,
+                resolution=(64, 48),
+            )
+        )
+        assert not camera.is_connected
+        camera.connect()
+        assert camera.is_connected
+
+        frame = camera.get_observation()["frame"]
+        assert frame.shape == (48, 64, 3)
+
+        camera.disconnect()
+        assert not camera.is_connected
+
+
+def test_a_real_arm_runs_against_a_faked_sdk():
+    """The arm class itself: connect, the parts it backs, state, commands."""
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        from rlinf.robotics.parts.arms.franky import FrankyArm
+
+        arm = FrankyArm("10.0.0.1", gripper_connection="/dev/ttyUSB0")
+        arm.connect()
+
+        assert arm.is_connected
+        assert set(arm.parts) == {"arm", "end_effector"}
+
+        observation = arm.get_observation()
+        assert observation["tcp_pose"].shape == (7,)
+        assert arm.parts["end_effector"].get_observation()["state"].shape == (1,)
+
+        arm.send_action({"joint_position": [0.0] * 7})
+
+        arm.disconnect()
+        assert not arm.is_connected
+
+
+def test_the_bench_check_runs_a_whole_robot_on_fakes():
+    """The command a bench runs, run here on the same code path."""
+    from robot_mocks import mocked_sdks
+
+    from toolkits.realworld_check.check_robot_parts import check
+
+    with mocked_sdks():
+        import rlinf.robotics.robots  # noqa: F401
+
+        assert (
+            check(
+                "DualFranka",
+                {
+                    "left_robot_ip": "10.0.0.1",
+                    "right_robot_ip": "10.0.0.2",
+                    "left_gripper_connection": "/dev/ttyUSB0",
+                    "right_gripper_connection": "/dev/ttyUSB1",
+                },
+            )
+            == 0
+        )

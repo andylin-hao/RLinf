@@ -39,10 +39,10 @@ class TeleopPart(RobotPart):
 
     Like every part, it says what its hardware is in :meth:`_open` and reads it
     in :meth:`get_observation`. Vendor readers vary in how they are released,
-    so :meth:`_close` tries the two names they use.
+    so :meth:`_release` tries the two names they use.
     """
 
-    def _close(self) -> None:
+    def _release(self) -> None:
         """Release the reader by whichever name its vendor gave the method."""
         for method in ("close", "stop"):
             release = getattr(self._device, method, None)

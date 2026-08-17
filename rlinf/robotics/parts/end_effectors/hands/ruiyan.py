@@ -107,7 +107,7 @@ class RuiyanHand(BaseEndEffector):
         """Open the serial port and start the background control loop."""
         self._driver.initialize()
 
-    def _close(self) -> None:
+    def _release(self) -> None:
         """Stop the background loop and close the serial port."""
         self._driver.shutdown()
 

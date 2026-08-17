@@ -100,7 +100,7 @@ class ZEDCamera(BaseCamera):
 
         return True, frame
 
-    def _close(self) -> None:
+    def _release(self) -> None:
         self._camera.close()
         self._camera = None
 

@@ -39,10 +39,22 @@ from __future__ import annotations
 
 import argparse
 import ast
+import pathlib
+import sys
 import traceback
 from typing import Any
 
 from rlinf.robotics.parts.base import Connection, Group
+
+
+def _mocked_sdks():
+    """The fake vendor SDKs, which live with the tests rather than the package."""
+    tests = pathlib.Path(__file__).resolve().parents[2] / "tests" / "unit_tests"
+    if str(tests) not in sys.path:
+        sys.path.insert(0, str(tests))
+    from robot_mocks import mocked_sdks
+
+    return mocked_sdks()
 
 
 def literal(text: str) -> Any:
@@ -77,6 +89,8 @@ def describe(robot: Any) -> list[str]:
 
 def check(robot_type: str, kwargs: dict[str, Any]) -> int:
     print(f"[1/5] composing {robot_type} with {kwargs}")
+    # Importing the robots is what registers them.
+    import rlinf.robotics.robots  # noqa: F401
     from rlinf.robotics.discovery import build_robot
 
     robot = build_robot(robot_type, **kwargs)
@@ -140,6 +154,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("robot_type", help="a registered robot type, e.g. Franka")
     parser.add_argument(
+        "--mock",
+        action="store_true",
+        help="run against faked vendor SDKs instead of hardware, so the same "
+        "command works on a laptop and on the bench",
+    )
+    parser.add_argument(
         "--arg",
         action="append",
         default=[],
@@ -156,6 +176,10 @@ def main() -> int:
         kwargs[name] = literal(value)
 
     try:
+        if args.mock:
+            print("[mock] vendor SDKs are faked; this checks the code, not a robot")
+            with _mocked_sdks():
+                return check(args.robot_type, kwargs)
         return check(args.robot_type, kwargs)
     except Exception:  # noqa: BLE001 - a bench check reports anything
         traceback.print_exc()

@@ -140,7 +140,7 @@ class LumosCamera(BaseCamera):
             )
         return True, bgr
 
-    def _close(self) -> None:
+    def _release(self) -> None:
         if self._cap is not None:
             self._cap.release()
 

@@ -44,7 +44,7 @@ class BaseCamera(Camera, ABC):
     """Abstract base class for threaded camera capture.
 
     A camera is a part like any other: :meth:`_open` reaches the hardware,
-    :meth:`_read_frame` reads one frame from it, and :meth:`_close` lets it go.
+    :meth:`_read_frame` reads one frame from it, and :meth:`_release` lets it go.
     The capture thread and its queue are handled here, started and stopped
     around those by :meth:`connect` and :meth:`disconnect`.
     """
@@ -151,6 +151,6 @@ class BaseCamera(Camera, ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def _close(self) -> None:
+    def _release(self) -> None:
         """Release hardware-specific resources (pipeline, SDK handle, …)."""
         raise NotImplementedError
