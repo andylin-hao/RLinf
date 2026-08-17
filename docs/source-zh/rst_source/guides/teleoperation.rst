@@ -85,7 +85,7 @@ binding 声明的部件若不在机器人上，group 会跳过该部件。设备
    python -m rlinf.robotics.parts.teleop.readers.gello --port /dev/ttyUSB0
 
 主臂只报告零值或操作球没有响应时，这条命令可以把接线、权限问题与环境配置问题分开。
-``toolkits/realworld_check`` 中的脚本则检查整台机器人。
+``toolkits/realworld_check`` 中的脚本则检查整台机器人，其中 ``check_robot_parts`` 会从组装一路走到断开。
 
 把设备放到它插着的机器上
 ------------------------

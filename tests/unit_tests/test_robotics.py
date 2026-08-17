@@ -2169,3 +2169,105 @@ def test_a_connection_with_several_parts_resolves_to_all_of_them():
     resolved = Placement().resolve(Pair.at())
     assert isinstance(resolved, Group)
     assert set(resolved.parts) == {"a", "b"}
+
+
+# --- the bench check, checked ------------------------------------------
+
+
+def _fake_robot_type(broken=None):
+    """Register a robot made of fakes, and yield its type name."""
+    import numpy as np
+
+    from rlinf.robotics.discovery import RobotConfig, RobotDiscovery, register_robot
+    from rlinf.robotics.parts.base import Connection, ControllablePart, Group
+    from rlinf.robotics.parts.views import MethodArm, MethodGripper
+    from rlinf.robotics.robot import Robot
+
+    class State:
+        def to_dict(self):
+            return {"tcp_pose": np.zeros(7), "gripper_position": np.zeros(1)}
+
+    class Bus(Connection):
+        def _open(self):
+            return "bus"
+
+        def get_state(self):
+            return State()
+
+        def move(self, target):
+            return target
+
+        @property
+        def parts(self):
+            return {
+                "left": MethodArm(
+                    self, commands={"tcp_pose": "move"}, state_fields=("tcp_pose",)
+                ),
+                "left_end_effector": MethodGripper(
+                    self, state_field="gripper_position"
+                ),
+            }
+
+    class Liar(ControllablePart):
+        def _open(self):
+            return "liar"
+
+        @property
+        def observation_features(self):
+            return {"tcp_pose": {}}
+
+        @property
+        def action_features(self):
+            return {}
+
+        def get_observation(self):
+            return {"joint_position": np.zeros(7)}
+
+        def send_action(self, action):
+            return action
+
+    class Bench(Robot):
+        ROBOT_TYPE = f"BenchFake{broken or ''}"
+
+        @classmethod
+        def build(cls, **_):
+            if broken == "Mismatch":
+                return cls(arm=Liar())
+            if broken == "Connection":
+                return cls(bus=Bus())
+            bus = Bus.at()
+            return cls(
+                left=Group(arm=bus.part("left"), gripper=bus.part("left_end_effector"))
+            )
+
+    class Config(RobotConfig):
+        pass
+
+    class Discovery(RobotDiscovery):
+        HW_TYPE = Bench.ROBOT_TYPE
+
+        @classmethod
+        def enumerate(cls, node_rank, configs=None):
+            return None
+
+    register_robot(Config, Bench, build=Bench.build)(Discovery)
+    return Bench.ROBOT_TYPE
+
+
+def _run_bench(robot_type):
+    from toolkits.realworld_check.check_robot_parts import check
+
+    return check(robot_type, {})
+
+
+def test_the_bench_check_passes_a_healthy_robot():
+    """The script the bench runs, run here against fakes."""
+    assert _run_bench(_fake_robot_type()) == 0
+
+
+def test_the_bench_check_catches_an_observation_that_was_never_declared():
+    assert _run_bench(_fake_robot_type("Mismatch")) == 1
+
+
+def test_the_bench_check_catches_a_connection_left_in_the_tree():
+    assert _run_bench(_fake_robot_type("Connection")) == 1

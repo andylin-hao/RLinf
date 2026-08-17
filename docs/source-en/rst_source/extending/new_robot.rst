@@ -369,15 +369,27 @@ Test the Integration
 
 Most of the integration is testable before the vendor SDK or robot is
 available. Cover the part contract, composition paths, handle lifecycle,
-discovery registration, and the exact schema expected by legacy policies:
+discovery registration, and the schema policies expect:
 
 .. code-block:: bash
 
-   pytest tests/unit_tests/test_robotics.py \
-     tests/unit_tests/test_robotics_boundaries.py \
-     tests/unit_tests/test_real_env.py \
-     tests/unit_tests/test_realworld_robotics_compatibility.py
+   pytest tests/unit_tests/test_robotics.py tests/unit_tests/test_real_env.py
 
-These tests exercise the scheduler import boundary, single-arm and dual-arm
-composition, the task/robot split, and the policy-facing schema of every
-built-in real-world environment. They do not require physical hardware.
+These exercise the scheduler import boundary, single-arm and dual-arm
+composition, the task and robot split, and the policy-facing schema of every
+built-in real-world environment. None of it requires physical hardware.
+
+What is left needs the robot. Once it is powered and reachable, the same path
+runs against it:
+
+.. code-block:: bash
+
+   python -m toolkits.realworld_check.check_robot_parts MyRobot \
+       --arg robot_ip=10.0.0.1 --arg node_rank=1
+
+It reports what the robot is made of, which connection backs each part and
+where it was placed, then reads every part and disconnects. It fails when a
+part observes something it never declared, when a connection ends up in the
+tree, or when anything still claims to be connected afterwards. Those are the
+mistakes that a fake cannot reproduce, because they only appear once a real
+device is on the other end.

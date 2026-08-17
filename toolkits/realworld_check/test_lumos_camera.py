@@ -65,7 +65,7 @@ def main():
         fps=args.fps,
     )
     camera = LumosCamera(camera_info)
-    camera.open()
+    camera.connect()
     print("[INFO] Camera opened successfully.")
 
     for step in range(args.steps):
@@ -76,7 +76,7 @@ def main():
         )
         time.sleep(1.0 / args.fps)
 
-    camera.close()
+    camera.disconnect()
     print("[INFO] LUMOS camera check completed.")
 
 

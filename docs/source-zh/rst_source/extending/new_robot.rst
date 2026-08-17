@@ -336,10 +336,20 @@ YAML 中，不要写死在 Python 代码里：
 
 .. code-block:: bash
 
-   pytest tests/unit_tests/test_robotics.py \
-     tests/unit_tests/test_robotics_boundaries.py \
-     tests/unit_tests/test_real_env.py \
-     tests/unit_tests/test_realworld_robotics_compatibility.py
+   pytest tests/unit_tests/test_robotics.py tests/unit_tests/test_real_env.py
 
 这组测试覆盖调度器导入边界、单臂与双臂组合、任务与机器人的分界，以及所有内置真机
 环境暴露给策略的数据结构；运行时不需要真实硬件。
+
+剩下的部分必须有机器人才能验证。等机器人上电、网络可达之后，同一条路径可以直接跑在
+它上面：
+
+.. code-block:: bash
+
+   python -m toolkits.realworld_check.check_robot_parts MyRobot \
+       --arg robot_ip=10.0.0.1 --arg node_rank=1
+
+它会列出机器人由哪些部件组成、每个部件挂在哪条连接上、被放到了哪个节点，然后逐个读取
+观测并断开。以下情况会判定失败：某个部件返回了它没有声明过的观测；连接本身出现在部件
+树里；断开之后仍有东西声称自己是连着的。这些错误用假部件复现不出来，只有真设备接在
+另一端时才会显形。

@@ -93,8 +93,8 @@ Every device reader can run without a robot or cluster:
 
 When a leader arm reports only zeros or a spacemouse does not respond, this
 command isolates wiring and permission problems from environment configuration.
-The bench scripts in ``toolkits/realworld_check`` perform the corresponding
-checks for a complete robot.
+``toolkits/realworld_check`` does the same for a complete robot;
+``check_robot_parts`` walks one from composition through to disconnect.
 
 Put a Device Where It Is Plugged In
 -----------------------------------
