@@ -84,7 +84,7 @@ class FrankaROSArm(ControllablePart):
         return {"tcp_pose": {}}
 
     @property
-    def parts(self) -> dict[str, RobotPart]:
+    def exports(self) -> dict[str, RobotPart]:
         """Expose the arm and whichever end effector is configured."""
         if self._end_effector_type.is_hand:
             end_effector = MethodGripper(

@@ -179,7 +179,7 @@ class DOSW1Connection(Connection):
             self._logger.exception("[DOSW1SDK] Failed to disconnect cleanly")
 
     @property
-    def parts(self) -> dict[str, RobotPart]:
+    def exports(self) -> dict[str, RobotPart]:
         """Expose both arms and both end effectors on this one SDK session.
 
         The subparts borrow the session; this part owns connecting and

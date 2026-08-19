@@ -55,15 +55,15 @@ class PartSpec:
     node_rank: Optional[int] = None
     name: Optional[str] = None
 
-    def part(self, name: str) -> "SubpartRef":
-        """Refer to one part of this declaration, resolved after placement.
+    def export(self, name: str) -> "SubpartRef":
+        """Refer to one capability this declaration exports, after placement.
 
         Use it when one connection backs several components::
 
             connection = Turtle2Connection.at(50, node_rank=0)
             left = Group(
-                arm=connection.part("left"),
-                gripper=connection.part("left_end_effector"),
+                arm=connection.export("left"),
+                gripper=connection.export("left_end_effector"),
             )
         """
         return SubpartRef(self, name)
@@ -120,7 +120,7 @@ class Placement:
             return self._handle_for(value.spec).part_named(value.name)
         if isinstance(value, PartSpec):
             handle = self._handle_for(value)
-            parts = handle.parts
+            parts = handle.exports
             # A leaf -- a camera, a gripper on its own port -- is its own part.
             if not parts:
                 return handle.part

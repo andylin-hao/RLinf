@@ -60,9 +60,9 @@ class GimArmRobot(Robot):
             node_rank=node_rank,
             name=f"GimArm-{worker_rank}-{env_idx}",
         )
-        parts = {"arm": connection.part("arm")}
+        parts = {"arm": connection.export("arm")}
         if enable_gripper:
-            parts["end_effector"] = connection.part("end_effector")
+            parts["end_effector"] = connection.export("end_effector")
         return parts
 
     @classmethod

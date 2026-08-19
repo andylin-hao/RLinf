@@ -150,13 +150,13 @@ One Connection, Named Parts
 The gripper raises a related composition question: it shares the Franka arm's
 connection. A connection often backs more than one component -- an arm and its
 gripper here, a ROS node driving two arms and their cameras elsewhere -- so the
-connection says which parts ride on it, and the robot names them:
+connection says which capabilities ride on it, and the robot names them:
 
 .. code-block:: python
 
    robot = FrankaRobot.build(robot_ip="10.0.0.1", node_rank=1, ...)
 
-   robot.parts                  # {"arm": ..., "end_effector": ...}
+   robot.children               # {"arm": ..., "end_effector": ...}
 
 Both names come from one declaration, so the connection is opened once however
 many parts refer to it.
@@ -205,12 +205,12 @@ other.
 One connection does not always correspond to one physical component. Suppose a
 coupled controller drives two arms, two grippers, and two wrist cameras through
 one ROS connection. The connected part lists each exposed component through
-``parts``:
+``exports``:
 
 .. code-block:: python
 
    @property
-   def parts(self) -> dict[str, RobotPart]:
+   def exports(self) -> dict[str, RobotPart]:
        return {
            "left": MethodArm(self, commands={"tcp_pose": "move_left_arm"}),
            "right": MethodArm(self, commands={"tcp_pose": "move_right_arm"}),
@@ -242,18 +242,21 @@ The Abstractions
        property that describes the returned data.
    * - ``Connection``
      - An endpoint that backs several parts without being one. It adds nothing
-       to ``Endpoint``: ``parts`` says what rides on it, and the robot composes
-       those.
+       to ``Endpoint``: ``exports`` says what rides on it, and the robot
+       composes those.
    * - ``ControllablePart``
      - A part with a ``send_action`` method and an ``action_features``
        description of the accepted commands.
    * - ``Camera`` / ``EndEffector`` / ``MobileBase`` / ``LeggedBase``
      - Specific part types used when a composition or remote proxy must retain
        the device category.
-   * - ``parts``
-     - Named components exposed by a part. Connected hardware lists everything
-       driven through that connection; a ``Group`` lists its members; a leaf
-       returns ``{}``.
+   * - ``exports``
+     - What one hardware session makes available: everything driven through
+       that connection. A leaf exports nothing. This belongs to the hardware.
+   * - ``children``
+     - What a ``Group`` is composed of, under the names it gave them. This
+       belongs to the robot. Composition is the step that picks exports and
+       names them, and it is the only place the two meet.
    * - ``Group``
      - A part composed from other named parts, whether they form an arm, a
        torso, or an entire robot.
@@ -323,7 +326,7 @@ part fails to start, it tears down the earlier ones. During a normal shutdown,
 ``disconnect`` follows the same cleanup path.
 
 Every robot composes this way, whether or not the hardware is shared. Declare
-the connection once, then name the components it exposes through ``parts``.
+the connection once, then name the components it offers through ``exports``.
 ``Turtle2Connection`` is a ``Connection``: one declaration backs both arms, both
 grippers and the cameras, and none of them is the connection itself:
 
@@ -332,12 +335,12 @@ grippers and the cameras, and none of them is the connection itself:
    connection = Turtle2Connection.at(50, camera_ids, node_rank=0)
    robot = Turtle2Robot(
        left=Group(
-           arm=connection.part("left"), gripper=connection.part("left_end_effector")
+           arm=connection.export("left"), gripper=connection.export("left_end_effector")
        ),
        right=Group(
-           arm=connection.part("right"), gripper=connection.part("right_end_effector")
+           arm=connection.export("right"), gripper=connection.export("right_end_effector")
        ),
-       wrist_1=connection.part("wrist_1"),
+       wrist_1=connection.export("wrist_1"),
    )
 
 Cameras use the same placement path as arms. A camera may stay on the machine
@@ -371,8 +374,8 @@ and gripper share a connection, adding the arm also adds its
 
    link = FrankaROSArm.at(robot_ip, node_rank=1)
    robot = FrankaRobot(
-       arm=link.part("arm"),
-       end_effector=link.part("end_effector"),
+       arm=link.export("arm"),
+       end_effector=link.export("end_effector"),
        wrist=RealSenseCamera.at(info, node_rank=3),
    )
 

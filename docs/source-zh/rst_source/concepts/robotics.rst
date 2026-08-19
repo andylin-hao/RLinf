@@ -140,7 +140,7 @@ Franka 有两套控制后端，机器人类通过 ``BACKEND`` 选择其中一套
 
    robot = FrankaRobot.build(robot_ip="10.0.0.1", node_rank=1, ...)
 
-   robot.parts                  # {"arm": ..., "end_effector": ...}
+   robot.children               # {"arm": ..., "end_effector": ...}
 
 两个名字来自同一份声明，因此无论多少部件引用它，这条连接只会打开一次。
 
@@ -178,13 +178,13 @@ SDK 往往不允许在一条链路上并发调用。Franka 类本身不参与这
 两者互为兄弟、而非一方继承另一方的原因。
 
 一条硬件连接不一定只对应一个物理组件。不妨设想一台联动双臂控制器：它通过一条 ROS
-连接操纵两条机械臂、两个夹爪和两个腕部相机。此时，由连接对应的部件通过 ``parts``
+连接操纵两条机械臂、两个夹爪和两个腕部相机。此时，由连接对应的部件通过 ``exports``
 列出所有组件：
 
 .. code-block:: python
 
    @property
-   def parts(self) -> dict[str, RobotPart]:
+   def exports(self) -> dict[str, RobotPart]:
        return {
            "left": MethodArm(self, commands={"tcp_pose": "move_left_arm"}),
            "right": MethodArm(self, commands={"tcp_pose": "move_right_arm"}),
@@ -213,14 +213,17 @@ SDK 往往不允许在一条链路上并发调用。Franka 类本身不参与这
        ``get_observation``，以及描述返回数据的 ``observation_features``。
    * - ``Connection``
      - 支撑多个部件、但自身不是其中任何一个的 ``Endpoint``。它没有在 ``Endpoint``
-       之上增加任何东西：``parts`` 说明谁挂在它上面，由机器人来组合这些部件。
+       之上增加任何东西：``exports`` 说明谁挂在它上面，由机器人来组合这些部件。
    * - ``ControllablePart``
      - 带有 ``send_action`` 的部件；``action_features`` 描述它接受的命令格式。
    * - ``Camera`` / ``EndEffector`` / ``MobileBase`` / ``LeggedBase``
      - 更具体的部件类型。组合结构或远程代理需要保留设备类别时使用。
-   * - ``parts``
-     - 当前部件暴露的具名组件。硬件用它列出一条连接驱动的所有组件，``Group`` 返回
-       组内成员，叶子部件返回 ``{}``。
+   * - ``exports``
+     - 一条硬件会话对外提供的能力：这条连接驱动的全部组件。叶子部件不提供任何
+       东西。它属于硬件那一侧。
+   * - ``children``
+     - ``Group`` 由哪些部件组成，以及它给这些部件起的名字。它属于机器人那一侧。
+       组合就是「挑出 exports 并为它们命名」的那一步，也是两者唯一相遇的地方。
    * - ``Group``
      - 由其他具名部件组成的部件，可以表示机械臂、躯干或整台机器人。
    * - ``Robot``
@@ -280,7 +283,7 @@ SDK 往往不允许在一条链路上并发调用。Franka 类本身不参与这
 退出时，``disconnect`` 走同一套清理流程。
 
 无论硬件是否共享，机器人都按这种方式组装：连接只声明一次，组合时再点名它通过
-``parts`` 暴露的组件。``Turtle2Connection`` 就是一个 ``Connection``——一条声明同时支撑
+``exports`` 提供的组件。``Turtle2Connection`` 就是一个 ``Connection``——一条声明同时支撑
 两条机械臂、两个夹爪和相机，而它们当中没有一个是这条连接本身：
 
 .. code-block:: python
@@ -288,12 +291,12 @@ SDK 往往不允许在一条链路上并发调用。Franka 类本身不参与这
    connection = Turtle2Connection.at(50, camera_ids, node_rank=0)
    robot = Turtle2Robot(
        left=Group(
-           arm=connection.part("left"), gripper=connection.part("left_end_effector")
+           arm=connection.export("left"), gripper=connection.export("left_end_effector")
        ),
        right=Group(
-           arm=connection.part("right"), gripper=connection.part("right_end_effector")
+           arm=connection.export("right"), gripper=connection.export("right_end_effector")
        ),
-       wrist_1=connection.part("wrist_1"),
+       wrist_1=connection.export("wrist_1"),
    )
 
 相机和机械臂走同一套放置流程。比如，相机留在实际插接的机器上，策略运行在别处；此时
@@ -325,8 +328,8 @@ SDK 往往不允许在一条链路上并发调用。Franka 类本身不参与这
 
    link = FrankaROSArm.at(robot_ip, node_rank=1)
    robot = FrankaRobot(
-       arm=link.part("arm"),
-       end_effector=link.part("end_effector"),
+       arm=link.export("arm"),
+       end_effector=link.export("end_effector"),
        wrist=RealSenseCamera.at(info, node_rank=3),
    )
 

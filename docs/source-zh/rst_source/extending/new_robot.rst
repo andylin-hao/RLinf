@@ -86,7 +86,7 @@
        ...
 
        @property
-       def parts(self) -> dict[str, RobotPart]:
+       def exports(self) -> dict[str, RobotPart]:
            return {
                "arm": self,
                "end_effector": MethodGripper(self, state_field="gripper_position"),
@@ -179,7 +179,7 @@
 一条连接支撑多个组件时，只声明一次连接，再从中选取暴露的部件::
 
    connection = ExampleConnection.at(node_rank=0)
-   Group(arm=connection.part("left"), gripper=connection.part("left_end_effector"))
+   Group(arm=connection.export("left"), gripper=connection.export("left_end_effector"))
 
 更底层的 ``spawn()`` 会立即放置部件。它适合机器人之外的场景，例如调试脚本；脚本
 此时也要自行管理句柄的生命周期。
@@ -328,6 +328,20 @@ YAML 中，不要写死在 Python 代码里：
 
    引入规范接口时，既有 Gym ID、动作维度、观测键、相机名称和数据集字段都不能变。
    用适配器和回归测试保证兼容，避免破坏已经训练好的策略和现有数据集。
+
+检查组合结果
+------------
+
+在牵扯到任何硬件之前，先问机器人它自己是什么::
+
+   >>> print(robot.describe())
+   FrankaRobot
+   ├── arm           declared      node=1     via FrankaROSArm#1
+   └── end_effector  declared      node=1     via FrankaROSArm#1
+
+每一行是一个部件、它将要运行的节点，以及它来自哪一份声明。``via`` 相同的两行共用一条
+连接，因此它们只会被打开一次，并按声明顺序依次下发命令，而不是并发下发。``connect``
+之后，同一个调用会告诉你每个部件最终是什么类型。
 
 测试集成
 --------

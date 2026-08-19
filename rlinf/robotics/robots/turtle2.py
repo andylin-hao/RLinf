@@ -48,8 +48,8 @@ class Turtle2Robot(Robot):
         """Both arms, each whole, from the shared connection."""
         return {
             side: Group(
-                arm=connection.part(side),
-                gripper=connection.part(f"{side}_end_effector"),
+                arm=connection.export(side),
+                gripper=connection.export(f"{side}_end_effector"),
             )
             for side in ("left", "right")
         }
@@ -58,7 +58,7 @@ class Turtle2Robot(Robot):
     def build_cameras(cls, connection, *, count: int) -> dict[str, Any]:
         """The wrist cameras, from that same connection."""
         return {
-            f"wrist_{index + 1}": connection.part(f"wrist_{index + 1}")
+            f"wrist_{index + 1}": connection.export(f"wrist_{index + 1}")
             for index in range(count)
         }
 

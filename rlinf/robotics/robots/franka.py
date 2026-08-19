@@ -107,8 +107,8 @@ class FrankaRobot(Robot):
             end_effector_config=end_effector_config,
         )
         return {
-            "arm": connection.part("arm"),
-            "end_effector": connection.part("end_effector"),
+            "arm": connection.export("arm"),
+            "end_effector": connection.export("end_effector"),
         }
 
     @classmethod

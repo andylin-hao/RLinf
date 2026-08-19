@@ -64,7 +64,7 @@ class PartHandle(ABC):
 
     @property
     @abstractmethod
-    def parts(self) -> dict[str, RobotPart]:
+    def exports(self) -> dict[str, RobotPart]:
         """Return the subparts of the hosted part, keyed by its local names."""
 
     @property
@@ -78,12 +78,12 @@ class PartHandle(ABC):
 
     def part_named(self, name: str) -> RobotPart:
         """Return one named subpart, or raise a clear configuration error."""
-        if name not in self.parts:
+        if name not in self.exports:
             raise KeyError(
                 f"Hosted part exposes no subpart {name!r}. "
-                f"Available: {sorted(self.parts)}."
+                f"Available: {sorted(self.exports)}."
             )
-        return self.parts[name]
+        return self.exports[name]
 
 
 class LocalPartHandle(PartHandle):
@@ -91,10 +91,10 @@ class LocalPartHandle(PartHandle):
 
     def __init__(self, part: Any) -> None:
         self._part = part
-        self._parts = dict(part.parts)
+        self._parts = dict(part.exports)
 
     @property
-    def parts(self) -> dict[str, RobotPart]:
+    def exports(self) -> dict[str, RobotPart]:
         """Return the local part's own subpart objects."""
         return self._parts
 
@@ -144,7 +144,7 @@ class RemotePartHandle(PartHandle):
         self._connected = True
 
     @property
-    def parts(self) -> dict[str, RobotPart]:
+    def exports(self) -> dict[str, RobotPart]:
         """Return proxies for the hosted part's subparts."""
         return self._parts
 

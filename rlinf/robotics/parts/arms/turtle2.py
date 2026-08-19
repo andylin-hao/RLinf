@@ -77,7 +77,7 @@ class Turtle2Connection(Connection):
         self._connected = False
 
     @property
-    def parts(self) -> dict[str, RobotPart]:
+    def exports(self) -> dict[str, RobotPart]:
         """Decompose the shared connection into per-side arms and cameras."""
         parts: dict[str, RobotPart] = {}
         for side, prefix in _ARM_SIDES.items():

@@ -136,7 +136,7 @@ class GimArm(ControllablePart):
         return {"joint_position": {}}
 
     @property
-    def parts(self) -> dict[str, RobotPart]:
+    def exports(self) -> dict[str, RobotPart]:
         """Expose the arm, plus the gripper when one is fitted."""
         parts: dict[str, RobotPart] = {"arm": self}
         if self._enable_gripper:

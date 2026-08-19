@@ -167,7 +167,7 @@ class DOSW1Env(gym.Env):
             self.robot.connect()
             left_driver = cast(
                 DOSW1Arm,
-                self.robot.part("left").part("arm"),
+                self.robot.child("left").child("arm"),
             )
             self.sdk = left_driver.sdk
             self._go_to_home()

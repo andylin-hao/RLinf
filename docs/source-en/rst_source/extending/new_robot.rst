@@ -8,7 +8,7 @@ the cluster config, while keeping the vendor SDK out of task and placement code.
 If the part model is new to you, start with
 :doc:`Robotics Model <../concepts/robotics>`. We'll use its three main ideas
 throughout this guide: a physical component is a ``RobotPart``; one connection
-may expose several components through ``parts``; and a ``Robot`` assigns stable
+may expose several components through ``exports``; and a ``Robot`` assigns stable
 names to the resulting tree. The concept page also maps the
 ``rlinf/robotics`` package and explains how ``spawn()`` places a part on another
 node.
@@ -82,7 +82,7 @@ Expose Several Components on One Connection
 -------------------------------------------
 
 Next, account for the connection boundary. A socket, CAN bus, or ROS node may
-drive several physical components; list them all through ``parts`` so callers
+drive several physical components; list them all through ``exports`` so callers
 can address each one even though the device connection opens only once. For an
 arm, the convention is to expose the part itself under ``"arm"``.
 
@@ -95,7 +95,7 @@ arm, the convention is to expose the part itself under ``"arm"``.
        ...
 
        @property
-       def parts(self) -> dict[str, RobotPart]:
+       def exports(self) -> dict[str, RobotPart]:
            return {
                "arm": self,
                "end_effector": MethodGripper(self, state_field="gripper_position"),
@@ -200,7 +200,10 @@ If one connection backs several components, declare that connection once and
 select the exposed parts from it::
 
    connection = ExampleConnection.at(node_rank=0)
-   Group(arm=connection.part("left"), gripper=connection.part("left_end_effector"))
+   Group(
+       arm=connection.export("left"),
+       gripper=connection.export("left_end_effector"),
+   )
 
 Underneath this flow, ``spawn()`` performs placement immediately. Call it
 directly only outside a robot, for example in a bench script that also takes
@@ -364,6 +367,21 @@ flat action vectors and ``state``/``frames`` observations, use
    dimension, observation key, camera name, and dataset field unchanged. Use an
    adapter and a regression test to preserve compatibility for trained policies
    and existing datasets.
+
+Check the Composition
+---------------------
+
+Before any hardware is involved, ask the robot what it is::
+
+   >>> print(robot.describe())
+   FrankaRobot
+   ├── arm           declared      node=1     via FrankaROSArm#1
+   └── end_effector  declared      node=1     via FrankaROSArm#1
+
+Each row is a part, the node it will run on, and the declaration it comes from.
+Two rows sharing a ``via`` share one connection, so they are opened once and
+commanded in their declared order rather than concurrently. After ``connect``
+the same call reports what each part turned out to be.
 
 Test the Integration
 --------------------

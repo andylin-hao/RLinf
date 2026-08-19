@@ -40,7 +40,9 @@ class DOSW1Robot(Robot):
     def build_arms(cls, sdk) -> dict[str, Any]:
         """Both arms, each whole, from the shared SDK session."""
         return {
-            side: Group(arm=sdk.part(side), gripper=sdk.part(f"{side}_end_effector"))
+            side: Group(
+                arm=sdk.export(side), gripper=sdk.export(f"{side}_end_effector")
+            )
             for side in ("left", "right")
         }
 

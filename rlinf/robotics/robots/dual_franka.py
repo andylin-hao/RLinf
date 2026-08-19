@@ -87,8 +87,8 @@ class DualFrankaRobot(FrankaRobot):
                 gripper_connection=connection,
             )
             arms[side] = Group(
-                arm=declared.part("arm"),
-                end_effector=declared.part("end_effector"),
+                arm=declared.export("arm"),
+                end_effector=declared.export("end_effector"),
                 **declare_cameras((arm_cameras or {}).get(side), node_rank=node_rank),
             )
         return arms

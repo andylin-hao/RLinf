@@ -69,7 +69,7 @@ def walk(part: Any, prefix: str = "") -> list[tuple[str, Any]]:
     """Every leaf part of a robot, by dotted path."""
     if isinstance(part, Group):
         found: list[tuple[str, Any]] = []
-        for name, child in part.parts.items():
+        for name, child in part.children.items():
             found += walk(child, f"{prefix}{name}.")
         return found
     return [(prefix.rstrip("."), part)]

@@ -117,7 +117,7 @@ class FrankyArm(ControllablePart):
         return {"joint_position": {}, "tcp_pose": {}}
 
     @property
-    def parts(self) -> dict[str, RobotPart]:
+    def exports(self) -> dict[str, RobotPart]:
         """Expose the arm and the gripper riding on the same connection."""
         return {
             "arm": self,
