@@ -39,7 +39,7 @@ This is the only module in ``rlinf.robotics`` that imports the scheduler.
 
 import inspect
 from abc import ABC, ABCMeta, abstractmethod
-from typing import Any, Callable, Optional
+from typing import Any, Callable, ClassVar, Optional
 from uuid import uuid4
 
 from rlinf.scheduler import Cluster, NodePlacementStrategy, Worker
@@ -358,88 +358,98 @@ class WorkerPartMeta(WorkerMeta, ABCMeta):
     """
 
 
-_WORKER_CLS_CACHE: dict[type, type] = {}
+class PartWorkerHost:
+    """Hosts one part in a scheduler worker and hands back a handle to it.
 
-
-def part_worker_cls(part_cls: type) -> type:
-    """Return (and cache) the ``Worker`` subclass that hosts ``part_cls``."""
-    cached = _WORKER_CLS_CACHE.get(part_cls)
-    if cached is not None:
-        return cached
-
-    def __init__(self: Any, *args: Any, **kwargs: Any) -> None:
-        Worker.__init__(self)
-        part_cls.__init__(self, *args, **kwargs)
-        self.connect()
-
-    namespace: dict[str, Any] = {
-        "__init__": __init__,
-        "__module__": part_cls.__module__,
-        "__qualname__": f"{part_cls.__name__}Worker",
-        "__doc__": f"Scheduler host for :class:`{part_cls.__name__}`.",
-    }
-
-    # Re-declare the part's public methods in the new class body so
-    # ``WorkerMeta`` wraps them for failure capture; inherited attributes are
-    # invisible to it. This is a loop, not hand-written delegation, and the
-    # bodies stay in the part.
-    for name, func in inspect.getmembers(part_cls, inspect.isfunction):
-        if not name.startswith("_") and name not in namespace:
-            namespace[name] = func
-
-    worker_cls = WorkerPartMeta(
-        f"{part_cls.__name__}Worker",
-        (Worker, part_cls),
-        namespace,
-    )
-    _WORKER_CLS_CACHE[part_cls] = worker_cls
-    return worker_cls
-
-
-def default_part_name(part_cls: type, node_rank: int) -> str:
-    """Name a hosted part so no two of them collide.
-
-    The class and the node are not enough on their own: a robot with a camera
-    on each wrist places two of the same class on the same node, and the same
-    robot built in two env workers places the whole tree twice. Ray refuses a
-    duplicate name rather than placing the second part, so the fresh suffix is
-    what lets either happen at all.
-    """
-    return f"{part_cls.__name__}-node{node_rank}-{uuid4().hex[:8]}"
-
-
-def spawn_part_worker(
-    part_cls: type,
-    args: tuple[Any, ...],
-    kwargs: dict[str, Any],
-    *,
-    node_rank: int,
-    name: Optional[str] = None,
-) -> RemotePartHandle:
-    """Host one part on ``node_rank`` and return a handle to it.
+    Synthesising the worker class, naming the group, launching it and building
+    the proxies are one job with one set of inputs, so they are one object
+    rather than four functions passing the same three arguments around.
 
     Args:
         part_cls: The part class to construct on the target node.
         args: Positional arguments for the part constructor.
         kwargs: Keyword arguments for the part constructor.
         node_rank: Cluster node rank that is physically wired to the device.
-        name: Worker-group name. Defaults to one derived from the class, the
-            node, and a fresh suffix. The suffix is what makes two cameras on
-            one arm -- or the same robot built in two env workers -- distinct;
-            a name built from the class alone would collide, and Ray refuses a
-            duplicate rather than placing the second part.
-
-    Returns:
-        RemotePartHandle: Handle whose parts proxy to the hosted part.
+        name: Worker-group name. Defaults to :meth:`default_name`.
     """
-    worker_cls = part_worker_cls(part_cls)
-    group = worker_cls.create_group(*args, **kwargs).launch(
-        cluster=Cluster(),
-        placement_strategy=NodePlacementStrategy(node_ranks=[node_rank]),
-        name=name or default_part_name(part_cls, node_rank),
-    )
-    return RemotePartHandle(
-        group,
-        _first(group.describe_parts()),
-        _first(group.describe_self()),
-    )
+
+    #: One synthesised ``Worker`` subclass per part class, reused after the
+    #: first placement of that class.
+    _worker_classes: ClassVar[dict[type, type]] = {}
+
+    def __init__(
+        self,
+        part_cls: type,
+        args: tuple[Any, ...] = (),
+        kwargs: Optional[dict[str, Any]] = None,
+        *,
+        node_rank: int,
+        name: Optional[str] = None,
+    ) -> None:
+        self.part_cls = part_cls
+        self.args = args
+        self.kwargs = kwargs or {}
+        self.node_rank = node_rank
+        self.name = name or self.default_name(part_cls, node_rank)
+
+    @staticmethod
+    def default_name(part_cls: type, node_rank: int) -> str:
+        """Name a hosted part so no two of them collide.
+
+        The class and the node are not enough on their own: a robot with a
+        camera on each wrist places two of the same class on the same node,
+        and the same robot built in two env workers places the whole tree
+        twice. Ray refuses a duplicate name rather than placing the second
+        part, so the fresh suffix is what lets either happen at all.
+        """
+        return f"{part_cls.__name__}-node{node_rank}-{uuid4().hex[:8]}"
+
+    @classmethod
+    def worker_class(cls, part_cls: type) -> type:
+        """Return (and cache) the ``Worker`` subclass that hosts ``part_cls``."""
+        cached = cls._worker_classes.get(part_cls)
+        if cached is not None:
+            return cached
+
+        def __init__(self: Any, *args: Any, **kwargs: Any) -> None:
+            Worker.__init__(self)
+            part_cls.__init__(self, *args, **kwargs)
+            self.connect()
+
+        namespace: dict[str, Any] = {
+            "__init__": __init__,
+            "__module__": part_cls.__module__,
+            "__qualname__": f"{part_cls.__name__}Worker",
+            "__doc__": f"Scheduler host for :class:`{part_cls.__name__}`.",
+        }
+
+        # Re-declare the part's public methods in the new class body so
+        # ``WorkerMeta`` wraps them for failure capture; inherited attributes
+        # are invisible to it. This is a loop, not hand-written delegation, and
+        # the bodies stay in the part.
+        for name, func in inspect.getmembers(part_cls, inspect.isfunction):
+            if not name.startswith("_") and name not in namespace:
+                namespace[name] = func
+
+        worker_cls = WorkerPartMeta(
+            f"{part_cls.__name__}Worker", (Worker, part_cls), namespace
+        )
+        cls._worker_classes[part_cls] = worker_cls
+        return worker_cls
+
+    def spawn(self) -> RemotePartHandle:
+        """Launch the worker and return a handle whose parts proxy into it."""
+        group = (
+            self.worker_class(self.part_cls)
+            .create_group(*self.args, **self.kwargs)
+            .launch(
+                cluster=Cluster(),
+                placement_strategy=NodePlacementStrategy(node_ranks=[self.node_rank]),
+                name=self.name,
+            )
+        )
+        return RemotePartHandle(
+            group,
+            _first(group.describe_parts()),
+            _first(group.describe_self()),
+        )

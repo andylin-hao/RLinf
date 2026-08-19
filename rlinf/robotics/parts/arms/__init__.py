@@ -15,7 +15,7 @@
 """Arms, and the hardware sessions behind them.
 
 Each module owns one vendor connection and the parts it exposes through
-:meth:`~rlinf.robotics.parts.base.RobotPart.subparts` -- typically the arm
+:attr:`~rlinf.robotics.parts.base.Endpoint.exports` -- typically the arm
 itself plus its end effector, and for coupled hardware several arms at once.
 
 Symbols load lazily so a node without a given vendor SDK can still import this

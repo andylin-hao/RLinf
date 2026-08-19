@@ -20,7 +20,7 @@ gripper lives behind ``open_gripper`` / ``close_gripper``, a controller that
 returns frames from ``get_camera(id)``. These adapters turn such method
 surfaces into proper parts, so composition sees a uniform interface.
 
-A part declares these in :meth:`~.parts.base.RobotPart.subparts`, in Python,
+A part declares these in :attr:`~.parts.base.Endpoint.exports`, in Python,
 next to the methods they wrap -- not as command/state dictionaries assembled in
 a separate factory module.
 """

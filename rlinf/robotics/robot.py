@@ -22,41 +22,6 @@ from .parts.base import Group, RobotPart
 RobotPartType = TypeVar("RobotPartType", bound=RobotPart)
 
 
-def _origin_spec(part: Any) -> Any:
-    """The declaration a part came from, when it came from one."""
-    from .placement.specs import PartSpec, SubpartRef
-
-    if isinstance(part, SubpartRef):
-        return part.spec
-    if isinstance(part, PartSpec):
-        return part
-    return None
-
-
-def _flatten(declared: Mapping[str, Any], prefix: str = "") -> dict[str, Any]:
-    """The declaration snapshot, keyed the way the tree walk keys parts."""
-    flat: dict[str, Any] = {}
-    for name, value in declared.items():
-        path = f"{prefix}{name}"
-        if isinstance(value, dict):
-            flat.update(_flatten(value, f"{path}."))
-        else:
-            flat[path] = value
-    return flat
-
-
-def _declared_kind(part_cls: Optional[type]) -> str:
-    """What a declared part will be, without building it."""
-    from .parts.base import _PART_KINDS
-
-    if part_cls is None:
-        return "declared"
-    for kind, kind_cls in _PART_KINDS:
-        if isinstance(part_cls, type) and issubclass(part_cls, kind_cls):
-            return kind
-    return "declared"
-
-
 class Robot(Group):
     """A named group of parts that owns their placement.
 
@@ -99,7 +64,12 @@ class Robot(Group):
                 ROBOT_TYPE = "Bench"
 
 
-            robot = Bench(arm=MyArm.at(port, node_rank=1), eye=MyCamera.at(info))
+            connection = MyArm.at(port, node_rank=1)
+            robot = Bench(
+                arm=connection.export("arm"),
+                gripper=connection.export("end_effector"),
+                eye=MyCamera.at(info),
+            )
             robot.connect()
 
         Composing does not connect.
@@ -132,6 +102,41 @@ class Robot(Group):
         walk(self, "")
         return matches
 
+    @staticmethod
+    def _origin_spec(part: Any) -> Any:
+        """The declaration a part came from, when it came from one."""
+        from .placement.specs import PartSpec, SubpartRef
+
+        if isinstance(part, SubpartRef):
+            return part.spec
+        if isinstance(part, PartSpec):
+            return part
+        return None
+
+    @classmethod
+    def _flatten(cls, declared: Mapping[str, Any], prefix: str = "") -> dict[str, Any]:
+        """The declaration snapshot, keyed the way the tree walk keys parts."""
+        flat: dict[str, Any] = {}
+        for name, value in declared.items():
+            path = f"{prefix}{name}"
+            if isinstance(value, dict):
+                flat.update(cls._flatten(value, f"{path}."))
+            else:
+                flat[path] = value
+        return flat
+
+    @staticmethod
+    def _declared_kind(part_cls: Optional[type]) -> str:
+        """What a declared part will be, without building it."""
+        from .parts.base import _PART_KINDS
+
+        if part_cls is None:
+            return "declared"
+        for kind, kind_cls in _PART_KINDS:
+            if isinstance(part_cls, type) and issubclass(part_cls, kind_cls):
+                return kind
+        return "declared"
+
     def describe(self) -> str:
         """What this robot is made of, where it runs, and what backs each part.
 
@@ -162,31 +167,29 @@ class Robot(Group):
         # connected part no longer carries one. The robot kept the snapshot it
         # would restore on failure, so the same answer is available either
         # side of connect rather than only before it.
-        declared = _flatten(self._declared or {})
+        declared = self._flatten(self._declared or {})
 
         # Parts declared from one spec share a connection; number the specs in
         # the order they appear so the grouping is visible at a glance.
         origins: dict[int, str] = {}
         for path, part in rows:
-            spec = _origin_spec(declared.get(path, part))
+            spec = self._origin_spec(declared.get(path, part))
             if spec is not None and id(spec) not in origins:
                 origins[id(spec)] = f"{spec.part_cls.__name__}#{len(origins) + 1}"
 
         width = max((len(path) for path, _ in rows), default=0)
-        from .parts.base import part_kind
-
         for index, (path, part) in enumerate(rows):
             branch = "└──" if index == len(rows) - 1 else "├──"
-            spec = _origin_spec(declared.get(path, part))
+            spec = self._origin_spec(declared.get(path, part))
             if isinstance(part, SubpartRef):
                 # What a connection exports is only known once it is open, so
                 # naming the connection's own kind here would say the arm is a
                 # connection. It is not.
                 kind = "declared"
             elif isinstance(part, PartSpec):
-                kind = _declared_kind(spec.part_cls if spec else None)
+                kind = self._declared_kind(spec.part_cls if spec else None)
             else:
-                kind = part_kind(part)
+                kind = part.kind
             where = (
                 "here"
                 if spec is None or spec.node_rank is None

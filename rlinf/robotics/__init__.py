@@ -14,7 +14,7 @@
 
 """RLinf's robotics layer: parts, and the robots composed from them.
 
-Two concepts:
+Four concepts:
 
 * **Endpoint** -- anything the robot opens on a machine and later closes. It
   has a location and a lifecycle, and that is all. Both of the following are
@@ -24,7 +24,7 @@ Two concepts:
   observation and action contract.
 * **Connection** -- an endpoint that backs several parts without being one. A
   coupled dual-arm controller, a two-armed SDK session:
-  :meth:`~rlinf.robotics.parts.base.Endpoint.parts` says what rides on it, and
+  :attr:`~rlinf.robotics.parts.base.Endpoint.exports` says what rides on it, and
   the robot composes those. Reading it would mean nothing, so it is a sibling
   of ``Part`` rather than a part that declines to answer -- which is what keeps
   it out of the robot's tree.
@@ -61,7 +61,6 @@ _MODULE_GROUPS: dict[str, tuple[str, ...]] = {
         "RobotPart",
         "run_parallel",
     ),
-    ".parts.base": ("part_kind",),
     ".parts.arms": ("ARM_STATE_FIELDS",),
     ".parts.cameras": ("camera_cls", "declare_cameras"),
     ".robot": ("Robot",),

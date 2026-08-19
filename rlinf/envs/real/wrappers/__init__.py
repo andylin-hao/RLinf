@@ -62,71 +62,90 @@ KEYBOARD_MODES: dict[str, type] = {
 }
 
 
-def _wanted(wrapper: type, cfg: Mapping[str, Any]) -> bool:
-    """Whether ``cfg`` switches this wrapper on.
-
-    A wrapper with no flag is always applied; one with a flag says its own
-    name and default, so this does not grow a branch per wrapper.
-    """
-    flag = getattr(wrapper, "CONFIG_FLAG", None)
-    if flag is None:
-        return True
-    return bool(cfg.get(flag, getattr(wrapper, "CONFIG_DEFAULT", True)))
-
-
-def _apply_teleop(env: gym.Env, cfg: Mapping[str, Any], inner: Any) -> gym.Env:
-    """Hand the action to an operator, if this env config asks for one.
-
-    Which devices those are, and what each one needs, is settled by the config
-    and the device registry. No device is named here.
-    """
-    devices = resolve_teleop_devices(
-        cfg,
-        supported=getattr(inner, "TELEOP", ()),
-        default=getattr(inner, "TELEOP_DEFAULT", NO_DEVICE),
-    )
-    if not devices or getattr(inner.config, "is_dummy", False):
-        return env
-
-    return TeleopIntervention(
-        env,
-        build_teleop(env, cfg, devices),
-        mark_flag=bool(getattr(inner, "TELEOP_MARK_FLAG", False)),
-    )
-
-
-def build_stack(env: gym.Env, cfg: Mapping[str, Any]) -> gym.Env:
-    """Wrap ``env`` in what it declares and this config asks for.
+class WrapperStack:
+    """The wrappers one env asks for, in the order they have to go on.
 
     Order matters and is the same for every robot: narrow the action first so
     the operator drives what the policy drives, then teleop, then whoever marks
     the episode, then the representation the policy expects.
+
+    A class rather than a procedure because the three steps share the env being
+    wrapped, the config asking for it, and the env's own declarations -- which
+    were otherwise passed between them by hand.
     """
-    inner = env.unwrapped
 
-    for flag in getattr(inner, "REFUSE_FLAGS", ()):
-        if cfg.get(flag, False):
-            raise NotImplementedError(
-                f"{type(inner).__name__} does not support {flag!r}."
-            )
+    def __init__(self, env: gym.Env, cfg: Mapping[str, Any]) -> None:
+        self.env = env
+        self.cfg = cfg
+        self.inner = env.unwrapped
 
-    for name in getattr(inner, "ACTION_WRAPPERS", ()):
-        wrapper = WRAPPERS[name]
-        if _wanted(wrapper, cfg):
-            env = wrapper(env)
+    def build(self) -> gym.Env:
+        """Return the wrapped env, or refuse a flag this env cannot honour."""
+        self._refuse_unsupported()
+        self._apply(getattr(self.inner, "ACTION_WRAPPERS", ()))
+        self._apply_teleop()
+        self._apply_keyboard_reward()
+        self._apply_episode()
+        self._apply(getattr(self.inner, "TRANSFORMS", ()))
+        return self.env
 
-    env = _apply_teleop(env, cfg, inner)
+    def _refuse_unsupported(self) -> None:
+        """Say so rather than wrapping an env in something it cannot support."""
+        for flag in getattr(self.inner, "REFUSE_FLAGS", ()):
+            if self.cfg.get(flag, False):
+                raise NotImplementedError(
+                    f"{type(self.inner).__name__} does not support {flag!r}."
+                )
 
-    mode = cfg.get("keyboard_reward_wrapper", None)
-    if mode and not getattr(inner.config, "is_dummy", False):
-        env = KEYBOARD_MODES[mode](env)
+    def _wanted(self, wrapper: type) -> bool:
+        """Whether the config switches this wrapper on.
 
-    for extra in getattr(inner, "episode_wrappers", lambda cfg: ())(cfg):
-        env = extra(env)
+        A wrapper with no flag is always applied; one with a flag says its own
+        name and default, so this does not grow a branch per wrapper.
+        """
+        flag = getattr(wrapper, "CONFIG_FLAG", None)
+        if flag is None:
+            return True
+        return bool(self.cfg.get(flag, getattr(wrapper, "CONFIG_DEFAULT", True)))
 
-    for name in getattr(inner, "TRANSFORMS", ()):
-        wrapper = WRAPPERS[name]
-        if _wanted(wrapper, cfg):
-            env = wrapper(env)
+    def _apply(self, names: Any) -> None:
+        """Put on each named wrapper the config asks for."""
+        for name in names:
+            wrapper = WRAPPERS[name]
+            if self._wanted(wrapper):
+                self.env = wrapper(self.env)
 
-    return env
+    def _apply_teleop(self) -> None:
+        """Hand the action to an operator, if this env config asks for one.
+
+        Which devices those are, and what each one needs, is settled by the
+        config and the device registry. No device is named here.
+        """
+        devices = resolve_teleop_devices(
+            self.cfg,
+            supported=getattr(self.inner, "TELEOP", ()),
+            default=getattr(self.inner, "TELEOP_DEFAULT", NO_DEVICE),
+        )
+        if not devices or getattr(self.inner.config, "is_dummy", False):
+            return
+        self.env = TeleopIntervention(
+            self.env,
+            build_teleop(self.env, self.cfg, devices),
+            mark_flag=bool(getattr(self.inner, "TELEOP_MARK_FLAG", False)),
+        )
+
+    def _apply_keyboard_reward(self) -> None:
+        """Let an operator score the episode from the keyboard."""
+        mode = self.cfg.get("keyboard_reward_wrapper", None)
+        if mode and not getattr(self.inner.config, "is_dummy", False):
+            self.env = KEYBOARD_MODES[mode](self.env)
+
+    def _apply_episode(self) -> None:
+        """Whatever decides when this task's rollout starts and ends."""
+        for extra in getattr(self.inner, "episode_wrappers", lambda cfg: ())(self.cfg):
+            self.env = extra(self.env)
+
+
+def build_stack(env: gym.Env, cfg: Mapping[str, Any]) -> gym.Env:
+    """Wrap ``env`` in what it declares and this config asks for."""
+    return WrapperStack(env, cfg).build()

@@ -22,9 +22,11 @@ arguments, and a ``node_rank`` -- and builds the part on the target node.
 you would compose parts; :meth:`Robot.connect` resolves them. Nobody writes a
 placement call.
 
+    connection = FrankaROSArm.at("10.0.0.1", node_rank=1)
     robot = FrankaRobot(
-        arms={"left": Arm(FrankaROSArm.at("10.0.0.1", node_rank=1))},
-        cameras={"scene": RealSenseCamera.at(info, node_rank=2)},
+        arm=connection.export("arm"),
+        end_effector=connection.export("end_effector"),
+        scene=RealSenseCamera.at(info, node_rank=2),
     )
     robot.connect()
 

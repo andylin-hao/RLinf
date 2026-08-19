@@ -27,14 +27,12 @@ behaves the same whether the part ended up local or remote.
 from .handles import (
     LocalPartHandle,
     PartHandle,
+    PartWorkerHost,
     RemoteCamera,
     RemoteControllablePart,
     RemoteEndEffector,
     RemotePart,
     RemotePartHandle,
-    default_part_name,
-    part_worker_cls,
-    spawn_part_worker,
 )
 from .specs import PartSpec, Placement, SubpartRef
 
@@ -49,7 +47,5 @@ __all__ = [
     "RemotePart",
     "RemotePartHandle",
     "SubpartRef",
-    "part_worker_cls",
-    "default_part_name",
-    "spawn_part_worker",
+    "PartWorkerHost",
 ]

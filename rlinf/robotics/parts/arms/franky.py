@@ -107,7 +107,7 @@ class FrankyArm(ControllablePart):
         """Describe the canonical Franka arm state fields.
 
         Gripper fields are deliberately absent: they belong to the end-effector
-        part returned by :meth:`parts`, not to the arm.
+        part returned by :attr:`exports`, not to the arm.
         """
         return {name: {} for name in ARM_STATE_FIELDS}
 

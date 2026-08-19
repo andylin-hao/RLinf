@@ -74,7 +74,7 @@ class FrankaROSArm(ControllablePart):
     def observation_features(self) -> dict:
         """Describe canonical Franka arm state fields.
 
-        End-effector fields belong to the part returned by :meth:`parts`.
+        End-effector fields belong to the part returned by :attr:`exports`.
         """
         return {name: {} for name in ARM_STATE_FIELDS}
 

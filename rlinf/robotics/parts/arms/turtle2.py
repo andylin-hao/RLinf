@@ -66,7 +66,7 @@ class Turtle2Connection(Connection):
 
     One ROS connection drives both arms, both grippers, and the wrist cameras.
     None of those is the connection, so it is a :class:`Connection` rather than
-    a part: :meth:`parts` says what it backs, and the robot composes those.
+    a part: :attr:`exports` says what it backs, and the robot composes those.
     """
 
     def __init__(self, freq=50, camera_ids=()):

@@ -71,7 +71,7 @@ class DOSW1Connection(Connection):
 
     The session drives four components and is none of them, so it is a
     :class:`~rlinf.robotics.parts.base.Connection`: it owns connecting and
-    disconnecting, :meth:`parts` says what rides on it, and the robot composes
+    disconnecting, :attr:`exports` says what rides on it, and the robot composes
     those.
     """
 

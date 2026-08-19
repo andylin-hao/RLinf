@@ -119,6 +119,19 @@ class Endpoint(ABC):
     # -- Composition ------------------------------------------------------
 
     @property
+    def kind(self) -> str:
+        """This endpoint's narrowest kind, as a remote proxy mirrors it.
+
+        Named rather than derived at each call site, because the proxy on the
+        other side of a placement has to rebuild the same interface from a
+        description that crossed a process boundary.
+        """
+        for kind, endpoint_type in _PART_KINDS:
+            if isinstance(self, endpoint_type):
+                return kind
+        raise TypeError(f"{type(self).__name__} is not an Endpoint.")
+
+    @property
     def exports(self) -> dict[str, "RobotPart"]:
         """The capabilities this endpoint makes available. A leaf has none.
 
@@ -153,7 +166,7 @@ class Endpoint(ABC):
         A leaf part -- a camera, a gripper on its own port -- exposes no
         subparts, so this is what a remote handle proxies.
         """
-        described: dict[str, Any] = {"kind": part_kind(self)}
+        described: dict[str, Any] = {"kind": self.kind}
         if isinstance(self, RobotPart):
             described["observation"] = self.observation_features
         if isinstance(self, ControllablePart):
@@ -170,7 +183,7 @@ class Endpoint(ABC):
         described: dict[str, dict[str, Any]] = {}
         for name, part in self.exports.items():
             entry: dict[str, Any] = {
-                "kind": part_kind(part),
+                "kind": part.kind,
                 "observation": part.observation_features,
             }
             if isinstance(part, ControllablePart):
@@ -256,14 +269,14 @@ class Endpoint(ABC):
         The scheduler is imported here rather than at module scope, so importing
         a part never pulls Ray into the process.
         """
-        from ..placement import LocalPartHandle, spawn_part_worker
+        from ..placement import LocalPartHandle, PartWorkerHost
 
         if node_rank is None:
             part = cls(*args, **kwargs)
             part.connect()
             return LocalPartHandle(part)
 
-        return spawn_part_worker(cls, args, kwargs, node_rank=node_rank, name=name)
+        return PartWorkerHost(cls, args, kwargs, node_rank=node_rank, name=name).spawn()
 
 
 class RobotPart(Endpoint):
@@ -409,8 +422,19 @@ class Group(ControllablePart):
             raise
 
     def disconnect(self) -> None:
-        """Disconnect every connected part, in reverse order."""
+        """Disconnect every connected part, in reverse order.
+
+        Disconnecting restores the declarations, so a second call walks a tree
+        holding those rather than live parts. A declaration has nothing to
+        disconnect -- and asking it raised, which is exactly the wrong thing to
+        do in the teardown path a ``finally`` block takes when it is not sure
+        whether the robot came up.
+        """
+        from ..placement.specs import PartSpec, SubpartRef
+
         for part in reversed(list(self._parts.values())):
+            if isinstance(part, (PartSpec, SubpartRef)):
+                continue
             if isinstance(part, Group) or part.is_connected:
                 part.disconnect()
 
@@ -506,8 +530,8 @@ class Connection(Endpoint):
     A ROS node, a CAN bus or an SDK session often drives more than one
     component: two arms, their grippers, and the wrist cameras on one link.
     Such a connection has a location and a lifecycle, which is what makes it an
-    :class:`Endpoint`, but reading it would mean nothing -- :meth:`parts` says
-    what it backs, and a robot composes those.
+    :class:`Endpoint`, but reading it would mean nothing -- :attr:`exports`
+    says what it backs, and a robot composes those parts.
 
     It is deliberately not a :class:`RobotPart`. A connection that had to be
     one could only answer ``get_observation`` by refusing, or by repeating what
@@ -515,7 +539,7 @@ class Connection(Endpoint):
     it into the tree by accident, and there is nothing to refuse.
 
     A connection that *is* one component, like a ROS link to a single arm, is
-    an ordinary part that lists itself in :meth:`parts`. The distinction is
+    an ordinary part that lists itself in :attr:`exports`. The distinction is
     whether an observation of the whole thing means anything.
     """
 
@@ -536,11 +560,3 @@ _PART_KINDS: tuple[tuple[str, type], ...] = (
     ("part", RobotPart),
     ("connection", Connection),
 )
-
-
-def part_kind(endpoint: Endpoint) -> str:
-    """Classify an endpoint so a remote proxy can mirror its interface."""
-    for kind, endpoint_type in _PART_KINDS:
-        if isinstance(endpoint, endpoint_type):
-            return kind
-    raise TypeError(f"{type(endpoint).__name__} is not an Endpoint.")

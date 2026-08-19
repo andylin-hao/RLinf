@@ -2512,9 +2512,9 @@ def test_two_parts_of_one_class_on_one_node_get_different_names():
     up with one wrist camera and an observation space asking for two.
     """
     from rlinf.robotics.parts.cameras.realsense import RealSenseCamera
-    from rlinf.robotics.placement import default_part_name
+    from rlinf.robotics.placement import PartWorkerHost
 
-    names = {default_part_name(RealSenseCamera, 0) for _ in range(8)}
+    names = {PartWorkerHost.default_name(RealSenseCamera, 0) for _ in range(8)}
 
     assert len(names) == 8, f"names repeat: {sorted(names)}"
     assert all(name.startswith("RealSenseCamera-node0-") for name in names), (
@@ -2780,3 +2780,32 @@ def test_describe_says_where_a_part_runs_before_anything_is_opened():
     assert "node=2" in described, described
     # Both names come from one declaration, so both say the same connection.
     assert described.count("FrankyArm#1") == 2, described
+
+
+def test_a_robot_can_be_disconnected_twice():
+    """Teardown calls disconnect when it is not sure the robot came up.
+
+    Disconnecting restores the declarations, so the second call walked a tree
+    holding those and asked a ``SubpartRef`` whether it was connected. The
+    ``AttributeError`` that produced would surface from inside a ``finally``,
+    replacing whatever error the caller was actually handling.
+
+    Found by the robot conformance suite, against every shipped robot at once.
+    """
+    from robot_mocks import mocked_sdks
+
+    from rlinf.robotics.parts.arms.franky import FrankyArm
+    from rlinf.robotics.robot import Robot
+
+    class Bench(Robot):
+        ROBOT_TYPE = "Bench"
+
+    declared = FrankyArm.at("10.0.0.1", gripper_connection="/dev/mock-gripper")
+    robot = Bench(arm=declared.export("arm"), gripper=declared.export("end_effector"))
+
+    with mocked_sdks():
+        robot.connect()
+        robot.disconnect()
+        robot.disconnect()
+
+        assert not robot.is_connected

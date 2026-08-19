@@ -28,10 +28,11 @@ subpackage named after it::
         hands/                    Ruiyan
       transports/                 ROS
 
-A part says what a component means to the policy: its observation and action
-contract. A link that presents several components at once -- a dual-arm
-controller, a two-armed SDK session -- is a :class:`~.base.Connection` rather
-than a part: it lists what rides on it in :meth:`~.base.Endpoint.parts`, and
+A part says what a component means to the policy: its observation contract and,
+when controllable, its action contract. A link that presents several components
+at once -- a dual-arm controller, a two-armed SDK session -- is a
+:class:`~.base.Connection` rather
+than a part: it lists what rides on it in :attr:`~.base.Endpoint.exports`, and
 the robot composes those. Both are :class:`~.base.Endpoint`\ s, so both are
 declared, placed, opened and closed the same way.
 

@@ -126,7 +126,7 @@ class GimArm(ControllablePart):
     def observation_features(self) -> dict:
         """Describe canonical GimArm arm state fields.
 
-        Gripper fields belong to the end-effector part from :meth:`parts`.
+        Gripper fields belong to the end-effector part from :attr:`exports`.
         """
         return {name: {} for name in ARM_STATE_FIELDS}
 

@@ -34,30 +34,6 @@ from rlinf.robotics.teleop import TeleopGroup
 from .intervention import TeleopDevice, TeleopSample
 
 
-def context_from(env: gym.Env) -> dict[str, Any]:
-    """Gather what bindings may ask about the robot they are driving.
-
-    Each value is fetched only if the env offers it, so an env without joints
-    costs nothing and a binding that needs them fails where it is used rather
-    than here.
-    """
-    context: dict[str, Any] = {}
-    for key, getter in (
-        ("tcp_pose", "get_tcp_pose"),
-        ("action_scale", "get_action_scale"),
-        ("joint_positions", "get_joint_positions"),
-        ("gripper_open", "get_gripper_open"),
-        ("hand_reset_pose", "get_hand_reset_pose"),
-    ):
-        try:
-            value = env.get_wrapper_attr(getter)
-        except AttributeError:
-            continue
-        if callable(value):
-            context[key] = value()
-    return context
-
-
 class ComposedTeleop(TeleopDevice):
     """A group of devices, flattened into this env's action.
 
@@ -100,6 +76,33 @@ class ComposedTeleop(TeleopDevice):
         if timeout is not None:
             self.timeout = timeout
 
+    #: What a binding may ask about the robot, and the getter that answers it.
+    CONTEXT_GETTERS = (
+        ("tcp_pose", "get_tcp_pose"),
+        ("action_scale", "get_action_scale"),
+        ("joint_positions", "get_joint_positions"),
+        ("gripper_open", "get_gripper_open"),
+        ("hand_reset_pose", "get_hand_reset_pose"),
+    )
+
+    @classmethod
+    def context_from(cls, env: gym.Env) -> dict[str, Any]:
+        """Gather what bindings may ask about the robot they are driving.
+
+        Each value is fetched only if the env offers it, so an env without
+        joints costs nothing and a binding that needs them fails where it is
+        used rather than here.
+        """
+        context: dict[str, Any] = {}
+        for key, getter in cls.CONTEXT_GETTERS:
+            try:
+                value = env.get_wrapper_attr(getter)
+            except AttributeError:
+                continue
+            if callable(value):
+                context[key] = value()
+        return context
+
     def before_reset(self, env: gym.Env, kwargs: dict[str, Any]) -> dict[str, Any]:
         """Let a streamer quiet itself, and adjust the reset if it needs to."""
         if self.streamer is not None:
@@ -112,7 +115,7 @@ class ComposedTeleop(TeleopDevice):
         The context goes with it: a binding that commands an absolute pose has
         to resume from where the env just reset the robot to.
         """
-        self.group.reset(context_from(env))
+        self.group.reset(self.context_from(env))
         if self.streamer is not None:
             self.streamer.reset(env)
 
@@ -148,7 +151,7 @@ class ComposedTeleop(TeleopDevice):
 
     def read(self, env: gym.Env, policy_action: np.ndarray) -> TeleopSample:
         """Read every device, then write each part into the action."""
-        parts, driving, info = self.group.action(context_from(env))
+        parts, driving, info = self.group.action(self.context_from(env))
         if not parts:
             return TeleopSample(action=None, active=False, info=info)
         if self.streamer is not None and self.streamer.streaming:
@@ -167,7 +170,7 @@ class ComposedTeleop(TeleopDevice):
         Used when a chunk of policy actions is skipped and the robot still has
         to be told something. Parts nobody holds keep ``fallback_action``.
         """
-        parts = self.group.hold(context_from(env))
+        parts = self.group.hold(self.context_from(env))
         if not parts:
             raise AttributeError(
                 "No device in this group commands an absolute pose, so none can "
