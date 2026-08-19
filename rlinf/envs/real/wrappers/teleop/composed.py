@@ -47,6 +47,7 @@ def context_from(env: gym.Env) -> dict[str, Any]:
         ("action_scale", "get_action_scale"),
         ("joint_positions", "get_joint_positions"),
         ("gripper_open", "get_gripper_open"),
+        ("hand_reset_pose", "get_hand_reset_pose"),
     ):
         try:
             value = env.get_wrapper_attr(getter)
@@ -106,8 +107,12 @@ class ComposedTeleop(TeleopDevice):
         return kwargs
 
     def reset(self, env: gym.Env) -> None:
-        """Let every binding drop what it held, and a streamer re-align."""
-        self.group.reset()
+        """Let every binding drop what it held, and a streamer re-align.
+
+        The context goes with it: a binding that commands an absolute pose has
+        to resume from where the env just reset the robot to.
+        """
+        self.group.reset(context_from(env))
         if self.streamer is not None:
             self.streamer.reset(env)
 

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import Any, Mapping
 
 import numpy as np
@@ -33,7 +34,14 @@ from .kinds import ActionKind
 #: action_scale    the env's [position, rotation, gripper] divisors
 #: joint_positions measured joint positions, one row per arm
 #: gripper_open    whether the gripper is currently open
-CONTEXT_KEYS = ("tcp_pose", "action_scale", "joint_positions", "gripper_open")
+#: hand_reset_pose the pose a dexterous hand is put into at reset
+CONTEXT_KEYS = (
+    "tcp_pose",
+    "action_scale",
+    "joint_positions",
+    "gripper_open",
+    "hand_reset_pose",
+)
 
 
 @dataclass
@@ -120,5 +128,10 @@ class TeleopBinding(ABC):
     def on_action_chunk_begin(self) -> None:
         """Let go of anything held only until the next chunk of actions."""
 
-    def reset(self) -> None:
-        """Forget anything held from the previous episode."""
+    def reset(self, context: Mapping[str, Any] = MappingProxyType({})) -> None:
+        """Forget anything held from the previous episode.
+
+        The context says what the robot was just reset *to*. A binding holding
+        a pose has to start from that pose rather than from zero, or its first
+        command moves the robot away from where the env just put it.
+        """

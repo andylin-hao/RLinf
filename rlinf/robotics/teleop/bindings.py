@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+from types import MappingProxyType
 from typing import Any, Mapping, Optional
 
 import numpy as np
@@ -56,7 +57,7 @@ class SpaceMouseBinding(TeleopBinding):
         self.left = False
         self.right = False
 
-    def reset(self) -> None:
+    def reset(self, context: Mapping[str, Any] = MappingProxyType({})) -> None:
         """Start each episode with the buttons released."""
         self.left = False
         self.right = False
@@ -205,12 +206,18 @@ class GloveBinding(TeleopBinding):
         self._base = np.zeros(6, dtype=np.float64)
         self._rebaseline = False
 
-    def reset(self, start: Optional[np.ndarray] = None) -> None:
-        """Start the episode from the task's configured hand pose."""
+    def reset(self, context: Mapping[str, Any] = MappingProxyType({})) -> None:
+        """Start the episode from the pose the env just put the hand into.
+
+        The env homes the hand to its configured reset pose, so starting from
+        zero here would make the first command a jump away from it -- on
+        hardware, an abrupt one.
+        """
+        start = context.get("hand_reset_pose")
         self._commanded = (
             np.zeros(6, dtype=np.float64)
             if start is None
-            else np.asarray(start, dtype=np.float64)
+            else np.asarray(start, dtype=np.float64).reshape(-1).copy()
         )
         self._base = self._commanded.copy()
         self._baseline = None
@@ -379,7 +386,7 @@ class _PicoArmBinding(TeleopBinding):
             info["pico_gripper_close"] = bool(close)
         return info
 
-    def reset(self) -> None:
+    def reset(self, context: Mapping[str, Any] = MappingProxyType({})) -> None:
         """Forget the previous episode's grip and where it started."""
         self._held_from = None
 
@@ -524,8 +531,8 @@ class PicoTcpBinding(_PicoArmBinding):
         """Let go of a pose held since the operator released mid-chunk."""
         self._holding_after_release = False
 
-    def reset(self) -> None:
+    def reset(self, context: Mapping[str, Any] = MappingProxyType({})) -> None:
         """Drop the held pose along with the previous episode's grip."""
-        super().reset()
+        super().reset(context)
         self._holding_after_release = False
         self._last_command = None

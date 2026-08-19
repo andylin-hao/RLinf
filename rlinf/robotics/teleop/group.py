@@ -27,6 +27,7 @@ merges the results by name.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Any, Iterable, Mapping, Optional
 
 import numpy as np
@@ -168,10 +169,14 @@ class TeleopGroup:
             if device.is_connected:
                 device.disconnect()
 
-    def reset(self) -> None:
-        """Drop anything the bindings held from the previous episode."""
+    def reset(self, context: Mapping[str, Any] = MappingProxyType({})) -> None:
+        """Drop anything the bindings held, telling them what the robot is at.
+
+        A binding that commands an absolute pose resumes from where the env
+        just reset the robot to; one that commands a delta ignores this.
+        """
         for entry in self.entries:
-            entry.binding.reset()
+            entry.binding.reset(context)
 
     def action(
         self, context: Mapping[str, Any]
