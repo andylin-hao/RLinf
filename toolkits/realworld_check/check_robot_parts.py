@@ -42,16 +42,22 @@ import ast
 import pathlib
 import sys
 import traceback
-from typing import Any, Optional
+from typing import Any
 
 from rlinf.robotics.parts.base import Connection, Group
+
+#: The fakes and the contracts live with the tests rather than in the package:
+#: they check RLinf rather than being part of it. This script is the one caller
+#: that is neither, so it reaches for them here.
+_TESTS = pathlib.Path(__file__).resolve().parents[2] / "tests"
+if str(_TESTS) not in sys.path:
+    sys.path.insert(0, str(_TESTS))
+
+from robot_contracts import ObservationContract  # noqa: E402
 
 
 def _mocked_sdks(remote=False):
     """The fake vendor SDKs, which live with the tests rather than the package."""
-    tests = pathlib.Path(__file__).resolve().parents[2] / "tests"
-    if str(tests) not in sys.path:
-        sys.path.insert(0, str(tests))
     from robot_mocks import mocked_sdks
 
     return mocked_sdks(remote=remote)
@@ -137,19 +143,6 @@ def _as_build_arguments(robot_type, kwargs, registry_cls):
     return {"config": config, **rest}
 
 
-def _declared_shape(feature: Any) -> Optional[tuple]:
-    """The shape a feature descriptor promises, when it states one.
-
-    Features are plain dictionaries, and a part may describe a subtree rather
-    than an array. Only a stated shape is worth comparing.
-    """
-    if isinstance(feature, dict):
-        shape = feature.get("shape")
-        if isinstance(shape, (tuple, list)):
-            return tuple(shape)
-    return None
-
-
 def check(robot_type: str, kwargs: dict[str, Any]) -> int:
     print(f"[1/5] composing {robot_type} with {kwargs}")
     # Importing the robots is what registers them.
@@ -186,29 +179,11 @@ def check(robot_type: str, kwargs: dict[str, Any]) -> int:
             key: getattr(value, "shape", type(value).__name__)
             for key, value in observation.items()
         }
-        features = part.observation_features
-        declared = set(features)
-        extra = set(observation) - declared
-        missing = declared - set(observation)
-        note = ""
-        if extra or missing:
-            note = f"  MISMATCH extra={sorted(extra)} missing={sorted(missing)}"
-            failures.append(
-                f"{path} observes {sorted(observation)}, declares {sorted(declared)}"
-            )
-        # The right keys carrying the wrong widths is the quieter failure: an
-        # env builds its observation space from what a part declares, so a
-        # value one number wider reaches a policy as data rather than an error.
-        for key in sorted(declared & set(observation)):
-            wanted = _declared_shape(features[key])
-            actual = getattr(observation[key], "shape", None)
-            if wanted is None or actual is None or tuple(actual) == tuple(wanted):
-                continue
-            note += f"  SHAPE {key}: declares {tuple(wanted)}, observes {tuple(actual)}"
-            failures.append(
-                f"{path} observes {key} with shape {tuple(actual)}, "
-                f"declares {tuple(wanted)}"
-            )
+        # The same comparison the conformance suite makes, so a bench run and
+        # a contributor's test agree about what a part promised.
+        mismatches = ObservationContract(part, path).failures()
+        failures += mismatches
+        note = "  " + "; ".join(mismatches) if mismatches else ""
         print(f"    {path:24} {shapes}{note}")
 
     print("[5/5] disconnecting")
