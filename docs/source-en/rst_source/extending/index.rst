@@ -1,8 +1,11 @@
 Extending
 =========
 
-Use Extending when you add a model, environment, or advanced integration path
-to RLinf.
+Choose the smallest extension point that matches your change. If RLinf already
+connects the hardware, add a task without touching robotics. If you need a new
+sensor, actuator, or robot, start with one local part and add placement later.
+The guides below take each path from a minimal implementation to registration
+and tests.
 
 .. grid:: 1 2 2 3
    :gutter: 2
@@ -19,17 +22,17 @@ to RLinf.
 
       Add a new RL environment and wire it into the env registry.
 
-   .. grid-item-card:: New Robot
-      :link: new_robot
-      :link-type: doc
-
-      Compose robot parts and register physical hardware discovery.
-
    .. grid-item-card:: New Task
       :link: new_task
       :link-type: doc
 
       Add a task on hardware RLinf already supports.
+
+   .. grid-item-card:: New Robot
+      :link: new_robot
+      :link-type: doc
+
+      Add one local part, compose the robot, then place it remotely.
 
    .. grid-item-card:: New Model with FSDP
       :link: new_model_fsdp
@@ -66,8 +69,8 @@ to RLinf.
 
    Extending Overview <overview>
    New Environment <new_env>
-   New Robot <new_robot>
    New Task <new_task>
+   New Robot <new_robot>
    New Model with FSDP <new_model_fsdp>
    New Model with Megatron <new_model_megatron>
    New SFT Model <new_model_sft>

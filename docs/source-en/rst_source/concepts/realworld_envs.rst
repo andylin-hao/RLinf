@@ -1,14 +1,18 @@
 Real-World Environment Model
 ============================
 
-A real-world environment joins a robot to a task, then wraps that pair with the
-behavior needed during a rollout. The robot supplies motion and sensing. The
-task owns target poses and reward rules, including reset behavior. Wrappers
-handle operator intervention and manual outcome labels; they also adapt how
-observations or actions are represented.
+A real-world environment joins a robot to one task. It then adds the rollout
+behavior that should remain outside both of them: operator intervention, manual
+outcome labels, and representation transforms.
 
-If you need the part and placement model underneath the robot, start with
-:doc:`robotics`. Here we stay at the environment boundary.
+Use this page when you need to decide where new behavior belongs. Start with the
+question closest to the robot: is it about sensing or motion, about success and
+reset, or about how a rollout is presented? The answer determines whether you
+change a part, a task, or a wrapper.
+
+If the named-part model is new to you, read :doc:`robotics` first. This page
+starts at the environment boundary and follows one task out through its wrapper
+stack.
 
 A Task Is a Config and a Few Overrides
 --------------------------------------
@@ -97,9 +101,10 @@ whichever robot it runs on:
 Teleop: What Stays on This Side
 -------------------------------
 
-Device selection and the meaning of each reading belong to :doc:`robotics`. The
-environment boundary handles two remaining decisions: how long an intervention
-stays active, and how named part actions enter the environment's flat vector.
+The :doc:`teleoperation guide <../guides/teleoperation>` covers device selection
+and bindings. At the environment boundary, two decisions remain: how long an
+intervention stays active, and how named part actions enter the environment's
+flat vector.
 
 ``TeleopIntervention`` keeps the latest operator action active for a short window
 between samples. Without that window, the action could flicker between operator
@@ -137,13 +142,23 @@ list:
      eval:
        teleop: [spacemouse, glove]
 
-Devices and Readers Are Separate
---------------------------------
+Keep Device I/O Separate from Action Meaning
+--------------------------------------------
 
-Inside ``teleop/``, device I/O is kept apart from env-specific action
-conversion. ``devices/`` contains the readers that talk to a serial port or a
-headset and imports no Gymnasium. ``adapters.py`` turns their readings into
-actions for a particular env.
+Teleoperation crosses several layers, but each layer has one job:
+
+- ``robotics/parts/teleop/readers/`` talks to serial devices, HID devices, and
+  headsets.
+- ``robotics/parts/teleop/devices.py`` presents each reader as a ``TeleopPart``
+  with the normal connect, observe, and disconnect lifecycle.
+- ``robotics/teleop/bindings.py`` explains what a reading means for named robot
+  action parts.
+- ``real/wrappers/teleop/composed.py`` writes those named parts into the flat
+  action vector declared by the environment.
+
+Keeping the layers separate lets you diagnose a cable before involving a robot,
+and lets one physical device acquire a different meaning through another
+binding.
 
 You can therefore check a leader arm's wiring without involving a robot:
 
@@ -196,11 +211,13 @@ Where the Code Lives
      - One module per task, plus ``base.py`` with the machinery they share and
        ``__init__.py`` with the ``TASKS`` table.
    * - ``robotics/parts/teleop/``
-     - The devices an operator drives, as parts, over vendor readers in
-       ``readers/`` that import no Gymnasium.
+     - Operator devices as parts, over low-level readers that import no
+       Gymnasium.
+   * - ``robotics/teleop/``
+     - Bindings, action meanings, and ``TeleopGroup`` composition.
    * - ``real/wrappers/teleop/``
-     - ``intervention.py``, ``adapters.py``, ``streaming.py``, ``composed.py``,
-       and ``config.py`` for device selection.
+     - Device selection, policy/operator arbitration, flat action layout, and
+       the optional direct-streaming path.
    * - ``real/wrappers/transforms/``
      - Relative frames, quaternion-to-Euler, gripper narrowing.
    * - ``real/wrappers/episode/``

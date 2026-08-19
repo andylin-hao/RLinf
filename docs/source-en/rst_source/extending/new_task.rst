@@ -1,16 +1,23 @@
 Adding a Task
 =============
 
-On hardware RLinf already supports, a new task takes a config dataclass, an env
-class, and one row in the task table. The task records the target and compliance
-settings as well as success and reset rules. Robot construction and placement
-remain unchanged, as does the wrapper stack.
+Use this guide when RLinf already knows how to connect the robot and your change
+is about what the robot should accomplish. By the end, you will have a config
+dataclass, a small env class, a registered Gymnasium ID, and a YAML config you
+can launch.
 
-If the robot itself is new, add it through :doc:`new_robot` before defining its
-task.
+You will not change robot construction, device placement, or teleoperation.
+Targets, compliance settings, success rules, and reset behavior belong to the
+task; the existing robot and wrapper stack remain in place. If the hardware
+itself is new, follow :doc:`new_robot` first and return here once one observation
+and action can pass through it.
 
 Steps
 -----
+
+The examples below add a ``WipeEnv-v1`` task to the existing Franka support.
+Follow them in order: later steps refer to the config class and Gymnasium ID
+chosen earlier.
 
 1. Write the config
 ~~~~~~~~~~~~~~~~~~~

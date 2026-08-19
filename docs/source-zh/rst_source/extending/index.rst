@@ -1,7 +1,9 @@
 扩展
 ====
 
-当你要向 RLinf 添加模型、环境或高级集成路径时，使用扩展页。
+先选择与改动范围相匹配的扩展点。RLinf 若已能连接硬件，只新增任务，不要改 robotics。如果需要
+接入新的传感器、执行器或机器人，先让一个本地部件跑通，再考虑远程放置。下面的指南会从最小实现一直
+带到注册和测试。
 
 .. grid:: 1 2 2 3
    :gutter: 2
@@ -18,17 +20,17 @@
 
       添加一个新的 RL 环境并接入环境注册表。
 
-   .. grid-item-card:: 新机器人
-      :link: new_robot
-      :link-type: doc
-
-      组合机器人部件并注册真机硬件发现逻辑。
-
    .. grid-item-card:: 新任务
       :link: new_task
       :link-type: doc
 
       在 RLinf 已支持的硬件上新增一个任务。
+
+   .. grid-item-card:: 新机器人
+      :link: new_robot
+      :link-type: doc
+
+      先接入一个本地部件，再组合机器人并放到远端。
 
    .. grid-item-card:: FSDP 新模型
       :link: new_model_fsdp
@@ -65,8 +67,8 @@
 
    扩展概览 <overview>
    新环境 <new_env>
-   新机器人 <new_robot>
    新任务 <new_task>
+   新机器人 <new_robot>
    FSDP 新模型 <new_model_fsdp>
    Megatron 新模型 <new_model_megatron>
    新 SFT 模型 <new_model_sft>

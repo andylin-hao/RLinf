@@ -1,24 +1,23 @@
 Adding a Robot
 ==============
 
-To add a physical robot, describe its devices as parts and compose them into a
-``Robot``. The steps on this page take that class through registration and into
-the cluster config, while keeping the vendor SDK out of task and placement code.
+This guide starts with one device in the current process. Once that works, you
+will compose it into a robot, share one connection between several parts, and
+finally move the device to another node. Keeping that order makes hardware bugs
+look like hardware bugs instead of placement bugs.
 
-If the part model is new to you, start with
-:doc:`Robotics Model <../concepts/robotics>`. We'll use its three main ideas
-throughout this guide: a physical component is a ``RobotPart``; one connection
-may expose several components through ``exports``; and a ``Robot`` assigns stable
-names to the resulting tree. The concept page also maps the
-``rlinf/robotics`` package and explains how ``spawn()`` places a part on another
-node.
+Before continuing, read the short :doc:`Robotics Model
+<../concepts/robotics>` page. If the hardware already exists and you only need a
+new reward, reset, or success condition, follow :doc:`new_task` instead; a task
+does not require a new robot class.
 
-Implement a Part
-----------------
+1. Add One Local Part
+---------------------
 
-Begin with one device and choose the narrowest interface that describes it.
-Inherit ``RobotPart`` for an observation-only device, or ``ControllablePart``
-when the device also accepts commands.
+Start with the smallest useful device. Inherit ``RobotPart`` for a sensor, or
+``ControllablePart`` when the device also accepts commands. Do not add cluster
+configuration yet: first make the part work in the process where you run the
+test.
 
 Every part answers the same three questions: ``_open`` reaches the hardware,
 ``get_observation`` reads it, and ``_release`` lets it go. Connecting and
@@ -43,8 +42,8 @@ the connection still loads it normally.
 
            return Client(self.endpoint)
 
-       def _release(self) -> None:
-           self._device.close()
+       def _release(self, device) -> None:
+           device.close()
 
        @property
        def observation_features(self) -> dict:
@@ -68,23 +67,38 @@ the connection still loads it normally.
            self._device.move_joints(action["joint_position"])
            return action
 
-Whatever ``_open`` returns is available as ``self._device`` and decides
-``is_connected``. Opening there rather than in ``__init__`` is what lets a part
-be declared on one machine and built on another. A part whose lifecycle is more
-than opening a device -- an arm that must home before it is usable -- may
-override ``connect`` and ``disconnect`` instead.
+Try the part locally before composing a robot:
+
+.. code-block:: python
+
+   arm = ExampleArm("tcp://left-arm:5000")
+   arm.connect()
+   try:
+       print(arm.get_observation())
+   finally:
+       arm.disconnect()
+
+Whatever ``_open()`` returns becomes ``self._device``. ``_release(device)``
+receives that same object during cleanup, so it should release the argument it
+is given rather than look the object up again on ``self``. Opening in
+``connect()`` instead of ``__init__`` is what later allows the declaration and
+the hardware to live on different machines.
+
+Some devices need more than an open and close call. An arm that must home before
+it becomes usable may override ``connect()`` and ``disconnect()``, but keep both
+methods idempotent so rollback and a later reconnect remain safe.
 
 When the device fits ``Camera``, ``EndEffector``, ``MobileBase``, or
 ``LeggedBase``, inherit that specific interface instead. Compositions and remote
 proxies can then retain its device category.
 
-Expose Several Components on One Connection
--------------------------------------------
+2. Share One Connection When the Hardware Does
+-----------------------------------------------
 
-Next, account for the connection boundary. A socket, CAN bus, or ROS node may
-drive several physical components; list them all through ``exports`` so callers
-can address each one even though the device connection opens only once. For an
-arm, the convention is to expose the part itself under ``"arm"``.
+Once one local part works, check whether the hardware session owns anything
+else. A socket, CAN bus, or ROS node may drive several physical components. List
+those capabilities through ``exports`` so callers can name each part while the
+session still opens only once. For an arm, expose the arm itself as ``"arm"``.
 
 .. code-block:: python
 
@@ -107,11 +121,12 @@ Some SDKs expose those capabilities as methods such as ``open_gripper``,
 methods. The robot composition then sees ordinary parts rather than vendor
 method names.
 
-Compose the Robot
------------------
+3. Compose Stable Public Names
+------------------------------
 
-A robot is named parts and nothing else. Constructed directly, that is the whole
-of it:
+A robot is a group of named parts. You can compose one directly before adding
+hardware discovery or YAML. Declare the shared connection once, then select and
+name the parts it exports:
 
 .. code-block:: python
 
@@ -122,18 +137,24 @@ of it:
        ROBOT_TYPE = "Bench"
 
 
-   robot = Bench(arm=ExampleArm.at("10.0.0.2", node_rank=1))
+   connection = ExampleArm.at("tcp://left-arm:5000")
+   robot = Bench(
+       arm=connection.export("arm"),
+       end_effector=connection.export("end_effector"),
+   )
+   print(robot.describe())
    robot.connect()
+   try:
+       print(robot.get_observation())
+   finally:
+       robot.disconnect()
 
-There is no hardware config and no discovery in that. Those exist so a robot can
-be composed from its type name alone, which a config file needs and a script
-does not. The rest of this page adds them.
+There is no hardware config or discovery here. Those are needed when a config
+file must build the robot by type name; a bench script can stay this small.
 
-
-Once the individual devices are represented, compose the robot and choose each
-part name as if it were a public API field. The names become canonical
-observation and action paths; changing one later also changes the schema used by
-policies and datasets.
+Choose each part name as if it were a public API field, because it is one. The
+names become canonical observation and action paths. Renaming a part later also
+changes the schema stored in policies and datasets.
 
 .. code-block:: python
 
@@ -144,52 +165,61 @@ policies and datasets.
        ROBOT_TYPE = "ExampleRobot"
 
 
+   left = ExampleArm.at("tcp://left-arm:5000")
+   right = ExampleArm.at("tcp://right-arm:5000")
    robot = ExampleRobot(
-       left=ExampleArm("tcp://left-arm:5000"),
-       right=ExampleArm("tcp://right-arm:5000"),
+       left=Group(
+           arm=left.export("arm"),
+           end_effector=left.export("end_effector"),
+       ),
+       right=Group(
+           arm=right.export("arm"),
+           end_effector=right.export("end_effector"),
+       ),
    )
    robot.connect()
-   observation = robot.get_observation()
-   robot.send_action(
-       {
-           "left": {"arm": {"joint_position": left_target}},
-           "right": {"arm": {"joint_position": right_target}},
-       }
-   )
+   try:
+       observation = robot.get_observation()
+       robot.send_action(
+           {
+               "left": {"arm": {"joint_position": left_target}},
+               "right": {"arm": {"joint_position": right_target}},
+           }
+       )
+   finally:
+       robot.disconnect()
 
-The paths are the names, all the way down, with nothing added in between. Here
-``ExampleArm`` exposes itself and its gripper, so the left arm reads at
-``left.arm`` and its gripper at ``left.end_effector``; a camera composed as
-``wrist`` reads at ``wrist``. There is no fixed ``arms`` or ``cameras`` level
-above them, because a robot has named parts rather than slots to fill.
-
-Choose those names as a public API: they are the observation and action paths a
-policy and a dataset see, so changing one later changes their schema.
+The paths are exactly the names above, with no implicit ``arms`` or ``cameras``
+level. The left arm reads at ``left.arm`` and its gripper at
+``left.end_effector``; a camera composed as ``wrist`` reads at ``wrist``.
 
 ``Robot`` resets, reads, and commands arms on independent connections in
 parallel. A two-arm observation therefore waits for one round trip, and the
 robot subclass does not contain its own concurrency code.
 
-Place Parts on Nodes
---------------------
+4. Move a Working Part to Another Node
+--------------------------------------
 
-Now we can decide where each part runs. Call ``at()`` with a node, then place the
-returned declaration wherever you would otherwise put a local part.
-``Robot.connect`` builds it on that node as part of the normal connection
-sequence.
+Only after the local composition works should placement enter the picture. Add
+``node_rank`` to the same declaration; the part and the robot tree do not
+change:
 
 .. code-block:: python
 
-   from rlinf.robotics import Group, Robot
-
-   robot = Robot(arm=ExampleArm.at("tcp://left-arm:5000", node_rank=0))
+   connection = ExampleArm.at("tcp://left-arm:5000", node_rank=0)
+   robot = Robot(
+       arm=connection.export("arm"),
+       end_effector=connection.export("end_effector"),
+   )
    robot.connect()
+   try:
+       print(robot.get_observation())
+   finally:
+       robot.disconnect()
 
-The call to ``at()`` records an ``ExampleArm`` declaration for node 0. No part is
-built until ``connect`` runs; at that point, the handle appears under
-``robot.handles[<name>]`` and remains there until ``disconnect`` tears it down.
-Compose end effectors and cameras explicitly, because this example arm contains
-only the parts supplied to it.
+The call records an ``ExampleArm`` declaration for node 0. No worker is created
+and no SDK is imported until ``connect()`` runs. The resulting handle appears in
+``robot.handles`` and remains there until ``disconnect()`` tears it down.
 
 The declaration is not arm-specific. For example, a camera can remain on the
 machine where it is physically connected::
@@ -217,8 +247,8 @@ the same expression locally and remotely::
    handle.is_robot_up().wait()[0]
    handle.reset_joint(home_qpos).wait()
 
-Describe and Build the Robot
-----------------------------
+5. Build the Robot from Configuration
+-------------------------------------
 
 With the parts in place, describe the robot's hardware inputs in a
 ``RobotConfig`` dataclass and implement ``build()`` to assemble them. Connection
@@ -243,25 +273,34 @@ discovery.
        ROBOT_TYPE = "ExampleRobot"
 
        @classmethod
-       def build(cls, *, config: ExampleRobotConfig) -> "ExampleRobot":
-           return cls(
-               **{
-                   side: ExampleArm.at(
-                       endpoint,
-                       node_rank=config.node_rank,
-                       name=f"ExampleArm-{side}",
-                   )
-                   for side, endpoint in (
-                       ("left", config.left_endpoint),
-                       ("right", config.right_endpoint),
-                   )
-               }
-           )
+       def build(
+           cls,
+           *,
+           left_endpoint: str,
+           right_endpoint: str,
+           node_rank: int = 0,
+           **_,
+       ) -> "ExampleRobot":
+           arms = {}
+           for side, endpoint in (
+               ("left", left_endpoint),
+               ("right", right_endpoint),
+           ):
+               connection = ExampleArm.at(
+                   endpoint,
+                   node_rank=node_rank,
+                   name=f"ExampleArm-{side}",
+               )
+               arms[side] = Group(
+                   arm=connection.export("arm"),
+                   end_effector=connection.export("end_effector"),
+               )
+           return cls(**arms)
 
-A single-arm variant can reuse this builder shape and return one entry instead
-of two. Startup must remain all-or-nothing: if a later part fails, disconnect
-the handles already placed before propagating the error. Otherwise, callers
-could receive a partial schema whose contents depend on the failure order.
+A single-arm variant can reuse this shape and return one group instead of two.
+Keep ``build()`` declarative: it should assemble ``PartSpec`` objects, not open
+hardware. ``Robot.connect()`` then makes startup all-or-nothing. If a later part
+fails, it tears down what it already placed and restores the declaration tree.
 
 .. warning::
 
@@ -374,21 +413,67 @@ Check the Composition
 Before any hardware is involved, ask the robot what it is::
 
    >>> print(robot.describe())
-   FrankaRobot
-   ├── arm           declared      node=1     via FrankaROSArm#1
-   └── end_effector  declared      node=1     via FrankaROSArm#1
+   ExampleRobot
+   ├── left.arm             declared      node=0     via ExampleArm#1
+   ├── left.end_effector    declared      node=0     via ExampleArm#1
+   ├── right.arm            declared      node=0     via ExampleArm#2
+   └── right.end_effector   declared      node=0     via ExampleArm#2
 
 Each row is a part, the node it will run on, and the declaration it comes from.
 Two rows sharing a ``via`` share one connection, so they are opened once and
-commanded in their declared order rather than concurrently. After ``connect``
-the same call reports what each part turned out to be.
+commanded in their declared order rather than concurrently. The node and
+ownership columns stay the same after ``connect()`` because the description is
+read from the declaration snapshot.
 
 Test the Integration
 --------------------
 
-Most of the integration is testable before the vendor SDK or robot is
-available. Cover the part contract, composition paths, handle lifecycle,
-discovery registration, and the schema policies expect:
+Add a test under ``tests/unit_tests/`` and point the contract classes at what
+you wrote. They state the promises the rest of the framework relies on and can
+run against the same fake SDKs used by the bench checks:
+
+.. code-block:: python
+
+   from robot_contracts import ConnectionContract, PartContract, RobotContract
+
+
+   def test_my_arm_conforms():
+       PartContract(
+           lambda: MyArm("10.0.0.1"),
+           action={"joint_position": np.zeros(6)},
+       ).assert_kept()
+
+
+   def test_my_link_conforms():
+       ConnectionContract(MyConnection).assert_kept()
+
+
+   def test_my_robot_conforms():
+       RobotContract(lambda: MyRobot.build(robot_ip="10.0.0.1")).assert_kept()
+
+They live in ``tests/robot_contracts``, beside the fake SDKs in
+``tests/robot_mocks``, because they check RLinf rather than being part of it.
+
+Between them they connect, read, disconnect, repeat the lifecycle, and
+disconnect once more. They compare observation names and shapes with the part's
+declaration. When ``PartContract`` receives a sample action, it also checks that
+the action is accepted and an unknown field is refused. ``RobotContract``
+injects a failure during ``connect()`` and checks that the robot does not report
+a partially connected tree.
+
+Each of those is a bug this package has actually had. A failure names the
+promise rather than the assertion, and lists all of them at once:
+
+.. code-block:: text
+
+   ConformanceError: MyArm does not keep 2:
+     - MyArm: reconnecting raised RuntimeError: threads can only be started
+       once; stall recovery closes an endpoint and opens it again
+     - MyArm observes tcp_pose with shape (7,), declares (6,)
+
+The rest of the integration is testable the same way. Cover the part contract,
+composition paths, handle lifecycle, discovery registration, and the schema
+policies expect:
 
 .. code-block:: bash
 

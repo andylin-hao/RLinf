@@ -1,8 +1,9 @@
 Concepts
 ========
 
-Use Concepts to understand the execution, scheduling, and robotics models
-before you tune placement, workers, communication, or hardware.
+Use Concepts to build a mental model before you tune placement, workers,
+communication, or hardware. Start with the overview for the layer you use;
+follow its architecture link only when you need to extend or debug that layer.
 
 Choose a Concept Area
 ---------------------
@@ -26,7 +27,13 @@ Choose a Concept Area
       :link: robotics
       :link-type: doc
 
-      Understand how physical hardware is modeled, composed, and placed.
+      Use a robot as a tree of named observation and action parts.
+
+   .. grid-item-card:: Robotics Architecture
+      :link: robotics_architecture
+      :link-type: doc
+
+      Trace shared connections, lifecycle, and remote placement.
 
    .. grid-item-card:: Real-World Environment Model
       :link: realworld_envs
@@ -40,4 +47,5 @@ Choose a Concept Area
    Execution Model <execution-model/index>
    Scheduling Model <scheduling-model/index>
    Robotics Model <robotics>
+   Robotics Architecture <robotics_architecture>
    Real-World Environment Model <realworld_envs>

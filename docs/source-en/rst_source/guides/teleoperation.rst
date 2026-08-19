@@ -1,12 +1,14 @@
 Teleoperation
 =============
 
-Teleoperation lets an operator replace the policy's action during a rollout,
-whether the goal is to collect demonstrations, recover from a failure, or run
-DAgger. A rig may consist of one device beside the robot or several devices
-spread across different machines; both use the same device and placement model.
+Teleoperation lets an operator replace the policy's action during a rollout to
+collect demonstrations, recover from a failure, or run DAgger. Start with one
+device and verify its readings. Then add a binding to the robot's named action
+parts; only after that works should you combine devices or move one to another
+machine.
 
-The underlying part model is described in :doc:`../concepts/robotics`.
+This page follows that order. For the underlying named-part model, see
+:doc:`../concepts/robotics`.
 
 Choose a Device
 ---------------
@@ -51,11 +53,25 @@ dual-arm Franka, for example, has no single-arm Cartesian path, so it rejects
 ``spacemouse`` instead of ignoring the setting. The error also lists the devices
 that the environment accepts.
 
-Run Several Together
+Check a Device First
 --------------------
 
-Each device contributes actions for the named robot parts it can drive. A list
-lets several devices divide those parts between them:
+Every device reader can run without a robot or cluster:
+
+.. code-block:: bash
+
+   python -m rlinf.robotics.parts.teleop.readers.gello --port /dev/ttyUSB0
+
+When a leader arm reports only zeros or a spacemouse does not respond, this
+command isolates wiring and permission problems from environment configuration.
+``toolkits/realworld_check`` does the same for a complete robot;
+``check_robot_parts`` walks one from composition through to disconnect.
+
+Compose Devices After One Works
+-------------------------------
+
+Once each device works alone, put them in a list. Each entry contributes actions
+for the named robot parts it can drive:
 
 .. code-block:: yaml
 
@@ -81,20 +97,6 @@ each device. This is the only configuration field that names a robot part:
 A binding leaves any part the robot does not have unfilled. The builder rejects
 the rig if a device matches no part at all, or if two devices claim the same
 part.
-
-Check a Device First
---------------------
-
-Every device reader can run without a robot or cluster:
-
-.. code-block:: bash
-
-   python -m rlinf.robotics.parts.teleop.readers.gello --port /dev/ttyUSB0
-
-When a leader arm reports only zeros or a spacemouse does not respond, this
-command isolates wiring and permission problems from environment configuration.
-``toolkits/realworld_check`` does the same for a complete robot;
-``check_robot_parts`` walks one from composition through to disconnect.
 
 Put a Device Where It Is Plugged In
 -----------------------------------
