@@ -41,8 +41,8 @@ class DualGelloJointStream(TeleopStreamer):
     touches the motion queue.
 
     Args:
-        left_port: Serial port of the left leader arm.
-        right_port: Serial port of the right leader arm.
+        left_arm: The left leader arm, already composed into the teleop group.
+        right_arm: The right leader arm, likewise.
         gripper_enabled: Whether each arm's action carries a gripper channel.
         use_delta: Whether the env takes joint deltas or absolute targets.
         action_scale: Divisor turning a joint delta into a normalized action.
@@ -55,19 +55,21 @@ class DualGelloJointStream(TeleopStreamer):
 
     def __init__(
         self,
-        left_port: str,
-        right_port: str,
+        left_arm: Any,
+        right_arm: Any,
         gripper_enabled: bool = True,
         use_delta: bool = False,
         action_scale: float = 0.1,
         direct_stream: bool = False,
         stream_period: float = 0.001,
     ) -> None:
-        from rlinf.robotics.parts.teleop.readers.gello_joint import GelloJointExpert
-
         super().__init__(period=stream_period, enabled=direct_stream)
-        self.left_expert = GelloJointExpert(port=left_port)
-        self.right_expert = GelloJointExpert(port=right_port)
+        # The arms are the group's, not this object's. Opening a second reader
+        # on the same serial port is what happens when a streamer builds its
+        # own: two pollers competing for one port, and a per-entry port
+        # override that only one of them has heard of.
+        self.left_arm = left_arm
+        self.right_arm = right_arm
         self.gripper_enabled = gripper_enabled
         self.use_delta = use_delta
         self.action_scale = action_scale
@@ -95,15 +97,30 @@ class DualGelloJointStream(TeleopStreamer):
         """Both controllers must exist before a tick can command them."""
         return self._controllers(env) != (None, None)
 
+    @property
+    def _ready(self) -> bool:
+        """Both leader arms have produced a reading."""
+        return bool(self.left_arm.ready and self.right_arm.ready)
+
+    def _joints(self) -> tuple:
+        """Each arm's joint target and grip, through the part interface."""
+        left = self.left_arm.get_observation()
+        right = self.right_arm.get_observation()
+        return (
+            left["joint_position"],
+            left["grip"],
+            right["joint_position"],
+            right["grip"],
+        )
+
     def align(self, env: gym.Env) -> bool:
         """Move each follower onto its leader's current joint pose."""
-        if not (self.left_expert.ready and self.right_expert.ready):
+        if not self._ready:
             return False
         left_ctrl, right_ctrl = self._controllers(env)
         if left_ctrl is None or right_ctrl is None:
             return False
-        left_q, _ = self.left_expert.get_action()
-        right_q, _ = self.right_expert.get_action()
+        left_q, _, right_q, _ = self._joints()
         left_ctrl.reset_joint(np.asarray(left_q, dtype=np.float64).tolist()).wait()
         right_ctrl.reset_joint(np.asarray(right_q, dtype=np.float64).tolist()).wait()
         inner = env.unwrapped
@@ -113,15 +130,14 @@ class DualGelloJointStream(TeleopStreamer):
 
     def stream_once(self, env: gym.Env) -> None:
         """Push one set of joint targets, and any gripper edge, to both arms."""
-        if not (self.left_expert.ready and self.right_expert.ready):
+        if not self._ready:
             time.sleep(self._period)
             return
         left_ctrl, right_ctrl = self._controllers(env)
         if left_ctrl is None or right_ctrl is None:
             return
 
-        left_q, left_g = self.left_expert.get_action()
-        right_q, right_g = self.right_expert.get_action()
+        left_q, left_g, right_q, right_g = self._joints()
         left_ctrl.move_joints(left_q.astype(np.float32)).wait()
         right_ctrl.move_joints(right_q.astype(np.float32)).wait()
 
@@ -138,7 +154,5 @@ class DualGelloJointStream(TeleopStreamer):
                 self._last_open[index] = is_open
 
     def close(self) -> None:
-        """Stop the loop, then release both leader arms."""
+        """Stop the loop. The arms belong to the group, which closes them."""
         super().close()
-        self.left_expert.close()
-        self.right_expert.close()

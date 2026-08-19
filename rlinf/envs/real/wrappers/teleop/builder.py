@@ -206,17 +206,32 @@ def _pico(
     return TeleopEntry(PicoController(**device_cfg), binding, drives=drives)
 
 
-def _gello_joint_stream(cfg: Mapping[str, Any], facts: EnvFacts) -> Optional[Any]:
+def _gello_joint_stream(
+    cfg: Mapping[str, Any], facts: EnvFacts, entries: Sequence[TeleopEntry]
+) -> Optional[Any]:
     """The 1 kHz thread a pair of leader arms uses, when this env asks for it.
 
     Follower tracking is unstable at the policy's step rate, so the joint
     targets go straight to the controllers on their own thread.
+
+    It streams the arms the group already composed rather than opening its own.
+    Two readers on one serial port is at best two pollers competing for it, and
+    the second pair would be built from the config's global ports -- so a
+    per-entry ``port`` override would drive the action and be ignored by the
+    stream.
     """
     if not facts.direct_stream:
         return None
+    arms = {entry.drives: entry.device for entry in entries if entry.drives}
+    missing = {"left", "right"} - set(arms)
+    if missing:
+        raise ValueError(
+            "Direct-stream GELLO drives both arms from their leader arms, so "
+            f"it needs an entry for each. Missing: {sorted(missing)}."
+        )
     return DualGelloJointStream(
-        left_port=cfg.get("left_gello_port"),
-        right_port=cfg.get("right_gello_port"),
+        left_arm=arms["left"],
+        right_arm=arms["right"],
         gripper_enabled=True,
         use_delta=facts.kinds.get("left.arm") is ActionKind.JOINT_DELTA,
         action_scale=facts.joint_action_scale,
@@ -228,7 +243,9 @@ def _gello_joint_stream(cfg: Mapping[str, Any], facts: EnvFacts) -> Optional[Any
 #: Device name -> the streamer it also commands the robot through, if any. A
 #: device is here as well as in :data:`DEVICES` when composition alone does not
 #: describe it: the action is one thing, the rate it is delivered at another.
-STREAMERS: dict[str, Callable[[Mapping[str, Any], EnvFacts], Optional[Any]]] = {
+STREAMERS: dict[
+    str, Callable[[Mapping[str, Any], EnvFacts, Sequence[TeleopEntry]], Optional[Any]]
+] = {
     "gello_joint": _gello_joint_stream,
 }
 
@@ -262,7 +279,7 @@ def build_teleop(
     spec = action_spec(env)
     facts = EnvFacts.about(env, spec.layout, spec.kinds)
 
-    entries, streamer = [], None
+    entries, streams = [], []
     for item in devices:
         if isinstance(item, str):
             name, options = item, {}
@@ -274,8 +291,14 @@ def build_teleop(
             )
         options = dict(options or {})
         entries.append(DEVICES[name](cfg, options, facts))
-        if name in STREAMERS and streamer is None:
-            streamer = STREAMERS[name](cfg, facts)
+        if name in STREAMERS and name not in streams:
+            streams.append(name)
+
+    # After the loop: a streamer drives the devices the group composed, so it
+    # cannot be built until they all exist.
+    streamer = None
+    for name in streams[:1]:
+        streamer = STREAMERS[name](cfg, facts, entries)
 
     group = TeleopGroup(entries, available=facts.kinds)
     group.connect()
