@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional
+from typing import Any, Optional
 
 import numpy as np
 
@@ -89,7 +89,7 @@ class RealSenseCamera(BaseCamera):
         else:
             return False, None
 
-    def _release(self) -> None:
+    def _release(self, device: Any) -> None:
         self._pipeline.stop()
         self._config.disable_all_streams()
         self._pipeline = None

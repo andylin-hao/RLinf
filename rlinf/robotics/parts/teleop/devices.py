@@ -42,10 +42,10 @@ class TeleopPart(RobotPart):
     so :meth:`_release` tries the two names they use.
     """
 
-    def _release(self) -> None:
+    def _release(self, device: Any) -> None:
         """Release the reader by whichever name its vendor gave the method."""
         for method in ("close", "stop"):
-            release = getattr(self._device, method, None)
+            release = getattr(device, method, None)
             if callable(release):
                 release()
                 return

@@ -17,7 +17,7 @@ import threading
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
 import numpy as np
 
@@ -173,6 +173,6 @@ class BaseCamera(Camera, ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def _release(self) -> None:
+    def _release(self, device: Any) -> None:
         """Release hardware-specific resources (pipeline, SDK handle, …)."""
         raise NotImplementedError

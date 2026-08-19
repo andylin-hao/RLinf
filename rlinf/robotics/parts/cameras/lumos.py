@@ -24,7 +24,7 @@ Depth is not available from this V4L2 interface.
 
 import glob
 import os
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 import numpy as np
 
@@ -140,7 +140,7 @@ class LumosCamera(BaseCamera):
             )
         return True, bgr
 
-    def _release(self) -> None:
+    def _release(self, device: Any) -> None:
         if self._cap is not None:
             self._cap.release()
 

@@ -18,7 +18,7 @@ Requires the ZED SDK to be installed system-wide (not pip-installable);
 the ``pyzed`` Python bindings are bundled with the SDK.
 """
 
-from typing import Optional
+from typing import Any, Optional
 
 import numpy as np
 
@@ -100,7 +100,7 @@ class ZEDCamera(BaseCamera):
 
         return True, frame
 
-    def _release(self) -> None:
+    def _release(self, device: Any) -> None:
         self._camera.close()
         self._camera = None
 

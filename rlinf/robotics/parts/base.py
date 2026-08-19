@@ -72,8 +72,14 @@ class Endpoint(ABC):
             "lifecycle is more than opening a device."
         )
 
-    def _release(self) -> None:
-        """Let the hardware go. The default has nothing to release."""
+    def _release(self, device: Any) -> None:
+        """Let ``device`` go. The default has nothing to release.
+
+        The handle is passed in rather than read back off ``self``, so an
+        implementation cannot be defeated by the order ``disconnect`` does
+        things in. That is not hypothetical: clearing ``_device`` first left
+        every teleop device closing nothing.
+        """
 
     @property
     def is_connected(self) -> bool:
@@ -99,10 +105,11 @@ class Endpoint(ABC):
         disconnected while the reader, its thread and its serial port stayed
         open.
         """
-        if self._device is None:
+        device = self._device
+        if device is None:
             return
         try:
-            self._release()
+            self._release(device)
         finally:
             self._device = None
 
@@ -112,26 +119,29 @@ class Endpoint(ABC):
     # -- Composition ------------------------------------------------------
 
     @property
-    def parts(self) -> dict[str, "RobotPart"]:
-        """The named parts this endpoint offers. A leaf has none.
+    def exports(self) -> dict[str, "RobotPart"]:
+        """The capabilities this endpoint makes available. A leaf has none.
 
-        One mechanism serves both directions of composition. A
-        :class:`Connection` returns everything riding on it, a part that is
-        also a link returns itself and its siblings, and a :class:`Group`
-        returns what it was composed of. Nothing in the layer needs to know
-        which case it is looking at.
+        One ROS link drives two arms and their grippers; one arm carries the
+        gripper on its own connection. Either way the endpoint says what rides
+        on it, and a robot picks the ones it wants and names them.
+
+        This is not composition. What a robot is *made of* is
+        :attr:`Group.children`, and the two were one property for long enough
+        to be worth saying: exports belong to a hardware session, children
+        belong to a tree of names.
         """
         return {}
 
-    def part(self, name: str) -> "RobotPart":
-        """Return one named part, or raise a clear configuration error."""
-        parts = self.parts
-        if name not in parts:
+    def export(self, name: str) -> "RobotPart":
+        """Return one exported capability, or say what is on offer."""
+        exports = self.exports
+        if name not in exports:
             raise KeyError(
-                f"{type(self).__name__} has no part {name!r}. "
-                f"Available: {sorted(parts)}."
+                f"{type(self).__name__} exports no {name!r}. "
+                f"Available: {sorted(exports)}."
             )
-        return parts[name]
+        return exports[name]
 
     # -- Subpart-addressed surface ----------------------------------------
     # Public, so a hosted part exposes these as RPCs automatically and one
@@ -158,7 +168,7 @@ class Endpoint(ABC):
         per subpart per property.
         """
         described: dict[str, dict[str, Any]] = {}
-        for name, part in self.parts.items():
+        for name, part in self.exports.items():
             entry: dict[str, Any] = {
                 "kind": part_kind(part),
                 "observation": part.observation_features,
@@ -170,11 +180,11 @@ class Endpoint(ABC):
 
     def part_observation(self, name: str) -> dict[str, Any]:
         """Read one part's observation."""
-        return self.part(name).get_observation()
+        return self.export(name).get_observation()
 
     def part_action(self, name: str, action: dict[str, Any]) -> dict[str, Any]:
         """Send an action to one controllable part."""
-        part = self.part(name)
+        part = self.export(name)
         if not isinstance(part, ControllablePart):
             raise TypeError(
                 f"Part {name!r} of {type(self).__name__} is not controllable."
@@ -183,11 +193,11 @@ class Endpoint(ABC):
 
     def part_reset(self, name: str) -> None:
         """Reset one part."""
-        self.part(name).reset()
+        self.export(name).reset()
 
     def part_reopen(self, name: str) -> None:
         """Reopen one part, for a camera that stalled behind a proxy."""
-        part = self.part(name)
+        part = self.export(name)
         reopen = getattr(part, "reopen", None)
         if not callable(reopen):
             raise TypeError(
@@ -320,9 +330,18 @@ class Group(ControllablePart):
         """Which connection each part came from, so sharing is respected."""
 
     @property
-    def parts(self) -> dict[str, Any]:
-        """The parts this group is composed of."""
+    def children(self) -> dict[str, Any]:
+        """The parts this group is composed of, by the names it gave them."""
         return self._parts
+
+    def child(self, name: str) -> Any:
+        """Return one composed part, or say which names exist."""
+        if name not in self._parts:
+            raise KeyError(
+                f"{type(self).__name__} has no part {name!r}. "
+                f"Available: {sorted(self._parts)}."
+            )
+        return self._parts[name]
 
     @property
     def is_connected(self) -> bool:

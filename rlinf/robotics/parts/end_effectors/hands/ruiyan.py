@@ -19,7 +19,7 @@ package (``pip install RLinf-dexterous-hands``) and adapts it to the
 :class:`EndEffector` interface used by the Franka env.
 """
 
-from typing import Optional
+from typing import Any, Optional
 
 import numpy as np
 
@@ -107,7 +107,7 @@ class RuiyanHand(BaseEndEffector):
         """Open the serial port and start the background control loop."""
         self._driver.initialize()
 
-    def _release(self) -> None:
+    def _release(self, device: Any) -> None:
         """Stop the background loop and close the serial port."""
         self._driver.shutdown()
 

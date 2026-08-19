@@ -16,6 +16,7 @@
 
 from abc import ABC, abstractmethod
 from enum import Enum
+from typing import Any
 
 import numpy as np
 
@@ -113,7 +114,7 @@ class BaseEndEffector(EndEffector, ABC):
         """
 
     @abstractmethod
-    def _release(self) -> None:
+    def _release(self, device: Any) -> None:
         """Gracefully release hardware resources."""
 
     # ------------------------------------------------------------------
