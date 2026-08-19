@@ -1122,11 +1122,15 @@ def test_env_packages_live_under_sim_or_real():
     old names resolve to nothing.
     """
     envs = _ROOT / "rlinf" / "envs"
+    # Only directories carrying source count. A package that moved leaves its
+    # __pycache__ behind, and stale bytecode on one machine is not a stray env
+    # package -- it would fail this for whoever had checked out the old tree.
     stray = sorted(
         path.name
         for path in envs.iterdir()
         if path.is_dir()
         and path.name not in {"sim", "real", "venv", "wrappers", "__pycache__"}
+        and any(path.rglob("*.py"))
     )
 
     assert stray == []
@@ -1533,7 +1537,7 @@ def test_the_glove_holds_what_the_operator_posed():
     from rlinf.robotics.teleop import GloveBinding
 
     glove = GloveBinding()
-    glove.reset(np.zeros(6))
+    glove.reset({"hand_reset_pose": np.zeros(6)})
 
     posed = glove.action({"angles": np.full(6, 0.4)}, {"hand_driving": True}).parts[
         "hand"
@@ -1557,7 +1561,7 @@ def test_the_glove_tracks_only_while_its_gate_is_held():
     from rlinf.robotics.teleop import GloveBinding, SpaceMouseBinding
 
     mouse, glove = SpaceMouseBinding(), GloveBinding()
-    glove.reset(np.zeros(6))
+    glove.reset({"hand_reset_pose": np.zeros(6)})
 
     released = mouse.publish({"twist": np.zeros(6), "buttons": [False, False]})
     held = mouse.publish({"twist": np.zeros(6), "buttons": [False, True]})
@@ -2590,3 +2594,134 @@ def test_a_retired_dosw1_config_object_is_refused_not_ignored():
 
     with pytest.raises(TypeError, match="no longer takes a config object"):
         DOSW1Robot.build(config=object())
+
+
+def test_disconnect_releases_before_it_forgets_the_handle():
+    """``_release`` is what closes the vendor object, so it needs it.
+
+    Clearing ``_device`` first left every implementation reading it -- which is
+    where the handle is documented to live, and what ``TeleopPart`` uses to
+    close a reader by whichever name its vendor gave the method -- closing
+    nothing. The part reported itself disconnected while the reader, its
+    thread and its serial port stayed open, for GELLO, gloves, PICO and the
+    spacemouse alike.
+    """
+    from rlinf.robotics.parts.teleop.devices import TeleopPart
+
+    class Reader:
+        def __init__(self):
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+    class Device(TeleopPart):
+        def __init__(self):
+            self.reader = Reader()
+
+        def _open(self):
+            return self.reader
+
+        @property
+        def observation_features(self):
+            return {}
+
+        def get_observation(self):
+            return {}
+
+    device = Device()
+    device.connect()
+    device.disconnect()
+
+    assert device.reader.closed, "the reader was left open"
+    assert not device.is_connected
+
+
+def test_a_camera_can_be_opened_again_after_it_is_closed():
+    """Stall recovery closes a camera and opens it again.
+
+    A thread runs once, so a camera holding one from ``__init__`` raised
+    ``RuntimeError: threads can only be started once`` the second time -- on
+    the recovery path both Franka envs take when a camera stops producing
+    frames.
+    """
+    import numpy as np
+
+    from rlinf.robotics.parts.cameras.base import BaseCamera, CameraInfo
+
+    class Fake(BaseCamera):
+        def __init__(self, info):
+            super().__init__(info)
+            self.opens = 0
+            self.releases = 0
+
+        def _open(self):
+            self.opens += 1
+            return object()
+
+        def _read_frame(self):
+            return True, np.zeros((4, 4, 3), dtype=np.uint8)
+
+        def _release(self):
+            self.releases += 1
+
+    camera = Fake(CameraInfo(name="c", serial_number="X", camera_type="realsense"))
+    camera.connect()
+    camera.reopen()
+
+    assert camera.opens == 2
+    assert camera.releases == 1
+    assert camera.is_connected
+    assert camera.get_frame(timeout=2.0).shape == (4, 4, 3)
+
+    camera.disconnect()
+    assert camera.releases == 2
+
+
+def test_a_hosted_camera_reopens_on_the_node_that_holds_it():
+    """``connect`` and ``disconnect`` are no-ops on a proxy.
+
+    The handle owns a hosted part's lifetime, so calling those two on a stalled
+    remote camera would do nothing at all. ``reopen`` is the operation that
+    crosses the boundary.
+    """
+    from rlinf.robotics.placement.handles import RemoteCamera
+
+    class Result:
+        def wait(self):
+            return [None]
+
+    class Group:
+        def __init__(self):
+            self.calls = []
+
+        def reopen(self):
+            self.calls.append("reopen")
+            return Result()
+
+    group = Group()
+    RemoteCamera(group, None, {}).reopen()
+
+    assert group.calls == ["reopen"]
+
+
+def test_a_held_hand_resumes_from_the_pose_the_env_reset_it_to():
+    """The env homes the hand, then the binding has to agree with it.
+
+    Resetting with no context zeroed the commanded pose, so the first takeover
+    command moved the hand away from where the env had just put it. On hardware
+    that is an abrupt command.
+    """
+    import numpy as np
+
+    from rlinf.robotics.teleop import GloveBinding
+
+    configured = np.array([0.4, 0.0, 0.0, 0.0, 0.0, 0.0])
+    glove = GloveBinding()
+    glove.reset({"hand_reset_pose": configured})
+
+    first = glove.action({"angles": np.zeros(6)}, {}).parts["hand"]
+
+    assert np.allclose(first, configured), (
+        f"the hand starts at {first}, not the configured {configured}"
+    )

@@ -1277,7 +1277,7 @@ def test_the_streamer_comes_from_the_registry_not_the_stack():
     from rlinf.envs.real.wrappers.teleop.builder import STREAMERS, EnvFacts
 
     quiet = EnvFacts(layout={}, kinds={}, direct_stream=False)
-    assert STREAMERS["gello_joint"]({}, quiet) is None
+    assert STREAMERS["gello_joint"]({}, quiet, []) is None
 
 
 # --- an env says what its action means --------------------------------
@@ -1606,3 +1606,62 @@ def test_shipped_configs_give_the_policy_the_action_width_it_expects():
                 )
 
     assert offenders == []
+
+
+def test_direct_stream_gello_opens_one_reader_per_port():
+    """The streamer drives the arms the group composed, not its own copies.
+
+    It used to build a second pair from the config's *global* ports. That is
+    two pollers competing for one serial port, and a per-entry ``port``
+    override that only the action path had heard of.
+    """
+    import sys
+    import types
+
+    import numpy as np
+
+    opened = []
+
+    fake = types.ModuleType("rlinf.robotics.parts.teleop.readers.gello_joint")
+
+    class GelloJointExpert:
+        def __init__(self, port):
+            opened.append(port)
+            self.ready = True
+
+        def get_action(self):
+            return np.zeros(7), np.zeros(1)
+
+        def close(self):
+            pass
+
+    fake.GelloJointExpert = GelloJointExpert
+    saved = sys.modules.get("rlinf.robotics.parts.teleop.readers.gello_joint")
+    sys.modules["rlinf.robotics.parts.teleop.readers.gello_joint"] = fake
+    try:
+        from rlinf.envs.real.wrappers.teleop.builder import STREAMERS, EnvFacts
+        from rlinf.robotics.parts.teleop.devices import TeleopLeaderArm
+        from rlinf.robotics.teleop import TeleopEntry
+
+        arms = {
+            side: TeleopLeaderArm(port=f"/dev/{side}", joint_space=True)
+            for side in ("left", "right")
+        }
+        entries = [TeleopEntry(arm, None, drives=side) for side, arm in arms.items()]
+        for arm in arms.values():
+            arm.connect()
+        assert opened == ["/dev/left", "/dev/right"]
+
+        facts = EnvFacts(layout={}, kinds={}, direct_stream=True)
+        streamer = STREAMERS["gello_joint"]({}, facts, entries)
+
+        assert opened == ["/dev/left", "/dev/right"], (
+            f"the streamer opened more readers: {opened}"
+        )
+        assert streamer.left_arm is arms["left"]
+        assert streamer.right_arm is arms["right"]
+    finally:
+        if saved is None:
+            sys.modules.pop("rlinf.robotics.parts.teleop.readers.gello_joint", None)
+        else:
+            sys.modules["rlinf.robotics.parts.teleop.readers.gello_joint"] = saved
