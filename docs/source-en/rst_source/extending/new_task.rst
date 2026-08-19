@@ -177,6 +177,9 @@ device hardware:
 .. code-block:: python
 
    class Pedal(TeleopPart):
+       def __init__(self, port: str) -> None:
+           self._port = port
+
        def _open(self):
            from .readers.pedal import PedalReader
 
@@ -187,31 +190,45 @@ device hardware:
            return {"pressed": {"shape": (1,), "dtype": "bool"}}
 
        def get_observation(self):
-           return {"pressed": np.asarray([self._reader.is_pressed()])}
+           return {"pressed": np.asarray([self._device.is_pressed()])}
 
-``_open`` opens the hardware when the part connects; ``__init__`` only records
-the declaration. Declaration and construction may happen on different machines.
+``_open`` opens the hardware when the part connects and returns whatever speaks
+to it; that handle is ``self._device``. ``__init__`` only records the
+declaration, because declaration and construction may happen on different
+machines.
 
-The binding goes in ``rlinf/robotics/teleop/bindings.py``. Its ``PRODUCES`` tuple
-declares which parts of the robot action it fills, and ``action`` returns those
-named values:
+The binding goes in ``rlinf/robotics/teleop/bindings.py``. ``PRODUCES`` maps each
+action part it fills to what the numbers *mean*, so a device offering a twist to
+a joint-space arm is refused rather than obeyed. ``action`` answers everything
+about one reading at once, as a ``TeleopAction``:
 
 .. code-block:: python
 
    class PedalGripperBinding(TeleopBinding):
-       PRODUCES = ("end_effector",)
+       PRODUCES = {"end_effector": ActionKind.GRIPPER}
 
        def action(self, reading, context):
-           return {"end_effector": np.array([-1.0 if reading["pressed"] else 1.0])}
+           pressed = bool(reading["pressed"])
+           return TeleopAction(
+               parts={"end_effector": np.array([-1.0 if pressed else 1.0])},
+               driving=pressed,
+           )
 
-       def is_driving(self, reading):
-           return bool(reading["pressed"])
+``driving`` is part of that one answer rather than a second call: a binding
+whose answer depends on state it just computed would otherwise have to leave
+that state behind, and nothing would enforce the order of the two calls.
 
-Pair the part and binding in ``DEVICES`` in
-``rlinf/envs/real/wrappers/teleop/builder.py``. Add the device name to every
-environment that can use it:
+Pair the part and binding with an entry builder, then register it in ``DEVICES``
+in ``rlinf/envs/real/wrappers/teleop/builder.py``:
 
 .. code-block:: python
+
+   def _pedal(cfg, options, facts):
+       return TeleopEntry(
+           Pedal(port=options["port"]),
+           PedalGripperBinding(),
+           drives=options.get("drives"),
+       )
 
    DEVICES = {..., "pedal": _pedal}
 
@@ -224,6 +241,7 @@ Adding a Wrapper Instead
 
 When the new behavior surrounds a rollout, add a wrapper. Put action replacement
 in ``teleop/`` and representation changes in ``transforms/``;
-rollout boundaries and scores belong in ``episode/``. A new teleop device
-implements ``read``. For a new keyboard mode, subclass ``KeyboardSession``.
+rollout boundaries and scores belong in ``episode/``. A new teleop device is a
+part and a binding, as above, not a wrapper. For a new keyboard mode, subclass
+``KeyboardSession``.
 :doc:`../concepts/realworld_envs` describes both extension points.

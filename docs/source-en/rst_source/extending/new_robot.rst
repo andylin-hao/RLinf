@@ -152,18 +152,19 @@ policies and datasets.
    observation = robot.get_observation()
    robot.send_action(
        {
-           "arms": {
-               "left": {"arm": {"joint_position": left_target}},
-               "right": {"arm": {"joint_position": right_target}},
-           }
+           "left": {"arm": {"joint_position": left_target}},
+           "right": {"arm": {"joint_position": right_target}},
        }
    )
 
-In this layout, the left arm's canonical observation path is
-``arms.left.state.joint_position``, and its action path is ``left.arm``.
-End-effector actions use ``arms.<name>.end_effector``; robot-level cameras use
-``cameras.<name>``; other components use ``parts.<name>``. Keep these names
-stable across the environment, policy, and dataset code.
+The paths are the names, all the way down, with nothing added in between. Here
+``ExampleArm`` exposes itself and its gripper, so the left arm reads at
+``left.arm`` and its gripper at ``left.end_effector``; a camera composed as
+``wrist`` reads at ``wrist``. There is no fixed ``arms`` or ``cameras`` level
+above them, because a robot has named parts rather than slots to fill.
+
+Choose those names as a public API: they are the observation and action paths a
+policy and a dataset see, so changing one later changes their schema.
 
 ``Robot`` resets, reads, and commands arms on independent connections in
 parallel. A two-arm observation therefore waits for one round trip, and the

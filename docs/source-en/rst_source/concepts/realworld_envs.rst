@@ -151,11 +151,15 @@ You can therefore check a leader arm's wiring without involving a robot:
 
    python -m rlinf.robotics.parts.teleop.readers.gello --port /dev/ttyUSB0
 
-A teleop device is not a :class:`~rlinf.robotics.parts.base.RobotPart`. A part
-describes a component as the policy sees it. A leader arm never appears in that
-view: policies do not observe it, and robots do not include it in their
-composition. It reads the operator, not the robot, and belongs on the
-environment side.
+A teleop device *is* a :class:`~rlinf.robotics.parts.base.RobotPart` --
+:class:`~rlinf.robotics.parts.teleop.devices.TeleopPart` inherits it -- which is
+what gives it a lifecycle and a node for free: ``SpaceMouse.at(node_rank=1)``
+puts a device on the machine it is plugged into, exactly as an arm is placed.
+
+What it is not is part of the *robot*. A leader arm never appears in the robot's
+composition, and a policy never observes it: it reads the operator, not the
+robot. Which parts of the robot's action it fills is the binding's business, and
+that lives on the environment side.
 
 Episode Control Is Not Teleop
 -----------------------------

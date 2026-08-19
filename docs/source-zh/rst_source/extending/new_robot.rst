@@ -138,17 +138,18 @@
    observation = robot.get_observation()
    robot.send_action(
        {
-           "arms": {
-               "left": {"arm": {"joint_position": left_target}},
-               "right": {"arm": {"joint_position": right_target}},
-           }
+           "left": {"arm": {"joint_position": left_target}},
+           "right": {"arm": {"joint_position": right_target}},
        }
    )
 
-按这套结构，左臂本体的规范观测路径是 ``arms.left.state.joint_position``，动作路径是
-``arms.left.arm``。末端执行器动作位于 ``arms.<name>.end_effector``，机器人级相机位于
-``cameras.<name>``，其他组件则位于 ``parts.<name>``。环境、策略和数据集应当共用这些
-名字。
+路径就是这些名字本身，一层层下去，中间不会多出任何东西。这里 ``ExampleArm`` 暴露了
+自己和它的夹爪，因此左臂本体在 ``left.arm``，夹爪在 ``left.end_effector``；组合名为
+``wrist`` 的相机就在 ``wrist``。它们上面没有固定的 ``arms`` 或 ``cameras`` 层，因为
+机器人拥有的是具名部件，而不是等着被填的槽位。
+
+这些名字要当作公开接口来选：它们就是策略和数据集看到的观测与动作路径，之后再改一个，
+就等于改了它们的数据结构。
 
 ``Robot`` 会并行重置、读取和控制使用独立连接的机械臂。因此，读取双臂观测只需等待
 一次往返；机器人子类中无需另写并发代码。

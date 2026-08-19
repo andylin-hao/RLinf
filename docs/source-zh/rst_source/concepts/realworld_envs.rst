@@ -133,9 +133,13 @@ env 自己声明，所以新增任务只要加一行：
 
    python -m rlinf.robotics.parts.teleop.readers.gello --port /dev/ttyUSB0
 
-遥操作设备不是 :class:`~rlinf.robotics.parts.base.RobotPart`。部件描述策略看到的物理
-组件，主臂不在这棵部件树里：策略不观测它，机器人也不会组合它。主臂读取的是操作者
-指令，代码归在环境这一侧。
+遥操作设备\ **就是**\  :class:`~rlinf.robotics.parts.base.RobotPart` ——
+:class:`~rlinf.robotics.parts.teleop.devices.TeleopPart` 直接继承了它 ——
+生命周期和节点因此都是白拿的：``SpaceMouse.at(node_rank=1)`` 把设备放在它实际插接的
+机器上，和放置一条机械臂完全一样。
+
+它不属于的是\ **机器人**\ 。主臂不在机器人的组合里，策略也不会观测它：它读的是操作者，
+不是机器人。它填机器人动作的哪些部件由 binding 决定，那部分代码归在环境这一侧。
 
 episode 控制不算遥操作
 ----------------------

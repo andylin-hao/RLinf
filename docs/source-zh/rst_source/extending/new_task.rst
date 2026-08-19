@@ -163,6 +163,9 @@ binding，以及把两者配对的注册表条目。
 .. code-block:: python
 
    class Pedal(TeleopPart):
+       def __init__(self, port: str) -> None:
+           self._port = port
+
        def _open(self):
            from .readers.pedal import PedalReader
 
@@ -173,29 +176,41 @@ binding，以及把两者配对的注册表条目。
            return {"pressed": {"shape": (1,), "dtype": "bool"}}
 
        def get_observation(self):
-           return {"pressed": np.asarray([self._reader.is_pressed()])}
+           return {"pressed": np.asarray([self._device.is_pressed()])}
 
-``_open`` 在部件连接时打开硬件，``__init__`` 只记录声明。因此，设备可以在一台机器上
-声明，再到另一台机器上构建。
+``_open`` 在部件连接时打开硬件，并返回与硬件对话的那个对象；它就是 ``self._device``。
+``__init__`` 只记录声明。因此，设备可以在一台机器上声明，再到另一台机器上构建。
 
-binding 写在 ``rlinf/robotics/teleop/bindings.py``。它通过 ``PRODUCES`` 列出要填的
-机器人动作部件，再由 ``action`` 返回这些具名部件的值：
+binding 写在 ``rlinf/robotics/teleop/bindings.py``。``PRODUCES`` 把它要填的每个动作
+部件映射到这些数字的\ **含义**\ ，因此把 twist 交给关节空间机械臂的设备会被拒绝，而不是
+被照单执行。``action`` 用一个 ``TeleopAction`` 一次性回答关于这次读数的全部问题：
 
 .. code-block:: python
 
    class PedalGripperBinding(TeleopBinding):
-       PRODUCES = ("end_effector",)
+       PRODUCES = {"end_effector": ActionKind.GRIPPER}
 
        def action(self, reading, context):
-           return {"end_effector": np.array([-1.0 if reading["pressed"] else 1.0])}
+           pressed = bool(reading["pressed"])
+           return TeleopAction(
+               parts={"end_effector": np.array([-1.0 if pressed else 1.0])},
+               driving=pressed,
+           )
 
-       def is_driving(self, reading):
-           return bool(reading["pressed"])
+``driving`` 属于这一次回答，而不是另开一次调用：如果 binding 的答案依赖它刚算出来的
+状态，分成两次就得把状态留在中间，而且没有任何东西能保证两次调用的先后顺序。
 
-在 ``rlinf/envs/real/wrappers/teleop/builder.py`` 的 ``DEVICES`` 中登记部件与 binding 的
-组合。能够使用该设备的环境也要加入这个设备名：
+先写一个条目构造函数把部件和 binding 配起来，再在
+``rlinf/envs/real/wrappers/teleop/builder.py`` 的 ``DEVICES`` 中登记：
 
 .. code-block:: python
+
+   def _pedal(cfg, options, facts):
+       return TeleopEntry(
+           Pedal(port=options["port"]),
+           PedalGripperBinding(),
+           drives=options.get("drives"),
+       )
 
    DEVICES = {..., "pedal": _pedal}
 
@@ -207,5 +222,5 @@ stack builder 不需要增加设备专用分支。配置中写入设备名后，
 
 如果要改的是 rollout 周围的行为，就该新增 wrapper，而不是任务。替换动作的逻辑放进
 ``teleop/``，观测或动作的表示转换放进 ``transforms/``；rollout 的起止与得分归
-``episode/``。新增遥操作设备时实现 ``read``，新增键盘模式时继承
-``KeyboardSession``。两个扩展点都在 :doc:`../concepts/realworld_envs` 中说明。
+``episode/``。新增遥操作设备靠的是上面那对部件与 binding，而不是 wrapper；新增键盘
+模式时继承 ``KeyboardSession``。两个扩展点都在 :doc:`../concepts/realworld_envs` 中说明。
