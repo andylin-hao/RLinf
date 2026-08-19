@@ -296,6 +296,18 @@ class RemoteCamera(RemotePart, Camera):
     on each.
     """
 
+    def reopen(self) -> None:
+        """Reopen the hosted camera on the node that holds it.
+
+        ``connect`` and ``disconnect`` are no-ops on a proxy -- the handle owns
+        the hosted part's lifetime -- so a stalled camera reached through one
+        would never actually be reopened by calling them.
+        """
+        if self._part_name is None:
+            self._worker_group.reopen().wait()
+            return
+        self._worker_group.part_reopen(self._part_name).wait()
+
     def get_frame(self, timeout: float = 5) -> Any:
         """Read one frame through the host, waiting up to ``timeout`` seconds.
 

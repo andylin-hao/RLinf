@@ -52,9 +52,7 @@ class BaseCamera(Camera, ABC):
     def __init__(self, camera_info: CameraInfo):
         self._camera_info = camera_info
         self._frame_queue: queue.Queue = queue.Queue()
-        self._frame_capturing_thread = threading.Thread(
-            target=self._capture_frames, daemon=True
-        )
+        self._frame_capturing_thread: Optional[threading.Thread] = None
         self._frame_capturing_start = False
 
     @property
@@ -84,18 +82,42 @@ class BaseCamera(Camera, ABC):
         }
 
     def connect(self) -> None:
-        """Open the camera, then start capturing frames from it."""
+        """Open the camera, then start capturing frames from it.
+
+        The queue and the thread are made here rather than in ``__init__``: a
+        thread runs once and cannot be restarted, so a camera built once and
+        connected twice -- which is what recovering from a stall does -- would
+        raise ``RuntimeError`` on the second connect. A fresh queue also drops
+        the frames buffered before the stall, which are the stale ones.
+        """
         super().connect()
         if not self._frame_capturing_start:
+            self._frame_queue = queue.Queue()
+            self._frame_capturing_thread = threading.Thread(
+                target=self._capture_frames, daemon=True
+            )
             self._frame_capturing_start = True
             self._frame_capturing_thread.start()
 
     def disconnect(self) -> None:
         """Stop capturing, then let the camera go."""
         self._frame_capturing_start = False
-        if self._frame_capturing_thread.is_alive():
-            self._frame_capturing_thread.join(timeout=2.0)
+        thread = self._frame_capturing_thread
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=2.0)
+        self._frame_capturing_thread = None
         super().disconnect()
+
+    def reopen(self) -> None:
+        """Close this camera and open it again.
+
+        What a stalled camera needs. It is a method on the camera rather than
+        a disconnect/connect pair at the call site because a placed camera is
+        reached through a proxy, where those two are no-ops and the reopen has
+        to happen on the node holding the device.
+        """
+        self.disconnect()
+        self.connect()
 
     def get_observation(self) -> dict[str, np.ndarray]:
         """Return the latest raw frame under the canonical camera key."""

@@ -91,6 +91,14 @@ def compliance(**overrides: float) -> dict[str, float]:
     return {**COMPLIANCE_DEFAULTS, **overrides}
 
 
+#: How many times a stalled camera is reopened before the env gives up. A
+#: camera that never comes back is a fault to report, not one to retry through.
+_CAMERA_REOPEN_ATTEMPTS = 3
+
+#: Seconds to wait before reopening a stalled camera.
+_CAMERA_REOPEN_WAIT_S = 5.0
+
+
 @dataclass
 class FrankaRobotConfig:
     robot_ip: Optional[str] = None
@@ -451,6 +459,17 @@ class FrankaEnv(gym.Env):
         """Return the action scale ``[pos_scale, ori_scale, gripper_scale]``."""
         return self.config.action_scale
 
+    def get_hand_reset_pose(self):
+        """The pose this env homes a dexterous hand to at reset.
+
+        A binding that commands an absolute hand pose starts its episode from
+        here, so its first command continues from where the reset left the
+        hand instead of jumping away from it.
+        """
+        if not self._is_hand:
+            return None
+        return np.asarray(self.config.hand_reset_state, dtype=np.float64)
+
     def get_gripper_open(self) -> bool:
         """Whether the gripper is currently open."""
         return bool(self._franka_state.gripper_open)
@@ -780,11 +799,12 @@ class FrankaEnv(gym.Env):
         the observation shapes right.
         """
         if self.robot is not None:
-            self._cameras: list[BaseCamera] = list(
-                self.robot.parts_of_type(Camera).values()
-            )
+            self._cameras: dict[str, BaseCamera] = {
+                path.rsplit(".", 1)[-1]: camera
+                for path, camera in self.robot.parts_of_type(Camera).items()
+            }
             return
-        self._cameras = [create_camera(info) for info in self._camera_infos]
+        self._cameras = {info.name: create_camera(info) for info in self._camera_infos}
 
     def close(self):
         """Release all hardware resources including cameras and video player."""
@@ -799,9 +819,9 @@ class FrankaEnv(gym.Env):
     def _close_cameras(self):
         """Close only cameras this env owns; the robot closes its own."""
         if self.robot is None:
-            for camera in self._cameras:
+            for camera in self._cameras.values():
                 camera.disconnect()
-        self._cameras = []
+        self._cameras = {}
 
     def _crop_frame(
         self,
@@ -840,37 +860,48 @@ class FrankaEnv(gym.Env):
         return cropped_frame, resized_frame
 
     def _get_camera_frames(self) -> dict[str, np.ndarray]:
-        """Get frames from all cameras."""
+        """Read one frame per camera, reopening any that has stalled.
+
+        Cameras are keyed by the name they were declared under, and the crop
+        comes from this env's own :class:`CameraInfo`. Neither is asked of the
+        camera: a camera placed on the machine it is plugged into is reached
+        through a proxy, which carries observations and not the descriptor that
+        stayed behind on that node.
+        """
+        crops = {info.name: info.crop_region for info in self._camera_infos}
         frames = {}
         display_frames = {}
-        for camera in self._cameras:
-            try:
-                frame = camera.get_frame()
-                reshape_size = self.observation_space["frames"][
-                    camera._camera_info.name
-                ].shape[:2][::-1]
-                cropped_frame, resized_frame = self._crop_frame(
-                    frame,
-                    reshape_size,
-                    crop_region=camera._camera_info.crop_region,
+        for name, camera in self._cameras.items():
+            frame = None
+            # Bounded: a camera that never comes back should say so, not retry
+            # until the recursion limit does it for us.
+            for attempt in range(_CAMERA_REOPEN_ATTEMPTS):
+                try:
+                    frame = camera.get_frame()
+                    break
+                except queue.Empty:
+                    self._logger.warning(
+                        "Camera %s is not producing frames; reopening "
+                        "(attempt %d of %d).",
+                        name,
+                        attempt + 1,
+                        _CAMERA_REOPEN_ATTEMPTS,
+                    )
+                    time.sleep(_CAMERA_REOPEN_WAIT_S)
+                    camera.reopen()
+            if frame is None:
+                raise RuntimeError(
+                    f"Camera {name} produced no frame after "
+                    f"{_CAMERA_REOPEN_ATTEMPTS} reopen attempts."
                 )
-                frames[camera._camera_info.name] = resized_frame[
-                    ..., ::-1
-                ]  # Convert RGB to BGR
-                display_frames[camera._camera_info.name] = (
-                    resized_frame  # Original RGB for display
-                )
-                display_frames[f"{camera._camera_info.name}_full"] = (
-                    cropped_frame  # Non-resized version
-                )
-            except queue.Empty:
-                self._logger.warning(
-                    f"Camera {camera._camera_info.name} is not producing frames. Wait 5 seconds and try again."
-                )
-                time.sleep(5)
-                camera.disconnect()
-                camera.connect()
-                return self._get_camera_frames()
+
+            reshape_size = self.observation_space["frames"][name].shape[:2][::-1]
+            cropped_frame, resized_frame = self._crop_frame(
+                frame, reshape_size, crop_region=crops.get(name)
+            )
+            frames[name] = resized_frame[..., ::-1]  # Convert RGB to BGR
+            display_frames[name] = resized_frame  # Original RGB for display
+            display_frames[f"{name}_full"] = cropped_frame  # Non-resized version
 
         self.camera_player.put_frame(display_frames)
         return frames

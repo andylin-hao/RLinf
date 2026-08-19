@@ -21,7 +21,13 @@ import cv2
 import gymnasium as gym
 import numpy as np
 
-from .base import FrankaEnv, FrankaRobotConfig, compliance
+from .base import (
+    _CAMERA_REOPEN_ATTEMPTS,
+    _CAMERA_REOPEN_WAIT_S,
+    FrankaEnv,
+    FrankaRobotConfig,
+    compliance,
+)
 
 
 @dataclass
@@ -150,29 +156,48 @@ class FrankaBinRelocationEnv(FrankaEnv):
         return image[:, 80:560, :]
 
     def _get_camera_frames(self):
+        """Read one frame per camera, reopening any that has stalled.
+
+        Named from the robot's own tree rather than by asking each camera: a
+        camera placed on the machine it is plugged into answers through a
+        proxy, which carries observations and not the descriptor holding its
+        name.
+        """
         images = {}
         display_images = {}
-        for camera in self._cameras:
-            try:
-                rgb = camera.get_frame()
-                cropped_rgb = self._crop_frame(camera.name, rgb)
-                resized = cv2.resize(
-                    cropped_rgb,
-                    self.observation_space["frames"][camera.name].shape[:2][::-1],
-                )
-                images[camera.name] = resized[..., ::-1]
-                display_images[camera.name] = resized
-                if camera.name == "front":
-                    display_images[camera.name + "_full"] = cv2.resize(
-                        cropped_rgb, (480, 480)
+        for name, camera in self._cameras.items():
+            rgb = None
+            for attempt in range(_CAMERA_REOPEN_ATTEMPTS):
+                try:
+                    rgb = camera.get_frame()
+                    break
+                except queue.Empty:
+                    self._logger.warning(
+                        "Camera %s is not producing frames; reopening "
+                        "(attempt %d of %d).",
+                        name,
+                        attempt + 1,
+                        _CAMERA_REOPEN_ATTEMPTS,
                     )
-                elif camera.name == "wrist_1":
-                    display_images[camera.name + "_full"] = cropped_rgb
-            except queue.Empty:
-                time.sleep(5)
-                camera.disconnect()
-                self._open_cameras()
-                return self._get_camera_frames()
+                    time.sleep(_CAMERA_REOPEN_WAIT_S)
+                    camera.reopen()
+            if rgb is None:
+                raise RuntimeError(
+                    f"Camera {name} produced no frame after "
+                    f"{_CAMERA_REOPEN_ATTEMPTS} reopen attempts."
+                )
+
+            cropped_rgb = self._crop_frame(name, rgb)
+            resized = cv2.resize(
+                cropped_rgb,
+                self.observation_space["frames"][name].shape[:2][::-1],
+            )
+            images[name] = resized[..., ::-1]
+            display_images[name] = resized
+            if name == "front":
+                display_images[name + "_full"] = cv2.resize(cropped_rgb, (480, 480))
+            elif name == "wrist_1":
+                display_images[name + "_full"] = cropped_rgb
 
         self.camera_player.put_frame(display_images)
         return images

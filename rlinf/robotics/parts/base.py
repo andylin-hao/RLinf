@@ -90,11 +90,21 @@ class Endpoint(ABC):
             self._device = self._open() or self
 
     def disconnect(self) -> None:
-        """Release resources owned by the part, once."""
+        """Release resources owned by the endpoint, once.
+
+        ``_release`` runs while the handle is still there, because that is what
+        it releases. Clearing it first left every implementation that reaches
+        for ``self._device`` -- which is where the vendor object is documented
+        to live -- closing nothing, and the endpoint reported itself
+        disconnected while the reader, its thread and its serial port stayed
+        open.
+        """
         if self._device is None:
             return
-        self._device = None
-        self._release()
+        try:
+            self._release()
+        finally:
+            self._device = None
 
     def reset(self) -> None:
         """Reset this endpoint when it has resettable state."""
@@ -174,6 +184,16 @@ class Endpoint(ABC):
     def part_reset(self, name: str) -> None:
         """Reset one part."""
         self.part(name).reset()
+
+    def part_reopen(self, name: str) -> None:
+        """Reopen one part, for a camera that stalled behind a proxy."""
+        part = self.part(name)
+        reopen = getattr(part, "reopen", None)
+        if not callable(reopen):
+            raise TypeError(
+                f"Part {name!r} of {type(self).__name__} cannot be reopened."
+            )
+        reopen()
 
     def shutdown(self) -> None:
         """Disconnect during worker teardown."""
