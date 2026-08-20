@@ -1,382 +1,445 @@
 添加机器人
 ==========
 
-接入新硬件时，建议先在当前进程中验证单个设备，再组合机器人，最后配置远程部署。按照该顺序实施，可以将设备或 SDK 问题与 Ray 部署问题分开排查。
+本指南以新增移动底盘为例，先在本地验证底盘的观测与动作，再将其与 RLinf 已有的 Franka 机械臂组合为移动操作机器人，最后接入真机 Gymnasium 环境和集群配置。按照这一顺序排查问题，可以先确认设备接口，再处理组合和部署。
 
-开始前，请先阅读 :doc:`机器人模型 <../concepts/robotics>`。如果 RLinf 已支持该机器人，而变更仅涉及奖励、复位流程或成功条件，请参阅 :doc:`new_task`。
+开始前，请阅读 :doc:`机器人模型 <../concepts/robotics>`。如果 RLinf 已经能够连接目标硬件，而变更仅涉及奖励、复位流程或成功条件，请参阅 :doc:`新增真机任务 <new_task>`。
 
-1. 实现本地部件
-----------------
+1. 在本地实现移动底盘
+----------------------
 
-首先选择一个可以独立调试的最小设备。传感器继承 ``RobotPart``；需要接收控制命令的设备继承 ``ControllablePart``。此阶段暂不添加集群配置，只验证连接、读取和断开流程。
-
-部件需要实现三个关键操作：``_open`` 打开设备，``get_observation`` 读取数据，``_release`` 释放资源。厂商 SDK 只在 ``_open`` 中导入，使连接硬件的节点按需加载 SDK，同时允许其他节点在未安装 SDK 的情况下导入部件模块。
+移动底盘是一个可控制部件：它报告自身位姿，并接收速度命令。实现时继承 ``MobileBase``，让类本身直接表明设备类别。厂商 SDK 应在 ``_open()`` 中导入；只导入该模块而不连接硬件的节点无需安装 SDK。
 
 .. code-block:: python
 
    import numpy as np
 
-   from rlinf.robotics import ControllablePart
+   from rlinf.robotics import MobileBase
 
 
-   class ExampleArm(ControllablePart):
+   @MobileBase.register("example")
+   class ExampleMobileBase(MobileBase):
        def __init__(self, endpoint: str):
            self.endpoint = endpoint
 
        def _open(self):
-           from example_robot_sdk import Client
+           from example_mobile_sdk import Client
 
            return Client(self.endpoint)
 
        def _release(self, device) -> None:
-           device.close()
+           try:
+               device.stop()
+           finally:
+               device.close()
 
        @property
        def observation_features(self) -> dict:
-           return {"joint_position": {"shape": (6,), "dtype": "float32"}}
+           return {"pose": {"shape": (3,), "dtype": "float32"}}
 
        @property
        def action_features(self) -> dict:
-           return {"joint_position": {"shape": (6,), "dtype": "float32"}}
+           return {"velocity": {"shape": (2,), "dtype": "float32"}}
 
        def reset(self) -> None:
-           self._device.move_home()
+           self._device.stop()
 
        def get_observation(self) -> dict[str, np.ndarray]:
-           return {"joint_position": self._device.get_joint_position()}
+           pose = np.asarray(self._device.get_pose(), dtype=np.float32)
+           return {"pose": pose}
 
        def send_action(
            self, action: dict[str, np.ndarray]
        ) -> dict[str, np.ndarray]:
-           if set(action) != {"joint_position"}:
-               raise KeyError("Expected only 'joint_position'.")
-           self._device.move_joints(action["joint_position"])
-           return action
+           if set(action) != {"velocity"}:
+               raise KeyError("Expected only 'velocity'.")
+           velocity = np.asarray(action["velocity"], dtype=np.float32)
+           if velocity.shape != (2,):
+               raise ValueError(f"Expected velocity shape (2,), got {velocity.shape}.")
+           self._device.set_velocity(
+               linear=float(velocity[0]),
+               angular=float(velocity[1]),
+           )
+           return {"velocity": velocity}
 
-组合机器人前，先直接运行并验证该部件：
+装饰器将该 driver 注册为 ``example`` backend。已经持有具体 class 的代码仍可直接构造实例；从配置构建机器人时，则可通过 ``MobileBase.backend("example")`` 解析 driver。这个 registry 用于选择可互换的设备 driver，不代表完整机器人类型；后文会使用 ``register_type()`` 注册机器人。
+
+这里约定 ``pose`` 为 ``[x, y, yaw]``，``velocity`` 为 ``[linear_velocity, angular_velocity]``。这些名称和单位会进入任务、policy 与数据集，因此应采用长期稳定的规范字段，而不是直接暴露厂商 SDK 的方法名。
+
+与其他部件组合前，先单独连接并控制底盘：
 
 .. code-block:: python
 
-   arm = ExampleArm("tcp://left-arm:5000")
-   arm.connect()
+   base = ExampleMobileBase("tcp://mobile-base:7000")
+   base.connect()
    try:
-       print(arm.get_observation())
+       print(base.get_observation())
+       base.send_action(
+           {"velocity": np.array([0.1, 0.0], dtype=np.float32)}
+       )
    finally:
-       arm.disconnect()
+       base.disconnect()
 
-``_open()`` 的返回值保存在 ``self._device``。断开时，同一对象会传给 ``_release(device)``；清理逻辑必须直接使用参数 ``device``。
+``_open()`` 的返回值会保存到 ``self._device``，断开时同一对象作为参数传给 ``_release(device)``。清理逻辑应停止并释放参数 ``device``，不要重新从 ``self`` 读取。基类已经保证 ``connect()`` 和 ``disconnect()`` 可重复调用；如果设备需要自定义生命周期，也应保留这一性质。
 
-不应在 ``__init__`` 中打开设备，否则无法在一台机器上声明部件、再由另一台机器创建。机械臂如果在连接后还需上电或回零，可以覆盖 ``connect()`` 和 ``disconnect()``；两个方法都必须支持重复调用，以便在启动失败后回滚并重新连接。
+.. warning::
 
-相机、末端执行器、移动底盘和足式底盘分别继承 ``Camera``、``EndEffector``、``MobileBase`` 和 ``LeggedBase``。远程代理会保留这些类型对应的接口。
+   Python 进程失去连接后，移动底盘仍可能继续运动。硬件控制器必须配置命令超时和速度限制；``_release()`` 中的停止命令只能作为最后一道软件保护。
 
-2. 共享硬件连接
-----------------
+2. 与现有机械臂组合
+--------------------
 
-本地部件验证通过后，需要确认其硬件连接是否同时控制其他部件。一个 socket、CAN 总线或 ROS 节点可能同时控制机械臂、夹爪和相机，但整条连接只应打开一次。
-
-在这种情况下，应在 endpoint 上实现 ``exports`` mapping。key 是传给 ``connection.export(name)`` 的内部名称，value 是返回给调用方的 ``RobotPart``。该 mapping 只声明连接能够提供的部件，不决定部件在机器人树中的最终位置。机械臂本身统一使用 ``"arm"``：
+移动底盘不应附带另一套机械臂驱动。可以直接复用现有 Franka connection 中的部件，将底盘、机械臂和末端执行器组合为一个移动操作机器人：
 
 .. code-block:: python
 
-   from rlinf.robotics import MethodGripper, RobotPart
+   from rlinf.robotics import FrankaRobot, Robot
 
 
-   class ExampleArm(ControllablePart):
-       ...
-
-       @property
-       def exports(self) -> dict[str, RobotPart]:
-           return {
-               "arm": self,
-               "end_effector": MethodGripper(self, state_field="gripper_position"),
-           }
-
-部分 SDK 只提供 ``open_gripper``、``move_left_arm``、``get_camera(id)`` 等方法。使用 ``MethodGripper``、``MethodArm`` 或 ``MethodCamera`` 将其适配为部件，使后续组合代码不再依赖厂商方法名称。
-
-3. 定义公开部件名称
--------------------
-
-上一步声明了连接能够提供的部件，本步骤定义任务和 policy 使用的公开部件名称。可以先手动组合一个最小机器人，无需立即实现 discovery 或 YAML 配置。共享连接只声明一次，再逐个选择部件并指定公开名称：
-
-.. code-block:: python
-
-   from rlinf.robotics import Robot
+   class MobileManipulator(Robot):
+       ROBOT_TYPE = "MobileManipulator"
 
 
-   class Bench(Robot):
-       ROBOT_TYPE = "Bench"
-
-
-   connection = ExampleArm.at("tcp://left-arm:5000")
-   robot = Bench(
-       arm=connection.export("arm"),
-       end_effector=connection.export("end_effector"),
+   base = ExampleMobileBase(
+       "tcp://mobile-base:7000",
+       node_rank=0,
+       worker_name="ExampleMobileBase-0-0",
    )
-   print(robot.describe())
-   robot.connect()
-   try:
-       print(robot.get_observation())
-   finally:
-       robot.disconnect()
+   arm_connection = FrankaRobot.declare_arm(
+       "10.0.0.2",
+       node_rank=0,
+       name="FrankaArm-0-0",
+   )
+   robot = MobileManipulator(
+       base=base,
+       arm=arm_connection.part("arm"),
+       end_effector=arm_connection.part("end_effector"),
+   )
 
-独立调试脚本可以继续使用上述写法。只有需要根据配置和类型名称创建机器人时，才需要实现 discovery。
+这两个参数采用不同的组合方式，因为它们表示的对象不同。构造 ``MobileBase`` 子类会得到一个尚未连接的 ``RobotPart``。它本身就是任务需要访问的逻辑部件，因此可以直接以 ``base=base`` 传入；参数名 ``base`` 会成为 ``robot.children`` 中的公开路径。
 
-部件名称属于公开 API，并会写入观测、动作和数据集。数据采集开始后修改名称，会同时改变 policy 输入和已有数据格式。
+Franka 对象则持有一条同时包含机械臂和末端执行器的硬件连接。调用 ``part(name)`` 只记录需要加入机器人树的部件，直到 ``robot.connect()`` 才会打开连接并解析该选择。返回值是内部使用的延迟选择，开发者无需构造或标注其具体类型。如果直接传入这个可读取的 Franka connection，其中的全部部件会在连接后解析为该路径下的一个 ``PartGroup``；需要让 ``arm`` 和 ``end_effector`` 成为顶层同级路径时，应分别调用 ``part(name)``。
+
+``PartGroup`` 会在组合阶段检查这一边界。构造函数只接受 ``RobotPart``、另一个 ``PartGroup``，或 ``connection.part(name)`` 返回的部件选择；如果传入不可读取的裸 ``Connection``，异常会直接指出出错的参数名。
+
+如果沿用 Franka 的标准部件名称，可以直接复用已有的 ``build_arms``：
 
 .. code-block:: python
 
-   from rlinf.robotics import Group, Robot
-
-
-   class ExampleRobot(Robot):
-       ROBOT_TYPE = "ExampleRobot"
-
-
-   left = ExampleArm.at("tcp://left-arm:5000")
-   right = ExampleArm.at("tcp://right-arm:5000")
-   robot = ExampleRobot(
-       left=Group(
-           arm=left.export("arm"),
-           end_effector=left.export("end_effector"),
-       ),
-       right=Group(
-           arm=right.export("arm"),
-           end_effector=right.export("end_effector"),
-       ),
+   arm_parts = FrankaRobot.build_arms(
+       robot_ip="10.0.0.2",
+       node_rank=0,
+       worker_rank=0,
+       env_idx=0,
    )
+   robot = MobileManipulator(base=base, **arm_parts)
+
+将 ``FrankaRobot.build_arms`` 替换为其他机器人系列提供的部件构建方法，或者使用 ``PartGroup`` 组合多条机械臂，都不需要修改移动底盘。机器人由所选部件及其名称构成，无需为移动操作机器人增加专用字段或基类。
+
+打开硬件前，可以检查公开路径、部署节点和连接归属：
+
+.. code-block:: text
+
+   >>> print(robot.describe())
+   MobileManipulator
+   ├── base            controllable  node=0     via ExampleMobileBase#1
+   ├── arm             declared      node=0     via FrankaROSArm#2
+   └── end_effector    declared      node=0     via FrankaROSArm#2
+
+``arm`` 与 ``end_effector`` 的 ``via`` 相同，表示二者共用一条 Franka connection；底盘使用另一条独立连接。``describe()`` 读取声明快照，因此在 ``connect()`` 前后都能显示相同的资源归属。
+
+连接后，观测和动作按照组合时定义的名称访问：
+
+.. code-block:: python
+
    robot.connect()
    try:
        observation = robot.get_observation()
+       base_pose = observation["base"]["pose"]
+       arm_pose = observation["arm"]["tcp_pose"]
+
+       # 部分动作树只控制底盘。
+       robot.send_action(
+           {"base": {"velocity": np.array([0.1, 0.0], dtype=np.float32)}}
+       )
+
+       # 任务也可以同时控制底盘和现有机械臂。
        robot.send_action(
            {
-               "left": {"arm": {"joint_position": left_target}},
-               "right": {"arm": {"joint_position": right_target}},
+               "base": {"velocity": base_velocity},
+               "arm": {"tcp_pose": arm_target},
+               "end_effector": {"target": gripper_target},
            }
        )
    finally:
        robot.disconnect()
 
-访问路径完全由组合时指定的名称决定，系统不会自动插入 ``arms`` 或 ``cameras`` 层级。在上述示例中，左臂路径为 ``left.arm``，左夹爪路径为 ``left.end_effector``；名为 ``wrist`` 的相机路径即为 ``wrist``。
+``PartGroup.send_action`` 接受不完整的动作树，因此导航任务只需发送 ``base`` 动作，无需为机械臂补充保持当前位置的命令。动作同时包含底盘和机械臂时，RLinf 可以并行调用两条独立连接；机械臂与末端执行器共用连接，仍会按照声明顺序调用。
 
-系统会并行读取和控制使用独立连接的部件；共用连接的部件则按声明顺序调用。机器人子类无需自行管理线程。
+3. 在真机环境中使用组合机器人
+------------------------------
 
-4. 配置远程部署
-----------------
-
-确认本地连接、读取和断开流程正常后，在原有声明中加入 ``node_rank``。部件类和机器人树均无需修改：
+硬件代码定义底盘如何运动，任务代码则定义目标位置、成功条件以及 policy 实际控制的部件。下面的 ``RobotTask`` 只向 policy 暴露底盘；同一机器人中已经组合的机械臂保持空闲：
 
 .. code-block:: python
 
-   connection = ExampleArm.at("tcp://left-arm:5000", node_rank=0)
-   robot = Robot(
-       arm=connection.export("arm"),
-       end_effector=connection.export("end_effector"),
-   )
-   robot.connect()
+   import gymnasium as gym
+
+   from rlinf.envs.real import RobotTask, RobotTaskEnv
+
+
+   class DriveToTarget(RobotTask):
+       def __init__(self, target_xy: np.ndarray):
+           self.target_xy = np.asarray(target_xy, dtype=np.float32)
+
+       @property
+       def description(self) -> str:
+           return "drive the mobile manipulator to the target"
+
+       @property
+       def observation_space(self) -> gym.Space:
+           return gym.spaces.Dict(
+               {
+                   "base": gym.spaces.Dict(
+                       {
+                           "pose": gym.spaces.Box(
+                               -np.inf, np.inf, shape=(3,), dtype=np.float32
+                           )
+                       }
+                   )
+               }
+           )
+
+       @property
+       def action_space(self) -> gym.Space:
+           return gym.spaces.Dict(
+               {
+                   "base": gym.spaces.Dict(
+                       {
+                           "velocity": gym.spaces.Box(
+                               low=np.array([-0.5, -1.0], dtype=np.float32),
+                               high=np.array([0.5, 1.0], dtype=np.float32),
+                           )
+                       }
+                   )
+               }
+           )
+
+       @staticmethod
+       def observe(robot: Robot) -> dict:
+           return {"base": robot.get_observation()["base"]}
+
+       def reset(self, robot: Robot, *, seed=None, options=None):
+           del seed, options
+           robot.reset()
+           return self.observe(robot), {}
+
+       def step(self, robot: Robot, action: dict):
+           robot.send_action(action)
+           observation = self.observe(robot)
+           distance = float(
+               np.linalg.norm(observation["base"]["pose"][:2] - self.target_xy)
+           )
+           reached = distance < 0.05
+           return observation, float(reached), reached, False, {"distance": distance}
+
+
+   env = RobotTaskEnv(robot, DriveToTarget(np.array([1.0, 0.0])))
    try:
-       print(robot.get_observation())
+       observation, info = env.reset()
+       observation, reward, terminated, truncated, info = env.step(
+           {"base": {"velocity": np.array([0.1, 0.0], dtype=np.float32)}}
+       )
    finally:
-       robot.disconnect()
+       env.close()
 
-``at()`` 只记录 ``ExampleArm`` 将部署在节点 0。调用 ``connect()`` 时，RLinf 才会创建 worker、导入 SDK 并打开设备。句柄保存在 ``robot.handles`` 中，并由 ``disconnect()`` 负责回收。
+创建 ``RobotTaskEnv`` 时会连接整个组合机器人，``close()`` 则负责断开。移动操作任务可以在 observation space、action space 和动作树中加入已有的 ``arm`` 与 ``end_effector`` 路径，无需修改底盘驱动或机器人组合。
 
-相机也可以采用相同方式部署到实际连接设备的机器上::
+如需通过 RLinf 分布式 ``RealWorldEnv`` 启动该任务，应先注册 Gymnasium ID，并在 env YAML 中设置 ``env_type: real`` 和对应 ID。当前 rollout 接口使用面向 policy 的 ``state`` 与 ``frames`` 观测；已有 policy 采用该表示时，请在环境边界配置 ``LegacyObservationAdapter`` 和 ``VectorActionAdapter``。任务注册、YAML、wrapper 与兼容性检查请参阅 :doc:`新增真机任务 <new_task>`。
 
-   scene=RealSenseCamera.at(info, node_rank=2)
+4. 将同一组合部署到硬件节点
+----------------------------
 
-当一条连接包含多个部件时，只声明一次连接，再通过 ``export()`` 选择所需部件::
+placement 只决定各条连接在哪个节点打开，不改变任务访问部件的路径。例如，可以将底盘控制器放在节点 0，将 Franka 控制器放在节点 1：
 
-   connection = ExampleConnection.at(node_rank=0)
-   Group(arm=connection.export("left"), gripper=connection.export("left_end_effector"))
+.. code-block:: python
 
-``spawn()`` 会立即创建远程资源，仅适用于独立调试脚本；此类脚本必须自行关闭句柄。
+   base = ExampleMobileBase(
+       "tcp://mobile-base:7000",
+       node_rank=0,
+       worker_name="ExampleMobileBase-0-0",
+   )
+   arm_connection = FrankaRobot.declare_arm(
+       "10.0.0.2",
+       node_rank=1,
+       name="FrankaArm-0-0",
+   )
+   robot = MobileManipulator(
+       base=base,
+       arm=arm_connection.part("arm"),
+       end_effector=arm_connection.part("end_effector"),
+   )
 
-无需为每个设备单独实现 worker。RLinf 会根据部件类生成 worker，并将公有方法绑定为 RPC。设备专有方法通过句柄调用，本地与远端使用相同的调用方式::
+构造这些对象时只会记录参数、``node_rank`` 和 ``worker_name``，不会导入厂商 SDK 或打开设备。``Connection`` 的 metaclass 会先取走 placement 参数，再调用驱动自身的 ``__init__``，因此新驱动的构造函数只需声明硬件相关参数。``robot.connect()`` 会在指定节点打开每条不同的连接，并按公开部件名将 handle 写入 ``robot.handles``。
 
-   handle.is_robot_up().wait()[0]
-   handle.reset_joint(home_qpos).wait()
+``spawn()`` 会立即创建资源，仅适用于自行管理 handle 生命周期的调试脚本。机器人内部直接构造尚未连接的部件，再由 ``Robot.connect()`` 统一启动；如果机械臂连接失败，已经打开的底盘会自动回滚。
 
-5. 通过配置构建机器人
----------------------
+5. 通过配置构建组合机器人
+-------------------------
 
-需要从 YAML 创建机器人时，应实现 ``RobotConfig`` 和 ``build()``。连接地址、``node_rank`` 等部署信息写入机器人配置；复位姿态、奖励和 episode 长度仍属于任务配置。
+调试脚本中的组合确认无误后，再使用 ``RobotConfig`` dataclass 描述硬件输入，并实现 ``build()``。机械臂继续复用已有声明，不应复制其 SDK 或生命周期代码：
 
 .. code-block:: python
 
    from dataclasses import dataclass
 
-   from rlinf.robotics import Group, RobotConfig
+   from rlinf.robotics import MobileBase, RobotConfig
 
 
    @dataclass
-   class ExampleRobotConfig(RobotConfig):
-       left_endpoint: str = ""
-       right_endpoint: str = ""
+   class MobileManipulatorConfig(RobotConfig):
+       base_backend: str = "example"
+       base_endpoint: str | None = None
+       arm_ip: str | None = None
+       controller_node_rank: int | None = None
 
 
-   class ExampleRobot(Robot):
-       ROBOT_TYPE = "ExampleRobot"
+   class MobileManipulator(Robot):
+       ROBOT_TYPE = "MobileManipulator"
 
        @classmethod
        def build(
            cls,
            *,
-           left_endpoint: str,
-           right_endpoint: str,
-           node_rank: int = 0,
+           base_backend: str = "example",
+           base_endpoint: str | None,
+           arm_ip: str | None,
+           node_rank: int,
+           controller_node_rank: int | None = None,
+           worker_rank: int = 0,
+           env_idx: int = 0,
            **_,
-       ) -> "ExampleRobot":
-           arms = {}
-           for side, endpoint in (
-               ("left", left_endpoint),
-               ("right", right_endpoint),
-           ):
-               connection = ExampleArm.at(
-                   endpoint,
-                   node_rank=node_rank,
-                   name=f"ExampleArm-{side}",
-               )
-               arms[side] = Group(
-                   arm=connection.export("arm"),
-                   end_effector=connection.export("end_effector"),
-               )
-           return cls(**arms)
+       ) -> "MobileManipulator":
+           if not base_endpoint:
+               raise ValueError("MobileManipulator requires base_endpoint.")
+           base_cls = MobileBase.backend(base_backend)
+           base = base_cls(
+               base_endpoint,
+               node_rank=node_rank,
+               worker_name=f"{base_cls.__name__}-{worker_rank}-{env_idx}",
+           )
+           arm_node_rank = (
+               node_rank
+               if controller_node_rank is None
+               else controller_node_rank
+           )
+           arm_connection = FrankaRobot.declare_arm(
+               arm_ip,
+               node_rank=arm_node_rank,
+               name=f"FrankaArm-{worker_rank}-{env_idx}",
+           )
+           return cls(
+               base=base,
+               arm=arm_connection.part("arm"),
+               end_effector=arm_connection.part("end_effector"),
+           )
 
-单臂型号只需返回一个 ``Group``。``build()`` 仅负责组合 ``PartSpec``，不应打开硬件。设备统一由 ``Robot.connect()`` 启动；如果启动过程中发生失败，已创建的资源会被回收。
+``MobileBase.backend()`` 根据硬件配置中的名称找到对应 driver。``build()`` 随后组合尚未连接的部件，以及从共享连接中选择的部件，不会打开任何设备。连接地址、backend 选择和 placement 写入机器人配置；目标位置、奖励、复位姿态与 episode 长度仍属于任务配置。
 
 .. warning::
 
-   ``build()`` 不会访问硬件。读取观测或发送命令前必须调用 ``connect()``，结束时调用 ``disconnect()``。真机环境会在初始化和清理阶段调用这两个方法。
+   读取观测或发送命令前必须调用 ``connect()``，清理阶段必须调用 ``disconnect()``。由 ``RobotTaskEnv`` 持有机器人时，这两个生命周期操作分别在环境创建和 ``close()`` 中完成。
 
-注册机器人
-----------
+6. 注册机器人类型
+-----------------
 
-在机器人模块末尾完成注册，无需修改中央注册表。
+大多数机器人无需单独实现 discovery class。在模块末尾注册机器人及其配置即可；``register_type()`` 会创建标准 discovery class，并关联当前机器人的 ``build()``：
 
 .. code-block:: python
 
-   from typing import Optional
+   MobileManipulator.register_type(MobileManipulatorConfig)
 
-   from rlinf.robotics import RobotDiscovery, RobotInfo
-   from rlinf.scheduler.hardware import HardwareConfig, HardwareResource
+标准 discovery 流程会筛选属于当前节点的配置，通过同名大写环境变量补全未设置字段，并为每项配置返回一条硬件记录。如果配置包含相机字段，该流程还会复用公共的相机发现与校验逻辑。只有机器人的枚举方式确实不同时，才需要将自定义 ``RobotDiscovery`` 子类作为第二个参数传给 ``register_type()``。
 
+``Connection.register()`` 与 ``Robot.register_type()`` 对应两个不同的 registry：前者注册单个设备 driver，后者注册整台机器人的组合。完成机器人类型注册后，调用方既可以使用 ``Robot.of_type("MobileManipulator", ...)``，也可以调用便捷函数 ``build_robot("MobileManipulator", ...)``。
 
-   class ExampleRobotDiscovery(RobotDiscovery):
-       HW_TYPE = ExampleRobot.ROBOT_TYPE
+项目内置实现应放在 ``rlinf/robotics/robots/`` 下，并由该目录的 ``__init__.py`` 导入。这样，无论构造 ``Cluster`` 还是运行检查脚本，导入 ``rlinf.robotics.robots`` 时都会先完成注册。项目外部的集成则需在自己的 entry point 中显式导入注册模块。node probe 也会导入已注册的机器人模块，因此每个节点配置的 Python 环境都必须能够导入该模块。
 
-       @classmethod
-       def enumerate(
-           cls,
-           node_rank: int,
-           configs: Optional[list[HardwareConfig]] = None,
-       ) -> Optional[HardwareResource]:
-           matching = [
-               config
-               for config in configs or []
-               if isinstance(config, ExampleRobotConfig)
-               and config.node_rank == node_rank
-           ]
-           if not matching:
-               return None
-           return HardwareResource(
-               type=cls.HW_TYPE,
-               infos=[
-                   RobotInfo(type=cls.HW_TYPE, model=cls.HW_TYPE, config=config)
-                   for config in matching
-               ],
-           )
+7. 配置集群
+-----------
 
-
-   ExampleRobot.register(ExampleRobotConfig, ExampleRobotDiscovery)
-
-注册调用必须位于配置类和发现类之后。注册完成后，调用方可以直接使用 ``build_robot("ExampleRobot", ...)``，无需导入具体机器人类。
-
-如果新硬件只是现有机器人的变体，可以直接继承对应类。例如，``DualFrankaRobot`` 只修改 ``FrankaRobot`` 的 ``build_arms`` 和 ``BACKEND``，``build`` 与生命周期方法继续使用父类实现。
-
-构造 ``Cluster`` 前必须导入注册模块，否则硬件发现无法识别该机器人。每个节点使用的 Python 环境也必须能够导入该模块。
-
-配置集群
---------
-
-将硬件信息写入 ``cluster.node_groups.hardware``。``endpoint``、``node_rank`` 等部署参数应保留在 YAML 中，不应硬编码到 Python 代码中：
+将硬件信息写入 ``cluster.node_groups.hardware``。连接地址和 ``node_rank`` 等部署参数应保留在 YAML 中，不应硬编码到 Python 代码中：
 
 .. code-block:: yaml
 
    cluster:
-     num_nodes: 1
+     num_nodes: 2
      component_placement: {}
      node_groups:
-       - label: example_robot
+       - label: mobile_manipulator
          node_ranks: 0
          hardware:
-           type: ExampleRobot
+           type: MobileManipulator
            configs:
              - node_rank: 0
-               left_endpoint: tcp://left-arm:5000
-               right_endpoint: tcp://right-arm:5000
+               base_backend: example
+               base_endpoint: tcp://mobile-base:7000
+               arm_ip: 10.0.0.2
+               controller_node_rank: 1
+       - label: arm_controller
+         node_ranks: 1
 
-保持任务逻辑独立
-----------------
+这里的 ``node_rank`` 表示配置中的机器人资源由哪个节点持有，``controller_node_rank`` 则将复用的 Franka connection 放到对应控制节点。env 配置另行选择 Gym ID，因此同一套硬件组合可以服务于导航、移动操作或数据采集任务。
 
-机器人负责发现和操作硬件，不定义任务逻辑。reset、奖励、成功条件、截断条件和 Gymnasium space 应写入 ``RobotTask`` 或真机环境，再通过 ``RobotTaskEnv`` 与 ``Robot`` 组合。现有 policy 如果使用扁平动作向量和 ``state``/``frames`` 观测，应在环境边界添加 ``LegacyObservationAdapter`` 和 ``VectorActionAdapter``。
+8. 测试集成
+-----------
 
-.. warning::
+运行 contract 前，应先在 ``tests/robot_mocks/`` 中为示例 SDK 添加一个 fake，并将其加入 ``sdk_modules()``。这个 fake 只需实现上文实际调用的 ``get_pose()``、``set_velocity()``、``stop()`` 和 ``close()``。统一注册后，单元测试、检查脚本和远程 mock worker 会使用同一份 fake。
 
-   改造已有机器人时，不要改变现有的 Gym ID、动作维度、观测字段、相机名称和数据集字段。需要转换格式时，请使用适配器，并补上回归测试。
-
-检查组合结果
-------------
-
-连接硬件前，使用 ``describe()`` 检查部件路径、部署节点和共享连接::
-
-   >>> print(robot.describe())
-   ExampleRobot
-   ├── left.arm             declared      node=0     via ExampleArm#1
-   ├── left.end_effector    declared      node=0     via ExampleArm#1
-   ├── right.arm            declared      node=0     via ExampleArm#2
-   └── right.end_effector   declared      node=0     via ExampleArm#2
-
-``via`` 值相同的部件共用一条连接，因此只会打开一次。``describe()`` 读取机器人保存的声明，因此在 ``connect()`` 前后会显示相同的路径、节点和资源归属。
-
-测试集成
---------
-
-在 ``tests/unit_tests/`` 中新增测试，并使用 ``PartContract``、``ConnectionContract`` 和 ``RobotContract`` 检查新实现的部件、连接和机器人。测试可以复用工具脚本中的 mock SDK：
+随后在 ``tests/unit_tests/`` 中新增测试，并使用 ``PartContract`` 和 ``RobotContract`` 检查新底盘及组合机器人：
 
 .. code-block:: python
 
-   from robot_contracts import ConnectionContract, PartContract, RobotContract
+   from robot_contracts import PartContract, RobotContract
+   from robot_mocks import mocked_sdks
 
 
-   def test_my_arm_conforms():
-       PartContract(
-           lambda: MyArm("10.0.0.1"),
-           action={"joint_position": np.zeros(6)},
-       ).assert_kept()
+   def test_mobile_base_conforms():
+       assert MobileBase.backend("example") is ExampleMobileBase
+       with mocked_sdks():
+           PartContract(
+               lambda: ExampleMobileBase("tcp://mobile-base:7000"),
+               action={"velocity": np.zeros(2, dtype=np.float32)},
+           ).assert_kept()
 
 
-   def test_my_link_conforms():
-       ConnectionContract(MyConnection).assert_kept()
-
-
-   def test_my_robot_conforms():
-       RobotContract(lambda: MyRobot.build(robot_ip="10.0.0.1")).assert_kept()
+   def test_mobile_manipulator_conforms():
+       with mocked_sdks():
+           RobotContract(
+               lambda: MobileManipulator.build(
+                   base_endpoint="tcp://mobile-base:7000",
+                   arm_ip="10.0.0.2",
+                   node_rank=0,
+                   controller_node_rank=0,
+               )
+           ).assert_kept()
 
 这些 contract 位于 ``tests/robot_contracts``，mock SDK 位于 ``tests/robot_mocks``。二者仅用于测试，不会随 ``rlinf`` 包发布。
 
-contract 会检查重复连接和断开、观测字段及 shape、未知动作字段，以及连接失败后的资源回收。向 ``PartContract`` 传入示例动作后，contract 还会实际调用一次动作接口。
+contract 会检查重复连接和断开、观测字段及 shape、未知动作字段，以及连接失败后的资源回收。向 ``PartContract`` 传入速度样例后，contract 还会实际调用一次动作接口。``RobotContract`` 会在 ``connect()`` 过程中注入失败，确认底盘或已有机械臂都不会留下部分连接的机器人树。
 
-如果实现违反 contract，错误信息会列出具体原因，例如：
+只有当新增 SDK session 会对应多个部件时，才需要增加 ``ConnectionContract``。本例新增的是单个叶子 ``MobileBase``，Franka connection 已有独立测试，因此无需再增加一层 ``Connection``。
+
+这些检查覆盖了项目中实际出现过的故障。contract 检查失败时，错误信息会列出具体原因，例如：
 
 .. code-block:: text
 
-   ConformanceError: MyArm does not keep 2:
-     - MyArm: reconnecting raised RuntimeError: threads can only be started
-       once; stall recovery closes an endpoint and opens it again
-     - MyArm observes tcp_pose with shape (7,), declares (6,)
+   ConformanceError: ExampleMobileBase does not keep 2:
+     - ExampleMobileBase: reconnecting raised RuntimeError: threads can only be started
+       once; stall recovery closes a connection and opens it again
+     - ExampleMobileBase observes pose with shape (4,), declares (3,)
 
-测试还应覆盖组合路径、句柄生命周期、注册、硬件发现，以及现有 policy 依赖的数据结构：
+测试还应覆盖组合路径、handle 生命周期、注册、硬件发现，以及现有 policy 依赖的数据结构：
 
 .. code-block:: bash
 
@@ -393,20 +456,21 @@ contract 会检查重复连接和断开、观测字段及 shape、未知动作�
 
 .. code-block:: bash
 
-   python -m toolkits.realworld_check.check_robot_parts MyRobot --mock \
-       --arg robot_ip=10.0.0.1 --arg node_rank=0
+   python -m toolkits.realworld_check.check_robot_parts MobileManipulator --mock \
+       --arg base_endpoint=tcp://mobile-base:7000 \
+       --arg arm_ip=10.0.0.2 --arg node_rank=0 --arg controller_node_rank=0
 
-脚本会列出部件路径、共享连接和部署节点，然后读取观测并断开。未声明的观测、错误的 shape、错误加入部件树的连接，以及断开后仍报告已连接的资源都会导致检查失败。
+脚本会列出部件路径、共享连接和部署节点，然后读取观测并断开。未声明的观测、错误的 shape、误放入部件树的 connection，以及断开后仍报告已连接的资源都会导致检查失败。
 
 环境根据部件声明创建 observation space，因此观测 shape 必须与声明一致。
 
 添加 ``--remote`` 后，部件会部署到调度器 worker 中。该模式还会检查方法名称冲突和无法跨进程传递的状态。
 
-还可以使用 mock 配置运行完整训练。``run.sh`` 会先安装相应的 mock SDK：
+还可以使用 mock 配置运行完整训练。``run.sh`` 会先安装相应的 mock SDK；Turtle2 是现有实现中最接近移动操作机器人的示例，可以作为新增配置的参考：
 
 .. code-block:: bash
 
-   bash tests/e2e_tests/embodied/run.sh realworld_mock_sac_cnn
+   bash tests/e2e_tests/embodied/run.sh realworld_xsquare_turtle2_mock_sac_cnn
 
 每种内置机器人均提供对应配置：
 
@@ -434,5 +498,6 @@ mock 测试通过后，再检查真机的时序、标定和 SDK 行为。确认�
 
 .. code-block:: bash
 
-   python -m toolkits.realworld_check.check_robot_parts MyRobot \
-       --arg robot_ip=10.0.0.1 --arg node_rank=1
+   python -m toolkits.realworld_check.check_robot_parts MobileManipulator \
+       --arg base_endpoint=tcp://mobile-base:7000 \
+       --arg arm_ip=10.0.0.2 --arg node_rank=0 --arg controller_node_rank=1

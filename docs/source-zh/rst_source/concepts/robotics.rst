@@ -72,5 +72,5 @@
 
 - :doc:`新增真机任务 <../extending/new_task>`：在已支持的真机上添加任务。
 - :doc:`添加机器人 <../extending/new_robot>`：接入本地传感器、执行器或整台机器人。
-- :doc:`机器人架构 <robotics_architecture>`：了解共享连接、``Endpoint``、远程句柄、失败回滚和 worker 放置。
+- :doc:`机器人架构 <robotics_architecture>`：了解共享连接、``PartGroup``、远程 handle、失败回滚和 worker placement。
 - :doc:`遥操作 <../guides/teleoperation>`：组合多种操作者设备。

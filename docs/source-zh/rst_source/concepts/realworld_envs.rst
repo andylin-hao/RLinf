@@ -118,9 +118,9 @@ wrapper 根据所承担的职责划分目录：
 
    python -m rlinf.robotics.parts.teleop.readers.gello --port /dev/ttyUSB0
 
-遥操作设备本身也是 :class:`~rlinf.robotics.parts.base.RobotPart`。:class:`~rlinf.robotics.parts.teleop.devices.TeleopPart` 直接继承该类，因此连接、断开和远程放置方式与机械臂一致。例如，``SpaceMouse.at(node_rank=1)`` 会在节点 1 上打开设备。
+遥操作设备本身也是 :class:`~rlinf.robotics.parts.base.RobotPart`。:class:`~rlinf.robotics.parts.teleop.devices.TeleopPart` 直接继承该类，因此沿用标准连接生命周期。构造设备时不会访问硬件；wrapper stack 启动后，``TeleopGroup.connect()`` 才会依次打开设备。
 
-遥操作设备虽然继承 ``RobotPart``，但不属于机器人部件树。主臂读取操作者输入，而非机器人状态，因此 policy 不会观测该设备。设备控制哪些机器人部件，由环境侧的 binding 决定。
+遥操作设备虽然继承 ``RobotPart``，但不属于机器人部件树。主臂读取操作者输入，而非机器人状态，因此 policy 不会观测该设备。设备控制哪些机器人部件，由环境侧的 binding 决定。这个边界也影响 placement：内置遥操作构建器在 env 进程中打开设备，不会经过 ``Robot.connect()``。手动部署独立设备前，请先阅读 :doc:`遥操作指南 <../guides/teleoperation>`。
 
 将 episode 控制置于独立层
 -------------------------

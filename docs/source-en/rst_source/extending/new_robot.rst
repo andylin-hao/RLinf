@@ -1,379 +1,464 @@
 Adding a Robot
 ==============
 
-This guide starts with one device in the current process. Once that works, you
-will compose it into a robot, share one connection between several parts, and
-finally move the device to another node. Keeping that order makes hardware bugs
-look like hardware bugs instead of placement bugs.
+This guide adds a mobile base, composes it with RLinf's existing Franka arm, and
+drives the resulting mobile manipulator through a real-world Gymnasium
+environment. The example starts with the base in one process. Placement and
+hardware discovery come only after its observations and actions work locally.
 
-Before continuing, read the short :doc:`Robotics Model
-<../concepts/robotics>` page. If the hardware already exists and you only need a
-new reward, reset, or success condition, follow :doc:`new_task` instead; a task
-does not require a new robot class.
+Before continuing, read :doc:`Robotics Model <../concepts/robotics>`. If RLinf
+already knows how to connect the hardware and you only need a new reward, reset,
+or success condition, follow :doc:`New Real-World Tasks <new_task>` instead.
 
-1. Add One Local Part
----------------------
+1. Implement the Mobile Base Locally
+------------------------------------
 
-Start with the smallest useful device. Inherit ``RobotPart`` for a sensor, or
-``ControllablePart`` when the device also accepts commands. Do not add cluster
-configuration yet: first make the part work in the process where you run the
-test.
-
-Every part answers the same three questions: ``_open`` reaches the hardware,
-``get_observation`` reads it, and ``_release`` lets it go. Connecting and
-disconnecting are handled for you, so a part is written by saying what its
-hardware is. Keep the vendor SDK import inside ``_open``: other nodes can then
-import the part module without installing the SDK, while the node that opens
-the connection still loads it normally.
+A mobile base is one controllable robot part: it reports its pose and accepts a
+velocity command. Inherit ``MobileBase`` so the class states that role directly.
+Keep the vendor SDK import inside ``_open()``; nodes that only import the module do
+not need the SDK installed.
 
 .. code-block:: python
 
    import numpy as np
 
-   from rlinf.robotics import ControllablePart
+   from rlinf.robotics import MobileBase
 
 
-   class ExampleArm(ControllablePart):
+   @MobileBase.register("example")
+   class ExampleMobileBase(MobileBase):
        def __init__(self, endpoint: str):
            self.endpoint = endpoint
 
        def _open(self):
-           from example_robot_sdk import Client
+           from example_mobile_sdk import Client
 
            return Client(self.endpoint)
 
        def _release(self, device) -> None:
-           device.close()
+           try:
+               device.stop()
+           finally:
+               device.close()
 
        @property
        def observation_features(self) -> dict:
-           return {"joint_position": {"shape": (6,), "dtype": "float32"}}
+           return {"pose": {"shape": (3,), "dtype": "float32"}}
 
        @property
        def action_features(self) -> dict:
-           return {"joint_position": {"shape": (6,), "dtype": "float32"}}
+           return {"velocity": {"shape": (2,), "dtype": "float32"}}
 
        def reset(self) -> None:
-           self._device.move_home()
+           self._device.stop()
 
        def get_observation(self) -> dict[str, np.ndarray]:
-           return {"joint_position": self._device.get_joint_position()}
+           pose = np.asarray(self._device.get_pose(), dtype=np.float32)
+           return {"pose": pose}
 
        def send_action(
            self, action: dict[str, np.ndarray]
        ) -> dict[str, np.ndarray]:
-           if set(action) != {"joint_position"}:
-               raise KeyError("Expected only 'joint_position'.")
-           self._device.move_joints(action["joint_position"])
-           return action
+           if set(action) != {"velocity"}:
+               raise KeyError("Expected only 'velocity'.")
+           velocity = np.asarray(action["velocity"], dtype=np.float32)
+           if velocity.shape != (2,):
+               raise ValueError(f"Expected velocity shape (2,), got {velocity.shape}.")
+           self._device.set_velocity(
+               linear=float(velocity[0]),
+               angular=float(velocity[1]),
+           )
+           return {"velocity": velocity}
 
-Try the part locally before composing a robot:
+The decorator gives this driver the backend name ``example``. Code that already
+has the concrete class can still instantiate it directly; a
+configuration-driven builder can instead resolve it with
+``MobileBase.backend("example")``. This registry names interchangeable device
+drivers, not complete robot types. The robot type is registered later with
+``register_type()``.
+
+Here ``pose`` is ``[x, y, yaw]`` and ``velocity`` is
+``[linear_velocity, angular_velocity]``. Use names and units that match the
+canonical interface you want tasks and datasets to retain; do not expose a
+vendor method name as a policy field.
+
+Connect the base directly before composing it with anything else:
 
 .. code-block:: python
 
-   arm = ExampleArm("tcp://left-arm:5000")
-   arm.connect()
+   base = ExampleMobileBase("tcp://mobile-base:7000")
+   base.connect()
    try:
-       print(arm.get_observation())
+       print(base.get_observation())
+       base.send_action(
+           {"velocity": np.array([0.1, 0.0], dtype=np.float32)}
+       )
    finally:
-       arm.disconnect()
+       base.disconnect()
 
-Whatever ``_open()`` returns becomes ``self._device``. ``_release(device)``
-receives that same object during cleanup, so it should release the argument it
-is given rather than look the object up again on ``self``. Opening in
-``connect()`` instead of ``__init__`` is what later allows the declaration and
-the hardware to live on different machines.
+Whatever ``_open()`` returns becomes ``self._device``. Cleanup receives that
+same object as ``_release(device)``, so stop and release the argument rather
+than reading it back from ``self``. ``connect()`` and ``disconnect()`` are
+idempotent in the base class; preserve that property if the device needs a
+custom lifecycle.
 
-Some devices need more than an open and close call. An arm that must home before
-it becomes usable may override ``connect()`` and ``disconnect()``, but keep both
-methods idempotent so rollback and a later reconnect remain safe.
+.. warning::
 
-When the device fits ``Camera``, ``EndEffector``, ``MobileBase``, or
-``LeggedBase``, inherit that specific interface instead. Compositions and remote
-proxies can then retain its device category.
+   A mobile base can keep moving after the Python process loses contact. Make
+   the hardware controller enforce command timeouts and velocity limits, and
+   send a stop command from ``_release`` as a final software safeguard.
 
-2. Let Several Parts Share One Connection
-------------------------------------------
+2. Compose It with an Existing Arm
+----------------------------------
 
-Once one local part works, check whether its hardware session also controls
-other components. A socket, CAN bus, or ROS node may drive an arm, a gripper,
-and a camera while still needing to open only once.
-
-In that case, define the endpoint's ``exports`` mapping. A key is the local name
-accepted by ``connection.export(name)``; its value is the ``RobotPart`` returned
-to the caller. This mapping only lists what the connection can provide. It does
-not decide where those parts appear in the robot tree. For an arm, expose the
-arm itself as ``"arm"``.
+The base is useful on its own, but it should not require a new arm driver. Build
+a mobile manipulator by placing the base beside parts backed by the existing
+Franka connection:
 
 .. code-block:: python
 
-   from rlinf.robotics import MethodGripper, RobotPart
+   from rlinf.robotics import FrankaRobot, Robot
 
 
-   class ExampleArm(ControllablePart):
-       ...
-
-       @property
-       def exports(self) -> dict[str, RobotPart]:
-           return {
-               "arm": self,
-               "end_effector": MethodGripper(self, state_field="gripper_position"),
-           }
-
-Some SDKs expose those capabilities as methods such as ``open_gripper``,
-``move_left_arm``, and ``get_camera(id)``. Wrap them with ``MethodGripper``,
-``MethodArm``, or ``MethodCamera`` and define the view beside the adapted
-methods. The robot composition then sees ordinary parts rather than vendor
-method names.
-
-3. Compose Stable Public Names
-------------------------------
-
-The previous step listed what the connection can provide. This step chooses the
-names that tasks and policies will see in the robot tree. You can compose a
-robot directly before adding hardware discovery or YAML: declare the shared
-connection once, then select each available part and assign its public name.
-
-.. code-block:: python
-
-   from rlinf.robotics import Robot
+   class MobileManipulator(Robot):
+       ROBOT_TYPE = "MobileManipulator"
 
 
-   class Bench(Robot):
-       ROBOT_TYPE = "Bench"
-
-
-   connection = ExampleArm.at("tcp://left-arm:5000")
-   robot = Bench(
-       arm=connection.export("arm"),
-       end_effector=connection.export("end_effector"),
+   base = ExampleMobileBase(
+       "tcp://mobile-base:7000",
+       node_rank=0,
+       worker_name="ExampleMobileBase-0-0",
    )
-   print(robot.describe())
-   robot.connect()
-   try:
-       print(robot.get_observation())
-   finally:
-       robot.disconnect()
+   arm_connection = FrankaRobot.declare_arm(
+       "10.0.0.2",
+       node_rank=0,
+       name="FrankaArm-0-0",
+   )
+   robot = MobileManipulator(
+       base=base,
+       arm=arm_connection.part("arm"),
+       end_effector=arm_connection.part("end_effector"),
+   )
 
-There is no hardware config or discovery here. Those are needed when a config
-file must build the robot by type name; a bench script can stay this small.
+The two arguments use different composition forms because they represent
+different things. Constructing the ``MobileBase`` subclass creates an
+unconnected ``RobotPart``. The base is already the logical part that tasks
+should see, so pass it directly as ``base=base``. The argument name becomes its
+public path in ``robot.children``.
 
-Choose each part name as if it were a public API field, because it is one. The
-names become canonical observation and action paths. Renaming a part later also
-changes the schema stored in policies and datasets.
+The Franka object owns one hardware session that backs both the arm and its end
+effector. Calling ``part(name)`` records which backed part should enter the
+tree; the connection remains unopened until ``robot.connect()``. The result is
+an internal, unresolved choice rather than another public class you need to
+construct or annotate. Passing this readable Franka object directly would
+resolve everything it backs as a nested ``PartGroup``. Select ``arm`` and
+``end_effector`` explicitly when they should remain top-level siblings.
+
+``PartGroup`` checks this boundary as soon as the robot is composed. It accepts
+a ``RobotPart``, another ``PartGroup``, or a choice returned by
+``connection.part(name)``. A bare ``Connection`` that is not a readable part is
+rejected with an error that names the invalid keyword.
+
+The existing arm builder can shorten the same composition when its standard
+names are appropriate:
 
 .. code-block:: python
 
-   from rlinf.robotics import Group, Robot
-
-
-   class ExampleRobot(Robot):
-       ROBOT_TYPE = "ExampleRobot"
-
-
-   left = ExampleArm.at("tcp://left-arm:5000")
-   right = ExampleArm.at("tcp://right-arm:5000")
-   robot = ExampleRobot(
-       left=Group(
-           arm=left.export("arm"),
-           end_effector=left.export("end_effector"),
-       ),
-       right=Group(
-           arm=right.export("arm"),
-           end_effector=right.export("end_effector"),
-       ),
+   arm_parts = FrankaRobot.build_arms(
+       robot_ip="10.0.0.2",
+       node_rank=0,
+       worker_rank=0,
+       env_idx=0,
    )
+   robot = MobileManipulator(base=base, **arm_parts)
+
+Replacing ``FrankaRobot.build_arms`` with another robot family's part builder,
+or wrapping several arm parts in a ``PartGroup``, does not change the mobile base.
+The composition defines the robot; no base-specific arm slot or mobile-arm
+subclass is required by the framework.
+
+Check those names and their resource ownership before opening hardware:
+
+.. code-block:: text
+
+   >>> print(robot.describe())
+   MobileManipulator
+   ├── base            controllable  node=0     via ExampleMobileBase#1
+   ├── arm             declared      node=0     via FrankaROSArm#2
+   └── end_effector    declared      node=0     via FrankaROSArm#2
+
+The arm and end effector share one ``via`` because they use one Franka
+connection. The base has its own connection. ``describe()`` reads the declaration
+snapshot, so this ownership remains visible before and after ``connect()``.
+
+Once connected, observations and actions use the names from the composition:
+
+.. code-block:: python
+
    robot.connect()
    try:
        observation = robot.get_observation()
+       base_pose = observation["base"]["pose"]
+       arm_pose = observation["arm"]["tcp_pose"]
+
+       # A partial action moves only the base.
+       robot.send_action(
+           {"base": {"velocity": np.array([0.1, 0.0], dtype=np.float32)}}
+       )
+
+       # A task may also command the base and existing arm together.
        robot.send_action(
            {
-               "left": {"arm": {"joint_position": left_target}},
-               "right": {"arm": {"joint_position": right_target}},
+               "base": {"velocity": base_velocity},
+               "arm": {"tcp_pose": arm_target},
+               "end_effector": {"target": gripper_target},
            }
        )
    finally:
        robot.disconnect()
 
-The paths are exactly the names above, with no implicit ``arms`` or ``cameras``
-level. The left arm reads at ``left.arm`` and its gripper at
-``left.end_effector``; a camera composed as ``wrist`` reads at ``wrist``.
+``PartGroup.send_action`` accepts a partial tree, so a navigation task need not send
+hold commands for the arm. When an action contains both connections, RLinf can
+dispatch them in parallel; the arm and end effector remain ordered because they
+share one connection.
 
-``Robot`` resets, reads, and commands arms on independent connections in
-parallel. A two-arm observation therefore waits for one round trip, and the
-robot subclass does not contain its own concurrency code.
+3. Use the Robot in a Real-World Environment
+--------------------------------------------
 
-4. Move a Working Part to Another Node
---------------------------------------
-
-Only after the local composition works should placement enter the picture. Add
-``node_rank`` to the same declaration; the part and the robot tree do not
-change:
+Hardware code says how to move the base. Task code decides where to move it,
+when an episode succeeds, and which subset of the robot a policy controls. The
+following ``RobotTask`` exposes only the base even though the robot also carries
+an arm:
 
 .. code-block:: python
 
-   connection = ExampleArm.at("tcp://left-arm:5000", node_rank=0)
-   robot = Robot(
-       arm=connection.export("arm"),
-       end_effector=connection.export("end_effector"),
-   )
-   robot.connect()
+   import gymnasium as gym
+
+   from rlinf.envs.real import RobotTask, RobotTaskEnv
+
+
+   class DriveToTarget(RobotTask):
+       def __init__(self, target_xy: np.ndarray):
+           self.target_xy = np.asarray(target_xy, dtype=np.float32)
+
+       @property
+       def description(self) -> str:
+           return "drive the mobile manipulator to the target"
+
+       @property
+       def observation_space(self) -> gym.Space:
+           return gym.spaces.Dict(
+               {
+                   "base": gym.spaces.Dict(
+                       {
+                           "pose": gym.spaces.Box(
+                               -np.inf, np.inf, shape=(3,), dtype=np.float32
+                           )
+                       }
+                   )
+               }
+           )
+
+       @property
+       def action_space(self) -> gym.Space:
+           return gym.spaces.Dict(
+               {
+                   "base": gym.spaces.Dict(
+                       {
+                           "velocity": gym.spaces.Box(
+                               low=np.array([-0.5, -1.0], dtype=np.float32),
+                               high=np.array([0.5, 1.0], dtype=np.float32),
+                           )
+                       }
+                   )
+               }
+           )
+
+       @staticmethod
+       def observe(robot: Robot) -> dict:
+           return {"base": robot.get_observation()["base"]}
+
+       def reset(self, robot: Robot, *, seed=None, options=None):
+           del seed, options
+           robot.reset()
+           return self.observe(robot), {}
+
+       def step(self, robot: Robot, action: dict):
+           robot.send_action(action)
+           observation = self.observe(robot)
+           distance = float(
+               np.linalg.norm(observation["base"]["pose"][:2] - self.target_xy)
+           )
+           reached = distance < 0.05
+           return observation, float(reached), reached, False, {"distance": distance}
+
+
+   env = RobotTaskEnv(robot, DriveToTarget(np.array([1.0, 0.0])))
    try:
-       print(robot.get_observation())
+       observation, info = env.reset()
+       observation, reward, terminated, truncated, info = env.step(
+           {"base": {"velocity": np.array([0.1, 0.0], dtype=np.float32)}}
+       )
    finally:
-       robot.disconnect()
+       env.close()
 
-The call records an ``ExampleArm`` declaration for node 0. No worker is created
-and no SDK is imported until ``connect()`` runs. The resulting handle appears in
-``robot.handles`` and remains there until ``disconnect()`` tears it down.
+``RobotTaskEnv`` connects the composed robot when the environment is created and
+disconnects it in ``close()``. A manipulation task can expand the spaces and
+actions with the existing ``arm`` and ``end_effector`` paths; the base driver
+and robot composition stay unchanged.
 
-The declaration is not arm-specific. For example, a camera can remain on the
-machine where it is physically connected::
+To launch the task through RLinf's distributed ``RealWorldEnv``, register the
+environment with Gymnasium and set ``env_type: real`` plus its Gym ID in the env
+YAML. The current rollout interface expects policy-facing ``state`` and
+``frames`` observations, so add ``LegacyObservationAdapter`` and
+``VectorActionAdapter`` when the policy uses that representation. Follow
+:doc:`New Real-World Tasks <new_task>` for registration, YAML, wrappers, and
+compatibility checks.
 
-   scene=RealSenseCamera.at(info, node_rank=2)
+4. Place the Same Composition on Hardware Nodes
+------------------------------------------------
 
-If one connection backs several components, declare that connection once and
-select the exposed parts from it::
+Placement changes where each connection opens, not how tasks address it. For
+example, keep the base controller on node 0 and the Franka controller on node 1:
 
-   connection = ExampleConnection.at(node_rank=0)
-   Group(
-       arm=connection.export("left"),
-       gripper=connection.export("left_end_effector"),
+.. code-block:: python
+
+   base = ExampleMobileBase(
+       "tcp://mobile-base:7000",
+       node_rank=0,
+       worker_name="ExampleMobileBase-0-0",
+   )
+   arm_connection = FrankaRobot.declare_arm(
+       "10.0.0.2",
+       node_rank=1,
+       name="FrankaArm-0-0",
+   )
+   robot = MobileManipulator(
+       base=base,
+       arm=arm_connection.part("arm"),
+       end_effector=arm_connection.part("end_effector"),
    )
 
-Underneath this flow, ``spawn()`` performs placement immediately. Call it
-directly only outside a robot, for example in a bench script that also takes
-care of the handle's lifecycle.
+Constructing these objects records their arguments, ``node_rank``, and
+``worker_name`` but does not import either vendor SDK or open hardware. The
+metaclass on ``Connection`` consumes the placement keywords before the driver's
+``__init__`` runs, so a new driver only declares hardware-specific parameters.
+``robot.connect()`` opens each distinct connection on its selected node and
+publishes its handle under the public part names in ``robot.handles``.
 
-There is no separate worker class to write for the part. Placement synthesizes
-one from its class, and ``WorkerGroup`` binds public methods as RPCs. A method
-outside the standard part interface remains available through the handle, using
-the same expression locally and remotely::
+Use ``spawn()`` only in a bench script that owns the returned handle's
+lifecycle. Inside a robot, construct the unconnected part normally and let
+``Robot.connect()`` make startup all-or-nothing. If the arm fails, the base is
+rolled back automatically.
 
-   handle.is_robot_up().wait()[0]
-   handle.reset_joint(home_qpos).wait()
+5. Build the Composition from Configuration
+-------------------------------------------
 
-5. Build the Robot from Configuration
--------------------------------------
-
-With the parts in place, describe the robot's hardware inputs in a
-``RobotConfig`` dataclass and implement ``build()`` to assemble them. Connection
-addresses and placement belong here. Reset poses, rewards, and episode horizons
-remain in the task config because they describe an episode rather than hardware
-discovery.
+Once the bench composition is correct, describe its hardware inputs with a
+``RobotConfig`` dataclass and implement ``build()``. Reuse the existing arm
+declaration rather than copying its SDK or lifecycle code:
 
 .. code-block:: python
 
    from dataclasses import dataclass
 
-   from rlinf.robotics import Group, RobotConfig
+   from rlinf.robotics import MobileBase, RobotConfig
 
 
    @dataclass
-   class ExampleRobotConfig(RobotConfig):
-       left_endpoint: str = ""
-       right_endpoint: str = ""
+   class MobileManipulatorConfig(RobotConfig):
+       base_backend: str = "example"
+       base_endpoint: str | None = None
+       arm_ip: str | None = None
+       controller_node_rank: int | None = None
 
 
-   class ExampleRobot(Robot):
-       ROBOT_TYPE = "ExampleRobot"
+   class MobileManipulator(Robot):
+       ROBOT_TYPE = "MobileManipulator"
 
        @classmethod
        def build(
            cls,
            *,
-           left_endpoint: str,
-           right_endpoint: str,
-           node_rank: int = 0,
+           base_backend: str = "example",
+           base_endpoint: str | None,
+           arm_ip: str | None,
+           node_rank: int,
+           controller_node_rank: int | None = None,
+           worker_rank: int = 0,
+           env_idx: int = 0,
            **_,
-       ) -> "ExampleRobot":
-           arms = {}
-           for side, endpoint in (
-               ("left", left_endpoint),
-               ("right", right_endpoint),
-           ):
-               connection = ExampleArm.at(
-                   endpoint,
-                   node_rank=node_rank,
-                   name=f"ExampleArm-{side}",
-               )
-               arms[side] = Group(
-                   arm=connection.export("arm"),
-                   end_effector=connection.export("end_effector"),
-               )
-           return cls(**arms)
+       ) -> "MobileManipulator":
+           if not base_endpoint:
+               raise ValueError("MobileManipulator requires base_endpoint.")
+           base_cls = MobileBase.backend(base_backend)
+           base = base_cls(
+               base_endpoint,
+               node_rank=node_rank,
+               worker_name=f"{base_cls.__name__}-{worker_rank}-{env_idx}",
+           )
+           arm_node_rank = (
+               node_rank
+               if controller_node_rank is None
+               else controller_node_rank
+           )
+           arm_connection = FrankaRobot.declare_arm(
+               arm_ip,
+               node_rank=arm_node_rank,
+               name=f"FrankaArm-{worker_rank}-{env_idx}",
+           )
+           return cls(
+               base=base,
+               arm=arm_connection.part("arm"),
+               end_effector=arm_connection.part("end_effector"),
+           )
 
-A single-arm variant can reuse this shape and return one group instead of two.
-Keep ``build()`` declarative: it should assemble ``PartSpec`` objects, not open
-hardware. ``Robot.connect()`` then makes startup all-or-nothing. If a later part
-fails, it tears down what it already placed and restores the declaration tree.
+``MobileBase.backend()`` resolves the driver name declared in the hardware
+config. The builder then composes unconnected parts and selections from shared
+connections; it does not open either device. Connection addresses, backend
+selection, and placement belong here. Targets, rewards, reset poses, and
+episode horizons remain in the task config.
 
 .. warning::
 
-   ``build()`` only composes declarations; it does not touch hardware. Call
-   ``connect()`` on the result before reading observations or sending commands,
-   then call ``disconnect()`` during teardown. Environments make these calls in
-   their hardware setup.
+   Call ``connect()`` before reading observations or sending commands, and
+   ``disconnect()`` during teardown. ``RobotTaskEnv`` performs both lifecycle
+   operations when it owns the robot.
 
-Register the Robot
-------------------
+6. Register the Robot Type
+--------------------------
 
-After defining the config, builder, and discovery logic, register them from the
-robot's own module. Registration happens locally rather than through an edit to
-a central table.
+Most robots do not need a discovery class of their own. Register the robot and
+its config at the end of the module; ``register_type()`` creates the standard
+discovery class and associates it with ``build()``:
 
 .. code-block:: python
 
-   from typing import Optional
+   MobileManipulator.register_type(MobileManipulatorConfig)
 
-   from rlinf.robotics import RobotDiscovery, RobotInfo
-   from rlinf.scheduler.hardware import HardwareConfig, HardwareResource
+The standard discovery flow selects configs assigned to the current node,
+fills unset fields from same-named uppercase environment variables, and returns
+one hardware record per config. Camera fields, when present, use the shared
+camera discovery and validation path. Pass a custom ``RobotDiscovery`` subclass
+as the second argument only when the robot genuinely needs a different
+enumeration procedure.
 
+``Connection.register()`` and ``Robot.register_type()`` serve different
+registries: the first names one device driver, while the second names the whole
+robot composition. After the robot type is registered, callers can use either
+``Robot.of_type("MobileManipulator", ...)`` or the convenience function
+``build_robot("MobileManipulator", ...)``.
 
-   class ExampleRobotDiscovery(RobotDiscovery):
-       HW_TYPE = ExampleRobot.ROBOT_TYPE
+For an in-tree implementation, place the module under
+``rlinf/robotics/robots/`` and import it from that package's ``__init__.py``.
+Importing ``rlinf.robotics.robots`` will then perform the registration before a
+``Cluster`` or the bench checker looks up the type. An external integration
+must import its registration module explicitly in its entry point instead.
+Registered robot modules are also imported by node probes, so every node's
+configured Python environment must be able to import the module.
 
-       @classmethod
-       def enumerate(
-           cls,
-           node_rank: int,
-           configs: Optional[list[HardwareConfig]] = None,
-       ) -> Optional[HardwareResource]:
-           matching = [
-               config
-               for config in configs or []
-               if isinstance(config, ExampleRobotConfig)
-               and config.node_rank == node_rank
-           ]
-           if not matching:
-               return None
-           return HardwareResource(
-               type=cls.HW_TYPE,
-               infos=[
-                   RobotInfo(type=cls.HW_TYPE, model=cls.HW_TYPE, config=config)
-                   for config in matching
-               ],
-           )
-
-
-   ExampleRobot.register(ExampleRobotConfig, ExampleRobotDiscovery)
-
-Put the registration call at the end of the module, after the config and
-discovery classes exist. It associates the robot class with its config,
-discovery logic, and ``build`` method. Callers can then use
-``build_robot("ExampleRobot", ...)`` without importing the concrete class.
-
-If the new hardware is a variant of an existing robot, subclass that robot
-instead. For example, ``DualFrankaRobot`` changes ``build_arms`` and ``BACKEND``
-on ``FrankaRobot`` but inherits ``build`` and the lifecycle methods.
-
-Import the registration module before constructing ``Cluster``; hardware
-discovery cannot identify the robot until that import has run. The registered
-hardware policy modules are also passed to node probes, so every node's
-configured Python environment must be able to import this one.
-
-Configure the Cluster
----------------------
+7. Configure the Cluster
+------------------------
 
 The final construction input comes from the existing
 ``cluster.node_groups.hardware`` schema. Its entries are parsed by the
@@ -384,98 +469,90 @@ Python:
 .. code-block:: yaml
 
    cluster:
-     num_nodes: 1
+     num_nodes: 2
      component_placement: {}
      node_groups:
-       - label: example_robot
+       - label: mobile_manipulator
          node_ranks: 0
          hardware:
-           type: ExampleRobot
+           type: MobileManipulator
            configs:
              - node_rank: 0
-               left_endpoint: tcp://left-arm:5000
-               right_endpoint: tcp://right-arm:5000
+               base_backend: example
+               base_endpoint: tcp://mobile-base:7000
+               arm_ip: 10.0.0.2
+               controller_node_rank: 1
+       - label: arm_controller
+         node_ranks: 1
 
-Keep Tasks and Compatibility Separate
--------------------------------------
+Here ``node_rank`` identifies the node that owns the configured robot resource;
+``controller_node_rank`` places the reused Franka connection on its controller node.
+The env config selects the Gym ID separately, so the same hardware composition
+can serve navigation, mobile manipulation, or data-collection tasks.
 
-At this stage, the robot knows how to find and operate its hardware, but it
-should not define the task. Put reset behavior, reward, success, truncation, and
-Gymnasium spaces in a ``RobotTask`` or the real-world environment, then combine
-the task and ``Robot`` through ``RobotTaskEnv``. When an existing policy expects
-flat action vectors and ``state``/``frames`` observations, use
-``LegacyObservationAdapter`` and ``VectorActionAdapter`` at that boundary.
+8. Test the Integration
+-----------------------
 
-.. warning::
+Before running a contract, add a minimal fake for the example SDK under
+``tests/robot_mocks/`` and include it in ``sdk_modules()``. The fake needs
+only the device-side methods used above: ``get_pose()``, ``set_velocity()``,
+``stop()``, and ``close()``. Registering it in one place makes the same fake
+available to unit tests, the bench checker, and remote mock workers.
 
-   When introducing the canonical interface, keep every existing Gym ID, action
-   dimension, observation key, camera name, and dataset field unchanged. Use an
-   adapter and a regression test to preserve compatibility for trained policies
-   and existing datasets.
-
-Check the Composition
----------------------
-
-Before any hardware is involved, ask the robot what it is::
-
-   >>> print(robot.describe())
-   ExampleRobot
-   ├── left.arm             declared      node=0     via ExampleArm#1
-   ├── left.end_effector    declared      node=0     via ExampleArm#1
-   ├── right.arm            declared      node=0     via ExampleArm#2
-   └── right.end_effector   declared      node=0     via ExampleArm#2
-
-Each row is a part, the node it will run on, and the declaration it comes from.
-Two rows sharing a ``via`` share one connection, so they are opened once and
-commanded in their declared order rather than concurrently. The node and
-ownership columns stay the same after ``connect()`` because the description is
-read from the declaration snapshot.
-
-Test the Integration
---------------------
-
-Add a test under ``tests/unit_tests/`` and point the contract classes at what
-you wrote. They state the promises the rest of the framework relies on and can
-run against the same fake SDKs used by the bench checks:
+Then add a test under ``tests/unit_tests/`` and point the contract classes at
+what you wrote. The contracts state the promises the rest of the framework
+relies on:
 
 .. code-block:: python
 
-   from robot_contracts import ConnectionContract, PartContract, RobotContract
+   from robot_contracts import PartContract, RobotContract
+   from robot_mocks import mocked_sdks
 
 
-   def test_my_arm_conforms():
-       PartContract(
-           lambda: MyArm("10.0.0.1"),
-           action={"joint_position": np.zeros(6)},
-       ).assert_kept()
+   def test_mobile_base_conforms():
+       assert MobileBase.backend("example") is ExampleMobileBase
+       with mocked_sdks():
+           PartContract(
+               lambda: ExampleMobileBase("tcp://mobile-base:7000"),
+               action={"velocity": np.zeros(2, dtype=np.float32)},
+           ).assert_kept()
 
 
-   def test_my_link_conforms():
-       ConnectionContract(MyConnection).assert_kept()
-
-
-   def test_my_robot_conforms():
-       RobotContract(lambda: MyRobot.build(robot_ip="10.0.0.1")).assert_kept()
+   def test_mobile_manipulator_conforms():
+       with mocked_sdks():
+           RobotContract(
+               lambda: MobileManipulator.build(
+                   base_endpoint="tcp://mobile-base:7000",
+                   arm_ip="10.0.0.2",
+                   node_rank=0,
+                   controller_node_rank=0,
+               )
+           ).assert_kept()
 
 They live in ``tests/robot_contracts``, beside the fake SDKs in
 ``tests/robot_mocks``, because they check RLinf rather than being part of it.
 
-Between them they connect, read, disconnect, repeat the lifecycle, and
-disconnect once more. They compare observation names and shapes with the part's
-declaration. When ``PartContract`` receives a sample action, it also checks that
-the action is accepted and an unknown field is refused. ``RobotContract``
-injects a failure during ``connect()`` and checks that the robot does not report
-a partially connected tree.
+The contracts connect, read, disconnect, repeat the lifecycle, and disconnect
+once more. They compare observation names and shapes with the part's declaration.
+When ``PartContract`` receives the velocity sample, it also checks that the
+action is accepted and an unknown field is refused. ``RobotContract`` injects a
+failure during ``connect()`` and checks that neither the base nor the existing
+arm leaves a partially connected tree.
 
-Each of those is a bug this package has actually had. A failure names the
-promise rather than the assertion, and lists all of them at once:
+Add ``ConnectionContract`` only when the new SDK session backs several parts.
+This example adds one leaf ``MobileBase`` and reuses the already-tested Franka
+connection, so there is no new connection abstraction to test.
+
+These checks cover failures the package has previously encountered. A contract
+failure names the broken promise rather than only the assertion, and lists all
+failures at once:
 
 .. code-block:: text
 
-   ConformanceError: MyArm does not keep 2:
-     - MyArm: reconnecting raised RuntimeError: threads can only be started
-       once; stall recovery closes an endpoint and opens it again
-     - MyArm observes tcp_pose with shape (7,), declares (6,)
+   ConformanceError: ExampleMobileBase does not keep 2:
+     - ExampleMobileBase: reconnecting raised RuntimeError: threads can only be started
+       once; stall recovery closes a connection and opens it again
+     - ExampleMobileBase observes pose with shape (4,), declares (3,)
 
 The rest of the integration is testable the same way. Cover the part contract,
 composition paths, handle lifecycle, discovery registration, and the schema
@@ -485,9 +562,9 @@ policies expect:
 
    pytest tests/unit_tests/test_robotics.py tests/unit_tests/test_real_env.py
 
-These exercise the scheduler import boundary, single-arm and dual-arm
-composition, the task and robot split, and the policy-facing schema of every
-built-in real-world environment. None of it requires physical hardware.
+These exercise the scheduler import boundary, part composition, the task and
+robot split, and the policy-facing schema of every built-in real-world
+environment. None of it requires physical hardware.
 
 Run It Against Faked SDKs
 ~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -500,8 +577,9 @@ Walk your robot's composition against them:
 
 .. code-block:: bash
 
-   python -m toolkits.realworld_check.check_robot_parts MyRobot --mock \
-       --arg robot_ip=10.0.0.1 --arg node_rank=0
+   python -m toolkits.realworld_check.check_robot_parts MobileManipulator --mock \
+       --arg base_endpoint=tcp://mobile-base:7000 \
+       --arg arm_ip=10.0.0.2 --arg node_rank=0 --arg controller_node_rank=0
 
 It reports what the robot is made of, which connection backs each part and
 where it was placed, then reads every part and disconnects. It fails when a
@@ -509,9 +587,9 @@ part observes something it never declared, when a value comes back a different
 shape from the one declared, when a connection ends up in the tree, or when
 anything still claims to be connected afterwards.
 
-The shape check is the quiet one worth having: an env builds its observation
-space from what a part declares, so a value one number wider reaches a policy
-as data rather than as an error.
+The shape check is particularly important: an env builds its observation space
+from what a part declares, so a value one number wider reaches a policy as data
+rather than as an error.
 
 Add ``--remote`` to host the parts in scheduler workers instead of this
 process. That is what catches a part that cannot be placed at all -- a method
@@ -519,11 +597,12 @@ whose name collides with the worker's own, or state that does not survive the
 process boundary.
 
 A whole training run works the same way. ``run.sh`` installs the fakes when the
-config name contains ``mock``:
+config name contains ``mock``. Turtle2 is the closest shipped example of a
+mobile manipulator and provides a working template for the new config:
 
 .. code-block:: bash
 
-   bash tests/e2e_tests/embodied/run.sh realworld_mock_sac_cnn
+   bash tests/e2e_tests/embodied/run.sh realworld_xsquare_turtle2_mock_sac_cnn
 
 Every shipped robot has one, so the composition, the wrapper stack, the
 observation space and the runner all run as they would on a bench:
@@ -548,11 +627,12 @@ observation space and the runner all run as they would on a bench:
 Run It Against the Robot
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
-What is left needs the hardware: timing, calibration, and whatever the device
-does that its documentation does not. Once it is powered and reachable, drop
-``--mock`` and the same check runs against it:
+The remaining checks require hardware: timing, calibration, and vendor behavior
+not covered by the SDK documentation. Once the robot is powered and reachable,
+drop ``--mock`` and run the same check against it:
 
 .. code-block:: bash
 
-   python -m toolkits.realworld_check.check_robot_parts MyRobot \
-       --arg robot_ip=10.0.0.1 --arg node_rank=1
+   python -m toolkits.realworld_check.check_robot_parts MobileManipulator \
+       --arg base_endpoint=tcp://mobile-base:7000 \
+       --arg arm_ip=10.0.0.2 --arg node_rank=0 --arg controller_node_rank=1

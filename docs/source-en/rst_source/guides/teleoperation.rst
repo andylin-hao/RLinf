@@ -4,8 +4,8 @@ Teleoperation
 Teleoperation lets an operator replace the policy's action during a rollout to
 collect demonstrations, recover from a failure, or run DAgger. Start with one
 device and verify its readings. Then add a binding to the robot's named action
-parts; only after that works should you combine devices or move one to another
-machine.
+parts; only after that works should you combine devices. This page also explains
+the current placement boundary for standalone and environment-owned devices.
 
 This page follows that order. For the underlying named-part model, see
 :doc:`../concepts/robotics`.
@@ -98,20 +98,35 @@ A binding leaves any part the robot does not have unfilled. The builder rejects
 the rig if a device matches no part at all, or if two devices claim the same
 part.
 
-Put a Device Where It Is Plugged In
------------------------------------
+Keep Device Ownership Explicit
+------------------------------
 
-A teleop device follows the same placement model as any other part. When the
-operator's hardware is attached to a different machine from the policy, assign
-the device a ``node_rank``:
+The built-in teleop builder creates devices in the environment process, and
+``TeleopGroup.connect()`` opens them there. A teleop device does not belong to
+the robot tree, so ``Robot.connect()`` does not place it. Plug devices configured
+through ``env.*.teleop`` into the machine that runs the environment worker.
+
+``node_rank`` takes effect only when a caller explicitly invokes ``place()`` or
+``spawn()``. This is useful for a standalone diagnostic that owns the returned
+handle:
 
 .. code-block:: python
 
-   leader = TeleopLeaderArm.at("/dev/ttyUSB0", node_rank=1)
+   handle = TeleopLeaderArm.spawn("/dev/ttyUSB0", node_rank=1)
+   try:
+       print(handle.part.get_observation())
+   finally:
+       handle.disconnect()
 
-Devices on independent connections are read in parallel. If one device
-contributes to two parts, it is still opened only once; a spacemouse driving both
-an arm and a gripper therefore uses a single HID handle.
+Keep the handle for as long as the remote device is in use. Disconnecting its
+part proxy is a no-op because the handle owns the worker and its hardware
+connection. The current ``teleop`` env config does not accept a remote device
+handle; constructing ``TeleopLeaderArm(..., node_rank=1)`` and passing it to a
+``TeleopGroup`` therefore does not move the device.
+
+Each distinct device is read once per sample. If one device contributes to two
+parts, it is still opened only once; a spacemouse driving both an arm and a
+gripper therefore uses a single HID handle.
 
 When the Rate Is the Problem
 ----------------------------
@@ -144,7 +159,8 @@ that takes effect, and the warning names what it replaced.
 Next
 ----
 
-- :doc:`Robotics Model <../concepts/robotics>`: devices, bindings, and groups.
+- :doc:`Robotics Model <../concepts/robotics>`: the named robot paths targeted
+  by device bindings.
 - :doc:`Real-World Environment Model <../concepts/realworld_envs>`: where teleop
   sits in the wrapper stack.
 - :doc:`Data Collection <data_collection>`: recording what an operator drove.

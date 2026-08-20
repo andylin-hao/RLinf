@@ -1,7 +1,7 @@
 遥操作
 ======
 
-遥操作允许操作者在 rollout 中接管 policy，可用于采集示教、纠正失败动作或运行 DAgger。接入时，建议先验证单台设备能否稳定读取数据，再配置 binding，最后组合多台设备或启用远程部署。若尚未了解部件名称与动作路径的关系，请先阅读 :doc:`../concepts/robotics`。
+遥操作允许操作者在 rollout 中接管 policy，可用于采集示教、纠正失败动作或运行 DAgger。接入时，建议先验证单台设备能否稳定读取数据，再配置 binding，最后组合多台设备。本页还会说明独立设备与 env 管理设备在 placement 上的差异。若尚未了解部件名称与动作路径的关系，请先阅读 :doc:`../concepts/robotics`。
 
 选择设备
 --------
@@ -78,16 +78,24 @@ reader 不依赖机器人或集群，可独立运行：
 
 如果 binding 声明的部件不在机器人中，``TeleopGroup`` 会跳过该部件。如果某台设备无法匹配任何部件，或两台设备同时声明控制同一部件，系统会在构建阶段报错。
 
-根据物理连接位置部署设备
-------------------------
+明确设备的资源归属
+------------------
 
-遥操作设备使用与普通部件相同的部署模型。如果设备与 policy 位于不同机器，请设置 ``node_rank``：
+内置遥操作构建器会在 env 进程中创建设备，再由 ``TeleopGroup.connect()`` 直接打开。遥操作设备不属于机器人树，因此 ``Robot.connect()`` 不会处理它的 placement。通过 ``env.*.teleop`` 配置设备时，应将设备接到 env worker 所在的机器。
+
+只有调用方显式执行 ``place()`` 或 ``spawn()`` 时，``node_rank`` 才会生效。独立诊断脚本可以用这种方式管理远程设备：
 
 .. code-block:: python
 
-   leader = TeleopLeaderArm.at("/dev/ttyUSB0", node_rank=1)
+   handle = TeleopLeaderArm.spawn("/dev/ttyUSB0", node_rank=1)
+   try:
+       print(handle.part.get_observation())
+   finally:
+       handle.disconnect()
 
-系统会并行读取使用独立连接的设备。同一台设备即使同时控制两个部件，也只会打开一次；因此，SpaceMouse 同时控制机械臂和夹爪时仍只占用一个 HID 句柄。
+远程设备使用期间必须保留 handle，并由它负责关闭 worker 和硬件连接。part proxy 的 ``disconnect()`` 不会释放这些资源。当前 ``teleop`` env 配置不能接收远程设备 handle；仅构造 ``TeleopLeaderArm(..., node_rank=1)`` 并将其传给 ``TeleopGroup``，不会把设备移到目标节点。
+
+每次采样只读取每台不同的设备一次。同一台设备即使同时控制两个部件，也只会打开一次；因此，SpaceMouse 同时控制机械臂和夹爪时仍只占用一个 HID 句柄。
 
 提高主从臂跟随频率
 ------------------
@@ -111,6 +119,6 @@ reader 不依赖机器人或集群，可独立运行：
 后续阅读
 --------
 
-- :doc:`机器人模型 <../concepts/robotics>`：了解设备、binding 和 group 的组织方式。
+- :doc:`机器人模型 <../concepts/robotics>`：了解 binding 所引用的机器人部件路径。
 - :doc:`真机环境模型 <../concepts/realworld_envs>`：了解遥操作在 wrapper 栈中的位置。
 - :doc:`数据采集 <data_collection>`：记录操作者动作。

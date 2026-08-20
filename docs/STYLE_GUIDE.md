@@ -19,7 +19,7 @@ These apply to every page:
 - **Outcome first.** Open every page and section with what the reader gets, then how.
 - **No throat-clearing.** Cut "This section provides a comprehensive guide to … within the RLinf framework, focusing on…". Start with the verb or the result.
 - **Annotate commands.** After any non-trivial command, say what it does ("What this does: 1… 2…") and point to where to configure it further.
-- **Name what you mean.** Prefer `Robot.connect`, `Group`, `Placement` to "the
+- **Name what you mean.** Prefer `Robot.connect`, `PartGroup`, `Placement` to "the
   common layer", "the robotics machinery", "the rest of the system".
 - **Avoid the usual tells:** "it is worth noting", "simply", "seamlessly",
   "powerful", "leverage", "robust", "in order to", "a wide range of", and
