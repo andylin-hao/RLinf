@@ -1031,43 +1031,26 @@ def test_scheduler_has_no_robotics_dependency():
     assert offenders == {}
 
 
-def test_pure_driver_import_does_not_load_scheduler():
-    env = os.environ.copy()
-    env["PYTHONPATH"] = os.pathsep.join(
-        value for value in (str(_ROOT), env.get("PYTHONPATH")) if value
-    )
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            (
-                "import sys; "
-                "from rlinf.robotics.parts.arms.franky import FrankyArm; "
-                "assert 'rlinf.scheduler' not in sys.modules; "
-                "assert not FrankyArm('10.0.0.1').is_connected"
-            ),
-        ],
-        cwd=_ROOT,
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-
-    assert result.returncode == 0, result.stderr
-
-
 _SCHEDULER_BRIDGE = Path("rlinf") / "robotics" / "placement" / "handles.py"
 
 
-def test_robotics_devices_do_not_depend_on_scheduler_ray_or_gym():
+def test_robotics_devices_do_not_depend_on_the_scheduler_or_gym():
+    """Hardware code names neither the layer above it nor the one beside it.
+
+    ``rlinf.scheduler`` is what robotics is an extension of, and Gymnasium
+    belongs to the env layer that consumes a robot. A driver that reached for
+    either would invert the dependency.
+
+    Ray is not on the list. It is a base dependency of the package, so every
+    machine running RLinf has it, and forbidding the name bought nothing.
+    """
     robotics_dir = _ROOT / "rlinf" / "robotics"
     device_paths = [
         robotics_dir / "robot.py",
         robotics_dir / "adapters.py",
         *robotics_dir.joinpath("parts").rglob("*.py"),
     ]
-    forbidden = ("ray", "gymnasium", "rlinf.scheduler")
+    forbidden = ("gymnasium", "rlinf.scheduler")
     offenders = {
         path.relative_to(_ROOT): module
         for path in device_paths
@@ -1209,36 +1192,6 @@ def test_teleop_readers_do_not_import_gymnasium():
     }
 
     assert offenders == set()
-
-
-def test_importing_a_teleop_device_does_not_load_the_env_stack():
-    """A bench script driving one serial device should not need the env stack.
-
-    ``toolkits/realworld_check`` runs on the machine the device is plugged into,
-    which may have no Gymnasium, no OpenCV, and no cluster. Reaching a reader
-    goes through ``rlinf.robotics`` alone now, and that package loads lazily.
-    """
-    env = os.environ.copy()
-    env["PYTHONPATH"] = os.pathsep.join(
-        value for value in (str(_ROOT), env.get("PYTHONPATH")) if value
-    )
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            "import sys\n"
-            "import rlinf.robotics.parts.teleop.readers.gello\n"
-            "leaked = {m.split('.')[0] for m in sys.modules} & {'gymnasium', 'cv2', 'ray'}\n"
-            "assert not leaked, sorted(leaked)\n",
-        ],
-        cwd=_ROOT,
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-
-    assert result.returncode == 0, result.stderr
 
 
 # --- the real composition, exercised through DOSW1's dummy SDK ---------------

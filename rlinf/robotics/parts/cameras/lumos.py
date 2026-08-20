@@ -28,19 +28,11 @@ from typing import Any, Optional, Union
 
 import numpy as np
 
+from rlinf.utils.logging import get_logger
+
 from .base import BaseCamera, CameraInfo
 
-
-def _logger():
-    """The logger, resolved on use.
-
-    Reaching for one loads the scheduler, and a camera driver has to be
-    importable on the machine it is plugged into, which may have no
-    cluster. Calling this inside a handler keeps that cost off import.
-    """
-    from rlinf.utils.logging import get_logger
-
-    return get_logger()
+_logger = get_logger()
 
 
 @BaseCamera.register("lumos")
@@ -133,7 +125,7 @@ class LumosCamera(BaseCamera):
         try:
             capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         except Exception as exc:
-            _logger().warning(
+            _logger.warning(
                 "Failed to set LUMOS buffer size (serial=%s): %s",
                 info.serial_number,
                 exc,
@@ -164,7 +156,7 @@ class LumosCamera(BaseCamera):
                 self._native_h * 3 // 2, self._native_w
             )
         except ValueError as exc:
-            _logger().warning(
+            _logger.warning(
                 "Dropping malformed LUMOS frame (serial=%s): %s",
                 self.camera_info.serial_number,
                 exc,

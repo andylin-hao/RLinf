@@ -37,9 +37,11 @@ needed to say where hardware lives, and no part writes a line for it:
 constructing a connection declares it, and
 :meth:`~rlinf.robotics.robot.Robot.connect` opens it on the machine it named.
 
-The scheduler never imports this package, and parts never import the scheduler
-except through :meth:`~rlinf.robotics.parts.base.Connection.place`, which loads
-:mod:`rlinf.robotics.placement` lazily.
+The dependency runs one way. The scheduler never imports this package -- it
+reaches robotics by importing the hardware-policy modules a config names, then
+calling the discovery classes they registered. Only the composition layer
+imports back, and :meth:`~rlinf.robotics.parts.base.Connection.place` loads
+:mod:`rlinf.robotics.placement` lazily so a part's source never names it.
 
 Symbols load lazily so a node without a given robot's SDK can still import
 ``rlinf.robotics``.

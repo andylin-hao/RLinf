@@ -22,19 +22,11 @@ from typing import Any, Optional
 
 import numpy as np
 
+from rlinf.utils.logging import get_logger
+
 from .base import BaseCamera, CameraInfo
 
-
-def _logger():
-    """The logger, resolved on use.
-
-    Reaching for one loads the scheduler, and a camera driver has to be
-    importable on the machine it is plugged into, which may have no
-    cluster. Calling this inside a handler keeps that cost off import.
-    """
-    from rlinf.utils.logging import get_logger
-
-    return get_logger()
+_logger = get_logger()
 
 
 @BaseCamera.register("zed")
@@ -78,7 +70,7 @@ class ZEDCamera(BaseCamera):
         if status == sl.ERROR_CODE.SUCCESS:
             pass
         elif "CALIBRATION" in str(status):
-            _logger().warning(
+            _logger.warning(
                 "ZED camera (serial=%s) opened with warning: %s. "
                 "Run ZED Calibration tool to resolve.",
                 self._camera_info.serial_number,

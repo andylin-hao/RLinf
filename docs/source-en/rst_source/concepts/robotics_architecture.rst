@@ -355,12 +355,22 @@ vendor operation that has no canonical part method.
 Preserve the Import Boundary
 ----------------------------
 
-Part modules must not import Ray, Gymnasium, or ``rlinf.scheduler``. A hardware
-machine should be able to import and test its driver without loading the
-cluster. ``rlinf/robotics/placement/handles.py`` is the bridge, loaded lazily by
+Part modules must not import ``rlinf.scheduler`` or Gymnasium.
+``rlinf/robotics/placement/handles.py`` is the bridge, loaded lazily by
 ``Connection.place()`` when placement is needed.
 
-The dependency also stays one-way. The scheduler does not import robotics.
+The point is the direction of the dependency. The scheduler is a general
+framework and robotics is one extension of it, so the scheduler never imports
+this package: it imports the hardware-policy modules a config names, then calls
+the discovery classes those modules registered. Gymnasium sits on the other
+side, in the env layer that consumes a robot. Only the composition layer --
+placement, discovery, the robot builders -- imports either back, which is what
+lets a driver be read and tested as hardware code.
+
+Ray is not on that list. It is a base dependency of RLinf, so every machine
+running it already has Ray and forbidding the name buys nothing. Nor is this a
+promise that importing a part loads nothing: a part may use ``rlinf.utils``
+helpers such as ``get_logger``, and those reach further.
 ``tests/unit_tests/test_robotics.py`` checks both directions.
 
 Find the Implementation

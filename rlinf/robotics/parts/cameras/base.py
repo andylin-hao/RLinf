@@ -23,6 +23,9 @@ from typing import Any, Optional
 import numpy as np
 
 from rlinf.robotics.parts.base import RobotPart, register_kind
+from rlinf.utils.logging import get_logger
+
+_logger = get_logger()
 
 
 @register_kind("camera")
@@ -181,16 +184,10 @@ class BaseCamera(Camera, ABC):
     def _capture_frames(self):
         while self._frame_capturing_start:
             time.sleep(1 / self._camera_info.fps)
-            # Resolved here rather than at import: reaching for a logger loads
-            # the scheduler, and a camera driver has to be importable on the
-            # machine it is plugged into, which may have no cluster at all.
-            from rlinf.utils.logging import get_logger
-
-            logger = get_logger()
             try:
                 has_frame, frame = self._read_frame()
             except Exception as e:
-                logger.error(
+                _logger.error(
                     "[%s] _read_frame raised %s: %s — exiting capture thread.",
                     self._camera_info.name,
                     type(e).__name__,
@@ -198,7 +195,7 @@ class BaseCamera(Camera, ABC):
                 )
                 break
             if not has_frame:
-                logger.error(
+                _logger.error(
                     "[%s] _read_frame returned (False, None) — exiting capture thread.",
                     self._camera_info.name,
                 )

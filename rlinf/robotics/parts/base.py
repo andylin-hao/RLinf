@@ -47,10 +47,16 @@ node it belongs to; :meth:`~rlinf.robotics.robot.Robot.connect` is the only
 thing that opens anything. That is what lets a robot be composed and described
 on a laptop, then run on the machine wired to the hardware.
 
-Nothing here imports Ray, Gymnasium, or the scheduler. A driver has to be
-importable and testable on the machine its device is plugged into, which may
-have none of them. :meth:`Connection.place` reaches the placement layer lazily,
-and that layer is the only bridge.
+No module here imports ``rlinf.scheduler`` or Gymnasium. The dependency runs
+one way: the scheduler is a general framework that reaches robotics by name
+from a config and through a registry, never by importing it, and Gymnasium
+belongs to the env layer that consumes a robot. Only the composition layer
+imports either back, and :meth:`Connection.place` reaches the placement layer
+lazily so that stays true of parts.
+
+Ray is not on that list -- it is a base dependency of the package, so the name
+is allowed. Nor is this a promise that importing a part loads nothing: a part
+may use ``rlinf.utils`` helpers such as ``get_logger``, which reach further.
 """
 
 from abc import ABC, ABCMeta, abstractmethod
@@ -562,8 +568,8 @@ class Connection(ABC, metaclass=_ConnectionMeta):
         yourself only outside a robot, on a bench script, where nothing else
         will release it.
 
-        The scheduler is imported here rather than at module scope, so importing
-        a part never pulls Ray into the process.
+        The placement layer is imported here rather than at module scope, so a
+        part's own source never names the scheduler.
         """
         from ..placement import LocalPartHandle, PartWorkerHost
 

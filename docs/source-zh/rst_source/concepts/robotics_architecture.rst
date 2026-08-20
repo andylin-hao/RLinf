@@ -264,9 +264,11 @@ placement 会根据具体的 connection class 生成 worker 接口，无需为�
 保持导入边界
 ------------
 
-部件模块不能导入 Ray、Gymnasium 或 ``rlinf.scheduler``。连接硬件的机器应能在不加载集群代码的情况下导入并测试驱动。需要 placement 时，``Connection.place()`` 才会延迟加载桥接层 ``rlinf/robotics/placement/handles.py``。
+部件模块不能导入 ``rlinf.scheduler`` 和 Gymnasium。需要 placement 时，``Connection.place()`` 才会延迟加载桥接层 ``rlinf/robotics/placement/handles.py``。
 
-依赖关系同样保持单向：调度器不导入 robotics。``tests/unit_tests/test_robotics.py`` 会检查两个方向的导入边界。
+这条规则的意义在于依赖方向。scheduler 是通用框架，robotics 只是它的一个扩展，因此 scheduler 从不导入本包：它按配置里写明的名字导入硬件策略模块，再调用这些模块注册进来的 discovery 类。Gymnasium 则位于另一侧，属于消费机器人的 env 层。只有组合层——placement、discovery、机器人构建器——会反向导入这两者，驱动因而能够作为纯粹的硬件代码被阅读和测试。
+
+Ray 不在此列。它是 RLinf 的基础依赖，运行 RLinf 的机器上一定有 Ray，禁止这个名字并无收益。这条规则约束的也只是部件源码可以写出哪些名字，而不保证导入一个部件不会加载任何东西：部件可以使用 ``rlinf.utils`` 里的 ``get_logger`` 等工具，它们会触及更深的层次。``tests/unit_tests/test_robotics.py`` 会检查两个方向的导入边界。
 
 代码位置
 --------
