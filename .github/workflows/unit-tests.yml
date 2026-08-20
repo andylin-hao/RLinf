@@ -137,7 +137,7 @@ jobs:
           export UV_PATH=/workspace/dataset/.uv
           export UV_CACHE_DIR=/workspace/dataset/.uv_cache
           export UV_PYTHON_INSTALL_DIR=/workspace/dataset/.uv_python
-          bash requirements/install.sh --platform musa embodied --env dummy
+          bash requirements/install.sh --platform musa --use-mirror embodied --env dummy
           source .venv/bin/activate
           uv pip install "transformers<=5.9.0"
 
