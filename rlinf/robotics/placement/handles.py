@@ -16,7 +16,7 @@
 
 Any :class:`~rlinf.robotics.parts.base.RobotPart` can be hosted in a scheduler
 worker: an arm on the machine wired to it, a camera on the machine it is
-plugged into. :meth:`RobotPart.spawn` is the entry point; everything here is
+plugged into. :meth:`Connection.place` is the entry point; everything here is
 what it returns.
 
 There is no per-hardware worker class. For any part, :func:`part_worker_cls`
@@ -34,18 +34,20 @@ on the part interface*. Off-interface calls always return a result object with
     handle.is_robot_up().wait()[0]
 
 This is the only module in ``rlinf.robotics`` that imports the scheduler.
-``RobotPart.spawn`` imports it lazily, so importing a part never loads Ray.
+``Connection.place`` imports it lazily, so importing a part never loads Ray.
 """
 
 import inspect
-from abc import ABC, ABCMeta, abstractmethod
+from abc import ABC, abstractmethod
 from typing import Any, Callable, ClassVar, Optional
 from uuid import uuid4
 
 from rlinf.scheduler import Cluster, NodePlacementStrategy, Worker
 from rlinf.scheduler.worker.worker import WorkerMeta
 
-from ..parts.base import Camera, ControllablePart, EndEffector, RobotPart
+from ..parts.base import ControllablePart, RobotPart, _ConnectionMeta
+from ..parts.cameras.base import Camera
+from ..parts.end_effectors.base import EndEffector
 
 
 class LocalResult:
@@ -64,7 +66,7 @@ class PartHandle(ABC):
 
     @property
     @abstractmethod
-    def exports(self) -> dict[str, RobotPart]:
+    def parts(self) -> dict[str, RobotPart]:
         """Return the subparts of the hosted part, keyed by its local names."""
 
     @property
@@ -78,12 +80,12 @@ class PartHandle(ABC):
 
     def part_named(self, name: str) -> RobotPart:
         """Return one named subpart, or raise a clear configuration error."""
-        if name not in self.exports:
+        if name not in self.parts:
             raise KeyError(
                 f"Hosted part exposes no subpart {name!r}. "
-                f"Available: {sorted(self.exports)}."
+                f"Available: {sorted(self.parts)}."
             )
-        return self.exports[name]
+        return self.parts[name]
 
 
 class LocalPartHandle(PartHandle):
@@ -91,10 +93,10 @@ class LocalPartHandle(PartHandle):
 
     def __init__(self, part: Any) -> None:
         self._part = part
-        self._parts = dict(part.exports)
+        self._parts = dict(part.parts)
 
     @property
-    def exports(self) -> dict[str, RobotPart]:
+    def parts(self) -> dict[str, RobotPart]:
         """Return the local part's own subpart objects."""
         return self._parts
 
@@ -144,7 +146,7 @@ class RemotePartHandle(PartHandle):
         self._connected = True
 
     @property
-    def exports(self) -> dict[str, RobotPart]:
+    def parts(self) -> dict[str, RobotPart]:
         """Return proxies for the hosted part's subparts."""
         return self._parts
 
@@ -281,7 +283,7 @@ class RemoteConnection(RemotePart):
     def get_observation(self) -> dict[str, Any]:
         """Refuse, the same way the hosted connection would."""
         raise TypeError(
-            f"{self._part_name or 'This endpoint'} is a connection, not a "
+            f"{self._part_name or 'This connection'} is a connection, not a "
             "part. Read the parts it backs instead."
         )
 
@@ -350,11 +352,12 @@ def _make_remote_part(
     return part_cls(worker_group, name, described.get("observation", {}))
 
 
-class WorkerPartMeta(WorkerMeta, ABCMeta):
-    """Reconcile ``Worker``'s metaclass with the ``ABCMeta`` drivers carry.
+class WorkerPartMeta(WorkerMeta, _ConnectionMeta):
+    """Reconcile ``Worker``'s metaclass with the one every connection carries.
 
-    ``Worker`` uses ``WorkerMeta(type)`` and every part is an ABC, so a class
-    deriving from both needs a metaclass deriving from both.
+    ``Worker`` uses ``WorkerMeta(type)``, and a part is an ABC that also takes
+    its placement keywords through ``_ConnectionMeta``, so a class deriving from
+    both needs a metaclass deriving from both.
     """
 
 
@@ -370,7 +373,7 @@ class PartWorkerHost:
         args: Positional arguments for the part constructor.
         kwargs: Keyword arguments for the part constructor.
         node_rank: Cluster node rank that is physically wired to the device.
-        name: Worker-group name. Defaults to :meth:`default_name`.
+        worker_name: Worker-group name. Defaults to :meth:`default_name`.
     """
 
     #: One synthesised ``Worker`` subclass per part class, reused after the
@@ -384,13 +387,13 @@ class PartWorkerHost:
         kwargs: Optional[dict[str, Any]] = None,
         *,
         node_rank: int,
-        name: Optional[str] = None,
+        worker_name: Optional[str] = None,
     ) -> None:
         self.part_cls = part_cls
         self.args = args
         self.kwargs = kwargs or {}
         self.node_rank = node_rank
-        self.name = name or self.default_name(part_cls, node_rank)
+        self.worker_name = worker_name or self.default_name(part_cls, node_rank)
 
     @staticmethod
     def default_name(part_cls: type, node_rank: int) -> str:
@@ -445,7 +448,7 @@ class PartWorkerHost:
             .launch(
                 cluster=Cluster(),
                 placement_strategy=NodePlacementStrategy(node_ranks=[self.node_rank]),
-                name=self.name,
+                name=self.worker_name,
             )
         )
         return RemotePartHandle(

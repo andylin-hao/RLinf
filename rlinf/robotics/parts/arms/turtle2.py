@@ -64,9 +64,10 @@ class Turtle2RobotState:
 class Turtle2Connection(Connection):
     """Turtle2's ROS connection, with no scheduler dependency.
 
-    One ROS connection drives both arms, both grippers, and the wrist cameras.
-    None of those is the connection, so it is a :class:`Connection` rather than
-    a part: :attr:`exports` says what it backs, and the robot composes those.
+    One ROS session drives both arms, both grippers, and the wrist cameras, and
+    is none of them. So it subclasses :class:`Connection` directly rather than
+    :class:`RobotPart`: reading the session as a whole would mean nothing,
+    :attr:`parts` says what it backs, and the robot composes those.
     """
 
     def __init__(self, freq=50, camera_ids=()):
@@ -77,7 +78,7 @@ class Turtle2Connection(Connection):
         self._connected = False
 
     @property
-    def exports(self) -> dict[str, RobotPart]:
+    def parts(self) -> dict[str, RobotPart]:
         """Decompose the shared connection into per-side arms and cameras."""
         parts: dict[str, RobotPart] = {}
         for side, prefix in _ARM_SIDES.items():

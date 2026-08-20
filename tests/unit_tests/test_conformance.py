@@ -225,7 +225,7 @@ def test_the_connection_contract_catches_one_that_is_also_a_part():
             return object()
 
         @property
-        def exports(self):
+        def parts(self):
             return {"arm": _Well()}
 
         @property
@@ -237,7 +237,7 @@ def test_the_connection_contract_catches_one_that_is_also_a_part():
 
     failures = ConnectionContract(Hybrid).failures()
 
-    assert any("not a Connection" in failure for failure in failures), failures
+    assert any("is a RobotPart" in failure for failure in failures), failures
 
 
 def test_the_connection_contract_catches_one_that_offers_nothing():
@@ -247,7 +247,7 @@ def test_the_connection_contract_catches_one_that_offers_nothing():
 
     failures = ConnectionContract(Empty).failures()
 
-    assert any("exports nothing" in failure for failure in failures), failures
+    assert any("backs no parts" in failure for failure in failures), failures
 
 
 def test_the_robot_contract_catches_a_robot_that_keeps_what_it_built():
@@ -270,7 +270,7 @@ def test_the_robot_contract_catches_a_robot_that_keeps_what_it_built():
                 pass
 
     def build():
-        return Stubborn(first=_Well.at(), second=_Well.at())
+        return Stubborn(first=_Well(), second=_Well())
 
     failures = RobotContract(build).failures()
 

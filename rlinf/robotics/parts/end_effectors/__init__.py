@@ -12,9 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from rlinf.robotics.parts.base import EndEffector
-
-from .base import BaseEndEffector, EndEffectorType, normalize_end_effector_type
+from .base import (
+    BaseEndEffector,
+    EndEffector,
+    EndEffectorType,
+    normalize_end_effector_type,
+)
 from .grippers import BaseGripper, create_gripper
 
 __all__ = [

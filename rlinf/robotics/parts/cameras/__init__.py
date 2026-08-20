@@ -12,67 +12,37 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional
+"""Cameras: the category, and the drivers that implement it.
 
-from .base import BaseCamera, CameraInfo
+:class:`Camera` is what a robot composes and what a policy reads.
+:class:`BaseCamera` is what a driver subclasses -- it owns the capture thread,
+so an implementation supplies :meth:`~BaseCamera._open`,
+:meth:`~BaseCamera._read_frame` and :meth:`~BaseCamera._release` and nothing
+else.
+
+Each driver registers the names a config selects it by, so building one from a
+:class:`CameraInfo` needs no table here::
+
+    camera = BaseCamera.of(info, node_rank=2)
+
+Importing this module registers every driver and imports no vendor SDK: each
+reaches for pyrealsense2, pyzed, or cv2 inside ``_open``, on the machine the
+camera is actually plugged into.
+"""
+
+from .base import BaseCamera, Camera, CameraInfo
+
+# Imported for the side effect of registering: a driver announces itself, and
+# nothing here lists them. Adding a camera is one file plus one decorator.
+from .lumos import LumosCamera
 from .realsense import RealSenseCamera
+from .zed import ZEDCamera
 
 __all__ = [
     "BaseCamera",
+    "Camera",
     "CameraInfo",
+    "LumosCamera",
     "RealSenseCamera",
-    "camera_cls",
-    "declare_cameras",
-    "create_camera",
+    "ZEDCamera",
 ]
-
-
-def camera_cls(camera_type: str) -> type[BaseCamera]:
-    """Return the camera class for a backend, imported lazily.
-
-    Supported ``camera_type`` values:
-
-    * ``"realsense"`` / ``"rs"`` -- Intel RealSense (requires ``pyrealsense2``)
-    * ``"zed"`` -- Stereolabs ZED (requires the ZED SDK / ``pyzed``)
-    * ``"lumos"`` -- LUMOS V4L2 USB camera (requires ``opencv-python``)
-    """
-    kind = camera_type.lower()
-    if kind == "zed":
-        from .zed import ZEDCamera
-
-        return ZEDCamera
-    if kind in ("realsense", "rs"):
-        return RealSenseCamera
-    if kind == "lumos":
-        from .lumos import LumosCamera
-
-        return LumosCamera
-    raise ValueError(
-        f"Unsupported camera_type={camera_type!r}. "
-        "Supported types: 'realsense', 'zed', 'lumos'."
-    )
-
-
-def create_camera(camera_info: CameraInfo) -> BaseCamera:
-    """Build a camera of the backend named by *camera_info*, in this process.
-
-    Prefer :class:`CameraConfig` inside a robot, which declares the camera and
-    lets :meth:`Robot.connect` place it on the node it is plugged into.
-    """
-    return camera_cls(camera_info.camera_type)(camera_info)
-
-
-def declare_cameras(
-    cameras: "Optional[dict[str, Any]]" = None,
-    *,
-    node_rank: Optional[int] = None,
-) -> dict[str, Any]:
-    """Declare a camera per descriptor, ready to compose into a robot.
-
-    Each becomes a part placed on ``node_rank`` -- the machine it is plugged
-    into -- and opened when the robot connects. Pass ``{name: CameraInfo}``.
-    """
-    return {
-        name: camera_cls(info.camera_type).at(info, node_rank=node_rank)
-        for name, info in (cameras or {}).items()
-    }

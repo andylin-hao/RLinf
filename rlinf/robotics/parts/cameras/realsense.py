@@ -19,6 +19,7 @@ import numpy as np
 from .base import BaseCamera, CameraInfo
 
 
+@BaseCamera.register("realsense", "rs")
 class RealSenseCamera(BaseCamera):
     """Camera capture for Intel RealSense cameras.
 
@@ -26,6 +27,8 @@ class RealSenseCamera(BaseCamera):
     For RealSense usage, see
     https://github.com/IntelRealSense/librealsense/blob/jupyter/notebooks/quick_start_live.ipynb.
     """
+
+    SDK = ("pyrealsense2", "pyrealsense2")
 
     def __init__(self, camera_info: CameraInfo):
         super().__init__(camera_info)
@@ -94,14 +97,14 @@ class RealSenseCamera(BaseCamera):
         self._config.disable_all_streams()
         self._pipeline = None
 
-    @staticmethod
-    def get_device_serial_numbers() -> set[str]:
-        """Return serial numbers of all connected RealSense cameras."""
-        cameras: set[str] = set()
+    @classmethod
+    def discover(cls) -> set[str]:
+        """Serial numbers of every RealSense attached to this machine."""
         try:
             import pyrealsense2 as rs
         except ImportError:
-            return cameras
-        for device in rs.context().devices:
-            cameras.add(device.get_info(rs.camera_info.serial_number))
-        return cameras
+            return set()
+        return {
+            device.get_info(rs.camera_info.serial_number)
+            for device in rs.context().devices
+        }

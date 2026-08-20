@@ -20,7 +20,18 @@ from typing import Any
 
 import numpy as np
 
-from rlinf.robotics.parts.base import EndEffector
+from rlinf.robotics.parts.base import ControllablePart, register_kind
+
+
+@register_kind("end_effector")
+class EndEffector(ControllablePart):
+    """A controllable tool at the end of an arm: a gripper, a dexterous hand.
+
+    The category, with no lifecycle of its own -- :class:`BaseEndEffector`
+    below is what a driver subclasses. Naming it separately is what lets teleop
+    ask which parts take a grip command, and what lets a hosted gripper come
+    back as one.
+    """
 
 
 class EndEffectorType(str, Enum):

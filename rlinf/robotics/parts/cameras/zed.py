@@ -22,13 +22,22 @@ from typing import Any, Optional
 
 import numpy as np
 
-from rlinf.utils.logging import get_logger
-
 from .base import BaseCamera, CameraInfo
 
-_logger = get_logger()
+
+def _logger():
+    """The logger, resolved on use.
+
+    Reaching for one loads the scheduler, and a camera driver has to be
+    importable on the machine it is plugged into, which may have no
+    cluster. Calling this inside a handler keeps that cost off import.
+    """
+    from rlinf.utils.logging import get_logger
+
+    return get_logger()
 
 
+@BaseCamera.register("zed")
 class ZEDCamera(BaseCamera):
     """Camera capture for Stereolabs ZED cameras.
 
@@ -38,6 +47,8 @@ class ZEDCamera(BaseCamera):
     ZED cameras output BGRA by default; this class strips the alpha channel
     to produce BGR, consistent with the RealSense pipeline.
     """
+
+    SDK = ("pyzed.sl", "pyzed (the Stereolabs ZED SDK)")
 
     def __init__(self, camera_info: CameraInfo):
         super().__init__(camera_info)
@@ -67,7 +78,7 @@ class ZEDCamera(BaseCamera):
         if status == sl.ERROR_CODE.SUCCESS:
             pass
         elif "CALIBRATION" in str(status):
-            _logger.warning(
+            _logger().warning(
                 "ZED camera (serial=%s) opened with warning: %s. "
                 "Run ZED Calibration tool to resolve.",
                 self._camera_info.serial_number,
@@ -133,12 +144,11 @@ class ZEDCamera(BaseCamera):
                 best = res_enum
         return best
 
-    @staticmethod
-    def get_device_serial_numbers() -> list[str]:
-        """Return serial numbers of all connected ZED cameras."""
+    @classmethod
+    def discover(cls) -> set[str]:
+        """Serial numbers of every ZED attached to this machine."""
         try:
             import pyzed.sl as sl
         except ImportError:
-            return []
-        devices = sl.Camera.get_device_list()
-        return [str(dev.serial_number) for dev in devices]
+            return set()
+        return {str(device.serial_number) for device in sl.Camera.get_device_list()}

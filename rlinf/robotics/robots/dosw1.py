@@ -18,16 +18,11 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Optional
 
-from rlinf.scheduler.hardware import HardwareConfig, HardwareInfo, HardwareResource
-
 from ..discovery import (
-    RobotAutoConfig,
     RobotConfig,
-    RobotDiscovery,
-    RobotInfo,
 )
-from ..parts.base import Group
-from ..parts.cameras import declare_cameras
+from ..parts.base import PartGroup
+from ..parts.cameras import BaseCamera
 from ..robot import Robot
 
 
@@ -40,8 +35,8 @@ class DOSW1Robot(Robot):
     def build_arms(cls, sdk) -> dict[str, Any]:
         """Both arms, each whole, from the shared SDK session."""
         return {
-            side: Group(
-                arm=sdk.export(side), gripper=sdk.export(f"{side}_end_effector")
+            side: PartGroup(
+                arm=sdk.part(side), gripper=sdk.part(f"{side}_end_effector")
             )
             for side in ("left", "right")
         }
@@ -54,7 +49,7 @@ class DOSW1Robot(Robot):
         node_rank: Optional[int] = None,
     ) -> dict[str, Any]:
         """The cameras this robot carries."""
-        return declare_cameras(cameras, node_rank=node_rank)
+        return BaseCamera.declare(cameras, node_rank=node_rank)
 
     @classmethod
     def build(
@@ -92,7 +87,7 @@ class DOSW1Robot(Robot):
                 "an SDK the caller meant to skip."
             )
 
-        sdk = DOSW1Connection.at(
+        sdk = DOSW1Connection(
             robot_url=robot_url,
             left_arm_port=left_arm_port,
             right_arm_port=right_arm_port,
@@ -103,60 +98,6 @@ class DOSW1Robot(Robot):
             is_dummy=is_dummy,
         )
         return cls(**cls.build_arms(sdk), **cls.build_cameras(cameras))
-
-
-class DOSW1Discovery(RobotDiscovery):
-    """Hardware policy for the DOS-W1 dual-arm robot.
-
-    Connection parameters (gRPC URL / ports) and RealSense camera serials
-    are placed here so that they are managed by the scheduler via
-    ``cluster.node_groups.hardware`` and injected into the env worker
-    through :class:`~rlinf.robotics.RobotInfo`.
-    """
-
-    HW_TYPE = DOSW1Robot.ROBOT_TYPE
-
-    @classmethod
-    def enumerate(
-        cls, node_rank: int, configs: Optional[list[HardwareConfig]] = None
-    ) -> Optional[HardwareResource]:
-        """Enumerate the DOS-W1 robot resources on a node.
-
-        Args:
-            node_rank: The rank of the node being enumerated.
-            configs: The configurations for the hardware on a node.
-
-        Returns:
-            Hardware resource descriptor, or ``None`` when the node has no
-            matching DOS-W1 configuration.
-        """
-        assert configs is not None, (
-            "DOSW1 hardware requires explicit configurations for robot URL, "
-            "gRPC ports and camera serials."
-        )
-        robot_configs: list["DOSW1RobotConfig"] = []
-        for config in configs:
-            if isinstance(config, DOSW1RobotConfig) and config.node_rank == node_rank:
-                robot_configs.append(config)
-
-        # Fill unset fields from env vars (e.g. ``ROBOT_URL``), one value per
-        # config when several robots share this node. With no configs given,
-        # create one per comma-separated ``ROBOT_URL``.
-        robot_configs = RobotAutoConfig.resolve(
-            robot_configs,
-            config_cls=DOSW1RobotConfig,
-            node_rank=node_rank,
-            count_fields=("robot_url",),
-        )
-
-        if not robot_configs:
-            return None
-
-        infos: list[HardwareInfo] = [
-            RobotInfo(type=cls.HW_TYPE, model=cls.HW_TYPE, config=cfg)
-            for cfg in robot_configs
-        ]
-        return HardwareResource(type=cls.HW_TYPE, infos=infos)
 
 
 @dataclass
@@ -195,4 +136,4 @@ class DOSW1RobotConfig(RobotConfig):
             self.camera_serials = [str(s) for s in self.camera_serials]
 
 
-DOSW1Robot.register(DOSW1RobotConfig, DOSW1Discovery)
+DOSW1Robot.register_type(DOSW1RobotConfig)

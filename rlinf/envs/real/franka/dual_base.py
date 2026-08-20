@@ -36,7 +36,7 @@ from rlinf.robotics import (
     RobotInfo,
 )
 from rlinf.robotics.parts.arms.franka import FrankaRobotState
-from rlinf.robotics.parts.cameras import BaseCamera, CameraInfo, create_camera
+from rlinf.robotics.parts.cameras import BaseCamera, CameraInfo
 from rlinf.robotics.teleop import ActionKind, ActionPart
 from rlinf.scheduler import WorkerInfo
 from rlinf.utils.logging import get_logger
@@ -308,7 +308,7 @@ class DualFrankaEnv(gym.Env):
                 self._cameras[declared] = camera
             return
         self._cameras = {
-            info.name: create_camera(info) for info in self._camera_infos()
+            info.name: BaseCamera.of(info) for info in self._camera_infos()
         }
 
     def _close_cameras(self):

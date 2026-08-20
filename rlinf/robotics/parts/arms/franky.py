@@ -29,7 +29,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 
 from rlinf.robotics.parts.arms import ARM_STATE_FIELDS
-from rlinf.robotics.parts.arms.franka import FrankaRobotState
+from rlinf.robotics.parts.arms.franka import FrankaRobotState, validated_robot_ip
 from rlinf.robotics.parts.base import ControllablePart, RobotPart
 from rlinf.robotics.parts.end_effectors.grippers import create_gripper
 from rlinf.robotics.parts.views import MethodGripper
@@ -83,7 +83,7 @@ class FrankyArm(ControllablePart):
         gripper_connection: Optional[str] = None,
     ):
         self._logger = get_logger()
-        self._robot_ip = robot_ip
+        self._robot_ip = validated_robot_ip(robot_ip, type(self).__name__)
         self._gripper_type = gripper_type
         self._gripper_connection = gripper_connection
         self._connected = False
@@ -107,7 +107,7 @@ class FrankyArm(ControllablePart):
         """Describe the canonical Franka arm state fields.
 
         Gripper fields are deliberately absent: they belong to the end-effector
-        part returned by :attr:`exports`, not to the arm.
+        part returned by :attr:`parts`, not to the arm.
         """
         return {name: {} for name in ARM_STATE_FIELDS}
 
@@ -117,7 +117,7 @@ class FrankyArm(ControllablePart):
         return {"joint_position": {}, "tcp_pose": {}}
 
     @property
-    def exports(self) -> dict[str, RobotPart]:
+    def parts(self) -> dict[str, RobotPart]:
         """Expose the arm and the gripper riding on the same connection."""
         return {
             "arm": self,

@@ -18,6 +18,7 @@ Both the ROS-backed and libfranka-backed arms report the same fields, so the
 dataclass lives beside them rather than inside either one.
 """
 
+import ipaddress
 from dataclasses import asdict, dataclass, field
 from typing import Optional
 
@@ -66,3 +67,31 @@ class FrankaRobotState:
     def to_dict(self):
         """Convert the dataclass to a serializable dictionary."""
         return asdict(self)
+
+
+def validated_robot_ip(robot_ip: str, part_name: str) -> str:
+    """Return ``robot_ip`` if it is an address an arm could actually dial.
+
+    The check belongs to the part rather than to a robot config: the part is
+    what opens the connection, so it is the thing that cannot proceed without a
+    real address, and a config placeholder left in a YAML should fail where it
+    is used rather than where it is parsed.
+
+    Format only. Whether anything answers at that address is not something a
+    constructor can find out without touching the network, and a driver that
+    reached for the network before ``connect`` would break placement.
+    """
+    if not robot_ip:
+        raise ValueError(
+            f"{part_name} needs a 'robot_ip'; none was given and none could be "
+            "resolved from the node's hardware infos."
+        )
+    try:
+        ipaddress.ip_address(robot_ip)
+    except ValueError:
+        raise ValueError(
+            f"{part_name} needs 'robot_ip' to be an IP address, but got "
+            f"{robot_ip!r}. A placeholder left in a config reaches the arm as "
+            "this."
+        ) from None
+    return robot_ip

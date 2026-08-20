@@ -16,15 +16,24 @@ import queue
 import threading
 import time
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Optional
 
 import numpy as np
 
-from rlinf.robotics.parts.base import Camera
-from rlinf.utils.logging import get_logger
+from rlinf.robotics.parts.base import RobotPart, register_kind
 
-_logger = get_logger()
+
+@register_kind("camera")
+class Camera(RobotPart):
+    """A part that is read and never commanded.
+
+    The category, with no lifecycle of its own -- :class:`BaseCamera` below is
+    what a driver subclasses. Naming it separately is what lets a robot ask for
+    every camera it carries, and what lets a camera hosted on another machine
+    come back as a camera rather than as a part in general.
+    """
 
 
 @dataclass
@@ -54,6 +63,39 @@ class BaseCamera(Camera, ABC):
         self._frame_queue: queue.Queue = queue.Queue()
         self._frame_capturing_thread: Optional[threading.Thread] = None
         self._frame_capturing_start = False
+
+    @classmethod
+    def of(cls, camera_info: CameraInfo, **placement: Any) -> "BaseCamera":
+        """Build the camera the descriptor names, without opening it.
+
+        The backend is chosen by :attr:`CameraInfo.camera_type`, so a config
+        naming ``"zed"`` reaches the ZED driver without the caller importing
+        it. Pass ``node_rank`` to say which machine the camera is plugged
+        into; the robot opens it there.
+        """
+        return cls.backend(camera_info.camera_type)(camera_info, **placement)
+
+    @classmethod
+    def declare(
+        cls,
+        cameras: "Optional[Mapping[str, CameraInfo]]" = None,
+        *,
+        node_rank: Optional[int] = None,
+    ) -> dict[str, "BaseCamera"]:
+        """Build one camera per descriptor, ready to compose into a robot.
+
+        The names are the public paths the robot will publish, so this returns
+        exactly what a builder splats into its composition::
+
+            return cls(**cls.declare(cameras, node_rank=camera_node_rank))
+
+        Every camera lands on ``node_rank`` -- the machine they are plugged
+        into -- and none is opened until the robot connects.
+        """
+        return {
+            name: cls.of(info, node_rank=node_rank)
+            for name, info in (cameras or {}).items()
+        }
 
     @property
     def name(self) -> str:
@@ -139,10 +181,16 @@ class BaseCamera(Camera, ABC):
     def _capture_frames(self):
         while self._frame_capturing_start:
             time.sleep(1 / self._camera_info.fps)
+            # Resolved here rather than at import: reaching for a logger loads
+            # the scheduler, and a camera driver has to be importable on the
+            # machine it is plugged into, which may have no cluster at all.
+            from rlinf.utils.logging import get_logger
+
+            logger = get_logger()
             try:
                 has_frame, frame = self._read_frame()
             except Exception as e:
-                _logger.error(
+                logger.error(
                     "[%s] _read_frame raised %s: %s — exiting capture thread.",
                     self._camera_info.name,
                     type(e).__name__,
@@ -150,7 +198,7 @@ class BaseCamera(Camera, ABC):
                 )
                 break
             if not has_frame:
-                _logger.error(
+                logger.error(
                     "[%s] _read_frame returned (False, None) — exiting capture thread.",
                     self._camera_info.name,
                 )

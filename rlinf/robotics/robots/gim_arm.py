@@ -12,21 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
-import warnings
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Optional
 
-from rlinf.scheduler.hardware import HardwareConfig, HardwareInfo, HardwareResource
-
 from ..discovery import (
-    RobotAutoConfig,
     RobotConfig,
-    RobotDiscovery,
-    RobotInfo,
 )
-from ..parts.cameras import declare_cameras
+from ..parts.cameras import BaseCamera
 from ..robot import Robot
 
 
@@ -51,18 +44,18 @@ class GimArmRobot(Robot):
         """The one arm this robot carries, gripper included when fitted."""
         from ..parts.arms.gim_arm import GimArm
 
-        connection = GimArm.at(
+        connection = GimArm(
             can_interface,
             arm_variant,
             enable_gripper,
             gripper_type,
             control_mode,
             node_rank=node_rank,
-            name=f"GimArm-{worker_rank}-{env_idx}",
+            worker_name=f"GimArm-{worker_rank}-{env_idx}",
         )
-        parts = {"arm": connection.export("arm")}
+        parts = {"arm": connection.part("arm")}
         if enable_gripper:
-            parts["end_effector"] = connection.export("end_effector")
+            parts["end_effector"] = connection.part("end_effector")
         return parts
 
     @classmethod
@@ -73,7 +66,7 @@ class GimArmRobot(Robot):
         node_rank: Optional[int] = None,
     ) -> dict[str, Any]:
         """The cameras this robot carries."""
-        return declare_cameras(cameras, node_rank=node_rank)
+        return BaseCamera.declare(cameras, node_rank=node_rank)
 
     @classmethod
     def build(
@@ -104,70 +97,6 @@ class GimArmRobot(Robot):
             ),
             **cls.build_cameras(cameras, node_rank=camera_node_rank),
         )
-
-
-class GimArmDiscovery(RobotDiscovery):
-    """Hardware policy for GimArm robots (CAN bus, 6-DOF)."""
-
-    HW_TYPE = GimArmRobot.ROBOT_TYPE
-
-    @classmethod
-    def enumerate(
-        cls, node_rank: int, configs: Optional[list[HardwareConfig]] = None
-    ) -> Optional[HardwareResource]:
-        """Enumerate GimArm robot resources on a node.
-
-        Args:
-            node_rank: The rank of the node being enumerated.
-            configs: The configurations for the hardware on a node.
-
-        Returns:
-            Optional[HardwareResource]: An object representing the hardware
-                resources. None if no GimArm hardware is configured for this
-                node.
-        """
-        assert configs is not None, "GimArm hardware requires explicit configurations."
-        robot_configs: list["GimArmConfig"] = []
-        for config in configs:
-            if isinstance(config, GimArmConfig) and config.node_rank == node_rank:
-                robot_configs.append(config)
-
-        # Fill unset fields from env vars (e.g. ``CAN_INTERFACE``), one value per
-        # config when several robots share this node. With no configs given,
-        # create one per comma-separated ``CAN_INTERFACE``.
-        robot_configs = RobotAutoConfig.resolve(
-            robot_configs,
-            config_cls=GimArmConfig,
-            node_rank=node_rank,
-            count_fields=("can_interface",),
-        )
-
-        if robot_configs:
-            gim_arm_infos: list[HardwareInfo] = []
-            for config in robot_configs:
-                if not config.disable_validate:
-                    cls._validate_can_interface(config.can_interface, node_rank)
-
-                gim_arm_infos.append(
-                    RobotInfo(
-                        type=cls.HW_TYPE,
-                        model=f"{cls.HW_TYPE}_{config.arm_variant}",
-                        config=config,
-                    )
-                )
-
-            return HardwareResource(type=cls.HW_TYPE, infos=gim_arm_infos)
-        return None
-
-    @staticmethod
-    def _validate_can_interface(can_interface: str, node_rank: int) -> None:
-        """Warn if the CAN interface is not visible on this node."""
-        can_path = f"/sys/class/net/{can_interface}"
-        if not os.path.exists(can_path):
-            warnings.warn(
-                f"CAN interface '{can_interface}' not found at {can_path} on node "
-                f"rank {node_rank}. The GimArm controller may fail to start."
-            )
 
 
 @dataclass
@@ -201,6 +130,10 @@ class GimArmConfig(RobotConfig):
     disable_validate: bool = False
     """Whether to skip CAN interface validation during enumeration."""
 
+    def model(self, robot_type: str) -> str:
+        """Report the arm variant, which changes reach and payload."""
+        return f"{robot_type}_{self.arm_variant}"
+
     def __post_init__(self):
         """Post-initialization to validate the configuration."""
         assert isinstance(self.node_rank, int), (
@@ -215,4 +148,4 @@ class GimArmConfig(RobotConfig):
             self.camera_serials = list(self.camera_serials)
 
 
-GimArmRobot.register(GimArmConfig, GimArmDiscovery)
+GimArmRobot.register_type(GimArmConfig)

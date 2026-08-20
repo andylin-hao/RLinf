@@ -14,54 +14,52 @@
 
 r"""Robot parts: what a component *is* to the policy.
 
-The taxonomy lives in :mod:`.base`; each category's implementations live in the
-subpackage named after it::
+:mod:`.base` holds the taxonomy. Each device category is defined beside the
+drivers that implement it, so a subpackage owns its category and its hardware
+together::
 
     parts/
-      base.py                     Endpoint, RobotPart, Connection,
-                                  ControllablePart, Group, Camera,
-                                  EndEffector, MobileBase, LeggedBase
+      base.py                     Connection, RobotPart, ControllablePart,
+                                  PartGroup, register_kind
       arms/                       Franky, Franka ROS, GimArm, Turtle2, DOSW1
-      cameras/                    RealSense, ZED, Lumos
-      end_effectors/
+      cameras/        base.py:    Camera
+                                  RealSense, ZED, Lumos
+      end_effectors/  base.py:    EndEffector
         grippers/                 Franka, Robotiq
         hands/                    Ruiyan
+      mobility/       base.py:    MobileBase
       transports/                 ROS
 
 A part says what a component means to the policy: its observation contract and,
 when controllable, its action contract. A link that presents several components
-at once -- a dual-arm controller, a two-armed SDK session -- is a
-:class:`~.base.Connection` rather
-than a part: it lists what rides on it in :attr:`~.base.Endpoint.exports`, and
-the robot composes those. Both are :class:`~.base.Endpoint`\ s, so both are
-declared, placed, opened and closed the same way.
+at once -- a dual-arm controller, a two-armed SDK session -- is a plain
+:class:`~.base.Connection` and not a part: reading it would mean nothing, so it
+lists what rides on it in :attr:`~.base.Connection.parts` and the robot composes
+those. Either way it is a connection, so either way it takes a ``node_rank`` and
+opens and closes the same way.
 
-Subpackages are not imported here: a node needs only the vendor SDKs for the
-hardware it actually has. Import ``rlinf.robotics.parts.cameras`` directly.
+Subpackages are not imported here, and that is load-bearing rather than tidy: a
+node needs only the vendor SDKs for the hardware it actually has, and importing
+one subpackage's category would drag in every driver beside it. Reach a
+category through its own subpackage -- ``from rlinf.robotics.parts.cameras
+import Camera`` -- or through :mod:`rlinf.robotics`, which resolves names
+lazily.
 """
 
 from .base import (
-    Camera,
     Connection,
     ControllablePart,
-    EndEffector,
-    Endpoint,
-    Group,
-    LeggedBase,
-    MobileBase,
+    PartGroup,
     RobotPart,
+    register_kind,
     run_parallel,
 )
 
 __all__ = [
     "Connection",
-    "Endpoint",
-    "Group",
-    "Camera",
     "ControllablePart",
-    "EndEffector",
-    "LeggedBase",
-    "MobileBase",
+    "PartGroup",
     "RobotPart",
+    "register_kind",
     "run_parallel",
 ]

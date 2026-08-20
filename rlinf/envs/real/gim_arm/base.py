@@ -33,7 +33,7 @@ from rlinf.robotics import (
     RobotInfo,
 )
 from rlinf.robotics.parts.arms.gim_arm import GimArmRobotState
-from rlinf.robotics.parts.cameras import BaseCamera, CameraInfo, create_camera
+from rlinf.robotics.parts.cameras import BaseCamera, CameraInfo
 from rlinf.robotics.teleop import ActionKind, ActionPart
 from rlinf.scheduler import WorkerInfo
 from rlinf.utils.logging import get_logger
@@ -476,7 +476,7 @@ class GimArmEnv(gym.Env):
                 self.robot.parts_of_type(Camera).values()
             )
             return
-        self._cameras = [create_camera(info) for info in self._camera_infos()]
+        self._cameras = [BaseCamera.of(info) for info in self._camera_infos()]
 
     def _close_cameras(self):
         """Close only cameras this env owns; the robot closes its own."""

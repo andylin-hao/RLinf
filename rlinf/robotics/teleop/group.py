@@ -20,7 +20,7 @@ that read its devices and spliced their outputs together by hand; here they are
 the same object with a different list.
 
 :class:`TeleopGroup` is the teleop counterpart of
-:class:`~rlinf.robotics.parts.base.Group`: it fans out over what it holds and
+:class:`~rlinf.robotics.parts.base.PartGroup`: it fans out over what it holds and
 merges the results by name.
 """
 

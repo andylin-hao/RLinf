@@ -21,7 +21,7 @@ import psutil
 from scipy.spatial.transform import Rotation as R
 
 from rlinf.robotics.parts.arms import ARM_STATE_FIELDS
-from rlinf.robotics.parts.arms.franka import FrankaRobotState
+from rlinf.robotics.parts.arms.franka import FrankaRobotState, validated_robot_ip
 from rlinf.robotics.parts.base import ControllablePart, RobotPart
 from rlinf.robotics.parts.end_effectors import (
     BaseEndEffector,
@@ -46,11 +46,7 @@ class FrankaROSArm(ControllablePart):
         gripper_connection: Optional[str] = None,
     ):
         self._logger = get_logger()
-        if not robot_ip:
-            raise ValueError(
-                "Franka 'robot_ip' must be resolved before constructing the arm."
-            )
-        self._robot_ip = robot_ip
+        self._robot_ip = validated_robot_ip(robot_ip, type(self).__name__)
         self._ros_pkg = ros_pkg
         self._end_effector_type = normalize_end_effector_type(
             end_effector_type,
@@ -74,7 +70,7 @@ class FrankaROSArm(ControllablePart):
     def observation_features(self) -> dict:
         """Describe canonical Franka arm state fields.
 
-        End-effector fields belong to the part returned by :attr:`exports`.
+        End-effector fields belong to the part returned by :attr:`parts`.
         """
         return {name: {} for name in ARM_STATE_FIELDS}
 
@@ -84,7 +80,7 @@ class FrankaROSArm(ControllablePart):
         return {"tcp_pose": {}}
 
     @property
-    def exports(self) -> dict[str, RobotPart]:
+    def parts(self) -> dict[str, RobotPart]:
         """Expose the arm and whichever end effector is configured."""
         if self._end_effector_type.is_hand:
             end_effector = MethodGripper(

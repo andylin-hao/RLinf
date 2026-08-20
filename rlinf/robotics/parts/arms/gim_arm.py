@@ -12,8 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import threading
 import time
+import warnings
 from dataclasses import asdict, dataclass, field
 
 import numpy as np
@@ -110,12 +112,30 @@ class GimArm(ControllablePart):
         control_mode: str = "momentum_observer",
     ):
         self._logger = get_logger()
+        self._warn_if_can_interface_is_down(can_interface)
         self._can_interface = can_interface
         self._arm_variant = arm_variant
         self._enable_gripper = enable_gripper
         self._gripper_type = gripper_type
         self._control_mode = control_mode
         self._connected = False
+
+    @staticmethod
+    def _warn_if_can_interface_is_down(can_interface: str) -> None:
+        """Say early when the bus this arm talks over is not up on this machine.
+
+        The arm owns its CAN interface, so the arm is what notices. A warning
+        rather than an error: the interface may be brought up between composing
+        the robot and connecting it, and refusing here would make that
+        impossible.
+        """
+        path = f"/sys/class/net/{can_interface}"
+        if not os.path.exists(path):
+            warnings.warn(
+                f"CAN interface {can_interface!r} was not found at {path} on "
+                "this machine. The arm will fail to connect unless it is "
+                "brought up first."
+            )
 
     @property
     def is_connected(self) -> bool:
@@ -126,7 +146,7 @@ class GimArm(ControllablePart):
     def observation_features(self) -> dict:
         """Describe canonical GimArm arm state fields.
 
-        Gripper fields belong to the end-effector part from :attr:`exports`.
+        Gripper fields belong to the end-effector part from :attr:`parts`.
         """
         return {name: {} for name in ARM_STATE_FIELDS}
 
@@ -136,7 +156,7 @@ class GimArm(ControllablePart):
         return {"joint_position": {}}
 
     @property
-    def exports(self) -> dict[str, RobotPart]:
+    def parts(self) -> dict[str, RobotPart]:
         """Expose the arm, plus the gripper when one is fitted."""
         parts: dict[str, RobotPart] = {"arm": self}
         if self._enable_gripper:

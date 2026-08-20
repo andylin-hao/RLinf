@@ -20,7 +20,7 @@ gripper lives behind ``open_gripper`` / ``close_gripper``, a controller that
 returns frames from ``get_camera(id)``. These adapters turn such method
 surfaces into proper parts, so composition sees a uniform interface.
 
-A part declares these in :attr:`~.parts.base.Endpoint.exports`, in Python,
+A part declares these in :attr:`~.parts.base.Connection.parts`, in Python,
 next to the methods they wrap -- not as command/state dictionaries assembled in
 a separate factory module.
 """
@@ -30,7 +30,9 @@ from typing import Any, Optional, Union, cast
 
 import numpy as np
 
-from .base import Camera, ControllablePart, EndEffector
+from .base import ControllablePart
+from .cameras.base import Camera
+from .end_effectors.base import EndEffector
 
 
 def state_to_dict(state: Any) -> dict[str, Any]:

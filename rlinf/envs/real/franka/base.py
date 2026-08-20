@@ -33,7 +33,7 @@ from rlinf.robotics import (
     RobotInfo,
 )
 from rlinf.robotics.parts.arms.franka import FrankaRobotState
-from rlinf.robotics.parts.cameras import BaseCamera, CameraInfo, create_camera
+from rlinf.robotics.parts.cameras import BaseCamera, CameraInfo
 from rlinf.robotics.parts.end_effectors.base import (
     EndEffectorType,
     normalize_end_effector_type,
@@ -804,7 +804,7 @@ class FrankaEnv(gym.Env):
                 for path, camera in self.robot.parts_of_type(Camera).items()
             }
             return
-        self._cameras = {info.name: create_camera(info) for info in self._camera_infos}
+        self._cameras = {info.name: BaseCamera.of(info) for info in self._camera_infos}
 
     def close(self):
         """Release all hardware resources including cameras and video player."""

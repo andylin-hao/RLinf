@@ -36,7 +36,7 @@ from rlinf.robotics import (
 )
 from rlinf.robotics.parts.arms import DOSW1Arm, DOSW1Connection
 from rlinf.robotics.parts.arms.dosw1 import DOSW1RobotState
-from rlinf.robotics.parts.cameras import BaseCamera, CameraInfo, create_camera
+from rlinf.robotics.parts.cameras import BaseCamera, CameraInfo
 from rlinf.robotics.parts.teleop.readers.keyboard import KeyboardListener
 from rlinf.robotics.teleop import ActionKind, ActionPart
 from rlinf.scheduler import WorkerInfo
@@ -691,7 +691,7 @@ class DOSW1Env(gym.Env):
             self._cameras = list(self.robot.parts_of_type(Camera).values())
             return
         for info in self._camera_infos():
-            camera = create_camera(info)
+            camera = BaseCamera.of(info)
             camera.connect()
             self._cameras.append(camera)
 
@@ -720,15 +720,10 @@ class DOSW1Env(gym.Env):
 
     @staticmethod
     def _discover_camera_serials() -> list[str]:
-        try:
-            import pyrealsense2 as rs
-        except ImportError:
-            return []
+        """Ask the camera driver which RealSense units are plugged in here."""
+        from rlinf.robotics.parts.cameras import BaseCamera
 
-        serials: list[str] = []
-        for device in rs.context().devices:
-            serials.append(device.get_info(rs.camera_info.serial_number))
-        return serials
+        return sorted(BaseCamera.backend("realsense").discover())
 
     def _apply_robot_info(
         self, robot_info: Optional[RobotInfo[DOSW1RobotConfig]]

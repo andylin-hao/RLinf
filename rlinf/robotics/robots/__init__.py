@@ -12,12 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Supported robots: one module each, holding its config, discovery, and class.
+"""Supported robots: one module each, holding its config and robot class.
 
 Each robot class owns its own construction: ``build()`` composes deferred part
-declarations, and ``register()`` wires the class, its config, and its discovery
-into the registry. ``Robot.connect()`` performs placement later. Importing this
-package performs those registrations.
+declarations, and ``register_type()`` wires the class and its config into the
+registry while supplying the standard discovery flow. ``Robot.connect()``
+performs placement later. Importing this package performs those registrations.
 """
 
 from .dosw1 import DOSW1Robot, DOSW1RobotConfig
@@ -27,12 +27,12 @@ from .gim_arm import GimArmConfig, GimArmRobot
 from .turtle2 import Turtle2Config, Turtle2Robot
 
 __all__ = [
-    "FRANKA_BACKENDS",
     "DOSW1Robot",
     "DOSW1RobotConfig",
     "DualFrankaConfig",
     "DualFrankaRobot",
     "FrankaConfig",
+    "FRANKA_BACKENDS",
     "FrankaRobot",
     "GimArmConfig",
     "GimArmRobot",

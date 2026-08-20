@@ -17,7 +17,7 @@ from __future__ import annotations
 import dataclasses
 import os
 from types import UnionType
-from typing import Any, Sequence, TypeVar, Union, get_args, get_origin, get_type_hints
+from typing import Any, TypeVar, Union, get_args, get_origin, get_type_hints
 
 from .registry import RobotConfig
 
@@ -37,8 +37,8 @@ class RobotAutoConfig:
     item per robot); with a single robot the whole value is used.
 
     When no configs are given for a node, configs are created from the env vars:
-    the number of robots is the comma-separated count of an identifier env var
-    (``count_fields``), and every field is taken from its env var.
+    the number of robots is the largest comma-separated count among the scalar
+    fields, and every field is taken from its env var.
     """
 
     #: Fields that are never auto-resolved (placement / structural fields).
@@ -50,7 +50,6 @@ class RobotAutoConfig:
         configs: list[RobotConfigType],
         config_cls: type[RobotConfigType] | None = None,
         node_rank: int | None = None,
-        count_fields: Sequence[str] = (),
     ) -> list[RobotConfigType]:
         """Fill the configs' unset fields from env vars in place and return them.
 
@@ -58,12 +57,12 @@ class RobotAutoConfig:
         configs, each env var must hold one comma-separated value per config.
 
         When ``configs`` is empty, configs are created from the env vars (see
-        the class docstring); ``config_cls``, ``node_rank`` and ``count_fields``
-        must be given to enable this.
+        the class docstring); ``config_cls`` and ``node_rank`` must be given to
+        enable this.
         """
         created = not configs
         if created:
-            configs = cls._create_from_env(config_cls, node_rank, count_fields)
+            configs = cls._create_from_env(config_cls, node_rank)
         if not configs:
             return configs
 
@@ -101,33 +100,44 @@ class RobotAutoConfig:
 
         return configs
 
-    @staticmethod
+    @classmethod
     def _create_from_env(
+        cls,
         config_cls: type[RobotConfigType] | None,
         node_rank: int | None,
-        count_fields: Sequence[str],
     ) -> list[RobotConfigType]:
-        """Create configs from env vars, sized by an identifier env var.
+        """Create configs from env vars, sized by how many robots they name.
 
-        Returns an empty list unless ``config_cls``/``node_rank`` are given and
-        one of ``count_fields`` is set in the environment.
+        A node whose robots are not written out in YAML says what it has in the
+        environment, and the number of robots is however many values one of
+        those variables carries. Which variables can say so follows from the
+        config itself: a field holding one value per robot is a scalar, so
+        ``ROBOT_IP="10.0.0.1,10.0.0.2"`` means two robots, while a list field
+        such as ``CAMERA_SERIALS`` is one robot's several cameras and says
+        nothing about the count.
+
+        Returns an empty list unless ``config_cls`` and ``node_rank`` are given
+        and at least one such variable is set.
         """
         if config_cls is None or node_rank is None:
             return []
 
-        n: int | None = None
-        for name in count_fields:
+        type_hints = get_type_hints(config_cls)
+        n = 0
+        for field in dataclasses.fields(config_cls):
+            name = field.name
+            if name in cls.SKIP_FIELDS or name.endswith("_node_rank"):
+                continue
+            base = cls._unwrap_optional(type_hints.get(name))
+            if get_origin(base) in (list, set, tuple):
+                continue
             raw = os.environ.get(name.upper())
             if raw is None:
                 continue
-            count = len(raw.split(","))
-            if n is None:
-                n = count
-            elif n != count:
-                raise ValueError(
-                    f"Identifier env vars {[f.upper() for f in count_fields]} "
-                    f"disagree on the robot count ({n} vs {count}) on this node."
-                )
+            # The largest count wins, and resolve() then holds every variable
+            # to it -- so a mismatch is reported against the field that is
+            # short rather than as an unattributed disagreement here.
+            n = max(n, len(raw.split(",")))
         if not n:
             return []
         return [config_cls(node_rank=node_rank) for _ in range(n)]

@@ -12,14 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Declaring where a part runs, and running it there.
+"""Opening a robot's connections where they belong, and reaching them there.
 
 A part whose vendor SDK only exists on one machine cannot be built here and
-moved. So placement takes a declaration -- a class, its constructor arguments,
-and a node -- and builds the part on that node, handing back a handle that
-behaves the same whether the part ended up local or remote.
+moved. So a connection bound for another node is rebuilt there from the recipe
+its constructor left behind, and what comes back is a handle that behaves the
+same whether the part ended up local or remote.
 
-:mod:`.specs` is the declaring half and imports nothing from the scheduler.
+:mod:`.plan` is the bookkeeping half -- what a connect opened, in what order,
+and what to release if it fails -- and imports nothing from the scheduler.
 :mod:`.handles` is the running half, and is the one module in
 ``rlinf.robotics`` allowed to import it.
 """
@@ -34,18 +35,16 @@ from .handles import (
     RemotePart,
     RemotePartHandle,
 )
-from .specs import PartSpec, Placement, SubpartRef
+from .plan import Placement
 
 __all__ = [
     "LocalPartHandle",
     "PartHandle",
-    "PartSpec",
     "Placement",
     "RemoteCamera",
     "RemoteControllablePart",
     "RemoteEndEffector",
     "RemotePart",
     "RemotePartHandle",
-    "SubpartRef",
     "PartWorkerHost",
 ]

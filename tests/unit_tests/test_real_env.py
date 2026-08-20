@@ -47,7 +47,7 @@ from rlinf.envs.real.wrappers.teleop.intervention import (  # noqa: E402
     TeleopSample,
 )
 from rlinf.envs.real.xsquare.base import Turtle2Env, Turtle2RobotConfig
-from rlinf.robotics import ControllablePart, Group, Robot
+from rlinf.robotics import ControllablePart, PartGroup, Robot
 
 _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:
@@ -149,7 +149,7 @@ class DummyTask(RobotTask):
 
 def test_robot_task_env_composes_task_and_robot_lifecycles():
     driver = DummyDriver()
-    robot = Robot(arm=Group(arm=driver))
+    robot = Robot(arm=PartGroup(arm=driver))
     env = RobotTaskEnv(robot, DummyTask())
     action = {"arm": {"arm": {"target": np.array([0.5])}}}
 

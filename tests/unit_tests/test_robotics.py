@@ -31,18 +31,18 @@ import pytest
 import rlinf.robotics.robots.franka as franka_module
 from rlinf.robotics import (
     Camera,
+    Connection,
     ControllablePart,
     DOSW1Robot,
     DOSW1RobotConfig,
     DualFrankaRobot,
     EndEffector,
-    Endpoint,
     FrankaRobot,
     GimArmConfig,
-    Group,
     LegacyObservationAdapter,
     MethodArm,
     MethodGripper,
+    PartGroup,
     RemotePartHandle,
     Robot,
     RobotAutoConfig,
@@ -61,7 +61,6 @@ from rlinf.robotics.parts.arms import (
     Turtle2Connection,
 )
 from rlinf.robotics.parts.arms.franka import FrankaRobotState
-from rlinf.robotics.placement.specs import PartSpec
 from rlinf.scheduler.hardware import (
     Hardware,
     HardwareConfig,
@@ -182,7 +181,7 @@ class FakeWorkerGroup:
 
 def test_robot_composes_and_namespaces_parts():
     events: list[str] = []
-    arm = Group(
+    arm = PartGroup(
         arm=FakeControllablePart("arm", events),
         gripper=FakeEndEffector("gripper", events),
         wrist=FakeCamera("wrist", events),
@@ -229,7 +228,7 @@ def test_robot_rejects_actions_for_observation_only_parts():
 def test_robot_disconnects_remaining_arm_parts_after_camera_failure():
     events: list[str] = []
     camera = FakeCamera("wrist", events)
-    arm = Group(arm=FakeControllablePart("driver", events), wrist=camera)
+    arm = PartGroup(arm=FakeControllablePart("driver", events), wrist=camera)
     robot = Robot(arm=arm)
     robot.connect()
     camera.disconnect()
@@ -291,15 +290,15 @@ def test_robot_requires_non_empty_string_part_names():
 
 def test_builtin_robots_expose_standard_composition_layouts():
     events: list[str] = []
-    left_arm = Group(
+    left_arm = PartGroup(
         arm=FakeControllablePart("left_arm", events),
         gripper=FakeEndEffector("left_gripper", events),
     )
-    right_arm = Group(
+    right_arm = PartGroup(
         arm=FakeControllablePart("right_arm", events),
         gripper=FakeEndEffector("right_gripper", events),
     )
-    third_arm = Group(arm=FakeControllablePart("third_arm", events))
+    third_arm = PartGroup(arm=FakeControllablePart("third_arm", events))
 
     single = FrankaRobot(arm=left_arm, front_camera=FakeCamera("front", events))
     dual = DualFrankaRobot(
@@ -309,13 +308,13 @@ def test_builtin_robots_expose_standard_composition_layouts():
     triple = FrankaRobot(left=left_arm, right=right_arm, third=third_arm)
 
     assert set(single.children) == {"arm", "front_camera"}
-    assert set(single.parts_of_type(Group)) == {"arm"}
+    assert set(single.parts_of_type(PartGroup)) == {"arm"}
     assert set(single.parts_of_type(EndEffector)) == {"arm.gripper"}
     assert set(single.parts_of_type(Camera)) == {"front_camera"}
     assert set(dual.children) == {"left", "right", "base_camera"}
-    assert set(dual.parts_of_type(Group)) == {"left", "right"}
+    assert set(dual.parts_of_type(PartGroup)) == {"left", "right"}
     assert set(triple.children) == {"left", "right", "third"}
-    assert set(triple.parts_of_type(Group)) == {"left", "right", "third"}
+    assert set(triple.parts_of_type(PartGroup)) == {"left", "right", "third"}
 
 
 def test_register_robot_registers_policy_and_config(monkeypatch):
@@ -330,7 +329,7 @@ def test_register_robot_registers_policy_and_config(monkeypatch):
 
     @dataclass
     class TestRobotConfig(RobotConfig):
-        endpoint: str = "loopback"
+        connection: str = "loopback"
 
     class TestRobot(Robot):
         ROBOT_TYPE = "TestRobot"
@@ -349,14 +348,14 @@ def test_register_robot_registers_policy_and_config(monkeypatch):
     registered = register_robot(TestRobotConfig, TestRobot)(TestRobotDiscovery)
     parsed = NodeHardwareConfig(
         type="TestRobot",
-        configs=cast(Any, [{"node_rank": 3, "endpoint": "robot.local"}]),
+        configs=cast(Any, [{"node_rank": 3, "connection": "robot.local"}]),
     )
 
     assert registered is TestRobotDiscovery
     assert RobotDiscovery.registry["TestRobot"].robot_cls is TestRobot
     assert TestRobotDiscovery in Hardware.policy_registry
     assert isinstance(parsed.configs[0], TestRobotConfig)
-    assert parsed.configs[0].endpoint == "robot.local"
+    assert parsed.configs[0].connection == "robot.local"
 
     with pytest.raises(ValueError, match="already registered"):
         register_robot(TestRobotConfig, TestRobot)(TestRobotDiscovery)
@@ -383,7 +382,7 @@ def test_robot_auto_config_supports_pep604_optional(monkeypatch):
 
 def test_namespaces_follow_the_composition():
     """Observation and action keys are the names the robot was composed with."""
-    robot = Robot(arm=Group(arm=FakeControllablePart("arm", [])))
+    robot = Robot(arm=PartGroup(arm=FakeControllablePart("arm", [])))
     robot.connect()
 
     observation = robot.get_observation()
@@ -402,7 +401,7 @@ def test_robot_releases_driver_handles_after_parts():
         def disconnect(self) -> None:
             events.append("handle")
 
-    robot = Robot(arm=Group(arm=FakeControllablePart("driver", events)))
+    robot = Robot(arm=PartGroup(arm=FakeControllablePart("driver", events)))
     robot.handles["arm"] = FakeHandle()
     robot.connect()
     robot.disconnect()
@@ -414,7 +413,7 @@ def test_robot_releases_driver_handles_after_parts():
 def test_driver_rejects_actions_for_observation_only_parts():
     class CameraOnlyHost(FakePart):
         @property
-        def exports(self) -> dict[str, RobotPart]:
+        def parts(self) -> dict[str, RobotPart]:
             return {"wrist": FakeCamera("wrist", [])}
 
     with pytest.raises(TypeError, match="not controllable"):
@@ -509,15 +508,38 @@ def test_pure_drivers_construct_without_scheduler_or_vendor_sdks():
     buses = [Turtle2Connection()]
 
     assert all(isinstance(driver, ControllablePart) for driver in arms)
-    assert all(isinstance(driver, Connection) for driver in buses)
-    # Every one of them is an endpoint -- declared, placed, opened, closed --
-    # but only the arms are parts, because only they mean something when read.
-    assert all(isinstance(driver, Endpoint) for driver in arms + buses)
+    # Every one of them is a connection -- declared, placed, opened, closed.
+    # Only the arms are parts, because only they mean something when read, and
+    # that one difference is the whole taxonomy.
+    assert all(isinstance(driver, Connection) for driver in arms + buses)
     assert all(isinstance(driver, RobotPart) for driver in arms)
     assert not any(isinstance(driver, RobotPart) for driver in buses)
     assert all(not driver.is_connected for driver in arms + buses)
     # Each declares the parts riding on its connection.
-    assert all(driver.exports for driver in arms + buses)
+    assert all(driver.parts for driver in arms + buses)
+
+
+class _BareArm(ControllablePart):
+    """An arm that says nothing about itself, for tests that only place it.
+
+    A robot composes parts, so a stand-in for one has to be a part even when
+    every check in the test is about where it was opened rather than what it
+    reads.
+    """
+
+    @property
+    def observation_features(self) -> dict:
+        return {}
+
+    @property
+    def action_features(self) -> dict:
+        return {}
+
+    def get_observation(self) -> dict:
+        return {}
+
+    def send_action(self, action):
+        return action
 
 
 def _fake_arm_backend(monkeypatch, *, failing_ip=None, disconnected=None):
@@ -526,43 +548,39 @@ def _fake_arm_backend(monkeypatch, *, failing_ip=None, disconnected=None):
     class FakeHandle:
         def __init__(self, name: str):
             self.name = name
-            self.exports = {"arm": FakeControllablePart(name, [])}
+            self.parts = {"arm": FakeControllablePart(name, [])}
 
         def part_named(self, _name: str):
-            return self.exports["arm"]
+            return self.parts["arm"]
 
         def disconnect(self) -> None:
             if disconnected is not None:
                 disconnected.append(self.name)
 
-    class FakeArm:
-        @classmethod
-        def at(cls, *args, node_rank=None, name=None, **kwargs):
-            return PartSpec(cls, args, kwargs, node_rank=node_rank, name=name)
+    class FakeArm(_BareArm):
+        def __init__(self, robot_ip, *_args, **_kwargs):
+            self.robot_ip = robot_ip
 
-        @staticmethod
-        def spawn(robot_ip, *args, node_rank=None, name=None, **kwargs):
-            if failing_ip is not None and robot_ip == failing_ip:
+        def place(self):
+            if failing_ip is not None and self.robot_ip == failing_ip:
                 raise RuntimeError("right arm is unreachable")
-            return FakeHandle(robot_ip)
+            return FakeHandle(self.robot_ip)
 
     monkeypatch.setattr(franka_module, "franka_arm_cls", lambda backend: FakeArm)
     return FakeArm
 
 
-def test_declaring_arms_places_nothing_until_connect(monkeypatch):
-    """Declarations are inert. ``connect`` is what touches hardware."""
+def test_declaring_arms_opens_nothing_until_connect(monkeypatch):
+    """Composing is inert. ``connect`` is what touches hardware."""
 
-    class NeverSpawns:
-        @classmethod
-        def at(cls, *args, node_rank=None, name=None, **kwargs):
-            return PartSpec(cls, args, kwargs, node_rank=node_rank, name=name)
+    class NeverOpens(_BareArm):
+        def __init__(self, *_args, **_kwargs):
+            pass
 
-        @staticmethod
-        def spawn(*args, **kwargs):
-            raise AssertionError("spawn must not run while declaring")
+        def place(self):
+            raise AssertionError("nothing may be opened while composing")
 
-    monkeypatch.setattr(franka_module, "franka_arm_cls", lambda backend: NeverSpawns)
+    monkeypatch.setattr(franka_module, "franka_arm_cls", lambda backend: NeverOpens)
 
     robot = FrankaRobot(
         arm=FrankaRobot.declare_arm("10.0.0.1", node_rank=0, name="left")
@@ -603,39 +621,34 @@ def test_declaring_arms_scales_past_two(monkeypatch):
     assert robot.is_connected
 
 
-def test_one_declaration_is_placed_once_however_often_referenced():
+def test_one_endpoint_is_opened_once_however_often_referenced():
     """A connection backing several components opens exactly once."""
     placements: list[str] = []
 
     class FakeHandle:
         def __init__(self):
-            self.exports = {
+            self.parts = {
                 "left": FakeControllablePart("left", []),
                 "right": FakeControllablePart("right", []),
                 "wrist": FakeCamera("wrist", []),
             }
 
         def part_named(self, name):
-            return self.exports[name]
+            return self.parts[name]
 
         def disconnect(self):
             pass
 
-    class CoupledHardware:
-        @classmethod
-        def at(cls, *args, node_rank=None, name=None, **kwargs):
-            return PartSpec(cls, args, kwargs, node_rank=node_rank, name=name)
-
-        @staticmethod
-        def spawn(*args, **kwargs):
+    class CoupledHardware(Connection):
+        def place(self):
             placements.append("placed")
             return FakeHandle()
 
-    hardware = CoupledHardware.at(node_rank=0)
+    hardware = CoupledHardware(node_rank=0)
     robot = Robot(
-        left=hardware.export("left"),
-        right=hardware.export("right"),
-        wrist=hardware.export("wrist"),
+        left=hardware.part("left"),
+        right=hardware.part("right"),
+        wrist=hardware.part("wrist"),
     )
     robot.connect()
 
@@ -657,14 +670,14 @@ def test_local_handle_subpart_returns_a_part_not_a_forwarded_call():
 
     class HostWithSubparts(FakeControllablePart):
         @property
-        def exports(self) -> dict[str, RobotPart]:
+        def parts(self) -> dict[str, RobotPart]:
             return {"arm": self, "end_effector": FakeEndEffector("ee", events)}
 
     handle = HostWithSubparts.spawn("host", events)
 
     assert isinstance(handle.part_named("arm"), RobotPart)
     assert isinstance(handle.part_named("end_effector"), EndEffector)
-    assert set(handle.exports) == {"arm", "end_effector"}
+    assert set(handle.parts) == {"arm", "end_effector"}
     # Off-interface names still forward, and still wrap.
     assert handle.get_observation().wait()[0]["state"].shape == (1,)
 
@@ -727,7 +740,7 @@ def test_every_part_kind_places_independently():
     placed: dict[str, int] = {}
 
     class Handle:
-        exports: dict[str, RobotPart] = {}
+        parts: dict[str, RobotPart] = {}
 
         def __init__(self, part):
             self._part = part
@@ -771,23 +784,19 @@ def test_every_part_kind_places_independently():
             def send_action(self, action):
                 return action
 
-            @classmethod
-            def spawn(cls, *args, node_rank=None, name=None, **kwargs):
-                placed[kind] = node_rank
-                part = cls()
-                part.connect()
-                return Handle(part)
+            def place(self):
+                placed[kind] = self.node_rank
+                self.connect()
+                return Handle(self)
 
         return Fake
 
     robot = Robot(
         **{
-            "arm": Group(
-                arm=fake("arm", ControllablePart).at("10.0.0.1", node_rank=1),
-                gripper=fake("gripper", EndEffector).at(
-                    port="/dev/ttyUSB0", node_rank=2
-                ),
-                wrist=fake("camera", Camera).at(node_rank=3),
+            "arm": PartGroup(
+                arm=fake("arm", ControllablePart)("10.0.0.1", node_rank=1),
+                gripper=fake("gripper", EndEffector)(port="/dev/ttyUSB0", node_rank=2),
+                wrist=fake("camera", Camera)(node_rank=3),
             )
         }
     )
@@ -828,33 +837,39 @@ def test_a_leaf_part_placed_remotely_still_exposes_itself():
 
     assert described["kind"] == "camera"
     assert described["observation"] == {"frame": {}}
-    assert Leaf().exports == {}
+    assert Leaf().parts == {}
 
 
 def test_declaring_cameras_needs_no_config_class():
     """A camera descriptor plus a node is all a declaration needs."""
-    from rlinf.robotics.parts.cameras import CameraInfo, declare_cameras
+    from rlinf.robotics.parts.cameras import BaseCamera, CameraInfo
 
     info = CameraInfo(name="scene", serial_number="123", camera_type="realsense")
-    declared = declare_cameras({"scene": info}, node_rank=4)
+    declared = BaseCamera.declare({"scene": info}, node_rank=4)
 
     assert set(declared) == {"scene"}
     assert declared["scene"].node_rank == 4
-    assert declared["scene"].part_cls.__name__ == "RealSenseCamera"
-    assert declare_cameras(None) == {}
+    assert type(declared["scene"]).__name__ == "RealSenseCamera"
+    assert not declared["scene"].is_connected, "declaring a camera must not open it"
+    assert BaseCamera.declare(None) == {}
+    # The backend comes from the registry, not from a table in the package.
+    assert BaseCamera.backend("rs") is BaseCamera.backend("realsense")
+    assert set(BaseCamera.backends()) >= {"realsense", "rs", "zed", "lumos"}
+    with pytest.raises(ValueError, match="Unsupported BaseCamera backend"):
+        BaseCamera.backend("no-such-camera")
 
 
 def test_failed_connect_can_be_retried():
-    """A failed connect restores declarations instead of poisoning the robot.
+    """A failed connect restores the composition instead of poisoning the robot.
 
-    Without this, an arm that placed successfully would keep a part whose
-    handle was released during rollback, and a retry would place nothing.
+    Without this, an arm that opened successfully would keep a part whose
+    handle was released during rollback, and a retry would open nothing.
     """
     placed: list[str] = []
     state = {"failing": True}
 
     class Handle:
-        exports: dict = {}
+        parts: dict = {}
 
         def __init__(self, part):
             self._part = part
@@ -867,7 +882,7 @@ def test_failed_connect_can_be_retried():
             raise KeyError(name)
 
         def disconnect(self):
-            pass
+            self._part.disconnect()
 
     def maker(tag, flaky=False):
         class Made(ControllablePart):
@@ -898,40 +913,35 @@ def test_failed_connect_can_be_retried():
             def send_action(self, action):
                 return action
 
-            @classmethod
-            def spawn(cls, *args, node_rank=None, name=None, **kwargs):
+            def place(self):
                 if flaky and state["failing"]:
                     raise RuntimeError("hardware unreachable")
                 placed.append(tag)
-                part = cls()
-                part.connect()
-                return Handle(part)
+                self.connect()
+                return Handle(self)
 
         return Made
 
-    robot = Robot(
-        **{
-            "left": maker("left").at(node_rank=1),
-            "right": maker("right", flaky=True).at(node_rank=2),
-        }
-    )
+    left = maker("left")(node_rank=1)
+    robot = Robot(left=left, right=maker("right", flaky=True)(node_rank=2))
 
     with pytest.raises(RuntimeError, match="unreachable"):
         robot.connect()
 
     assert robot.handles == {}, "handles from the aborted attempt were kept"
-    assert isinstance(robot.child("left"), PartSpec), (
-        "the successful arm kept a part whose handle was released"
+    assert robot.child("left") is left, "the tree did not go back to what it held"
+    assert not left.is_connected, (
+        "the arm that opened was left connected with nobody holding it"
     )
 
     state["failing"] = False
     robot.connect()
 
-    assert placed == ["left", "left", "right"], "the retry did not re-place"
+    assert placed == ["left", "left", "right"], "the retry did not re-open"
     assert robot.is_connected
 
     robot.disconnect()
-    assert isinstance(robot.child("left"), PartSpec)
+    assert not left.is_connected
     robot.connect()
     assert robot.is_connected, "a disconnected robot must be connectable again"
 
@@ -967,13 +977,12 @@ def test_a_robot_owned_camera_is_placed_opened_and_closed():
         def get_observation(self):
             return {"frame": None}
 
-        @classmethod
-        def spawn(cls, *args, node_rank=None, name=None, **kwargs):
-            events.append(f"placed@{node_rank}")
-            part = cls()
+        def place(self):
+            events.append(f"placed@{self.node_rank}")
+            part = self
 
             class Handle:
-                exports: dict = {}
+                parts: dict = {}
 
                 @property
                 def part(self):
@@ -988,7 +997,7 @@ def test_a_robot_owned_camera_is_placed_opened_and_closed():
             return Handle()
 
     robot = Robot(
-        arm=Group(arm=FakeControllablePart("arm", []), wrist=Cam.at(node_rank=5))
+        arm=PartGroup(arm=FakeControllablePart("arm", []), wrist=Cam(node_rank=5))
     )
     robot.connect()
     robot.disconnect()
@@ -1252,26 +1261,25 @@ def test_building_a_real_robot_touches_no_hardware():
     The machine assembling a robot config is often not the machine holding the
     hardware, so nothing may be opened until ``connect``.
     """
-    from rlinf.robotics.parts.base import Group
-    from rlinf.robotics.placement.specs import PartSpec, SubpartRef
+    from rlinf.robotics.parts.base import PartGroup, _ExportRef
 
     robot = _dosw1_robot()
 
     assert not robot.is_connected
-    # Both arms reference one declaration, because one SDK session drives them
-    # all; the references resolve against it when connect places it.
+    # Every part was picked out of one session, because one SDK session drives
+    # them all; the picks resolve against it when connect opens it.
     leaves = [
         leaf
         for part in robot.children.values()
-        for leaf in (part.children.values() if isinstance(part, Group) else [part])
+        for leaf in (part.children.values() if isinstance(part, PartGroup) else [part])
     ]
-    assert leaves, "the robot declared no parts"
-    assert all(isinstance(leaf, (PartSpec, SubpartRef)) for leaf in leaves)
-    # Compared by identity, not equality: a PartSpec carries its constructor
-    # kwargs, which routinely hold unhashable values, so Placement dedupes on
-    # id() too.
-    specs = [leaf.spec for leaf in leaves if isinstance(leaf, SubpartRef)]
-    assert specs and all(spec is specs[0] for spec in specs)
+    assert leaves, "the robot composed no parts"
+    assert all(isinstance(leaf, _ExportRef) for leaf in leaves)
+    # Compared by identity, not equality: two sessions built from equal
+    # arguments are still two devices, so Placement keys on id() too.
+    sessions = [leaf.connection for leaf in leaves]
+    assert all(session is sessions[0] for session in sessions)
+    assert not sessions[0].is_connected, "composing the robot opened the session"
 
 
 def test_real_robot_lifecycle_without_hardware():
@@ -1935,9 +1943,9 @@ def test_every_part_family_opens_and_closes_the_same_way():
         for retired in ("_close_device", "def initialize", "def shutdown"):
             assert retired not in source, f"{family.__name__} still has {retired}"
 
-    # Teardown belongs to the endpoint, so a connection gets it too.
-    assert RobotPart.shutdown.__qualname__ == "Endpoint.shutdown"
-    assert BaseEndEffector.shutdown.__qualname__ == "Endpoint.shutdown"
+    # Teardown belongs to the connection, so a connection gets it too.
+    assert RobotPart.shutdown.__qualname__ == "Connection.shutdown"
+    assert BaseEndEffector.shutdown.__qualname__ == "Connection.shutdown"
 
 
 class _Part(RobotPart):
@@ -2066,7 +2074,7 @@ def test_a_connection_backing_several_parts_is_not_observable():
     assert not issubclass(Turtle2Connection, ControllablePart)
 
     hardware = Turtle2Connection()
-    assert set(hardware.exports) == {
+    assert set(hardware.parts) == {
         "left",
         "left_end_effector",
         "right",
@@ -2086,7 +2094,7 @@ def test_every_robot_composes_from_named_parts():
     A connection that also happens to be a part -- a ROS link to one arm --
     then lands under its own name rather than under a name that repeats it.
     """
-    from rlinf.robotics.placement.specs import PartSpec
+    from rlinf.robotics.parts.base import RobotPart, _ExportRef
     from rlinf.robotics.robots.dual_franka import DualFrankaRobot
     from rlinf.robotics.robots.franka import FrankaRobot
     from rlinf.robotics.robots.gim_arm import GimArmRobot
@@ -2108,9 +2116,13 @@ def test_every_robot_composes_from_named_parts():
             values = (
                 list(value.children.values()) if hasattr(value, "children") else [value]
             )
-            assert not any(isinstance(v, PartSpec) for v in values), (
-                f"{name} holds a whole connection rather than its parts"
+            # Every leaf is one capability picked out of a session, never the
+            # session itself: composing that would put a connection in the tree.
+            assert all(isinstance(v, _ExportRef) for v in values), (
+                f"{name} holds {[type(v).__name__ for v in values]} rather than "
+                "parts picked out of its connection"
             )
+            assert not any(isinstance(v, RobotPart) for v in values)
 
 
 def test_one_connection_backs_every_part_that_names_it():
@@ -2119,11 +2131,11 @@ def test_one_connection_backs_every_part_that_names_it():
     from rlinf.robotics.robots.franka import FrankaRobot
 
     single = FrankaRobot.build_arms(robot_ip="1.2.3.4", node_rank=0)
-    assert len({id(ref.spec) for ref in single.values()}) == 1
+    assert len({id(ref.connection) for ref in single.values()}) == 1
 
     dual = DualFrankaRobot.build_arms(left_robot_ip="1.2.3.4", right_robot_ip="1.2.3.5")
     sides = {
-        side: {id(ref.spec) for ref in group.children.values()}
+        side: {id(ref.connection) for ref in group.children.values()}
         for side, group in dual.items()
     }
     assert len(sides["left"]) == 1 and len(sides["right"]) == 1
@@ -2136,8 +2148,8 @@ def test_a_connection_with_several_parts_resolves_to_all_of_them():
     Its import was wrong from the move that split placement into a package, so
     this raised ModuleNotFoundError rather than composing anything.
     """
-    from rlinf.robotics.parts.base import Group
-    from rlinf.robotics.placement.specs import Placement
+    from rlinf.robotics.parts.base import PartGroup
+    from rlinf.robotics.placement import Placement
 
     class Pair(RobotPart):
         def _open(self):
@@ -2151,11 +2163,11 @@ def test_a_connection_with_several_parts_resolves_to_all_of_them():
             return {}
 
         @property
-        def exports(self):
+        def parts(self):
             return {"a": _Part(), "b": _Part()}
 
-    resolved = Placement().resolve(Pair.at())
-    assert isinstance(resolved, Group)
+    resolved = Placement().resolve(Pair())
+    assert isinstance(resolved, PartGroup)
     assert set(resolved.children) == {"a", "b"}
 
 
@@ -2167,7 +2179,7 @@ def _fake_robot_type(broken=None):
     import numpy as np
 
     from rlinf.robotics.discovery import RobotConfig, RobotDiscovery, register_robot
-    from rlinf.robotics.parts.base import Connection, ControllablePart, Group
+    from rlinf.robotics.parts.base import Connection, ControllablePart, PartGroup
     from rlinf.robotics.parts.views import MethodArm, MethodGripper
     from rlinf.robotics.robot import Robot
 
@@ -2186,7 +2198,7 @@ def _fake_robot_type(broken=None):
             return target
 
         @property
-        def exports(self):
+        def parts(self):
             return {
                 "left": MethodArm(
                     self, commands={"tcp_pose": "move"}, state_fields=("tcp_pose",)
@@ -2223,11 +2235,11 @@ def _fake_robot_type(broken=None):
                 return cls(arm=Liar())
             if broken == "Connection":
                 return cls(bus=Bus())
-            bus = Bus.at()
+            bus = Bus()
             return cls(
-                left=Group(
-                    arm=bus.export("left"),
-                    gripper=bus.export("left_end_effector"),
+                left=PartGroup(
+                    arm=bus.part("left"),
+                    gripper=bus.part("left_end_effector"),
                 )
             )
 
@@ -2260,8 +2272,16 @@ def test_the_bench_check_catches_an_observation_that_was_never_declared():
     assert _run_bench(_fake_robot_type("Mismatch")) == 1
 
 
-def test_the_bench_check_catches_a_connection_left_in_the_tree():
-    assert _run_bench(_fake_robot_type("Connection")) == 1
+def test_a_connection_left_in_the_tree_is_refused_at_composition():
+    """The tree holds parts, and the message says what to do instead.
+
+    The bench check still refuses a connection it finds among the leaves, but
+    it can no longer be handed one: composing a robot is where this is caught
+    now, which is before any hardware is reached and before a name for the
+    mistake has to be guessed from a failed read.
+    """
+    with pytest.raises(TypeError, match="backs parts without being one"):
+        _run_bench(_fake_robot_type("Connection"))
 
 
 # --- real parts, faked SDKs -------------------------------------------
@@ -2335,11 +2355,11 @@ def test_a_real_arm_runs_against_a_faked_sdk():
         arm.connect()
 
         assert arm.is_connected
-        assert set(arm.exports) == {"arm", "end_effector"}
+        assert set(arm.parts) == {"arm", "end_effector"}
 
         observation = arm.get_observation()
         assert observation["tcp_pose"].shape == (7,)
-        assert arm.exports["end_effector"].get_observation()["state"].shape == (1,)
+        assert arm.parts["end_effector"].get_observation()["state"].shape == (1,)
 
         arm.send_action({"joint_position": [0.0] * 7})
 
@@ -2542,23 +2562,34 @@ def test_every_real_task_is_registered_through_the_shared_factory():
     assert offenders == [], f"these register a task outside register_tasks: {offenders}"
 
 
-def test_a_dual_arm_config_can_switch_its_address_check_off():
-    """Every other robot config can; this one rejected the field outright.
+def test_an_address_is_checked_by_the_arm_that_dials_it():
+    """The part refuses a placeholder; the config it came from does not.
 
-    A config whose addresses are placeholders, or whose arms are faked, has
-    nothing to validate, and being unable to say so is what stopped a dual-arm
-    config from being written at all.
+    Whether a string is an address is one question with one answer, and two
+    robot configs used to answer it separately -- with different messages, and
+    with a ``disable_validate`` switch on one of them to turn it back off. The
+    arm is what opens the connection, so the arm is what checks, and a
+    placeholder left in a YAML now fails where it is used.
     """
+    from rlinf.robotics.parts.arms.franka_ros import FrankaROSArm
+    from rlinf.robotics.parts.arms.franky import FrankyArm
     from rlinf.robotics.robots.dual_franka import DualFrankaConfig
+    from rlinf.robotics.robots.franka import FrankaConfig
 
-    with pytest.raises(ValueError, match="valid IP address"):
-        DualFrankaConfig(node_rank=0, left_robot_ip="LEFT_ROBOT_IP")
-
-    relaxed = DualFrankaConfig(
-        node_rank=0, left_robot_ip="LEFT_ROBOT_IP", disable_validate=True
+    # Parsing a config no longer decides this; enumeration may still fill the
+    # field in from the node's environment.
+    assert (
+        DualFrankaConfig(node_rank=0, left_robot_ip="LEFT_ROBOT_IP").left_robot_ip
+        == "LEFT_ROBOT_IP"
     )
+    assert FrankaConfig(node_rank=0, robot_ip="ROBOT_IP").robot_ip == "ROBOT_IP"
 
-    assert relaxed.left_robot_ip == "LEFT_ROBOT_IP"
+    for arm_cls in (FrankaROSArm, FrankyArm):
+        with pytest.raises(ValueError, match="to be an IP address"):
+            arm_cls("LEFT_ROBOT_IP")
+        with pytest.raises(ValueError, match="needs a 'robot_ip'"):
+            arm_cls("")
+        assert arm_cls("10.0.0.1")._robot_ip == "10.0.0.1"
 
 
 def test_a_connection_cannot_be_composed_into_a_robot():
@@ -2573,13 +2604,13 @@ def test_a_connection_cannot_be_composed_into_a_robot():
     """
     from rlinf.robotics.parts.arms.dosw1 import DOSW1Connection
     from rlinf.robotics.parts.arms.turtle2 import Turtle2Connection
-    from rlinf.robotics.parts.base import Connection, Endpoint, RobotPart
+    from rlinf.robotics.parts.base import Connection, RobotPart
 
     for cls in (Turtle2Connection, DOSW1Connection):
-        assert issubclass(cls, Connection)
-        assert issubclass(cls, Endpoint), f"{cls.__name__} must still be placeable"
+        assert issubclass(cls, Connection), f"{cls.__name__} must still be placeable"
         assert not issubclass(cls, RobotPart), (
-            f"{cls.__name__} is a connection; it must not be composable as a part"
+            f"{cls.__name__} backs parts without being one; it must not be "
+            "composable as a part"
         )
         for absent in ("get_observation", "observation_features"):
             assert not hasattr(cls, absent), (
@@ -2696,7 +2727,7 @@ def test_a_hosted_camera_reopens_on_the_node_that_holds_it():
         def wait(self):
             return [None]
 
-    class Group:
+    class FakeWorkerGroup:
         def __init__(self):
             self.calls = []
 
@@ -2704,7 +2735,7 @@ def test_a_hosted_camera_reopens_on_the_node_that_holds_it():
             self.calls.append("reopen")
             return Result()
 
-    group = Group()
+    group = FakeWorkerGroup()
     RemoteCamera(group, None, {}).reopen()
 
     assert group.calls == ["reopen"]
@@ -2732,29 +2763,31 @@ def test_a_held_hand_resumes_from_the_pose_the_env_reset_it_to():
     )
 
 
-def test_exports_and_children_are_different_questions():
+def test_backed_parts_and_children_are_different_questions():
     """One word used to answer both, and they are not the same question.
 
-    ``exports`` is what a hardware session offers; ``children`` is what a robot
-    was composed of. Composition is where the two meet -- it picks exports and
-    names them -- and nowhere else. Sharing a name meant a reader could not
-    tell which of the two a given call site meant, and the docs got it wrong.
+    ``parts`` is what a hardware session backs; ``children`` is what a robot
+    was composed of. Composition is where the two meet -- ``part(name)`` picks
+    one and the keyword names it -- and nowhere else. Sharing a name meant a
+    reader could not tell which of the two a given call site meant, and the
+    docs got it wrong.
     """
     from rlinf.robotics.parts.arms.turtle2 import Turtle2Connection
-    from rlinf.robotics.parts.base import Connection, Group
+    from rlinf.robotics.parts.base import Connection, PartGroup, RobotPart
 
     connection = Turtle2Connection()
 
-    assert set(connection.exports) >= {"left", "left_end_effector"}
+    assert set(connection.parts) >= {"left", "left_end_effector"}
     assert not hasattr(connection, "children"), (
         "a connection composes nothing; it only offers"
     )
 
-    robot = Group(arm=connection.export("left"))
+    robot = PartGroup(arm=connection.part("left"))
 
     assert set(robot.children) == {"arm"}
-    assert robot.exports == {}, "a group offers nothing of its own"
+    assert robot.parts == {}, "a group backs nothing of its own"
     assert isinstance(connection, Connection)
+    assert not isinstance(connection, RobotPart)
 
 
 def test_describe_says_where_a_part_runs_before_anything_is_opened():
@@ -2770,8 +2803,8 @@ def test_describe_says_where_a_part_runs_before_anything_is_opened():
     class Bench(Robot):
         ROBOT_TYPE = "Bench"
 
-    declared = FrankyArm.at("10.0.0.1", node_rank=2)
-    robot = Bench(arm=declared.export("arm"), gripper=declared.export("end_effector"))
+    declared = FrankyArm("10.0.0.1", node_rank=2)
+    robot = Bench(arm=declared.part("arm"), gripper=declared.part("end_effector"))
 
     described = robot.describe()
 
@@ -2785,8 +2818,8 @@ def test_describe_says_where_a_part_runs_before_anything_is_opened():
 def test_a_robot_can_be_disconnected_twice():
     """Teardown calls disconnect when it is not sure the robot came up.
 
-    Disconnecting restores the declarations, so the second call walked a tree
-    holding those and asked a ``SubpartRef`` whether it was connected. The
+    Disconnecting restores the composition, so the second call walked a tree
+    holding unresolved picks and asked one whether it was connected. The
     ``AttributeError`` that produced would surface from inside a ``finally``,
     replacing whatever error the caller was actually handling.
 
@@ -2800,8 +2833,8 @@ def test_a_robot_can_be_disconnected_twice():
     class Bench(Robot):
         ROBOT_TYPE = "Bench"
 
-    declared = FrankyArm.at("10.0.0.1", gripper_connection="/dev/mock-gripper")
-    robot = Bench(arm=declared.export("arm"), gripper=declared.export("end_effector"))
+    declared = FrankyArm("10.0.0.1", gripper_connection="/dev/mock-gripper")
+    robot = Bench(arm=declared.part("arm"), gripper=declared.part("end_effector"))
 
     with mocked_sdks():
         robot.connect()

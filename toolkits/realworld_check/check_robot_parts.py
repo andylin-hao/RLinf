@@ -44,7 +44,7 @@ import sys
 import traceback
 from typing import Any
 
-from rlinf.robotics.parts.base import Connection, Group
+from rlinf.robotics.parts.base import Connection, PartGroup, RobotPart
 
 #: The fakes and the contracts live with the tests rather than in the package:
 #: they check RLinf rather than being part of it. This script is the one caller
@@ -73,7 +73,7 @@ def literal(text: str) -> Any:
 
 def walk(part: Any, prefix: str = "") -> list[tuple[str, Any]]:
     """Every leaf part of a robot, by dotted path."""
-    if isinstance(part, Group):
+    if isinstance(part, PartGroup):
         found: list[tuple[str, Any]] = []
         for name, child in part.children.items():
             found += walk(child, f"{prefix}{name}.")
@@ -167,7 +167,7 @@ def check(robot_type: str, kwargs: dict[str, Any]) -> int:
     print("[4/5] observing every part")
     failures = []
     for path, part in walk(robot):
-        if isinstance(part, Connection):
+        if isinstance(part, Connection) and not isinstance(part, RobotPart):
             failures.append(f"{path} is a Connection and should not be in the tree")
             continue
         try:

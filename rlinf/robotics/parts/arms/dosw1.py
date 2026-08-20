@@ -21,12 +21,8 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from rlinf.robotics.parts.base import (
-    Connection,
-    ControllablePart,
-    EndEffector,
-    RobotPart,
-)
+from rlinf.robotics.parts.base import Connection, ControllablePart, RobotPart
+from rlinf.robotics.parts.end_effectors.base import EndEffector
 from rlinf.utils.logging import get_logger
 
 #: Arm sides exposed by one DOSW1 SDK session.
@@ -71,7 +67,7 @@ class DOSW1Connection(Connection):
 
     The session drives four components and is none of them, so it is a
     :class:`~rlinf.robotics.parts.base.Connection`: it owns connecting and
-    disconnecting, :attr:`exports` says what rides on it, and the robot composes
+    disconnecting, :attr:`parts` says what rides on it, and the robot composes
     those.
     """
 
@@ -179,7 +175,7 @@ class DOSW1Connection(Connection):
             self._logger.exception("[DOSW1SDK] Failed to disconnect cleanly")
 
     @property
-    def exports(self) -> dict[str, RobotPart]:
+    def parts(self) -> dict[str, RobotPart]:
         """Expose both arms and both end effectors on this one SDK session.
 
         The subparts borrow the session; this part owns connecting and

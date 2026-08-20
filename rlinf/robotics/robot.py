@@ -17,22 +17,24 @@
 from collections.abc import Mapping
 from typing import Any, ClassVar, Optional, TypeVar
 
-from .parts.base import Group, RobotPart
+from .parts.base import PartGroup, RobotPart, _ExportRef
 
 RobotPartType = TypeVar("RobotPartType", bound=RobotPart)
 
 
-class Robot(Group):
-    """A named group of parts that owns their placement.
+class Robot(PartGroup):
+    """A named group of parts that owns where they run.
 
-    A robot is a :class:`~rlinf.robotics.parts.base.Group` like any other, with
-    three additions: it knows its registered type, it builds itself from a
-    hardware config, and :meth:`connect` places the parts that were declared
-    rather than constructed::
+    A robot is a :class:`~rlinf.robotics.parts.base.PartGroup` like any other,
+    with three additions: it knows its registered type, it builds itself from a
+    hardware config, and :meth:`connect` opens every connection it was composed
+    from -- on the machine each one belongs to::
 
+        arm = FrankaROSArm(robot_ip, node_rank=1)
         robot = FrankaRobot(
-            arm=FrankaROSArm.at(robot_ip, node_rank=1).export("arm"),
-            wrist=RealSenseCamera.at(info, node_rank=3),
+            arm=arm.part("arm"),
+            end_effector=arm.part("end_effector"),
+            wrist=RealSenseCamera(info, node_rank=3),
         )
         robot.connect()
 
@@ -56,19 +58,19 @@ class Robot(Group):
         """Compose this robot from its hardware config.
 
         Only robots reached through the registry need this: it is what
-        ``register`` hands to :func:`~rlinf.robotics.discovery.build_robot`, so
-        a robot can be composed from its type name alone. A robot you construct
+        :meth:`register_type` hands to the registry, so :meth:`of_type` can
+        compose a robot from its type name alone. A robot you construct
         yourself does not need it -- name the parts and connect::
 
             class Bench(Robot):
                 ROBOT_TYPE = "Bench"
 
 
-            connection = MyArm.at(port, node_rank=1)
+            connection = MyArm(port, node_rank=1)
             robot = Bench(
-                arm=connection.export("arm"),
-                gripper=connection.export("end_effector"),
-                eye=MyCamera.at(info),
+                arm=connection.part("arm"),
+                gripper=connection.part("end_effector"),
+                eye=MyCamera(info),
             )
             robot.connect()
 
@@ -81,37 +83,90 @@ class Robot(Group):
         )
 
     @classmethod
-    def register(cls, config_cls: type, discovery_cls: type) -> type:
-        """Register this robot's config, discovery, and builder in one call."""
-        from .discovery import register_robot
+    def register_type(
+        cls, config_cls: type, discovery_cls: Optional[type] = None
+    ) -> type:
+        """Register this robot's config, discovery, and builder in one call::
+
+            FrankaRobot.register_type(FrankaConfig)
+
+        Discovering a robot on a node is the same procedure for every robot,
+        so ``discovery_cls`` is optional and one is made here when it is left
+        out. It is named after this robot and takes its ``HW_TYPE`` from
+        :attr:`ROBOT_TYPE`, which is the only thing a plain discovery class
+        ever said. Pass one only to override
+        :meth:`~rlinf.robotics.discovery.RobotDiscovery.enumerate` itself.
+
+        Named for what it registers -- a robot *type* with the scheduler --
+        because :meth:`~rlinf.robotics.parts.base.Connection.register` already
+        means something else on every connection: putting a driver in a
+        category's registry.
+        """
+        from .discovery import RobotDiscovery, register_robot
+
+        if discovery_cls is None:
+            discovery_cls = type(
+                f"{cls.__name__}Discovery",
+                (RobotDiscovery,),
+                {
+                    "HW_TYPE": cls.ROBOT_TYPE,
+                    "__module__": cls.__module__,
+                    "__doc__": f"Find {cls.ROBOT_TYPE} robots on a node.",
+                },
+            )
+        elif not getattr(discovery_cls, "HW_TYPE", ""):
+            discovery_cls.HW_TYPE = cls.ROBOT_TYPE
 
         return register_robot(config_cls, cls, build=cls.build)(discovery_cls)
+
+    @classmethod
+    def of_type(cls, robot_type: str, **kwargs: Any) -> "Robot":
+        """Compose a registered robot by type name.
+
+        What a config file names is a string, so this is the door from a
+        deployment's YAML into a composed robot::
+
+            robot = Robot.of_type("Franka", robot_ip="10.0.0.1", node_rank=1)
+
+        The type has to have been registered, which happens when its module is
+        imported. Importing :mod:`rlinf.robotics.robots` registers every robot
+        that ships.
+        """
+        from .discovery import RobotDiscovery
+
+        registration = RobotDiscovery.registry.get(robot_type)
+        if registration is None:
+            raise KeyError(
+                f"Unknown robot type {robot_type!r}. "
+                f"Registered: {sorted(RobotDiscovery.registry)}."
+            )
+        if registration.build is None:
+            raise NotImplementedError(
+                f"Robot type {robot_type!r} registered no builder."
+            )
+        return registration.build(**kwargs)
 
     def parts_of_type(self, part_type: type[RobotPartType]) -> dict[str, RobotPartType]:
         """Return every part implementing ``part_type``, by its dotted path."""
         matches: dict[str, RobotPartType] = {}
 
-        def walk(group: Group, prefix: str) -> None:
+        def walk(group: PartGroup, prefix: str) -> None:
             for name, part in group.children.items():
                 path = f"{prefix}{name}"
                 if isinstance(part, part_type):
                     matches[path] = part
-                if isinstance(part, Group):
+                if isinstance(part, PartGroup):
                     walk(part, f"{path}.")
 
         walk(self, "")
         return matches
 
     @staticmethod
-    def _origin_spec(part: Any) -> Any:
-        """The declaration a part came from, when it came from one."""
-        from .placement.specs import PartSpec, SubpartRef
-
-        if isinstance(part, SubpartRef):
-            return part.spec
-        if isinstance(part, PartSpec):
-            return part
-        return None
+    def _origin(part: Any) -> Any:
+        """The connection a composed part came out of, when it came out of one."""
+        if isinstance(part, _ExportRef):
+            return part.connection
+        return part
 
     @classmethod
     def _flatten(cls, declared: Mapping[str, Any], prefix: str = "") -> dict[str, Any]:
@@ -125,79 +180,61 @@ class Robot(Group):
                 flat[path] = value
         return flat
 
-    @staticmethod
-    def _declared_kind(part_cls: Optional[type]) -> str:
-        """What a declared part will be, without building it."""
-        from .parts.base import _PART_KINDS
-
-        if part_cls is None:
-            return "declared"
-        for kind, kind_cls in _PART_KINDS:
-            if isinstance(part_cls, type) and issubclass(part_cls, kind_cls):
-                return kind
-        return "declared"
-
     def describe(self) -> str:
         """What this robot is made of, where it runs, and what backs each part.
 
         Readable before anything is opened, which is when it is most useful: a
-        declaration already says which node a part will run on and which
-        connection it will come from, so a composition can be checked without
-        a robot present.
+        composed part already says which node it will run on and which connection
+        it will come from, so a composition can be checked without a robot
+        present.
 
         Parts sharing a ``via`` share one connection, and are therefore opened
         once and commanded in their declared order rather than concurrently.
         """
-        from .placement.specs import PartSpec, SubpartRef
-
         lines = [type(self).__name__]
         rows: list[tuple[str, Any]] = []
 
-        def walk(group: Group, prefix: str) -> None:
+        def walk(group: PartGroup, prefix: str) -> None:
             for name, part in group.children.items():
                 path = f"{prefix}{name}"
-                if isinstance(part, Group):
+                if isinstance(part, PartGroup):
                     walk(part, f"{path}.")
                 else:
                     rows.append((path, part))
 
         walk(self, "")
 
-        # Placement and ownership are properties of the declaration, and a
-        # connected part no longer carries one. The robot kept the snapshot it
-        # would restore on failure, so the same answer is available either
+        # Placement and ownership belong to the connection a part came out of,
+        # and a connected part no longer names one. The robot kept the snapshot
+        # it would restore on failure, so the same answer is available either
         # side of connect rather than only before it.
         declared = self._flatten(self._declared or {})
 
-        # Parts declared from one spec share a connection; number the specs in
-        # the order they appear so the grouping is visible at a glance.
+        # Parts picked out of one connection share it; number the connections
+        # in the order they appear so the grouping is visible at a glance.
         origins: dict[int, str] = {}
         for path, part in rows:
-            spec = self._origin_spec(declared.get(path, part))
-            if spec is not None and id(spec) not in origins:
-                origins[id(spec)] = f"{spec.part_cls.__name__}#{len(origins) + 1}"
+            origin = self._origin(declared.get(path, part))
+            if id(origin) not in origins:
+                origins[id(origin)] = f"{type(origin).__name__}#{len(origins) + 1}"
 
         width = max((len(path) for path, _ in rows), default=0)
         for index, (path, part) in enumerate(rows):
             branch = "└──" if index == len(rows) - 1 else "├──"
-            spec = self._origin_spec(declared.get(path, part))
-            if isinstance(part, SubpartRef):
-                # What a connection exports is only known once it is open, so
+            composed = declared.get(path, part)
+            origin = self._origin(composed)
+            if isinstance(composed, _ExportRef):
+                # What parts a connection backs is only settled once it is open, so
                 # naming the connection's own kind here would say the arm is a
                 # connection. It is not.
                 kind = "declared"
-            elif isinstance(part, PartSpec):
-                kind = self._declared_kind(spec.part_cls if spec else None)
             else:
-                kind = part.kind
-            where = (
-                "here"
-                if spec is None or spec.node_rank is None
-                else str(spec.node_rank)
-            )
-            via = origins.get(id(spec), "itself") if spec is not None else "itself"
+                kind = composed.kind
+            node_rank = getattr(origin, "node_rank", None)
+            where = "here" if node_rank is None else str(node_rank)
             lines.append(
-                f"{branch} {path:<{width}}  {kind:<13} node={where:<5} via {via}"
+                f"{branch} {path:<{width}}  {kind:<13} node={where:<5} "
+                f"via {origins[id(origin)]}"
             )
         return "\n".join(lines)
 
@@ -207,12 +244,12 @@ class Robot(Group):
         return self.parts_of_type(RobotPart)
 
     def connect(self) -> None:
-        """Place any declared parts, then connect everything.
+        """Open every connection this robot was composed from, then connect it.
 
-        Each distinct declaration is built once, however many parts refer to it.
-        If anything fails, whatever was already placed or connected is torn down
-        and the parts go back to their declarations, so you can fix the cause and
-        call ``connect`` again.
+        Each distinct connection is opened once, however many parts came out of
+        it. If anything fails, whatever was already opened is torn down and the
+        tree goes back to what it was composed with, so you can fix the cause
+        and call ``connect`` again.
         """
         from .placement import Placement
 
@@ -238,11 +275,11 @@ class Robot(Group):
             raise
 
     def disconnect(self) -> None:
-        """Disconnect every part, release the connections, restore declarations.
+        """Disconnect every part, release the handles, restore the composition.
 
-        A disconnected robot can be connected again: the parts go back to the
-        declarations they were composed with, so ``connect`` places fresh ones
-        rather than reusing any whose connection is gone.
+        A disconnected robot can be connected again: the tree goes back to what
+        it was composed with, so ``connect`` opens the connections afresh rather
+        than reusing a part whose connection is gone.
         """
         super().disconnect()
 

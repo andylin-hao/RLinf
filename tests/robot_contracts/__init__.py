@@ -155,7 +155,7 @@ class Contract(ABC):
 
     # -- shared checks ----------------------------------------------------
 
-    def lifecycle_failures(self, endpoint: Any, where: str) -> list[str]:
+    def lifecycle_failures(self, connection: Any, where: str) -> list[str]:
         """Connect, disconnect, do it again, and do the last one twice.
 
         Reconnecting is the one people skip, and it is the one stall recovery
@@ -166,35 +166,35 @@ class Contract(ABC):
         """
         found: list[str] = []
 
-        if endpoint.is_connected:
+        if connection.is_connected:
             found.append(f"{where} reports itself connected before connect()")
 
         try:
-            endpoint.connect()
+            connection.connect()
         except Exception as error:  # noqa: BLE001
             return found + [f"{where}: connect raised {type(error).__name__}: {error}"]
-        if not endpoint.is_connected:
+        if not connection.is_connected:
             found.append(f"{where} does not report itself connected after connect()")
 
         try:
-            endpoint.connect()
+            connection.connect()
         except Exception as error:  # noqa: BLE001
             found.append(
-                f"{where}: connecting an already-connected endpoint raised "
+                f"{where}: connecting an already-connected connection raised "
                 f"{type(error).__name__}: {error}"
             )
 
         try:
-            endpoint.disconnect()
+            connection.disconnect()
         except Exception as error:  # noqa: BLE001
             return found + [
                 f"{where}: disconnect raised {type(error).__name__}: {error}"
             ]
-        if endpoint.is_connected:
+        if connection.is_connected:
             found.append(f"{where} still reports itself connected after disconnect()")
 
         try:
-            endpoint.disconnect()
+            connection.disconnect()
         except Exception as error:  # noqa: BLE001
             found.append(
                 f"{where}: disconnecting twice raised "
@@ -202,25 +202,25 @@ class Contract(ABC):
             )
 
         try:
-            endpoint.connect()
+            connection.connect()
         except Exception as error:  # noqa: BLE001
             found.append(
                 f"{where}: reconnecting raised {type(error).__name__}: {error}; "
-                "stall recovery closes an endpoint and opens it again"
+                "stall recovery closes a connection and opens it again"
             )
         return found
 
     @staticmethod
-    def release(endpoint: Any) -> None:
+    def release(connection: Any) -> None:
         """Let a checked subject go, whatever state the checks left it in."""
         try:
-            endpoint.disconnect()
+            connection.disconnect()
         except Exception:  # noqa: BLE001 - anything wrong here is already reported
             pass
 
 
 class PartContract(Contract):
-    """A part is an endpoint you can read, and optionally command.
+    """A part is a connection you can read, and optionally command.
 
     Args:
         factory: Builds a fresh, unconnected part.
@@ -241,12 +241,13 @@ class PartContract(Contract):
         part = self.factory()
         where = type(part).__name__
 
-        if isinstance(part, Connection):
-            return [
-                f"{where} is a Connection, so it belongs to ConnectionContract; "
-                "a part is something you can read"
-            ]
         if not isinstance(part, RobotPart):
+            if isinstance(part, Connection):
+                return [
+                    f"{where} is a connection that backs parts without being "
+                    "one, so it belongs to ConnectionContract; a part is "
+                    "something you can read"
+                ]
             return [f"{where} is not a RobotPart"]
 
         found = self.lifecycle_failures(part, where)
@@ -284,7 +285,7 @@ class PartContract(Contract):
 class ConnectionContract(Contract):
     """A connection owns a session and offers what rides on it.
 
-    Its exports borrow that session: they are read through it, and they are
+    Its parts borrow that session: they are read through it, and they are
     not opened or closed on their own.
     """
 
@@ -296,9 +297,12 @@ class ConnectionContract(Contract):
         where = type(connection).__name__
 
         if not isinstance(connection, Connection):
+            return [f"{where} is not a Connection, so it cannot be opened at all"]
+        if isinstance(connection, RobotPart):
             return [
-                f"{where} is not a Connection. A thing that backs several parts "
-                "without being one of them should be, so a robot cannot compose it"
+                f"{where} is a RobotPart, so a robot can compose it whole. A "
+                "link that backs several parts without being one of them should "
+                "subclass Connection directly, and leave get_observation off"
             ]
 
         found = [
@@ -308,28 +312,32 @@ class ConnectionContract(Contract):
         ]
         found += self.lifecycle_failures(connection, where)
         if connection.is_connected:
-            found += self._export_failures(connection, where, RobotPart, Connection)
+            found += self._backed_part_failures(connection, where, RobotPart)
 
         self.release(connection)
         return found
 
     @staticmethod
-    def _export_failures(
-        connection: Any, where: str, part_cls: type, connection_cls: type
-    ) -> list[str]:
-        """Everything the session offers has to be a readable part."""
-        exports = connection.exports
-        if not exports:
-            return [f"{where} exports nothing, so no robot can use it"]
+    def _backed_part_failures(connection: Any, where: str, part_cls: type) -> list[str]:
+        """Everything the session backs has to be a part a robot can read.
+
+        One check, because there is one requirement. A thing that is not a
+        ``RobotPart`` cannot be composed at all, whether it is a second bus, a
+        raw SDK object, or a string somebody left in the mapping.
+        """
+        parts = connection.parts
+        if not parts:
+            return [f"{where} backs no parts, so no robot can use it"]
 
         found: list[str] = []
-        for name, export in exports.items():
-            if isinstance(export, connection_cls):
-                found.append(f"{where} exports {name!r}, which is itself a connection")
-            elif not isinstance(export, part_cls):
-                found.append(f"{where} exports {name!r}, which is not a part")
+        for name, backed in parts.items():
+            if not isinstance(backed, part_cls):
+                found.append(
+                    f"{where} backs {name!r}, which is a "
+                    f"{type(backed).__name__} and not a readable part"
+                )
             else:
-                found += ObservationContract(export, f"{where}.{name}").failures()
+                found += ObservationContract(backed, f"{where}.{name}").failures()
         return found
 
 
@@ -365,14 +373,14 @@ class RobotContract(Contract):
     @classmethod
     def _tree_failures(cls, robot: Any) -> list[str]:
         """Every leaf observes what it declared, and no connection is a leaf."""
-        from rlinf.robotics.parts.base import Connection
+        from rlinf.robotics.parts.base import Connection, RobotPart
 
         found: list[str] = []
         for path, part in cls._leaves(robot, ""):
-            if isinstance(part, Connection):
+            if isinstance(part, Connection) and not isinstance(part, RobotPart):
                 found.append(
                     f"{path} is a connection and should not be in the tree; "
-                    "compose the parts it exports"
+                    "compose the parts it backs"
                 )
             else:
                 found += ObservationContract(part, path).failures()
@@ -381,12 +389,12 @@ class RobotContract(Contract):
     @classmethod
     def _leaves(cls, group: Any, prefix: str) -> list[tuple[str, Any]]:
         """Every leaf of a composed tree, by its dotted path."""
-        from rlinf.robotics.parts.base import Group
+        from rlinf.robotics.parts.base import PartGroup
 
         found: list[tuple[str, Any]] = []
         for name, part in group.children.items():
             path = f"{prefix}{name}"
-            if isinstance(part, Group):
+            if isinstance(part, PartGroup):
                 found += cls._leaves(part, f"{path}.")
             else:
                 found.append((path, part))
@@ -395,21 +403,21 @@ class RobotContract(Contract):
     def _rollback_failures(self) -> list[str]:
         """A robot that fails halfway through connecting leaves nothing open.
 
-        The failure is injected into the last declaration the robot places, so
-        whatever came before it has already been built when the error arrives.
+        The failure is injected into the last connection the robot opens, so
+        whatever came before it has already been opened when the error arrives.
         That is the case that leaks.
         """
         robot = self.factory()
-        specs = self._declarations(robot)
-        if not specs:
-            # Nothing is declared, so there is no partial state to roll back.
+        connections = self._declarations(robot)
+        if not connections:
+            # Nothing to open, so there is no partial state to roll back.
             return []
 
         # Whichever entry point this class actually opens through. A part with
         # a lifecycle of its own is allowed to override connect instead of
         # _open, and patching the one it does not use injects nothing and
         # quietly passes.
-        target = specs[-1].part_cls
+        target = type(connections[-1])
         hook = "_open" if "_open" in vars(target) else "connect"
         original = getattr(target, hook)
 
@@ -440,23 +448,25 @@ class RobotContract(Contract):
 
     @staticmethod
     def _declarations(robot: Any) -> list[Any]:
-        """Every distinct declaration this robot will place, in tree order."""
-        from rlinf.robotics.placement.specs import PartSpec, SubpartRef
+        """Every distinct connection this robot will open, in tree order."""
+        from rlinf.robotics.parts.base import Connection, _ExportRef
 
-        specs: list[Any] = []
+        connections: list[Any] = []
 
         def walk(group: Any) -> None:
             for value in group.children.values():
                 if hasattr(value, "children"):
                     walk(value)
                     continue
-                if isinstance(value, SubpartRef):
-                    value = value.spec
-                if isinstance(value, PartSpec) and not any(s is value for s in specs):
-                    specs.append(value)
+                if isinstance(value, _ExportRef):
+                    value = value.connection
+                if isinstance(value, Connection) and not any(
+                    seen is value for seen in connections
+                ):
+                    connections.append(value)
 
         walk(robot)
-        return specs
+        return connections
 
 
 class PlacementParityContract(Contract):

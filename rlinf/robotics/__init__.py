@@ -14,28 +14,32 @@
 
 """RLinf's robotics layer: parts, and the robots composed from them.
 
-Four concepts:
+Three concepts:
 
-* **Endpoint** -- anything the robot opens on a machine and later closes. It
-  has a location and a lifecycle, and that is all. Both of the following are
-  endpoints.
-* **Part** -- an endpoint you can read, which is what makes it a component of
-  the robot: an arm, an end effector, a camera. It has a policy-facing
-  observation and action contract.
-* **Connection** -- an endpoint that backs several parts without being one. A
-  coupled dual-arm controller, a two-armed SDK session:
-  :attr:`~rlinf.robotics.parts.base.Endpoint.exports` says what rides on it, and
-  the robot composes those. Reading it would mean nothing, so it is a sibling
-  of ``Part`` rather than a part that declines to answer -- which is what keeps
-  it out of the robot's tree.
-* **Robot** -- a named composition of parts. See :mod:`rlinf.robotics.robot`.
+* **Connection** -- one link to hardware. It knows the machine it runs on, it
+  opens, and it closes. Subclass it directly when a single link backs several
+  components without being any of them -- a coupled dual-arm controller, a
+  two-armed SDK session. Reading such a link would mean nothing, so
+  :attr:`~rlinf.robotics.parts.base.Connection.parts` says what rides on it and
+  the robot composes those.
+* **Part** -- a connection you *can* read, which is what makes it a component
+  of the robot: an arm, an end effector, a camera, a mobile base. It has a
+  policy-facing observation contract, and an action contract when it is
+  controllable. An arm is both a part and its own link, and that is the ordinary
+  case.
+* **Robot** -- a named composition of parts, and only parts. Hand it a bare
+  connection and it says which of the parts to pick instead. See
+  :mod:`rlinf.robotics.robot`.
 
-Any endpoint can be placed on a node with
-:meth:`~rlinf.robotics.parts.base.Endpoint.spawn`, so a camera can run on the
-machine it is plugged into while the policy runs elsewhere.
+Every connection takes an optional ``node_rank``, so a camera can run on the
+machine it is plugged into while the policy runs elsewhere. Nothing else is
+needed to say where hardware lives, and no part writes a line for it:
+constructing a connection declares it, and
+:meth:`~rlinf.robotics.robot.Robot.connect` opens it on the machine it named.
 
 The scheduler never imports this package, and parts never import the scheduler
-except through ``spawn``, which loads :mod:`rlinf.robotics.placement` lazily.
+except through :meth:`~rlinf.robotics.parts.base.Connection.place`, which loads
+:mod:`rlinf.robotics.placement` lazily.
 
 Symbols load lazily so a node without a given robot's SDK can still import
 ``rlinf.robotics``.
@@ -50,32 +54,30 @@ from typing import Any
 #: single-line change in the group it belongs to.
 _MODULE_GROUPS: dict[str, tuple[str, ...]] = {
     ".parts": (
-        "Group",
-        "Camera",
         "Connection",
         "ControllablePart",
-        "EndEffector",
-        "Endpoint",
-        "LeggedBase",
-        "MobileBase",
+        "PartGroup",
         "RobotPart",
+        "register_kind",
         "run_parallel",
     ),
     ".parts.arms": ("ARM_STATE_FIELDS",),
-    ".parts.cameras": ("camera_cls", "declare_cameras"),
+    # Each device category lives with the drivers that implement it, and is
+    # reached lazily so a node loads only the hardware it has.
+    ".parts.cameras": ("BaseCamera", "Camera", "CameraInfo"),
+    ".parts.end_effectors": ("EndEffector",),
+    ".parts.mobility": ("MobileBase",),
     ".robot": ("Robot",),
     ".parts.views": ("MethodArm", "MethodCamera", "MethodGripper"),
     ".placement": (
         "LocalPartHandle",
         "PartHandle",
-        "PartSpec",
         "Placement",
         "RemoteCamera",
         "RemoteControllablePart",
         "RemoteEndEffector",
         "RemotePart",
         "RemotePartHandle",
-        "SubpartRef",
     ),
     ".robots": (
         "DOSW1Robot",
