@@ -1,10 +1,13 @@
-Adding a Task
-=============
+New Real-World Tasks
+====================
 
-Use this guide when RLinf already knows how to connect the robot and your change
-is about what the robot should accomplish. By the end, you will have a config
-dataclass, a small env class, a registered Gymnasium ID, and a YAML config you
-can launch.
+Use this guide when RLinf already knows how to connect the physical robot and
+your change is about what it should accomplish. By the end, you will have a
+config dataclass, a small env class, a registered Gymnasium ID, and a YAML config
+you can launch.
+
+This guide covers task modules under ``rlinf/envs/real``. To add a task to a
+simulator or benchmark, follow :doc:`new_env` instead.
 
 You will not change robot construction, device placement, or teleoperation.
 Targets, compliance settings, success rules, and reset behavior belong to the

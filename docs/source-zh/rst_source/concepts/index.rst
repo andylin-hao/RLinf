@@ -1,10 +1,9 @@
 概念
 ====
 
-建议先从自己正在使用的那一层读起，建立整体认识后再调优 placement、worker 和通信。
-只有在准备扩展或排查底层问题时，才需要继续追到对应的架构页。
+请根据当前问题选择对应的概念页面，例如训练执行流程、组件部署位置或机器人组织方式。各页面先介绍使用相关功能所需的核心模型，并在需要扩展或排查底层问题时链接至实现细节。
 
-选择概念区域
+选择概念主题
 ------------
 
 .. grid:: 1 2 2 2
@@ -14,31 +13,31 @@
       :link: execution-model/index
       :link-type: doc
 
-      理解任务流程、worker、cluster、channel 与 collective。
+      了解任务执行流程，以及 worker、cluster、channel 与 collective 之间的关系。
 
    .. grid-item-card:: 调度模型
       :link: scheduling-model/index
       :link-type: doc
 
-      理解 placement 策略、执行模式与 replay buffer。
+      了解 placement、执行模式与 replay buffer 的工作机制。
 
    .. grid-item-card:: 机器人模型
       :link: robotics
       :link-type: doc
 
-      把机器人作为一棵具名观测与动作部件树来使用。
+      了解部件名称与观测、动作路径之间的对应关系。
 
    .. grid-item-card:: 机器人架构
       :link: robotics_architecture
       :link-type: doc
 
-      深入了解共享连接、生命周期和远程放置。
+      了解共享连接、资源生命周期和远程部署机制。
 
    .. grid-item-card:: 真机环境模型
       :link: realworld_envs
       :link-type: doc
 
-      理解任务、遥操作与各类 wrapper 如何围绕机器人组织。
+      了解任务、遥操作和 wrapper 与机器人的组合关系。
 
 .. toctree::
    :hidden:

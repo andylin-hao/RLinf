@@ -23,8 +23,20 @@ The distinction matters because the two views answer different questions:
 - The **robot tree** says what the policy can observe or command.
 - The **hardware session** says what must be opened, placed, and released once.
 
-RLinf keeps those questions separate with ``children`` and ``exports``. Most of
-the architecture follows from that one choice.
+The code represents these views with two mappings:
+
+- A ``Group`` or ``Robot`` stores its public part tree in ``children``. Each key
+  becomes an observation and action path, such as ``left.arm``, so these are the
+  names seen by tasks, policies, and datasets.
+- An ``Endpoint`` stores the parts available from one hardware session in
+  ``exports``. Each key selects a part from that session, but it does not become
+  a robot path by itself.
+
+Composition joins the mappings. ``connection.export("arm")`` selects a part
+that the connection offers. Passing that result as ``Robot(arm=...)`` places it
+in the robot's ``children`` under the public name ``arm``. In short,
+``exports`` says what one connection can provide; ``children`` says what the
+robot contains.
 
 The Core Types
 --------------
@@ -63,11 +75,12 @@ The Core Types
 The specific ``Camera``, ``EndEffector``, ``MobileBase``, and ``LeggedBase``
 types preserve a device category when composition or a remote proxy needs it.
 
-Keep ``exports`` and ``children`` Distinct
-------------------------------------------
+Connect a Shared Hardware Session to the Robot Tree
+---------------------------------------------------
 
-Use ``exports`` to describe what one hardware session makes available. For
-example, an arm connection can export the arm itself and a gripper view:
+Define the ``exports`` mapping when one hardware session makes several parts
+available. For example, this arm endpoint opens one connection and offers both
+the arm itself and a gripper view:
 
 .. code-block:: python
 
@@ -81,8 +94,9 @@ example, an arm connection can export the arm itself and a gripper view:
                ),
            }
 
-Export names belong to that connection. They are not automatically the names a
-robot must publish. Composition makes that choice explicitly:
+At this point, ``arm`` and ``end_effector`` are selectors local to the
+connection. They are not yet paths in a robot. Choose the public paths when you
+compose the robot:
 
 .. code-block:: python
 
@@ -92,10 +106,11 @@ robot must publish. Composition makes that choice explicitly:
        end_effector=connection.export("end_effector"),
    )
 
-Now ``robot.children`` contains ``arm`` and ``end_effector``. The connection
-has no ``children``, and the group exports nothing. This makes ownership hard
-to misread: ``exports`` belongs to the hardware session; ``children`` belongs
-to the named robot tree. Composition is the only place they meet.
+The keyword arguments passed to ``Robot`` become ``robot.children``, so this
+robot now publishes ``arm`` and ``end_effector``. A ``Connection`` has no
+``children`` because it is not part of the public robot tree. A ``Group``
+exports nothing because its parts are already in that tree. The call to
+``connection.export(...)`` is where the two mappings meet.
 
 The same rule handles a coupled controller without pretending the controller is
 an arm:
@@ -117,8 +132,8 @@ an arm:
 
 One declaration backs every reference, so the controller is opened once.
 
-Declare Placement, Then Connect
--------------------------------
+Declare Placement Before Opening Hardware
+-----------------------------------------
 
 ``at()`` records where a part should be built; it does not construct the part or
 touch hardware:
@@ -155,8 +170,8 @@ bench script. It places immediately and hands lifecycle management to the
 caller. Inside a robot, prefer ``at()`` so connection rollback and cleanup stay
 automatic.
 
-Inspect a Declaration Before Opening Hardware
----------------------------------------------
+Inspect the Composition Before Connecting
+-----------------------------------------
 
 ``Robot.describe()`` reads the declaration snapshot rather than the live proxy.
 As a result, node and ownership information remains stable before, during, and
@@ -178,7 +193,7 @@ At present, ``describe()`` focuses on topology, placement, and ownership. It
 does not print observation or action feature schemas. In particular, an
 unopened ``Connection`` cannot describe the concrete parts it will export. Use
 the conformance checks in :doc:`../extending/new_robot` to validate those
-schemas after opening the connection with a fake SDK or the real device.
+schemas after opening the connection with a mock SDK or the real device.
 
 Follow the Lifecycle
 --------------------

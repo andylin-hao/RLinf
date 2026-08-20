@@ -237,5 +237,5 @@ Where the Code Lives
 Next
 ----
 
-- :doc:`Adding a Task <../extending/new_task>`: follow the step-by-step guide.
+- :doc:`New Real-World Tasks <../extending/new_task>`: follow the step-by-step guide.
 - :doc:`Robotics Model <robotics>`: how the robot underneath is composed.

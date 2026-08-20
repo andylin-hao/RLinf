@@ -2,8 +2,9 @@ Extending
 =========
 
 Choose the smallest extension point that matches your change. If RLinf already
-connects the hardware, add a task without touching robotics. If you need a new
-sensor, actuator, or robot, start with one local part and add placement later.
+connects the physical hardware, add a real-world task without touching robotics.
+If you need a new sensor, actuator, or robot, start with one local part and add
+placement later.
 The guides below take each path from a minimal implementation to registration
 and tests.
 
@@ -22,11 +23,11 @@ and tests.
 
       Add a new RL environment and wire it into the env registry.
 
-   .. grid-item-card:: New Task
+   .. grid-item-card:: New Real-World Tasks
       :link: new_task
       :link-type: doc
 
-      Add a task on hardware RLinf already supports.
+      Add a task on physical hardware RLinf already supports.
 
    .. grid-item-card:: New Robot
       :link: new_robot
@@ -69,7 +70,7 @@ and tests.
 
    Extending Overview <overview>
    New Environment <new_env>
-   New Task <new_task>
+   New Real-World Tasks <new_task>
    New Robot <new_robot>
    New Model with FSDP <new_model_fsdp>
    New Model with Megatron <new_model_megatron>

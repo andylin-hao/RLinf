@@ -99,8 +99,8 @@ on different nodes.
 Choose What to Read Next
 ------------------------
 
-- To add a task on supported hardware, continue with
-  :doc:`Adding a Task <../extending/new_task>`.
+- To add a task on supported physical hardware, continue with
+  :doc:`New Real-World Tasks <../extending/new_task>`.
 - To add one local sensor or actuator, continue with
   :doc:`Adding a Robot <../extending/new_robot>`.
 - To understand shared connections, ``Endpoint``, remote handles, lifecycle

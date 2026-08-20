@@ -92,13 +92,18 @@ When the device fits ``Camera``, ``EndEffector``, ``MobileBase``, or
 ``LeggedBase``, inherit that specific interface instead. Compositions and remote
 proxies can then retain its device category.
 
-2. Share One Connection When the Hardware Does
------------------------------------------------
+2. Let Several Parts Share One Connection
+------------------------------------------
 
-Once one local part works, check whether the hardware session owns anything
-else. A socket, CAN bus, or ROS node may drive several physical components. List
-those capabilities through ``exports`` so callers can name each part while the
-session still opens only once. For an arm, expose the arm itself as ``"arm"``.
+Once one local part works, check whether its hardware session also controls
+other components. A socket, CAN bus, or ROS node may drive an arm, a gripper,
+and a camera while still needing to open only once.
+
+In that case, define the endpoint's ``exports`` mapping. A key is the local name
+accepted by ``connection.export(name)``; its value is the ``RobotPart`` returned
+to the caller. This mapping only lists what the connection can provide. It does
+not decide where those parts appear in the robot tree. For an arm, expose the
+arm itself as ``"arm"``.
 
 .. code-block:: python
 
@@ -124,9 +129,10 @@ method names.
 3. Compose Stable Public Names
 ------------------------------
 
-A robot is a group of named parts. You can compose one directly before adding
-hardware discovery or YAML. Declare the shared connection once, then select and
-name the parts it exports:
+The previous step listed what the connection can provide. This step chooses the
+names that tasks and policies will see in the robot tree. You can compose a
+robot directly before adding hardware discovery or YAML: declare the shared
+connection once, then select each available part and assign its public name.
 
 .. code-block:: python
 
