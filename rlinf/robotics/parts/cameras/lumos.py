@@ -28,13 +28,22 @@ from typing import Any, Optional, Union
 
 import numpy as np
 
-from rlinf.utils.logging import get_logger
-
 from .base import BaseCamera, CameraInfo
 
-_logger = get_logger()
+
+def _logger():
+    """The logger, resolved on use.
+
+    Reaching for one loads the scheduler, and a camera driver has to be
+    importable on the machine it is plugged into, which may have no
+    cluster. Calling this inside a handler keeps that cost off import.
+    """
+    from rlinf.utils.logging import get_logger
+
+    return get_logger()
 
 
+@BaseCamera.register("lumos")
 class LumosCamera(BaseCamera):
     """Camera capture for LUMOS USB cameras (V4L2, I420 stream).
 
@@ -45,14 +54,13 @@ class LumosCamera(BaseCamera):
     * a numeric string or int interpreted as a V4L2 device index
     """
 
+    SDK = ("cv2", "opencv-python")
+
     _NATIVE_W = 1280
     _NATIVE_H = 1280
 
     def __init__(self, camera_info: CameraInfo):
-        import cv2
-
         super().__init__(camera_info)
-        self._cv2 = cv2
 
         if camera_info.enable_depth:
             raise ValueError("LumosCamera does not support depth capture via V4L2.")
@@ -60,45 +68,74 @@ class LumosCamera(BaseCamera):
         self._out_w, self._out_h = camera_info.resolution
         # XVisio vSLAM only streams YU12 at 1280x1280; off-spec hangs at select(). Resize in software.
         self._native_w, self._native_h = self._NATIVE_W, self._NATIVE_H
-        dev_path: Union[str, int] = self._resolve_device_path(camera_info.serial_number)
+        self._cv2: Any = None
 
-        self._cap = cv2.VideoCapture(dev_path, cv2.CAP_V4L2)
-        if not self._cap.isOpened():
+    def _open(self) -> Any:
+        """Open the V4L2 device and hold it to the format this camera needs.
+
+        Everything that touches the device happens here rather than in the
+        constructor, so composing a robot stays inert: a camera can be declared
+        on a machine that does not have it, and placement rebuilds it on the
+        machine that does. Opening here is also what makes ``reopen`` work,
+        which is how a stalled camera recovers.
+        """
+        import cv2
+
+        self._cv2 = cv2
+        info = self._camera_info
+        dev_path: Union[str, int] = self._resolve_device_path(info.serial_number)
+
+        capture = cv2.VideoCapture(dev_path, cv2.CAP_V4L2)
+        if not capture.isOpened():
             raise RuntimeError(
-                f"Failed to open LUMOS camera (serial={camera_info.serial_number}, "
+                f"Failed to open LUMOS camera (serial={info.serial_number}, "
                 f"dev_path={dev_path})."
             )
 
-        expected_fourcc = cv2.VideoWriter_fourcc(*"YU12")
-        self._cap.set(cv2.CAP_PROP_FOURCC, expected_fourcc)
-        # Keep OpenCV from silently reinterpreting the I420 buffer.
-        self._cap.set(cv2.CAP_PROP_CONVERT_RGB, 0)
-        self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, self._native_w)
-        self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self._native_h)
-        self._cap.set(cv2.CAP_PROP_FPS, camera_info.fps)
+        try:
+            self._configure(capture, dev_path)
+        except Exception:
+            # A half-configured capture still holds the device, and the
+            # lifecycle only releases what _open returned.
+            capture.release()
+            raise
+        return capture
 
-        actual_fourcc = int(self._cap.get(cv2.CAP_PROP_FOURCC))
+    def _configure(self, capture: Any, dev_path: Union[str, int]) -> None:
+        """Put the device in YU12 at its native size, or say why it will not go."""
+        cv2 = self._cv2
+        info = self._camera_info
+
+        expected_fourcc = cv2.VideoWriter_fourcc(*"YU12")
+        capture.set(cv2.CAP_PROP_FOURCC, expected_fourcc)
+        # Keep OpenCV from silently reinterpreting the I420 buffer.
+        capture.set(cv2.CAP_PROP_CONVERT_RGB, 0)
+        capture.set(cv2.CAP_PROP_FRAME_WIDTH, self._native_w)
+        capture.set(cv2.CAP_PROP_FRAME_HEIGHT, self._native_h)
+        capture.set(cv2.CAP_PROP_FPS, info.fps)
+
+        actual_fourcc = int(capture.get(cv2.CAP_PROP_FOURCC))
         if actual_fourcc != expected_fourcc:
             raise RuntimeError(
-                f"LUMOS camera (serial={camera_info.serial_number}, dev_path={dev_path}) "
+                f"LUMOS camera (serial={info.serial_number}, dev_path={dev_path}) "
                 f"does not support YU12. Actual FOURCC={actual_fourcc:#010x}."
             )
 
-        actual_w = int(self._cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        actual_h = int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        actual_w = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
+        actual_h = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
         if (actual_w, actual_h) != (self._native_w, self._native_h):
             raise RuntimeError(
-                f"LUMOS camera (serial={camera_info.serial_number}, dev_path={dev_path}) "
+                f"LUMOS camera (serial={info.serial_number}, dev_path={dev_path}) "
                 f"returned resolution {actual_w}x{actual_h}; expected "
                 f"{self._native_w}x{self._native_h}."
             )
 
         try:
-            self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         except Exception as exc:
-            _logger.warning(
+            _logger().warning(
                 "Failed to set LUMOS buffer size (serial=%s): %s",
-                self.camera_info.serial_number,
+                info.serial_number,
                 exc,
             )
 
@@ -119,7 +156,7 @@ class LumosCamera(BaseCamera):
             ) from exc
 
     def _read_frame(self) -> tuple[bool, Optional[np.ndarray]]:
-        ok, raw = self._cap.read()
+        ok, raw = self._device.read()
         if not ok or raw is None:
             return False, None
         try:
@@ -127,7 +164,7 @@ class LumosCamera(BaseCamera):
                 self._native_h * 3 // 2, self._native_w
             )
         except ValueError as exc:
-            _logger.warning(
+            _logger().warning(
                 "Dropping malformed LUMOS frame (serial=%s): %s",
                 self.camera_info.serial_number,
                 exc,
@@ -141,16 +178,21 @@ class LumosCamera(BaseCamera):
         return True, bgr
 
     def _release(self, device: Any) -> None:
-        if self._cap is not None:
-            self._cap.release()
+        """Release the capture the lifecycle handed back, not one read off self.
 
-    @staticmethod
-    def get_device_serial_numbers() -> list[str]:
-        """Return stable by-id identifiers for connected V4L2 cameras.
+        Taking the argument is what makes a second disconnect harmless and
+        keeps cleanup independent of when ``_device`` is cleared.
+        """
+        if device is not None:
+            device.release()
+
+    @classmethod
+    def discover(cls) -> set[str]:
+        """Stable ``by-id`` identifiers for the V4L2 cameras attached here.
 
         Falls back to ``videoN`` names when ``/dev/v4l/by-id/`` is unavailable.
         """
         devices = glob.glob("/dev/v4l/by-id/*")
-        if devices:
-            return [os.path.basename(d) for d in devices]
-        return [os.path.basename(v) for v in glob.glob("/dev/video*")]
+        if not devices:
+            devices = glob.glob("/dev/video*")
+        return {os.path.basename(device) for device in devices}

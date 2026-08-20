@@ -106,6 +106,82 @@ def test_every_shipped_robot_keeps_the_robot_contract(robot_type):
     assert failures == [], "\n".join(failures)
 
 
+#: Every camera backend, with an identifier its fake SDK answers to and the
+#: list that fake appends to when a device is opened.
+SHIPPED_CAMERAS = {
+    "realsense": ("MOCK0001", "pyrealsense2", "opened"),
+    "zed": ("12345678", "pyzed.sl", "opened"),
+    "lumos": ("video0", "cv2", "opens"),
+}
+
+
+@pytest.mark.parametrize("camera_type", sorted(SHIPPED_CAMERAS))
+def test_every_shipped_camera_keeps_the_part_contract(camera_type):
+    """Connect, read, disconnect, and open again -- for every backend.
+
+    Only RealSense and ZED had fake SDKs, so LUMOS was the one camera nobody
+    ever connected: it opened its device in ``__init__`` and implemented no
+    ``_open``, so ``connect()`` raised ``NotImplementedError`` every time. The
+    contract that would have caught it existed; it was never pointed here.
+    """
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        from rlinf.robotics.parts.cameras import BaseCamera, CameraInfo
+
+        info = CameraInfo(
+            name="wrist",
+            serial_number=SHIPPED_CAMERAS[camera_type][0],
+            camera_type=camera_type,
+            resolution=(64, 48),
+        )
+        failures = PartContract(lambda: BaseCamera.of(info)).failures()  # noqa: B023
+
+    assert failures == [], "\n".join(failures)
+
+
+@pytest.mark.parametrize("camera_type", sorted(SHIPPED_CAMERAS))
+def test_building_a_camera_opens_no_device(camera_type):
+    """Composing a robot must not touch hardware, cameras included.
+
+    A camera is declared on the machine composing the robot and opened on the
+    machine it is plugged into, so a constructor that opens the device breaks
+    placement -- and breaks describing a robot from a laptop.
+    """
+    from robot_mocks import mocked_sdks
+
+    serial, sdk_name, opened_attr = SHIPPED_CAMERAS[camera_type]
+
+    with mocked_sdks() as sdks:
+        from rlinf.robotics.parts.cameras import BaseCamera, CameraInfo
+
+        info = CameraInfo(
+            name="wrist",
+            serial_number=serial,
+            camera_type=camera_type,
+            resolution=(64, 48),
+        )
+        camera = BaseCamera.of(info, node_rank=2)
+
+        assert not camera.is_connected
+        assert camera.node_rank == 2
+        if sdk_name is not None:
+            opened = getattr(sdks[sdk_name], opened_attr)
+            assert opened == [], (
+                f"{camera_type} opened {opened} while being constructed"
+            )
+
+        # And it does open once connected, so the check above is not passing
+        # because the fake records nothing.
+        camera.connect()
+        assert camera.is_connected
+        if sdk_name is not None:
+            assert getattr(sdks[sdk_name], opened_attr), (
+                f"{camera_type} recorded no device after connect()"
+            )
+        camera.disconnect()
+
+
 @pytest.mark.parametrize(
     "module_name, class_name",
     [

@@ -20,6 +20,7 @@ the next and prove the capture thread is running rather than replaying.
 
 from __future__ import annotations
 
+import importlib.machinery
 import types
 from typing import Any
 
@@ -118,8 +119,14 @@ def realsense(width: int = 64, height: int = 48) -> types.ModuleType:
     return fake
 
 
+#: A ZED reports a numeric serial, and the driver casts it, so the fake's has
+#: to be one too.
+ZED_SERIAL = "12345678"
+
+
 def zed(width: int = 64, height: int = 48) -> dict[str, types.ModuleType]:
     """A ``pyzed.sl`` that opens and grabs without a camera."""
+    opened: list[Any] = []
 
     class Mat:
         def __init__(self):
@@ -135,8 +142,9 @@ def zed(width: int = 64, height: int = 48) -> dict[str, types.ModuleType]:
         def __init__(self):
             self.opened = False
 
-        def open(self, _params):
+        def open(self, params):
             self.opened = True
+            opened.append(getattr(params, "serial", None))
             return "SUCCESS"
 
         def grab(self, _runtime):
@@ -177,15 +185,125 @@ def zed(width: int = 64, height: int = 48) -> dict[str, types.ModuleType]:
         VIEW=types.SimpleNamespace(LEFT="LEFT"),
         MEASURE=types.SimpleNamespace(DEPTH="DEPTH"),
         DEPTH_MODE=types.SimpleNamespace(ULTRA="ULTRA", NONE="NONE"),
-        RESOLUTION=types.SimpleNamespace(HD720="HD720", VGA="VGA"),
+        RESOLUTION=types.SimpleNamespace(
+            HD2K="HD2K", HD1080="HD1080", HD720="HD720", VGA="VGA"
+        ),
     )
+    sl.opened = opened
     parent = module("pyzed")
     parent.sl = sl
     return {"pyzed": parent, "pyzed.sl": sl}
 
 
+#: What a LUMOS camera streams, and the only thing it will stream: the driver
+#: refuses anything else, so a fake that answered differently would test the
+#: refusal rather than the camera.
+_LUMOS_W = _LUMOS_H = 1280
+_YU12 = 0x32315559
+
+
+def opencv() -> types.ModuleType:
+    """A ``cv2`` with a V4L2 capture that behaves like the XVisio device.
+
+    Enough of OpenCV for the LUMOS driver: a capture that reports YU12 at its
+    native size, hands back an I420 buffer, and can be released and opened
+    again. The colour conversion and resize are real shapes rather than real
+    pixels, which is what the driver's frame handling is checked against.
+    """
+    opens: list[Any] = []
+    # Captured before the fake is installed, so delegation reaches the real
+    # module rather than importing this one back and recursing.
+    try:
+        import cv2 as real_cv2
+    except ImportError:  # pragma: no cover - a node may have no OpenCV
+        real_cv2 = None
+
+    class VideoCapture:
+        def __init__(self, path: Any, api: Any = None):
+            opens.append(path)
+            self.path = path
+            self.released = False
+            self._properties: dict[int, float] = {}
+
+        def isOpened(self):
+            return not self.released
+
+        def set(self, prop, value):
+            self._properties[prop] = value
+            return True
+
+        def get(self, prop):
+            # Report back what the device really supports, not what was asked
+            # for: the driver checks these and refuses a mismatch.
+            fixed = {
+                _Props.FOURCC: float(_YU12),
+                _Props.FRAME_WIDTH: float(_LUMOS_W),
+                _Props.FRAME_HEIGHT: float(_LUMOS_H),
+            }
+            return fixed.get(prop, self._properties.get(prop, 0.0))
+
+        def read(self):
+            if self.released:
+                return False, None
+            # One I420 plane set, flat, exactly as V4L2 delivers it.
+            return True, np.zeros(_LUMOS_W * _LUMOS_H * 3 // 2, dtype=np.uint8)
+
+        def release(self):
+            self.released = True
+
+    class _Props:
+        FOURCC = 6
+        CONVERT_RGB = 16
+        FRAME_WIDTH = 3
+        FRAME_HEIGHT = 4
+        FPS = 5
+        BUFFERSIZE = 38
+
+    def cvtColor(image, code):
+        return np.zeros((_LUMOS_H, _LUMOS_W, 3), dtype=np.uint8)
+
+    def resize(image, size, interpolation=None):
+        width, height = size
+        return np.zeros((height, width, 3), dtype=np.uint8)
+
+    class _OpenCV(types.ModuleType):
+        """The real cv2 where it exists, minus the ability to open a device.
+
+        Only the V4L2 capture is faked. Envs under these mocks do real image
+        work -- DOSW1 resizes and crops every frame -- so anything this does
+        not define is delegated rather than missing.
+        """
+
+        def __getattr__(self, name: str) -> Any:
+            if real_cv2 is None:
+                raise AttributeError(name)
+            return getattr(real_cv2, name)
+
+    fake = _OpenCV("cv2")
+    fake.__spec__ = importlib.machinery.ModuleSpec("cv2", loader=None)
+    for key, value in {
+        "CAP_V4L2": 200,
+        "CAP_PROP_FOURCC": _Props.FOURCC,
+        "CAP_PROP_CONVERT_RGB": _Props.CONVERT_RGB,
+        "CAP_PROP_FRAME_WIDTH": _Props.FRAME_WIDTH,
+        "CAP_PROP_FRAME_HEIGHT": _Props.FRAME_HEIGHT,
+        "CAP_PROP_FPS": _Props.FPS,
+        "CAP_PROP_BUFFERSIZE": _Props.BUFFERSIZE,
+        "COLOR_YUV2BGR_I420": 101,
+        "INTER_AREA": 3,
+        "VideoCapture": VideoCapture,
+        "VideoWriter_fourcc": lambda *_chars: _YU12,
+        "cvtColor": cvtColor,
+        "resize": resize,
+    }.items():
+        setattr(fake, key, value)
+    #: What the fake opened, so a test can prove construction touched nothing.
+    fake.opens = opens
+    return fake
+
+
 def modules(**_: Any) -> dict[str, types.ModuleType]:
     """Every camera SDK, by the name a part imports it as."""
-    made = {"pyrealsense2": realsense()}
+    made = {"pyrealsense2": realsense(), "cv2": opencv()}
     made.update(zed())
     return made
