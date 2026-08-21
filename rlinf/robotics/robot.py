@@ -15,9 +15,12 @@
 """A robot: the outermost group of parts, and what places them."""
 
 from collections.abc import Mapping
-from typing import Any, ClassVar, Optional, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, Optional, TypeVar
 
 from .parts.base import PartGroup, RobotPart, _ExportRef
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from .parts.base import Composable
 
 RobotPartType = TypeVar("RobotPartType", bound=RobotPart)
 
@@ -44,7 +47,11 @@ class Robot(PartGroup):
 
     ROBOT_TYPE: ClassVar[str] = ""
 
-    def __init__(self, parts: Optional[Mapping[str, Any]] = None, **named: Any) -> None:
+    def __init__(
+        self,
+        parts: "Optional[Mapping[str, Composable]]" = None,
+        **named: "Composable",
+    ) -> None:
         super().__init__(parts, **named)
         self.handles: dict[str, Any] = {}
         """Connections this robot placed, keyed by the part that needed them.

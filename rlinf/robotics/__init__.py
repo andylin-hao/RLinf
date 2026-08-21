@@ -47,10 +47,69 @@ Symbols load lazily so a node without a given robot's SDK can still import
 ``rlinf.robotics``.
 """
 
-# ruff: noqa: F822
+# ruff: noqa: F401, F822
 
 from importlib import import_module
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    # The lazy ``__getattr__`` below is invisible to a type checker, which
+    # would otherwise resolve every name here to ``Any`` -- so an editor could
+    # not say what ``Robot(...)`` accepts. Importing the same names statically
+    # here restores that without loading anything at run time.
+    #
+    # Keep this list in step with ``_MODULE_GROUPS``; the test suite checks it.
+    from .adapters import (
+        LegacyObservationAdapter,
+        VectorActionAdapter,
+        VectorActionBinding,
+    )
+    from .discovery import (
+        RobotAutoConfig,
+        RobotConfig,
+        RobotDiscovery,
+        RobotInfo,
+        RobotRegistration,
+        build_robot,
+        register_robot,
+    )
+    from .parts import (
+        Connection,
+        ControllablePart,
+        PartGroup,
+        RobotPart,
+        register_kind,
+        run_parallel,
+    )
+    from .parts.arms import ARM_STATE_FIELDS
+    from .parts.cameras import BaseCamera, Camera, CameraInfo
+    from .parts.end_effectors import EndEffector
+    from .parts.mobility import MobileBase
+    from .parts.views import MethodArm, MethodCamera, MethodGripper
+    from .placement import (
+        LocalPartHandle,
+        PartHandle,
+        Placement,
+        RemoteCamera,
+        RemoteControllablePart,
+        RemoteEndEffector,
+        RemotePart,
+        RemotePartHandle,
+    )
+    from .robot import Robot
+    from .robots import (
+        FRANKA_BACKENDS,
+        DOSW1Robot,
+        DOSW1RobotConfig,
+        DualFrankaConfig,
+        DualFrankaRobot,
+        FrankaConfig,
+        FrankaRobot,
+        GimArmConfig,
+        GimArmRobot,
+        Turtle2Config,
+        Turtle2Robot,
+    )
 
 #: Symbols grouped by the module that defines them, so adding one is a
 #: single-line change in the group it belongs to.

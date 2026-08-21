@@ -1019,6 +1019,50 @@ def _imports(path: Path) -> set[str]:
     return modules
 
 
+def test_the_lazy_package_still_types_what_it_exports():
+    """Every lazily exported name is also imported for a type checker.
+
+    ``rlinf.robotics`` loads its symbols through a module ``__getattr__`` so a
+    node without a vendor SDK can still import the package. A type checker
+    cannot see that, and resolves every name to ``Any`` -- which is what made
+    ``Robot(arm=...)`` uncheckable and left an editor unable to say what a
+    robot accepts. A ``TYPE_CHECKING`` block imports the same names statically.
+
+    The two lists have to agree, and nothing at run time would notice if they
+    drifted, so this compares them.
+    """
+    source = (_ROOT / "rlinf" / "robotics" / "__init__.py").read_text()
+    tree = ast.parse(source)
+
+    typed: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.If) and "TYPE_CHECKING" in ast.dump(node.test)):
+            continue
+        for statement in ast.walk(node):
+            if isinstance(statement, ast.ImportFrom):
+                module = "." * statement.level + (statement.module or "")
+                for alias in statement.names:
+                    typed[alias.name] = module
+
+    from rlinf.robotics import _MODULE_BY_NAME
+
+    missing = sorted(set(_MODULE_BY_NAME) - set(typed))
+    assert missing == [], (
+        f"lazily exported but invisible to a type checker: {missing}. "
+        "Add them to the TYPE_CHECKING block in rlinf/robotics/__init__.py."
+    )
+
+    extra = sorted(set(typed) - set(_MODULE_BY_NAME))
+    assert extra == [], f"typed but not exported at run time: {extra}"
+
+    wrong = {
+        name: (module, _MODULE_BY_NAME[name])
+        for name, module in typed.items()
+        if module != _MODULE_BY_NAME[name]
+    }
+    assert wrong == {}, f"typed from a different module than it loads from: {wrong}"
+
+
 def test_scheduler_has_no_robotics_dependency():
     scheduler_dir = _ROOT / "rlinf" / "scheduler"
     offenders = {

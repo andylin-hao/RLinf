@@ -65,10 +65,21 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from functools import partial
 from importlib import import_module
-from typing import TYPE_CHECKING, Any, Callable, ClassVar, Optional, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, ClassVar, Optional, TypeVar, Union
 
 if TYPE_CHECKING:
     from ..placement import PartHandle
+
+    #: What may be composed under a name in a :class:`PartGroup`: a part, a
+    #: subtree of parts, or one part picked out of a connection that is not
+    #: open yet.
+    #:
+    #: Typing only, and deliberately so. Its third member is private, and
+    #: naming the union is what lets an editor suggest the three shapes
+    #: without a robot author ever having to write that name. Anything else --
+    #: a bare :class:`Connection`, a stray config object -- is refused by
+    #: :meth:`PartGroup._check_composable` with a message that says why.
+    Composable = Union["RobotPart", "PartGroup", "_ExportRef"]
 
 KeyType = TypeVar("KeyType")
 ValueType = TypeVar("ValueType")
@@ -668,15 +679,19 @@ class PartGroup(ControllablePart):
     #: ``worker_name`` are ordinary part names here and must reach ``__init__``.
     _TAKES_PLACEMENT: ClassVar[bool] = False
 
-    def __init__(self, parts: Optional[Mapping[str, Any]] = None, **named: Any) -> None:
-        combined = {**(parts or {}), **named}
+    def __init__(
+        self,
+        parts: "Optional[Mapping[str, Composable]]" = None,
+        **named: "Composable",
+    ) -> None:
+        combined: "dict[str, Composable]" = {**(parts or {}), **named}
         if any(not name or not isinstance(name, str) for name in combined):
             raise ValueError(
                 f"{type(self).__name__} part names must be non-empty strings."
             )
         for name, value in combined.items():
             self._check_composable(name, value)
-        self._children: dict[str, Any] = combined
+        self._children: "dict[str, Composable]" = combined
         self._handle_of: dict[str, int] = {}
         """Which connection each part came from, so sharing is respected."""
 
@@ -713,11 +728,11 @@ class PartGroup(ControllablePart):
         )
 
     @property
-    def children(self) -> dict[str, Any]:
+    def children(self) -> "dict[str, Composable]":
         """The parts this group is composed of, by the names it gave them."""
         return self._children
 
-    def child(self, name: str) -> Any:
+    def child(self, name: str) -> "Composable":
         """Return one composed part, or say which names exist."""
         if name not in self._children:
             raise KeyError(
@@ -875,14 +890,14 @@ class PartGroup(ControllablePart):
             self._children[name] = placement.resolve(value)
         return used
 
-    def declarations(self) -> dict[str, Any]:
+    def declarations(self) -> "dict[str, Composable | dict]":
         """Snapshot the tree as composed, so opening it can be undone."""
         return {
             name: value.declarations() if isinstance(value, PartGroup) else value
             for name, value in self._children.items()
         }
 
-    def restore(self, declared: Mapping[str, Any]) -> None:
+    def restore(self, declared: "Mapping[str, Composable | dict]") -> None:
         """Put every part back to what it was composed with."""
         for name, value in declared.items():
             current = self._children.get(name)
