@@ -37,7 +37,9 @@
 - ``PartGroup`` 或 ``Robot`` 将公开部件树保存在 ``children`` 中。每个 key 都会成为观测和动作路径，例如 ``left.arm``；任务、policy 和数据集使用这些名称访问部件。
 - ``Connection`` 将同一硬件 session 对应的逻辑部件保存在 ``parts`` 中。这些名称属于驱动内部，不会自动成为机器人路径。
 
-组合时，``connection.part("arm")`` 直接交出部件本身，``Robot(arm=...)`` 再为它指定公开名称 ``arm``。这里没有任何延迟解析：``connect()`` 前后机器人持有的是同一批对象，所以在没有真机的机器上也能把一套组合描述清楚。
+组合时，``Robot(arm=connection)`` 为一个部件指定名称，而搭在这个部件上的东西会跟着进来，位于它下面一层：机械臂的夹爪出现在 ``arm.end_effector``，因为夹爪就装在那儿。这里没有任何延迟解析——``connect()`` 前后机器人持有的是同一批对象——所以在没有真机的机器上也能把一套组合描述清楚。
+
+``connection.part(name)`` 用于从一条本身不是部件的链路里挑出某个部件，例如驱动两条机械臂的 session。只有这种情况才需要它。
 
 应根据待组合对象选择对应写法：
 
@@ -48,33 +50,35 @@
    * - 对象
      - 组合方式
      - 结果
-   * - 一个可读取的完整部件，例如移动底盘或相机
-     - ``Robot(base=base)``
-     - 该部件以 ``base`` 为名称进入机器人树。
-   * - 一条对应多个部件的硬件连接
-     - ``Robot(arm=connection.part("arm"))``
-     - 指定的部件以 ``arm`` 为名称进入机器人树。
-   * - 一条连接上的全部部件，沿用驱动自己的名称
-     - ``Robot(**connection.compose())``
-     - 每个部件都以驱动认识它的名称进入机器人树。
+   * - 没有任何东西搭载其上的部件，例如相机
+     - ``Robot(wrist=camera)``
+     - 该部件以 ``wrist`` 为名称进入机器人树。
+   * - 承载其他部件的部件，例如带夹爪的机械臂
+     - ``Robot(arm=connection)``
+     - 机械臂进入 ``arm``，它的夹爪进入 ``arm.end_effector``。
+   * - 本身不是部件的链路，例如双臂 session
+     - ``Robot(left=session.part("left"))``
+     - 指定的部件以 ``left`` 为名称进入机器人树。
    * - 已经组合好的子树
      - ``Robot(left=PartGroup(...))``
      - ``PartGroup`` 及其具名部件共同进入 ``left`` 路径。
 
 ``part(name)`` 返回的就是一个 ``RobotPart``，中间没有任何需要机器人开发者构造或标注的类型。``PartGroup`` 接收 ``RobotPart`` 或另一个 ``PartGroup``；传入不可读取的裸 ``Connection`` 会被拒绝，并指出出错的参数名。
 
-有些对象既是硬件连接，也是可读取的部件：机械臂 session 既返回机械臂自身的观测，也承载装在同一条总线上的末端执行器。这类对象可以直接组合，但**只会组合机械臂本身**——它是一个部件，因此就以部件的身份进入机器人树，末端执行器不会出现。要把它承载的部件全部取来，用 ``compose()``；要挑选并重命名，用 ``part(name)``。
+``children`` 是一个问题、一个答案，无论问的是谁：对部件而言，它是搭在其上的东西；对 ``PartGroup`` 而言，它是这个组被组合进来的东西。因此遍历这棵树——描述它、找出所有相机、读取它——从来不需要先判断手上拿的是哪一种。
 
-当驱动的名称就是机器人想用的名称时——围绕单条机械臂搭建的机器人通常如此——应优先使用 ``compose()``：
+正因如此，机器人只需点名机械臂就够了：
 
 .. code-block:: python
 
    class ExampleRobot(Robot):
        @classmethod
        def build_arms(cls, **config):
-           return ExampleArm(config["robot_ip"], node_rank=config["node_rank"]).compose()
+           return {"arm": ExampleArm(config["robot_ip"], node_rank=config["node_rank"])}
 
-逐个列出部件则多出一处需要同步维护的清单。如果机械臂在运行时才决定是否装夹爪，或者之后新增了部件，组合结果就会漏掉它，而且没有任何地方会报出这一点。
+夹爪之所以被组合进来，是因为机械臂带着它。在这里再点一次名，只会把夹爪放到机械臂**旁边**而不是它**上面**，而且多出一份需要同步维护的清单：如果机械臂在运行时才决定是否装夹爪，或者之后新增了部件，组合结果就会漏掉它，而且没有任何地方会报出这一点。
+
+因此驱动从 ``parts`` 返回的映射只说明搭在它上面的东西，绝不包含自己。把自己列进去会被拒绝：部件不会搭在自己身上，那样这棵树也就没有底了。
 
 核心类型
 --------
@@ -160,8 +164,7 @@ robotics 代码中有三种 registry，它们所命名的对象不同：
        worker_name="ExampleArm-0-0",
    )
    robot = Robot(
-       arm=connection.part("arm"),
-       end_effector=connection.part("end_effector"),
+       arm=connection,
    )
 
 传给 ``Robot`` 的关键字参数会进入 ``robot.children``，因此上述机器人最终公开 ``arm`` 和 ``end_effector``。裸 ``Connection`` 不组合任何部件，所以没有 ``children``；``PartGroup`` 中的部件已经位于 ``children``，因此其 ``parts`` 为空。``connection.part(...)`` 是两套命名体系相交的位置。
@@ -205,8 +208,7 @@ placement 参数与硬件构造参数一起传入。构造过程不会访问设�
        worker_name="ExampleArm-0-0",
    )
    robot = Robot(
-       arm=arm_connection.part("arm"),
-       end_effector=arm_connection.part("end_effector"),
+       arm=arm_connection,
        scene=RealSenseCamera(camera_info, node_rank=3),
    )
 

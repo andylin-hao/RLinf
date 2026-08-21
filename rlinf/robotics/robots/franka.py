@@ -100,10 +100,11 @@ class FrankaRobot(Robot):
             end_effector_type=end_effector_type,
             end_effector_config=end_effector_config,
         )
-        # Whatever the arm backs, under the names it uses: one arm and the end
-        # effector on its bus, and a hand instead of a gripper when one is
-        # fitted. A robot with two of them renames, and DualFrankaRobot does.
-        return connection.compose()
+        # The arm, and with it whatever rides on it: a gripper, or a hand when
+        # one is fitted. Naming the end effector here too would put it beside
+        # the arm rather than on it, and would have to be kept in step with
+        # what the driver actually carries.
+        return {"arm": connection}
 
     @classmethod
     def build_cameras(

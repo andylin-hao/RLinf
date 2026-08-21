@@ -75,7 +75,7 @@ class FrankaROSArm(ControllablePart):
 
     @property
     def parts(self) -> dict[str, RobotPart]:
-        """Expose the arm and whichever end effector is configured."""
+        """Whichever end effector is configured, riding this arm's connection."""
         if self._end_effector_type.is_hand:
             end_effector = MethodGripper(
                 self,
@@ -85,7 +85,7 @@ class FrankaROSArm(ControllablePart):
             )
         else:
             end_effector = MethodGripper(self, state_field="gripper_position")
-        return {"arm": self, "end_effector": end_effector}
+        return {"end_effector": end_effector}
 
     def _open(self) -> Any:
         """Connect ROS channels, controller processes, and the end effector."""

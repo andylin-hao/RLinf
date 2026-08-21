@@ -152,11 +152,10 @@ class GimArm(ControllablePart):
 
     @property
     def parts(self) -> dict[str, RobotPart]:
-        """Expose the arm, plus the gripper when one is fitted."""
-        parts: dict[str, RobotPart] = {"arm": self}
-        if self._enable_gripper:
-            parts["end_effector"] = MethodGripper(self, state_field="gripper_position")
-        return parts
+        """The gripper riding this arm's connection, when one is fitted."""
+        if not self._enable_gripper:
+            return {}
+        return {"end_effector": MethodGripper(self, state_field="gripper_position")}
 
     def _open(self) -> Any:
         """Connect the CAN SDK and start the feedforward control loop."""

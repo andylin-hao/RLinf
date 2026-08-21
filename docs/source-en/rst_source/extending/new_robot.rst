@@ -136,27 +136,23 @@ Franka connection:
    )
    robot = MobileManipulator(
        base=base,
-       arm=arm_connection.part("arm"),
-       end_effector=arm_connection.part("end_effector"),
+       arm=arm_connection,
    )
 
-The two arguments use different composition forms because they represent
-different things. Constructing the ``MobileBase`` subclass creates an
-unconnected ``RobotPart``. The base is already the logical part that tasks
-should see, so pass it directly as ``base=base``. The argument name becomes its
-public path in ``robot.children``.
+Both arguments are composed the same way, because both are parts. Constructing
+the ``MobileBase`` subclass creates an unconnected ``RobotPart``, and the Franka
+arm is one too. The argument name becomes each part's public path in
+``robot.children``.
 
-The Franka object owns one hardware session that backs both the arm and its end
-effector. ``part(name)`` hands over one of them, still unopened, riding that
-session. It returns a ``RobotPart`` -- there is no separate class to construct
-or annotate. Passing the Franka object itself would compose only the arm, since
-the arm is what it is as a part, and the end effector would be quietly missing.
+The difference is what they carry. The base carries nothing. The Franka arm
+carries its end effector on the same hardware session, so composing the arm
+composes the gripper with it, at ``arm.end_effector``. The robot does not name
+it and does not need to know it is there -- which is what lets an arm that
+decides at run time whether a gripper is fitted work without a robot edit.
 
-Name the parts one at a time when the robot's names differ from the driver's.
-When they do not, ``compose()`` takes them all under the driver's own names,
-which is one list rather than two::
-
-   robot = MobileManipulator(base=base, **arm_connection.compose())
+Name a part one at a time only when the robot's names differ from the driver's,
+or when a link is not a part at all and you have to pick from it: a two-arm
+session is composed with ``session.part("left")``.
 
 ``PartGroup`` checks this boundary as soon as the robot is composed. It accepts
 a ``RobotPart`` or another ``PartGroup``. A bare ``Connection`` that is not a
@@ -338,8 +334,7 @@ example, keep the base controller on node 0 and the Franka controller on node 1:
    )
    robot = MobileManipulator(
        base=base,
-       arm=arm_connection.part("arm"),
-       end_effector=arm_connection.part("end_effector"),
+       arm=arm_connection,
    )
 
 Constructing these objects records their arguments, ``node_rank``, and
@@ -410,7 +405,7 @@ declaration rather than copying its SDK or lifecycle code:
                node_rank=arm_node_rank,
                name=f"FrankaArm-{worker_rank}-{env_idx}",
            )
-           return cls(base=base, **arm_connection.compose())
+           return cls(base=base, arm=arm_connection)
 
 ``MobileBase.backend()`` resolves the driver name declared in the hardware
 config. The builder then composes unconnected parts and selections from shared

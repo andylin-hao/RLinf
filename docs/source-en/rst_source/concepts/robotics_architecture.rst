@@ -53,11 +53,16 @@ The code keeps those views in separate mappings:
   ``parts``. These names belong to the driver and do not become robot paths by
   themselves.
 
-Composition joins the mappings. ``connection.part("arm")`` hands over the part
-itself, and ``Robot(arm=...)`` gives it the public name ``arm``. Nothing is
-deferred: the object the robot holds before ``connect()`` is the object it holds
-after, which is why a composition can be described on a machine with no robot
+Composition joins the mappings. ``Robot(arm=connection)`` names a part, and
+what rides on that part comes with it, one level down: an arm's gripper is at
+``arm.end_effector`` because that is where the gripper is. Nothing is deferred
+-- the object the robot holds before ``connect()`` is the object it holds after
+-- which is why a composition can be described on a machine with no robot
 attached.
+
+``connection.part(name)`` picks one part out of a link that is not a part
+itself, such as a session driving two arms. That is the only case that needs
+it.
 
 Choose the form that matches what you are composing:
 
@@ -68,15 +73,15 @@ Choose the form that matches what you are composing:
    * - Value
      - Composition
      - Result
-   * - One readable part, such as a mobile base or camera
-     - ``Robot(base=base)``
-     - The part enters the tree under ``base``.
-   * - One session that backs several parts
-     - ``Robot(arm=connection.part("arm"))``
-     - The named part enters the tree under ``arm``.
-   * - Every part a session backs, under the driver's own names
-     - ``Robot(**connection.compose())``
-     - Each enters the tree under the name the driver knows it by.
+   * - A part with nothing riding it, such as a camera
+     - ``Robot(wrist=camera)``
+     - The part enters the tree under ``wrist``.
+   * - A part that carries others, such as an arm with a gripper
+     - ``Robot(arm=connection)``
+     - The arm enters under ``arm``, its gripper under ``arm.end_effector``.
+   * - A link that is not a part, such as a two-arm session
+     - ``Robot(left=session.part("left"))``
+     - The named part enters the tree under ``left``.
    * - An existing subtree
      - ``Robot(left=PartGroup(...))``
      - The group and its named children enter under ``left``.
@@ -86,26 +91,29 @@ robot author to construct or annotate. ``PartGroup`` accepts a ``RobotPart`` or
 another ``PartGroup``, and rejects a bare ``Connection`` that cannot be read,
 naming the keyword that is wrong.
 
-Some objects are both a connection and a readable part: an arm session exposes
-the arm's own observation while also backing the end effector on its bus.
-Passing such an object directly is valid, and composes *only the arm* -- it is
-a part, so it enters the tree as one, and the end effector is simply absent.
-Use ``compose()`` to take everything it backs, or ``part(name)`` to choose and
-rename.
+``children`` is one question with one answer, whatever it is asked of. For a
+part it is what rides on it; for a ``PartGroup`` it is what the group was
+composed of. Walking the tree -- to describe it, to find every camera, to read
+it -- therefore never asks which kind of thing it is holding.
 
-Reach for ``compose()`` when the driver's names are the robot's names, which is
-the ordinary case for a robot built around one arm:
+That is what lets a robot name an arm and stop there:
 
 .. code-block:: python
 
    class ExampleRobot(Robot):
        @classmethod
        def build_arms(cls, **config):
-           return ExampleArm(config["robot_ip"], node_rank=config["node_rank"]).compose()
+           return {"arm": ExampleArm(config["robot_ip"], node_rank=config["node_rank"])}
 
-Listing the parts by hand instead is a second place to keep in step. An arm
-that decides at run time whether a gripper is fitted, or that grows a part
-later, would be composed without it and nothing would report the omission.
+The gripper is composed because the arm carries it. Naming it here as well
+would put it *beside* the arm rather than on it, and would be a second list to
+keep in step: an arm that decides at run time whether a gripper is fitted, or
+that grows a part later, would be composed without it and nothing would report
+the omission.
+
+The mapping a driver returns from ``parts`` therefore says what rides on it and
+never itself. Listing itself is refused, because a part does not ride itself and
+the tree would have no bottom.
 
 The Core Types
 --------------
@@ -189,9 +197,9 @@ Two registries appear in the robotics code, and they name different things:
 Connect a Shared Hardware Session to the Robot Tree
 ---------------------------------------------------
 
-Define the ``parts`` mapping when one session backs several policy-facing
-parts. For example, this arm is readable itself and also presents its gripper as
-a separate view:
+Define the ``parts`` mapping to say what rides on a connection. This arm is
+readable itself and also carries its gripper, so it lists the gripper and not
+itself:
 
 .. code-block:: python
 
@@ -199,14 +207,13 @@ a separate view:
        @property
        def parts(self) -> dict[str, RobotPart]:
            return {
-               "arm": self,
                "end_effector": MethodGripper(
                    self, state_field="gripper_position"
                ),
            }
 
-The keys ``arm`` and ``end_effector`` are names local to the driver. Choose the
-public paths when you compose the robot:
+``end_effector`` is a name local to the driver. Composing the arm publishes it
+one level below whatever the robot calls the arm:
 
 .. code-block:: python
 
@@ -215,23 +222,24 @@ public paths when you compose the robot:
        node_rank=1,
        worker_name="ExampleArm-0-0",
    )
-   robot = Robot(
-       arm=connection.part("arm"),
-       end_effector=connection.part("end_effector"),
-   )
+   robot = Robot(arm=connection)
 
-The keyword arguments become ``robot.children``, so the robot publishes
-``arm`` and ``end_effector``. A bare ``Connection`` has no ``children`` because
-it composes nothing. A ``PartGroup`` inherits an empty ``parts`` mapping because
-its components are already in ``children``. The call to ``connection.part(...)``
-is where the two naming systems meet.
+   robot.children                     # {"arm": <ExampleArm>}
+   robot.child("arm").children        # {"end_effector": <MethodGripper>}
+   robot.get_observation()["arm"]     # the arm's fields, plus "end_effector"
 
-``part()`` is also where a view is told which connection opens it, so a view
-declares nothing about its own lifecycle: no ``_open``, no ``connect``. Only a
-part with no way to open anything is adopted like that. A device listed here
-that holds a link of its own -- a wrist camera on its own USB bus, named beside
-the arm it is bolted to -- keeps that link and the node it named, and the robot
-opens it separately.
+The keyword arguments become ``robot.children``; the driver's own names appear
+beneath the part that carries them. A bare ``Connection`` answers no
+``children`` at all, because it has no place in the tree -- its parts are picked
+one at a time with ``part(name)``. A ``PartGroup`` has an empty ``parts``
+mapping, because nothing rides a group.
+
+Composing a part is also where a view is told which connection opens it, so a
+view declares nothing about its own lifecycle: no ``_open``, no ``connect``.
+Only a part with no way to open anything is adopted like that. A device listed
+in ``parts`` that holds a link of its own -- a wrist camera on its own USB bus,
+named by the arm it is bolted to -- keeps that link and the node it named, and
+the robot opens it separately.
 
 If reading the shared session itself has no useful meaning, subclass
 ``Connection`` rather than ``RobotPart``. A coupled Turtle2 controller follows
@@ -275,8 +283,7 @@ or rebuild it in a worker on the selected node:
        worker_name="ExampleArm-0-0",
    )
    robot = Robot(
-       arm=arm_connection.part("arm"),
-       end_effector=arm_connection.part("end_effector"),
+       arm=arm_connection,
        scene=RealSenseCamera(camera_info, node_rank=3),
    )
 

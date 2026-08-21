@@ -112,11 +112,12 @@ class FrankyArm(ControllablePart):
 
     @property
     def parts(self) -> dict[str, RobotPart]:
-        """Expose the arm and the gripper riding on the same connection."""
-        return {
-            "arm": self,
-            "end_effector": MethodGripper(self, state_field="gripper_position"),
-        }
+        """The gripper riding this arm's connection.
+
+        Not the arm: this says what rides on it, and the arm is what they ride.
+        Composing the arm brings the gripper with it, under ``end_effector``.
+        """
+        return {"end_effector": MethodGripper(self, state_field="gripper_position")}
 
     def _open(self) -> Any:
         """Connect the robot and gripper SDKs."""

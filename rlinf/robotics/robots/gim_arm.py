@@ -54,9 +54,9 @@ class GimArmRobot(Robot):
             worker_name=f"GimArm-{worker_rank}-{env_idx}",
         )
         # Whether a gripper is fitted is the arm's own answer -- it is the
-        # thing that was told -- so take what it backs rather than branching on
-        # ``enable_gripper`` a second time here.
-        return connection.compose()
+        # thing that was told -- and it carries one if it has one, so there is
+        # nothing to branch on a second time here.
+        return {"arm": connection}
 
     @classmethod
     def build_cameras(

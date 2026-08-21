@@ -29,13 +29,14 @@ class Robot(PartGroup):
     hardware config, and :meth:`connect` opens every connection it was composed
     from -- on the machine each one belongs to::
 
-        arm = FrankaROSArm(robot_ip, node_rank=1)
         robot = FrankaRobot(
-            arm=arm.part("arm"),
-            end_effector=arm.part("end_effector"),
+            arm=FrankaROSArm(robot_ip, node_rank=1),
             wrist=RealSenseCamera(info, node_rank=3),
         )
         robot.connect()
+
+    The gripper is not named: it rides the arm, so composing the arm composes
+    it too, at ``arm.end_effector``.
 
     There are no arm, camera, or base slots. Names carry the meaning, so a robot
     with a lift, a head, or a third arm needs no new concept.
@@ -56,10 +57,8 @@ class Robot(PartGroup):
                 ROBOT_TYPE = "Bench"
 
 
-            connection = MyArm(port, node_rank=1)
             robot = Bench(
-                arm=connection.part("arm"),
-                gripper=connection.part("end_effector"),
+                arm=MyArm(port, node_rank=1),
                 eye=MyCamera(info),
             )
             robot.connect()
@@ -140,13 +139,12 @@ class Robot(PartGroup):
         """Return every part implementing ``part_type``, by its dotted path."""
         matches: dict[str, RobotPartType] = {}
 
-        def walk(group: PartGroup, prefix: str) -> None:
-            for name, part in group.children.items():
+        def walk(part: RobotPart, prefix: str) -> None:
+            for name, child in part.children.items():
                 path = f"{prefix}{name}"
-                if isinstance(part, part_type):
-                    matches[path] = part
-                if isinstance(part, PartGroup):
-                    walk(part, f"{path}.")
+                if isinstance(child, part_type):
+                    matches[path] = child
+                walk(child, f"{path}.")
 
         walk(self, "")
         return matches
@@ -160,19 +158,28 @@ class Robot(PartGroup):
         present. The tree holds the same objects either side of ``connect``, so
         the answer does not change.
 
-        Parts sharing a ``via`` share one connection, and are therefore opened
-        once and commanded in their declared order rather than concurrently.
+        A part that carries others is drawn with them beneath it, because that
+        is where they are: a gripper on an arm's bus is under the arm, not
+        beside it. Parts sharing a ``via`` share one connection, and are
+        therefore opened once and commanded in their declared order rather than
+        concurrently.
         """
-        lines = [type(self).__name__]
-        rows: list[tuple[str, RobotPart]] = []
+        rows: list[tuple[str, Optional[RobotPart]]] = []
 
-        def walk(group: PartGroup, prefix: str) -> None:
-            for name, part in group.children.items():
-                path = f"{prefix}{name}"
-                if isinstance(part, PartGroup):
-                    walk(part, f"{path}.")
-                else:
-                    rows.append((path, part))
+        def walk(part: RobotPart, prefix: str) -> None:
+            children = list(part.children.items())
+            for index, (name, child) in enumerate(children):
+                last = index == len(children) - 1
+                branch = "└── " if last else "├── "
+                # A group is a name with nothing behind it, so it gets a row
+                # without a device; what it holds is what the rows below say.
+                rows.append(
+                    (
+                        prefix + branch + name,
+                        None if isinstance(child, PartGroup) else child,
+                    )
+                )
+                walk(child, prefix + ("    " if last else "│   "))
 
         walk(self, "")
 
@@ -180,17 +187,22 @@ class Robot(PartGroup):
         # order they appear so the grouping is visible at a glance.
         origins: dict[int, str] = {}
         for _, part in rows:
+            if part is None:
+                continue
             owner = part.owner
             if id(owner) not in origins:
                 origins[id(owner)] = f"{type(owner).__name__}#{len(origins) + 1}"
 
-        width = max((len(path) for path, _ in rows), default=0)
-        for index, (path, part) in enumerate(rows):
-            branch = "└──" if index == len(rows) - 1 else "├──"
+        width = max((len(label) for label, _ in rows), default=0)
+        lines = [type(self).__name__]
+        for label, part in rows:
+            if part is None:
+                lines.append(label)
+                continue
             owner = part.owner
             where = "here" if owner.node_rank is None else str(owner.node_rank)
             lines.append(
-                f"{branch} {path:<{width}}  {type(part).__name__:<20} "
+                f"{label:<{width}}  {type(part).__name__:<20} "
                 f"node={where:<5} via {origins[id(owner)]}"
             )
         return "\n".join(lines)

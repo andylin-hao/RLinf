@@ -72,13 +72,18 @@ def literal(text: str) -> Any:
 
 
 def walk(part: Any, prefix: str = "") -> list[tuple[str, Any]]:
-    """Every leaf part of a robot, by dotted path."""
-    if isinstance(part, PartGroup):
-        found: list[tuple[str, Any]] = []
-        for name, child in part.children.items():
-            found += walk(child, f"{prefix}{name}.")
-        return found
-    return [(prefix.rstrip("."), part)]
+    """Every readable part of a robot, by dotted path.
+
+    A part that carries others is checked and then walked into, because both
+    are parts: an arm reads its own joints and the gripper on its bus reads
+    itself, and a policy sees them both.
+    """
+    found: list[tuple[str, Any]] = []
+    if not isinstance(part, PartGroup) and prefix:
+        found.append((prefix.rstrip("."), part))
+    for name, child in part.children.items():
+        found += walk(child, f"{prefix}{name}.")
+    return found
 
 
 def describe(robot: Any) -> list[str]:

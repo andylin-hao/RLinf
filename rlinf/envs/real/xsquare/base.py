@@ -163,7 +163,7 @@ class Turtle2Env(gym.Env):
         # Both arms ride one ROS session, and it is the session that answers
         # get_state, move_arm and the camera calls -- so ask either arm which
         # connection it rides rather than talking to the arm view itself.
-        self._controller = self.robot.child("left").owner
+        self._controller = self.robot.child("left").child("arm").owner
 
     def close(self) -> None:
         """Detach all composed Turtle2 runtime proxies."""

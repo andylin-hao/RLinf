@@ -710,15 +710,13 @@ def test_one_connection_is_opened_once_however_often_it_is_named():
     assert robot.is_connected
 
 
-def test_a_robot_can_take_everything_a_connection_backs_without_listing_it():
-    """Restating the driver's own names is where the two lists drift apart.
+def test_a_robot_composes_an_arm_and_gets_what_rides_on_it():
+    """A robot names the arm; the gripper comes with it, because it is on it.
 
-    A single-arm robot's parts are exactly what its arm backs, so naming them
-    again in ``build_arms`` only creates a second place to forget: an arm that
-    grows a part, or that decides at run time whether it has one, would be
-    composed without it and nothing would say so. GimArm is the second case --
-    it fits a gripper only when told to -- and its robot used to branch on that
-    a second time.
+    Handing the robot both meant the robot knew what the arm carried, and had
+    to be edited when that changed. GimArm is the case that shows it: whether a
+    gripper is fitted is the arm's own answer, and the robot used to decide it a
+    second time.
     """
     from robot_mocks import mocked_sdks
 
@@ -726,11 +724,18 @@ def test_a_robot_can_take_everything_a_connection_backs_without_listing_it():
         from rlinf.robotics.robots import FrankaRobot, GimArmRobot
 
         arm = FrankaRobot.declare_arm("10.0.0.2", node_rank=0, name="arm")
-        assert list(arm.compose()) == list(arm.parts)
-        assert all(part.owner is arm for part in arm.compose().values())
+        assert list(arm.parts) == ["end_effector"], (
+            "an arm backs what rides on it, and is not one of them"
+        )
 
-        built = FrankaRobot.build_arms(robot_ip="10.0.0.2", node_rank=0)
-        assert list(built) == ["arm", "end_effector"]
+        robot = FrankaRobot(arm=arm)
+        assert list(robot.children) == ["arm"]
+        assert robot.child("arm") is arm
+        assert list(robot.child("arm").children) == ["end_effector"]
+
+        # The reading has the same shape as the tree.
+        assert set(robot.observation_features["arm"]) >= {"tcp_pose", "end_effector"}
+        assert set(robot.action_features["arm"]) == {"tcp_pose", "end_effector"}
 
         config = {
             "node_rank": 0,
@@ -738,15 +743,100 @@ def test_a_robot_can_take_everything_a_connection_backs_without_listing_it():
             "arm_variant": "arm6",
             "gripper_type": "default",
             "control_mode": "position",
+            "env_idx": 0,
+            "worker_rank": 0,
         }
-        with_gripper = GimArmRobot.build_arms(enable_gripper=True, **config)
-        without = GimArmRobot.build_arms(enable_gripper=False, **config)
+        fitted = GimArmRobot.build(enable_gripper=True, **config)
+        bare = GimArmRobot.build(enable_gripper=False, **config)
 
-    assert list(with_gripper) == ["arm", "end_effector"]
-    assert list(without) == ["arm"], (
+    assert list(fitted.child("arm").children) == ["end_effector"]
+    assert list(bare.child("arm").children) == [], (
         "the arm knows whether a gripper is fitted; the robot must not decide "
         "that a second time"
     )
+
+
+def test_every_env_reaches_a_real_connection_through_the_tree():
+    """The path an env walks to reach a driver must land on the driver.
+
+    Envs call driver methods that are not part of any contract -- ``get_state``,
+    ``is_robot_up``, ``move_arm`` -- by asking a part which connection it rides.
+    A group answering that question with itself made one of those paths return
+    an object with none of those methods, and the failure surfaced at the first
+    read rather than at the line that was wrong.
+    """
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        from rlinf.robotics.robots import (
+            DualFrankaRobot,
+            FrankaRobot,
+            GimArmRobot,
+            Turtle2Robot,
+        )
+
+        # The path each shipped env walks, and the method it then calls.
+        reached = [
+            (
+                FrankaRobot.build(
+                    robot_ip="10.0.0.2", node_rank=0, env_idx=0, worker_rank=0
+                )
+                .child("arm")
+                .owner,
+                "get_state",
+            ),
+            (
+                GimArmRobot.build(
+                    node_rank=0,
+                    can_interface="can0",
+                    arm_variant="arm6",
+                    enable_gripper=True,
+                    gripper_type="default",
+                    control_mode="position",
+                    env_idx=0,
+                    worker_rank=0,
+                )
+                .child("arm")
+                .owner,
+                "get_state",
+            ),
+            (
+                Turtle2Robot.build(
+                    frequency=50,
+                    camera_ids=(1, 2),
+                    env_idx=0,
+                    node_rank=0,
+                    worker_rank=0,
+                )
+                .child("left")
+                .child("arm")
+                .owner,
+                "get_cams",
+            ),
+        ]
+        dual = DualFrankaRobot.build(
+            left_robot_ip="1.2.3.4",
+            right_robot_ip="1.2.3.5",
+            left_gripper_connection="/dev/a",
+            right_gripper_connection="/dev/b",
+            env_idx=0,
+            worker_rank=0,
+            node_rank=0,
+        )
+        reached.append((dual.child("left").child("arm").owner, "clear_errors"))
+
+        for connection, method in reached:
+            assert not isinstance(connection, PartGroup), (
+                f"the path reached a {type(connection).__name__}, not a driver"
+            )
+            assert hasattr(connection, method), (
+                f"{type(connection).__name__} has no {method}(), which the env calls"
+            )
+
+        # And a group says so rather than answering for a connection it has not
+        # got, which is what hid the mistake.
+        with pytest.raises(TypeError, match="rides no connection"):
+            dual.child("left").owner
 
 
 def test_a_device_with_its_own_link_keeps_it_when_a_connection_lists_it():
@@ -1367,8 +1457,10 @@ def test_parts_on_separate_connections_still_run_together():
 
     assert len(robot.owners()) == 2
     assert robot._batches() == [["left"], ["right"]]
-    # Within one arm, the arm and its gripper share a link and stay together.
-    assert robot.child("left")._batches() == [["arm", "end_effector"]]
+    # Within one arm there is one part to batch: the gripper rides the arm and
+    # is read with it, not beside it.
+    assert robot.child("left")._batches() == [["arm"]]
+    assert set(robot.child("left").child("arm").children) == {"end_effector"}
 
 
 def test_a_group_spanning_two_sessions_pulls_both_into_one_batch():
@@ -2679,11 +2771,13 @@ def test_a_real_arm_runs_against_a_faked_sdk():
         arm.connect()
 
         assert arm.is_connected
-        assert set(arm.parts) == {"arm", "end_effector"}
+        # What the arm backs is what rides on it, and it is not one of them.
+        assert set(arm.parts) == {"end_effector"}
+        assert set(arm.children) == {"end_effector"}
 
         observation = arm.get_observation()
         assert observation["tcp_pose"].shape == (7,)
-        assert arm.parts["end_effector"].get_observation()["state"].shape == (1,)
+        assert arm.child("end_effector").get_observation()["state"].shape == (1,)
 
         arm.send_action({"joint_position": [0.0] * 7})
 
@@ -3178,15 +3272,15 @@ def test_describe_says_where_a_part_runs_before_anything_is_opened():
     class Bench(Robot):
         ROBOT_TYPE = "Bench"
 
-    declared = FrankyArm("10.0.0.1", node_rank=2)
-    robot = Bench(arm=declared.part("arm"), gripper=declared.part("end_effector"))
+    robot = Bench(arm=FrankyArm("10.0.0.1", node_rank=2))
 
     described = robot.describe()
 
     assert "Bench" in described
-    assert "arm" in described and "gripper" in described
+    # The arm, with what rides on it drawn beneath it.
+    assert "arm" in described and "end_effector" in described
     assert "node=2" in described, described
-    # Both names come from one declaration, so both say the same connection.
+    # Both rows come from one connection, so both say the same one.
     assert described.count("FrankyArm#1") == 2, described
 
 
@@ -3208,8 +3302,7 @@ def test_a_robot_can_be_disconnected_twice():
     class Bench(Robot):
         ROBOT_TYPE = "Bench"
 
-    declared = FrankyArm("10.0.0.1", gripper_connection="/dev/mock-gripper")
-    robot = Bench(arm=declared.part("arm"), gripper=declared.part("end_effector"))
+    robot = Bench(arm=FrankyArm("10.0.0.1", gripper_connection="/dev/mock-gripper"))
 
     with mocked_sdks():
         robot.connect()

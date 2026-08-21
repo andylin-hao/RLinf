@@ -515,26 +515,6 @@ class Connection(ABC, metaclass=_ConnectionMeta):
             )
         return self._adopt(available[name])
 
-    def compose(self) -> dict[str, "RobotPart"]:
-        """Every part this connection backs, under the names it knows them by.
-
-        For the ordinary case, where the driver's names are the names the robot
-        wants::
-
-            class ExampleRobot(Robot):
-                @classmethod
-                def build_arms(cls, **config):
-                    return ExampleArm(config["robot_ip"]).compose()
-
-        Naming them one at a time is what :meth:`part` is for, and is right
-        when the robot's names differ from the driver's -- two arms that become
-        ``left`` and ``right``, or a robot that fits only some of what its
-        session offers. When they do not differ, restating them is a place for
-        the two lists to drift: a driver that grows a third part would be
-        composed without it, and nothing would say so.
-        """
-        return {name: self._adopt(part) for name, part in self.parts.items()}
-
     def _adopt(self, part: "RobotPart") -> "RobotPart":
         """Say that this connection is what opens ``part``, when it is."""
         if part is not self and part._owner is None and not part._opens_itself():
@@ -563,6 +543,42 @@ class RobotPart(Connection):
     @abstractmethod
     def observation_features(self) -> dict[str, Any]:
         """Describe the values returned by :meth:`get_observation`."""
+
+    @property
+    def children(self) -> "dict[str, RobotPart]":
+        """What sits beneath this in the robot's tree, by name.
+
+        For a part, that is what rides on it: an arm's gripper is under the
+        arm, because that is where it is. For a :class:`PartGroup` it is what
+        the group was composed of. One question with one answer, so walking the
+        tree -- to describe it, to find every camera, to read it -- never has to
+        ask which kind of thing it is holding.
+
+        A bare :class:`Connection` has no place in the tree and so does not
+        answer this at all, however many parts it backs; those are composed one
+        at a time with :meth:`Connection.part`.
+        """
+        beneath: "dict[str, RobotPart]" = {}
+        for name, part in self.parts.items():
+            if part is self:
+                raise TypeError(
+                    f"{type(self).__name__} lists itself in parts as {name!r}. "
+                    "That mapping says what *rides* on this part, and a part "
+                    "does not ride itself -- composing it already puts it in "
+                    "the tree, with everything here beneath it. Drop the entry."
+                )
+            beneath[name] = self._adopt(part)
+        return beneath
+
+    def child(self, name: str) -> "RobotPart":
+        """Return one part from beneath this one, or say which names exist."""
+        available = self.children
+        if name not in available:
+            raise KeyError(
+                f"{type(self).__name__} has no part {name!r}. "
+                f"Available: {sorted(available)}."
+            )
+        return available[name]
 
     @abstractmethod
     def get_observation(self) -> dict[str, Any]:
@@ -598,9 +614,9 @@ class PartGroup(ControllablePart):
     What may be composed is a part, and only a part::
 
         PartGroup(
-            arm=connection.part("arm"),  # a part of a session
+            arm=ExampleArm("10.0.0.2"),  # and whatever rides on it
             end_effector=ExampleGripper("/dev/ttyUSB0"),  # a part of its own
-            wrist=PartGroup(camera=...),  # a subtree of parts
+            left=PartGroup(camera=...),  # a subtree of parts
         )
 
     A :class:`Connection` is refused: it backs parts without being one, so
@@ -664,17 +680,28 @@ class PartGroup(ControllablePart):
 
     @property
     def children(self) -> "dict[str, RobotPart]":
-        """The parts this group is composed of, by the names it gave them."""
+        """The parts this group was composed of, by the names it gave them.
+
+        A group carries nothing of its own, so unlike a part its children are
+        what it was handed rather than what rides on it.
+        """
         return self._children
 
-    def child(self, name: str) -> "RobotPart":
-        """Return one composed part, or say which names exist."""
-        if name not in self._children:
-            raise KeyError(
-                f"{type(self).__name__} has no part {name!r}. "
-                f"Available: {sorted(self._children)}."
-            )
-        return self._children[name]
+    @property
+    def owner(self) -> "Connection":
+        """Refused: a group rides no connection of its own.
+
+        Every part beneath it may ride a different one, so there is no single
+        answer and inventing one hides a mistake rather than reporting it.
+        Answering ``self`` is what let an env ask a group for the arm session
+        behind it and get an object with no ``get_state`` on it, three calls
+        later and nowhere near the line at fault.
+        """
+        raise TypeError(
+            f"{type(self).__name__} is composed of parts and rides no "
+            "connection itself, so it has no owner. Ask the part you mean "
+            "-- group.child(<name>).owner -- or owners() for all of them."
+        )
 
     @property
     def is_connected(self) -> bool:
@@ -685,14 +712,19 @@ class PartGroup(ControllablePart):
     def observation_features(self) -> dict[str, Any]:
         """Describe each part's observation under its name."""
         return {
-            name: part.observation_features for name, part in self._children.items()
+            name: PartGroup._read_part(part, lambda p: p.observation_features)
+            for name, part in self._children.items()
         }
 
     @property
     def action_features(self) -> dict[str, Any]:
         """Describe each controllable part's action under its name."""
         return {
-            name: part.action_features
+            name: PartGroup._read_part(
+                part,
+                lambda p: p.action_features,
+                include=lambda p: isinstance(p, ControllablePart),
+            )
             for name, part in self._children.items()
             if isinstance(part, ControllablePart)
         }
@@ -709,6 +741,49 @@ class PartGroup(ControllablePart):
             for owner in self._owners_of(part):
                 seen.setdefault(id(owner), owner)
         return list(seen.values())
+
+    @staticmethod
+    def _read_part(
+        part: "RobotPart",
+        call: "Callable[[RobotPart], Mapping[str, Any]]",
+        include: "Optional[Callable[[RobotPart], bool]]" = None,
+    ) -> dict[str, Any]:
+        """Read one part, with each part riding it under its own name.
+
+        The gripper on an arm's bus is beneath the arm in the tree, so it is
+        beneath the arm in the reading. A part answers for its own device and
+        knows nothing about this; assembling a carrier and its riders into one
+        value is the tree's job.
+
+        ``include`` drops riders that have nothing to contribute -- a camera on
+        an arm takes no action, so it is absent from the action rather than
+        present and empty.
+        """
+        reading = dict(call(part))
+        for name, rider in part.children.items():
+            if include is None or include(rider):
+                reading[name] = PartGroup._read_part(rider, call, include)
+        return reading
+
+    @staticmethod
+    def _command_part(part: "RobotPart", action: "Mapping[str, Any]") -> dict[str, Any]:
+        """Apply one part's action, handing each rider's share to the rider.
+
+        The keys of a carrier's action are its own fields plus the names of what
+        rides on it, so this splits them by that: a name the carrier backs goes
+        down, anything else is the carrier's own.
+        """
+        riders = part.children
+        own = {name: value for name, value in action.items() if name not in riders}
+        applied: dict[str, Any] = dict(part.send_action(own)) if own else {}
+        for name, value in action.items():
+            if name not in riders:
+                continue
+            rider = riders[name]
+            if not isinstance(rider, ControllablePart):
+                raise TypeError(f"Part {name!r} is not controllable.")
+            applied[name] = PartGroup._command_part(rider, value)
+        return applied
 
     def _batches(self) -> list[list[str]]:
         """Group part names so no two batches touch the same connection.
@@ -806,8 +881,10 @@ class PartGroup(ControllablePart):
         self._fan_out(lambda part: part.reset())
 
     def get_observation(self) -> dict[str, Any]:
-        """Read every part, namespaced by name."""
-        return self._fan_out(lambda part: part.get_observation())
+        """Read every part, namespaced by name, riders under their carrier."""
+        return self._fan_out(
+            lambda part: self._read_part(part, lambda p: p.get_observation())
+        )
 
     def send_action(self, action: Mapping[str, Any]) -> dict[str, Any]:
         """Dispatch each named action to the part that owns it."""
@@ -830,7 +907,7 @@ class PartGroup(ControllablePart):
 
         def run(names: list[str]) -> dict[str, Any]:
             return {
-                name: self._children[name].send_action(requested[name])
+                name: self._command_part(self._children[name], requested[name])
                 for name in names
             }
 

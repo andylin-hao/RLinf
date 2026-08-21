@@ -112,17 +112,16 @@
    )
    robot = MobileManipulator(
        base=base,
-       arm=arm_connection.part("arm"),
-       end_effector=arm_connection.part("end_effector"),
+       arm=arm_connection,
    )
 
 这两个参数采用不同的组合方式，因为它们表示的对象不同。构造 ``MobileBase`` 子类会得到一个尚未连接的 ``RobotPart``。它本身就是任务需要访问的逻辑部件，因此可以直接以 ``base=base`` 传入；参数名 ``base`` 会成为 ``robot.children`` 中的公开路径。
 
 Franka 对象则持有一条同时包含机械臂和末端执行器的硬件连接。``part(name)`` 直接交出其中一个部件，它尚未打开，搭在这条连接上；返回值就是 ``RobotPart``，中间没有需要构造或标注的类型。如果直接传入 Franka 对象本身，只会组合机械臂——它本身就是一个部件，会以部件的身份进入机器人树，末端执行器则会悄无声息地缺席。
 
-只有当机器人想用的名称与驱动不同时，才需要逐个点名。名称一致时用 ``compose()`` 按驱动自己的名称全部取来，需要维护的清单就只有一份::
+只有当机器人想用的名称与驱动不同时，才需要逐个点名。名称一致时直接组合这个部件即可，搭在它上面的东西会跟着进来，需要维护的清单就只有一份::
 
-   robot = MobileManipulator(base=base, **arm_connection.compose())
+   robot = MobileManipulator(base=base, arm=arm_connection)
 
 ``PartGroup`` 会在组合阶段检查这一边界。构造函数只接受 ``RobotPart`` 或另一个 ``PartGroup``；如果传入不可读取的裸 ``Connection``，异常会直接指出出错的参数名。
 
@@ -280,8 +279,7 @@ placement 只决定各条连接在哪个节点打开，不改变任务访问部�
    )
    robot = MobileManipulator(
        base=base,
-       arm=arm_connection.part("arm"),
-       end_effector=arm_connection.part("end_effector"),
+       arm=arm_connection,
    )
 
 构造这些对象时只会记录参数、``node_rank`` 和 ``worker_name``，不会导入厂商 SDK 或打开设备。``Connection`` 的 metaclass 会先取走 placement 参数，再调用驱动自身的 ``__init__``，因此新驱动的构造函数只需声明硬件相关参数。``robot.connect()`` 会在每条连接指定的节点上把它打开一次。跨节点的连接在该节点重新构造，树里那个对象随即变成它的 view，因此机器人两种情况下持有的都是同一批部件，代码里也不需要区分部署位置。
@@ -344,7 +342,7 @@ placement 只决定各条连接在哪个节点打开，不改变任务访问部�
            )
            return cls(
                base=base,
-               **arm_connection.compose(),
+               arm=arm_connection,
            )
 
 ``MobileBase.backend()`` 根据硬件配置中的名称找到对应 driver。``build()`` 随后组合尚未连接的部件，以及从共享连接中选择的部件，不会打开任何设备。连接地址、backend 选择和 placement 写入机器人配置；目标位置、奖励、复位姿态与 episode 长度仍属于任务配置。
