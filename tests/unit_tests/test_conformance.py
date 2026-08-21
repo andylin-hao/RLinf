@@ -182,6 +182,66 @@ def test_building_a_camera_opens_no_device(camera_type):
         camera.disconnect()
 
 
+def test_a_gripper_opens_when_connected_and_not_before():
+    """A gripper is a part, and parts do not open in their constructor.
+
+    ``RobotiqGripper.__init__`` used to open the serial port and run the
+    activation sequence -- which moves the fingers -- while ``connect()``
+    merely checked that it had worked. A robot composed with one reported
+    itself connected before anything connected it, and stayed connected after
+    disconnecting.
+    """
+    from robot_mocks import mocked_sdks
+
+    from rlinf.robotics.robot import Robot
+
+    class Bench(Robot):
+        ROBOT_TYPE = "BenchGripper"
+
+    with mocked_sdks():
+        from rlinf.robotics.parts.end_effectors.grippers.robotiq import RobotiqGripper
+
+        gripper = RobotiqGripper(port="/dev/mock-gripper")
+        assert not gripper.is_connected, "the constructor opened the port"
+        assert not gripper.is_ready(), "the constructor activated the gripper"
+
+        robot = Bench(hand=gripper)
+        assert not robot.is_connected
+
+        robot.connect()
+        assert robot.is_connected and gripper.is_ready()
+
+        robot.disconnect()
+        assert not robot.is_connected, "the gripper stayed connected after teardown"
+        assert not gripper.is_ready()
+
+        # Stall recovery opens it again, like any other part.
+        robot.connect()
+        assert robot.is_connected
+        robot.disconnect()
+
+
+def test_a_gripper_keeps_the_part_contract():
+    """The full part lifecycle for a gripper that can run on fakes.
+
+    The Franka gripper is left out: it rides the arm's ROS session, so there
+    is no gripper to build without an arm around it, and the DualFranka robot
+    contract already covers that path.
+    """
+    import numpy as np
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        from rlinf.robotics.parts.end_effectors.grippers import create_gripper
+
+        failures = PartContract(
+            lambda: create_gripper(gripper_type="robotiq", port="/dev/mock-gripper"),
+            action={"target": np.zeros(1, dtype=np.float32)},
+        ).failures()
+
+    assert failures == [], "\n".join(failures)
+
+
 @pytest.mark.parametrize(
     "module_name, class_name",
     [

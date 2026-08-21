@@ -48,7 +48,7 @@ Byte   Register  Description
 
 import inspect
 import time
-from typing import Optional
+from typing import Any, Optional
 
 import numpy as np
 
@@ -104,28 +104,45 @@ class RobotiqGripper(BaseGripper):
     ):
         self._logger = get_logger()
         self._port = port
+        self._baudrate = baudrate
         self._slave_id = slave_id
         self._max_width = max_width
 
-        self._client = _create_modbus_client(port, baudrate)
-        self._client.connect()
-
-        # pymodbus >=3.10 renamed "slave" to "device_id"
-        sig = inspect.signature(self._client.write_registers)
-        if "device_id" in sig.parameters:
-            self._slave_kwarg = "device_id"
-        else:
-            self._slave_kwarg = "slave"
-
+        self._client = None
+        self._slave_kwarg = "slave"
         self._cached_position: int = 0  # raw 0-255
         self._is_open_flag: bool = True
         self._activated: bool = False
 
-        self._activate()
+    def _open(self):
+        """Open the serial link and run the activation sequence.
+
+        Activation moves the fingers, so it belongs here rather than in the
+        constructor: composing a robot must not drive hardware, and this
+        gripper may be built on a machine that is not the one holding it.
+        """
+        client = _create_modbus_client(self._port, self._baudrate)
+        client.connect()
+        self._client = client
+
+        # pymodbus >=3.10 renamed "slave" to "device_id"
+        sig = inspect.signature(client.write_registers)
+        self._slave_kwarg = "device_id" if "device_id" in sig.parameters else "slave"
+
+        try:
+            self._activate()
+        except Exception:
+            # A half-activated gripper still holds the port, and the lifecycle
+            # only releases what _open returned.
+            client.close()
+            self._client = None
+            raise
+
         self._logger.info(
-            f"Robotiq gripper activated on {port} "
-            f"(slave=0x{slave_id:02X}, max_width={max_width}m)"
+            f"Robotiq gripper activated on {self._port} "
+            f"(slave=0x{self._slave_id:02X}, max_width={self._max_width}m)"
         )
+        return client
 
     # ── BaseGripper interface ────────────────────────────────────────
 
@@ -156,8 +173,12 @@ class RobotiqGripper(BaseGripper):
     def is_ready(self) -> bool:
         return self._activated
 
-    def cleanup(self) -> None:
-        self._client.close()
+    def _release(self, device: Any) -> None:
+        """Close the serial link the lifecycle handed back."""
+        self._activated = False
+        self._client = None
+        if device is not None:
+            device.close()
 
     # ── Modbus helpers ───────────────────────────────────────────────
 

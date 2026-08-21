@@ -187,7 +187,10 @@ class FrankyArm(ControllablePart):
                 "for now."
             )
         if gt == "robotiq":
-            return create_gripper(gripper_type="robotiq", port=gripper_connection)
+            gripper = create_gripper(gripper_type="robotiq", port=gripper_connection)
+            # Built unopened, like every part; this arm owns its lifetime.
+            gripper.connect()
+            return gripper
         raise ValueError(
             f"FrankyArm: unsupported gripper_type={gripper_type!r}. "
             f"Supported: 'robotiq'."
@@ -433,6 +436,6 @@ class FrankyArm(ControllablePart):
         self._stop_cart_tracking_motion()
         self._safe_join()
         try:
-            self._gripper.cleanup()
+            self._gripper.disconnect()
         except Exception:
             pass

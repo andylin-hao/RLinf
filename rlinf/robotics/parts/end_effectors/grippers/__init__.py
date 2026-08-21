@@ -28,7 +28,11 @@ def create_gripper(
     port: Optional[str] = None,
     **kwargs,
 ) -> BaseGripper:
-    """Factory that instantiates the right gripper backend.
+    """Build the right gripper backend, without opening it.
+
+    Like every part, the gripper that comes back is unopened: call
+    ``connect()`` when the hardware should be reached, and ``disconnect()``
+    to let it go. An arm that builds its own gripper does both.
 
     Args:
         gripper_type: ``"franka"`` (ROS-based) or ``"robotiq"`` (Modbus RTU).

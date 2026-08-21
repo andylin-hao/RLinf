@@ -146,7 +146,7 @@ class FrankaROSArm(ControllablePart):
         if self._end_effector is not None:
             self._end_effector.disconnect()
         if self._gripper is not None:
-            self._gripper.cleanup()
+            self._gripper.disconnect()
         self._connected = False
 
     def _init_end_effector(
@@ -163,6 +163,8 @@ class FrankaROSArm(ControllablePart):
                 port=gripper_connection,
                 **end_effector_config,
             )
+            # Built unopened, like every part; this arm owns its lifetime.
+            self._gripper.connect()
             self._logger.info(
                 "Gripper initialised: end_effector=%s",
                 self._end_effector_type.value,

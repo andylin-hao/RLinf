@@ -38,12 +38,9 @@ class FrankaGripper(BaseGripper):
     """
 
     def __init__(self, ros):
-        from franka_gripper.msg import GraspActionGoal, MoveActionGoal
-        from sensor_msgs.msg import JointState
-
         self._ros = ros
-        self._GraspActionGoal = GraspActionGoal
-        self._MoveActionGoal = MoveActionGoal
+        self._GraspActionGoal = None
+        self._MoveActionGoal = None
 
         self._position_value: float = 0.0
         self._is_open_flag: bool = True
@@ -54,11 +51,32 @@ class FrankaGripper(BaseGripper):
         self._grasp_channel = "/franka_gripper/grasp/goal"
         self._state_channel = "/franka_gripper/joint_states"
 
+    def _open(self):
+        """Open the gripper's channels on the arm's ROS session.
+
+        The message types are imported here rather than at module scope, and
+        the channels are created here rather than in the constructor, so
+        composing a robot needs neither ROS nor the gripper.
+
+        The session belongs to the arm, so there is nothing of its own to hand
+        back; returning ``None`` leaves the lifecycle holding the gripper
+        itself, which is what :meth:`_release` then has nothing to close.
+        """
+        from franka_gripper.msg import GraspActionGoal, MoveActionGoal
+        from sensor_msgs.msg import JointState
+
+        self._GraspActionGoal = GraspActionGoal
+        self._MoveActionGoal = MoveActionGoal
+
         self._ros.create_ros_channel(self._move_channel, MoveActionGoal, queue_size=1)
         self._ros.create_ros_channel(self._grasp_channel, GraspActionGoal, queue_size=1)
         self._ros.connect_ros_channel(
             self._state_channel, JointState, self._on_state_msg
         )
+
+    def _release(self, device) -> None:
+        """Nothing to close: the arm owns the ROS session these ride on."""
+        self._is_ready_flag = False
 
     # ── BaseGripper interface ────────────────────────────────────────
 

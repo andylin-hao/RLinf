@@ -200,11 +200,12 @@ A quick sanity check (run on the NUC):
    python -c "
    from rlinf.robotics.parts.end_effectors.grippers.robotiq import RobotiqGripper
    g = RobotiqGripper(port='/dev/ttyUSB0')
-   print(f'Position: {g.position:.4f} m, Ready: {g.is_ready}')
+   g.connect()
+   print(f'Position: {g.position:.4f} m, Ready: {g.is_ready()}')
    g.open()
    import time; time.sleep(1)
    g.close()
-   g.cleanup()
+   g.disconnect()
    "
 
 

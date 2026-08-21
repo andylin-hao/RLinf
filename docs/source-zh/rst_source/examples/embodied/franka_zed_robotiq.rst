@@ -195,11 +195,12 @@ Robotiq 夹爪通过 USB 转 RS485 适配器使用 **Modbus RTU** 协议通信�
    python -c "
    from rlinf.robotics.parts.end_effectors.grippers.robotiq import RobotiqGripper
    g = RobotiqGripper(port='/dev/ttyUSB0')
-   print(f'Position: {g.position:.4f} m, Ready: {g.is_ready}')
+   g.connect()
+   print(f'Position: {g.position:.4f} m, Ready: {g.is_ready()}')
    g.open()
    import time; time.sleep(1)
    g.close()
-   g.cleanup()
+   g.disconnect()
    "
 
 

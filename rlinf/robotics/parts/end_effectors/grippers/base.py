@@ -24,8 +24,18 @@ class BaseGripper(EndEffector, ABC):
     """Abstract base class for robot gripper control.
 
     All gripper implementations (Franka parallel gripper, Robotiq 2F, …)
-    must implement this interface so that the arm part can
-    use them interchangeably.
+    must implement this interface so that the arm part can use them
+    interchangeably.
+
+    A gripper opens the way every other part does: :meth:`_open` reaches the
+    hardware and returns what speaks to it, :meth:`_release` lets it go, and
+    the constructor only stores settings. It used to be the other way round --
+    the constructor opened the serial port and ``connect()`` merely checked
+    that it had worked -- which meant a gripper reported itself connected
+    before anything connected it, and stayed that way after disconnecting.
+
+    :meth:`is_ready` is a separate question from being connected: a gripper can
+    hold its link and still be mid-activation.
     """
 
     @abstractmethod
@@ -75,14 +85,6 @@ class BaseGripper(EndEffector, ABC):
         """Whether the gripper is activated and ready to accept commands."""
         raise NotImplementedError
 
-    def cleanup(self) -> None:
-        """Release hardware resources (serial port, ROS channels, …)."""
-
-    @property
-    def is_connected(self) -> bool:
-        """Whether the backend is ready to accept commands."""
-        return self.is_ready()
-
     @property
     def observation_features(self) -> dict[str, Any]:
         """Describe the scalar gripper position."""
@@ -92,15 +94,6 @@ class BaseGripper(EndEffector, ABC):
     def action_features(self) -> dict[str, Any]:
         """Describe the scalar absolute-position command."""
         return {"target": {"shape": (1,), "dtype": "float32"}}
-
-    def connect(self) -> None:
-        """Validate the connection established by the backend constructor."""
-        if not self.is_ready():
-            raise RuntimeError(f"{type(self).__name__} is not ready.")
-
-    def disconnect(self) -> None:
-        """Release backend resources."""
-        self.cleanup()
 
     def reset(self) -> None:
         """Reset the gripper to its open state."""
