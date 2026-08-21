@@ -45,6 +45,20 @@ class BaseGripper(BaseEndEffector, ABC):
     hold its link and still be mid-activation.
     """
 
+    @classmethod
+    def declare(cls, *, ros=None, port=None, **settings) -> "BaseGripper":
+        """Take whichever attachment this gripper is reached through.
+
+        A Franka Hand rides the arm's ROS session and a Robotiq its own serial
+        port, so the arm offers both and each takes one. Overriding here rather
+        than branching in the arm is what lets a third gripper arrive without
+        the arm changing.
+        """
+        raise NotImplementedError(
+            f"{cls.__name__} does not say which attachment it is reached "
+            "through. Override declare() to take the one it uses."
+        )
+
     @abstractmethod
     def open(self, speed: float = 0.3) -> None:
         """Fully open the gripper.

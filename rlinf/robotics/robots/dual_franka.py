@@ -21,7 +21,7 @@ from ..discovery import (
     RobotConfig,
 )
 from ..parts.base import PartGroup
-from ..parts.cameras import BaseCamera
+from ..parts.cameras import Camera
 from .franka import FrankaRobot
 
 
@@ -82,9 +82,7 @@ class DualFrankaRobot(FrankaRobot):
             )
             arms[side] = PartGroup(
                 arm=declared,
-                **BaseCamera.declare(
-                    (arm_cameras or {}).get(side), node_rank=node_rank
-                ),
+                **Camera.declare((arm_cameras or {}).get(side), node_rank=node_rank),
             )
         return arms
 

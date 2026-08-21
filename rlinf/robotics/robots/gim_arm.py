@@ -19,7 +19,7 @@ from typing import Any, Optional
 from ..discovery import (
     RobotConfig,
 )
-from ..parts.cameras import BaseCamera
+from ..parts.cameras import Camera
 from ..robot import Robot
 
 
@@ -66,7 +66,7 @@ class GimArmRobot(Robot):
         node_rank: Optional[int] = None,
     ) -> dict[str, Any]:
         """The cameras this robot carries."""
-        return BaseCamera.declare(cameras, node_rank=node_rank)
+        return Camera.declare(cameras, node_rank=node_rank)
 
     @classmethod
     def build(

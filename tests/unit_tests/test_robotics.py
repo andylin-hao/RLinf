@@ -1192,13 +1192,13 @@ def test_declaring_cameras_needs_no_config_class():
     from rlinf.robotics.parts.cameras import BaseCamera, CameraInfo
 
     info = CameraInfo(name="scene", serial_number="123", camera_type="realsense")
-    declared = BaseCamera.declare({"scene": info}, node_rank=4)
+    declared = Camera.declare({"scene": info}, node_rank=4)
 
     assert set(declared) == {"scene"}
     assert declared["scene"].node_rank == 4
     assert type(declared["scene"]).__name__ == "RealSenseCamera"
     assert not declared["scene"].is_connected, "declaring a camera must not open it"
-    assert BaseCamera.declare(None) == {}
+    assert Camera.declare(None) == {}
     # The backend comes from the registry, not from a table in the package.
     assert BaseCamera.backend("rs") is BaseCamera.backend("realsense")
     assert set(BaseCamera.backends()) >= {"realsense", "rs", "zed", "lumos"}
@@ -2316,6 +2316,90 @@ def test_the_binding_turns_a_reading_into_a_command_for_this_arm():
 # --- one lifecycle, whatever kind of part it is -----------------------
 
 
+def test_every_device_family_is_shaped_the_same_way():
+    """One category per family, the registry on it, one lifecycle rule.
+
+    Four families drifted into four answers. Arms had no category at all, so
+    their backends lived in a table inside a robot; cameras registered on their
+    driver base, so asking the *category* what backends existed returned
+    nothing; and whether a driver had to write ``_open`` depended on which
+    family it belonged to.
+    """
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        import rlinf.robotics.parts.cameras  # noqa: F401  - registers drivers
+        import rlinf.robotics.parts.end_effectors  # noqa: F401
+        import rlinf.robotics.parts.teleop.devices  # noqa: F401
+        from rlinf.robotics.parts.arms.base import Arm, BaseArm
+        from rlinf.robotics.parts.cameras.base import BaseCamera, Camera
+        from rlinf.robotics.parts.end_effectors.base import BaseEndEffector, EndEffector
+        from rlinf.robotics.parts.teleop.devices import TeleopPart
+
+        # The registry answers on the category, which is what a config names.
+        for category in (Arm, Camera, EndEffector):
+            assert category.backends(), (
+                f"{category.__name__} has no registered backends; a config "
+                "naming one would have nothing to resolve against"
+            )
+
+        # A driver base requires opening. Releasing too, unless the family
+        # releases the same way for all of its drivers and does it once.
+        for base in (BaseArm, BaseCamera, BaseEndEffector, TeleopPart):
+            assert base._open.__isabstractmethod__, (
+                f"{base.__name__} lets a driver inherit _open, so one that "
+                "never wrote it fails at the first connect instead of at "
+                "class definition"
+            )
+        for base in (BaseArm, BaseCamera, BaseEndEffector):
+            assert base._release.__isabstractmethod__, base.__name__
+        assert not getattr(TeleopPart._release, "__isabstractmethod__", False), (
+            "TeleopPart releases every reader the same way, so it does it once"
+        )
+
+
+def test_every_part_presents_a_device_category():
+    """Nothing readable in a robot is 'a part' with no kind.
+
+    A category is what ``parts_of_type`` asks for and what a placed part comes
+    back as, so a part outside all of them is invisible to both. The two arm
+    views were exactly that until ``Arm`` existed to belong to.
+    """
+    import inspect
+
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        import rlinf.robotics.parts.teleop.devices  # noqa: F401
+        import rlinf.robotics.parts.views  # noqa: F401
+        import rlinf.robotics.robots  # noqa: F401
+        from rlinf.robotics.parts.arms.base import Arm
+        from rlinf.robotics.parts.base import PartGroup, RobotPart
+        from rlinf.robotics.parts.cameras.base import Camera
+        from rlinf.robotics.parts.end_effectors.base import EndEffector
+        from rlinf.robotics.parts.mobility.base import MobileBase
+        from rlinf.robotics.parts.teleop.devices import TeleopPart
+
+        Arm.backends()  # loads every arm module
+
+        def descendants(cls):
+            for child in cls.__subclasses__():
+                yield child
+                yield from descendants(child)
+
+        categories = (Arm, Camera, EndEffector, MobileBase, TeleopPart)
+        homeless = sorted(
+            cls.__name__
+            for cls in descendants(RobotPart)
+            if cls.__module__.startswith("rlinf.")  # not this file's own fakes
+            and not inspect.isabstract(cls)
+            and not issubclass(cls, PartGroup)
+            and not any(issubclass(cls, category) for category in categories)
+        )
+
+    assert homeless == [], f"parts belonging to no device category: {homeless}"
+
+
 def test_every_part_family_opens_and_closes_the_same_way():
     """A part author learns _open/_release once, not once per device family."""
     import inspect
@@ -2401,10 +2485,10 @@ def test_a_gripper_is_commanded_in_the_units_it_reports():
     """
     from robot_mocks import mocked_sdks
 
-    with mocked_sdks():
-        from rlinf.robotics.parts.end_effectors.grippers import create_gripper
+    from rlinf.robotics.parts.end_effectors import EndEffector
 
-        gripper = create_gripper(gripper_type="robotiq", port="/dev/mock-gripper")
+    with mocked_sdks():
+        gripper = EndEffector.of("robotiq", port="/dev/mock-gripper")
         gripper.connect()
         try:
             assert gripper.max_width > 0
@@ -2482,7 +2566,6 @@ def test_every_end_effector_answers_the_same_questions():
 
     with mocked_sdks():
         from rlinf.robotics.parts.end_effectors.base import EndEffector
-        from rlinf.robotics.parts.end_effectors.grippers import create_gripper
         from rlinf.robotics.robots import DOSW1Robot, FrankaRobot
 
         def franka(end_effector_type=None):
@@ -2501,8 +2584,8 @@ def test_every_end_effector_answers_the_same_questions():
             "gripper on a session": DOSW1Robot.build(is_dummy=True)
             .child("left")
             .child("gripper"),
-            "gripper on its own port": create_gripper(
-                gripper_type="robotiq", port="/dev/mock-gripper"
+            "gripper on its own port": EndEffector.of(
+                "robotiq", port="/dev/mock-gripper"
             ),
         }
 
@@ -2530,12 +2613,10 @@ def test_every_end_effector_reports_its_state_under_the_same_name():
     from robot_mocks import mocked_sdks
 
     with mocked_sdks():
-        from rlinf.robotics.parts.end_effectors import create_end_effector
         from rlinf.robotics.parts.end_effectors.base import EndEffectorType
-        from rlinf.robotics.parts.end_effectors.grippers import create_gripper
 
-        gripper = create_gripper(gripper_type="robotiq", port="/dev/mock-gripper")
-        hand = create_end_effector(EndEffectorType.RUIYAN_HAND, port="/dev/mock-hand")
+        gripper = EndEffector.of("robotiq", port="/dev/mock-gripper")
+        hand = EndEffector.of(EndEffectorType.RUIYAN_HAND, port="/dev/mock-hand")
 
         for part in (gripper, hand):
             name = type(part).__name__

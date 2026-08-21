@@ -20,7 +20,7 @@ from ..discovery import (
     RobotConfig,
 )
 from ..parts.arms.base import Arm
-from ..parts.cameras import BaseCamera
+from ..parts.cameras import Camera
 from ..robot import Robot
 
 
@@ -116,7 +116,7 @@ class FrankaRobot(Robot):
         node_rank: Optional[int] = None,
     ) -> dict[str, Any]:
         """The cameras this robot carries, each placed where it is plugged in."""
-        return BaseCamera.declare(cameras, node_rank=node_rank)
+        return Camera.declare(cameras, node_rank=node_rank)
 
     @classmethod
     def build(

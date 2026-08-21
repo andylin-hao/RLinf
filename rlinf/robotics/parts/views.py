@@ -44,7 +44,7 @@ from typing import Any, Optional, Union, cast
 
 import numpy as np
 
-from .base import ControllablePart
+from .arms.base import Arm
 from .cameras.base import Camera
 from .end_effectors.base import EndEffector
 
@@ -61,7 +61,7 @@ def state_to_dict(state: Any) -> dict[str, Any]:
     raise TypeError(f"Host state {type(state).__name__} is not dictionary-like.")
 
 
-class MethodArm(ControllablePart):
+class MethodArm(Arm):
     """One arm of a part that commands arms through named methods.
 
     Args:

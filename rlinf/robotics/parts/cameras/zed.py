@@ -24,12 +24,12 @@ import numpy as np
 
 from rlinf.utils.logging import get_logger
 
-from .base import BaseCamera, CameraInfo
+from .base import BaseCamera, Camera, CameraInfo
 
 _logger = get_logger()
 
 
-@BaseCamera.register("zed")
+@Camera.register("zed")
 class ZEDCamera(BaseCamera):
     """Camera capture for Stereolabs ZED cameras.
 

@@ -307,9 +307,7 @@ class DualFrankaEnv(gym.Env):
                 )
                 self._cameras[declared] = camera
             return
-        self._cameras = {
-            info.name: BaseCamera.of(info) for info in self._camera_infos()
-        }
+        self._cameras = {info.name: Camera.of(info) for info in self._camera_infos()}
 
     def _close_cameras(self):
         """Close only cameras this env owns; the robot closes its own."""

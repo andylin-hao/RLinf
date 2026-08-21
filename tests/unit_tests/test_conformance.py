@@ -127,7 +127,7 @@ def test_every_shipped_camera_keeps_the_part_contract(camera_type):
     from robot_mocks import mocked_sdks
 
     with mocked_sdks():
-        from rlinf.robotics.parts.cameras import BaseCamera, CameraInfo
+        from rlinf.robotics.parts.cameras import Camera, CameraInfo
 
         info = CameraInfo(
             name="wrist",
@@ -135,7 +135,7 @@ def test_every_shipped_camera_keeps_the_part_contract(camera_type):
             camera_type=camera_type,
             resolution=(64, 48),
         )
-        failures = PartContract(lambda: BaseCamera.of(info)).failures()  # noqa: B023
+        failures = PartContract(lambda: Camera.of(info)).failures()  # noqa: B023
 
     assert failures == [], "\n".join(failures)
 
@@ -153,7 +153,7 @@ def test_building_a_camera_opens_no_device(camera_type):
     serial, sdk_name, opened_attr = SHIPPED_CAMERAS[camera_type]
 
     with mocked_sdks() as sdks:
-        from rlinf.robotics.parts.cameras import BaseCamera, CameraInfo
+        from rlinf.robotics.parts.cameras import Camera, CameraInfo
 
         info = CameraInfo(
             name="wrist",
@@ -161,7 +161,7 @@ def test_building_a_camera_opens_no_device(camera_type):
             camera_type=camera_type,
             resolution=(64, 48),
         )
-        camera = BaseCamera.of(info, node_rank=2)
+        camera = Camera.of(info, node_rank=2)
 
         assert not camera.is_connected
         assert camera.node_rank == 2
@@ -231,11 +231,11 @@ def test_a_gripper_keeps_the_part_contract():
     import numpy as np
     from robot_mocks import mocked_sdks
 
-    with mocked_sdks():
-        from rlinf.robotics.parts.end_effectors.grippers import create_gripper
+    from rlinf.robotics.parts.end_effectors import EndEffector
 
+    with mocked_sdks():
         failures = PartContract(
-            lambda: create_gripper(gripper_type="robotiq", port="/dev/mock-gripper"),
+            lambda: EndEffector.of("robotiq", port="/dev/mock-gripper"),
             action={"target": np.zeros(1, dtype=np.float32)},
         ).failures()
 

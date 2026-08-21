@@ -25,8 +25,8 @@ from rlinf.robotics.parts.arms.franka import FrankaRobotState, validated_robot_i
 from rlinf.robotics.parts.base import RobotPart
 from rlinf.robotics.parts.end_effectors import (
     BaseEndEffector,
+    EndEffector,
     EndEffectorType,
-    create_end_effector,
     normalize_end_effector_type,
 )
 from rlinf.robotics.parts.views import MethodEndEffector
@@ -163,10 +163,11 @@ class FrankaROSArm(BaseArm):
         gripper_connection: Optional[str],
     ) -> None:
         if self._end_effector_type.is_gripper:
-            from rlinf.robotics.parts.end_effectors.grippers import create_gripper
-
-            self._gripper = create_gripper(
-                gripper_type=self._end_effector_type.gripper_backend,
+            # A gripper on this arm's ROS session, or on a serial port of its
+            # own: which one the name selects is the registry's answer, and
+            # what each needs is its own constructor's.
+            self._gripper = EndEffector.of(
+                self._end_effector_type.gripper_backend,
                 ros=self._ros,
                 port=gripper_connection,
                 **end_effector_config,
@@ -179,7 +180,7 @@ class FrankaROSArm(BaseArm):
             )
             return
 
-        self._end_effector = create_end_effector(
+        self._end_effector = EndEffector.of(
             self._end_effector_type,
             **end_effector_config,
         )

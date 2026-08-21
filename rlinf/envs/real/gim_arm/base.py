@@ -477,7 +477,7 @@ class GimArmEnv(gym.Env):
                 self.robot.parts_of_type(Camera).values()
             )
             return
-        self._cameras = [BaseCamera.of(info) for info in self._camera_infos()]
+        self._cameras = [Camera.of(info) for info in self._camera_infos()]
 
     def _close_cameras(self):
         """Close only cameras this env owns; the robot closes its own."""

@@ -109,15 +109,17 @@
 
 .. code-block:: python
 
-   @BaseCamera.register("example")
+   @Camera.register("example")
    class ExampleCamera(BaseCamera):
        ...
 
 
-   camera_cls = BaseCamera.backend(camera_info.camera_type)
+   camera_cls = Camera.backend(camera_info.camera_type)
    camera = camera_cls(camera_info, node_rank=2)
 
-``Camera``、``Arm``、``MobileBase`` 等所有设备类别都会继承 ``Connection.register()`` 和 ``backend()``。backend 名称不区分大小写；两个 class 注册同一名称时会直接报错。如果某类设备具有固定的配置结构，还可以提供 ``of()`` 或 ``declare()`` 作为便捷入口：``BaseCamera.of()`` 读取 ``CameraInfo.camera_type``，``Arm.declare()`` 则把机器人层面的机械臂配置映射到某个 backend 自己的构造函数上。
+所有设备类别都会继承 ``Connection.register()`` 和 ``backend()``，而且 registry 属于**类别**本身——``Camera``、``Arm``、``EndEffector``——因为配置里写的是一类设备，而不是某个基类。backend 名称不区分大小写；两个 class 注册同一名称时会直接报错。
+
+如果某类设备具有固定的配置结构，还可以提供构建入口：``Camera.of()`` 接收 ``CameraInfo`` 并从中读出 backend；``EndEffector.of()`` 接收名称，以及安装它的机械臂所能提供的接入方式；``Arm.declare()`` 把机器人层面的机械臂配置映射到某个 backend 自己的构造函数上。这些映射都写在驱动里、紧挨着它所服务的构造函数，因此新增一个 backend 不需要改动任何负责选择 backend 的代码。
 
 机械臂是这套机制最要紧的地方，因为同一套硬件可能由两种 backend 驱动。一台 Franka 既可以走 libfranka，也可以走 ROS，于是两者都注册到 ``Arm`` 上，机器人只需点名其一：
 

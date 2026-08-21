@@ -28,6 +28,7 @@ and nothing else about the class changes.
 
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from typing import Any, Optional
 
 import numpy as np
@@ -35,13 +36,21 @@ import numpy as np
 from ..base import RobotPart
 
 
-class TeleopPart(RobotPart):
+class TeleopPart(RobotPart, ABC):
     """A device the operator drives.
 
     Like every part, it says what its hardware is in :meth:`_open` and reads it
     in :meth:`get_observation`. Vendor readers vary in how they are released,
     so :meth:`_release` tries the two names they use.
     """
+
+    @abstractmethod
+    def _open(self) -> Any:
+        """Reach the device and return the vendor reader for it.
+
+        Required of a driver rather than inherited, so one that never wrote it
+        is refused at class definition instead of at the first connect.
+        """
 
     def _release(self, device: Any) -> None:
         """Release the reader by whichever name its vendor gave the method."""

@@ -18,46 +18,16 @@ from .base import (
     EndEffectorType,
     normalize_end_effector_type,
 )
-from .grippers import BaseGripper, create_gripper
+from .grippers import BaseGripper, FrankaGripper, RobotiqGripper
+from .hands.ruiyan import RuiyanHand
 
 __all__ = [
     "BaseEndEffector",
     "BaseGripper",
     "EndEffector",
     "EndEffectorType",
-    "create_end_effector",
-    "create_gripper",
+    "FrankaGripper",
+    "RobotiqGripper",
+    "RuiyanHand",
     "normalize_end_effector_type",
 ]
-
-
-def create_end_effector(
-    end_effector_type: str | EndEffectorType,
-    **kwargs,
-) -> BaseEndEffector:
-    """Factory function to create an end-effector instance.
-
-    Args:
-        end_effector_type: The type of end-effector to create.
-            One of ``"ruiyan_hand"``.
-        **kwargs: Additional keyword arguments forwarded to the end-effector
-            constructor.
-
-    Returns:
-        A ``BaseEndEffector`` instance of the requested type.
-
-    Raises:
-        ValueError: If the end-effector type is not recognized.
-    """
-    if isinstance(end_effector_type, str):
-        end_effector_type = EndEffectorType(end_effector_type)
-
-    if end_effector_type == EndEffectorType.RUIYAN_HAND:
-        from .hands.ruiyan import RuiyanHand
-
-        return RuiyanHand(**kwargs)  # noqa: F811
-
-    raise ValueError(
-        f"Unsupported end-effector type: {end_effector_type}. "
-        "Supported types: ['ruiyan_hand']"
-    )

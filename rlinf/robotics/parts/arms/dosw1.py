@@ -22,7 +22,8 @@ from typing import Any
 
 import numpy as np
 
-from rlinf.robotics.parts.base import Connection, ControllablePart, RobotPart
+from rlinf.robotics.parts.arms.base import Arm
+from rlinf.robotics.parts.base import Connection, RobotPart
 from rlinf.robotics.parts.end_effectors.base import EndEffector
 from rlinf.utils.logging import get_logger
 
@@ -371,7 +372,7 @@ class DOSW1Connection(Connection):
             _disconnect_arm(getattr(robot, "right_lead_arm", None))
 
 
-class DOSW1Arm(ControllablePart):
+class DOSW1Arm(Arm):
     """Present one side of a shared DOSW1 SDK session as an arm.
 
     It opens nothing of its own. Naming the session as its ``_owner`` is the

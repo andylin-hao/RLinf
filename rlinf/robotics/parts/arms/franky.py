@@ -31,7 +31,7 @@ from scipy.spatial.transform import Rotation as R
 from rlinf.robotics.parts.arms.base import Arm, BaseArm
 from rlinf.robotics.parts.arms.franka import FrankaRobotState, validated_robot_ip
 from rlinf.robotics.parts.base import RobotPart
-from rlinf.robotics.parts.end_effectors.grippers import create_gripper
+from rlinf.robotics.parts.end_effectors import EndEffector
 from rlinf.robotics.parts.views import MethodEndEffector
 from rlinf.utils.logging import get_logger
 
@@ -186,19 +186,23 @@ class FrankyArm(BaseArm):
         gripper_connection: Optional[str],
         robot_ip: str,
     ):
-        """Pick the right gripper for the franky/libfranka stack."""
+        """Build the gripper this arm carries, from the registry.
+
+        The Franka Hand is driven over a ROS session, which this stack does not
+        hold, so it is the one name this arm cannot honour. Everything else
+        goes through the registry like any other driver.
+        """
         gt = (gripper_type or "robotiq").lower()
-        if gt == "franka":
+        if gt in {"franka", "franka_gripper"}:
             raise NotImplementedError(
                 "FrankyArm: the libfranka backend for the original "
                 "Franka Hand is not yet supported. Use gripper_type='robotiq' "
                 "for now."
             )
-        if gt == "robotiq":
-            gripper = create_gripper(gripper_type="robotiq", port=gripper_connection)
-            # Built unopened, like every part; this arm owns its lifetime.
-            gripper.connect()
-            return gripper
+        gripper = EndEffector.of(gt, port=gripper_connection)
+        # Built unopened, like every part; this arm owns its lifetime.
+        gripper.connect()
+        return gripper
         raise ValueError(
             f"FrankyArm: unsupported gripper_type={gripper_type!r}. "
             f"Supported: 'robotiq'."

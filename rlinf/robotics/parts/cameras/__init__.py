@@ -23,7 +23,7 @@ else.
 Each driver registers the names a config selects it by, so building one from a
 :class:`CameraInfo` needs no table here::
 
-    camera = BaseCamera.of(info, node_rank=2)
+    camera = Camera.of(info, node_rank=2)
 
 Importing this module registers every driver and imports no vendor SDK: each
 reaches for pyrealsense2, pyzed, or cv2 inside ``_open``, on the machine the

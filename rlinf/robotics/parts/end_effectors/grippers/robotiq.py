@@ -54,6 +54,7 @@ import numpy as np
 
 from rlinf.utils.logging import get_logger
 
+from ..base import EndEffector
 from .base import BaseGripper
 
 # Modbus constants
@@ -84,6 +85,7 @@ def _create_modbus_client(port: str, baudrate: int = 115200):
     )
 
 
+@EndEffector.register("robotiq", "robotiq_gripper")
 class RobotiqGripper(BaseGripper):
     """Robotiq 2F-85 / 2F-140 controlled via Modbus RTU over USB-RS485.
 
@@ -95,6 +97,11 @@ class RobotiqGripper(BaseGripper):
             0.085 for the 2F-85, 0.140 for the 2F-140.
     """
 
+    @classmethod
+    def declare(cls, *, ros=None, port=None, **settings) -> "RobotiqGripper":
+        """Reached over a serial port; the arm's ROS session is not for us."""
+        return cls(port=port, **settings)
+
     def __init__(
         self,
         port: str,
@@ -102,6 +109,12 @@ class RobotiqGripper(BaseGripper):
         slave_id: int = _SLAVE_ID,
         max_width: float = 0.085,
     ):
+        if not port:
+            raise ValueError(
+                "A Robotiq gripper is reached over a serial port, so one has "
+                "to be named -- 'gripper_connection' in a robot config, e.g. "
+                "'/dev/ttyUSB0'."
+            )
         self._logger = get_logger()
         self._port = port
         self._baudrate = baudrate

@@ -16,10 +16,10 @@ from typing import Any, Optional
 
 import numpy as np
 
-from .base import BaseCamera, CameraInfo
+from .base import BaseCamera, Camera, CameraInfo
 
 
-@BaseCamera.register("realsense", "rs")
+@Camera.register("realsense", "rs")
 class RealSenseCamera(BaseCamera):
     """Camera capture for Intel RealSense cameras.
 

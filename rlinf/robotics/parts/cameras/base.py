@@ -35,7 +35,48 @@ class Camera(RobotPart):
     what a driver subclasses. Naming it separately is what lets a robot ask for
     every camera it carries, and what lets a camera hosted on another machine
     come back as a camera rather than as a part in general.
+
+    It is also what the drivers register on, so ``Camera.backend("zed")``
+    answers the question a config asks. The registry belongs to the category
+    for the same reason the name does: a config names a kind of device, not a
+    base class.
     """
+
+    @classmethod
+    def of(cls, camera_info: "CameraInfo", **placement: Any) -> "Camera":
+        """Build the camera the descriptor names, without opening it.
+
+        The backend is chosen by :attr:`CameraInfo.camera_type`, so a config
+        naming ``"zed"`` reaches the ZED driver without the caller importing
+        it. Pass ``node_rank`` to say which machine the camera is plugged
+        into; the robot opens it there.
+
+        On the category rather than on the driver base, for the same reason the
+        registry is: what a config names is a kind of camera.
+        """
+        return cls.backend(camera_info.camera_type)(camera_info, **placement)
+
+    @classmethod
+    def declare(
+        cls,
+        cameras: "Optional[Mapping[str, CameraInfo]]" = None,
+        *,
+        node_rank: Optional[int] = None,
+    ) -> dict[str, "Camera"]:
+        """Build one camera per descriptor, ready to compose into a robot.
+
+        The names are the public paths the robot will publish, so this returns
+        exactly what a builder splats into its composition::
+
+            return cls(**cls.declare(cameras, node_rank=camera_node_rank))
+
+        Every camera lands on ``node_rank`` -- the machine they are plugged
+        into -- and none is opened until the robot connects.
+        """
+        return {
+            name: cls.of(info, node_rank=node_rank)
+            for name, info in (cameras or {}).items()
+        }
 
 
 @dataclass
@@ -65,39 +106,6 @@ class BaseCamera(Camera, ABC):
         self._frame_queue: queue.Queue = queue.Queue()
         self._frame_capturing_thread: Optional[threading.Thread] = None
         self._frame_capturing_start = False
-
-    @classmethod
-    def of(cls, camera_info: CameraInfo, **placement: Any) -> "BaseCamera":
-        """Build the camera the descriptor names, without opening it.
-
-        The backend is chosen by :attr:`CameraInfo.camera_type`, so a config
-        naming ``"zed"`` reaches the ZED driver without the caller importing
-        it. Pass ``node_rank`` to say which machine the camera is plugged
-        into; the robot opens it there.
-        """
-        return cls.backend(camera_info.camera_type)(camera_info, **placement)
-
-    @classmethod
-    def declare(
-        cls,
-        cameras: "Optional[Mapping[str, CameraInfo]]" = None,
-        *,
-        node_rank: Optional[int] = None,
-    ) -> dict[str, "BaseCamera"]:
-        """Build one camera per descriptor, ready to compose into a robot.
-
-        The names are the public paths the robot will publish, so this returns
-        exactly what a builder splats into its composition::
-
-            return cls(**cls.declare(cameras, node_rank=camera_node_rank))
-
-        Every camera lands on ``node_rank`` -- the machine they are plugged
-        into -- and none is opened until the robot connects.
-        """
-        return {
-            name: cls.of(info, node_rank=node_rank)
-            for name, info in (cameras or {}).items()
-        }
 
     @property
     def name(self) -> str:
@@ -207,6 +215,15 @@ class BaseCamera(Camera, ABC):
                 except queue.Empty:
                     pass
             self._frame_queue.put(frame)
+
+    @abstractmethod
+    def _open(self) -> Any:
+        """Reach the camera and return whatever speaks to it.
+
+        Required of a driver rather than inherited, so a camera that never
+        wrote one is refused at class definition instead of at the first
+        connect -- the same point :meth:`_release` is required at.
+        """
 
     @abstractmethod
     def _read_frame(self) -> tuple[bool, Optional[np.ndarray]]:

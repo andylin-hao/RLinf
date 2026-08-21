@@ -12,55 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional
-
 from .base import BaseGripper
+from .franka import FrankaGripper
+from .robotiq import RobotiqGripper
 
 __all__ = [
     "BaseGripper",
-    "create_gripper",
+    "FrankaGripper",
+    "RobotiqGripper",
 ]
-
-
-def create_gripper(
-    gripper_type: str = "franka",
-    ros=None,
-    port: Optional[str] = None,
-    **kwargs,
-) -> BaseGripper:
-    """Build the right gripper backend, without opening it.
-
-    Like every part, the gripper that comes back is unopened: call
-    ``connect()`` when the hardware should be reached, and ``disconnect()``
-    to let it go. An arm that builds its own gripper does both.
-
-    Args:
-        gripper_type: ``"franka"`` (ROS-based) or ``"robotiq"`` (Modbus RTU).
-        ros: :class:`ROSController` instance — required for ``"franka"``.
-        port: Serial device path (e.g. ``"/dev/ttyUSB0"``) — required for
-            ``"robotiq"``.
-        **kwargs: Forwarded to the gripper constructor (e.g. ``max_width``,
-            ``baudrate``, ``slave_id``).
-    """
-    gt = gripper_type.lower()
-    if gt == "robotiq":
-        if port is None:
-            raise ValueError(
-                "gripper_connection (serial port) must be specified "
-                "for Robotiq grippers."
-            )
-        from .robotiq import RobotiqGripper
-
-        return RobotiqGripper(port=port, **kwargs)
-    if gt == "franka":
-        if ros is None:
-            raise ValueError(
-                "ROSController instance must be provided for Franka gripper."
-            )
-        from .franka import FrankaGripper
-
-        return FrankaGripper(ros=ros, **kwargs)
-    raise ValueError(
-        f"Unsupported gripper_type={gripper_type!r}. "
-        f"Supported types: 'franka', 'robotiq'."
-    )

@@ -23,10 +23,11 @@ from typing import Any, Optional
 
 import numpy as np
 
-from rlinf.robotics.parts.end_effectors.base import BaseEndEffector
+from rlinf.robotics.parts.end_effectors.base import BaseEndEffector, EndEffector
 from rlinf.utils.logging import get_logger
 
 
+@EndEffector.register("ruiyan_hand")
 class RuiyanHand(BaseEndEffector):
     """Ruiyan dexterous hand — thin wrapper around ``rlinf_dexhand``.
 

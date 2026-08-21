@@ -20,9 +20,11 @@ were previously embedded in the arm's controller worker.
 
 import numpy as np
 
+from ..base import EndEffector
 from .base import BaseGripper
 
 
+@EndEffector.register("franka", "franka_gripper")
 class FrankaGripper(BaseGripper):
     """Franka Emika parallel-jaw gripper (ROS-based).
 
@@ -40,7 +42,18 @@ class FrankaGripper(BaseGripper):
             :meth:`move` and :pyattr:`position` share.
     """
 
+    @classmethod
+    def declare(cls, *, ros=None, port=None, **settings) -> "FrankaGripper":
+        """Reached over the arm's ROS session; a serial port is not for us."""
+        return cls(ros=ros, **settings)
+
     def __init__(self, ros, max_width: float = 0.08):
+        if ros is None:
+            raise ValueError(
+                "A Franka Hand is driven over the arm's ROS session, so one "
+                "has to be passed. Only an arm holding that session can build "
+                "this gripper."
+            )
         self._ros = ros
         self._max_width = max_width
         self._GraspActionGoal = None

@@ -30,12 +30,12 @@ import numpy as np
 
 from rlinf.utils.logging import get_logger
 
-from .base import BaseCamera, CameraInfo
+from .base import BaseCamera, Camera, CameraInfo
 
 _logger = get_logger()
 
 
-@BaseCamera.register("lumos")
+@Camera.register("lumos")
 class LumosCamera(BaseCamera):
     """Camera capture for LUMOS USB cameras (V4L2, I420 stream).
 

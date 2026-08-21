@@ -156,20 +156,26 @@ registers the names that configs use, and the device family resolves the name:
 
 .. code-block:: python
 
-   @BaseCamera.register("example")
+   @Camera.register("example")
    class ExampleCamera(BaseCamera):
        ...
 
 
-   camera_cls = BaseCamera.backend(camera_info.camera_type)
+   camera_cls = Camera.backend(camera_info.camera_type)
    camera = camera_cls(camera_info, node_rank=2)
 
 ``Connection.register()`` and ``backend()`` are inherited by every device
-family -- ``Camera``, ``Arm``, ``MobileBase``. Backend names are
-case-insensitive, and registering the same name for two classes is an error. A
-family may add an ``of()`` or ``declare()`` helper when its config has a
-standard shape; ``BaseCamera.of()`` uses ``CameraInfo.camera_type``, and
-``Arm.declare()`` maps a robot's arm settings onto one backend's constructor.
+family, and the registry belongs to the *category* -- ``Camera``, ``Arm``,
+``EndEffector`` -- because a config names a kind of device rather than a base
+class. Backend names are case-insensitive, and registering the same name for
+two classes is an error.
+
+A family adds a builder when its config has a standard shape. ``Camera.of()``
+takes a ``CameraInfo`` and reads the backend off it; ``EndEffector.of()`` takes
+a name and whatever the arm fitting it can offer; ``Arm.declare()`` maps a
+robot's arm settings onto one backend's constructor. In each case the mapping
+lives on the driver, next to the constructor it serves, so a new backend
+arrives without editing anything that selects one.
 
 Arms are where this matters most, because two of them drive the same hardware.
 A Franka is reached through libfranka or through ROS, so both register on

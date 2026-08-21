@@ -35,6 +35,37 @@ class EndEffector(ControllablePart, ABC):
     directly.
     """
 
+    @classmethod
+    def of(cls, end_effector_type: Any, **settings: Any) -> "EndEffector":
+        """Build the end effector a config names, without opening it.
+
+        The same shape as
+        :meth:`~rlinf.robotics.parts.cameras.base.BaseCamera.of`: a name from
+        the registry, and the settings that driver takes. What each one needs
+        -- a serial port for a Robotiq, the arm's ROS session for a Franka Hand
+        -- it checks for itself, in its own constructor, so a caller building
+        one directly is told the same thing as one going through here.
+
+        Args:
+            end_effector_type: A registered name, or an
+                :class:`EndEffectorType` carrying one.
+            **settings: Offered to that driver's :meth:`declare`.
+        """
+        name = getattr(end_effector_type, "value", end_effector_type)
+        return cls.backend(name).declare(**settings)
+
+    @classmethod
+    def declare(cls, **settings: Any) -> "EndEffector":
+        """Build this driver from what the arm carrying it can offer.
+
+        An arm fitting an end effector offers everything it has to attach one
+        with -- its ROS session, a serial port -- because it does not know
+        which the configured backend uses. A driver takes what it needs and
+        leaves the rest, which is why these are offers rather than settings a
+        config asked for: dropping one is the normal case, not a mistake.
+        """
+        return cls(**settings)
+
     @property
     @abstractmethod
     def action_dim(self) -> int:

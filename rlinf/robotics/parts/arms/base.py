@@ -128,6 +128,24 @@ class BaseArm(Arm, ABC):
     STATE_FIELDS: ClassVar[tuple[str, ...]] = ARM_STATE_FIELDS
 
     @abstractmethod
+    def _open(self) -> Any:
+        """Reach the arm and return whatever speaks to it.
+
+        Required of a driver rather than inherited, so an arm that never wrote
+        one is refused at class definition instead of at the first connect.
+        """
+
+    @abstractmethod
+    def _release(self, device: Any) -> None:
+        """Let go of exactly what :meth:`_open` returned.
+
+        Required for the same reason, and because every arm has something to
+        stop: a control loop, a motion, a session. A part family that releases
+        the same way for all of its drivers implements this once instead --
+        :class:`~rlinf.robotics.parts.teleop.devices.TeleopPart` does.
+        """
+
+    @abstractmethod
     def get_state(self) -> Any:
         """The arm's whole state, as an object with ``to_dict()``."""
 

@@ -800,7 +800,7 @@ class FrankaEnv(gym.Env):
                 for path, camera in self.robot.parts_of_type(Camera).items()
             }
             return
-        self._cameras = {info.name: BaseCamera.of(info) for info in self._camera_infos}
+        self._cameras = {info.name: Camera.of(info) for info in self._camera_infos}
 
     def close(self):
         """Release all hardware resources including cameras and video player."""

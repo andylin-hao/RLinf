@@ -691,7 +691,7 @@ class DOSW1Env(gym.Env):
             self._cameras = list(self.robot.parts_of_type(Camera).values())
             return
         for info in self._camera_infos():
-            camera = BaseCamera.of(info)
+            camera = Camera.of(info)
             camera.connect()
             self._cameras.append(camera)
 
