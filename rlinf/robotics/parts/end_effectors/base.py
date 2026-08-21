@@ -84,10 +84,22 @@ def normalize_end_effector_type(
 
 
 class BaseEndEffector(EndEffector, ABC):
-    """Abstract interface for a robot end-effector.
+    """An end effector that holds a link of its own.
 
-    Every end-effector must expose its state and action dimensions so
-    that ``FrankaEnv`` can build the correct Gymnasium spaces dynamically.
+    What every driver in this package subclasses, grippers included: a
+    :class:`~rlinf.robotics.parts.end_effectors.grippers.base.BaseGripper` is
+    one of these with a single degree of freedom. The alternative -- two
+    sibling bases -- had them disagree about the things a caller holding an
+    ``EndEffector`` most needs to be able to assume: what opens it, what its
+    observation is called, and whether ``reset`` takes a target.
+
+    A driver states its dimensions here so an env can build Gymnasium spaces
+    from the end effector rather than from a table of device names.
+
+    Not every end effector is one of these. A view onto an arm's own bus --
+    :class:`~rlinf.robotics.parts.views.MethodGripper` -- is an ``EndEffector``
+    that opens nothing, so it subclasses the category directly and the
+    lifecycle below does not apply to it.
     """
 
     # ------------------------------------------------------------------
@@ -114,18 +126,23 @@ class BaseEndEffector(EndEffector, ABC):
     # ------------------------------------------------------------------
 
     @abstractmethod
-    def _open(self) -> None:
-        """Perform any hardware-level initialization (serial open, etc.).
+    def _open(self) -> Any:
+        """Reach the hardware -- open the serial port, claim the bus -- and
+        return whatever speaks to it.
 
-        Named for the part lifecycle rather than for this device family. The
-        old name, ``shutdown``, collided with :meth:`RobotPart.shutdown`, which
-        is worker teardown: a released end effector still reported itself
-        connected because teardown never reached ``disconnect``.
+        The same contract as every other part, restated as ``abstractmethod``
+        so an end-effector driver that never wrote one is refused at class
+        definition rather than at the first ``connect``. Return nothing when
+        the device is opened in place and there is no handle to keep.
         """
 
     @abstractmethod
     def _release(self, device: Any) -> None:
-        """Gracefully release hardware resources."""
+        """Let go of exactly what :meth:`_open` returned.
+
+        The handle arrives as an argument rather than off ``self`` so teardown
+        cannot be defeated by the order ``disconnect`` does things in.
+        """
 
     # ------------------------------------------------------------------
     # State

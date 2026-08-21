@@ -2032,9 +2032,10 @@ def test_every_part_family_opens_and_closes_the_same_way():
 
     from rlinf.robotics.parts.cameras.base import BaseCamera
     from rlinf.robotics.parts.end_effectors.base import BaseEndEffector
+    from rlinf.robotics.parts.end_effectors.grippers.base import BaseGripper
     from rlinf.robotics.parts.teleop.devices import TeleopPart
 
-    for family in (TeleopPart, BaseCamera, BaseEndEffector):
+    for family in (TeleopPart, BaseCamera, BaseEndEffector, BaseGripper):
         assert hasattr(family, "_open"), f"{family.__name__} has no _open"
         assert hasattr(family, "_release"), f"{family.__name__} has no _release"
 
@@ -2047,7 +2048,7 @@ def test_every_part_family_opens_and_closes_the_same_way():
     # Opening and closing belong to the connection, and only to it. A family
     # that overrode connect or disconnect would decide where its devices run,
     # which is the one thing those two are for.
-    for family in (TeleopPart, BaseCamera, BaseEndEffector):
+    for family in (TeleopPart, BaseCamera, BaseEndEffector, BaseGripper):
         for public in ("connect", "disconnect"):
             assert public not in vars(family), (
                 f"{family.__name__} overrides {public}; a part placed on another "
@@ -2059,6 +2060,84 @@ def test_every_part_family_opens_and_closes_the_same_way():
         "BaseCamera starts its capture loop, and that has to run beside the "
         "camera rather than beside whoever is holding it"
     )
+
+
+def test_a_gripper_is_an_end_effector_rather_than_a_second_kind_of_one():
+    """One driver base, so a caller holding an ``EndEffector`` can assume things.
+
+    ``BaseGripper`` used to be a sibling of ``BaseEndEffector``, and the two
+    disagreed about exactly what generic code needs: whether ``_open`` was
+    required, what the observation was called, and whether ``reset`` took a
+    target. A gripper is an end effector with one degree of freedom, so it says
+    so, and writes the shared surface in terms of open/close/move.
+    """
+    import inspect
+
+    from rlinf.robotics.parts.end_effectors.base import BaseEndEffector, EndEffector
+    from rlinf.robotics.parts.end_effectors.grippers.base import BaseGripper
+    from rlinf.robotics.parts.views import MethodGripper
+
+    assert issubclass(BaseGripper, BaseEndEffector)
+
+    # The lifecycle is declared once, and required of both.
+    for hook in ("_open", "_release"):
+        assert BaseGripper.__dict__.get(hook) is None, (
+            f"BaseGripper re-declares {hook}; it should inherit the one contract"
+        )
+        assert getattr(BaseEndEffector, hook).__isabstractmethod__, (
+            f"{hook} must be required, or a driver that never wrote one fails "
+            "at the first connect instead of at class definition"
+        )
+
+    # ``reset`` has one signature across the family.
+    assert list(inspect.signature(BaseGripper.reset).parameters) == list(
+        inspect.signature(BaseEndEffector.reset).parameters
+    )
+
+    # A view is an end effector without being a driver, so the lifecycle above
+    # does not apply to it and it needs no ``_open``.
+    assert issubclass(MethodGripper, EndEffector)
+    assert not issubclass(MethodGripper, BaseEndEffector)
+
+
+def test_every_end_effector_reports_its_state_under_the_same_name():
+    """A gripper and a hand answer the same keys, so one env reads both.
+
+    The gripper used to report ``position`` where everything else reported
+    ``state``, which an env building an observation space from the part could
+    only handle by knowing which driver it had.
+    """
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        from rlinf.robotics.parts.end_effectors import create_end_effector
+        from rlinf.robotics.parts.end_effectors.base import EndEffectorType
+        from rlinf.robotics.parts.end_effectors.grippers import create_gripper
+
+        gripper = create_gripper(gripper_type="robotiq", port="/dev/mock-gripper")
+        hand = create_end_effector(EndEffectorType.RUIYAN_HAND, port="/dev/mock-hand")
+
+        for part in (gripper, hand):
+            name = type(part).__name__
+            assert set(part.observation_features) == {"state"}, (
+                f"{name} reports {sorted(part.observation_features)}, not 'state'"
+            )
+            assert set(part.action_features) == {"target"}, name
+            assert part.state_dim >= 1 and part.action_dim >= 1, name
+            assert part.control_mode in {"binary", "continuous"}, name
+
+            part.connect()
+            try:
+                observation = part.get_observation()
+                assert set(observation) == {"state"}, name
+                assert observation["state"].shape == (part.state_dim,), name
+                target = np.zeros(part.action_dim, dtype=np.float32)
+                assert set(part.send_action({"target": target})) == {"target"}, name
+                part.reset()
+                part.reset(target)
+            finally:
+                part.disconnect()
+            assert not part.is_connected, name
 
 
 class _Part(RobotPart):

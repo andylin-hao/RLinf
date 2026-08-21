@@ -47,8 +47,11 @@ def _print_help() -> None:
     print(
         "commands: q | getpos | getpos_euler | getjoint | home | "
         "nudge <i> <d> | stream <i> <d> <n> | hold <secs> | "
-        "open | close | grip <0-255> | impedance <7 ints>"
+        "open | close | grip <position>"
     )
+    # No impedance command: joint stiffness is reconfigured through the
+    # cartesian_impedance_controller's dynamic-reconfigure server, which only
+    # the ROS backend runs. Drive a FrankaROSArm to change it.
 
 
 def main() -> None:
@@ -170,18 +173,11 @@ def main() -> None:
                 print("gripper closed")
             elif cmd == "grip":
                 if len(parts) != 2:
-                    print("usage: grip <0-255>")
+                    print("usage: grip <position, in the gripper's own units>")
                     continue
-                pos = int(parts[1])
+                pos = float(parts[1])
                 controller.move_gripper(pos)
                 print(f"gripper moved to {pos}")
-            elif cmd == "impedance":
-                if len(parts) != 8:
-                    print("usage: impedance <k1 k2 k3 k4 k5 k6 k7>")
-                    continue
-                Kq = [float(x) for x in parts[1:]]
-                controller.reconfigure_compliance_params({"Kq": Kq})
-                print(f"impedance updated to {Kq}")
             else:
                 print(f"unknown cmd: {cmd_str}")
                 _print_help()

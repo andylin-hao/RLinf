@@ -13,26 +13,33 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Optional
 
 import numpy as np
 
-from rlinf.robotics.parts.end_effectors.base import EndEffector
+from rlinf.robotics.parts.end_effectors.base import BaseEndEffector
 
 
-class BaseGripper(EndEffector, ABC):
-    """Abstract base class for robot gripper control.
+class BaseGripper(BaseEndEffector, ABC):
+    """A one-degree-of-freedom end effector: two fingers on one axis.
 
     All gripper implementations (Franka parallel gripper, Robotiq 2F, …)
-    must implement this interface so that the arm part can use them
+    implement this interface so that the arm part can use them
     interchangeably.
 
-    A gripper opens the way every other part does: :meth:`_open` reaches the
-    hardware and returns what speaks to it, :meth:`_release` lets it go, and
-    the constructor only stores settings. It used to be the other way round --
-    the constructor opened the serial port and ``connect()`` merely checked
-    that it had worked -- which meant a gripper reported itself connected
-    before anything connected it, and stayed that way after disconnecting.
+    A gripper is a :class:`~rlinf.robotics.parts.end_effectors.base.BaseEndEffector`
+    and not a sibling of one, so everything a caller can assume about an end
+    effector holds here too: it opens through :meth:`_open` and closes through
+    :meth:`_release`, its observation is a ``state`` vector, and ``reset``
+    takes an optional target. What a gripper adds is the vocabulary its axis
+    deserves -- :meth:`open`, :meth:`close`, :meth:`move` -- and the generic
+    surface below is written once in terms of those, so a driver implements
+    only the three.
+
+    The constructor stores settings and nothing else. It used to open the
+    serial port, with ``connect()`` merely checking that it had worked, which
+    meant a gripper reported itself connected before anything connected it and
+    stayed that way after disconnecting.
 
     :meth:`is_ready` is a separate question from being connected: a gripper can
     hold its link and still be mid-activation.
@@ -85,30 +92,47 @@ class BaseGripper(EndEffector, ABC):
         """Whether the gripper is activated and ready to accept commands."""
         raise NotImplementedError
 
-    @property
-    def observation_features(self) -> dict[str, Any]:
-        """Describe the scalar gripper position."""
-        return {"position": {"shape": (1,), "dtype": "float32"}}
+    # -- The end-effector contract, in terms of the three above -----------
 
     @property
-    def action_features(self) -> dict[str, Any]:
-        """Describe the scalar absolute-position command."""
-        return {"target": {"shape": (1,), "dtype": "float32"}}
+    def state_dim(self) -> int:
+        """One: the position of the single axis the fingers ride."""
+        return 1
 
-    def reset(self) -> None:
-        """Reset the gripper to its open state."""
-        self.open()
+    @property
+    def action_dim(self) -> int:
+        """One: a position on that axis."""
+        return 1
 
-    def get_observation(self) -> dict[str, np.ndarray]:
-        """Return the current gripper position."""
-        return {"position": np.asarray([self.position], dtype=np.float32)}
+    @property
+    def control_mode(self) -> str:
+        """``"continuous"``: :meth:`move` accepts every point on the axis.
 
-    def send_action(self, action: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
-        """Apply one absolute-position target."""
-        if set(action) != {"target"}:
-            raise KeyError("Gripper action must contain only 'target'.")
-        target = np.asarray(action["target"], dtype=np.float32).reshape(-1)
-        if target.size != 1:
+        A driver whose hardware only travels to its two ends should say
+        ``"binary"`` instead, so a policy is not handed a range it cannot use.
+        """
+        return "continuous"
+
+    def get_state(self) -> np.ndarray:
+        """The position of the axis, as the one-element state vector."""
+        return np.asarray([self.position], dtype=np.float32)
+
+    def command(self, action: np.ndarray) -> bool:
+        """Move to an absolute position, and say whether that changed the grip.
+
+        The return value follows the end-effector contract: ``True`` when the
+        command opened or closed the gripper, which is what a task counts.
+        """
+        target = np.asarray(action, dtype=np.float32).reshape(-1)
+        if target.size != self.action_dim:
             raise ValueError(f"Gripper target must have one value, got {target.size}.")
+        was_open = self.is_open
         self.move(float(target[0]))
-        return {"target": target}
+        return self.is_open != was_open
+
+    def reset(self, target_state: Optional[np.ndarray] = None) -> None:
+        """Open the gripper, or move it to ``target_state`` when one is given."""
+        if target_state is None:
+            self.open()
+            return
+        self.command(target_state)

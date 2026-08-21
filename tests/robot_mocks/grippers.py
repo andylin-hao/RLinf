@@ -80,6 +80,63 @@ def pymodbus() -> dict[str, types.ModuleType]:
     }
 
 
+def rlinf_dexhand() -> dict[str, types.ModuleType]:
+    """An ``rlinf_dexhand`` whose hand remembers where it was commanded.
+
+    Six motors on one serial bus. The driver surface a
+    :class:`~rlinf.robotics.parts.end_effectors.hands.ruiyan.RuiyanHand` uses is
+    small -- start it, read it, command it, stop it -- and the fake keeps the
+    positions so a test can see a command arrive and a reset undo it.
+    """
+
+    class RuiyanHandDriver:
+        _DOFS = 6
+
+        def __init__(self, port="/dev/ttyUSB0", motor_ids=(1, 2, 3, 4, 5, 6), **kwargs):
+            self.port = port
+            self.motor_ids = tuple(motor_ids)
+            self.default_state = kwargs.get("default_state")
+            self.running = False
+            self.commands: list[list[float]] = []
+            self._positions = [0.0] * self._DOFS
+
+        def initialize(self) -> None:
+            self.running = True
+
+        def shutdown(self) -> None:
+            self.running = False
+
+        def get_state(self):
+            import numpy as np
+
+            return np.asarray(self._positions, dtype=np.float32)
+
+        def command(self, action) -> bool:
+            values = [float(v) for v in action]
+            self.commands.append(values)
+            changed = values != self._positions
+            self._positions = values
+            return changed
+
+        def reset(self, target_state=None) -> None:
+            target = target_state if target_state is not None else self.default_state
+            self._positions = (
+                [float(v) for v in target] if target is not None else [0.0] * self._DOFS
+            )
+
+        def get_detailed_state(self) -> dict:
+            return {
+                "positions": list(self._positions),
+                "finger_names": [f"motor_{i}" for i in self.motor_ids],
+            }
+
+    ruiyan = module("rlinf_dexhand.ruiyan", RuiyanHandDriver=RuiyanHandDriver)
+    root = module("rlinf_dexhand")
+    root.__path__ = []  # a package, or importing a submodule of it fails
+    root.ruiyan = ruiyan
+    return {"rlinf_dexhand": root, "rlinf_dexhand.ruiyan": ruiyan}
+
+
 def modules(**_: Any) -> dict[str, types.ModuleType]:
-    """Every gripper SDK, by the name a part imports it as."""
-    return pymodbus()
+    """Every gripper and hand SDK, by the name a part imports it as."""
+    return {**pymodbus(), **rlinf_dexhand()}
