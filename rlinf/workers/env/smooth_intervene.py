@@ -176,13 +176,17 @@ class SmoothInterveneController:
                 )
             # Imported here so a worker that never touches real hardware does
             # not pay for the realworld env package at import time.
+            from rlinf.envs.real.wrappers.teleop.backends import TeleopBackend
             from rlinf.envs.real.wrappers.teleop.config import (
                 resolve_teleop_devices,
             )
 
+            # Every registered device, so a config naming a real one that this
+            # check then rejects says why -- rather than reporting it as a
+            # device that does not exist.
             devices = resolve_teleop_devices(
                 OmegaConf.select(cfg, "env.train") or {},
-                supported=("spacemouse", "gello", "pico", "gello_joint"),
+                supported=TeleopBackend.names(),
             )
             named = [d if isinstance(d, str) else next(iter(dict(d))) for d in devices]
             if not named or any(name != "pico" for name in named):

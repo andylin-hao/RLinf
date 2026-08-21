@@ -128,6 +128,8 @@ Each distinct device is read once per sample. If one device contributes to two
 parts, it is still opened only once; a spacemouse driving both an arm and a
 gripper therefore uses a single HID handle.
 
+.. _teleop-rate:
+
 When the Rate Is the Problem
 ----------------------------
 
@@ -146,6 +148,37 @@ read state but no longer forwards motion:
 Enable direct streaming only when tracking visibly lags. Because ``env.step`` no
 longer dispatches joint targets in this mode, a misconfigured rig remains still
 instead of receiving malformed motion.
+
+Add a Device
+------------
+
+A device a config can name is one class in
+``rlinf/envs/real/wrappers/teleop/backends.py``, registering itself under that
+name:
+
+.. code-block:: python
+
+   @TeleopBackend.register("example")
+   class ExampleBackend(TeleopBackend):
+       @classmethod
+       def entry(cls, cfg, options, facts):
+           return TeleopEntry(
+               ExampleDevice(port=options.get("port")),
+               ExampleBinding(),
+               drives=options.get("drives"),
+           )
+
+``entry()`` returns the pairing: the hardware, and the binding that says what
+its numbers mean for this robot. ``facts`` is what the env says about itself --
+notably whether its arm takes a pose to reach or a delta to apply -- so a
+device that binds differently in the two cases asks rather than guesses.
+
+Override ``streamer()`` only for a device that also commands the robot on its
+own thread; the default returns nothing, which is what every device but
+``gello_joint`` wants. See :ref:`When the Rate Is the Problem <teleop-rate>`.
+
+Then list the name in the env's ``TELEOP`` tuple, which is what that env can be
+driven by. Nothing else changes: the builder asks the registry.
 
 Retired Spellings
 -----------------

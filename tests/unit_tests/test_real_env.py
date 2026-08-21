@@ -1231,7 +1231,7 @@ def test_no_device_is_named_in_the_wrapper_stack():
 
 def test_a_leader_arm_reads_the_joint_convention_from_the_env():
     """How joint targets are read belongs to the env, not to the operator."""
-    from rlinf.envs.real.wrappers.teleop.builder import DEVICES, EnvFacts
+    from rlinf.envs.real.wrappers.teleop.builder import EnvFacts, TeleopBackend
     from rlinf.robotics.teleop import ActionKind
 
     facts = EnvFacts(
@@ -1242,7 +1242,7 @@ def test_a_leader_arm_reads_the_joint_convention_from_the_env():
         },
         joint_action_scale=0.25,
     )
-    entry = DEVICES["gello_joint"](
+    entry = TeleopBackend.named("gello_joint").entry(
         {"left_gello_port": "/dev/left"}, {"drives": "left"}, facts
     )
 
@@ -1251,7 +1251,7 @@ def test_a_leader_arm_reads_the_joint_convention_from_the_env():
 
 
 def test_an_entry_option_wins_over_the_env_default():
-    from rlinf.envs.real.wrappers.teleop.builder import DEVICES, EnvFacts
+    from rlinf.envs.real.wrappers.teleop.builder import EnvFacts, TeleopBackend
     from rlinf.robotics.teleop import ActionKind
 
     facts = EnvFacts(
@@ -1262,7 +1262,7 @@ def test_an_entry_option_wins_over_the_env_default():
         },
         joint_action_scale=0.25,
     )
-    entry = DEVICES["gello_joint"](
+    entry = TeleopBackend.named("gello_joint").entry(
         {"left_gello_port": "/dev/left"},
         {"drives": "left", "action_scale": 0.5},
         facts,
@@ -1272,12 +1272,78 @@ def test_an_entry_option_wins_over_the_env_default():
     assert entry.binding.use_delta is True
 
 
+def test_a_teleop_device_is_one_class_that_registers_itself():
+    """One place per device, not an entry in each of two tables plus a function.
+
+    A device used to be a name in ``DEVICES``, sometimes a second name in
+    ``STREAMERS`` for the thread it commands on, and a module-level function
+    far from either -- three edits in a file that knows about every device, for
+    something that belongs to one.
+    """
+    from rlinf.envs.real.wrappers.teleop.backends import TeleopBackend
+
+    assert TeleopBackend.names() == [
+        "gello",
+        "gello_joint",
+        "glove",
+        "pico",
+        "spacemouse",
+    ]
+
+    # Each name resolves to one class that carries both halves.
+    for name in TeleopBackend.names():
+        backend = TeleopBackend.named(name)
+        assert issubclass(backend, TeleopBackend)
+        assert callable(backend.entry)
+        assert callable(backend.streamer)
+
+    # Streaming is the exception, so it is the default that says nothing.
+    quiet = [
+        name
+        for name in TeleopBackend.names()
+        if "streamer" not in vars(TeleopBackend.named(name))
+    ]
+    assert "gello_joint" not in quiet, "the one device that streams must say so"
+    assert set(quiet) == {"gello", "glove", "pico", "spacemouse"}
+
+    with pytest.raises(ValueError, match="Unknown teleop device"):
+        TeleopBackend.named("no_such_device")
+
+    # Registering a name twice is refused rather than letting import order pick.
+    with pytest.raises(ValueError, match="already registered"):
+
+        @TeleopBackend.register("pico")
+        class Second(TeleopBackend):
+            @classmethod
+            def entry(cls, cfg, options, facts):
+                raise AssertionError("never built")
+
+
+def test_every_env_only_offers_teleop_devices_that_exist():
+    """An env lists what it can be driven by; those names have to be real.
+
+    A typo, or a device removed from the registry, would otherwise surface only
+    when somebody configured it -- with a robot in front of them.
+    """
+    from rlinf.envs.real.dosw1.base import DOSW1Env
+    from rlinf.envs.real.franka.base import FrankaEnv
+    from rlinf.envs.real.franka.dual_base import DualFrankaEnv
+    from rlinf.envs.real.wrappers.teleop.backends import TeleopBackend
+    from rlinf.envs.real.xsquare.base import Turtle2Env
+
+    known = set(TeleopBackend.names())
+    for env_cls in (FrankaEnv, DualFrankaEnv, Turtle2Env, DOSW1Env):
+        offered = set(getattr(env_cls, "TELEOP", ()))
+        unknown = sorted(offered - known)
+        assert not unknown, f"{env_cls.__name__} offers {unknown}, which do not exist"
+
+
 def test_the_streamer_comes_from_the_registry_not_the_stack():
     """A device that also commands the robot says so where it is built."""
-    from rlinf.envs.real.wrappers.teleop.builder import STREAMERS, EnvFacts
+    from rlinf.envs.real.wrappers.teleop.builder import EnvFacts, TeleopBackend
 
     quiet = EnvFacts(layout={}, kinds={}, direct_stream=False)
-    assert STREAMERS["gello_joint"]({}, quiet, []) is None
+    assert TeleopBackend.named("gello_joint").streamer({}, quiet, []) is None
 
 
 # --- an env says what its action means --------------------------------
@@ -1639,7 +1705,7 @@ def test_direct_stream_gello_opens_one_reader_per_port():
     saved = sys.modules.get("rlinf.robotics.parts.teleop.readers.gello_joint")
     sys.modules["rlinf.robotics.parts.teleop.readers.gello_joint"] = fake
     try:
-        from rlinf.envs.real.wrappers.teleop.builder import STREAMERS, EnvFacts
+        from rlinf.envs.real.wrappers.teleop.builder import EnvFacts, TeleopBackend
         from rlinf.robotics.parts.teleop.devices import TeleopLeaderArm
         from rlinf.robotics.teleop import TeleopEntry
 
@@ -1653,7 +1719,7 @@ def test_direct_stream_gello_opens_one_reader_per_port():
         assert opened == ["/dev/left", "/dev/right"]
 
         facts = EnvFacts(layout={}, kinds={}, direct_stream=True)
-        streamer = STREAMERS["gello_joint"]({}, facts, entries)
+        streamer = TeleopBackend.named("gello_joint").streamer({}, facts, entries)
 
         assert opened == ["/dev/left", "/dev/right"], (
             f"the streamer opened more readers: {opened}"

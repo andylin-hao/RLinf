@@ -98,6 +98,8 @@ reader 不依赖机器人或集群，可独立运行：
 
 每次采样只读取每台不同的设备一次。同一台设备即使同时控制两个部件，也只会打开一次；因此，SpaceMouse 同时控制机械臂和夹爪时仍只占用一个 HID 句柄。
 
+.. _teleop-rate:
+
 提高主从臂跟随频率
 ------------------
 
@@ -111,6 +113,29 @@ reader 不依赖机器人或集群，可独立运行：
          teleop_direct_stream: true
 
 仅在跟随延迟明显时启用该选项。启用后，``env.step`` 不再发送关节目标；如果配置有误，机器人将保持静止。
+
+新增设备
+--------
+
+配置里能点名的设备，就是 ``rlinf/envs/real/wrappers/teleop/backends.py`` 里的一个 class，它用那个名字把自己注册进去：
+
+.. code-block:: python
+
+   @TeleopBackend.register("example")
+   class ExampleBackend(TeleopBackend):
+       @classmethod
+       def entry(cls, cfg, options, facts):
+           return TeleopEntry(
+               ExampleDevice(port=options.get("port")),
+               ExampleBinding(),
+               drives=options.get("drives"),
+           )
+
+``entry()`` 返回的是一对东西：硬件，以及说明它的数值对这台机器人意味着什么的 binding。``facts`` 是 env 对自身的说明——尤其是机械臂接收的是目标位姿还是增量——因此在两种情况下绑定方式不同的设备可以直接问，而不必猜。
+
+只有当某台设备还要在自己的线程上直接下发指令时，才需要覆盖 ``streamer()``；默认返回 ``None``，这也是除 ``gello_joint`` 之外每台设备想要的行为，参见 :ref:`提高主从臂跟随频率 <teleop-rate>`。
+
+最后把这个名字写进对应 env 的 ``TELEOP`` 元组，表示该 env 可以由它驱动。除此之外不需要改动任何地方：builder 会向 registry 查询。
 
 已废弃的配置项
 --------------
