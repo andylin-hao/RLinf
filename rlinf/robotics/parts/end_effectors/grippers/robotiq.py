@@ -155,16 +155,29 @@ class RobotiqGripper(BaseGripper):
         self._goto(position=255, speed=speed, force=norm_force)
         self._is_open_flag = False
 
-    def move(self, position: float, speed: float = 0.3) -> None:
-        self._goto(position=int(np.clip(position, 0, 255)), speed=speed, force=0.5)
+    def move(self, width: float, speed: float = 0.3) -> None:
+        """Move to an opening width in metres.
+
+        The register takes 0-255 counts running the other way -- 0 is fully
+        open, 255 fully closed -- so this is where metres become counts. Doing
+        it here rather than at the caller is what lets a policy command the
+        same number it reads back from :pyattr:`position`.
+        """
+        opening = np.clip(width, 0.0, self._max_width) / self._max_width
+        self._goto(position=int(round(255 * (1.0 - opening))), speed=speed, force=0.5)
 
     @property
     def position(self) -> float:
-        """Current opening width in metres (consistent with Franka convention)."""
+        """Current opening width in metres."""
         status = self._read_status()
         if status is not None:
             self._cached_position = status["position"]
         return self._max_width * (1.0 - self._cached_position / 255.0)
+
+    @property
+    def max_width(self) -> float:
+        """Opening of the fully-open gripper, as configured for this model."""
+        return self._max_width
 
     @property
     def is_open(self) -> bool:

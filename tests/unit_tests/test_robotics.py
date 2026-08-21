@@ -2100,6 +2100,85 @@ def test_a_gripper_is_an_end_effector_rather_than_a_second_kind_of_one():
     assert not issubclass(MethodGripper, BaseEndEffector)
 
 
+def test_a_gripper_is_commanded_in_the_units_it_reports():
+    """One axis, in metres, so a width read back can be commanded again.
+
+    ``move`` used to take a Robotiq's 0-255 register counts while ``position``
+    reported metres, which made ``command(get_state())`` meaningless -- and the
+    two drivers ran that raw number in opposite directions, so the same call
+    opened one gripper and closed the other. Whatever counts the hardware takes
+    are now the driver's business.
+    """
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        from rlinf.robotics.parts.end_effectors.grippers import create_gripper
+
+        gripper = create_gripper(gripper_type="robotiq", port="/dev/mock-gripper")
+        gripper.connect()
+        try:
+            assert gripper.max_width > 0
+
+            gripper.open()
+            assert gripper.position == pytest.approx(gripper.max_width, abs=1e-3)
+            gripper.close()
+            assert gripper.position == pytest.approx(0.0, abs=1e-3)
+
+            # A width survives the trip to the hardware and back, to within the
+            # one register count the device quantises to.
+            quantum = gripper.max_width / 255
+            for width in (0.0, gripper.max_width / 2, gripper.max_width):
+                gripper.move(width)
+                assert gripper.position == pytest.approx(width, abs=quantum)
+
+            # And that is exactly what the end-effector contract rides on.
+            gripper.move(gripper.max_width / 3)
+            state = gripper.get_state()
+            gripper.open()
+            gripper.command(state)
+            assert gripper.position == pytest.approx(state[0], abs=quantum)
+
+            # Past the stroke clamps rather than wrapping round the register.
+            gripper.move(gripper.max_width * 10)
+            assert gripper.position == pytest.approx(gripper.max_width, abs=quantum)
+        finally:
+            gripper.disconnect()
+
+
+def test_a_franka_hand_is_commanded_in_metres_on_the_wire():
+    """The width a caller asks for is the width the topic carries.
+
+    It used to be divided by ``255 * 10`` first, so a 5 cm command reached the
+    hand as 20 micrometres -- fully closed. Nothing caught it because the
+    number was still a plausible width.
+    """
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        from rlinf.robotics.parts.arms.franka_ros import FrankaROSArm
+
+        arm = FrankaROSArm("10.0.0.2", end_effector_type="franka_gripper")
+        arm.connect()
+        try:
+            gripper = arm._gripper
+            widths: list[float] = []
+            put = gripper._ros.put_channel
+
+            def record(channel, message):
+                widths.append(float(message.goal.width))
+                return put(channel, message)
+
+            gripper._ros.put_channel = record
+
+            arm.open_gripper()
+            arm.move_gripper(0.05)
+            arm.move_gripper(gripper.max_width * 10)
+        finally:
+            arm.disconnect()
+
+    assert widths == pytest.approx([gripper.max_width, 0.05, gripper.max_width])
+
+
 def test_every_end_effector_reports_its_state_under_the_same_name():
     """A gripper and a hand answer the same keys, so one env reads both.
 

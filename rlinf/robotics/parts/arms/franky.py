@@ -420,15 +420,14 @@ class FrankyArm(ControllablePart):
     def close_gripper(self) -> None:
         self._gripper.close(speed=1.0)
 
-    def move_gripper(self, position: float, speed: float = 0.3) -> None:
-        """Move the gripper to an absolute position.
+    def move_gripper(self, width: float, speed: float = 0.3) -> None:
+        """Move the gripper to an opening width, in metres.
 
-        The units are the gripper's own -- 0-255 for a Robotiq, metres of width
-        for a Franka Hand -- because it is the gripper that knows them. Open and
-        close are the two ends of the same axis; this is every point between,
-        which is what a partial grasp needs.
+        The same axis :attr:`FrankaRobotState.gripper_position` reports, so a
+        width read back can be commanded again. Open and close are its two
+        ends; this is every point between, which is what a partial grasp needs.
         """
-        self._gripper.move(position, speed)
+        self._gripper.move(width, speed)
 
     def cleanup(self) -> None:
         self._stop_tracking_motion()

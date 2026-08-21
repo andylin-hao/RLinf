@@ -65,20 +65,36 @@ class BaseGripper(BaseEndEffector, ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def move(self, position: float, speed: float = 0.3) -> None:
-        """Move gripper to an absolute position.
+    def move(self, width: float, speed: float = 0.3) -> None:
+        """Move the fingers to an absolute opening width, in metres.
+
+        Zero is closed and :pyattr:`max_width` is fully open, whatever counts
+        the hardware underneath actually takes. That conversion belongs to the
+        driver, because the driver is the only thing that knows it: a Robotiq
+        speaks in 0-255 running the other way, and reading the raw number back
+        would tell a policy nothing about the world.
 
         Args:
-            position: Target position. Semantics are implementation-specific
-                (e.g. Franka uses width in metres, Robotiq uses 0–255).
-            speed: Movement speed.
+            width: Target opening in metres, clamped to ``[0, max_width]``.
+            speed: Movement speed, normalized to [0, 1].
         """
         raise NotImplementedError
 
     @property
     @abstractmethod
     def position(self) -> float:
-        """Current gripper opening width / position."""
+        """Current opening width, in metres."""
+        raise NotImplementedError
+
+    @property
+    @abstractmethod
+    def max_width(self) -> float:
+        """Opening width of the fully-open gripper, in metres.
+
+        The far end of the axis :meth:`move` and :pyattr:`position` share, so
+        it is what bounds an action space built from this part -- and what
+        :meth:`open` travels to.
+        """
         raise NotImplementedError
 
     @property
@@ -114,14 +130,16 @@ class BaseGripper(BaseEndEffector, ABC):
         return "continuous"
 
     def get_state(self) -> np.ndarray:
-        """The position of the axis, as the one-element state vector."""
+        """The opening width, in metres, as the one-element state vector."""
         return np.asarray([self.position], dtype=np.float32)
 
     def command(self, action: np.ndarray) -> bool:
-        """Move to an absolute position, and say whether that changed the grip.
+        """Move to an absolute width, and say whether that changed the grip.
 
-        The return value follows the end-effector contract: ``True`` when the
-        command opened or closed the gripper, which is what a task counts.
+        The target is in the same units :meth:`get_state` reports -- metres --
+        which is what lets a policy read a width and write one back. The return
+        value follows the end-effector contract: ``True`` when the command
+        opened or closed the gripper, which is what a task counts.
         """
         target = np.asarray(action, dtype=np.float32).reshape(-1)
         if target.size != self.action_dim:

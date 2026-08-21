@@ -373,13 +373,17 @@ class FrankaROSArm(ControllablePart):
             self._state.gripper_open = False
         self._logger.debug("Close gripper")
 
-    def move_gripper(self, position: int, speed: float = 0.3):
-        assert 0 <= position <= 255, (
-            f"Invalid gripper position {position}, must be between 0 and 255"
-        )
+    def move_gripper(self, width: float, speed: float = 0.3):
+        """Move the gripper to an opening width, in metres.
+
+        The range check that used to live here read ``0 <= position <= 255``,
+        which is one gripper's register counts written into the arm. The
+        gripper is what knows its own stroke, and it clamps to it, so the arm
+        passes the width through.
+        """
         if self._end_effector_type.is_gripper:
-            self._gripper.move(position, speed)
-        self._logger.debug(f"Move gripper to position: {position}")
+            self._gripper.move(width, speed)
+        self._logger.debug("Move gripper to width: %.4f m", width)
 
     def _wait_robot(self, sleep_time: int = 1):
         time.sleep(sleep_time)

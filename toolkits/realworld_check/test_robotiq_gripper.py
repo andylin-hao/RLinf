@@ -61,8 +61,9 @@ def main():
         f"  position after close: {gripper.position:.4f} m, is_open={gripper.is_open}"
     )
 
-    print("[INFO] Moving to mid position (128) ...")
-    gripper.move(128)
+    half_open = gripper.max_width / 2
+    print(f"[INFO] Moving to half open ({half_open:.4f} m) ...")
+    gripper.move(half_open)
     time.sleep(2.0)
     print(f"  position after move: {gripper.position:.4f} m, is_open={gripper.is_open}")
 

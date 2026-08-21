@@ -35,10 +35,14 @@ class FrankaGripper(BaseGripper):
     Args:
         ros: An initialised :class:`ROSController` instance (shared with the
             arm controller).
+        max_width: Stroke of the hand in metres. The default is the Franka
+            Hand's own; ``open()`` travels to it, and it bounds the axis
+            :meth:`move` and :pyattr:`position` share.
     """
 
-    def __init__(self, ros):
+    def __init__(self, ros, max_width: float = 0.08):
         self._ros = ros
+        self._max_width = max_width
         self._GraspActionGoal = None
         self._MoveActionGoal = None
 
@@ -82,7 +86,7 @@ class FrankaGripper(BaseGripper):
 
     def open(self, speed: float = 0.3) -> None:
         msg = self._MoveActionGoal()
-        msg.goal.width = 0.09
+        msg.goal.width = self._max_width
         msg.goal.speed = speed
         self._ros.put_channel(self._move_channel, msg)
         self._is_open_flag = True
@@ -97,15 +101,29 @@ class FrankaGripper(BaseGripper):
         self._ros.put_channel(self._grasp_channel, msg)
         self._is_open_flag = False
 
-    def move(self, position: float, speed: float = 0.3) -> None:
+    def move(self, width: float, speed: float = 0.3) -> None:
+        """Move to an opening width in metres, which is what the topic takes.
+
+        It used to divide by ``255 * 10`` first, treating a Robotiq's register
+        counts as the unit every gripper spoke. That made a width of 0.05 m
+        arrive as 0.2 mm -- a closed hand -- and it ran the opposite way from
+        the Robotiq it was imitating, where a bigger number means a tighter
+        grip.
+        """
         msg = self._MoveActionGoal()
-        msg.goal.width = float(position / (255 * 10))
+        msg.goal.width = float(np.clip(width, 0.0, self._max_width))
         msg.goal.speed = speed
         self._ros.put_channel(self._move_channel, msg)
 
     @property
     def position(self) -> float:
+        """Current opening width in metres: both finger joints together."""
         return self._position_value
+
+    @property
+    def max_width(self) -> float:
+        """Stroke of the Franka Hand."""
+        return self._max_width
 
     @property
     def is_open(self) -> bool:
