@@ -513,7 +513,30 @@ class Connection(ABC, metaclass=_ConnectionMeta):
                 f"{type(self).__name__} backs no part {name!r}. "
                 f"Available: {sorted(available)}."
             )
-        part = available[name]
+        return self._adopt(available[name])
+
+    def compose(self) -> dict[str, "RobotPart"]:
+        """Every part this connection backs, under the names it knows them by.
+
+        For the ordinary case, where the driver's names are the names the robot
+        wants::
+
+            class ExampleRobot(Robot):
+                @classmethod
+                def build_arms(cls, **config):
+                    return ExampleArm(config["robot_ip"]).compose()
+
+        Naming them one at a time is what :meth:`part` is for, and is right
+        when the robot's names differ from the driver's -- two arms that become
+        ``left`` and ``right``, or a robot that fits only some of what its
+        session offers. When they do not differ, restating them is a place for
+        the two lists to drift: a driver that grows a third part would be
+        composed without it, and nothing would say so.
+        """
+        return {name: self._adopt(part) for name, part in self.parts.items()}
+
+    def _adopt(self, part: "RobotPart") -> "RobotPart":
+        """Say that this connection is what opens ``part``, when it is."""
         if part is not self and part._owner is None and not part._opens_itself():
             part._owner = self
         return part

@@ -53,10 +53,11 @@ The code keeps those views in separate mappings:
   ``parts``. These names belong to the driver and do not become robot paths by
   themselves.
 
-Composition joins the mappings. ``connection.part("arm")`` records a choice from
-the connection, and ``Robot(arm=...)`` gives that choice the public name ``arm``.
-The choice remains unresolved until ``Robot.connect()`` opens the connection and
-can inspect the parts it backs.
+Composition joins the mappings. ``connection.part("arm")`` hands over the part
+itself, and ``Robot(arm=...)`` gives it the public name ``arm``. Nothing is
+deferred: the object the robot holds before ``connect()`` is the object it holds
+after, which is why a composition can be described on a machine with no robot
+attached.
 
 Choose the form that matches what you are composing:
 
@@ -72,21 +73,39 @@ Choose the form that matches what you are composing:
      - The part enters the tree under ``base``.
    * - One session that backs several parts
      - ``Robot(arm=connection.part("arm"))``
-     - The selected part enters the tree under ``arm``.
+     - The named part enters the tree under ``arm``.
+   * - Every part a session backs, under the driver's own names
+     - ``Robot(**connection.compose())``
+     - Each enters the tree under the name the driver knows it by.
    * - An existing subtree
      - ``Robot(left=PartGroup(...))``
      - The group and its named children enter under ``left``.
 
-The result of ``part(name)`` is an internal deferred choice, not another public
-type a robot author needs to construct or annotate. ``PartGroup`` accepts that
-choice, a ``RobotPart``, or another ``PartGroup``. It rejects a bare
-``Connection`` that cannot be read and reports which keyword is invalid.
+``part(name)`` returns a ``RobotPart`` -- there is no intermediate type for a
+robot author to construct or annotate. ``PartGroup`` accepts a ``RobotPart`` or
+another ``PartGroup``, and rejects a bare ``Connection`` that cannot be read,
+naming the keyword that is wrong.
 
-Some objects are both a connection and a readable part. An arm session, for
-example, may expose the arm's own observation while also backing an end
-effector. Passing such an object directly is valid; if it backs several parts,
-it resolves to a ``PartGroup`` under that keyword. Use ``part(name)`` when those
-parts should appear as separate siblings or under different public names.
+Some objects are both a connection and a readable part: an arm session exposes
+the arm's own observation while also backing the end effector on its bus.
+Passing such an object directly is valid, and composes *only the arm* -- it is
+a part, so it enters the tree as one, and the end effector is simply absent.
+Use ``compose()`` to take everything it backs, or ``part(name)`` to choose and
+rename.
+
+Reach for ``compose()`` when the driver's names are the robot's names, which is
+the ordinary case for a robot built around one arm:
+
+.. code-block:: python
+
+   class ExampleRobot(Robot):
+       @classmethod
+       def build_arms(cls, **config):
+           return ExampleArm(config["robot_ip"], node_rank=config["node_rank"]).compose()
+
+Listing the parts by hand instead is a second place to keep in step. An arm
+that decides at run time whether a gripper is fitted, or that grows a part
+later, would be composed without it and nothing would report the omission.
 
 The Core Types
 --------------

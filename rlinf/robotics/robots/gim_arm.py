@@ -53,10 +53,10 @@ class GimArmRobot(Robot):
             node_rank=node_rank,
             worker_name=f"GimArm-{worker_rank}-{env_idx}",
         )
-        parts = {"arm": connection.part("arm")}
-        if enable_gripper:
-            parts["end_effector"] = connection.part("end_effector")
-        return parts
+        # Whether a gripper is fitted is the arm's own answer -- it is the
+        # thing that was told -- so take what it backs rather than branching on
+        # ``enable_gripper`` a second time here.
+        return connection.compose()
 
     @classmethod
     def build_cameras(

@@ -118,9 +118,13 @@
 
 这两个参数采用不同的组合方式，因为它们表示的对象不同。构造 ``MobileBase`` 子类会得到一个尚未连接的 ``RobotPart``。它本身就是任务需要访问的逻辑部件，因此可以直接以 ``base=base`` 传入；参数名 ``base`` 会成为 ``robot.children`` 中的公开路径。
 
-Franka 对象则持有一条同时包含机械臂和末端执行器的硬件连接。调用 ``part(name)`` 只记录需要加入机器人树的部件，直到 ``robot.connect()`` 才会打开连接并解析该选择。返回值是内部使用的延迟选择，开发者无需构造或标注其具体类型。如果直接传入这个可读取的 Franka connection，其中的全部部件会在连接后解析为该路径下的一个 ``PartGroup``；需要让 ``arm`` 和 ``end_effector`` 成为顶层同级路径时，应分别调用 ``part(name)``。
+Franka 对象则持有一条同时包含机械臂和末端执行器的硬件连接。``part(name)`` 直接交出其中一个部件，它尚未打开，搭在这条连接上；返回值就是 ``RobotPart``，中间没有需要构造或标注的类型。如果直接传入 Franka 对象本身，只会组合机械臂——它本身就是一个部件，会以部件的身份进入机器人树，末端执行器则会悄无声息地缺席。
 
-``PartGroup`` 会在组合阶段检查这一边界。构造函数只接受 ``RobotPart``、另一个 ``PartGroup``，或 ``connection.part(name)`` 返回的部件选择；如果传入不可读取的裸 ``Connection``，异常会直接指出出错的参数名。
+只有当机器人想用的名称与驱动不同时，才需要逐个点名。名称一致时用 ``compose()`` 按驱动自己的名称全部取来，需要维护的清单就只有一份::
+
+   robot = MobileManipulator(base=base, **arm_connection.compose())
+
+``PartGroup`` 会在组合阶段检查这一边界。构造函数只接受 ``RobotPart`` 或另一个 ``PartGroup``；如果传入不可读取的裸 ``Connection``，异常会直接指出出错的参数名。
 
 如果沿用 Franka 的标准部件名称，可以直接复用已有的 ``build_arms``：
 
@@ -340,8 +344,7 @@ placement 只决定各条连接在哪个节点打开，不改变任务访问部�
            )
            return cls(
                base=base,
-               arm=arm_connection.part("arm"),
-               end_effector=arm_connection.part("end_effector"),
+               **arm_connection.compose(),
            )
 
 ``MobileBase.backend()`` 根据硬件配置中的名称找到对应 driver。``build()`` 随后组合尚未连接的部件，以及从共享连接中选择的部件，不会打开任何设备。连接地址、backend 选择和 placement 写入机器人配置；目标位置、奖励、复位姿态与 episode 长度仍属于任务配置。

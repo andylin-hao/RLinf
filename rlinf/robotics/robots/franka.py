@@ -100,10 +100,10 @@ class FrankaRobot(Robot):
             end_effector_type=end_effector_type,
             end_effector_config=end_effector_config,
         )
-        return {
-            "arm": connection.part("arm"),
-            "end_effector": connection.part("end_effector"),
-        }
+        # Whatever the arm backs, under the names it uses: one arm and the end
+        # effector on its bus, and a hand instead of a gripper when one is
+        # fitted. A robot with two of them renames, and DualFrankaRobot does.
+        return connection.compose()
 
     @classmethod
     def build_cameras(

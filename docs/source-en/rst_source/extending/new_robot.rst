@@ -147,17 +147,20 @@ should see, so pass it directly as ``base=base``. The argument name becomes its
 public path in ``robot.children``.
 
 The Franka object owns one hardware session that backs both the arm and its end
-effector. Calling ``part(name)`` records which backed part should enter the
-tree; the connection remains unopened until ``robot.connect()``. The result is
-an internal, unresolved choice rather than another public class you need to
-construct or annotate. Passing this readable Franka object directly would
-resolve everything it backs as a nested ``PartGroup``. Select ``arm`` and
-``end_effector`` explicitly when they should remain top-level siblings.
+effector. ``part(name)`` hands over one of them, still unopened, riding that
+session. It returns a ``RobotPart`` -- there is no separate class to construct
+or annotate. Passing the Franka object itself would compose only the arm, since
+the arm is what it is as a part, and the end effector would be quietly missing.
+
+Name the parts one at a time when the robot's names differ from the driver's.
+When they do not, ``compose()`` takes them all under the driver's own names,
+which is one list rather than two::
+
+   robot = MobileManipulator(base=base, **arm_connection.compose())
 
 ``PartGroup`` checks this boundary as soon as the robot is composed. It accepts
-a ``RobotPart``, another ``PartGroup``, or a choice returned by
-``connection.part(name)``. A bare ``Connection`` that is not a readable part is
-rejected with an error that names the invalid keyword.
+a ``RobotPart`` or another ``PartGroup``. A bare ``Connection`` that is not a
+readable part is rejected with an error that names the invalid keyword.
 
 The existing arm builder can shorten the same composition when its standard
 names are appropriate:
@@ -407,11 +410,7 @@ declaration rather than copying its SDK or lifecycle code:
                node_rank=arm_node_rank,
                name=f"FrankaArm-{worker_rank}-{env_idx}",
            )
-           return cls(
-               base=base,
-               arm=arm_connection.part("arm"),
-               end_effector=arm_connection.part("end_effector"),
-           )
+           return cls(base=base, **arm_connection.compose())
 
 ``MobileBase.backend()`` resolves the driver name declared in the hardware
 config. The builder then composes unconnected parts and selections from shared

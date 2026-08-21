@@ -710,6 +710,45 @@ def test_one_connection_is_opened_once_however_often_it_is_named():
     assert robot.is_connected
 
 
+def test_a_robot_can_take_everything_a_connection_backs_without_listing_it():
+    """Restating the driver's own names is where the two lists drift apart.
+
+    A single-arm robot's parts are exactly what its arm backs, so naming them
+    again in ``build_arms`` only creates a second place to forget: an arm that
+    grows a part, or that decides at run time whether it has one, would be
+    composed without it and nothing would say so. GimArm is the second case --
+    it fits a gripper only when told to -- and its robot used to branch on that
+    a second time.
+    """
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        from rlinf.robotics.robots import FrankaRobot, GimArmRobot
+
+        arm = FrankaRobot.declare_arm("10.0.0.2", node_rank=0, name="arm")
+        assert list(arm.compose()) == list(arm.parts)
+        assert all(part.owner is arm for part in arm.compose().values())
+
+        built = FrankaRobot.build_arms(robot_ip="10.0.0.2", node_rank=0)
+        assert list(built) == ["arm", "end_effector"]
+
+        config = {
+            "node_rank": 0,
+            "can_interface": "can0",
+            "arm_variant": "arm6",
+            "gripper_type": "default",
+            "control_mode": "position",
+        }
+        with_gripper = GimArmRobot.build_arms(enable_gripper=True, **config)
+        without = GimArmRobot.build_arms(enable_gripper=False, **config)
+
+    assert list(with_gripper) == ["arm", "end_effector"]
+    assert list(without) == ["arm"], (
+        "the arm knows whether a gripper is fitted; the robot must not decide "
+        "that a second time"
+    )
+
+
 def test_a_device_with_its_own_link_keeps_it_when_a_connection_lists_it():
     """``part()`` adopts a view, not a device that opens itself.
 
