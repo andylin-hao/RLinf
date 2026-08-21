@@ -28,9 +28,9 @@ from typing import Any, Optional
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
-from rlinf.robotics.parts.arms import ARM_STATE_FIELDS
+from rlinf.robotics.parts.arms.base import Arm, BaseArm
 from rlinf.robotics.parts.arms.franka import FrankaRobotState, validated_robot_ip
-from rlinf.robotics.parts.base import ControllablePart, RobotPart
+from rlinf.robotics.parts.base import RobotPart
 from rlinf.robotics.parts.end_effectors.grippers import create_gripper
 from rlinf.robotics.parts.views import MethodEndEffector
 from rlinf.utils.logging import get_logger
@@ -73,8 +73,40 @@ _RT_PRIORITY = 80
 _MCL_CURRENT, _MCL_FUTURE = 1, 2
 
 
-class FrankyArm(ControllablePart):
+@Arm.register("franky")
+class FrankyArm(BaseArm):
     """Franka arm over libfranka, with no scheduler dependency."""
+
+    @classmethod
+    def declare(
+        cls,
+        address,
+        *,
+        gripper_type=None,
+        gripper_connection=None,
+        end_effector_type=None,
+        end_effector_config=None,
+        **placement,
+    ) -> "FrankyArm":
+        """Build this backend from the settings a Franka robot carries.
+
+        libfranka drives the arm and this class builds the gripper beside it,
+        so a gripper backend and its port are what it needs. It has no way to
+        fit a named end effector, so being handed one is refused rather than
+        dropped -- the arm would run with a gripper the config did not ask for.
+        """
+        if end_effector_type is not None or end_effector_config:
+            raise TypeError(
+                "The franky backend builds its own gripper and cannot fit a "
+                f"named end effector ({end_effector_type!r}). Use the "
+                "'franka_ros' backend for that, or set gripper_type instead."
+            )
+        return cls(
+            address,
+            gripper_type=gripper_type or "franka",
+            gripper_connection=gripper_connection,
+            **placement,
+        )
 
     def __init__(
         self,
@@ -95,15 +127,6 @@ class FrankyArm(ControllablePart):
         self._cart_tracker = None
         self._prev_cart_target_xyz: Optional[np.ndarray] = None
         self._prev_cart_target_quat: Optional[np.ndarray] = None
-
-    @property
-    def observation_features(self) -> dict:
-        """Describe the canonical Franka arm state fields.
-
-        Gripper fields are deliberately absent: they belong to the end-effector
-        part returned by :attr:`parts`, not to the arm.
-        """
-        return {name: {} for name in ARM_STATE_FIELDS}
 
     @property
     def action_features(self) -> dict:
@@ -140,11 +163,6 @@ class FrankyArm(ControllablePart):
 
     def reset(self) -> None:
         """Leave task-specific reset positions to the caller."""
-
-    def get_observation(self) -> dict:
-        """Return the canonical arm state, without end-effector fields."""
-        state = self.get_state().to_dict()
-        return {name: state[name] for name in ARM_STATE_FIELDS}
 
     def send_action(self, action: dict) -> dict:
         """Apply one or both canonical arm targets."""

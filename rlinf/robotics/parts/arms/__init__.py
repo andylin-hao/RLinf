@@ -27,20 +27,10 @@ package.
 from importlib import import_module
 from typing import Any
 
-#: Canonical arm observation fields shared by the Franka and GimArm families.
-#: An arm reports these and nothing else; end-effector values belong to the
-#: end-effector part, and camera frames to camera parts.
-ARM_STATE_FIELDS: tuple[str, ...] = (
-    "tcp_pose",
-    "tcp_vel",
-    "arm_joint_position",
-    "arm_joint_velocity",
-    "tcp_force",
-    "tcp_torque",
-    "arm_jacobian",
-)
-
 _MODULE_BY_NAME: dict[str, str] = {
+    "ARM_STATE_FIELDS": ".base",
+    "Arm": ".base",
+    "BaseArm": ".base",
     "DOSW1Arm": ".dosw1",
     "DOSW1RobotState": ".dosw1",
     "DOSW1ConnectionConfig": ".dosw1",
@@ -55,7 +45,20 @@ _MODULE_BY_NAME: dict[str, str] = {
     "Turtle2RobotState": ".turtle2",
 }
 
-__all__ = ["ARM_STATE_FIELDS", *sorted(_MODULE_BY_NAME)]
+__all__ = sorted(_MODULE_BY_NAME)
+
+
+def load_drivers() -> None:
+    """Import every arm module, so the drivers in them have registered.
+
+    Registration is a decorator in the file that implements a driver, which
+    only runs once that file is imported -- and these are imported lazily, so
+    that a node missing one vendor SDK can still use the others. Asking the
+    :class:`~.base.Arm` registry what exists is the moment they all have to
+    have run, and this is where that happens.
+    """
+    for module_name in sorted(set(_MODULE_BY_NAME.values())):
+        import_module(module_name, __name__)
 
 
 def __getattr__(name: str) -> Any:

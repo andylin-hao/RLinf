@@ -22,7 +22,7 @@ performs placement later. Importing this package performs those registrations.
 
 from .dosw1 import DOSW1Robot, DOSW1RobotConfig
 from .dual_franka import DualFrankaConfig, DualFrankaRobot
-from .franka import FRANKA_BACKENDS, FrankaConfig, FrankaRobot
+from .franka import FrankaConfig, FrankaRobot
 from .gim_arm import GimArmConfig, GimArmRobot
 from .turtle2 import Turtle2Config, Turtle2Robot
 
@@ -32,7 +32,6 @@ __all__ = [
     "DualFrankaConfig",
     "DualFrankaRobot",
     "FrankaConfig",
-    "FRANKA_BACKENDS",
     "FrankaRobot",
     "GimArmConfig",
     "GimArmRobot",

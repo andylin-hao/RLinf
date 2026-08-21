@@ -117,11 +117,24 @@
    camera_cls = BaseCamera.backend(camera_info.camera_type)
    camera = camera_cls(camera_info, node_rank=2)
 
-``BaseCamera``、``MobileBase`` 等设备类别都会继承 ``Connection.register()`` 和 ``backend()``。backend 名称不区分大小写；两个 class 注册同一名称时会直接报错。如果某类设备具有固定的配置结构，还可以提供 ``of()`` 或 ``declare()`` 作为便捷入口。例如，``BaseCamera.of()`` 读取 ``CameraInfo.camera_type``，``BaseCamera.declare()`` 则返回可直接加入机器人树的相机。
+``Camera``、``Arm``、``MobileBase`` 等所有设备类别都会继承 ``Connection.register()`` 和 ``backend()``。backend 名称不区分大小写；两个 class 注册同一名称时会直接报错。如果某类设备具有固定的配置结构，还可以提供 ``of()`` 或 ``declare()`` 作为便捷入口：``BaseCamera.of()`` 读取 ``CameraInfo.camera_type``，``Arm.declare()`` 则把机器人层面的机械臂配置映射到某个 backend 自己的构造函数上。
+
+机械臂是这套机制最要紧的地方，因为同一套硬件可能由两种 backend 驱动。一台 Franka 既可以走 libfranka，也可以走 ROS，于是两者都注册到 ``Arm`` 上，机器人只需点名其一：
+
+.. code-block:: python
+
+   class FrankaRobot(Robot):
+       BACKEND = "franka_ros"
+
+
+   class DualFrankaRobot(FrankaRobot):
+       BACKEND = "franky"
+
+点名 backend 就是切换的全部。每个 backend 在自己的 ``declare()`` 里把标准的机械臂配置映射到自己的构造函数上，这段代码就写在它所服务的构造函数旁边，因此机器人不必知道一种 stack 需要 ROS package、另一种需要夹爪串口。backend 无法满足的配置项会被拒绝而不是丢弃，否则机械臂就会带着配置里没有要求的末端执行器运行。
 
 支持硬件枚举的 driver 还可以通过 ``SDK`` 声明厂商模块，并实现 ``discover()``。公共 discovery 流程会据此报告缺失的 SDK，并在持有设备的节点上校验相机 ID。厂商模块仍应在 ``_open()`` 或 ``discover()`` 中导入，不应在模块导入阶段加载。
 
-robotics 代码中有三种 registry，它们所命名的对象不同：
+robotics 代码中有两种 registry，它们所命名的对象不同：
 
 .. list-table::
    :header-rows: 1
@@ -131,8 +144,8 @@ robotics 代码中有三种 registry，它们所命名的对象不同：
      - 公开 API
      - 用途
    * - 单个设备 backend
-     - ``BaseCamera.register()`` 与 ``BaseCamera.backend()``
-     - 根据设备配置选择 ``realsense``、``zed`` 等 driver。
+     - ``Camera.register()`` / ``Arm.register()`` 与 ``backend()``
+     - 根据配置选择 ``realsense``、``franky`` 等 driver。
    * - 完整机器人类型
      - ``Robot.register_type()`` 与 ``Robot.of_type()``
      - 根据名称选择机器人树及其 ``RobotConfig``；未传入自定义 class 时，同时创建标准 discovery 流程。
@@ -296,7 +309,7 @@ Ray 不在此列。它是 RLinf 的基础依赖，运行 RLinf 的机器上一�
    * - ``robotics/parts/base.py``
      - ``Connection``、``RobotPart``、``ControllablePart``、``PartGroup``，以及组合阶段的类型检查和 driver registry。
    * - ``robotics/parts/arms/``
-     - 机械臂与联动控制器实现。
+     - ``Arm`` 类别与 ``BaseArm``，以及注册到它们之上的各个 backend：Franky、Franka ROS、GimArm 和联动控制器。
    * - ``robotics/parts/cameras/``
      - 相机生命周期，以及 RealSense、ZED 和 Lumos 实现。
    * - ``robotics/parts/end_effectors/``

@@ -21,7 +21,8 @@ together::
     parts/
       base.py                     Connection, RobotPart, ControllablePart,
                                   PartGroup
-      arms/                       Franky, Franka ROS, GimArm, Turtle2, DOSW1
+      arms/           base.py:    Arm, BaseArm
+                                  Franky, Franka ROS, GimArm, Turtle2, DOSW1
       cameras/        base.py:    Camera
                                   RealSense, ZED, Lumos
       end_effectors/  base.py:    EndEffector

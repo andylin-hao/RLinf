@@ -83,14 +83,13 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
         RobotPart,
         run_parallel,
     )
-    from .parts.arms import ARM_STATE_FIELDS
+    from .parts.arms import ARM_STATE_FIELDS, Arm, BaseArm
     from .parts.cameras import BaseCamera, Camera, CameraInfo
     from .parts.end_effectors import EndEffector
     from .parts.mobility import MobileBase
     from .parts.views import MethodArm, MethodCamera, MethodEndEffector
     from .robot import Robot
     from .robots import (
-        FRANKA_BACKENDS,
         DOSW1Robot,
         DOSW1RobotConfig,
         DualFrankaConfig,
@@ -113,7 +112,7 @@ _MODULE_GROUPS: dict[str, tuple[str, ...]] = {
         "RobotPart",
         "run_parallel",
     ),
-    ".parts.arms": ("ARM_STATE_FIELDS",),
+    ".parts.arms": ("ARM_STATE_FIELDS", "Arm", "BaseArm"),
     # Each device category lives with the drivers that implement it, and is
     # reached lazily so a node loads only the hardware it has.
     ".parts.cameras": ("BaseCamera", "Camera", "CameraInfo"),
@@ -132,7 +131,6 @@ _MODULE_GROUPS: dict[str, tuple[str, ...]] = {
         "GimArmRobot",
         "Turtle2Config",
         "Turtle2Robot",
-        "FRANKA_BACKENDS",
     ),
     ".adapters": (
         "LegacyObservationAdapter",

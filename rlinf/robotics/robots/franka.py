@@ -19,6 +19,7 @@ from typing import Any, Optional
 from ..discovery import (
     RobotConfig,
 )
+from ..parts.arms.base import Arm
 from ..parts.cameras import BaseCamera
 from ..robot import Robot
 
@@ -33,7 +34,12 @@ class FrankaRobot(Robot):
     ROBOT_TYPE = "Franka"
 
     BACKEND: str = "franka_ros"
-    """Arm implementation this robot drives. See :data:`FRANKA_BACKENDS`."""
+    """Name of the arm backend this robot drives.
+
+    Any name registered on :class:`~..parts.arms.base.Arm`, so a variant that
+    drives the same hardware through a different stack sets this and inherits
+    everything else. ``Arm.backends()`` lists them.
+    """
 
     @classmethod
     def declare_arm(
@@ -55,22 +61,18 @@ class FrankaRobot(Robot):
         constructing the arm records where it runs, and ``connect`` opens it
         there.
         """
-        backend = backend or cls.BACKEND
         resolved_ip = robot_ip or resolve_robot_ip(node_rank)
         if not resolved_ip:
             raise ValueError(
                 f"Franka arm {name!r} has no 'robot_ip' and none could be "
                 f"resolved from node rank {node_rank}'s hardware infos."
             )
-        part_cls, arm_args = franka_arm_cls(backend), FRANKA_BACKENDS[backend][1]
-        return part_cls(
-            *arm_args(
-                resolved_ip,
-                gripper_type=gripper_type,
-                gripper_connection=gripper_connection,
-                end_effector_type=end_effector_type,
-                end_effector_config=end_effector_config,
-            ),
+        return Arm.backend(backend or cls.BACKEND).declare(
+            resolved_ip,
+            gripper_type=gripper_type,
+            gripper_connection=gripper_connection,
+            end_effector_type=end_effector_type,
+            end_effector_config=end_effector_config,
             node_rank=node_rank,
             worker_name=name,
         )
@@ -210,47 +212,6 @@ def resolve_robot_ip(node_rank: int) -> Optional[str]:
             if robot_ip:
                 return robot_ip
     return None
-
-
-def _franka_ros_args(robot_ip: str, **arm) -> tuple:
-    """Positional arguments for :class:`FrankaROSArm`."""
-    return (
-        robot_ip,
-        "serl_franka_controllers",
-        arm.get("end_effector_type") or "franka_gripper",
-        arm.get("end_effector_config") or {},
-        None,
-        arm.get("gripper_connection"),
-    )
-
-
-def _franky_args(robot_ip: str, **arm) -> tuple:
-    """Positional arguments for :class:`FrankyArm`."""
-    return (robot_ip, arm.get("gripper_type", "franka"), arm.get("gripper_connection"))
-
-
-def franka_arm_cls(backend: str) -> type:
-    """Return the arm class for a backend, imported lazily."""
-    if backend not in FRANKA_BACKENDS:
-        raise ValueError(
-            f"Unknown Franka backend {backend!r}. Supported: {sorted(FRANKA_BACKENDS)}."
-        )
-    part_name, _ = FRANKA_BACKENDS[backend]
-    if part_name == "FrankaROSArm":
-        from ..parts.arms.franka_ros import FrankaROSArm
-
-        return FrankaROSArm
-    from ..parts.arms.franky import FrankyArm
-
-    return FrankyArm
-
-
-#: Backend name to the arm part that speaks it. The backend is a per-robot
-#: choice, not a separate robot type.
-FRANKA_BACKENDS: dict[str, tuple[str, Any]] = {
-    "franka_ros": ("FrankaROSArm", _franka_ros_args),
-    "franky": ("FrankyArm", _franky_args),
-}
 
 
 FrankaRobot.register_type(FrankaConfig)

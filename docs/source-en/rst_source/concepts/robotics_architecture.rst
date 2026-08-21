@@ -164,12 +164,32 @@ registers the names that configs use, and the device family resolves the name:
    camera_cls = BaseCamera.backend(camera_info.camera_type)
    camera = camera_cls(camera_info, node_rank=2)
 
-``Connection.register()`` and ``backend()`` are inherited by device families
-such as ``BaseCamera`` and ``MobileBase``. Backend names are case-insensitive,
-and registering the same name for two classes is an error. A family may add an
-``of()`` or ``declare()`` helper when its config has a standard shape;
-``BaseCamera.of()`` uses ``CameraInfo.camera_type`` and
-``BaseCamera.declare()`` returns cameras ready to add to a robot.
+``Connection.register()`` and ``backend()`` are inherited by every device
+family -- ``Camera``, ``Arm``, ``MobileBase``. Backend names are
+case-insensitive, and registering the same name for two classes is an error. A
+family may add an ``of()`` or ``declare()`` helper when its config has a
+standard shape; ``BaseCamera.of()`` uses ``CameraInfo.camera_type``, and
+``Arm.declare()`` maps a robot's arm settings onto one backend's constructor.
+
+Arms are where this matters most, because two of them drive the same hardware.
+A Franka is reached through libfranka or through ROS, so both register on
+``Arm`` and a robot names one:
+
+.. code-block:: python
+
+   class FrankaRobot(Robot):
+       BACKEND = "franka_ros"
+
+
+   class DualFrankaRobot(FrankaRobot):
+       BACKEND = "franky"
+
+Naming the backend is the whole of the swap. Each backend maps the standard arm
+settings onto its own constructor in its own ``declare()``, next to the
+constructor it serves, so the robot does not know that one stack wants a ROS
+package and the other a gripper port. A setting a backend cannot honour is
+refused rather than dropped, because the alternative is an arm running with an
+end effector the config did not ask for.
 
 A driver that supports hardware enumeration can also declare its vendor module
 in ``SDK`` and implement ``discover()``. The shared discovery code then reports
@@ -187,8 +207,8 @@ Two registries appear in the robotics code, and they name different things:
      - Public API
      - Used for
    * - One device backend
-     - ``BaseCamera.register()`` and ``BaseCamera.backend()``
-     - Selecting a driver such as ``realsense`` or ``zed`` from a device config.
+     - ``Camera.register()`` / ``Arm.register()`` and ``backend()``
+     - Selecting a driver such as ``realsense`` or ``franky`` from a config.
    * - One complete robot type
      - ``Robot.register_type()`` and ``Robot.of_type()``
      - Selecting a named robot tree and its ``RobotConfig``; registration also
@@ -424,7 +444,8 @@ Find the Implementation
      - ``Connection``, ``RobotPart``, ``ControllablePart``, ``PartGroup``, and
        the composition checks and driver registry.
    * - ``robotics/parts/arms/``
-     - Arm and coupled-controller implementations.
+     - The ``Arm`` category and ``BaseArm``, then the backends that register on
+       them: Franky, Franka ROS, GimArm, and the coupled controllers.
    * - ``robotics/parts/cameras/``
      - Camera lifecycle and RealSense, ZED, and Lumos implementations.
    * - ``robotics/parts/end_effectors/``

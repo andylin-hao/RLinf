@@ -30,6 +30,7 @@ import pytest
 
 import rlinf.robotics.robots.franka as franka_module
 from rlinf.robotics import (
+    Arm,
     Camera,
     Connection,
     ControllablePart,
@@ -529,13 +530,24 @@ def test_pure_drivers_construct_without_scheduler_or_vendor_sdks():
     assert all(driver.parts for driver in arms + buses)
 
 
-class _BareArm(ControllablePart):
+class _BareArm(Arm):
     """An arm that says nothing about itself, for tests that only place it.
 
     A robot composes parts, so a stand-in for one has to be a part even when
     every check in the test is about where it was opened rather than what it
-    reads.
+    reads. It is an ``Arm`` so that a robot can select it by backend name, the
+    way it selects a real one.
     """
+
+    @classmethod
+    def declare(cls, address, **settings):
+        """Take whatever a robot offers; these tests are not about the wiring."""
+        placement = {
+            name: settings.pop(name)
+            for name in ("node_rank", "worker_name")
+            if name in settings
+        }
+        return cls(address, **placement)
 
     @property
     def observation_features(self) -> dict:
@@ -574,7 +586,12 @@ def _opens_here(monkeypatch):
 
 
 def _fake_arm_backend(monkeypatch, *, failing_ip=None, disconnected=None):
-    """Point FrankaRobot at a fake arm class that records what it places."""
+    """Register a fake arm backend and point FrankaRobot at it by name.
+
+    Through the registry rather than around it, so what these tests exercise is
+    the lookup a config actually takes.
+    """
+    from rlinf.robotics.parts.arms.base import Arm
 
     _opens_here(monkeypatch)
 
@@ -584,7 +601,7 @@ def _fake_arm_backend(monkeypatch, *, failing_ip=None, disconnected=None):
 
         @property
         def parts(self):
-            return {"arm": self}
+            return {}
 
         @property
         def observation_features(self):
@@ -609,12 +626,138 @@ def _fake_arm_backend(monkeypatch, *, failing_ip=None, disconnected=None):
             if disconnected is not None:
                 disconnected.append(self.robot_ip)
 
-    monkeypatch.setattr(franka_module, "franka_arm_cls", lambda backend: FakeArm)
+    # setitem rather than the decorator, so the entry is removed again when the
+    # test ends; it is the same mapping ``Arm.backends()`` reads.
+    Arm.backends()  # load the real drivers first, so the mapping exists
+    monkeypatch.setitem(Arm.__dict__["_BACKENDS"], "bench", FakeArm)
+    monkeypatch.setattr(franka_module.FrankaRobot, "BACKEND", "bench")
     return FakeArm
+
+
+def test_an_arm_backend_is_selected_from_the_registry_like_any_driver():
+    """Swapping the stack that drives a Franka is naming a registered arm.
+
+    It used to be a table inside the robot mapping a name to a class *name*,
+    then a string comparison on that name to decide which module to import, and
+    a per-backend function assembling positional constructor arguments -- three
+    places to keep in step for two backends, and none of them the pattern every
+    other device family already used.
+    """
+    from rlinf.robotics.parts.arms.base import Arm
+    from rlinf.robotics.parts.arms.franka_ros import FrankaROSArm
+    from rlinf.robotics.parts.arms.franky import FrankyArm
+    from rlinf.robotics.robots import DualFrankaRobot, FrankaRobot
+
+    assert Arm.backend("franka_ros") is FrankaROSArm
+    assert Arm.backend("franky") is FrankyArm
+    assert {"franka_ros", "franky"} <= set(Arm.backends())
+
+    # A robot names one; that is the whole of the swap.
+    assert FrankaRobot.BACKEND == "franka_ros"
+    assert DualFrankaRobot.BACKEND == "franky"
+    for robot in (FrankaRobot, DualFrankaRobot):
+        assert Arm.backend(robot.BACKEND) is not None
+
+    with pytest.raises(ValueError, match="Unsupported Arm backend"):
+        Arm.backend("no_such_stack")
+
+
+def test_a_backend_maps_the_robot_settings_onto_its_own_constructor():
+    """Each backend knows its constructor, so nothing else has to.
+
+    The two Franka stacks take different arguments -- one a named end effector
+    it opens on its ROS session, the other a gripper backend it builds beside
+    itself -- and a robot naming one should not have to know which.
+    """
+    from rlinf.robotics.parts.arms.base import Arm
+    from rlinf.robotics.robots import FrankaRobot
+
+    ros = FrankaRobot.declare_arm(
+        "10.0.0.2",
+        node_rank=1,
+        name="arm",
+        backend="franka_ros",
+        end_effector_type="ruiyan_hand",
+    )
+    assert type(ros).__name__ == "FrankaROSArm"
+    assert ros.node_rank == 1, "placement must survive the mapping"
+
+    franky = FrankaRobot.declare_arm(
+        "10.0.0.3",
+        node_rank=2,
+        name="arm",
+        backend="franky",
+        gripper_type="robotiq",
+        gripper_connection="/dev/ttyUSB0",
+    )
+    assert type(franky).__name__ == "FrankyArm"
+    assert franky.node_rank == 2
+
+    # A setting a backend cannot honour is refused, not dropped: the arm would
+    # otherwise run with an end effector the config did not ask for.
+    with pytest.raises(TypeError, match="cannot fit a named end effector"):
+        FrankaRobot.declare_arm(
+            "10.0.0.3",
+            node_rank=0,
+            name="arm",
+            backend="franky",
+            end_effector_type="ruiyan_hand",
+        )
+
+    # And an arm that takes none of them says so rather than ignoring them.
+    class Plain(Arm):
+        def __init__(self, address):
+            self.address = address
+
+        @property
+        def observation_features(self):
+            return {}
+
+        @property
+        def action_features(self):
+            return {}
+
+        def _open(self):
+            return "device"
+
+        def get_observation(self):
+            return {}
+
+        def send_action(self, action):
+            return action
+
+    assert Plain.declare("addr", node_rank=3).node_rank == 3
+    with pytest.raises(TypeError, match="does not take"):
+        Plain.declare("addr", gripper_connection="/dev/ttyUSB0")
+
+
+def test_every_canonical_arm_reports_the_same_fields_from_one_place():
+    """One category, so the contract is written once rather than per driver."""
+    import inspect
+
+    from rlinf.robotics.parts.arms.base import ARM_STATE_FIELDS, BaseArm
+    from rlinf.robotics.parts.arms.franka_ros import FrankaROSArm
+    from rlinf.robotics.parts.arms.franky import FrankyArm
+    from rlinf.robotics.parts.arms.gim_arm import GimArm
+
+    for driver in (FrankaROSArm, FrankyArm, GimArm):
+        assert issubclass(driver, BaseArm)
+        for inherited in ("observation_features", "get_observation"):
+            assert inherited not in vars(driver), (
+                f"{driver.__name__} writes its own {inherited}; the three of "
+                "them had the same body three times"
+            )
+        assert set(driver.STATE_FIELDS) == set(ARM_STATE_FIELDS)
+        assert "get_state" in vars(driver), f"{driver.__name__} must supply state"
+
+    # The category is what a robot can ask for.
+    assert inspect.isabstract(BaseArm)
 
 
 def test_declaring_arms_opens_nothing_until_connect(monkeypatch):
     """Composing is inert. ``connect`` is what touches hardware."""
+
+    from rlinf.robotics.parts.arms.base import Arm
 
     class NeverOpens(_BareArm):
         def __init__(self, *_args, **_kwargs):
@@ -623,7 +766,9 @@ def test_declaring_arms_opens_nothing_until_connect(monkeypatch):
         def _open(self):
             raise AssertionError("nothing may be opened while composing")
 
-    monkeypatch.setattr(franka_module, "franka_arm_cls", lambda backend: NeverOpens)
+    Arm.backends()
+    monkeypatch.setitem(Arm.__dict__["_BACKENDS"], "bench", NeverOpens)
+    monkeypatch.setattr(franka_module.FrankaRobot, "BACKEND", "bench")
 
     robot = FrankaRobot(
         arm=FrankaRobot.declare_arm("10.0.0.1", node_rank=0, name="left")

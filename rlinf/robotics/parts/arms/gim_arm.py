@@ -21,8 +21,8 @@ from typing import Any
 
 import numpy as np
 
-from rlinf.robotics.parts.arms import ARM_STATE_FIELDS
-from rlinf.robotics.parts.base import ControllablePart, RobotPart
+from rlinf.robotics.parts.arms.base import Arm, BaseArm
+from rlinf.robotics.parts.base import RobotPart
 from rlinf.robotics.parts.views import MethodEndEffector
 from rlinf.utils.logging import get_logger
 
@@ -87,7 +87,8 @@ class GimArmRobotState:
         return asdict(self)
 
 
-class GimArm(ControllablePart):
+@Arm.register("gim_arm")
+class GimArm(BaseArm):
     """GimArm robot arm controller.
 
     Wraps the ``gim_arm_control`` SDK (CAN bus) independently of scheduling.
@@ -136,14 +137,6 @@ class GimArm(ControllablePart):
                 "this machine. The arm will fail to connect unless it is "
                 "brought up first."
             )
-
-    @property
-    def observation_features(self) -> dict:
-        """Describe canonical GimArm arm state fields.
-
-        Gripper fields belong to the end-effector part from :attr:`parts`.
-        """
-        return {name: {} for name in ARM_STATE_FIELDS}
 
     @property
     def action_features(self) -> dict:
@@ -220,11 +213,6 @@ class GimArm(ControllablePart):
 
     def reset(self) -> None:
         """Leave task-specific reset positions to the caller."""
-
-    def get_observation(self) -> dict:
-        """Return the canonical arm state, without end-effector fields."""
-        state = self.get_state().to_dict()
-        return {name: state[name] for name in ARM_STATE_FIELDS}
 
     def send_action(self, action: dict) -> dict:
         """Apply one absolute joint target."""

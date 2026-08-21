@@ -20,9 +20,9 @@ import numpy as np
 import psutil
 from scipy.spatial.transform import Rotation as R
 
-from rlinf.robotics.parts.arms import ARM_STATE_FIELDS
+from rlinf.robotics.parts.arms.base import Arm, BaseArm
 from rlinf.robotics.parts.arms.franka import FrankaRobotState, validated_robot_ip
-from rlinf.robotics.parts.base import ControllablePart, RobotPart
+from rlinf.robotics.parts.base import RobotPart
 from rlinf.robotics.parts.end_effectors import (
     BaseEndEffector,
     EndEffectorType,
@@ -33,8 +33,39 @@ from rlinf.robotics.parts.views import MethodEndEffector
 from rlinf.utils.logging import get_logger
 
 
-class FrankaROSArm(ControllablePart):
+@Arm.register("franka_ros")
+class FrankaROSArm(BaseArm):
     """Franka arm over ROS, with no scheduler dependency."""
+
+    @classmethod
+    def declare(
+        cls,
+        address,
+        *,
+        gripper_type=None,
+        gripper_connection=None,
+        end_effector_type=None,
+        end_effector_config=None,
+        **placement,
+    ) -> "FrankaROSArm":
+        """Build this backend from the settings a Franka robot carries.
+
+        The end effector is this arm's own: it is opened on the ROS session
+        this arm holds, so the type and its config come through here rather
+        than being composed beside the arm.
+
+        ``gripper_type`` is deliberately not forwarded. It selects a gripper
+        backend for an arm that builds one itself, which the ROS stack does
+        not: here the end effector is named outright by ``end_effector_type``,
+        and passing both would let one silently override the other.
+        """
+        return cls(
+            address,
+            end_effector_type=end_effector_type or "franka_gripper",
+            end_effector_config=end_effector_config or {},
+            gripper_connection=gripper_connection,
+            **placement,
+        )
 
     def __init__(
         self,
@@ -59,14 +90,6 @@ class FrankaROSArm(ControllablePart):
         self._gripper = None
         self._impedance: psutil.Process | None = None
         self._joint: psutil.Process | None = None
-
-    @property
-    def observation_features(self) -> dict:
-        """Describe canonical Franka arm state fields.
-
-        End-effector fields belong to the part returned by :attr:`parts`.
-        """
-        return {name: {} for name in ARM_STATE_FIELDS}
 
     @property
     def action_features(self) -> dict:
@@ -117,11 +140,6 @@ class FrankaROSArm(ControllablePart):
 
     def reset(self) -> None:
         """Leave task-specific reset positions to the caller."""
-
-    def get_observation(self) -> dict:
-        """Return the canonical arm state, without end-effector fields."""
-        state = self.get_state().to_dict()
-        return {name: state[name] for name in ARM_STATE_FIELDS}
 
     def send_action(self, action: dict) -> dict:
         """Apply one Cartesian pose target."""
