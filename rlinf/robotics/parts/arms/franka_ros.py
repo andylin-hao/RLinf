@@ -29,7 +29,7 @@ from rlinf.robotics.parts.end_effectors import (
     create_end_effector,
     normalize_end_effector_type,
 )
-from rlinf.robotics.parts.views import MethodGripper
+from rlinf.robotics.parts.views import MethodEndEffector
 from rlinf.utils.logging import get_logger
 
 
@@ -77,14 +77,14 @@ class FrankaROSArm(ControllablePart):
     def parts(self) -> dict[str, RobotPart]:
         """Whichever end effector is configured, riding this arm's connection."""
         if self._end_effector_type.is_hand:
-            end_effector = MethodGripper(
+            end_effector = MethodEndEffector(
                 self,
                 state_field="hand_position",
-                action_dim=6,
+                dims=6,
                 command="command_end_effector",
             )
         else:
-            end_effector = MethodGripper(self, state_field="gripper_position")
+            end_effector = MethodEndEffector(self, state_field="gripper_position")
         return {"end_effector": end_effector}
 
     def _open(self) -> Any:

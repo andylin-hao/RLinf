@@ -23,7 +23,7 @@ import numpy as np
 
 from rlinf.robotics.parts.arms import ARM_STATE_FIELDS
 from rlinf.robotics.parts.base import ControllablePart, RobotPart
-from rlinf.robotics.parts.views import MethodGripper
+from rlinf.robotics.parts.views import MethodEndEffector
 from rlinf.utils.logging import get_logger
 
 # End-effector frame name in gim_arm URDF.
@@ -155,7 +155,7 @@ class GimArm(ControllablePart):
         """The gripper riding this arm's connection, when one is fitted."""
         if not self._enable_gripper:
             return {}
-        return {"end_effector": MethodGripper(self, state_field="gripper_position")}
+        return {"end_effector": MethodEndEffector(self, state_field="gripper_position")}
 
     def _open(self) -> Any:
         """Connect the CAN SDK and start the feedforward control loop."""

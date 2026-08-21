@@ -435,29 +435,32 @@ class DOSW1EndEffector(EndEffector):
         self.side = side
 
     @property
-    def observation_features(self) -> dict:
-        """Describe the scalar gripper width."""
-        return {"state": {"shape": (1,), "dtype": "float64"}}
+    def state_dim(self) -> int:
+        """One: the gripper's width."""
+        return 1
 
     @property
-    def action_features(self) -> dict:
-        """Describe the scalar gripper target width."""
-        return {"target": {"shape": (1,), "dtype": "float64"}}
+    def action_dim(self) -> int:
+        """One: a target width."""
+        return 1
+
+    @property
+    def control_mode(self) -> str:
+        """The SDK takes any width, not just the two ends."""
+        return "continuous"
 
     def reset(self) -> None:
         """Leave reset width to the task configuration."""
 
-    def get_observation(self) -> dict[str, np.ndarray]:
+    def get_state(self) -> np.ndarray:
         """Read this gripper's current width."""
         current = getattr(self.sdk, f"get_{self.side}_joint")()
-        return {"state": np.asarray(current[6:7], dtype=np.float64)}
+        return np.asarray(current[6:7], dtype=np.float64)
 
-    def send_action(self, action: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+    def command(self, action: np.ndarray) -> bool:
         """Apply a gripper target while retaining joint positions."""
-        if set(action) != {"target"}:
-            raise KeyError("DOSW1 end-effector action must contain only 'target'.")
-        target = np.asarray(action["target"], dtype=np.float64).reshape(1)
+        target = np.asarray(action, dtype=np.float64).reshape(1)
         current = getattr(self.sdk, f"get_{self.side}_joint")()
-        command = getattr(self.sdk, f"{self.side}_go_joint")
-        command(current[:6].tolist(), float(target[0]))
-        return {"target": target}
+        go_joint = getattr(self.sdk, f"{self.side}_go_joint")
+        go_joint(current[:6].tolist(), float(target[0]))
+        return True

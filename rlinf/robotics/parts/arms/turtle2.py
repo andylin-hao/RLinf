@@ -20,7 +20,7 @@ from typing import Any
 import numpy as np
 
 from rlinf.robotics.parts.base import Connection, RobotPart
-from rlinf.robotics.parts.views import MethodArm, MethodCamera, MethodGripper
+from rlinf.robotics.parts.views import MethodArm, MethodCamera, MethodEndEffector
 from rlinf.utils.logging import get_logger
 
 #: State-field prefix backing each arm, and the method suffix commanding it.
@@ -91,7 +91,7 @@ class Turtle2Connection(Connection):
                     "joint_current": f"{prefix}_cur_data",
                 },
             )
-            parts[f"{side}_end_effector"] = MethodGripper(
+            parts[f"{side}_end_effector"] = MethodEndEffector(
                 self,
                 state_field=f"{prefix}_pos",
                 command=f"move_{side}_gripper",

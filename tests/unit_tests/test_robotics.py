@@ -41,7 +41,7 @@ from rlinf.robotics import (
     GimArmConfig,
     LegacyObservationAdapter,
     MethodArm,
-    MethodGripper,
+    MethodEndEffector,
     PartGroup,
     Robot,
     RobotAutoConfig,
@@ -112,12 +112,17 @@ class FakeControllablePart(FakePart, ControllablePart):
 
 
 class FakeEndEffector(FakePart, EndEffector):
-    @property
-    def action_features(self) -> dict[str, dict]:
-        return {"target": {"shape": (1,)}}
+    """An end effector answers the category's questions, whoever opens it."""
 
-    def send_action(self, action: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
-        return action
+    state_dim = 1
+    action_dim = 1
+    control_mode = "binary"
+
+    def get_state(self) -> np.ndarray:
+        return np.array([1.0])
+
+    def command(self, action: np.ndarray) -> bool:
+        return True
 
 
 class FakeCamera(FakePart, Camera):
@@ -252,7 +257,7 @@ def test_driver_views_expose_composed_part_api():
         commands={"tcp_pose": "move_arm"},
         state_fields=("tcp_pose", "arm_joint_position"),
     )
-    end_effector = MethodGripper(driver, state_field="gripper_position")
+    end_effector = MethodEndEffector(driver, state_field="gripper_position")
     target = np.ones(7)
 
     assert set(arm.get_observation()) == {"tcp_pose", "arm_joint_position"}
@@ -870,7 +875,7 @@ def test_a_device_with_its_own_link_keeps_it_when_a_connection_lists_it():
     )
 
     # A part that opens nothing is adopted, which is what a view is.
-    gripper = MethodGripper(arm, state_field="gripper_position")
+    gripper = MethodEndEffector(arm, state_field="gripper_position")
     assert gripper.owner is arm
 
 
@@ -961,6 +966,9 @@ def test_every_part_places_independently_whatever_it_is():
 
     def fake(base):
         class Fake(base):
+            state_dim = action_dim = 1
+            control_mode = "binary"
+
             def __init__(self, *args, **kwargs):
                 pass
 
@@ -978,8 +986,14 @@ def test_every_part_places_independently_whatever_it_is():
             def get_observation(self):
                 return {}
 
+            def get_state(self):
+                return np.array([0.0])
+
             def send_action(self, action):
                 return action
+
+            def command(self, action):
+                return True
 
         return Fake
 
@@ -2206,7 +2220,7 @@ def test_a_gripper_is_an_end_effector_rather_than_a_second_kind_of_one():
 
     from rlinf.robotics.parts.end_effectors.base import BaseEndEffector, EndEffector
     from rlinf.robotics.parts.end_effectors.grippers.base import BaseGripper
-    from rlinf.robotics.parts.views import MethodGripper
+    from rlinf.robotics.parts.views import MethodEndEffector
 
     assert issubclass(BaseGripper, BaseEndEffector)
 
@@ -2227,8 +2241,8 @@ def test_a_gripper_is_an_end_effector_rather_than_a_second_kind_of_one():
 
     # A view is an end effector without being a driver, so the lifecycle above
     # does not apply to it and it needs no ``_open``.
-    assert issubclass(MethodGripper, EndEffector)
-    assert not issubclass(MethodGripper, BaseEndEffector)
+    assert issubclass(MethodEndEffector, EndEffector)
+    assert not issubclass(MethodEndEffector, BaseEndEffector)
 
 
 def test_a_gripper_is_commanded_in_the_units_it_reports():
@@ -2308,6 +2322,57 @@ def test_a_franka_hand_is_commanded_in_metres_on_the_wire():
             arm.disconnect()
 
     assert widths == pytest.approx([gripper.max_width, 0.05, gripper.max_width])
+
+
+def test_every_end_effector_answers_the_same_questions():
+    """A task holding an ``EndEffector`` must not have to ask which kind it got.
+
+    A hand on an arm's bus, a gripper on an arm's bus, a gripper on a shared
+    SDK session, and a gripper on its own serial port are four different things
+    to the hardware and one thing to a policy. The contract used to live on the
+    driver base, so only the ones with a link of their own answered it and the
+    views -- which are what a robot actually composes -- answered none of it.
+    """
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        from rlinf.robotics.parts.end_effectors.base import EndEffector
+        from rlinf.robotics.parts.end_effectors.grippers import create_gripper
+        from rlinf.robotics.robots import DOSW1Robot, FrankaRobot
+
+        def franka(end_effector_type=None):
+            robot = FrankaRobot.build(
+                robot_ip="10.0.0.2",
+                node_rank=0,
+                env_idx=0,
+                worker_rank=0,
+                end_effector_type=end_effector_type,
+            )
+            return robot.child("arm").child("end_effector")
+
+        every = {
+            "hand on a bus": franka("ruiyan_hand"),
+            "gripper on a bus": franka(),
+            "gripper on a session": DOSW1Robot.build(is_dummy=True)
+            .child("left")
+            .child("gripper"),
+            "gripper on its own port": create_gripper(
+                gripper_type="robotiq", port="/dev/mock-gripper"
+            ),
+        }
+
+        for label, part in every.items():
+            assert isinstance(part, EndEffector), label
+            assert part.state_dim >= 1 and part.action_dim >= 1, label
+            assert part.control_mode in {"binary", "continuous"}, label
+            assert callable(part.get_state) and callable(part.command), label
+            assert set(part.observation_features) == {"state"}, label
+            assert set(part.action_features) == {"target"}, label
+
+        # The hand is six-fingered, which is why its class is not named for a
+        # gripper: one view serves every end effector reached through a host.
+        assert every["hand on a bus"].action_dim == 6
+        assert type(every["hand on a bus"]) is type(every["gripper on a bus"])
 
 
 def test_every_end_effector_reports_its_state_under_the_same_name():
@@ -2596,7 +2661,7 @@ def _fake_robot_type(broken=None):
 
     from rlinf.robotics.discovery import RobotConfig, RobotDiscovery, register_robot
     from rlinf.robotics.parts.base import Connection, ControllablePart, PartGroup
-    from rlinf.robotics.parts.views import MethodArm, MethodGripper
+    from rlinf.robotics.parts.views import MethodArm, MethodEndEffector
     from rlinf.robotics.robot import Robot
 
     class State:
@@ -2619,7 +2684,7 @@ def _fake_robot_type(broken=None):
                 "left": MethodArm(
                     self, commands={"tcp_pose": "move"}, state_fields=("tcp_pose",)
                 ),
-                "left_end_effector": MethodGripper(
+                "left_end_effector": MethodEndEffector(
                     self, state_field="gripper_position"
                 ),
             }

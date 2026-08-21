@@ -87,7 +87,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from .parts.cameras import BaseCamera, Camera, CameraInfo
     from .parts.end_effectors import EndEffector
     from .parts.mobility import MobileBase
-    from .parts.views import MethodArm, MethodCamera, MethodGripper
+    from .parts.views import MethodArm, MethodCamera, MethodEndEffector
     from .robot import Robot
     from .robots import (
         FRANKA_BACKENDS,
@@ -120,7 +120,7 @@ _MODULE_GROUPS: dict[str, tuple[str, ...]] = {
     ".parts.end_effectors": ("EndEffector",),
     ".parts.mobility": ("MobileBase",),
     ".robot": ("Robot",),
-    ".parts.views": ("MethodArm", "MethodCamera", "MethodGripper"),
+    ".parts.views": ("MethodArm", "MethodCamera", "MethodEndEffector"),
     ".robots": (
         "DOSW1Robot",
         "DOSW1RobotConfig",

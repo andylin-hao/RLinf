@@ -149,7 +149,7 @@ robotics 代码中有三种 registry，它们所命名的对象不同：
        def parts(self) -> dict[str, RobotPart]:
            return {
                "arm": self,
-               "end_effector": MethodGripper(
+               "end_effector": MethodEndEffector(
                    self, state_field="gripper_position"
                ),
            }
@@ -231,8 +231,8 @@ placement 参数与硬件构造参数一起传入。构造过程不会访问设�
 .. code-block:: text
 
    FrankaRobot
-   ├── arm           FrankaROSArm         node=1     via FrankaROSArm#1
-   └── end_effector  MethodGripper        node=1     via FrankaROSArm#1
+   └── arm                 FrankaROSArm         node=1     via FrankaROSArm#1
+       └── end_effector    MethodEndEffector    node=1     via FrankaROSArm#1
 
 ``via`` 相同的行共用一个 ``Connection``。连接之后，跨节点的部件会显示它的 view class，例如上面的 ``FrankaROSArm`` 会变成 ``RemoteFrankaROSArm``，一眼就能看出哪些部件跑在别的机器上。
 
@@ -304,7 +304,7 @@ Ray 不在此列。它是 RLinf 的基础依赖，运行 RLinf 的机器上一�
    * - ``robotics/parts/mobility/``
      - ``MobileBase`` 类别与移动平台驱动。
    * - ``robotics/parts/views.py``
-     - 将共享厂商 session 呈现为部件的 ``MethodArm``、``MethodGripper`` 和 ``MethodCamera``。
+     - 将共享厂商 session 呈现为部件的 ``MethodArm``、``MethodEndEffector`` 和 ``MethodCamera``。
    * - ``robotics/placement/``
      - 承载连接的 worker，以及连接跨节点后变成的 view，两者都由 driver class 合成。
    * - ``robotics/robot.py``

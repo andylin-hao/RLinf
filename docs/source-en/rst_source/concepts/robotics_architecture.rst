@@ -207,7 +207,7 @@ itself:
        @property
        def parts(self) -> dict[str, RobotPart]:
            return {
-               "end_effector": MethodGripper(
+               "end_effector": MethodEndEffector(
                    self, state_field="gripper_position"
                ),
            }
@@ -225,7 +225,7 @@ one level below whatever the robot calls the arm:
    robot = Robot(arm=connection)
 
    robot.children                     # {"arm": <ExampleArm>}
-   robot.child("arm").children        # {"end_effector": <MethodGripper>}
+   robot.child("arm").children        # {"end_effector": <MethodEndEffector>}
    robot.get_observation()["arm"]     # the arm's fields, plus "end_effector"
 
 The keyword arguments become ``robot.children``; the driver's own names appear
@@ -318,8 +318,8 @@ answerable with no robot present:
 .. code-block:: text
 
    FrankaRobot
-   ├── arm           FrankaROSArm         node=1     via FrankaROSArm#1
-   └── end_effector  MethodGripper        node=1     via FrankaROSArm#1
+   └── arm                 FrankaROSArm         node=1     via FrankaROSArm#1
+       └── end_effector    MethodEndEffector    node=1     via FrankaROSArm#1
 
 Rows sharing ``via`` share one ``Connection``. After connecting, a placed part
 reports its view class -- ``RemoteFrankaROSArm`` above -- which is how you see
@@ -432,7 +432,7 @@ Find the Implementation
    * - ``robotics/parts/mobility/``
      - The ``MobileBase`` category and mobile-platform drivers.
    * - ``robotics/parts/views.py``
-     - ``MethodArm``, ``MethodGripper``, and ``MethodCamera`` views over shared
+     - ``MethodArm``, ``MethodEndEffector``, and ``MethodCamera`` views over shared
        vendor sessions.
    * - ``robotics/placement/``
      - The worker that hosts a connection, and the view a placed connection

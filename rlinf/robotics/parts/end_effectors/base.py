@@ -23,14 +23,72 @@ import numpy as np
 from rlinf.robotics.parts.base import ControllablePart
 
 
-class EndEffector(ControllablePart):
+class EndEffector(ControllablePart, ABC):
     """A controllable tool at the end of an arm: a gripper, a dexterous hand.
 
-    The category, with no lifecycle of its own -- :class:`BaseEndEffector`
-    below is what a driver subclasses. Naming it separately is what lets teleop
-    ask which parts take a grip command, and what lets a hosted gripper come
-    back as one.
+    What every end effector answers, whoever opens it. A driver holding its own
+    serial port and a view riding an arm's bus are both one of these, and a
+    task holding one can read it and command it without knowing which it got.
+
+    The lifecycle is deliberately not here. :class:`BaseEndEffector` adds it
+    for a device with a link of its own; a view has none and so subclasses this
+    directly.
     """
+
+    @property
+    @abstractmethod
+    def action_dim(self) -> int:
+        """Dimensionality of the end-effector action vector."""
+
+    @property
+    @abstractmethod
+    def state_dim(self) -> int:
+        """Dimensionality of the end-effector state vector."""
+
+    @property
+    @abstractmethod
+    def control_mode(self) -> str:
+        """Control mode: ``"binary"`` (open/close) or ``"continuous"``."""
+
+    @abstractmethod
+    def get_state(self) -> np.ndarray:
+        """Return the current end-effector state as a 1-D array.
+
+        The length of the returned array must equal :pyattr:`state_dim`.
+        """
+
+    @abstractmethod
+    def command(self, action: np.ndarray) -> bool:
+        """Send a command to the end-effector.
+
+        Args:
+            action: Action vector whose length equals :pyattr:`action_dim`.
+
+        Returns:
+            ``True`` if the command caused a meaningful state change
+            (e.g. gripper opened/closed), ``False`` otherwise.
+        """
+
+    @property
+    def observation_features(self) -> dict:
+        """Describe the canonical end-effector state."""
+        return {"state": {"shape": (self.state_dim,), "dtype": "float32"}}
+
+    @property
+    def action_features(self) -> dict:
+        """Describe the canonical end-effector command."""
+        return {"target": {"shape": (self.action_dim,), "dtype": "float32"}}
+
+    def get_observation(self) -> dict[str, np.ndarray]:
+        """Return the end-effector state under its canonical key."""
+        return {"state": self.get_state()}
+
+    def send_action(self, action: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+        """Apply the canonical target command."""
+        if set(action) != {"target"}:
+            raise KeyError("End-effector action must contain only 'target'.")
+        self.command(action["target"])
+        return {"target": action["target"]}
 
 
 class EndEffectorType(str, Enum):
@@ -88,42 +146,13 @@ class BaseEndEffector(EndEffector, ABC):
 
     What every driver in this package subclasses, grippers included: a
     :class:`~rlinf.robotics.parts.end_effectors.grippers.base.BaseGripper` is
-    one of these with a single degree of freedom. The alternative -- two
-    sibling bases -- had them disagree about the things a caller holding an
-    ``EndEffector`` most needs to be able to assume: what opens it, what its
-    observation is called, and whether ``reset`` takes a target.
+    one of these with a single degree of freedom.
 
-    A driver states its dimensions here so an env can build Gymnasium spaces
-    from the end effector rather than from a table of device names.
-
-    Not every end effector is one of these. A view onto an arm's own bus --
-    :class:`~rlinf.robotics.parts.views.MethodGripper` -- is an ``EndEffector``
-    that opens nothing, so it subclasses the category directly and the
-    lifecycle below does not apply to it.
+    All this adds to :class:`EndEffector` is the lifecycle. What an end
+    effector *is* -- its dimensions, its state, the command it takes -- belongs
+    to the category, so a view riding an arm's bus answers the same questions
+    without pretending to own a device.
     """
-
-    # ------------------------------------------------------------------
-    # Properties
-    # ------------------------------------------------------------------
-
-    @property
-    @abstractmethod
-    def action_dim(self) -> int:
-        """Dimensionality of the end-effector action vector."""
-
-    @property
-    @abstractmethod
-    def state_dim(self) -> int:
-        """Dimensionality of the end-effector state vector."""
-
-    @property
-    @abstractmethod
-    def control_mode(self) -> str:
-        """Control mode: ``"binary"`` (open/close) or ``"continuous"``."""
-
-    # ------------------------------------------------------------------
-    # Lifecycle
-    # ------------------------------------------------------------------
 
     @abstractmethod
     def _open(self) -> Any:
@@ -142,17 +171,6 @@ class BaseEndEffector(EndEffector, ABC):
 
         The handle arrives as an argument rather than off ``self`` so teardown
         cannot be defeated by the order ``disconnect`` does things in.
-        """
-
-    # ------------------------------------------------------------------
-    # State
-    # ------------------------------------------------------------------
-
-    @abstractmethod
-    def get_state(self) -> np.ndarray:
-        """Return the current end-effector state as a 1-D array.
-
-        The length of the returned array must equal :pyattr:`state_dim`.
         """
 
     @property
@@ -176,43 +194,6 @@ class BaseEndEffector(EndEffector, ABC):
             "positions": state.tolist(),
             "finger_names": self.finger_names,
         }
-
-    @property
-    def observation_features(self) -> dict:
-        """Describe the canonical end-effector state."""
-        return {"state": {"shape": (self.state_dim,), "dtype": "float32"}}
-
-    @property
-    def action_features(self) -> dict:
-        """Describe the canonical end-effector command."""
-        return {"target": {"shape": (self.action_dim,), "dtype": "float32"}}
-
-    def get_observation(self) -> dict[str, np.ndarray]:
-        """Return the end-effector state under its canonical key."""
-        return {"state": self.get_state()}
-
-    def send_action(self, action: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
-        """Apply the canonical target command."""
-        if set(action) != {"target"}:
-            raise KeyError("End-effector action must contain only 'target'.")
-        self.command(action["target"])
-        return {"target": action["target"]}
-
-    # ------------------------------------------------------------------
-    # Commands
-    # ------------------------------------------------------------------
-
-    @abstractmethod
-    def command(self, action: np.ndarray) -> bool:
-        """Send a command to the end-effector.
-
-        Args:
-            action: Action vector whose length equals :pyattr:`action_dim`.
-
-        Returns:
-            ``True`` if the command caused a meaningful state change
-            (e.g. gripper opened/closed), ``False`` otherwise.
-        """
 
     @abstractmethod
     def reset(self, target_state: np.ndarray | None = None) -> None:

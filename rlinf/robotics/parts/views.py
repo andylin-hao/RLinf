@@ -24,6 +24,14 @@ A part declares these in :attr:`~.parts.base.Connection.parts`, in Python,
 next to the methods they wrap -- not as command/state dictionaries assembled in
 a separate factory module.
 
+Each is named for the part category it presents -- an arm, an end effector, a
+camera -- with ``Method`` saying how it gets there: by calling methods on the
+part that carries it, whose names you pass to the constructor. What it presents
+is what a policy sees; how it is wired is what a driver author writes. Nothing
+here names a *sub*category, because one view serves the whole of one: the same
+:class:`MethodEndEffector` presents a two-fingered gripper and a six-fingered
+hand.
+
 Each view holds its host twice under two names, because it uses it for two
 things: ``_host`` is what it calls methods on, and ``_owner`` is what the base
 class opens, closes and reports connection state for. Setting the second is the
@@ -111,15 +119,23 @@ class MethodArm(ControllablePart):
         return applied
 
 
-class MethodGripper(EndEffector):
-    """End effector implemented inside an arm's own connection.
+class MethodEndEffector(EndEffector):
+    """An end effector reached through the methods of the part carrying it.
+
+    Named for what it presents, not for one shape of it: with ``dims=6`` and a
+    continuous command this is a dexterous hand, and the shipped Franka path
+    composes one. It was called ``MethodGripper``, which was wrong there twice
+    over -- a six-fingered hand is not a gripper, and it never had a gripper's
+    open/close/width vocabulary either.
 
     Args:
         host: The part owning the connection.
         state_field: Host state field holding the end-effector value.
-        action_dim: Width of the target vector.
+        dims: Width of the state and target vectors.
         command: Host method taking a continuous target. When ``None`` the
             view falls back to binary open/close on the sign of ``target[0]``.
+        open_method: Host method that opens, in binary mode.
+        close_method: Host method that closes, in binary mode.
         state_index: Optional index or slice selecting the end-effector value
             out of a wider state field.
     """
@@ -128,7 +144,7 @@ class MethodGripper(EndEffector):
         self,
         host: Any,
         state_field: str,
-        action_dim: int = 1,
+        dims: int = 1,
         command: Optional[str] = None,
         open_method: str = "open_gripper",
         close_method: str = "close_gripper",
@@ -136,49 +152,52 @@ class MethodGripper(EndEffector):
     ) -> None:
         self._host = self._owner = host
         self.state_field = state_field
-        self.action_dim = action_dim
-        self.command = command
+        self.dims = dims
+        self.method = command
         self.open_method = open_method
         self.close_method = close_method
         self.state_index = state_index
 
     @property
-    def observation_features(self) -> dict[str, Any]:
-        """Describe the end-effector state vector."""
-        return {"state": {"shape": (self.action_dim,), "dtype": "float32"}}
+    def action_dim(self) -> int:
+        """As wide as the host field this drives."""
+        return self.dims
 
     @property
-    def action_features(self) -> dict[str, Any]:
-        """Describe the end-effector target vector."""
-        return {"target": {"shape": (self.action_dim,), "dtype": "float32"}}
+    def state_dim(self) -> int:
+        """As wide as the host field this reads."""
+        return self.dims
+
+    @property
+    def control_mode(self) -> str:
+        """Continuous when the host takes a target, binary when it opens and closes."""
+        return "continuous" if self.method is not None else "binary"
 
     def reset(self) -> None:
         """Leave task-specific end-effector reset to the task environment."""
 
-    def get_observation(self) -> dict[str, np.ndarray]:
+    def get_state(self) -> np.ndarray:
         """Read the end-effector field out of the shared host state."""
         state = state_to_dict(self._host.get_state())
         value = np.asarray(state[self.state_field])
         if self.state_index is not None:
             value = value[self.state_index]
-        return {"state": np.asarray(value).reshape(-1)}
+        return np.asarray(value).reshape(-1)
 
-    def send_action(self, action: dict[str, Any]) -> dict[str, np.ndarray]:
-        """Apply a continuous target, or a binary open/close command."""
-        if set(action) != {"target"}:
-            raise KeyError("End-effector action must contain only 'target'.")
-        target = np.asarray(action["target"]).reshape(-1)
-        if target.shape != (self.action_dim,):
+    def command(self, action: np.ndarray) -> bool:
+        """Apply a continuous target, or open and close on its sign."""
+        target = np.asarray(action).reshape(-1)
+        if target.shape != (self.dims,):
             raise ValueError(
-                f"Expected end-effector target shape {(self.action_dim,)}, "
+                f"Expected end-effector target shape {(self.dims,)}, "
                 f"got {target.shape}."
             )
-        if self.command is not None:
-            getattr(self._host, self.command)(target)
-        else:
-            method = self.open_method if target[0] >= 0 else self.close_method
-            getattr(self._host, method)()
-        return {"target": target}
+        if self.method is not None:
+            getattr(self._host, self.method)(target)
+            return True
+        opening = bool(target[0] >= 0)
+        getattr(self._host, self.open_method if opening else self.close_method)()
+        return True
 
 
 class MethodCamera(Camera):

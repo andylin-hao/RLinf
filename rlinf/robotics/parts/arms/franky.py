@@ -32,7 +32,7 @@ from rlinf.robotics.parts.arms import ARM_STATE_FIELDS
 from rlinf.robotics.parts.arms.franka import FrankaRobotState, validated_robot_ip
 from rlinf.robotics.parts.base import ControllablePart, RobotPart
 from rlinf.robotics.parts.end_effectors.grippers import create_gripper
-from rlinf.robotics.parts.views import MethodGripper
+from rlinf.robotics.parts.views import MethodEndEffector
 from rlinf.utils.logging import get_logger
 
 # Franka Panda joint position / velocity limits.
@@ -117,7 +117,7 @@ class FrankyArm(ControllablePart):
         Not the arm: this says what rides on it, and the arm is what they ride.
         Composing the arm brings the gripper with it, under ``end_effector``.
         """
-        return {"end_effector": MethodGripper(self, state_field="gripper_position")}
+        return {"end_effector": MethodEndEffector(self, state_field="gripper_position")}
 
     def _open(self) -> Any:
         """Connect the robot and gripper SDKs."""
