@@ -22,13 +22,12 @@ from typing import Any, Optional
 
 import numpy as np
 
-from rlinf.robotics.parts.base import RobotPart, register_kind
+from rlinf.robotics.parts.base import RobotPart
 from rlinf.utils.logging import get_logger
 
 _logger = get_logger()
 
 
-@register_kind("camera")
 class Camera(RobotPart):
     """A part that is read and never commanded.
 
@@ -126,32 +125,34 @@ class BaseCamera(Camera, ABC):
             }
         }
 
-    def connect(self) -> None:
-        """Open the camera, then start capturing frames from it.
+    def _opened(self) -> None:
+        """Start capturing frames from the camera the driver just opened.
 
         The queue and the thread are made here rather than in ``__init__``: a
         thread runs once and cannot be restarted, so a camera built once and
         connected twice -- which is what recovering from a stall does -- would
         raise ``RuntimeError`` on the second connect. A fresh queue also drops
         the frames buffered before the stall, which are the stale ones.
-        """
-        super().connect()
-        if not self._frame_capturing_start:
-            self._frame_queue = queue.Queue()
-            self._frame_capturing_thread = threading.Thread(
-                target=self._capture_frames, daemon=True
-            )
-            self._frame_capturing_start = True
-            self._frame_capturing_thread.start()
 
-    def disconnect(self) -> None:
-        """Stop capturing, then let the camera go."""
+        This runs beside the camera, so a camera placed on another node runs
+        its capture loop there and this process only asks for the last frame.
+        """
+        if self._frame_capturing_start:
+            return
+        self._frame_queue = queue.Queue()
+        self._frame_capturing_thread = threading.Thread(
+            target=self._capture_frames, daemon=True
+        )
+        self._frame_capturing_start = True
+        self._frame_capturing_thread.start()
+
+    def _closing(self) -> None:
+        """Stop capturing, while the camera is still open to be read."""
         self._frame_capturing_start = False
         thread = self._frame_capturing_thread
         if thread is not None and thread.is_alive():
             thread.join(timeout=2.0)
         self._frame_capturing_thread = None
-        super().disconnect()
 
     def reopen(self) -> None:
         """Close this camera and open it again.

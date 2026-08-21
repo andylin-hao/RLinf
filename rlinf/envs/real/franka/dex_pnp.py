@@ -72,10 +72,10 @@ class DexpnpEnv(FrankaEnv):
             self._end_effector_action(self.config.hand_reset_state)
         else:
             self._end_effector_action(np.array([1.0]))
-        self._franka_state = self._controller.get_state().wait()[0]
+        self._franka_state = self._controller.get_state()
         self._move_action(self._franka_state.tcp_pose)
 
-        self._franka_state = self._controller.get_state().wait()[0]
+        self._franka_state = self._controller.get_state()
         # Move up to clear the slot
         reset_pose = copy.deepcopy(self._franka_state.tcp_pose)
         reset_pose[2] += 0.03

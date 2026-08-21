@@ -42,6 +42,7 @@ from a REPL with a robot on the desk.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from dataclasses import replace
 from typing import Any, Callable, Optional, Sequence
 
 __all__ = [
@@ -449,24 +450,7 @@ class RobotContract(Contract):
     @staticmethod
     def _declarations(robot: Any) -> list[Any]:
         """Every distinct connection this robot will open, in tree order."""
-        from rlinf.robotics.parts.base import Connection, _ExportRef
-
-        connections: list[Any] = []
-
-        def walk(group: Any) -> None:
-            for value in group.children.values():
-                if hasattr(value, "children"):
-                    walk(value)
-                    continue
-                if isinstance(value, _ExportRef):
-                    value = value.connection
-                if isinstance(value, Connection) and not any(
-                    seen is value for seen in connections
-                ):
-                    connections.append(value)
-
-        walk(robot)
-        return connections
+        return robot.owners()
 
 
 class PlacementParityContract(Contract):
@@ -494,11 +478,16 @@ class PlacementParityContract(Contract):
         finally:
             self.release(local)
 
-        handle = type(local).spawn(node_rank=self.node_rank)
+        # The same factory, told to run on a node. Going through the recipe
+        # rather than through a second factory argument is what makes this the
+        # production path: connect() reads the recipe and nothing else.
+        placed = self.factory()
+        placed._recipe = replace(placed._recipe, node_rank=self.node_rank)
+        placed.connect()
         try:
-            there = handle.part.observation_features
+            there = placed.observation_features
         finally:
-            handle.disconnect()
+            placed.disconnect()
 
         if here != there:
             return [

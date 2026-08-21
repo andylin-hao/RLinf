@@ -80,7 +80,7 @@ def main():
     )
 
     start_time = time.time()
-    while not controller.is_robot_up().wait()[0]:
+    while not controller.is_robot_up():
         time.sleep(0.5)
         if time.time() - start_time > 30:
             print(
@@ -92,17 +92,17 @@ def main():
             if cmd_str == "q":
                 break
             elif cmd_str == "getpos":
-                print(controller.get_state().wait()[0].tcp_pose)
+                print(controller.get_state().tcp_pose)
             elif cmd_str == "getpos_euler":
-                tcp_pose = controller.get_state().wait()[0].tcp_pose
+                tcp_pose = controller.get_state().tcp_pose
                 r = R.from_quat(tcp_pose[3:].copy())
                 euler = r.as_euler("xyz")
                 print(np.concatenate([tcp_pose[:3], euler]))
             elif cmd_str == "getstate":
-                state = controller.get_state().wait()[0]
+                state = controller.get_state()
                 print(state.to_dict())
             elif cmd_str == "gethand":
-                print(controller.get_hand_detailed_state().wait()[0])
+                print(controller.get_hand_detailed_state())
             else:
                 print(f"Unknown cmd: {cmd_str}")
         except KeyboardInterrupt:

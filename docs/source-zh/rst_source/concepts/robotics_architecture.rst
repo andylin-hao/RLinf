@@ -80,11 +80,9 @@
    * - ``PartGroup``
      - 由具名 ``children`` 组成的可读、可控子树，可表示机械臂组件、躯干或其他嵌套单元。
    * - ``Robot``
-     - 最外层的 ``PartGroup``，还管理 placement、注册、组合快照以及 ``connect()`` 期间创建的 handle。
-   * - ``PartHandle``
-     - 指向本地连接或 worker 中远程连接的统一 handle。
+     - 最外层的 ``PartGroup``，还管理注册，并知道每条连接运行在哪个节点上。
 
-``Camera`` 和 ``EndEffector`` 在标准部件接口之外还有专用方法，因此分别注册了对应的远程 proxy。``MobileBase`` 没有增加专用方法，远程部署时沿用通用的 ``ControllablePart`` proxy；在本地类型检查和 backend 注册中，它仍表示移动底盘这一设备类别。轮式与足式底盘都继承 ``MobileBase``，具体运动方式由 observation/action contract 描述。
+跨节点运行的部件没有单独的类型。带 ``node_rank`` 的连接会在目标节点的 worker 中重新构造，而手上已有的那个对象随即变成它的一个 view：class 不变，``isinstance`` 不变，只是所有公开调用都改为跨进程执行。``Camera``、``MobileBase`` 这类设备类别不需要为此注册任何东西，因为 view 本身就是由 driver class 派生出来的。
 
 通过配置选择具体实现
 --------------------
@@ -120,9 +118,6 @@ robotics 代码中有三种 registry，它们所命名的对象不同：
    * - 完整机器人类型
      - ``Robot.register_type()`` 与 ``Robot.of_type()``
      - 根据名称选择机器人树及其 ``RobotConfig``；未传入自定义 class 时，同时创建标准 discovery 流程。
-   * - 远程代理类别
-     - ``register_kind()``
-     - 让远程相机或末端执行器保留正确接口。该入口由框架中的设备类别使用，普通 driver 无需调用。
 
 将共享硬件连接映射到机器人树
 ----------------------------
@@ -206,24 +201,22 @@ placement 参数与硬件构造参数一起传入。构造过程不会访问设�
    finally:
        robot.disconnect()
 
-执行 ``connect()`` 时，机器人会为每个不同的 ``Connection`` 打开一次资源。本地连接使用 ``LocalPartHandle``；远程连接在调度器 worker 中重新构造，并使用 ``RemotePartHandle``。两种 handle 提供相同的部件接口，任务代码无需区分部署位置。
+执行 ``connect()`` 时，机器人会为每个不同的 ``Connection`` 打开一次资源。没有 ``node_rank`` 的连接在本进程打开；带 ``node_rank`` 的连接在目标节点的调度器 worker 中重新构造，树里那个对象则变成自身 class 的一个合成子类，公开方法和 property 全部转发到该 worker。树中没有任何对象被替换，任务代码因而不必区分部署位置，``isinstance`` 的结果也和连接之前一致。
 
-RLinf 按对象 identity 判断连接是否相同。同一条连接无论被多少个机器人路径引用，都只会创建一个 handle，并在断开时释放一次。不同 handle 可以并行调用；同一 handle 中的部件则按声明顺序调用，避免并发访问不支持该模式的厂商 SDK。
-
-``spawn()`` 只适用于机器人之外的调试脚本，由调用方管理返回 handle 的生命周期。机器人内部应直接构造尚未连接的部件，并将启动、失败回滚和资源清理交给 ``Robot.connect()``。
+资源归属由对象 identity 决定。每个部件都用 ``owner`` 回答“谁代它打开连接”：自带链路的机械臂回答自己，搭在共享 session 上的 view 回答那个 session。机器人连接的是 owner 而不是部件，因此一条连接只打开一次、只释放一次。不同连接上的部件可以并行调用；共用一条连接的部件按声明顺序调用，避免并发访问不支持该模式的厂商 SDK。
 
 连接前检查组合结果
 ------------------
 
-``Robot.describe()`` 读取组合快照，不依赖已连接的代理，因此连接前后显示的节点和资源归属保持一致：
+``Robot.describe()`` 读取组合好的部件树，而这棵树在 ``connect()`` 前后持有的是同一批对象，因此没有机器人在场时也能回答节点和资源归属：
 
 .. code-block:: text
 
    FrankaRobot
-   ├── arm           declared      node=1     via FrankaROSArm#1
-   └── end_effector  declared      node=1     via FrankaROSArm#1
+   ├── arm           FrankaROSArm         node=1     via FrankaROSArm#1
+   └── end_effector  MethodGripper        node=1     via FrankaROSArm#1
 
-``via`` 相同的行共用一个 ``Connection``。直接组合的部件可以在连接前显示类别；通过未打开连接选择的部件显示为 ``declared``，因为具体部件只有在连接打开后才能确定。``describe()`` 不会使用 ``Connection`` 自身的类别代替部件类别。
+``via`` 相同的行共用一个 ``Connection``。连接之后，跨节点的部件会显示它的 view class，例如上面的 ``FrankaROSArm`` 会变成 ``RemoteFrankaROSArm``，一眼就能看出哪些部件跑在别的机器上。
 
 ``describe()`` 目前只显示组合结构、节点和资源归属，不显示 observation/action schema。若需检查字段和 shape，请使用 :doc:`添加机器人 <../extending/new_robot>` 中的 conformance 检查；该检查会通过 mock SDK 或真机打开连接后进行验证。
 
@@ -239,32 +232,35 @@ RLinf 按对象 identity 判断连接是否相同。同一条连接无论被多�
    * - 组合
      - 构造函数记录硬件参数和 placement，不导入厂商 SDK，也不打开硬件。
    * - 连接
-     - 机器人打开每条不同的连接，解析选中的部件，并将 handle 写入 ``robot.handles``。
+     - 机器人在每条连接指定的节点上把它打开一次。跨节点的连接在该节点重新构造，本地对象随即变成它的 view。
    * - 使用
      - 机器人按名称读取、复位和控制部件树，并根据资源归属决定能否并行。
    * - 断开
-     - ``Connection`` 释放 ``_open()`` 实际返回的设备，关闭 handle，并恢复最初的组合结构。
+     - ``Connection`` 释放 ``_open()`` 实际返回的设备。跨节点的连接先在它所在的节点上关闭，再停掉 worker，然后恢复成一个未打开的普通对象。
 
 ``_open()`` 返回的厂商对象会原样传给 ``_release(device)``。清理逻辑应释放参数 ``device``，不要重新从 ``self`` 读取。
 
+要实现的始终是这两个方法，而不是 ``connect()`` 和 ``disconnect()``。后面这一对决定设备在哪里运行，覆盖它们等于放弃跨节点部署的能力：在 ``super().connect()`` 之后启动的线程会跑在持有部件的机器上，而不是持有设备的那台。设备类别若要在 driver 之外再包一层，用 ``_opened()`` 和 ``_closing()``：``BaseCamera`` 的取流循环就在这里启停，无论相机落在哪个节点，循环都跟着相机走。
+
 连接过程要么全部成功，要么全部回滚。如果后续连接启动失败，``Robot.connect()`` 会关闭此前已经打开的资源，并恢复原始组合。排除故障后，可以对同一对象再次调用 ``connect()``；``disconnect()`` 也支持重复调用，并将机器人恢复到可重新连接的状态。
 
-通过 handle 调用设备专有方法
+直接在部件上调用设备专有方法
 ----------------------------
 
-placement 会根据具体的 connection class 生成 worker 接口，无需为每种设备再实现一层 worker。标准部件接口之外的公有方法可以通过 handle 调用：
+placement 的两端都由 driver class 派生而来，因此标准部件接口之外的公开方法同样会跨节点转发，理由和 driver 本身拥有这些方法完全一样。先问部件它搭在哪条连接上，再调用即可：
 
 .. code-block:: python
 
-   robot.handles["arm"].is_robot_up().wait()[0]
-   robot.handles["arm"].reset_joint(home_qpos).wait()
+   controller = robot.child("arm").owner
+   controller.is_robot_up()
+   controller.reset_joint(home_qpos)
 
-本地与远程部件使用相同的调用方式。任务代码仍应通过标准 observation/action tree 访问部件；初始化、诊断或无法纳入通用部件接口的厂商操作才使用 handle。
+无论这条机械臂在本机还是在别的节点上，写法都一样，也没有返回值需要额外拆包。任务代码仍应通过标准 observation/action tree 访问部件；初始化、诊断或无法纳入通用部件接口的厂商操作才直接使用连接。
 
 保持导入边界
 ------------
 
-部件模块不能导入 ``rlinf.scheduler`` 和 Gymnasium。需要 placement 时，``Connection.place()`` 才会延迟加载桥接层 ``rlinf/robotics/placement/handles.py``。
+部件模块不能导入 ``rlinf.scheduler`` 和 Gymnasium。只有当一条连接指定了节点时，``Connection.connect()`` 才会延迟加载桥接层 ``rlinf/robotics/placement/handles.py``。
 
 这条规则的意义在于依赖方向。scheduler 是通用框架，robotics 只是它的一个扩展，因此 scheduler 从不导入本包：它按配置里写明的名字导入硬件策略模块，再调用这些模块注册进来的 discovery 类。Gymnasium 则位于另一侧，属于消费机器人的 env 层。只有组合层——placement、discovery、机器人构建器——会反向导入这两者，驱动因而能够作为纯粹的硬件代码被阅读和测试。
 
@@ -292,7 +288,7 @@ Ray 不在此列。它是 RLinf 的基础依赖，运行 RLinf 的机器上一�
    * - ``robotics/parts/views.py``
      - 将共享厂商 session 呈现为部件的 ``MethodArm``、``MethodGripper`` 和 ``MethodCamera``。
    * - ``robotics/placement/``
-     - connection 解析、本地与远程 handle，以及 worker placement。
+     - 承载连接的 worker，以及连接跨节点后变成的 view，两者都由 driver class 合成。
    * - ``robotics/robot.py``
      - 最外层组合、声明快照、``describe()`` 和生命周期。
    * - ``robotics/discovery/``

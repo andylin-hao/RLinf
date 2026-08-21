@@ -101,16 +101,16 @@ class GimArmPegInsertionEnv(GimArmEnv):
         if not self.config.is_dummy:
             if self.config.enable_gripper:
                 # Close gripper to hold the peg during retraction.
-                self._controller.close_gripper().wait()
+                self._controller.close_gripper()
                 time.sleep(0.3)
 
             # Move to safe retracted position (clears the insertion hole).
-            self._controller.reset_joint(self.config.safe_retract_qpos).wait()
+            self._controller.reset_joint(self.config.safe_retract_qpos)
             time.sleep(0.5)
 
         if not self.config.is_dummy:
             if joint_reset:
-                self._controller.reset_joint(self.config.joint_reset_qpos).wait()
+                self._controller.reset_joint(self.config.joint_reset_qpos)
                 time.sleep(0.5)
 
             # Use per-episode perturbed qpos if available, otherwise config default.
@@ -119,7 +119,7 @@ class GimArmPegInsertionEnv(GimArmEnv):
                 if self._perturbed_reset_qpos is not None
                 else self.config.reset_joint_qpos
             )
-            self._controller.reset_joint(reset_qpos).wait()
+            self._controller.reset_joint(reset_qpos)
 
     def reset(self, joint_reset=False, **kwargs):
         """Reset with optional random perturbation on joint positions."""

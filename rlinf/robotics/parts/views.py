@@ -65,7 +65,7 @@ class MethodArm(ControllablePart):
         commands: dict[str, str],
         state_fields: Optional[Union[tuple[str, ...], dict[str, str]]] = None,
     ) -> None:
-        self._host = host
+        self._host = self._owner = host
         self.commands = dict(commands)
         self.state_fields = (
             dict(state_fields)
@@ -139,7 +139,7 @@ class MethodGripper(EndEffector):
         close_method: str = "close_gripper",
         state_index: Optional[Union[int, slice]] = None,
     ) -> None:
-        self._host = host
+        self._host = self._owner = host
         self.state_field = state_field
         self.action_dim = action_dim
         self.command = command
@@ -207,7 +207,7 @@ class MethodCamera(Camera):
     """
 
     def __init__(self, host: Any, method: str, *method_args: Any) -> None:
-        self._host = host
+        self._host = self._owner = host
         self.method = method
         self.method_args = method_args
 

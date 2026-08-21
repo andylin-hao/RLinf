@@ -12,178 +12,68 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Placing a part on a node, and reaching it once it is there.
+"""Running a connection on another node, without a second class to write.
 
-Any :class:`~rlinf.robotics.parts.base.RobotPart` can be hosted in a scheduler
-worker: an arm on the machine wired to it, a camera on the machine it is
-plugged into. :meth:`Connection.place` is the entry point; everything here is
-what it returns.
+A connection with a ``node_rank`` is rebuilt inside a scheduler worker on that
+node, and the object you are holding *becomes* a view onto it: same class, same
+methods, same ``isinstance``, but every public call now travels. Nothing about
+a driver changes to make that work, and there is no remote counterpart to keep
+in step with it -- both halves are derived from the driver class itself.
 
-There is no per-hardware worker class. For any part, :func:`part_worker_cls`
-synthesizes ``type(name, (Worker, PartCls), ...)`` once and caches it.
-``WorkerGroup`` then binds every public method of that class as an RPC, so a
-hosted part exposes its whole surface -- the subpart-addressed calls *and*
-hardware methods like ``is_robot_up`` or ``reset_joint`` -- with no delegation
-written by hand.
+The worker side already worked that way. ``WorkerGroup`` binds every public
+method of the class it hosts, so a hosted part exposes its whole surface --
+``get_observation`` and ``send_action`` alongside ``is_robot_up`` or
+``reset_joint`` -- with no delegation written by hand. What used to be missing
+was the other side: a table named one hand-written proxy class per device
+category, so a new category meant a new proxy, and a category the table did not
+know arrived as a plain part.
 
-A handle answers two questions the same way whether the part runs here or in a
-worker: *what subparts does it expose*, and *how do I call a method that is not
-on the part interface*. Off-interface calls always return a result object with
-``wait() -> list``, so call sites read identically::
+:func:`remote_view_of` closes that by deriving the proxy from the class rather
+than from a name for it. Two things do not survive the trip:
 
-    handle.is_robot_up().wait()[0]
+* **Properties.** ``WorkerGroup`` binds callables, and a property is not one,
+  so ``observation_features`` and friends would simply be missing. The worker
+  gets an :meth:`attribute` call and the view's properties use it.
+* **Anything that owns the worker.** ``connect``, ``disconnect`` and the
+  composition surface stay local, or a view would ask the worker to shut itself
+  down. :data:`_STAYS_LOCAL` is that list, and it is short on purpose.
 
 This is the only module in ``rlinf.robotics`` that imports the scheduler.
-``Connection.place`` imports it lazily, so importing a part never loads Ray.
+:meth:`Connection.connect` reaches it lazily.
 """
 
 import inspect
-from abc import ABC, abstractmethod
 from typing import Any, Callable, ClassVar, Optional
 from uuid import uuid4
 
 from rlinf.scheduler import Cluster, NodePlacementStrategy, Worker
 from rlinf.scheduler.worker.worker import WorkerMeta
 
-from ..parts.base import ControllablePart, RobotPart, _ConnectionMeta
-from ..parts.cameras.base import Camera
-from ..parts.end_effectors.base import EndEffector
+from ..parts.base import Connection, _ConnectionMeta
 
+#: Names a remote view answers itself instead of forwarding.
+#:
+#: Lifecycle, because a view that forwarded ``disconnect`` would ask the worker
+#: to end itself and then still be holding it. Composition, because the parts a
+#: connection backs are local view objects wrapping *this* object -- sending
+#: them over the wire would hand back copies bound to the far side. And the
+#: placement surface, which is what got the object here to begin with.
+_STAYS_LOCAL: frozenset[str] = frozenset(
+    {
+        "connect",
+        "disconnect",
+        "is_connected",
+        "owner",
+        "node_rank",
+        "part",
+        "parts",
+        "children",
+        "child",
+    }
+)
 
-class LocalResult:
-    """A value computed in this process, shaped like a worker-group result."""
-
-    def __init__(self, value: Any) -> None:
-        self._value = value
-
-    def wait(self) -> list[Any]:
-        """Return the value in the one-element list callers expect."""
-        return [self._value]
-
-
-class PartHandle(ABC):
-    """Common surface over a local part or a hosted one."""
-
-    @property
-    @abstractmethod
-    def parts(self) -> dict[str, RobotPart]:
-        """Return the subparts of the hosted part, keyed by its local names."""
-
-    @property
-    @abstractmethod
-    def part(self) -> RobotPart:
-        """The hosted part itself, for hardware that is a single component."""
-
-    @abstractmethod
-    def disconnect(self) -> None:
-        """Release the connection and, when hosted, its worker."""
-
-    def part_named(self, name: str) -> RobotPart:
-        """Return one named subpart, or raise a clear configuration error."""
-        if name not in self.parts:
-            raise KeyError(
-                f"Hosted part exposes no subpart {name!r}. "
-                f"Available: {sorted(self.parts)}."
-            )
-        return self.parts[name]
-
-
-class LocalPartHandle(PartHandle):
-    """Handle for a part constructed in this process."""
-
-    def __init__(self, part: Any) -> None:
-        self._part = part
-        self._parts = dict(part.parts)
-
-    @property
-    def parts(self) -> dict[str, RobotPart]:
-        """Return the local part's own subpart objects."""
-        return self._parts
-
-    @property
-    def part(self) -> Any:
-        """Return the underlying part, for code that legitimately needs it."""
-        return self._part
-
-    def disconnect(self) -> None:
-        """Disconnect the part if it is still connected."""
-        if self._part.is_connected:
-            self._part.disconnect()
-
-    def __getattr__(self, name: str) -> Any:
-        """Forward off-interface hardware methods, wrapping results for symmetry."""
-        if name.startswith("_"):
-            raise AttributeError(name)
-        attr = getattr(self._part, name)
-        if not callable(attr):
-            return attr
-
-        def call(*args: Any, **kwargs: Any) -> LocalResult:
-            return LocalResult(attr(*args, **kwargs))
-
-        return call
-
-
-class RemotePartHandle(PartHandle):
-    """Handle for a part hosted in a one-worker scheduler group."""
-
-    def __init__(
-        self,
-        worker_group: Any,
-        described: dict[str, dict[str, Any]],
-        described_self: Optional[dict[str, Any]] = None,
-    ) -> None:
-        self._worker_group = worker_group
-        self._self_part = (
-            _make_remote_part(worker_group, None, described_self)
-            if described_self
-            else None
-        )
-        self._parts: dict[str, RobotPart] = {
-            name: _make_remote_part(worker_group, name, entry)
-            for name, entry in described.items()
-        }
-        self._connected = True
-
-    @property
-    def parts(self) -> dict[str, RobotPart]:
-        """Return proxies for the hosted part's subparts."""
-        return self._parts
-
-    @property
-    def part(self) -> RobotPart:
-        """A proxy for the hosted part itself."""
-        if self._self_part is None:
-            raise RuntimeError("The hosted part did not describe itself.")
-        return self._self_part
-
-    @property
-    def worker_group(self) -> Any:
-        """Return the underlying worker group."""
-        return self._worker_group
-
-    def disconnect(self) -> None:
-        """Shut the hosted part down and terminate its worker."""
-        if not self._connected:
-            return
-        self._connected = False
-        try:
-            self._worker_group.shutdown().wait()
-        finally:
-            close = getattr(self._worker_group, "_close", None)
-            if callable(close):
-                close()
-
-    def __getattr__(self, name: str) -> Any:
-        """Forward off-interface hardware methods to the worker group.
-
-        ``WorkerGroup`` binds every public method of the hosted class, so this
-        reaches ``is_robot_up``, ``reset_joint``, ``clear_errors`` and friends
-        with no per-hardware declaration.
-        """
-        if name.startswith("_"):
-            raise AttributeError(name)
-        return getattr(self._worker_group, name)
+#: The RPC a view reads properties through. Public so ``WorkerGroup`` binds it.
+_ATTRIBUTE_RPC = "attribute"
 
 
 def _first(result: Any) -> Any:
@@ -196,182 +86,108 @@ def _first(result: Any) -> Any:
     return values[0]
 
 
-class RemotePart(RobotPart):
-    """One subpart of a hosted part, addressed by name through its worker."""
+def _forwarding_method(name: str) -> Callable[..., Any]:
+    """A method that runs ``name`` on the worker and returns what it returned."""
 
-    def __init__(
-        self,
-        worker_group: Any,
-        part_name: str,
-        observation_features: dict[str, Any],
-    ) -> None:
-        self._worker_group = worker_group
-        self._part_name = part_name
-        self._observation_features = observation_features
+    def call(self: Any, *args: Any, **kwargs: Any) -> Any:
+        return _first(getattr(self._group, name)(*args, **kwargs))
 
-    @property
-    def is_connected(self) -> bool:
-        """Subparts of a hosted part are live for as long as it is."""
-        return True
-
-    @property
-    def observation_features(self) -> dict[str, Any]:
-        """Return the features captured when the host was described."""
-        return self._observation_features
-
-    def connect(self) -> None:
-        """No-op: the hosted part connects when its worker starts."""
-
-    def reset(self) -> None:
-        """Reset this subpart through its host."""
-        if self._part_name is None:
-            self._worker_group.reset().wait()
-            return
-        self._worker_group.part_reset(self._part_name).wait()
-
-    def get_observation(self) -> dict[str, Any]:
-        """Read this subpart's observation through its host."""
-        if self._part_name is None:
-            return _first(self._worker_group.get_observation())
-        return _first(self._worker_group.part_observation(self._part_name))
-
-    def disconnect(self) -> None:
-        """No-op: the handle owns the hosted part's lifetime."""
+    call.__name__ = name
+    call.__qualname__ = name
+    call.__doc__ = f"Run ``{name}`` on the node holding this connection."
+    return call
 
 
-class RemoteControllablePart(RemotePart, ControllablePart):
-    """Hosted part that also accepts actions."""
+def _forwarding_property(name: str) -> property:
+    """A property that reads ``name`` off the hosted object."""
 
-    def __init__(
-        self,
-        worker_group: Any,
-        part_name: str,
-        observation_features: dict[str, Any],
-        action_features: dict[str, Any],
-    ) -> None:
-        super().__init__(worker_group, part_name, observation_features)
-        self._action_features = action_features
+    def read(self: Any) -> Any:
+        return _first(getattr(self._group, _ATTRIBUTE_RPC)(name))
 
-    @property
-    def action_features(self) -> dict[str, Any]:
-        """Return the action features captured at describe time."""
-        return self._action_features
-
-    def send_action(self, action: dict[str, Any]) -> dict[str, Any]:
-        """Send an action to this subpart through its host."""
-        if self._part_name is None:
-            return _first(self._worker_group.send_action(action))
-        return _first(self._worker_group.part_action(self._part_name, action))
+    read.__name__ = name
+    read.__doc__ = f"``{name}`` as the node holding this connection reports it."
+    return property(read)
 
 
-class RemoteEndEffector(RemoteControllablePart, EndEffector):
-    """Hosted end effector."""
+def _public_surface(part_cls: type) -> tuple[list[str], list[str]]:
+    """The methods and properties of ``part_cls`` that should travel.
 
+    Everything public that the class or its bases define, minus what
+    :data:`_STAYS_LOCAL` keeps here. Taken from the class rather than from an
+    instance so it is known before anything is built.
 
-class RemoteConnection(RemotePart):
-    """Hosted connection: opened and closed, never read.
-
-    Its parts are proxied individually, which is the only way anything reaches
-    what it backs.
+    Class methods are left out. ``register``, ``backends`` and ``discover``
+    answer questions about the driver registry rather than about a device, and
+    the answer is the same on either machine -- forwarding them would send a
+    question about this process to a worker that would answer for its own.
     """
+    methods: list[str] = []
+    properties: list[str] = []
+    for name in dir(part_cls):
+        if name.startswith("_") or name in _STAYS_LOCAL:
+            continue
+        attribute = inspect.getattr_static(part_cls, name, None)
+        if isinstance(attribute, property):
+            properties.append(name)
+        elif isinstance(attribute, (classmethod, staticmethod)):
+            continue
+        elif callable(getattr(part_cls, name, None)):
+            methods.append(name)
+    return methods, properties
 
-    @property
-    def observation_features(self) -> dict[str, Any]:
-        """Nothing. A connection is reached through the parts it backs."""
-        return {}
 
-    def get_observation(self) -> dict[str, Any]:
-        """Refuse, the same way the hosted connection would."""
-        raise TypeError(
-            f"{self._part_name or 'This connection'} is a connection, not a "
-            "part. Read the parts it backs instead."
-        )
+class _RemoteViewMeta(WorkerMeta, _ConnectionMeta):
+    """Reconcile the metaclasses a synthesized view inherits."""
 
 
-class RemoteCamera(RemotePart, Camera):
-    """Hosted camera.
+#: One synthesized view per part class, reused after the first placement.
+_VIEWS: dict[type, type] = {}
 
-    Adds :meth:`get_frame` to what a part proxies. A frame is what a camera is
-    for, and callers ask for it with their own timeout rather than taking the
-    one baked into ``get_observation``: an env that reads several cameras a
-    step wants to know quickly that one has stalled, not to wait the default
-    on each.
+
+def remote_view_of(part_cls: type) -> type:
+    """Return (and cache) the class a ``part_cls`` becomes when placed.
+
+    A subclass of ``part_cls`` whose public methods and properties forward to
+    the worker holding the real one. Being a subclass is the point: a placed
+    camera still satisfies ``isinstance(part, Camera)``, so
+    ``robot.parts_of_type(Camera)`` and the ``ControllablePart`` filter that
+    builds an action tree keep working with nothing registered anywhere.
     """
+    cached = _VIEWS.get(part_cls)
+    if cached is not None:
+        return cached
 
-    def reopen(self) -> None:
-        """Reopen the hosted camera on the node that holds it.
+    methods, properties = _public_surface(part_cls)
+    namespace: dict[str, Any] = {
+        "__module__": part_cls.__module__,
+        "__qualname__": f"Remote{part_cls.__name__}",
+        "__doc__": (
+            f"{part_cls.__name__} running on another node.\n\n"
+            "Synthesized: every public method and property forwards to the "
+            "worker holding the real one."
+        ),
+    }
+    for name in methods:
+        namespace[name] = _forwarding_method(name)
+    for name in properties:
+        namespace[name] = _forwarding_property(name)
 
-        ``connect`` and ``disconnect`` are no-ops on a proxy -- the handle owns
-        the hosted part's lifetime -- so a stalled camera reached through one
-        would never actually be reopened by calling them.
-        """
-        if self._part_name is None:
-            self._worker_group.reopen().wait()
-            return
-        self._worker_group.part_reopen(self._part_name).wait()
-
-    def get_frame(self, timeout: float = 5) -> Any:
-        """Read one frame through the host, waiting up to ``timeout`` seconds.
-
-        A camera that produced nothing in time raises ``queue.Empty`` on its own
-        node, and the call re-raises it here, so a stall reads the same whether
-        the camera is placed or local.
-        """
-        if self._part_name is None:
-            return _first(self._worker_group.get_frame(timeout))
-        # A camera reached through a multi-part connection has no frame call of
-        # its own; its observation carries the frame under the canonical key.
-        return self.get_observation()["frame"]
-
-
-_REMOTE_PART_BY_KIND: dict[str, Callable[..., RemotePart]] = {
-    "end_effector": RemoteEndEffector,
-    "camera": RemoteCamera,
-    "controllable": RemoteControllablePart,
-    "part": RemotePart,
-    "connection": RemoteConnection,
-}
-
-
-def _make_remote_part(
-    worker_group: Any,
-    name: str,
-    described: dict[str, Any],
-) -> RemotePart:
-    """Build a proxy mirroring the interface of the hosted part."""
-    kind = described["kind"]
-    part_cls = _REMOTE_PART_BY_KIND[kind]
-    if kind in ("end_effector", "controllable"):
-        return part_cls(
-            worker_group,
-            name,
-            described["observation"],
-            described["action"],
-        )
-    # A connection describes no observation, because reading it means nothing.
-    return part_cls(worker_group, name, described.get("observation", {}))
-
-
-class WorkerPartMeta(WorkerMeta, _ConnectionMeta):
-    """Reconcile ``Worker``'s metaclass with the one every connection carries.
-
-    ``Worker`` uses ``WorkerMeta(type)``, and a part is an ABC that also takes
-    its placement keywords through ``_ConnectionMeta``, so a class deriving from
-    both needs a metaclass deriving from both.
-    """
+    view = _RemoteViewMeta(f"Remote{part_cls.__name__}", (part_cls,), namespace)
+    _VIEWS[part_cls] = view
+    return view
 
 
 class PartWorkerHost:
-    """Hosts one part in a scheduler worker and hands back a handle to it.
+    """Hosts one connection in a scheduler worker and hands back its group.
 
-    Synthesising the worker class, naming the group, launching it and building
-    the proxies are one job with one set of inputs, so they are one object
-    rather than four functions passing the same three arguments around.
+    Synthesising the worker class, naming the group and launching it are one
+    job with one set of inputs, so they are one object rather than three
+    functions passing the same three arguments around.
 
     Args:
-        part_cls: The part class to construct on the target node.
-        args: Positional arguments for the part constructor.
-        kwargs: Keyword arguments for the part constructor.
+        part_cls: The class to construct on the target node.
+        args: Positional arguments for its constructor.
+        kwargs: Keyword arguments for its constructor.
         node_rank: Cluster node rank that is physically wired to the device.
         worker_name: Worker-group name. Defaults to :meth:`default_name`.
     """
@@ -419,8 +235,19 @@ class PartWorkerHost:
             part_cls.__init__(self, *args, **kwargs)
             self.connect()
 
+        def attribute(self: Any, name: str) -> Any:
+            """Read one attribute of the hosted part.
+
+            ``WorkerGroup`` binds callables, and a property is not one, so
+            without this a remote view could not answer
+            ``observation_features`` -- the one thing an env needs before it
+            can build a space.
+            """
+            return getattr(self, name)
+
         namespace: dict[str, Any] = {
             "__init__": __init__,
+            attribute.__name__: attribute,
             "__module__": part_cls.__module__,
             "__qualname__": f"{part_cls.__name__}Worker",
             "__doc__": f"Scheduler host for :class:`{part_cls.__name__}`.",
@@ -434,15 +261,15 @@ class PartWorkerHost:
             if not name.startswith("_") and name not in namespace:
                 namespace[name] = func
 
-        worker_cls = WorkerPartMeta(
+        worker_cls = _RemoteViewMeta(
             f"{part_cls.__name__}Worker", (Worker, part_cls), namespace
         )
         cls._worker_classes[part_cls] = worker_cls
         return worker_cls
 
-    def spawn(self) -> RemotePartHandle:
-        """Launch the worker and return a handle whose parts proxy into it."""
-        group = (
+    def launch(self) -> Any:
+        """Start the worker and return the group that reaches it."""
+        return (
             self.worker_class(self.part_cls)
             .create_group(*self.args, **self.kwargs)
             .launch(
@@ -451,8 +278,36 @@ class PartWorkerHost:
                 name=self.worker_name,
             )
         )
-        return RemotePartHandle(
-            group,
-            _first(group.describe_parts()),
-            _first(group.describe_self()),
-        )
+
+
+def host(connection: Connection) -> tuple[Any, type]:
+    """Rebuild ``connection`` on the node it named, and say what it becomes.
+
+    Returns the worker group and the class the caller should take on, so the
+    object the robot already holds turns into a view of the hosted one rather
+    than being replaced by something else.
+    """
+    recipe = connection._recipe
+    group = PartWorkerHost(
+        recipe.part_cls,
+        recipe.args,
+        recipe.kwargs,
+        node_rank=recipe.node_rank,
+        worker_name=recipe.worker_name,
+    ).launch()
+    return group, remote_view_of(recipe.part_cls)
+
+
+def shutdown(group: Any) -> None:
+    """Close the hosted connection, then terminate the worker holding it.
+
+    In that order: killing the actor first would leave the device open with
+    nothing left to close it -- a camera still streaming, a gripper still
+    powered -- until something else on that node claimed the handle.
+    """
+    try:
+        group.disconnect().wait()
+    finally:
+        close = getattr(group, "_close", None)
+        if callable(close):
+            close()

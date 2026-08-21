@@ -143,7 +143,7 @@ class Turtle2Env(gym.Env):
 
         # Wait for the first frame
         self._reset_arms()
-        self._turtle2_state = self._controller.get_state().wait()[0]
+        self._turtle2_state = self._controller.get_state()
 
         # Init cameras
         self._check_cameras()
@@ -160,8 +160,10 @@ class Turtle2Env(gym.Env):
             worker_rank=self.env_worker_rank,
         )
         self.robot.connect()
-        # Both arms ride one connection, so both names give the same handle.
-        self._controller = self.robot.handles["left"]
+        # Both arms ride one ROS session, and it is the session that answers
+        # get_state, move_arm and the camera calls -- so ask either arm which
+        # connection it rides rather than talking to the arm view itself.
+        self._controller = self.robot.child("left").owner
 
     def close(self) -> None:
         """Detach all composed Turtle2 runtime proxies."""
@@ -229,9 +231,7 @@ class Turtle2Env(gym.Env):
             return
 
         self._logger.info("pre-reset")
-        self._controller.move_arm(
-            [0.2, 0, 0.1, 0, 0, 0, 0], [0.2, 0, 0.1, 0, 0, 0, 0]
-        ).wait()
+        self._controller.move_arm([0.2, 0, 0.1, 0, 0, 0, 0], [0.2, 0, 0.1, 0, 0, 0, 0])
         time.sleep(2.0)
 
         if self.config.enable_random_reset:
@@ -276,12 +276,12 @@ class Turtle2Env(gym.Env):
             repr(right_arm_reset_pose),
         )
 
-        self._controller.move_arm(left_arm_reset_pose, right_arm_reset_pose).wait()
+        self._controller.move_arm(left_arm_reset_pose, right_arm_reset_pose)
 
         reach = False
         start_time = time.time()
         while not reach:
-            state = self._controller.get_state().wait()[0]
+            state = self._controller.get_state()
             left_pos = state.follow1_pos
             right_pos = state.follow2_pos
             left_reach = (
@@ -315,7 +315,7 @@ class Turtle2Env(gym.Env):
         if self.config.is_dummy:
             return
 
-        cam1_ok, cam2_ok, cam3_ok = self._controller.check_cams().wait()[0]
+        cam1_ok, cam2_ok, cam3_ok = self._controller.check_cams()
         if 0 in self.config.use_camera_ids and not cam1_ok:
             raise ValueError("Camera 1 not available.")
         if 1 in self.config.use_camera_ids and not cam2_ok:
@@ -331,7 +331,7 @@ class Turtle2Env(gym.Env):
         # Reset
         self._reset_arms()
         self._num_steps = 0
-        self._turtle2_state = self._controller.get_state().wait()[0]
+        self._turtle2_state = self._controller.get_state()
         observation = self._get_observation()
         # save if debug
         # for key in observation["frames"].keys():
@@ -386,7 +386,7 @@ class Turtle2Env(gym.Env):
         action = action.reshape(-1, 7)
         xyz_delta = action[:, :3]
 
-        # self._turtle2_state = self._controller.get_state().wait()[0]
+        # self._turtle2_state = self._controller.get_state()
         next_position1 = self._turtle2_state.follow1_pos.copy()
         next_position2 = self._turtle2_state.follow2_pos.copy()
 
@@ -426,9 +426,7 @@ class Turtle2Env(gym.Env):
         next_position2 = next_position[1]
 
         if not self.config.is_dummy:
-            self._controller.move_arm(
-                next_position1.tolist(), next_position2.tolist()
-            ).wait()
+            self._controller.move_arm(next_position1.tolist(), next_position2.tolist())
         else:
             pass
 
@@ -437,7 +435,7 @@ class Turtle2Env(gym.Env):
         time.sleep(max(0, (1.0 / self.config.step_frequency) - step_time))
 
         if not self.config.is_dummy:
-            self._turtle2_state = self._controller.get_state().wait()[0]
+            self._turtle2_state = self._controller.get_state()
         else:
             self._turtle2_state = self._turtle2_state
         observation = self._get_observation()
@@ -561,7 +559,7 @@ class Turtle2Env(gym.Env):
             Observation dict with 'state' (tcp_pose) and 'frames' (camera images).
         """
         if not self.config.is_dummy:
-            frames = self._controller.get_cams(self.config.use_camera_ids).wait()[0]
+            frames = self._controller.get_cams(self.config.use_camera_ids)
             assert len(frames) == len(self.config.use_camera_ids), "get frames failed."
             for i in range(len(frames)):
                 frames[i] = self._crop_frame(frames[i], (128, 128))

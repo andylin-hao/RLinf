@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
+from typing import Any
 
 import numpy as np
 
@@ -107,19 +108,16 @@ class DOSW1Connection(Connection):
         self._gripper_width_max = gripper_width_max
         self._is_dummy = is_dummy
         self._leader_arm_enabled = bool(enable_human_in_loop)
-        self._connected = False
         self._robot: object | None = None
 
-    @property
-    def is_connected(self) -> bool:
-        """Whether the underlying dual-arm SDK is connected."""
-        return self._connected
+    def _open(self) -> Any:
+        """Connect to follower and optional leader arms.
 
-    def connect(self) -> None:
-        """Connect to follower and optional leader arms."""
+        A dummy session returns nothing, which still counts as open: it answers
+        every getter with zeros and has no SDK behind it.
+        """
         if self._is_dummy:
-            self._connected = True
-            return
+            return None
 
         if _AirbotRobot is None or _AirbotSDKConfig is None:
             raise ImportError(
@@ -157,15 +155,14 @@ class DOSW1Connection(Connection):
             self._shutdown_robot(self._robot)
             self._robot = None
             raise
-        self._connected = True
         self._logger.info("[DOSW1SDK] Connected.")
+        return self._robot
 
-    def disconnect(self) -> None:
+    def _release(self, device: Any) -> None:
         """Disconnect the wrapped AirbotRobot instance."""
         self._logger.info("[DOSW1SDK] Disconnecting.")
         robot = self._robot
         self._robot = None
-        self._connected = False
         if robot is None:
             return
 
@@ -312,7 +309,7 @@ class DOSW1Connection(Connection):
         return np.asarray(robot.right_get_pose(), dtype=np.float64)
 
     def _require_connected(self) -> object:
-        if not self._connected or self._robot is None:
+        if not self.is_connected or self._robot is None:
             raise RuntimeError(
                 "DOSW1Connection is not connected. Call connect() first."
             )
@@ -377,18 +374,11 @@ class DOSW1Connection(Connection):
 class DOSW1Arm(ControllablePart):
     """Present one side of a shared DOSW1 SDK session as an arm."""
 
-    def __init__(
-        self,
-        sdk: DOSW1Connection,
-        side: str,
-        *,
-        owns_connection: bool = False,
-    ) -> None:
+    def __init__(self, sdk: DOSW1Connection, side: str) -> None:
         if side not in {"left", "right"}:
             raise ValueError("DOSW1 arm side must be 'left' or 'right'.")
-        self.sdk = sdk
+        self.sdk = self._owner = sdk
         self.side = side
-        self.owns_connection = owns_connection
 
     @property
     def is_connected(self) -> bool:
@@ -409,9 +399,8 @@ class DOSW1Arm(ControllablePart):
         return {"joint_position": {"shape": (6,), "dtype": "float64"}}
 
     def connect(self) -> None:
-        """Connect the shared SDK once for both arms."""
-        if not self.sdk.is_connected:
-            self.sdk.connect()
+        """Connect the shared SDK, which both arms and both grippers share."""
+        self.sdk.connect()
 
     def reset(self) -> None:
         """Leave reset targets to the task configuration."""
@@ -436,9 +425,7 @@ class DOSW1Arm(ControllablePart):
         return {"joint_position": target}
 
     def disconnect(self) -> None:
-        """Disconnect the shared SDK from its owning arm only."""
-        if self.owns_connection and self.sdk.is_connected:
-            self.sdk.disconnect()
+        """No-op: the shared session is closed once, by its owner."""
 
 
 class DOSW1EndEffector(EndEffector):
@@ -447,7 +434,7 @@ class DOSW1EndEffector(EndEffector):
     def __init__(self, sdk: DOSW1Connection, side: str) -> None:
         if side not in {"left", "right"}:
             raise ValueError("DOSW1 gripper side must be 'left' or 'right'.")
-        self.sdk = sdk
+        self.sdk = self._owner = sdk
         self.side = side
 
     @property
@@ -466,9 +453,8 @@ class DOSW1EndEffector(EndEffector):
         return {"target": {"shape": (1,), "dtype": "float64"}}
 
     def connect(self) -> None:
-        """Connect the shared SDK when needed."""
-        if not self.sdk.is_connected:
-            self.sdk.connect()
+        """Connect the shared SDK, which both arms and both grippers share."""
+        self.sdk.connect()
 
     def reset(self) -> None:
         """Leave reset width to the task configuration."""

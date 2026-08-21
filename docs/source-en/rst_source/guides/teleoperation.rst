@@ -106,23 +106,23 @@ The built-in teleop builder creates devices in the environment process, and
 the robot tree, so ``Robot.connect()`` does not place it. Plug devices configured
 through ``env.*.teleop`` into the machine that runs the environment worker.
 
-``node_rank`` takes effect only when a caller explicitly invokes ``place()`` or
-``spawn()``. This is useful for a standalone diagnostic that owns the returned
-handle:
+A teleop device is a ``Connection`` like any other, so it accepts a
+``node_rank`` and opens on that node when something connects it:
 
 .. code-block:: python
 
-   handle = TeleopLeaderArm.spawn("/dev/ttyUSB0", node_rank=1)
+   leader = TeleopLeaderArm("/dev/ttyUSB0", node_rank=1)
+   leader.connect()
    try:
-       print(handle.part.get_observation())
+       print(leader.get_observation())
    finally:
-       handle.disconnect()
+       leader.disconnect()
 
-Keep the handle for as long as the remote device is in use. Disconnecting its
-part proxy is a no-op because the handle owns the worker and its hardware
-connection. The current ``teleop`` env config does not accept a remote device
-handle; constructing ``TeleopLeaderArm(..., node_rank=1)`` and passing it to a
-``TeleopGroup`` therefore does not move the device.
+That is useful for a standalone diagnostic, and it also works inside a
+``TeleopGroup``, which opens each of its devices the same way. What decides
+where a leader arm runs is the ``node_rank`` its constructor was given; the
+``env.*.teleop`` config does not yet expose one, so devices configured through
+it open in the environment process.
 
 Each distinct device is read once per sample. If one device contributes to two
 parts, it is still opened only once; a spacemouse driving both an arm and a

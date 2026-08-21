@@ -161,8 +161,9 @@ def check(robot_type: str, kwargs: dict[str, Any]) -> int:
     if not robot.is_connected:
         print("    FAIL: the robot does not report itself connected")
         return 1
-    for name, handle in robot.handles.items():
-        print(f"    {name:24} placed as {type(handle).__name__}")
+    for owner in robot.owners():
+        where = "here" if owner.node_rank is None else f"node {owner.node_rank}"
+        print(f"    {type(owner).__name__:24} open {where}")
 
     print("[4/5] observing every part")
     failures = []

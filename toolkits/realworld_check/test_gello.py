@@ -133,7 +133,7 @@ def setup_franky():
         node_rank=0,
     )
     for _ in range(60):
-        if controller.is_robot_up().wait()[0]:
+        if controller.is_robot_up():
             break
         time.sleep(0.5)
     else:
@@ -170,7 +170,7 @@ def safe_reset_to(controller, q_target: Sequence[float]) -> None:
     offline.
     """
     try:
-        q_now = controller.get_state().wait()[0].arm_joint_position
+        q_now = controller.get_state().arm_joint_position
         delta = np.asarray(q_target) - np.asarray(q_now)
         max_d = float(np.max(np.abs(delta)))
         worst = int(np.argmax(np.abs(delta)))
@@ -202,7 +202,7 @@ def safe_reset_to(controller, q_target: Sequence[float]) -> None:
 
     print("  → calling reset_joint (slow, ~4.5% dynamics) ...", flush=True)
     try:
-        controller.reset_joint(list(q_target)).wait()
+        controller.reset_joint(list(q_target))
     except Exception as e:
         msg = str(e)
         print(colour(f"\n  reset_joint failed: {msg}", "31;1"), file=sys.stderr)
@@ -278,7 +278,7 @@ def run_align_check(_args: argparse.Namespace) -> None:
     try:
         while True:
             try:
-                q_robot = controller.get_state().wait()[0].arm_joint_position
+                q_robot = controller.get_state().arm_joint_position
                 q_gello, _grip = gello.get_action()
             except KeyboardInterrupt:
                 raise
@@ -398,7 +398,7 @@ def run_align_sequential(_args: argparse.Namespace) -> None:
     confirm_or_exit("Proceed with motion to HOME? [y/N]: ")
     print(colour("Moving robot to HOME pose before alignment ...", "36;1"))
     safe_reset_to(controller, home_joints)
-    q_at_home = controller.get_state().wait()[0].arm_joint_position
+    q_at_home = controller.get_state().arm_joint_position
     print(
         colour(
             f"  at home: {[round(float(x), 3) for x in q_at_home]}",
@@ -421,7 +421,7 @@ def run_align_sequential(_args: argparse.Namespace) -> None:
             entered = time.time()
             while True:
                 try:
-                    q_robot = controller.get_state().wait()[0].arm_joint_position
+                    q_robot = controller.get_state().arm_joint_position
                     q_gello, _ = gello.get_action()
                 except KeyboardInterrupt:
                     raise
@@ -469,7 +469,7 @@ def run_align_sequential(_args: argparse.Namespace) -> None:
         return
 
     # Final sanity print
-    q_robot = controller.get_state().wait()[0].arm_joint_position
+    q_robot = controller.get_state().arm_joint_position
     q_gello, _ = gello.get_action()
     deltas = [wrap_to_pi(float(q_gello[i]) - float(q_robot[i])) for i in range(7)]
     max_d = max(abs(d) for d in deltas)
@@ -489,7 +489,7 @@ def run_align_sequential(_args: argparse.Namespace) -> None:
     print("Holding here so you don't lose the alignment — Ctrl-C to exit.")
     try:
         while True:
-            q_robot = controller.get_state().wait()[0].arm_joint_position
+            q_robot = controller.get_state().arm_joint_position
             q_gello, _ = gello.get_action()
             deltas = [
                 wrap_to_pi(float(q_gello[i]) - float(q_robot[i])) for i in range(7)
@@ -660,7 +660,7 @@ def run_calibrate(_args: argparse.Namespace) -> None:
 
     print_banner("Step 1 — move robot to POSE A and align GELLO")
     safe_reset_to(controller, CALIB_POSE_A)
-    q_robot_A = controller.get_state().wait()[0].arm_joint_position
+    q_robot_A = controller.get_state().arm_joint_position
     print(f"  robot now at A: {[round(float(x), 3) for x in q_robot_A]}", flush=True)
     _calib_wait_for_enter(
         "Physically pose the GELLO leader so it visually matches the Franka.\n"
@@ -674,7 +674,7 @@ def run_calibrate(_args: argparse.Namespace) -> None:
 
     print_banner("Step 2 — move robot to POSE B and re-align GELLO")
     safe_reset_to(controller, CALIB_POSE_B)
-    q_robot_B = controller.get_state().wait()[0].arm_joint_position
+    q_robot_B = controller.get_state().arm_joint_position
     print(f"  robot now at B: {[round(float(x), 3) for x in q_robot_B]}", flush=True)
     _calib_wait_for_enter(
         "Re-pose the GELLO leader so it visually matches the new Franka pose.\n"
@@ -815,7 +815,7 @@ def run_reset_to_gello(_args: argparse.Namespace) -> None:
         time.sleep(0.02)
     target = np.mean(samples, axis=0)
 
-    state = controller.get_state().wait()[0]
+    state = controller.get_state()
     current = state.arm_joint_position
 
     delta = target - current
@@ -874,10 +874,10 @@ def run_reset_to_gello(_args: argparse.Namespace) -> None:
         return
 
     print("\n  Moving robot (slow, ~4.5% dynamics) ...", flush=True)
-    controller.reset_joint(target.tolist()).wait()
+    controller.reset_joint(target.tolist())
     time.sleep(0.5)
 
-    state = controller.get_state().wait()[0]
+    state = controller.get_state()
     final = state.arm_joint_position
     final_delta = target - final
     max_err = float(np.max(np.abs(final_delta)))

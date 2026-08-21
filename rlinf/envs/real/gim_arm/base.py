@@ -208,16 +208,16 @@ class GimArmEnv(gym.Env):
 
         # Wait for the robot to be ready.
         start_time = time.time()
-        while not self._controller.is_robot_up().wait()[0]:
+        while not self._controller.is_robot_up():
             time.sleep(0.5)
             if time.time() - start_time > 30:
                 self._logger.warning(
                     f"Waited {time.time() - start_time:.0f}s for GimArm to be ready."
                 )
 
-        self._controller.reset_joint(self.config.reset_joint_qpos).wait()
+        self._controller.reset_joint(self.config.reset_joint_qpos)
         time.sleep(1.0)
-        self._state = self._controller.get_state().wait()[0]
+        self._state = self._controller.get_state()
 
         self._open_cameras()
         self.camera_player = VideoPlayer(self.config.enable_camera_player)
@@ -260,9 +260,10 @@ class GimArmEnv(gym.Env):
             cameras={info.name: info for info in self._camera_infos()},
         )
         self.robot.connect()
-        # Off-interface driver calls (is_robot_up, reset_joint, ...) go
-        # straight to the handle; no cast through a part proxy.
-        self._controller = self.robot.handles["arm"]
+        # Off-interface driver calls -- is_robot_up, reset_joint and friends --
+        # are the arm's own methods, and they travel unchanged when the arm was
+        # placed on another node.
+        self._controller = self.robot.child("arm").owner
 
     def _init_action_obs_spaces(self):
         """Initialise action and observation spaces."""
@@ -333,7 +334,7 @@ class GimArmEnv(gym.Env):
             q_target = np.clip(
                 action[:6], self._joint_limit_low, self._joint_limit_high
             )
-            self._controller.move_joints(q_target).wait()
+            self._controller.move_joints(q_target)
 
             gripper_action = float(action[6])
             is_gripper_effective = self._gripper_action(gripper_action)
@@ -345,7 +346,7 @@ class GimArmEnv(gym.Env):
         time.sleep(max(0.0, (1.0 / self.config.step_frequency) - step_time))
 
         if not self.config.is_dummy:
-            self._state = self._controller.get_state().wait()[0]
+            self._state = self._controller.get_state()
 
         observation = self._get_observation()
         reward = self._calc_step_reward(observation, is_gripper_effective)
@@ -378,7 +379,7 @@ class GimArmEnv(gym.Env):
 
         self.go_to_rest(joint_reset)
         self._num_steps = 0
-        self._state = self._controller.get_state().wait()[0]
+        self._state = self._controller.get_state()
         return self._get_observation(), {}
 
     def go_to_rest(self, joint_reset: bool = False):
@@ -389,10 +390,10 @@ class GimArmEnv(gym.Env):
         :attr:`reset_joint_qpos`.
         """
         if joint_reset:
-            self._controller.reset_joint(self.config.joint_reset_qpos).wait()
+            self._controller.reset_joint(self.config.joint_reset_qpos)
             time.sleep(0.5)
 
-        self._controller.reset_joint(self.config.reset_joint_qpos).wait()
+        self._controller.reset_joint(self.config.reset_joint_qpos)
 
     # ── Reward ───────────────────────────────────────────────────────────────
 
@@ -547,14 +548,14 @@ class GimArmEnv(gym.Env):
             position <= -self.config.binary_gripper_threshold
             and self._state.gripper_open
         ):
-            self._controller.close_gripper().wait()
+            self._controller.close_gripper()
             time.sleep(0.6)
             return True
         if (
             position >= self.config.binary_gripper_threshold
             and not self._state.gripper_open
         ):
-            self._controller.open_gripper().wait()
+            self._controller.open_gripper()
             time.sleep(0.6)
             return True
         return False

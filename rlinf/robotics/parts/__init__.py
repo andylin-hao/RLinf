@@ -20,7 +20,7 @@ together::
 
     parts/
       base.py                     Connection, RobotPart, ControllablePart,
-                                  PartGroup, register_kind
+                                  PartGroup
       arms/                       Franky, Franka ROS, GimArm, Turtle2, DOSW1
       cameras/        base.py:    Camera
                                   RealSense, ZED, Lumos
@@ -51,7 +51,6 @@ from .base import (
     ControllablePart,
     PartGroup,
     RobotPart,
-    register_kind,
     run_parallel,
 )
 
@@ -60,6 +59,5 @@ __all__ = [
     "ControllablePart",
     "PartGroup",
     "RobotPart",
-    "register_kind",
     "run_parallel",
 ]

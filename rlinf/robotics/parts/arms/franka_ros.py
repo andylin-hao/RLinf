@@ -14,7 +14,7 @@
 
 import sys
 import time
-from typing import Optional
+from typing import Any, Optional
 
 import numpy as np
 import psutil
@@ -59,12 +59,6 @@ class FrankaROSArm(ControllablePart):
         self._gripper = None
         self._impedance: psutil.Process | None = None
         self._joint: psutil.Process | None = None
-        self._connected = False
-
-    @property
-    def is_connected(self) -> bool:
-        """Whether ROS channels and the impedance controller are active."""
-        return self._connected
 
     @property
     def observation_features(self) -> dict:
@@ -93,10 +87,8 @@ class FrankaROSArm(ControllablePart):
             end_effector = MethodGripper(self, state_field="gripper_position")
         return {"arm": self, "end_effector": end_effector}
 
-    def connect(self) -> None:
+    def _open(self) -> Any:
         """Connect ROS channels, controller processes, and the end effector."""
-        if self._connected:
-            return
         import geometry_msgs.msg as geom_msg
         import rospy
         from dynamic_reconfigure.client import Client as ReconfClient
@@ -121,7 +113,7 @@ class FrankaROSArm(ControllablePart):
         self._reconf_client = self._ReconfClient(
             "cartesian_impedance_controllerdynamic_reconfigure_compliance_param_node"
         )
-        self._connected = True
+        return self._ros
 
     def reset(self) -> None:
         """Leave task-specific reset positions to the caller."""
@@ -138,16 +130,14 @@ class FrankaROSArm(ControllablePart):
         self.move_arm(action["tcp_pose"])
         return action
 
-    def disconnect(self) -> None:
+    def _release(self, device: Any) -> None:
         """Stop impedance control and release end-effector resources."""
-        if not self._connected:
-            return
         self.stop_impedance()
         if self._end_effector is not None:
             self._end_effector.disconnect()
         if self._gripper is not None:
             self._gripper.disconnect()
-        self._connected = False
+        self._ros = None
 
     def _init_end_effector(
         self,

@@ -201,7 +201,7 @@ class DualFrankaEnv(gym.Env):
         # Wait for both arms to be ready
         for label, ctrl in [("left", self._left_ctrl), ("right", self._right_ctrl)]:
             t0 = time.time()
-            while not ctrl.is_robot_up().wait()[0]:
+            while not ctrl.is_robot_up():
                 time.sleep(0.5)
                 if time.time() - t0 > 30:
                     self._logger.warning(
@@ -211,8 +211,8 @@ class DualFrankaEnv(gym.Env):
                     )
 
         # Initial state read
-        self._left_state = self._left_ctrl.get_state().wait()[0]
-        self._right_state = self._right_ctrl.get_state().wait()[0]
+        self._left_state = self._left_ctrl.get_state()
+        self._right_state = self._right_ctrl.get_state()
 
         # Cache of last successful frame per camera, for graceful degradation
         # when a single camera stalls (used by _get_camera_frames).
@@ -438,8 +438,8 @@ class DualFrankaEnv(gym.Env):
             cameras=base_cameras,
         )
         self.robot.connect()
-        self._left_ctrl = self.robot.handles["left"]
-        self._right_ctrl = self.robot.handles["right"]
+        self._left_ctrl = self.robot.child("left").child("arm").owner
+        self._right_ctrl = self.robot.child("right").child("arm").owner
 
     # ---------------------------------------------------------------- reset/step
 
@@ -454,8 +454,8 @@ class DualFrankaEnv(gym.Env):
         self._left_ctrl.reset_joint(self.config.joint_reset_qpos[0])
         self._right_ctrl.reset_joint(self.config.joint_reset_qpos[1])
         time.sleep(0.5)
-        self._left_state = self._left_ctrl.get_state().wait()[0]
-        self._right_state = self._right_ctrl.get_state().wait()[0]
+        self._left_state = self._left_ctrl.get_state()
+        self._right_state = self._right_ctrl.get_state()
 
     def reset(self, *, seed=None, options=None):
         """``options["skip_reset_to_home"]`` lets teleop wrappers keep tracking
@@ -485,10 +485,8 @@ class DualFrankaEnv(gym.Env):
             self._go_to_rest(joint_reset)
         self._clear_errors()
 
-        left_st_f = self._left_ctrl.get_state()
-        right_st_f = self._right_ctrl.get_state()
-        self._left_state = left_st_f.wait()[0]
-        self._right_state = right_st_f.wait()[0]
+        self._left_state = self._left_ctrl.get_state()
+        self._right_state = self._right_ctrl.get_state()
         return self._get_observation(), {}
 
     def step(self, action: np.ndarray):
@@ -519,10 +517,8 @@ class DualFrankaEnv(gym.Env):
             if self._pace_between_action_and_state_read():
                 step_time = time.time() - start_time
                 time.sleep(max(0.0, (1.0 / self.config.step_frequency) - step_time))
-            left_st_f = self._left_ctrl.get_state()
-            right_st_f = self._right_ctrl.get_state()
-            self._left_state = left_st_f.wait()[0]
-            self._right_state = right_st_f.wait()[0]
+            self._left_state = self._left_ctrl.get_state()
+            self._right_state = self._right_ctrl.get_state()
 
         observation = self._get_observation()
         reward = self._calc_step_reward(is_gripper_effective)
@@ -533,17 +529,15 @@ class DualFrankaEnv(gym.Env):
         return observation, reward, terminated, truncated, {}
 
     def _clear_errors(self):
-        l = self._left_ctrl.clear_errors()
-        r = self._right_ctrl.clear_errors()
-        l.wait()
-        r.wait()
+        self._left_ctrl.clear_errors()
+        self._right_ctrl.clear_errors()
 
     # ---------------------------------------------------------------- gripper / utils
 
     def _gripper_action(self, ctrl, state, position: float) -> bool:
-        # Fire-and-forget: collection streams gripper RPCs at 10 Hz and a
-        # blocking .wait() + 0.6 s sleep stretches eval steps to ~700 ms
-        # and rings out j7.
+        # Commanded and not waited on: collection streams gripper commands at
+        # 10 Hz, and settling for the 0.6 s the gripper takes stretches an eval
+        # step to ~700 ms and rings out j7.
         threshold = self.config.binary_gripper_threshold
         if position <= -threshold and state.gripper_open:
             ctrl.close_gripper()
@@ -555,10 +549,8 @@ class DualFrankaEnv(gym.Env):
 
     def get_tcp_pose(self) -> np.ndarray:
         """Return concatenated TCP poses ``(14,)`` for both arms."""
-        left_st_f = self._left_ctrl.get_state()
-        right_st_f = self._right_ctrl.get_state()
-        self._left_state = left_st_f.wait()[0]
-        self._right_state = right_st_f.wait()[0]
+        self._left_state = self._left_ctrl.get_state()
+        self._right_state = self._right_ctrl.get_state()
         return np.concatenate([self._left_state.tcp_pose, self._right_state.tcp_pose])
 
     def get_action_scale(self) -> np.ndarray:

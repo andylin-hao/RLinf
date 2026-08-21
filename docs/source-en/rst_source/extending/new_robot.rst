@@ -343,13 +343,13 @@ Constructing these objects records their arguments, ``node_rank``, and
 ``worker_name`` but does not import either vendor SDK or open hardware. The
 metaclass on ``Connection`` consumes the placement keywords before the driver's
 ``__init__`` runs, so a new driver only declares hardware-specific parameters.
-``robot.connect()`` opens each distinct connection on its selected node and
-publishes its handle under the public part names in ``robot.handles``.
+``robot.connect()`` opens each distinct connection once, on the node that
+connection named. A connection bound for another node is rebuilt there and the
+object in the tree becomes a view of it, so the robot holds the same parts
+either way and nothing in your code branches on placement.
 
-Use ``spawn()`` only in a bench script that owns the returned handle's
-lifecycle. Inside a robot, construct the unconnected part normally and let
-``Robot.connect()`` make startup all-or-nothing. If the arm fails, the base is
-rolled back automatically.
+Startup is all-or-nothing. If the arm fails, the base is rolled back
+automatically and the robot goes back to being connectable.
 
 5. Build the Composition from Configuration
 -------------------------------------------

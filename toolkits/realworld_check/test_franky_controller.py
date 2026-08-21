@@ -67,7 +67,7 @@ def main() -> None:
 
     # Wait for the controller to publish a valid state.
     start_time = time.time()
-    while not controller.is_robot_up().wait()[0]:
+    while not controller.is_robot_up():
         time.sleep(0.5)
         if time.time() - start_time > 30:
             print(f"Waited {time.time() - start_time:.1f}s for Franka to be ready")
@@ -93,18 +93,18 @@ def main() -> None:
             elif cmd == "help":
                 _print_help()
             elif cmd == "getpos":
-                pose = controller.get_state().wait()[0].tcp_pose
+                pose = controller.get_state().tcp_pose
                 print(pose)
             elif cmd == "getpos_euler":
-                pose = controller.get_state().wait()[0].tcp_pose
+                pose = controller.get_state().tcp_pose
                 euler = R.from_quat(pose[3:].copy()).as_euler("xyz")
                 print(np.concatenate([pose[:3], euler]))
             elif cmd == "getjoint":
-                state = controller.get_state().wait()[0]
+                state = controller.get_state()
                 print(state.arm_joint_position)
             elif cmd == "home":
                 print(f"Resetting to home: {HOME_JOINTS}")
-                controller.reset_joint(HOME_JOINTS).wait()
+                controller.reset_joint(HOME_JOINTS)
                 print("Home reached")
             elif cmd == "nudge":
                 if len(parts) != 3:
@@ -113,11 +113,11 @@ def main() -> None:
                 idx = int(parts[1]) - 1
                 delta = float(parts[2])
                 assert 0 <= idx < 7, "joint index must be 1..7"
-                current = controller.get_state().wait()[0].arm_joint_position
+                current = controller.get_state().arm_joint_position
                 target = current.copy()
                 target[idx] += delta
                 print(f"move_joints: {target}")
-                controller.move_joints(target).wait()
+                controller.move_joints(target)
             elif cmd == "stream":
                 if len(parts) != 4:
                     print("usage: stream <joint_index 1..7> <delta_per_tick> <n_ticks>")
@@ -134,7 +134,7 @@ def main() -> None:
                         f"(reduce delta or n)"
                     )
                     continue
-                current = controller.get_state().wait()[0].arm_joint_position
+                current = controller.get_state().arm_joint_position
                 print(
                     f"starting from joint {idx + 1} = {current[idx]:+.4f} rad; "
                     f"total planned displacement {delta * n:+.4f} rad"
@@ -143,10 +143,10 @@ def main() -> None:
                 t0 = time.time()
                 for _ in range(n):
                     target[idx] += delta
-                    controller.move_joints(target).wait()
+                    controller.move_joints(target)
                     time.sleep(0.001)
                 elapsed = time.time() - t0
-                end = controller.get_state().wait()[0].arm_joint_position
+                end = controller.get_state().arm_joint_position
                 print(
                     f"streamed {n} ticks in {elapsed:.3f}s "
                     f"(~{n / elapsed:.0f} Hz); "
@@ -156,30 +156,30 @@ def main() -> None:
                 secs = float(parts[1]) if len(parts) == 2 else 30.0
                 print(f"holding for {secs:.1f}s — listen for buzz")
                 time.sleep(secs)
-                state = controller.get_state().wait()[0]
+                state = controller.get_state()
                 print(
                     f"joint_vel rms = "
                     f"{np.sqrt(np.mean(state.arm_joint_velocity**2)):.5f} rad/s"
                 )
             elif cmd == "open":
-                controller.open_gripper().wait()
+                controller.open_gripper()
                 print("gripper opened")
             elif cmd == "close":
-                controller.close_gripper().wait()
+                controller.close_gripper()
                 print("gripper closed")
             elif cmd == "grip":
                 if len(parts) != 2:
                     print("usage: grip <0-255>")
                     continue
                 pos = int(parts[1])
-                controller.move_gripper(pos).wait()
+                controller.move_gripper(pos)
                 print(f"gripper moved to {pos}")
             elif cmd == "impedance":
                 if len(parts) != 8:
                     print("usage: impedance <k1 k2 k3 k4 k5 k6 k7>")
                     continue
                 Kq = [float(x) for x in parts[1:]]
-                controller.reconfigure_compliance_params({"Kq": Kq}).wait()
+                controller.reconfigure_compliance_params({"Kq": Kq})
                 print(f"impedance updated to {Kq}")
             else:
                 print(f"unknown cmd: {cmd_str}")
@@ -191,7 +191,7 @@ def main() -> None:
 
     print("shutting down...")
     try:
-        controller.cleanup().wait()
+        controller.cleanup()
     except Exception:
         pass
 

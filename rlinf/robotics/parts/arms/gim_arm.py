@@ -17,6 +17,7 @@ import threading
 import time
 import warnings
 from dataclasses import asdict, dataclass, field
+from typing import Any
 
 import numpy as np
 
@@ -118,7 +119,6 @@ class GimArm(ControllablePart):
         self._enable_gripper = enable_gripper
         self._gripper_type = gripper_type
         self._control_mode = control_mode
-        self._connected = False
 
     @staticmethod
     def _warn_if_can_interface_is_down(can_interface: str) -> None:
@@ -136,11 +136,6 @@ class GimArm(ControllablePart):
                 "this machine. The arm will fail to connect unless it is "
                 "brought up first."
             )
-
-    @property
-    def is_connected(self) -> bool:
-        """Whether the CAN controller and feedforward loop are active."""
-        return self._connected
 
     @property
     def observation_features(self) -> dict:
@@ -163,10 +158,8 @@ class GimArm(ControllablePart):
             parts["end_effector"] = MethodGripper(self, state_field="gripper_position")
         return parts
 
-    def connect(self) -> None:
+    def _open(self) -> Any:
         """Connect the CAN SDK and start the feedforward control loop."""
-        if self._connected:
-            return
         import pinocchio as pin
         from gim_arm_control import (
             ButterworthFilter,
@@ -224,7 +217,7 @@ class GimArm(ControllablePart):
             target=self._feedforward_loop, daemon=True
         )
         self._control_thread.start()
-        self._connected = True
+        return self._sdk
 
     def reset(self) -> None:
         """Leave task-specific reset positions to the caller."""
@@ -241,11 +234,10 @@ class GimArm(ControllablePart):
         self.move_joints(action["joint_position"])
         return action
 
-    def disconnect(self) -> None:
+    def _release(self, device: Any) -> None:
         """Stop the control loop and disconnect the SDK."""
-        if self._connected:
-            self.stop()
-            self._connected = False
+        self.stop()
+        self._sdk = None
 
     # ── Feedforward control loop ─────────────────────────────────────────
 

@@ -35,12 +35,15 @@ Every connection takes an optional ``node_rank``, so a camera can run on the
 machine it is plugged into while the policy runs elsewhere. Nothing else is
 needed to say where hardware lives, and no part writes a line for it:
 constructing a connection declares it, and
-:meth:`~rlinf.robotics.robot.Robot.connect` opens it on the machine it named.
+:meth:`~rlinf.robotics.robot.Robot.connect` opens it on the machine it named --
+rebuilding it there and turning the object you hold into a view of it, so a
+part on another node and one on this bench are the same thing to everything
+holding them. There is no remote counterpart to write, and none to forget.
 
 The dependency runs one way. The scheduler never imports this package -- it
 reaches robotics by importing the hardware-policy modules a config names, then
 calling the discovery classes they registered. Only the composition layer
-imports back, and :meth:`~rlinf.robotics.parts.base.Connection.place` loads
+imports back, and :meth:`~rlinf.robotics.parts.base.Connection.connect` loads
 :mod:`rlinf.robotics.placement` lazily so a part's source never names it.
 
 Symbols load lazily so a node without a given robot's SDK can still import
@@ -78,7 +81,6 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
         ControllablePart,
         PartGroup,
         RobotPart,
-        register_kind,
         run_parallel,
     )
     from .parts.arms import ARM_STATE_FIELDS
@@ -86,16 +88,6 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from .parts.end_effectors import EndEffector
     from .parts.mobility import MobileBase
     from .parts.views import MethodArm, MethodCamera, MethodGripper
-    from .placement import (
-        LocalPartHandle,
-        PartHandle,
-        Placement,
-        RemoteCamera,
-        RemoteControllablePart,
-        RemoteEndEffector,
-        RemotePart,
-        RemotePartHandle,
-    )
     from .robot import Robot
     from .robots import (
         FRANKA_BACKENDS,
@@ -119,7 +111,6 @@ _MODULE_GROUPS: dict[str, tuple[str, ...]] = {
         "ControllablePart",
         "PartGroup",
         "RobotPart",
-        "register_kind",
         "run_parallel",
     ),
     ".parts.arms": ("ARM_STATE_FIELDS",),
@@ -130,16 +121,6 @@ _MODULE_GROUPS: dict[str, tuple[str, ...]] = {
     ".parts.mobility": ("MobileBase",),
     ".robot": ("Robot",),
     ".parts.views": ("MethodArm", "MethodCamera", "MethodGripper"),
-    ".placement": (
-        "LocalPartHandle",
-        "PartHandle",
-        "Placement",
-        "RemoteCamera",
-        "RemoteControllablePart",
-        "RemoteEndEffector",
-        "RemotePart",
-        "RemotePartHandle",
-    ),
     ".robots": (
         "DOSW1Robot",
         "DOSW1RobotConfig",

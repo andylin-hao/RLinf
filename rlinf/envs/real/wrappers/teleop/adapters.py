@@ -121,11 +121,11 @@ class DualGelloJointStream(TeleopStreamer):
         if left_ctrl is None or right_ctrl is None:
             return False
         left_q, _, right_q, _ = self._joints()
-        left_ctrl.reset_joint(np.asarray(left_q, dtype=np.float64).tolist()).wait()
-        right_ctrl.reset_joint(np.asarray(right_q, dtype=np.float64).tolist()).wait()
+        left_ctrl.reset_joint(np.asarray(left_q, dtype=np.float64).tolist())
+        right_ctrl.reset_joint(np.asarray(right_q, dtype=np.float64).tolist())
         inner = env.unwrapped
-        inner._left_state = left_ctrl.get_state().wait()[0]
-        inner._right_state = right_ctrl.get_state().wait()[0]
+        inner._left_state = left_ctrl.get_state()
+        inner._right_state = right_ctrl.get_state()
         return True
 
     def stream_once(self, env: gym.Env) -> None:
@@ -138,8 +138,8 @@ class DualGelloJointStream(TeleopStreamer):
             return
 
         left_q, left_g, right_q, right_g = self._joints()
-        left_ctrl.move_joints(left_q.astype(np.float32)).wait()
-        right_ctrl.move_joints(right_q.astype(np.float32)).wait()
+        left_ctrl.move_joints(left_q.astype(np.float32))
+        right_ctrl.move_joints(right_q.astype(np.float32))
 
         if not self.gripper_enabled:
             return

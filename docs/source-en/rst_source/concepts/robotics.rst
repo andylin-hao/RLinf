@@ -103,7 +103,7 @@ Choose What to Read Next
   :doc:`New Real-World Tasks <../extending/new_task>`.
 - To add one local sensor or actuator, continue with
   :doc:`Adding a Robot <../extending/new_robot>`.
-- To understand shared connections, part groups, remote handles, lifecycle
+- To understand shared connections, part groups, placement, lifecycle
   rollback, and worker placement, read
   :doc:`Robotics Architecture <robotics_architecture>`.
 - To combine operator devices, read

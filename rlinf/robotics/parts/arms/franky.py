@@ -23,7 +23,7 @@ import ctypes
 import ctypes.util
 import os
 import time
-from typing import Optional
+from typing import Any, Optional
 
 import numpy as np
 from scipy.spatial.transform import Rotation as R
@@ -86,7 +86,6 @@ class FrankyArm(ControllablePart):
         self._robot_ip = validated_robot_ip(robot_ip, type(self).__name__)
         self._gripper_type = gripper_type
         self._gripper_connection = gripper_connection
-        self._connected = False
         self._franky = None
         self._robot = None
         self._gripper = None
@@ -96,11 +95,6 @@ class FrankyArm(ControllablePart):
         self._cart_tracker = None
         self._prev_cart_target_xyz: Optional[np.ndarray] = None
         self._prev_cart_target_quat: Optional[np.ndarray] = None
-
-    @property
-    def is_connected(self) -> bool:
-        """Whether the libfranka robot and gripper are connected."""
-        return self._connected
 
     @property
     def observation_features(self) -> dict:
@@ -124,10 +118,8 @@ class FrankyArm(ControllablePart):
             "end_effector": MethodGripper(self, state_field="gripper_position"),
         }
 
-    def connect(self) -> None:
+    def _open(self) -> Any:
         """Connect the robot and gripper SDKs."""
-        if self._connected:
-            return
         self._apply_rt_hardening()
 
         import franky
@@ -142,9 +134,8 @@ class FrankyArm(ControllablePart):
             gripper_connection=self._gripper_connection,
             robot_ip=self._robot_ip,
         )
-        self._connected = True
-
         self._logger.info(f"FrankyArm connected to robot at {self._robot_ip}")
+        return self._robot
 
     def reset(self) -> None:
         """Leave task-specific reset positions to the caller."""
@@ -165,12 +156,10 @@ class FrankyArm(ControllablePart):
             self.move_tcp_pose(action["tcp_pose"])
         return action
 
-    def disconnect(self) -> None:
+    def _release(self, device: Any) -> None:
         """Stop active motion and release the gripper connection."""
-        if not self._connected:
-            return
         self.cleanup()
-        self._connected = False
+        self._robot = None
 
     def _build_gripper(
         self,

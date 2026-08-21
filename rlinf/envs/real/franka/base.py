@@ -274,7 +274,7 @@ class FrankaEnv(gym.Env):
 
         # Wait for the robot to be ready
         start_time = time.time()
-        while not self._controller.is_robot_up().wait()[0]:
+        while not self._controller.is_robot_up():
             time.sleep(0.5)
             if time.time() - start_time > 30:
                 self._logger.warning(
@@ -283,7 +283,7 @@ class FrankaEnv(gym.Env):
 
         self._interpolate_move(self._reset_pose)
         time.sleep(1.0)
-        self._franka_state = self._controller.get_state().wait()[0]
+        self._franka_state = self._controller.get_state()
 
         # Init cameras
         self._open_cameras()
@@ -345,7 +345,7 @@ class FrankaEnv(gym.Env):
             camera_node_rank=camera_node_rank,
         )
         self.robot.connect()
-        self._controller = self.robot.handles["arm"]
+        self._controller = self.robot.child("arm").owner
 
     def _setup_reward_worker(self):
         if not self.config.use_reward_model:
@@ -427,7 +427,7 @@ class FrankaEnv(gym.Env):
         time.sleep(max(0, (1.0 / self.config.step_frequency) - step_time))
 
         if not self.config.is_dummy:
-            self._franka_state = self._controller.get_state().wait()[0]
+            self._franka_state = self._controller.get_state()
         else:
             self._franka_state = self._franka_state
         observation = self._get_observation()
@@ -452,7 +452,7 @@ class FrankaEnv(gym.Env):
 
     def get_tcp_pose(self) -> np.ndarray:
         """Return the current TCP pose ``[x, y, z, qx, qy, qz, qw]``."""
-        self._franka_state = self._controller.get_state().wait()[0]
+        self._franka_state = self._controller.get_state()
         return self._franka_state.tcp_pose
 
     def get_action_scale(self) -> np.ndarray:
@@ -568,9 +568,7 @@ class FrankaEnv(gym.Env):
             )
 
         image_batch = np.expand_dims(frames[image_key], axis=0)
-        reward_output = self._reward_worker.compute_reward(
-            {"main_images": image_batch}
-        ).wait()[0]
+        reward_output = self._reward_worker.compute_reward({"main_images": image_batch})
         if hasattr(reward_output, "detach"):
             reward_output = reward_output.detach().cpu().numpy()
         reward_array = np.asarray(reward_output).reshape(-1)
@@ -583,9 +581,7 @@ class FrankaEnv(gym.Env):
 
         self._success_hold_counter = 0  # Reset hold counter at the start of the episode
 
-        self._controller.reconfigure_compliance_params(
-            self.config.compliance_param
-        ).wait()
+        self._controller.reconfigure_compliance_params(self.config.compliance_param)
 
         # Reset joint
         joint_reset_cycle = next(self._joint_reset_cycle)
@@ -600,14 +596,14 @@ class FrankaEnv(gym.Env):
 
         self._clear_error()
         self._num_steps = 0
-        self._franka_state = self._controller.get_state().wait()[0]
+        self._franka_state = self._controller.get_state()
         observation = self._get_observation()
 
         return observation, {}
 
     def go_to_rest(self, joint_reset=False):
         if joint_reset:
-            self._controller.reset_joint(self.config.joint_reset_qpos).wait()
+            self._controller.reset_joint(self.config.joint_reset_qpos)
             time.sleep(0.5)
 
         # Reset arm
@@ -624,19 +620,19 @@ class FrankaEnv(gym.Env):
         else:
             reset_pose = self._reset_pose.copy()
 
-        self._franka_state = self._controller.get_state().wait()[0]
+        self._franka_state = self._controller.get_state()
         cnt = 0
         while not np.allclose(self._franka_state.tcp_pose[:3], reset_pose[:3], 0.02):
             cnt += 1
             self._interpolate_move(reset_pose)
-            self._franka_state = self._controller.get_state().wait()[0]
+            self._franka_state = self._controller.get_state()
             if cnt > 2:
                 break
 
         # Reset dexterous hands here. Gripper state is task-specific, matching
         # the upstream Franka reset path where the base env does not open/close it.
         if self._is_hand:
-            self._controller.reset_end_effector(self.config.hand_reset_state).wait()
+            self._controller.reset_end_effector(self.config.hand_reset_state)
             self._last_hand_command = (
                 np.array(self.config.hand_reset_state, dtype=np.float64)
                 * self.config.hand_action_scale
@@ -925,7 +921,7 @@ class FrankaEnv(gym.Env):
         return position
 
     def _clear_error(self):
-        self._controller.clear_errors().wait()
+        self._controller.clear_errors()
 
     def _binary_gripper_action(self, position: float) -> bool:
         """Execute a scaled binary gripper command."""
@@ -933,14 +929,14 @@ class FrankaEnv(gym.Env):
             position <= -self.config.binary_gripper_threshold
             and self._franka_state.gripper_open
         ):
-            self._controller.close_gripper().wait()
+            self._controller.close_gripper()
             time.sleep(0.6)
             return True
         if (
             position >= self.config.binary_gripper_threshold
             and not self._franka_state.gripper_open
         ):
-            self._controller.open_gripper().wait()
+            self._controller.open_gripper()
             time.sleep(0.6)
             return True
         return False
@@ -971,12 +967,12 @@ class FrankaEnv(gym.Env):
                 max_d = self.config.hand_max_delta_per_step
                 scaled = self._last_hand_command + np.clip(delta, -max_d, max_d)
             self._last_hand_command = scaled.copy()
-            self._controller.command_end_effector(scaled).wait()
+            self._controller.command_end_effector(scaled)
             return True
 
     def _interpolate_move(self, pose: np.ndarray, timeout: float = 1.5):
         num_steps = int(timeout * self.config.step_frequency)
-        self._franka_state: FrankaRobotState = self._controller.get_state().wait()[0]
+        self._franka_state: FrankaRobotState = self._controller.get_state()
         pos_path = np.linspace(
             self._franka_state.tcp_pose[:3], pose[:3], int(num_steps) + 1
         )
@@ -989,12 +985,12 @@ class FrankaEnv(gym.Env):
             self._move_action(pose.astype(np.float32))
             time.sleep(1.0 / self.config.step_frequency)
 
-        self._franka_state: FrankaRobotState = self._controller.get_state().wait()[0]
+        self._franka_state: FrankaRobotState = self._controller.get_state()
 
     def _move_action(self, position: np.ndarray):
         if not self.config.is_dummy:
             self._clear_error()
-            self._controller.move_arm(position.astype(np.float32)).wait()
+            self._controller.move_arm(position.astype(np.float32))
         else:
             print(f"Executing dummy action towards {position=}.")
 

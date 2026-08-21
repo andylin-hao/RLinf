@@ -15,6 +15,7 @@
 import time
 import tracemalloc
 from dataclasses import asdict, dataclass, field
+from typing import Any
 
 import numpy as np
 
@@ -75,7 +76,6 @@ class Turtle2Connection(Connection):
         self.freq = freq
         self.camera_ids = tuple(camera_ids)
         self._state = Turtle2RobotState()
-        self._connected = False
 
     @property
     def parts(self) -> dict[str, RobotPart]:
@@ -101,15 +101,8 @@ class Turtle2Connection(Connection):
             parts[f"wrist_{index + 1}"] = MethodCamera(self, "get_camera", camera_id)
         return parts
 
-    @property
-    def is_connected(self) -> bool:
-        """Whether the ROS-backed controller is active."""
-        return self._connected
-
-    def connect(self) -> None:
+    def _open(self) -> Any:
         """Connect the ROS controller and start state/control timers."""
-        if self._connected:
-            return
         import rospy
         from cv_bridge import CvBridge
         from turtle2_basic.turtle2_controller.Turtle2Controller import (
@@ -142,15 +135,14 @@ class Turtle2Connection(Connection):
 
         tracemalloc.start(15)
         self.snapshot_base = tracemalloc.take_snapshot()
-        self._connected = True
+        return self.controller
 
     def reset(self) -> None:
         """Reset both arm targets to zero."""
         self.reset_arms()
 
-    def disconnect(self) -> None:
-        """Detach from the shared ROS process."""
-        self._connected = False
+    def _release(self, device: Any) -> None:
+        """Detach from the shared ROS process, which outlives this session."""
 
     def state_callback(self, event):
         arms_data = self.controller.arms_data()

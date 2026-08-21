@@ -83,17 +83,18 @@ reader 不依赖机器人或集群，可独立运行：
 
 内置遥操作构建器会在 env 进程中创建设备，再由 ``TeleopGroup.connect()`` 直接打开。遥操作设备不属于机器人树，因此 ``Robot.connect()`` 不会处理它的 placement。通过 ``env.*.teleop`` 配置设备时，应将设备接到 env worker 所在的机器。
 
-只有调用方显式执行 ``place()`` 或 ``spawn()`` 时，``node_rank`` 才会生效。独立诊断脚本可以用这种方式管理远程设备：
+遥操作设备本身也是一条 ``Connection``，因此同样接受 ``node_rank``，连接时就在该节点打开：
 
 .. code-block:: python
 
-   handle = TeleopLeaderArm.spawn("/dev/ttyUSB0", node_rank=1)
+   leader = TeleopLeaderArm("/dev/ttyUSB0", node_rank=1)
+   leader.connect()
    try:
-       print(handle.part.get_observation())
+       print(leader.get_observation())
    finally:
-       handle.disconnect()
+       leader.disconnect()
 
-远程设备使用期间必须保留 handle，并由它负责关闭 worker 和硬件连接。part proxy 的 ``disconnect()`` 不会释放这些资源。当前 ``teleop`` env 配置不能接收远程设备 handle；仅构造 ``TeleopLeaderArm(..., node_rank=1)`` 并将其传给 ``TeleopGroup``，不会把设备移到目标节点。
+独立诊断脚本可以这样用，放进 ``TeleopGroup`` 也一样，因为 group 打开每台设备走的是同一条路径。决定主臂跑在哪里的是构造时传入的 ``node_rank``；``env.*.teleop`` 配置目前还没有暴露这个字段，所以通过它配置的设备都在 env 进程中打开。
 
 每次采样只读取每台不同的设备一次。同一台设备即使同时控制两个部件，也只会打开一次；因此，SpaceMouse 同时控制机械臂和夹爪时仍只占用一个 HID 句柄。
 

@@ -14,13 +14,9 @@
 
 """A robot: the outermost group of parts, and what places them."""
 
-from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, ClassVar, Optional, TypeVar
+from typing import Any, ClassVar, Optional, TypeVar
 
-from .parts.base import PartGroup, RobotPart, _ExportRef
-
-if TYPE_CHECKING:  # pragma: no cover - typing only
-    from .parts.base import Composable
+from .parts.base import PartGroup, RobotPart
 
 RobotPartType = TypeVar("RobotPartType", bound=RobotPart)
 
@@ -46,19 +42,6 @@ class Robot(PartGroup):
     """
 
     ROBOT_TYPE: ClassVar[str] = ""
-
-    def __init__(
-        self,
-        parts: "Optional[Mapping[str, Composable]]" = None,
-        **named: "Composable",
-    ) -> None:
-        super().__init__(parts, **named)
-        self.handles: dict[str, Any] = {}
-        """Connections this robot placed, keyed by the part that needed them.
-        Reach hardware methods outside the part interface through these."""
-
-        self._placement: Any = None
-        self._declared: Optional[dict[str, Any]] = None
 
     @classmethod
     def build(cls, **kwargs: Any) -> "Robot":
@@ -168,38 +151,20 @@ class Robot(PartGroup):
         walk(self, "")
         return matches
 
-    @staticmethod
-    def _origin(part: Any) -> Any:
-        """The connection a composed part came out of, when it came out of one."""
-        if isinstance(part, _ExportRef):
-            return part.connection
-        return part
-
-    @classmethod
-    def _flatten(cls, declared: Mapping[str, Any], prefix: str = "") -> dict[str, Any]:
-        """The declaration snapshot, keyed the way the tree walk keys parts."""
-        flat: dict[str, Any] = {}
-        for name, value in declared.items():
-            path = f"{prefix}{name}"
-            if isinstance(value, dict):
-                flat.update(cls._flatten(value, f"{path}."))
-            else:
-                flat[path] = value
-        return flat
-
     def describe(self) -> str:
         """What this robot is made of, where it runs, and what backs each part.
 
-        Readable before anything is opened, which is when it is most useful: a
-        composed part already says which node it will run on and which connection
-        it will come from, so a composition can be checked without a robot
-        present.
+        Readable at any point, and most useful before anything is opened: a
+        composed part already says which node it will run on and which
+        connection it rides, so a composition can be checked without a robot
+        present. The tree holds the same objects either side of ``connect``, so
+        the answer does not change.
 
         Parts sharing a ``via`` share one connection, and are therefore opened
         once and commanded in their declared order rather than concurrently.
         """
         lines = [type(self).__name__]
-        rows: list[tuple[str, Any]] = []
+        rows: list[tuple[str, RobotPart]] = []
 
         def walk(group: PartGroup, prefix: str) -> None:
             for name, part in group.children.items():
@@ -211,37 +176,22 @@ class Robot(PartGroup):
 
         walk(self, "")
 
-        # Placement and ownership belong to the connection a part came out of,
-        # and a connected part no longer names one. The robot kept the snapshot
-        # it would restore on failure, so the same answer is available either
-        # side of connect rather than only before it.
-        declared = self._flatten(self._declared or {})
-
-        # Parts picked out of one connection share it; number the connections
-        # in the order they appear so the grouping is visible at a glance.
+        # Parts riding one connection share it; number the connections in the
+        # order they appear so the grouping is visible at a glance.
         origins: dict[int, str] = {}
-        for path, part in rows:
-            origin = self._origin(declared.get(path, part))
-            if id(origin) not in origins:
-                origins[id(origin)] = f"{type(origin).__name__}#{len(origins) + 1}"
+        for _, part in rows:
+            owner = part.owner
+            if id(owner) not in origins:
+                origins[id(owner)] = f"{type(owner).__name__}#{len(origins) + 1}"
 
         width = max((len(path) for path, _ in rows), default=0)
         for index, (path, part) in enumerate(rows):
             branch = "└──" if index == len(rows) - 1 else "├──"
-            composed = declared.get(path, part)
-            origin = self._origin(composed)
-            if isinstance(composed, _ExportRef):
-                # What parts a connection backs is only settled once it is open, so
-                # naming the connection's own kind here would say the arm is a
-                # connection. It is not.
-                kind = "declared"
-            else:
-                kind = composed.kind
-            node_rank = getattr(origin, "node_rank", None)
-            where = "here" if node_rank is None else str(node_rank)
+            owner = part.owner
+            where = "here" if owner.node_rank is None else str(owner.node_rank)
             lines.append(
-                f"{branch} {path:<{width}}  {kind:<13} node={where:<5} "
-                f"via {origins[id(origin)]}"
+                f"{branch} {path:<{width}}  {type(part).__name__:<20} "
+                f"node={where:<5} via {origins[id(owner)]}"
             )
         return "\n".join(lines)
 
@@ -249,57 +199,3 @@ class Robot(PartGroup):
     def named_parts(self) -> dict[str, RobotPart]:
         """Every part keyed by its dotted path."""
         return self.parts_of_type(RobotPart)
-
-    def connect(self) -> None:
-        """Open every connection this robot was composed from, then connect it.
-
-        Each distinct connection is opened once, however many parts came out of
-        it. If anything fails, whatever was already opened is torn down and the
-        tree goes back to what it was composed with, so you can fix the cause
-        and call ``connect`` again.
-        """
-        from .placement import Placement
-
-        if self._declared is None:
-            self._declared = self.declarations()
-
-        placement = self._placement or Placement()
-        try:
-            for name, handles in self.resolve(placement).items():
-                self.handles.setdefault(name, handles[0])
-            self._placement = placement
-            super().connect()
-        except Exception:
-            aborted = {id(handle) for handle in placement.handles}
-            self.handles = {
-                name: handle
-                for name, handle in self.handles.items()
-                if id(handle) not in aborted
-            }
-            placement.release()
-            self._placement = None
-            self.restore(self._declared)
-            raise
-
-    def disconnect(self) -> None:
-        """Disconnect every part, release the handles, restore the composition.
-
-        A disconnected robot can be connected again: the tree goes back to what
-        it was composed with, so ``connect`` opens the connections afresh rather
-        than reusing a part whose connection is gone.
-        """
-        super().disconnect()
-
-        placed = set()
-        if self._placement is not None:
-            placed = {id(handle) for handle in self._placement.handles}
-        for handle in reversed(list(self.handles.values())):
-            if id(handle) not in placed:
-                handle.disconnect()
-        if self._placement is not None:
-            self._placement.release()
-            self._placement = None
-
-        self.handles.clear()
-        if self._declared is not None:
-            self.restore(self._declared)

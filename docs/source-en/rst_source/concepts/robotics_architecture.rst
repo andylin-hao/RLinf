@@ -110,17 +110,15 @@ The Core Types
      - A readable, controllable subtree composed from named ``children``. It may
        represent an arm assembly, a torso, or another nested unit.
    * - ``Robot``
-     - The outermost ``PartGroup``. It also owns placement, registration, the
-       declaration snapshot, and handles created during ``connect()``.
-   * - ``PartHandle``
-     - A uniform reference to a local connection or one hosted in a worker.
+     - The outermost ``PartGroup``. It also owns registration and knows which
+       node each of its connections runs on.
 
-``Camera`` and ``EndEffector`` register specialized remote-proxy categories
-because they add methods to the standard part interface. ``MobileBase`` adds no
-extra methods, so a hosted base uses the normal controllable-part proxy. It is
-still a useful category for local code and backend registration: wheeled and
-legged bases both inherit ``MobileBase``, while their observation and action
-contracts describe the locomotion interface.
+There is no separate type for a part running elsewhere. A connection given a
+``node_rank`` is rebuilt in a worker on that node, and the object you already
+hold becomes a view of it: same class, same ``isinstance``, every public call
+now travelling. A device category such as ``Camera`` or ``MobileBase`` needs
+nothing registered for that to work, because the view is derived from the
+driver class itself.
 
 Select an Implementation from Configuration
 -------------------------------------------
@@ -152,7 +150,7 @@ a missing SDK clearly and validates configured camera identifiers on the node
 that owns them. Vendor imports still belong in ``_open()`` or ``discover()``,
 not at module import time.
 
-Three registries appear in the robotics code, but they name different things:
+Two registries appear in the robotics code, and they name different things:
 
 .. list-table::
    :header-rows: 1
@@ -168,10 +166,6 @@ Three registries appear in the robotics code, but they name different things:
      - ``Robot.register_type()`` and ``Robot.of_type()``
      - Selecting a named robot tree and its ``RobotConfig``; registration also
        supplies the standard discovery flow unless a custom class is passed.
-   * - One remote proxy category
-     - ``register_kind()``
-     - Rebuilding a hosted camera or end effector with the correct interface.
-       Framework category authors use this; ordinary driver authors do not.
 
 Connect a Shared Hardware Session to the Robot Tree
 ---------------------------------------------------
@@ -267,37 +261,36 @@ or rebuild it in a worker on the selected node:
    finally:
        robot.disconnect()
 
-During ``connect()``, the robot opens each distinct ``Connection`` once. A
-local connection gets a ``LocalPartHandle``. A remote connection is rebuilt in
-a scheduler worker and gets a ``RemotePartHandle``. Both present the same part
-surface, so task code does not branch on placement.
+During ``connect()``, the robot opens each distinct ``Connection`` once. With no
+``node_rank`` that happens in this process. With one, the connection is rebuilt
+inside a scheduler worker on that node and the object in the tree takes on a
+synthesized subclass of its own class whose public methods and properties
+forward to the worker. Nothing in the tree is replaced, so task code never
+branches on placement and ``isinstance`` keeps answering what it did before.
 
-Identity preserves resource ownership. Several robot paths that originate from
-one connection share one handle and one cleanup operation. Parts on different
-handles may run concurrently; parts sharing a handle run in declaration order
-because vendor sessions are rarely safe for concurrent access.
-
-Use ``spawn()`` only outside a robot, such as in a bench script that owns the
-returned handle. Inside a robot, construct the unconnected part normally and
-let ``Robot.connect()`` own startup, rollback, and cleanup.
+Identity is what preserves resource ownership. Every part answers ``owner``
+with the connection opened on its behalf -- itself for an arm holding its own
+link, the shared session for a view riding one -- and the robot connects owners
+rather than parts. Parts on different connections may run concurrently; parts
+sharing one run in declaration order, because vendor sessions are rarely safe
+for concurrent access.
 
 Inspect the Composition Before Connecting
 -----------------------------------------
 
-``Robot.describe()`` reads the composition snapshot rather than a live proxy.
-Node and ownership information therefore remains stable before, during, and
-after a connection:
+``Robot.describe()`` reads the composed tree, which holds the same objects
+before and after ``connect()``. Node and ownership information is therefore
+answerable with no robot present:
 
 .. code-block:: text
 
    FrankaRobot
-   ├── arm           declared      node=1     via FrankaROSArm#1
-   └── end_effector  declared      node=1     via FrankaROSArm#1
+   ├── arm           FrankaROSArm         node=1     via FrankaROSArm#1
+   └── end_effector  MethodGripper        node=1     via FrankaROSArm#1
 
-Rows sharing ``via`` share one ``Connection``. A directly composed part can
-report its category before connection. A choice from an unopened connection is
-shown as ``declared`` because the concrete backed part is not known until that
-connection opens; ``describe()`` does not substitute the connection's own kind.
+Rows sharing ``via`` share one ``Connection``. After connecting, a placed part
+reports its view class -- ``RemoteFrankaROSArm`` above -- which is how you see
+at a glance which parts ended up on another machine.
 
 At present, ``describe()`` focuses on topology, placement, and ownership. It
 does not print observation or action feature schemas. Use the conformance checks
@@ -317,18 +310,28 @@ Follow the Lifecycle
      - Constructors record hardware settings and placement. They do not import
        the vendor SDK or open hardware.
    * - Connect
-     - The robot opens each distinct connection, resolves selected parts, and
-       publishes handles in ``robot.handles``.
+     - The robot opens each distinct connection once, on the node that
+       connection named. A placed one is rebuilt there and the local object
+       becomes a view of it.
    * - Use
      - The robot reads, resets, and commands the named tree, concurrently where
        resource ownership allows it.
    * - Disconnect
-     - Connections release the exact device returned by ``_open()``, handles
-       shut down, and the robot restores its original composition.
+     - Connections release the exact device returned by ``_open()``. A placed
+       one closes on its node before its worker is stopped, and becomes an
+       ordinary unopened object again.
 
 ``_open()`` returns the vendor object, and ``_release(device)`` receives that
 same object. Cleanup should release the argument rather than look it up again on
 ``self``.
+
+Implement those two, never ``connect()`` and ``disconnect()``. The public pair
+decides *where* a device runs, so a part that overrode them would opt itself
+out of ever being placed -- and a thread started after ``super().connect()``
+would start on the machine holding the part rather than the one holding the
+device. A device category that wraps its drivers has ``_opened()`` and
+``_closing()`` for that: ``BaseCamera`` starts and stops its capture loop
+there, beside the camera wherever it ended up.
 
 Connection is all-or-nothing. If a later connection fails, ``Robot.connect()``
 tears down everything it already opened and restores the composition. After
@@ -336,28 +339,30 @@ fixing the hardware, you can call ``connect()`` on the same robot again.
 ``disconnect()`` is idempotent and returns the robot to the same reconnectable
 state.
 
-Reach Device-Specific Methods Through a Handle
-----------------------------------------------
+Reach Device-Specific Methods on the Part Itself
+------------------------------------------------
 
-Placement creates the worker surface from the connection class, so you do not
-write another worker class for every device. Public methods outside the standard
-part contract remain callable through the handle:
+Both halves of placement are derived from the driver class, so a method outside
+the standard part contract travels for the same reason the driver has it. Ask a
+part which connection it rides, then call the method:
 
 .. code-block:: python
 
-   robot.handles["arm"].is_robot_up().wait()[0]
-   robot.handles["arm"].reset_joint(home_qpos).wait()
+   controller = robot.child("arm").owner
+   controller.is_robot_up()
+   controller.reset_joint(home_qpos)
 
-The expression is the same for local and remote parts. Keep task code on the
-standard observation and action tree; use a handle for setup, diagnostics, or a
-vendor operation that has no canonical part method.
+The expression is the same whether that arm is on this bench or on another
+node, and there is no result to unwrap. Keep task code on the standard
+observation and action tree; reach for the connection for setup, diagnostics,
+or a vendor operation with no canonical part method.
 
 Preserve the Import Boundary
 ----------------------------
 
 Part modules must not import ``rlinf.scheduler`` or Gymnasium.
 ``rlinf/robotics/placement/handles.py`` is the bridge, loaded lazily by
-``Connection.place()`` when placement is needed.
+``Connection.connect()`` and only for a connection that named a node.
 
 The point is the direction of the dependency. The scheduler is a general
 framework and robotics is one extension of it, so the scheduler never imports
@@ -397,9 +402,10 @@ Find the Implementation
      - ``MethodArm``, ``MethodGripper``, and ``MethodCamera`` views over shared
        vendor sessions.
    * - ``robotics/placement/``
-     - Connection resolution, local and remote handles, and worker placement.
+     - The worker that hosts a connection, and the view a placed connection
+       becomes. Both are synthesized from the driver class.
    * - ``robotics/robot.py``
-     - The outer composition, declaration snapshot, description, and lifecycle.
+     - The outer composition, description, and lifecycle.
    * - ``robotics/discovery/``
      - Robot type registration, standard hardware enumeration, environment
        variable completion, and configuration lookup.

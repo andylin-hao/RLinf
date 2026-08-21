@@ -36,22 +36,26 @@ Device categories are *not* here. ``Camera`` lives in
 :mod:`rlinf.robotics.parts.cameras`, ``EndEffector`` in
 :mod:`rlinf.robotics.parts.end_effectors`, and ``MobileBase`` in
 :mod:`rlinf.robotics.parts.mobility`, each beside the drivers that implement it.
-Categories with a specialized remote surface announce it with
-:func:`register_kind`; a mobile base adds no methods beyond
-``ControllablePart`` and uses that standard proxy. This module is the taxonomy,
-not the catalogue, so importing it pulls in nothing about hardware a node does
-not have.
+This module is the taxonomy, not the catalogue, so importing it pulls in
+nothing about hardware a node does not have.
 
 Composing is inert. Constructing a connection records its arguments and the
 node it belongs to; :meth:`~rlinf.robotics.robot.Robot.connect` is the only
 thing that opens anything. That is what lets a robot be composed and described
 on a laptop, then run on the machine wired to the hardware.
 
+Where a part runs changes nothing about what it is. Given a ``node_rank``, a
+connection is rebuilt inside a worker on that node when it opens, and the
+object already in the tree becomes a view of it -- same class, same
+``isinstance``, every public call now travelling. So a robot is composed from
+real parts and nothing is swapped, and a driver never writes a remote
+counterpart to itself.
+
 No module here imports ``rlinf.scheduler`` or Gymnasium. The dependency runs
 one way: the scheduler is a general framework that reaches robotics by name
 from a config and through a registry, never by importing it, and Gymnasium
 belongs to the env layer that consumes a robot. Only the composition layer
-imports either back, and :meth:`Connection.place` reaches the placement layer
+imports either back, and :meth:`Connection.connect` reaches the placement layer
 lazily so that stays true of parts.
 
 Ray is not on that list -- it is a base dependency of the package, so the name
@@ -65,21 +69,11 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from functools import partial
 from importlib import import_module
-from typing import TYPE_CHECKING, Any, Callable, ClassVar, Optional, TypeVar, Union
+from typing import TYPE_CHECKING, Any, Callable, ClassVar, Optional, TypeVar
 
 if TYPE_CHECKING:
-    from ..placement import PartHandle
+    pass
 
-    #: What may be composed under a name in a :class:`PartGroup`: a part, a
-    #: subtree of parts, or one part picked out of a connection that is not
-    #: open yet.
-    #:
-    #: Typing only, and deliberately so. Its third member is private, and
-    #: naming the union is what lets an editor suggest the three shapes
-    #: without a robot author ever having to write that name. Anything else --
-    #: a bare :class:`Connection`, a stray config object -- is refused by
-    #: :meth:`PartGroup._check_composable` with a message that says why.
-    Composable = Union["RobotPart", "PartGroup", "_ExportRef"]
 
 KeyType = TypeVar("KeyType")
 ValueType = TypeVar("ValueType")
@@ -118,27 +112,6 @@ class _Recipe:
     worker_name: Optional[str] = None
 
 
-@dataclass(frozen=True, eq=False)
-class _ExportRef:
-    """A part picked out of a connection that is not open yet.
-
-    ``connection.part("arm")`` evaluates to one of these.
-    :meth:`PartGroup.resolve` swaps it for the real part once the connection
-    behind it has been opened, so this only exists between composing a robot
-    and connecting it.
-
-    Internal, and deliberately unnamed in the public API: a robot author writes
-    ``part("arm")`` and composes the result, and never has a reason to say what
-    type that is.
-    """
-
-    connection: "Connection"
-    name: str
-
-    def __repr__(self) -> str:  # pragma: no cover - debugging aid
-        return f"<{type(self.connection).__name__}.{self.name}, not open yet>"
-
-
 class _ConnectionMeta(ABCMeta):
     """Take ``node_rank`` and ``worker_name`` before ``__init__`` sees them.
 
@@ -165,37 +138,6 @@ class _ConnectionMeta(ABCMeta):
         return connection
 
 
-#: Device categories, by the name a remote proxy is rebuilt from. Registered
-#: rather than listed, because this module is the taxonomy and not the
-#: catalogue: cameras live in ``parts/cameras``, end effectors in
-#: ``parts/end_effectors``, and neither is imported here.
-_PART_KINDS: dict[str, type] = {}
-
-
-def register_kind(kind: str) -> Callable[[type], type]:
-    """Name a device category, so a hosted part comes back as one.
-
-    Placement sends a part's :attr:`Connection.kind` across the process
-    boundary, and the handle on the far side builds a proxy of the matching
-    class. Registering is what lets a camera hosted on another machine arrive
-    with ``get_frame`` on it rather than as a part in general::
-
-        @register_kind("camera")
-        class Camera(RobotPart): ...
-
-    Decorate the category, not a driver: one name covers every camera. A
-    category nobody registers still works, and simply arrives as the nearest
-    ancestor that is registered.
-    """
-
-    def register(part_cls: type) -> type:
-        _PART_KINDS[kind] = part_cls
-        return part_cls
-
-    return register
-
-
-@register_kind("connection")
 class Connection(ABC, metaclass=_ConnectionMeta):
     """One link to hardware: which machine it runs on, and when it is open.
 
@@ -238,9 +180,14 @@ class Connection(ABC, metaclass=_ConnectionMeta):
     is the only question worth asking: does an observation of the whole thing
     say anything a policy can use.
 
-    A connection whose lifecycle is more than opening a device -- an arm that
-    must home before it is usable -- overrides :meth:`connect` and
-    :meth:`disconnect` rather than the two hooks.
+    Opening and closing are :meth:`_open` and :meth:`_release`, and a driver
+    implements those rather than :meth:`connect` and :meth:`disconnect`. The
+    two public ones decide *where* the device lives and must run whole for a
+    placed connection to work; a subclass that overrode ``connect`` and started
+    a thread after it would start that thread on the wrong machine. A category
+    that wraps its drivers -- a camera running a capture loop around whatever
+    the driver opened -- uses :meth:`_opened` and :meth:`_closing`, which run
+    beside the device wherever it ended up.
     """
 
     #: The vendor object this part talks to, or ``None`` before it is opened.
@@ -254,6 +201,16 @@ class Connection(ABC, metaclass=_ConnectionMeta):
     #: Set by the metaclass on every instance. The class default keeps code
     #: that reads it safe for a connection built some other way.
     _recipe: Optional[_Recipe] = None
+
+    #: The worker group holding this connection, while it is placed on a node.
+    _group: Any = None
+
+    #: What to become again when a placed connection is let go.
+    _local_cls: Optional[type] = None
+
+    #: The connection this one rides, when it is not its own link. Set by
+    #: :meth:`part`, or by a view's constructor when it is handed its host.
+    _owner: Optional["Connection"] = None
 
     def _open(self) -> Any:
         """Reach the hardware and return whatever speaks to it."""
@@ -272,22 +229,87 @@ class Connection(ABC, metaclass=_ConnectionMeta):
         every teleop device closing nothing.
         """
 
+    def _opened(self) -> None:
+        """Run once the device is open, on the machine holding it.
+
+        For a category that adds something around its drivers rather than
+        instead of them: :class:`~rlinf.robotics.parts.cameras.base.BaseCamera`
+        starts the loop that reads frames out of whatever the driver opened.
+        A driver itself has no use for this -- ``_open`` is already that place.
+        """
+
+    def _closing(self) -> None:
+        """Undo :meth:`_opened`, while the device is still open."""
+
     @property
     def is_connected(self) -> bool:
         """Whether the part is ready for observations."""
         return self._device is not None
 
-    def connect(self) -> None:
-        """Connect to the physical part, once.
+    @property
+    def node_rank(self) -> Optional[int]:
+        """The node this connection runs on, or ``None`` for this process.
 
-        A part that opens in place rather than returning a handle still counts
-        as connected, so ``_open`` may return nothing.
+        Read off the recipe, so it answers before anything is opened and keeps
+        answering the same afterwards -- including once the object has become a
+        view of a hosted connection, which is why it never travels.
         """
-        if self._device is None:
+        return self._recipe.node_rank if self._recipe else None
+
+    @property
+    def owner(self) -> "Connection":
+        """The connection that is opened and closed on this part's behalf.
+
+        A part holding its own link answers itself, which is the ordinary case
+        for an arm or a camera. A part riding a shared session -- one arm of a
+        dual-arm controller, a gripper on the arm's bus -- answers that
+        session, so a robot opens it once however many of its parts it
+        composed.
+
+        Nothing declares this. :meth:`part` binds it when it hands a part out,
+        which is the only way a part riding a session reaches a robot. A driver
+        that returns a fresh helper from :attr:`parts` therefore cannot forget
+        to say what opens it -- and forgetting used to mean the session was
+        never opened at all, with the failure surfacing at the first read.
+
+        Followed through, so a part on a session that itself rides another link
+        answers the one at the bottom.
+        """
+        return self._owner.owner if self._owner is not None else self
+
+    def connect(self) -> None:
+        """Open this connection, once, on the machine it belongs to.
+
+        With no ``node_rank`` that is here: :meth:`_open` reaches the hardware
+        and what it returns is held until :meth:`disconnect`. A part that opens
+        in place rather than returning a handle still counts as connected, so
+        ``_open`` may return nothing.
+
+        With one, the connection is rebuilt inside a worker on that node and
+        *this object becomes a view of it* -- same class, same ``isinstance``,
+        every public call now travelling. Nothing is swapped in the robot's
+        tree, so a part placed on another machine and one sitting on this
+        bench are the same thing to everything holding them.
+        """
+        if self._device is not None:
+            return
+        if self._recipe is None or self._recipe.node_rank is None:
             self._device = self._open() or self
+            self._opened()
+            return
+
+        # Imported here rather than at module scope: this is the one bridge to
+        # the scheduler, and a driver's source may not name it.
+        from ..placement import host
+
+        group, view = host(self)
+        self._group = group
+        self._local_cls = type(self)
+        self._device = group
+        self.__class__ = view
 
     def disconnect(self) -> None:
-        """Release resources owned by the connection, once.
+        """Let this connection go, once, wherever it was opened.
 
         ``_release`` runs while the handle is still there, because that is what
         it releases. Clearing it first left every implementation that reaches
@@ -295,44 +317,31 @@ class Connection(ABC, metaclass=_ConnectionMeta):
         to live -- closing nothing, and the connection reported itself
         disconnected while the reader, its thread and its serial port stayed
         open.
+
+        A placed connection stops its worker instead, and becomes an ordinary
+        unopened object again, so the same tree can be connected a second time.
         """
         device = self._device
         if device is None:
             return
         try:
-            self._release(device)
+            if self._group is None:
+                self._closing()
+                self._release(device)
+            else:
+                from ..placement import shutdown
+
+                self.__class__ = self._local_cls
+                try:
+                    shutdown(self._group)
+                finally:
+                    self._group = None
+                    self._local_cls = None
         finally:
             self._device = None
 
     def reset(self) -> None:
         """Reset this connection when it has resettable state."""
-
-    # -- Composition ------------------------------------------------------
-
-    @property
-    def kind(self) -> str:
-        """This connection's narrowest registered category.
-
-        Named rather than derived at each call site, because the proxy on the
-        other side of a placement has to rebuild the same interface from a
-        description that crossed a process boundary.
-
-        Narrowest wins, so a gripper is an ``end_effector`` rather than the
-        ``controllable`` it also is. That is settled by comparing the matching
-        classes, not by the order categories happened to register in -- they
-        register as their modules are imported, and a node only imports the
-        hardware it has.
-        """
-        found: Optional[str] = None
-        narrowest: Optional[type] = None
-        for kind, part_cls in _PART_KINDS.items():
-            if not isinstance(self, part_cls):
-                continue
-            if narrowest is None or issubclass(part_cls, narrowest):
-                found, narrowest = kind, part_cls
-        if found is None:
-            raise TypeError(f"{type(self).__name__} is not a Connection.")
-        return found
 
     # -- Drivers, by the name a config selects them with --------------------
 
@@ -455,7 +464,7 @@ class Connection(ABC, metaclass=_ConnectionMeta):
         """
         return {}
 
-    def part(self, name: str) -> "_ExportRef":
+    def part(self, name: str) -> "RobotPart":
         """Pick one of the parts this connection backs, to compose under a name.
 
         Use it when one session backs several parts::
@@ -466,19 +475,10 @@ class Connection(ABC, metaclass=_ConnectionMeta):
                 end_effector=session.part("left_end_effector"),
             )
 
-        Which parts a session backs is only settled once it is open, and for a
-        session open on another machine only that machine can say. So this
-        records the choice and :meth:`Robot.connect` acts on it. The connection
-        is opened once however many parts are picked out of it.
-        """
-        return _ExportRef(self, name)
-
-    def _live_part(self, name: str) -> "RobotPart":
-        """Return one part of an open connection, or say what is on offer.
-
-        The lookup :attr:`parts` supports once the connection is open, which the
-        part-addressed calls below need. :meth:`part` is the composing verb and
-        answers before anything has been opened.
+        What comes back is the part itself, unopened, riding this connection --
+        so a robot holds the same object whether the session ends up here or on
+        another node. Picking several costs one open: this is where each of
+        them is told that this connection is its :attr:`owner`.
         """
         available = self.parts
         if name not in available:
@@ -486,129 +486,12 @@ class Connection(ABC, metaclass=_ConnectionMeta):
                 f"{type(self).__name__} backs no part {name!r}. "
                 f"Available: {sorted(available)}."
             )
-        return available[name]
-
-    # -- Subpart-addressed surface ----------------------------------------
-    # Public, so a hosted part exposes these as RPCs automatically and one
-    # generic proxy can reach any subpart.
-
-    def describe_self(self) -> dict[str, Any]:
-        """Describe this part itself: its kind and its feature dictionaries.
-
-        A leaf part -- a camera, a gripper on its own port -- exposes no
-        subparts, so this is what a remote handle proxies.
-        """
-        described: dict[str, Any] = {"kind": self.kind}
-        if isinstance(self, RobotPart):
-            described["observation"] = self.observation_features
-        if isinstance(self, ControllablePart):
-            described["action"] = self.action_features
-        return described
-
-    def describe_parts(self) -> dict[str, dict[str, Any]]:
-        """Describe every part: its kind and its feature dictionaries.
-
-        One call carries everything a remote handle needs to build correctly
-        typed proxies, so placement costs a single round trip rather than one
-        per subpart per property.
-        """
-        described: dict[str, dict[str, Any]] = {}
-        for name, part in self.parts.items():
-            entry: dict[str, Any] = {
-                "kind": part.kind,
-                "observation": part.observation_features,
-            }
-            if isinstance(part, ControllablePart):
-                entry["action"] = part.action_features
-            described[name] = entry
-        return described
-
-    def part_observation(self, name: str) -> dict[str, Any]:
-        """Read one part's observation."""
-        return self._live_part(name).get_observation()
-
-    def part_action(self, name: str, action: dict[str, Any]) -> dict[str, Any]:
-        """Send an action to one controllable part."""
-        part = self._live_part(name)
-        if not isinstance(part, ControllablePart):
-            raise TypeError(
-                f"Part {name!r} of {type(self).__name__} is not controllable."
-            )
-        return part.send_action(action)
-
-    def part_reset(self, name: str) -> None:
-        """Reset one part."""
-        self._live_part(name).reset()
-
-    def part_reopen(self, name: str) -> None:
-        """Reopen one part, for a camera that stalled behind a proxy."""
-        part = self._live_part(name)
-        reopen = getattr(part, "reopen", None)
-        if not callable(reopen):
-            raise TypeError(
-                f"Part {name!r} of {type(self).__name__} cannot be reopened."
-            )
-        reopen()
-
-    def shutdown(self) -> None:
-        """Disconnect during worker teardown."""
-        if self.is_connected:
-            self.disconnect()
-
-    # -- Placement --------------------------------------------------------
-
-    @property
-    def node_rank(self) -> Optional[int]:
-        """The node this connection runs on, or ``None`` for this process."""
-        return self._recipe.node_rank if self._recipe else None
-
-    def place(self) -> "PartHandle":
-        """Open this connection where it belongs, and return a handle to it.
-
-        With no ``node_rank`` the connection is opened in this process and the
-        handle wraps the object you already have. With one, it is rebuilt from
-        its recipe inside a scheduler worker on that node and the handle proxies
-        to it -- which is why a constructor must only store its settings.
-
-        Both handles expose the same API, so callers never branch on placement.
-        Any connection can be placed, not only arms: a camera can run on the
-        machine it is plugged into while the policy runs elsewhere.
-
-        :meth:`Robot.connect` calls this, once per connection however many parts
-        were picked out of it, and owns the handle it gets back. Call it
-        yourself only outside a robot, on a bench script, where nothing else
-        will release it.
-
-        The placement layer is imported here rather than at module scope, so a
-        part's own source never names the scheduler.
-        """
-        from ..placement import LocalPartHandle, PartWorkerHost
-
-        recipe = self._recipe
-        if recipe is None or recipe.node_rank is None:
-            self.connect()
-            return LocalPartHandle(self)
-
-        return PartWorkerHost(
-            recipe.part_cls,
-            recipe.args,
-            recipe.kwargs,
-            node_rank=recipe.node_rank,
-            worker_name=recipe.worker_name,
-        ).spawn()
-
-    @classmethod
-    def spawn(cls, *args: Any, **kwargs: Any) -> "PartHandle":
-        """Declare this connection and place it in one step.
-
-        The eager form, for a bench script or a test that wants one device and
-        no robot around it. ``ExampleArm.spawn(ip, node_rank=1)`` is
-        ``ExampleArm(ip, node_rank=1).place()``, and the caller owns the handle.
-        """
-        return cls(*args, **kwargs).place()
+        part = available[name]
+        if part is not self and part._owner is None:
+            part._owner = self
+        return part
 
 
-@register_kind("part")
 class RobotPart(Connection):
     """A connection you can read: a component of the robot itself.
 
@@ -631,7 +514,6 @@ class RobotPart(Connection):
         """Read the current part observation."""
 
 
-@register_kind("controllable")
 class ControllablePart(RobotPart):
     """A part a policy can command, not only read.
 
@@ -681,19 +563,17 @@ class PartGroup(ControllablePart):
 
     def __init__(
         self,
-        parts: "Optional[Mapping[str, Composable]]" = None,
-        **named: "Composable",
+        parts: "Optional[Mapping[str, RobotPart]]" = None,
+        **named: "RobotPart",
     ) -> None:
-        combined: "dict[str, Composable]" = {**(parts or {}), **named}
+        combined: "dict[str, RobotPart]" = {**(parts or {}), **named}
         if any(not name or not isinstance(name, str) for name in combined):
             raise ValueError(
                 f"{type(self).__name__} part names must be non-empty strings."
             )
         for name, value in combined.items():
             self._check_composable(name, value)
-        self._children: "dict[str, Composable]" = combined
-        self._handle_of: dict[str, int] = {}
-        """Which connection each part came from, so sharing is respected."""
+        self._children: "dict[str, RobotPart]" = combined
 
     def _check_composable(self, name: str, value: Any) -> None:
         """Refuse anything that is not a part, and say what to do instead.
@@ -706,7 +586,7 @@ class PartGroup(ControllablePart):
         mistake worth explaining: the value is a link that backs parts, and the
         fix is to pick one rather than to find a different object.
         """
-        if isinstance(value, (RobotPart, _ExportRef)):
+        if isinstance(value, RobotPart):
             return
         if isinstance(value, Connection):
             # Name a real one where the connection can say: a message that
@@ -728,11 +608,11 @@ class PartGroup(ControllablePart):
         )
 
     @property
-    def children(self) -> "dict[str, Composable]":
+    def children(self) -> "dict[str, RobotPart]":
         """The parts this group is composed of, by the names it gave them."""
         return self._children
 
-    def child(self, name: str) -> "Composable":
+    def child(self, name: str) -> "RobotPart":
         """Return one composed part, or say which names exist."""
         if name not in self._children:
             raise KeyError(
@@ -743,11 +623,8 @@ class PartGroup(ControllablePart):
 
     @property
     def is_connected(self) -> bool:
-        """Whether every part is resolved and connected."""
-        values = list(self._children.values())
-        if any(isinstance(value, _ExportRef) for value in values):
-            return False
-        return all(part.is_connected for part in values)
+        """Whether every connection this group's parts ride on is open."""
+        return all(owner.is_connected for owner in self.owners())
 
     @property
     def observation_features(self) -> dict[str, Any]:
@@ -765,12 +642,27 @@ class PartGroup(ControllablePart):
             if isinstance(part, ControllablePart)
         }
 
+    def owners(self) -> list["Connection"]:
+        """Every distinct connection this group's parts ride on, in order.
+
+        One session backing four parts appears once, which is what makes it
+        open once and close once. Identity, not equality: two arms of the same
+        model built from equal arguments are still two devices.
+        """
+        seen: dict[int, Connection] = {}
+        for part in self._children.values():
+            found = part.owners() if isinstance(part, PartGroup) else [part.owner]
+            for owner in found:
+                seen.setdefault(id(owner), owner)
+        return list(seen.values())
+
     def _batches(self) -> list[list[str]]:
         """Group part names by connection: distinct ones may run together."""
         order: list[list[str]] = []
         index: dict[int, int] = {}
         for position, name in enumerate(self._children):
-            key = self._handle_of.get(name, -position - 1)
+            part = self._children[name]
+            key = id(part.owner) if not isinstance(part, PartGroup) else -position - 1
             if key in index:
                 order[index[key]].append(name)
             else:
@@ -794,32 +686,33 @@ class PartGroup(ControllablePart):
         return merged
 
     def connect(self) -> None:
-        """Connect every part, rolling back the ones already connected."""
-        connected: list[RobotPart] = []
+        """Open every connection this tree rides on, or none of them.
+
+        A session backing several parts is opened once, and if a later one
+        fails, whatever already opened is closed again -- so a half-built robot
+        is never handed back and the same tree can be connected again once the
+        cause is fixed.
+        """
+        opened: list[Connection] = []
         try:
-            for part in self._children.values():
-                if not part.is_connected:
-                    part.connect()
-                    connected.append(part)
+            for owner in self.owners():
+                if not owner.is_connected:
+                    owner.connect()
+                    opened.append(owner)
         except Exception:
-            for part in reversed(connected):
-                part.disconnect()
+            for owner in reversed(opened):
+                owner.disconnect()
             raise
 
     def disconnect(self) -> None:
-        """Disconnect every connected part, in reverse order.
+        """Close every connection this tree rides on, newest first.
 
-        Disconnecting puts the tree back to what it was composed with, so a
-        second call walks one holding unresolved picks rather than live parts.
-        A pick has nothing to disconnect, and asking it used to raise -- from
-        inside the ``finally`` a caller runs when it is not sure the robot ever
-        came up, replacing the error it was actually handling.
+        Idempotent, because teardown runs this from a ``finally`` block that
+        does not know whether the robot ever came up.
         """
-        for part in reversed(list(self._children.values())):
-            if isinstance(part, _ExportRef):
-                continue
-            if isinstance(part, PartGroup) or part.is_connected:
-                part.disconnect()
+        for owner in reversed(self.owners()):
+            if owner.is_connected:
+                owner.disconnect()
 
     def reset(self) -> None:
         """Reset every part."""
@@ -865,44 +758,3 @@ class PartGroup(ControllablePart):
         for value in results.values():
             applied.update(value)
         return applied
-
-    def resolve(self, placement: Any) -> dict[str, list[Any]]:
-        """Open each composed connection and put what it resolves to in the tree.
-
-        Returns the handles used, keyed by the part name that needed them, so a
-        robot can publish them and so sharing is visible to :meth:`_batches`.
-        """
-        used: dict[str, list[Any]] = {}
-        for name, value in list(self._children.items()):
-            if isinstance(value, PartGroup):
-                nested = value.resolve(placement)
-                flat = [h for handles in nested.values() for h in handles]
-                if flat:
-                    used[name] = flat
-                    self._handle_of[name] = id(flat[0])
-                continue
-            if not isinstance(value, (Connection, _ExportRef)):
-                continue
-            connection = value.connection if isinstance(value, _ExportRef) else value
-            handle = placement.handle_for(connection)
-            used[name] = [handle]
-            self._handle_of[name] = id(handle)
-            self._children[name] = placement.resolve(value)
-        return used
-
-    def declarations(self) -> "dict[str, Composable | dict]":
-        """Snapshot the tree as composed, so opening it can be undone."""
-        return {
-            name: value.declarations() if isinstance(value, PartGroup) else value
-            for name, value in self._children.items()
-        }
-
-    def restore(self, declared: "Mapping[str, Composable | dict]") -> None:
-        """Put every part back to what it was composed with."""
-        for name, value in declared.items():
-            current = self._children.get(name)
-            if isinstance(value, dict) and isinstance(current, PartGroup):
-                current.restore(value)
-            else:
-                self._children[name] = value
-        self._handle_of.clear()

@@ -12,39 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Opening a robot's connections where they belong, and reaching them there.
+"""Running a connection on the node it belongs to.
 
 A part whose vendor SDK only exists on one machine cannot be built here and
 moved. So a connection bound for another node is rebuilt there from the recipe
-its constructor left behind, and what comes back is a handle that behaves the
-same whether the part ended up local or remote.
+its constructor left behind, and the object already in the robot's tree becomes
+a view of it. Nothing is swapped, and a driver writes no remote counterpart:
+both the worker and the view are derived from the driver class.
 
-:mod:`.plan` is the bookkeeping half -- what a connect opened, in what order,
-and what to release if it fails -- and imports nothing from the scheduler.
-:mod:`.handles` is the running half, and is the one module in
-``rlinf.robotics`` allowed to import it.
+:mod:`.handles` is the whole of it, and is the one module in ``rlinf.robotics``
+allowed to import the scheduler.
 """
 
-from .handles import (
-    LocalPartHandle,
-    PartHandle,
-    PartWorkerHost,
-    RemoteCamera,
-    RemoteControllablePart,
-    RemoteEndEffector,
-    RemotePart,
-    RemotePartHandle,
-)
-from .plan import Placement
+from .handles import PartWorkerHost, host, remote_view_of, shutdown
 
-__all__ = [
-    "LocalPartHandle",
-    "PartHandle",
-    "Placement",
-    "RemoteCamera",
-    "RemoteControllablePart",
-    "RemoteEndEffector",
-    "RemotePart",
-    "RemotePartHandle",
-    "PartWorkerHost",
-]
+__all__ = ["PartWorkerHost", "host", "remote_view_of", "shutdown"]

@@ -118,10 +118,8 @@ class DualFrankaJointEnv(DualFrankaEnv):
             tj = self._clip_joints_to_limits(tj)
             target_joints.append(tj)
 
-        left_f = ctrls[0].move_joints(target_joints[0].astype(np.float32))
-        right_f = ctrls[1].move_joints(target_joints[1].astype(np.float32))
-        left_f.wait()
-        right_f.wait()
+        ctrls[0].move_joints(target_joints[0].astype(np.float32))
+        ctrls[1].move_joints(target_joints[1].astype(np.float32))
 
     def _pace_between_action_and_state_read(self) -> bool:
         return not self.config.teleop_direct_stream

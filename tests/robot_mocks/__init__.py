@@ -171,18 +171,22 @@ def mocked_sdks(
             os.environ[name] = value
     else:
         # A faked SDK lives in this process, and a part placed on a node is
-        # built in another one that never saw it. Open every connection here:
-        # what this checks is the code, not the cluster.
+        # rebuilt in another one that never saw it. Forget the node every
+        # recipe names, so every connection opens here: what this checks is
+        # the code, not the cluster.
+        from dataclasses import replace as _replace
+
         from rlinf.robotics.parts import base as _base
 
-        def _place_here(self):
-            from rlinf.robotics.placement import LocalPartHandle
+        _connect = _base.Connection.connect
 
-            self.connect()
-            return LocalPartHandle(self)
+        def _connect_here(self):
+            if self._recipe is not None and self._recipe.node_rank is not None:
+                self._recipe = _replace(self._recipe, node_rank=None)
+            _connect(self)
 
-        patches.append((_base.Connection, "place", _base.Connection.place))
-        _base.Connection.place = _place_here
+        patches.append((_base.Connection, "connect", _connect))
+        _base.Connection.connect = _connect_here
     # Modules that start processes rather than only talking to an SDK. A fake
     # module in sys.modules arrives too late for these, because they import
     # psutil at module scope.
