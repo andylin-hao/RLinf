@@ -58,12 +58,13 @@ def main() -> None:
     gripper_type = os.environ.get("FRANKA_GRIPPER_TYPE", "robotiq")
     gripper_connection = os.environ.get("FRANKA_GRIPPER_PORT")
 
-    controller = FrankyArm.spawn(
+    controller = FrankyArm(
         robot_ip=robot_ip,
         gripper_type=gripper_type,
         gripper_connection=gripper_connection,
         node_rank=0,
     )
+    controller.connect()
 
     # Wait for the controller to publish a valid state.
     start_time = time.time()
@@ -191,7 +192,7 @@ def main() -> None:
 
     print("shutting down...")
     try:
-        controller.cleanup()
+        controller.disconnect()
     except Exception:
         pass
 

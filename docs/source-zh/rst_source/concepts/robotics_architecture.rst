@@ -152,6 +152,8 @@ robotics 代码中有三种 registry，它们所命名的对象不同：
 
 传给 ``Robot`` 的关键字参数会进入 ``robot.children``，因此上述机器人最终公开 ``arm`` 和 ``end_effector``。裸 ``Connection`` 不组合任何部件，所以没有 ``children``；``PartGroup`` 中的部件已经位于 ``children``，因此其 ``parts`` 为空。``connection.part(...)`` 是两套命名体系相交的位置。
 
+``part()`` 同时会告诉 view 由哪条连接负责打开它，因此 view 不需要声明任何生命周期：没有 ``_open``，也没有 ``connect``。只有本身无法打开任何硬件的部件才会被这样接管。如果这里列出的是一台自带链路的设备——比如装在这条机械臂腕部、却走自己 USB 总线的相机——它会保留自己的链路和指定的节点，由机器人单独打开。
+
 如果共享 session 本身没有可供 policy 使用的观测，应直接继承 ``Connection``，而不是 ``RobotPart``。Turtle2 的联动控制器采用这种形式：
 
 .. code-block:: python

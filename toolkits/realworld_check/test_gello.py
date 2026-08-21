@@ -126,12 +126,13 @@ def setup_franky():
     robot_ip = os.environ.get("FRANKA_ROBOT_IP", "172.16.0.2")
     gripper_port = _resolve_local_robotiq_port()
     print(f"Connecting to Franka at {robot_ip} ...", flush=True)
-    controller = FrankyArm.spawn(
+    controller = FrankyArm(
         robot_ip=robot_ip,
         gripper_type="robotiq",
         gripper_connection=gripper_port,
         node_rank=0,
     )
+    controller.connect()
     for _ in range(60):
         if controller.is_robot_up():
             break

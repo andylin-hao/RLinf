@@ -177,6 +177,26 @@ def remote_view_of(part_cls: type) -> type:
     return view
 
 
+def _refuse_collisions(part_cls: type, methods: dict[str, Any]) -> None:
+    """Refuse to host a part whose method names the worker already uses.
+
+    The part's methods are re-declared in the worker's class body, so one
+    sharing a name with :class:`Worker` -- or with :data:`_ATTRIBUTE_RPC`, the
+    call a view reads properties through -- would replace it. That breaks the
+    worker rather than the part, at some later point and with no mention of the
+    method that did it, so it is refused here where the name is still in hand.
+    """
+    taken = {name for name in dir(Worker) if not name.startswith("_")}
+    taken.add(_ATTRIBUTE_RPC)
+    clashing = sorted(set(methods) & taken)
+    if clashing:
+        raise TypeError(
+            f"{part_cls.__name__} cannot be placed on a node: its methods "
+            f"{clashing} share a name with the worker that would host it. "
+            "Rename them, or keep them private."
+        )
+
+
 class PartWorkerHost:
     """Hosts one connection in a scheduler worker and hands back its group.
 
@@ -257,9 +277,13 @@ class PartWorkerHost:
         # ``WorkerMeta`` wraps them for failure capture; inherited attributes
         # are invisible to it. This is a loop, not hand-written delegation, and
         # the bodies stay in the part.
-        for name, func in inspect.getmembers(part_cls, inspect.isfunction):
-            if not name.startswith("_") and name not in namespace:
-                namespace[name] = func
+        methods = {
+            name: func
+            for name, func in inspect.getmembers(part_cls, inspect.isfunction)
+            if not name.startswith("_")
+        }
+        _refuse_collisions(part_cls, methods)
+        namespace.update(methods)
 
         worker_cls = _RemoteViewMeta(
             f"{part_cls.__name__}Worker", (Worker, part_cls), namespace

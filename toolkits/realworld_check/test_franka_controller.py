@@ -72,12 +72,13 @@ def main():
             "motor_ids": tuple(args.hand_motor_ids),
         }
 
-    controller = FrankaROSArm.spawn(
+    controller = FrankaROSArm(
         robot_ip=robot_ip,
         end_effector_type=args.end_effector_type,
         end_effector_config=end_effector_config,
         node_rank=0,
     )
+    controller.connect()
 
     start_time = time.time()
     while not controller.is_robot_up():

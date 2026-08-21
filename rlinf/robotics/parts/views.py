@@ -23,6 +23,12 @@ surfaces into proper parts, so composition sees a uniform interface.
 A part declares these in :attr:`~.parts.base.Connection.parts`, in Python,
 next to the methods they wrap -- not as command/state dictionaries assembled in
 a separate factory module.
+
+Each view holds its host twice under two names, because it uses it for two
+things: ``_host`` is what it calls methods on, and ``_owner`` is what the base
+class opens, closes and reports connection state for. Setting the second is the
+whole of a view's lifecycle -- there is no ``connect`` here, and no ``_open``,
+because a view has no device of its own.
 """
 
 from dataclasses import asdict, is_dataclass
@@ -74,11 +80,6 @@ class MethodArm(ControllablePart):
         )
 
     @property
-    def is_connected(self) -> bool:
-        """Follow the owning part's connection state."""
-        return self._host.is_connected
-
-    @property
     def observation_features(self) -> dict[str, Any]:
         """Describe the state fields this view exposes."""
         return {name: {} for name in self.state_fields}
@@ -87,9 +88,6 @@ class MethodArm(ControllablePart):
     def action_features(self) -> dict[str, Any]:
         """Describe the canonical command names this view accepts."""
         return {name: {} for name in self.commands}
-
-    def connect(self) -> None:
-        """No-op: the owning part holds the connection."""
 
     def reset(self) -> None:
         """Leave task-specific reset motion to the task environment."""
@@ -111,9 +109,6 @@ class MethodArm(ControllablePart):
             getattr(self._host, self.commands[name])(value)
             applied[name] = value
         return applied
-
-    def disconnect(self) -> None:
-        """No-op: the owning part holds the connection."""
 
 
 class MethodGripper(EndEffector):
@@ -148,11 +143,6 @@ class MethodGripper(EndEffector):
         self.state_index = state_index
 
     @property
-    def is_connected(self) -> bool:
-        """Follow the owning part's connection state."""
-        return self._host.is_connected
-
-    @property
     def observation_features(self) -> dict[str, Any]:
         """Describe the end-effector state vector."""
         return {"state": {"shape": (self.action_dim,), "dtype": "float32"}}
@@ -161,9 +151,6 @@ class MethodGripper(EndEffector):
     def action_features(self) -> dict[str, Any]:
         """Describe the end-effector target vector."""
         return {"target": {"shape": (self.action_dim,), "dtype": "float32"}}
-
-    def connect(self) -> None:
-        """No-op: the owning part holds the connection."""
 
     def reset(self) -> None:
         """Leave task-specific end-effector reset to the task environment."""
@@ -193,9 +180,6 @@ class MethodGripper(EndEffector):
             getattr(self._host, method)()
         return {"target": target}
 
-    def disconnect(self) -> None:
-        """No-op: the owning part holds the connection."""
-
 
 class MethodCamera(Camera):
     """A camera frame returned by one host method.
@@ -212,17 +196,9 @@ class MethodCamera(Camera):
         self.method_args = method_args
 
     @property
-    def is_connected(self) -> bool:
-        """Follow the owning part's connection state."""
-        return self._host.is_connected
-
-    @property
     def observation_features(self) -> dict[str, Any]:
         """Describe the raw frame returned by the host."""
         return {"frame": {}}
-
-    def connect(self) -> None:
-        """No-op: the owning part holds the connection."""
 
     def reset(self) -> None:
         """Camera views have no resettable state."""
@@ -230,6 +206,3 @@ class MethodCamera(Camera):
     def get_observation(self) -> dict[str, Any]:
         """Fetch one frame through the configured host method."""
         return {"frame": getattr(self._host, self.method)(*self.method_args)}
-
-    def disconnect(self) -> None:
-        """No-op: the owning part holds the connection."""

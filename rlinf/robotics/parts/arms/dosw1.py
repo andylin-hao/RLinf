@@ -372,18 +372,18 @@ class DOSW1Connection(Connection):
 
 
 class DOSW1Arm(ControllablePart):
-    """Present one side of a shared DOSW1 SDK session as an arm."""
+    """Present one side of a shared DOSW1 SDK session as an arm.
+
+    It opens nothing of its own. Naming the session as its ``_owner`` is the
+    whole of its lifecycle: the robot then opens that session once for all four
+    parts riding it, and this arm is readable exactly when the session is.
+    """
 
     def __init__(self, sdk: DOSW1Connection, side: str) -> None:
         if side not in {"left", "right"}:
             raise ValueError("DOSW1 arm side must be 'left' or 'right'.")
         self.sdk = self._owner = sdk
         self.side = side
-
-    @property
-    def is_connected(self) -> bool:
-        """Whether the shared SDK is connected."""
-        return self.sdk.is_connected
 
     @property
     def observation_features(self) -> dict:
@@ -397,10 +397,6 @@ class DOSW1Arm(ControllablePart):
     def action_features(self) -> dict:
         """Describe the absolute joint-position command."""
         return {"joint_position": {"shape": (6,), "dtype": "float64"}}
-
-    def connect(self) -> None:
-        """Connect the shared SDK, which both arms and both grippers share."""
-        self.sdk.connect()
 
     def reset(self) -> None:
         """Leave reset targets to the task configuration."""
@@ -424,23 +420,19 @@ class DOSW1Arm(ControllablePart):
         command(target.tolist(), float(current[6]))
         return {"joint_position": target}
 
-    def disconnect(self) -> None:
-        """No-op: the shared session is closed once, by its owner."""
-
 
 class DOSW1EndEffector(EndEffector):
-    """Present one DOSW1 gripper through the common end-effector API."""
+    """Present one DOSW1 gripper through the common end-effector API.
+
+    Like :class:`DOSW1Arm`, it rides the shared session rather than holding a
+    link, and says so by naming that session as its ``_owner``.
+    """
 
     def __init__(self, sdk: DOSW1Connection, side: str) -> None:
         if side not in {"left", "right"}:
             raise ValueError("DOSW1 gripper side must be 'left' or 'right'.")
         self.sdk = self._owner = sdk
         self.side = side
-
-    @property
-    def is_connected(self) -> bool:
-        """Whether the shared SDK is connected."""
-        return self.sdk.is_connected
 
     @property
     def observation_features(self) -> dict:
@@ -451,10 +443,6 @@ class DOSW1EndEffector(EndEffector):
     def action_features(self) -> dict:
         """Describe the scalar gripper target width."""
         return {"target": {"shape": (1,), "dtype": "float64"}}
-
-    def connect(self) -> None:
-        """Connect the shared SDK, which both arms and both grippers share."""
-        self.sdk.connect()
 
     def reset(self) -> None:
         """Leave reset width to the task configuration."""
@@ -473,6 +461,3 @@ class DOSW1EndEffector(EndEffector):
         command = getattr(self.sdk, f"{self.side}_go_joint")
         command(current[:6].tolist(), float(target[0]))
         return {"target": target}
-
-    def disconnect(self) -> None:
-        """Leave connection shutdown to the owning session."""

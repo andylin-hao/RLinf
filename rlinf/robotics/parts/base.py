@@ -243,7 +243,13 @@ class Connection(ABC, metaclass=_ConnectionMeta):
 
     @property
     def is_connected(self) -> bool:
-        """Whether the part is ready for observations."""
+        """Whether the part is ready for observations.
+
+        A part riding a session has no device of its own, so it answers for the
+        session: a gripper on an arm's bus is readable exactly when the arm is.
+        """
+        if self._owner is not None:
+            return self._owner.is_connected
         return self._device is not None
 
     @property
@@ -290,7 +296,15 @@ class Connection(ABC, metaclass=_ConnectionMeta):
         every public call now travelling. Nothing is swapped in the robot's
         tree, so a part placed on another machine and one sitting on this
         bench are the same thing to everything holding them.
+
+        A part riding a session opens that session instead of anything of its
+        own. That is what lets ``connect`` stay a method nothing overrides: a
+        gripper on an arm's bus has no ``_open`` to write, and calling this on
+        it does the one thing that makes it readable.
         """
+        if self._owner is not None:
+            self._owner.connect()
+            return
         if self._device is not None:
             return
         if self._recipe is None or self._recipe.node_rank is None:
@@ -320,7 +334,13 @@ class Connection(ABC, metaclass=_ConnectionMeta):
 
         A placed connection stops its worker instead, and becomes an ordinary
         unopened object again, so the same tree can be connected a second time.
+
+        A part riding a session does nothing here. The session backs parts this
+        one knows nothing about, so closing it would take them down too; it is
+        closed once, by whoever opened it.
         """
+        if self._owner is not None:
+            return
         device = self._device
         if device is None:
             return
@@ -479,6 +499,13 @@ class Connection(ABC, metaclass=_ConnectionMeta):
         so a robot holds the same object whether the session ends up here or on
         another node. Picking several costs one open: this is where each of
         them is told that this connection is its :attr:`owner`.
+
+        Only a part with no way to open anything is adopted like that, which is
+        what a view onto this session is. A part that implements :meth:`_open`
+        holds a link of its own -- a wrist camera on its own USB bus, listed
+        here because it is bolted to this arm -- and keeps it, along with the
+        node it named. Adopting it too would open it on this connection's
+        machine instead, or not at all.
         """
         available = self.parts
         if name not in available:
@@ -487,9 +514,14 @@ class Connection(ABC, metaclass=_ConnectionMeta):
                 f"Available: {sorted(available)}."
             )
         part = available[name]
-        if part is not self and part._owner is None:
+        if part is not self and part._owner is None and not part._opens_itself():
             part._owner = self
         return part
+
+    @classmethod
+    def _opens_itself(cls) -> bool:
+        """Whether this class reaches hardware of its own."""
+        return cls._open is not Connection._open
 
 
 class RobotPart(Connection):
@@ -651,24 +683,56 @@ class PartGroup(ControllablePart):
         """
         seen: dict[int, Connection] = {}
         for part in self._children.values():
-            found = part.owners() if isinstance(part, PartGroup) else [part.owner]
-            for owner in found:
+            for owner in self._owners_of(part):
                 seen.setdefault(id(owner), owner)
         return list(seen.values())
 
     def _batches(self) -> list[list[str]]:
-        """Group part names by connection: distinct ones may run together."""
+        """Group part names so no two batches touch the same connection.
+
+        :meth:`_fan_out` runs the batches concurrently and each batch in
+        declaration order, so this is what keeps two threads off one vendor
+        session -- few of which are safe for that. Grouping by the connection a
+        part rides is not enough on its own: a nested group has several, and
+        two sibling groups can share one. DOSW1 is exactly that, with both arms
+        and both grippers on a single SDK session, so its two sides have to end
+        up in one batch. Children are therefore merged whenever the sets of
+        connections they touch overlap at all.
+        """
+        names = list(self._children)
+        touched = [
+            frozenset(id(owner) for owner in self._owners_of(self._children[name]))
+            for name in names
+        ]
+        # Union-find over "shares at least one connection". Quadratic in the
+        # number of children, which is the number of parts one group names.
+        parent = list(range(len(names)))
+
+        def root(index: int) -> int:
+            while parent[index] != index:
+                parent[index] = parent[parent[index]]
+                index = parent[index]
+            return index
+
+        for left in range(len(names)):
+            for right in range(left + 1, len(names)):
+                if touched[left] & touched[right]:
+                    parent[root(right)] = root(left)
+
         order: list[list[str]] = []
-        index: dict[int, int] = {}
-        for position, name in enumerate(self._children):
-            part = self._children[name]
-            key = id(part.owner) if not isinstance(part, PartGroup) else -position - 1
-            if key in index:
-                order[index[key]].append(name)
-            else:
-                index[key] = len(order)
-                order.append([name])
+        index_of: dict[int, int] = {}
+        for position, name in enumerate(names):
+            group = root(position)
+            if group not in index_of:
+                index_of[group] = len(order)
+                order.append([])
+            order[index_of[group]].append(name)
         return order
+
+    @staticmethod
+    def _owners_of(part: "RobotPart") -> list["Connection"]:
+        """Every connection opened on this child's behalf."""
+        return part.owners() if isinstance(part, PartGroup) else [part.owner]
 
     def _fan_out(self, call) -> dict[str, Any]:
         """Run *call* over every part, concurrently where connections differ."""

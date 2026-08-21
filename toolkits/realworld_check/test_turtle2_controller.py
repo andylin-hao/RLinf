@@ -18,7 +18,8 @@ from rlinf.robotics.parts.arms.turtle2 import Turtle2Connection
 
 
 def main():
-    controller = Turtle2Connection.spawn(freq=50, node_rank=0)
+    controller = Turtle2Connection(freq=50, node_rank=0)
+    controller.connect()
 
     while True:
         try:

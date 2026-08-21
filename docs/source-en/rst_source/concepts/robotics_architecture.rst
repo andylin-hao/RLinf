@@ -207,6 +207,13 @@ it composes nothing. A ``PartGroup`` inherits an empty ``parts`` mapping because
 its components are already in ``children``. The call to ``connection.part(...)``
 is where the two naming systems meet.
 
+``part()`` is also where a view is told which connection opens it, so a view
+declares nothing about its own lifecycle: no ``_open``, no ``connect``. Only a
+part with no way to open anything is adopted like that. A device listed here
+that holds a link of its own -- a wrist camera on its own USB bus, named beside
+the arm it is bolted to -- keeps that link and the node it named, and the robot
+opens it separately.
+
 If reading the shared session itself has no useful meaning, subclass
 ``Connection`` rather than ``RobotPart``. A coupled Turtle2 controller follows
 that form:

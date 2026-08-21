@@ -668,14 +668,30 @@ def test_one_connection_is_opened_once_however_often_it_is_named():
     """
     opens: list[str] = []
 
+    class Riding(ControllablePart):
+        """A part with no ``_open``: it reads whatever the session opened."""
+
+        @property
+        def observation_features(self) -> dict:
+            return {}
+
+        @property
+        def action_features(self) -> dict:
+            return {}
+
+        def get_observation(self) -> dict:
+            return {}
+
+        def send_action(self, action):
+            return action
+
+    class RidingCamera(Riding, Camera):
+        pass
+
     class CoupledHardware(Connection):
         @property
         def parts(self) -> dict[str, RobotPart]:
-            return {
-                "left": FakeControllablePart("left", []),
-                "right": FakeControllablePart("right", []),
-                "wrist": FakeCamera("wrist", []),
-            }
+            return {"left": Riding(), "right": Riding(), "wrist": RidingCamera()}
 
         def _open(self):
             opens.append("open")
@@ -692,6 +708,41 @@ def test_one_connection_is_opened_once_however_often_it_is_named():
     assert opens == ["open"], "the shared connection was opened more than once"
     assert isinstance(robot.child("wrist"), Camera)
     assert robot.is_connected
+
+
+def test_a_device_with_its_own_link_keeps_it_when_a_connection_lists_it():
+    """``part()`` adopts a view, not a device that opens itself.
+
+    An arm may list the camera bolted to its wrist, but that camera holds its
+    own USB bus and may name its own node. Adopting it would mean the arm's
+    connect opened it -- on the arm's machine, or not at all -- while the
+    camera reported itself connected the whole time.
+    """
+    events: list[str] = []
+
+    class WristCamera(FakeCamera):
+        pass
+
+    class ArmWithCamera(FakeControllablePart):
+        @property
+        def parts(self) -> dict[str, RobotPart]:
+            return {"arm": self, "wrist": WristCamera("wrist", events, node_rank=3)}
+
+    arm = ArmWithCamera("arm", events)
+    wrist = arm.part("wrist")
+
+    assert wrist.owner is wrist, "the camera was adopted by the arm"
+    assert wrist.node_rank == 3, "the camera lost the node it named"
+
+    arm.connect()
+    assert arm.is_connected
+    assert not wrist.is_connected, (
+        "the camera reported itself connected off the back of the arm's link"
+    )
+
+    # A part that opens nothing is adopted, which is what a view is.
+    gripper = MethodGripper(arm, state_field="gripper_position")
+    assert gripper.owner is arm
 
 
 def test_a_connection_answers_its_parts_before_it_is_opened():
@@ -1239,6 +1290,89 @@ def test_building_a_real_robot_touches_no_hardware():
     sessions = [leaf.owner for leaf in leaves]
     assert all(session is sessions[0] for session in sessions)
     assert not sessions[0].is_connected, "composing the robot opened the session"
+
+
+def test_parts_sharing_a_session_are_never_read_concurrently():
+    """DOSW1's two sides ride one SDK session, so they run in one batch.
+
+    ``_fan_out`` runs batches concurrently and each batch in declaration order.
+    Grouping only by the connection a leaf rides is not enough, because the two
+    sides are nested groups rather than leaves: keying each group separately put
+    two threads on one vendor session, which few of them survive.
+    """
+    robot = _dosw1_robot()
+
+    assert len(robot.owners()) == 1, "DOSW1 should present exactly one session"
+    assert robot._batches() == [["left", "right"]], (
+        f"both sides ride one session but were batched as {robot._batches()}"
+    )
+
+
+def test_parts_on_separate_connections_still_run_together():
+    """The grouping must not serialize what is genuinely independent.
+
+    Two Franka arms are two devices on two links, so reading them at the same
+    time is the point. Only overlap forces parts into one batch.
+    """
+    from rlinf.robotics.robots.dual_franka import DualFrankaRobot
+
+    robot = DualFrankaRobot.build(
+        left_robot_ip="1.2.3.4",
+        right_robot_ip="1.2.3.5",
+        left_gripper_connection="/dev/ttyUSB0",
+        right_gripper_connection="/dev/ttyUSB1",
+        env_idx=0,
+        worker_rank=0,
+        node_rank=0,
+    )
+
+    assert len(robot.owners()) == 2
+    assert robot._batches() == [["left"], ["right"]]
+    # Within one arm, the arm and its gripper share a link and stay together.
+    assert robot.child("left")._batches() == [["arm", "end_effector"]]
+
+
+def test_a_group_spanning_two_sessions_pulls_both_into_one_batch():
+    """Overlap is transitive, so grouping cannot key on one connection each.
+
+    Three children: one on session A, one on session B, and between them a
+    group holding a part from each. Keying every child by a single connection
+    would leave the two outer children in separate batches while the middle one
+    ran against both -- three threads on two sessions. They all belong together.
+    """
+
+    class Riding(RobotPart):
+        @property
+        def observation_features(self) -> dict:
+            return {}
+
+        def get_observation(self) -> dict:
+            return {}
+
+    class Session(RobotPart):
+        @property
+        def observation_features(self) -> dict:
+            return {}
+
+        def get_observation(self) -> dict:
+            return {}
+
+        def _open(self):
+            return "link"
+
+        @property
+        def parts(self) -> dict[str, RobotPart]:
+            return {"a": Riding(), "b": Riding()}
+
+    first, second = Session(), Session()
+    tree = PartGroup(
+        x=first.part("a"),
+        bridge=PartGroup(p=first.part("b"), q=second.part("a")),
+        y=second.part("b"),
+    )
+
+    assert len(tree.owners()) == 2
+    assert tree._batches() == [["x", "bridge", "y"]]
 
 
 def test_real_robot_lifecycle_without_hardware():
@@ -2705,6 +2839,45 @@ def test_a_camera_can_be_opened_again_after_it_is_closed():
 
     camera.disconnect()
     assert camera.releases == 2
+
+
+def test_a_part_that_would_break_its_worker_is_refused_before_placement():
+    """A part method named like the worker's own would replace it.
+
+    The part's methods are re-declared in the worker's class body, so the
+    collision breaks the worker rather than the part -- later, somewhere else,
+    and with no mention of the method responsible. Refuse it while the name is
+    still in hand.
+    """
+    from rlinf.robotics.placement.handles import PartWorkerHost
+
+    class Clashing(ControllablePart):
+        @property
+        def observation_features(self):
+            return {}
+
+        @property
+        def action_features(self):
+            return {}
+
+        def _open(self):
+            return "device"
+
+        def get_observation(self):
+            return {}
+
+        def send_action(self, action):
+            return action
+
+        def attribute(self, name):
+            """Collides with the call a view reads properties through."""
+
+    with pytest.raises(TypeError, match="share a name with the worker"):
+        PartWorkerHost.worker_class(Clashing)
+
+    # Every shipped driver is clear of it.
+    for driver in (FrankyArm, FrankaROSArm, GimArm):
+        assert PartWorkerHost.worker_class(driver) is not None
 
 
 def test_a_hosted_camera_reopens_on_the_node_that_holds_it():

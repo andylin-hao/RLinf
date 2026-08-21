@@ -20,9 +20,10 @@ The observation is whatever the operator did, in the device's own terms -- a
 twist, a set of joint angles, a grip. Turning that into a command for a robot is
 the job of a binding, in :mod:`rlinf.robotics.teleop`.
 
-Opening the hardware happens in ``connect`` rather than ``__init__``. A caller
-that owns a standalone device can therefore place it on another machine with
-``SpaceMouse.spawn(node_rank=1)`` and retain the returned handle for cleanup.
+Opening the hardware happens in :meth:`~..base.Connection._open` rather than
+``__init__``, so a device says where it runs the same way an arm does:
+``SpaceMouse(node_rank=1)`` is read on that machine once something connects it,
+and nothing else about the class changes.
 """
 
 from __future__ import annotations

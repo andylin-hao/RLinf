@@ -88,13 +88,14 @@ def main():
 
     # ── 1. Launch controller via distributed Worker ──────────────────────────
     print(f"\n[1] Launching GimArm on '{args.can}' ...")
-    controller = GimArm.spawn(
+    controller = GimArm(
         can_interface=args.can,
         arm_variant=args.variant,
         enable_gripper=not args.no_gripper,
         gripper_type=args.gripper_type,
         node_rank=0,
     )
+    controller.connect()
     print("  Controller launched (SDK + feedforward thread started)")
 
     try:
@@ -259,7 +260,7 @@ def main():
     finally:
         # ── 7. Cleanup ───────────────────────────────────────────────────────
         print("\n[7] Stopping controller ...")
-        controller.stop()
+        controller.disconnect()
 
 
 if __name__ == "__main__":
