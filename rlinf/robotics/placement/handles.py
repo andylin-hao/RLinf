@@ -110,7 +110,7 @@ class _RemoteViewMeta(WorkerMeta, _ConnectionMeta):
 _VIEWS: dict[type, type] = {}
 
 
-def remote_view_of(part_cls: type) -> type:
+def remote_view_of(part_cls: "type[Connection]") -> "type[Connection]":
     """Return the cached remote-view subclass for ``part_cls``.
 
     The generated subclass forwards public instance methods and properties,
@@ -184,7 +184,7 @@ class PartWorkerHost:
         return f"{part_cls.__name__}-node{node_rank}-{uuid4().hex[:8]}"
 
     @classmethod
-    def worker_class(cls, part_cls: type) -> type:
+    def worker_class(cls, part_cls: "type[Connection]") -> "type[Worker]":
         """Return (and cache) the ``Worker`` subclass that hosts ``part_cls``."""
         cached = cls._worker_classes.get(part_cls)
         if cached is not None:
@@ -222,7 +222,7 @@ class PartWorkerHost:
         cls._worker_classes[part_cls] = worker_cls
         return worker_cls
 
-    def launch(self) -> Any:
+    def launch(self) -> "WorkerGroup":
         """Start the worker and return the group that reaches it."""
         return (
             self.worker_class(self.part_cls)
@@ -235,7 +235,7 @@ class PartWorkerHost:
         )
 
 
-def host(connection: Connection) -> tuple[Any, type]:
+def host(connection: Connection) -> "tuple[WorkerGroup, type[Connection]]":
     """Host a connection remotely and return its worker group and view class."""
     recipe = connection._recipe
     group = PartWorkerHost(

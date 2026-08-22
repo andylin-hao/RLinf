@@ -25,7 +25,7 @@ from typing import Any, Optional, Union, cast
 import numpy as np
 
 from .arms.base import Arm
-from .base import Connection
+from .base import Action, Connection, Features, Observation
 from .cameras.base import Camera
 from .end_effectors.base import EndEffector
 
@@ -69,26 +69,26 @@ class MethodArm(Arm):
         )
 
     @property
-    def observation_features(self) -> dict[str, Any]:
+    def observation_features(self) -> Features:
         """Describe the state fields this view exposes."""
         return {name: {} for name in self.state_fields}
 
     @property
-    def action_features(self) -> dict[str, Any]:
+    def action_features(self) -> Features:
         """Describe the canonical command names this view accepts."""
         return {name: {} for name in self.commands}
 
     def reset(self) -> None:
         """Leave task-specific reset motion to the task environment."""
 
-    def get_observation(self) -> dict[str, Any]:
+    def get_observation(self) -> Observation:
         """Select this view's fields out of the shared host state."""
         state = state_to_dict(self._host.get_state())
         if not self.state_fields:
             return state
         return {name: state[source] for name, source in self.state_fields.items()}
 
-    def send_action(self, action: dict[str, Any]) -> dict[str, Any]:
+    def send_action(self, action: Action) -> Observation:
         """Dispatch canonical command fields to the host's methods."""
         unknown = set(action) - set(self.commands)
         if unknown:
@@ -190,13 +190,13 @@ class MethodCamera(Camera):
         self.method_args = method_args
 
     @property
-    def observation_features(self) -> dict[str, Any]:
+    def observation_features(self) -> Features:
         """Describe the raw frame returned by the host."""
         return {"frame": {}}
 
     def reset(self) -> None:
         """Camera views have no resettable state."""
 
-    def get_observation(self) -> dict[str, Any]:
+    def get_observation(self) -> Observation:
         """Fetch one frame through the configured host method."""
         return {"frame": getattr(self._host, self.method)(*self.method_args)}

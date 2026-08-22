@@ -84,7 +84,7 @@ class DualGelloJointStream(TeleopStreamer):
         """Return whether both leader arms have produced a reading."""
         return bool(self.left_arm.ready and self.right_arm.ready)
 
-    def _joints(self) -> tuple:
+    def _joints(self) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """Read joint and gripper targets from both leader arms."""
         left = self.left_arm.get_observation()
         right = self.right_arm.get_observation()

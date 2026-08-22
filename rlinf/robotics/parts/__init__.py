@@ -19,16 +19,22 @@ here, which keeps unrelated vendor dependencies out of local import paths.
 """
 
 from .base import (
+    Action,
     Connection,
     ControllablePart,
+    Features,
+    Observation,
     PartGroup,
     RobotPart,
     run_parallel,
 )
 
 __all__ = [
+    "Action",
     "Connection",
     "ControllablePart",
+    "Features",
+    "Observation",
     "PartGroup",
     "RobotPart",
     "run_parallel",

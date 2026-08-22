@@ -15,9 +15,9 @@
 """Arm interfaces and the canonical observation schema."""
 
 from abc import ABC, abstractmethod
-from typing import Any, ClassVar, Optional
+from typing import Any, ClassVar, Optional, Protocol
 
-from rlinf.robotics.parts.base import ControllablePart
+from rlinf.robotics.parts.base import ControllablePart, Features, Observation
 
 #: Canonical arm fields; mounted devices expose their own observations.
 ARM_STATE_FIELDS: tuple[str, ...] = (
@@ -29,6 +29,21 @@ ARM_STATE_FIELDS: tuple[str, ...] = (
     "tcp_torque",
     "arm_jacobian",
 )
+
+
+class ArmState(Protocol):
+    """What an arm's own state object has to offer.
+
+    A driver returns whatever dataclass it already keeps -- ``FrankaRobotState``,
+    ``GimArmRobotState`` -- and :meth:`BaseArm.get_observation` selects the
+    canonical fields out of it. Naming the one method it uses says that without
+    naming any one driver's class, and gives ``get_state()`` somewhere to jump
+    to instead of ``Any``.
+    """
+
+    def to_dict(self) -> dict[str, Any]:
+        """This state as a mapping, keyed by the canonical field names."""
+        ...
 
 
 class Arm(ControllablePart):
@@ -102,15 +117,15 @@ class BaseArm(Arm, ABC):
         """Release the handle returned by :meth:`_open`."""
 
     @abstractmethod
-    def get_state(self) -> Any:
-        """Return the arm state as an object implementing ``to_dict()``."""
+    def get_state(self) -> ArmState:
+        """The arm's whole state, as something with ``to_dict()``."""
 
     @property
-    def observation_features(self) -> dict:
+    def observation_features(self) -> Features:
         """Describe the canonical arm observation fields."""
         return {name: {} for name in self.STATE_FIELDS}
 
-    def get_observation(self) -> dict:
+    def get_observation(self) -> Observation:
         """Select the canonical fields out of this arm's state."""
         state = self.get_state().to_dict()
         return {name: state[name] for name in self.STATE_FIELDS}

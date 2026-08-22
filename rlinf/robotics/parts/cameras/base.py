@@ -22,7 +22,7 @@ from typing import Any, Optional
 
 import numpy as np
 
-from rlinf.robotics.parts.base import RobotPart
+from rlinf.robotics.parts.base import Features, Observation, RobotPart
 from rlinf.utils.logging import get_logger
 
 _logger = get_logger()
@@ -90,7 +90,7 @@ class BaseCamera(Camera, ABC):
         return self._device is not None
 
     @property
-    def observation_features(self) -> dict:
+    def observation_features(self) -> Features:
         """Describe the raw BGR frame returned by this camera."""
         width, height = self._camera_info.resolution
         channels = 4 if self._camera_info.enable_depth else 3
@@ -129,7 +129,7 @@ class BaseCamera(Camera, ABC):
         self.disconnect()
         self.connect()
 
-    def get_observation(self) -> dict[str, np.ndarray]:
+    def get_observation(self) -> Observation:
         """Return the latest raw frame under the canonical camera key."""
         return {"frame": self.get_frame()}
 

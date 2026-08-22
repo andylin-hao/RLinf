@@ -20,7 +20,7 @@ from typing import Any
 
 import numpy as np
 
-from rlinf.robotics.parts.base import ControllablePart
+from rlinf.robotics.parts.base import Action, ControllablePart, Features, Observation
 
 
 class EndEffector(ControllablePart, ABC):
@@ -84,20 +84,20 @@ class EndEffector(ControllablePart, ABC):
         """
 
     @property
-    def observation_features(self) -> dict:
+    def observation_features(self) -> Features:
         """Describe the canonical end-effector state."""
         return {"state": {"shape": (self.state_dim,), "dtype": "float32"}}
 
     @property
-    def action_features(self) -> dict:
+    def action_features(self) -> Features:
         """Describe the canonical end-effector command."""
         return {"target": {"shape": (self.action_dim,), "dtype": "float32"}}
 
-    def get_observation(self) -> dict[str, np.ndarray]:
+    def get_observation(self) -> Observation:
         """Return the end-effector state under its canonical key."""
         return {"state": self.get_state()}
 
-    def send_action(self, action: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+    def send_action(self, action: Action) -> Observation:
         """Apply the canonical target command."""
         if set(action) != {"target"}:
             raise KeyError("End-effector action must contain only 'target'.")
@@ -175,7 +175,7 @@ class BaseEndEffector(EndEffector, ABC):
         """
         return [f"dof_{i}" for i in range(self.state_dim)]
 
-    def get_detailed_state(self) -> dict:
+    def get_detailed_state(self) -> dict[str, Any]:
         """Return diagnostic state using the generic position representation."""
         state = self.get_state()
         return {

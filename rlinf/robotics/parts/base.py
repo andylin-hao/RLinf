@@ -40,6 +40,26 @@ if TYPE_CHECKING:
 KeyType = TypeVar("KeyType")
 ValueType = TypeVar("ValueType")
 
+#: The category a registry call was made on, so ``Arm.backend("franky")`` is a
+#: ``type[Arm]`` and ``Camera.backend("zed")`` a ``type[Camera]`` -- rather than
+#: a bare ``type``, which an editor cannot follow anywhere.
+DriverType = TypeVar("DriverType", bound="Connection")
+
+#: What a part promises about one reading or one command: each name mapped to
+#: its ``{"shape": ..., "dtype": ...}``, or to ``{}`` where the driver says only
+#: that the name exists. A carrier's features also carry its riders' under
+#: their names, so this nests.
+Features = dict[str, Any]
+
+#: One reading, by the names :attr:`observation_features` declared. Values are
+#: whatever the device measures -- usually a numpy array, and a nested reading
+#: for each part riding this one.
+Observation = dict[str, Any]
+
+#: One command, by the names :attr:`action_features` declared, shaped like the
+#: observation it answers.
+Action = Mapping[str, Any]
+
 
 def run_parallel(
     jobs: Mapping[KeyType, Callable[[], ValueType]],
@@ -69,7 +89,7 @@ class _Recipe:
 class _ConnectionMeta(ABCMeta):
     """Record placement arguments without exposing them to driver constructors."""
 
-    def __call__(cls, *args: Any, **kwargs: Any) -> Any:
+    def __call__(cls, *args: Any, **kwargs: Any) -> "Connection":
         """Construct a connection and save the recipe used to create it."""
         node_rank = worker_name = None
         if cls._TAKES_PLACEMENT:
@@ -224,7 +244,9 @@ class Connection(ABC, metaclass=_ConnectionMeta):
     # Driver registry
 
     @classmethod
-    def register(cls, *names: str) -> Callable[[type], type]:
+    def register(
+        cls: "type[DriverType]", *names: str
+    ) -> "Callable[[type[DriverType]], type[DriverType]]":
         """Register a driver in this device category.
 
         Names are case-insensitive. A name cannot refer to two different
@@ -236,7 +258,7 @@ class Connection(ABC, metaclass=_ConnectionMeta):
             class RealSenseCamera(BaseCamera): ...
         """
 
-        def add(driver_cls: type) -> type:
+        def add(driver_cls: "type[DriverType]") -> "type[DriverType]":
             # Store the registry on the category, not on Connection.
             if "_BACKENDS" not in cls.__dict__:
                 cls._BACKENDS = {}
@@ -254,7 +276,7 @@ class Connection(ABC, metaclass=_ConnectionMeta):
         return add
 
     @classmethod
-    def backends(cls) -> dict[str, type]:
+    def backends(cls: "type[DriverType]") -> "dict[str, type[DriverType]]":
         """Return registered drivers keyed by backend name."""
         merged: dict[str, type] = {}
         for base in reversed(cls.__mro__):
@@ -262,7 +284,7 @@ class Connection(ABC, metaclass=_ConnectionMeta):
         return merged
 
     @classmethod
-    def backend(cls, name: str) -> type:
+    def backend(cls: "type[DriverType]", name: str) -> "type[DriverType]":
         """Resolve a backend by name, or return the available names."""
         registered = cls.backends()
         driver_cls = registered.get(str(name).lower())
@@ -356,7 +378,7 @@ class RobotPart(Connection):
 
     @property
     @abstractmethod
-    def observation_features(self) -> dict[str, Any]:
+    def observation_features(self) -> Features:
         """Describe the values returned by :meth:`get_observation`."""
 
     @property
@@ -410,7 +432,7 @@ class RobotPart(Connection):
         return available[name]
 
     @abstractmethod
-    def get_observation(self) -> dict[str, Any]:
+    def get_observation(self) -> Observation:
         """Read the current part observation."""
 
 
@@ -419,11 +441,11 @@ class ControllablePart(RobotPart):
 
     @property
     @abstractmethod
-    def action_features(self) -> dict[str, Any]:
+    def action_features(self) -> Features:
         """Describe the values accepted by :meth:`send_action`."""
 
     @abstractmethod
-    def send_action(self, action: dict[str, Any]) -> dict[str, Any]:
+    def send_action(self, action: Action) -> Observation:
         """Apply an action and return the action actually sent."""
 
 
@@ -523,7 +545,7 @@ class PartGroup(ControllablePart):
         return all(owner.is_connected for owner in self.owners())
 
     @property
-    def observation_features(self) -> dict[str, Any]:
+    def observation_features(self) -> Features:
         """Describe each part's observation under its name."""
         return {
             name: PartGroup._read_part(part, lambda p: p.observation_features)
@@ -531,7 +553,7 @@ class PartGroup(ControllablePart):
         }
 
     @property
-    def action_features(self) -> dict[str, Any]:
+    def action_features(self) -> Features:
         """Describe each controllable part's action under its name."""
         return {
             name: PartGroup._read_part(
@@ -671,13 +693,13 @@ class PartGroup(ControllablePart):
         """Reset every part."""
         self._fan_out(lambda part: part.reset())
 
-    def get_observation(self) -> dict[str, Any]:
+    def get_observation(self) -> Observation:
         """Read observations into the named part tree."""
         return self._fan_out(
             lambda part: self._read_part(part, lambda p: p.get_observation())
         )
 
-    def send_action(self, action: Mapping[str, Any]) -> dict[str, Any]:
+    def send_action(self, action: Action) -> Observation:
         """Dispatch each named action to the part that owns it."""
         unknown = set(action) - set(self._children)
         if unknown:

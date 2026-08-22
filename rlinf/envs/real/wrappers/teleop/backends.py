@@ -100,10 +100,12 @@ class TeleopBackend(ABC):
     _REGISTRY: ClassVar[dict[str, type["TeleopBackend"]]] = {}
 
     @classmethod
-    def register(cls, *names: str) -> Callable[[type], type]:
+    def register(
+        cls, *names: str
+    ) -> "Callable[[type[TeleopBackend]], type[TeleopBackend]]":
         """Register a backend under the names a config spells it with."""
 
-        def add(backend: type) -> type:
+        def add(backend: "type[TeleopBackend]") -> "type[TeleopBackend]":
             for name in names:
                 key = name.lower()
                 taken = TeleopBackend._REGISTRY.get(key)

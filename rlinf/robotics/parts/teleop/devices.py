@@ -25,7 +25,7 @@ from typing import Any, Optional
 
 import numpy as np
 
-from ..base import RobotPart
+from ..base import Features, Observation, RobotPart
 
 
 class TeleopPart(RobotPart, ABC):
@@ -65,14 +65,14 @@ class SpaceMouse(TeleopPart):
         return SpaceMouseExpert(device_index=self._device_index)
 
     @property
-    def observation_features(self) -> dict[str, Any]:
+    def observation_features(self) -> Features:
         """Return the twist and button-state feature declarations."""
         return {
             "twist": {"shape": (6,), "dtype": "float32"},
             "buttons": {"shape": (2,), "dtype": "bool"},
         }
 
-    def get_observation(self) -> dict[str, Any]:
+    def get_observation(self) -> Observation:
         """Read the puck and the buttons."""
         twist, buttons = self._device.get_action()
         return {
@@ -103,7 +103,7 @@ class TeleopLeaderArm(TeleopPart):
         return GelloExpert(port=self._port)
 
     @property
-    def observation_features(self) -> dict[str, Any]:
+    def observation_features(self) -> Features:
         """Joint positions, or a Cartesian target, plus the grip."""
         if self._joint_space:
             return {
@@ -116,7 +116,7 @@ class TeleopLeaderArm(TeleopPart):
             "grip": {"shape": (1,), "dtype": "float32"},
         }
 
-    def get_observation(self) -> dict[str, Any]:
+    def get_observation(self) -> Observation:
         """Read the arm the operator is holding."""
         if self._joint_space:
             joints, grip = self._device.get_action()
@@ -165,11 +165,11 @@ class Glove(TeleopPart):
         )
 
     @property
-    def observation_features(self) -> dict[str, Any]:
+    def observation_features(self) -> Features:
         """Return one angle feature per finger joint."""
         return {"angles": {"shape": (6,), "dtype": "float32"}}
 
-    def get_observation(self) -> dict[str, Any]:
+    def get_observation(self) -> Observation:
         """Read the operator's finger angles."""
         return {"angles": np.asarray(self._device.get_angles(), dtype=np.float32)}
 
@@ -190,7 +190,7 @@ class PicoController(TeleopPart):
         return PicoExpert(**self._config)
 
     @property
-    def observation_features(self) -> dict[str, Any]:
+    def observation_features(self) -> Features:
         """Whether the operator is driving, and how far they have moved."""
         return {
             "held": {"dtype": "bool", "shape": ()},
@@ -200,6 +200,6 @@ class PicoController(TeleopPart):
             "grip_open": {"dtype": "bool", "shape": ()},
         }
 
-    def get_observation(self) -> dict[str, Any]:
+    def get_observation(self) -> Observation:
         """Read the controller."""
         return self._device.get_reading()

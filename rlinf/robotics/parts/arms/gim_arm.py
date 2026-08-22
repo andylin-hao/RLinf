@@ -22,7 +22,7 @@ from typing import Any
 import numpy as np
 
 from rlinf.robotics.parts.arms.base import Arm, BaseArm
-from rlinf.robotics.parts.base import RobotPart
+from rlinf.robotics.parts.base import Action, Features, Observation, RobotPart
 from rlinf.robotics.parts.views import MethodEndEffector
 from rlinf.utils.logging import get_logger
 
@@ -122,7 +122,7 @@ class GimArm(BaseArm):
             )
 
     @property
-    def action_features(self) -> dict:
+    def action_features(self) -> Features:
         """Describe the absolute joint target."""
         return {"joint_position": {}}
 
@@ -199,7 +199,7 @@ class GimArm(BaseArm):
     def reset(self) -> None:
         """Leave task-specific reset positions to the caller."""
 
-    def send_action(self, action: dict) -> dict:
+    def send_action(self, action: Action) -> Observation:
         """Apply one absolute joint target."""
         if set(action) != {"joint_position"}:
             raise KeyError("GimArm action must contain only 'joint_position'.")

@@ -22,7 +22,7 @@ from scipy.spatial.transform import Rotation as R
 
 from rlinf.robotics.parts.arms.base import Arm, BaseArm
 from rlinf.robotics.parts.arms.franka import FrankaRobotState, validated_robot_ip
-from rlinf.robotics.parts.base import RobotPart
+from rlinf.robotics.parts.base import Action, Features, Observation, RobotPart
 from rlinf.robotics.parts.end_effectors import (
     BaseEndEffector,
     EndEffector,
@@ -92,7 +92,7 @@ class FrankaROSArm(BaseArm):
         self._joint: psutil.Process | None = None
 
     @property
-    def action_features(self) -> dict:
+    def action_features(self) -> Features:
         """Describe the Cartesian pose command."""
         return {"tcp_pose": {}}
 
@@ -141,7 +141,7 @@ class FrankaROSArm(BaseArm):
     def reset(self) -> None:
         """Leave task-specific reset positions to the caller."""
 
-    def send_action(self, action: dict) -> dict:
+    def send_action(self, action: Action) -> Observation:
         """Apply one Cartesian pose target."""
         if set(action) != {"tcp_pose"}:
             raise KeyError("Franka ROS action must contain only 'tcp_pose'.")
@@ -432,7 +432,7 @@ class FrankaROSArm(BaseArm):
         assert self._end_effector is not None
         return self._end_effector.get_state()
 
-    def get_hand_detailed_state(self) -> dict:
+    def get_hand_detailed_state(self) -> dict[str, Any]:
         if self._end_effector_type.is_gripper:
             return {
                 "gripper_position": self._gripper.position,

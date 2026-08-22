@@ -94,7 +94,7 @@ class RuiyanHand(BaseEndEffector):
         """Human-readable DOF names for the Ruiyan hand."""
         return list(self._FINGER_NAMES)
 
-    def get_detailed_state(self) -> dict:
+    def get_detailed_state(self) -> dict[str, Any]:
         """Return detailed per-motor diagnostic information."""
         return self._driver.get_detailed_state()
 

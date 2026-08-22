@@ -29,7 +29,7 @@ from scipy.spatial.transform import Rotation as R
 
 from rlinf.robotics.parts.arms.base import Arm, BaseArm
 from rlinf.robotics.parts.arms.franka import FrankaRobotState, validated_robot_ip
-from rlinf.robotics.parts.base import RobotPart
+from rlinf.robotics.parts.base import Action, Features, Observation, RobotPart
 from rlinf.robotics.parts.end_effectors import EndEffector
 from rlinf.robotics.parts.views import MethodEndEffector
 from rlinf.utils.logging import get_logger
@@ -132,7 +132,7 @@ class FrankyArm(BaseArm):
         self._prev_cart_target_quat: Optional[np.ndarray] = None
 
     @property
-    def action_features(self) -> dict:
+    def action_features(self) -> Features:
         """Describe supported joint and Cartesian targets."""
         return {"joint_position": {}, "tcp_pose": {}}
 
@@ -163,7 +163,7 @@ class FrankyArm(BaseArm):
     def reset(self) -> None:
         """Leave task-specific reset positions to the caller."""
 
-    def send_action(self, action: dict) -> dict:
+    def send_action(self, action: Action) -> Observation:
         """Apply one or both canonical arm targets."""
         unknown = set(action) - {"joint_position", "tcp_pose"}
         if unknown:

@@ -14,9 +14,12 @@
 
 """Robot composition and lifecycle management."""
 
-from typing import Any, ClassVar, Optional, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, Optional, TypeVar
 
 from .parts.base import PartGroup, RobotPart
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from .discovery import RobotConfig, RobotDiscovery
 
 RobotPartType = TypeVar("RobotPartType", bound=RobotPart)
 
@@ -41,8 +44,10 @@ class Robot(PartGroup):
 
     @classmethod
     def register_type(
-        cls, config_cls: type, discovery_cls: Optional[type] = None
-    ) -> type:
+        cls,
+        config_cls: "type[RobotConfig]",
+        discovery_cls: "Optional[type[RobotDiscovery]]" = None,
+    ) -> "type[RobotDiscovery]":
         """Register the robot class, config, discovery, and builder.
 
         If ``discovery_cls`` is omitted, a standard discovery class is created

@@ -42,13 +42,16 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
         register_robot,
     )
     from .parts import (
+        Action,
         Connection,
         ControllablePart,
+        Features,
+        Observation,
         PartGroup,
         RobotPart,
         run_parallel,
     )
-    from .parts.arms import ARM_STATE_FIELDS, Arm, BaseArm
+    from .parts.arms import ARM_STATE_FIELDS, Arm, ArmState, BaseArm
     from .parts.cameras import BaseCamera, Camera, CameraInfo
     from .parts.end_effectors import EndEffector
     from .parts.mobility import MobileBase
@@ -70,13 +73,16 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 #: Public symbols grouped by defining module for lazy loading.
 _MODULE_GROUPS: dict[str, tuple[str, ...]] = {
     ".parts": (
+        "Action",
         "Connection",
         "ControllablePart",
+        "Features",
+        "Observation",
         "PartGroup",
         "RobotPart",
         "run_parallel",
     ),
-    ".parts.arms": ("ARM_STATE_FIELDS", "Arm", "BaseArm"),
+    ".parts.arms": ("ARM_STATE_FIELDS", "Arm", "ArmState", "BaseArm"),
     # Load each device category only when requested.
     ".parts.cameras": ("BaseCamera", "Camera", "CameraInfo"),
     ".parts.end_effectors": ("EndEffector",),

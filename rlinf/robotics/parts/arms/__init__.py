@@ -26,6 +26,7 @@ from typing import Any
 _MODULE_BY_NAME: dict[str, str] = {
     "ARM_STATE_FIELDS": ".base",
     "Arm": ".base",
+    "ArmState": ".base",
     "BaseArm": ".base",
     "DOSW1Arm": ".dosw1",
     "DOSW1RobotState": ".dosw1",

@@ -23,7 +23,13 @@ from typing import Any
 import numpy as np
 
 from rlinf.robotics.parts.arms.base import Arm
-from rlinf.robotics.parts.base import Connection, RobotPart
+from rlinf.robotics.parts.base import (
+    Action,
+    Connection,
+    Features,
+    Observation,
+    RobotPart,
+)
 from rlinf.robotics.parts.end_effectors.base import EndEffector
 from rlinf.utils.logging import get_logger
 
@@ -294,7 +300,7 @@ class DOSW1Connection(Connection):
         robot = self._require_connected()
         return np.asarray(robot.right_get_pose(), dtype=np.float64)
 
-    def _require_connected(self) -> object:
+    def _require_connected(self) -> Any:
         if not self.is_connected or self._robot is None:
             raise RuntimeError(
                 "DOSW1Connection is not connected. Call connect() first."
@@ -318,7 +324,7 @@ class DOSW1Connection(Connection):
             time.sleep(_CONTROL_LOOP_DT)
         raise TimeoutError("Timed out waiting for DOSW1 state from AirbotRobot.")
 
-    def _require_connected_candidate(self) -> object:
+    def _require_connected_candidate(self) -> Any:
         if self._robot is None:
             raise RuntimeError("DOSW1Connection failed to create AirbotRobot.")
         return self._robot
@@ -367,7 +373,7 @@ class DOSW1Arm(Arm):
         self.side = side
 
     @property
-    def observation_features(self) -> dict:
+    def observation_features(self) -> Features:
         """Describe the DOSW1 joint and end-effector pose state."""
         return {
             "joint_position": {"shape": (6,), "dtype": "float64"},
@@ -375,14 +381,14 @@ class DOSW1Arm(Arm):
         }
 
     @property
-    def action_features(self) -> dict:
+    def action_features(self) -> Features:
         """Describe the absolute joint-position command."""
         return {"joint_position": {"shape": (6,), "dtype": "float64"}}
 
     def reset(self) -> None:
         """Leave reset targets to the task configuration."""
 
-    def get_observation(self) -> dict[str, np.ndarray]:
+    def get_observation(self) -> Observation:
         """Read this arm's joint state and end-effector pose."""
         get_joint = getattr(self.sdk, f"get_{self.side}_joint")
         get_pose = getattr(self.sdk, f"get_{self.side}_pose")
@@ -391,7 +397,7 @@ class DOSW1Arm(Arm):
             "tcp_pose": get_pose().copy(),
         }
 
-    def send_action(self, action: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+    def send_action(self, action: Action) -> Observation:
         """Apply an absolute joint target while retaining gripper width."""
         if set(action) != {"joint_position"}:
             raise KeyError("DOSW1 arm action must contain only 'joint_position'.")

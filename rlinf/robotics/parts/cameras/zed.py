@@ -110,7 +110,7 @@ class ZEDCamera(BaseCamera):
     _resolution_map: Optional[dict] = None
 
     @staticmethod
-    def _build_resolution_map() -> dict:
+    def _build_resolution_map() -> dict[tuple[int, int], Any]:
         """Lazily build and cache the ZED resolution lookup table."""
         if ZEDCamera._resolution_map is None:
             import pyzed.sl as sl
