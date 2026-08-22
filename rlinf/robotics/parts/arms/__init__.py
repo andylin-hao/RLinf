@@ -12,14 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Arms, and the hardware sessions behind them.
+"""Arm interfaces and registered hardware backends.
 
-Each module owns one vendor connection and the parts it exposes through
-:attr:`~rlinf.robotics.parts.base.Connection.parts` -- typically the arm
-itself plus its end effector, and for coupled hardware several arms at once.
-
-Symbols load lazily so a node without a given vendor SDK can still import this
-package.
+Driver modules load lazily so importing the package does not require every arm
+SDK.
 """
 
 # ruff: noqa: F822
@@ -49,14 +45,7 @@ __all__ = sorted(_MODULE_BY_NAME)
 
 
 def load_drivers() -> None:
-    """Import every arm module, so the drivers in them have registered.
-
-    Registration is a decorator in the file that implements a driver, which
-    only runs once that file is imported -- and these are imported lazily, so
-    that a node missing one vendor SDK can still use the others. Asking the
-    :class:`~.base.Arm` registry what exists is the moment they all have to
-    have run, and this is where that happens.
-    """
+    """Import all arm modules to populate the backend registry."""
     for module_name in sorted(set(_MODULE_BY_NAME.values())):
         import_module(module_name, __name__)
 

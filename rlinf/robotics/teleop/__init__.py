@@ -12,13 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""What a device means for the robot it drives, and how devices compose.
-
-A device reports what the operator did; a :class:`TeleopBinding` says which
-parts of the action that fills; :class:`TeleopGroup` merges several of them
-into one action. Composing here is what removes the hand-written classes that
-used to splice a spacemouse and a glove, or two leader arms, together.
-"""
+"""Bindings and composition for mapping operator input to robot actions."""
 
 from .binding import CONTEXT_KEYS, TeleopAction, TeleopBinding
 from .bindings import (

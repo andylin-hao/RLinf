@@ -15,7 +15,7 @@
 
 Pedal: ``a`` starts a rollout from idle; ``c`` ends with reward=1
 ("success"); ``b`` ends with reward=0 ("failure"). On end, returns
-``terminated=True`` and lets the outer ``auto_reset`` drive home.
+``terminated=True`` so the outer ``auto_reset`` can return the robot home.
 """
 
 import time
@@ -38,14 +38,11 @@ class KeyboardEvalControlWrapper(KeyboardSession):
         self._last_obs: Any = None
 
     def reset(self, *, seed=None, options=None):
-        # Not KeyboardSession.reset: this one blocks after the env reset,
-        # waiting for the operator to start the rollout.
+        # Reset first, then wait for explicit operator confirmation.
         self.drain()
         obs, info = self.env.reset(seed=seed, options=options)
         self._last_obs = obs
-        # Block until the operator has arranged the scene and presses 'a'.
-        # This is intentional (the arms are homed and idle); log on entry and
-        # emit a periodic heartbeat so the wait is not mistaken for a hang.
+        # Emit a heartbeat while the homed robot waits for the start signal.
         self.log(
             "Arms homed and idle. Arrange the scene, then press pedal 'a' "
             "to start the next rollout (Ctrl-C to abort)."
@@ -67,7 +64,7 @@ class KeyboardEvalControlWrapper(KeyboardSession):
         self, action: ActType
     ) -> tuple[ObsType, SupportsFloat, bool, bool, dict[str, Any]]:
         if not self._running:
-            # Idle: poll pedal, hold robot via the controller's last target.
+            # Keep the robot idle while polling for the start signal.
             time.sleep(self.IDLE_POLL_S)
             for key in self.presses():
                 if key == "a":
@@ -75,7 +72,7 @@ class KeyboardEvalControlWrapper(KeyboardSession):
                     return self._idle_response(event="start")
             return self._idle_response(event=None)
 
-        # Running: forward to the wrapped env.
+        # Forward policy actions until the operator reports an outcome.
         obs, reward, terminated, truncated, info = self.env.step(action)
         self._last_obs = obs
 

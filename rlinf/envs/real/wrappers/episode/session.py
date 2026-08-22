@@ -12,17 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Driving an episode from a keyboard or a foot pedal.
-
-Marking a success, aborting a take, advancing a stage, switching policies: the
-operator is the only one who knows, so each of these wrappers listens for a
-keypress and turns it into something the rollout can see.
-
-They differ in what a key means and agree on everything around it -- who owns the
-listener, how a press is debounced, and that presses queued between episodes must
-be dropped rather than delivered to the next one. That agreement lives here, so a
-new mode is a ``step`` that reads :meth:`KeyboardSession.presses`.
-"""
+"""Shared keyboard and foot-pedal session handling for episode wrappers."""
 
 from __future__ import annotations
 
@@ -36,14 +26,13 @@ from rlinf.robotics.parts.teleop.readers.keyboard import KeyboardListener
 
 
 class KeyboardSession(gym.Wrapper):
-    """A wrapper the operator steers with keys, holding the listener.
+    """Base wrapper for debounced operator key input.
 
     Subclasses read :meth:`presses` for debounced keys, or ``self.listener``
     directly when they want the raw stream.
     """
 
-    #: Presses of the same key closer together than this are dropped. Foot
-    #: pedals bounce, and a USB key-down burst arrives as several presses.
+    #: Minimum interval between accepted presses of the same key.
     DEBOUNCE_S: float = 0.2
 
     def __init__(self, env: gym.Env) -> None:
@@ -61,25 +50,25 @@ class KeyboardSession(gym.Wrapper):
             yield key
 
     def drain(self) -> None:
-        """Discard queued presses so they do not leak into the next episode."""
+        """Discard key presses queued by the previous episode."""
         self._last_press.clear()
         self.listener.pop_pressed_keys()
 
     def begin_episode(self) -> None:
-        """Clear whatever the previous episode left behind."""
+        """Reset subclass state for a new episode."""
 
     def reset(self, *, seed: Optional[int] = None, options: Optional[dict] = None):
-        """Drop stale presses, reset the mode's state, then reset the env."""
+        """Clear session state before resetting the environment."""
         self.drain()
         self.begin_episode()
         return self.env.reset(seed=seed, options=options)
 
     def base_env(self) -> Any:
-        """The innermost env, which owns the logger and the task config."""
+        """Return the unwrapped environment."""
         return getattr(self.env, "unwrapped", self.env)
 
     def log(self, message: str, *args: Any) -> None:
-        """Report through the env's logger; these wrappers never print."""
+        """Write an informational message through the environment logger."""
         logger = getattr(self.base_env(), "_logger", None)
         if logger is not None:
             logger.info(message, *args)

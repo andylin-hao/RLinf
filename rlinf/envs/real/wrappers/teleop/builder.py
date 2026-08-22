@@ -12,12 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Building the teleop a config asks for.
-
-What each device *is* lives in :mod:`.backends`, one class per name. This is
-only the order they are built in: every entry first, because a streamer drives
-the devices the group composed rather than opening its own.
-"""
+"""Build a composed teleoperation device from environment configuration."""
 
 from __future__ import annotations
 
@@ -40,15 +35,14 @@ def build_teleop(
     devices: Sequence[Any],
     timeout: Optional[float] = None,
 ) -> ComposedTeleop:
-    """Build the teleop this env config asks for.
+    """Build and connect the configured teleoperation group.
 
     Args:
-        env: The env being wrapped, which supplies the action layout.
-        cfg: The env config section, for options devices share.
+        env: Environment that supplies the action layout.
+        cfg: Environment configuration containing shared device options.
         devices: Device names, or single-key mappings carrying options, e.g.
             ``{"gello_joint": {"port": "/dev/left", "drives": "left"}}``.
-        timeout: Hold window. Left out, the bindings decide: a device held
-            down to take over asks for none.
+        timeout: Optional operator-control hold window.
     """
     spec = action_spec(env)
     facts = EnvFacts.about(env, spec.layout, spec.kinds)
@@ -65,9 +59,7 @@ def build_teleop(
         if backend not in asked:
             asked.append(backend)
 
-    # After the loop: a streamer drives the devices the group composed, so it
-    # cannot be built until they all exist. One env has one rate, so the first
-    # backend that wants a thread is the one that gets it.
+    # Build a streamer after its group-owned devices exist.
     streamer = None
     for backend in asked:
         streamer = backend.streamer(cfg, facts, entries)

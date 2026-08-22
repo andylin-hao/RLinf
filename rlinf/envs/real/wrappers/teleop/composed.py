@@ -12,15 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Presenting a composed teleop group as one device to the env.
-
-:class:`~rlinf.robotics.teleop.group.TeleopGroup` produces action *parts*, named
-after what they drive. An env takes one flat vector. This is the only place that
-knows how to get from one to the other, and it is the only piece of the teleop
-story that has to be on the env side at all.
-
-The layout comes from the env, which built the action space in the first place.
-"""
+"""Adapt composed teleoperation action parts to an environment action vector."""
 
 from __future__ import annotations
 
@@ -35,18 +27,17 @@ from .intervention import TeleopDevice, TeleopSample
 
 
 class ComposedTeleop(TeleopDevice):
-    """A group of devices, flattened into this env's action.
+    """Flatten a teleoperation group into an environment action vector.
 
     Args:
-        group: The devices and bindings in play.
-        layout: Where each named part sits in the action vector. Parts the
-            group does not fill keep whatever the policy asked for.
+        group: Composed devices and bindings.
+        layout: Slice occupied by each named action part. Unset parts retain
+            the policy action.
         timeout: How long the operator keeps control after their last active
             reading. Zero for rigs whose devices say exactly when they are
             driving.
-        streamer: A device that also commands the robot on its own thread,
-            faster than ``env.step`` runs. Composition says what the action is;
-            this says it is delivered a second way, so the two are separate.
+        streamer: Optional direct command stream that runs faster than
+            ``env.step``.
     """
 
     def __init__(
@@ -76,7 +67,7 @@ class ComposedTeleop(TeleopDevice):
         if timeout is not None:
             self.timeout = timeout
 
-    #: What a binding may ask about the robot, and the getter that answers it.
+    #: Environment getters that provide optional binding context.
     CONTEXT_GETTERS = (
         ("tcp_pose", "get_tcp_pose"),
         ("action_scale", "get_action_scale"),
@@ -87,12 +78,7 @@ class ComposedTeleop(TeleopDevice):
 
     @classmethod
     def context_from(cls, env: gym.Env) -> dict[str, Any]:
-        """Gather what bindings may ask about the robot they are driving.
-
-        Each value is fetched only if the env offers it, so an env without
-        joints costs nothing and a binding that needs them fails where it is
-        used rather than here.
-        """
+        """Collect the binding context exposed by an environment."""
         context: dict[str, Any] = {}
         for key, getter in cls.CONTEXT_GETTERS:
             try:
@@ -104,35 +90,31 @@ class ComposedTeleop(TeleopDevice):
         return context
 
     def before_reset(self, env: gym.Env, kwargs: dict[str, Any]) -> dict[str, Any]:
-        """Let a streamer quiet itself, and adjust the reset if it needs to."""
+        """Pause the streamer and allow it to adjust reset arguments."""
         if self.streamer is not None:
             return self.streamer.before_reset(env, kwargs)
         return kwargs
 
     def reset(self, env: gym.Env) -> None:
-        """Let every binding drop what it held, and a streamer re-align.
-
-        The context goes with it: a binding that commands an absolute pose has
-        to resume from where the env just reset the robot to.
-        """
+        """Reset bindings from the current robot state and realign the streamer."""
         self.group.reset(self.context_from(env))
         if self.streamer is not None:
             self.streamer.reset(env)
 
     def after_reset(self, env: gym.Env) -> None:
-        """Let a streamer resume, whether or not the reset succeeded."""
+        """Resume the streamer after reset cleanup."""
         if self.streamer is not None:
             self.streamer.after_reset(env)
 
     def before_step(self, env: gym.Env) -> None:
-        """Give a streamer its chance to start."""
+        """Start the streamer when its prerequisites are satisfied."""
         if self.streamer is not None:
             self.streamer.before_step(env)
 
     def _write(
         self, env: gym.Env, policy_action: np.ndarray, parts: Mapping[str, np.ndarray]
     ) -> np.ndarray:
-        """Put each named part into a copy of the action the policy asked for."""
+        """Write named action parts into a copy of the policy action."""
         action = np.array(policy_action, dtype=np.float64, copy=True)
         clipped = set(self.group.clipped_parts) & set(parts)
         bounds = None
@@ -155,8 +137,7 @@ class ComposedTeleop(TeleopDevice):
         if not parts:
             return TeleopSample(action=None, active=False, info=info)
         if self.streamer is not None and self.streamer.streaming:
-            # Recorded so a dataset can tell which parts of this action the
-            # robot was already given, rather than dispatched by step().
+            # Record parts delivered outside env.step for dataset consumers.
             info = {**info, "streamed_parts": list(self.streamer.DELIVERS)}
         return TeleopSample(
             action=self._write(env, policy_action, parts), active=driving, info=info
@@ -165,11 +146,7 @@ class ComposedTeleop(TeleopDevice):
     def get_hold_action(
         self, env: gym.Env, fallback_action: Optional[np.ndarray] = None
     ) -> np.ndarray:
-        """The action that keeps the robot where it is.
-
-        Used when a chunk of policy actions is skipped and the robot still has
-        to be told something. Parts nobody holds keep ``fallback_action``.
-        """
+        """Return an action that holds absolute parts during a skipped chunk."""
         parts = self.group.hold(self.context_from(env))
         if not parts:
             raise AttributeError(

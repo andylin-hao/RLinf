@@ -18,7 +18,7 @@ import gymnasium as gym
 
 
 class LeaderFollowerKeyboardIntervention(gym.Wrapper):
-    """Keyboard intervention wrapper for leader-follower teleoperation envs."""
+    """Handle keyboard mode changes for leader-follower teleoperation."""
 
     def __init__(self, env):
         super().__init__(env)

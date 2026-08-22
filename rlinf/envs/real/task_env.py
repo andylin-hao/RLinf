@@ -21,7 +21,7 @@ from rlinf.robotics import Robot
 
 
 class ValueAdapter(Protocol):
-    """Adapter from one public representation to another."""
+    """Convert values between canonical and public representations."""
 
     def adapt(self, value: Any) -> Any:
         """Translate ``value`` into the destination representation."""

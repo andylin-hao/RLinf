@@ -26,15 +26,15 @@ from rlinf.robotics.parts.arms.franky import (
     JOINT_LIMITS_UPPER,
 )
 
-# Mid-point of each joint's limit window; the first Dynamixel read is wrapped
-# into the ±π band around this point and then clamped into the limit window.
+# Unwrap the first Dynamixel reading around the midpoint of each joint range.
 _GELLO_UNWRAP_REFERENCE = 0.5 * (
     np.asarray(JOINT_LIMITS_LOWER) + np.asarray(JOINT_LIMITS_UPPER)
 )
 
 
 class GelloJointExpert:
-    """Interface to the GELLO teleoperation device (joint-space output).
+    """Read joint-space input from a GELLO device.
+
     Args:
         port: Serial port of the GELLO device.
     """
@@ -102,7 +102,7 @@ class GelloJointExpert:
 
     @property
     def ready(self) -> bool:
-        """Whether at least one GELLO frame has been received."""
+        """Return whether at least one GELLO frame has been received."""
         return self._ready
 
     def get_action(self) -> tuple[np.ndarray, np.ndarray]:

@@ -12,13 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Registering a robot type, and finding its hardware on a cluster.
-
-:mod:`.registry` maps a robot's type name to its config, discovery policy, and
-builder, so ``build_robot("Franka", ...)`` works from the name alone.
-:mod:`.autoconfig` fills a robot config's fields from the environment, which is
-how a node describes the hardware plugged into it.
-"""
+"""Robot registration, hardware discovery, and automatic configuration."""
 
 from .autoconfig import RobotAutoConfig
 from .registry import (

@@ -64,13 +64,7 @@ class Turtle2RobotState:
 
 
 class Turtle2Connection(Connection):
-    """Turtle2's ROS connection, with no scheduler dependency.
-
-    One ROS session drives both arms, both grippers, and the wrist cameras, and
-    is none of them. So it subclasses :class:`Connection` directly rather than
-    :class:`RobotPart`: reading the session as a whole would mean nothing,
-    :attr:`parts` says what it backs, and the robot composes those.
-    """
+    """Shared ROS connection for the Turtle2 arms, grippers, and cameras."""
 
     def __init__(
         self,
@@ -131,10 +125,10 @@ class Turtle2Connection(Connection):
         self.last_expected_rpy1 = None
         self.last_expected_rpy2 = None
 
-        # xyz, rpy, gripper
-        self.tol = [0.002, 0.005, 5]  # m, rad, cm
-        self.xyz_speed = 0.5  # m/s
-        self.rpy_speed = 1.5  # rad/s
+        # Position, orientation, and gripper tolerances in m, rad, and cm.
+        self.tol = [0.002, 0.005, 5]
+        self.xyz_speed = 0.5  # m/s.
+        self.rpy_speed = 1.5  # rad/s.
         rospy.Timer(control_period, self.smooth_action_callback)
         rospy.Timer(state_period, self.state_callback)
 
@@ -169,30 +163,20 @@ class Turtle2Connection(Connection):
         return self._state
 
     def smooth_action_callback(self, event: Any) -> None:
-        # print("intimer")
         xyz_step = self.xyz_speed / self.freq  # m
         rpy_step = self.rpy_speed / self.freq  # rad
-        # start_time = time.time()
 
         curxyz1 = self._state.follow1_pos[0:3]
         curxyz2 = self._state.follow2_pos[0:3]
-        # print("current pos:")
-        # print(curxyz1, curxyz2)
         targetxyz1 = np.array(self.left_arm_target[0:3], dtype=float)
         targetxyz2 = np.array(self.right_arm_target[0:3], dtype=float)
-        # print("target pos:")
-        # print(targetxyz1, targetxyz2)
         errxyz1 = np.linalg.norm(curxyz1 - targetxyz1)
         errxyz2 = np.linalg.norm(curxyz2 - targetxyz2)
 
         currpy1 = self._state.follow1_pos[3:6]
         currpy2 = self._state.follow2_pos[3:6]
-        # print("current rpy:")
-        # print(currpy1, currpy2)
         targetrpy1 = np.array(self.left_arm_target[3:6], dtype=float)
         targetrpy2 = np.array(self.right_arm_target[3:6], dtype=float)
-        # print("target rpy:")
-        # print(targetrpy1, targetrpy2)
         errrpy1 = np.linalg.norm(currpy1 - targetrpy1)
         errrpy2 = np.linalg.norm(currpy2 - targetrpy2)
 
@@ -202,14 +186,13 @@ class Turtle2Connection(Connection):
             and errrpy1 < self.tol[1]
             and errrpy2 < self.tol[1]
         ):
-            # print(f"[INFO] target reach! {errxyz1:.4f}, {errxyz2:.4f}, {errrpy1:.4f}, {errrpy2:.4f}")
             self.last_expected_xyz1 = curxyz1.copy()
             self.last_expected_xyz2 = curxyz2.copy()
             self.last_expected_rpy1 = currpy1.copy()
             self.last_expected_rpy2 = currpy2.copy()
             return
         else:
-            # interpolate xyz
+            # Interpolate translation and rotation independently.
             curxyz1 = (
                 0.5 * (curxyz1 + self.last_expected_xyz1)
                 if self.last_expected_xyz1 is not None
@@ -233,27 +216,22 @@ class Turtle2Connection(Connection):
 
             dirxyz1 = (targetxyz1 - curxyz1) / (errxyz1 + 0.001)
             dirxyz2 = (targetxyz2 - curxyz2) / (errxyz2 + 0.001)
-            # print("dirxyz2:",dirxyz2)
             stepxyz1 = dirxyz1 * min(xyz_step, errxyz1)
             stepxyz2 = dirxyz2 * min(xyz_step, errxyz2)
-            # print("stepxyz2:",stepxyz2)
             newxyz1 = curxyz1 + stepxyz1
             self.last_expected_xyz1 = newxyz1.copy()
 
             newxyz2 = curxyz2 + stepxyz2
             self.last_expected_xyz2 = newxyz2.copy()
 
-            # interpolate rpy
             dirrpy1 = (targetrpy1 - currpy1) / (errrpy1 + 0.001)
             dirrpy2 = (targetrpy2 - currpy2) / (errrpy2 + 0.001)
-            # print("dirrpy2:",dirrpy2)
             steprpy1 = dirrpy1 * min(rpy_step, errrpy1)
             steprpy2 = dirrpy2 * min(rpy_step, errrpy2)
             newrpy1 = currpy1 + steprpy1
             self.last_expected_rpy1 = newrpy1.copy()
 
             newrpy2 = currpy2 + steprpy2
-            # print("last_exp:", self.last_expected_rpy2, "; stp:", steprpy2)
             self.last_expected_rpy2 = newrpy2.copy()
 
             newpos1 = [
@@ -274,9 +252,7 @@ class Turtle2Connection(Connection):
                 newrpy2[2],
                 self.right_arm_target[6],
             ]
-            # print("new pos:",newpos2)
             self.controller.arms_control(newpos1, newpos2)
-            # time.sleep(0.2 / self.freq)
 
     def move_arm(
         self,

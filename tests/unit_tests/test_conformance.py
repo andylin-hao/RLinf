@@ -12,15 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""The conformance suites, pointed at the robots that ship and at broken ones.
-
-Half of this file is negative: a check that cannot fail is worse than no check,
-because it reports a promise as kept. Every contract here is shown catching an
-implementation that breaks it, and the broken implementations are the real bugs
-this package has had -- a camera that cannot be opened twice, a part observing
-a value wider than it declared, a robot that keeps what it built when a later
-part refuses.
-"""
+"""Conformance tests for shipped and deliberately invalid implementations."""
 
 from __future__ import annotations
 
@@ -48,7 +40,7 @@ from rlinf.robotics.parts.base import (  # noqa: E402
     RobotPart,
 )
 
-#: Every shipped robot, and the settings its builder needs.
+#: Shipped robot types and the settings required by their builders.
 SHIPPED = {
     "Franka": {
         "robot_ip": "0.0.0.0",
@@ -88,10 +80,6 @@ SHIPPED = {
 
 @pytest.mark.parametrize("robot_type", sorted(SHIPPED))
 def test_every_shipped_robot_keeps_the_robot_contract(robot_type):
-    """Connect, read, disconnect, do it again, and roll back a failure.
-
-    Against faked SDKs, so this is the code being checked and not a robot.
-    """
     from robot_mocks import mocked_sdks
 
     with mocked_sdks():
@@ -106,8 +94,7 @@ def test_every_shipped_robot_keeps_the_robot_contract(robot_type):
     assert failures == [], "\n".join(failures)
 
 
-#: Every camera backend, with an identifier its fake SDK answers to and the
-#: list that fake appends to when a device is opened.
+#: Camera backends with a mock identifier and SDK open-record attribute.
 SHIPPED_CAMERAS = {
     "realsense": ("MOCK0001", "pyrealsense2", "opened"),
     "zed": ("12345678", "pyzed.sl", "opened"),
@@ -117,13 +104,6 @@ SHIPPED_CAMERAS = {
 
 @pytest.mark.parametrize("camera_type", sorted(SHIPPED_CAMERAS))
 def test_every_shipped_camera_keeps_the_part_contract(camera_type):
-    """Connect, read, disconnect, and open again -- for every backend.
-
-    Only RealSense and ZED had fake SDKs, so LUMOS was the one camera nobody
-    ever connected: it opened its device in ``__init__`` and implemented no
-    ``_open``, so ``connect()`` raised ``NotImplementedError`` every time. The
-    contract that would have caught it existed; it was never pointed here.
-    """
     from robot_mocks import mocked_sdks
 
     with mocked_sdks():
@@ -142,12 +122,6 @@ def test_every_shipped_camera_keeps_the_part_contract(camera_type):
 
 @pytest.mark.parametrize("camera_type", sorted(SHIPPED_CAMERAS))
 def test_building_a_camera_opens_no_device(camera_type):
-    """Composing a robot must not touch hardware, cameras included.
-
-    A camera is declared on the machine composing the robot and opened on the
-    machine it is plugged into, so a constructor that opens the device breaks
-    placement -- and breaks describing a robot from a laptop.
-    """
     from robot_mocks import mocked_sdks
 
     serial, sdk_name, opened_attr = SHIPPED_CAMERAS[camera_type]
@@ -171,8 +145,7 @@ def test_building_a_camera_opens_no_device(camera_type):
                 f"{camera_type} opened {opened} while being constructed"
             )
 
-        # And it does open once connected, so the check above is not passing
-        # because the fake records nothing.
+        # Verify that the mock records a real open after connect().
         camera.connect()
         assert camera.is_connected
         if sdk_name is not None:
@@ -183,14 +156,6 @@ def test_building_a_camera_opens_no_device(camera_type):
 
 
 def test_a_gripper_opens_when_connected_and_not_before():
-    """A gripper is a part, and parts do not open in their constructor.
-
-    ``RobotiqGripper.__init__`` used to open the serial port and run the
-    activation sequence -- which moves the fingers -- while ``connect()``
-    merely checked that it had worked. A robot composed with one reported
-    itself connected before anything connected it, and stayed connected after
-    disconnecting.
-    """
     from robot_mocks import mocked_sdks
 
     from rlinf.robotics.robot import Robot
@@ -215,19 +180,13 @@ def test_a_gripper_opens_when_connected_and_not_before():
         assert not robot.is_connected, "the gripper stayed connected after teardown"
         assert not gripper.is_ready()
 
-        # Stall recovery opens it again, like any other part.
+        # Reconnection is required for stall recovery.
         robot.connect()
         assert robot.is_connected
         robot.disconnect()
 
 
 def test_a_gripper_keeps_the_part_contract():
-    """The full part lifecycle for a gripper that can run on fakes.
-
-    The Franka gripper is left out: it rides the arm's ROS session, so there
-    is no gripper to build without an arm around it, and the DualFranka robot
-    contract already covers that path.
-    """
     import numpy as np
     from robot_mocks import mocked_sdks
 
@@ -252,7 +211,6 @@ def test_a_gripper_keeps_the_part_contract():
 def test_every_shipped_connection_keeps_the_connection_contract(
     module_name, class_name
 ):
-    """A connection owns a session and offers what rides on it."""
     from importlib import import_module
 
     from robot_mocks import mocked_sdks
@@ -264,11 +222,11 @@ def test_every_shipped_connection_keeps_the_connection_contract(
     assert failures == [], "\n".join(failures)
 
 
-# --- the checks, shown catching what they exist to catch ---------------------
+# Negative conformance cases
 
 
 class _Well(RobotPart):
-    """A part that keeps every promise, for the broken ones to differ from."""
+    """Minimal conforming part used as a baseline."""
 
     def __init__(self):
         self.opens = 0
@@ -290,8 +248,6 @@ def test_the_part_contract_passes_a_part_that_keeps_it():
 
 
 def test_the_part_contract_catches_a_part_that_cannot_be_opened_twice():
-    """The camera bug: a thread built once, and stall recovery reopening."""
-
     class OnceOnly(_Well):
         def connect(self):
             if self.opens:
@@ -304,8 +260,6 @@ def test_the_part_contract_catches_a_part_that_cannot_be_opened_twice():
 
 
 def test_the_part_contract_catches_an_observation_wider_than_declared():
-    """The tcp_pose bug: right key, wrong width, silently into a policy."""
-
     class TooWide(_Well):
         def get_observation(self):
             return {"state": np.zeros(2)}
@@ -354,8 +308,6 @@ def test_the_part_contract_catches_an_action_naming_a_part_it_does_not_have():
 
 
 def test_the_connection_contract_catches_one_that_is_also_a_part():
-    """The shape this refactor removed: a connection composable into a tree."""
-
     class Hybrid(RobotPart):
         def _open(self):
             return object()
@@ -387,11 +339,6 @@ def test_the_connection_contract_catches_one_that_offers_nothing():
 
 
 def test_the_robot_contract_catches_a_robot_that_keeps_what_it_built():
-    """A half-built robot should never be handed back.
-
-    The first part opens, the second refuses, and a robot that does not roll
-    back leaves the first one connected with nobody holding it.
-    """
     from rlinf.robotics.robot import Robot
 
     class Stubborn(Robot):
@@ -401,8 +348,7 @@ def test_the_robot_contract_catches_a_robot_that_keeps_what_it_built():
             try:
                 super().connect()
             except Exception:
-                # Swallowing the failure is the bug: the caller is told
-                # nothing and the parts that did open stay open.
+                # Model an invalid robot that suppresses partial-open failures.
                 pass
 
     def build():
@@ -414,8 +360,6 @@ def test_the_robot_contract_catches_a_robot_that_keeps_what_it_built():
 
 
 def test_assert_kept_raises_with_every_failure_listed():
-    """A contributor should see all of it at once, not one thing per run."""
-
     class Broken(_Well):
         def get_observation(self):
             return {"surprise": np.zeros(3)}

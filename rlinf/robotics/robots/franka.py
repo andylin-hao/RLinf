@@ -34,11 +34,10 @@ class FrankaRobot(Robot):
     ROBOT_TYPE = "Franka"
 
     BACKEND: str = "franka_ros"
-    """Name of the arm backend this robot drives.
+    """Registered arm backend used by this robot.
 
-    Any name registered on :class:`~..parts.arms.base.Arm`, so a variant that
-    drives the same hardware through a different stack sets this and inherits
-    everything else. ``Arm.backends()`` lists them.
+    Subclasses may select another backend while reusing the same composition.
+    See ``Arm.backends()`` for the available names.
     """
 
     @classmethod
@@ -54,13 +53,7 @@ class FrankaRobot(Robot):
         end_effector_type: Optional[str] = None,
         end_effector_config: Optional[dict[str, Any]] = None,
     ) -> "Arm":
-        """Declare one whole arm: its motion and the end effector it carries.
-
-        The end effector rides the arm's own connection, so it comes with the
-        arm rather than being composed beside it. Nothing is opened here --
-        constructing the arm records where it runs, and ``connect`` opens it
-        there.
-        """
+        """Declare an arm and the end effector exported by its connection."""
         resolved_ip = robot_ip or resolve_robot_ip(node_rank)
         if not resolved_ip:
             raise ValueError(
@@ -89,10 +82,9 @@ class FrankaRobot(Robot):
         end_effector_config: Optional[dict] = None,
         gripper_connection: Optional[str] = None,
     ) -> dict[str, Any]:
-        """The arms this robot carries, by name.
+        """Return the robot's named arm declarations.
 
-        Override this to give a robot a different number of arms; everything
-        else about building stays the same.
+        Subclasses can override this method to compose a different arm layout.
         """
         connection = cls.declare_arm(
             robot_ip,
@@ -102,10 +94,7 @@ class FrankaRobot(Robot):
             end_effector_type=end_effector_type,
             end_effector_config=end_effector_config,
         )
-        # The arm, and with it whatever rides on it: a gripper, or a hand when
-        # one is fitted. Naming the end effector here too would put it beside
-        # the arm rather than on it, and would have to be kept in step with
-        # what the driver actually carries.
+        # The arm declaration includes the end effector exported by its connection.
         return {"arm": connection}
 
     @classmethod
@@ -115,7 +104,7 @@ class FrankaRobot(Robot):
         *,
         node_rank: Optional[int] = None,
     ) -> dict[str, Any]:
-        """The cameras this robot carries, each placed where it is plugged in."""
+        """Return the robot's named camera declarations."""
         return Camera.declare(cameras, node_rank=node_rank)
 
     @classmethod
@@ -126,12 +115,7 @@ class FrankaRobot(Robot):
         camera_node_rank: Optional[int] = None,
         **config: Any,
     ) -> "FrankaRobot":
-        """Compose this robot from the parts it is made of.
-
-        Everything that varies between Franka robots lives in ``build_arms``, so
-        a variant with a different number of arms overrides that alone and
-        inherits this.
-        """
+        """Compose a Franka robot from its declared arms and cameras."""
         return cls(
             **cls.build_arms(**config),
             **cls.build_cameras(cameras, node_rank=camera_node_rank),
@@ -194,12 +178,7 @@ class FrankaConfig(RobotConfig):
 
 
 def resolve_robot_ip(node_rank: int) -> Optional[str]:
-    """Read a robot IP off a node's enumerated hardware.
-
-    A remote arm may leave ``robot_ip`` unset in YAML because only the node
-    wired to it knows the address. Any process in the cluster can ask, so this
-    resolves before placement rather than inside the hosted part.
-    """
+    """Resolve a robot IP from hardware enumerated on a cluster node."""
     from rlinf.scheduler import Cluster
 
     try:

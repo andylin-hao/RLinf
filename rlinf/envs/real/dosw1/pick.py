@@ -12,11 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Single-arm pick task for the DOSW1 robot.
-
-Three-phase task (reach -> grasp -> lift) using left arm only,
-modelled after Franka's ``PegInsertionEnv`` but in joint space.
-"""
+"""Single-arm DOSW1 pick task with reach, grasp, and lift phases."""
 
 import time
 from dataclasses import dataclass, field

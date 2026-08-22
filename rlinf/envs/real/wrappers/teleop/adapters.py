@@ -12,13 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Devices that are more than a reading mapped onto an action.
-
-Composition covers the rest: a device reports, a binding maps, and a group
-merges, in :mod:`rlinf.robotics.teleop`. What is left here needs something
-composition does not describe -- in this case a thread that pushes joint targets
-to the controllers at roughly 1 kHz, outside ``env.step`` entirely.
-"""
+"""Environment adapters for teleoperation devices with direct command streams."""
 
 from __future__ import annotations
 
@@ -34,13 +28,7 @@ from .streaming import TeleopStreamer
 
 
 class DualGelloJointStream(TeleopStreamer):
-    """The 1 kHz loop that pushes a pair of leader arms to the controllers.
-
-    The action itself comes from composition, one leader per side. This exists
-    because a leader arm tracked at the policy's step rate feels laggy to the
-    operator, so its targets go straight to each controller; ``env.step`` then
-    reads state and grippers but stops forwarding motion, and only one writer
-    touches the motion queue.
+    """Stream two GELLO leader arms directly to follower controllers.
 
     Args:
         left_arm: The left leader arm, already composed into the teleop group.
@@ -48,7 +36,7 @@ class DualGelloJointStream(TeleopStreamer):
         gripper_enabled: Whether each arm's action carries a gripper channel.
         use_delta: Whether the env takes joint deltas or absolute targets.
         action_scale: Divisor turning a joint delta into a normalized action.
-        direct_stream: Push targets from the device's own thread.
+        direct_stream: Whether to send targets from the streaming thread.
         stream_period: Seconds between pushes when streaming.
     """
 
@@ -66,25 +54,17 @@ class DualGelloJointStream(TeleopStreamer):
         stream_period: float = 0.001,
     ) -> None:
         super().__init__(period=stream_period, enabled=direct_stream)
-        # The arms are the group's, not this object's. Opening a second reader
-        # on the same serial port is what happens when a streamer builds its
-        # own: two pollers competing for one port, and a per-entry port
-        # override that only one of them has heard of.
+        # Reuse the group's readers to keep one owner per serial port.
         self.left_arm = left_arm
         self.right_arm = right_arm
         self.gripper_enabled = gripper_enabled
         self.use_delta = use_delta
         self.action_scale = action_scale
-        # Gripper commands are edge-triggered: an open/close RPC takes ~100 ms,
-        # and repeating it every tick would starve the serial channel.
+        # Send slow gripper RPCs only when the requested state changes.
         self._last_open: list[Optional[bool]] = [None, None]
 
     def before_reset(self, env: gym.Env, kwargs: dict[str, Any]) -> dict[str, Any]:
-        """Skip the env's slew home; aligning to the leader arms replaces it.
-
-        Homing first and then aligning would move the robot twice, and the
-        second move starts from wherever the first one left it.
-        """
+        """Replace the environment home motion with leader-arm alignment."""
         kwargs = super().before_reset(env, kwargs)
         options = dict(kwargs.get("options") or {})
         options.setdefault("skip_reset_to_home", True)
@@ -96,16 +76,16 @@ class DualGelloJointStream(TeleopStreamer):
         return getattr(inner, "_left_ctrl", None), getattr(inner, "_right_ctrl", None)
 
     def ready_to_stream(self, env: gym.Env) -> bool:
-        """Both controllers must exist before a tick can command them."""
+        """Return whether both follower controllers are available."""
         return self._controllers(env) != (None, None)
 
     @property
     def _ready(self) -> bool:
-        """Both leader arms have produced a reading."""
+        """Return whether both leader arms have produced a reading."""
         return bool(self.left_arm.ready and self.right_arm.ready)
 
     def _joints(self) -> tuple:
-        """Each arm's joint target and grip, through the part interface."""
+        """Read joint and gripper targets from both leader arms."""
         left = self.left_arm.get_observation()
         right = self.right_arm.get_observation()
         return (
@@ -116,7 +96,7 @@ class DualGelloJointStream(TeleopStreamer):
         )
 
     def align(self, env: gym.Env) -> bool:
-        """Move each follower onto its leader's current joint pose."""
+        """Move both followers to their leaders' current joint poses."""
         if not self._ready:
             return False
         left_ctrl, right_ctrl = self._controllers(env)
@@ -156,5 +136,5 @@ class DualGelloJointStream(TeleopStreamer):
                 self._last_open[index] = is_open
 
     def close(self) -> None:
-        """Stop the loop. The arms belong to the group, which closes them."""
+        """Stop the stream without closing the group-owned leader arms."""
         super().close()

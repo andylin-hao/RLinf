@@ -12,28 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Cameras: the category, and the drivers that implement it.
+"""Camera interfaces and registered hardware backends.
 
-:class:`Camera` is what a robot composes and what a policy reads.
-:class:`BaseCamera` is what a driver subclasses -- it owns the capture thread,
-so an implementation supplies :meth:`~BaseCamera._open`,
-:meth:`~BaseCamera._read_frame` and :meth:`~BaseCamera._release` and nothing
-else.
-
-Each driver registers the names a config selects it by, so building one from a
-:class:`CameraInfo` needs no table here::
-
-    camera = Camera.of(info, node_rank=2)
-
-Importing this module registers every driver and imports no vendor SDK: each
-reaches for pyrealsense2, pyzed, or cv2 inside ``_open``, on the machine the
-camera is actually plugged into.
+Importing this package registers the built-in drivers. Vendor SDKs are loaded
+only when a driver opens or discovers hardware.
 """
 
 from .base import BaseCamera, Camera, CameraInfo
 
-# Imported for the side effect of registering: a driver announces itself, and
-# nothing here lists them. Adding a camera is one file plus one decorator.
+# Import built-in drivers to populate the camera registry.
 from .lumos import LumosCamera
 from .realsense import RealSenseCamera
 from .zed import ZEDCamera

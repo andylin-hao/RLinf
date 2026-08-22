@@ -34,7 +34,7 @@ class Turtle2Robot(Robot):
     def declare_connection(
         cls, *, frequency: int, camera_ids: list[int], node_rank: int, name: str
     ) -> "Turtle2Connection":
-        """Declare the one connection that drives everything on this robot."""
+        """Declare the shared Turtle2 connection."""
         from ..parts.arms.turtle2 import Turtle2Connection
 
         return Turtle2Connection(
@@ -43,7 +43,7 @@ class Turtle2Robot(Robot):
 
     @classmethod
     def build_arms(cls, connection: "Turtle2Connection") -> dict[str, RobotPart]:
-        """Both arms, each whole, from the shared connection."""
+        """Return both arm groups exported by the shared connection."""
         return {
             side: PartGroup(
                 arm=connection.part(side),
@@ -56,7 +56,7 @@ class Turtle2Robot(Robot):
     def build_cameras(
         cls, connection: "Turtle2Connection", *, count: int
     ) -> dict[str, RobotPart]:
-        """The wrist cameras, from that same connection."""
+        """Return wrist cameras exported by the shared connection."""
         return {
             f"wrist_{index + 1}": connection.part(f"wrist_{index + 1}")
             for index in range(count)
@@ -72,11 +72,7 @@ class Turtle2Robot(Robot):
         node_rank: int,
         worker_rank: int,
     ) -> "Turtle2Robot":
-        """Compose this robot from the parts it is made of.
-
-        Everything hangs off one declaration, so the connection is opened once
-        however many parts refer to it.
-        """
+        """Compose a Turtle2 robot around one shared connection."""
         connection = cls.declare_connection(
             frequency=frequency,
             camera_ids=camera_ids,
@@ -91,9 +87,7 @@ class Turtle2Robot(Robot):
 
 @dataclass
 class Turtle2Config(RobotConfig):
-    """Configuration for a robotic system."""
-
-    # empty config
+    """Placement configuration for a Turtle2 robot."""
 
     def __post_init__(self) -> None:
         """Post-initialization to validate the configuration."""

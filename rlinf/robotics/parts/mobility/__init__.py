@@ -12,11 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Bases that move the whole robot, and the drivers for them.
-
-Only the category lives here so far. A wheeled or legged base implementation
-goes beside it, the way a camera goes in :mod:`rlinf.robotics.parts.cameras`.
-"""
+"""Interfaces and drivers for mobile robot bases."""
 
 from .base import MobileBase
 

@@ -18,11 +18,7 @@ import numpy as np
 
 
 class GelloExpert:
-    """Interface to the GELLO teleoperation device.
-
-    Continuously reads GELLO joint positions in a background thread,
-    computes the corresponding TCP pose via forward kinematics, and
-    exposes the result through :meth:`get_action`.
+    """Read GELLO input and convert joint positions to a TCP pose.
 
     Args:
         port: Serial port of the GELLO device, e.g.
@@ -64,7 +60,7 @@ class GelloExpert:
 
     @property
     def ready(self) -> bool:
-        """Whether at least one GELLO frame has been received."""
+        """Return whether at least one GELLO frame has been received."""
         return self._ready
 
     def get_action(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:

@@ -232,16 +232,14 @@ class PicoExpert:
             self._context = None
 
     def get_reading(self) -> dict[str, Any]:
-        """What the operator is doing, said without reference to the robot.
+        """Return controller motion relative to the latest grip point.
 
-        The controller's own anchor is set here, on the edge where the operator
-        takes hold, because it is controller state. Where the *robot* was at
-        that moment is the binding's to remember: this reader never sees it.
+        The reader tracks the controller anchor. The binding separately tracks
+        the robot pose at the same grip edge.
 
         Returns:
-            ``held`` and, while held, the motion since the operator took hold,
-            already in the robot's frame and scaled. Plus the gripper buttons
-            and whatever the link and the calibration have to report.
+            Held state, relative motion, gripper buttons, and link and
+            calibration status.
         """
         idle = {
             "held": False,

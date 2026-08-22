@@ -12,16 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Franka tasks, and the two envs they are built on.
-
-Each module beside this one is a task: a config dataclass saying where the
-target is and how the arm should comply, plus whatever reset behavior that task
-needs. The machinery every task shares lives in :mod:`.base` for one arm and
-:mod:`.dual_base` for two.
-
-Registering a task is one line, because the only things that differ are the env
-class and whether it takes the single- or dual-arm wrapper stack.
-"""
+"""Single- and dual-arm Franka environments and task registrations."""
 
 from __future__ import annotations
 
@@ -37,8 +28,7 @@ from .dual_franka_joint import DualFrankaJointEnv, DualFrankaJointRobotConfig
 from .dual_franka_tcp import DualFrankaTCPEnv, DualFrankaTCPRobotConfig
 from .peg_insertion import PegInsertionEnv
 
-#: Gym id -> the env class behind it. The wrapper stack comes from the env,
-#: which declares what it accepts, so a new task is one entry plus its module.
+#: Mapping from Gymnasium IDs to registered Franka environment classes.
 TASKS: dict[str, type] = {
     "FrankaEnv-v1": FrankaEnv,
     "PegInsertionEnv-v1": PegInsertionEnv,

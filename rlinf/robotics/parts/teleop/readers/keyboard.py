@@ -44,7 +44,7 @@ class KeyboardListener:
 
         self.state_lock = threading.Lock()
         self.latest_data = {"key": None}
-        # Edge-press queue so a sub-period tap isn't missed (get_key() only reports the held key).
+        # Queue press edges so short taps are not lost between polls.
         self._press_events: deque[str] = deque()
         self.device = self._open_keyboard_device()
 
@@ -150,7 +150,7 @@ class KeyboardListener:
         return required_codes.issubset(supported_key_codes)
 
     def _listen_loop(self) -> None:
-        # Cache path so we can reopen after a USB hiccup (errno=19 ENODEV); pedal shares a flaky bus with Lumos.
+        # Retain the path so the listener can recover after USB disconnects.
         device_path = self.device.path
         while True:
             try:
@@ -163,7 +163,7 @@ class KeyboardListener:
                         continue
 
                     if event.value == 1:
-                        # Initial press only; autorepeat (value==2) does not re-enqueue.
+                        # Enqueue the initial press only, not key-repeat events.
                         with self.state_lock:
                             self.latest_data["key"] = key
                             self._press_events.append(key)
@@ -194,7 +194,7 @@ class KeyboardListener:
                     self.device.close()
                 except Exception:
                     pass
-                # Reopen forever; daemon thread dies with the process.
+                # Keep retrying until the device returns or the process exits.
                 while True:
                     time.sleep(0.5)
                     try:
@@ -219,7 +219,7 @@ class KeyboardListener:
         return key_name.lower()
 
     def get_key(self) -> str | None:
-        """Return the currently-held key, or None.
+        """Return the currently held key, or ``None``.
 
         Only reflects held state; fast taps may be missed between polls.
         Use :meth:`pop_pressed_keys` when you need lossless press detection.
@@ -228,9 +228,10 @@ class KeyboardListener:
             return self.latest_data["key"]
 
     def pop_pressed_keys(self) -> list[str]:
-        """Drain and return every key that has seen an initial press since the
-        last call.  Autorepeat is collapsed to a single entry per physical
-        keystroke.  Thread-safe and non-blocking.
+        """Return and clear key presses recorded since the previous call.
+
+        Key-repeat events are omitted. The operation is thread-safe and
+        non-blocking.
         """
         with self.state_lock:
             if not self._press_events:

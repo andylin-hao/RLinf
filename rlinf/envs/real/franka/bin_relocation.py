@@ -33,13 +33,13 @@ from .base import (
 @dataclass
 class BinEnvConfig(FrankaRobotConfig):
     task_description: str = "Pick up the object and put it into another bin"
-    random_xy_range: float = 0.01  # for randomization
-    clip_x_range: float = 0.10  # for bounding box
-    clip_y_range: float = 0.15  # for bounding box
+    random_xy_range: float = 0.01  # Reset-position perturbation.
+    clip_x_range: float = 0.10  # Safety-box half-width along x.
+    clip_y_range: float = 0.15  # Safety-box half-width along y.
     clip_z_range_high: float = 0.1
     clip_z_range_low: float = 0.001
-    random_rz_range: float = np.pi / 9  # for random reset
-    clip_rz_range: float = np.pi / 6  # for bounding box
+    random_rz_range: float = np.pi / 9  # Reset-yaw perturbation.
+    clip_rz_range: float = np.pi / 6  # Maximum yaw deviation.
     enable_random_reset: bool = True
 
     target_ee_pose: np.ndarray = field(default_factory=lambda: np.zeros(6))
@@ -94,13 +94,8 @@ class FrankaBinRelocationEnv(FrankaEnv):
 
     def __init__(self, override_cfg, worker_info=None, robot_info=None, env_idx=0):
         super().__init__(override_cfg, worker_info, robot_info, env_idx)
-        self.task_id = 0  # 0 for forward task, 1 for backward task
-        """
-        the inner safety box is used to prevent the gripper from hitting the two walls of the bins in the center.
-        it is particularly useful when there is things you want to avoid running into within the bounding box.
-        it uses the intersect_line_bbox function to detect whether the gripper is going to hit the wall
-        and clips actions that will lead to collision.
-        """
+        self.task_id = 0  # 0 moves forward; 1 moves backward.
+        # The inner box clips trajectories that would cross the central bin walls.
         self.inner_safety_box = gym.spaces.Box(
             self.config.target_ee_pose[:3] - np.array([0.07, 0.03, 0.001]),
             self.config.target_ee_pose[:3] + np.array([0.07, 0.03, 0.04]),
@@ -108,8 +103,7 @@ class FrankaBinRelocationEnv(FrankaEnv):
         )
 
     def intersect_line_bbox(self, p1, p2, bbox_min, bbox_max):
-        # Define the parameterized line segment
-        # P(t) = p1 + t(p2 - p1)
+        # Parameterize the segment as P(t) = p1 + t(p2 - p1).
         tmin = 0
         tmax = 1
 
@@ -119,12 +113,12 @@ class FrankaBinRelocationEnv(FrankaEnv):
             if p1[i] > bbox_max[i] and p2[i] > bbox_max[i]:
                 return None
 
-            # For each axis (x, y, z), compute t values at the intersection points
-            if abs(p2[i] - p1[i]) > 1e-10:  # To prevent division by zero
+            # Compute the segment interval inside this axis-aligned slab.
+            if abs(p2[i] - p1[i]) > 1e-10:
                 t1 = (bbox_min[i] - p1[i]) / (p2[i] - p1[i])
                 t2 = (bbox_max[i] - p1[i]) / (p2[i] - p1[i])
 
-                # Ensure t1 is smaller than t2
+                # Order the entry and exit parameters.
                 if t1 > t2:
                     t1, t2 = t2, t1
 
@@ -134,14 +128,14 @@ class FrankaBinRelocationEnv(FrankaEnv):
                 if tmin > tmax:
                     return None
 
-        # Compute the intersection point using the t value
+            # Return the first point at which the segment enters the box.
         intersection = p1 + tmin * (p2 - p1)
 
         return intersection
 
     def _clip_position_to_safety_box(self, pose):
         pose = super()._clip_position_to_safety_box(pose)
-        # Clip xyz to inner box
+        # Stop motion at the inner safety-box boundary.
         if self.inner_safety_box.contains(pose[:3]):
             pose[:3] = self.intersect_line_bbox(
                 self._franka_state.tcp_pose[:3],
@@ -152,17 +146,11 @@ class FrankaBinRelocationEnv(FrankaEnv):
         return pose
 
     def _crop_frame(self, name, image):
-        """Crop realsense images to be a square."""
+        """Crop a RealSense frame to a square."""
         return image[:, 80:560, :]
 
     def _get_camera_frames(self):
-        """Read one frame per camera, reopening any that has stalled.
-
-        Named from the robot's own tree rather than by asking each camera: a
-        camera placed on the machine it is plugged into answers through a
-        proxy, which carries observations and not the descriptor holding its
-        name.
-        """
+        """Read task-specific camera crops and reopen stalled devices."""
         images = {}
         display_images = {}
         for name, camera in self._cameras.items():
@@ -220,20 +208,16 @@ class FrankaBinRelocationEnv(FrankaEnv):
         return super().reset(joint_reset)
 
     def go_to_rest(self, joint_reset=False):
-        """
-        Move to the rest position defined in base class.
-        Add a small z offset before going to rest to avoid collision with object.
-        """
+        """Lift clear of the slot before moving to the base rest pose."""
         self._end_effector_action(np.array([1.0]))
         self._franka_state = self._controller.get_state()
         self._move_action(self._franka_state.tcp_pose)
         time.sleep(0.5)
         self._franka_state = self._controller.get_state()
 
-        # Move up to clear the slot
+        # Lift before following the normal reset trajectory.
         reset_pose = copy.deepcopy(self._franka_state.tcp_pose)
         reset_pose[2] += 0.10
         self._interpolate_move(reset_pose, timeout=1)
 
-        # execute the go_to_rest method from the parent class
         super().go_to_rest(joint_reset)

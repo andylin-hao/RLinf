@@ -83,17 +83,14 @@ class RealWorldEnv(gym.Env):
 
     @staticmethod
     def realworld_setup():
-        """Setup RealWorld environment upon env class import.
+        """Run node-level setup before creating real-world environments.
 
-        This is for any node-level setup required by RealWorld environments. For example, ROS
-        requires a single roscore instance per node, so we ensure that any existing roscore
-        processes are terminated before starting a new one.
-
-        This function is called once when the RealWorldEnv class is first imported.
+        The setup is serialized because ROS permits only one core per node.
+        Existing ROS core processes are stopped before environments start.
         """
-        # Concurrency control is needed for multiple processes on the same node
+        # Serialize setup across environment processes on the same node.
         node_lock_file = "/tmp/.realworld.lock"
-        # Check if the path is valid
+        # Fall back to the user directory if the temporary path is unavailable.
         if not os.path.exists(os.path.dirname(node_lock_file)):
             node_lock_file = os.path.join(pathlib.Path.home(), ".realworld.lock")
         node_lock = FileLock(node_lock_file)
@@ -118,11 +115,10 @@ class RealWorldEnv(gym.Env):
     def get_hold_actions(
         self, fallback_actions: np.ndarray | None = None
     ) -> np.ndarray:
-        """Return per-env hold actions for smooth-intervene dummy chunks.
+        """Return per-environment actions that hold the current robot state.
 
-        Prefers an intervention wrapper's ``get_hold_action`` (e.g. absolute TCP
-        hold). When unavailable, returns zeros so relative-action teleop setups
-        keep a no-op command (same as the previous dummy-chunk behavior).
+        Absolute-action teleoperation wrappers provide their own hold action.
+        Other environments use a zero action.
         """
         action_dim = int(self.action_space.shape[-1])
         holds: list[np.ndarray] = []
@@ -131,8 +127,7 @@ class RealWorldEnv(gym.Env):
             if fallback_actions is not None:
                 fallback = np.asarray(fallback_actions[env_id], dtype=np.float32)
 
-            # A stack with no operator has no such method; one driving with
-            # deltas has the method but nothing to say, and raises.
+            # A wrapper stack without a hold action falls back to zero.
             try:
                 hold = np.asarray(
                     env.get_wrapper_attr("get_hold_action")(fallback),
@@ -159,7 +154,8 @@ class RealWorldEnv(gym.Env):
 
     @property
     def total_num_group_envs(self):
-        return np.iinfo(np.uint8).max // 2  # TODO
+        # TODO(agent): Replace this placeholder with task-specific reset-state data.
+        return np.iinfo(np.uint8).max // 2
 
     @property
     def is_start(self):
@@ -229,7 +225,7 @@ class RealWorldEnv(gym.Env):
         return infos
 
     def reset(self, *, reset_state_ids=None, seed=None, options=None, env_idx=None):
-        # TODO: handle partial reset
+        # TODO(agent): Honor reset_state_ids for partial real-environment resets.
         raw_obs, infos = self.env.reset(seed=seed, options=options)
 
         extracted_obs = self._wrap_obs(raw_obs)
@@ -240,9 +236,7 @@ class RealWorldEnv(gym.Env):
         return extracted_obs, infos
 
     def _wrap_obs(self, raw_obs):
-        """
-        raw_obs: Dict of list
-        """
+        """Convert batched raw observations to the runner representation."""
         obs = {}
 
         state = raw_obs["state"]
@@ -271,7 +265,7 @@ class RealWorldEnv(gym.Env):
 
         self._elapsed_steps += 1
         raw_obs, _reward, terminations, truncations, infos = self.env.step(actions)
-        # max_episode_steps: null → external wrapper owns episode end.
+        # A null limit delegates episode boundaries to an external wrapper.
         if self.cfg.max_episode_steps is None:
             timeout_truncations = np.zeros_like(truncations, dtype=bool)
         else:
@@ -335,7 +329,7 @@ class RealWorldEnv(gym.Env):
                 on_begin()
 
     def chunk_step(self, chunk_actions):
-        # chunk_actions: [num_envs, chunk_step, action_dim]
+        # Shape: [num_envs, chunk_steps, action_dim].
         chunk_size = chunk_actions.shape[1]
         obs_list = []
         infos_list = []
@@ -425,7 +419,7 @@ class RealWorldEnv(gym.Env):
                 else None
             ),
         )
-        # gymnasium calls it final observation but it really is just o_{t+1} or the true next observation
+        # Follow Gymnasium's final-observation naming for the pre-reset result.
         infos["final_observation"] = final_obs
         infos["final_info"] = final_info
         infos["_final_info"] = dones

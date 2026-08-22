@@ -29,7 +29,7 @@ from rlinf.utils.logging import get_logger
 
 @EndEffector.register("ruiyan_hand")
 class RuiyanHand(BaseEndEffector):
-    """Ruiyan dexterous hand — thin wrapper around ``rlinf_dexhand``.
+    """Ruiyan dexterous hand backed by ``rlinf_dexhand``.
 
     Install the driver package first::
 
@@ -63,9 +63,7 @@ class RuiyanHand(BaseEndEffector):
         default_current: int = 800,
         default_state: Optional[list[float]] = None,
     ) -> None:
-        # Settings only. Importing the SDK here would put it on the machine
-        # composing the robot rather than the one holding the hand, and a
-        # config could not be described at all without the vendor package.
+        # Store settings only; the placement node loads the SDK in _open().
         self._settings = {
             "port": port,
             "baudrate": baudrate,
@@ -77,9 +75,7 @@ class RuiyanHand(BaseEndEffector):
         self._driver = None
         self._logger = get_logger()
 
-    # ------------------------------------------------------------------
     # Properties
-    # ------------------------------------------------------------------
 
     @property
     def action_dim(self) -> int:
@@ -102,16 +98,10 @@ class RuiyanHand(BaseEndEffector):
         """Return detailed per-motor diagnostic information."""
         return self._driver.get_detailed_state()
 
-    # ------------------------------------------------------------------
     # Lifecycle
-    # ------------------------------------------------------------------
 
     def _open(self) -> Any:
-        """Build the driver, open the serial port, start the control loop.
-
-        The SDK is imported here, beside the hardware, so a hand placed on
-        another node needs it only there.
-        """
+        """Create the driver, open the serial port, and start control."""
         from rlinf_dexhand.ruiyan import RuiyanHandDriver
 
         self._driver = RuiyanHandDriver(**self._settings)
@@ -125,20 +115,16 @@ class RuiyanHand(BaseEndEffector):
         finally:
             self._driver = None
 
-    # ------------------------------------------------------------------
     # State
-    # ------------------------------------------------------------------
 
     def get_state(self) -> np.ndarray:
-        """Return the latest finger positions (normalised ``[0, 1]``)."""
+        """Return the latest finger positions normalized to ``[0, 1]``."""
         return self._driver.get_state()
 
-    # ------------------------------------------------------------------
     # Commands
-    # ------------------------------------------------------------------
 
     def command(self, action: np.ndarray) -> bool:
-        """Set target finger positions (normalised ``[0, 1]``)."""
+        """Set target finger positions normalized to ``[0, 1]``."""
         return self._driver.command(action)
 
     def reset(self, target_state: np.ndarray | None = None) -> None:

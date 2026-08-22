@@ -12,11 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Franka parallel-jaw gripper controlled via ROS topics.
-
-This module encapsulates the ROS channel setup and message publishing that
-were previously embedded in the arm's controller worker.
-"""
+"""Franka parallel-jaw gripper controlled through ROS topics."""
 
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -35,12 +31,12 @@ class FrankaGripper(BaseGripper):
 
     Communication uses three ROS topics:
 
-    * ``/franka_gripper/move/goal``   – move to a given width
-    * ``/franka_gripper/grasp/goal``  – grasp with configurable force
-    * ``/franka_gripper/joint_states`` – finger-joint state feedback
+    * ``/franka_gripper/move/goal`` for width commands
+    * ``/franka_gripper/grasp/goal`` for force-controlled grasps
+    * ``/franka_gripper/joint_states`` for finger-joint feedback
 
     Args:
-        ros: An initialised :class:`ROSController` instance (shared with the
+        ros: An initialized :class:`ROSController` instance shared with the
             arm controller).
         max_width: Stroke of the hand in metres. The default is the Franka
             Hand's own; ``open()`` travels to it, and it bounds the axis
@@ -55,7 +51,7 @@ class FrankaGripper(BaseGripper):
         port: Optional[str] = None,
         **settings: Any,
     ) -> "FrankaGripper":
-        """Reached over the arm's ROS session; a serial port is not for us."""
+        """Declare a gripper that uses the arm's ROS session."""
         return cls(ros=ros, **settings)
 
     def __init__(self, ros: "ROSController", max_width: float = 0.08) -> None:
@@ -74,22 +70,13 @@ class FrankaGripper(BaseGripper):
         self._is_open_flag: bool = True
         self._is_ready_flag: bool = False
 
-        # ROS channels
+        # ROS channels.
         self._move_channel = "/franka_gripper/move/goal"
         self._grasp_channel = "/franka_gripper/grasp/goal"
         self._state_channel = "/franka_gripper/joint_states"
 
     def _open(self) -> None:
-        """Open the gripper's channels on the arm's ROS session.
-
-        The message types are imported here rather than at module scope, and
-        the channels are created here rather than in the constructor, so
-        composing a robot needs neither ROS nor the gripper.
-
-        The session belongs to the arm, so there is nothing of its own to hand
-        back; returning ``None`` leaves the lifecycle holding the gripper
-        itself, which is what :meth:`_release` then has nothing to close.
-        """
+        """Create the gripper channels on the arm's ROS session."""
         from franka_gripper.msg import GraspActionGoal, MoveActionGoal
         from sensor_msgs.msg import JointState
 
@@ -103,10 +90,10 @@ class FrankaGripper(BaseGripper):
         )
 
     def _release(self, device: Any) -> None:
-        """Nothing to close: the arm owns the ROS session these ride on."""
+        """Mark the gripper unavailable without closing the arm's ROS session."""
         self._is_ready_flag = False
 
-    # ── BaseGripper interface ────────────────────────────────────────
+    # BaseGripper interface
 
     def open(self, speed: float = 0.3) -> None:
         msg = self._MoveActionGoal()
@@ -126,14 +113,7 @@ class FrankaGripper(BaseGripper):
         self._is_open_flag = False
 
     def move(self, width: float, speed: float = 0.3) -> None:
-        """Move to an opening width in metres, which is what the topic takes.
-
-        It used to divide by ``255 * 10`` first, treating a Robotiq's register
-        counts as the unit every gripper spoke. That made a width of 0.05 m
-        arrive as 0.2 mm -- a closed hand -- and it ran the opposite way from
-        the Robotiq it was imitating, where a bigger number means a tighter
-        grip.
-        """
+        """Move to an opening width in metres."""
         msg = self._MoveActionGoal()
         msg.goal.width = float(np.clip(width, 0.0, self._max_width))
         msg.goal.speed = speed
@@ -156,7 +136,7 @@ class FrankaGripper(BaseGripper):
     def is_ready(self) -> bool:
         return self._ros.get_input_channel_status(self._state_channel)
 
-    # ── ROS callback ─────────────────────────────────────────────────
+    # ROS callback
 
     def _on_state_msg(self, msg: Any) -> None:
         self._position_value = np.sum(msg.position)

@@ -12,19 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Where each named part sits in an env's action vector, and what it means.
-
-An env builds its own action space, so it is the only thing that knows what the
-numbers in it are: ``FrankaEnv.step`` reads ``action[:6]`` as a twist, while
-``GimArmEnv.step`` reads the same six as joint angles. Saying so is what lets a
-teleop group ask for "the arm" instead of computing a slice -- and what stops a
-spacemouse driving an arm that would read its twist as joint targets.
-
-This used to be inferred from the width of the action space. Widths agree far
-more often than meanings do, so a robot could accept a device it would misread.
-An env declares :meth:`action_parts` instead, and one that does not cannot be
-teleoperated.
-"""
+"""Map named robot parts to environment action-vector spans and semantics."""
 
 from __future__ import annotations
 
@@ -37,11 +25,11 @@ from rlinf.robotics.teleop import ActionKind, ActionPart
 
 @dataclass(frozen=True)
 class ActionSpec:
-    """An env's action vector, part by part.
+    """Named layout and semantics of an environment action vector.
 
     Attributes:
-        layout: Where each named part sits.
-        kinds: What each part's numbers mean.
+        layout: Slice occupied by each named part.
+        kinds: Semantic action type for each part.
     """
 
     layout: dict[str, slice]
@@ -49,14 +37,11 @@ class ActionSpec:
 
 
 def action_spec(env: gym.Env) -> ActionSpec:
-    """Return what ``env`` says its action is made of.
+    """Return and validate the environment's declared action parts.
 
     Raises:
-        AttributeError: If the env does not declare ``action_parts``. Guessing
-            here would hand an operator's commands to a robot that reads them
-            as something else.
-        ValueError: If the declared parts do not tile the action space exactly,
-            which means the declaration and ``step`` disagree.
+        AttributeError: If the environment does not declare ``action_parts``.
+        ValueError: If the declared parts do not cover the action space exactly.
     """
     try:
         declare = env.get_wrapper_attr("action_parts")
@@ -66,8 +51,7 @@ def action_spec(env: gym.Env) -> ActionSpec:
             "there is no way to know what a command for its arm means. Declare "
             "it to use teleoperation."
         ) from None
-    # Called outside the guard: an AttributeError raised inside the env's own
-    # declaration is a bug in it, not a missing declaration.
+    # Do not mask AttributeError raised by the declaration itself.
     parts = declare()
 
     layout: dict[str, slice] = {}
@@ -100,11 +84,7 @@ def action_layout(env: gym.Env) -> dict[str, slice]:
 def mirrored(
     per_arm: tuple[ActionPart, ...], sides: tuple[str, ...]
 ) -> tuple[ActionPart, ...]:
-    """Repeat one arm's parts for each side, qualified by side name.
-
-    A two-armed robot lays the same parts out twice, so it says what one arm
-    takes and names the sides.
-    """
+    """Repeat an arm layout for each side and qualify the part names."""
     return tuple(
         ActionPart(f"{side}.{part.name}", part.width, part.kind)
         for side in sides

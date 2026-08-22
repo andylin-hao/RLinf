@@ -25,14 +25,13 @@ import numpy as np
 
 from ._fakes import module
 
-#: A pose that is reachable and obviously not zero, so a test can tell the
-#: difference between "read the arm" and "read nothing".
+#: Reachable, nonzero arm state used by the fake SDKs.
 HOME_JOINTS = (0.0, -0.4, 0.0, -2.0, 0.0, 1.6, 0.8)
 HOME_TCP = (0.4, 0.0, 0.3, 0.0, 1.0, 0.0, 0.0)
 
 
 def franky() -> types.ModuleType:
-    """A ``franky`` whose robot answers with a fixed pose."""
+    """Return a ``franky`` module that reports a fixed robot pose."""
 
     class Affine:
         def __init__(self, matrix=None):
@@ -93,7 +92,7 @@ def franky() -> types.ModuleType:
             return True
 
     class _Tracker:
-        """Keeps the targets it was given, so a test can read them back."""
+        """Record impedance targets for assertions."""
 
         def __init__(self, *_args, **_kwargs):
             self.targets: list[Any] = []
@@ -125,11 +124,11 @@ def franky() -> types.ModuleType:
 
 
 def ros() -> dict[str, types.ModuleType]:
-    """A ``rospy`` and the message packages the Franka arm imports."""
+    """Return fake ``rospy`` and Franka ROS message modules."""
     published: list[tuple[str, Any]] = []
 
     class Publisher:
-        """Keeps its message type: the transport checks what is put on it."""
+        """Record the declared message type and published messages."""
 
         def __init__(self, name, data_class, **_kwargs):
             self.name = name
@@ -139,13 +138,7 @@ def ros() -> dict[str, types.ModuleType]:
             published.append((self.name, message))
 
     class Subscriber:
-        """Delivers one message as soon as it subscribes.
-
-        A ROS channel counts as up once its callback has fired, so a
-        subscriber that never delivers leaves the arm waiting for a robot that
-        looks switched off. One message is what a live robot publishing state
-        looks like from here.
-        """
+        """Deliver an initial message when the subscriber is created."""
 
         def __init__(self, name, data_class, callback, **_kwargs):
             self.name = name
@@ -154,17 +147,11 @@ def ros() -> dict[str, types.ModuleType]:
             self.publish()
 
         def publish(self, message=None):
-            """Deliver a message, defaulting to a fresh one of this type."""
+            """Publish a supplied or default message to the topic."""
             self.callback(message if message is not None else self.data_class())
 
     class _Timer:
-        """A ROS timer that actually fires.
-
-        Parts drive themselves from timers: Turtle2 interpolates toward its
-        commanded pose on one, and an arm that never moves leaves the env
-        waiting for a reset that cannot converge. The thread is a daemon and
-        stops on ``shutdown``, as rospy's does.
-        """
+        """Run a ROS timer callback on a daemon thread."""
 
         def __init__(self, period, callback, oneshot=False, **_kwargs):
             self.period = float(period)
@@ -187,7 +174,7 @@ def ros() -> dict[str, types.ModuleType]:
             self._running = False
 
     def _message(**fields):
-        """A message *class*: the transport isinstance-checks what it publishes."""
+        """Create a message class with default fields."""
 
         names = list(fields)
 
@@ -262,7 +249,7 @@ def ros() -> dict[str, types.ModuleType]:
     )
 
     def _gripper_goal():
-        """The goal a grasp or move message carries, with room for its fields."""
+        """Create a gripper goal with writable command fields."""
         return types.SimpleNamespace(
             width=0.0,
             speed=0.0,
@@ -313,7 +300,7 @@ def ros() -> dict[str, types.ModuleType]:
 
 
 def modules(**_: Any) -> dict[str, types.ModuleType]:
-    """Every arm SDK, by the name a part imports it as."""
+    """Return fake arm SDKs keyed by import name."""
     made = {"franky": franky()}
     made.update(ros())
     return made

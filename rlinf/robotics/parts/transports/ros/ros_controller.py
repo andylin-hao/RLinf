@@ -26,7 +26,7 @@ from rlinf.utils.logging import get_logger
 
 
 class ROSController:
-    """Controller for ROS communication. A controller is used for managing one robot."""
+    """Manage ROS 1 publishers and subscribers for one robot."""
 
     def __init__(self, ros_version: int = 1) -> None:
         """Initialize the ROS controller."""
@@ -34,19 +34,17 @@ class ROSController:
         self._ros_version = ros_version
         assert self._ros_version == 1, "Currently only ROS 1 is supported."
 
-        # ROS is a global service on the node
-        # When there are multiple controllers, concurrency control is needed
+        # Serialize access to the node-wide ROS core.
         ros_lock_file = "/tmp/.ros.lock"
-        # Check if the path is valid
+        # Fall back to the user directory if the temporary path is unavailable.
         if not os.path.exists(os.path.dirname(ros_lock_file)):
             ros_lock_file = os.path.join(pathlib.Path.home(), ".ros.lock")
         self._ros_lock = FileLock(ros_lock_file)
 
         if self._ros_version == 1:
-            # roscore is removed in ROS 2
             with self._ros_lock:
                 self._ros_core = None
-                # Check roscore state and launch roscore
+                # Reuse an existing core or launch one for this node.
                 for proc in psutil.process_iter():
                     if proc.name() == "roscore":
                         self._ros_core = proc
@@ -55,24 +53,22 @@ class ROSController:
                     self._ros_core = psutil.Popen(
                         ["roscore"], stdout=sys.stdout, stderr=sys.stdout
                     )
-                    time.sleep(1)  # Wait for roscore to start
+                    time.sleep(1)  # Allow roscore to accept connections.
 
-        # Initialize ros node
+        # Initialize the ROS node.
         rospy.init_node("franka_controller", anonymous=True)
 
-        # ROS channels
+        # ROS channels.
         self._output_channels: dict[str, rospy.Publisher] = {}
         self._input_channels: dict[str, rospy.Subscriber] = {}
         self._input_channel_status: dict[str, bool] = {}
 
     def get_input_channel_status(self, name: str) -> bool:
-        """Get the status of a ROS input channel.
+        """Return whether a subscriber has received a message.
 
         Args:
             name: The name of the ROS input channel.
 
-        Returns:
-            bool: The status of the ROS input channel.
         """
         if name not in self._input_channel_status:
             return False
@@ -81,12 +77,13 @@ class ROSController:
     def create_ros_channel(
         self, name: str, data_class: rospy.Message, queue_size: Optional[int] = None
     ) -> None:
-        """Create a ROS Publisher channel for communication.
+        """Create a ROS publisher.
 
         Args:
-            name: The name of the ROS channel.
-            data_class: The message data class for the ROS channel.
-            queue_size: The size of the queue for the ROS channel. Same as common channel, queue_size 0 means an infinite queue. However, queue_size being None means the channel becomes blocking.
+            name: ROS topic name.
+            data_class: Message type published on the topic.
+            queue_size: Publisher queue size. Zero selects an unbounded queue;
+                ``None`` enables synchronous publishing.
         """
         self._output_channels[name] = rospy.Publisher(
             name, data_class, queue_size=queue_size
@@ -95,16 +92,16 @@ class ROSController:
     def connect_ros_channel(
         self, name: str, data_class: rospy.Message, callback: Callable
     ) -> None:
-        """Connect a ROS Subscriber channel for communication.
+        """Create a ROS subscriber.
 
         Args:
-            name: The name of the ROS channel.
-            data_class: The message data class for the ROS channel.
-            callback: The callback function to handle incoming messages.
+            name: ROS topic name.
+            data_class: Message type received from the topic.
+            callback: Function invoked for each message.
         """
 
         def callback_wrapper(*args: Any, **kwargs: Any) -> Any:
-            # When the callback is called, mark the channel as active
+            # Mark the subscriber active after its first message.
             self._input_channel_status[name] = True
             return callback(*args, **kwargs)
 
@@ -114,11 +111,11 @@ class ROSController:
         )
 
     def put_channel(self, name: str, data: rospy.Message) -> None:
-        """Put data into a ROS Publisher channel.
+        """Publish a message on a configured channel.
 
         Args:
-            name: The name of the ROS channel.
-            data: The data to publish on the ROS channel.
+            name: ROS topic name.
+            data: Message to publish.
         """
         if name in self._output_channels:
             assert isinstance(data, self._output_channels[name].data_class), (

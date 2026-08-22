@@ -12,18 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""What the test suites share.
-
-``robot_mocks`` sits here rather than inside ``unit_tests`` because a faked
-robot is as useful to an end-to-end run as to a unit test: the same fakes let a
-whole training loop run against a robot that is not there.
-
-How each suite reaches it differs, because they are run differently. Pytest
-suites add this directory in their own ``conftest.py``, since each carries its
-own ``pytest.ini`` and pytest never looks above a rootdir. Script-driven suites
-put it on ``PYTHONPATH``, which is also what a worker process needs -- see
-``robot_mocks._reach_worker_processes``.
-"""
+"""Make shared test utilities importable from all test suites."""
 
 import sys
 from pathlib import Path

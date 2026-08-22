@@ -12,15 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Hardware an operator drives, as parts.
+"""Operator devices exposed through the standard robot-part lifecycle.
 
-A leader arm is an arm with encoders, a glove reports finger angles, a
-spacemouse reports a twist. They connect, they report a reading, they
-disconnect, and they are plugged into a particular machine -- so they are
-:class:`~rlinf.robotics.parts.base.RobotPart` implementations like any other
-piece of hardware, and get placement and lifecycle for free.
-
-What a reading *means* for a robot is not their concern. That mapping lives in
+Bindings that map device readings to robot actions live in
 :mod:`rlinf.robotics.teleop`.
 """
 

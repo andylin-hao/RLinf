@@ -48,17 +48,10 @@ class FrankaROSArm(BaseArm):
         end_effector_config: Optional[dict[str, Any]] = None,
         **placement: Any,
     ) -> "FrankaROSArm":
-        """Build this backend from the settings a Franka robot carries.
+        """Declare a ROS-backed Franka arm and its end effector.
 
-        The end effector is this arm's own: it is opened on the ROS session
-        this arm holds, so the type and its config come through here rather
-        than being composed beside the arm.
-
-        ``gripper_type`` is refused rather than forwarded. It selects a gripper
-        backend for an arm that builds one itself, which the ROS stack does not
-        -- here the end effector is named outright by ``end_effector_type``.
-        Accepting it and ignoring it is the shape that hurts: a config asking
-        for a Robotiq got the default Franka Hand and nothing said so.
+        This backend does not support ``gripper_type``. Select the device with
+        ``end_effector_type`` instead.
         """
         if gripper_type is not None:
             raise TypeError(
@@ -105,7 +98,7 @@ class FrankaROSArm(BaseArm):
 
     @property
     def parts(self) -> dict[str, RobotPart]:
-        """Whichever end effector is configured, riding this arm's connection."""
+        """Return the end effector exported by the arm connection."""
         if self._end_effector_type.is_hand:
             end_effector = MethodEndEffector(
                 self,
@@ -170,19 +163,17 @@ class FrankaROSArm(BaseArm):
         gripper_connection: Optional[str],
     ) -> None:
         if self._end_effector_type.is_gripper:
-            # A gripper on this arm's ROS session, or on a serial port of its
-            # own: which one the name selects is the registry's answer, and
-            # what each needs is its own constructor's.
+            # The registry selects either a ROS-backed or serial gripper.
             self._gripper = EndEffector.of(
                 self._end_effector_type.gripper_backend,
                 ros=self._ros,
                 port=gripper_connection,
                 **end_effector_config,
             )
-            # Built unopened, like every part; this arm owns its lifetime.
+            # The arm owns the gripper lifecycle.
             self._gripper.connect()
             self._logger.info(
-                "Gripper initialised: end_effector=%s",
+                "Gripper initialized: end_effector=%s",
                 self._end_effector_type.value,
             )
             return
@@ -193,7 +184,7 @@ class FrankaROSArm(BaseArm):
         )
         self._end_effector.connect()
         self._logger.info(
-            "End-effector initialised: %s",
+            "End-effector initialized: %s",
             self._end_effector_type.value,
         )
 
@@ -264,7 +255,7 @@ class FrankaROSArm(BaseArm):
         return arm_ok
 
     def get_state(self) -> FrankaRobotState:
-        """Get the current state of the Franka robot."""
+        """Return the current Franka state."""
         if self._end_effector_type.is_gripper:
             self._state.gripper_position = self._gripper.position
             self._state.gripper_open = self._gripper.is_open
@@ -400,13 +391,7 @@ class FrankaROSArm(BaseArm):
         self._logger.debug("Close gripper")
 
     def move_gripper(self, width: float, speed: float = 0.3) -> None:
-        """Move the gripper to an opening width, in metres.
-
-        The range check that used to live here read ``0 <= position <= 255``,
-        which is one gripper's register counts written into the arm. The
-        gripper is what knows its own stroke, and it clamps to it, so the arm
-        passes the width through.
-        """
+        """Move the configured gripper to an opening width in metres."""
         if self._end_effector_type.is_gripper:
             self._gripper.move(width, speed)
         self._logger.debug("Move gripper to width: %.4f m", width)

@@ -41,7 +41,7 @@ class GimArmRobot(Robot):
         worker_rank: int = 0,
         env_idx: int = 0,
     ) -> dict[str, Any]:
-        """The one arm this robot carries, gripper included when fitted."""
+        """Return the arm declaration, including its optional gripper."""
         from ..parts.arms.gim_arm import GimArm
 
         connection = GimArm(
@@ -53,9 +53,7 @@ class GimArmRobot(Robot):
             node_rank=node_rank,
             worker_name=f"GimArm-{worker_rank}-{env_idx}",
         )
-        # Whether a gripper is fitted is the arm's own answer -- it is the
-        # thing that was told -- and it carries one if it has one, so there is
-        # nothing to branch on a second time here.
+        # The arm connection exports its gripper when one is enabled.
         return {"arm": connection}
 
     @classmethod
@@ -65,7 +63,7 @@ class GimArmRobot(Robot):
         *,
         node_rank: Optional[int] = None,
     ) -> dict[str, Any]:
-        """The cameras this robot carries."""
+        """Return the robot's named camera declarations."""
         return Camera.declare(cameras, node_rank=node_rank)
 
     @classmethod
@@ -83,7 +81,7 @@ class GimArmRobot(Robot):
         cameras: Optional[Mapping[str, Any]] = None,
         camera_node_rank: Optional[int] = None,
     ) -> "GimArmRobot":
-        """Compose this robot from the parts it is made of."""
+        """Compose a GimArm robot from its arm and cameras."""
         return cls(
             **cls.build_arms(
                 can_interface=can_interface,

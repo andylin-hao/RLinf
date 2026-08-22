@@ -50,7 +50,7 @@ class ButtonEnvConfig(Turtle2RobotConfig):
             ]
         )
         self.reward_threshold = np.array([0.015, 0.015, 0.01, 0.15, 0.15, 0.15])
-        self.action_scale = np.array([0.01, 0.05, 0.0])  # remain the gripper close
+        self.action_scale = np.array([0.01, 0.05, 0.0])  # Keep gripper state fixed.
 
         self.ee_pose_limit_min = self.target_ee_pose.copy()
         self.ee_pose_limit_min[:, 0] -= self.clip_x_range
@@ -73,7 +73,7 @@ class ButtonEnv(Turtle2Env):
     """Button pressing task environment for Turtle2 robot."""
 
     def __init__(self, override_cfg, worker_info=None, robot_info=None, env_idx=0):
-        # Update config according to current env
+        # Derive task limits and targets from the selected arm.
         config = ButtonEnvConfig(**override_cfg)
         super().__init__(config, worker_info, robot_info, env_idx)
 

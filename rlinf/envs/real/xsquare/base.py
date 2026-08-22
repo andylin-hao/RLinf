@@ -38,16 +38,15 @@ from rlinf.utils.logging import get_logger
 
 @dataclass
 class Turtle2RobotConfig:
-    use_camera_ids: list[int] = field(default_factory=lambda: [2])  # [0, 1, 2]
-    use_arm_ids: list[int] = field(default_factory=lambda: [1])  # [0, 1]
+    use_camera_ids: list[int] = field(default_factory=lambda: [2])
+    use_arm_ids: list[int] = field(default_factory=lambda: [1])
 
     is_dummy: bool = True
     use_dense_reward: bool = False
-    step_frequency: float = 10.0  # Max number of steps per second
-    smooth_frequency: int = 50  # Frequency for smooth controller
+    step_frequency: float = 10.0  # Maximum environment steps per second.
+    smooth_frequency: int = 50  # Smoothing-controller frequency.
 
-    # Positions are stored in eular angles (xyz for position, rzryrx for orientation)
-    # It will be converted to quaternions internally
+    # Poses use xyz position and xyz Euler orientation; observations use quaternions.
     target_ee_pose: np.ndarray = field(
         default_factory=lambda: np.array(
             [[0, 0, 0, 0, 0, 0], [0.0, 0.0, 0.15, 0.0, 1, 0.0]]
@@ -63,14 +62,13 @@ class Turtle2RobotConfig:
     reward_threshold: np.ndarray = field(default_factory=lambda: np.zeros((2, 6)))
     action_scale: np.ndarray = field(
         default_factory=lambda: np.ones(3)
-    )  # [xyz move scale, orientation scale, gripper scale]
+    )  # Translation, orientation, and gripper scales.
     enable_random_reset: bool = False
 
     random_xy_range: float = 0.05
     random_rz_range: float = np.pi / 10
 
-    # Robot parameters
-    # Same as the position arrays: first 3 are position limits, last 3 are orientation limits
+    # Cartesian limits use xyz position followed by xyz Euler orientation.
     ee_pose_limit_min: np.ndarray = field(
         default_factory=lambda: np.full((2, 6), -np.inf)
     )
@@ -104,7 +102,7 @@ class Turtle2Env(gym.Env):
         robot_info: Optional[RobotInfo[Turtle2Config]],
         env_idx: int,
     ) -> None:
-        """Initialize Turtle2Env.
+        """Initialize a Turtle2 environment.
 
         Args:
             config: Robot and environment configuration.
@@ -135,19 +133,16 @@ class Turtle2Env(gym.Env):
         if not self.config.is_dummy:
             self._setup_hardware()
 
-        # Init action and observation spaces
         self._init_action_obs_spaces()
 
         if self.config.is_dummy:
             return
 
-        # Wait for the first frame
+        # Reset the arms before reading the initial state.
         self._reset_arms()
         self._turtle2_state = self._controller.get_state()
 
-        # Init cameras
         self._check_cameras()
-        # Video player for displaying camera frames
 
     def _setup_hardware(self):
         assert self.env_idx >= 0, "env_idx must be set for Turtle2Env."
@@ -160,13 +155,11 @@ class Turtle2Env(gym.Env):
             worker_rank=self.env_worker_rank,
         )
         self.robot.connect()
-        # Both arms ride one ROS session, and it is the session that answers
-        # get_state, move_arm and the camera calls -- so ask either arm which
-        # connection it rides rather than talking to the arm view itself.
+        # Both arms and cameras share the same owning ROS connection.
         self._controller = self.robot.child("left").child("arm").owner
 
     def close(self) -> None:
-        """Detach all composed Turtle2 runtime proxies."""
+        """Disconnect the composed Turtle2 runtime."""
         if self.robot is not None:
             self.robot.disconnect()
         super().close()
@@ -198,7 +191,7 @@ class Turtle2Env(gym.Env):
             np.ones((len(self.config.use_arm_ids) * 7), dtype=np.float32),
         )
 
-        obs_dim_per_arm = 7  # xyz(3) + quat(4)
+        obs_dim_per_arm = 7  # xyz position and quaternion orientation.
         self.observation_space = gym.spaces.Dict(
             {
                 "state": gym.spaces.Dict(
@@ -328,16 +321,10 @@ class Turtle2Env(gym.Env):
             observation = self._get_observation()
             return observation, {}
 
-        # Reset
         self._reset_arms()
         self._num_steps = 0
         self._turtle2_state = self._controller.get_state()
         observation = self._get_observation()
-        # save if debug
-        # for key in observation["frames"].keys():
-        #     img = Image.fromarray(observation["frames"][key])
-        #     img.save(f'{key}.jpg')
-
         return observation, {}
 
     def transform_action_ee_to_base(self, action: np.ndarray) -> np.ndarray:
@@ -353,7 +340,7 @@ class Turtle2Env(gym.Env):
         return action
 
     def action_parts(self) -> tuple[ActionPart, ...]:
-        """A twist and a gripper for each arm in use."""
+        """Return Cartesian-delta and gripper parts for each active arm."""
         from rlinf.envs.real.wrappers.teleop.layout import mirrored
 
         per_arm = (
@@ -382,11 +369,10 @@ class Turtle2Env(gym.Env):
 
         action = np.clip(action, self.action_space.low, self.action_space.high)
 
-        # deal with dual arms (xyz)
+        # Apply translation deltas to each active arm.
         action = action.reshape(-1, 7)
         xyz_delta = action[:, :3]
 
-        # self._turtle2_state = self._controller.get_state()
         next_position1 = self._turtle2_state.follow1_pos.copy()
         next_position2 = self._turtle2_state.follow2_pos.copy()
 
@@ -399,7 +385,7 @@ class Turtle2Env(gym.Env):
                 next_position2[:3] + xyz_delta[-1] * self.config.action_scale[0]
             )
 
-        # deal with dual arms (rpy)
+        # Apply Euler-angle deltas to each active arm.
         if 0 in self.config.use_arm_ids:
             next_position1[3:6] = (
                 next_position1[3:6] + action[0, 3:6] * self.config.action_scale[1]
@@ -418,7 +404,7 @@ class Turtle2Env(gym.Env):
             if 1 in self.config.use_arm_ids:
                 next_position2[6] = action[-1, 6]
 
-        # clip to safety box
+        # Enforce Cartesian and gripper limits before dispatch.
         next_position = self._clip_position_to_safety_box(
             np.stack([next_position1, next_position2])
         )
@@ -463,7 +449,6 @@ class Turtle2Env(gym.Env):
             ``use_dense_reward`` is set, or ``0.0`` otherwise.
         """
         if not self.config.is_dummy:
-            # Convert orientation to euler angles
             position1 = self._turtle2_state.follow1_pos[0:6]
             position2 = self._turtle2_state.follow2_pos[0:6]
             delta1 = np.abs(position1 - self.config.target_ee_pose[0, 0:6])
@@ -522,7 +507,7 @@ class Turtle2Env(gym.Env):
         resized_frame = cv2.resize(cropped_frame, reshape_size)
         return resized_frame
 
-    # Robot actions
+    # Robot action helpers.
 
     def _clip_position_to_safety_box(self, position: np.ndarray) -> np.ndarray:
         """Clip the position array to be within the safety box."""
@@ -553,10 +538,10 @@ class Turtle2Env(gym.Env):
         return position
 
     def _get_observation(self) -> dict[str, dict[str, np.ndarray]]:
-        """Get current observation from robot state and cameras.
+        """Build an observation from robot state and camera frames.
 
         Returns:
-            Observation dict with 'state' (tcp_pose) and 'frames' (camera images).
+            Observation with ``state`` and ``frames`` dictionaries.
         """
         if not self.config.is_dummy:
             frames = self._controller.get_cams(self.config.use_camera_ids)

@@ -24,29 +24,17 @@ from rlinf.robotics.parts.base import ControllablePart
 
 
 class EndEffector(ControllablePart, ABC):
-    """A controllable tool at the end of an arm: a gripper, a dexterous hand.
+    """Common observation and action interface for end effectors.
 
-    What every end effector answers, whoever opens it. A driver holding its own
-    serial port and a view riding an arm's bus are both one of these, and a
-    task holding one can read it and command it without knowing which it got.
-
-    The lifecycle is deliberately not here. :class:`BaseEndEffector` adds it
-    for a device with a link of its own; a view has none and so subclasses this
-    directly.
+    Implementations may own a connection or borrow the connection of the arm
+    that carries them.
     """
 
     @classmethod
     def of(
         cls, end_effector_type: "str | EndEffectorType", **settings: Any
     ) -> "EndEffector":
-        """Build the end effector a config names, without opening it.
-
-        The same shape as
-        :meth:`~rlinf.robotics.parts.cameras.base.BaseCamera.of`: a name from
-        the registry, and the settings that driver takes. What each one needs
-        -- a serial port for a Robotiq, the arm's ROS session for a Franka Hand
-        -- it checks for itself, in its own constructor, so a caller building
-        one directly is told the same thing as one going through here.
+        """Declare an end effector from a registered backend name.
 
         Args:
             end_effector_type: A registered name, or an
@@ -58,14 +46,7 @@ class EndEffector(ControllablePart, ABC):
 
     @classmethod
     def declare(cls, **settings: Any) -> "EndEffector":
-        """Build this driver from what the arm carrying it can offer.
-
-        An arm fitting an end effector offers everything it has to attach one
-        with -- its ROS session, a serial port -- because it does not know
-        which the configured backend uses. A driver takes what it needs and
-        leaves the rest, which is why these are offers rather than settings a
-        config asked for: dropping one is the normal case, not a mistake.
-        """
+        """Declare this backend from attachment settings offered by an arm."""
         return cls(**settings)
 
     @property
@@ -175,36 +156,15 @@ def normalize_end_effector_type(
 
 
 class BaseEndEffector(EndEffector, ABC):
-    """An end effector that holds a link of its own.
-
-    What every driver in this package subclasses, grippers included: a
-    :class:`~rlinf.robotics.parts.end_effectors.grippers.base.BaseGripper` is
-    one of these with a single degree of freedom.
-
-    All this adds to :class:`EndEffector` is the lifecycle. What an end
-    effector *is* -- its dimensions, its state, the command it takes -- belongs
-    to the category, so a view riding an arm's bus answers the same questions
-    without pretending to own a device.
-    """
+    """Base class for end effectors with an independent connection."""
 
     @abstractmethod
     def _open(self) -> Any:
-        """Reach the hardware -- open the serial port, claim the bus -- and
-        return whatever speaks to it.
-
-        The same contract as every other part, restated as ``abstractmethod``
-        so an end-effector driver that never wrote one is refused at class
-        definition rather than at the first ``connect``. Return nothing when
-        the device is opened in place and there is no handle to keep.
-        """
+        """Open the end effector and return its device handle."""
 
     @abstractmethod
     def _release(self, device: Any) -> None:
-        """Let go of exactly what :meth:`_open` returned.
-
-        The handle arrives as an argument rather than off ``self`` so teardown
-        cannot be defeated by the order ``disconnect`` does things in.
-        """
+        """Release the handle returned by :meth:`_open`."""
 
     @property
     def finger_names(self) -> list[str]:
@@ -216,12 +176,7 @@ class BaseEndEffector(EndEffector, ABC):
         return [f"dof_{i}" for i in range(self.state_dim)]
 
     def get_detailed_state(self) -> dict:
-        """Return a detailed status dictionary for diagnostic purposes.
-
-        The default implementation wraps :meth:`get_state` into a dict.
-        Subclasses (e.g. dexterous hands) should override this to expose
-        per-motor velocity, current, error status, etc.
-        """
+        """Return diagnostic state using the generic position representation."""
         state = self.get_state()
         return {
             "positions": state.tolist(),

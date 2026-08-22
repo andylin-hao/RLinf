@@ -11,13 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Wrappers that let an operator drive the episode rather than the robot.
-
-None of these touch the action. They decide when an episode starts, when it ends,
-what reward it earned, and which policy is in charge -- the judgements a person
-watching the robot makes, which no sensor reports. Teleop is the other half of
-that story and lives in :mod:`rlinf.envs.real.wrappers.teleop`.
-"""
+"""Operator controls for episode state, reward, and policy selection."""
 
 from .eval_control import KeyboardEvalControlWrapper
 from .leader_follower import LeaderFollowerKeyboardIntervention

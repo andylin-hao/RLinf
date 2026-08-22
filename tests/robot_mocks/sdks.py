@@ -27,7 +27,7 @@ ARM_DOF = 6
 
 
 def pinocchio() -> types.ModuleType:
-    """Enough kinematics to answer a forward-kinematics query."""
+    """Return the subset of Pinocchio needed for kinematics tests."""
 
     class Transform:
         def __init__(self):
@@ -77,7 +77,7 @@ def pinocchio() -> types.ModuleType:
 
 
 def gim_arm() -> dict[str, types.ModuleType]:
-    """A ``gim_arm_control`` whose controller answers with a resting arm."""
+    """Return a ``gim_arm_control`` module that reports a resting arm."""
     pin = pinocchio()
 
     class Reading:
@@ -169,7 +169,7 @@ def gim_arm() -> dict[str, types.ModuleType]:
 
 
 def turtle2() -> dict[str, types.ModuleType]:
-    """A ``turtle2_basic`` controller that reports a resting two-arm robot."""
+    """Return a ``turtle2_basic`` controller for a resting dual-arm robot."""
 
     class Cameras:
         def check_cam1(self, timeout=0.5):
@@ -190,12 +190,7 @@ def turtle2() -> dict[str, types.ModuleType]:
     REST = [0.3, 0.0, 0.2, 0.0, 1.0, 0.0, 0.0]
 
     class Turtle2Controller:
-        """Arms that go where they are told.
-
-        Reset waits for the reported pose to reach the commanded one, so an
-        arm reporting a fixed pose never converges and the env times out. A
-        real arm moves; this one arrives immediately.
-        """
+        """Record arm targets and expose them as the current state."""
 
         def __init__(self, *_args, **_kwargs):
             self.cam = Cameras()
@@ -247,12 +242,12 @@ def turtle2() -> dict[str, types.ModuleType]:
 
 
 def airbot() -> dict[str, types.ModuleType]:
-    """An ``airbot_sdk`` whose robot reports both arms at rest."""
+    """Return an ``airbot_sdk`` module that reports both arms at rest."""
 
     JOINTS = 7
 
     class Arm:
-        """One arm of the SDK's robot, which is where commands land."""
+        """Represent one arm and record its commands."""
 
         def __init__(self):
             self.commanded: list[Any] = []
@@ -270,11 +265,7 @@ def airbot() -> dict[str, types.ModuleType]:
             return 0.0
 
     class AirbotRobot:
-        """Reports both arms at rest, with seven joints each.
-
-        The driver waits for exactly seven joints per arm before it calls the
-        robot ready, so shorter lists would hang it until its timeout.
-        """
+        """Report both arms at rest with seven joints each."""
 
         def __init__(self, *_args, **_kwargs):
             self.running = True
@@ -341,7 +332,7 @@ def airbot() -> dict[str, types.ModuleType]:
 
 
 def modules(**_: Any) -> dict[str, types.ModuleType]:
-    """Every remaining robot SDK, by the name a part imports it as."""
+    """Return the remaining fake robot SDKs keyed by import name."""
     made: dict[str, types.ModuleType] = {}
     made.update(gim_arm())
     made.update(turtle2())

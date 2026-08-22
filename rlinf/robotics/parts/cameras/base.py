@@ -29,31 +29,11 @@ _logger = get_logger()
 
 
 class Camera(RobotPart):
-    """A part that is read and never commanded.
-
-    The category, with no lifecycle of its own -- :class:`BaseCamera` below is
-    what a driver subclasses. Naming it separately is what lets a robot ask for
-    every camera it carries, and what lets a camera hosted on another machine
-    come back as a camera rather than as a part in general.
-
-    It is also what the drivers register on, so ``Camera.backend("zed")``
-    answers the question a config asks. The registry belongs to the category
-    for the same reason the name does: a config names a kind of device, not a
-    base class.
-    """
+    """Observable camera category used by registered camera drivers."""
 
     @classmethod
     def of(cls, camera_info: "CameraInfo", **placement: Any) -> "Camera":
-        """Build the camera the descriptor names, without opening it.
-
-        The backend is chosen by :attr:`CameraInfo.camera_type`, so a config
-        naming ``"zed"`` reaches the ZED driver without the caller importing
-        it. Pass ``node_rank`` to say which machine the camera is plugged
-        into; the robot opens it there.
-
-        On the category rather than on the driver base, for the same reason the
-        registry is: what a config names is a kind of camera.
-        """
+        """Declare a camera from its descriptor and placement settings."""
         return cls.backend(camera_info.camera_type)(camera_info, **placement)
 
     @classmethod
@@ -63,15 +43,9 @@ class Camera(RobotPart):
         *,
         node_rank: Optional[int] = None,
     ) -> dict[str, "Camera"]:
-        """Build one camera per descriptor, ready to compose into a robot.
+        """Declare named cameras for composition into a robot.
 
-        The names are the public paths the robot will publish, so this returns
-        exactly what a builder splats into its composition::
-
-            return cls(**cls.declare(cameras, node_rank=camera_node_rank))
-
-        Every camera lands on ``node_rank`` -- the machine they are plugged
-        into -- and none is opened until the robot connects.
+        All returned cameras use ``node_rank`` and remain unconnected.
         """
         return {
             name: cls.of(info, node_rank=node_rank)
@@ -93,13 +67,7 @@ class CameraInfo:
 
 
 class BaseCamera(Camera, ABC):
-    """Abstract base class for threaded camera capture.
-
-    A camera is a part like any other: :meth:`_open` reaches the hardware,
-    :meth:`_read_frame` reads one frame from it, and :meth:`_release` lets it go.
-    The capture thread and its queue are handled here, started and stopped
-    around those by :meth:`connect` and :meth:`disconnect`.
-    """
+    """Base class for cameras captured on a background thread."""
 
     def __init__(self, camera_info: CameraInfo) -> None:
         self._camera_info = camera_info
@@ -134,16 +102,10 @@ class BaseCamera(Camera, ABC):
         }
 
     def _opened(self) -> None:
-        """Start capturing frames from the camera the driver just opened.
+        """Create a fresh frame queue and start the capture thread.
 
-        The queue and the thread are made here rather than in ``__init__``: a
-        thread runs once and cannot be restarted, so a camera built once and
-        connected twice -- which is what recovering from a stall does -- would
-        raise ``RuntimeError`` on the second connect. A fresh queue also drops
-        the frames buffered before the stall, which are the stale ones.
-
-        This runs beside the camera, so a camera placed on another node runs
-        its capture loop there and this process only asks for the last frame.
+        Recreating both resources supports disconnect and reconnect without
+        retaining stale frames.
         """
         if self._frame_capturing_start:
             return
@@ -163,13 +125,7 @@ class BaseCamera(Camera, ABC):
         self._frame_capturing_thread = None
 
     def reopen(self) -> None:
-        """Close this camera and open it again.
-
-        What a stalled camera needs. It is a method on the camera rather than
-        a disconnect/connect pair at the call site because a placed camera is
-        reached through a proxy, where those two are no-ops and the reopen has
-        to happen on the node holding the device.
-        """
+        """Reconnect the camera on the node that owns it."""
         self.disconnect()
         self.connect()
 
@@ -188,7 +144,7 @@ class BaseCamera(Camera, ABC):
         )
         return self._frame_queue.get(timeout=timeout)
 
-    # ── internal ──────────────────────────────────────────────────────
+    # Internal capture loop
 
     def _capture_frames(self) -> None:
         while self._frame_capturing_start:
@@ -197,7 +153,7 @@ class BaseCamera(Camera, ABC):
                 has_frame, frame = self._read_frame()
             except Exception as e:
                 _logger.error(
-                    "[%s] _read_frame raised %s: %s — exiting capture thread.",
+                    "[%s] _read_frame raised %s: %s; stopping capture thread.",
                     self._camera_info.name,
                     type(e).__name__,
                     e,
@@ -205,7 +161,7 @@ class BaseCamera(Camera, ABC):
                 break
             if not has_frame:
                 _logger.error(
-                    "[%s] _read_frame returned (False, None) — exiting capture thread.",
+                    "[%s] _read_frame returned (False, None); stopping capture thread.",
                     self._camera_info.name,
                 )
                 break
@@ -218,12 +174,7 @@ class BaseCamera(Camera, ABC):
 
     @abstractmethod
     def _open(self) -> Any:
-        """Reach the camera and return whatever speaks to it.
-
-        Required of a driver rather than inherited, so a camera that never
-        wrote one is refused at class definition instead of at the first
-        connect -- the same point :meth:`_release` is required at.
-        """
+        """Open the camera and return its device handle."""
 
     @abstractmethod
     def _read_frame(self) -> tuple[bool, Optional[np.ndarray]]:
@@ -237,5 +188,5 @@ class BaseCamera(Camera, ABC):
 
     @abstractmethod
     def _release(self, device: Any) -> None:
-        """Release hardware-specific resources (pipeline, SDK handle, …)."""
+        """Release the camera handle returned by :meth:`_open`."""
         raise NotImplementedError

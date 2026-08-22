@@ -28,11 +28,11 @@ class KeyboardRLTPolicySwitchWrapper(KeyboardSession):
 
     @property
     def rlt_switch_flags(self) -> bool:
-        """Whether the Stage2 actor has taken over."""
+        """Return whether the Stage2 actor is active."""
         return self._rlt_switch_flags
 
     def begin_episode(self) -> None:
-        """Every episode starts back on the Stage1 policy."""
+        """Restore the Stage1 policy at the start of an episode."""
         self._rlt_switch_flags = False
 
     def step(

@@ -12,20 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Real-world environments, and the tasks each robot can be asked to do.
+"""Real-world robot environments, tasks, and wrapper integration.
 
-Names load on first use rather than at import. Pulling in every robot means
-Gymnasium, OpenCV, SciPy, and the model stack, which a bench script driving one
-teleop device over a serial port has no need for -- and a machine holding only
-that device may not even have installed. Touching any name here loads
-everything and registers every task, so ``from rlinf.envs.real import
-RealWorldEnv`` behaves exactly as it did.
+Public symbols load lazily to avoid importing optional robotics and vision
+dependencies until an environment is requested.
 """
 
 import importlib
 import typing
 
-#: Exported name -> the module that defines it.
+#: Public symbol mapped to its defining module.
 _EXPORTS: dict[str, str] = {
     name: module
     for module, names in {
@@ -69,12 +65,7 @@ _loaded = False
 
 
 def _load_all() -> None:
-    """Import every robot package, registering its tasks with Gymnasium.
-
-    Registration is a side effect of importing a robot package, so a caller
-    that reaches for one env must get all of them registered -- otherwise
-    ``gym.make`` of a task nobody imported would fail.
-    """
+    """Import all robot packages and register their Gymnasium tasks."""
     global _loaded
     if _loaded:
         return

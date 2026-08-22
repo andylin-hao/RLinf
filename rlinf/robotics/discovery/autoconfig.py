@@ -25,20 +25,12 @@ RobotConfigType = TypeVar("RobotConfigType", bound=RobotConfig)
 
 
 class RobotAutoConfig:
-    """Fill unset robot config fields from same-named env vars.
+    """Resolve unset robot configuration fields from environment variables.
 
-    Each ``None`` field is read from the uppercased field name on the
-    enumerating node (``robot_ip`` -> ``ROBOT_IP``), parsed by its type
-    annotation: int/float/bool cast, lists comma-split. Since enumeration runs
-    per node, each node resolves the hardware attached to it.
-
-    When a node hosts several robots, one env var carries a comma-separated
-    value per robot, assigned to the configs in order (so a list field gets one
-    item per robot); with a single robot the whole value is used.
-
-    When no configs are given for a node, configs are created from the env vars:
-    the number of robots is the largest comma-separated count among the scalar
-    fields, and every field is taken from its env var.
+    Environment variable names are the uppercase field names. Values for
+    multiple robots are comma-separated and assigned in configuration order.
+    If no configurations are provided, scalar fields determine how many
+    configurations to create.
     """
 
     #: Fields that are never auto-resolved (placement / structural fields).
@@ -51,14 +43,10 @@ class RobotAutoConfig:
         config_cls: type[RobotConfigType] | None = None,
         node_rank: int | None = None,
     ) -> list[RobotConfigType]:
-        """Fill the configs' unset fields from env vars in place and return them.
+        """Resolve unset fields in place and return the configurations.
 
-        Fields already set in the YAML are left untouched. With multiple
-        configs, each env var must hold one comma-separated value per config.
-
-        When ``configs`` is empty, configs are created from the env vars (see
-        the class docstring); ``config_cls`` and ``node_rank`` must be given to
-        enable this.
+        Existing values take precedence. If ``configs`` is empty,
+        ``config_cls`` and ``node_rank`` are required to create configurations.
         """
         created = not configs
         if created:
@@ -78,8 +66,7 @@ class RobotAutoConfig:
             if raw is None:
                 continue
 
-            # One robot uses the whole value; several robots split it by comma,
-            # one value each, in order.
+            # Split values only when the node declares multiple robots.
             if n == 1:
                 chunks = [raw]
             else:
@@ -93,8 +80,7 @@ class RobotAutoConfig:
 
             hint = type_hints.get(name)
             for config, chunk in zip(configs, chunks):
-                # Created configs have no YAML to preserve, so env wins over the
-                # dataclass defaults; otherwise only fill the unset fields.
+                # Environment values override defaults on generated configs.
                 if created or getattr(config, name) is None:
                     setattr(config, name, cls._parse(chunk, hint))
 
@@ -106,18 +92,10 @@ class RobotAutoConfig:
         config_cls: type[RobotConfigType] | None,
         node_rank: int | None,
     ) -> list[RobotConfigType]:
-        """Create configs from env vars, sized by how many robots they name.
+        """Create configurations using the largest scalar value count.
 
-        A node whose robots are not written out in YAML says what it has in the
-        environment, and the number of robots is however many values one of
-        those variables carries. Which variables can say so follows from the
-        config itself: a field holding one value per robot is a scalar, so
-        ``ROBOT_IP="10.0.0.1,10.0.0.2"`` means two robots, while a list field
-        such as ``CAMERA_SERIALS`` is one robot's several cameras and says
-        nothing about the count.
-
-        Returns an empty list unless ``config_cls`` and ``node_rank`` are given
-        and at least one such variable is set.
+        List-valued fields describe one robot and therefore do not determine
+        the number of configurations.
         """
         if config_cls is None or node_rank is None:
             return []
@@ -134,9 +112,7 @@ class RobotAutoConfig:
             raw = os.environ.get(name.upper())
             if raw is None:
                 continue
-            # The largest count wins, and resolve() then holds every variable
-            # to it -- so a mismatch is reported against the field that is
-            # short rather than as an unattributed disagreement here.
+            # Defer count-mismatch reporting to resolve().
             n = max(n, len(raw.split(",")))
         if not n:
             return []

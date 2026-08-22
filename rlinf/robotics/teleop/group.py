@@ -12,17 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Several devices, each driving a named part of one action.
-
-A dexterous-hand setup is a spacemouse on the arm and a glove on the hand. A
-dual-arm GELLO setup is one leader per side. Each of those used to be a class
-that read its devices and spliced their outputs together by hand; here they are
-the same object with a different list.
-
-:class:`TeleopGroup` is the teleop counterpart of
-:class:`~rlinf.robotics.parts.base.PartGroup`: it fans out over what it holds and
-merges the results by name.
-"""
+"""Compose teleoperation devices into named robot actions."""
 
 from __future__ import annotations
 
@@ -41,11 +31,11 @@ from .kinds import ActionKind
 
 @dataclass
 class TeleopEntry:
-    """One device, what it means, and which branch it drives.
+    """A teleoperation device, its binding, and optional target branch.
 
     Attributes:
         device: The hardware the operator drives.
-        binding: What its reading means for the robot.
+        binding: Mapping from device readings to robot actions.
         drives: Branch of a multi-arm action this entry fills. ``None`` on a
             robot with one of each part, where the binding's own names suffice.
     """
@@ -61,7 +51,7 @@ class TeleopEntry:
 
     @property
     def produces(self) -> dict[str, ActionKind]:
-        """What this entry fills and what each command means, by qualified name."""
+        """Return the qualified action parts produced by this entry."""
         if self.drives is None:
             return dict(self.binding.PRODUCES)
         return {
@@ -71,19 +61,16 @@ class TeleopEntry:
 
 
 class TeleopGroup:
-    """Devices and their bindings, producing one action.
+    """Combine device bindings into one named action.
 
     Args:
-        entries: The devices in play.
+        entries: Devices and bindings to compose.
         available: Action parts the robot actually has. A binding offering a
-            part outside this set does not fill it, which is how a spacemouse
-            drives the arm of a robot whose end effector is a hand rather than a
-            gripper.
+            part outside this set does not fill it.
 
     Raises:
-        ValueError: If two entries fill the same part, or an entry fills
-            nothing. Both are mistakes worth reporting when the group is built
-            rather than at the first step with a robot moving.
+        ValueError: If entries overlap, fill no available part, or use an
+            incompatible action kind.
     """
 
     def __init__(
@@ -96,7 +83,7 @@ class TeleopGroup:
         self._filled = self._resolve()
 
     def _resolve(self) -> dict[str, TeleopEntry]:
-        """Decide which entry fills which part, and refuse a conflict."""
+        """Resolve each action part to exactly one compatible entry."""
         filled: dict[str, TeleopEntry] = {}
         for entry in self.entries:
             claimed = [
@@ -122,12 +109,7 @@ class TeleopGroup:
         return filled
 
     def _check_kinds(self, entry: TeleopEntry, claimed: list[str]) -> None:
-        """Refuse a device whose commands this robot would misread.
-
-        Widths match far more often than meanings do: six numbers are a twist
-        to one arm and six joint angles to another. Obeying the wrong one moves
-        a real robot somewhere nobody asked for, so it is refused here.
-        """
+        """Reject bindings whose action meaning differs from the environment."""
         if self.available is None:
             return
         produced = entry.produces
@@ -143,16 +125,12 @@ class TeleopGroup:
 
     @property
     def parts(self) -> tuple[str, ...]:
-        """Every action part this group fills."""
+        """Return the action parts filled by this group."""
         return tuple(self._filled)
 
     @property
     def devices(self) -> tuple[TeleopPart, ...]:
-        """Each distinct device, in the order it was given.
-
-        Distinct by identity: one device listed under two parts is read once,
-        the same way one connection is opened once.
-        """
+        """Return distinct devices in declaration order."""
         seen: list[TeleopPart] = []
         for entry in self.entries:
             if not any(entry.device is device for device in seen):
@@ -160,13 +138,7 @@ class TeleopGroup:
         return tuple(seen)
 
     def connect(self) -> None:
-        """Open every device, or none of them.
-
-        If a later device fails, the ones already open are closed again. The
-        caller never receives the group when this raises -- ``build_teleop``
-        returns nothing -- so anything left open would be a leader arm holding
-        a serial port with nothing able to release it.
-        """
+        """Open all devices and roll back partial startup."""
         opened: list[Any] = []
         try:
             for device in self.devices:
@@ -186,11 +158,7 @@ class TeleopGroup:
 
     @staticmethod
     def _close(devices: "Sequence[Any]", doing: str) -> None:
-        """Close all of these, newest first, whatever any one of them does.
-
-        Stopping at the first device that will not close would strand the ones
-        opened before it, which is the state a rollback exists to avoid.
-        """
+        """Close devices in reverse order and report all cleanup failures."""
         failures: list[BaseException] = []
         for device in reversed(list(devices)):
             try:
@@ -206,11 +174,7 @@ class TeleopGroup:
             raise failures[-1]
 
     def reset(self, context: Mapping[str, Any] = MappingProxyType({})) -> None:
-        """Drop anything the bindings held, telling them what the robot is at.
-
-        A binding that commands an absolute pose resumes from where the env
-        just reset the robot to; one that commands a delta ignores this.
-        """
+        """Reset binding state using the robot's post-reset context."""
         for entry in self.entries:
             entry.binding.reset(context)
 
@@ -228,8 +192,7 @@ class TeleopGroup:
         info: dict[str, Any] = {}
 
         readings = {id(device): device.get_observation() for device in self.devices}
-        # Entries are processed in order so a binding can gate the ones after
-        # it, which is how a spacemouse button puts a glove in control.
+        # Preserve order because one binding may publish context for the next.
         running = dict(context)
         for entry in self.entries:
             reading = readings[id(entry.device)]
@@ -243,12 +206,7 @@ class TeleopGroup:
 
     @staticmethod
     def _require_context(entry: TeleopEntry, context: Mapping[str, Any]) -> None:
-        """Refuse to call a binding the robot cannot answer for.
-
-        A missing key would otherwise surface as a ``KeyError`` from inside the
-        binding's arithmetic, naming the key but not the device that wanted it
-        or the robot that could not supply it.
-        """
+        """Validate that the environment supplied all required context."""
         missing = [key for key in entry.binding.NEEDS if key not in context]
         if missing:
             raise ValueError(
@@ -271,7 +229,7 @@ class TeleopGroup:
 
     @staticmethod
     def _reported(entry: TeleopEntry, info: Mapping[str, Any]) -> dict[str, Any]:
-        """Name an entry's info after the branch it drives, so sides differ."""
+        """Qualify info keys with the target branch when required."""
         if entry.drives is None:
             return dict(info)
         return {f"{entry.drives}_{key}": value for key, value in info.items()}
@@ -287,7 +245,7 @@ class TeleopGroup:
 
     @property
     def hold_window(self) -> Optional[float]:
-        """The shortest hold window any binding asks for, if any asks."""
+        """Return the shortest hold window configured by the bindings."""
         windows = [
             entry.binding.HOLD_WINDOW
             for entry in self.entries
@@ -296,12 +254,12 @@ class TeleopGroup:
         return min(windows) if windows else None
 
     def on_action_chunk_begin(self) -> None:
-        """Tell every binding a fresh chunk of policy actions starts here."""
+        """Notify bindings that a new policy-action chunk has started."""
         for entry in self.entries:
             entry.binding.on_action_chunk_begin()
 
     def hold(self, context: Mapping[str, Any]) -> dict[str, np.ndarray]:
-        """The parts that keep the robot where it is, by name."""
+        """Return named action parts that hold the current robot state."""
         parts: dict[str, np.ndarray] = {}
         for entry in self.entries:
             parts.update(self._claimed(entry, entry.binding.hold(context)))

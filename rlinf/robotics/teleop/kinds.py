@@ -12,16 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""What a command for one part of a robot means.
+"""Semantic action types shared by teleoperation bindings and environments.
 
-Two arms can both take six numbers and mean entirely different things by them:
-a Cartesian twist to add to where the arm is now, or six joint angles to move
-to. Nothing in the width tells them apart, so the width is not what decides.
-
-An env says what each part of its action means, a binding says what it produces,
-and a device that produces one kind cannot drive a part that expects another.
-Without this a spacemouse's twist lands in a joint-position command and the arm
-moves somewhere nobody asked for, with every shape check passing.
+Action dimensions alone cannot distinguish Cartesian deltas, absolute poses,
+or joint targets. These types allow compatibility checks before hardware moves.
 """
 
 from __future__ import annotations
@@ -30,7 +24,7 @@ import enum
 
 
 class ActionKind(enum.Enum):
-    """The meaning of the numbers in one part of an action."""
+    """Semantic meaning of one part of an action vector."""
 
     CARTESIAN_DELTA = "cartesian_delta"
     """Change in end-effector pose: ``[dx, dy, dz, drx, dry, drz]``."""
@@ -55,12 +49,12 @@ class ActionKind(enum.Enum):
 
 
 class ActionPart:
-    """One named span of an env's action vector, and what it means.
+    """Named span of an environment action vector.
 
     Args:
-        name: What the part drives, e.g. ``"arm"`` or ``"end_effector"``.
-        width: How many numbers it occupies.
-        kind: What those numbers mean.
+        name: Target part, such as ``"arm"`` or ``"end_effector"``.
+        width: Number of values in the span.
+        kind: Meaning of those values.
     """
 
     __slots__ = ("name", "width", "kind")

@@ -12,10 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Robotiq 2F-85 / 2F-140 gripper via direct Modbus RTU over USB-RS485.
+"""Robotiq 2F-85 and 2F-140 driver for Modbus RTU over USB-RS485.
 
-No ROS dependency — communicates with the gripper through ``pymodbus``
-and a USB-RS485 adapter (e.g. ``/dev/ttyUSB0``).
+The driver uses ``pymodbus`` directly and does not require ROS.
 
 Modbus register map (Robotiq 2F series)
 ---------------------------------------
@@ -27,9 +26,9 @@ Byte   Register  Description
 0      reg0 hi   Action request: rACT(0) rGTO(3) rATR(4)
 1      reg0 lo   Reserved
 2      reg1 hi   Reserved
-3      reg1 lo   rPR — position request  (0=open, 255=closed)
-4      reg2 hi   rSP — speed             (0=min,  255=max)
-5      reg2 lo   rFR — force             (0=min,  255=max)
+3      reg1 lo   rPR: position request  (0=open, 255=closed)
+4      reg2 hi   rSP: speed             (0=min,  255=max)
+5      reg2 lo   rFR: force             (0=min,  255=max)
 ====== ========= ===========================================
 
 **Input registers** (FC 03, base address 0x07D0):
@@ -39,10 +38,10 @@ Byte   Register  Description
 ====== ========= ===========================================
 0      reg0 hi   Status: gACT(0) gGTO(3) gSTA(4-5) gOBJ(6-7)
 1      reg0 lo   Reserved
-2      reg1 hi   gFLT — fault status
-3      reg1 lo   gPR  — position request echo
-4      reg2 hi   gPO  — actual position  (0=open, 255=closed)
-5      reg2 lo   gCU  — motor current    (×10 mA)
+2      reg1 hi   gFLT: fault status
+3      reg1 lo   gPR: position request echo
+4      reg2 hi   gPO: actual position  (0=open, 255=closed)
+5      reg2 lo   gCU: motor current    (x10 mA)
 ====== ========= ===========================================
 """
 
@@ -69,7 +68,7 @@ _rGTO = 1 << 3
 
 
 def _create_modbus_client(port: str, baudrate: int = 115200) -> Any:
-    """Create a pymodbus serial client (compatible with v2 and v3+)."""
+    """Create a serial client compatible with pymodbus 2 and 3."""
     try:
         from pymodbus.client import ModbusSerialClient
     except ImportError:
@@ -91,12 +90,12 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 
 @EndEffector.register("robotiq", "robotiq_gripper")
 class RobotiqGripper(BaseGripper):
-    """Robotiq 2F-85 / 2F-140 controlled via Modbus RTU over USB-RS485.
+    """Control a Robotiq 2F-85 or 2F-140 over Modbus RTU.
 
     Args:
         port: Serial device path, e.g. ``"/dev/ttyUSB0"``.
-        baudrate: Modbus baud rate (default 115200).
-        slave_id: Modbus slave address (default 0x09).
+        baudrate: Modbus baud rate.
+        slave_id: Modbus slave address.
         max_width: Physical opening of the fully-open gripper in metres.
             0.085 for the 2F-85, 0.140 for the 2F-140.
     """
@@ -109,7 +108,7 @@ class RobotiqGripper(BaseGripper):
         port: Optional[str] = None,
         **settings: Any,
     ) -> "RobotiqGripper":
-        """Reached over a serial port; the arm's ROS session is not for us."""
+        """Declare a gripper that uses a dedicated serial connection."""
         return cls(port=port, **settings)
 
     def __init__(
@@ -121,8 +120,8 @@ class RobotiqGripper(BaseGripper):
     ) -> None:
         if not port:
             raise ValueError(
-                "A Robotiq gripper is reached over a serial port, so one has "
-                "to be named -- 'gripper_connection' in a robot config, e.g. "
+                "A Robotiq gripper requires a serial port. Set "
+                "'gripper_connection' in the robot config, for example "
                 "'/dev/ttyUSB0'."
             )
         self._logger = get_logger()
@@ -138,12 +137,7 @@ class RobotiqGripper(BaseGripper):
         self._activated: bool = False
 
     def _open(self) -> Any:
-        """Open the serial link and run the activation sequence.
-
-        Activation moves the fingers, so it belongs here rather than in the
-        constructor: composing a robot must not drive hardware, and this
-        gripper may be built on a machine that is not the one holding it.
-        """
+        """Open the serial link and run the activation sequence."""
         client = _create_modbus_client(self._port, self._baudrate)
         client.connect()
         self._client = client
@@ -155,8 +149,7 @@ class RobotiqGripper(BaseGripper):
         try:
             self._activate()
         except Exception:
-            # A half-activated gripper still holds the port, and the lifecycle
-            # only releases what _open returned.
+            # Release the serial port if activation fails after opening it.
             client.close()
             self._client = None
             raise
@@ -167,7 +160,7 @@ class RobotiqGripper(BaseGripper):
         )
         return client
 
-    # ── BaseGripper interface ────────────────────────────────────────
+    # BaseGripper interface
 
     def open(self, speed: float = 0.3) -> None:
         self._goto(position=0, speed=speed, force=0.0)
@@ -181,10 +174,8 @@ class RobotiqGripper(BaseGripper):
     def move(self, width: float, speed: float = 0.3) -> None:
         """Move to an opening width in metres.
 
-        The register takes 0-255 counts running the other way -- 0 is fully
-        open, 255 fully closed -- so this is where metres become counts. Doing
-        it here rather than at the caller is what lets a policy command the
-        same number it reads back from :pyattr:`position`.
+        The driver converts metres to the reversed register scale, where zero
+        is fully open and 255 is fully closed.
         """
         opening = np.clip(width, 0.0, self._max_width) / self._max_width
         self._goto(position=int(round(255 * (1.0 - opening))), speed=speed, force=0.5)
@@ -216,10 +207,10 @@ class RobotiqGripper(BaseGripper):
         if device is not None:
             device.close()
 
-    # ── Modbus helpers ───────────────────────────────────────────────
+    # Modbus helpers
 
     def _activate(self) -> None:
-        """Run the Robotiq activation sequence (clear → activate → wait)."""
+        """Run the clear, activate, and readiness sequence."""
         # 1. Clear (deactivate)
         self._write_output_regs(0x0000, 0x0000, 0x0000)
         time.sleep(0.5)

@@ -89,20 +89,10 @@ class GimArmRobotState:
 
 @Arm.register("gim_arm")
 class GimArm(BaseArm):
-    """GimArm robot arm controller.
+    """GimArm controller backed by the CAN-based ``gim_arm_control`` SDK.
 
-    Wraps the ``gim_arm_control`` SDK (CAN bus) independently of scheduling.
-
-    Runs in **MOMENTUM_OBSERVER** mode by default.  A background feedforward
-    control thread at 100 Hz computes Butterworth-filtered velocity and
-    acceleration from the target position, then sends them via
-    ``set_feedforward_target(q, dq, ddq)`` so the SDK can compute proper
-    dynamics-based torques (gravity + inertia + Coriolis + external torque
-    compensation).
-
-    All ``gim_arm_control`` and ``pinocchio`` imports are deferred to
-    :meth:`connect` so this module can be imported on GPU-only nodes that
-    do not have the robot SDK installed.
+    A 100 Hz loop derives filtered velocity and acceleration feedforward from
+    position targets. Hardware dependencies are loaded during :meth:`connect`.
     """
 
     def __init__(
@@ -122,16 +112,7 @@ class GimArm(BaseArm):
 
     @staticmethod
     def _warn_if_can_interface_is_down(can_interface: str) -> None:
-        """Say when the bus this arm talks over is not up on this machine.
-
-        Called from :meth:`_open`, which runs on the machine holding the arm.
-        Warning at construction instead reported on whichever machine composed
-        the robot -- for an arm bound for another node, always the wrong one,
-        and a warning about a bus that was never meant to be here.
-
-        A warning rather than an error: opening is what fails if the interface
-        really is down, and it says so with the SDK's own message.
-        """
+        """Warn if the CAN interface is absent on the placement node."""
         path = f"/sys/class/net/{can_interface}"
         if not os.path.exists(path):
             warnings.warn(
@@ -147,7 +128,7 @@ class GimArm(BaseArm):
 
     @property
     def parts(self) -> dict[str, RobotPart]:
-        """The gripper riding this arm's connection, when one is fitted."""
+        """Return the gripper exported by this arm connection, if configured."""
         if not self._enable_gripper:
             return {}
         return {"end_effector": MethodEndEffector(self, state_field="gripper_position")}
@@ -230,7 +211,7 @@ class GimArm(BaseArm):
         self.stop()
         self._sdk = None
 
-    # ── Feedforward control loop ─────────────────────────────────────────
+    # Feedforward control loop
 
     def _feedforward_loop(self) -> None:
         """Background loop: filter target and send feedforward commands at 100 Hz."""
@@ -258,7 +239,7 @@ class GimArm(BaseArm):
             else:
                 next_time = now
 
-    # ── Public API ───────────────────────────────────────────────────────
+    # Public API
 
     def is_robot_up(self) -> bool:
         """Return ``True`` when the SDK has a valid reading and no active faults."""
@@ -266,11 +247,11 @@ class GimArm(BaseArm):
         return reading is not None and not reading.has_fault
 
     def get_state(self) -> GimArmRobotState:
-        """Compute and return the current robot state.
+        """Compute the robot state from the latest hardware reading.
 
-        Performs Pinocchio FK and Jacobian evaluation on the latest hardware
-        reading.  External torque (if available from the momentum observer) is
-        mapped to a Cartesian wrench via ``J^{-T}``.
+        Pinocchio provides forward kinematics and the Jacobian. If external
+        torque is available, it is mapped to a Cartesian wrench with
+        ``J^{-T}``.
         """
         reading = self._sdk.get_reading()
         if reading is None:
@@ -342,11 +323,7 @@ class GimArm(BaseArm):
         )
 
     def move_joints(self, q_target: np.ndarray) -> None:
-        """Set the target joint position (non-blocking).
-
-        The background feedforward control thread picks up the new target,
-        computes Butterworth-filtered velocity and acceleration, and sends
-        the feedforward command to the SDK at 100 Hz.
+        """Set a non-blocking joint-position target.
 
         Args:
             q_target: Desired joint positions ``(6,)`` in radians.
@@ -355,11 +332,7 @@ class GimArm(BaseArm):
             self._target_q = np.array(q_target, dtype=np.float64)
 
     def reset_joint(self, reset_qpos: list[float], duration: float = 3.0) -> None:
-        """Gradually move to a joint reset configuration using smooth interpolation.
-
-        Uses quintic smoothstep to interpolate from the current position to
-        ``reset_qpos`` over ``duration`` seconds.  The feedforward control
-        thread handles filtering and sending commands.
+        """Move smoothly to a reset configuration.
 
         Args:
             reset_qpos: Target joint positions ``(6,)`` in radians.
@@ -395,7 +368,7 @@ class GimArm(BaseArm):
         self._sdk.set_gripper(self._sdk.gripper_closed_position)
 
     def clear_errors(self) -> None:
-        """No-op — the GimArm SDK handles fault recovery internally."""
+        """Leave fault recovery to the GimArm SDK."""
         pass
 
     def stop(self) -> None:

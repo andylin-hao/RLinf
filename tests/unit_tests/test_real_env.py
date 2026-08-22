@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Real-world environments: task envs, teleop devices, config, and layout."""
+"""Tests for real-world tasks, teleoperation, configuration, and layout."""
 
 from __future__ import annotations
 
@@ -52,9 +52,6 @@ from rlinf.robotics import ControllablePart, PartGroup, Robot
 _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
-
-
-# --- from test_robot_task_env.py --------------------------------------
 
 
 class DummyDriver(ControllablePart):
@@ -165,9 +162,6 @@ def test_robot_task_env_composes_task_and_robot_lifecycles():
     assert not driver.is_connected
 
 
-# --- from test_realworld_robotics_compatibility.py --------------------
-
-
 def _assert_legacy_transition(env) -> None:
     observation, _ = env.reset()
     transition = env.step(env.action_space.sample())
@@ -267,11 +261,8 @@ def test_turtle2_dummy_preserves_legacy_policy_schema():
     _assert_legacy_transition(env)
 
 
-# --- from test_teleop_intervention.py ---------------------------------
-
-
 class FakeEnv:
-    """Records the actions it is stepped with."""
+    """Record actions passed to ``step``."""
 
     def __init__(self) -> None:
         self.stepped: list[np.ndarray] = []
@@ -291,7 +282,7 @@ class FakeEnv:
 
 
 class ScriptedDevice(TeleopDevice):
-    """Replays a list of samples, one per read."""
+    """Return one scripted sample per read."""
 
     def __init__(self, samples: list[TeleopSample]) -> None:
         self.samples = list(samples)
@@ -328,7 +319,6 @@ EXPERT = np.array([1.0, 1.0, 1.0])
 
 
 def test_active_sample_replaces_the_policy_action():
-    """While the operator drives, their action is the one applied."""
     env = FakeEnv()
     wrapper = TeleopIntervention(
         env, ScriptedDevice([TeleopSample(action=EXPERT, active=True)])
@@ -341,7 +331,6 @@ def test_active_sample_replaces_the_policy_action():
 
 
 def test_inactive_device_leaves_the_policy_action_alone():
-    """A device with nothing to say never touches the action or the info."""
     env = FakeEnv()
     wrapper = TeleopIntervention(
         env, ScriptedDevice([TeleopSample(action=None, active=False)])
@@ -354,11 +343,6 @@ def test_inactive_device_leaves_the_policy_action_alone():
 
 
 def test_control_is_held_between_samples_then_released():
-    """The hold window keeps the operator in control across quiet samples.
-
-    A person moves far slower than the device samples, so without the window
-    the applied action would flicker between operator and policy mid-motion.
-    """
     env = FakeEnv()
     device = ScriptedDevice(
         [
@@ -368,22 +352,16 @@ def test_control_is_held_between_samples_then_released():
     )
     wrapper = TeleopIntervention(env, device)
 
-    wrapper.step(POLICY)  # operator moves
-    wrapper.step(POLICY)  # quiet, but still inside the window
+    wrapper.step(POLICY)  # Operator moves.
+    wrapper.step(POLICY)  # Quiet sample within the hold window.
     assert np.array_equal(env.stepped[1], EXPERT)
 
-    device.timeout = 0.0  # window elapses
+    device.timeout = 0.0  # Hold window expires.
     wrapper.step(POLICY)
     assert np.array_equal(env.stepped[2], POLICY)
 
 
 def test_an_unfilled_part_keeps_the_policy_action():
-    """Composition replaced the per-device fallback hook.
-
-    A group starts from the action the policy asked for and overwrites only the
-    parts its devices fill, so anything unfilled is the policy's, and a device
-    holding state it commands keeps it by filling that part every step.
-    """
     import numpy as np
 
     from rlinf.envs.real.wrappers.teleop.composed import ComposedTeleop
@@ -427,12 +405,12 @@ def test_an_unfilled_part_keeps_the_policy_action():
     policy = np.arange(12, dtype=np.float64)
     sample = device.read(_FakeLayoutEnv(), policy)
 
-    assert np.allclose(sample.action[:6], policy[:6])  # untouched by any device
-    assert np.allclose(sample.action[6:], 0.5)  # filled by the glove
+    assert np.allclose(sample.action[:6], policy[:6])  # Arm remains policy-driven.
+    assert np.allclose(sample.action[6:], 0.5)  # Glove controls the hand.
 
 
 class _FakeLayoutEnv:
-    """Just enough env for context gathering, which finds nothing here."""
+    """Provide the attributes required by teleoperation layout tests."""
 
     unwrapped = None
 
@@ -441,7 +419,6 @@ class _FakeLayoutEnv:
 
 
 def test_mark_flag_is_opt_in():
-    """Only formats that key on the flag pay for it."""
     sample = TeleopSample(action=EXPERT, active=True)
 
     plain = TeleopIntervention(FakeEnv(), ScriptedDevice([sample]))
@@ -452,7 +429,6 @@ def test_mark_flag_is_opt_in():
 
 
 def test_device_info_reaches_the_step_info():
-    """Device state a collector records rides along with the transition."""
     env = FakeEnv()
     wrapper = TeleopIntervention(
         env,
@@ -463,7 +439,6 @@ def test_device_info_reaches_the_step_info():
 
 
 def test_reset_resyncs_the_device_and_drops_the_hold():
-    """A new episode must not inherit the previous one's intervention."""
     env = FakeEnv()
     device = ScriptedDevice(
         [
@@ -484,7 +459,6 @@ def test_reset_resyncs_the_device_and_drops_the_hold():
 
 
 def test_close_releases_the_device_before_the_env():
-    """Devices hold serial ports; they are released with the wrapper."""
     env = FakeEnv()
     device = ScriptedDevice([TeleopSample(action=None, active=False)])
     wrapper = TeleopIntervention(env, device)
@@ -496,7 +470,6 @@ def test_close_releases_the_device_before_the_env():
 
 
 def test_before_step_runs_ahead_of_the_env():
-    """Devices that stream need a hook before the env advances."""
     env = FakeEnv()
     device = ScriptedDevice([TeleopSample(action=None, active=False)])
     wrapper = TeleopIntervention(env, device)
@@ -507,12 +480,9 @@ def test_before_step_runs_ahead_of_the_env():
 
 
 def test_read_is_abstract():
-    """A device is only required to say what the operator wants."""
     with pytest.raises(TypeError):
         TeleopDevice()
 
-
-# --- from test_teleop_config.py ---------------------------------------
 
 SINGLE_ARM = ("spacemouse", "gello", "pico")
 
@@ -533,7 +503,6 @@ def test_missing_config_falls_back_to_the_default():
 
 
 def test_retired_boolean_still_selects_its_device_and_warns():
-    """Configs written before the rename keep working for a release."""
     with pytest.warns(DeprecationWarning, match="use_pico"):
         device = resolve_teleop_device({"use_pico": True}, supported=SINGLE_ARM)
 
@@ -541,7 +510,6 @@ def test_retired_boolean_still_selects_its_device_and_warns():
 
 
 def test_all_retired_booleans_off_means_no_device():
-    """Explicitly disabling every device is not the same as saying nothing."""
     with pytest.warns(DeprecationWarning):
         device = resolve_teleop_device(
             {"use_spacemouse": False, "use_gello": False},
@@ -560,11 +528,6 @@ def test_two_retired_booleans_on_is_an_error():
 
 
 def test_disagreeing_old_and_new_keys_are_refused():
-    """Env configs layer, so a half-migrated stack can hold both keys.
-
-    Silently preferring either one hands somebody the wrong device with a robot
-    already moving, so this is an error rather than a precedence rule.
-    """
     with pytest.raises(ValueError, match="cannot be reconciled"):
         resolve_teleop_device(
             {"teleop_device": "pico", "use_spacemouse": True},
@@ -582,7 +545,6 @@ def test_agreeing_old_and_new_keys_only_warn():
 
 
 def test_device_the_env_cannot_drive_is_refused():
-    """A dual-arm Franka has no single-arm Cartesian teleop path."""
     with pytest.raises(ValueError, match="Unsupported teleop device"):
         resolve_teleop_device(
             {"teleop_device": "spacemouse"}, supported=("gello_joint", "pico")
@@ -597,7 +559,6 @@ def test_none_is_always_allowed():
 
 
 def test_shipped_configs_use_the_new_key():
-    """Every retired spelling is gone from every config in the repo."""
     roots = [_ROOT / "examples", _ROOT / "evaluations", _ROOT / "tests"]
     offenders = []
     for root in roots:
@@ -621,8 +582,6 @@ def test_shipped_configs_use_the_new_key():
     assert offenders == []
 
 
-# --- from test_real_env_layout.py -------------------------------------
-
 _REAL = _ROOT / "rlinf" / "envs" / "real"
 
 
@@ -644,26 +603,18 @@ EXPECTED_IDS = {
 
 
 def test_no_robot_keeps_a_tasks_subpackage():
-    """Tasks sit at the top of their robot folder, not one level down."""
     leftovers = [name for name in _ROBOTS if (_REAL / name / "tasks").exists()]
 
     assert leftovers == []
 
 
 def test_every_robot_folder_has_a_base():
-    """Shared machinery is named so nobody mistakes it for a task."""
     missing = [name for name in _ROBOTS if not (_REAL / name / "base.py").exists()]
 
     assert missing == []
 
 
 def test_all_task_ids_are_registered():
-    """Reaching for any name registers every task.
-
-    ``rlinf.envs.real`` loads lazily so that importing one teleop device does
-    not drag in the env stack, which means registration happens on first use
-    rather than on import. ``get_env_cls`` reaches it exactly this way.
-    """
     from gymnasium.envs.registration import registry
 
     from rlinf.envs.real import RealWorldEnv
@@ -673,7 +624,6 @@ def test_all_task_ids_are_registered():
 
 
 def test_every_entry_point_resolves():
-    """A registered id whose entry point cannot be imported fails at rollout."""
     from gymnasium.envs.registration import registry
 
     from rlinf.envs.real import RealWorldEnv
@@ -691,21 +641,15 @@ def test_every_entry_point_resolves():
 
 
 def test_task_tables_cover_the_wrapped_robots():
-    """The TASKS table is the one place a robot's tasks are declared."""
     from rlinf.envs.real import dosw1, franka, xsquare
 
     declared = set(franka.TASKS) | set(dosw1.TASKS) | set(xsquare.TASKS)
 
-    # GimArm registers its env class directly, with no wrapper stack.
+    # GimArm registers its environment class without a wrapper factory.
     assert declared == EXPECTED_IDS - {"GimArmPegInsertionEnv-v1"}
 
 
 def test_pose_math_is_not_filed_under_a_robot():
-    """construct_adjoint_matrix is SE(3) math the wrappers share.
-
-    Leaving it in the Franka package made every wrapper importing it pull that
-    package in, which is what turned the task registry into an import cycle.
-    """
     from rlinf.envs.real.utils import pose
 
     assert hasattr(pose, "construct_adjoint_matrix")
@@ -713,11 +657,6 @@ def test_pose_math_is_not_filed_under_a_robot():
 
 
 def test_task_configs_state_only_their_compliance_deltas():
-    """A task's config should show its tuning, not eighteen repeated gains.
-
-    Every Franka task used to carry a full copy of the impedance gains, so the
-    handful of numbers that actually differed were invisible.
-    """
     from rlinf.envs.real.franka.base import COMPLIANCE_DEFAULTS
     from rlinf.envs.real.franka.bin_relocation import BinEnvConfig
     from rlinf.envs.real.franka.bottle import BottleConfig
@@ -733,7 +672,7 @@ def test_task_configs_state_only_their_compliance_deltas():
         for cls in (PegInsertionConfig, BottleConfig, BinEnvConfig, DexpnpConfig)
     }
 
-    # Every task keeps the full set of gains; only some are task-specific.
+    # Every task receives the complete gain set after defaults are applied.
     for cls in (PegInsertionConfig, BottleConfig, BinEnvConfig, DexpnpConfig):
         assert set(cls().compliance_param) == set(COMPLIANCE_DEFAULTS)
     assert {name: len(keys) for name, keys in deltas.items()} == {
@@ -745,7 +684,6 @@ def test_task_configs_state_only_their_compliance_deltas():
 
 
 def test_unknown_compliance_gain_is_refused():
-    """A misspelled gain reaches the impedance controller and is ignored there."""
     import pytest
 
     from rlinf.envs.real.franka.base import compliance
@@ -754,16 +692,10 @@ def test_unknown_compliance_gain_is_refused():
         compliance(translational_stifness=1000)
 
 
-# --- wrapper families ------------------------------------------------------
+# Wrapper families
 
 
 def test_wrappers_are_split_by_what_they_change():
-    """Three families, each with an obvious home for a new wrapper.
-
-    teleop replaces the action, transforms rewrite how it is expressed, and
-    episode decides when a rollout starts, ends, and what it scored. The old
-    flat wrappers/ package mixed all three.
-    """
     real = _ROOT / "rlinf" / "envs" / "real"
     wrappers = real / "wrappers"
 
@@ -771,7 +703,7 @@ def test_wrappers_are_split_by_what_they_change():
     for family in ("teleop", "transforms", "episode"):
         assert (wrappers / family / "__init__.py").exists(), family
 
-    # The top level is robot folders and the env machinery, nothing else.
+    # Top-level modules contain robot packages and shared environment machinery.
     loose = sorted(
         path.stem for path in real.glob("*.py") if path.name != "__init__.py"
     )
@@ -779,7 +711,6 @@ def test_wrappers_are_split_by_what_they_change():
 
 
 def test_no_teleop_wrapper_is_left_outside_teleop():
-    """Every intervention lives with the devices it reads."""
     real = _ROOT / "rlinf" / "envs" / "real"
     strays = sorted(
         path.name
@@ -792,11 +723,6 @@ def test_no_teleop_wrapper_is_left_outside_teleop():
 
 
 def test_a_held_button_device_does_not_keep_control_after_release():
-    """PICO says exactly when it is driving, so it sets no hold window.
-
-    The window exists for devices that sample faster than a person moves;
-    applying it here would keep commanding the robot after the grip is released.
-    """
     from rlinf.robotics.teleop import PicoBinding, PicoTcpBinding
 
     assert PicoBinding.HOLD_WINDOW == 0.0
@@ -804,7 +730,6 @@ def test_a_held_button_device_does_not_keep_control_after_release():
 
 
 def test_streaming_device_lifecycle_without_hardware():
-    """The command thread starts once aligned and is joined on close."""
     from rlinf.envs.real.wrappers.teleop.intervention import TeleopSample
     from rlinf.envs.real.wrappers.teleop.streaming import TeleopStreamer
 
@@ -832,11 +757,11 @@ def test_streaming_device_lifecycle_without_hardware():
     assert not device.streaming
 
 
-# --- keyboard sessions -----------------------------------------------------
+# Keyboard sessions
 
 
 def _keyboard_session(monkeypatch, queued):
-    """A KeyboardSession over a fake listener replaying `queued` key batches."""
+    """Build a keyboard session that replays queued key batches."""
     from rlinf.envs.real.wrappers.episode import session as session_module
 
     class FakeListener:
@@ -867,26 +792,23 @@ def _keyboard_session(monkeypatch, queued):
 
 
 def test_repeat_presses_within_the_debounce_window_are_dropped(monkeypatch):
-    """Foot pedals bounce, and a USB key-down burst arrives as several presses."""
     session = _keyboard_session(monkeypatch, [["a"], ["a"], ["b"]])
 
     assert list(session.presses()) == ["a"]
-    assert list(session.presses()) == []  # same key, still inside the window
-    assert list(session.presses()) == ["b"]  # different key passes
+    assert list(session.presses()) == []  # Same key within the debounce window.
+    assert list(session.presses()) == ["b"]  # A different key is accepted.
 
 
 def test_presses_queued_between_episodes_do_not_leak(monkeypatch):
-    """A pedal tapped while the arm homes must not start the next episode."""
     session = _keyboard_session(monkeypatch, [["c"], ["a"]])
 
     session.reset()
 
     assert session.env.resets == 1
-    assert list(session.presses()) == ["a"]  # the queued "c" was dropped
+    assert list(session.presses()) == ["a"]  # The queued key was drained.
 
 
 def test_every_keyboard_wrapper_shares_the_session(monkeypatch):
-    """One place owns the listener, the debounce, and the drain."""
     from rlinf.envs.real.wrappers.episode import (
         KeyboardEvalControlWrapper,
         KeyboardRewardDoneMultiStageWrapper,
@@ -907,7 +829,6 @@ def test_every_keyboard_wrapper_shares_the_session(monkeypatch):
 
 
 def test_episode_wrappers_report_through_the_logger():
-    """These run beside a robot; a stray print is not where an operator looks."""
     episode_dir = _ROOT / "rlinf" / "envs" / "real" / "episode"
     offenders = sorted(
         path.name
@@ -919,7 +840,6 @@ def test_episode_wrappers_report_through_the_logger():
 
 
 def test_euler_conversion_is_one_wrapper_for_any_arm_count():
-    """One arm and two differ only in how many poses tcp_pose carries."""
     import numpy as np
     from gymnasium import spaces
 
@@ -954,11 +874,7 @@ def test_euler_conversion_is_one_wrapper_for_any_arm_count():
     assert np.allclose(both["state"]["tcp_pose"], [1.0, 2.0, 3.0, 0, 0, 0] * 2)
 
 
-# --- the stack an env actually gets, built by the real builders --------------
-#
-# The tests above drive scripted devices and fake envs. These run the dummy
-# envs through build_stack, so the wrapper stack, the transforms,
-# and the task configs are the ones a rollout would see.
+# Full wrapper stacks built through the production builders
 
 
 def _dummy_franka(env_cls=None, **overrides):
@@ -977,7 +893,7 @@ def _dummy_franka(env_cls=None, **overrides):
 
 
 def _chain(env):
-    """Wrapper class names from the outside in."""
+    """Return wrapper class names from outermost to innermost."""
     names = []
     while hasattr(env, "env"):
         names.append(type(env).__name__)
@@ -986,11 +902,6 @@ def _chain(env):
 
 
 def test_wrapper_stack_converts_the_pose_it_hands_the_policy():
-    """The quaternion the arm reports is not what the policy receives.
-
-    A policy trained on Euler angles needs the conversion at rollout, so the
-    stack is what makes the observation match the training data.
-    """
     from rlinf.envs.real.wrappers import build_stack
 
     env = _dummy_franka()
@@ -1008,7 +919,6 @@ def test_wrapper_stack_converts_the_pose_it_hands_the_policy():
 
 
 def test_no_teleop_device_leaves_no_intervention_in_the_stack():
-    """An autonomous rollout must not carry a wrapper waiting on hardware."""
     from rlinf.envs.real.wrappers import build_stack
 
     wrapped = build_stack(
@@ -1021,7 +931,6 @@ def test_no_teleop_device_leaves_no_intervention_in_the_stack():
 
 
 def test_no_gripper_narrows_the_action_the_policy_must_produce():
-    """``no_gripper`` drops the gripper channel rather than ignoring it."""
     from rlinf.envs.real.wrappers import build_stack
 
     env = _dummy_franka()
@@ -1038,7 +947,6 @@ def test_no_gripper_narrows_the_action_the_policy_must_produce():
 
 
 def test_a_task_env_runs_with_its_own_config():
-    """A task is its config plus a hook or two, and it steps like any env."""
     from rlinf.envs.real.franka.base import COMPLIANCE_DEFAULTS
     from rlinf.envs.real.franka.peg_insertion import PegInsertionEnv
 
@@ -1047,7 +955,7 @@ def test_a_task_env_runs_with_its_own_config():
     )
 
     assert env.config.task_description == "peg and insertion"
-    # The task states one gain; the rest come from the shared defaults.
+    # Task-specific gains override shared defaults.
     assert set(env.config.compliance_param) == set(COMPLIANCE_DEFAULTS)
     assert env.config.compliance_param["translational_stiffness"] == 2000
 
@@ -1062,7 +970,6 @@ def test_a_task_env_runs_with_its_own_config():
 
 
 def test_every_registered_task_builds_through_its_entry_point():
-    """A registered id whose factory raises fails only at rollout time."""
     import gymnasium as gym
 
     from rlinf.envs.real import RealWorldEnv  # noqa: F401  (registers the tasks)
@@ -1095,13 +1002,6 @@ def test_every_registered_task_builds_through_its_entry_point():
 
 
 def test_converted_pose_stays_inside_the_observation_space():
-    """The wrapper's output dtype has to match the space it declares.
-
-    SciPy returns float64 from ``as_euler`` while the envs declare float32
-    poses, so the converted observation used to fall outside its own space.
-    Anything allocating buffers from the space, or checking ``contains``, sees
-    that.
-    """
     from rlinf.envs.real.wrappers import build_stack
 
     wrapped = build_stack(
@@ -1118,11 +1018,11 @@ def test_converted_pose_stays_inside_the_observation_space():
     wrapped.close()
 
 
-# --- composing several teleop devices ---------------------------------
+# Multiple teleoperation devices
 
 
 class _FakeInner:
-    """Just the env attributes the teleop builders read."""
+    """Provide the environment attributes read by teleoperation builders."""
 
     def __init__(self, **config: Any) -> None:
         self.config = SimpleNamespace(**config)
@@ -1155,7 +1055,6 @@ def test_an_entry_carries_its_own_options():
 
 
 def test_one_device_may_appear_twice_on_different_branches():
-    """Two leader arms are the same device driving different halves."""
     entries = resolve_teleop_devices(
         {
             "teleop": [
@@ -1177,7 +1076,6 @@ def test_a_listed_device_the_env_cannot_drive_is_refused():
 
 
 def test_a_list_supersedes_a_retired_key_underneath_it():
-    """Env configs layer, so a run config often sits on an older base."""
     with pytest.warns(DeprecationWarning, match="supersedes"):
         entries = resolve_teleop_devices(
             {"teleop": ["spacemouse"], "teleop_device": "none"},
@@ -1219,7 +1117,6 @@ def test_a_two_key_entry_is_refused():
 
 
 def test_no_device_is_named_in_the_wrapper_stack():
-    """Composition is a config question, so the builder answers it alone."""
     import inspect
 
     from rlinf.envs.real import wrappers
@@ -1230,7 +1127,6 @@ def test_no_device_is_named_in_the_wrapper_stack():
 
 
 def test_a_leader_arm_reads_the_joint_convention_from_the_env():
-    """How joint targets are read belongs to the env, not to the operator."""
     from rlinf.envs.real.wrappers.teleop.builder import EnvFacts, TeleopBackend
     from rlinf.robotics.teleop import ActionKind
 
@@ -1273,12 +1169,6 @@ def test_an_entry_option_wins_over_the_env_default():
 
 
 def test_a_failed_teleop_connect_leaves_no_device_open():
-    """``build_teleop`` never returns when a device fails, so nothing can close.
-
-    The caller has no group to disconnect, so a leader arm opened before the
-    failure would hold its serial port with nothing able to release it -- until
-    the process ended, which for an env worker is a long time.
-    """
     from rlinf.robotics.parts.teleop.devices import TeleopPart
     from rlinf.robotics.teleop import ActionKind, SpaceMouseBinding, TeleopEntry
     from rlinf.robotics.teleop.group import TeleopGroup
@@ -1332,14 +1222,6 @@ def test_a_failed_teleop_connect_leaves_no_device_open():
 
 
 def test_the_glove_reads_the_key_the_shipped_configs_set():
-    """``glove_config``, not ``glove`` -- and a per-entry option wins over it.
-
-    Reading the wrong key discarded the configured ports and the calibration
-    file and fell back to a default, so a rig would open the wrong device and
-    say nothing about it. The shipped configs are what fix the spelling:
-    ``examples/embodiment/config/realworld_collect_dexhand_data.yaml`` sets
-    ``glove_config``.
-    """
     from rlinf.envs.real.wrappers.teleop.backends import TeleopBackend
 
     glove = TeleopBackend.named("glove")
@@ -1358,16 +1240,15 @@ def test_the_glove_reads_the_key_the_shipped_configs_set():
     assert device._frequency == 90
     assert device._config_file == "/etc/glove.json"
 
-    # A per-entry option overrides the shared block.
+    # Per-entry options override shared device configuration.
     overridden = glove.entry(cfg, {"left_port": "/dev/override"}, None).device
     assert overridden._left_port == "/dev/override"
 
-    # And the documented default survives when nothing is configured.
+    # The documented default applies when the option is omitted.
     assert glove.entry({}, {}, None).device._left_port == "/dev/ttyACM0"
 
 
 def test_every_shipped_teleop_config_key_is_one_a_backend_reads():
-    """A config block nobody reads is a setting that silently does nothing."""
     import pathlib
     import re
 
@@ -1392,13 +1273,6 @@ def test_every_shipped_teleop_config_key_is_one_a_backend_reads():
 
 
 def test_a_teleop_device_is_one_class_that_registers_itself():
-    """One place per device, not an entry in each of two tables plus a function.
-
-    A device used to be a name in ``DEVICES``, sometimes a second name in
-    ``STREAMERS`` for the thread it commands on, and a module-level function
-    far from either -- three edits in a file that knows about every device, for
-    something that belongs to one.
-    """
     from rlinf.envs.real.wrappers.teleop.backends import TeleopBackend
 
     assert TeleopBackend.names() == [
@@ -1409,14 +1283,14 @@ def test_a_teleop_device_is_one_class_that_registers_itself():
         "spacemouse",
     ]
 
-    # Each name resolves to one class that carries both halves.
+    # Each registry entry contains both device and builder behavior.
     for name in TeleopBackend.names():
         backend = TeleopBackend.named(name)
         assert issubclass(backend, TeleopBackend)
         assert callable(backend.entry)
         assert callable(backend.streamer)
 
-    # Streaming is the exception, so it is the default that says nothing.
+    # Only streaming backends override the default capability flag.
     quiet = [
         name
         for name in TeleopBackend.names()
@@ -1428,7 +1302,7 @@ def test_a_teleop_device_is_one_class_that_registers_itself():
     with pytest.raises(ValueError, match="Unknown teleop device"):
         TeleopBackend.named("no_such_device")
 
-    # Registering a name twice is refused rather than letting import order pick.
+    # Duplicate names fail deterministically instead of depending on import order.
     with pytest.raises(ValueError, match="already registered"):
 
         @TeleopBackend.register("pico")
@@ -1439,11 +1313,6 @@ def test_a_teleop_device_is_one_class_that_registers_itself():
 
 
 def test_every_env_only_offers_teleop_devices_that_exist():
-    """An env lists what it can be driven by; those names have to be real.
-
-    A typo, or a device removed from the registry, would otherwise surface only
-    when somebody configured it -- with a robot in front of them.
-    """
     from rlinf.envs.real.dosw1.base import DOSW1Env
     from rlinf.envs.real.franka.base import FrankaEnv
     from rlinf.envs.real.franka.dual_base import DualFrankaEnv
@@ -1458,23 +1327,21 @@ def test_every_env_only_offers_teleop_devices_that_exist():
 
 
 def test_the_streamer_comes_from_the_registry_not_the_stack():
-    """A device that also commands the robot says so where it is built."""
     from rlinf.envs.real.wrappers.teleop.builder import EnvFacts, TeleopBackend
 
     quiet = EnvFacts(layout={}, kinds={}, direct_stream=False)
     assert TeleopBackend.named("gello_joint").streamer({}, quiet, []) is None
 
 
-# --- an env says what its action means --------------------------------
+# Environment action declarations
 
 
 def _declared(cls, **attrs):
-    """The parts a class declares, given only what its declaration reads."""
+    """Return the action parts declared by an environment class."""
     return cls.action_parts(SimpleNamespace(**attrs))
 
 
 def test_every_env_declares_parts_that_tile_its_action():
-    """A declaration that disagrees with step() is worse than none at all."""
     from rlinf.envs.real.dosw1.base import DOSW1Env
     from rlinf.envs.real.franka.base import FrankaEnv
     from rlinf.envs.real.gim_arm.base import GimArmEnv
@@ -1493,7 +1360,6 @@ def test_every_env_declares_parts_that_tile_its_action():
 
 
 def test_a_two_armed_robot_names_both_arms():
-    """Inferring this from the action width gave one arm and a huge gripper."""
     from rlinf.envs.real.xsquare.base import Turtle2Env
 
     parts = _declared(Turtle2Env, config=SimpleNamespace(use_arm_ids=[0, 1]))
@@ -1507,7 +1373,6 @@ def test_a_two_armed_robot_names_both_arms():
 
 
 def test_two_arms_of_the_same_width_can_mean_different_things():
-    """Six numbers are a twist to one robot and joint angles to another."""
     from rlinf.envs.real.franka.base import FrankaEnv
     from rlinf.envs.real.gim_arm.base import GimArmEnv
     from rlinf.robotics.teleop import ActionKind
@@ -1556,7 +1421,6 @@ def test_a_declaration_that_does_not_tile_the_action_is_refused():
 
 
 def test_a_device_that_means_something_else_is_refused():
-    """The failure this whole declaration exists to prevent."""
     from rlinf.robotics.teleop import (
         ActionKind,
         SpaceMouseBinding,
@@ -1584,11 +1448,11 @@ def test_a_device_that_means_something_else_is_refused():
         TeleopGroup([TeleopEntry(Device(), SpaceMouseBinding())], available=joint_arm)
 
 
-# --- every shipped config names devices its robot can drive -----------
+# Teleoperation compatibility of shipped configurations
 
 
 def _task_classes():
-    """Gym id -> env class, across every robot that declares tasks."""
+    """Return registered real-world task classes keyed by Gym ID."""
     from rlinf.envs.real import dosw1, franka, gim_arm, xsquare
 
     classes = {}
@@ -1598,7 +1462,7 @@ def _task_classes():
 
 
 def _env_configs():
-    """Every shipped env config: its path, its section, and its gym id.
+    """Return each shipped environment config and its Gym ID.
 
     A run config layers an ``env/<name>`` file into ``env.train`` or
     ``env.eval`` and may override the device there, so both halves are read.
@@ -1614,7 +1478,7 @@ def _env_configs():
             except yaml.YAMLError:
                 continue
             env_id = (doc.get("init_params") or {}).get("id")
-            # Simulated envs register elsewhere and have no teleop to check.
+            # Simulated environments have no real-world teleoperation contract.
             if env_id and str(doc.get("env_type", "")) in ("real", "realworld"):
                 env_files[path.stem] = (path, doc, str(env_id))
 
@@ -1643,11 +1507,6 @@ def _env_configs():
 
 
 def test_shipped_configs_name_devices_their_env_can_drive():
-    """A device an env cannot drive is only discovered with a robot moving.
-
-    Every config in the repo is resolved against the env class its gym id
-    names, so a typo or an unsupported device fails here instead of there.
-    """
     classes = _task_classes()
     offenders = []
     for path, section, env_id in _env_configs():
@@ -1669,7 +1528,6 @@ def test_shipped_configs_name_devices_their_env_can_drive():
 
 
 def test_every_shipped_config_names_a_registered_task():
-    """A gym id nobody registers is a config that cannot start."""
     classes = _task_classes()
     unknown = sorted(
         {
@@ -1683,7 +1541,6 @@ def test_every_shipped_config_names_a_registered_task():
 
 
 def test_the_retired_env_type_still_resolves_and_warns():
-    """The package is `real`; configs that still say `realworld` keep working."""
     from rlinf.envs import SupportedEnvType
 
     assert SupportedEnvType("real") is SupportedEnvType.REAL
@@ -1692,7 +1549,6 @@ def test_the_retired_env_type_still_resolves_and_warns():
 
 
 def test_no_worker_compares_the_env_type_to_a_bare_string():
-    """A literal would have gone quietly wrong when the value was renamed."""
     offenders = []
     for path in (_ROOT / "rlinf" / "workers").rglob("*.py"):
         for number, line in enumerate(path.read_text().splitlines(), 1):
@@ -1703,7 +1559,7 @@ def test_no_worker_compares_the_env_type_to_a_bare_string():
 
 
 def _resolved(doc, value):
-    """Follow a ``${a.b.c}`` interpolation within the same document."""
+    """Resolve a ``${a.b.c}`` interpolation within one document."""
     if not isinstance(value, str) or not value.startswith("${"):
         return value
     node = doc
@@ -1715,7 +1571,7 @@ def _resolved(doc, value):
 
 
 def _merged_sections(path, doc):
-    """Each env section of a run config, as Hydra composes it.
+    """Yield each environment section after Hydra-style composition.
 
     A section layers its own keys over the ``env/<name>`` file its ``defaults``
     names, and ``override_cfg`` merges key by key rather than wholesale. What
@@ -1746,12 +1602,6 @@ def _merged_sections(path, doc):
 
 
 def test_shipped_configs_give_the_policy_the_action_width_it_expects():
-    """An env whose action is a different width than the model's is unusable.
-
-    ``realworld_dexpnp_rlpd_cnn_async`` configured a dexterous hand for
-    training and left evaluation to inherit the default gripper, so the same
-    policy faced a 12-wide action in one section and a 7-wide one in the other.
-    """
     import yaml
 
     from rlinf.envs.real.franka.base import FrankaEnv
@@ -1773,7 +1623,7 @@ def test_shipped_configs_give_the_policy_the_action_width_it_expects():
         if not isinstance(action_dim, int):
             continue
         for name, section, env_id in _merged_sections(path, doc):
-            # Only a single-arm Franka lays its action out this way.
+            # This legacy action layout applies only to single-arm Franka.
             env_cls = classes.get(env_id)
             if env_cls is None or not issubclass(env_cls, FrankaEnv):
                 continue
@@ -1794,12 +1644,6 @@ def test_shipped_configs_give_the_policy_the_action_width_it_expects():
 
 
 def test_direct_stream_gello_opens_one_reader_per_port():
-    """The streamer drives the arms the group composed, not its own copies.
-
-    It used to build a second pair from the config's *global* ports. That is
-    two pollers competing for one serial port, and a per-entry ``port``
-    override that only the action path had heard of.
-    """
     import sys
     import types
 

@@ -12,18 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Vendor-facing readers for the hardware an operator drives.
+"""Low-level readers for teleoperation hardware.
 
-Each module here talks to one device -- a serial port, an HID handle, a headset
--- and exposes whatever shape that vendor's SDK gives back. They import no
-Gymnasium and no scheduler, so a bench script can drive one directly:
+Readers expose vendor-native values without depending on Gymnasium or the
+scheduler. They can be tested directly from the command line:
 
 .. code-block:: bash
 
    python -m rlinf.robotics.parts.teleop.readers.gello --port /dev/ttyUSB0
 
-:mod:`rlinf.robotics.parts.teleop.devices` wraps them as parts, which is what
-gives them a lifecycle, placement, and a uniform observation.
-
-Imports are left to callers: each device needs its own vendor package.
+:mod:`rlinf.robotics.parts.teleop.devices` adds the common connection lifecycle
+and observation interface. Vendor packages remain optional imports.
 """

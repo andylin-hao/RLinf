@@ -21,12 +21,7 @@ from .session import KeyboardSession
 
 
 class BaseKeyboardRewardDoneWrapper(KeyboardSession):
-    """The operator scores the episode; the key pressed says what it earned.
-
-    This family reads one key per step rather than draining the queue: a reward
-    is a standing judgement, so the latest press wins and there is nothing to
-    debounce.
-    """
+    """Replace environment rewards with operator keyboard ratings."""
 
     def __init__(self, env: gym.Env, reward_mode: str = "always_replace"):
         super().__init__(env)
@@ -40,7 +35,7 @@ class BaseKeyboardRewardDoneWrapper(KeyboardSession):
     def step(
         self, action: ActType
     ) -> tuple[ObsType, SupportsFloat, bool, bool, dict[str, Any]]:
-        """Modifies the :attr:`env` :meth:`step` reward using :meth:`self.reward`."""
+        """Step the environment and apply the current operator rating."""
         observation, reward, terminated, truncated, info = self.env.step(action)
         last_intervened, updated_reward, updated_terminated = self.reward_terminated()
         if last_intervened or self.reward_mode == "always_replace":
@@ -86,12 +81,11 @@ class KeyboardRewardDoneMultiStageWrapper(BaseKeyboardRewardDoneWrapper):
     def __init__(self, env):
         super().__init__(env)
         self.stage_rewards = [0, 0.1, 1]
-        # Set here as well as in begin_episode: a caller that steps before
-        # resetting would otherwise hit an attribute that does not exist yet.
+        # Initialize eagerly so step() remains valid before the first reset.
         self.reward_stage = 0
 
     def begin_episode(self) -> None:
-        """Every episode starts back at stage zero."""
+        """Reset the stage counter at the start of an episode."""
         self.reward_stage = 0
 
     def _check_keypress(self) -> tuple[bool, bool, float]:

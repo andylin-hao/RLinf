@@ -12,21 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Letting an operator take over from the policy.
-
-Every teleop device answers the same question -- *what would the operator do
-right now* -- and the answer is handled the same way whatever produced it: while
-the operator is driving, their action replaces the policy's, and the episode
-records that it was overridden. Only the reading differs.
-
-So the reading is the only thing a device implements. :class:`TeleopDevice`
-turns hardware into a :class:`TeleopSample`, and :class:`TeleopIntervention`
-owns the part that used to be copied into every wrapper: the hold window that
-keeps the operator in control between samples, and the ``info`` keys a dataset
-collector reads back. Holding state the policy does not command is a matter for
-the composed group, which starts from the policy's action and overwrites only
-what its devices fill.
-"""
+"""Arbitrate between policy actions and operator teleoperation input."""
 
 from __future__ import annotations
 
@@ -41,18 +27,13 @@ import numpy as np
 
 @dataclass
 class TeleopSample:
-    """One reading from a teleop device.
+    """Action sample produced by a teleoperation device.
 
     Attributes:
-        action: What the operator is asking for, in the env's action space, or
-            ``None`` when the device has nothing to say -- not connected yet, or
-            still waiting for its first packet. A ``None`` sample never starts
-            the hold window.
-        active: Whether the operator is actually driving. Devices report small
-            residual motion constantly, so each one decides its own threshold;
-            this flag, not the action, is what restarts the hold window.
-        info: Extra keys to merge into the step ``info``, for device state a
-            collector wants to record.
+        action: Operator command in the environment action space, or ``None``
+            when no usable reading is available.
+        active: Whether the operator currently holds control.
+        info: Device state to merge into the step information.
     """
 
     action: Optional[np.ndarray]
@@ -61,19 +42,10 @@ class TeleopSample:
 
 
 class TeleopDevice(ABC):
-    """Hardware an operator drives, expressed as actions for one env.
+    """Base interface for operator input expressed as environment actions."""
 
-    Implement :meth:`read`. The rest has defaults that suit most devices.
-    """
-
-    #: How long the operator keeps control after their last active sample.
-    #: Devices sample faster than a person moves, so without this the action
-    #: would flicker between operator and policy inside a single motion.
-    #:
-    #: Set it to ``0`` for a device the operator holds down to take over -- a
-    #: trigger or a grip button says exactly when they are driving, and
-    #: stretching that by half a second would keep commanding the robot after
-    #: they let go.
+    #: Duration for which control remains with the operator after an active sample.
+    #: Use zero for devices that report an explicit held state.
     timeout: float = 0.5
 
     @abstractmethod
@@ -81,11 +53,7 @@ class TeleopDevice(ABC):
         """Return what the operator is asking for, in ``env``'s action space."""
 
     def before_reset(self, env: gym.Env, kwargs: dict[str, Any]) -> dict[str, Any]:
-        """Adjust the reset arguments, and quiet the device while it runs.
-
-        A device that is already commanding the robot has to stop before the env
-        drives it home, or the two fight over the same controller.
-        """
+        """Prepare the device and reset arguments before environment reset."""
         return kwargs
 
     def reset(self, env: gym.Env) -> None:
@@ -103,7 +71,7 @@ class TeleopDevice(ABC):
     def get_hold_action(
         self, env: gym.Env, fallback_action: Optional[np.ndarray] = None
     ) -> np.ndarray:
-        """The action that keeps the robot where it is, for a skipped chunk.
+        """Return an action that holds the robot during a skipped chunk.
 
         Raises:
             AttributeError: If this device commands deltas, where a zero motion
@@ -120,9 +88,8 @@ class TeleopDevice(ABC):
 class TeleopIntervention(gym.Wrapper):
     """Replace the policy's action while the operator is driving.
 
-    This is a :class:`gymnasium.Wrapper` rather than an ``ActionWrapper``
-    deliberately: deciding whether an action was overridden also decides what
-    goes into ``info``, and ``ActionWrapper.action`` has nowhere to report that.
+    A regular :class:`gymnasium.Wrapper` is required because intervention
+    metadata is written to ``info`` alongside the selected action.
 
     Args:
         env: The environment to wrap.
@@ -148,12 +115,7 @@ class TeleopIntervention(gym.Wrapper):
         return time.monotonic() - self._last_active < self.device.timeout
 
     def reset(self, **kwargs: Any) -> tuple[Any, dict[str, Any]]:
-        """Reset the env, then let the device re-sync with it.
-
-        ``after_reset`` runs even when the reset fails, because a device that
-        paused itself in ``before_reset`` would otherwise stay paused for the
-        rest of the session.
-        """
+        """Reset the environment and synchronize the device afterward."""
         kwargs = self.device.before_reset(self, kwargs)
         try:
             result = self.env.reset(**kwargs)
@@ -174,7 +136,7 @@ class TeleopIntervention(gym.Wrapper):
             self._last_active = time.monotonic()
             applied, overridden = sample.action, True
         elif self.intervening:
-            # Quiet sample, but still inside the hold window.
+            # Retain operator control for the configured hold window.
             applied, overridden = sample.action, True
         else:
             applied, overridden = action, False
@@ -190,18 +152,13 @@ class TeleopIntervention(gym.Wrapper):
         return obs, reward, terminated, truncated, info
 
     def on_action_chunk_begin(self) -> None:
-        """Tell the device a fresh chunk of policy actions starts here.
-
-        On the wrapper because :mod:`rlinf.envs.real.env` finds it by name
-        through ``get_wrapper_attr``: the env runs the chunk, and the device
-        holds what it means.
-        """
+        """Notify the device that a new policy action chunk has started."""
         self.device.on_action_chunk_begin()
 
     def get_hold_action(
         self, fallback_action: Optional[np.ndarray] = None
     ) -> np.ndarray:
-        """The action that keeps the robot where it is, for a skipped chunk."""
+        """Return an action that holds the robot during a skipped chunk."""
         return self.device.get_hold_action(self, fallback_action)
 
     def close(self) -> None:

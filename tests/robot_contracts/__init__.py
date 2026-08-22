@@ -12,16 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""What a part, a connection, and a robot each promise, as runnable checks.
+"""Reusable conformance checks for robot parts, connections, and robots.
 
-Every lifecycle bug this package has had came from a promise nobody was
-checking: a reader closed after its handle was cleared, a camera whose thread
-could not be started twice, a part observing a value one number wider than it
-declared, a robot that raised on the second disconnect. Each was found by hand,
-once, on one robot.
-
-So the promises are written down here instead, as three contracts a contributor
-points at their own hardware::
+The checks cover lifecycle behavior, declared observation shapes, composition,
+resource ownership, and rollback after a partial connection failure. They can
+run under pytest, from a bench script, or directly against a robot::
 
     from robot_contracts import PartContract, RobotContract
 
@@ -33,10 +28,7 @@ points at their own hardware::
     def test_my_robot_conforms():
         RobotContract(lambda: MyRobot.build(robot_ip="10.0.0.1")).assert_kept()
 
-They sit beside :mod:`robot_mocks` rather than in the shipped package, because
-they test RLinf rather than being part of it, and they need no test framework
-of their own -- so the same contract runs under pytest, in a bench script, or
-from a REPL with a robot on the desk.
+The module is test infrastructure and does not depend on pytest.
 """
 
 from __future__ import annotations
@@ -55,7 +47,7 @@ __all__ = [
 
 
 class ConformanceError(AssertionError):
-    """One or more promises a part, connection, or robot did not keep."""
+    """Report one or more conformance failures for a subject."""
 
     def __init__(self, subject: str, failures: Sequence[str]) -> None:
         self.failures = list(failures)
@@ -64,13 +56,7 @@ class ConformanceError(AssertionError):
 
 
 class ObservationContract:
-    """What a part observes, against what it said it would.
-
-    Its own class because two callers need it: the contracts below, and the
-    bench check that walks a robot on real hardware. One implementation means
-    a bench run and a contributor's test cannot disagree about what a part
-    promised.
-    """
+    """Check a part's observations against its declared features."""
 
     def __init__(self, part: Any, where: str) -> None:
         self.part = part
@@ -78,11 +64,7 @@ class ObservationContract:
 
     @staticmethod
     def declared_shape(feature: Any) -> Optional[tuple]:
-        """The shape a feature descriptor promises, when it states one.
-
-        Features are plain dictionaries and a part may describe a subtree
-        rather than an array, so only a stated shape is worth comparing.
-        """
+        """Return the declared shape, or ``None`` for an unshaped feature."""
         if isinstance(feature, dict):
             shape = feature.get("shape")
             if isinstance(shape, (tuple, list)):
@@ -90,12 +72,7 @@ class ObservationContract:
         return None
 
     def failures(self) -> list[str]:
-        """Read the part once and report every way the answer disagrees.
-
-        Keys and shapes both. An env builds its observation space from the
-        declaration, so a value of the wrong width reaches a policy as data
-        rather than as an error -- it corrupts training instead of raising.
-        """
+        """Return all observation key and shape mismatches."""
         try:
             observation = self.part.get_observation()
         except Exception as error:  # noqa: BLE001 - a check reports anything
@@ -126,12 +103,10 @@ class ObservationContract:
 
 
 class Contract(ABC):
-    """One subject, built by a factory, checked against what it promises.
+    """Base class for conformance checks against a fresh subject.
 
     Args:
-        factory: Builds a fresh, unconnected subject each time it is called.
-            Several checks need one that has never been connected, so this is
-            a factory rather than an instance.
+        factory: Callable that returns a fresh, unconnected subject.
     """
 
     def __init__(self, factory: Callable[[], Any]) -> None:
@@ -139,30 +114,23 @@ class Contract(ABC):
 
     @property
     def subject_name(self) -> str:
-        """What to call the subject when reporting a broken promise."""
+        """Return the subject name used in failure messages."""
         return type(self.factory()).__name__
 
     @abstractmethod
     def failures(self) -> list[str]:
-        """Every promise the subject did not keep, as readable sentences."""
+        """Return all conformance failures."""
 
     def assert_kept(self) -> None:
-        """Raise unless the subject keeps every promise its kind makes."""
+        """Raise :class:`ConformanceError` if any check fails."""
         failures = self.failures()
         if failures:
             raise ConformanceError(self.subject_name, failures)
 
-    # -- shared checks ----------------------------------------------------
+    # Shared checks
 
     def lifecycle_failures(self, connection: Any, where: str) -> list[str]:
-        """Connect, disconnect, do it again, and do the last one twice.
-
-        Reconnecting is the one people skip, and it is the one stall recovery
-        needs: an env that finds a camera stalled closes it and opens it
-        again. Disconnecting twice is what a teardown path does when it is not
-        sure the thing ever came up, and raising there replaces whatever error
-        the caller was actually handling.
-        """
+        """Check connection, reconnection, and idempotent cleanup."""
         found: list[str] = []
 
         if connection.is_connected:
@@ -211,7 +179,7 @@ class Contract(ABC):
 
     @staticmethod
     def release(connection: Any) -> None:
-        """Let a checked subject go, whatever state the checks left it in."""
+        """Disconnect a subject after a check, suppressing reported failures."""
         try:
             connection.disconnect()
         except Exception:  # noqa: BLE001 - anything wrong here is already reported
@@ -219,12 +187,12 @@ class Contract(ABC):
 
 
 class PartContract(Contract):
-    """A part is a connection you can read, and optionally command.
+    """Check the lifecycle and data interface of a robot part.
 
     Args:
-        factory: Builds a fresh, unconnected part.
-        action: An action to send, for a controllable part. Left out, the
-            action half of the contract is skipped rather than guessed at.
+        factory: Callable that returns a fresh, unconnected part.
+        action: Valid action for a controllable part. If omitted, action checks
+            are skipped.
     """
 
     def __init__(
@@ -234,7 +202,7 @@ class PartContract(Contract):
         self.action = action
 
     def failures(self) -> list[str]:
-        """Check the lifecycle, the observation, and the action."""
+        """Return lifecycle, observation, and action failures."""
         from rlinf.robotics.parts.base import Connection, ControllablePart, RobotPart
 
         part = self.factory()
@@ -259,7 +227,7 @@ class PartContract(Contract):
         return found
 
     def _action_failures(self, part: Any, where: str) -> list[str]:
-        """Accept what it declares, and refuse what it does not."""
+        """Check valid actions and rejection of unknown part names."""
         found: list[str] = []
         try:
             part.send_action(self.action)
@@ -282,14 +250,10 @@ class PartContract(Contract):
 
 
 class ConnectionContract(Contract):
-    """A connection owns a session and offers what rides on it.
-
-    Its parts borrow that session: they are read through it, and they are
-    not opened or closed on their own.
-    """
+    """Check a shared hardware connection and the parts it exports."""
 
     def failures(self) -> list[str]:
-        """Check the lifecycle, then everything the session offers."""
+        """Return lifecycle and exported-part failures."""
         from rlinf.robotics.parts.base import Connection, RobotPart
 
         connection = self.factory()
@@ -318,12 +282,7 @@ class ConnectionContract(Contract):
 
     @staticmethod
     def _backed_part_failures(connection: Any, where: str, part_cls: type) -> list[str]:
-        """Everything the session backs has to be a part a robot can read.
-
-        One check, because there is one requirement. A thing that is not a
-        ``RobotPart`` cannot be composed at all, whether it is a second bus, a
-        raw SDK object, or a string somebody left in the mapping.
-        """
+        """Check that every exported value is an observable robot part."""
         parts = connection.parts
         if not parts:
             return [f"{where} backs no parts, so no robot can use it"]
@@ -341,10 +300,10 @@ class ConnectionContract(Contract):
 
 
 class RobotContract(Contract):
-    """A robot is a tree of named parts that comes up whole or not at all."""
+    """Check a robot's part tree, lifecycle, ownership, and rollback."""
 
     def failures(self) -> list[str]:
-        """Check describing, the lifecycle, every part, and the rollback."""
+        """Return all robot conformance failures."""
         robot = self.factory()
         where = type(robot).__name__
 
@@ -359,12 +318,7 @@ class RobotContract(Contract):
 
     @classmethod
     def _identity_failures(cls, robot: Any, where: str) -> list[str]:
-        """Walking the tree twice finds the same objects.
-
-        Everything else assumes it: the robot opens what the walk found, and an
-        env keeps what it looked up. A tree that rebuilt its parts per read
-        handed one object to the opener and another to the reader.
-        """
+        """Check that repeated tree traversal returns the same part objects."""
         first = dict(cls._leaves(robot, ""))
         second = dict(cls._leaves(robot, ""))
         unstable = sorted(path for path in first if first[path] is not second.get(path))
@@ -377,7 +331,7 @@ class RobotContract(Contract):
 
     @staticmethod
     def _describe_failures(robot: Any, where: str) -> list[str]:
-        """Describing a robot has to work before one is connected."""
+        """Check that the robot can be described before connecting."""
         try:
             if where not in robot.describe():
                 return [f"{where}.describe() does not name the robot"]
@@ -390,7 +344,7 @@ class RobotContract(Contract):
 
     @classmethod
     def _tree_failures(cls, robot: Any) -> list[str]:
-        """Every leaf observes what it declared, and no connection is a leaf."""
+        """Check every leaf's type, observations, and ownership."""
         from rlinf.robotics.parts.base import Connection, RobotPart
 
         found: list[str] = []
@@ -407,13 +361,7 @@ class RobotContract(Contract):
 
     @staticmethod
     def _ownership_failures(robot: Any, path: str, part: Any) -> list[str]:
-        """Every part in the tree rides a connection the robot actually opens.
-
-        A part is readable only because something opened the link behind it. If
-        the robot never opened that link, the part still answers -- with stale
-        values, or with whatever its driver does when closed -- so a reading
-        alone does not prove the tree is sound.
-        """
+        """Check that the robot owns and opens the part's connection."""
         found: list[str] = []
         if not part.is_connected:
             found.append(
@@ -430,13 +378,7 @@ class RobotContract(Contract):
 
     @classmethod
     def _leaves(cls, group: Any, prefix: str) -> list[tuple[str, Any]]:
-        """Every readable part of a composed tree, by its dotted path.
-
-        Descends past a part into what rides on it. Stopping at the first
-        readable thing is what let a gripper -- and a wrist camera holding its
-        own link -- go unchecked: they are what a robot actually publishes, and
-        the arm carrying them is only where they hang.
-        """
+        """Return every readable part and its dotted path."""
         from rlinf.robotics.parts.base import PartGroup
 
         found: list[tuple[str, Any]] = []
@@ -448,22 +390,14 @@ class RobotContract(Contract):
         return found
 
     def _rollback_failures(self) -> list[str]:
-        """A robot that fails halfway through connecting leaves nothing open.
-
-        The failure is injected into the last connection the robot opens, so
-        whatever came before it has already been opened when the error arrives.
-        That is the case that leaks.
-        """
+        """Check rollback after the final connection fails to open."""
         robot = self.factory()
         connections = self._declarations(robot)
         if not connections:
             # Nothing to open, so there is no partial state to roll back.
             return []
 
-        # Whichever entry point this class actually opens through. A part with
-        # a lifecycle of its own is allowed to override connect instead of
-        # _open, and patching the one it does not use injects nothing and
-        # quietly passes.
+        # Patch the lifecycle entry point implemented by this concrete class.
         target = type(connections[-1])
         hook = "_open" if "_open" in vars(target) else "connect"
         original = getattr(target, hook)
@@ -495,5 +429,5 @@ class RobotContract(Contract):
 
     @staticmethod
     def _declarations(robot: Any) -> list[Any]:
-        """Every distinct connection this robot will open, in tree order."""
+        """Return the distinct connections in tree order."""
         return robot.owners()

@@ -12,12 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Splitting one ``pico:`` config block into a config per controller.
-
-Both controllers share an address, scales and a calibration; only the buttons
-usually differ. The block is written once with ``left:`` and ``right:``
-overrides, and each side's device gets the merged result.
-"""
+"""Split shared PICO configuration into left and right controller settings."""
 
 from __future__ import annotations
 
@@ -43,7 +38,7 @@ def split_dual_config(pico_config: Mapping[str, Any]) -> tuple[dict, dict]:
             calibration = shared_calibration.copy()
             calibration.update(_as_dict(override.get("calibration")))
             side_cfg["calibration"] = calibration
-        # A dual rig always binds the left controller to the left arm.
+        # Bind each controller to the matching robot side.
         side_cfg["hand"] = side
         sides.append(side_cfg)
     return sides[0], sides[1]

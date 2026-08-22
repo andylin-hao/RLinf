@@ -12,10 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Fake RealSense and ZED SDKs.
+"""Fake RealSense, ZED, and OpenCV camera interfaces.
 
-Frames carry a rising counter in the first pixel, so a test can tell one from
-the next and prove the capture thread is running rather than replaying.
+Each generated frame increments its first pixel so tests can detect fresh
+capture-thread output.
 """
 
 from __future__ import annotations
@@ -28,8 +28,7 @@ import numpy as np
 
 from ._fakes import module
 
-#: Serials the fake reports. A robot may carry several cameras, and each is
-#: opened by serial, so one device would leave the others unopenable.
+#: Camera serials available to multi-camera tests.
 SERIALS = ("MOCK0001", "MOCK0002", "MOCK0003")
 SERIAL = SERIALS[0]
 
@@ -60,7 +59,7 @@ class _Frames:
 
 
 def realsense(width: int = 64, height: int = 48) -> types.ModuleType:
-    """A ``pyrealsense2`` that yields frames without a camera."""
+    """Return a ``pyrealsense2`` module that yields synthetic frames."""
     opened: list[str] = []
 
     class Pipeline:
@@ -125,7 +124,7 @@ ZED_SERIAL = "12345678"
 
 
 def zed(width: int = 64, height: int = 48) -> dict[str, types.ModuleType]:
-    """A ``pyzed.sl`` that opens and grabs without a camera."""
+    """Return a ``pyzed.sl`` module that captures synthetic frames."""
     opened: list[Any] = []
 
     class Mat:
@@ -195,21 +194,13 @@ def zed(width: int = 64, height: int = 48) -> dict[str, types.ModuleType]:
     return {"pyzed": parent, "pyzed.sl": sl}
 
 
-#: What a LUMOS camera streams, and the only thing it will stream: the driver
-#: refuses anything else, so a fake that answered differently would test the
-#: refusal rather than the camera.
+#: Native dimensions and format required by the LUMOS driver.
 _LUMOS_W = _LUMOS_H = 1280
 _YU12 = 0x32315559
 
 
 def opencv() -> types.ModuleType:
-    """A ``cv2`` with a V4L2 capture that behaves like the XVisio device.
-
-    Enough of OpenCV for the LUMOS driver: a capture that reports YU12 at its
-    native size, hands back an I420 buffer, and can be released and opened
-    again. The colour conversion and resize are real shapes rather than real
-    pixels, which is what the driver's frame handling is checked against.
-    """
+    """Return a ``cv2`` module with a synthetic XVisio V4L2 capture."""
     opens: list[Any] = []
     # Captured before the fake is installed, so delegation reaches the real
     # module rather than importing this one back and recursing.
@@ -267,12 +258,7 @@ def opencv() -> types.ModuleType:
         return np.zeros((height, width, 3), dtype=np.uint8)
 
     class _OpenCV(types.ModuleType):
-        """The real cv2 where it exists, minus the ability to open a device.
-
-        Only the V4L2 capture is faked. Envs under these mocks do real image
-        work -- DOSW1 resizes and crops every frame -- so anything this does
-        not define is delegated rather than missing.
-        """
+        """Delegate to real OpenCV except for device capture."""
 
         def __getattr__(self, name: str) -> Any:
             if real_cv2 is None:
@@ -303,7 +289,7 @@ def opencv() -> types.ModuleType:
 
 
 def modules(**_: Any) -> dict[str, types.ModuleType]:
-    """Every camera SDK, by the name a part imports it as."""
+    """Return fake camera SDKs keyed by import name."""
     made = {"pyrealsense2": realsense(), "cv2": opencv()}
     made.update(zed())
     return made

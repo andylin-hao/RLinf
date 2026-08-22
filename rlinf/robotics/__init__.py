@@ -12,42 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""RLinf's robotics layer: parts, and the robots composed from them.
+"""Public API for robot parts, composition, placement, and discovery.
 
-Three concepts:
-
-* **Connection** -- one link to hardware. It knows the machine it runs on, it
-  opens, and it closes. Subclass it directly when a single link backs several
-  components without being any of them -- a coupled dual-arm controller, a
-  two-armed SDK session. Reading such a link would mean nothing, so
-  :attr:`~rlinf.robotics.parts.base.Connection.parts` says what rides on it and
-  the robot composes those.
-* **Part** -- a connection you *can* read, which is what makes it a component
-  of the robot: an arm, an end effector, a camera, a mobile base. It has a
-  policy-facing observation contract, and an action contract when it is
-  controllable. An arm is both a part and its own link, and that is the ordinary
-  case.
-* **Robot** -- a named composition of parts, and only parts. Hand it a bare
-  connection and it says which of the parts to pick instead. See
-  :mod:`rlinf.robotics.robot`.
-
-Every connection takes an optional ``node_rank``, so a camera can run on the
-machine it is plugged into while the policy runs elsewhere. Nothing else is
-needed to say where hardware lives, and no part writes a line for it:
-constructing a connection declares it, and
-:meth:`~rlinf.robotics.robot.Robot.connect` opens it on the machine it named --
-rebuilding it there and turning the object you hold into a view of it, so a
-part on another node and one on this bench are the same thing to everything
-holding them. There is no remote counterpart to write, and none to forget.
-
-The dependency runs one way. The scheduler never imports this package -- it
-reaches robotics by importing the hardware-policy modules a config names, then
-calling the discovery classes they registered. Only the composition layer
-imports back, and :meth:`~rlinf.robotics.parts.base.Connection.connect` loads
-:mod:`rlinf.robotics.placement` lazily so a part's source never names it.
-
-Symbols load lazily so a node without a given robot's SDK can still import
-``rlinf.robotics``.
+Connections manage deferred hardware sessions. Robot parts add observation and
+action contracts, and robots compose those parts into named trees. Symbols are
+loaded lazily so importing this package does not require every vendor SDK.
 """
 
 # ruff: noqa: F401, F822
@@ -56,12 +25,8 @@ from importlib import import_module
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
-    # The lazy ``__getattr__`` below is invisible to a type checker, which
-    # would otherwise resolve every name here to ``Any`` -- so an editor could
-    # not say what ``Robot(...)`` accepts. Importing the same names statically
-    # here restores that without loading anything at run time.
-    #
-    # Keep this list in step with ``_MODULE_GROUPS``; the test suite checks it.
+    # Provide static types for names exported through lazy __getattr__.
+    # Tests keep this list synchronized with _MODULE_GROUPS.
     from .adapters import (
         LegacyObservationAdapter,
         VectorActionAdapter,
@@ -102,8 +67,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
         Turtle2Robot,
     )
 
-#: Symbols grouped by the module that defines them, so adding one is a
-#: single-line change in the group it belongs to.
+#: Public symbols grouped by defining module for lazy loading.
 _MODULE_GROUPS: dict[str, tuple[str, ...]] = {
     ".parts": (
         "Connection",
@@ -113,8 +77,7 @@ _MODULE_GROUPS: dict[str, tuple[str, ...]] = {
         "run_parallel",
     ),
     ".parts.arms": ("ARM_STATE_FIELDS", "Arm", "BaseArm"),
-    # Each device category lives with the drivers that implement it, and is
-    # reached lazily so a node loads only the hardware it has.
+    # Load each device category only when requested.
     ".parts.cameras": ("BaseCamera", "Camera", "CameraInfo"),
     ".parts.end_effectors": ("EndEffector",),
     ".parts.mobility": ("MobileBase",),

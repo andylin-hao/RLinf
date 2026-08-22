@@ -12,12 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Registering a real-world task with Gymnasium.
-
-Building a task env is the same four lines whichever robot it runs on:
-construct the env class with the worker's config, then wrap it in the stack the
-env declares. So a task declares its class, and nothing else.
-"""
+"""Gymnasium registration helpers for real-world tasks."""
 
 from __future__ import annotations
 
@@ -30,7 +25,7 @@ from .wrappers import build_stack
 
 
 def task_factory(env_cls: type) -> Callable[..., gym.Env]:
-    """Build the entry point Gymnasium calls to create one task."""
+    """Create a Gymnasium entry point for a real-world environment class."""
 
     def create(
         override_cfg: dict[str, Any],
@@ -57,7 +52,7 @@ def register_tasks(
     namespace: dict[str, Any],
     tasks: Mapping[str, type],
 ) -> list[str]:
-    """Register every task in ``tasks`` and publish its entry point.
+    """Register real-world tasks and publish their generated entry points.
 
     Gymnasium resolves an entry point by importing ``module`` and reading the
     named attribute, so each generated factory is bound into ``namespace``
@@ -66,7 +61,7 @@ def register_tasks(
     Args:
         module: Dotted path of the calling package, i.e. ``__name__``.
         namespace: The caller's ``globals()``, where entry points are bound.
-        tasks: Gym id -> the env class. The stack comes from the env.
+        tasks: Mapping from Gymnasium ID to environment class.
 
     Returns:
         The entry point names bound into ``namespace``, for ``__all__``.

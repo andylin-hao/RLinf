@@ -12,11 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Franka controller backed by libfranka via the ``franky`` bindings.
+"""Franka control through the libfranka-based ``franky`` bindings.
 
-Expects a PREEMPT_RT kernel and ``rtprio>=80`` / unlimited memlock for the
-calling user; otherwise ``_apply_rt_hardening`` falls back to best-effort
-and logs a warning.
+A PREEMPT_RT kernel, ``rtprio>=80``, and unlimited memory locking are
+recommended. The driver logs a warning if real-time hardening is unavailable.
 """
 
 import ctypes
@@ -40,7 +39,7 @@ JOINT_LIMITS_LOWER = np.array(
     [-2.8973, -1.7628, -2.8973, -3.0718, -2.8973, -0.0175, -2.8973]
 )
 JOINT_LIMITS_UPPER = np.array([2.8973, 1.7628, 2.8973, -0.0698, 2.8973, 3.7525, 2.8973])
-# Hard limits − 0.1 rad/s margin (same as polymetis).
+# Hardware limits with the same 0.1 rad/s margin used by Polymetis.
 JOINT_VEL_LIMITS = np.array([2.075, 2.075, 2.075, 2.075, 2.51, 2.51, 2.51])
 
 _TORQUE_THRESHOLD = [80.0, 80.0, 80.0, 80.0, 11.0, 11.0, 11.0]
@@ -50,9 +49,9 @@ _JOINT_STIFFNESS = [103.75, 265.734, 227.273, 221.445, 13.5, 12.818, 5.134]
 _JOINT_DAMPING = [16.7, 40.263, 25.0, 12.862, 1.5, 2.0, 1.331]
 
 
-_CART_TRANS_STIFFNESS = float(os.environ.get("RLINF_CART_K_T", 500.0))  # N/m
-_CART_ROT_STIFFNESS = float(os.environ.get("RLINF_CART_K_R", 40.0))  # Nm/rad
-_CART_NULLSPACE_STIFFNESS = float(os.environ.get("RLINF_CART_K_NS", 5.0))  # Nm/rad
+_CART_TRANS_STIFFNESS = float(os.environ.get("RLINF_CART_K_T", 500.0))  # N/m.
+_CART_ROT_STIFFNESS = float(os.environ.get("RLINF_CART_K_R", 40.0))  # Nm/rad.
+_CART_NULLSPACE_STIFFNESS = float(os.environ.get("RLINF_CART_K_NS", 5.0))  # Nm/rad.
 _CART_MAX_DELTA_TAU = float(
     os.environ.get("RLINF_CART_MAX_DTAU", 0.3)
 )  # Nm / 1 kHz cycle
@@ -94,12 +93,10 @@ class FrankyArm(BaseArm):
         end_effector_config: Optional[dict[str, Any]] = None,
         **placement: Any,
     ) -> "FrankyArm":
-        """Build this backend from the settings a Franka robot carries.
+        """Declare a libfranka-backed arm and its gripper.
 
-        libfranka drives the arm and this class builds the gripper beside it,
-        so a gripper backend and its port are what it needs. It has no way to
-        fit a named end effector, so being handed one is refused rather than
-        dropped -- the arm would run with a gripper the config did not ask for.
+        This backend accepts ``gripper_type`` but does not support a separately
+        named ``end_effector_type``.
         """
         if end_effector_type is not None or end_effector_config:
             raise TypeError(
@@ -141,11 +138,7 @@ class FrankyArm(BaseArm):
 
     @property
     def parts(self) -> dict[str, RobotPart]:
-        """The gripper riding this arm's connection.
-
-        Not the arm: this says what rides on it, and the arm is what they ride.
-        Composing the arm brings the gripper with it, under ``end_effector``.
-        """
+        """Return the gripper exported by the arm connection."""
         return {"end_effector": MethodEndEffector(self, state_field="gripper_position")}
 
     def _open(self) -> Any:
@@ -192,12 +185,7 @@ class FrankyArm(BaseArm):
         gripper_connection: Optional[str],
         robot_ip: str,
     ) -> "BaseGripper":
-        """Build the gripper this arm carries, from the registry.
-
-        The Franka Hand is driven over a ROS session, which this stack does not
-        hold, so it is the one name this arm cannot honour. Everything else
-        goes through the registry like any other driver.
-        """
+        """Create and connect the configured gripper from the registry."""
         gt = (gripper_type or "robotiq").lower()
         if gt in {"franka", "franka_gripper"}:
             raise NotImplementedError(
@@ -206,7 +194,7 @@ class FrankyArm(BaseArm):
                 "for now."
             )
         gripper = EndEffector.of(gt, port=gripper_connection)
-        # Built unopened, like every part; this arm owns its lifetime.
+        # The arm owns the gripper lifecycle.
         gripper.connect()
         return gripper
         raise ValueError(
@@ -241,8 +229,7 @@ class FrankyArm(BaseArm):
                 self._logger.warning(f"sched_setaffinity failed: {e}")
 
     def _safe_join(self) -> None:
-        # join_motion re-raises latched errors from a prior motion; swallow
-        # so setup/teardown can drain them and proceed.
+        # Drain latched motion errors during setup and teardown.
         try:
             self._robot.join_motion()
         except Exception:
@@ -258,7 +245,7 @@ class FrankyArm(BaseArm):
     def get_state(self) -> FrankaRobotState:
         raw = self._robot.state
         affine = raw.O_T_EE
-        # franky.Affine.quaternion is xyzw (Eigen coeffs) — same as scipy.
+        # Franky and SciPy both use xyzw quaternion order.
         tcp_pose = np.concatenate(
             [
                 np.asarray(affine.translation, dtype=np.float64),
@@ -305,7 +292,7 @@ class FrankyArm(BaseArm):
     def _stop_tracking_motion(self) -> None:
         if self._tracker is None:
             return
-        # tracker.stop re-raises latched async reflexes (e.g. power_limit_violation).
+        # tracker.stop may re-raise a latched asynchronous reflex error.
         try:
             self._tracker.stop()
         except Exception as e:
@@ -317,7 +304,7 @@ class FrankyArm(BaseArm):
         self._robot.recover_from_errors()
 
     def move_joints(self, joint_positions: np.ndarray) -> None:
-        # dq feedforward is essential at 10 Hz — without it PD lags / overshoots.
+        # Velocity feedforward reduces PD lag and overshoot at 10 Hz.
         assert len(joint_positions) == 7
         q = np.clip(
             np.asarray(joint_positions, dtype=np.float64),
@@ -378,8 +365,8 @@ class FrankyArm(BaseArm):
         self._robot.recover_from_errors()
 
     def move_tcp_pose(self, pose: np.ndarray) -> None:
-        # No twist feedforward: finite-diff'ing 10 Hz targets fed j7 oscillation.
-        # Pose is (7,) [xyz, quat_xyzw].
+        # Twist feedforward from 10 Hz finite differences destabilizes joint 7.
+        # Pose layout: xyz position followed by an xyzw quaternion.
         pose = np.asarray(pose, dtype=np.float64)
         assert pose.shape == (7,), (
             f"pose must be (7,) [xyz, quat_xyzw]; got {pose.shape}"
@@ -408,7 +395,7 @@ class FrankyArm(BaseArm):
         else:
             xyz = xyz_in
 
-        # Hemisphere-align quat so we slerp the short arc.
+        # Align quaternion hemispheres before interpolating along the short arc.
         if float(np.dot(quat_in, prev_quat)) < 0.0:
             quat_in = -quat_in
         if _CART_MAX_STEP_RAD > 0:
@@ -450,12 +437,7 @@ class FrankyArm(BaseArm):
         self._gripper.close(speed=1.0)
 
     def move_gripper(self, width: float, speed: float = 0.3) -> None:
-        """Move the gripper to an opening width, in metres.
-
-        The same axis :attr:`FrankaRobotState.gripper_position` reports, so a
-        width read back can be commanded again. Open and close are its two
-        ends; this is every point between, which is what a partial grasp needs.
-        """
+        """Move the configured gripper to an opening width in metres."""
         self._gripper.move(width, speed)
 
     def cleanup(self) -> None:

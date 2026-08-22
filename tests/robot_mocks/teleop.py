@@ -12,10 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Fake operator hardware: spacemouse, leader arms, glove, VR and keyboard.
+"""Fake SpaceMouse, leader-arm, glove, VR, and keyboard interfaces.
 
-Each answers as a device at rest, so a binding reads something well-shaped and
-reports nobody driving. A test that wants motion sets the values itself::
+Devices report an idle state by default. Tests can supply motion directly::
 
     with mocked_sdks() as made:
         made["pyspacemouse"].twist = (0.5, 0, 0, 0, 0, 0)
@@ -34,7 +33,7 @@ DOF = 7
 
 
 def spacemouse() -> types.ModuleType:
-    """A ``pyspacemouse`` whose puck rests until a test moves it."""
+    """Return an idle ``pyspacemouse`` module with mutable input state."""
     fake = module("pyspacemouse")
     fake.twist = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
     fake.buttons = (0, 0)
@@ -60,7 +59,7 @@ def spacemouse() -> types.ModuleType:
 
 
 def gello() -> dict[str, types.ModuleType]:
-    """A ``gello_teleop`` leader arm holding a fixed pose."""
+    """Return a ``gello_teleop`` module with a fixed leader-arm pose."""
     agent_module = module("gello_teleop.gello_teleop_agent")
     fk_module = module("gello_teleop.franka_fk")
 
@@ -91,7 +90,7 @@ def gello() -> dict[str, types.ModuleType]:
 
 
 def glove() -> dict[str, types.ModuleType]:
-    """A ``rlinf_dexhand`` glove reporting open fingers."""
+    """Return an ``rlinf_dexhand`` glove that reports open fingers."""
 
     class GloveExpert:
         def __init__(self, *_args, **_kwargs):
@@ -113,7 +112,7 @@ def glove() -> dict[str, types.ModuleType]:
 
 
 def vr() -> types.ModuleType:
-    """A ``zmq`` that delivers whatever a test puts in the queue."""
+    """Return a ``zmq`` module backed by a test-controlled packet queue."""
     fake = module("zmq")
     fake.packets: list[Any] = []
 
@@ -159,7 +158,7 @@ def vr() -> types.ModuleType:
 
 
 def keyboard() -> types.ModuleType:
-    """An ``evdev`` with no keyboards attached."""
+    """Return an ``evdev`` module with no attached keyboards."""
     return module(
         "evdev",
         InputDevice=lambda _path: types.SimpleNamespace(
@@ -171,7 +170,7 @@ def keyboard() -> types.ModuleType:
 
 
 def modules(**_: Any) -> dict[str, types.ModuleType]:
-    """Every operator-hardware SDK, by the name a reader imports it as."""
+    """Return fake teleoperation SDKs keyed by import name."""
     made: dict[str, types.ModuleType] = {
         "pyspacemouse": spacemouse(),
         "zmq": vr(),

@@ -12,39 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-r"""Robot parts: what a component *is* to the policy.
+"""Base classes for hardware connections and composable robot parts.
 
-:mod:`.base` holds the taxonomy. Each device category is defined beside the
-drivers that implement it, so a subpackage owns its category and its hardware
-together::
-
-    parts/
-      base.py                     Connection, RobotPart, ControllablePart,
-                                  PartGroup
-      arms/           base.py:    Arm, BaseArm
-                                  Franky, Franka ROS, GimArm, Turtle2, DOSW1
-      cameras/        base.py:    Camera
-                                  RealSense, ZED, Lumos
-      end_effectors/  base.py:    EndEffector
-        grippers/                 Franka, Robotiq
-        hands/                    Ruiyan
-      mobility/       base.py:    MobileBase
-      transports/                 ROS
-
-A part says what a component means to the policy: its observation contract and,
-when controllable, its action contract. A link that presents several components
-at once -- a dual-arm controller, a two-armed SDK session -- is a plain
-:class:`~.base.Connection` and not a part: reading it would mean nothing, so it
-lists what rides on it in :attr:`~.base.Connection.parts` and the robot composes
-those. Either way it is a connection, so either way it takes a ``node_rank`` and
-opens and closes the same way.
-
-Subpackages are not imported here, and that is load-bearing rather than tidy: a
-node needs only the vendor SDKs for the hardware it actually has, and importing
-one subpackage's category would drag in every driver beside it. Reach a
-category through its own subpackage -- ``from rlinf.robotics.parts.cameras
-import Camera`` -- or through :mod:`rlinf.robotics`, which resolves names
-lazily.
+Device categories live in their respective subpackages and are not imported
+here, which keeps unrelated vendor dependencies out of local import paths.
 """
 
 from .base import (

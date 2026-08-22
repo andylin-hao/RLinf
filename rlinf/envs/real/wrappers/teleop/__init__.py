@@ -12,20 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Letting an operator take over, on the environment's terms.
-
-What the operator is asking for is worked out in
-:mod:`rlinf.robotics.teleop`: devices report, bindings say what a reading means
-for the robot, and a group merges them. Everything here is what that cannot
-answer on its own, because it depends on the environment.
-
-:class:`TeleopIntervention` decides when the operator's action replaces the
-policy's and records that it did. :class:`ComposedTeleop` flattens a group's
-named parts into this env's action vector, using the layout from
-:mod:`.layout`. :mod:`.config` resolves which devices a config asked for,
-:mod:`.backends` says what each of those names is, and :mod:`.builder` puts
-them together in the right order.
-"""
+"""Environment-side teleoperation configuration and action arbitration."""
 
 from .backends import EnvFacts, TeleopBackend
 from .composed import ComposedTeleop

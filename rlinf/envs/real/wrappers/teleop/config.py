@@ -12,25 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Choosing which teleop devices an environment listens to.
+"""Resolve teleoperation devices from an environment configuration.
 
-``teleop`` names them. One device is the common case, so ``teleop: spacemouse``
-is a name; when several devices divide the robot between them it is a list, and
-an entry may carry its own options::
+``teleop`` accepts a device name or an ordered list of devices with options::
 
     teleop:
       - {gello_joint: {port: /dev/left,  drives: left}}
       - {gello_joint: {port: /dev/right, drives: right}}
 
-Both spellings land on the same list of entries, which is what the group builder
-consumes. Which devices make up a group is settled here, from the config, rather
-than inferred from the robot further down. Naming a device this env cannot drive
-is an error rather than a surprise once the robot is moving.
-
-The retired spellings -- ``teleop_device`` and the booleans ``use_spacemouse``,
-``use_gello``, ``use_pico``, ``use_gello_joint`` -- still select a single device
-and warn. They are read here rather than in the wrapper builders so that every
-env stack retires them on the same schedule.
+Legacy keys still select one device and emit a deprecation warning. Device
+compatibility is validated before the environment opens hardware.
 """
 
 from __future__ import annotations
@@ -46,7 +37,7 @@ LEGACY_FLAGS: dict[str, str] = {
     "use_gello_joint": "gello_joint",
 }
 
-#: The name meaning "nobody takes over from the policy".
+#: Selection that leaves control with the policy.
 NO_DEVICE = "none"
 
 
@@ -76,10 +67,8 @@ def resolve_teleop_device(
 
     Args:
         cfg: The env config section, e.g. ``env.eval``.
-        supported: Device names this env stack can drive. A name outside this
-            set is an error rather than a silently ignored setting, because a
-            missing takeover is only discovered with a robot already moving.
-        default: The device to use when the config says nothing.
+        supported: Device names supported by this environment.
+        default: Device to use when the configuration omits a selection.
 
     Raises:
         ValueError: If the config names an unsupported device, enables more than
@@ -90,9 +79,7 @@ def resolve_teleop_device(
     legacy, legacy_present = _legacy_selection(cfg)
 
     if declared is not None and legacy_present:
-        # Env configs layer, so a half-migrated stack can hold both keys. If they
-        # agree that is merely redundant; if they disagree, choosing either one
-        # silently gives somebody the wrong device on real hardware.
+        # Reject conflicting legacy and current selections.
         if legacy != str(declared):
             raise ValueError(
                 f"This env config sets 'teleop_device: {declared}' and also "
@@ -137,11 +124,7 @@ def resolve_teleop_device(
 
 
 def _entry(item: Any) -> tuple[str, Any]:
-    """Split one ``teleop`` entry into its device name and the entry itself.
-
-    An entry is either a bare name or a single-key mapping of name to options,
-    which is the shape the group builder already takes.
-    """
+    """Normalize one device name or single-key options mapping."""
     if isinstance(item, str):
         return item, item
     try:
@@ -168,11 +151,11 @@ def resolve_teleop_devices(
     Args:
         cfg: The env config section, e.g. ``env.eval``.
         supported: Device names this env stack can drive.
-        default: The device to use when the config says nothing.
+        default: Device to use when the configuration omits a selection.
 
     Returns:
         Bare names and single-key option mappings, ready for the group builder.
-        Empty when nobody takes over from the policy.
+        An empty list when control remains with the policy.
 
     Raises:
         ValueError: If ``teleop`` is empty, holds a malformed entry, names a
@@ -184,9 +167,7 @@ def resolve_teleop_devices(
         device = resolve_teleop_device(cfg, supported=supported, default=default)
         return [] if device == NO_DEVICE else [device]
 
-    # Env configs layer, so a run config saying 'teleop' often sits on a base
-    # that still says 'teleop_device'. The one naming every device wins, and
-    # says so rather than dropping the other silently.
+    # The current key supersedes legacy keys inherited through config layering.
     superseded = [key for key in ("teleop_device", *LEGACY_FLAGS) if key in cfg]
     if superseded:
         warnings.warn(
@@ -210,7 +191,8 @@ def resolve_teleop_devices(
         if len(names) > 1:
             raise ValueError(
                 f"'teleop' lists {NO_DEVICE!r} alongside {sorted(set(names) - {NO_DEVICE})}. "
-                f"{NO_DEVICE!r} means nobody takes over, so it cannot share the list."
+                f"{NO_DEVICE!r} disables intervention and cannot share the "
+                "list with a device."
             )
         return []
 
@@ -222,5 +204,5 @@ def resolve_teleop_devices(
             f"for this environment. Supported: {', '.join(sorted(allowed))}."
         )
 
-    # A name may repeat: two leader arms differ only by the branch each drives.
+    # Repeated names may target different robot branches.
     return [entry for _, entry in entries]

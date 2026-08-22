@@ -12,12 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Relative-frame wrappers for dual-arm (14-dim tcp_pose) Franka environments.
+"""Relative-frame transforms for dual-arm Franka environments.
 
-These wrappers mirror :class:`RelativeFrame` and :class:`RelativeTargetFrame`
-but operate on the concatenated ``(14,)`` tcp_pose produced by
-:class:`DualFrankaEnv`.  Each arm's adjoint / homogeneous transform is
-computed independently.
+The wrappers operate on a concatenated 14-value TCP pose and compute an
+independent transform for each arm.
 """
 
 import gymnasium as gym
@@ -34,11 +32,9 @@ NUM_ARMS = 2
 
 
 class DualRelativeFrame(gym.Wrapper):
-    """Transform observations and actions between base and end-effector frames
-    for a dual-arm environment with ``(14,)`` tcp_pose.
+    """Transform dual-arm observations and actions between coordinate frames.
 
-    The adjoint matrix is maintained per arm.  Actions are expected to be
-    ``(12,)`` (no gripper) or ``(14,)`` (with gripper), laid out as
+    Actions contain 12 values without grippers or 14 values with grippers:
     ``[left_6d, (grip), right_6d, (grip)]``.
     """
 
@@ -76,8 +72,6 @@ class DualRelativeFrame(gym.Wrapper):
                 )
 
         return self.transform_observation(obs), info
-
-    # -------------------------------------------------------------- #
 
     def _update_adjoint(self, tcp_pose: np.ndarray):
         for arm in range(NUM_ARMS):
@@ -141,13 +135,12 @@ class DualRelativeFrame(gym.Wrapper):
 
 
 class DualRelativeTargetFrame(DualRelativeFrame):
-    """Like :class:`DualRelativeFrame`, but the adjoint is computed from the
-    *target* end-effector pose rather than the current pose on reset."""
+    """Compute reset transforms from target poses instead of measured poses."""
 
     def reset(self, **kwargs):
         obs, info = self.env.reset(**kwargs)
 
-        target = self.env.target_ee_pose  # (14,) quaternion form
+        target = self.env.target_ee_pose  # Quaternion pose, shape (14,).
         for arm in range(NUM_ARMS):
             pose7 = target[arm * 7 : arm * 7 + 7]
             self.adjoint_matrices[arm] = construct_adjoint_matrix(pose7)

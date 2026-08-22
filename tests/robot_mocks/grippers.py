@@ -23,7 +23,7 @@ from ._fakes import module
 
 
 def pymodbus() -> dict[str, types.ModuleType]:
-    """A ``pymodbus`` whose registers remember what was written."""
+    """Return ``pymodbus`` modules backed by in-memory registers."""
 
     class Registers:
         def __init__(self, values):
@@ -33,7 +33,7 @@ def pymodbus() -> dict[str, types.ModuleType]:
             return False
 
     class ModbusSerialClient:
-        """Answers the Robotiq activation handshake and echoes commands.
+        """Emulate the Robotiq activation handshake and command registers.
 
         The real gripper reports its state in three input registers. Only two
         fields matter to the driver: ``gSTA`` says activation finished, and the
@@ -81,13 +81,7 @@ def pymodbus() -> dict[str, types.ModuleType]:
 
 
 def rlinf_dexhand() -> dict[str, types.ModuleType]:
-    """An ``rlinf_dexhand`` whose hand remembers where it was commanded.
-
-    Six motors on one serial bus. The driver surface a
-    :class:`~rlinf.robotics.parts.end_effectors.hands.ruiyan.RuiyanHand` uses is
-    small -- start it, read it, command it, stop it -- and the fake keeps the
-    positions so a test can see a command arrive and a reset undo it.
-    """
+    """Return an ``rlinf_dexhand`` module that records six-finger commands."""
 
     class RuiyanHandDriver:
         _DOFS = 6
@@ -138,5 +132,5 @@ def rlinf_dexhand() -> dict[str, types.ModuleType]:
 
 
 def modules(**_: Any) -> dict[str, types.ModuleType]:
-    """Every gripper and hand SDK, by the name a part imports it as."""
+    """Return fake gripper and hand SDKs keyed by import name."""
     return {**pymodbus(), **rlinf_dexhand()}

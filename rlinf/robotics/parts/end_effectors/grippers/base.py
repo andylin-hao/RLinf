@@ -21,28 +21,11 @@ from rlinf.robotics.parts.end_effectors.base import BaseEndEffector
 
 
 class BaseGripper(BaseEndEffector, ABC):
-    """A one-degree-of-freedom end effector: two fingers on one axis.
+    """One-axis end-effector interface for parallel grippers.
 
-    All gripper implementations (Franka parallel gripper, Robotiq 2F, …)
-    implement this interface so that the arm part can use them
-    interchangeably.
-
-    A gripper is a :class:`~rlinf.robotics.parts.end_effectors.base.BaseEndEffector`
-    and not a sibling of one, so everything a caller can assume about an end
-    effector holds here too: it opens through :meth:`_open` and closes through
-    :meth:`_release`, its observation is a ``state`` vector, and ``reset``
-    takes an optional target. What a gripper adds is the vocabulary its axis
-    deserves -- :meth:`open`, :meth:`close`, :meth:`move` -- and the generic
-    surface below is written once in terms of those, so a driver implements
-    only the three.
-
-    The constructor stores settings and nothing else. It used to open the
-    serial port, with ``connect()`` merely checking that it had worked, which
-    meant a gripper reported itself connected before anything connected it and
-    stayed that way after disconnecting.
-
-    :meth:`is_ready` is a separate question from being connected: a gripper can
-    hold its link and still be mid-activation.
+    Drivers implement :meth:`open`, :meth:`close`, and :meth:`move`; this class
+    maps them to the common end-effector state and command interface. Connection
+    state and activation readiness are reported separately.
     """
 
     @classmethod
@@ -53,13 +36,7 @@ class BaseGripper(BaseEndEffector, ABC):
         port: Optional[str] = None,
         **settings: Any,
     ) -> "BaseGripper":
-        """Take whichever attachment this gripper is reached through.
-
-        A Franka Hand rides the arm's ROS session and a Robotiq its own serial
-        port, so the arm offers both and each takes one. Overriding here rather
-        than branching in the arm is what lets a third gripper arrive without
-        the arm changing.
-        """
+        """Declare a gripper from the attachment settings offered by its arm."""
         raise NotImplementedError(
             f"{cls.__name__} does not say which attachment it is reached "
             "through. Override declare() to take the one it uses."
@@ -86,13 +63,7 @@ class BaseGripper(BaseEndEffector, ABC):
 
     @abstractmethod
     def move(self, width: float, speed: float = 0.3) -> None:
-        """Move the fingers to an absolute opening width, in metres.
-
-        Zero is closed and :pyattr:`max_width` is fully open, whatever counts
-        the hardware underneath actually takes. That conversion belongs to the
-        driver, because the driver is the only thing that knows it: a Robotiq
-        speaks in 0-255 running the other way, and reading the raw number back
-        would tell a policy nothing about the world.
+        """Move the fingers to an absolute opening width.
 
         Args:
             width: Target opening in metres, clamped to ``[0, max_width]``.
@@ -109,12 +80,7 @@ class BaseGripper(BaseEndEffector, ABC):
     @property
     @abstractmethod
     def max_width(self) -> float:
-        """Opening width of the fully-open gripper, in metres.
-
-        The far end of the axis :meth:`move` and :pyattr:`position` share, so
-        it is what bounds an action space built from this part -- and what
-        :meth:`open` travels to.
-        """
+        """Return the fully open width in metres."""
         raise NotImplementedError
 
     @property
@@ -128,39 +94,29 @@ class BaseGripper(BaseEndEffector, ABC):
         """Whether the gripper is activated and ready to accept commands."""
         raise NotImplementedError
 
-    # -- The end-effector contract, in terms of the three above -----------
+    # End-effector interface derived from the gripper primitives.
 
     @property
     def state_dim(self) -> int:
-        """One: the position of the single axis the fingers ride."""
+        """Return the one-dimensional gripper state size."""
         return 1
 
     @property
     def action_dim(self) -> int:
-        """One: a position on that axis."""
+        """Return the one-dimensional gripper action size."""
         return 1
 
     @property
     def control_mode(self) -> str:
-        """``"continuous"``: :meth:`move` accepts every point on the axis.
-
-        A driver whose hardware only travels to its two ends should say
-        ``"binary"`` instead, so a policy is not handed a range it cannot use.
-        """
+        """Return ``"continuous"`` for absolute-width control."""
         return "continuous"
 
     def get_state(self) -> np.ndarray:
-        """The opening width, in metres, as the one-element state vector."""
+        """Return the opening width in metres as a one-element vector."""
         return np.asarray([self.position], dtype=np.float32)
 
     def command(self, action: np.ndarray) -> bool:
-        """Move to an absolute width, and say whether that changed the grip.
-
-        The target is in the same units :meth:`get_state` reports -- metres --
-        which is what lets a policy read a width and write one back. The return
-        value follows the end-effector contract: ``True`` when the command
-        opened or closed the gripper, which is what a task counts.
-        """
+        """Move to an absolute width and report whether open state changed."""
         target = np.asarray(action, dtype=np.float32).reshape(-1)
         if target.size != self.action_dim:
             raise ValueError(f"Gripper target must have one value, got {target.size}.")

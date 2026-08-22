@@ -18,11 +18,7 @@ import numpy as np
 
 
 class SpaceMouseExpert:
-    """
-    This class provides an interface to the SpaceMouse.
-    It continuously reads the SpaceMouse state and provide
-    a "get_action" method to get the latest action and button state.
-    """
+    """Read SpaceMouse motion and button state in a background thread."""
 
     def __init__(self, device_index: int = 0) -> None:
         import pyspacemouse
@@ -40,11 +36,11 @@ class SpaceMouseExpert:
             with self.state_lock:
                 self.latest_data["action"] = np.array(
                     [-state.y, state.x, state.z, -state.roll, -state.pitch, -state.yaw]
-                )  # spacemouse axis matched with robot base frame
+                )  # Express SpaceMouse axes in the robot base frame.
                 self.latest_data["buttons"] = state.buttons
 
     def get_action(self) -> tuple[np.ndarray, list]:
-        """Returns the latest action and button state of the SpaceMouse."""
+        """Return the latest motion and button state."""
         with self.state_lock:
             return self.latest_data["action"], self.latest_data["buttons"]
 
@@ -53,13 +49,7 @@ if __name__ == "__main__":
     import time
 
     def test_spacemouse() -> None:
-        """Test the SpaceMouseExpert class.
-
-        This interactive test prints the action and buttons of the spacemouse at a rate of 10Hz.
-        The user is expected to move the spacemouse and press its buttons while the test is running.
-        It keeps running until the user stops it.
-
-        """
+        """Print SpaceMouse readings at 10 Hz until interrupted."""
         spacemouse = SpaceMouseExpert()
         with np.printoptions(precision=3, suppress=True):
             while True:

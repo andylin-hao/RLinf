@@ -12,21 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Commanding the robot faster than the environment steps.
-
-A leader arm tracks well only if the follower receives targets continuously, and
-``env.step`` runs at the policy's rate -- often 10 Hz against the ~1 kHz the
-controller can accept. A streamer owns a thread that pushes targets straight to
-the controller, while ``env.step`` keeps reading state and stops forwarding
-motion, so the two never race for the same motion queue.
-
-This is not an alternative to composition; it sits beside it. What the operator
-is asking for still comes from a group of devices and their bindings. The thread
-is the whole reason the class exists and the whole risk: it outlives a single
-step, it must pause while the env drives the robot home, and it must be joined on
-shutdown. :class:`TeleopStreamer` owns that lifecycle so a subclass only writes
-what one tick sends.
-"""
+"""High-rate teleoperation command streaming outside the environment step loop."""
 
 from __future__ import annotations
 
@@ -39,26 +25,17 @@ import gymnasium as gym
 
 
 class TeleopStreamer:
-    """A command loop that runs beside the action, not instead of it.
+    """Run a high-rate command loop alongside normal environment steps.
 
-    What the operator is asking for comes from composition, the same as any
-    other rig. This delivers it a second way, straight to the controllers, for
-    hardware that tracks badly at the policy's step rate. Subclasses implement
-    :meth:`stream_once` -- one iteration of the loop -- and
-    :meth:`ready_to_stream`, which decides whether the hardware is in a state
-    where streaming is safe to begin.
+    Subclasses implement :meth:`stream_once` and may gate startup with
+    :meth:`ready_to_stream`.
 
     Args:
-        period: Seconds between ticks. The loop targets this rate and skips the
-            sleep when a tick already took longer.
-        enabled: Whether to stream at all. When ``False`` nothing runs and the
-            action reaches the robot through ``env.step`` like any other rig.
+        period: Target interval between command ticks, in seconds.
+        enabled: Whether to start the command loop.
     """
 
-    #: The action parts this loop delivers itself. While it streams, ``step``
-    #: does not dispatch them, so the composed vector still carries them but
-    #: the robot has already been told. Naming them is what keeps that visible
-    #: rather than leaving the two paths to be inferred from a config flag.
+    #: Action parts delivered directly by the streaming loop.
     DELIVERS: tuple[str, ...] = ()
 
     def __init__(self, period: float = 0.001, enabled: bool = False) -> None:
@@ -67,8 +44,7 @@ class TeleopStreamer:
         self._thread: Optional[threading.Thread] = None
         self._running = False
         self._aligned = False
-        # Open means a tick may run. It is closed while the env resets so the
-        # env's own motion is the only thing commanding the robot.
+        # Pause streaming while the environment resets the robot.
         self._gate = threading.Event()
         self._gate.set()
 
@@ -86,11 +62,7 @@ class TeleopStreamer:
         return True
 
     def align(self, env: gym.Env) -> bool:
-        """Bring the robot to the device's current pose before streaming.
-
-        Without this the first tick would push a far target straight into the
-        controller, which reads as a step change in the reference.
-        """
+        """Align the robot with the device before streaming starts."""
         return True
 
     def before_reset(self, env: gym.Env, kwargs: dict[str, Any]) -> dict[str, Any]:

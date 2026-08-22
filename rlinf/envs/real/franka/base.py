@@ -49,9 +49,7 @@ from ..utils.pose import (
     quat_slerp,
 )
 
-#: Cartesian impedance gains that suit most Franka tasks. A task states only
-#: what it needs differently, so its config shows the tuning rather than burying
-#: it in eighteen keys that are the same everywhere.
+#: Default Cartesian impedance gains shared by Franka tasks.
 COMPLIANCE_DEFAULTS: dict[str, float] = {
     "translational_stiffness": 1000,
     "translational_damping": 89,
@@ -78,9 +76,7 @@ def compliance(**overrides: float) -> dict[str, float]:
     """Return :data:`COMPLIANCE_DEFAULTS` with ``overrides`` applied.
 
     Raises:
-        KeyError: If an override names a gain the controller does not take,
-            which otherwise reaches the impedance controller as a silently
-            ignored key.
+        KeyError: If an override is not a supported controller gain.
     """
     unknown = set(overrides) - set(COMPLIANCE_DEFAULTS)
     if unknown:
@@ -91,8 +87,7 @@ def compliance(**overrides: float) -> dict[str, float]:
     return {**COMPLIANCE_DEFAULTS, **overrides}
 
 
-#: How many times a stalled camera is reopened before the env gives up. A
-#: camera that never comes back is a fault to report, not one to retry through.
+#: Maximum reopen attempts for a stalled camera.
 _CAMERA_REOPEN_ATTEMPTS = 3
 
 #: Seconds to wait before reopening a stalled camera.
@@ -108,15 +103,13 @@ class FrankaRobotConfig:
     gripper_type: Optional[str] = None
     gripper_connection: Optional[str] = None
     enable_camera_player: bool = True
-    # Per-camera crop regions keyed by serial number.
-    # Each value is [top%, left%, bottom%, right%] in 0..1 range.
-    # Example: {"230322271990": [0.0, 0.15, 1.0, 0.85]}
+    # Per-camera [top, left, bottom, right] crop fractions, keyed by serial.
     camera_crop_regions: Optional[dict[str, list[float]]] = None
 
     is_dummy: bool = False
     use_dense_reward: bool = False
-    reward_scale: float = 1.0  # Scale dense reward to make training stable
-    step_frequency: float = 10.0  # Max number of steps per second
+    reward_scale: float = 1.0  # Scale applied to the dense reward.
+    step_frequency: float = 10.0  # Maximum environment steps per second.
 
     use_reward_model: bool = False
     reward_worker_cfg: Optional[dict] = None
@@ -125,8 +118,7 @@ class FrankaRobotConfig:
     reward_worker_node_group: Optional[str] = None
     reward_image_key: Optional[str] = None
 
-    # Positions are stored in eular angles (xyz for position, rzryrx for orientation)
-    # It will be converted to quaternions internally
+    # Poses use xyz position and xyz Euler orientation; the env converts to quaternions.
     target_ee_pose: np.ndarray = field(
         default_factory=lambda: np.array([0.5, 0.0, 0.1, -3.14, 0.0, 0.0])
     )
@@ -138,14 +130,13 @@ class FrankaRobotConfig:
     reward_threshold: np.ndarray = field(default_factory=lambda: np.zeros(6))
     action_scale: np.ndarray = field(
         default_factory=lambda: np.ones(3)
-    )  # [xyz move scale, orientation scale, gripper scale]
+    )  # Translation, orientation, and gripper scales.
     enable_random_reset: bool = False
 
     random_xy_range: float = 0.0
-    random_rz_range: float = 0.0  # np.pi / 6
+    random_rz_range: float = 0.0  # Maximum yaw perturbation, in radians.
 
-    # Robot parameters
-    # Same as the position arrays: first 3 are position limits, last 3 are orientation limits
+    # Cartesian limits use xyz position followed by xyz Euler orientation.
     ee_pose_limit_min: np.ndarray = field(default_factory=lambda: np.zeros(6))
     ee_pose_limit_max: np.ndarray = field(default_factory=lambda: np.zeros(6))
     compliance_param: dict[str, float] = field(default_factory=dict)
@@ -153,14 +144,11 @@ class FrankaRobotConfig:
     enable_gripper_penalty: bool = True
     gripper_penalty: float = 0.1
     save_video_path: Optional[str] = None
-    joint_reset_cycle: int = 20000  # Number of resets before resetting joints
+    joint_reset_cycle: int = 20000  # Episode resets between full joint resets.
     task_description: str = ""
-    success_hold_steps: int = (
-        1  # Default to 1 to maintain backward compatibility (immediate success)
-    )
+    success_hold_steps: int = 1  # Consecutive successful steps required.
 
-    # -- End-effector selection -------------------------------------------
-    # One of "franka_gripper", "robotiq_gripper", or "ruiyan_hand".
+    # End-effector selection and control parameters.
     end_effector_type: str = "franka_gripper"
     # Extra kwargs forwarded to the end-effector constructor.
     end_effector_config: dict = field(default_factory=dict)
@@ -198,17 +186,14 @@ class FrankaRobotConfig:
 class FrankaEnv(gym.Env):
     """Franka robot arm environment."""
 
-    #: Teleop devices this env can be driven with, and the one a config gets
-    #: when it says nothing. Declared here because it is a fact about the
-    #: robot's action space, not about any particular task.
+    #: Supported teleoperation devices and the default selection.
     TELEOP = ("spacemouse", "gello", "glove", "pico")
     TELEOP_DEFAULT = "spacemouse"
 
-    #: Narrowing applied before teleop, so the operator drives the same action
-    #: the policy does.
+    #: Action wrappers applied before teleoperation.
     ACTION_WRAPPERS = ("GripperCloseEnv",)
 
-    #: Applied last, so the policy sees the representation it trained on.
+    #: Representation transforms applied after episode wrappers.
     TRANSFORMS = ("RelativeFrame", "Quat2EulerWrapper")
 
     CONFIG_CLS: type[FrankaRobotConfig] = FrankaRobotConfig
@@ -248,9 +233,9 @@ class FrankaEnv(gym.Env):
             self._reset_pose = np.zeros(7)
         self._num_steps = 0
         self._joint_reset_cycle = cycle(range(self.config.joint_reset_cycle))
-        next(self._joint_reset_cycle)  # Initialize the cycle
+        next(self._joint_reset_cycle)  # Start the first cycle after zero.
 
-        self._success_hold_counter = 0  # Initialize the success hold counter
+        self._success_hold_counter = 0
         self._last_hand_command: np.ndarray | None = None
         self._reward_worker = None
         self.robot: Robot | None = None
@@ -263,7 +248,7 @@ class FrankaEnv(gym.Env):
         if not hasattr(self, "_camera_infos"):
             self._camera_infos = self._build_camera_infos()
 
-        # Init action and observation spaces
+        # Initialize spaces after camera declarations are available.
         assert self._camera_infos, (
             "At least one camera serial must be provided for FrankaEnv."
         )
@@ -272,7 +257,7 @@ class FrankaEnv(gym.Env):
         if self.config.is_dummy:
             return
 
-        # Wait for the robot to be ready
+        # Wait for the controller's first valid state.
         start_time = time.time()
         while not self._controller.is_robot_up():
             time.sleep(0.5)
@@ -285,9 +270,7 @@ class FrankaEnv(gym.Env):
         time.sleep(1.0)
         self._franka_state = self._controller.get_state()
 
-        # Init cameras
         self._open_cameras()
-        # Video player for displaying camera frames
         self.camera_player = VideoPlayer(self.config.enable_camera_player)
 
     @property
@@ -297,7 +280,7 @@ class FrankaEnv(gym.Env):
     def _setup_hardware(self):
         assert self.env_idx >= 0, "env_idx must be set for FrankaEnv."
 
-        # Setup Franka IP and camera serials
+        # Fill unset connection fields from enumerated hardware configuration.
         assert isinstance(self.robot_info, RobotInfo) and isinstance(
             self.robot_info.config, FrankaConfig
         ), f"robot_info must contain a FrankaConfig, but got {type(self.robot_info)}."
@@ -322,16 +305,13 @@ class FrankaEnv(gym.Env):
             self.config.gripper_type,
         ).value
 
-        # Place the controller on controller_node_rank if the arm lives on a
-        # different machine (e.g. cameras on GPU server, arm on NUC).
-        # Falls back to the env worker's own node when not specified.
+        # Default the arm controller to the environment worker's node.
         controller_node_rank = getattr(
             self.robot_info.config, "controller_node_rank", None
         )
         if controller_node_rank is None:
             controller_node_rank = self.node_rank
-        # The robot owns its cameras: it places them on the node they are
-        # plugged into and opens them when it connects.
+        # The composed robot owns camera placement and lifecycle.
         camera_node_rank = getattr(self.robot_info.config, "camera_node_rank", None)
         self.robot = FrankaRobot.build(
             robot_ip=self.config.robot_ip,
@@ -416,7 +396,7 @@ class FrankaEnv(gym.Env):
                 * R.from_quat(self._franka_state.tcp_pose[3:].copy())
             ).as_quat()
 
-            # --- End-effector action ---
+            # Apply the end-effector command before moving the arm.
             ee_action = action[6:]
             is_ee_action_effective = self._end_effector_action(ee_action)
 
@@ -432,12 +412,10 @@ class FrankaEnv(gym.Env):
             self._franka_state = self._franka_state
         observation = self._get_observation()
 
-        # Calculate reward and update the internal hold counter
+        # Reward evaluation also updates the success hold counter.
         reward = self._calc_step_reward(observation, is_ee_action_effective)
 
-        # Logic to determine termination
-        # The episode is done only if the robot has reached the target (reward == 1.0)
-        # AND has held the position for the required number of steps.
+        # Terminate after the target has been held for the configured duration.
         terminated = (reward == 1.0) and (
             self._success_hold_counter >= self.config.success_hold_steps
         )
@@ -460,22 +438,17 @@ class FrankaEnv(gym.Env):
         return self.config.action_scale
 
     def get_hand_reset_pose(self):
-        """The pose this env homes a dexterous hand to at reset.
-
-        A binding that commands an absolute hand pose starts its episode from
-        here, so its first command continues from where the reset left the
-        hand instead of jumping away from it.
-        """
+        """Return the dexterous-hand pose applied during reset."""
         if not self._is_hand:
             return None
         return np.asarray(self.config.hand_reset_state, dtype=np.float64)
 
     def get_gripper_open(self) -> bool:
-        """Whether the gripper is currently open."""
+        """Return whether the gripper is currently open."""
         return bool(self._franka_state.gripper_open)
 
     def action_parts(self) -> tuple[ActionPart, ...]:
-        """A Cartesian twist, then whatever the arm is holding things with."""
+        """Return the Cartesian arm and configured end-effector action parts."""
         if self._is_hand:
             return (
                 ActionPart("arm", 6, ActionKind.CARTESIAN_DELTA),
@@ -491,11 +464,11 @@ class FrankaEnv(gym.Env):
         observation: dict[str, np.ndarray | FrankaRobotState],
         is_gripper_action_effective: bool = False,
     ) -> float:
-        """Compute the reward for the current observation, namely the robot state and camera frames.
+        """Compute reward from the current robot state and camera frames.
 
         Args:
-            observation (Dict[str, np.ndarray]): The current observation from the environment.
-            is_gripper_action_effective (bool): Whether the gripper action was effective (i.e., the gripper state changed).
+            observation: Current environment observation.
+            is_gripper_action_effective: Whether the gripper state changed.
         """
         if self.config.use_reward_model:
             reward = self._compute_reward_model(observation)
@@ -508,24 +481,22 @@ class FrankaEnv(gym.Env):
             return reward
 
         if not self.config.is_dummy:
-            # Convert orientation to euler angles
+            # Compare orientation in the Euler representation used by the config.
             euler_angles = np.abs(
                 R.from_quat(self._franka_state.tcp_pose[3:].copy()).as_euler("xyz")
             )
             position = np.hstack([self._franka_state.tcp_pose[:3], euler_angles])
             target_delta = np.abs(position - self.config.target_ee_pose)
 
-            # Check if current state meets the success threshold
+            # Check whether the current state is within the success threshold.
             is_in_target_zone = np.all(
                 target_delta[:3] <= self.config.reward_threshold[:3]
             )
 
             if is_in_target_zone:
-                # Increment hold counter if in target zone
                 self._success_hold_counter += 1
                 reward = 1.0
             else:
-                # Reset counter if robot leaves the target zone
                 self._success_hold_counter = 0
                 if self.config.use_dense_reward:
                     reward = np.exp(-500 * np.sum(np.square(target_delta[:3])))
@@ -579,11 +550,11 @@ class FrankaEnv(gym.Env):
             observation = self._get_observation()
             return observation, {}
 
-        self._success_hold_counter = 0  # Reset hold counter at the start of the episode
+        self._success_hold_counter = 0
 
         self._controller.reconfigure_compliance_params(self.config.compliance_param)
 
-        # Reset joint
+        # Periodically return the joints to their configured reset positions.
         joint_reset_cycle = next(self._joint_reset_cycle)
         joint_reset = False
         if joint_reset_cycle == 0:
@@ -606,7 +577,7 @@ class FrankaEnv(gym.Env):
             self._controller.reset_joint(self.config.joint_reset_qpos)
             time.sleep(0.5)
 
-        # Reset arm
+        # Move the arm to a fixed or randomized Cartesian reset pose.
         if self.config.enable_random_reset:
             reset_pose = self._reset_pose.copy()
             reset_pose[:2] += np.random.uniform(
@@ -629,8 +600,7 @@ class FrankaEnv(gym.Env):
             if cnt > 2:
                 break
 
-        # Reset dexterous hands here. Gripper state is task-specific, matching
-        # the upstream Franka reset path where the base env does not open/close it.
+        # Reset dexterous hands; individual tasks remain responsible for grippers.
         if self._is_hand:
             self._controller.reset_end_effector(self.config.hand_reset_state)
             self._last_hand_command = (
@@ -649,7 +619,7 @@ class FrankaEnv(gym.Env):
         return self._ee_type.is_hand
 
     def _init_action_obs_spaces(self):
-        """Initialize action and observation spaces, including arm safety box.
+        """Initialize spaces and Cartesian safety limits.
 
         The action dimension adapts to the active end-effector:
         - Gripper: 7-D (6 arm + 1 gripper)
@@ -666,7 +636,7 @@ class FrankaEnv(gym.Env):
             dtype=np.float64,
         )
 
-        # Arm DOF (xyz + rpy) = 6; end-effector DOF depends on type
+        # The arm has six Cartesian values; the end-effector size varies.
         ee_action_dim = 6 if self._is_hand else 1
         total_action_dim = 6 + ee_action_dim
         self.action_space = gym.spaces.Box(
@@ -675,7 +645,7 @@ class FrankaEnv(gym.Env):
         )
 
         obs_tcp_pose_dim = 7
-        # End-effector state key and dimension
+        # Match the state field and dimension to the selected end effector.
         if self._is_hand:
             ee_state_key = "hand_position"
             ee_state_dim = 6
@@ -789,10 +759,10 @@ class FrankaEnv(gym.Env):
         return camera_infos
 
     def _open_cameras(self):
-        """Take the cameras from the robot, which built, placed and opened them.
+        """Use cameras connected by the robot runtime.
 
-        A dummy run has no robot, so it builds unopened cameras locally to keep
-        the observation shapes right.
+        Dummy environments create local, unopened camera objects only to retain
+        the declared observation structure.
         """
         if self.robot is not None:
             self._cameras: dict[str, BaseCamera] = {
@@ -856,21 +826,13 @@ class FrankaEnv(gym.Env):
         return cropped_frame, resized_frame
 
     def _get_camera_frames(self) -> dict[str, np.ndarray]:
-        """Read one frame per camera, reopening any that has stalled.
-
-        Cameras are keyed by the name they were declared under, and the crop
-        comes from this env's own :class:`CameraInfo`. Neither is asked of the
-        camera: a camera placed on the machine it is plugged into is reached
-        through a proxy, which carries observations and not the descriptor that
-        stayed behind on that node.
-        """
+        """Read and crop one frame per camera, reopening stalled devices."""
         crops = {info.name: info.crop_region for info in self._camera_infos}
         frames = {}
         display_frames = {}
         for name, camera in self._cameras.items():
             frame = None
-            # Bounded: a camera that never comes back should say so, not retry
-            # until the recursion limit does it for us.
+            # Bound recovery attempts so persistent camera faults surface promptly.
             for attempt in range(_CAMERA_REOPEN_ATTEMPTS):
                 try:
                     frame = camera.get_frame()
@@ -895,14 +857,14 @@ class FrankaEnv(gym.Env):
             cropped_frame, resized_frame = self._crop_frame(
                 frame, reshape_size, crop_region=crops.get(name)
             )
-            frames[name] = resized_frame[..., ::-1]  # Convert RGB to BGR
-            display_frames[name] = resized_frame  # Original RGB for display
-            display_frames[f"{name}_full"] = cropped_frame  # Non-resized version
+            frames[name] = resized_frame[..., ::-1]  # Policy input in BGR.
+            display_frames[name] = resized_frame  # Display frame in RGB.
+            display_frames[f"{name}_full"] = cropped_frame  # Full crop for display.
 
         self.camera_player.put_frame(display_frames)
         return frames
 
-    # Robot actions
+    # Robot action helpers.
 
     def _clip_position_to_safety_box(self, position: np.ndarray) -> np.ndarray:
         """Clip the position array to be within the safety box."""
@@ -955,7 +917,7 @@ class FrankaEnv(gym.Env):
             ``True`` if the action caused a meaningful state change.
         """
         if self._ee_type.is_gripper:
-            # Binary gripper logic (backward compatible)
+            # Preserve the established binary gripper action contract.
             position = float(ee_action[0]) * self.config.action_scale[2]
             return self._binary_gripper_action(position)
         else:
@@ -1003,7 +965,7 @@ class FrankaEnv(gym.Env):
                 "tcp_force": self._franka_state.tcp_force,
                 "tcp_torque": self._franka_state.tcp_torque,
             }
-            # End-effector state (key matches observation_space)
+            # Use the state field declared in observation_space.
             if self._is_hand:
                 hand_pos = self._franka_state.hand_position
                 if hand_pos is None:

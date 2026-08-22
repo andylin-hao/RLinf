@@ -36,7 +36,7 @@ class DOSW1Robot(Robot):
 
     @classmethod
     def build_arms(cls, sdk: "DOSW1Connection") -> dict[str, RobotPart]:
-        """Both arms, each whole, from the shared SDK session."""
+        """Return both arm groups exported by the shared SDK connection."""
         return {
             side: PartGroup(
                 arm=sdk.part(side), gripper=sdk.part(f"{side}_end_effector")
@@ -51,7 +51,7 @@ class DOSW1Robot(Robot):
         *,
         node_rank: Optional[int] = None,
     ) -> dict[str, Any]:
-        """The cameras this robot carries."""
+        """Return the robot's named camera declarations."""
         return Camera.declare(cameras, node_rank=node_rank)
 
     @classmethod
@@ -70,18 +70,7 @@ class DOSW1Robot(Robot):
         cameras: Optional[Mapping[str, Any]] = None,
         camera_node_rank: Optional[int] = None,
     ) -> "DOSW1Robot":
-        """Compose this robot from the parts it is made of.
-
-        Both arms share one SDK session, so ``node_rank`` places that session
-        and everything riding it. It used to be swallowed by a catch-all, which
-        left the session on whichever machine composed the robot however the
-        config was written.
-
-        The settings are named rather than taken as one config object, the way
-        every other robot names them. Handing the whole object over meant the
-        session read fields that live on the env's config, so it could only be
-        built by an env -- never from a bench script or a test.
-        """
+        """Compose a DOS-W1 robot around one shared SDK connection."""
         from ..parts.arms.dosw1 import DOSW1Connection
 
         sdk = DOSW1Connection(

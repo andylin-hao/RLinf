@@ -30,7 +30,7 @@ from rlinf.robotics.teleop import ActionKind
 
 from .dual_base import DualFrankaEnv, DualFrankaRobotConfig
 
-ACTION_DIM_PER_ARM = 8  # 7 joints + 1 gripper trigger
+ACTION_DIM_PER_ARM = 8  # Seven joints and one gripper channel.
 
 
 @dataclass
@@ -44,10 +44,10 @@ class DualFrankaJointRobotConfig(DualFrankaRobotConfig):
         default_factory=lambda: JOINT_LIMITS_UPPER.copy()
     )
 
-    joint_action_mode: str = "absolute"  # "absolute" | "delta"
-    joint_action_scale: float = 0.1  # rad per unit action (delta mode)
+    joint_action_mode: str = "absolute"  # Either "absolute" or "delta".
+    joint_action_scale: float = 0.1  # Radians per action unit in delta mode.
 
-    # When True, a 1 kHz daemon (DualGelloJointStream) owns the controllers.
+    # When enabled, DualGelloJointStream sends arm targets directly at 1 kHz.
     teleop_direct_stream: bool = False
 
     def __post_init__(self):
@@ -62,10 +62,10 @@ class DualFrankaJointEnv(DualFrankaEnv):
     CONFIG_CLS: type[DualFrankaJointRobotConfig] = DualFrankaJointRobotConfig
 
     PER_ARM_ACTION_DIM = ACTION_DIM_PER_ARM
-    GRIPPER_IDX_IN_ARM = 7  # gripper slot after the 7 arm joints
+    GRIPPER_IDX_IN_ARM = 7  # Gripper channel after the seven arm joints.
 
     def arm_action_kind(self) -> ActionKind:
-        """Joint targets, or changes to them, as this env was configured."""
+        """Return joint-position or joint-delta semantics from the configuration."""
         if self.config.joint_action_mode == "delta":
             return ActionKind.JOINT_DELTA
         return ActionKind.JOINT_POSITION
@@ -110,7 +110,7 @@ class DualFrankaJointEnv(DualFrankaEnv):
             joint_action = actions[arm, :7]
             if self.config.joint_action_mode == "absolute":
                 tj = joint_action.copy()
-            else:  # delta
+            else:  # Delta command relative to the current joints.
                 tj = (
                     states[arm].arm_joint_position
                     + joint_action * self.config.joint_action_scale

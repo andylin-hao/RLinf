@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Writing the TCP pose as Euler angles instead of a quaternion."""
+"""Observation wrappers that express TCP orientation as Euler angles."""
 
 from typing import Optional
 
@@ -24,9 +24,6 @@ from scipy.spatial.transform import Rotation as R
 
 class Quat2EulerWrapper(gym.ObservationWrapper):
     """Convert each arm's TCP pose from ``xyz + quat`` to ``xyz + euler``.
-
-    The rotation is the same either way; only its representation changes, which
-    is what a policy trained on Euler angles expects to receive.
 
     Args:
         env: The environment to wrap.
@@ -41,8 +38,7 @@ class Quat2EulerWrapper(gym.ObservationWrapper):
     QUAT_DIM = 7
     EULER_DIM = 6
 
-    #: Matches the pose dtype the envs declare, so the converted pose stays
-    #: inside the observation space. SciPy returns float64 from ``as_euler``.
+    #: Match the environment pose dtype; SciPy returns float64 by default.
     DTYPE = np.float32
 
     def __init__(self, env: Env, arms: Optional[int] = None) -> None:
@@ -65,6 +61,6 @@ class Quat2EulerWrapper(gym.ObservationWrapper):
 
 
 class DualQuat2EulerWrapper(Quat2EulerWrapper):
-    """The same conversion for a robot whose ``tcp_pose`` holds both arms."""
+    """Convert the concatenated TCP poses of a dual-arm robot."""
 
     ARMS = 2

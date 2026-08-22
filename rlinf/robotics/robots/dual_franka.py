@@ -49,16 +49,11 @@ class DualFrankaRobot(FrankaRobot):
         right_gripper_connection: Optional[str] = None,
         arm_cameras: Optional[Mapping[str, Mapping[str, Any]]] = None,
     ) -> dict[str, Any]:
-        """Two arms instead of one, each with whatever rides on its wrist.
-
-        A wrist camera belongs to the arm it is bolted to, so it is named
-        inside that arm's group rather than at the top of the robot.
-        """
+        """Return the left and right arm groups with their wrist cameras."""
         if not left_robot_ip or not right_robot_ip:
             raise ValueError("Both Franka robot IPs are required for a dual-arm robot.")
 
-        # One node for both arms unless a side names its own, which is what
-        # puts a controller next to the arm it drives.
+        # Individual node ranks override the shared arm placement.
         shared = 0 if node_rank is None else node_rank
         sides = {
             "left": (
@@ -92,12 +87,10 @@ class DualFrankaRobot(FrankaRobot):
 
 @dataclass
 class DualFrankaConfig(RobotConfig):
-    """Configuration for a dual-arm Franka robotic system.
+    """Configuration for a dual-arm Franka system.
 
-    The env process (cameras + teleop) always runs on the node indicated
-    by :attr:`node_rank`.  Each arm's low-level controller can be placed
-    on a separate node via the ``*_controller_node_rank`` fields — this
-    is the key mechanism for *Option D* (main controller + remote arm).
+    ``node_rank`` places the environment process. Each arm controller can be
+    placed independently with its ``*_controller_node_rank`` field.
     """
 
     left_robot_ip: Optional[str] = None

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""DOSW1 tasks, and the dual-arm env they are built on."""
+"""DOSW1 environment and task registrations."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from rlinf.envs.real.registry import register_tasks
 from .base import ControlMode, DOSW1Config, DOSW1Env
 from .pick import PickEnv
 
-#: Gym id -> the env class behind it and the wrapper stack it takes.
+#: Mapping from Gymnasium IDs to DOSW1 environment classes.
 TASKS = {"DOSW1PickEnv-v1": PickEnv}
 
 _ENTRY_POINTS = register_tasks(__name__, globals(), TASKS)

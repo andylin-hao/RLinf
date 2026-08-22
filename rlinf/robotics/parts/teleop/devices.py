@@ -12,18 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""The devices an operator drives, as parts.
+"""Teleoperation devices represented as robot parts.
 
-Each class here wraps one vendor reader from :mod:`.readers` and presents it the
-way every other part is presented: connect, report an observation, disconnect.
-The observation is whatever the operator did, in the device's own terms -- a
-twist, a set of joint angles, a grip. Turning that into a command for a robot is
-the job of a binding, in :mod:`rlinf.robotics.teleop`.
-
-Opening the hardware happens in :meth:`~..base.Connection._open` rather than
-``__init__``, so a device says where it runs the same way an arm does:
-``SpaceMouse(node_rank=1)`` is read on that machine once something connects it,
-and nothing else about the class changes.
+Each part reports device-native readings. Bindings in
+:mod:`rlinf.robotics.teleop` translate those readings into robot actions.
 """
 
 from __future__ import annotations
@@ -37,20 +29,11 @@ from ..base import RobotPart
 
 
 class TeleopPart(RobotPart, ABC):
-    """A device the operator drives.
-
-    Like every part, it says what its hardware is in :meth:`_open` and reads it
-    in :meth:`get_observation`. Vendor readers vary in how they are released,
-    so :meth:`_release` tries the two names they use.
-    """
+    """Base class for operator input devices."""
 
     @abstractmethod
     def _open(self) -> Any:
-        """Reach the device and return the vendor reader for it.
-
-        Required of a driver rather than inherited, so one that never wrote it
-        is refused at class definition instead of at the first connect.
-        """
+        """Open the device and return its vendor reader."""
 
     def _release(self, device: Any) -> None:
         """Release the reader by whichever name its vendor gave the method."""
@@ -62,11 +45,7 @@ class TeleopPart(RobotPart, ABC):
 
     @property
     def ready(self) -> bool:
-        """Whether the device has produced a usable reading yet.
-
-        Leader arms stream, so the first reads after connecting can be empty.
-        A device whose reader says nothing about this is ready once connected.
-        """
+        """Return whether the device has produced a usable reading."""
         return bool(getattr(self._device, "ready", self.is_connected))
 
 
@@ -87,7 +66,7 @@ class SpaceMouse(TeleopPart):
 
     @property
     def observation_features(self) -> dict[str, Any]:
-        """A twist and the button states."""
+        """Return the twist and button-state feature declarations."""
         return {
             "twist": {"shape": (6,), "dtype": "float32"},
             "buttons": {"shape": (2,), "dtype": "bool"},
@@ -103,11 +82,7 @@ class SpaceMouse(TeleopPart):
 
 
 class TeleopLeaderArm(TeleopPart):
-    """A leader arm the operator poses by hand.
-
-    Two readers exist for the GELLO hardware and they report different things:
-    the Cartesian one gives a target pose, the joint one gives joint positions.
-    ``joint_space`` picks between them.
+    """Leader arm that reports Cartesian or joint-space input.
 
     Args:
         port: Serial port of the leader arm.
@@ -191,7 +166,7 @@ class Glove(TeleopPart):
 
     @property
     def observation_features(self) -> dict[str, Any]:
-        """One angle per finger joint."""
+        """Return one angle feature per finger joint."""
         return {"angles": {"shape": (6,), "dtype": "float32"}}
 
     def get_observation(self) -> dict[str, Any]:
@@ -200,11 +175,7 @@ class Glove(TeleopPart):
 
 
 class PicoController(TeleopPart):
-    """A VR controller reporting how far the operator has moved it.
-
-    The reading is the motion since the operator took hold, in the robot's
-    axes, plus the grip and gripper buttons. Where the robot was when they took
-    hold is not the controller's business, so the binding remembers that.
+    """VR controller that reports motion from its grip point.
 
     Args:
         pico_config: Forwarded to the vendor reader; ``hand`` selects a side.

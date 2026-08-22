@@ -12,13 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Put what the suites share on the path.
-
-``pytest.ini`` lives in this directory, so pytest roots itself here and never
-reaches ``tests/``. Adding it is what lets a unit test write
-``from robot_mocks import mocked_sdks``; see ``tests/conftest.py`` for why the
-mocks live a level up.
-"""
+"""Make repository and shared test modules importable by unit tests."""
 
 import sys
 from pathlib import Path

@@ -12,16 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Vendor SDKs, faked, so a real part can be run without its hardware.
+"""Fake vendor SDKs for testing production robot drivers without hardware.
 
-Every part imports its SDK inside ``_open`` or ``connect`` rather than at module
-scope. Putting a fake in :data:`sys.modules` first is therefore enough for the
-part's own code -- its lifecycle, its state conversion, its action dispatch --
-to run unchanged against something that answers. Nothing about the part is
-stubbed; only what is on the other end of the cable.
-
-That is the difference from a test double: a double proves the code around the
-part is right, and this proves the part is.
+Drivers import their SDKs when they connect. Installing these modules first
+allows the real driver lifecycle, data conversion, and command code to run in
+tests.
 
 Use it as a context manager::
 
@@ -31,8 +26,7 @@ Use it as a context manager::
         robot = build_robot("DualFranka", left_robot_ip="1.2.3.4", ...)
         robot.connect()
 
-The bench check takes ``--mock`` and does exactly this, so the same command
-that verifies a real robot also runs in CI.
+The bench check exposes the same setup through ``--mock``.
 """
 
 from __future__ import annotations
@@ -49,19 +43,13 @@ from ._fakes import Recorder, module
 
 __all__ = ["Recorder", "mocked_sdks", "module", "sdk_modules"]
 
-#: Attributes to swap on modules that import their dependency at module scope,
-#: where a :data:`sys.modules` entry arrives too late. Keyed by dotted module.
+#: Module attributes patched when a dependency was imported at module scope.
+#: Keys are dotted module names.
 _PATCHES: dict[str, dict[str, Any]] = {}
 
 
 def _no_processes() -> Any:
-    """A ``psutil`` that starts no processes but is otherwise the real one.
-
-    The Franka ROS arm launches its impedance controller and the ROS transport
-    launches roscore, both through ``psutil.Popen``. Only that has to be
-    stubbed: the scheduler uses the rest of psutil, so everything else is
-    delegated rather than faked.
-    """
+    """Return a ``psutil`` proxy whose ``Popen`` starts no processes."""
     import psutil as real
 
     class Popen:
@@ -95,7 +83,7 @@ def _no_processes() -> Any:
             return []
 
     class _Psutil(types.ModuleType):
-        """The real psutil, minus the ability to start anything."""
+        """Delegate to real ``psutil`` except for explicitly replaced members."""
 
         def __getattr__(self, name: str) -> Any:
             return getattr(real, name)
@@ -104,17 +92,15 @@ def _no_processes() -> Any:
     # Keep the real spec: libraries ask find_spec whether psutil is installed.
     fake.__spec__ = real.__spec__
     fake.Popen = Popen
-    # Nothing of ours is running, so the roscore search finds nothing and the
-    # transport starts its own -- which is the stub above.
+    # Force the ROS transport to use the stubbed Popen path.
     fake.process_iter = lambda *_a, **_k: iter(())
     return fake
 
 
 def sdk_modules() -> dict[str, types.ModuleType]:
-    """Every faked SDK, by the name a part imports it as."""
+    """Return fake SDK modules keyed by their import names."""
     made: dict[str, types.ModuleType] = {}
-    # Parts that launch a process rather than only talking to an SDK: the ROS
-    # transport starts roscore, and the Franka arm its impedance controller.
+    # ROS transport and the Franka ROS driver launch helper processes.
     made["psutil"] = _no_processes()
     made.update(cameras.modules())
     made.update(arms.modules())
@@ -125,13 +111,7 @@ def sdk_modules() -> dict[str, types.ModuleType]:
 
 
 def _reach_worker_processes() -> dict[str, str]:
-    """Environment that makes a scheduler worker install the fakes too.
-
-    A worker is a separate process, and a fake in this one's ``sys.modules``
-    never reaches it. Putting this package on ``PYTHONPATH`` lets the worker
-    import ``sitecustomize`` from it at interpreter start, and the flag is what
-    tells that hook to act.
-    """
+    """Return environment variables that install fakes in worker processes."""
     here = str(pathlib.Path(__file__).resolve().parent)
     tests = str(pathlib.Path(__file__).resolve().parent.parent)
     existing = os.environ.get("PYTHONPATH", "")
@@ -143,16 +123,15 @@ def _reach_worker_processes() -> dict[str, str]:
 def mocked_sdks(
     *, extra: dict[str, Any] | None = None, remote: bool = False
 ) -> Iterator[dict[str, Any]]:
-    """Install the fake SDKs for the duration of the block.
+    """Install fake SDKs for the duration of the context.
 
     Args:
         extra: More modules to install, by dotted name.
-        remote: Place parts on nodes, as a real run does, with each worker
-            installing the fakes for itself. Left False, every part is built
-            in this process, which is faster and needs no cluster.
+        remote: Whether workers should install their own fake SDKs. If false,
+            all parts are built in the current process.
 
     Yields:
-        The installed modules, so a test can assert on what a part did to them.
+        Installed modules available for test assertions.
     """
     made = sdk_modules()
     if extra:

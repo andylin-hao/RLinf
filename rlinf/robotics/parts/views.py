@@ -12,31 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Part views over hardware that speaks in methods rather than parts.
+"""Robot-part views backed by methods on a shared connection.
 
-Some hardware exposes one connection that drives several logical components:
-a dual-arm controller with ``move_left_arm`` / ``move_right_arm``, an arm whose
-gripper lives behind ``open_gripper`` / ``close_gripper``, a controller that
-returns frames from ``get_camera(id)``. These adapters turn such method
-surfaces into proper parts, so composition sees a uniform interface.
-
-A part declares these in :attr:`~.parts.base.Connection.parts`, in Python,
-next to the methods they wrap -- not as command/state dictionaries assembled in
-a separate factory module.
-
-Each is named for the part category it presents -- an arm, an end effector, a
-camera -- with ``Method`` saying how it gets there: by calling methods on the
-part that carries it, whose names you pass to the constructor. What it presents
-is what a policy sees; how it is wired is what a driver author writes. Nothing
-here names a *sub*category, because one view serves the whole of one: the same
-:class:`MethodEndEffector` presents a two-fingered gripper and a six-fingered
-hand.
-
-Each view holds its host twice under two names, because it uses it for two
-things: ``_host`` is what it calls methods on, and ``_owner`` is what the base
-class opens, closes and reports connection state for. Setting the second is the
-whole of a view's lifecycle -- there is no ``connect`` here, and no ``_open``,
-because a view has no device of its own.
+These adapters expose arms, end effectors, and cameras from vendor sessions
+that provide method-based APIs. Each view borrows the host connection's
+lifecycle and presents the standard part interface.
 """
 
 from dataclasses import asdict, is_dataclass
@@ -63,7 +43,7 @@ def state_to_dict(state: Any) -> dict[str, Any]:
 
 
 class MethodArm(Arm):
-    """One arm of a part that commands arms through named methods.
+    """Expose one arm through methods on a shared host connection.
 
     Args:
         host: The part owning the connection.
@@ -121,13 +101,7 @@ class MethodArm(Arm):
 
 
 class MethodEndEffector(EndEffector):
-    """An end effector reached through the methods of the part carrying it.
-
-    Named for what it presents, not for one shape of it: with ``dims=6`` and a
-    continuous command this is a dexterous hand, and the shipped Franka path
-    composes one. It was called ``MethodGripper``, which was wrong there twice
-    over -- a six-fingered hand is not a gripper, and it never had a gripper's
-    open/close/width vocabulary either.
+    """Expose an end effector through methods on a shared host connection.
 
     Args:
         host: The part owning the connection.
@@ -161,17 +135,17 @@ class MethodEndEffector(EndEffector):
 
     @property
     def action_dim(self) -> int:
-        """As wide as the host field this drives."""
+        """Return the target vector width."""
         return self.dims
 
     @property
     def state_dim(self) -> int:
-        """As wide as the host field this reads."""
+        """Return the state vector width."""
         return self.dims
 
     @property
     def control_mode(self) -> str:
-        """Continuous when the host takes a target, binary when it opens and closes."""
+        """Return continuous or binary control according to the host API."""
         return "continuous" if self.method is not None else "binary"
 
     def reset(self) -> None:
@@ -202,7 +176,7 @@ class MethodEndEffector(EndEffector):
 
 
 class MethodCamera(Camera):
-    """A camera frame returned by one host method.
+    """Expose camera frames returned by a method on a shared host.
 
     Args:
         host: The part owning the connection.

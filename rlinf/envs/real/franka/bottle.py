@@ -82,16 +82,13 @@ class BottleEnv(FrankaEnv):
     CONFIG_CLS = BottleConfig
 
     def go_to_rest(self, joint_reset=False):
-        """
-        Move to the rest position defined in base class.
-        Add a small z offset before going to rest to avoid collision with object.
-        """
+        """Lift clear of the object before moving to the base rest pose."""
         self._end_effector_action(np.array([1.0]))
         self._franka_state = self._controller.get_state()
         self._move_action(self._franka_state.tcp_pose)
 
         self._franka_state = self._controller.get_state()
-        # Move up to clear the slot
+        # Lift clear of the slot before returning to rest.
         reset_pose = copy.deepcopy(self._franka_state.tcp_pose)
         reset_pose[2] += 0.03
         time.sleep(5)

@@ -12,20 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""What carries the robot around: the base a policy drives."""
+"""Interfaces for controllable mobile bases."""
 
 from rlinf.robotics.parts.base import ControllablePart
 
 
 class MobileBase(ControllablePart):
-    """A base the policy drives, whatever it rolls or walks on.
+    """Base class for wheeled, tracked, or legged mobile platforms.
 
-    Wheels, tracks and legs differ in what a command means -- a velocity, a
-    gait -- and a driver says which in its :attr:`action_features`. They do not
-    differ in what the robot tree needs to know, which is that this part moves
-    the whole machine rather than something attached to it.
-
-    There is deliberately no separate legged category. One existed, nothing
-    used it, and it split a distinction that the action contract already makes
-    more precisely.
+    Drivers declare their observation fields, action fields, and units through
+    the standard part interface.
     """

@@ -31,27 +31,13 @@ RobotConfigType = TypeVar("RobotConfigType", bound="RobotConfig", covariant=True
 
 @dataclass
 class RobotConfig(HardwareConfig):
-    """Base physical configuration for a registered robot.
-
-    What varies between robots at enumeration time is what their *config*
-    says, so the two hooks below live here rather than on a discovery class.
-    Most robots set neither.
-
-    How many robots a node carries is not one of them: it follows from the
-    fields themselves, since a field holding one value per robot is a scalar
-    and a list field belongs to a single robot. See
-    :class:`~rlinf.robotics.discovery.RobotAutoConfig`.
-    """
+    """Base hardware configuration for a registered robot."""
 
     #: Whether a node carrying this robot must have at least one camera.
     REQUIRES_CAMERA: ClassVar[bool] = False
 
     def model(self, robot_type: str) -> str:
-        """The model to report, when the type name is not specific enough.
-
-        An arm that comes in two reaches is one robot type and two models, and
-        the config is what knows which one this is.
-        """
+        """Return the hardware model reported to the scheduler."""
         return robot_type
 
 
@@ -64,7 +50,7 @@ class RobotInfo(HardwareInfo, Generic[RobotConfigType]):
 
 @dataclass(frozen=True)
 class RobotRegistration:
-    """Everything one registered robot type contributes."""
+    """Classes and builder associated with one robot type."""
 
     robot_cls: type[Robot]
     config_cls: type[RobotConfig]
@@ -74,25 +60,17 @@ class RobotRegistration:
 
 
 class RobotDiscovery(Hardware):
-    """Scheduler-facing discovery policy kept separate from robot composition.
+    """Discover configured robot resources for the scheduler.
 
-    Finding a robot on a node is the same procedure whatever the robot is:
-    take the configs of this robot's type that name this node, fill in what the
-    node's environment can answer, check what the parts report, and describe
-    what came out. :meth:`enumerate` does that once, here.
-
-    No robot needs a subclass of this. What differs between robots is what
-    their config says -- :attr:`RobotConfig.REQUIRES_CAMERA` and
-    :meth:`RobotConfig.model` -- and what their parts check for themselves.
-    :meth:`~rlinf.robotics.robot.Robot.register_type` makes one of these per
-    robot type when none is given.
+    The standard implementation resolves node-local configuration, prepares
+    inferred fields, validates attached hardware, and returns ``RobotInfo``.
     """
 
     registry: ClassVar[dict[str, RobotRegistration]] = {}
 
     @classmethod
     def config_cls(cls) -> type[RobotConfig]:
-        """The config class registered for this robot type."""
+        """Return the config class registered for this robot type."""
         registration = cls.registry.get(cls.HW_TYPE)
         if registration is None:
             raise KeyError(
@@ -112,14 +90,14 @@ class RobotDiscovery(Hardware):
             configs: Every hardware config written for this node, of any type.
 
         Returns:
-            What this node carries, or ``None`` when it carries none of this
-            robot.
+            Hardware resources on the node, or ``None`` when no matching robot
+            is attached.
         """
         assert configs is not None, (
             f"{cls.HW_TYPE} hardware requires explicit configurations; "
             "enumeration reads them rather than probing for the robot."
         )
-        # Imported here because autoconfig needs RobotConfig from this module.
+        # Import lazily to avoid a registry/autoconfig import cycle.
         from .autoconfig import RobotAutoConfig
 
         config_cls = cls.config_cls()
@@ -128,9 +106,7 @@ class RobotDiscovery(Hardware):
             for config in configs
             if isinstance(config, config_cls) and config.node_rank == node_rank
         ]
-        # Fill unset fields from same-named env vars, one value per robot when
-        # a node carries several. With nothing written in YAML, the env vars
-        # are also what say how many robots to create.
+        # Resolve unset fields from node-local environment variables.
         mine = RobotAutoConfig.resolve(mine, config_cls=config_cls, node_rank=node_rank)
         if not mine:
             return None
@@ -151,30 +127,14 @@ class RobotDiscovery(Hardware):
 
     @classmethod
     def prepare(cls, config: RobotConfig, node_rank: int) -> None:
-        """Fill in what only the node holding the hardware can answer.
-
-        A config that names no camera means "use whatever is plugged in", and
-        this node is the only one that can say what that is. Runs before the
-        config is described, and whatever ``disable_validate`` says, because
-        filling a blank is not a check.
-        """
+        """Populate configuration fields that require node-local discovery."""
         if getattr(config, "camera_serials", ...) is None:
             camera_type = getattr(config, "camera_type", None) or "realsense"
             config.camera_serials = sorted(cls.enumerate_cameras(camera_type))
 
     @classmethod
     def validate(cls, config: RobotConfig, node_rank: int) -> None:
-        """Check that the hardware this config names is really here.
-
-        Cameras are asked here because every robot has them and the answer
-        comes from the camera driver. Anything else a robot needs checked
-        belongs to the part that owns it -- an arm validates its own address,
-        a CAN-bus arm its own interface -- so there is nothing per-robot left
-        to write.
-
-        Skipped when the config sets ``disable_validate``, which is how an
-        offline run or a bench check against faked SDKs gets past it.
-        """
+        """Validate node-local hardware referenced by the robot config."""
         serials = getattr(config, "camera_serials", None)
         if not serials and not config.REQUIRES_CAMERA:
             return
@@ -187,12 +147,7 @@ class RobotDiscovery(Hardware):
 
     @classmethod
     def enumerate_cameras(cls, camera_type: str = "realsense") -> set[str]:
-        """Which cameras of one backend are attached to this node.
-
-        The answer comes from the camera driver, which is the only thing that
-        knows the SDK call that gives it. A node without that SDK reports
-        nothing rather than failing, so enumeration can run anywhere.
-        """
+        """Return camera identifiers discovered by the selected backend."""
         from ..parts.cameras import BaseCamera
 
         return BaseCamera.backend(camera_type).discover()
@@ -206,18 +161,13 @@ class RobotDiscovery(Hardware):
         attached: "Optional[set[str]]" = None,
         require_one: bool = True,
     ) -> None:
-        """Check the SDK is installed and every named camera is really there.
-
-        Enumeration happens on the node that holds the hardware, so this is
-        where a typo in a serial number becomes an error naming the node --
-        rather than a camera that opens to nothing several minutes into a run.
+        """Validate the camera SDK and configured camera identifiers.
 
         Args:
             camera_type: The backend the config asked for.
             serials: The camera identifiers the config named.
             node_rank: The node being enumerated, for the error messages.
-            attached: What :meth:`enumerate_cameras` already found, when the
-                caller has it; enumerated here otherwise.
+            attached: Previously enumerated camera identifiers, when available.
             require_one: Whether a robot with no camera at all is an error.
         """
         from ..parts.cameras import BaseCamera
@@ -240,12 +190,7 @@ class RobotDiscovery(Hardware):
 
 
 def build_robot(robot_type: str, **kwargs: Any) -> Robot:
-    """Build a registered robot by type name.
-
-    The spelling most call sites use. It is :meth:`Robot.of_type` under a
-    module-level name, kept because composing a robot from a config string is
-    the one thing a caller does without having a robot class in hand.
-    """
+    """Build an unconnected robot from a registered type name."""
     return Robot.of_type(robot_type, **kwargs)
 
 
@@ -254,11 +199,7 @@ def register_robot(
     robot_cls: type[Robot],
     build: Optional[Callable[..., Robot]] = None,
 ) -> Callable[[type[RobotDiscovery]], type[RobotDiscovery]]:
-    """Register composition, config, discovery, and builder for one robot type.
-
-    One call per robot, made from that robot's own module, so adding hardware
-    does not edit a central table.
-    """
+    """Register the config, discovery class, and builder for a robot type."""
 
     def decorator(discovery_cls: type[RobotDiscovery]) -> type[RobotDiscovery]:
         if not issubclass(discovery_cls, RobotDiscovery):

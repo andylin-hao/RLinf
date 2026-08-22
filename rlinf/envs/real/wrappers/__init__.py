@@ -12,14 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Building the wrapper stack an env asks for.
-
-There used to be one builder per arm count, each with an if-chain over device
-names inside it. What varies between robots is not the procedure -- narrow the
-action, hand it to an operator, let someone mark the episode, change the
-representation -- but which pieces take part. So the env says which, and there
-is one builder.
-"""
+"""Build the wrapper stack declared by a real-world environment."""
 
 from __future__ import annotations
 
@@ -43,9 +36,7 @@ from rlinf.envs.real.wrappers.transforms import (
     RelativeFrame,
 )
 
-#: Wrappers an env may name in ``ACTION_WRAPPERS`` or ``TRANSFORMS``. Named
-#: rather than imported there so an env module does not depend on the wrappers
-#: it happens to use.
+#: Wrappers available to ``ACTION_WRAPPERS`` and ``TRANSFORMS`` declarations.
 WRAPPERS: dict[str, type] = {
     "GripperCloseEnv": GripperCloseEnv,
     "Quat2EulerWrapper": Quat2EulerWrapper,
@@ -63,15 +54,10 @@ KEYBOARD_MODES: dict[str, type] = {
 
 
 class WrapperStack:
-    """The wrappers one env asks for, in the order they have to go on.
+    """Apply declared wrappers in the required execution order.
 
-    Order matters and is the same for every robot: narrow the action first so
-    the operator drives what the policy drives, then teleop, then whoever marks
-    the episode, then the representation the policy expects.
-
-    A class rather than a procedure because the three steps share the env being
-    wrapped, the config asking for it, and the env's own declarations -- which
-    were otherwise passed between them by hand.
+    Action wrappers run first, followed by teleoperation, episode controls, and
+    observation or action transforms.
     """
 
     def __init__(self, env: gym.Env, cfg: Mapping[str, Any]) -> None:
@@ -80,7 +66,7 @@ class WrapperStack:
         self.inner = env.unwrapped
 
     def build(self) -> gym.Env:
-        """Return the wrapped env, or refuse a flag this env cannot honour."""
+        """Build and return the configured wrapper stack."""
         self._refuse_unsupported()
         self._apply(getattr(self.inner, "ACTION_WRAPPERS", ()))
         self._apply_teleop()
@@ -90,7 +76,7 @@ class WrapperStack:
         return self.env
 
     def _refuse_unsupported(self) -> None:
-        """Say so rather than wrapping an env in something it cannot support."""
+        """Reject enabled flags that the environment does not support."""
         for flag in getattr(self.inner, "REFUSE_FLAGS", ()):
             if self.cfg.get(flag, False):
                 raise NotImplementedError(
@@ -98,29 +84,21 @@ class WrapperStack:
                 )
 
     def _wanted(self, wrapper: type) -> bool:
-        """Whether the config switches this wrapper on.
-
-        A wrapper with no flag is always applied; one with a flag says its own
-        name and default, so this does not grow a branch per wrapper.
-        """
+        """Return whether the configuration enables a wrapper."""
         flag = getattr(wrapper, "CONFIG_FLAG", None)
         if flag is None:
             return True
         return bool(self.cfg.get(flag, getattr(wrapper, "CONFIG_DEFAULT", True)))
 
     def _apply(self, names: Any) -> None:
-        """Put on each named wrapper the config asks for."""
+        """Apply enabled wrappers from a sequence of registered names."""
         for name in names:
             wrapper = WRAPPERS[name]
             if self._wanted(wrapper):
                 self.env = wrapper(self.env)
 
     def _apply_teleop(self) -> None:
-        """Hand the action to an operator, if this env config asks for one.
-
-        Which devices those are, and what each one needs, is settled by the
-        config and the device registry. No device is named here.
-        """
+        """Apply the configured teleoperation devices when supported."""
         devices = resolve_teleop_devices(
             self.cfg,
             supported=getattr(self.inner, "TELEOP", ()),
@@ -141,11 +119,11 @@ class WrapperStack:
             self.env = KEYBOARD_MODES[mode](self.env)
 
     def _apply_episode(self) -> None:
-        """Whatever decides when this task's rollout starts and ends."""
+        """Apply environment-specific episode-control wrappers."""
         for extra in getattr(self.inner, "episode_wrappers", lambda cfg: ())(self.cfg):
             self.env = extra(self.env)
 
 
 def build_stack(env: gym.Env, cfg: Mapping[str, Any]) -> gym.Env:
-    """Wrap ``env`` in what it declares and this config asks for."""
+    """Apply the wrappers declared by the environment and configuration."""
     return WrapperStack(env, cfg).build()

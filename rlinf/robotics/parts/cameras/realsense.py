@@ -70,7 +70,7 @@ class RealSenseCamera(BaseCamera):
             )
         self.profile = self._pipeline.start(config)
 
-        # rs.align allows us to perform alignment of depth frames to color frames
+        # Align depth pixels with the color image.
         self._align = rs.align(rs.stream.color)
         return self._pipeline
 
@@ -99,7 +99,7 @@ class RealSenseCamera(BaseCamera):
 
     @classmethod
     def discover(cls) -> set[str]:
-        """Serial numbers of every RealSense attached to this machine."""
+        """Return serial numbers for RealSense cameras attached to this node."""
         try:
             import pyrealsense2 as rs
         except ImportError:

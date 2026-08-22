@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""DOSW1 dual-arm gymnasium environment with human-in-the-loop support."""
+"""Dual-arm DOSW1 Gymnasium environment with optional human control."""
 
 from __future__ import annotations
 
@@ -122,8 +122,7 @@ class DOSW1Config:
 class DOSW1Env(gym.Env):
     """Dual-arm DOSW1 gymnasium environment with optional human-in-the-loop."""
 
-    #: DOSW1 is driven by its own leader arms through the env, not by a teleop
-    #: device the stack builds.
+    #: DOSW1 uses its integrated leader arms instead of stack-built devices.
     TELEOP = ()
     TELEOP_DEFAULT = "none"
     ACTION_WRAPPERS = ()
@@ -223,8 +222,7 @@ class DOSW1Env(gym.Env):
                 enabled=True, source="reset_enter_free_teleop"
             )
             if skip_wait_for_start:
-                # Caller explicitly asked not to block on the 's' key, e.g.
-                # the final reset in collect_real_data.py after the last episode.
+                # Allow cleanup resets to bypass the operator start prompt.
                 self._logger.info(
                     "[DOSW1Env] Skipping free-teleop start wait "
                     "(options.skip_wait_for_start=True)."
@@ -253,7 +251,7 @@ class DOSW1Env(gym.Env):
         return self._get_observation(), {}
 
     def action_parts(self) -> tuple[ActionPart, ...]:
-        """Six absolute joint angles and a gripper, for each arm."""
+        """Return joint-position and gripper actions for both arms."""
         from rlinf.envs.real.wrappers.teleop.layout import mirrored
 
         return mirrored(
@@ -372,10 +370,10 @@ class DOSW1Env(gym.Env):
         target_joint: np.ndarray,
         side: str,
     ) -> np.ndarray:
-        """Clip target joints so the resulting ee_pose stays within the safety box.
+        """Clip a joint target to the Cartesian safety box.
 
-        Uses binary search along the current -> target line in joint space,
-        checking ee_pose via FK at each midpoint.
+        The method searches the current-to-target joint segment and evaluates
+        each candidate with forward kinematics.
         """
         cfg = self.config
         if side == "left":
@@ -471,9 +469,11 @@ class DOSW1Env(gym.Env):
         cur_left: np.ndarray,
         cur_right: np.ndarray,
     ) -> tuple[np.ndarray, float, np.ndarray, float]:
-        """Compute teleop target joints/grippers from leader-arm deltas.
+        """Compute follower targets from leader-arm deltas.
 
-        Returns (left_joint, left_gripper, right_joint, right_gripper).
+        Returns:
+            Left joints, left gripper width, right joints, and right gripper
+            width.
         """
         cfg = self.config
         lead_left = self.sdk.get_left_lead_joint()
@@ -566,7 +566,7 @@ class DOSW1Env(gym.Env):
             self._keyboard_event_callback(reset_phase=reset_phase)
             return
 
-        # Fallback when wrapper is disabled: keep reset-phase "s to start".
+        # Preserve the reset start key when no keyboard wrapper is installed.
         if (
             reset_phase
             and self._keyboard is not None
@@ -673,7 +673,7 @@ class DOSW1Env(gym.Env):
         return names[: len(serials)] if serials else names
 
     def _camera_infos(self) -> list[CameraInfo]:
-        """Describe this robot's cameras, discovering serials if unset."""
+        """Return camera declarations, discovering serials when needed."""
         serials = self.config.camera_serials or self._discover_camera_serials()
         self.config.camera_serials = list(serials)
         names = self.config.camera_names or []
@@ -686,7 +686,7 @@ class DOSW1Env(gym.Env):
         ]
 
     def _open_cameras(self) -> None:
-        """Take the cameras from the robot, which placed and opened them."""
+        """Use robot-owned cameras or connect local fallback cameras."""
         if self.robot is not None:
             self._cameras = list(self.robot.parts_of_type(Camera).values())
             return
@@ -720,7 +720,7 @@ class DOSW1Env(gym.Env):
 
     @staticmethod
     def _discover_camera_serials() -> list[str]:
-        """Ask the camera driver which RealSense units are plugged in here."""
+        """Discover RealSense serial numbers attached to this node."""
         from rlinf.robotics.parts.cameras import BaseCamera
 
         return sorted(BaseCamera.backend("realsense").discover())
@@ -749,7 +749,7 @@ class DOSW1Env(gym.Env):
                 setattr(self.config, attr, int(value))
 
     def episode_wrappers(self, cfg):
-        """Hand the leader arms to the operator when the task asks for it."""
+        """Return the optional leader-follower keyboard wrapper."""
         if not cfg.get("keyboard_intervention_wrapper", False):
             return ()
         if not getattr(self.config, "enable_human_in_loop", False):

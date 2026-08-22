@@ -12,11 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""State vocabulary shared by the Franka arm backends.
-
-Both the ROS-backed and libfranka-backed arms report the same fields, so the
-dataclass lives beside them rather than inside either one.
-"""
+"""Shared Franka state representation and address validation."""
 
 import ipaddress
 from dataclasses import asdict, dataclass, field
@@ -27,13 +23,10 @@ import numpy as np
 
 @dataclass
 class FrankaRobotState:
-    """Full state of the Franka robot arm and its end-effector.
+    """State snapshot shared by the Franka backends.
 
-    The state covers the arm kinematics (pose, velocity, force/torque)
-    as well as the end-effector.  For the built-in Franka gripper the
-    scalar ``gripper_position`` / ``gripper_open`` fields are used.  For
-    dexterous hands such as Ruiyan, the 6-D ``hand_position`` array is
-    used instead.
+    The built-in gripper uses ``gripper_position`` and ``gripper_open``.
+    Dexterous hands use the six-dimensional ``hand_position`` field.
     """
 
     # https://docs.ros.org/en/kinetic/api/libfranka/html/structfranka_1_1RobotState.html
@@ -57,12 +50,12 @@ class FrankaRobotState:
         default_factory=lambda: np.zeros((6, 7))
     )  # ZeroJacobian.zero_jacobian
 
-    # -- Franka built-in gripper -----------------------------------------
+    # Franka built-in gripper state.
     gripper_position: float = 0.0  # Sum(JointState.position)
     gripper_open: bool = False
 
-    # -- Dexterous hand --------------------------------------------------
-    hand_position: Optional[np.ndarray] = None  # 6-D normalised [0, 1]
+    # Dexterous-hand state.
+    hand_position: Optional[np.ndarray] = None  # Six values normalized to [0, 1].
 
     def to_dict(self) -> dict[str, Any]:
         """Convert the dataclass to a serializable dictionary."""
@@ -70,17 +63,7 @@ class FrankaRobotState:
 
 
 def validated_robot_ip(robot_ip: str, part_name: str) -> str:
-    """Return ``robot_ip`` if it is an address an arm could actually dial.
-
-    The check belongs to the part rather than to a robot config: the part is
-    what opens the connection, so it is the thing that cannot proceed without a
-    real address, and a config placeholder left in a YAML should fail where it
-    is used rather than where it is parsed.
-
-    Format only. Whether anything answers at that address is not something a
-    constructor can find out without touching the network, and a driver that
-    reached for the network before ``connect`` would break placement.
-    """
+    """Validate and return a nonempty IP address without accessing the network."""
     if not robot_ip:
         raise ValueError(
             f"{part_name} needs a 'robot_ip'; none was given and none could be "

@@ -22,13 +22,10 @@ from .session import KeyboardSession
 
 
 class KeyboardStartEndWrapper(KeyboardSession):
-    """Foot-pedal data-collection wrapper. Pedal binding (``a`` / ``b`` / ``c``):
+    """Control data-collection episodes with a three-key foot pedal.
 
-    * ``a``        — start a rec episode (pre) or abort the current one (rec).
-                     Abort drops the buffer; the arm is **not** reset (GELLO
-                     keeps tracking the operator).
-    * ``b`` (rec)  — bump ``segment_id``, debounced at 1 s.
-    * ``c`` (rec)  — end with reward=1, terminated=True.
+    ``a`` starts or aborts recording, ``b`` advances the segment, and ``c``
+    ends the episode successfully. Aborting preserves the current robot pose.
 
     Adds ``keyboard_phase`` / ``keyboard_event`` / ``pre_record`` /
     ``record_reset`` / ``segment_advance`` to ``info`` for ``CollectEpisode``.
@@ -42,7 +39,7 @@ class KeyboardStartEndWrapper(KeyboardSession):
         self._last_segment_ts = -math.inf
 
     def begin_episode(self) -> None:
-        """A new episode starts before recording, with no segment history."""
+        """Clear segment history before recording a new episode."""
         self._recording = False
         self._last_segment_ts = -math.inf
 
@@ -51,7 +48,7 @@ class KeyboardStartEndWrapper(KeyboardSession):
     ) -> tuple[ObsType, SupportsFloat, bool, bool, dict[str, Any]]:
         obs, reward, terminated, truncated, info = self.env.step(action)
 
-        # Pedal owns episode boundaries — pre/abort must NOT auto-reset.
+        # The pedal owns episode boundaries; start and abort do not reset the env.
         terminated = False
         truncated = False
 
@@ -63,13 +60,13 @@ class KeyboardStartEndWrapper(KeyboardSession):
             now = time.monotonic()
             if key == "a":
                 if self._recording:
-                    # Drop the in-progress episode but stay where we are.
+                    # Abort recording without moving the robot.
                     event = "abort"
                     self._recording = False
                     record_reset = True
                     self._last_segment_ts = -math.inf
                 else:
-                    # Begin a fresh rec episode at the current pose.
+                    # Start recording from the current pose.
                     event = "start"
                     self._recording = True
                     record_reset = True
@@ -79,14 +76,12 @@ class KeyboardStartEndWrapper(KeyboardSession):
                     event = "segment"
                     segment_advance = True
                     self._last_segment_ts = now
-                # else: silently ignore — keeps mini-segments out of the data.
+                # Ignore rapid repeats to avoid very short segments.
             elif key == "c" and self._recording:
                 event = "end_success"
                 reward = 1.0
                 terminated = True
-                # Keep _recording=True so this terminating frame keeps
-                # pre_record=False — else CollectEpisode skips the
-                # reward=1.0 step and only_success drops the episode.
+                # Keep recording enabled so the successful terminal frame is saved.
                 break
 
         info["pre_record"] = not self._recording

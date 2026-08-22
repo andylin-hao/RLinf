@@ -65,13 +65,7 @@ _STATE_READY_TIMEOUT_S = 5.0
 
 
 class DOSW1Connection(Connection):
-    """One ``airbot_sdk.AirbotRobot`` session, backing both arms.
-
-    The session drives four components and is none of them, so it is a
-    :class:`~rlinf.robotics.parts.base.Connection`: it owns connecting and
-    disconnecting, :attr:`parts` says what rides on it, and the robot composes
-    those.
-    """
+    """Shared SDK connection for both DOSW1 arms and grippers."""
 
     def __init__(
         self,
@@ -85,7 +79,7 @@ class DOSW1Connection(Connection):
         gripper_width_max: float = 0.07,
         is_dummy: bool = False,
     ) -> None:
-        """Say where the arms are, the way every other part does.
+        """Initialize a deferred DOSW1 connection.
 
         Args:
             robot_url: Host of the AirBot gRPC endpoint.
@@ -93,11 +87,10 @@ class DOSW1Connection(Connection):
             right_arm_port: gRPC port of the right follower arm.
             left_lead_port: gRPC port of the left leader arm.
             right_lead_port: gRPC port of the right leader arm.
-            enable_human_in_loop: Bring the leader arms up alongside the
-                followers, so an operator can take over.
-            gripper_width_max: Travel a gripper command is scaled against, in
-                metres.
-            is_dummy: Answer without touching the SDK.
+            enable_human_in_loop: Whether to connect the leader arms for
+                teleoperation.
+            gripper_width_max: Maximum gripper opening, in metres.
+            is_dummy: Whether to run without the hardware SDK.
         """
         self._logger = get_logger()
         self._robot_url = robot_url
@@ -112,11 +105,7 @@ class DOSW1Connection(Connection):
         self._robot: object | None = None
 
     def _open(self) -> Any:
-        """Connect to follower and optional leader arms.
-
-        A dummy session returns nothing, which still counts as open: it answers
-        every getter with zeros and has no SDK behind it.
-        """
+        """Connect the follower arms and, if enabled, the leader arms."""
         if self._is_dummy:
             return None
 
@@ -174,11 +163,7 @@ class DOSW1Connection(Connection):
 
     @property
     def parts(self) -> dict[str, RobotPart]:
-        """Expose both arms and both end effectors on this one SDK session.
-
-        The subparts borrow the session; this part owns connecting and
-        disconnecting it.
-        """
+        """Return the arms and end effectors exported by this connection."""
         parts: dict[str, RobotPart] = {}
         for side in _ARM_SIDES:
             parts[side] = DOSW1Arm(self, side)
@@ -373,12 +358,7 @@ class DOSW1Connection(Connection):
 
 
 class DOSW1Arm(Arm):
-    """Present one side of a shared DOSW1 SDK session as an arm.
-
-    It opens nothing of its own. Naming the session as its ``_owner`` is the
-    whole of its lifecycle: the robot then opens that session once for all four
-    parts riding it, and this arm is readable exactly when the session is.
-    """
+    """Arm view exported by a shared DOSW1 connection."""
 
     def __init__(self, sdk: DOSW1Connection, side: str) -> None:
         if side not in {"left", "right"}:
@@ -423,11 +403,7 @@ class DOSW1Arm(Arm):
 
 
 class DOSW1EndEffector(EndEffector):
-    """Present one DOSW1 gripper through the common end-effector API.
-
-    Like :class:`DOSW1Arm`, it rides the shared session rather than holding a
-    link, and says so by naming that session as its ``_owner``.
-    """
+    """Gripper view exported by a shared DOSW1 connection."""
 
     def __init__(self, sdk: DOSW1Connection, side: str) -> None:
         if side not in {"left", "right"}:
@@ -437,17 +413,17 @@ class DOSW1EndEffector(EndEffector):
 
     @property
     def state_dim(self) -> int:
-        """One: the gripper's width."""
+        """Return the scalar gripper state dimension."""
         return 1
 
     @property
     def action_dim(self) -> int:
-        """One: a target width."""
+        """Return the scalar gripper action dimension."""
         return 1
 
     @property
     def control_mode(self) -> str:
-        """The SDK takes any width, not just the two ends."""
+        """Return the continuous-width control mode."""
         return "continuous"
 
     def reset(self) -> None:

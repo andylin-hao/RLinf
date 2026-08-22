@@ -92,7 +92,7 @@ class ZEDCamera(BaseCamera):
             return False, None
 
         self._camera.retrieve_image(self._image, self._sl.VIEW.LEFT)
-        # BGRA → BGR (strip alpha to match RealSense output)
+        # Drop alpha to match the BGR output used by other camera backends.
         frame = self._image.get_data()[:, :, :3].copy()
 
         if self._depth is not None:
@@ -138,7 +138,7 @@ class ZEDCamera(BaseCamera):
 
     @classmethod
     def discover(cls) -> set[str]:
-        """Serial numbers of every ZED attached to this machine."""
+        """Return serial numbers for ZED cameras attached to this node."""
         try:
             import pyzed.sl as sl
         except ImportError:

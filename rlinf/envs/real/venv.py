@@ -40,10 +40,11 @@ class NoAutoResetSyncVectorEnv(SyncVectorEnv):
     def step(
         self, actions
     ) -> tuple[Any, NDArray[Any], NDArray[Any], NDArray[Any], dict]:
-        """Steps through each of the environments returning the batched results.
+        """Step each environment and return batched results without resetting.
 
         Returns:
-            The batched environment step results
+            Batched observations, rewards, termination flags, truncation flags,
+            and info dictionaries.
         """
         self._actions = actions
         observations, infos = [], {}
@@ -202,9 +203,7 @@ def _worker_shared_memory_no_auto_reset(
 
 
 class NoAutoResetAsyncVectorEnv(AsyncVectorEnv):
-    """
-    Rewrite the AsyncVectorEnv to disable auto reset when an env is done.
-    """
+    """Asynchronous vector environment with automatic reset disabled."""
 
     def __init__(
         self,
@@ -217,30 +216,24 @@ class NoAutoResetAsyncVectorEnv(AsyncVectorEnv):
         daemon: bool = True,
         worker: Optional[Callable] = None,
     ):
-        """
-        Vectorized environment that runs multiple environments in parallel.
+        """Initialize environments that run in separate processes.
 
         Args:
             env_fns: Functions that create the environments.
-            observation_space: Observation space of a single environment. If ``None``,
-                then the observation space of the first environment is taken.
-            action_space: Action space of a single environment. If ``None``,
-                then the action space of the first environment is taken.
-            shared_memory: If ``True``, then the observations from the worker processes are communicated back through
-                shared variables. This can improve the efficiency if the observations are large (e.g. images).
-            copy: If ``True``, then the :meth:`~AsyncVectorEnv.reset` and :meth:`~AsyncVectorEnv.step` methods
-                return a copy of the observations.
-            context: Context for `multiprocessing`_. If ``None``, then the default context is used.
-            daemon: If ``True``, then subprocesses have ``daemon`` flag turned on; that is, they will quit if
-                the head process quits. However, ``daemon=True`` prevents subprocesses to spawn children,
-                so for some environments you may want to have it set to ``False``.
-            worker: If set, then use that worker in a subprocess instead of a default one.
-                Can be useful to override some inner vector env logic, for instance, how resets on termination or truncation are handled.
+            observation_space: Space for one environment. If omitted, use the
+                first environment's observation space.
+            action_space: Space for one environment. If omitted, use the first
+                environment's action space.
+            shared_memory: Whether workers exchange observations through
+                shared memory.
+            copy: Whether :meth:`reset` and :meth:`step` copy observations.
+            context: Multiprocessing context name.
+            daemon: Whether worker processes exit with the parent process.
+            worker: Optional custom worker function.
 
         Warnings:
-            worker is an advanced mode option. It provides a high degree of flexibility and a high chance
-            to shoot yourself in the foot; thus, if you are writing your own worker, it is recommended to start
-            from the code for ``_worker`` (or ``_worker_shared_memory``) method, and add changes.
+            A custom worker must preserve the command protocol implemented by
+            ``_worker`` or ``_worker_shared_memory``.
         """
         ctx = mp.get_context(context)
         self.env_fns = env_fns

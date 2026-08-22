@@ -12,16 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Running a connection on the node it belongs to.
+"""Remote placement and forwarding for robotics connections.
 
-A part whose vendor SDK only exists on one machine cannot be built here and
-moved. So a connection bound for another node is rebuilt there from the recipe
-its constructor left behind, and the object already in the robot's tree becomes
-a view of it. Nothing is swapped, and a driver writes no remote counterpart:
-both the worker and the view are derived from the driver class.
-
-:mod:`.handles` is the whole of it, and is the one module in ``rlinf.robotics``
-allowed to import the scheduler.
+This package is the scheduler integration boundary for ``rlinf.robotics``.
 """
 
 from .handles import PartWorkerHost, host, remote_view_of, shutdown

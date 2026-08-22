@@ -12,12 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Building fake vendor modules.
-
-A part imports its SDK inside ``_open`` or ``connect``, never at module scope,
-so a fake put in :data:`sys.modules` first is what the real part class talks
-to. Nothing about the part is stubbed: its own code runs.
-"""
+"""Utilities for constructing fake vendor modules."""
 
 from __future__ import annotations
 
@@ -27,7 +22,7 @@ from typing import Any
 
 
 def module(name: str, **members: Any) -> types.ModuleType:
-    """A module with these members, registered under a dotted name.
+    """Create a module with the supplied members.
 
     It carries a ``__spec__`` because libraries check for a package with
     ``importlib.util.find_spec``, which raises on a module that has none.
@@ -40,7 +35,7 @@ def module(name: str, **members: Any) -> types.ModuleType:
 
 
 def package(name: str, *parts: str) -> list[types.ModuleType]:
-    """Every parent package of a dotted module name, outermost first."""
+    """Return every parent of a dotted module name, outermost first."""
     made = []
     pieces = name.split(".")
     for index in range(1, len(pieces)):
@@ -49,13 +44,7 @@ def package(name: str, *parts: str) -> list[types.ModuleType]:
 
 
 class Recorder:
-    """Records what it was asked to do, and answers anything.
-
-    Vendor SDKs are wide and mostly irrelevant to a lifecycle check. What
-    matters is that a part's calls land somewhere and that the values it reads
-    back have the right shape, so unknown attributes answer rather than raise,
-    and every call is kept for a test to assert on.
-    """
+    """Record arbitrary SDK method calls and return configured responses."""
 
     def __init__(self, name: str = "sdk", **answers: Any) -> None:
         self._name = name
@@ -75,7 +64,7 @@ class Recorder:
         return call
 
     def called(self, name: str) -> bool:
-        """Whether the part ever asked for this."""
+        """Return whether a method with ``name`` was called."""
         return any(call == name for call, _, _ in self.calls)
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid

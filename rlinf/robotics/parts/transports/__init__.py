@@ -12,8 +12,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Shared transports that parts talk over, such as ROS.
-
-A transport is not a part: it carries messages for one. Kept beside the parts
-that use it so a node installs only what its hardware needs.
-"""
+"""Shared hardware transports used by connection implementations."""

@@ -12,12 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Dual-arm Franka env driving TCP waypoints.
+"""Dual-arm Franka environment with absolute TCP waypoint actions.
 
-Currently only ``rotation_repr='rot6d'`` is implemented:
-layout ``[L_xyz(3), L_rot6d(6), L_grip(1), R_xyz(3), R_rot6d(6), R_grip(1)]``.
-Each step pushes (xyz, quat) into a per-arm CartesianImpedanceTracker via
-``move_tcp_pose``; tracking error is soft, not a Ruckig reflex.
+Only ``rotation_repr='rot6d'`` is currently supported. Each action contains
+left and right position, rot6d orientation, and gripper commands. Per-arm
+Cartesian impedance trackers receive the converted quaternion poses.
 """
 
 from __future__ import annotations
@@ -34,40 +33,40 @@ from rlinf.utils.rot6d import matrix_to_rot6d, rot6d_to_quat_xyzw_safe
 
 from .dual_base import DualFrankaEnv, DualFrankaRobotConfig
 
-ACTION_DIM_PER_ARM = 10  # xyz(3) + rot6d(6) + gripper(1)
-PROPRIO_DIM_PER_ARM = 9  # xyz(3) + rot6d(6); gripper has its own slot
+ACTION_DIM_PER_ARM = 10  # xyz, 6D rotation, and gripper.
+PROPRIO_DIM_PER_ARM = 9  # xyz and 6D rotation; gripper uses a separate slot.
 
 
 @dataclass
 class DualFrankaTCPRobotConfig(DualFrankaRobotConfig):
     """Config for :class:`DualFrankaTCPEnv`."""
 
-    # Only "rot6d" is implemented; other values raise NotImplementedError.
+    # Other orientation representations are rejected during space initialization.
     rotation_repr: str = "rot6d"
 
 
 class DualFrankaTCPEnv(DualFrankaEnv):
-    """Dual-arm Franka env with TCP waypoint actions (rotation_repr-selected)."""
+    """Dual-arm Franka environment with absolute TCP waypoint actions."""
 
     CONFIG_CLS: type[DualFrankaTCPRobotConfig] = DualFrankaTCPRobotConfig
 
     PER_ARM_ACTION_DIM = ACTION_DIM_PER_ARM
-    GRIPPER_IDX_IN_ARM = 9  # xyz(3) + rot6d(6) then gripper
+    GRIPPER_IDX_IN_ARM = 9  # Gripper channel after xyz and 6D rotation.
 
     def arm_action_kind(self) -> ActionKind:
-        """An absolute pose: position and a rot6d rotation."""
+        """Return absolute Cartesian-pose semantics."""
         return ActionKind.CARTESIAN_POSE
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # Per-arm previous quat for hemisphere alignment across steps.
+        # Retain quaternion hemispheres across steps for smooth interpolation.
         self._prev_step_quat = [None, None]
 
     def reset(self, *, seed=None, options=None):
         self._prev_step_quat = [None, None]
         return super().reset(seed=seed, options=options)
 
-    # ---------------------------------------------------------------- spaces
+    # Spaces.
 
     def _init_action_obs_spaces(self):
         if self.config.rotation_repr != "rot6d":
@@ -77,7 +76,7 @@ class DualFrankaTCPEnv(DualFrankaEnv):
             )
         self._cartesian_safety_boxes()
 
-        # rot6d range widened to [-1.5, 1.5] for headroom before Gram-Schmidt.
+        # Leave headroom for normalization before Gram-Schmidt projection.
         rot6d_low = -1.5 * np.ones(6, dtype=np.float32)
         rot6d_high = 1.5 * np.ones(6, dtype=np.float32)
         left_low = np.concatenate(
@@ -120,7 +119,7 @@ class DualFrankaTCPEnv(DualFrankaEnv):
             }
         )
 
-    # --------------------------------------------------------- step dispatch
+    # Motion dispatch.
 
     def _dispatch_arm_motion(
         self,
@@ -145,7 +144,7 @@ class DualFrankaTCPEnv(DualFrankaEnv):
 
             ctrls[arm].move_tcp_pose(np.concatenate([xyz, quat]).astype(np.float64))
 
-    # ------------------------------------------------------------ obs + utils
+    # Observation and pose helpers.
 
     def _get_observation(self) -> dict:
         if self.config.is_dummy:
@@ -165,7 +164,7 @@ class DualFrankaTCPEnv(DualFrankaEnv):
         return copy.deepcopy({"state": state, "frames": frames})
 
     def _tcp_rot6d_18d(self) -> np.ndarray:
-        """[L_xyz, L_rot6d, R_xyz, R_rot6d] (no euler → no wrap artifacts)."""
+        """Return both TCP poses using rot6d orientation."""
         out = np.zeros(18, dtype=np.float32)
         for arm, st in enumerate((self._left_state, self._right_state)):
             base = arm * PROPRIO_DIM_PER_ARM

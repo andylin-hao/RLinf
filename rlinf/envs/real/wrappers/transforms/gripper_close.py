@@ -18,12 +18,9 @@ from gymnasium.spaces import Box
 
 
 class GripperCloseEnv(gym.ActionWrapper):
-    """
-    Use this wrapper to task that requires the gripper to be closed
-    """
+    """Remove the gripper action and keep the gripper closed."""
 
-    #: Applied when this env-config flag is set. A wrapper knowing its own
-    #: switch is what lets one stack builder serve every robot.
+    #: Environment configuration flag that enables this wrapper.
     CONFIG_FLAG = "no_gripper"
     CONFIG_DEFAULT = True
 
@@ -34,12 +31,7 @@ class GripperCloseEnv(gym.ActionWrapper):
         self.action_space = Box(ub.low[:6], ub.high[:6])
 
     def action_parts(self):
-        """The env's parts, minus the gripper this wrapper holds shut.
-
-        A wrapper that changes the action space says so, for the same reason
-        an env declares its own: whoever drives the action has to be told what
-        the numbers mean, and here there is one fewer of them.
-        """
+        """Return the wrapped action parts without the end effector."""
         return tuple(
             part
             for part in self.env.get_wrapper_attr("action_parts")()

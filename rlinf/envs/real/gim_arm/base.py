@@ -38,10 +38,8 @@ from rlinf.robotics.teleop import ActionKind, ActionPart
 from rlinf.scheduler import WorkerInfo
 from rlinf.utils.logging import get_logger
 
-# GIM_ARM_XL joint limits (rad) from gim_arm_control SDK
-# (arm_config.hpp position_min_limits_ / position_max_limits_).
-# Users targeting the standard GIM_ARM variant should override
-# joint_limit_low / joint_limit_high in their config.
+# GIM_ARM_XL joint limits from the gim_arm_control SDK, in radians.
+# Override them when using the standard GIM_ARM variant.
 _DEFAULT_JOINT_LIMIT_LOW = np.array([-1.4, -3.0, 0.0, -1.5, -1.5, -1.88])
 _DEFAULT_JOINT_LIMIT_HIGH = np.array([1.4, 0.0, 3.0, 1.5, 1.5, 1.90])
 
@@ -50,8 +48,8 @@ _DEFAULT_JOINT_LIMIT_HIGH = np.array([1.4, 0.0, 3.0, 1.5, 1.5, 1.90])
 class GimArmRobotConfig:
     """Configuration for :class:`GimArmEnv`.
 
-    Hardware connection fields (``can_interface``, ``arm_variant``, etc.) are
-    populated automatically from :class:`~rlinf.robotics.RobotInfo` when ``None``.
+    Unset hardware connection fields are populated from
+    :class:`~rlinf.robotics.RobotInfo`.
     """
 
     can_interface: Optional[str] = None
@@ -92,7 +90,7 @@ class GimArmRobotConfig:
         default_factory=lambda: np.array([0.5, 0.0, 0.1, -3.14, 0.0, 0.0])
     )
     """Target end-effector pose ``[x, y, z, rx, ry, rz]`` (m / Euler XYZ).
-    Used only for reward computation — not for motion control."""
+    Used only for reward computation, not motion control."""
 
     reset_joint_qpos: list[float] = field(default_factory=lambda: [0.0] * 6)
     """Joint configuration to move to at the start of each episode."""
@@ -142,23 +140,13 @@ class GimArmRobotConfig:
 
 
 class GimArmEnv(gym.Env):
-    """GimArm 6-DOF robot environment with joint-space actions.
+    """Six-DOF GimArm environment with absolute joint-position actions.
 
-    Action space:  ``Box((7,))`` — ``[q1, ..., q6, gripper]``
-    Observation:   ``Dict{state: Dict{...}, frames: Dict{wrist_i: ...}}``
-
-    The first six action dimensions are **absolute joint positions** in
-    radians.  The action-space bounds for these dimensions match the
-    configured joint limits.  The seventh element is a binary open/close
-    gripper command (in ``[-1, 1]``) using ``binary_gripper_threshold``.
-
-    Reward is computed in Cartesian space by comparing the FK-computed TCP
-    pose to ``target_ee_pose``, identical to :class:`FrankaEnv`.
+    Actions contain six joint positions in radians and one binary gripper
+    command. Rewards compare the forward-kinematics TCP pose with the target.
     """
 
-    # Every device shipped today produces a Cartesian command, and this arm
-    # takes joint angles, so none of them can drive it. The group would refuse
-    # them anyway; saying so here makes the config error the clearer one.
+    # No registered teleoperation device currently produces this joint layout.
     TELEOP = ()
     TELEOP_DEFAULT = "none"
     ACTION_WRAPPERS = ("GripperCloseEnv",)
@@ -191,8 +179,7 @@ class GimArmEnv(gym.Env):
         if not self.config.is_dummy:
             self._setup_hardware()
 
-        # NOTE: Camera integration is not yet available for all test setups.
-        # When no cameras are configured, "frames" will be an empty dict.
+        # Camera-free setups expose an empty frames dictionary.
         if self.config.camera_serials is None:
             self.config.camera_serials = []
         if not self.config.camera_serials:
@@ -206,7 +193,7 @@ class GimArmEnv(gym.Env):
         if self.config.is_dummy:
             return
 
-        # Wait for the robot to be ready.
+        # Wait for the controller's first valid state.
         start_time = time.time()
         while not self._controller.is_robot_up():
             time.sleep(0.5)
@@ -222,7 +209,7 @@ class GimArmEnv(gym.Env):
         self._open_cameras()
         self.camera_player = VideoPlayer(self.config.enable_camera_player)
 
-    # ── Setup ────────────────────────────────────────────────────────────────
+    # Hardware setup.
 
     def _setup_hardware(self):
         assert self.env_idx >= 0, "env_idx must be set for GimArmEnv."
@@ -230,7 +217,7 @@ class GimArmEnv(gym.Env):
             self.robot_info.config, GimArmConfig
         ), f"robot_info must contain a GimArmConfig, but got {type(self.robot_info)}."
 
-        # Fill in connection fields from hardware info when not set by the user.
+        # Fill unset connection fields from enumerated hardware configuration.
         if self.config.can_interface is None:
             self.config.can_interface = self.robot_info.config.can_interface
         if self.config.arm_variant is None:
@@ -260,21 +247,17 @@ class GimArmEnv(gym.Env):
             cameras={info.name: info for info in self._camera_infos()},
         )
         self.robot.connect()
-        # Off-interface driver calls -- is_robot_up, reset_joint and friends --
-        # are the arm's own methods, and they travel unchanged when the arm was
-        # placed on another node.
+        # The owning connection forwards driver-specific methods when remote.
         self._controller = self.robot.child("arm").owner
 
     def _init_action_obs_spaces(self):
-        """Initialise action and observation spaces."""
+        """Initialize action and observation spaces."""
         self._joint_limit_low = np.array(self.config.joint_limit_low, dtype=np.float64)
         self._joint_limit_high = np.array(
             self.config.joint_limit_high, dtype=np.float64
         )
 
-        # Action: [q1, q2, q3, q4, q5, q6, gripper]
-        # First 6 dims: absolute joint positions (rad) bounded by joint limits.
-        # 7th dim: gripper command in [-1, 1].
+        # Six bounded joint positions followed by a binary gripper command.
         action_low = np.append(self._joint_limit_low, -1.0).astype(np.float32)
         action_high = np.append(self._joint_limit_high, 1.0).astype(np.float32)
         self.action_space = gym.spaces.Box(action_low, action_high)
@@ -305,10 +288,10 @@ class GimArmEnv(gym.Env):
         )
         self._base_observation_space = copy.deepcopy(self.observation_space)
 
-    # ── Core gym API ─────────────────────────────────────────────────────────
+    # Gymnasium API.
 
     def action_parts(self) -> tuple[ActionPart, ...]:
-        """Six absolute joint angles, then the gripper."""
+        """Return the joint-position and gripper action parts."""
         return (
             ActionPart("arm", 6, ActionKind.JOINT_POSITION),
             ActionPart("end_effector", 1, ActionKind.GRIPPER),
@@ -395,18 +378,14 @@ class GimArmEnv(gym.Env):
 
         self._controller.reset_joint(self.config.reset_joint_qpos)
 
-    # ── Reward ───────────────────────────────────────────────────────────────
+    # Reward calculation.
 
     def _calc_step_reward(
         self,
         observation: dict,
         is_gripper_action_effective: bool = False,
     ) -> float:
-        """Compute reward from FK-based TCP pose vs target pose.
-
-        Identical logic to :class:`FrankaEnv`: sparse 0/1 with optional dense
-        exponential falloff, plus an optional gripper penalty.
-        """
+        """Compute sparse or dense reward from TCP distance to the target."""
         if not self.config.is_dummy:
             euler_angles = np.abs(
                 R.from_quat(self._state.tcp_pose[3:].copy()).as_euler("xyz")
@@ -437,7 +416,7 @@ class GimArmEnv(gym.Env):
             return reward
         return 0.0
 
-    # ── Observation ──────────────────────────────────────────────────────────
+    # Observation construction.
 
     def _get_observation(self) -> dict:
         if not self.config.is_dummy:
@@ -453,10 +432,10 @@ class GimArmEnv(gym.Env):
             return copy.deepcopy({"state": state, "frames": frames})
         return self._base_observation_space.sample()
 
-    # ── Cameras ──────────────────────────────────────────────────────────────
+    # Camera handling.
 
     def _camera_infos(self) -> list[CameraInfo]:
-        """Describe the wrist cameras this arm carries."""
+        """Return declarations for the configured wrist cameras."""
         camera_type = self.config.camera_type or "realsense"
         return [
             CameraInfo(
@@ -468,10 +447,7 @@ class GimArmEnv(gym.Env):
         ]
 
     def _open_cameras(self):
-        """Take the cameras from the robot, which placed and opened them.
-
-        A dummy run has no robot, so it builds unopened cameras locally.
-        """
+        """Use robot-owned cameras or create local dummy declarations."""
         if self.robot is not None:
             self._cameras: list[BaseCamera] = list(
                 self.robot.parts_of_type(Camera).values()
@@ -518,7 +494,7 @@ class GimArmEnv(gym.Env):
                     camera._camera_info.name
                 ].shape[:2][::-1]
                 cropped, resized = self._crop_frame(frame, reshape_size)
-                frames[camera._camera_info.name] = resized[..., ::-1]  # BGR
+                frames[camera._camera_info.name] = resized[..., ::-1]  # BGR input.
                 display_frames[camera._camera_info.name] = resized
                 display_frames[f"{camera._camera_info.name}_full"] = cropped
             except queue.Empty:
@@ -534,7 +510,7 @@ class GimArmEnv(gym.Env):
         self.camera_player.put_frame(display_frames)
         return frames
 
-    # ── Gripper ──────────────────────────────────────────────────────────────
+    # Gripper control.
 
     def _gripper_action(self, position: float) -> bool:
         """Execute a binary gripper open/close.
@@ -560,7 +536,7 @@ class GimArmEnv(gym.Env):
             return True
         return False
 
-    # ── Utilities ────────────────────────────────────────────────────────────
+    # Utilities.
 
     @property
     def target_ee_pose(self) -> np.ndarray:

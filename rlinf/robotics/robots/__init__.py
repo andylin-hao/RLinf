@@ -12,12 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Supported robots: one module each, holding its config and robot class.
+"""Built-in robot compositions and their hardware configurations.
 
-Each robot class owns its own construction: ``build()`` composes deferred part
-declarations, and ``register_type()`` wires the class and its config into the
-registry while supplying the standard discovery flow. ``Robot.connect()``
-performs placement later. Importing this package performs those registrations.
+Importing this package registers each robot type and its discovery metadata.
 """
 
 from .dosw1 import DOSW1Robot, DOSW1RobotConfig

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Turning one device's reading into part of a robot's action."""
+"""Interfaces for mapping device readings to named robot actions."""
 
 from __future__ import annotations
 
@@ -25,16 +25,7 @@ import numpy as np
 
 from .kinds import ActionKind
 
-#: What a binding may ask about the robot it drives. A binding lists the ones
-#: it cannot work without in :attr:`TeleopBinding.NEEDS`, and the group checks
-#: them before calling it, so an env that cannot answer is refused by name
-#: rather than raising a ``KeyError`` from inside somebody's arithmetic.
-#:
-#: tcp_pose        the arm's measured pose, xyz + quat
-#: action_scale    the env's [position, rotation, gripper] divisors
-#: joint_positions measured joint positions, one row per arm
-#: gripper_open    whether the gripper is currently open
-#: hand_reset_pose the pose a dexterous hand is put into at reset
+#: Context fields that bindings may request through ``TeleopBinding.NEEDS``.
 CONTEXT_KEYS = (
     "tcp_pose",
     "action_scale",
@@ -46,7 +37,7 @@ CONTEXT_KEYS = (
 
 @dataclass
 class TeleopAction:
-    """What one device is asking for, this step.
+    """Action contribution produced from one device reading.
 
     Attributes:
         parts: The action parts this device fills, by name.
@@ -62,33 +53,18 @@ class TeleopAction:
 
 
 class TeleopBinding(ABC):
-    """What one device means for the robot it drives.
+    """Map one device's readings to named robot action parts."""
 
-    A device reports what the operator did. A binding says which parts of the
-    action that fills, and computes them. Keeping the two apart is what lets the
-    same spacemouse drive a Cartesian arm here and something else elsewhere.
-    """
-
-    #: Action parts this binding can fill, and what each command means.
-    #: Matched against what the robot actually has, so a binding that offers a
-    #: gripper to an arm carrying a hand simply does not fill it -- and one that
-    #: offers a twist to a joint-space arm is refused rather than obeyed.
-    #:
-    #: A binding whose meaning depends on how it was built sets this on the
-    #: instance instead, as a leader arm does for deltas versus targets.
+    #: Action parts this binding can fill and their semantic kinds.
     PRODUCES: Mapping[str, "ActionKind"] = {}
 
-    #: Below this, motion is the device resting rather than the operator
-    #: driving. Devices jitter; a person moving does not.
+    #: Motion below this threshold is treated as device noise.
     MOVEMENT_EPSILON: float = 0.001
 
-    #: How long the operator keeps control after their last active reading.
-    #: ``None`` accepts the shared default; ``0`` suits a device held down to
-    #: take over, where the button already says exactly when they are driving.
+    #: Hold duration after the last active reading; ``None`` uses the default.
     HOLD_WINDOW: float | None = None
 
-    #: Whether the parts this binding fills are clipped into the env's action
-    #: space. Absolute commands can leave it; normalised deltas cannot.
+    #: Whether produced actions must be clipped to the environment space.
     CLIPS_TO_ACTION_SPACE: bool = False
 
     #: Context keys this binding cannot work without, from :data:`CONTEXT_KEYS`.
@@ -98,40 +74,18 @@ class TeleopBinding(ABC):
     def action(
         self, reading: Mapping[str, Any], context: Mapping[str, Any]
     ) -> TeleopAction:
-        """Say what this device asks for, given one reading.
-
-        Everything about a reading is answered here at once. A binding whose
-        answer depends on state it computed -- as one holding a pose does --
-        would otherwise have to leave that state behind for a second call, and
-        nothing would enforce the order the two are made in.
-        """
+        """Convert one device reading into an action contribution."""
 
     def publish(self, reading: Mapping[str, Any]) -> dict[str, Any]:
-        """Context this device offers the bindings listed after it.
-
-        Devices in one rig are not independent: on the dex-hand setup the
-        spacemouse's left button is what puts the glove in control. Saying so
-        here keeps that coupling visible and ordered, rather than hidden in a
-        class that reads both devices.
-        """
+        """Return context made available to subsequent bindings."""
         return {}
 
     def hold(self, context: Mapping[str, Any]) -> dict[str, np.ndarray]:
-        """The parts that keep this device's share of the robot where it is.
-
-        Asked for when a chunk of policy actions is skipped and something still
-        has to be commanded. A binding that fills a part with a delta has
-        nothing to say here: zero motion is already the policy's own action.
-        """
+        """Return actions that hold this binding's controlled parts in place."""
         return {}
 
     def on_action_chunk_begin(self) -> None:
         """Let go of anything held only until the next chunk of actions."""
 
     def reset(self, context: Mapping[str, Any] = MappingProxyType({})) -> None:
-        """Forget anything held from the previous episode.
-
-        The context says what the robot was just reset *to*. A binding holding
-        a pose has to start from that pose rather than from zero, or its first
-        command moves the robot away from where the env just put it.
-        """
+        """Reset internal state using the robot's post-reset context."""

@@ -41,8 +41,7 @@ from rlinf.robotics.teleop import ActionKind, ActionPart
 from rlinf.scheduler import WorkerInfo
 from rlinf.utils.logging import get_logger
 
-# Per-camera get_frame timeout. Short so a stalled camera doesn't drag the
-# 10 Hz env loop; reconnection is handled by the camera's own capture thread.
+# Keep frame reads shorter than the 10 Hz control period.
 _CAMERA_FRAME_TIMEOUT_S = 0.5
 
 
@@ -71,7 +70,7 @@ class DualFrankaRobotConfig:
     use_dense_reward: bool = False
     step_frequency: float = 10.0
 
-    # (2, 6) arrays: row 0 = left arm, row 1 = right arm
+    # Two-row pose arrays store the left arm first and right arm second.
     target_ee_pose: np.ndarray = field(default_factory=lambda: np.zeros((2, 6)))
     reset_ee_pose: np.ndarray = field(default_factory=lambda: np.zeros((2, 6)))
     joint_reset_qpos: list[list[float]] = field(
@@ -84,7 +83,7 @@ class DualFrankaRobotConfig:
     random_xy_range: float = 0.0
     random_rz_range: float = 0.0
 
-    # (2, 6) arrays for per-arm safety box
+    # Per-arm Cartesian safety limits.
     ee_pose_limit_min: np.ndarray = field(
         default_factory=lambda: np.full((2, 6), -np.inf)
     )
@@ -118,14 +117,12 @@ class DualFrankaEnv(gym.Env):
     ``_dispatch_arm_motion``.
     """
 
-    #: A dual-arm Franka has no single-arm Cartesian teleop path, so naming one
-    #: is a mistake worth reporting rather than a setting to ignore.
+    #: Teleoperation devices compatible with the dual-arm action layouts.
     TELEOP = ("gello_joint", "pico")
     TELEOP_DEFAULT = "none"
     TELEOP_MARK_FLAG = True
 
-    #: No DualGripperCloseEnv exists, and a 12-D action would blow up as
-    #: reshape(2, 7), so narrowing is refused rather than silently skipped.
+    #: Reject the single-arm gripper-removal flag for dual-arm actions.
     ACTION_WRAPPERS = ()
     REFUSE_FLAGS = ("no_gripper",)
 
@@ -136,11 +133,11 @@ class DualFrankaEnv(gym.Env):
     GRIPPER_IDX_IN_ARM: int = 0
 
     def arm_action_kind(self) -> ActionKind:
-        """What this env reads the arm half of each side's action as."""
+        """Return the semantic type of each arm action."""
         raise NotImplementedError
 
     def action_parts(self) -> tuple[ActionPart, ...]:
-        """The same parts for each arm, named by the side they drive."""
+        """Return mirrored arm and end-effector action parts."""
         from rlinf.envs.real.wrappers.teleop.layout import mirrored
 
         gripper_at = self.GRIPPER_IDX_IN_ARM
@@ -198,7 +195,7 @@ class DualFrankaEnv(gym.Env):
         if self.config.is_dummy:
             return
 
-        # Wait for both arms to be ready
+        # Wait for an initial valid state from each arm.
         for label, ctrl in [("left", self._left_ctrl), ("right", self._right_ctrl)]:
             t0 = time.time()
             while not ctrl.is_robot_up():
@@ -210,12 +207,10 @@ class DualFrankaEnv(gym.Env):
                         label,
                     )
 
-        # Initial state read
         self._left_state = self._left_ctrl.get_state()
         self._right_state = self._right_ctrl.get_state()
 
-        # Cache of last successful frame per camera, for graceful degradation
-        # when a single camera stalls (used by _get_camera_frames).
+        # Retain the latest valid frame while an individual camera recovers.
         self._last_camera_frame: dict[str, np.ndarray] = {}
 
         self._open_cameras()
@@ -233,10 +228,10 @@ class DualFrankaEnv(gym.Env):
         if self.robot is not None:
             self.robot.disconnect()
 
-    # ---------------------------------------------------------------- cameras
+    # Camera handling.
 
     def _all_camera_specs(self) -> list[tuple[str, str, str]]:
-        """Camera specs as ``[(name, serial, camera_type), ...]`` with pi0-aligned names.
+        """Return named camera specifications in policy-compatible order.
 
         Per-slot ``*_camera_type`` falls back to the global ``camera_type``.
         """
@@ -261,17 +256,14 @@ class DualFrankaEnv(gym.Env):
         return [serial for _, serial, _ in self._all_camera_specs()]
 
     def _camera_infos(self) -> list[CameraInfo]:
-        """Describe every camera on this robot, wrist and base alike."""
+        """Return declarations for all wrist and base cameras."""
         return [
             CameraInfo(name=name, serial_number=serial, camera_type=ct)
             for name, serial, ct in self._all_camera_specs()
         ]
 
     def _camera_declarations(self):
-        """Split the cameras by the component they belong to.
-
-        Wrist cameras go to their arm; anything else is a robot-level camera.
-        """
+        """Separate wrist cameras from robot-level cameras."""
         per_arm: dict[str, dict] = {"left": {}, "right": {}}
         robot_level: dict = {}
         for info in self._camera_infos():
@@ -284,17 +276,10 @@ class DualFrankaEnv(gym.Env):
         return per_arm, robot_level
 
     def _open_cameras(self):
-        """Take the cameras from the robot, which placed and opened them.
+        """Use cameras connected and placed by the robot runtime.
 
-        Kept by name rather than by position: a camera the robot placed on
-        another node is a proxy, and asking it what it is called would mean
-        reaching through it for a descriptor that stayed behind on that node.
-        The robot already names every part it holds.
-
-        The robot names a wrist camera for where it hangs -- ``left.``
-        something -- because that is where it is bolted. The observation space
-        was built from the declared names, which already say which side they
-        are on, so the branch is dropped here rather than doubled.
+        Camera paths are reduced to their declared leaf names because the
+        observation space already encodes the arm side.
         """
         if self.robot is not None:
             self._cameras: dict[str, BaseCamera] = {}
@@ -328,10 +313,9 @@ class DualFrankaEnv(gym.Env):
         return cropped, resized
 
     def _get_camera_frames(self) -> dict[str, np.ndarray]:
-        """Read one frame per camera. On stall, fall back to the last-good
-        frame and replace just that camera in-place; other cameras keep
-        producing fresh frames. Raises only when a camera stalls before
-        producing any frame (no cache to fall back to).
+        """Read all cameras and use the latest cached frame during recovery.
+
+        A camera that stalls before producing its first frame raises an error.
         """
         frames: dict[str, np.ndarray] = {}
         display_frames: dict[str, np.ndarray] = {}
@@ -346,9 +330,7 @@ class DualFrankaEnv(gym.Env):
                         f"Camera {name} stalled with no cached frame to fall back to."
                     )
                 self._logger.error("Camera %s stalled; reopening.", name)
-                # Reopened rather than rebuilt: the camera may be hosted on the
-                # node it is plugged into, and building a replacement here
-                # would look for the device on the wrong machine.
+                # Reopen the existing camera to preserve its remote placement.
                 camera.disconnect()
                 camera.connect()
                 frame = cached
@@ -363,7 +345,7 @@ class DualFrankaEnv(gym.Env):
         self.camera_player.put_frame(display_frames)
         return frames
 
-    # ---------------------------------------------------------------- hardware
+    # Hardware setup.
 
     def _resolve_hw_overrides(self) -> None:
         if self.robot_info is None:
@@ -375,7 +357,7 @@ class DualFrankaEnv(gym.Env):
             f"but got {type(self.robot_info)}."
         )
         hw = self.robot_info.config
-        # (field_name, default if hw lacks the attr)
+        # Fields inherit from hardware configuration when unset by the task.
         hw_fallback_fields: tuple[tuple[str, object], ...] = (
             ("left_robot_ip", None),
             ("right_robot_ip", None),
@@ -401,7 +383,7 @@ class DualFrankaEnv(gym.Env):
                 )
 
     def _resolve_controller_node_ranks(self) -> tuple[int, int]:
-        """Return per-arm node ranks, honoring the hw config overrides."""
+        """Return controller node ranks with hardware overrides applied."""
         left_node = self.node_rank
         right_node = self.node_rank
         if self.robot_info is not None:
@@ -439,7 +421,7 @@ class DualFrankaEnv(gym.Env):
         self._left_ctrl = self.robot.child("left").child("arm").owner
         self._right_ctrl = self.robot.child("right").child("arm").owner
 
-    # ---------------------------------------------------------------- reset/step
+    # Gymnasium reset and step.
 
     def _go_to_rest(self, joint_reset: bool = False):
         del joint_reset
@@ -456,8 +438,7 @@ class DualFrankaEnv(gym.Env):
         self._right_state = self._right_ctrl.get_state()
 
     def reset(self, *, seed=None, options=None):
-        """``options["skip_reset_to_home"]`` lets teleop wrappers keep tracking
-        from the episode-end pose instead of bouncing through home."""
+        """Reset both arms unless teleoperation requests pose continuity."""
         del seed
         skip_reset_to_home = bool((options or {}).get("skip_reset_to_home", False))
         self._num_steps = 0
@@ -499,7 +480,7 @@ class DualFrankaEnv(gym.Env):
             ctrls = [self._left_ctrl, self._right_ctrl]
             dt = 1.0 / self.config.step_frequency
 
-            # Grippers first so they don't contend with a fresh motion command.
+            # Send gripper commands before starting the next arm motion.
             for arm in range(2):
                 gripper_val = (
                     actions[arm, self.GRIPPER_IDX_IN_ARM] * self.config.action_scale[2]
@@ -530,12 +511,10 @@ class DualFrankaEnv(gym.Env):
         self._left_ctrl.clear_errors()
         self._right_ctrl.clear_errors()
 
-    # ---------------------------------------------------------------- gripper / utils
+    # Gripper and state helpers.
 
     def _gripper_action(self, ctrl, state, position: float) -> bool:
-        # Commanded and not waited on: collection streams gripper commands at
-        # 10 Hz, and settling for the 0.6 s the gripper takes stretches an eval
-        # step to ~700 ms and rings out j7.
+        # Do not block on gripper settling in the 10 Hz control loop.
         threshold = self.config.binary_gripper_threshold
         if position <= -threshold and state.gripper_open:
             ctrl.close_gripper()
@@ -556,7 +535,7 @@ class DualFrankaEnv(gym.Env):
         return self.config.action_scale
 
     def get_joint_positions(self) -> np.ndarray:
-        """Stacked ``(2, 7)`` joint positions from cached state (no RPC)."""
+        """Return cached joint positions for both arms with shape ``(2, 7)``."""
         return np.stack(
             [
                 self._left_state.arm_joint_position.copy(),
@@ -633,7 +612,7 @@ class DualFrankaEnv(gym.Env):
             }
         )
 
-    # ---------------------------------------------------------------- reward
+    # Reward calculation.
 
     def _calc_step_reward(self, is_gripper_effective: list[bool]) -> float:
         if self.config.is_dummy:
@@ -665,7 +644,7 @@ class DualFrankaEnv(gym.Env):
                     reward -= self.config.gripper_penalty
         return reward
 
-    # --------------------------------------------------------- subclass hooks
+    # Subclass hooks.
 
     def _init_action_obs_spaces(self):
         raise NotImplementedError(
@@ -684,7 +663,7 @@ class DualFrankaEnv(gym.Env):
         ctrls: list,
         dt: float,
     ) -> None:
-        """Override in subclass to issue move_joints / move_tcp_pose."""
+        """Dispatch arm motion using the subclass control representation."""
         del actions, states, ctrls, dt
 
     def _pace_between_action_and_state_read(self) -> bool:

@@ -25,7 +25,7 @@ def normalize(q):
 
 
 def wrap_to_pi(angle: float | np.ndarray) -> float | np.ndarray:
-    """Wrap angle values to the principal range [-pi, pi)."""
+    """Wrap angles to the principal range ``[-pi, pi)``."""
     return (angle + np.pi) % (2 * np.pi) - np.pi
 
 
@@ -37,7 +37,8 @@ def clip_euler_to_target_window(
 ) -> np.ndarray:
     """Clip Euler angles using the shortest wrapped delta to the target pose.
 
-    This keeps the clipping window continuous even when the target is near +/- pi.
+    The target-centered window remains continuous across the ``-pi``/``pi``
+    boundary.
 
     Args:
         euler: Current Euler angles in radians.
@@ -46,7 +47,7 @@ def clip_euler_to_target_window(
         upper_euler: Upper bound expressed in the same absolute Euler convention.
 
     Returns:
-        Euler angles clipped to the target-centered window and wrapped to [-pi, pi).
+        Clipped angles wrapped to ``[-pi, pi)``.
     """
     delta = wrap_to_pi(euler - target_euler)
     lower_delta = lower_euler - target_euler
@@ -55,19 +56,15 @@ def clip_euler_to_target_window(
     return wrap_to_pi(target_euler + clipped_delta)
 
 
-# geometry
 def quat_slerp(q0, q1, t):
-    """
-    Slerp q0 and q1 with t steps.
-    This is computed by the 4-dim sphere. And it does not depend on the order of "xyzw".
-    """
+    """Spherically interpolate between two quaternions."""
 
     q0 = normalize(q0)
     q1 = normalize(q1)
 
     dot = np.dot(q0, q1)
 
-    # ensure shortest path
+    # Align quaternion hemispheres to follow the shortest path.
     if dot < 0:
         q1 = -q1
         dot = -dot
@@ -81,7 +78,7 @@ def quat_slerp(q0, q1, t):
 
     results = []
 
-    # nearly identical → fallback to LERP
+    # Use normalized linear interpolation for nearly identical quaternions.
     if dot > 0.9995:
         for tt in t_arr:
             q = normalize(q0 + tt * (q1 - q0))
@@ -102,10 +99,7 @@ def quat_slerp(q0, q1, t):
 
 
 def construct_adjoint_matrix(tcp_pose):
-    """
-    Construct the adjoint matrix for a spatial velocity vector
-    :args: tcp_pose: (x, y, z, qx, qy, qz, qw)
-    """
+    """Construct the adjoint matrix for an ``xyz + quaternion`` TCP pose."""
     rotation = R.from_quat(tcp_pose[3:].copy()).as_matrix()
     translation = np.array(tcp_pose[:3])
     skew_matrix = np.array(
@@ -123,10 +117,7 @@ def construct_adjoint_matrix(tcp_pose):
 
 
 def construct_homogeneous_matrix(tcp_pose):
-    """
-    Construct the homogeneous transformation matrix from given pose.
-    args: tcp_pose: (x, y, z, qx, qy, qz, qw)
-    """
+    """Construct a homogeneous transform from an ``xyz + quaternion`` pose."""
     rotation = R.from_quat(tcp_pose[3:]).as_matrix()
     translation = np.array(tcp_pose[:3])
     T = np.zeros((4, 4))

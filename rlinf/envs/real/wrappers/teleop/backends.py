@@ -12,17 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""The teleop devices a config can name, and how each is built for an env.
+"""Registry for environment-specific teleoperation device backends.
 
-One class per name, registering itself the way a robotics driver does. A device
-is a pairing rather than a single object -- the hardware, and the binding that
-says what its numbers mean for this robot -- so what registers here is the
-knowledge of how to make that pair, not either half of it.
-
-That knowledge is env-layer: it reads the env config, and it asks the env what
-its arm command means. Which is why this lives here and not beside the device
-classes in :mod:`rlinf.robotics.parts.teleop`, where an env config has no
-business being.
+Each backend constructs a device together with the binding that maps its
+readings to the environment's action semantics.
 """
 
 from __future__ import annotations
@@ -63,16 +56,13 @@ DeviceOptions = Mapping[str, Any]
 
 @dataclass(frozen=True)
 class EnvFacts:
-    """What the env tells a device backend about the robot it will drive.
+    """Action metadata required to construct teleoperation bindings.
 
     Attributes:
-        layout: Where each named part sits in the action vector.
-        kinds: What each part's numbers mean, which is what decides whether a
-            device can drive it at all.
-        joint_action_scale: The divisor turning a joint delta into a normalized
-            action. Belongs to the robot rather than to the operator.
-        direct_stream: Whether this env wants joint targets pushed on their own
-            thread rather than dispatched by ``step``.
+        layout: Slice occupied by each named action part.
+        kinds: Semantic action type for each part.
+        joint_action_scale: Divisor used to normalize joint deltas.
+        direct_stream: Whether joint targets bypass ``step`` through a stream.
     """
 
     layout: Mapping[str, slice]
@@ -87,7 +77,7 @@ class EnvFacts:
         layout: Mapping[str, slice],
         kinds: Mapping[str, ActionKind],
     ) -> "EnvFacts":
-        """Read the facts a device backend may ask for off an env."""
+        """Build action metadata from an environment."""
         config = getattr(env.unwrapped, "config", None)
         return cls(
             layout=layout,
@@ -98,22 +88,12 @@ class EnvFacts:
 
 
 class TeleopBackend(ABC):
-    """One device a config can name, and how to build it for this env.
+    """Base class for registered teleoperation device builders.
 
-    Registering is a decorator in the file that implements the backend, the way
-    a camera or an arm driver registers::
+    Example::
 
         @TeleopBackend.register("spacemouse")
         class SpaceMouseBackend(TeleopBackend): ...
-
-
-        TeleopBackend.named("spacemouse")  # the class
-        TeleopBackend.names()  # every name a config may use
-
-    Adding a device used to mean an entry in one table, sometimes a second
-    entry in another table for the thread it streams on, and a module-level
-    function far from either -- three edits in a file that knows about every
-    device, for something that belongs to one.
     """
 
     #: Name to backend, filled by :meth:`register`.
@@ -139,7 +119,7 @@ class TeleopBackend(ABC):
 
     @classmethod
     def named(cls, name: str) -> type["TeleopBackend"]:
-        """The backend a config name selects, or a list of what exists."""
+        """Return the backend registered under ``name``."""
         backend = cls._REGISTRY.get(str(name).lower())
         if backend is None:
             raise ValueError(f"Unknown teleop device {name!r}. Known: {cls.names()}.")
@@ -147,7 +127,7 @@ class TeleopBackend(ABC):
 
     @classmethod
     def names(cls) -> list[str]:
-        """Every name a config may use, sorted."""
+        """Return registered backend names in sorted order."""
         return sorted(cls._REGISTRY)
 
     @classmethod
@@ -158,12 +138,12 @@ class TeleopBackend(ABC):
         options: DeviceOptions,
         facts: EnvFacts,
     ) -> TeleopEntry:
-        """Build this device and the binding that says what it means.
+        """Build a device and its environment-specific binding.
 
         Args:
-            cfg: The env config section, for options devices share.
-            options: This entry's own options from the config.
-            facts: What the env says about the robot being driven.
+            cfg: Environment configuration containing shared device options.
+            options: Options for this device entry.
+            facts: Action metadata declared by the environment.
         """
 
     @classmethod
@@ -173,21 +153,13 @@ class TeleopBackend(ABC):
         facts: EnvFacts,
         entries: Sequence[TeleopEntry],
     ) -> Optional[TeleopStreamer]:
-        """The thread this device also commands the robot through, if any.
-
-        Most devices command through the group, so the default is none. One
-        that overrides this is saying that composition alone does not describe
-        it: the action is one thing, the rate it is delivered at another.
-
-        It is asked after every entry exists, because a streamer drives the
-        devices the group composed rather than opening its own.
-        """
+        """Build an optional direct-action streamer after all entries exist."""
         return None
 
 
 @TeleopBackend.register("spacemouse")
 class SpaceMouseBackend(TeleopBackend):
-    """A six-axis puck: the twist drives the arm, the buttons latch the grip."""
+    """Build a SpaceMouse with Cartesian-delta and gripper bindings."""
 
     @classmethod
     def entry(
@@ -205,7 +177,7 @@ class SpaceMouseBackend(TeleopBackend):
 
 @TeleopBackend.register("gello")
 class GelloBackend(TeleopBackend):
-    """A leader arm the operator poses, read as a Cartesian target."""
+    """Build a GELLO leader arm with Cartesian-pose input."""
 
     @classmethod
     def entry(
@@ -229,7 +201,7 @@ class GelloBackend(TeleopBackend):
 
 @TeleopBackend.register("gello_joint")
 class GelloJointBackend(TeleopBackend):
-    """The same leader arm, read as joint targets for one arm of the robot."""
+    """Build a GELLO leader arm with joint-space input."""
 
     @classmethod
     def entry(
@@ -252,8 +224,7 @@ class GelloJointBackend(TeleopBackend):
                 f"'{drives}_gello_port' in the env config."
             )
         side = {"left": 0, "right": 1}.get(str(drives), 0)
-        # Whether the env reads a target or a change is what it declared its
-        # arm command to be; there is no second place to ask.
+        # Match the binding to absolute or delta joint semantics.
         arm = facts.kinds.get(f"{drives}.arm", facts.kinds.get("arm"))
         return TeleopEntry(
             TeleopLeaderArm(port=port, joint_space=True),
@@ -274,16 +245,10 @@ class GelloJointBackend(TeleopBackend):
         facts: EnvFacts,
         entries: Sequence[TeleopEntry],
     ) -> Optional[TeleopStreamer]:
-        """The 1 kHz thread a pair of leader arms uses, when this env asks.
+        """Build the optional 1 kHz dual-leader-arm streamer.
 
-        Follower tracking is unstable at the policy's step rate, so the joint
-        targets go straight to the controllers on their own thread.
-
-        It streams the arms the group already composed rather than opening its
-        own. Two readers on one serial port is at best two pollers competing
-        for it, and the second pair would be built from the config's global
-        ports -- so a per-entry ``port`` override would drive the action and be
-        ignored by the stream.
+        The streamer reuses devices from ``entries`` to avoid opening each
+        serial port twice.
         """
         if not facts.direct_stream:
             return None
@@ -307,7 +272,7 @@ class GelloJointBackend(TeleopBackend):
 
 @TeleopBackend.register("glove")
 class GloveBackend(TeleopBackend):
-    """A pair of gloves, read as finger angles for a dexterous hand."""
+    """Build a glove device with a dexterous-hand binding."""
 
     @classmethod
     def entry(
@@ -316,10 +281,7 @@ class GloveBackend(TeleopBackend):
         options: DeviceOptions,
         facts: EnvFacts,
     ) -> TeleopEntry:
-        # ``glove_config`` is the key the shipped configs set, and a per-entry
-        # option overrides it. Reading ``glove`` instead silently dropped the
-        # ports and the calibration file, leaving the device to open a default
-        # that is not the one anybody configured.
+        # Per-entry options override the shared glove configuration.
         glove_cfg = dict(cfg.get("glove_config", {}))
         glove_cfg.update(options)
         return TeleopEntry(
@@ -336,7 +298,7 @@ class GloveBackend(TeleopBackend):
 
 @TeleopBackend.register("pico")
 class PicoBackend(TeleopBackend):
-    """A VR controller, bound to a pose or to a delta as the env asks."""
+    """Build a PICO controller with pose or delta semantics."""
 
     @classmethod
     def entry(
@@ -355,8 +317,7 @@ class PicoBackend(TeleopBackend):
         )
         gripper = bool(options.get("gripper", not bool(cfg.get("no_gripper", True))))
 
-        # The env says whether its arm takes a pose to reach or a delta to
-        # apply.
+        # Match the binding to the environment's Cartesian action semantics.
         arm = facts.kinds.get("arm" if drives is None else f"{drives}.arm")
         absolute = arm is ActionKind.CARTESIAN_POSE
 

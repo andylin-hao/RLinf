@@ -12,9 +12,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Helpers the real-world envs and their wrappers share.
-
-:mod:`.pose` is SE(3) maths -- adjoints, homogeneous matrices, angle wrapping --
-used by the frame transforms and by the arms. :mod:`.video` plays camera frames
-back to an operator watching a rollout.
-"""
+"""Shared pose and video helpers for real-world environments."""

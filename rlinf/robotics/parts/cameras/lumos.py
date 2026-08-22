@@ -15,9 +15,8 @@
 """LUMOS camera capture via OpenCV's V4L2 backend.
 
 LUMOS cameras expose a raw I420 (YU12) stream over V4L2; this class disables
-OpenCV's built-in RGB conversion, reshapes the packed YUV buffer, and does
-the I420→BGR conversion manually so the output matches the RealSense / ZED
-backends (BGR ``uint8``).
+OpenCV's built-in RGB conversion, reshapes the packed YUV buffer, and converts
+I420 to BGR so its ``uint8`` output matches the other camera backends.
 
 Depth is not available from this V4L2 interface.
 """
@@ -41,7 +40,7 @@ class LumosCamera(BaseCamera):
 
     ``camera_info.serial_number`` may be:
 
-    * a ``/dev/v4l/by-id/`` filename (preferred — stable across reboots)
+    * a ``/dev/v4l/by-id/`` filename, which is stable across reboots
     * a ``"videoN"`` shorthand resolved to ``/dev/videoN``
     * a numeric string or int interpreted as a V4L2 device index
     """
@@ -58,19 +57,12 @@ class LumosCamera(BaseCamera):
             raise ValueError("LumosCamera does not support depth capture via V4L2.")
 
         self._out_w, self._out_h = camera_info.resolution
-        # XVisio vSLAM only streams YU12 at 1280x1280; off-spec hangs at select(). Resize in software.
+        # XVisio vSLAM requires 1280x1280 YU12 capture; resize in software.
         self._native_w, self._native_h = self._NATIVE_W, self._NATIVE_H
         self._cv2: Any = None
 
     def _open(self) -> Any:
-        """Open the V4L2 device and hold it to the format this camera needs.
-
-        Everything that touches the device happens here rather than in the
-        constructor, so composing a robot stays inert: a camera can be declared
-        on a machine that does not have it, and placement rebuilds it on the
-        machine that does. Opening here is also what makes ``reopen`` work,
-        which is how a stalled camera recovers.
-        """
+        """Open the V4L2 device and configure its native stream format."""
         import cv2
 
         self._cv2 = cv2
@@ -87,8 +79,7 @@ class LumosCamera(BaseCamera):
         try:
             self._configure(capture, dev_path)
         except Exception:
-            # A half-configured capture still holds the device, and the
-            # lifecycle only releases what _open returned.
+            # Release the device if configuration fails after opening it.
             capture.release()
             raise
         return capture
@@ -170,11 +161,7 @@ class LumosCamera(BaseCamera):
         return True, bgr
 
     def _release(self, device: Any) -> None:
-        """Release the capture the lifecycle handed back, not one read off self.
-
-        Taking the argument is what makes a second disconnect harmless and
-        keeps cleanup independent of when ``_device`` is cleared.
-        """
+        """Release the supplied video capture."""
         if device is not None:
             device.release()
 

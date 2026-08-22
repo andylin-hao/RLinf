@@ -12,17 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""GimArm peg-insertion task.
-
-Ported from :class:`rlinf.envs.real.franka.tasks.PegInsertionEnv`.
-
-Key differences from the Franka version:
-- No ``compliance_param`` / ``precision_param`` (no ROS impedance controller).
-- Reset and control are in joint space, not Cartesian space.
-- ``go_to_rest`` retracts to ``safe_retract_qpos`` (joint-space) instead of
-  a Cartesian Z-axis lift.
-- Reward is still computed in Cartesian space via FK, identical to Franka.
-"""
+"""GimArm peg-insertion task with joint-space control and reset motion."""
 
 import time
 from dataclasses import dataclass, field
@@ -79,12 +69,7 @@ class GimArmPegInsertionConfig(GimArmRobotConfig):
 
 
 class GimArmPegInsertionEnv(GimArmEnv):
-    """GimArm peg insertion task: insert a peg into a hole.
-
-    Actions are 6-DOF absolute joint-position targets plus a binary gripper command.
-    Reward is computed in Cartesian space by comparing FK-based TCP pose
-    to the target pose.
-    """
+    """Insert a grasped peg using absolute joint targets and Cartesian reward."""
 
     def __init__(self, override_cfg, worker_info=None, robot_info=None, env_idx=0):
         config = GimArmPegInsertionConfig(**override_cfg)
@@ -100,11 +85,11 @@ class GimArmPegInsertionEnv(GimArmEnv):
         """Close gripper on peg, retract to safe config, then move to reset pose."""
         if not self.config.is_dummy:
             if self.config.enable_gripper:
-                # Close gripper to hold the peg during retraction.
+                # Keep the peg secured during the reset trajectory.
                 self._controller.close_gripper()
                 time.sleep(0.3)
 
-            # Move to safe retracted position (clears the insertion hole).
+            # Retract clear of the insertion hole.
             self._controller.reset_joint(self.config.safe_retract_qpos)
             time.sleep(0.5)
 
@@ -113,7 +98,7 @@ class GimArmPegInsertionEnv(GimArmEnv):
                 self._controller.reset_joint(self.config.joint_reset_qpos)
                 time.sleep(0.5)
 
-            # Use per-episode perturbed qpos if available, otherwise config default.
+            # Apply the per-episode perturbation when available.
             reset_qpos = (
                 self._perturbed_reset_qpos
                 if self._perturbed_reset_qpos is not None
