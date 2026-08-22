@@ -48,7 +48,7 @@ Byte   Register  Description
 
 import inspect
 import time
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import numpy as np
 
@@ -68,7 +68,7 @@ _rACT = 1 << 0
 _rGTO = 1 << 3
 
 
-def _create_modbus_client(port: str, baudrate: int = 115200):
+def _create_modbus_client(port: str, baudrate: int = 115200) -> Any:
     """Create a pymodbus serial client (compatible with v2 and v3+)."""
     try:
         from pymodbus.client import ModbusSerialClient
@@ -85,6 +85,10 @@ def _create_modbus_client(port: str, baudrate: int = 115200):
     )
 
 
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from rlinf.robotics.parts.transports.ros import ROSController
+
+
 @EndEffector.register("robotiq", "robotiq_gripper")
 class RobotiqGripper(BaseGripper):
     """Robotiq 2F-85 / 2F-140 controlled via Modbus RTU over USB-RS485.
@@ -98,7 +102,13 @@ class RobotiqGripper(BaseGripper):
     """
 
     @classmethod
-    def declare(cls, *, ros=None, port=None, **settings) -> "RobotiqGripper":
+    def declare(
+        cls,
+        *,
+        ros: Optional["ROSController"] = None,
+        port: Optional[str] = None,
+        **settings: Any,
+    ) -> "RobotiqGripper":
         """Reached over a serial port; the arm's ROS session is not for us."""
         return cls(port=port, **settings)
 
@@ -108,7 +118,7 @@ class RobotiqGripper(BaseGripper):
         baudrate: int = 115200,
         slave_id: int = _SLAVE_ID,
         max_width: float = 0.085,
-    ):
+    ) -> None:
         if not port:
             raise ValueError(
                 "A Robotiq gripper is reached over a serial port, so one has "
@@ -127,7 +137,7 @@ class RobotiqGripper(BaseGripper):
         self._is_open_flag: bool = True
         self._activated: bool = False
 
-    def _open(self):
+    def _open(self) -> Any:
         """Open the serial link and run the activation sequence.
 
         Activation moves the fingers, so it belongs here rather than in the

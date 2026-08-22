@@ -29,7 +29,7 @@ class GelloExpert:
             ``"/dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTA0OUKN-if00-port0"``.
     """
 
-    def __init__(self, port: str):
+    def __init__(self, port: str) -> None:
         from gello_teleop.franka_fk import FrankaFK
         from gello_teleop.gello_teleop_agent import GelloTeleopAgent
 
@@ -46,7 +46,7 @@ class GelloExpert:
         self.thread = threading.Thread(target=self._read_gello, daemon=True)
         self.thread.start()
 
-    def _read_gello(self):
+    def _read_gello(self) -> None:
         import time
 
         while True:

@@ -51,7 +51,7 @@ class LumosCamera(BaseCamera):
     _NATIVE_W = 1280
     _NATIVE_H = 1280
 
-    def __init__(self, camera_info: CameraInfo):
+    def __init__(self, camera_info: CameraInfo) -> None:
         super().__init__(camera_info)
 
         if camera_info.enable_depth:

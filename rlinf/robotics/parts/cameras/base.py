@@ -101,7 +101,7 @@ class BaseCamera(Camera, ABC):
     around those by :meth:`connect` and :meth:`disconnect`.
     """
 
-    def __init__(self, camera_info: CameraInfo):
+    def __init__(self, camera_info: CameraInfo) -> None:
         self._camera_info = camera_info
         self._frame_queue: queue.Queue = queue.Queue()
         self._frame_capturing_thread: Optional[threading.Thread] = None
@@ -190,7 +190,7 @@ class BaseCamera(Camera, ABC):
 
     # ── internal ──────────────────────────────────────────────────────
 
-    def _capture_frames(self):
+    def _capture_frames(self) -> None:
         while self._frame_capturing_start:
             time.sleep(1 / self._camera_info.fps)
             try:

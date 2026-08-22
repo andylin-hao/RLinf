@@ -30,7 +30,7 @@ class RealSenseCamera(BaseCamera):
 
     SDK = ("pyrealsense2", "pyrealsense2")
 
-    def __init__(self, camera_info: CameraInfo):
+    def __init__(self, camera_info: CameraInfo) -> None:
         super().__init__(camera_info)
         self._serial_number = camera_info.serial_number
         self._enable_depth = camera_info.enable_depth
@@ -38,7 +38,7 @@ class RealSenseCamera(BaseCamera):
         self._config = None
         self._align = None
 
-    def _open(self):
+    def _open(self) -> Any:
         """Start the RealSense pipeline for this serial number."""
         import pyrealsense2 as rs
 

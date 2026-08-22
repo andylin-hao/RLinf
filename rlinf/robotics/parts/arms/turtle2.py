@@ -15,9 +15,10 @@
 import time
 import tracemalloc
 from dataclasses import asdict, dataclass, field
-from typing import Any
+from typing import Any, Sequence
 
 import numpy as np
+from numpy.typing import ArrayLike
 
 from rlinf.robotics.parts.base import Connection, RobotPart
 from rlinf.robotics.parts.views import MethodArm, MethodCamera, MethodEndEffector
@@ -57,7 +58,7 @@ class Turtle2RobotState:
     lift: float = 0.0
     car_pose: np.ndarray = field(default_factory=lambda: np.zeros(3))
 
-    def to_dict(self):
+    def to_dict(self) -> dict[str, Any]:
         """Convert the dataclass to a serializable dictionary."""
         return asdict(self)
 
@@ -71,7 +72,11 @@ class Turtle2Connection(Connection):
     :attr:`parts` says what it backs, and the robot composes those.
     """
 
-    def __init__(self, freq=50, camera_ids=()):
+    def __init__(
+        self,
+        freq: int = 50,
+        camera_ids: Sequence[int] = (),
+    ) -> None:
         self._logger = get_logger()
         self.freq = freq
         self.camera_ids = tuple(camera_ids)
@@ -144,7 +149,7 @@ class Turtle2Connection(Connection):
     def _release(self, device: Any) -> None:
         """Detach from the shared ROS process, which outlives this session."""
 
-    def state_callback(self, event):
+    def state_callback(self, event: Any) -> None:
         arms_data = self.controller.arms_data()
         self._state.follow1_pos = np.array(arms_data[0], dtype=np.float32)
         self._state.follow2_pos = np.array(arms_data[1], dtype=np.float32)
@@ -160,10 +165,10 @@ class Turtle2Connection(Connection):
         chassis_pose = self.controller.chassis_pose_data()
         self._state.car_pose = np.array(chassis_pose, dtype=np.float32)
 
-    def get_state(self):
+    def get_state(self) -> "Turtle2RobotState":
         return self._state
 
-    def smooth_action_callback(self, event):
+    def smooth_action_callback(self, event: Any) -> None:
         # print("intimer")
         xyz_step = self.xyz_speed / self.freq  # m
         rpy_step = self.rpy_speed / self.freq  # rad
@@ -273,7 +278,11 @@ class Turtle2Connection(Connection):
             self.controller.arms_control(newpos1, newpos2)
             # time.sleep(0.2 / self.freq)
 
-    def move_arm(self, left_arm_target, right_arm_target):
+    def move_arm(
+        self,
+        left_arm_target: list[float],
+        right_arm_target: list[float],
+    ) -> None:
         assert isinstance(left_arm_target, list) and len(left_arm_target) == 7, (
             "left_arm_target should be a list of length 7"
         )
@@ -283,43 +292,43 @@ class Turtle2Connection(Connection):
         self.left_arm_target = left_arm_target
         self.right_arm_target = right_arm_target
 
-    def move_left_arm(self, target):
+    def move_left_arm(self, target: ArrayLike) -> None:
         """Update the left arm target while preserving its gripper target."""
         target = np.asarray(target).reshape(6)
         self.left_arm_target = [*target.tolist(), self.left_arm_target[6]]
 
-    def move_right_arm(self, target):
+    def move_right_arm(self, target: ArrayLike) -> None:
         """Update the right arm target while preserving its gripper target."""
         target = np.asarray(target).reshape(6)
         self.right_arm_target = [*target.tolist(), self.right_arm_target[6]]
 
-    def move_left_gripper(self, target):
+    def move_left_gripper(self, target: ArrayLike) -> None:
         """Update only the left gripper target."""
         self.left_arm_target = [
             *self.left_arm_target[:6],
             float(np.asarray(target).reshape(1)[0]),
         ]
 
-    def move_right_gripper(self, target):
+    def move_right_gripper(self, target: ArrayLike) -> None:
         """Update only the right gripper target."""
         self.right_arm_target = [
             *self.right_arm_target[:6],
             float(np.asarray(target).reshape(1)[0]),
         ]
 
-    def reset_arms(self):
+    def reset_arms(self) -> None:
         self.left_arm_target = [0, 0, 0, 0, 0, 0, 0]
         self.right_arm_target = [0, 0, 0, 0, 0, 0, 0]
         self._logger.info("Reset target to zero.")
         time.sleep(2.0)
 
-    def check_cams(self, timeout=0.5):
+    def check_cams(self, timeout: float = 0.5) -> tuple[bool, bool, bool]:
         cam1_ok = self.controller.cam.check_cam1(timeout)
         cam2_ok = self.controller.cam.check_cam2(timeout)
         cam3_ok = self.controller.cam.check_cam3(timeout)
         return cam1_ok, cam2_ok, cam3_ok
 
-    def get_cams(self, ids):
+    def get_cams(self, ids: Sequence[int]) -> list[np.ndarray]:
         assert len(ids) > 0 and len(ids) <= 3
         frames = []
         for cam_id in ids:
@@ -335,6 +344,6 @@ class Turtle2Connection(Connection):
         assert len(frames) == len(ids), "get frames failed."
         return frames
 
-    def get_camera(self, camera_id):
+    def get_camera(self, camera_id: int) -> np.ndarray:
         """Return one camera frame by hardware camera ID."""
         return self.get_cams([camera_id])[0]

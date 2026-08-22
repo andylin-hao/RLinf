@@ -52,6 +52,13 @@ from rlinf.robotics.teleop import (
 
 from .adapters import DualGelloJointStream
 from .pico_config import split_dual_config
+from .streaming import TeleopStreamer
+
+#: The env config section a device reads shared options from, e.g. ``env.eval``.
+EnvConfig = Mapping[str, Any]
+
+#: One entry's own options, from the mapping form of a ``teleop`` list item.
+DeviceOptions = Mapping[str, Any]
 
 
 @dataclass(frozen=True)
@@ -74,7 +81,12 @@ class EnvFacts:
     direct_stream: bool = False
 
     @classmethod
-    def about(cls, env: gym.Env, layout, kinds) -> "EnvFacts":
+    def about(
+        cls,
+        env: gym.Env,
+        layout: Mapping[str, slice],
+        kinds: Mapping[str, ActionKind],
+    ) -> "EnvFacts":
         """Read the facts a device backend may ask for off an env."""
         config = getattr(env.unwrapped, "config", None)
         return cls(
@@ -142,8 +154,8 @@ class TeleopBackend(ABC):
     @abstractmethod
     def entry(
         cls,
-        cfg: Mapping[str, Any],
-        options: Mapping[str, Any],
+        cfg: EnvConfig,
+        options: DeviceOptions,
         facts: EnvFacts,
     ) -> TeleopEntry:
         """Build this device and the binding that says what it means.
@@ -157,10 +169,10 @@ class TeleopBackend(ABC):
     @classmethod
     def streamer(
         cls,
-        cfg: Mapping[str, Any],
+        cfg: EnvConfig,
         facts: EnvFacts,
         entries: Sequence[TeleopEntry],
-    ) -> Optional[Any]:
+    ) -> Optional[TeleopStreamer]:
         """The thread this device also commands the robot through, if any.
 
         Most devices command through the group, so the default is none. One
@@ -178,7 +190,12 @@ class SpaceMouseBackend(TeleopBackend):
     """A six-axis puck: the twist drives the arm, the buttons latch the grip."""
 
     @classmethod
-    def entry(cls, cfg, options, facts) -> TeleopEntry:
+    def entry(
+        cls,
+        cfg: EnvConfig,
+        options: DeviceOptions,
+        facts: EnvFacts,
+    ) -> TeleopEntry:
         return TeleopEntry(
             SpaceMouse(device_index=int(options.get("device_index", 0))),
             SpaceMouseBinding(),
@@ -191,7 +208,12 @@ class GelloBackend(TeleopBackend):
     """A leader arm the operator poses, read as a Cartesian target."""
 
     @classmethod
-    def entry(cls, cfg, options, facts) -> TeleopEntry:
+    def entry(
+        cls,
+        cfg: EnvConfig,
+        options: DeviceOptions,
+        facts: EnvFacts,
+    ) -> TeleopEntry:
         port = options.get("port", cfg.get("gello_port"))
         if port is None:
             raise ValueError(
@@ -210,7 +232,12 @@ class GelloJointBackend(TeleopBackend):
     """The same leader arm, read as joint targets for one arm of the robot."""
 
     @classmethod
-    def entry(cls, cfg, options, facts) -> TeleopEntry:
+    def entry(
+        cls,
+        cfg: EnvConfig,
+        options: DeviceOptions,
+        facts: EnvFacts,
+    ) -> TeleopEntry:
         drives = options.get("drives")
         if drives is None:
             raise ValueError(
@@ -241,7 +268,12 @@ class GelloJointBackend(TeleopBackend):
         )
 
     @classmethod
-    def streamer(cls, cfg, facts, entries) -> Optional[Any]:
+    def streamer(
+        cls,
+        cfg: EnvConfig,
+        facts: EnvFacts,
+        entries: Sequence[TeleopEntry],
+    ) -> Optional[TeleopStreamer]:
         """The 1 kHz thread a pair of leader arms uses, when this env asks.
 
         Follower tracking is unstable at the policy's step rate, so the joint
@@ -278,7 +310,12 @@ class GloveBackend(TeleopBackend):
     """A pair of gloves, read as finger angles for a dexterous hand."""
 
     @classmethod
-    def entry(cls, cfg, options, facts) -> TeleopEntry:
+    def entry(
+        cls,
+        cfg: EnvConfig,
+        options: DeviceOptions,
+        facts: EnvFacts,
+    ) -> TeleopEntry:
         # ``glove_config`` is the key the shipped configs set, and a per-entry
         # option overrides it. Reading ``glove`` instead silently dropped the
         # ports and the calibration file, leaving the device to open a default
@@ -302,7 +339,12 @@ class PicoBackend(TeleopBackend):
     """A VR controller, bound to a pose or to a delta as the env asks."""
 
     @classmethod
-    def entry(cls, cfg, options, facts) -> TeleopEntry:
+    def entry(
+        cls,
+        cfg: EnvConfig,
+        options: DeviceOptions,
+        facts: EnvFacts,
+    ) -> TeleopEntry:
         drives = options.get("drives")
         pico_cfg = dict(cfg.get("pico", {}))
         hold = bool(

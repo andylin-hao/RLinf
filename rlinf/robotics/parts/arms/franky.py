@@ -23,7 +23,7 @@ import ctypes
 import ctypes.util
 import os
 import time
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import numpy as np
 from scipy.spatial.transform import Rotation as R
@@ -73,6 +73,12 @@ _RT_PRIORITY = 80
 _MCL_CURRENT, _MCL_FUTURE = 1, 2
 
 
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from rlinf.robotics.parts.end_effectors.grippers import BaseGripper
+
+    pass
+
+
 @Arm.register("franky")
 class FrankyArm(BaseArm):
     """Franka arm over libfranka, with no scheduler dependency."""
@@ -80,13 +86,13 @@ class FrankyArm(BaseArm):
     @classmethod
     def declare(
         cls,
-        address,
+        address: str,
         *,
-        gripper_type=None,
-        gripper_connection=None,
-        end_effector_type=None,
-        end_effector_config=None,
-        **placement,
+        gripper_type: Optional[str] = None,
+        gripper_connection: Optional[str] = None,
+        end_effector_type: Optional[str] = None,
+        end_effector_config: Optional[dict[str, Any]] = None,
+        **placement: Any,
     ) -> "FrankyArm":
         """Build this backend from the settings a Franka robot carries.
 
@@ -113,7 +119,7 @@ class FrankyArm(BaseArm):
         robot_ip: str,
         gripper_type: str = "robotiq",
         gripper_connection: Optional[str] = None,
-    ):
+    ) -> None:
         self._logger = get_logger()
         self._robot_ip = validated_robot_ip(robot_ip, type(self).__name__)
         self._gripper_type = gripper_type
@@ -185,7 +191,7 @@ class FrankyArm(BaseArm):
         gripper_type: str,
         gripper_connection: Optional[str],
         robot_ip: str,
-    ):
+    ) -> "BaseGripper":
         """Build the gripper this arm carries, from the registry.
 
         The Franka Hand is driven over a ROS session, which this stack does not

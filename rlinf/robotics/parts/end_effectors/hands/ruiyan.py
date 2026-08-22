@@ -62,7 +62,7 @@ class RuiyanHand(BaseEndEffector):
         default_velocity: int = 2000,
         default_current: int = 800,
         default_state: Optional[list[float]] = None,
-    ):
+    ) -> None:
         # Settings only. Importing the SDK here would put it on the machine
         # composing the robot rather than the one holding the hand, and a
         # config could not be described at all without the vendor package.

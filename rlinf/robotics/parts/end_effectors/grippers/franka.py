@@ -18,10 +18,15 @@ This module encapsulates the ROS channel setup and message publishing that
 were previously embedded in the arm's controller worker.
 """
 
+from typing import TYPE_CHECKING, Any, Optional
+
 import numpy as np
 
 from ..base import EndEffector
 from .base import BaseGripper
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from rlinf.robotics.parts.transports.ros import ROSController
 
 
 @EndEffector.register("franka", "franka_gripper")
@@ -43,11 +48,17 @@ class FrankaGripper(BaseGripper):
     """
 
     @classmethod
-    def declare(cls, *, ros=None, port=None, **settings) -> "FrankaGripper":
+    def declare(
+        cls,
+        *,
+        ros: Optional["ROSController"] = None,
+        port: Optional[str] = None,
+        **settings: Any,
+    ) -> "FrankaGripper":
         """Reached over the arm's ROS session; a serial port is not for us."""
         return cls(ros=ros, **settings)
 
-    def __init__(self, ros, max_width: float = 0.08):
+    def __init__(self, ros: "ROSController", max_width: float = 0.08) -> None:
         if ros is None:
             raise ValueError(
                 "A Franka Hand is driven over the arm's ROS session, so one "
@@ -68,7 +79,7 @@ class FrankaGripper(BaseGripper):
         self._grasp_channel = "/franka_gripper/grasp/goal"
         self._state_channel = "/franka_gripper/joint_states"
 
-    def _open(self):
+    def _open(self) -> None:
         """Open the gripper's channels on the arm's ROS session.
 
         The message types are imported here rather than at module scope, and
@@ -91,7 +102,7 @@ class FrankaGripper(BaseGripper):
             self._state_channel, JointState, self._on_state_msg
         )
 
-    def _release(self, device) -> None:
+    def _release(self, device: Any) -> None:
         """Nothing to close: the arm owns the ROS session these ride on."""
         self._is_ready_flag = False
 
@@ -147,6 +158,6 @@ class FrankaGripper(BaseGripper):
 
     # ── ROS callback ─────────────────────────────────────────────────
 
-    def _on_state_msg(self, msg) -> None:
+    def _on_state_msg(self, msg: Any) -> None:
         self._position_value = np.sum(msg.position)
         self._is_ready_flag = True

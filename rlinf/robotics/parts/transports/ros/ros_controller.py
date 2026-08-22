@@ -16,7 +16,7 @@ import os
 import pathlib
 import sys
 import time
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 import psutil
 import rospy
@@ -28,7 +28,7 @@ from rlinf.utils.logging import get_logger
 class ROSController:
     """Controller for ROS communication. A controller is used for managing one robot."""
 
-    def __init__(self, ros_version: int = 1):
+    def __init__(self, ros_version: int = 1) -> None:
         """Initialize the ROS controller."""
         self._logger = get_logger()
         self._ros_version = ros_version
@@ -80,7 +80,7 @@ class ROSController:
 
     def create_ros_channel(
         self, name: str, data_class: rospy.Message, queue_size: Optional[int] = None
-    ):
+    ) -> None:
         """Create a ROS Publisher channel for communication.
 
         Args:
@@ -94,7 +94,7 @@ class ROSController:
 
     def connect_ros_channel(
         self, name: str, data_class: rospy.Message, callback: Callable
-    ):
+    ) -> None:
         """Connect a ROS Subscriber channel for communication.
 
         Args:
@@ -103,7 +103,7 @@ class ROSController:
             callback: The callback function to handle incoming messages.
         """
 
-        def callback_wrapper(*args, **kwargs):
+        def callback_wrapper(*args: Any, **kwargs: Any) -> Any:
             # When the callback is called, mark the channel as active
             self._input_channel_status[name] = True
             return callback(*args, **kwargs)
@@ -113,7 +113,7 @@ class ROSController:
             name, data_class, callback_wrapper
         )
 
-    def put_channel(self, name: str, data: rospy.Message):
+    def put_channel(self, name: str, data: rospy.Message) -> None:
         """Put data into a ROS Publisher channel.
 
         Args:

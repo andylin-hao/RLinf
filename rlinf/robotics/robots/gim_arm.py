@@ -134,7 +134,7 @@ class GimArmConfig(RobotConfig):
         """Report the arm variant, which changes reach and payload."""
         return f"{robot_type}_{self.arm_variant}"
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Post-initialization to validate the configuration."""
         assert isinstance(self.node_rank, int), (
             f"'node_rank' in GimArm config must be an integer. "

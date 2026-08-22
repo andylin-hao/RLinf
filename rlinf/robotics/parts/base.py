@@ -927,7 +927,7 @@ class PartGroup(ControllablePart):
             found.extend(PartGroup._owners_of(rider))
         return found
 
-    def _fan_out(self, call) -> dict[str, Any]:
+    def _fan_out(self, call: "Callable[[RobotPart], Any]") -> dict[str, Any]:
         """Run *call* over every part, concurrently where connections differ."""
 
         def run(names: list[str]) -> dict[str, Any]:

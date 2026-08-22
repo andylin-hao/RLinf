@@ -52,8 +52,8 @@ class FrankaRobot(Robot):
         gripper_type: Optional[str] = None,
         gripper_connection: Optional[str] = None,
         end_effector_type: Optional[str] = None,
-        end_effector_config: Optional[dict] = None,
-    ):
+        end_effector_config: Optional[dict[str, Any]] = None,
+    ) -> "Arm":
         """Declare one whole arm: its motion and the end effector it carries.
 
         The end effector rides the arm's own connection, so it comes with the
@@ -183,7 +183,7 @@ class FrankaConfig(RobotConfig):
     enumeration either way: whether it is an address at all is settled by the
     arm part that dials it."""
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Post-initialization to validate the configuration."""
         assert isinstance(self.node_rank, int), (
             f"'node_rank' in franka config must be an integer. But got {type(self.node_rank)}."

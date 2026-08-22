@@ -20,7 +20,7 @@ dataclass lives beside them rather than inside either one.
 
 import ipaddress
 from dataclasses import asdict, dataclass, field
-from typing import Optional
+from typing import Any, Optional
 
 import numpy as np
 
@@ -64,7 +64,7 @@ class FrankaRobotState:
     # -- Dexterous hand --------------------------------------------------
     hand_position: Optional[np.ndarray] = None  # 6-D normalised [0, 1]
 
-    def to_dict(self):
+    def to_dict(self) -> dict[str, Any]:
         """Convert the dataclass to a serializable dictionary."""
         return asdict(self)
 

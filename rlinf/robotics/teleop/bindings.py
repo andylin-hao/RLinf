@@ -17,7 +17,7 @@
 from __future__ import annotations
 
 from types import MappingProxyType
-from typing import Any, Mapping, Optional
+from typing import Any, Mapping, Optional, Sequence
 
 import numpy as np
 from scipy.spatial.transform import Rotation as R
@@ -246,7 +246,7 @@ class GloveBinding(TeleopBinding):
         return TeleopAction(parts={"hand": self._commanded.copy()}, driving=False)
 
 
-def _rotvec_to_euler(action: np.ndarray, action_scale: Any) -> np.ndarray:
+def _rotvec_to_euler(action: np.ndarray, action_scale: Sequence[float]) -> np.ndarray:
     """Re-express a rotvec delta as the Euler delta a Franka env expects.
 
     The controller reports rotation as a scaled rotvec; the env reads Euler.
@@ -305,7 +305,9 @@ class _PicoArmBinding(TeleopBinding):
             f"values, got {pose.size}."
         )
 
-    def _read(self, reading: Mapping[str, Any], context: Mapping[str, Any]):
+    def _read(
+        self, reading: Mapping[str, Any], context: Mapping[str, Any]
+    ) -> dict[str, np.ndarray]:
         """Turn the operator's motion into a command for where this arm is."""
         pose = self._measured_pose(context)
         held = bool(reading.get("held", False))
@@ -328,7 +330,7 @@ class _PicoArmBinding(TeleopBinding):
         self,
         reading: Mapping[str, Any],
         pose: np.ndarray,
-        action_scale: Any,
+        action_scale: Sequence[float],
     ) -> np.ndarray:
         """The normalized delta from where the arm is to where it should go."""
         anchor_pos, anchor_rot = self._held_from
@@ -466,7 +468,7 @@ class PicoTcpBinding(_PicoArmBinding):
         )
 
     def _compose(
-        self, action: np.ndarray, pose: np.ndarray, action_scale: Any
+        self, action: np.ndarray, pose: np.ndarray, action_scale: Sequence[float]
     ) -> np.ndarray:
         """Put the operator's delta on top of where the arm actually is."""
         if action.size < 6:

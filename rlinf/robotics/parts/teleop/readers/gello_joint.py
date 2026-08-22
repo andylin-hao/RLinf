@@ -39,7 +39,7 @@ class GelloJointExpert:
         port: Serial port of the GELLO device.
     """
 
-    def __init__(self, port: str):
+    def __init__(self, port: str) -> None:
         from gello_teleop.gello_teleop_agent import GelloTeleopAgent
 
         self.agent = GelloTeleopAgent(port=port)
@@ -55,7 +55,7 @@ class GelloJointExpert:
         self.thread = threading.Thread(target=self._read_gello, daemon=True)
         self.thread.start()
 
-    def _read_gello(self):
+    def _read_gello(self) -> None:
         consecutive_errors = 0
         max_consecutive_errors = 50
 

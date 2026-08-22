@@ -45,6 +45,7 @@ from typing import Any, Optional, Union, cast
 import numpy as np
 
 from .arms.base import Arm
+from .base import Connection
 from .cameras.base import Camera
 from .end_effectors.base import EndEffector
 
@@ -75,7 +76,7 @@ class MethodArm(Arm):
 
     def __init__(
         self,
-        host: Any,
+        host: "Connection",
         commands: dict[str, str],
         state_fields: Optional[Union[tuple[str, ...], dict[str, str]]] = None,
     ) -> None:
@@ -142,7 +143,7 @@ class MethodEndEffector(EndEffector):
 
     def __init__(
         self,
-        host: Any,
+        host: "Connection",
         state_field: str,
         dims: int = 1,
         command: Optional[str] = None,
@@ -209,7 +210,7 @@ class MethodCamera(Camera):
         method_args: Fixed arguments identifying the camera, e.g. its id.
     """
 
-    def __init__(self, host: Any, method: str, *method_args: Any) -> None:
+    def __init__(self, host: "Connection", method: str, *method_args: Any) -> None:
         self._host = self._owner = host
         self.method = method
         self.method_args = method_args

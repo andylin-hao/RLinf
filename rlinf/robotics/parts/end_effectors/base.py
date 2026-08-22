@@ -36,7 +36,9 @@ class EndEffector(ControllablePart, ABC):
     """
 
     @classmethod
-    def of(cls, end_effector_type: Any, **settings: Any) -> "EndEffector":
+    def of(
+        cls, end_effector_type: "str | EndEffectorType", **settings: Any
+    ) -> "EndEffector":
         """Build the end effector a config names, without opening it.
 
         The same shape as

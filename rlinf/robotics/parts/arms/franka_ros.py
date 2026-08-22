@@ -40,13 +40,13 @@ class FrankaROSArm(BaseArm):
     @classmethod
     def declare(
         cls,
-        address,
+        address: str,
         *,
-        gripper_type=None,
-        gripper_connection=None,
-        end_effector_type=None,
-        end_effector_config=None,
-        **placement,
+        gripper_type: Optional[str] = None,
+        gripper_connection: Optional[str] = None,
+        end_effector_type: Optional[str] = None,
+        end_effector_config: Optional[dict[str, Any]] = None,
+        **placement: Any,
     ) -> "FrankaROSArm":
         """Build this backend from the settings a Franka robot carries.
 
@@ -82,7 +82,7 @@ class FrankaROSArm(BaseArm):
         end_effector_config: Optional[dict] = None,
         gripper_type: Optional[str] = None,
         gripper_connection: Optional[str] = None,
-    ):
+    ) -> None:
         self._logger = get_logger()
         self._robot_ip = validated_robot_ip(robot_ip, type(self).__name__)
         self._ros_pkg = ros_pkg
@@ -197,7 +197,7 @@ class FrankaROSArm(BaseArm):
             self._end_effector_type.value,
         )
 
-    def _init_ros_channels(self):
+    def _init_ros_channels(self) -> None:
         """Initialize ROS channels for arm communication."""
         self._arm_equilibrium_channel = (
             "/cartesian_impedance_controller/equilibrium_pose"
@@ -227,12 +227,12 @@ class FrankaROSArm(BaseArm):
             self._on_arm_state_msg,
         )
 
-    def _on_arm_jacobian_msg(self, msg):
+    def _on_arm_jacobian_msg(self, msg: Any) -> None:
         self._state.arm_jacobian = np.array(list(msg.zero_jacobian)).reshape(
             (6, 7), order="F"
         )
 
-    def _on_arm_state_msg(self, msg):
+    def _on_arm_state_msg(self, msg: Any) -> None:
         tmatrix = np.array(list(msg.O_T_EE)).reshape(4, 4).T
         r = R.from_matrix(tmatrix[:3, :3].copy())
         self._state.tcp_pose = np.concatenate([tmatrix[:3, -1], r.as_quat()])
@@ -252,7 +252,7 @@ class FrankaROSArm(BaseArm):
                 exc,
             )
 
-    def reconfigure_compliance_params(self, params: dict[str, float]):
+    def reconfigure_compliance_params(self, params: dict[str, float]) -> None:
         self._reconf_client.update_configuration(params)
         self._logger.debug(f"Reconfigure compliance parameters: {params}")
 
@@ -274,7 +274,7 @@ class FrankaROSArm(BaseArm):
             self._state.hand_position = self._end_effector.get_state()
         return self._state
 
-    def start_impedance(self):
+    def start_impedance(self) -> None:
         """Start the impedance controller."""
         load_gripper = (
             "true"
@@ -296,17 +296,17 @@ class FrankaROSArm(BaseArm):
         self._wait_robot()
         self._logger.debug(f"Start Impedance controller: {self._impedance.status()}")
 
-    def stop_impedance(self):
+    def stop_impedance(self) -> None:
         if self._impedance:
             self._impedance.terminate()
             self._impedance = None
             self._wait_robot()
         self._logger.debug("Stop Impedance controller")
 
-    def clear_errors(self):
+    def clear_errors(self) -> None:
         self._ros.put_channel(self._arm_reset_channel, self._ErrorRecoveryActionGoal())
 
-    def reset_joint(self, reset_pos: list[float]):
+    def reset_joint(self, reset_pos: list[float]) -> None:
         """Reset the joint positions of the robot arm."""
         self.stop_impedance()
         self.clear_errors()
@@ -344,7 +344,7 @@ class FrankaROSArm(BaseArm):
         self.clear_errors()
         self.start_impedance()
 
-    def move_arm(self, position: np.ndarray):
+    def move_arm(self, position: np.ndarray) -> None:
         """Move the robot arm to the desired position."""
         assert len(position) == 7, (
             f"Invalid position, expected 7 dimensions but got {len(position)}"
@@ -387,19 +387,19 @@ class FrankaROSArm(BaseArm):
         assert self._end_effector is not None
         self._end_effector.reset(target_state)
 
-    def open_gripper(self):
+    def open_gripper(self) -> None:
         if self._end_effector_type.is_gripper:
             self._gripper.open()
             self._state.gripper_open = True
         self._logger.debug("Open gripper")
 
-    def close_gripper(self):
+    def close_gripper(self) -> None:
         if self._end_effector_type.is_gripper:
             self._gripper.close()
             self._state.gripper_open = False
         self._logger.debug("Close gripper")
 
-    def move_gripper(self, width: float, speed: float = 0.3):
+    def move_gripper(self, width: float, speed: float = 0.3) -> None:
         """Move the gripper to an opening width, in metres.
 
         The range check that used to live here read ``0 <= position <= 255``,
@@ -411,10 +411,10 @@ class FrankaROSArm(BaseArm):
             self._gripper.move(width, speed)
         self._logger.debug("Move gripper to width: %.4f m", width)
 
-    def _wait_robot(self, sleep_time: int = 1):
+    def _wait_robot(self, sleep_time: int = 1) -> None:
         time.sleep(sleep_time)
 
-    def _wait_for_joint(self, target_pos: list[float], timeout: int = 30):
+    def _wait_for_joint(self, target_pos: list[float], timeout: int = 30) -> None:
         wait_time = 0.01
         waited_time = 0.0
         target_pos = np.array(target_pos)

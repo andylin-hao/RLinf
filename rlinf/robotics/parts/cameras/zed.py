@@ -42,11 +42,11 @@ class ZEDCamera(BaseCamera):
 
     SDK = ("pyzed.sl", "pyzed (the Stereolabs ZED SDK)")
 
-    def __init__(self, camera_info: CameraInfo):
+    def __init__(self, camera_info: CameraInfo) -> None:
         super().__init__(camera_info)
         self._camera = None
 
-    def _open(self):
+    def _open(self) -> Any:
         """Open the ZED and configure its streams."""
         import pyzed.sl as sl
 
@@ -124,7 +124,7 @@ class ZEDCamera(BaseCamera):
         return ZEDCamera._resolution_map
 
     @staticmethod
-    def _find_closest_resolution(target: tuple[int, int]):
+    def _find_closest_resolution(target: tuple[int, int]) -> Any:
         """Map the requested ``(width, height)`` to the nearest ZED preset."""
         resolution_map = ZEDCamera._build_resolution_map()
         best = None

@@ -162,7 +162,7 @@ class DualFrankaConfig(RobotConfig):
     addresses are not checked at enumeration either way: whether each is an
     address at all is settled by the arm part that dials it."""
 
-    def __post_init__(self):  # noqa: D105
+    def __post_init__(self) -> None:  # noqa: D105
         assert isinstance(self.node_rank, int), (
             f"'node_rank' in DualFranka config must be an integer. "
             f"But got {type(self.node_rank)}."

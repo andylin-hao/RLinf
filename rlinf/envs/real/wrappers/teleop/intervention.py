@@ -147,7 +147,7 @@ class TeleopIntervention(gym.Wrapper):
         """Whether the operator currently holds control."""
         return time.monotonic() - self._last_active < self.device.timeout
 
-    def reset(self, **kwargs: Any):
+    def reset(self, **kwargs: Any) -> tuple[Any, dict[str, Any]]:
         """Reset the env, then let the device re-sync with it.
 
         ``after_reset`` runs even when the reset fails, because a device that
@@ -163,7 +163,7 @@ class TeleopIntervention(gym.Wrapper):
         finally:
             self.device.after_reset(self)
 
-    def step(self, action: np.ndarray):
+    def step(self, action: np.ndarray) -> tuple[Any, float, bool, bool, dict[str, Any]]:
         """Step with the operator's action when they are driving."""
         self.device.before_step(self)
         sample = self.device.read(self, action)
@@ -204,7 +204,7 @@ class TeleopIntervention(gym.Wrapper):
         """The action that keeps the robot where it is, for a skipped chunk."""
         return self.device.get_hold_action(self, fallback_action)
 
-    def close(self):
+    def close(self) -> None:
         """Release the device, then the wrapped env."""
         self.device.close()
         return super().close()

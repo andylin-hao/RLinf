@@ -52,7 +52,7 @@ class SpaceMouseExpert:
 if __name__ == "__main__":
     import time
 
-    def test_spacemouse():
+    def test_spacemouse() -> None:
         """Test the SpaceMouseExpert class.
 
         This interactive test prints the action and buttons of the spacemouse at a rate of 10Hz.

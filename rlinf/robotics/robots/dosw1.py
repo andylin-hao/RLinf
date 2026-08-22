@@ -16,14 +16,17 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from ..discovery import (
     RobotConfig,
 )
-from ..parts.base import PartGroup
+from ..parts.base import PartGroup, RobotPart
 from ..parts.cameras import Camera
 from ..robot import Robot
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from ..parts.arms.dosw1 import DOSW1Connection
 
 
 class DOSW1Robot(Robot):
@@ -32,7 +35,7 @@ class DOSW1Robot(Robot):
     ROBOT_TYPE = "DOSW1"
 
     @classmethod
-    def build_arms(cls, sdk) -> dict[str, Any]:
+    def build_arms(cls, sdk: "DOSW1Connection") -> dict[str, RobotPart]:
         """Both arms, each whole, from the shared SDK session."""
         return {
             side: PartGroup(
@@ -128,7 +131,7 @@ class DOSW1RobotConfig(RobotConfig):
     camera_serials: Optional[list[str]] = None
     """RealSense camera serial numbers used by the env."""
 
-    def __post_init__(self):  # noqa: D105
+    def __post_init__(self) -> None:  # noqa: D105
         assert isinstance(self.node_rank, int), (
             f"'node_rank' in DOSW1 config must be an integer. "
             f"But got {type(self.node_rank)}."

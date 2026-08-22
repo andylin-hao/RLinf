@@ -82,7 +82,7 @@ class GimArmRobotState:
     gripper_open: bool = False
     """``True`` when the gripper position is closer to open than closed."""
 
-    def to_dict(self):
+    def to_dict(self) -> dict[str, Any]:
         """Convert the dataclass to a serializable dictionary."""
         return asdict(self)
 
@@ -112,7 +112,7 @@ class GimArm(BaseArm):
         enable_gripper: bool,
         gripper_type: str,
         control_mode: str = "momentum_observer",
-    ):
+    ) -> None:
         self._logger = get_logger()
         self._can_interface = can_interface
         self._arm_variant = arm_variant
@@ -232,7 +232,7 @@ class GimArm(BaseArm):
 
     # ── Feedforward control loop ─────────────────────────────────────────
 
-    def _feedforward_loop(self):
+    def _feedforward_loop(self) -> None:
         """Background loop: filter target and send feedforward commands at 100 Hz."""
         next_time = time.monotonic()
         while self._control_running:

@@ -48,6 +48,7 @@ from uuid import uuid4
 
 from rlinf.scheduler import Cluster, NodePlacementStrategy, Worker
 from rlinf.scheduler.worker.worker import WorkerMeta
+from rlinf.scheduler.worker.worker_group import WorkerGroup
 
 from ..parts.base import Connection, _ConnectionMeta
 
@@ -322,7 +323,7 @@ def host(connection: Connection) -> tuple[Any, type]:
     return group, remote_view_of(recipe.part_cls)
 
 
-def shutdown(group: Any) -> None:
+def shutdown(group: "WorkerGroup") -> None:
     """Close the hosted connection, then terminate the worker holding it.
 
     In that order: killing the actor first would leave the device open with

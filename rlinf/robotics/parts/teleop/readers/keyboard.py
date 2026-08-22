@@ -17,6 +17,7 @@ import os
 import threading
 import time
 from collections import deque
+from typing import Any
 
 from rlinf.utils.logging import get_logger
 
@@ -28,7 +29,7 @@ class KeyboardListener:
 
     REQUIRED_KEY_NAMES = ("KEY_A", "KEY_B", "KEY_C", "KEY_Q")
 
-    def __init__(self):
+    def __init__(self) -> None:
         try:
             from evdev import InputDevice, ecodes, list_devices
         except ImportError as exc:
@@ -55,7 +56,7 @@ class KeyboardListener:
         self.listener.start()
         self.last_intervene = 0
 
-    def _open_keyboard_device(self):
+    def _open_keyboard_device(self) -> Any:
         override_path = os.environ.get("RLINF_KEYBOARD_DEVICE")
         if override_path:
             device = self._open_device(override_path, is_override=True)
@@ -113,7 +114,7 @@ class KeyboardListener:
             "correct /dev/input/eventX path."
         )
 
-    def _open_device(self, device_path: str, is_override: bool = False):
+    def _open_device(self, device_path: str, is_override: bool = False) -> Any:
         try:
             return self._input_device_cls(device_path)
         except FileNotFoundError as exc:
@@ -140,7 +141,7 @@ class KeyboardListener:
                 f"KeyboardListener failed to open input device '{device_path}': {exc}"
             ) from exc
 
-    def _is_keyboard_device(self, device) -> bool:
+    def _is_keyboard_device(self, device: Any) -> bool:
         required_codes = {
             getattr(self._ecodes, key_name) for key_name in self.REQUIRED_KEY_NAMES
         }

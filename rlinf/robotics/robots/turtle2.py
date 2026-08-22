@@ -13,13 +13,16 @@
 # limitations under the License.
 
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING
 
 from ..discovery import (
     RobotConfig,
 )
-from ..parts.base import PartGroup
+from ..parts.base import PartGroup, RobotPart
 from ..robot import Robot
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from ..parts.arms.turtle2 import Turtle2Connection
 
 
 class Turtle2Robot(Robot):
@@ -30,7 +33,7 @@ class Turtle2Robot(Robot):
     @classmethod
     def declare_connection(
         cls, *, frequency: int, camera_ids: list[int], node_rank: int, name: str
-    ):
+    ) -> "Turtle2Connection":
         """Declare the one connection that drives everything on this robot."""
         from ..parts.arms.turtle2 import Turtle2Connection
 
@@ -39,7 +42,7 @@ class Turtle2Robot(Robot):
         )
 
     @classmethod
-    def build_arms(cls, connection) -> dict[str, Any]:
+    def build_arms(cls, connection: "Turtle2Connection") -> dict[str, RobotPart]:
         """Both arms, each whole, from the shared connection."""
         return {
             side: PartGroup(
@@ -50,7 +53,9 @@ class Turtle2Robot(Robot):
         }
 
     @classmethod
-    def build_cameras(cls, connection, *, count: int) -> dict[str, Any]:
+    def build_cameras(
+        cls, connection: "Turtle2Connection", *, count: int
+    ) -> dict[str, RobotPart]:
         """The wrist cameras, from that same connection."""
         return {
             f"wrist_{index + 1}": connection.part(f"wrist_{index + 1}")
@@ -90,7 +95,7 @@ class Turtle2Config(RobotConfig):
 
     # empty config
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Post-initialization to validate the configuration."""
         assert isinstance(self.node_rank, int), (
             f"'node_rank' in Turtle2 config must be an integer. But got {type(self.node_rank)}."

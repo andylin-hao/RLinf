@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Any, Optional
 
 import numpy as np
 
@@ -46,7 +46,13 @@ class BaseGripper(BaseEndEffector, ABC):
     """
 
     @classmethod
-    def declare(cls, *, ros=None, port=None, **settings) -> "BaseGripper":
+    def declare(
+        cls,
+        *,
+        ros: Optional[Any] = None,
+        port: Optional[str] = None,
+        **settings: Any,
+    ) -> "BaseGripper":
         """Take whichever attachment this gripper is reached through.
 
         A Franka Hand rides the arm's ROS session and a Robotiq its own serial

@@ -469,7 +469,7 @@ class PicoExpert:
             return False
         return self._control_value(data, side, str(name)) >= float(threshold)
 
-    def __del__(self):  # pragma: no cover - best effort cleanup
+    def __del__(self) -> None:  # pragma: no cover - best effort cleanup
         try:
             self.stop()
         except Exception:

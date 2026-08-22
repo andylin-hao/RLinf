@@ -28,6 +28,8 @@ from typing import Any, Optional
 import gymnasium as gym
 import numpy as np
 
+from rlinf.robotics.parts.teleop import TeleopLeaderArm
+
 from .streaming import TeleopStreamer
 
 
@@ -55,8 +57,8 @@ class DualGelloJointStream(TeleopStreamer):
 
     def __init__(
         self,
-        left_arm: Any,
-        right_arm: Any,
+        left_arm: "TeleopLeaderArm",
+        right_arm: "TeleopLeaderArm",
         gripper_enabled: bool = True,
         use_delta: bool = False,
         action_scale: float = 0.1,
@@ -89,7 +91,7 @@ class DualGelloJointStream(TeleopStreamer):
         kwargs["options"] = options
         return kwargs
 
-    def _controllers(self, env: gym.Env):
+    def _controllers(self, env: gym.Env) -> tuple[Optional[Any], Optional[Any]]:
         inner = env.unwrapped
         return getattr(inner, "_left_ctrl", None), getattr(inner, "_right_ctrl", None)
 
