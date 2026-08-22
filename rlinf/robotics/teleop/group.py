@@ -28,9 +28,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Any, Iterable, Mapping, Optional
+from typing import Any, Iterable, Mapping, Optional, Sequence
 
 import numpy as np
+
+from rlinf.utils.logging import get_logger
 
 from ..parts.teleop.devices import TeleopPart
 from .binding import TeleopBinding
@@ -158,16 +160,50 @@ class TeleopGroup:
         return tuple(seen)
 
     def connect(self) -> None:
-        """Open every device."""
-        for device in self.devices:
-            if not device.is_connected:
-                device.connect()
+        """Open every device, or none of them.
+
+        If a later device fails, the ones already open are closed again. The
+        caller never receives the group when this raises -- ``build_teleop``
+        returns nothing -- so anything left open would be a leader arm holding
+        a serial port with nothing able to release it.
+        """
+        opened: list[Any] = []
+        try:
+            for device in self.devices:
+                if not device.is_connected:
+                    device.connect()
+                    opened.append(device)
+        except BaseException:
+            self._close(opened, "rolling back a failed teleop connect")
+            raise
 
     def disconnect(self) -> None:
         """Close every device, newest first."""
-        for device in reversed(self.devices):
-            if device.is_connected:
+        self._close(
+            [device for device in self.devices if device.is_connected],
+            "disconnecting teleop",
+        )
+
+    @staticmethod
+    def _close(devices: "Sequence[Any]", doing: str) -> None:
+        """Close all of these, newest first, whatever any one of them does.
+
+        Stopping at the first device that will not close would strand the ones
+        opened before it, which is the state a rollback exists to avoid.
+        """
+        failures: list[BaseException] = []
+        for device in reversed(list(devices)):
+            try:
                 device.disconnect()
+            except BaseException as error:  # noqa: BLE001 - reported below
+                failures.append(error)
+                get_logger().exception(
+                    "%s: %s failed to close; continuing with the rest",
+                    doing,
+                    type(device).__name__,
+                )
+        if failures:
+            raise failures[-1]
 
     def reset(self, context: Mapping[str, Any] = MappingProxyType({})) -> None:
         """Drop anything the bindings held, telling them what the robot is at.

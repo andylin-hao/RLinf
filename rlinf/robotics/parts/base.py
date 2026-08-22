@@ -599,8 +599,36 @@ class RobotPart(Connection):
                     "the tree, with everything here beneath it. Drop the entry."
                 )
             beneath[name] = self._adopt(part)
+        self._refuse_shadowed_fields(beneath)
         self._beneath = beneath
         return beneath
+
+    def _refuse_shadowed_fields(self, beneath: "dict[str, RobotPart]") -> None:
+        """Refuse a rider whose name is already one of this part's own fields.
+
+        A carrier's reading holds its fields and its riders in one mapping, so
+        a rider named ``tcp_pose`` on an arm that reports ``tcp_pose`` replaces
+        it -- the arm's real pose disappears from the observation, and the
+        action for that name goes to the rider instead of to the arm. The two
+        sides disagree and neither says so, which is why this is caught when
+        the tree is built rather than at the first read.
+        """
+        try:
+            mine = set(self.observation_features) | set(
+                getattr(self, "action_features", {}) or {}
+            )
+        except Exception:  # noqa: BLE001 - a contract that needs hardware
+            # A part that cannot describe itself unopened cannot be checked
+            # here; the conformance suite is where that is caught instead.
+            return
+        shadowed = sorted(set(beneath) & mine)
+        if shadowed:
+            raise ValueError(
+                f"{type(self).__name__} backs parts named {shadowed}, which "
+                "are also its own observation or action fields. A carrier's "
+                "reading holds both in one mapping, so the field would vanish "
+                "and its action would go to the part instead. Rename the part."
+            )
 
     def child(self, name: str) -> "RobotPart":
         """Return one part from beneath this one, or say which names exist."""

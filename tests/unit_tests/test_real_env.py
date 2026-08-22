@@ -1272,6 +1272,65 @@ def test_an_entry_option_wins_over_the_env_default():
     assert entry.binding.use_delta is True
 
 
+def test_a_failed_teleop_connect_leaves_no_device_open():
+    """``build_teleop`` never returns when a device fails, so nothing can close.
+
+    The caller has no group to disconnect, so a leader arm opened before the
+    failure would hold its serial port with nothing able to release it -- until
+    the process ended, which for an env worker is a long time.
+    """
+    from rlinf.robotics.parts.teleop.devices import TeleopPart
+    from rlinf.robotics.teleop import ActionKind, SpaceMouseBinding, TeleopEntry
+    from rlinf.robotics.teleop.group import TeleopGroup
+
+    log: list[str] = []
+
+    class Device(TeleopPart):
+        def __init__(self, tag, fail=False):
+            self.tag, self.fail = tag, fail
+
+        def _open(self):
+            if self.fail:
+                raise RuntimeError("cable unplugged")
+            log.append(f"open:{self.tag}")
+            return self.tag
+
+        def _release(self, device):
+            log.append(f"close:{self.tag}")
+
+        @property
+        def observation_features(self):
+            return {}
+
+        def get_observation(self):
+            return {}
+
+    kinds = {
+        f"{side}.{part}": kind
+        for side in ("left", "right")
+        for part, kind in (
+            ("arm", ActionKind.CARTESIAN_DELTA),
+            ("end_effector", ActionKind.GRIPPER),
+        )
+    }
+    group = TeleopGroup(
+        [
+            TeleopEntry(Device("first"), SpaceMouseBinding(), drives="left"),
+            TeleopEntry(
+                Device("second", fail=True), SpaceMouseBinding(), drives="right"
+            ),
+        ],
+        available=kinds,
+    )
+
+    with pytest.raises(RuntimeError, match="cable unplugged"):
+        group.connect()
+
+    assert log == ["open:first", "close:first"], (
+        f"the device opened before the failure was left open: {log}"
+    )
+
+
 def test_the_glove_reads_the_key_the_shipped_configs_set():
     """``glove_config``, not ``glove`` -- and a per-entry option wins over it.
 

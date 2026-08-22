@@ -156,7 +156,9 @@ class Robot(PartGroup):
         composed part already says which node it will run on and which
         connection it rides, so a composition can be checked without a robot
         present. The tree holds the same objects either side of ``connect``, so
-        the answer does not change.
+        the shape, the nodes and the ownership do not change. One thing does: a
+        placed connection reports the view class it took on, which is how you
+        see at a glance what ended up on another machine.
 
         A part that carries others is drawn with them beneath it, because that
         is where they are: a gripper on an arm's bus is under the arm, not

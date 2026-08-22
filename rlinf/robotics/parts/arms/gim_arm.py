@@ -114,7 +114,6 @@ class GimArm(BaseArm):
         control_mode: str = "momentum_observer",
     ):
         self._logger = get_logger()
-        self._warn_if_can_interface_is_down(can_interface)
         self._can_interface = can_interface
         self._arm_variant = arm_variant
         self._enable_gripper = enable_gripper
@@ -123,12 +122,15 @@ class GimArm(BaseArm):
 
     @staticmethod
     def _warn_if_can_interface_is_down(can_interface: str) -> None:
-        """Say early when the bus this arm talks over is not up on this machine.
+        """Say when the bus this arm talks over is not up on this machine.
 
-        The arm owns its CAN interface, so the arm is what notices. A warning
-        rather than an error: the interface may be brought up between composing
-        the robot and connecting it, and refusing here would make that
-        impossible.
+        Called from :meth:`_open`, which runs on the machine holding the arm.
+        Warning at construction instead reported on whichever machine composed
+        the robot -- for an arm bound for another node, always the wrong one,
+        and a warning about a bus that was never meant to be here.
+
+        A warning rather than an error: opening is what fails if the interface
+        really is down, and it says so with the SDK's own message.
         """
         path = f"/sys/class/net/{can_interface}"
         if not os.path.exists(path):
@@ -152,6 +154,8 @@ class GimArm(BaseArm):
 
     def _open(self) -> Any:
         """Connect the CAN SDK and start the feedforward control loop."""
+        self._warn_if_can_interface_is_down(self._can_interface)
+
         import pinocchio as pin
         from gim_arm_control import (
             ButterworthFilter,

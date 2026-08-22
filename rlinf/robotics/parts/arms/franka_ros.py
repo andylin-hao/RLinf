@@ -54,11 +54,18 @@ class FrankaROSArm(BaseArm):
         this arm holds, so the type and its config come through here rather
         than being composed beside the arm.
 
-        ``gripper_type`` is deliberately not forwarded. It selects a gripper
-        backend for an arm that builds one itself, which the ROS stack does
-        not: here the end effector is named outright by ``end_effector_type``,
-        and passing both would let one silently override the other.
+        ``gripper_type`` is refused rather than forwarded. It selects a gripper
+        backend for an arm that builds one itself, which the ROS stack does not
+        -- here the end effector is named outright by ``end_effector_type``.
+        Accepting it and ignoring it is the shape that hurts: a config asking
+        for a Robotiq got the default Franka Hand and nothing said so.
         """
+        if gripper_type is not None:
+            raise TypeError(
+                f"The franka_ros backend names its end effector outright, so "
+                f"gripper_type={gripper_type!r} would not be honoured. Set "
+                f"end_effector_type='{gripper_type}_gripper' instead."
+            )
         return cls(
             address,
             end_effector_type=end_effector_type or "franka_gripper",

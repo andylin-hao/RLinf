@@ -63,16 +63,18 @@ class RuiyanHand(BaseEndEffector):
         default_current: int = 800,
         default_state: Optional[list[float]] = None,
     ):
-        from rlinf_dexhand.ruiyan import RuiyanHandDriver
-
-        self._driver = RuiyanHandDriver(
-            port=port,
-            baudrate=baudrate,
-            motor_ids=motor_ids,
-            default_velocity=default_velocity,
-            default_current=default_current,
-            default_state=default_state,
-        )
+        # Settings only. Importing the SDK here would put it on the machine
+        # composing the robot rather than the one holding the hand, and a
+        # config could not be described at all without the vendor package.
+        self._settings = {
+            "port": port,
+            "baudrate": baudrate,
+            "motor_ids": motor_ids,
+            "default_velocity": default_velocity,
+            "default_current": default_current,
+            "default_state": default_state,
+        }
+        self._driver = None
         self._logger = get_logger()
 
     # ------------------------------------------------------------------
@@ -104,13 +106,24 @@ class RuiyanHand(BaseEndEffector):
     # Lifecycle
     # ------------------------------------------------------------------
 
-    def _open(self) -> None:
-        """Open the serial port and start the background control loop."""
+    def _open(self) -> Any:
+        """Build the driver, open the serial port, start the control loop.
+
+        The SDK is imported here, beside the hardware, so a hand placed on
+        another node needs it only there.
+        """
+        from rlinf_dexhand.ruiyan import RuiyanHandDriver
+
+        self._driver = RuiyanHandDriver(**self._settings)
         self._driver.initialize()
+        return self._driver
 
     def _release(self, device: Any) -> None:
         """Stop the background loop and close the serial port."""
-        self._driver.shutdown()
+        try:
+            device.shutdown()
+        finally:
+            self._driver = None
 
     # ------------------------------------------------------------------
     # State

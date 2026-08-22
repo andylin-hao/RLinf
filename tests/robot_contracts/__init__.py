@@ -42,7 +42,6 @@ from a REPL with a robot on the desk.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import replace
 from typing import Any, Callable, Optional, Sequence
 
 __all__ = [
@@ -51,7 +50,6 @@ __all__ = [
     "Contract",
     "ObservationContract",
     "PartContract",
-    "PlacementParityContract",
     "RobotContract",
 ]
 
@@ -351,12 +349,31 @@ class RobotContract(Contract):
         where = type(robot).__name__
 
         found = self._describe_failures(robot, where)
+        found += self._identity_failures(robot, where)
         found += self.lifecycle_failures(robot, where)
         if robot.is_connected:
             found += self._tree_failures(robot)
         self.release(robot)
         found += self._rollback_failures()
         return found
+
+    @classmethod
+    def _identity_failures(cls, robot: Any, where: str) -> list[str]:
+        """Walking the tree twice finds the same objects.
+
+        Everything else assumes it: the robot opens what the walk found, and an
+        env keeps what it looked up. A tree that rebuilt its parts per read
+        handed one object to the opener and another to the reader.
+        """
+        first = dict(cls._leaves(robot, ""))
+        second = dict(cls._leaves(robot, ""))
+        unstable = sorted(path for path in first if first[path] is not second.get(path))
+        if unstable:
+            return [
+                f"{where} hands out a different object for {unstable} each "
+                "time the tree is walked"
+            ]
+        return []
 
     @staticmethod
     def _describe_failures(robot: Any, where: str) -> list[str]:
@@ -383,22 +400,51 @@ class RobotContract(Contract):
                     f"{path} is a connection and should not be in the tree; "
                     "compose the parts it backs"
                 )
-            else:
-                found += ObservationContract(part, path).failures()
+                continue
+            found += ObservationContract(part, path).failures()
+            found += cls._ownership_failures(robot, path, part)
+        return found
+
+    @staticmethod
+    def _ownership_failures(robot: Any, path: str, part: Any) -> list[str]:
+        """Every part in the tree rides a connection the robot actually opens.
+
+        A part is readable only because something opened the link behind it. If
+        the robot never opened that link, the part still answers -- with stale
+        values, or with whatever its driver does when closed -- so a reading
+        alone does not prove the tree is sound.
+        """
+        found: list[str] = []
+        if not part.is_connected:
+            found.append(
+                f"{path} is in the tree but not connected; the robot opened "
+                f"{[type(o).__name__ for o in robot.owners()]} and none of "
+                "them was its owner"
+            )
+        if not any(owner is part.owner for owner in robot.owners()):
+            found.append(
+                f"{path} rides a {type(part.owner).__name__} the robot never "
+                "lists among its owners, so nothing will close it either"
+            )
         return found
 
     @classmethod
     def _leaves(cls, group: Any, prefix: str) -> list[tuple[str, Any]]:
-        """Every leaf of a composed tree, by its dotted path."""
+        """Every readable part of a composed tree, by its dotted path.
+
+        Descends past a part into what rides on it. Stopping at the first
+        readable thing is what let a gripper -- and a wrist camera holding its
+        own link -- go unchecked: they are what a robot actually publishes, and
+        the arm carrying them is only where they hang.
+        """
         from rlinf.robotics.parts.base import PartGroup
 
         found: list[tuple[str, Any]] = []
         for name, part in group.children.items():
             path = f"{prefix}{name}"
-            if isinstance(part, PartGroup):
-                found += cls._leaves(part, f"{path}.")
-            else:
+            if not isinstance(part, PartGroup):
                 found.append((path, part))
+            found += cls._leaves(part, f"{path}.")
         return found
 
     def _rollback_failures(self) -> list[str]:
@@ -451,47 +497,3 @@ class RobotContract(Contract):
     def _declarations(robot: Any) -> list[Any]:
         """Every distinct connection this robot will open, in tree order."""
         return robot.owners()
-
-
-class PlacementParityContract(Contract):
-    """A part answers the same hosted on a node as it does in this process.
-
-    Separate from the contracts above because it needs a running cluster,
-    where those need nothing but the part.
-    """
-
-    def __init__(self, factory: Callable[[], Any], node_rank: int = 0) -> None:
-        super().__init__(factory)
-        self.node_rank = node_rank
-
-    @property
-    def subject_name(self) -> str:
-        """Name the subject as the placed thing it is being checked as."""
-        return f"{super().subject_name} (placed)"
-
-    def failures(self) -> list[str]:
-        """Compare what a local part describes with what a hosted one does."""
-        local = self.factory()
-        local.connect()
-        try:
-            here = local.observation_features
-        finally:
-            self.release(local)
-
-        # The same factory, told to run on a node. Going through the recipe
-        # rather than through a second factory argument is what makes this the
-        # production path: connect() reads the recipe and nothing else.
-        placed = self.factory()
-        placed._recipe = replace(placed._recipe, node_rank=self.node_rank)
-        placed.connect()
-        try:
-            there = placed.observation_features
-        finally:
-            placed.disconnect()
-
-        if here != there:
-            return [
-                "a hosted part describes different observations from a local "
-                f"one: here {sorted(here)}, hosted {sorted(there)}"
-            ]
-        return []

@@ -1039,6 +1039,80 @@ def _arm_with_a_camera_of_its_own(log):
     return ArmWithCamera()
 
 
+def test_a_rider_may_not_shadow_one_of_its_carriers_own_fields():
+    """A carrier's reading holds its fields and its riders in one mapping.
+
+    So a rider named after one of the carrier's fields replaces it: the arm's
+    real pose disappears from the observation, while the action for that name
+    goes to the rider instead of the arm. The two sides disagree and neither
+    says so, which is why composing it is refused.
+    """
+
+    class Rider(RobotPart):
+        @property
+        def observation_features(self):
+            return {"v": {}}
+
+        def get_observation(self):
+            return {"v": "RIDER"}
+
+    class Shadowed(ControllablePart):
+        def _open(self):
+            return "arm"
+
+        @property
+        def observation_features(self):
+            return {"tcp_pose": {}}
+
+        @property
+        def action_features(self):
+            return {"tcp_pose": {}}
+
+        def get_observation(self):
+            return {"tcp_pose": "ARM"}
+
+        def send_action(self, action):
+            return action
+
+        @property
+        def parts(self):
+            return {"tcp_pose": Rider()}
+
+    with pytest.raises(ValueError, match="also its own observation or action"):
+        Shadowed().children
+
+
+def test_a_constructor_reaches_no_hardware_and_no_vendor_library():
+    """Composing must work on a machine that has neither.
+
+    It is what lets a config be described anywhere, and what placement rests
+    on: a part bound for another node is rebuilt there from the arguments its
+    constructor recorded, so a constructor that imports an SDK demands it on
+    the machine that will never hold the device.
+    """
+    import sys
+    import warnings
+
+    from rlinf.robotics.parts.arms.gim_arm import GimArm
+    from rlinf.robotics.parts.end_effectors.hands.ruiyan import RuiyanHand
+
+    sys.modules.pop("rlinf_dexhand", None)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        hand = RuiyanHand(port="/dev/ttyUSB9", node_rank=1)
+        arm = GimArm("can-not-here", "arm6", True, "default", "position", node_rank=2)
+
+    assert "rlinf_dexhand" not in sys.modules, (
+        "RuiyanHand imported its vendor SDK while composing, so a hand bound "
+        "for another node needs that package on this one"
+    )
+    assert not [w for w in caught if "CAN interface" in str(w.message)], (
+        "GimArm warned about the composing machine's CAN bus for an arm that "
+        "is going to node 2"
+    )
+    assert not hand.is_connected and not arm.is_connected
+
+
 def test_a_rider_holding_its_own_link_is_opened_by_the_robot():
     """Keeping its own link only helps if something then opens it.
 
@@ -3566,18 +3640,45 @@ def test_a_connection_cannot_be_composed_into_a_robot():
             )
 
 
-def test_a_retired_dosw1_config_object_is_refused_not_ignored():
-    """``build`` absorbs unknown keywords, which is how a caller goes quiet.
+def test_no_robot_builder_absorbs_a_setting_it_does_not_use():
+    """A catch-all in a builder is how a configured setting goes quiet.
 
-    It used to take one config object. A call still passing ``config=`` would
-    land in ``**_`` and leave every setting at its default -- ``is_dummy``
-    included, so a session meant to skip the SDK would reach for it and fail
-    somewhere else entirely.
+    ``**_`` swallowed anything unrecognised and left every setting at its
+    default -- ``is_dummy`` included, so a session meant to skip the SDK would
+    reach for it and fail somewhere else entirely. It also hid a real gap:
+    DOSW1 declared a ``node_rank`` its builder never took, so the session could
+    not be placed however the config was written.
     """
-    from rlinf.robotics.robots import DOSW1Robot
+    import inspect
 
-    with pytest.raises(TypeError, match="no longer takes a config object"):
+    from rlinf.robotics.robots import (
+        DOSW1Robot,
+        DualFrankaRobot,
+        FrankaRobot,
+        GimArmRobot,
+        Turtle2Robot,
+    )
+
+    # The shipped robots by name, rather than whatever the shared registry
+    # happens to hold: other tests register fakes into it.
+    for robot in (
+        FrankaRobot,
+        DualFrankaRobot,
+        GimArmRobot,
+        Turtle2Robot,
+        DOSW1Robot,
+    ):
+        # A catch-all is allowed only where it is forwarded to something that
+        # names its parameters, so an unknown key still has to land somewhere.
+        with pytest.raises(TypeError, match="unexpected keyword argument"):
+            robot.build(no_such_setting=True)
+
+    # And the retired config object is refused with everything else.
+    with pytest.raises(TypeError, match="unexpected keyword argument"):
         DOSW1Robot.build(config=object())
+
+    # The node DOSW1's config names now reaches the session.
+    assert "node_rank" in inspect.signature(DOSW1Robot.build).parameters
 
 
 def test_disconnect_releases_before_it_forgets_the_handle():

@@ -63,13 +63,16 @@ class DOSW1Robot(Robot):
         enable_human_in_loop: bool = False,
         gripper_width_max: float = 0.07,
         is_dummy: bool = False,
+        node_rank: Optional[int] = None,
         cameras: Optional[Mapping[str, Any]] = None,
-        **_: Any,
+        camera_node_rank: Optional[int] = None,
     ) -> "DOSW1Robot":
         """Compose this robot from the parts it is made of.
 
-        Both arms share one SDK session, and it runs wherever the env worker
-        runs, so the declaration carries no node.
+        Both arms share one SDK session, so ``node_rank`` places that session
+        and everything riding it. It used to be swallowed by a catch-all, which
+        left the session on whichever machine composed the robot however the
+        config was written.
 
         The settings are named rather than taken as one config object, the way
         every other robot names them. Handing the whole object over meant the
@@ -77,15 +80,6 @@ class DOSW1Robot(Robot):
         built by an env -- never from a bench script or a test.
         """
         from ..parts.arms.dosw1 import DOSW1Connection
-
-        if "config" in _:
-            raise TypeError(
-                "DOSW1Robot.build no longer takes a config object; name the "
-                "settings instead, as every other robot does. Passing one "
-                "would land in **_ and quietly leave every setting at its "
-                "default -- including is_dummy, so the session would reach for "
-                "an SDK the caller meant to skip."
-            )
 
         sdk = DOSW1Connection(
             robot_url=robot_url,
@@ -96,8 +90,15 @@ class DOSW1Robot(Robot):
             enable_human_in_loop=enable_human_in_loop,
             gripper_width_max=gripper_width_max,
             is_dummy=is_dummy,
+            node_rank=node_rank,
         )
-        return cls(**cls.build_arms(sdk), **cls.build_cameras(cameras))
+        return cls(
+            **cls.build_arms(sdk),
+            **cls.build_cameras(
+                cameras,
+                node_rank=node_rank if camera_node_rank is None else camera_node_rank,
+            ),
+        )
 
 
 @dataclass

@@ -49,7 +49,7 @@ class FrankaRobot(Robot):
         node_rank: int,
         name: str,
         backend: Optional[str] = None,
-        gripper_type: str = "franka",
+        gripper_type: Optional[str] = None,
         gripper_connection: Optional[str] = None,
         end_effector_type: Optional[str] = None,
         end_effector_config: Optional[dict] = None,

@@ -38,8 +38,9 @@ class DualFrankaRobot(FrankaRobot):
         *,
         left_robot_ip: Optional[str] = None,
         right_robot_ip: Optional[str] = None,
-        left_node_rank: int = 0,
-        right_node_rank: int = 0,
+        node_rank: Optional[int] = None,
+        left_node_rank: Optional[int] = None,
+        right_node_rank: Optional[int] = None,
         worker_rank: int = 0,
         env_idx: int = 0,
         left_gripper_type: str = "robotiq",
@@ -47,7 +48,6 @@ class DualFrankaRobot(FrankaRobot):
         left_gripper_connection: Optional[str] = None,
         right_gripper_connection: Optional[str] = None,
         arm_cameras: Optional[Mapping[str, Mapping[str, Any]]] = None,
-        **_: Any,
     ) -> dict[str, Any]:
         """Two arms instead of one, each with whatever rides on its wrist.
 
@@ -57,18 +57,21 @@ class DualFrankaRobot(FrankaRobot):
         if not left_robot_ip or not right_robot_ip:
             raise ValueError("Both Franka robot IPs are required for a dual-arm robot.")
 
+        # One node for both arms unless a side names its own, which is what
+        # puts a controller next to the arm it drives.
+        shared = 0 if node_rank is None else node_rank
         sides = {
             "left": (
                 left_robot_ip,
                 left_gripper_type,
                 left_gripper_connection,
-                left_node_rank,
+                shared if left_node_rank is None else left_node_rank,
             ),
             "right": (
                 right_robot_ip,
                 right_gripper_type,
                 right_gripper_connection,
-                right_node_rank,
+                shared if right_node_rank is None else right_node_rank,
             ),
         }
         arms = {}

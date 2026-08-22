@@ -148,7 +148,41 @@ def _as_build_arguments(robot_type, kwargs, registry_cls):
     return {"config": config, **rest}
 
 
-def check(robot_type: str, kwargs: dict[str, Any]) -> int:
+def parity_failures(robot_type: str, kwargs: dict[str, Any], placed: Any) -> list[str]:
+    """A placed robot must describe itself the way a local one does.
+
+    Only worth asking when something really was placed: a view is derived from
+    the driver class, so the two agree unless a driver's contract depends on
+    the machine it is running on -- reading an env var, sizing a buffer from
+    the hardware it finds. That is exactly the case a single-machine test
+    cannot see, and it is why this runs here, where a cluster is already up.
+    """
+    from dataclasses import replace
+
+    from rlinf.robotics.discovery import build_robot
+
+    here = build_robot(robot_type, **kwargs)
+    for owner in here.owners():
+        if owner._recipe is not None:
+            owner._recipe = replace(owner._recipe, node_rank=None)
+    here.connect()
+    try:
+        local = {path: part.observation_features for path, part in walk(here)}
+    finally:
+        here.disconnect()
+
+    hosted = {path: part.observation_features for path, part in walk(placed)}
+    found = []
+    for path in sorted(set(local) | set(hosted)):
+        if local.get(path) != hosted.get(path):
+            found.append(
+                f"{path} describes {sorted(hosted.get(path) or {})} hosted but "
+                f"{sorted(local.get(path) or {})} here"
+            )
+    return found
+
+
+def check(robot_type: str, kwargs: dict[str, Any], remote: bool = False) -> int:
     print(f"[1/5] composing {robot_type} with {kwargs}")
     # Importing the robots is what registers them.
     import rlinf.robotics.robots  # noqa: F401
@@ -191,6 +225,15 @@ def check(robot_type: str, kwargs: dict[str, Any]) -> int:
         failures += mismatches
         note = "  " + "; ".join(mismatches) if mismatches else ""
         print(f"    {path:24} {shapes}{note}")
+
+    if remote:
+        print("[4b/5] comparing a placed robot with a local one")
+        mismatches = parity_failures(robot_type, kwargs, robot)
+        failures += mismatches
+        for line in mismatches:
+            print(f"    {line}")
+        if not mismatches:
+            print("    every part describes the same either side of the boundary")
 
     print("[5/5] disconnecting")
     robot.disconnect()
@@ -244,8 +287,8 @@ def main() -> int:
         if args.mock:
             print("[mock] vendor SDKs are faked; this checks the code, not a robot")
             with _mocked_sdks(remote=args.remote):
-                return check(args.robot_type, kwargs)
-        return check(args.robot_type, kwargs)
+                return check(args.robot_type, kwargs, remote=args.remote)
+        return check(args.robot_type, kwargs, remote=args.remote)
     except Exception:  # noqa: BLE001 - a bench check reports anything
         traceback.print_exc()
         return 1
