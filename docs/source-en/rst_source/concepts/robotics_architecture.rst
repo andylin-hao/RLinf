@@ -35,8 +35,8 @@ see two parts:
 .. code-block:: text
 
    robot
-   ├── arm
-   └── end_effector
+   └── arm
+       └── end_effector
 
 The two views answer different questions:
 
@@ -44,21 +44,23 @@ The two views answer different questions:
 - The **hardware connection** says what must be opened on one node and released
   once.
 
-The code keeps those views in separate mappings:
+The code keeps those views in separate mappings. The distinction matters even
+when the same names appear in both:
 
 - A ``PartGroup`` or ``Robot`` stores its public tree in ``children``. Each key
   becomes an observation and action path, such as ``left.arm``. Tasks, policies,
   and datasets use these names.
 - A ``Connection`` lists the logical parts backed by one hardware session in
-  ``parts``. These names belong to the driver and do not become robot paths by
-  themselves.
+  ``parts``. For a readable part, the mapping contains the parts mounted on it;
+  for a bare shared session, it contains the parts that can be selected with
+  ``part(name)``. These names belong to the driver and do not become robot
+  paths by themselves.
 
 Composition joins the mappings. ``Robot(arm=connection)`` names a part, and
 what rides on that part comes with it, one level down: an arm's gripper is at
-``arm.end_effector`` because that is where the gripper is. Nothing is deferred
--- the object the robot holds before ``connect()`` is the object it holds after
--- which is why a composition can be described on a machine with no robot
-attached.
+``arm.end_effector`` because that is where the gripper is. These public paths,
+their placement, and their ownership are available before ``connect()``, which
+is why a composition can be inspected on a machine with no robot attached.
 
 ``connection.part(name)`` picks one part out of a link that is not a part
 itself, such as a session driving two arms. That is the only case that needs
@@ -142,9 +144,10 @@ The Core Types
 
 There is no separate type for a part running elsewhere. A connection given a
 ``node_rank`` is rebuilt in a worker on that node, and the object you already
-hold becomes a view of it: same class, same ``isinstance``, every public call
-now travelling. A device category such as ``Camera`` or ``MobileBase`` needs
-nothing registered for that to work, because the view is derived from the
+hold becomes a view of it: the same object, a synthesized subclass, and every
+public call now travelling. ``isinstance`` continues to match the original
+driver and its device category. A category such as ``Camera`` or ``MobileBase``
+needs nothing registered for placement, because the view is derived from the
 driver class itself.
 
 Select an Implementation from Configuration
@@ -203,7 +206,7 @@ a missing SDK clearly and validates configured camera identifiers on the node
 that owns them. Vendor imports still belong in ``_open()`` or ``discover()``,
 not at module import time.
 
-Two registries appear in the robotics code, and they name different things:
+Two registries appear in the robotics package, and they name different things:
 
 .. list-table::
    :header-rows: 1
@@ -219,6 +222,20 @@ Two registries appear in the robotics code, and they name different things:
      - ``Robot.register_type()`` and ``Robot.of_type()``
      - Selecting a named robot tree and its ``RobotConfig``; registration also
        supplies the standard discovery flow unless a custom class is passed.
+
+Registration associates the robot class, config class, discovery class, and
+builder; it does not convert a ``RobotConfig`` instance into builder arguments.
+``Robot.of_type()`` and ``build_robot()`` forward the keyword arguments they
+receive directly to ``build()``. A registered robot should therefore give its
+builder an explicit, documented signature, and the environment that receives a
+``RobotInfo`` should perform any required translation in one visible place.
+
+The environment layer uses the same registration style for teleoperation, but
+keeps a separate ``TeleopBackend`` registry. A teleop name selects a device and
+the binding that gives its reading meaning for an environment; it does not
+select a robot component. Keeping this registry under
+``rlinf/envs/real/wrappers/teleop`` prevents Gymnasium configuration from
+leaking into the robotics package.
 
 Connect a Shared Hardware Session to the Robot Tree
 ---------------------------------------------------
@@ -260,12 +277,13 @@ beneath the part that carries them. A bare ``Connection`` answers no
 one at a time with ``part(name)``. A ``PartGroup`` has an empty ``parts``
 mapping, because nothing rides a group.
 
-Composing a part is also where a view is told which connection opens it, so a
-view declares nothing about its own lifecycle: no ``_open``, no ``connect``.
-Only a part with no way to open anything is adopted like that. A device listed
-in ``parts`` that holds a link of its own -- a wrist camera on its own USB bus,
-named by the arm it is bolted to -- keeps that link and the node it named, and
-the robot opens it separately.
+Selecting a part with ``part(name)`` also tells a connection-backed view which
+connection opens it, so the view declares no lifecycle of its own: no
+``_open()`` and no ``connect()`` override. Use ``parts`` for these borrowed
+views. A device with its own link, such as a wrist camera on USB, should be
+composed explicitly as another child of the robot or of an assembly
+``PartGroup``. That explicit form gives the camera its own owner and ensures
+``Robot.connect()`` opens it on the node it named.
 
 If reading the shared session itself has no useful meaning, subclass
 ``Connection`` rather than ``RobotPart``. A coupled Turtle2 controller follows
@@ -324,8 +342,9 @@ During ``connect()``, the robot opens each distinct ``Connection`` once. With no
 ``node_rank`` that happens in this process. With one, the connection is rebuilt
 inside a scheduler worker on that node and the object in the tree takes on a
 synthesized subclass of its own class whose public methods and properties
-forward to the worker. Nothing in the tree is replaced, so task code never
-branches on placement and ``isinstance`` keeps answering what it did before.
+forward to the worker. The object identity is preserved, although its concrete
+class changes while it is connected. Task code therefore never branches on
+placement, and ``isinstance`` keeps answering what it did before.
 
 Identity is what preserves resource ownership. Every part answers ``owner``
 with the connection opened on its behalf -- itself for an arm holding its own
@@ -337,9 +356,8 @@ for concurrent access.
 Inspect the Composition Before Connecting
 -----------------------------------------
 
-``Robot.describe()`` reads the composed tree, which holds the same objects
-before and after ``connect()``. Node and ownership information is therefore
-answerable with no robot present:
+``Robot.describe()`` reads the composed tree, so node and ownership information
+is available before any hardware is opened:
 
 .. code-block:: text
 
@@ -348,8 +366,10 @@ answerable with no robot present:
        └── end_effector    MethodEndEffector    node=1     via FrankaROSArm#1
 
 Rows sharing ``via`` share one ``Connection``. After connecting, a placed part
-reports its view class -- ``RemoteFrankaROSArm`` above -- which is how you see
-at a glance which parts ended up on another machine.
+uses a synthesized class name such as RemoteFrankaROSArm. Its path,
+``node``, and ownership stay the same, but the complete output string is not a
+stable serialization format; use it as a diagnostic rather than storing or
+parsing it.
 
 At present, ``describe()`` focuses on topology, placement, and ownership. It
 does not print observation or action feature schemas. Use the conformance checks
@@ -392,11 +412,12 @@ device. A device category that wraps its drivers has ``_opened()`` and
 ``_closing()`` for that: ``BaseCamera`` starts and stops its capture loop
 there, beside the camera wherever it ended up.
 
-Connection is all-or-nothing. If a later connection fails, ``Robot.connect()``
-tears down everything it already opened and restores the composition. After
-fixing the hardware, you can call ``connect()`` on the same robot again.
-``disconnect()`` is idempotent and returns the robot to the same reconnectable
-state.
+Robot startup rolls back the connections that completed successfully if a
+later connection fails. A driver's ``_open()`` must still release anything it
+acquired before raising, because no completed connection exists for the robot
+to close in that case. After fixing the hardware, you can call ``connect()`` on
+the same robot again. ``disconnect()`` is idempotent and returns successfully
+closed connections to a reconnectable state.
 
 Reach Device-Specific Methods on the Part Itself
 ------------------------------------------------

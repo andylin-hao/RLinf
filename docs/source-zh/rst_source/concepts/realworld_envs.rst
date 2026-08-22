@@ -103,14 +103,15 @@ wrapper 根据所承担的职责划分目录：
 分离设备读取与动作映射
 ----------------------
 
-遥操作代码分为以下四层：
+遥操作代码按以下职责分层：
 
 - ``robotics/parts/teleop/readers/``：直接读取串口设备、HID 设备和头显。
 - ``robotics/parts/teleop/devices.py``：将 reader 封装为 ``TeleopPart``，并提供与其他部件一致的连接、观测和断开接口。
 - ``robotics/teleop/bindings.py``：声明设备读数对应的机器人动作部件。
-- ``real/wrappers/teleop/composed.py``：根据部件名称，将动作写入环境声明的扁平 action vector。
+- ``real/wrappers/teleop/backends.py``：将配置名称注册到相应的设备与 binding 组合。
+- ``real/wrappers/teleop/builder.py``：解析配置请求的名称；``composed.py`` 再根据部件名称，将动作写入 env 声明的扁平 action vector。
 
-排查线缆或设备权限时，可单独运行 reader，无需启动机器人。同一台物理设备也可以通过不同的 binding 接入另一种动作空间。
+排查线缆或设备权限时，可单独运行 reader，无需启动机器人。同一台物理设备也可以通过不同的 binding 接入另一种动作空间。backend registry 保留在 env 层，是因为名称解析同时依赖 env 配置和该 env 声明的动作语义；如果将其放入 robotics 层，硬件 reader 将反向依赖 Gymnasium 配置。
 
 连接机器人前，可使用以下命令检查主臂接线：
 
@@ -156,7 +157,7 @@ wrapper 根据所承担的职责划分目录：
    * - ``robotics/teleop/``
      - binding、动作含义和 ``TeleopGroup`` 组合。
    * - ``real/wrappers/teleop/``
-     - 设备选择、policy 与操作者动作仲裁、扁平动作布局，以及可选的直接推送路径。
+     - ``TeleopBackend`` registry、设备选择、policy 与操作者动作仲裁、扁平动作布局，以及可选的直接推送路径。
    * - ``real/wrappers/transforms/``
      - 相对坐标系、四元数转欧拉角、夹爪维度裁剪。
    * - ``real/wrappers/episode/``

@@ -64,12 +64,14 @@ may use ``rlinf.utils`` helpers such as ``get_logger``, which reach further.
 """
 
 from abc import ABC, ABCMeta, abstractmethod
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from functools import partial
 from importlib import import_module
 from typing import TYPE_CHECKING, Any, Callable, ClassVar, Optional, TypeVar
+
+from rlinf.utils.logging import get_logger
 
 if TYPE_CHECKING:
     pass
@@ -212,6 +214,9 @@ class Connection(ABC, metaclass=_ConnectionMeta):
     #: :meth:`part`, or by a view's constructor when it is handed its host.
     _owner: Optional["Connection"] = None
 
+    #: What rides on this part, once :attr:`RobotPart.children` has built it.
+    _beneath: "Optional[dict[str, RobotPart]]" = None
+
     def _open(self) -> Any:
         """Reach the hardware and return whatever speaks to it."""
         raise NotImplementedError(
@@ -308,8 +313,22 @@ class Connection(ABC, metaclass=_ConnectionMeta):
         if self._device is not None:
             return
         if self._recipe is None or self._recipe.node_rank is None:
-            self._device = self._open() or self
-            self._opened()
+            device = self._open()
+            # ``is None``, not falsiness: a file descriptor of 0 and an empty
+            # buffer are real handles, and ``or self`` threw them away, leaving
+            # _release nothing to close.
+            self._device = self if device is None else device
+            try:
+                self._opened()
+            except BaseException:
+                # Whatever a category starts around the device did not start,
+                # so the part is not usable; hand the device back rather than
+                # leaving it open under a part that reports itself connected.
+                try:
+                    self._release(self._device)
+                finally:
+                    self._device = None
+                raise
             return
 
         # Imported here rather than at module scope: this is the one bridge to
@@ -346,8 +365,13 @@ class Connection(ABC, metaclass=_ConnectionMeta):
             return
         try:
             if self._group is None:
-                self._closing()
-                self._release(device)
+                # Nested so the device is released even when the category's
+                # teardown throws: the finalizer below clears ``_device``
+                # either way, so a skipped release could never be retried.
+                try:
+                    self._closing()
+                finally:
+                    self._release(device)
             else:
                 from ..placement import shutdown
 
@@ -557,7 +581,14 @@ class RobotPart(Connection):
         A bare :class:`Connection` has no place in the tree and so does not
         answer this at all, however many parts it backs; those are composed one
         at a time with :meth:`Connection.part`.
+
+        Built once and held. :attr:`parts` makes a fresh view on every read, so
+        without this the tree handed out a different object each time it was
+        walked: what :meth:`_adopt` recorded went to a throwaway, and a robot
+        opened one object while the reading came from another.
         """
+        if self._beneath is not None:
+            return self._beneath
         beneath: "dict[str, RobotPart]" = {}
         for name, part in self.parts.items():
             if part is self:
@@ -568,6 +599,7 @@ class RobotPart(Connection):
                     "the tree, with everything here beneath it. Drop the entry."
                 )
             beneath[name] = self._adopt(part)
+        self._beneath = beneath
         return beneath
 
     def child(self, name: str) -> "RobotPart":
@@ -602,6 +634,29 @@ class ControllablePart(RobotPart):
     @abstractmethod
     def send_action(self, action: dict[str, Any]) -> dict[str, Any]:
         """Apply an action and return the action actually sent."""
+
+
+def _close_all(owners: "Sequence[Connection]", doing: str) -> None:
+    """Close every one of these, newest first, whatever any of them does.
+
+    A rollback that stopped at the first connection to raise left the ones
+    opened before it open, with nothing holding them -- which is the state the
+    rollback exists to avoid. Every failure is reported and the last is raised,
+    so one stuck device cannot hide the others or swallow itself.
+    """
+    failures: list[BaseException] = []
+    for owner in reversed(list(owners)):
+        try:
+            owner.disconnect()
+        except BaseException as error:  # noqa: BLE001 - reported below
+            failures.append(error)
+            get_logger().exception(
+                "%s: %s failed to close; continuing with the rest",
+                doing,
+                type(owner).__name__,
+            )
+    if failures:
+        raise failures[-1]
 
 
 class PartGroup(ControllablePart):
@@ -829,8 +884,20 @@ class PartGroup(ControllablePart):
 
     @staticmethod
     def _owners_of(part: "RobotPart") -> list["Connection"]:
-        """Every connection opened on this child's behalf."""
-        return part.owners() if isinstance(part, PartGroup) else [part.owner]
+        """Every connection this child needs open, itself and beneath it.
+
+        Walking beneath is what a rider holding its own link depends on. A
+        wrist camera on its own USB bus is composed with the arm it is bolted
+        to, and keeps that bus rather than being adopted -- so if this stopped
+        at the arm, the camera would sit in the tree and in the observation
+        while nothing ever opened it.
+        """
+        if isinstance(part, PartGroup):
+            return part.owners()
+        found = [part.owner]
+        for rider in part.children.values():
+            found.extend(PartGroup._owners_of(rider))
+        return found
 
     def _fan_out(self, call) -> dict[str, Any]:
         """Run *call* over every part, concurrently where connections differ."""
@@ -861,9 +928,8 @@ class PartGroup(ControllablePart):
                 if not owner.is_connected:
                     owner.connect()
                     opened.append(owner)
-        except Exception:
-            for owner in reversed(opened):
-                owner.disconnect()
+        except BaseException:
+            _close_all(opened, "rolling back a failed connect")
             raise
 
     def disconnect(self) -> None:
@@ -872,9 +938,9 @@ class PartGroup(ControllablePart):
         Idempotent, because teardown runs this from a ``finally`` block that
         does not know whether the robot ever came up.
         """
-        for owner in reversed(self.owners()):
-            if owner.is_connected:
-                owner.disconnect()
+        _close_all(
+            [owner for owner in self.owners() if owner.is_connected], "disconnecting"
+        )
 
     def reset(self) -> None:
         """Reset every part."""

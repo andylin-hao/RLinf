@@ -23,10 +23,15 @@
    try:
        observation = robot.get_observation()
        tcp_pose = observation["arm"]["tcp_pose"]
-       gripper_width = observation["end_effector"]["state"]
+       gripper_width = observation["arm"]["end_effector"]["state"]
 
        robot.send_action(
-           {"arm": {"tcp_pose": target}, "end_effector": {"target": width}}
+           {
+               "arm": {
+                   "tcp_pose": target,
+                   "end_effector": {"target": width},
+               }
+           }
        )
    finally:
        robot.disconnect()
@@ -36,22 +41,24 @@
 以部件名称访问观测和动作
 ------------------------
 
-单臂 Franka 的顶层有 ``arm`` 和 ``end_effector`` 两个部件：
+单臂 Franka 的顶层只有 ``arm``。末端执行器安装在机械臂上，因此位于 ``arm`` 分支下：
 
 .. code-block:: text
 
    FrankaRobot
-   ├── arm           declared      node=1     via FrankaROSArm#1
-   └── end_effector  declared      node=1     via FrankaROSArm#1
+   └── arm                 FrankaROSArm         node=1     via FrankaROSArm#1
+       └── end_effector    MethodEndEffector    node=1     via FrankaROSArm#1
 
-两行输出中的 ``via`` 值相同，表示机械臂和夹爪共用一条 Franka 连接。读取观测和发送动作时无需处理这条连接；排查重复连接或节点配置时，可结合 ``node`` 和 ``via`` 确认资源归属。
+两行输出中的 ``via`` 值相同，表示机械臂和夹爪共用一条 Franka connection。读取观测和发送动作时无需处理这条 connection；排查重复连接或节点配置时，可结合 ``node`` 和 ``via`` 确认资源归属。
+
+这一结构也说明了何时直接向 ``Robot`` 传入部件，何时需要调用 ``part(name)``。``FrankaROSArm`` 本身就是可读取的 ``RobotPart``，因此可通过 ``Robot(arm=arm)`` 直接组合，安装在机械臂上的末端执行器也会同时进入部件树。如果某个共享控制器只是 ``Connection``、本身不能读取观测，则需要先通过 ``session.part("left")`` 取出其中的部件。
 
 双臂机器人在顶层增加 ``left`` 和 ``right`` 两个分支，部件名称保持不变：
 
 .. code-block:: python
 
    left_qpos = observation["left"]["arm"]["arm_joint_position"]
-   right_gripper = observation["right"]["end_effector"]["state"]
+   right_gripper = observation["right"]["arm"]["end_effector"]["state"]
 
 部件树可以继续向下嵌套。RLinf 不预设 ``arms``、``cameras`` 等固定分组；新增升降机构、云台或第三条机械臂时，只需为新部件命名并将其加入树中。
 
@@ -72,5 +79,5 @@
 
 - :doc:`新增真机任务 <../extending/new_task>`：在已支持的真机上添加任务。
 - :doc:`添加机器人 <../extending/new_robot>`：接入本地传感器、执行器或整台机器人。
-- :doc:`机器人架构 <robotics_architecture>`：了解共享连接、``PartGroup``、远程 handle、失败回滚和 worker placement。
+- :doc:`机器人架构 <robotics_architecture>`：了解 ``parts`` 与 ``children``、共享 connection、``PartGroup``、资源生命周期和 worker placement。
 - :doc:`遥操作 <../guides/teleoperation>`：组合多种操作者设备。

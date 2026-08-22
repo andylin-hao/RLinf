@@ -24,20 +24,20 @@
 .. code-block:: text
 
    robot
-   ├── arm
-   └── end_effector
+   └── arm
+       └── end_effector
 
 这两种结构分别回答不同的问题：
 
 - 机器人树描述 policy 可以观测和控制哪些部件。
 - 硬件连接描述哪些资源需要在同一节点打开，并且只能释放一次。
 
-这两组名称分别保存在两个属性中：
+这两组名称分别保存在两个属性中。即使名称相同，两个属性的用途也不同：
 
 - ``PartGroup`` 或 ``Robot`` 将公开部件树保存在 ``children`` 中。每个 key 都会成为观测和动作路径，例如 ``left.arm``；任务、policy 和数据集使用这些名称访问部件。
-- ``Connection`` 将同一硬件 session 对应的逻辑部件保存在 ``parts`` 中。这些名称属于驱动内部，不会自动成为机器人路径。
+- ``Connection`` 通过 ``parts`` 列出同一硬件 session 支持的逻辑部件。对可读取的部件而言，该映射表示安装在它上面的其他部件；对不可读取的共享 session 而言，该映射列出可通过 ``part(name)`` 取出的部件。这些名称属于 driver 内部，不会自动成为机器人路径。
 
-组合时，``Robot(arm=connection)`` 为一个部件指定名称，而搭在这个部件上的东西会跟着进来，位于它下面一层：机械臂的夹爪出现在 ``arm.end_effector``，因为夹爪就装在那儿。这里没有任何延迟解析——``connect()`` 前后机器人持有的是同一批对象——所以在没有真机的机器上也能把一套组合描述清楚。
+组合时，``Robot(arm=connection)`` 为一个部件指定名称，而搭在这个部件上的部件会同时进入树中，并位于它的下一层。机械臂的夹爪出现在 ``arm.end_effector``，因为夹爪安装在机械臂上。公开路径、placement 和资源归属在 ``connect()`` 前已经确定，因此即使当前机器没有连接真机，也可以先检查组合结果。
 
 ``connection.part(name)`` 用于从一条本身不是部件的链路里挑出某个部件，例如驱动两条机械臂的 session。只有这种情况才需要它。
 
@@ -50,7 +50,7 @@
    * - 对象
      - 组合方式
      - 结果
-   * - 没有任何东西搭载其上的部件，例如相机
+   * - 不包含子部件的部件，例如相机
      - ``Robot(wrist=camera)``
      - 该部件以 ``wrist`` 为名称进入机器人树。
    * - 承载其他部件的部件，例如带夹爪的机械臂
@@ -65,9 +65,9 @@
 
 ``part(name)`` 返回的就是一个 ``RobotPart``，中间没有任何需要机器人开发者构造或标注的类型。``PartGroup`` 接收 ``RobotPart`` 或另一个 ``PartGroup``；传入不可读取的裸 ``Connection`` 会被拒绝，并指出出错的参数名。
 
-``children`` 是一个问题、一个答案，无论问的是谁：对部件而言，它是搭在其上的东西；对 ``PartGroup`` 而言，它是这个组被组合进来的东西。因此遍历这棵树——描述它、找出所有相机、读取它——从来不需要先判断手上拿的是哪一种。
+``children`` 始终表示部件树中的下一层：对部件而言，它表示该部件承载的子部件；对 ``PartGroup`` 而言，它表示组合该 group 时传入的具名成员。因此，在描述部件树、查找相机或读取观测时，无需根据当前对象的具体类型切换遍历方式。
 
-正因如此，机器人只需点名机械臂就够了：
+因此，机器人定义中只需声明机械臂：
 
 .. code-block:: python
 
@@ -76,9 +76,9 @@
        def build_arms(cls, **config):
            return {"arm": ExampleArm(config["robot_ip"], node_rank=config["node_rank"])}
 
-夹爪之所以被组合进来，是因为机械臂带着它。在这里再点一次名，只会把夹爪放到机械臂**旁边**而不是它**上面**，而且多出一份需要同步维护的清单：如果机械臂在运行时才决定是否装夹爪，或者之后新增了部件，组合结果就会漏掉它，而且没有任何地方会报出这一点。
+机械臂通过 ``parts`` 声明夹爪后，组合机械臂时会一并加入该夹爪。如果机器人再次声明夹爪，夹爪会成为机械臂的同级部件，而不是其子部件，同时还会形成一份需要同步维护的重复清单。机械臂在运行时决定是否安装夹爪，或后续增加新部件时，这份清单容易遗漏实际存在的部件。
 
-因此驱动从 ``parts`` 返回的映射只说明搭在它上面的东西，绝不包含自己。把自己列进去会被拒绝：部件不会搭在自己身上，那样这棵树也就没有底了。
+因此，driver 的 ``parts`` 映射只包含该部件承载的子部件，不包含部件自身。系统会拒绝将部件自身加入 ``parts``，从而避免形成无法终止的递归结构。
 
 核心类型
 --------
@@ -100,7 +100,7 @@
    * - ``Robot``
      - 最外层的 ``PartGroup``，还管理注册，并知道每条连接运行在哪个节点上。
 
-跨节点运行的部件没有单独的类型。带 ``node_rank`` 的连接会在目标节点的 worker 中重新构造，而手上已有的那个对象随即变成它的一个 view：class 不变，``isinstance`` 不变，只是所有公开调用都改为跨进程执行。``Camera``、``MobileBase`` 这类设备类别不需要为此注册任何东西，因为 view 本身就是由 driver class 派生出来的。
+跨节点运行的部件没有单独的公开类型。带 ``node_rank`` 的 connection 会在目标节点的 worker 中重新构造，本地对象则切换为由原 driver class 合成的子类。对象 identity 保持不变，``isinstance`` 仍会匹配原 driver 和设备类别，公开方法与 property 则转发到远程 worker。``Camera``、``MobileBase`` 等类别不需要为 placement 另外注册 proxy。
 
 通过配置选择具体实现
 --------------------
@@ -121,7 +121,7 @@
 
 如果某类设备具有固定的配置结构，还可以提供构建入口：``Camera.of()`` 接收 ``CameraInfo`` 并从中读出 backend；``EndEffector.of()`` 接收名称，以及安装它的机械臂所能提供的接入方式；``Arm.declare()`` 把机器人层面的机械臂配置映射到某个 backend 自己的构造函数上。这些映射都写在驱动里、紧挨着它所服务的构造函数，因此新增一个 backend 不需要改动任何负责选择 backend 的代码。
 
-机械臂是这套机制最要紧的地方，因为同一套硬件可能由两种 backend 驱动。一台 Franka 既可以走 libfranka，也可以走 ROS，于是两者都注册到 ``Arm`` 上，机器人只需点名其一：
+机械臂尤其适合采用这套机制，因为同一套硬件可能支持多种 backend。Franka 可以通过 libfranka 或 ROS 控制，因此两种实现都注册到 ``Arm``，机器人只需指定其中一种：
 
 .. code-block:: python
 
@@ -132,7 +132,7 @@
    class DualFrankaRobot(FrankaRobot):
        BACKEND = "franky"
 
-点名 backend 就是切换的全部。每个 backend 在自己的 ``declare()`` 里把标准的机械臂配置映射到自己的构造函数上，这段代码就写在它所服务的构造函数旁边，因此机器人不必知道一种 stack 需要 ROS package、另一种需要夹爪串口。backend 无法满足的配置项会被拒绝而不是丢弃，否则机械臂就会带着配置里没有要求的末端执行器运行。
+切换时只需修改 backend 名称。每个 backend 在自己的 ``declare()`` 中，将标准机械臂配置映射到相应构造函数；机器人无需了解某套实现需要 ROS package，而另一套实现需要夹爪串口。backend 无法满足的配置项应直接拒绝，不能静默丢弃，否则实际使用的末端执行器可能与配置不一致。
 
 支持硬件枚举的 driver 还可以通过 ``SDK`` 声明厂商模块，并实现 ``discover()``。公共 discovery 流程会据此报告缺失的 SDK，并在持有设备的节点上校验相机 ID。厂商模块仍应在 ``_open()`` 或 ``discover()`` 中导入，不应在模块导入阶段加载。
 
@@ -152,6 +152,10 @@ robotics 代码中有两种 registry，它们所命名的对象不同：
      - ``Robot.register_type()`` 与 ``Robot.of_type()``
      - 根据名称选择机器人树及其 ``RobotConfig``；未传入自定义 class 时，同时创建标准 discovery 流程。
 
+注册操作会关联 robot class、config class、discovery class 和 builder，但不会自动将 ``RobotConfig`` 实例转换为 builder 参数。``Robot.of_type()`` 和 ``build_robot()`` 会将接收到的关键字参数直接传给 ``build()``。因此，机器人的 builder 应提供明确的参数签名；如果 env 从 ``RobotInfo`` 获取硬件配置，应在一处显式完成参数转换。
+
+env 层也使用相同的注册风格，但遥操作使用独立的 ``TeleopBackend`` registry。一个遥操作名称对应设备及其 binding，而不是机器人部件。该 registry 位于 ``rlinf/envs/real/wrappers/teleop``，避免 Gymnasium 配置进入 robotics 层。
+
 将共享硬件连接映射到机器人树
 ----------------------------
 
@@ -163,13 +167,12 @@ robotics 代码中有两种 registry，它们所命名的对象不同：
        @property
        def parts(self) -> dict[str, RobotPart]:
            return {
-               "arm": self,
                "end_effector": MethodEndEffector(
                    self, state_field="gripper_position"
                ),
            }
 
-``arm`` 和 ``end_effector`` 是驱动内部的名称。组合机器人时，再决定对外公开的路径：
+``end_effector`` 是 driver 内部的名称。机械臂本身不能再出现在 ``parts`` 中；将机械臂传给 ``Robot`` 时，组合已经建立了它在树中的位置。对外公开的路径由组合时的参数名决定：
 
 .. code-block:: python
 
@@ -182,9 +185,9 @@ robotics 代码中有两种 registry，它们所命名的对象不同：
        arm=connection,
    )
 
-传给 ``Robot`` 的关键字参数会进入 ``robot.children``，因此上述机器人最终公开 ``arm`` 和 ``end_effector``。裸 ``Connection`` 不组合任何部件，所以没有 ``children``；``PartGroup`` 中的部件已经位于 ``children``，因此其 ``parts`` 为空。``connection.part(...)`` 是两套命名体系相交的位置。
+传给 ``Robot`` 的关键字参数会进入 ``robot.children``。上述机器人的顶层路径为 ``arm``，末端执行器则位于 ``arm.end_effector``。裸 ``Connection`` 不属于部件树，因此没有 ``children``；``PartGroup`` 的组成项已保存在 ``children`` 中，因此其 ``parts`` 为空。当共享 session 本身不可读取时，通过 ``connection.part(...)`` 取出需要组合的部件。
 
-``part()`` 同时会告诉 view 由哪条连接负责打开它，因此 view 不需要声明任何生命周期：没有 ``_open``，也没有 ``connect``。只有本身无法打开任何硬件的部件才会被这样接管。如果这里列出的是一台自带链路的设备——比如装在这条机械臂腕部、却走自己 USB 总线的相机——它会保留自己的链路和指定的节点，由机器人单独打开。
+通过 ``part(name)`` 取出部件时，共享 connection 会成为该 view 的 owner。因此 view 不需要实现 ``_open()``，也不应覆盖 ``connect()``。``parts`` 应用于这类借用共享 connection 的 view。如果设备拥有独立链路，例如通过 USB 连接的腕部相机，应将其显式组合为 ``Robot`` 或某个 ``PartGroup`` 的 child。这样相机会保留自己的 owner，``Robot.connect()`` 也会在其指定节点上打开该设备。
 
 如果共享 session 本身没有可供 policy 使用的观测，应直接继承 ``Connection``，而不是 ``RobotPart``。Turtle2 的联动控制器采用这种形式：
 
@@ -234,14 +237,14 @@ placement 参数与硬件构造参数一起传入。构造过程不会访问设�
    finally:
        robot.disconnect()
 
-执行 ``connect()`` 时，机器人会为每个不同的 ``Connection`` 打开一次资源。没有 ``node_rank`` 的连接在本进程打开；带 ``node_rank`` 的连接在目标节点的调度器 worker 中重新构造，树里那个对象则变成自身 class 的一个合成子类，公开方法和 property 全部转发到该 worker。树中没有任何对象被替换，任务代码因而不必区分部署位置，``isinstance`` 的结果也和连接之前一致。
+执行 ``connect()`` 时，机器人会为每个不同的 ``Connection`` 打开一次资源。没有 ``node_rank`` 的 connection 在本进程打开；带 ``node_rank`` 的 connection 在目标节点的 scheduler worker 中重新构造，树中已有对象的具体 class 则切换为合成子类，公开方法和 property 转发到该 worker。对象 identity 不变，任务代码因而无需区分部署位置，``isinstance`` 的结果也与连接前一致。
 
 资源归属由对象 identity 决定。每个部件都用 ``owner`` 回答“谁代它打开连接”：自带链路的机械臂回答自己，搭在共享 session 上的 view 回答那个 session。机器人连接的是 owner 而不是部件，因此一条连接只打开一次、只释放一次。不同连接上的部件可以并行调用；共用一条连接的部件按声明顺序调用，避免并发访问不支持该模式的厂商 SDK。
 
 连接前检查组合结果
 ------------------
 
-``Robot.describe()`` 读取组合好的部件树，而这棵树在 ``connect()`` 前后持有的是同一批对象，因此没有机器人在场时也能回答节点和资源归属：
+``Robot.describe()`` 读取已组合的部件树，因此在打开任何硬件之前就能查看部署节点和资源归属：
 
 .. code-block:: text
 
@@ -249,7 +252,7 @@ placement 参数与硬件构造参数一起传入。构造过程不会访问设�
    └── arm                 FrankaROSArm         node=1     via FrankaROSArm#1
        └── end_effector    MethodEndEffector    node=1     via FrankaROSArm#1
 
-``via`` 相同的行共用一个 ``Connection``。连接之后，跨节点的部件会显示它的 view class，例如上面的 ``FrankaROSArm`` 会变成 ``RemoteFrankaROSArm``，一眼就能看出哪些部件跑在别的机器上。
+``via`` 相同的行共用一个 ``Connection``。连接后，跨节点部件会显示合成 class 名称，例如 RemoteFrankaROSArm。部件路径、``node`` 和 owner 保持不变，但完整输出字符串不是稳定的序列化格式，不应存储或解析该字符串。
 
 ``describe()`` 目前只显示组合结构、节点和资源归属，不显示 observation/action schema。若需检查字段和 shape，请使用 :doc:`添加机器人 <../extending/new_robot>` 中的 conformance 检查；该检查会通过 mock SDK 或真机打开连接后进行验证。
 
@@ -273,9 +276,9 @@ placement 参数与硬件构造参数一起传入。构造过程不会访问设�
 
 ``_open()`` 返回的厂商对象会原样传给 ``_release(device)``。清理逻辑应释放参数 ``device``，不要重新从 ``self`` 读取。
 
-要实现的始终是这两个方法，而不是 ``connect()`` 和 ``disconnect()``。后面这一对决定设备在哪里运行，覆盖它们等于放弃跨节点部署的能力：在 ``super().connect()`` 之后启动的线程会跑在持有部件的机器上，而不是持有设备的那台。设备类别若要在 driver 之外再包一层，用 ``_opened()`` 和 ``_closing()``：``BaseCamera`` 的取流循环就在这里启停，无论相机落在哪个节点，循环都跟着相机走。
+driver 应实现 ``_open()`` 与 ``_release()``，不要覆盖 ``connect()`` 和 ``disconnect()``。后两个方法负责选择设备的运行节点；覆盖它们会绕过跨节点部署流程。例如，在 ``super().connect()`` 返回后启动线程，线程会运行在持有部件对象的进程，而非实际持有设备的 worker。设备类别如需在 driver 生命周期外增加处理，可实现 ``_opened()`` 和 ``_closing()``。``BaseCamera`` 使用这两个 hook 启停取流循环，确保循环与相机运行在同一节点。
 
-连接过程要么全部成功，要么全部回滚。如果后续连接启动失败，``Robot.connect()`` 会关闭此前已经打开的资源，并恢复原始组合。排除故障后，可以对同一对象再次调用 ``connect()``；``disconnect()`` 也支持重复调用，并将机器人恢复到可重新连接的状态。
+如果后续 connection 打开失败，``Robot.connect()`` 会回滚此前已成功打开的 connection。但如果 driver 在 ``_open()`` 内部只完成了部分初始化就抛出异常，driver 仍需要自行释放已获取的资源，因为此时尚没有可供机器人关闭的完整 connection。排除故障后，可对同一对象再次调用 ``connect()``。已成功关闭的 connection 也可重复调用 ``disconnect()``，并保持可重新连接状态。
 
 直接在部件上调用设备专有方法
 ----------------------------
@@ -297,7 +300,7 @@ placement 的两端都由 driver class 派生而来，因此标准部件接口�
 
 这条规则的意义在于依赖方向。scheduler 是通用框架，robotics 只是它的一个扩展，因此 scheduler 从不导入本包：它按配置里写明的名字导入硬件策略模块，再调用这些模块注册进来的 discovery 类。Gymnasium 则位于另一侧，属于消费机器人的 env 层。只有组合层——placement、discovery、机器人构建器——会反向导入这两者，驱动因而能够作为纯粹的硬件代码被阅读和测试。
 
-Ray 不在此列。它是 RLinf 的基础依赖，运行 RLinf 的机器上一定有 Ray，禁止这个名字并无收益。这条规则约束的也只是部件源码可以写出哪些名字，而不保证导入一个部件不会加载任何东西：部件可以使用 ``rlinf.utils`` 里的 ``get_logger`` 等工具，它们会触及更深的层次。``tests/unit_tests/test_robotics.py`` 会检查两个方向的导入边界。
+上述限制不包括 Ray。Ray 是 RLinf 的基础依赖，运行节点已经安装该依赖。该规则也不保证导入部件模块时不会加载其他模块；部件仍可使用 ``rlinf.utils`` 中的 ``get_logger`` 等公共工具。``tests/unit_tests/test_robotics.py`` 会检查两个方向的导入边界。
 
 代码位置
 --------
@@ -323,7 +326,7 @@ Ray 不在此列。它是 RLinf 的基础依赖，运行 RLinf 的机器上一�
    * - ``robotics/placement/``
      - 承载连接的 worker，以及连接跨节点后变成的 view，两者都由 driver class 合成。
    * - ``robotics/robot.py``
-     - 最外层组合、声明快照、``describe()`` 和生命周期。
+     - 最外层组合、``describe()`` 和生命周期。
    * - ``robotics/discovery/``
      - 机器人类型注册、标准硬件枚举、环境变量补全与配置查找。
 

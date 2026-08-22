@@ -66,6 +66,18 @@ reader 不依赖机器人或集群，可独立运行：
 
 在上述配置中，SpaceMouse 控制机械臂，数据手套控制灵巧手。按住 SpaceMouse 的第二个按键时，手套开始接管；松开后，灵巧手保持最后一个位姿。
 
+设备级参数保留在对应的配置段中。例如，项目内置的灵巧手配置通过 ``glove_config`` 指定数据手套端口和标定文件：
+
+.. code-block:: yaml
+
+   env:
+     eval:
+       teleop: [spacemouse, glove]
+       glove_config:
+         left_port: /dev/ttyACM0
+         frequency: 60
+         config_file: null
+
 当机器人包含两个同类分支时，使用 ``drives`` 指定每台设备控制的分支。该字段是遥操作配置中唯一直接引用机器人部件名称的位置：
 
 .. code-block:: yaml
@@ -94,7 +106,7 @@ reader 不依赖机器人或集群，可独立运行：
    finally:
        leader.disconnect()
 
-独立诊断脚本可以这样用，放进 ``TeleopGroup`` 也一样，因为 group 打开每台设备走的是同一条路径。决定主臂跑在哪里的是构造时传入的 ``node_rank``；``env.*.teleop`` 配置目前还没有暴露这个字段，所以通过它配置的设备都在 env 进程中打开。
+该写法适用于独立诊断，也适用于 ``TeleopGroup``，因为 group 通过同一套 connection 接口打开每台设备。主臂的运行节点由构造时传入的 ``node_rank`` 决定。``env.*.teleop`` 配置目前尚未提供该字段，因此通过该配置创建的设备均在 env 进程中打开。
 
 每次采样只读取每台不同的设备一次。同一台设备即使同时控制两个部件，也只会打开一次；因此，SpaceMouse 同时控制机械臂和夹爪时仍只占用一个 HID 句柄。
 
@@ -117,7 +129,9 @@ reader 不依赖机器人或集群，可独立运行：
 新增设备
 --------
 
-配置里能点名的设备，就是 ``rlinf/envs/real/wrappers/teleop/backends.py`` 里的一个 class，它用那个名字把自己注册进去：
+新增遥操作设备时，需要实现两个职责明确的扩展点。首先，在 ``robotics/parts/teleop`` 中将硬件 reader 封装为 ``TeleopPart``，沿用标准 connection 生命周期，且不依赖 Gymnasium。随后，在 ``real/wrappers/teleop/backends.py`` 中实现面向配置的 ``TeleopBackend``，将设备与 binding 组合起来。该 registry 位于 env 层，因为 backend 需要读取 env 配置，并根据 env 声明的动作语义选择 binding。
+
+backend 应在实现该组合的同一文件中完成注册：
 
 .. code-block:: python
 
@@ -125,17 +139,28 @@ reader 不依赖机器人或集群，可独立运行：
    class ExampleBackend(TeleopBackend):
        @classmethod
        def entry(cls, cfg, options, facts):
+           device_cfg = dict(cfg.get("example_config", {}))
+           unknown = set(options) - {"port", "drives"}
+           if unknown:
+               raise ValueError(f"Unsupported example options: {sorted(unknown)}")
+           port = options.get("port", device_cfg.get("port"))
+           if port is None:
+               raise ValueError("teleop device 'example' requires a port")
            return TeleopEntry(
-               ExampleDevice(port=options.get("port")),
+               ExampleDevice(port=port),
                ExampleBinding(),
                drives=options.get("drives"),
            )
 
-``entry()`` 返回的是一对东西：硬件，以及说明它的数值对这台机器人意味着什么的 binding。``facts`` 是 env 对自身的说明——尤其是机械臂接收的是目标位姿还是增量——因此在两种情况下绑定方式不同的设备可以直接问，而不必猜。
+``cfg`` 是完整的 env 配置段，用于读取设备级配置；``options`` 只属于当前列表项，可单独指定端口或 ``drives``。backend 应在此处校验允许的 key，避免拼写错误的硬件参数被静默忽略。
 
-只有当某台设备还要在自己的线程上直接下发指令时，才需要覆盖 ``streamer()``；默认返回 ``None``，这也是除 ``gello_joint`` 之外每台设备想要的行为，参见 :ref:`提高主从臂跟随频率 <teleop-rate>`。
+``entry()`` 返回 ``TeleopEntry``，其中包含设备、解释设备读数的 binding，以及可选的目标分支。``facts`` 描述 env 的动作布局和语义，例如机械臂接收绝对位姿还是增量。backend 可据此选择正确的 binding，无需导入某个具体 env class。
 
-最后把这个名字写进对应 env 的 ``TELEOP`` 元组，表示该 env 可以由它驱动。除此之外不需要改动任何地方：builder 会向 registry 查询。
+只有当某台设备还要在独立线程中直接下发指令时，才需要覆盖 ``streamer()``；除 ``gello_joint`` 外，其余设备均使用默认实现并返回 ``None``，参见 :ref:`提高主从臂跟随频率 <teleop-rate>`。
+
+builder 会先构建所有 backend entry，再创建 streamer。streamer 可能接管并非由自身构造的设备；按照这一顺序创建，可确保 streamer 初始化时已经取得本次配置请求的全部设备和 binding。
+
+最后，将注册名加入对应 env 的 ``TELEOP`` 元组，声明该 env 能够表示该设备产生的动作。这里无需再次注册设备；公共 builder 会通过 ``TeleopBackend`` 查询注册名并构建相应的 entry。
 
 已废弃的配置项
 --------------

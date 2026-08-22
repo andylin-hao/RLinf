@@ -279,10 +279,15 @@ class GloveBackend(TeleopBackend):
 
     @classmethod
     def entry(cls, cfg, options, facts) -> TeleopEntry:
-        glove_cfg = dict(cfg.get("glove", {}))
+        # ``glove_config`` is the key the shipped configs set, and a per-entry
+        # option overrides it. Reading ``glove`` instead silently dropped the
+        # ports and the calibration file, leaving the device to open a default
+        # that is not the one anybody configured.
+        glove_cfg = dict(cfg.get("glove_config", {}))
+        glove_cfg.update(options)
         return TeleopEntry(
             Glove(
-                left_port=glove_cfg.get("left_port"),
+                left_port=glove_cfg.get("left_port", "/dev/ttyACM0"),
                 right_port=glove_cfg.get("right_port"),
                 frequency=int(glove_cfg.get("frequency", 60)),
                 config_file=glove_cfg.get("config_file"),

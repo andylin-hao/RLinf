@@ -1272,6 +1272,66 @@ def test_an_entry_option_wins_over_the_env_default():
     assert entry.binding.use_delta is True
 
 
+def test_the_glove_reads_the_key_the_shipped_configs_set():
+    """``glove_config``, not ``glove`` -- and a per-entry option wins over it.
+
+    Reading the wrong key discarded the configured ports and the calibration
+    file and fell back to a default, so a rig would open the wrong device and
+    say nothing about it. The shipped configs are what fix the spelling:
+    ``examples/embodiment/config/realworld_collect_dexhand_data.yaml`` sets
+    ``glove_config``.
+    """
+    from rlinf.envs.real.wrappers.teleop.backends import TeleopBackend
+
+    glove = TeleopBackend.named("glove")
+    cfg = {
+        "glove_config": {
+            "left_port": "/dev/ttyACM7",
+            "right_port": "/dev/ttyACM8",
+            "frequency": 90,
+            "config_file": "/etc/glove.json",
+        }
+    }
+
+    device = glove.entry(cfg, {}, None).device
+    assert device._left_port == "/dev/ttyACM7"
+    assert device._right_port == "/dev/ttyACM8"
+    assert device._frequency == 90
+    assert device._config_file == "/etc/glove.json"
+
+    # A per-entry option overrides the shared block.
+    overridden = glove.entry(cfg, {"left_port": "/dev/override"}, None).device
+    assert overridden._left_port == "/dev/override"
+
+    # And the documented default survives when nothing is configured.
+    assert glove.entry({}, {}, None).device._left_port == "/dev/ttyACM0"
+
+
+def test_every_shipped_teleop_config_key_is_one_a_backend_reads():
+    """A config block nobody reads is a setting that silently does nothing."""
+    import pathlib
+    import re
+
+    from rlinf.envs.real.wrappers.teleop.backends import TeleopBackend
+
+    source = pathlib.Path("rlinf/envs/real/wrappers/teleop/backends.py").read_text()
+    read = set(re.findall(r'cfg\.get\(\s*"([a-z_]+)"', source))
+
+    configured: set[str] = set()
+    for path in pathlib.Path("examples/embodiment/config").glob("*.yaml"):
+        text = path.read_text()
+        if "teleop:" not in text:
+            continue
+        configured |= {
+            key
+            for key in re.findall(r"^\s{4}([a-z_]+):", text, re.MULTILINE)
+            if key.split("_")[0] in TeleopBackend.names()
+        }
+
+    unread = sorted(configured - read)
+    assert not unread, f"configs set {unread}, which no teleop backend reads"
+
+
 def test_a_teleop_device_is_one_class_that_registers_itself():
     """One place per device, not an entry in each of two tables plus a function.
 

@@ -83,6 +83,20 @@ In this dexterous-hand rig, the puck drives the arm and the glove drives the
 hand. The glove takes control only while the spacemouse's second button is held;
 releasing it leaves the hand at its last pose.
 
+Device-wide settings remain in their named config block. For example, the
+shipped dexterous-hand configs set the glove ports and calibration under
+``glove_config``:
+
+.. code-block:: yaml
+
+   env:
+     eval:
+       teleop: [spacemouse, glove]
+       glove_config:
+         left_port: /dev/ttyACM0
+         frequency: 60
+         config_file: null
+
 When a robot has two branches of the same kind, ``drives`` selects the branch for
 each device. This is the only configuration field that names a robot part:
 
@@ -152,9 +166,15 @@ instead of receiving malformed motion.
 Add a Device
 ------------
 
-A device a config can name is one class in
-``rlinf/envs/real/wrappers/teleop/backends.py``, registering itself under that
-name:
+Adding a teleop device involves two existing extension points. Implement the
+hardware reader as a ``TeleopPart`` under ``robotics/parts/teleop`` so it keeps
+the standard connection lifecycle and has no Gymnasium dependency. Implement
+the config-facing pairing as a ``TeleopBackend`` under
+``real/wrappers/teleop/backends.py``. The latter belongs to the environment
+layer because it reads env config and selects a binding for the action semantics
+declared by that env.
+
+Register the backend in the same file that implements the pairing:
 
 .. code-block:: python
 
@@ -162,23 +182,42 @@ name:
    class ExampleBackend(TeleopBackend):
        @classmethod
        def entry(cls, cfg, options, facts):
+           device_cfg = dict(cfg.get("example_config", {}))
+           unknown = set(options) - {"port", "drives"}
+           if unknown:
+               raise ValueError(f"Unsupported example options: {sorted(unknown)}")
+           port = options.get("port", device_cfg.get("port"))
+           if port is None:
+               raise ValueError("teleop device 'example' requires a port")
            return TeleopEntry(
-               ExampleDevice(port=options.get("port")),
+               ExampleDevice(port=port),
                ExampleBinding(),
                drives=options.get("drives"),
            )
 
-``entry()`` returns the pairing: the hardware, and the binding that says what
-its numbers mean for this robot. ``facts`` is what the env says about itself --
-notably whether its arm takes a pose to reach or a delta to apply -- so a
-device that binds differently in the two cases asks rather than guesses.
+``cfg`` is the complete env section and contains the device-wide config block.
+``options`` belongs to this one list entry, so it can select a port or a
+``drives`` branch without changing other instances. Validate these keys at the
+backend boundary; a misspelled hardware option should not be silently ignored.
+
+``entry()`` returns a ``TeleopEntry`` containing the device, the binding that
+gives its readings meaning, and the optional branch it drives. ``facts``
+describes the env's action layout and semantics -- notably whether an arm takes
+an absolute pose or a delta -- so a backend can select the correct binding
+without importing a concrete env class.
 
 Override ``streamer()`` only for a device that also commands the robot on its
 own thread; the default returns nothing, which is what every device but
 ``gello_joint`` wants. See :ref:`When the Rate Is the Problem <teleop-rate>`.
 
-Then list the name in the env's ``TELEOP`` tuple, which is what that env can be
-driven by. Nothing else changes: the builder asks the registry.
+The builder creates every backend entry before it creates any streamer. A
+streamer may take over devices that it does not construct itself, so it can
+rely on all requested devices and bindings being available at that point.
+
+Then list the registered name in the env's ``TELEOP`` tuple. This declaration
+states that the env can represent the device's action; it does not register the
+device again. The shared builder resolves the name through ``TeleopBackend`` and
+constructs the returned entry.
 
 Retired Spellings
 -----------------

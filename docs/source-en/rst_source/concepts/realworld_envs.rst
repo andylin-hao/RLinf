@@ -153,12 +153,16 @@ Teleoperation crosses several layers, but each layer has one job:
   with the normal connect, observe, and disconnect lifecycle.
 - ``robotics/teleop/bindings.py`` explains what a reading means for named robot
   action parts.
-- ``real/wrappers/teleop/composed.py`` writes those named parts into the flat
-  action vector declared by the environment.
+- ``real/wrappers/teleop/backends.py`` registers each config name with the
+  device-and-binding pairing it constructs for an env.
+- ``real/wrappers/teleop/builder.py`` resolves the requested names, while
+  ``composed.py`` writes their named actions into the env's flat vector.
 
 Keeping the layers separate lets you diagnose a cable before involving a robot,
 and lets one physical device acquire a different meaning through another
-binding.
+binding. The backend registry remains in the env layer because resolving a name
+requires both env config and the action semantics that env declares. Moving it
+into robotics would make hardware readers depend on Gymnasium configuration.
 
 You can therefore check a leader arm's wiring without involving a robot:
 
@@ -219,8 +223,8 @@ Where the Code Lives
    * - ``robotics/teleop/``
      - Bindings, action meanings, and ``TeleopGroup`` composition.
    * - ``real/wrappers/teleop/``
-     - Device selection, policy/operator arbitration, flat action layout, and
-       the optional direct-streaming path.
+     - The ``TeleopBackend`` registry, device selection, policy/operator
+       arbitration, flat action layout, and the optional direct-streaming path.
    * - ``real/wrappers/transforms/``
      - Relative frames, quaternion-to-Euler, gripper narrowing.
    * - ``real/wrappers/episode/``

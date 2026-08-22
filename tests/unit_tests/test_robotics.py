@@ -989,6 +989,245 @@ def test_every_env_reaches_a_real_connection_through_the_tree():
             dual.child("left").owner
 
 
+def _arm_with_a_camera_of_its_own(log):
+    """An arm carrying a wrist camera that holds its own USB bus."""
+
+    class WristCamera(Camera):
+        def _open(self):
+            log.append("open:camera")
+            return "usb"
+
+        def _release(self, device):
+            log.append("close:camera")
+
+        @property
+        def observation_features(self):
+            return {"frame": {}}
+
+        def get_observation(self):
+            return {"frame": "IMAGE"}
+
+    class ArmWithCamera(ControllablePart):
+        def __init__(self, *args, **kwargs):
+            self._camera = WristCamera()
+
+        def _open(self):
+            log.append("open:arm")
+            return "arm"
+
+        def _release(self, device):
+            log.append("close:arm")
+
+        @property
+        def observation_features(self):
+            return {"q": {}}
+
+        @property
+        def action_features(self):
+            return {}
+
+        def get_observation(self):
+            return {"q": 0}
+
+        def send_action(self, action):
+            return action
+
+        @property
+        def parts(self):
+            return {"wrist": self._camera}
+
+    return ArmWithCamera()
+
+
+def test_a_rider_holding_its_own_link_is_opened_by_the_robot():
+    """Keeping its own link only helps if something then opens it.
+
+    ``part()`` leaves a device that opens itself unadopted, so the arm's
+    connect does not touch it. The robot has to reach it instead -- otherwise
+    the camera sits in the tree and in the observation, reporting frames from
+    hardware nobody opened.
+    """
+    log: list[str] = []
+    arm = _arm_with_a_camera_of_its_own(log)
+    robot = Robot(arm=arm)
+
+    assert len(robot.owners()) == 2, (
+        "the camera rides no connection but its own, so it is a second one to "
+        f"open; owners() found {[type(o).__name__ for o in robot.owners()]}"
+    )
+
+    robot.connect()
+    assert log == ["open:arm", "open:camera"]
+    assert arm.child("wrist").is_connected
+
+    robot.disconnect()
+    assert log[-2:] == ["close:camera", "close:arm"], "closed newest first"
+
+
+def test_the_tree_holds_the_same_objects_every_time_it_is_walked():
+    """``parts`` builds a fresh view per read; ``children`` must not.
+
+    Everything that walks the tree -- opening it, describing it, finding every
+    camera -- has to see one object per part. Rebuilding meant what ``part()``
+    recorded went to a throwaway, and a robot could open one object while the
+    reading came from another.
+    """
+    log: list[str] = []
+    robot = Robot(arm=_arm_with_a_camera_of_its_own(log))
+
+    once = robot.child("arm").child("wrist")
+    assert robot.child("arm").child("wrist") is once
+    assert robot.named_parts["arm.wrist"] is once
+    assert robot.parts_of_type(Camera)["arm.wrist"] is once
+
+    robot.connect()
+    try:
+        assert once.is_connected, "the object the tree hands out is the one opened"
+    finally:
+        robot.disconnect()
+
+
+def test_a_failed_connect_leaves_nothing_open():
+    """Whatever a category starts around a device either starts, or nothing is.
+
+    ``_opened`` runs after the device is in hand, so a capture loop that fails
+    to start used to leave the camera open under a part reporting itself
+    connected -- and ``disconnect`` would not close it, because a part that
+    never came up is not one anybody disconnects.
+    """
+    released: list[Any] = []
+
+    class Balky(RobotPart):
+        def _open(self):
+            return "device"
+
+        def _opened(self):
+            raise RuntimeError("the capture loop would not start")
+
+        def _release(self, device):
+            released.append(device)
+
+        @property
+        def observation_features(self):
+            return {}
+
+        def get_observation(self):
+            return {}
+
+    part = Balky()
+    with pytest.raises(RuntimeError, match="capture loop"):
+        part.connect()
+
+    assert released == ["device"], "the device was not handed back"
+    assert not part.is_connected
+
+
+def test_a_device_is_released_even_when_teardown_throws():
+    """``_closing`` failing must not cost the release.
+
+    ``disconnect`` clears the handle either way, so a release it skipped could
+    never be retried: the device would be leaked with nothing left pointing at
+    it.
+    """
+    released: list[Any] = []
+
+    class Balky(RobotPart):
+        def _open(self):
+            return "device"
+
+        def _closing(self):
+            raise RuntimeError("the capture loop would not stop")
+
+        def _release(self, device):
+            released.append(device)
+
+        @property
+        def observation_features(self):
+            return {}
+
+        def get_observation(self):
+            return {}
+
+    part = Balky()
+    part.connect()
+    with pytest.raises(RuntimeError, match="capture loop"):
+        part.disconnect()
+
+    assert released == ["device"]
+    assert not part.is_connected
+
+
+def test_a_handle_that_is_falsy_is_still_a_handle():
+    """``_open() or self`` threw away a file descriptor of 0.
+
+    Falsiness is not the question -- whether the driver returned something is.
+    A zero fd, an empty buffer and a zero-length array are all real handles,
+    and substituting the part for them left ``_release`` nothing to close.
+    """
+    for handle in (0, "", 0.0, []):
+
+        class Zero(RobotPart):
+            def _open(self):
+                return handle
+
+            @property
+            def observation_features(self):
+                return {}
+
+            def get_observation(self):
+                return {}
+
+        part = Zero()
+        part.connect()
+        assert part._device is handle, f"{handle!r} was replaced by the part"
+        assert part.is_connected
+        part.disconnect()
+
+
+def test_rollback_closes_every_connection_even_if_one_will_not():
+    """One stuck device must not strand the ones opened before it.
+
+    Stopping at the first failure is the state the rollback exists to avoid: a
+    half-open robot with nothing holding the open half.
+    """
+    log: list[str] = []
+
+    def part(tag, fail_open=False, fail_close=False):
+        class Flaky(RobotPart):
+            def _open(self):
+                if fail_open:
+                    raise RuntimeError("hardware unreachable")
+                log.append(f"open:{tag}")
+                return tag
+
+            def _release(self, device):
+                if fail_close:
+                    raise RuntimeError("this one will not close")
+                log.append(f"close:{tag}")
+
+            @property
+            def observation_features(self):
+                return {}
+
+            def get_observation(self):
+                return {}
+
+        return Flaky()
+
+    group = PartGroup(
+        first=part("first"),
+        second=part("second", fail_close=True),
+        third=part("third", fail_open=True),
+    )
+
+    with pytest.raises(RuntimeError):
+        group.connect()
+
+    assert "close:first" in log, (
+        f"the rollback stopped at the connection that would not close: {log}"
+    )
+
+
 def test_a_device_with_its_own_link_keeps_it_when_a_connection_lists_it():
     """``part()`` adopts a view, not a device that opens itself.
 

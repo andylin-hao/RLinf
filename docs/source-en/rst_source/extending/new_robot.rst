@@ -182,13 +182,14 @@ Check those names and their resource ownership before opening hardware:
 
    >>> print(robot.describe())
    MobileManipulator
-   ├── base            controllable  node=0     via ExampleMobileBase#1
-   ├── arm             declared      node=0     via FrankaROSArm#2
-   └── end_effector    declared      node=0     via FrankaROSArm#2
+   ├── base                ExampleMobileBase    node=0     via ExampleMobileBase#1
+   └── arm                 FrankaROSArm         node=0     via FrankaROSArm#2
+       └── end_effector    MethodEndEffector    node=0     via FrankaROSArm#2
 
 The arm and end effector share one ``via`` because they use one Franka
-connection. The base has its own connection. ``describe()`` reads the declaration
-snapshot, so this ownership remains visible before and after ``connect()``.
+connection. The base has its own connection. The paths, nodes, and ownership
+remain visible after ``connect()``; a remotely placed connection then uses its
+synthesized class name, such as RemoteFrankaROSArm.
 
 Once connected, observations and actions use the names from the composition:
 
@@ -209,17 +210,19 @@ Once connected, observations and actions use the names from the composition:
        robot.send_action(
            {
                "base": {"velocity": base_velocity},
-               "arm": {"tcp_pose": arm_target},
-               "end_effector": {"target": gripper_target},
+               "arm": {
+                   "tcp_pose": arm_target,
+                   "end_effector": {"target": gripper_target},
+               },
            }
        )
    finally:
        robot.disconnect()
 
-``PartGroup.send_action`` accepts a partial tree, so a navigation task need not send
-hold commands for the arm. When an action contains both connections, RLinf can
-dispatch them in parallel; the arm and end effector remain ordered because they
-share one connection.
+``PartGroup.send_action`` accepts a partial tree, so a navigation task need not
+send hold commands for the arm. When an action contains both connections,
+RLinf can dispatch them in parallel; the arm and end effector remain ordered
+because they share one connection.
 
 3. Use the Robot in a Real-World Environment
 --------------------------------------------
@@ -301,10 +304,10 @@ an arm:
    finally:
        env.close()
 
-``RobotTaskEnv`` connects the composed robot when the environment is created and
-disconnects it in ``close()``. A manipulation task can expand the spaces and
-actions with the existing ``arm`` and ``end_effector`` paths; the base driver
-and robot composition stay unchanged.
+``RobotTaskEnv`` connects the composed robot when the environment is created
+and disconnects it in ``close()``. A manipulation task can expand the spaces
+and actions with ``arm`` and ``arm.end_effector``; the base driver and robot
+composition stay unchanged.
 
 To launch the task through RLinf's distributed ``RealWorldEnv``, register the
 environment with Gymnasium and set ``env_type: real`` plus its Gym ID in the env
@@ -346,8 +349,10 @@ connection named. A connection bound for another node is rebuilt there and the
 object in the tree becomes a view of it, so the robot holds the same parts
 either way and nothing in your code branches on placement.
 
-Startup is all-or-nothing. If the arm fails, the base is rolled back
-automatically and the robot goes back to being connectable.
+If a later connection fails, the robot closes the connections that completed
+before it. A driver must still clean up resources acquired inside a failing
+``_open()`` call, because that connection never completed and cannot be rolled
+back by the robot.
 
 5. Build the Composition from Configuration
 -------------------------------------------
@@ -385,7 +390,6 @@ declaration rather than copying its SDK or lifecycle code:
            controller_node_rank: int | None = None,
            worker_rank: int = 0,
            env_idx: int = 0,
-           **_,
        ) -> "MobileManipulator":
            if not base_endpoint:
                raise ValueError("MobileManipulator requires base_endpoint.")
@@ -412,6 +416,12 @@ config. The builder then composes unconnected parts and selections from shared
 connections; it does not open either device. Connection addresses, backend
 selection, and placement belong here. Targets, rewards, reset poses, and
 episode horizons remain in the task config.
+
+Keep the signature explicit. ``Robot.of_type()`` and ``build_robot()`` forward
+their keyword arguments directly to ``build()``; registration does not unpack a
+``RobotConfig`` instance or discard fields the builder does not recognize. An
+unexpected config key should therefore raise at this boundary instead of being
+absorbed by ``**kwargs`` and silently ignored.
 
 .. warning::
 
@@ -441,7 +451,9 @@ enumeration procedure.
 registries: the first names one device driver, while the second names the whole
 robot composition. After the robot type is registered, callers can use either
 ``Robot.of_type("MobileManipulator", ...)`` or the convenience function
-``build_robot("MobileManipulator", ...)``.
+``build_robot("MobileManipulator", ...)``. Both calls still require the
+builder's keyword arguments; registration does not turn a hardware config into
+those arguments automatically.
 
 For an in-tree implementation, place the module under
 ``rlinf/robotics/robots/`` and import it from that package's ``__init__.py``.
@@ -454,10 +466,10 @@ configured Python environment must be able to import the module.
 7. Configure the Cluster
 ------------------------
 
-The final construction input comes from the existing
-``cluster.node_groups.hardware`` schema. Its entries are parsed by the
-registered config class and passed to the registered builder. Put endpoints and
-node ranks in this YAML rather than embedding a particular deployment in
+The cluster describes physical resources under
+``cluster.node_groups.hardware``. Each entry is parsed with the registered
+config class and becomes a ``RobotInfo`` during hardware discovery. Put
+endpoints and node ranks in this YAML rather than embedding a deployment in
 Python:
 
 .. code-block:: yaml
@@ -483,6 +495,29 @@ Here ``node_rank`` identifies the node that owns the configured robot resource;
 ``controller_node_rank`` places the reused Franka connection on its controller node.
 The env config selects the Gym ID separately, so the same hardware composition
 can serve navigation, mobile manipulation, or data-collection tasks.
+
+The environment receives that ``RobotInfo`` and calls the registered builder
+explicitly. This is the visible boundary where scheduler metadata such as the
+env worker rank is added:
+
+.. code-block:: python
+
+   hardware = robot_info.config
+   robot = build_robot(
+       "MobileManipulator",
+       base_backend=hardware.base_backend,
+       base_endpoint=hardware.base_endpoint,
+       arm_ip=hardware.arm_ip,
+       node_rank=hardware.node_rank,
+       controller_node_rank=hardware.controller_node_rank,
+       worker_rank=worker_info.rank,
+       env_idx=env_idx,
+   )
+
+Keeping this call explicit prevents the hardware registry from becoming an
+implicit adapter between unrelated config shapes. If several environments use
+the same robot, place the translation in shared setup code rather than copying
+it into each task.
 
 8. Test the Integration
 -----------------------
@@ -527,15 +562,35 @@ They live in ``tests/robot_contracts``, beside the fake SDKs in
 ``tests/robot_mocks``, because they check RLinf rather than being part of it.
 
 The contracts connect, read, disconnect, repeat the lifecycle, and disconnect
-once more. They compare observation names and shapes with the part's declaration.
-When ``PartContract`` receives the velocity sample, it also checks that the
-action is accepted and an unknown field is refused. ``RobotContract`` injects a
-failure during ``connect()`` and checks that neither the base nor the existing
-arm leaves a partially connected tree.
+once more. ``PartContract`` compares one part's observation names and shapes
+with its declaration. When it receives the velocity sample, it also checks that
+the action is accepted and an unknown field is refused. ``RobotContract`` checks
+that the robot can be described before connecting, validates the composed
+top-level leaves, and injects a failure during ``connect()`` to verify rollback.
+
+The contract currently treats a ``RobotPart`` that carries riders as one leaf;
+it does not separately walk those riders. Add direct composition assertions for
+the paths and owners introduced by this robot:
+
+.. code-block:: python
+
+   robot = MobileManipulator.build(
+       base_endpoint="tcp://mobile-base:7000",
+       arm_ip="10.0.0.2",
+       node_rank=0,
+       controller_node_rank=0,
+   )
+   assert set(robot.named_parts) == {"base", "arm", "arm.end_effector"}
+   end_effector = robot.child("arm").child("end_effector")
+   assert end_effector.owner is robot.child("arm").owner
+   assert len(robot.owners()) == 2
 
 Add ``ConnectionContract`` only when the new SDK session backs several parts.
-This example adds one leaf ``MobileBase`` and reuses the already-tested Franka
-connection, so there is no new connection abstraction to test.
+It checks the session lifecycle and the observations returned by its ``parts``
+mapping. Also assert that ``connection.part(name).owner is connection`` for each
+selected part; the contract does not currently make that selection itself. This
+example adds one leaf ``MobileBase`` and reuses the already-tested Franka
+connection, so there is no new shared session to test.
 
 These checks cover failures the package has previously encountered. A contract
 failure names the broken promise rather than only the assertion, and lists all
@@ -549,12 +604,13 @@ failures at once:
      - ExampleMobileBase observes pose with shape (4,), declares (3,)
 
 The rest of the integration is testable the same way. Cover the part contract,
-composition paths, handle lifecycle, discovery registration, and the schema
+composition paths, connection lifecycle, discovery registration, and the schema
 policies expect:
 
 .. code-block:: bash
 
-   pytest tests/unit_tests/test_robotics.py tests/unit_tests/test_real_env.py
+   pytest tests/unit_tests/test_robotics.py tests/unit_tests/test_conformance.py \
+       tests/unit_tests/test_real_env.py
 
 These exercise the scheduler import boundary, part composition, the task and
 robot split, and the policy-facing schema of every built-in real-world
@@ -585,10 +641,12 @@ The shape check is particularly important: an env builds its observation space
 from what a part declares, so a value one number wider reaches a policy as data
 rather than as an error.
 
-Add ``--remote`` to host the parts in scheduler workers instead of this
-process. That is what catches a part that cannot be placed at all -- a method
-whose name collides with the worker's own, or state that does not survive the
-process boundary.
+Add ``--remote`` to preserve the ``node_rank`` declarations while using the
+mock SDKs. Connections that declare a node then run in scheduler workers;
+connections without a ``node_rank`` still open in the current process. This is
+what catches a part that cannot be placed at all -- for example, a method whose
+name collides with the worker's own, or state that does not survive the process
+boundary.
 
 A whole training run works the same way. ``run.sh`` installs the fakes when the
 config name contains ``mock``. Turtle2 is the closest shipped example of a

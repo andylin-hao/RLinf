@@ -33,10 +33,15 @@ when a rollout or a debugging command fails:
    try:
        observation = robot.get_observation()
        tcp_pose = observation["arm"]["tcp_pose"]
-       gripper_width = observation["end_effector"]["state"]
+       gripper_width = observation["arm"]["end_effector"]["state"]
 
        robot.send_action(
-           {"arm": {"tcp_pose": target}, "end_effector": {"target": width}}
+           {
+               "arm": {
+                   "tcp_pose": target,
+                   "end_effector": {"target": width},
+               }
+           }
        )
    finally:
        robot.disconnect()
@@ -48,25 +53,33 @@ action to only the parts you want to command.
 Read the Tree
 -------------
 
-Part names are the public data contract. A single-arm Franka has ``arm`` and
-``end_effector`` at the top level:
+Part names are the public data contract. A single-arm Franka has one top-level
+``arm``. Its end effector is mounted on that arm and therefore appears below
+it:
 
 .. code-block:: text
 
    FrankaRobot
-   ├── arm           declared      node=1     via FrankaROSArm#1
-   └── end_effector  declared      node=1     via FrankaROSArm#1
+   └── arm                 FrankaROSArm         node=1     via FrankaROSArm#1
+       └── end_effector    MethodEndEffector    node=1     via FrankaROSArm#1
 
 The two rows share a ``via`` value because one Franka connection owns both
 parts. You do not need that detail to use the robot; it is there to make a
 configuration mistake visible before the hardware moves.
 
-On a dual-arm robot, the same part names sit below ``left`` and ``right``:
+This distinction explains when a part is passed directly to ``Robot`` and when
+``part(name)`` is needed. ``FrankaROSArm`` is already a readable ``RobotPart``,
+so ``Robot(arm=arm)`` composes it directly and brings along the end effector it
+carries. A shared controller that is only a ``Connection`` is not readable;
+select one of the parts it backs with ``session.part("left")`` before composing
+it.
+
+On a dual-arm robot, the same structure sits below ``left`` and ``right``:
 
 .. code-block:: python
 
    left_qpos = observation["left"]["arm"]["arm_joint_position"]
-   right_gripper = observation["right"]["end_effector"]["state"]
+   right_gripper = observation["right"]["arm"]["end_effector"]["state"]
 
 The tree can be nested as deeply as the hardware requires. There is no fixed
 ``arms`` or ``cameras`` slot, so a lift, head, or third arm does not need a new
@@ -103,8 +116,8 @@ Choose What to Read Next
   :doc:`New Real-World Tasks <../extending/new_task>`.
 - To add one local sensor or actuator, continue with
   :doc:`Adding a Robot <../extending/new_robot>`.
-- To understand shared connections, part groups, placement, lifecycle
-  rollback, and worker placement, read
+- To understand ``parts`` versus ``children``, shared connections, part groups,
+  lifecycle, and worker placement, read
   :doc:`Robotics Architecture <robotics_architecture>`.
 - To combine operator devices, read
   :doc:`Teleoperation <../guides/teleoperation>`.
