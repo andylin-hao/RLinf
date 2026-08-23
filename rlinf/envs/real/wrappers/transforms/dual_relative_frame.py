@@ -18,6 +18,8 @@ The wrappers operate on a concatenated 14-value TCP pose and compute an
 independent transform for each arm.
 """
 
+from typing import Any
+
 import gymnasium as gym
 import numpy as np
 from gymnasium import Env
@@ -38,7 +40,7 @@ class DualRelativeFrame(gym.Wrapper):
     ``[left_6d, (grip), right_6d, (grip)]``.
     """
 
-    def __init__(self, env: Env, include_relative_pose=True):
+    def __init__(self, env: Env, include_relative_pose: bool = True) -> None:
         super().__init__(env)
         self.adjoint_matrices = [np.zeros((6, 6)) for _ in range(NUM_ARMS)]
 
@@ -46,7 +48,7 @@ class DualRelativeFrame(gym.Wrapper):
         if self.include_relative_pose:
             self.T_b_r_invs = [np.zeros((4, 4)) for _ in range(NUM_ARMS)]
 
-    def step(self, action: np.ndarray):
+    def step(self, action: np.ndarray) -> tuple[Any, float, bool, bool, dict[str, Any]]:
         transformed_action = self.transform_action(action)
         obs, reward, done, truncated, info = self.env.step(transformed_action)
 
@@ -59,7 +61,7 @@ class DualRelativeFrame(gym.Wrapper):
         transformed_obs = self.transform_observation(obs)
         return transformed_obs, reward, done, truncated, info
 
-    def reset(self, **kwargs):
+    def reset(self, **kwargs: Any) -> tuple[Any, dict[str, Any]]:
         obs, info = self.env.reset(**kwargs)
         tcp_pose = obs["state"]["tcp_pose"]
 
@@ -73,7 +75,7 @@ class DualRelativeFrame(gym.Wrapper):
 
         return self.transform_observation(obs), info
 
-    def _update_adjoint(self, tcp_pose: np.ndarray):
+    def _update_adjoint(self, tcp_pose: np.ndarray) -> None:
         for arm in range(NUM_ARMS):
             self.adjoint_matrices[arm] = construct_adjoint_matrix(
                 tcp_pose[arm * 7 : arm * 7 + 7]
@@ -89,7 +91,7 @@ class DualRelativeFrame(gym.Wrapper):
         start = 7 if len(action) == 14 else 6
         return slice(start, start + 6)
 
-    def transform_observation(self, obs: dict) -> dict:
+    def transform_observation(self, obs: dict) -> dict[str, Any]:
         """Transform dual-arm observations from base frame to end-effector frame."""
         tcp_pose = obs["state"]["tcp_pose"]
         tcp_vel = obs["state"].get("tcp_vel")
@@ -137,7 +139,7 @@ class DualRelativeFrame(gym.Wrapper):
 class DualRelativeTargetFrame(DualRelativeFrame):
     """Compute reset transforms from target poses instead of measured poses."""
 
-    def reset(self, **kwargs):
+    def reset(self, **kwargs: Any) -> tuple[Any, dict[str, Any]]:
         obs, info = self.env.reset(**kwargs)
 
         target = self.env.target_ee_pose  # Quaternion pose, shape (14,).

@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import copy
 from dataclasses import dataclass
+from typing import Any, Optional
 
 import gymnasium as gym
 import numpy as np
@@ -57,18 +58,20 @@ class DualFrankaTCPEnv(DualFrankaEnv):
         """Return absolute Cartesian-pose semantics."""
         return ActionKind.CARTESIAN_POSE
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         # Retain quaternion hemispheres across steps for smooth interpolation.
         self._prev_step_quat = [None, None]
 
-    def reset(self, *, seed=None, options=None):
+    def reset(
+        self, *, seed: Optional[int] = None, options: Optional[dict[str, Any]] = None
+    ) -> tuple[Any, dict[str, Any]]:
         self._prev_step_quat = [None, None]
         return super().reset(seed=seed, options=options)
 
     # Spaces.
 
-    def _init_action_obs_spaces(self):
+    def _init_action_obs_spaces(self) -> None:
         if self.config.rotation_repr != "rot6d":
             raise NotImplementedError(
                 f"DualFrankaTCPEnv currently only supports rotation_repr='rot6d', "
@@ -146,7 +149,7 @@ class DualFrankaTCPEnv(DualFrankaEnv):
 
     # Observation and pose helpers.
 
-    def _get_observation(self) -> dict:
+    def _get_observation(self) -> dict[str, Any]:
         if self.config.is_dummy:
             return self.observation_space.sample()
         frames = self._get_camera_frames()

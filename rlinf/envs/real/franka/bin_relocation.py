@@ -16,10 +16,15 @@ import copy
 import queue
 import time
 from dataclasses import dataclass, field
+from typing import Any, Optional
 
 import cv2
 import gymnasium as gym
 import numpy as np
+
+from rlinf.robotics.discovery import RobotInfo
+from rlinf.robotics.robots import FrankaConfig
+from rlinf.scheduler import WorkerInfo
 
 from .base import (
     _CAMERA_REOPEN_ATTEMPTS,
@@ -47,7 +52,7 @@ class BinEnvConfig(FrankaRobotConfig):
         default_factory=lambda: np.array([0.01, 0.01, 0.01, 0.2, 0.2, 0.2])
     )
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.compliance_param = compliance(
             rotational_clip_neg_x=0.04,
             rotational_clip_neg_y=0.04,
@@ -92,7 +97,13 @@ class BinEnvConfig(FrankaRobotConfig):
 class FrankaBinRelocationEnv(FrankaEnv):
     CONFIG_CLS = BinEnvConfig
 
-    def __init__(self, override_cfg, worker_info=None, robot_info=None, env_idx=0):
+    def __init__(
+        self,
+        override_cfg: dict[str, Any],
+        worker_info: Optional[WorkerInfo] = None,
+        robot_info: "Optional[RobotInfo[FrankaConfig]]" = None,
+        env_idx: int = 0,
+    ) -> None:
         super().__init__(override_cfg, worker_info, robot_info, env_idx)
         self.task_id = 0  # 0 moves forward; 1 moves backward.
         # The inner box clips trajectories that would cross the central bin walls.
@@ -102,7 +113,13 @@ class FrankaBinRelocationEnv(FrankaEnv):
             dtype=np.float64,
         )
 
-    def intersect_line_bbox(self, p1, p2, bbox_min, bbox_max):
+    def intersect_line_bbox(
+        self,
+        p1: np.ndarray,
+        p2: np.ndarray,
+        bbox_min: np.ndarray,
+        bbox_max: np.ndarray,
+    ) -> Optional[np.ndarray]:
         # Parameterize the segment as P(t) = p1 + t(p2 - p1).
         tmin = 0
         tmax = 1
@@ -133,7 +150,7 @@ class FrankaBinRelocationEnv(FrankaEnv):
 
         return intersection
 
-    def _clip_position_to_safety_box(self, pose):
+    def _clip_position_to_safety_box(self, pose: np.ndarray) -> np.ndarray:
         pose = super()._clip_position_to_safety_box(pose)
         # Stop motion at the inner safety-box boundary.
         if self.inner_safety_box.contains(pose[:3]):
@@ -145,11 +162,11 @@ class FrankaBinRelocationEnv(FrankaEnv):
             )
         return pose
 
-    def _crop_frame(self, name, image):
+    def _crop_frame(self, name: str, image: np.ndarray) -> np.ndarray:
         """Crop a RealSense frame to a square."""
         return image[:, 80:560, :]
 
-    def _get_camera_frames(self):
+    def _get_camera_frames(self) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
         """Read task-specific camera crops and reopen stalled devices."""
         images = {}
         display_images = {}
@@ -190,14 +207,16 @@ class FrankaBinRelocationEnv(FrankaEnv):
         self.camera_player.put_frame(display_images)
         return images
 
-    def task_graph(self, obs=None):
+    def task_graph(self, obs: Optional[dict[str, Any]] = None) -> int:
         if obs is None:
             return (self.task_id + 1) % 2
 
-    def set_task_id(self, task_id):
+    def set_task_id(self, task_id: int) -> None:
         self.task_id = task_id
 
-    def reset(self, joint_reset=False, **kwargs):
+    def reset(
+        self, joint_reset: bool = False, **kwargs: Any
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
         if self.task_id == 0:
             self._reset_pose[1] = self.config.target_ee_pose[1] + 0.1
         elif self.task_id == 1:
@@ -207,7 +226,7 @@ class FrankaBinRelocationEnv(FrankaEnv):
 
         return super().reset(joint_reset)
 
-    def go_to_rest(self, joint_reset=False):
+    def go_to_rest(self, joint_reset: bool = False) -> None:
         """Lift clear of the slot before moving to the base rest pose."""
         self._end_effector_action(np.array([1.0]))
         self._franka_state = self._controller.get_state()

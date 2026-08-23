@@ -13,10 +13,11 @@
 # limitations under the License.
 
 import numpy as np
+from numpy.typing import ArrayLike
 from scipy.spatial.transform import Rotation as R
 
 
-def normalize(q):
+def normalize(q: ArrayLike) -> np.ndarray:
     q = np.array(q, dtype=float)
     n = np.linalg.norm(q)
     if n == 0:
@@ -56,7 +57,7 @@ def clip_euler_to_target_window(
     return wrap_to_pi(target_euler + clipped_delta)
 
 
-def quat_slerp(q0, q1, t):
+def quat_slerp(q0: ArrayLike, q1: ArrayLike, t: float) -> np.ndarray:
     """Spherically interpolate between two quaternions."""
 
     q0 = normalize(q0)
@@ -98,7 +99,7 @@ def quat_slerp(q0, q1, t):
     return results
 
 
-def construct_adjoint_matrix(tcp_pose):
+def construct_adjoint_matrix(tcp_pose: np.ndarray) -> np.ndarray:
     """Construct the adjoint matrix for an ``xyz + quaternion`` TCP pose."""
     rotation = R.from_quat(tcp_pose[3:].copy()).as_matrix()
     translation = np.array(tcp_pose[:3])
@@ -116,7 +117,7 @@ def construct_adjoint_matrix(tcp_pose):
     return adjoint_matrix
 
 
-def construct_homogeneous_matrix(tcp_pose):
+def construct_homogeneous_matrix(tcp_pose: np.ndarray) -> np.ndarray:
     """Construct a homogeneous transform from an ``xyz + quaternion`` pose."""
     rotation = R.from_quat(tcp_pose[3:]).as_matrix()
     translation = np.array(tcp_pose[:3])

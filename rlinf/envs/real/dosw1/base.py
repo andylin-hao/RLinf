@@ -20,7 +20,7 @@ import copy
 import enum
 import time
 from dataclasses import dataclass, field
-from typing import Callable, Optional, cast
+from typing import Any, Callable, Mapping, Optional, cast
 
 import cv2
 import gymnasium as gym
@@ -585,7 +585,7 @@ class DOSW1Env(gym.Env):
         self.sdk.left_go_joint(left_joint.tolist(), left_gripper)
         self.sdk.right_go_joint(right_joint.tolist(), right_gripper)
 
-    def _get_observation(self) -> dict:
+    def _get_observation(self) -> dict[str, Any]:
         if self.config.is_dummy:
             return self.observation_space.sample()
 
@@ -748,7 +748,7 @@ class DOSW1Env(gym.Env):
             if value is not None:
                 setattr(self.config, attr, int(value))
 
-    def episode_wrappers(self, cfg):
+    def episode_wrappers(self, cfg: Mapping[str, Any]) -> list[Any]:
         """Return the optional leader-follower keyboard wrapper."""
         if not cfg.get("keyboard_intervention_wrapper", False):
             return ()

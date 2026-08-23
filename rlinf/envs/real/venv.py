@@ -15,6 +15,8 @@
 import multiprocessing as mp
 import sys
 from copy import deepcopy
+from multiprocessing.connection import Connection
+from multiprocessing.queues import Queue
 from typing import Any, Callable, Optional, Sequence
 
 import gymnasium as gym
@@ -38,8 +40,8 @@ from numpy.typing import NDArray
 
 class NoAutoResetSyncVectorEnv(SyncVectorEnv):
     def step(
-        self, actions
-    ) -> tuple[Any, NDArray[Any], NDArray[Any], NDArray[Any], dict]:
+        self, actions: Any
+    ) -> tuple[Any, NDArray[Any], NDArray[Any], NDArray[Any], dict[str, Any]]:
         """Step each environment and return batched results without resetting.
 
         Returns:
@@ -72,7 +74,14 @@ class NoAutoResetSyncVectorEnv(SyncVectorEnv):
         )
 
 
-def _worker_no_auto_reset(index, env_fn, pipe, parent_pipe, shared_memory, error_queue):
+def _worker_no_auto_reset(
+    index: int,
+    env_fn: Callable[[], Env],
+    pipe: Connection,
+    parent_pipe: Connection,
+    shared_memory: Optional[Any],
+    error_queue: Queue,
+) -> None:
     assert shared_memory is None
     env = env_fn()
     parent_pipe.close()
@@ -135,8 +144,13 @@ def _worker_no_auto_reset(index, env_fn, pipe, parent_pipe, shared_memory, error
 
 
 def _worker_shared_memory_no_auto_reset(
-    index, env_fn, pipe, parent_pipe, shared_memory, error_queue
-):
+    index: int,
+    env_fn: Callable[[], Env],
+    pipe: Connection,
+    parent_pipe: Connection,
+    shared_memory: Optional[Any],
+    error_queue: Queue,
+) -> None:
     assert shared_memory is not None
     env = env_fn()
     observation_space = env.observation_space
@@ -215,7 +229,7 @@ class NoAutoResetAsyncVectorEnv(AsyncVectorEnv):
         context: Optional[str] = None,
         daemon: bool = True,
         worker: Optional[Callable] = None,
-    ):
+    ) -> None:
         """Initialize environments that run in separate processes.
 
         Args:

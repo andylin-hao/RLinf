@@ -161,7 +161,7 @@ class FrankaRobotConfig:
     # Max per-step change for hand joints (set to inf to disable).
     hand_max_delta_per_step: float = float("inf")
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Convert list fields from YAML/Hydra to numpy arrays."""
         if self.camera_names is not None:
             self.camera_names = {
@@ -204,7 +204,7 @@ class FrankaEnv(gym.Env):
         worker_info: Optional[WorkerInfo],
         robot_info: Optional[RobotInfo[FrankaConfig]],
         env_idx: int,
-    ):
+    ) -> None:
         config = self.CONFIG_CLS(**override_cfg)
         self._logger = get_logger()
         self.config = config
@@ -274,10 +274,10 @@ class FrankaEnv(gym.Env):
         self.camera_player = VideoPlayer(self.config.enable_camera_player)
 
     @property
-    def task_description(self):
+    def task_description(self) -> str:
         return self._task_description
 
-    def _setup_hardware(self):
+    def _setup_hardware(self) -> None:
         assert self.env_idx >= 0, "env_idx must be set for FrankaEnv."
 
         # Fill unset connection fields from enumerated hardware configuration.
@@ -327,7 +327,7 @@ class FrankaEnv(gym.Env):
         self.robot.connect()
         self._controller = self.robot.child("arm").owner
 
-    def _setup_reward_worker(self):
+    def _setup_reward_worker(self) -> None:
         if not self.config.use_reward_model:
             return
         if self.config.reward_worker_cfg is None:
@@ -351,11 +351,13 @@ class FrankaEnv(gym.Env):
         )
         self._reward_worker.init_worker().wait()
 
-    def transform_action_ee_to_base(self, action):
+    def transform_action_ee_to_base(self, action: np.ndarray) -> np.ndarray:
         action[:6] = np.linalg.inv(self.adjoint_matrix) @ action[:6]
         return action
 
-    def step(self, action: np.ndarray):
+    def step(
+        self, action: np.ndarray
+    ) -> tuple[dict[str, Any], float, bool, bool, dict[str, Any]]:
         """Take a step in the environment.
 
         For gripper end-effectors (7-D action)::
@@ -425,7 +427,7 @@ class FrankaEnv(gym.Env):
         return observation, reward, terminated, truncated, {}
 
     @property
-    def num_steps(self):
+    def num_steps(self) -> int:
         return self._num_steps
 
     def get_tcp_pose(self) -> np.ndarray:
@@ -437,7 +439,7 @@ class FrankaEnv(gym.Env):
         """Return the action scale ``[pos_scale, ori_scale, gripper_scale]``."""
         return self.config.action_scale
 
-    def get_hand_reset_pose(self):
+    def get_hand_reset_pose(self) -> Optional[np.ndarray]:
         """Return the dexterous-hand pose applied during reset."""
         if not self._is_hand:
             return None
@@ -545,7 +547,12 @@ class FrankaEnv(gym.Env):
         reward_array = np.asarray(reward_output).reshape(-1)
         return float(reward_array[0])
 
-    def reset(self, joint_reset=False, seed=None, options=None):
+    def reset(
+        self,
+        joint_reset: bool = False,
+        seed: Optional[int] = None,
+        options: Optional[dict[str, Any]] = None,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
         if self.config.is_dummy:
             observation = self._get_observation()
             return observation, {}
@@ -572,7 +579,7 @@ class FrankaEnv(gym.Env):
 
         return observation, {}
 
-    def go_to_rest(self, joint_reset=False):
+    def go_to_rest(self, joint_reset: bool = False) -> None:
         if joint_reset:
             self._controller.reset_joint(self.config.joint_reset_qpos)
             time.sleep(0.5)
@@ -618,7 +625,7 @@ class FrankaEnv(gym.Env):
         """Whether the active end-effector is a dexterous hand."""
         return self._ee_type.is_hand
 
-    def _init_action_obs_spaces(self):
+    def _init_action_obs_spaces(self) -> None:
         """Initialize spaces and Cartesian safety limits.
 
         The action dimension adapts to the active end-effector:
@@ -758,7 +765,7 @@ class FrankaEnv(gym.Env):
 
         return camera_infos
 
-    def _open_cameras(self):
+    def _open_cameras(self) -> None:
         """Use cameras connected by the robot runtime.
 
         Dummy environments create local, unopened camera objects only to retain
@@ -772,7 +779,7 @@ class FrankaEnv(gym.Env):
             return
         self._cameras = {info.name: Camera.of(info) for info in self._camera_infos}
 
-    def close(self):
+    def close(self) -> None:
         """Release all hardware resources including cameras and video player."""
         if hasattr(self, "camera_player"):
             self.camera_player.stop()
@@ -782,7 +789,7 @@ class FrankaEnv(gym.Env):
             self.robot.disconnect()
         super().close()
 
-    def _close_cameras(self):
+    def _close_cameras(self) -> None:
         """Close only cameras this env owns; the robot closes its own."""
         if self.robot is None:
             for camera in self._cameras.values():
@@ -882,7 +889,7 @@ class FrankaEnv(gym.Env):
 
         return position
 
-    def _clear_error(self):
+    def _clear_error(self) -> None:
         self._controller.clear_errors()
 
     def _binary_gripper_action(self, position: float) -> bool:
@@ -932,7 +939,7 @@ class FrankaEnv(gym.Env):
             self._controller.command_end_effector(scaled)
             return True
 
-    def _interpolate_move(self, pose: np.ndarray, timeout: float = 1.5):
+    def _interpolate_move(self, pose: np.ndarray, timeout: float = 1.5) -> None:
         num_steps = int(timeout * self.config.step_frequency)
         self._franka_state: FrankaRobotState = self._controller.get_state()
         pos_path = np.linspace(
@@ -949,14 +956,14 @@ class FrankaEnv(gym.Env):
 
         self._franka_state: FrankaRobotState = self._controller.get_state()
 
-    def _move_action(self, position: np.ndarray):
+    def _move_action(self, position: np.ndarray) -> None:
         if not self.config.is_dummy:
             self._clear_error()
             self._controller.move_arm(position.astype(np.float32))
         else:
             print(f"Executing dummy action towards {position=}.")
 
-    def _get_observation(self) -> dict:
+    def _get_observation(self) -> dict[str, Any]:
         if not self.config.is_dummy:
             frames = self._get_camera_frames()
             state: dict = {
@@ -987,7 +994,7 @@ class FrankaEnv(gym.Env):
             obs = self._base_observation_space.sample()
             return obs
 
-    def transform_obs_base_to_ee(self, state):
+    def transform_obs_base_to_ee(self, state: dict[str, Any]) -> dict[str, Any]:
         self.adjoint_matrix = construct_adjoint_matrix(self._franka_state.tcp_pose)
         adjoint_inv = np.linalg.inv(self.adjoint_matrix)
 
@@ -1003,7 +1010,7 @@ class FrankaEnv(gym.Env):
         return state
 
     @property
-    def target_ee_pose(self):
+    def target_ee_pose(self) -> np.ndarray:
         tgt = np.concatenate(
             [
                 self.config.target_ee_pose[:3],

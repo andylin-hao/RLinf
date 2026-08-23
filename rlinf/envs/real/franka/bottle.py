@@ -39,7 +39,7 @@ class BottleConfig(FrankaRobotConfig):
     enable_gripper_penalty: bool = False
     step_frequency: float = 5.0
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.compliance_param = compliance(
             rotational_clip_neg_z=0.5,
             rotational_clip_z=0.5,
@@ -81,7 +81,7 @@ class BottleConfig(FrankaRobotConfig):
 class BottleEnv(FrankaEnv):
     CONFIG_CLS = BottleConfig
 
-    def go_to_rest(self, joint_reset=False):
+    def go_to_rest(self, joint_reset: bool = False) -> None:
         """Lift clear of the object before moving to the base rest pose."""
         self._end_effector_action(np.array([1.0]))
         self._franka_state = self._controller.get_state()

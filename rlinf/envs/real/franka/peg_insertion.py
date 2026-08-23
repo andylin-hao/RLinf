@@ -37,7 +37,7 @@ class PegInsertionConfig(FrankaRobotConfig):
     enable_random_reset: bool = True
     add_gripper_penalty: bool = False
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.compliance_param = compliance(
             translational_stiffness=2000,
         )
@@ -72,7 +72,7 @@ class PegInsertionConfig(FrankaRobotConfig):
 class PegInsertionEnv(FrankaEnv):
     CONFIG_CLS = PegInsertionConfig
 
-    def go_to_rest(self, joint_reset=False):
+    def go_to_rest(self, joint_reset: bool = False) -> None:
         """Lift clear of the slot before moving to the base rest pose."""
         self._end_effector_action(np.array([-1.0]))
         self._franka_state = self._controller.get_state()

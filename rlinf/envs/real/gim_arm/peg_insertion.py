@@ -16,8 +16,12 @@
 
 import time
 from dataclasses import dataclass, field
+from typing import Any, Optional
 
 import numpy as np
+
+from rlinf.robotics.discovery import RobotInfo
+from rlinf.scheduler import WorkerInfo
 
 from .base import GimArmEnv, GimArmRobotConfig
 
@@ -61,7 +65,7 @@ class GimArmPegInsertionConfig(GimArmRobotConfig):
 
     add_gripper_penalty: bool = False
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.target_ee_pose = np.array(self.target_ee_pose)
         self.reward_threshold = np.array(self.reward_threshold)
         if self.add_gripper_penalty:
@@ -71,17 +75,23 @@ class GimArmPegInsertionConfig(GimArmRobotConfig):
 class GimArmPegInsertionEnv(GimArmEnv):
     """Insert a grasped peg using absolute joint targets and Cartesian reward."""
 
-    def __init__(self, override_cfg, worker_info=None, robot_info=None, env_idx=0):
+    def __init__(
+        self,
+        override_cfg: dict[str, Any],
+        worker_info: Optional[WorkerInfo] = None,
+        robot_info: "Optional[RobotInfo[Any]]" = None,
+        env_idx: int = 0,
+    ) -> None:
         config = GimArmPegInsertionConfig(**override_cfg)
         super().__init__(config, worker_info, robot_info, env_idx)
         self._base_reset_joint_qpos = list(self.config.reset_joint_qpos)
         self._perturbed_reset_qpos = None
 
     @property
-    def task_description(self):
+    def task_description(self) -> str:
         return "peg and insertion"
 
-    def go_to_rest(self, joint_reset: bool = False):
+    def go_to_rest(self, joint_reset: bool = False) -> None:
         """Close gripper on peg, retract to safe config, then move to reset pose."""
         if not self.config.is_dummy:
             if self.config.enable_gripper:
@@ -106,7 +116,9 @@ class GimArmPegInsertionEnv(GimArmEnv):
             )
             self._controller.reset_joint(reset_qpos)
 
-    def reset(self, joint_reset=False, **kwargs):
+    def reset(
+        self, joint_reset: bool = False, **kwargs: Any
+    ) -> tuple[Any, dict[str, Any]]:
         """Reset with optional random perturbation on joint positions."""
         if self.config.enable_random_reset and not self.config.is_dummy:
             base_qpos = np.array(self._base_reset_joint_qpos)

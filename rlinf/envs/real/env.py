@@ -17,22 +17,47 @@ import os
 import pathlib
 import time
 from functools import partial
-from typing import OrderedDict
+from typing import Any, Mapping, Optional, OrderedDict, Union
 
 import gymnasium as gym
 import numpy as np
 import psutil
 import torch
 from filelock import FileLock
-from omegaconf import OmegaConf
+from omegaconf import DictConfig, OmegaConf
+from torch import Tensor
 
 from rlinf.envs.real.venv import NoAutoResetSyncVectorEnv
 from rlinf.envs.utils import to_tensor
 from rlinf.scheduler import WorkerInfo
 
+#: One batched observation, by the keys the runner reads: ``states``, the image
+#: keys a config names, and whatever a task adds.
+Observation = dict[str, Any]
+
+#: The per-env info dicts a step or reset returns, plus the metrics recorded
+#: into them.
+EnvInfos = dict[str, Any]
+
+#: What :meth:`RealWorldEnv.step` answers with: observation, reward,
+#: termination, truncation, infos -- the Gymnasium five, batched.
+StepResult = tuple[Observation, Tensor, Tensor, Tensor, EnvInfos]
+
+#: The same, one entry per step of an action chunk.
+ChunkStepResult = tuple[
+    list[Observation], list[Tensor], list[Tensor], list[Tensor], list[EnvInfos]
+]
+
 
 class RealWorldEnv(gym.Env):
-    def __init__(self, cfg, num_envs, seed_offset, total_num_processes, worker_info):
+    def __init__(
+        self,
+        cfg: DictConfig,
+        num_envs: int,
+        seed_offset: int,
+        total_num_processes: int,
+        worker_info: WorkerInfo,
+    ) -> None:
         assert num_envs == 1, (
             f"Currently, only 1 realworld env can be started per worker, but {num_envs=} is received."
         )
@@ -65,7 +90,7 @@ class RealWorldEnv(gym.Env):
         self._elapsed_steps = np.zeros(self.num_envs, dtype=np.int32)
         self._init_reset_state_ids()
 
-    def _create_env(self, env_idx: int):
+    def _create_env(self, env_idx: int) -> gym.Env:
         worker_info: WorkerInfo = self.worker_info
         robot_info = None
         if worker_info is not None and env_idx < len(worker_info.hardware_infos):
@@ -82,7 +107,7 @@ class RealWorldEnv(gym.Env):
         return env
 
     @staticmethod
-    def realworld_setup():
+    def realworld_setup() -> None:
         """Run node-level setup before creating real-world environments.
 
         The setup is serialized because ROS permits only one core per node.
@@ -102,7 +127,7 @@ class RealWorldEnv(gym.Env):
                     proc.kill()
                     time.sleep(0.5)
 
-    def _init_env(self):
+    def _init_env(self) -> None:
         env_fns = [
             partial(self._create_env, env_idx=env_idx)
             for env_idx in range(self.num_envs)
@@ -145,31 +170,31 @@ class RealWorldEnv(gym.Env):
         return np.stack(holds, axis=0)
 
     @property
-    def action_space(self):
+    def action_space(self) -> gym.Space:
         return self.env.action_space
 
     @property
-    def observation_space(self):
+    def observation_space(self) -> gym.Space:
         return self.env.observation_space
 
     @property
-    def total_num_group_envs(self):
+    def total_num_group_envs(self) -> int:
         # TODO(agent): Replace this placeholder with task-specific reset-state data.
         return np.iinfo(np.uint8).max // 2
 
     @property
-    def is_start(self):
+    def is_start(self) -> bool:
         return self._is_start
 
     @is_start.setter
-    def is_start(self, value):
+    def is_start(self, value: bool) -> None:
         self._is_start = value
 
     @property
-    def elapsed_steps(self):
+    def elapsed_steps(self) -> np.ndarray:
         return self._elapsed_steps
 
-    def _init_metrics(self):
+    def _init_metrics(self) -> None:
         self.prev_step_reward = np.zeros(self.num_envs)
 
         self.success_once = np.zeros(self.num_envs, dtype=bool)
@@ -178,7 +203,7 @@ class RealWorldEnv(gym.Env):
         self.intervened_once = np.zeros(self.num_envs, dtype=bool)
         self.intervened_steps = np.zeros(self.num_envs, dtype=int)
 
-    def _reset_metrics(self, env_idx=None):
+    def _reset_metrics(self, env_idx: Optional[np.ndarray] = None) -> None:
         if env_idx is not None:
             mask = np.zeros(self.num_envs, dtype=bool)
             mask[env_idx] = True
@@ -200,12 +225,12 @@ class RealWorldEnv(gym.Env):
 
     def _record_metrics(
         self,
-        step_reward,
-        terminations,
-        success_current_step,
-        intervene_current_step,
-        infos,
-    ):
+        step_reward: np.ndarray,
+        terminations: np.ndarray,
+        success_current_step: np.ndarray,
+        intervene_current_step: np.ndarray,
+        infos: EnvInfos,
+    ) -> EnvInfos:
         episode_info = {}
         self.returns += step_reward
         self.success_once = self.success_once | success_current_step
@@ -224,7 +249,14 @@ class RealWorldEnv(gym.Env):
         infos["episode"] = to_tensor(episode_info)
         return infos
 
-    def reset(self, *, reset_state_ids=None, seed=None, options=None, env_idx=None):
+    def reset(
+        self,
+        *,
+        reset_state_ids: Optional[np.ndarray] = None,
+        seed: Optional[int] = None,
+        options: Optional[dict[str, Any]] = None,
+        env_idx: Optional[np.ndarray] = None,
+    ) -> tuple[Observation, EnvInfos]:
         # TODO(agent): Honor reset_state_ids for partial real-environment resets.
         raw_obs, infos = self.env.reset(seed=seed, options=options)
 
@@ -235,7 +267,7 @@ class RealWorldEnv(gym.Env):
             self._reset_metrics()
         return extracted_obs, infos
 
-    def _wrap_obs(self, raw_obs):
+    def _wrap_obs(self, raw_obs: Mapping[str, Any]) -> Observation:
         """Convert batched raw observations to the runner representation."""
         obs = {}
 
@@ -259,7 +291,11 @@ class RealWorldEnv(gym.Env):
         obs["task_descriptions"] = self.task_descriptions
         return obs
 
-    def step(self, actions=None, auto_reset=True):
+    def step(
+        self,
+        actions: Optional[Union[np.ndarray, torch.Tensor]] = None,
+        auto_reset: bool = True,
+    ) -> StepResult:
         if isinstance(actions, torch.Tensor):
             actions = actions.detach().cpu().numpy()
 
@@ -328,7 +364,7 @@ class RealWorldEnv(gym.Env):
             if callable(on_begin):
                 on_begin()
 
-    def chunk_step(self, chunk_actions):
+    def chunk_step(self, chunk_actions: np.ndarray) -> ChunkStepResult:
         # Shape: [num_envs, chunk_steps, action_dim].
         chunk_size = chunk_actions.shape[1]
         obs_list = []
@@ -407,7 +443,12 @@ class RealWorldEnv(gym.Env):
             infos_list,
         )
 
-    def _handle_auto_reset(self, dones, _final_obs, infos):
+    def _handle_auto_reset(
+        self,
+        dones: np.ndarray,
+        _final_obs: Observation,
+        infos: EnvInfos,
+    ) -> tuple[Observation, EnvInfos]:
         final_obs = copy.deepcopy(_final_obs)
         env_idx = np.arange(0, self.num_envs)[dones]
         final_info = copy.deepcopy(infos)
@@ -427,21 +468,21 @@ class RealWorldEnv(gym.Env):
         infos["_elapsed_steps"] = dones
         return obs, infos
 
-    def _calc_step_reward(self, reward: np.ndarray):
+    def _calc_step_reward(self, reward: np.ndarray) -> np.ndarray:
         return reward.astype(np.float32)
 
-    def _get_random_reset_state_ids(self, num_reset_states):
+    def _get_random_reset_state_ids(self, num_reset_states: int) -> np.ndarray:
         reset_state_ids = self._generator.integers(
             low=0, high=self.total_num_group_envs, size=(num_reset_states,)
         )
         return reset_state_ids
 
-    def _init_reset_state_ids(self):
+    def _init_reset_state_ids(self) -> None:
         self._generator = torch.Generator()
         self._generator.manual_seed(self.seed)
         self.update_reset_state_ids()
 
-    def update_reset_state_ids(self):
+    def update_reset_state_ids(self) -> None:
         reset_state_ids = torch.randint(
             low=0,
             high=self.total_num_group_envs,

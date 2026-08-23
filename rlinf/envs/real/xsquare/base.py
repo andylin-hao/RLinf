@@ -17,7 +17,7 @@ from __future__ import annotations
 import copy
 import time
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any, Optional
 
 import cv2
 import gymnasium as gym
@@ -144,7 +144,7 @@ class Turtle2Env(gym.Env):
 
         self._check_cameras()
 
-    def _setup_hardware(self):
+    def _setup_hardware(self) -> None:
         assert self.env_idx >= 0, "env_idx must be set for Turtle2Env."
 
         self.robot = Turtle2Robot.build(
@@ -164,7 +164,7 @@ class Turtle2Env(gym.Env):
             self.robot.disconnect()
         super().close()
 
-    def _init_action_obs_spaces(self):
+    def _init_action_obs_spaces(self) -> None:
         """Initialize action and observation spaces, including arm safety box."""
         self._xyz_safe_space1 = gym.spaces.Box(
             low=self.config.ee_pose_limit_min[0, :3].flatten(),
@@ -304,7 +304,7 @@ class Turtle2Env(gym.Env):
         time.sleep(0.5)
         return
 
-    def _check_cameras(self):
+    def _check_cameras(self) -> None:
         if self.config.is_dummy:
             return
 
@@ -316,7 +316,9 @@ class Turtle2Env(gym.Env):
         if 2 in self.config.use_camera_ids and not cam3_ok:
             raise ValueError("Camera 3 not available.")
 
-    def reset(self, *, seed=None, options=None):
+    def reset(
+        self, *, seed: Optional[int] = None, options: Optional[dict[str, Any]] = None
+    ) -> tuple[Any, dict[str, Any]]:
         if self.config.is_dummy:
             observation = self._get_observation()
             return observation, {}
@@ -431,7 +433,7 @@ class Turtle2Env(gym.Env):
         return observation, reward, terminated, truncated, {}
 
     @property
-    def num_steps(self):
+    def num_steps(self) -> int:
         return self._num_steps
 
     def _calc_step_reward(

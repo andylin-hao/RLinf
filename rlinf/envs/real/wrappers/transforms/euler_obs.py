@@ -14,7 +14,7 @@
 
 """Observation wrappers that express TCP orientation as Euler angles."""
 
-from typing import Optional
+from typing import Any, Optional
 
 import gymnasium as gym
 import numpy as np
@@ -48,7 +48,7 @@ class Quat2EulerWrapper(gym.ObservationWrapper):
             -np.inf, np.inf, shape=(self.EULER_DIM * self.arms,), dtype=self.DTYPE
         )
 
-    def observation(self, observation: dict) -> dict:
+    def observation(self, observation: dict) -> dict[str, Any]:
         """Rewrite ``tcp_pose`` in place, one arm at a time."""
         tcp_pose = observation["state"]["tcp_pose"]
         observation["state"]["tcp_pose"] = np.concatenate(

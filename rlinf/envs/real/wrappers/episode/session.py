@@ -57,13 +57,15 @@ class KeyboardSession(gym.Wrapper):
     def begin_episode(self) -> None:
         """Reset subclass state for a new episode."""
 
-    def reset(self, *, seed: Optional[int] = None, options: Optional[dict] = None):
+    def reset(
+        self, *, seed: Optional[int] = None, options: Optional[dict[str, Any]] = None
+    ) -> tuple[Any, dict[str, Any]]:
         """Clear session state before resetting the environment."""
         self.drain()
         self.begin_episode()
         return self.env.reset(seed=seed, options=options)
 
-    def base_env(self) -> Any:
+    def base_env(self) -> gym.Env:
         """Return the unwrapped environment."""
         return getattr(self.env, "unwrapped", self.env)
 

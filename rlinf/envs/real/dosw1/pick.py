@@ -16,10 +16,13 @@
 
 import time
 from dataclasses import dataclass, field
+from typing import Any, Optional
 
 import numpy as np
 
 from rlinf.envs.real.dosw1.base import ControlMode, DOSW1Config, DOSW1Env
+from rlinf.robotics.discovery import RobotInfo
+from rlinf.scheduler import WorkerInfo
 
 
 def _default_grasp_joint() -> np.ndarray:
@@ -57,9 +60,9 @@ class PickEnv(DOSW1Env):
 
     def __init__(
         self,
-        override_cfg: dict,
-        worker_info=None,
-        robot_info=None,
+        override_cfg: dict[str, Any],
+        worker_info: Optional[WorkerInfo] = None,
+        robot_info: "Optional[RobotInfo[Any]]" = None,
         env_idx: int = 0,
     ) -> None:
         super().__init__(
@@ -79,8 +82,8 @@ class PickEnv(DOSW1Env):
     def reset(
         self,
         *,
-        seed=None,
-        options=None,
+        seed: Optional[int] = None,
+        options: Optional[dict[str, Any]] = None,
         joint_reset: bool = False,
     ) -> tuple[dict, dict]:
         obs, info = super().reset(seed=seed, options=options, joint_reset=joint_reset)

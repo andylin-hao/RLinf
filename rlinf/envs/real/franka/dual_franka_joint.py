@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import copy
 from dataclasses import dataclass, field
+from typing import Any
 
 import gymnasium as gym
 import numpy as np
@@ -50,7 +51,7 @@ class DualFrankaJointRobotConfig(DualFrankaRobotConfig):
     # When enabled, DualGelloJointStream sends arm targets directly at 1 kHz.
     teleop_direct_stream: bool = False
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         super().__post_init__()
         self.joint_position_limits_lower = np.array(self.joint_position_limits_lower)
         self.joint_position_limits_upper = np.array(self.joint_position_limits_upper)
@@ -70,7 +71,7 @@ class DualFrankaJointEnv(DualFrankaEnv):
             return ActionKind.JOINT_DELTA
         return ActionKind.JOINT_POSITION
 
-    def _init_action_obs_spaces(self):
+    def _init_action_obs_spaces(self) -> None:
         self._cartesian_safety_boxes()
 
         if self.config.joint_action_mode == "absolute":
@@ -131,7 +132,7 @@ class DualFrankaJointEnv(DualFrankaEnv):
             self.config.joint_position_limits_upper,
         )
 
-    def _get_observation(self) -> dict:
+    def _get_observation(self) -> dict[str, Any]:
         if self.config.is_dummy:
             return self.observation_space.sample()
         frames = self._get_camera_frames()

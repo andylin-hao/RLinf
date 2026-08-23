@@ -16,7 +16,7 @@ import math
 import time
 from typing import Any, SupportsFloat
 
-from gymnasium.core import ActType, ObsType
+from gymnasium.core import ActType, Env, ObsType
 
 from .session import KeyboardSession
 
@@ -33,7 +33,7 @@ class KeyboardStartEndWrapper(KeyboardSession):
 
     SEGMENT_DEBOUNCE_S = 1.0
 
-    def __init__(self, env):
+    def __init__(self, env: Env) -> None:
         super().__init__(env)
         self._recording = False
         self._last_segment_ts = -math.inf

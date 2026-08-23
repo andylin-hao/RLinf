@@ -17,7 +17,7 @@ import queue
 import time
 from dataclasses import dataclass, field
 from itertools import cycle
-from typing import Optional
+from typing import Any, Optional
 
 import cv2
 import gymnasium as gym
@@ -158,7 +158,7 @@ class GimArmEnv(gym.Env):
         worker_info: Optional[WorkerInfo],
         robot_info: Optional[RobotInfo[GimArmConfig]],
         env_idx: int,
-    ):
+    ) -> None:
         self._logger = get_logger()
         self.config = config
         self.robot_info = robot_info
@@ -211,7 +211,7 @@ class GimArmEnv(gym.Env):
 
     # Hardware setup.
 
-    def _setup_hardware(self):
+    def _setup_hardware(self) -> None:
         assert self.env_idx >= 0, "env_idx must be set for GimArmEnv."
         assert isinstance(self.robot_info, RobotInfo) and isinstance(
             self.robot_info.config, GimArmConfig
@@ -250,7 +250,7 @@ class GimArmEnv(gym.Env):
         # The owning connection forwards driver-specific methods when remote.
         self._controller = self.robot.child("arm").owner
 
-    def _init_action_obs_spaces(self):
+    def _init_action_obs_spaces(self) -> None:
         """Initialize action and observation spaces."""
         self._joint_limit_low = np.array(self.config.joint_limit_low, dtype=np.float64)
         self._joint_limit_high = np.array(
@@ -297,7 +297,7 @@ class GimArmEnv(gym.Env):
             ActionPart("end_effector", 1, ActionKind.GRIPPER),
         )
 
-    def step(self, action: np.ndarray):
+    def step(self, action: np.ndarray) -> tuple[Any, float, bool, bool, dict[str, Any]]:
         """Execute one environment step.
 
         Args:
@@ -342,10 +342,15 @@ class GimArmEnv(gym.Env):
         return observation, reward, terminated, truncated, {}
 
     @property
-    def num_steps(self):
+    def num_steps(self) -> int:
         return self._num_steps
 
-    def reset(self, joint_reset=False, seed=None, options=None):
+    def reset(
+        self,
+        joint_reset: bool = False,
+        seed: Optional[int] = None,
+        options: Optional[dict[str, Any]] = None,
+    ) -> tuple[Any, dict[str, Any]]:
         """Reset the environment to the rest pose."""
         if self.config.is_dummy:
             return self._get_observation(), {}
@@ -365,7 +370,7 @@ class GimArmEnv(gym.Env):
         self._state = self._controller.get_state()
         return self._get_observation(), {}
 
-    def go_to_rest(self, joint_reset: bool = False):
+    def go_to_rest(self, joint_reset: bool = False) -> None:
         """Move to the rest configuration.
 
         If ``joint_reset`` is ``True``, move to :attr:`joint_reset_qpos`
@@ -418,7 +423,7 @@ class GimArmEnv(gym.Env):
 
     # Observation construction.
 
-    def _get_observation(self) -> dict:
+    def _get_observation(self) -> dict[str, Any]:
         if not self.config.is_dummy:
             frames = self._get_camera_frames()
             state = {
@@ -446,7 +451,7 @@ class GimArmEnv(gym.Env):
             for index, serial in enumerate(self.config.camera_serials or [])
         ]
 
-    def _open_cameras(self):
+    def _open_cameras(self) -> None:
         """Use robot-owned cameras or create local dummy declarations."""
         if self.robot is not None:
             self._cameras: list[BaseCamera] = list(
@@ -455,14 +460,14 @@ class GimArmEnv(gym.Env):
             return
         self._cameras = [Camera.of(info) for info in self._camera_infos()]
 
-    def _close_cameras(self):
+    def _close_cameras(self) -> None:
         """Close only cameras this env owns; the robot closes its own."""
         if self.robot is None:
             for camera in self._cameras:
                 camera.disconnect()
         self._cameras = []
 
-    def close(self):
+    def close(self) -> None:
         """Release cameras and detach the composed robot runtime."""
         if hasattr(self, "_cameras"):
             self._close_cameras()

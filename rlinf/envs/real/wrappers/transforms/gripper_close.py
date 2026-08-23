@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import Any
+
 import gymnasium as gym
 import numpy as np
 from gymnasium.spaces import Box
@@ -24,13 +26,13 @@ class GripperCloseEnv(gym.ActionWrapper):
     CONFIG_FLAG = "no_gripper"
     CONFIG_DEFAULT = True
 
-    def __init__(self, env):
+    def __init__(self, env: gym.Env) -> None:
         super().__init__(env)
         ub = self.env.action_space
         assert ub.shape == (7,)
         self.action_space = Box(ub.low[:6], ub.high[:6])
 
-    def action_parts(self):
+    def action_parts(self) -> tuple[str, ...]:
         """Return the wrapped action parts without the end effector."""
         return tuple(
             part
@@ -43,7 +45,7 @@ class GripperCloseEnv(gym.ActionWrapper):
         new_action[:6] = action.copy()
         return new_action
 
-    def step(self, action):
+    def step(self, action: np.ndarray) -> tuple[Any, float, bool, bool, dict[str, Any]]:
         new_action = self.action(action)
         obs, rew, done, truncated, info = self.env.step(new_action)
         if "intervene_action" in info:

@@ -100,7 +100,7 @@ class DualFrankaRobotConfig:
     task_description: str = ""
     success_hold_steps: int = 1
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.target_ee_pose = np.array(self.target_ee_pose).reshape(2, 6)
         self.reset_ee_pose = np.array(self.reset_ee_pose).reshape(2, 6)
         self.reward_threshold = np.array(self.reward_threshold).reshape(2, 6)
@@ -161,7 +161,7 @@ class DualFrankaEnv(gym.Env):
         worker_info: Optional[WorkerInfo],
         robot_info: Optional[RobotInfo[DualFrankaConfig]],
         env_idx: int,
-    ):
+    ) -> None:
         config = self.CONFIG_CLS(**override_cfg)
         self._logger = get_logger()
         self.config = config
@@ -217,10 +217,10 @@ class DualFrankaEnv(gym.Env):
         self.camera_player = VideoPlayer(self.config.enable_camera_player)
 
     @property
-    def task_description(self):
+    def task_description(self) -> str:
         return self._task_description
 
-    def close(self):
+    def close(self) -> None:
         if hasattr(self, "_cameras"):
             self._close_cameras()
         if hasattr(self, "camera_player"):
@@ -262,7 +262,7 @@ class DualFrankaEnv(gym.Env):
             for name, serial, ct in self._all_camera_specs()
         ]
 
-    def _camera_declarations(self):
+    def _camera_declarations(self) -> tuple[dict[str, dict], dict]:
         """Separate wrist cameras from robot-level cameras."""
         per_arm: dict[str, dict] = {"left": {}, "right": {}}
         robot_level: dict = {}
@@ -275,7 +275,7 @@ class DualFrankaEnv(gym.Env):
                 robot_level[info.name] = info
         return per_arm, robot_level
 
-    def _open_cameras(self):
+    def _open_cameras(self) -> None:
         """Use cameras connected and placed by the robot runtime.
 
         Camera paths are reduced to their declared leaf names because the
@@ -294,7 +294,7 @@ class DualFrankaEnv(gym.Env):
             return
         self._cameras = {info.name: Camera.of(info) for info in self._camera_infos()}
 
-    def _close_cameras(self):
+    def _close_cameras(self) -> None:
         """Close only cameras this env owns; the robot closes its own."""
         if self.robot is None:
             for camera in self._cameras.values():
@@ -394,7 +394,7 @@ class DualFrankaEnv(gym.Env):
                 right_node = hw.right_controller_node_rank
         return left_node, right_node
 
-    def _setup_hardware(self):
+    def _setup_hardware(self) -> None:
         assert self.env_idx >= 0, f"env_idx must be set for {type(self).__name__}."
 
         self._resolve_hw_overrides()
@@ -423,7 +423,7 @@ class DualFrankaEnv(gym.Env):
 
     # Gymnasium reset and step.
 
-    def _go_to_rest(self, joint_reset: bool = False):
+    def _go_to_rest(self, joint_reset: bool = False) -> None:
         del joint_reset
         try:
             self._left_ctrl.open_gripper()
@@ -437,7 +437,9 @@ class DualFrankaEnv(gym.Env):
         self._left_state = self._left_ctrl.get_state()
         self._right_state = self._right_ctrl.get_state()
 
-    def reset(self, *, seed=None, options=None):
+    def reset(
+        self, *, seed: Optional[int] = None, options: Optional[dict[str, Any]] = None
+    ) -> tuple[Any, dict[str, Any]]:
         """Reset both arms unless teleoperation requests pose continuity."""
         del seed
         skip_reset_to_home = bool((options or {}).get("skip_reset_to_home", False))
@@ -468,7 +470,7 @@ class DualFrankaEnv(gym.Env):
         self._right_state = self._right_ctrl.get_state()
         return self._get_observation(), {}
 
-    def step(self, action: np.ndarray):
+    def step(self, action: np.ndarray) -> tuple[Any, float, bool, bool, dict[str, Any]]:
         start_time = time.time()
         action = np.clip(action, self.action_space.low, self.action_space.high)
         actions = action.reshape(2, self.PER_ARM_ACTION_DIM)
@@ -507,13 +509,13 @@ class DualFrankaEnv(gym.Env):
         truncated = self._num_steps >= self.config.max_num_steps
         return observation, reward, terminated, truncated, {}
 
-    def _clear_errors(self):
+    def _clear_errors(self) -> None:
         self._left_ctrl.clear_errors()
         self._right_ctrl.clear_errors()
 
     # Gripper and state helpers.
 
-    def _gripper_action(self, ctrl, state, position: float) -> bool:
+    def _gripper_action(self, ctrl: Any, state: Any, position: float) -> bool:
         # Do not block on gripper settling in the 10 Hz control loop.
         threshold = self.config.binary_gripper_threshold
         if position <= -threshold and state.gripper_open:
@@ -544,11 +546,11 @@ class DualFrankaEnv(gym.Env):
         )
 
     @property
-    def num_steps(self):
+    def num_steps(self) -> int:
         return self._num_steps
 
     @property
-    def target_ee_pose(self):
+    def target_ee_pose(self) -> np.ndarray:
         """Return concatenated target poses ``(14,)`` in quaternion form."""
         poses = []
         for arm in range(2):
@@ -646,12 +648,12 @@ class DualFrankaEnv(gym.Env):
 
     # Subclass hooks.
 
-    def _init_action_obs_spaces(self):
+    def _init_action_obs_spaces(self) -> None:
         raise NotImplementedError(
             f"{type(self).__name__} must implement _init_action_obs_spaces"
         )
 
-    def _get_observation(self) -> dict:
+    def _get_observation(self) -> dict[str, Any]:
         raise NotImplementedError(
             f"{type(self).__name__} must implement _get_observation"
         )

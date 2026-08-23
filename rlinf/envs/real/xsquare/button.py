@@ -13,10 +13,13 @@
 # limitations under the License.
 
 from dataclasses import dataclass
+from typing import Any, Optional
 
 import numpy as np
 
 from rlinf.envs.real.xsquare.base import Turtle2Env, Turtle2RobotConfig
+from rlinf.robotics.discovery import RobotInfo
+from rlinf.scheduler import WorkerInfo
 
 
 @dataclass
@@ -31,7 +34,7 @@ class ButtonEnvConfig(Turtle2RobotConfig):
     enable_random_reset: bool = True
     add_gripper_penalty: bool = False
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Initialize button task configuration parameters.
         This method sets up the configuration for the button pressing task:
         - Computes reset_ee_pose by
@@ -72,11 +75,17 @@ class ButtonEnvConfig(Turtle2RobotConfig):
 class ButtonEnv(Turtle2Env):
     """Button pressing task environment for Turtle2 robot."""
 
-    def __init__(self, override_cfg, worker_info=None, robot_info=None, env_idx=0):
+    def __init__(
+        self,
+        override_cfg: dict[str, Any],
+        worker_info: Optional[WorkerInfo] = None,
+        robot_info: "Optional[RobotInfo[Any]]" = None,
+        env_idx: int = 0,
+    ) -> None:
         # Derive task limits and targets from the selected arm.
         config = ButtonEnvConfig(**override_cfg)
         super().__init__(config, worker_info, robot_info, env_idx)
 
     @property
-    def task_description(self):
+    def task_description(self) -> str:
         return "Press the button with the end-effector."

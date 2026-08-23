@@ -22,7 +22,7 @@ import numpy as np
 
 
 class VideoPlayer:
-    def __init__(self, enable: bool = True):
+    def __init__(self, enable: bool = True) -> None:
         self.queue = queue.Queue()
         self.is_running = False
         if not enable:
@@ -30,11 +30,11 @@ class VideoPlayer:
         self._run_thread = threading.Thread(target=self._play, daemon=True)
         self._run_thread.start()
 
-    def put_frame(self, frame):
+    def put_frame(self, frame: np.ndarray) -> None:
         if self.is_running:
             self.queue.put(frame)
 
-    def stop(self):
+    def stop(self) -> None:
         """Stop the display thread if it was started."""
         thread = getattr(self, "_run_thread", None)
         if thread is None:
@@ -43,7 +43,7 @@ class VideoPlayer:
         thread.join(timeout=2.0)
         self.is_running = False
 
-    def _play(self):
+    def _play(self) -> None:
         if os.environ.get("DISPLAY") is None:
             warnings.warn(
                 "No display found. VideoPlayer will not run. Set DISPLAY environment variable to enable."

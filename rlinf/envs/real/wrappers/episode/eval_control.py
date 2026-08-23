@@ -19,9 +19,9 @@ Pedal: ``a`` starts a rollout from idle; ``c`` ends with reward=1
 """
 
 import time
-from typing import Any, SupportsFloat
+from typing import Any, Optional, SupportsFloat
 
-from gymnasium.core import ActType, ObsType
+from gymnasium.core import ActType, Env, ObsType
 
 from .session import KeyboardSession
 
@@ -32,12 +32,14 @@ class KeyboardEvalControlWrapper(KeyboardSession):
     IDLE_POLL_S = 0.05
     WAIT_HEARTBEAT_S = 10.0
 
-    def __init__(self, env):
+    def __init__(self, env: Env) -> None:
         super().__init__(env)
         self._running = False
         self._last_obs: Any = None
 
-    def reset(self, *, seed=None, options=None):
+    def reset(
+        self, *, seed: Optional[int] = None, options: Optional[dict[str, Any]] = None
+    ) -> tuple[Any, dict[str, Any]]:
         # Reset first, then wait for explicit operator confirmation.
         self.drain()
         obs, info = self.env.reset(seed=seed, options=options)
@@ -98,6 +100,8 @@ class KeyboardEvalControlWrapper(KeyboardSession):
         info["eval_result"] = result
         return obs, reward, terminated, truncated, info
 
-    def _idle_response(self, event: str | None):
+    def _idle_response(
+        self, event: str | None
+    ) -> tuple[Any, float, bool, bool, dict[str, Any]]:
         info = {"eval_phase": "pre", "eval_event": event, "eval_result": None}
         return self._last_obs, 0.0, False, False, info

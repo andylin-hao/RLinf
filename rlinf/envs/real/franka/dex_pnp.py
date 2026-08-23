@@ -31,7 +31,7 @@ class DexpnpConfig(FrankaRobotConfig):
     enable_gripper_penalty: bool = False
     step_frequency: float = 5.0
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.compliance_param = compliance(
             translational_clip_neg_x=0.015,
             translational_clip_neg_y=0.015,
@@ -60,10 +60,10 @@ class DexpnpEnv(FrankaEnv):
     CONFIG_CLS = DexpnpConfig
 
     @property
-    def task_description(self):
+    def task_description(self) -> str:
         return "pick up the toy and place it onto the plate"
 
-    def go_to_rest(self, joint_reset=False):
+    def go_to_rest(self, joint_reset: bool = False) -> None:
         """Lift clear of the object before moving to the base rest pose."""
         if self._is_hand:
             self._end_effector_action(self.config.hand_reset_state)

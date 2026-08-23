@@ -14,7 +14,7 @@
 
 from typing import Any, SupportsFloat
 
-from gymnasium.core import ActType, ObsType
+from gymnasium.core import ActType, Env, ObsType
 
 from .session import KeyboardSession
 
@@ -22,7 +22,7 @@ from .session import KeyboardSession
 class KeyboardRLTPolicySwitchWrapper(KeyboardSession):
     """Press ``b`` to enter the RLT critical phase."""
 
-    def __init__(self, env):
+    def __init__(self, env: Env) -> None:
         super().__init__(env)
         self._rlt_switch_flags = False
 

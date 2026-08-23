@@ -14,26 +14,29 @@
 
 from __future__ import annotations
 
+from typing import Any, Optional
+
 import gymnasium as gym
+import numpy as np
 
 
 class LeaderFollowerKeyboardIntervention(gym.Wrapper):
     """Handle keyboard mode changes for leader-follower teleoperation."""
 
-    def __init__(self, env):
+    def __init__(self, env: gym.Env) -> None:
         super().__init__(env)
         base_env = self._base_env()
         register_callback = getattr(base_env, "set_keyboard_event_callback", None)
         if callable(register_callback):
             register_callback(self._handle_key_event)
 
-    def step(self, action):
+    def step(self, action: np.ndarray) -> tuple[Any, float, bool, bool, dict[str, Any]]:
         step_result = self._handle_key_event(reset_phase=False)
         if step_result is not None:
             return step_result
         return self.env.step(action)
 
-    def _handle_key_event(self, reset_phase: bool = False):
+    def _handle_key_event(self, reset_phase: bool = False) -> None:
         base_env = self._base_env()
         keyboard = getattr(base_env, "_keyboard", None)
         if keyboard is None:
@@ -83,7 +86,7 @@ class LeaderFollowerKeyboardIntervention(gym.Wrapper):
 
         set_control_mode = getattr(base_env, "set_control_mode", None)
 
-        def _update_mode(target_mode, source: str) -> None:
+        def _update_mode(target_mode: Any, source: str) -> None:
             if callable(set_control_mode):
                 set_control_mode(target_mode, source=source)
             else:
@@ -107,7 +110,9 @@ class LeaderFollowerKeyboardIntervention(gym.Wrapper):
 
         return None
 
-    def _build_truncated_result(self):
+    def _build_truncated_result(
+        self,
+    ) -> Optional[tuple[Any, float, bool, bool, dict[str, Any]]]:
         base_env = self._base_env()
         obs_fn = getattr(base_env, "_get_observation", None)
         if not callable(obs_fn):
@@ -130,10 +135,10 @@ class LeaderFollowerKeyboardIntervention(gym.Wrapper):
             },
         )
 
-    def _log_info(self, message: str, *args) -> None:
+    def _log_info(self, message: str, *args: Any) -> None:
         logger = getattr(self._base_env(), "_logger", None)
         if logger is not None:
             logger.info(message, *args)
 
-    def _base_env(self):
+    def _base_env(self) -> gym.Env:
         return getattr(self.env, "unwrapped", self.env)

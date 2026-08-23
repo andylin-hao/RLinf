@@ -198,7 +198,7 @@ unfixable = []
 # Argument and return annotations are enforced where they are complete, so the
 # gap cannot come back. Everything else is exempt until it is annotated too:
 # turning ANN on repo-wide today would bury real findings under known ones.
-"!{rlinf/robotics/**.py,rlinf/envs/real/wrappers/teleop/**.py}" = ["ANN"]
+"!{rlinf/robotics/**.py,rlinf/envs/real/**.py}" = ["ANN"]
 # A test's fixtures are read next to their assertions, where a missing type
 # costs nothing and the noise would be considerable.
 "tests/**.py" = ["ANN"]

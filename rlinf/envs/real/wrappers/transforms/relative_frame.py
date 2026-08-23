@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import Any
+
 import gymnasium as gym
 import numpy as np
 from gymnasium import Env
@@ -36,7 +38,7 @@ class RelativeFrame(gym.Wrapper):
     CONFIG_FLAG = "use_relative_frame"
     CONFIG_DEFAULT = True
 
-    def __init__(self, env: Env, include_relative_pose=True):
+    def __init__(self, env: Env, include_relative_pose: bool = True) -> None:
         super().__init__(env)
         self.adjoint_matrix = np.zeros((6, 6))
 
@@ -45,7 +47,7 @@ class RelativeFrame(gym.Wrapper):
             # Transform from the base frame to the reset-relative frame.
             self.T_b_r_inv = np.zeros((4, 4))
 
-    def step(self, action: np.ndarray):
+    def step(self, action: np.ndarray) -> tuple[Any, float, bool, bool, dict[str, Any]]:
         # Convert the Cartesian action from end-effector to base frame.
         transformed_action = self.transform_action(action)
 
@@ -63,7 +65,7 @@ class RelativeFrame(gym.Wrapper):
         transformed_obs = self.transform_observation(obs)
         return transformed_obs, reward, done, truncated, info
 
-    def reset(self, **kwargs):
+    def reset(self, **kwargs: Any) -> tuple[Any, dict[str, Any]]:
         obs, info = self.env.reset(**kwargs)
 
         self.adjoint_matrix = construct_adjoint_matrix(obs["state"]["tcp_pose"])
@@ -75,7 +77,7 @@ class RelativeFrame(gym.Wrapper):
 
         return self.transform_observation(obs), info
 
-    def transform_observation(self, obs):
+    def transform_observation(self, obs: dict[str, Any]) -> dict[str, Any]:
         """Transform observations from the base to end-effector frame."""
         adjoint_inv = np.linalg.inv(self.adjoint_matrix)
         if "tcp_vel" in obs["state"]:
@@ -91,14 +93,14 @@ class RelativeFrame(gym.Wrapper):
 
         return obs
 
-    def transform_action(self, action: np.ndarray):
+    def transform_action(self, action: np.ndarray) -> np.ndarray:
         """Transform an action from the end-effector to base frame."""
         # Copy because JAX may provide a read-only array.
         action = np.array(action)
         action[:6] = self.adjoint_matrix @ action[:6]
         return action
 
-    def transform_action_inv(self, action: np.ndarray):
+    def transform_action_inv(self, action: np.ndarray) -> np.ndarray:
         """Transform an action from the base to end-effector frame."""
         action = np.array(action)
         action[:6] = np.linalg.inv(self.adjoint_matrix) @ action[:6]
@@ -106,7 +108,7 @@ class RelativeFrame(gym.Wrapper):
 
 
 class RelativeTargetFrame(RelativeFrame):
-    def reset(self, **kwargs):
+    def reset(self, **kwargs: Any) -> tuple[Any, dict[str, Any]]:
         obs, info = self.env.reset(**kwargs)
 
         self.adjoint_matrix = construct_adjoint_matrix(self.env.target_ee_pose)
