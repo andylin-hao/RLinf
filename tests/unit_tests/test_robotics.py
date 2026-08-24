@@ -565,8 +565,8 @@ def _opens_here(monkeypatch):
     connect = Connection.connect
 
     def connect_here(self):
-        if self._recipe is not None and self._recipe.node_rank is not None:
-            self._recipe = replace(self._recipe, node_rank=None)
+        if self._remote_info is not None and self._remote_info.node_rank is not None:
+            self._remote_info = replace(self._remote_info, node_rank=None)
         connect(self)
 
     monkeypatch.setattr(Connection, "connect", connect_here)
@@ -2986,6 +2986,16 @@ def test_a_real_arm_runs_against_a_faked_sdk():
 
         arm.disconnect()
         assert not arm.is_connected
+
+
+def test_franky_declaration_keeps_its_supported_gripper_default():
+    from rlinf.robotics.parts.arms.franky import FrankyArm
+
+    arm = FrankyArm.declare("10.0.0.1")
+
+    assert arm._gripper_type == "robotiq"
+    with pytest.raises(ValueError, match="unsupported gripper_type"):
+        arm._build_gripper("unknown", None, "10.0.0.1")
 
 
 def test_the_bench_check_runs_a_whole_robot_on_fakes():

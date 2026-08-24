@@ -35,7 +35,7 @@ from rlinf.utils.logging import get_logger
 
 @Arm.register("franka_ros")
 class FrankaROSArm(BaseArm):
-    """Franka arm over ROS, with no scheduler dependency."""
+    """Franka arm controlled through ROS."""
 
     @classmethod
     def declare(

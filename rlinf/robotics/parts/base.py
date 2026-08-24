@@ -18,9 +18,6 @@
 adds observations, ``ControllablePart`` adds actions, and ``PartGroup`` builds a
 named tree from those parts. ``Connection.parts`` describes components backed
 by one session; ``RobotPart.children`` describes the public robot tree.
-
-Part modules remain independent of the scheduler and Gymnasium. Remote
-placement is loaded lazily by :meth:`Connection.connect`.
 """
 
 from abc import ABC, ABCMeta, abstractmethod
@@ -37,8 +34,8 @@ if TYPE_CHECKING:
     pass
 
 
-KeyType = TypeVar("KeyType")
-ValueType = TypeVar("ValueType")
+_KeyType = TypeVar("_KeyType")
+_ValueType = TypeVar("_ValueType")
 
 #: The category a registry call was made on, so ``Arm.backend("franky")`` is a
 #: ``type[Arm]`` and ``Camera.backend("zed")`` a ``type[Camera]`` -- rather than
@@ -61,46 +58,38 @@ Observation = dict[str, Any]
 Action = Mapping[str, Any]
 
 
-def run_parallel(
-    jobs: Mapping[KeyType, Callable[[], ValueType]],
-) -> dict[KeyType, ValueType]:
-    """Run independent component operations concurrently.
-
-    A single operation runs inline to avoid thread-pool overhead.
-    """
-    if len(jobs) <= 1:
-        return {key: job() for key, job in jobs.items()}
-    with ThreadPoolExecutor(max_workers=len(jobs)) as executor:
-        futures = {key: executor.submit(job) for key, job in jobs.items()}
-        return {key: future.result() for key, future in futures.items()}
-
-
 @dataclass(frozen=True)
-class _Recipe:
-    """Constructor arguments and placement for rebuilding a connection."""
+class RemoteInfo:
+    """Information required to rebuild a connection on another node."""
 
-    part_cls: type
+    connection_cls: type
     args: tuple[Any, ...] = ()
     kwargs: dict[str, Any] = field(default_factory=dict)
     node_rank: Optional[int] = None
     worker_name: Optional[str] = None
 
 
-class _ConnectionMeta(ABCMeta):
-    """Record placement arguments without exposing them to driver constructors."""
+class ConnectionMeta(ABCMeta):
+    """Remove placement arguments before invoking a driver constructor.
+
+    ``Connection.__new__`` cannot perform this step because Python passes the
+    original keyword arguments to ``__init__`` after ``__new__`` returns.
+    """
 
     def __call__(cls, *args: Any, **kwargs: Any) -> "Connection":
-        """Construct a connection and save the recipe used to create it."""
+        """Construct a connection and retain its remote reconstruction data."""
         node_rank = worker_name = None
         if cls._TAKES_PLACEMENT:
             node_rank = kwargs.pop("node_rank", None)
             worker_name = kwargs.pop("worker_name", None)
         connection = super().__call__(*args, **kwargs)
-        connection._recipe = _Recipe(cls, args, dict(kwargs), node_rank, worker_name)
+        connection._remote_info = RemoteInfo(
+            cls, args, dict(kwargs), node_rank, worker_name
+        )
         return connection
 
 
-class Connection(ABC, metaclass=_ConnectionMeta):
+class Connection(ABC, metaclass=ConnectionMeta):
     """A deferred local or remote hardware connection.
 
     Construction records the driver arguments and optional ``node_rank`` but
@@ -120,8 +109,8 @@ class Connection(ABC, metaclass=_ConnectionMeta):
     #: Whether the metaclass should consume placement arguments.
     _TAKES_PLACEMENT: ClassVar[bool] = True
 
-    #: Constructor and placement information recorded by the metaclass.
-    _recipe: Optional[_Recipe] = None
+    #: Information needed to rebuild this connection on another node.
+    _remote_info: Optional[RemoteInfo] = None
 
     #: Worker group hosting this connection while it is placed remotely.
     _group: Any = None
@@ -162,7 +151,7 @@ class Connection(ABC, metaclass=_ConnectionMeta):
     @property
     def node_rank(self) -> Optional[int]:
         """Return the target node, or ``None`` for the current process."""
-        return self._recipe.node_rank if self._recipe else None
+        return self._remote_info.node_rank if self._remote_info else None
 
     @property
     def owner(self) -> "Connection":
@@ -185,7 +174,7 @@ class Connection(ABC, metaclass=_ConnectionMeta):
             return
         if self._device is not None:
             return
-        if self._recipe is None or self._recipe.node_rank is None:
+        if self._remote_info is None or self._remote_info.node_rank is None:
             device = self._open()
             # Preserve valid false-valued handles such as file descriptor 0.
             self._device = self if device is None else device
@@ -200,7 +189,6 @@ class Connection(ABC, metaclass=_ConnectionMeta):
                 raise
             return
 
-        # Keep scheduler imports out of driver modules and local-only paths.
         from ..placement import host
 
         group, view = host(self)
@@ -656,6 +644,17 @@ class PartGroup(ControllablePart):
             found.extend(PartGroup._owners_of(rider))
         return found
 
+    @staticmethod
+    def _run_parallel(
+        jobs: "Mapping[_KeyType, Callable[[], _ValueType]]",
+    ) -> "dict[_KeyType, _ValueType]":
+        """Run independent part operations concurrently."""
+        if len(jobs) <= 1:
+            return {key: job() for key, job in jobs.items()}
+        with ThreadPoolExecutor(max_workers=len(jobs)) as executor:
+            futures = {key: executor.submit(job) for key, job in jobs.items()}
+            return {key: future.result() for key, future in futures.items()}
+
     def _fan_out(self, call: "Callable[[RobotPart], Any]") -> dict[str, Any]:
         """Run *call* over every part, concurrently where connections differ."""
 
@@ -663,7 +662,7 @@ class PartGroup(ControllablePart):
             return {name: call(self._children[name]) for name in names}
 
         batches = self._batches()
-        results = run_parallel(
+        results = self._run_parallel(
             {position: partial(run, names) for position, names in enumerate(batches)}
         )
         merged: dict[str, Any] = {}
@@ -724,7 +723,7 @@ class PartGroup(ControllablePart):
                 for name in names
             }
 
-        results = run_parallel(
+        results = self._run_parallel(
             {
                 position: partial(run, names)
                 for position, names in enumerate(batches)

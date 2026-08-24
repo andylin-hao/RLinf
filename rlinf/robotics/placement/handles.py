@@ -28,7 +28,7 @@ from rlinf.scheduler import Cluster, NodePlacementStrategy, Worker
 from rlinf.scheduler.worker.worker import WorkerMeta
 from rlinf.scheduler.worker.worker_group import WorkerGroup
 
-from ..parts.base import Connection, _ConnectionMeta
+from ..parts.base import Connection, ConnectionMeta
 
 #: Methods and properties that remain on the local connection view.
 _STAYS_LOCAL: frozenset[str] = frozenset(
@@ -102,7 +102,7 @@ def _public_surface(part_cls: type) -> tuple[list[str], list[str]]:
     return methods, properties
 
 
-class _RemoteViewMeta(WorkerMeta, _ConnectionMeta):
+class _RemoteViewMeta(WorkerMeta, ConnectionMeta):
     """Reconcile the metaclasses a synthesized view inherits."""
 
 
@@ -237,15 +237,17 @@ class PartWorkerHost:
 
 def host(connection: Connection) -> "tuple[WorkerGroup, type[Connection]]":
     """Host a connection remotely and return its worker group and view class."""
-    recipe = connection._recipe
+    remote_info = connection._remote_info
+    if remote_info is None or remote_info.node_rank is None:
+        raise ValueError("Remote hosting requires a connection with a node rank.")
     group = PartWorkerHost(
-        recipe.part_cls,
-        recipe.args,
-        recipe.kwargs,
-        node_rank=recipe.node_rank,
-        worker_name=recipe.worker_name,
+        remote_info.connection_cls,
+        remote_info.args,
+        remote_info.kwargs,
+        node_rank=remote_info.node_rank,
+        worker_name=remote_info.worker_name,
     ).launch()
-    return group, remote_view_of(recipe.part_cls)
+    return group, remote_view_of(remote_info.connection_cls)
 
 
 def shutdown(group: "WorkerGroup") -> None:

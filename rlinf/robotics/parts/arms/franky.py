@@ -80,7 +80,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 
 @Arm.register("franky")
 class FrankyArm(BaseArm):
-    """Franka arm over libfranka, with no scheduler dependency."""
+    """Franka arm controlled through libfranka by Franky."""
 
     @classmethod
     def declare(
@@ -106,7 +106,7 @@ class FrankyArm(BaseArm):
             )
         return cls(
             address,
-            gripper_type=gripper_type or "franka",
+            gripper_type=gripper_type or "robotiq",
             gripper_connection=gripper_connection,
             **placement,
         )
@@ -193,14 +193,15 @@ class FrankyArm(BaseArm):
                 "Franka Hand is not yet supported. Use gripper_type='robotiq' "
                 "for now."
             )
+        if gt not in {"robotiq", "robotiq_gripper"}:
+            raise ValueError(
+                f"FrankyArm: unsupported gripper_type={gripper_type!r}. "
+                "Supported: 'robotiq'."
+            )
         gripper = EndEffector.of(gt, port=gripper_connection)
         # The arm owns the gripper lifecycle.
         gripper.connect()
         return gripper
-        raise ValueError(
-            f"FrankyArm: unsupported gripper_type={gripper_type!r}. "
-            f"Supported: 'robotiq'."
-        )
 
     def _apply_rt_hardening(self) -> None:
         """Lock memory, raise priority, pin affinity. All best-effort."""

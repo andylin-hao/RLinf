@@ -26,7 +26,6 @@ from .base import (
     Observation,
     PartGroup,
     RobotPart,
-    run_parallel,
 )
 
 __all__ = [
@@ -37,5 +36,4 @@ __all__ = [
     "Observation",
     "PartGroup",
     "RobotPart",
-    "run_parallel",
 ]

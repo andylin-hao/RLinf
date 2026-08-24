@@ -163,8 +163,8 @@ def parity_failures(robot_type: str, kwargs: dict[str, Any], placed: Any) -> lis
 
     here = build_robot(robot_type, **kwargs)
     for owner in here.owners():
-        if owner._recipe is not None:
-            owner._recipe = replace(owner._recipe, node_rank=None)
+        if owner._remote_info is not None:
+            owner._remote_info = replace(owner._remote_info, node_rank=None)
     here.connect()
     try:
         local = {path: part.observation_features for path, part in walk(here)}

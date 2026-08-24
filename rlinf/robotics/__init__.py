@@ -49,7 +49,6 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
         Observation,
         PartGroup,
         RobotPart,
-        run_parallel,
     )
     from .parts.arms import ARM_STATE_FIELDS, Arm, ArmState, BaseArm
     from .parts.cameras import BaseCamera, Camera, CameraInfo
@@ -80,7 +79,6 @@ _MODULE_GROUPS: dict[str, tuple[str, ...]] = {
         "Observation",
         "PartGroup",
         "RobotPart",
-        "run_parallel",
     ),
     ".parts.arms": ("ARM_STATE_FIELDS", "Arm", "ArmState", "BaseArm"),
     # Load each device category only when requested.
