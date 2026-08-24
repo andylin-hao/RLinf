@@ -67,6 +67,9 @@ class TeleopBinding(ABC):
     #: Whether produced actions must be clipped to the environment space.
     CLIPS_TO_ACTION_SPACE: bool = False
 
+    #: Whether this binding's parts still apply while the operator is idle.
+    APPLIES_WHILE_IDLE: bool = False
+
     #: Context keys this binding cannot work without, from :data:`CONTEXT_KEYS`.
     NEEDS: tuple[str, ...] = ()
 

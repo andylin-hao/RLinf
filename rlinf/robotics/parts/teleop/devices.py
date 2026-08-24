@@ -190,6 +190,15 @@ class PicoController(TeleopPart):
         return PicoExpert(**self._config)
 
     @property
+    def ready(self) -> bool:
+        """Return whether the reader can provide its explicit idle state.
+
+        Unlike a leader arm, the PICO reader returns a safe ``ready=False``
+        reading before the first controller packet arrives.
+        """
+        return self.is_connected
+
+    @property
     def observation_features(self) -> Features:
         """Whether the operator is driving, and how far they have moved."""
         return {

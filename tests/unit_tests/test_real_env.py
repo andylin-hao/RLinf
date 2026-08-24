@@ -409,6 +409,45 @@ def test_an_unfilled_part_keeps_the_policy_action():
     assert np.allclose(sample.action[6:], 0.5)  # Glove controls the hand.
 
 
+def test_an_idle_glove_keeps_its_hand_pose_without_claiming_the_arm():
+    from rlinf.envs.real.wrappers.teleop.composed import ComposedTeleop
+    from rlinf.robotics.teleop import (
+        ActionKind,
+        TeleopAction,
+        TeleopBinding,
+        TeleopEntry,
+        TeleopGroup,
+    )
+
+    class HeldHand(TeleopBinding):
+        PRODUCES = {"hand": ActionKind.HAND}
+        APPLIES_WHILE_IDLE = True
+
+        def action(self, reading, context):
+            return TeleopAction(parts={"hand": np.full(6, 0.5)}, driving=False)
+
+    class Device:
+        is_connected = True
+
+        def get_observation(self):
+            return {}
+
+    layout = {"arm": slice(0, 6), "hand": slice(6, 12)}
+    group = TeleopGroup(
+        [TeleopEntry(Device(), HeldHand())],
+        available={"arm": ActionKind.CARTESIAN_DELTA, "hand": ActionKind.HAND},
+    )
+    policy = np.arange(12, dtype=np.float64)
+    sample = ComposedTeleop(group, layout).read(_FakeLayoutEnv(), policy)
+    env = FakeEnv()
+
+    _, _, _, _, info = TeleopIntervention(env, ScriptedDevice([sample])).step(policy)
+
+    assert np.allclose(env.stepped[0][:6], policy[:6])
+    assert np.allclose(env.stepped[0][6:], 0.5)
+    assert "intervene_action" not in info
+
+
 class _FakeLayoutEnv:
     """Provide the attributes required by teleoperation layout tests."""
 

@@ -172,7 +172,7 @@ class SpaceMouseBackend(TeleopBackend):
     ) -> TeleopEntry:
         return TeleopEntry(
             SpaceMouse(device_index=int(options.get("device_index", 0))),
-            SpaceMouseBinding(),
+            SpaceMouseBinding(dexterous_hand="hand" in facts.kinds),
             drives=options.get("drives"),
         )
 
@@ -196,7 +196,7 @@ class GelloBackend(TeleopBackend):
             )
         return TeleopEntry(
             TeleopLeaderArm(port=port),
-            LeaderArmBinding(),
+            LeaderArmBinding(gripper="end_effector" in facts.kinds),
             drives=options.get("drives"),
         )
 

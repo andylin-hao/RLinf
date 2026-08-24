@@ -44,15 +44,17 @@ class SpaceMouseBinding(TeleopBinding):
     # gripper_open is optional because the binding provides a default.
     NEEDS = ()
 
-    def __init__(self) -> None:
+    def __init__(self, dexterous_hand: bool = False) -> None:
+        self.dexterous_hand = dexterous_hand
         self._grip: Optional[np.ndarray] = None
         self.left = False
         self.right = False
 
     def reset(self, context: Mapping[str, Any] = MappingProxyType({})) -> None:
-        """Start each episode with the buttons released."""
+        """Release the buttons and resync the gripper after a reset."""
         self.left = False
         self.right = False
+        self._grip = None
 
     def action(
         self, reading: Mapping[str, Any], context: Mapping[str, Any]
@@ -72,7 +74,16 @@ class SpaceMouseBinding(TeleopBinding):
         parts["end_effector"] = self._grip.copy()
 
         moved = float(np.linalg.norm(reading["twist"])) > self.MOVEMENT_EPSILON
-        return TeleopAction(parts=parts, driving=moved or self.left or self.right)
+        info = (
+            {"left": self.right, "right": self.left}
+            if self.dexterous_hand
+            else {"left": self.left, "right": self.right}
+        )
+        return TeleopAction(
+            parts=parts,
+            driving=moved or self.left or self.right,
+            info=info,
+        )
 
     def publish(self, reading: Mapping[str, Any]) -> dict[str, Any]:
         """Publish whether the glove-control button is held."""
@@ -88,6 +99,9 @@ class LeaderArmBinding(TeleopBinding):
     }
 
     NEEDS = ("tcp_pose", "action_scale")
+
+    def __init__(self, gripper: bool = True) -> None:
+        self.gripper = gripper
 
     def action(
         self, reading: Mapping[str, Any], context: Mapping[str, Any]
@@ -108,10 +122,14 @@ class LeaderArmBinding(TeleopBinding):
                 np.concatenate((delta_position, delta_rotation), axis=0), -1.0, 1.0
             )
         }
-        grip = np.asarray(reading["grip"]) / scale[2]
-        parts["end_effector"] = np.clip(-(2 * grip - 1.0), -1.0, 1.0)
-        # A leader arm is posed by hand, so it is driving whenever it streams.
-        return TeleopAction(parts=parts, driving=True)
+        gripper_active = False
+        if self.gripper:
+            grip = np.asarray(reading["grip"]) / scale[2]
+            grip = np.clip(-(2 * grip - 1.0), -1.0, 1.0)
+            parts["end_effector"] = grip
+            gripper_active = bool(np.abs(grip).item() > 0.5)
+        moved = float(np.linalg.norm(parts["arm"])) > self.MOVEMENT_EPSILON
+        return TeleopAction(parts=parts, driving=moved or gripper_active)
 
 
 class LeaderJointBinding(TeleopBinding):
@@ -129,7 +147,10 @@ class LeaderJointBinding(TeleopBinding):
         "end_effector": ActionKind.GRIPPER,
     }
 
-    NEEDS = ()
+    NEEDS = ("joint_positions",)
+
+    #: Match the threshold used by the former dual-GELLO wrapper.
+    MOVEMENT_EPSILON = 0.01
 
     def __init__(
         self, side: int = 0, use_delta: bool = False, action_scale: float = 0.1
@@ -137,8 +158,6 @@ class LeaderJointBinding(TeleopBinding):
         self.side = side
         self.use_delta = use_delta
         self.action_scale = action_scale
-        # Only a delta needs the follower's joints to difference against.
-        self.NEEDS = ("joint_positions",) if use_delta else ()
         # Differencing against the follower makes this a delta, not a target.
         self.PRODUCES = {
             "arm": ActionKind.JOINT_DELTA if use_delta else ActionKind.JOINT_POSITION,
@@ -150,19 +169,22 @@ class LeaderJointBinding(TeleopBinding):
     ) -> TeleopAction:
         """Difference the leader's joints against the follower's."""
         target = np.asarray(reading["joint_position"])
+        current = np.asarray(context["joint_positions"])[self.side]
         if self.use_delta:
-            current = np.asarray(context["joint_positions"])[self.side]
             arm = np.clip((target - current) / self.action_scale, -1.0, 1.0)
         else:
             arm = target.copy()
 
         grip = np.asarray(reading["grip"])
+        grip = np.clip(-(2 * grip - 1.0), -1.0, 1.0)
+        moved = float(np.linalg.norm(target - current)) > self.MOVEMENT_EPSILON
+        gripper_active = bool(np.abs(grip).item() > 0.5)
         return TeleopAction(
             parts={
                 "arm": arm,
-                "end_effector": np.clip(-(2 * grip - 1.0), -1.0, 1.0),
+                "end_effector": grip,
             },
-            driving=True,
+            driving=moved or gripper_active,
         )
 
 
@@ -170,6 +192,7 @@ class GloveBinding(TeleopBinding):
     """Map glove motion to hand targets relative to a resettable baseline."""
 
     PRODUCES = {"hand": ActionKind.HAND}
+    APPLIES_WHILE_IDLE = True
 
     def __init__(self, hold: bool = True) -> None:
         self.hold = hold

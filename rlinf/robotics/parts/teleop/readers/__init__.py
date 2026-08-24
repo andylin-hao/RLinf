@@ -14,8 +14,8 @@
 
 """Low-level readers for teleoperation hardware.
 
-Readers expose vendor-native values without depending on Gymnasium or the
-scheduler. They can be tested directly from the command line:
+Readers expose vendor-native values and can be tested directly from the command
+line:
 
 .. code-block:: bash
 

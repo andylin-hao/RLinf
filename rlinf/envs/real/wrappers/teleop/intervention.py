@@ -33,11 +33,14 @@ class TeleopSample:
         action: Operator command in the environment action space, or ``None``
             when no usable reading is available.
         active: Whether the operator currently holds control.
+        apply_when_inactive: Whether ``action`` contains passive state, such as
+            a held dexterous-hand pose, that must still reach the environment.
         info: Device state to merge into the step information.
     """
 
     action: Optional[np.ndarray]
     active: bool
+    apply_when_inactive: bool = False
     info: dict[str, Any] = field(default_factory=dict)
 
 
@@ -138,6 +141,9 @@ class TeleopIntervention(gym.Wrapper):
         elif self.intervening:
             # Retain operator control for the configured hold window.
             applied, overridden = sample.action, True
+        elif sample.apply_when_inactive:
+            # Some devices keep only their own stateful action parts applied.
+            applied, overridden = sample.action, False
         else:
             applied, overridden = action, False
 

@@ -1973,6 +1973,96 @@ def test_one_device_listed_twice_is_read_once():
     assert group.parts == ("arm", "end_effector")
 
 
+def test_a_teleop_rig_waits_until_every_reader_is_ready():
+    from rlinf.robotics.parts.teleop.devices import TeleopPart
+    from rlinf.robotics.teleop import TeleopEntry, TeleopGroup
+
+    class Starting(TeleopPart):
+        def _open(self):
+            return object()
+
+        @property
+        def ready(self):
+            return False
+
+        @property
+        def observation_features(self):
+            return {"twist": {}}
+
+        def get_observation(self):
+            raise AssertionError("an unready reader must not be sampled")
+
+    device = Starting()
+    device.connect()
+    group = TeleopGroup(
+        [TeleopEntry(device, _binding(("arm",), np.ones(6)))],
+        available=_kinds("arm"),
+    )
+
+    assert group.action({}) == ({}, False, {})
+
+
+def test_spacemouse_reset_resyncs_the_gripper_and_reports_its_buttons():
+    from rlinf.robotics.teleop import SpaceMouseBinding
+
+    binding = SpaceMouseBinding()
+    opened = binding.action(
+        {"twist": np.zeros(6), "buttons": [False, False]},
+        {"gripper_open": True},
+    )
+    binding.reset()
+    closed = binding.action(
+        {"twist": np.zeros(6), "buttons": [True, False]},
+        {"gripper_open": False},
+    )
+
+    assert opened.parts["end_effector"].item() > 0
+    assert closed.parts["end_effector"].item() < 0
+    assert closed.info == {"left": True, "right": False}
+    dex = SpaceMouseBinding(dexterous_hand=True).action(
+        {"twist": np.zeros(6), "buttons": [True, False]},
+        {"gripper_open": True},
+    )
+    assert dex.info == {"left": False, "right": True}
+
+
+def test_leader_arm_only_takes_control_for_motion_or_an_active_gripper():
+    from rlinf.robotics.teleop import LeaderArmBinding
+
+    context = {
+        "tcp_pose": np.array([0.3, 0.1, 0.4, 0.0, 0.0, 0.0, 1.0]),
+        "action_scale": np.array([0.05, 0.3, 1.0]),
+    }
+    idle = {
+        "position": context["tcp_pose"][:3],
+        "orientation": context["tcp_pose"][3:],
+        "grip": np.array([0.5]),
+    }
+
+    assert not LeaderArmBinding().action(idle, context).driving
+    assert (
+        not LeaderArmBinding(gripper=False)
+        .action({**idle, "grip": np.array([0.0])}, context)
+        .driving
+    )
+    moved = {**idle, "position": idle["position"] + np.array([0.01, 0.0, 0.0])}
+    assert LeaderArmBinding().action(moved, context).driving
+
+
+def test_leader_joint_uses_the_legacy_motion_and_gripper_thresholds():
+    from rlinf.robotics.teleop import LeaderJointBinding
+
+    binding = LeaderJointBinding(side=0)
+    current = np.zeros((2, 7))
+    idle = {"joint_position": np.zeros(7), "grip": np.array([0.5])}
+
+    assert not binding.action(idle, {"joint_positions": current}).driving
+    moved = {**idle, "joint_position": np.full(7, 0.01)}
+    assert binding.action(moved, {"joint_positions": current}).driving
+    gripped = {**idle, "grip": np.array([0.0])}
+    assert binding.action(gripped, {"joint_positions": current}).driving
+
+
 def test_the_glove_holds_what_the_operator_posed():
     import numpy as np
 

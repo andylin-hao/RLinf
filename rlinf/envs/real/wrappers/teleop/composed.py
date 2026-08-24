@@ -136,11 +136,21 @@ class ComposedTeleop(TeleopDevice):
         parts, driving, info = self.group.action(self.context_from(env))
         if not parts:
             return TeleopSample(action=None, active=False, info=info)
+        apply_when_inactive = False
+        if not driving:
+            idle = set(self.group.idle_parts)
+            parts = {name: value for name, value in parts.items() if name in idle}
+            apply_when_inactive = bool(parts)
+            if not parts:
+                return TeleopSample(action=None, active=False, info=info)
         if self.streamer is not None and self.streamer.streaming:
             # Record parts delivered outside env.step for dataset consumers.
             info = {**info, "streamed_parts": list(self.streamer.DELIVERS)}
         return TeleopSample(
-            action=self._write(env, policy_action, parts), active=driving, info=info
+            action=self._write(env, policy_action, parts),
+            active=driving,
+            apply_when_inactive=apply_when_inactive,
+            info=info,
         )
 
     def get_hold_action(

@@ -187,6 +187,12 @@ class TeleopGroup:
             The action parts by name, whether any operator is driving, and any
             info the bindings want recorded.
         """
+        # GELLO readers start in a deliberately invalid zero-pose state. The
+        # previous wrappers waited until every configured reader was ready, so
+        # keep the policy in control until the complete rig has a first sample.
+        if not all(getattr(device, "ready", True) for device in self.devices):
+            return {}, False, {}
+
         parts: dict[str, np.ndarray] = {}
         driving = False
         info: dict[str, Any] = {}
@@ -241,6 +247,15 @@ class TeleopGroup:
             part
             for part, entry in self._filled.items()
             if entry.binding.CLIPS_TO_ACTION_SPACE
+        )
+
+    @property
+    def idle_parts(self) -> tuple[str, ...]:
+        """Parts that remain under device control while the rig is idle."""
+        return tuple(
+            part
+            for part, entry in self._filled.items()
+            if entry.binding.APPLIES_WHILE_IDLE
         )
 
     @property
