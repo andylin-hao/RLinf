@@ -294,6 +294,7 @@ def run_yaml_dosw1() -> None:
             "robot_url": "192.168.5.5",
             "left_arm_port": 50061,
             "camera_serials": ["dosCam"],
+            "disable_validate": True,
         }
     ]
     cluster = Cluster(cluster_cfg=cluster_cfg("dosw1", "DOSW1", configs))

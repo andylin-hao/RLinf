@@ -125,9 +125,6 @@ class GimArmConfig(RobotConfig):
     """Node rank where the arm part should run.
     When ``None`` (default), co-located with the env worker."""
 
-    disable_validate: bool = False
-    """Whether to skip CAN interface validation during enumeration."""
-
     def model(self, robot_type: str) -> str:
         """Report the arm variant, which changes reach and payload."""
         return f"{robot_type}_{self.arm_variant}"

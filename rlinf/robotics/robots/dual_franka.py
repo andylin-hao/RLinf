@@ -148,13 +148,6 @@ class DualFrankaConfig(RobotConfig):
     """Node rank for the right arm part.
     ``None`` means co-located with the env worker."""
 
-    disable_validate: bool = False
-    """Whether to skip the enumeration checks on the hardware this config names.
-
-    Set it for an offline run, or a bench check against faked SDKs. The arm
-    addresses are not checked at enumeration either way: whether each is an
-    address at all is settled by the arm part that dials it."""
-
     def __post_init__(self) -> None:  # noqa: D105
         assert isinstance(self.node_rank, int), (
             f"'node_rank' in DualFranka config must be an integer. "

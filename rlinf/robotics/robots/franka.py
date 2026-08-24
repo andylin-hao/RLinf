@@ -159,14 +159,6 @@ class FrankaConfig(RobotConfig):
     worker.  Set this when the arm/gripper and cameras are on different
     machines (e.g. cameras on a GPU server, arm on a NUC)."""
 
-    disable_validate: bool = False
-    """Whether to skip the enumeration checks on the cameras this config names.
-
-    Set it for an offline run, or a bench check against faked SDKs, where the
-    hardware named here is not attached. The arm's address is not checked at
-    enumeration either way: whether it is an address at all is settled by the
-    arm part that dials it."""
-
     def __post_init__(self) -> None:
         """Post-initialization to validate the configuration."""
         assert isinstance(self.node_rank, int), (

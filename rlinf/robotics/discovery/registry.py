@@ -36,6 +36,20 @@ class RobotConfig(HardwareConfig):
     #: Whether a node carrying this robot must have at least one camera.
     REQUIRES_CAMERA: ClassVar[bool] = False
 
+    disable_validate: bool = False
+    """Skip the node-local hardware checks that enumeration would run.
+
+    Enumeration confirms that the cameras a config names are attached, which
+    needs the camera SDK installed on the node doing the enumerating. Set this
+    when the config is already trusted and the node has nothing to probe with:
+    an offline run, a bench check against faked SDKs, or a scheduler node
+    writing configuration for hardware it does not itself carry.
+
+    Only cameras are checked at enumeration. An arm address is not reached
+    either way: whether it is an address at all is settled by the arm part
+    that dials it.
+    """
+
     def model(self, robot_type: str) -> str:
         """Return the hardware model reported to the scheduler."""
         return robot_type
@@ -121,7 +135,7 @@ class RobotDiscovery(Hardware):
                     config=config,
                 )
             )
-            if not getattr(config, "disable_validate", False):
+            if not config.disable_validate:
                 cls.validate(config, node_rank)
         return HardwareResource(type=cls.HW_TYPE, infos=infos)
 

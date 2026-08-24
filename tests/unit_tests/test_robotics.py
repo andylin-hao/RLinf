@@ -21,7 +21,7 @@ import os
 import re
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any, Optional, cast
 
@@ -450,6 +450,41 @@ def test_all_builtin_configs_construct_from_a_node_rank_alone():
     ]
 
     assert all(config.node_rank == 0 for config in configs)
+
+
+def test_every_registered_robot_can_skip_the_enumeration_probe():
+    """Validation is uniform across robots, so the opt-out must be too.
+
+    Enumeration checks the cameras a config names, which needs the camera SDK
+    on the enumerating node. Every robot config has to offer the same way out,
+    or a node without that SDK cannot declare the robot at all.
+    """
+    registry = RobotDiscovery.registry
+
+    without = sorted(
+        name
+        for name, reg in registry.items()
+        if "disable_validate" not in {f.name for f in fields(reg.config_cls)}
+    )
+    assert without == []
+
+    # The flag has to reach enumeration, not merely exist on the config.
+    discovery = registry["DOSW1"].discovery_cls
+    probed = []
+
+    class Probing(discovery):
+        @classmethod
+        def validate(cls, config, node_rank):
+            probed.append(config)
+
+    Probing.enumerate(0, [DOSW1RobotConfig(node_rank=0, camera_serials=["cam"])])
+    assert len(probed) == 1
+
+    Probing.enumerate(
+        0,
+        [DOSW1RobotConfig(node_rank=0, camera_serials=["cam"], disable_validate=True)],
+    )
+    assert len(probed) == 1
 
 
 def test_every_registered_robot_carries_a_builder():
