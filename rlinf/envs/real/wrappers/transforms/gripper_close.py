@@ -26,6 +26,13 @@ class GripperCloseEnv(gym.ActionWrapper):
     CONFIG_FLAG = "no_gripper"
     CONFIG_DEFAULT = True
 
+    @classmethod
+    def applies_to(cls, env: gym.Env) -> bool:
+        """Return whether the env uses a one-axis gripper action."""
+        config = getattr(env.unwrapped, "config", None)
+        end_effector = str(getattr(config, "end_effector_type", ""))
+        return not end_effector.endswith("hand")
+
     def __init__(self, env: gym.Env) -> None:
         super().__init__(env)
         ub = self.env.action_space

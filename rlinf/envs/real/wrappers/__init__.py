@@ -77,8 +77,9 @@ class WrapperStack:
 
     def _refuse_unsupported(self) -> None:
         """Reject enabled flags that the environment does not support."""
+        defaults = getattr(self.inner, "REFUSE_DEFAULTS", {})
         for flag in getattr(self.inner, "REFUSE_FLAGS", ()):
-            if self.cfg.get(flag, False):
+            if self.cfg.get(flag, defaults.get(flag, False)):
                 raise NotImplementedError(
                     f"{type(self.inner).__name__} does not support {flag!r}."
                 )
@@ -94,7 +95,8 @@ class WrapperStack:
         """Apply enabled wrappers from a sequence of registered names."""
         for name in names:
             wrapper = WRAPPERS[name]
-            if self._wanted(wrapper):
+            applies_to = getattr(wrapper, "applies_to", lambda env: True)
+            if self._wanted(wrapper) and applies_to(self.inner):
                 self.env = wrapper(self.env)
 
     def _apply_teleop(self) -> None:

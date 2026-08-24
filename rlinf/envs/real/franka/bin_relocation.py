@@ -166,7 +166,7 @@ class FrankaBinRelocationEnv(FrankaEnv):
         """Crop a RealSense frame to a square."""
         return image[:, 80:560, :]
 
-    def _get_camera_frames(self) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
+    def _get_camera_frames(self) -> dict[str, np.ndarray]:
         """Read task-specific camera crops and reopen stalled devices."""
         images = {}
         display_images = {}
@@ -207,7 +207,7 @@ class FrankaBinRelocationEnv(FrankaEnv):
         self.camera_player.put_frame(display_images)
         return images
 
-    def task_graph(self, obs: Optional[dict[str, Any]] = None) -> int:
+    def task_graph(self, obs: Optional[dict[str, Any]] = None) -> Optional[int]:
         if obs is None:
             return (self.task_id + 1) % 2
 

@@ -149,8 +149,9 @@ class GimArmEnv(gym.Env):
     # No registered teleoperation device currently produces this joint layout.
     TELEOP = ()
     TELEOP_DEFAULT = "none"
-    ACTION_WRAPPERS = ("GripperCloseEnv",)
-    TRANSFORMS = ("RelativeFrame", "Quat2EulerWrapper")
+    # The legacy GimArm task was registered directly and had no wrapper stack.
+    ACTION_WRAPPERS = ()
+    TRANSFORMS = ()
 
     def __init__(
         self,
@@ -508,8 +509,7 @@ class GimArmEnv(gym.Env):
                     "Waiting 5s and retrying."
                 )
                 time.sleep(5)
-                camera.disconnect()
-                self._open_cameras()
+                camera.reopen()
                 return self._get_camera_frames()
 
         self.camera_player.put_frame(display_frames)

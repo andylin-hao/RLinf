@@ -241,11 +241,9 @@ class FrankaEnv(gym.Env):
         self.robot: Robot | None = None
 
         if not self.config.is_dummy:
-            self._camera_infos = self._build_camera_infos()
             self._setup_hardware()
             self._setup_reward_worker()
-
-        if not hasattr(self, "_camera_infos"):
+        else:
             self._camera_infos = self._build_camera_infos()
 
         # Initialize spaces after camera declarations are available.
@@ -304,6 +302,9 @@ class FrankaEnv(gym.Env):
             self.config.end_effector_type,
             self.config.gripper_type,
         ).value
+        # Hardware discovery may be the source of the camera serials. Build the
+        # declarations only after those values have been applied.
+        self._camera_infos = self._build_camera_infos()
 
         # Default the arm controller to the environment worker's node.
         controller_node_rank = getattr(
@@ -541,7 +542,9 @@ class FrankaEnv(gym.Env):
             )
 
         image_batch = np.expand_dims(frames[image_key], axis=0)
-        reward_output = self._reward_worker.compute_reward({"main_images": image_batch})
+        reward_output = self._reward_worker.compute_reward(
+            {"main_images": image_batch}
+        ).wait()[0]
         if hasattr(reward_output, "detach"):
             reward_output = reward_output.detach().cpu().numpy()
         reward_array = np.asarray(reward_output).reshape(-1)

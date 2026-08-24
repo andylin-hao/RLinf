@@ -133,6 +133,7 @@ class DualFrankaTCPEnv(DualFrankaEnv):
     ) -> None:
         del dt
 
+        targets = []
         for arm in range(2):
             xyz = actions[arm, 0:3]
             rot6d = actions[arm, 3:9]
@@ -144,8 +145,12 @@ class DualFrankaTCPEnv(DualFrankaEnv):
             if float(np.dot(quat, prev_quat)) < 0.0:
                 quat = -quat
             self._prev_step_quat[arm] = quat
+            targets.append(np.concatenate([xyz, quat]).astype(np.float64))
 
-            ctrls[arm].move_tcp_pose(np.concatenate([xyz, quat]).astype(np.float64))
+        self._run_arm_calls(
+            lambda: ctrls[0].move_tcp_pose(targets[0]),
+            lambda: ctrls[1].move_tcp_pose(targets[1]),
+        )
 
     # Observation and pose helpers.
 

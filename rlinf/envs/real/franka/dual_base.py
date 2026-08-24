@@ -18,9 +18,10 @@ from __future__ import annotations
 
 import queue
 import time
+from concurrent.futures import Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
 from itertools import cycle
-from typing import Any, Optional
+from typing import Any, Callable, Optional, TypeVar
 
 import cv2
 import gymnasium as gym
@@ -43,6 +44,8 @@ from rlinf.utils.logging import get_logger
 
 # Keep frame reads shorter than the 10 Hz control period.
 _CAMERA_FRAME_TIMEOUT_S = 0.5
+
+_ArmResult = TypeVar("_ArmResult")
 
 
 @dataclass
@@ -125,6 +128,7 @@ class DualFrankaEnv(gym.Env):
     #: Reject the single-arm gripper-removal flag for dual-arm actions.
     ACTION_WRAPPERS = ()
     REFUSE_FLAGS = ("no_gripper",)
+    REFUSE_DEFAULTS = {"no_gripper": True}
 
     TRANSFORMS = ()
 
@@ -185,6 +189,11 @@ class DualFrankaEnv(gym.Env):
 
         if not self.config.is_dummy:
             self._setup_hardware()
+            # Each arm keeps its own serial command queue
+            self._arm_executors = (
+                ThreadPoolExecutor(max_workers=1, thread_name_prefix="franka-left"),
+                ThreadPoolExecutor(max_workers=1, thread_name_prefix="franka-right"),
+            )
 
         all_serials = self._all_camera_serials()
         assert len(all_serials) > 0, (
@@ -207,8 +216,10 @@ class DualFrankaEnv(gym.Env):
                         label,
                     )
 
-        self._left_state = self._left_ctrl.get_state()
-        self._right_state = self._right_ctrl.get_state()
+        self._left_state, self._right_state = self._run_arm_calls(
+            self._left_ctrl.get_state,
+            self._right_ctrl.get_state,
+        )
 
         # Retain the latest valid frame while an individual camera recovers.
         self._last_camera_frame: dict[str, np.ndarray] = {}
@@ -225,6 +236,9 @@ class DualFrankaEnv(gym.Env):
             self._close_cameras()
         if hasattr(self, "camera_player"):
             self.camera_player.stop()
+        if hasattr(self, "_arm_executors"):
+            for executor in self._arm_executors:
+                executor.shutdown(wait=True)
         if self.robot is not None:
             self.robot.disconnect()
 
@@ -330,9 +344,7 @@ class DualFrankaEnv(gym.Env):
                         f"Camera {name} stalled with no cached frame to fall back to."
                     )
                 self._logger.error("Camera %s stalled; reopening.", name)
-                # Reopen the existing camera to preserve its remote placement.
-                camera.disconnect()
-                camera.connect()
+                camera.reopen()
                 frame = cached
 
             reshape_size = self.observation_space["frames"][name].shape[:2][::-1]
@@ -423,19 +435,66 @@ class DualFrankaEnv(gym.Env):
 
     # Gymnasium reset and step.
 
+    def _run_arm_calls(
+        self,
+        left: Callable[[], _ArmResult],
+        right: Callable[[], _ArmResult],
+    ) -> tuple[_ArmResult, _ArmResult]:
+        """Run one ordered command on each arm and wait for both results."""
+        futures = (
+            self._arm_executors[0].submit(left),
+            self._arm_executors[1].submit(right),
+        )
+        wait(futures)
+        return futures[0].result(), futures[1].result()
+
+    def _submit_arm_calls(
+        self,
+        left: Callable[[], Any],
+        right: Callable[[], Any],
+    ) -> tuple[Future[Any], Future[Any]]:
+        """Queue one command per arm without delaying the control loop."""
+        futures = (
+            self._submit_arm_call(0, left),
+            self._submit_arm_call(1, right),
+        )
+        return futures
+
+    def _submit_arm_call(
+        self, arm: int, call: Callable[[], _ArmResult]
+    ) -> Future[_ArmResult]:
+        """Queue one arm command and report failures without waiting."""
+        future = self._arm_executors[arm].submit(call)
+        side = "left" if arm == 0 else "right"
+        future.add_done_callback(
+            lambda completed: self._log_background_failure(side, completed)
+        )
+        return future
+
+    def _log_background_failure(self, side: str, future: Future[Any]) -> None:
+        """Report an asynchronous arm command that failed."""
+        try:
+            future.result()
+        except Exception as exc:
+            self._logger.warning("%s Franka command failed: %s", side, exc)
+
     def _go_to_rest(self, joint_reset: bool = False) -> None:
         del joint_reset
-        try:
-            self._left_ctrl.open_gripper()
-            self._right_ctrl.open_gripper()
-        except Exception as exc:
-            self._logger.warning("open_gripper during reset failed: %s", exc)
-
-        self._left_ctrl.reset_joint(self.config.joint_reset_qpos[0])
-        self._right_ctrl.reset_joint(self.config.joint_reset_qpos[1])
+        self._submit_arm_calls(
+            self._left_ctrl.open_gripper,
+            self._right_ctrl.open_gripper,
+        )
+        self._submit_arm_calls(
+            lambda: self._left_ctrl.reset_joint(self.config.joint_reset_qpos[0]),
+            lambda: self._right_ctrl.reset_joint(self.config.joint_reset_qpos[1]),
+        )
         time.sleep(0.5)
-        self._left_state = self._left_ctrl.get_state()
-        self._right_state = self._right_ctrl.get_state()
+        # State reads follow the reset on each arm's queue and therefore wait
+        # for it, while the fixed settle delay overlaps the reset as before.
+        self._left_state, self._right_state = self._run_arm_calls(
+            self._left_ctrl.get_state,
+            self._right_ctrl.get_state,
+        )
 
     def reset(
         self, *, seed: Optional[int] = None, options: Optional[dict[str, Any]] = None
@@ -466,8 +525,10 @@ class DualFrankaEnv(gym.Env):
             self._go_to_rest(joint_reset)
         self._clear_errors()
 
-        self._left_state = self._left_ctrl.get_state()
-        self._right_state = self._right_ctrl.get_state()
+        self._left_state, self._right_state = self._run_arm_calls(
+            self._left_ctrl.get_state,
+            self._right_ctrl.get_state,
+        )
         return self._get_observation(), {}
 
     def step(self, action: np.ndarray) -> tuple[Any, float, bool, bool, dict[str, Any]]:
@@ -482,13 +543,14 @@ class DualFrankaEnv(gym.Env):
             ctrls = [self._left_ctrl, self._right_ctrl]
             dt = 1.0 / self.config.step_frequency
 
-            # Send gripper commands before starting the next arm motion.
+            # Queue gripper commands before the next motion on each arm. The
+            # command is intentionally not awaited in the 10 Hz control loop.
             for arm in range(2):
                 gripper_val = (
                     actions[arm, self.GRIPPER_IDX_IN_ARM] * self.config.action_scale[2]
                 )
                 is_gripper_effective[arm] = self._gripper_action(
-                    ctrls[arm], states[arm], gripper_val
+                    arm, ctrls[arm], states[arm], gripper_val
                 )
 
             self._dispatch_arm_motion(actions, states, ctrls, dt)
@@ -498,8 +560,10 @@ class DualFrankaEnv(gym.Env):
             if self._pace_between_action_and_state_read():
                 step_time = time.time() - start_time
                 time.sleep(max(0.0, (1.0 / self.config.step_frequency) - step_time))
-            self._left_state = self._left_ctrl.get_state()
-            self._right_state = self._right_ctrl.get_state()
+            self._left_state, self._right_state = self._run_arm_calls(
+                self._left_ctrl.get_state,
+                self._right_ctrl.get_state,
+            )
 
         observation = self._get_observation()
         reward = self._calc_step_reward(is_gripper_effective)
@@ -510,26 +574,29 @@ class DualFrankaEnv(gym.Env):
         return observation, reward, terminated, truncated, {}
 
     def _clear_errors(self) -> None:
-        self._left_ctrl.clear_errors()
-        self._right_ctrl.clear_errors()
+        self._run_arm_calls(
+            self._left_ctrl.clear_errors,
+            self._right_ctrl.clear_errors,
+        )
 
     # Gripper and state helpers.
 
-    def _gripper_action(self, ctrl: Any, state: Any, position: float) -> bool:
-        # Do not block on gripper settling in the 10 Hz control loop.
+    def _gripper_action(self, arm: int, ctrl: Any, state: Any, position: float) -> bool:
         threshold = self.config.binary_gripper_threshold
         if position <= -threshold and state.gripper_open:
-            ctrl.close_gripper()
+            self._submit_arm_call(arm, ctrl.close_gripper)
             return True
         elif position >= threshold and not state.gripper_open:
-            ctrl.open_gripper()
+            self._submit_arm_call(arm, ctrl.open_gripper)
             return True
         return False
 
     def get_tcp_pose(self) -> np.ndarray:
         """Return concatenated TCP poses ``(14,)`` for both arms."""
-        self._left_state = self._left_ctrl.get_state()
-        self._right_state = self._right_ctrl.get_state()
+        self._left_state, self._right_state = self._run_arm_calls(
+            self._left_ctrl.get_state,
+            self._right_ctrl.get_state,
+        )
         return np.concatenate([self._left_state.tcp_pose, self._right_state.tcp_pose])
 
     def get_action_scale(self) -> np.ndarray:

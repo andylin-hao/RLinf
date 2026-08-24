@@ -75,6 +75,23 @@ class DualGelloJointStream(TeleopStreamer):
         inner = env.unwrapped
         return getattr(inner, "_left_ctrl", None), getattr(inner, "_right_ctrl", None)
 
+    @staticmethod
+    def _run_both(env: gym.Env, left: Any, right: Any) -> tuple[Any, Any]:
+        """Run paired controller calls through the env's arm queues."""
+        run = getattr(env.unwrapped, "_run_arm_calls", None)
+        if callable(run):
+            return run(left, right)
+        return left(), right()
+
+    @staticmethod
+    def _submit_one(env: gym.Env, arm: int, call: Any) -> None:
+        """Queue a gripper edge without delaying the stream."""
+        submit = getattr(env.unwrapped, "_submit_arm_call", None)
+        if callable(submit):
+            submit(arm, call)
+        else:
+            call()
+
     def ready_to_stream(self, env: gym.Env) -> bool:
         """Return whether both follower controllers are available."""
         return self._controllers(env) != (None, None)
@@ -103,11 +120,21 @@ class DualGelloJointStream(TeleopStreamer):
         if left_ctrl is None or right_ctrl is None:
             return False
         left_q, _, right_q, _ = self._joints()
-        left_ctrl.reset_joint(np.asarray(left_q, dtype=np.float64).tolist())
-        right_ctrl.reset_joint(np.asarray(right_q, dtype=np.float64).tolist())
+        self._run_both(
+            env,
+            lambda: left_ctrl.reset_joint(
+                np.asarray(left_q, dtype=np.float64).tolist()
+            ),
+            lambda: right_ctrl.reset_joint(
+                np.asarray(right_q, dtype=np.float64).tolist()
+            ),
+        )
         inner = env.unwrapped
-        inner._left_state = left_ctrl.get_state()
-        inner._right_state = right_ctrl.get_state()
+        inner._left_state, inner._right_state = self._run_both(
+            env,
+            left_ctrl.get_state,
+            right_ctrl.get_state,
+        )
         return True
 
     def stream_once(self, env: gym.Env) -> None:
@@ -120,8 +147,11 @@ class DualGelloJointStream(TeleopStreamer):
             return
 
         left_q, left_g, right_q, right_g = self._joints()
-        left_ctrl.move_joints(left_q.astype(np.float32))
-        right_ctrl.move_joints(right_q.astype(np.float32))
+        self._run_both(
+            env,
+            lambda: left_ctrl.move_joints(left_q.astype(np.float32)),
+            lambda: right_ctrl.move_joints(right_q.astype(np.float32)),
+        )
 
         if not self.gripper_enabled:
             return
@@ -132,7 +162,8 @@ class DualGelloJointStream(TeleopStreamer):
             if self._last_open[index] is None:
                 self._last_open[index] = is_open
             elif is_open != self._last_open[index]:
-                ctrl.open_gripper() if is_open else ctrl.close_gripper()
+                call = ctrl.open_gripper if is_open else ctrl.close_gripper
+                self._submit_one(env, index, call)
                 self._last_open[index] = is_open
 
     def close(self) -> None:

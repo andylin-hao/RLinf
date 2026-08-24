@@ -19,8 +19,10 @@ from __future__ import annotations
 import importlib
 import re
 import sys
+import threading
 import time
 import warnings
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Optional
@@ -259,6 +261,188 @@ def test_turtle2_dummy_preserves_legacy_policy_schema():
     assert env.action_space.shape == (7,)
     assert env.robot is None
     _assert_legacy_transition(env)
+
+
+def test_franka_builds_cameras_after_applying_hardware_info(monkeypatch):
+    from rlinf.envs.real.franka.base import FrankaRobotConfig
+    from rlinf.robotics import FrankaConfig, RobotInfo
+    from rlinf.robotics.robots.franka import FrankaRobot
+
+    captured = {}
+
+    class BuiltRobot:
+        def connect(self):
+            pass
+
+        def child(self, name):
+            assert name == "arm"
+            return SimpleNamespace(owner=object())
+
+    def build(**kwargs):
+        captured.update(kwargs)
+        return BuiltRobot()
+
+    monkeypatch.setattr(FrankaRobot, "build", build)
+    env = FrankaEnv.__new__(FrankaEnv)
+    env.config = FrankaRobotConfig(camera_serials=None, camera_type=None)
+    env.robot_info = RobotInfo(
+        type="Robot",
+        model="Franka",
+        config=FrankaConfig(
+            node_rank=0,
+            robot_ip="10.0.0.1",
+            camera_serials=["hardware-camera"],
+        ),
+    )
+    env.env_idx = 0
+    env.node_rank = 0
+    env.env_worker_rank = 3
+
+    env._setup_hardware()
+
+    assert [info.serial_number for info in env._camera_infos] == ["hardware-camera"]
+    assert list(captured["cameras"]) == ["wrist_1"]
+
+
+def test_gim_arm_reopens_the_existing_camera_after_a_stall(monkeypatch):
+    from rlinf.robotics.parts.cameras import CameraInfo
+
+    class Camera:
+        def __init__(self):
+            self._camera_info = CameraInfo("wrist_1", "camera")
+            self.reads = 0
+            self.reopens = 0
+
+        def get_frame(self):
+            self.reads += 1
+            if self.reads == 1:
+                raise __import__("queue").Empty
+            return np.zeros((8, 8, 3), dtype=np.uint8)
+
+        def reopen(self):
+            self.reopens += 1
+
+    env = GimArmEnv.__new__(GimArmEnv)
+    camera = Camera()
+    env._cameras = [camera]
+    env._logger = SimpleNamespace(warning=lambda *args, **kwargs: None)
+    env.camera_player = SimpleNamespace(put_frame=lambda frames: None)
+    env.observation_space = gym.spaces.Dict(
+        {
+            "frames": gym.spaces.Dict(
+                {"wrist_1": gym.spaces.Box(0, 255, shape=(4, 4, 3), dtype=np.uint8)}
+            )
+        }
+    )
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+
+    frames = env._get_camera_frames()
+
+    assert camera.reopens == 1
+    assert frames["wrist_1"].shape == (4, 4, 3)
+
+
+def test_dual_franka_runs_independent_arm_calls_concurrently():
+    env = DualFrankaJointEnv.__new__(DualFrankaJointEnv)
+    env._arm_executors = (
+        ThreadPoolExecutor(max_workers=1),
+        ThreadPoolExecutor(max_workers=1),
+    )
+    rendezvous = threading.Barrier(2)
+
+    def call(side):
+        rendezvous.wait(timeout=1.0)
+        return side
+
+    try:
+        assert env._run_arm_calls(lambda: call("left"), lambda: call("right")) == (
+            "left",
+            "right",
+        )
+    finally:
+        for executor in env._arm_executors:
+            executor.shutdown(wait=True)
+
+
+def test_dual_franka_does_not_wait_for_gripper_motion():
+    env = DualFrankaJointEnv.__new__(DualFrankaJointEnv)
+    env.config = SimpleNamespace(binary_gripper_threshold=0.5)
+    env._logger = SimpleNamespace(warning=lambda *args, **kwargs: None)
+    env._arm_executors = (
+        ThreadPoolExecutor(max_workers=1),
+        ThreadPoolExecutor(max_workers=1),
+    )
+    entered = threading.Event()
+    release = threading.Event()
+
+    class Controller:
+        def close_gripper(self):
+            entered.set()
+            assert release.wait(timeout=1.0)
+
+    try:
+        changed = env._gripper_action(
+            0,
+            Controller(),
+            SimpleNamespace(gripper_open=True),
+            -1.0,
+        )
+        assert changed
+        assert entered.wait(timeout=1.0)
+        assert not release.is_set(), "the control loop must not wait for the gripper"
+    finally:
+        release.set()
+        for executor in env._arm_executors:
+            executor.shutdown(wait=True)
+
+
+def test_franka_reward_model_waits_for_the_worker_result():
+    class Work:
+        def wait(self):
+            return [np.array([0.75], dtype=np.float32)]
+
+    env = FrankaEnv.__new__(FrankaEnv)
+    env.config = SimpleNamespace(reward_image_key=None)
+    env._reward_worker = SimpleNamespace(compute_reward=lambda _batch: Work())
+
+    reward = env._compute_reward_model(
+        {"frames": {"wrist_1": np.zeros((4, 4, 3), dtype=np.uint8)}}
+    )
+
+    assert reward == pytest.approx(0.75)
+
+
+def test_direct_gello_stream_keeps_both_arm_commands_concurrent():
+    from rlinf.envs.real.wrappers.teleop.adapters import DualGelloJointStream
+
+    rendezvous = threading.Barrier(2)
+
+    class Controller:
+        def move_joints(self, _target):
+            rendezvous.wait(timeout=1.0)
+
+    class Leader:
+        ready = True
+
+        def get_observation(self):
+            return {"joint_position": np.zeros(7), "grip": np.zeros(1)}
+
+    env = DualFrankaJointEnv.__new__(DualFrankaJointEnv)
+    env._left_ctrl = Controller()
+    env._right_ctrl = Controller()
+    env._arm_executors = (
+        ThreadPoolExecutor(max_workers=1),
+        ThreadPoolExecutor(max_workers=1),
+    )
+    streamer = DualGelloJointStream(
+        Leader(), Leader(), gripper_enabled=False, direct_stream=False
+    )
+
+    try:
+        streamer.stream_once(env)
+    finally:
+        for executor in env._arm_executors:
+            executor.shutdown(wait=True)
 
 
 class FakeEnv:
@@ -983,6 +1167,64 @@ def test_no_gripper_narrows_the_action_the_policy_must_produce():
     assert "GripperCloseEnv" in _chain(wrapped)
     assert wrapped.action_space.shape == (6,)
     wrapped.close()
+
+
+def test_the_no_gripper_default_does_not_wrap_a_dexterous_hand():
+    from rlinf.envs.real.wrappers import build_stack
+
+    wrapped = build_stack(
+        _dummy_franka(
+            end_effector_type="ruiyan_hand",
+            hand_target_state=np.zeros(6),
+            hand_reset_state=np.zeros(6),
+        ),
+        {"teleop": "none", "use_relative_frame": False},
+    )
+
+    assert "GripperCloseEnv" not in _chain(wrapped)
+    assert wrapped.action_space.shape == (12,)
+    wrapped.close()
+
+
+def test_gim_arm_keeps_the_unwrapped_legacy_action_and_observation_schema():
+    from rlinf.envs.real.gim_arm.base import GimArmEnv, GimArmRobotConfig
+    from rlinf.envs.real.wrappers import build_stack
+
+    env = GimArmEnv(
+        config=GimArmRobotConfig(is_dummy=True),
+        worker_info=None,
+        robot_info=None,
+        env_idx=0,
+    )
+    wrapped = build_stack(env, {})
+
+    assert wrapped is env
+    assert wrapped.action_space.shape == (7,)
+    assert wrapped.observation_space["state"]["tcp_pose"].shape == (7,)
+    wrapped.close()
+
+
+def test_dual_franka_keeps_the_legacy_no_gripper_default():
+    from rlinf.envs.real.franka.dual_franka_joint import DualFrankaJointEnv
+    from rlinf.envs.real.wrappers import build_stack
+
+    env = DualFrankaJointEnv(
+        override_cfg={
+            "is_dummy": True,
+            "base_camera_serials": ["dummy"],
+            "left_camera_serials": [],
+            "right_camera_serials": [],
+            "enable_camera_player": False,
+            "step_frequency": 10000.0,
+        },
+        worker_info=None,
+        robot_info=None,
+        env_idx=0,
+    )
+
+    with pytest.raises(NotImplementedError, match="no_gripper"):
+        build_stack(env, {"teleop": "none"})
+    env.close()
 
 
 def test_a_task_env_runs_with_its_own_config():
