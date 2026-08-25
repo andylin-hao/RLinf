@@ -1,10 +1,10 @@
-Robotics Model
-==============
+Robot Composition
+=================
 
 A robot is a tree of named parts. Each part exposes observations and may also
 accept actions.
 
-That is the only model you need when writing a task or using an existing robot.
+That is all you need when writing a task or using an existing robot.
 An arm, gripper, camera, or mobile base occupies one path in the tree. That path
 appears in observations and, when the part is controllable, in actions.
 

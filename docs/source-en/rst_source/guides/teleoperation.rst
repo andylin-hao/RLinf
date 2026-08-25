@@ -7,7 +7,7 @@ device and verify its readings. Then add a binding to the robot's named action
 parts; only after that works should you combine devices. This page also explains
 the current placement boundary for standalone and environment-owned devices.
 
-This page follows that order. For the underlying named-part model, see
+This page follows that order. For the underlying robot composition, see
 :doc:`../concepts/robotics`.
 
 Choose a Device
@@ -231,8 +231,8 @@ that takes effect, and the warning names what it replaced.
 Next
 ----
 
-- :doc:`Robotics Model <../concepts/robotics>`: the named robot paths targeted
+- :doc:`Robot Composition <../concepts/robotics>`: the named robot paths targeted
   by device bindings.
-- :doc:`Real-World Environment Model <../concepts/realworld_envs>`: where teleop
+- :doc:`Real-World Tasks and Environments <../concepts/realworld_envs>`: where teleop
   sits in the wrapper stack.
 - :doc:`Data Collection <data_collection>`: recording what an operator drove.

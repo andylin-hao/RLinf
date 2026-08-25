@@ -6,8 +6,8 @@ This page follows that tree down to hardware connections and across machine
 boundaries. Read it when you are adding a device, sharing one connection between
 several parts, or debugging placement and cleanup.
 
-Start from the Public Model
----------------------------
+Start from the Robot's Public Structure
+---------------------------------------
 
 Start with the common one-to-one case: one hardware connection represents one
 logical part. A mobile base can enter the robot tree directly:

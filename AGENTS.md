@@ -126,6 +126,46 @@ For debugging (breakpoints, rendering/EGL, network, NCCL/CUDA, timeouts), see th
 
 ## Style and contributing
 
+### Engineering and review preferences
+
+Use these preferences when designing, refactoring, implementing, or reviewing
+RLinf:
+
+- Preserve behavior before simplifying an implementation. Trace the complete
+  call path and compare every affected backend, driver, environment, and task
+  with the baseline. Treat a difference as intentional only when it is named,
+  documented, and tested. Do not call a parameter or field vestigial until its
+  builders, defaulting paths, serialization, and runtime consumers have been
+  checked.
+- Prefer small, explicit, composable abstractions. Give each concept one clear
+  responsibility and one stable name; avoid parallel vocabularies, convenience
+  APIs that conceal ownership, and dynamic machinery that a direct constructor
+  or method can express. Use a registry when independently developed components
+  need extension without adding branches to a central factory.
+- Design invalid states out of the API when practical. Resource ownership,
+  lifecycle order, partial-failure rollback, cleanup, and reconnect behavior
+  should be explicit. Cleanup must be idempotent, and a resource must have one
+  clear owner.
+- Optimize public APIs for developers who do not know the scheduler or hardware
+  internals. Keep the common local path direct; introduce remote placement,
+  process boundaries, and resource sharing only when the task requires them.
+  Public names, accepted input types, return types, and constructor forms must be
+  discoverable from type hints and docstrings.
+- Evaluate an abstraction through composition and extension, not only through
+  its smallest example. A new component should combine with existing components
+  without special-case wiring and should work through the same user-facing API
+  in local and remote configurations.
+- Review the whole affected surface, not only the newest diff. For cross-cutting
+  refactors, inspect every implementation, handle, builder, task, environment,
+  test, and documentation path that participates in the contract.
+- Verify contracts at the appropriate layers: focused regression tests,
+  reusable conformance suites, mock SDK tests, local/remote parity checks, and
+  end-to-end tests where hardware or integration behavior matters.
+- Keep docstrings and comments concise and natural. Document the public
+  contract, invariants, ownership, and non-obvious reasons; do not narrate the
+  implementation, repeat the signature, advertise the design, or mention an
+  absent dependency unless that fact changes how a caller uses the code.
+
 ### Writing and communication
 
 These rules apply to all language communication in the project, including
@@ -141,6 +181,18 @@ release notes, commit messages, and user-facing replies.
   config, or API name, connect it to one example, and add edge cases only after
   the normal path is clear. Headings must be understandable before their sections
   are read; do not introduce an unexplained implementation term in a heading.
+- Guide readers from common use to implementation detail. Show the normal local
+  workflow first, then a common extension, composition with existing components,
+  remote or distributed use, and finally ownership or scheduler internals. Do
+  not make the table of contents mirror an internal class hierarchy.
+- Use examples that complete a real workflow. When explaining an extensible
+  abstraction, show how the new component composes with an existing one, how a
+  caller reads or controls it, and how it participates in the relevant task or
+  environment. An isolated class definition is not sufficient.
+- Treat technical accuracy as part of writing quality. Check signatures, types,
+  return values, lifecycle behavior, configuration names, and call sites against
+  the code. If an API accepts two related types, explain what each represents and
+  why both are accepted before using them interchangeably in examples.
 - Write English directly and precisely. Prefer concrete nouns and verbs, vary
   sentence and paragraph shape, and avoid chatty transitions, promotional
   summaries, and formulaic prose.

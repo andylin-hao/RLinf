@@ -6,7 +6,7 @@ drives the resulting mobile manipulator through a real-world Gymnasium
 environment. The example starts with the base in one process. Placement and
 hardware discovery come only after its observations and actions work locally.
 
-Before continuing, read :doc:`Robotics Model <../concepts/robotics>`. If RLinf
+Before continuing, read :doc:`Robot Composition <../concepts/robotics>`. If RLinf
 already knows how to connect the hardware and you only need a new reward, reset,
 or success condition, follow :doc:`New Real-World Tasks <new_task>` instead.
 

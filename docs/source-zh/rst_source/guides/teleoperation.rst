@@ -170,6 +170,6 @@ builder 会先构建所有 backend entry，再创建 streamer。streamer 可能�
 后续阅读
 --------
 
-- :doc:`机器人模型 <../concepts/robotics>`：了解 binding 所引用的零部件路径。
-- :doc:`真机环境模型 <../concepts/realworld_envs>`：了解遥操作在 wrapper 栈中的位置。
+- :doc:`机器人组成 <../concepts/robotics>`：了解 binding 所引用的零部件路径。
+- :doc:`真机任务与环境 <../concepts/realworld_envs>`：了解遥操作在 wrapper 栈中的位置。
 - :doc:`数据采集 <data_collection>`：记录操作者动作。

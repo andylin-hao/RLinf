@@ -35,20 +35,34 @@ When the two disagree, the style guide wins.
      the aligned card schema for that gallery subsection.
    - **Concept / guide / reference / extending prose page** → outcome-first intro,
      short sections, link out instead of inlining reference material.
-4. **Apply the voice rules** to every paragraph: second person, imperative,
+4. **Inspect the implementation behind the page.** Verify public signatures,
+   accepted input types, concrete return types, lifecycle behavior, config names,
+   and representative call sites. When two related types are accepted by one
+   API, explain what each represents and why both forms are valid. Pair this pass
+   with **docs-check** for broader doc-to-code validation.
+5. **Plan progressive disclosure across the page.** Lead with the normal local
+   workflow, then the common extension, composition with existing components,
+   remote or distributed use, and finally ownership or scheduler internals. Use
+   only the stages that fit the topic, but do not use the internal class hierarchy
+   as the teaching outline.
+6. **Apply the voice rules** to every paragraph: second person, imperative,
    outcome first, no throat-clearing, short sentences, annotate non-trivial
    commands ("What this does: 1… 2…").
    - Explain before naming: concrete situation → ordinary-language distinction →
      exact API term → example → edge cases.
    - A heading must be understandable before its section is read. Do not put an
      unexplained implementation term in a heading and define it below.
-5. **Fix structure and labels:** Title Case headings + standard names, one H1 per
+7. **Make examples demonstrate use, not only syntax.** For an extensible
+   abstraction, show how the new component composes with an existing one, how a
+   caller reads or controls it, and how it participates in the relevant task or
+   environment.
+8. **Fix structure and labels:** Title Case headings + standard names, one H1 per
    page, bare nav captions, cards/tables instead of bullet walls, footguns in a
    `warning`, correct axis ownership/placement.
-6. **De-duplicate:** link to the canonical Reference / Evaluation page instead of
+9. **De-duplicate:** link to the canonical Reference / Evaluation page instead of
    re-explaining; if identical prose/commands repeat across 3+ pages, extract an
    underscore include partial (`_name.rst`).
-7. **Keep EN ↔ ZH parity:** same structure and (translated) headings; identical,
+10. **Keep EN ↔ ZH parity:** same structure and (translated) headings; identical,
    untranslated code identifiers (config keys, CLI flags, env/model names); stable
    `:doc:` / `:ref:` links (no hardcoded ReadTheDocs URLs); never glue `**bold**`
    directly between CJK characters.
@@ -59,7 +73,7 @@ When the two disagree, the style guide wins.
    reStructuredText renders a hard wrap inside prose as a visible space, which
    leaves an unnatural gap between Chinese characters. Keep structural line
    breaks in headings, directives, tables, and code blocks.
-8. **Verify (the gate)** — see below.
+11. **Verify (the gate)** — see below.
 
 ## Natural-language gate
 
@@ -85,6 +99,11 @@ When the two disagree, the style guide wins.
 **Any page**
 - [ ] Opens with the outcome, second person, no throat-clearing.
 - [ ] New terms are explained before they appear in headings, cards, or tables.
+- [ ] Public types, return values, lifecycle statements, and config names match
+      the implementation and representative call sites.
+- [ ] The normal workflow precedes composition, remote operation, and internals.
+- [ ] Extension examples compose with existing components and reach a real caller,
+      task, or environment.
 - [ ] One H1; Title Case headings; standard section names where applicable.
 - [ ] EN and ZH updated together; code tokens identical; no CJK-glued `**bold**`.
 - [ ] ZH preserves meaning without mirroring EN sentence by sentence.

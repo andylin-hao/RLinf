@@ -1,9 +1,9 @@
 Concepts
 ========
 
-Use Concepts to build a mental model before you tune placement, workers,
-communication, or hardware. Start with the overview for the layer you use;
-follow its architecture link only when you need to extend or debug that layer.
+Use Concepts to understand how RLinf executes work, schedules components, and
+organizes robot hardware. Start with the area closest to your current question;
+follow its architecture links only when you need to extend or debug that layer.
 
 Choose a Concept Area
 ---------------------
@@ -11,19 +11,19 @@ Choose a Concept Area
 .. grid:: 1 2 2 2
    :gutter: 2
 
-   .. grid-item-card:: Execution Model
+   .. grid-item-card:: Execution
       :link: execution-model/index
       :link-type: doc
 
       Understand job flow, workers, clusters, channels, and collectives.
 
-   .. grid-item-card:: Scheduling Model
+   .. grid-item-card:: Scheduling
       :link: scheduling-model/index
       :link-type: doc
 
       Understand placement strategies, execution modes, and replay buffers.
 
-   .. grid-item-card:: Robotics Model
+   .. grid-item-card:: Robot Composition
       :link: robotics
       :link-type: doc
 
@@ -35,7 +35,7 @@ Choose a Concept Area
 
       Trace shared connections, lifecycle, and remote placement.
 
-   .. grid-item-card:: Real-World Environment Model
+   .. grid-item-card:: Real-World Tasks and Environments
       :link: realworld_envs
       :link-type: doc
 
@@ -44,8 +44,8 @@ Choose a Concept Area
 .. toctree::
    :hidden:
 
-   Execution Model <execution-model/index>
-   Scheduling Model <scheduling-model/index>
-   Robotics Model <robotics>
+   Execution <execution-model/index>
+   Scheduling <scheduling-model/index>
+   Robot Composition <robotics>
    Robotics Architecture <robotics_architecture>
-   Real-World Environment Model <realworld_envs>
+   Real-World Tasks and Environments <realworld_envs>

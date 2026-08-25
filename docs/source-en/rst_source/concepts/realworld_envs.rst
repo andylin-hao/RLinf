@@ -1,5 +1,5 @@
-Real-World Environment Model
-============================
+Real-World Tasks and Environments
+=================================
 
 A real-world environment joins a robot to one task. It then adds the rollout
 behavior that should remain outside both of them: operator intervention, manual
@@ -10,9 +10,9 @@ question closest to the robot: is it about sensing or motion, about success and
 reset, or about how a rollout is presented? The answer determines whether you
 change a part, a task, or a wrapper.
 
-If the named-part model is new to you, read :doc:`robotics` first. This page
-starts at the environment boundary and follows one task out through its wrapper
-stack.
+If the robot's named-part structure is new to you, read :doc:`robotics` first.
+This page starts at the environment boundary and follows one task out through
+its wrapper stack.
 
 A Task Is a Config and a Few Overrides
 --------------------------------------
@@ -245,4 +245,4 @@ Next
 ----
 
 - :doc:`New Real-World Tasks <../extending/new_task>`: follow the step-by-step guide.
-- :doc:`Robotics Model <robotics>`: how the robot underneath is composed.
+- :doc:`Robot Composition <robotics>`: how the robot underneath is composed.

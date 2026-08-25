@@ -47,6 +47,45 @@ This is progressive disclosure at sentence level. It is not a reason to hide
 precise names: once the idea is clear, use the real identifier consistently so
 readers can search for it in code.
 
+### Guide the reader from use to internals
+
+Progressive disclosure also determines the order of a whole page. Begin with the
+path most readers need and introduce system details only when they explain the
+next task. For an extensible system, use this sequence when it fits the topic:
+
+1. Use an existing component through the public API.
+2. Add one component in the normal local configuration.
+3. Compose it with components that already exist.
+4. Show the remote or distributed form without changing the caller's mental
+   model.
+5. Explain ownership, placement, connection management, or scheduler internals.
+
+Do not use an internal class hierarchy as the teaching outline. Related API
+terms such as ``exports`` and ``children`` may appear in code, but prose must
+first explain what each collection contains, how the two differ, and what type
+the corresponding method returns. Readers should never need to reverse-engineer
+a title or example before they can understand the distinction it is meant to
+teach.
+
+Examples should close the loop from declaration to use. When a page adds an
+extensible component, show how it combines with an existing component, how the
+application reads or controls it, and where it enters a real task or environment.
+An isolated class definition demonstrates syntax, not composability.
+
+### Technical accuracy is part of the prose
+
+Documentation is a user-facing description of the code's contract. Check public
+signatures, accepted input types, concrete return types, lifecycle behavior,
+configuration names, and call sites before describing them. If a constructor
+accepts two related types, explain what each type represents and why both forms
+are valid. Do not infer behavior from a class or field name, and do not describe
+an intended design when the implementation still behaves differently.
+
+For a behavior-preserving refactor, compare every affected path with the
+baseline and state the intentional differences. Update examples and conceptual
+pages in the same change when a public name, type relationship, ownership rule,
+or lifecycle changes.
+
 ### Explanatory pages: Concepts and Guides
 
 Recipes, index pages, and reference tables should stay terse — a reader scanning
@@ -141,7 +180,7 @@ established groupings:
 
 - **Guides:** Configure · Launch & Scale · Data & Checkpoints · Performance · Hardware Backends · Agent Workflows.
 - **Reference:** API · Algorithms · Configuration · Evaluation Reference.
-- **Concepts:** Execution Model · Scheduling Model.
+- **Concepts:** Execution · Scheduling.
 - **Extending:** keep the primary add-component pages (New Environment, New Model with FSDP, New Model with Megatron, New SFT Model) as immediate children; group only advanced topics under Advanced Integrations (Megatron-Bridge, weight synchronization, reward-model workflow).
 - **Examples** keeps its own gallery category structure — do not regroup it.
 
