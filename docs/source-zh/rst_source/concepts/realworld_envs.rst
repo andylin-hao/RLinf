@@ -3,7 +3,7 @@
 
 真机环境将机器人与任务组合，并在外层添加遥操作、人工结果标记和数据转换等 wrapper。
 
-新增逻辑时，可根据职责确定代码位置：直接读写硬件的逻辑属于部件；奖励、成功条件和复位流程属于任务；只改变 rollout 控制方式或数据表示的逻辑属于 wrapper。若尚未了解部件树模型，请先阅读 :doc:`robotics`。
+新增逻辑时，可根据职责确定代码位置：直接读写硬件的逻辑属于机器人零部件；奖励、成功条件和复位流程属于任务；只改变 rollout 控制方式或数据表示的逻辑属于 wrapper。若尚未了解零部件如何组合，请先阅读 :doc:`robotics`。
 
 任务由配置和少量覆盖组成
 --------------------------
@@ -77,11 +77,11 @@ wrapper 根据所承担的职责划分目录：
 在环境侧处理动作接管
 --------------------
 
-:doc:`遥操作指南 <../guides/teleoperation>` 介绍设备选择和 binding。环境侧处理两个问题：在相邻采样之间保持接管状态，以及将按部件名称返回的动作写入环境使用的扁平 action vector。
+:doc:`遥操作指南 <../guides/teleoperation>` 介绍设备选择和 binding。环境侧处理两个问题：在相邻采样之间保持接管状态，以及将以零部件名称为 key 的动作写入环境使用的扁平 action vector。
 
 ``TeleopIntervention`` 会在短时间内保留最近一次操作者动作，避免两次设备采样之间切回 policy。PICO 使用 grip 明确标识接管区间，因此将 ``timeout`` 设为 0，并在松开后立即交还控制权。数据采集器从 ``intervene_action`` 读取仲裁后的动作。
 
-``TeleopGroup`` 按部件名称返回动作，而环境接收扁平向量。``ComposedTeleop`` 根据环境声明的布局写入各部件动作；未由操作者控制的部分保留 policy 输出。
+``TeleopGroup`` 按零部件名称返回动作，而环境接收扁平向量。``ComposedTeleop`` 根据环境声明的布局，将各零部件的动作写入对应区间；未由操作者控制的部分保留 policy 输出。
 
 布局还声明动作语义。``FrankaEnv`` 将前六个数解释为位姿增量，``GimArmEnv`` 则将其解释为关节角。两者宽度相同，但 SpaceMouse 只能匹配前者。binding 与环境声明的动作类型不一致时，系统会在构建阶段报错。
 
@@ -106,10 +106,10 @@ wrapper 根据所承担的职责划分目录：
 遥操作代码按以下职责分层：
 
 - ``robotics/parts/teleop/readers/``：直接读取串口设备、HID 设备和头显。
-- ``robotics/parts/teleop/devices.py``：将 reader 封装为 ``TeleopPart``，并提供与其他部件一致的连接、观测和断开接口。
-- ``robotics/teleop/bindings.py``：声明设备读数对应的机器人动作部件。
+- ``robotics/parts/teleop/devices.py``：将 reader 封装为 ``TeleopPart``，并提供与机器人零部件一致的连接、观测和断开接口。
+- ``robotics/teleop/bindings.py``：声明设备读数对应哪些机器人动作，以及每项动作的语义。
 - ``real/wrappers/teleop/backends.py``：将配置名称注册到相应的设备与 binding 组合。
-- ``real/wrappers/teleop/builder.py``：解析配置请求的名称；``composed.py`` 再根据部件名称，将动作写入 env 声明的扁平 action vector。
+- ``real/wrappers/teleop/builder.py``：解析配置中的设备名称；``composed.py`` 再根据零部件名称，将动作写入 env 声明的扁平 action vector。
 
 排查线缆或设备权限时，可单独运行 reader，无需启动机器人。同一台物理设备也可以通过不同的 binding 接入另一种动作空间。backend registry 保留在 env 层，是因为名称解析同时依赖 env 配置和该 env 声明的动作语义；如果将其放入 robotics 层，硬件 reader 将反向依赖 Gymnasium 配置。
 
@@ -121,7 +121,7 @@ wrapper 根据所承担的职责划分目录：
 
 遥操作设备本身也是 :class:`~rlinf.robotics.parts.base.RobotPart`。:class:`~rlinf.robotics.parts.teleop.devices.TeleopPart` 直接继承该类，因此沿用标准连接生命周期。构造设备时不会访问硬件；wrapper stack 启动后，``TeleopGroup.connect()`` 才会依次打开设备。
 
-遥操作设备虽然继承 ``RobotPart``，但不属于机器人部件树。主臂读取操作者输入，而非机器人状态，因此 policy 不会观测该设备。设备控制哪些机器人部件，由环境侧的 binding 决定。这个边界也影响 placement：内置遥操作构建器在 env 进程中打开设备，不会经过 ``Robot.connect()``。手动部署独立设备前，请先阅读 :doc:`遥操作指南 <../guides/teleoperation>`。
+遥操作设备在类型上继承 ``RobotPart``，但不会加入 ``Robot`` 的组合结构。主臂读取操作者输入，而非机器人状态，因此 policy 不会观测该设备。设备控制哪些机器人零部件，由环境侧的 binding 决定。这个边界也影响 placement：内置遥操作构建器在 env 进程中打开设备，不会经过 ``Robot.connect()``。手动部署独立设备前，请先阅读 :doc:`遥操作指南 <../guides/teleoperation>`。
 
 将 episode 控制置于独立层
 -------------------------
@@ -153,7 +153,7 @@ wrapper 根据所承担的职责划分目录：
    * - ``real/<robot>/``
      - 每个任务对应一个模块；``base.py`` 保存公共逻辑，``__init__.py`` 保存 ``TASKS`` 映射。
    * - ``robotics/parts/teleop/``
-     - 操作者设备及其部件接口；底层 ``readers/`` 不依赖 Gymnasium。
+     - 操作者设备及其 ``RobotPart`` 接口；底层 ``readers/`` 不依赖 Gymnasium。
    * - ``robotics/teleop/``
      - binding、动作含义和 ``TeleopGroup`` 组合。
    * - ``real/wrappers/teleop/``
@@ -175,4 +175,4 @@ wrapper 根据所承担的职责划分目录：
 --------
 
 - :doc:`新增真机任务 <../extending/new_task>`：按步骤接入新的真机任务。
-- :doc:`机器人模型 <robotics>`：了解机器人的部件树及其组合方式。
+- :doc:`机器人模型 <robotics>`：了解零部件名称、访问路径及组合方式。

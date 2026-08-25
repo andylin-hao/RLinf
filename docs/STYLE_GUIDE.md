@@ -409,6 +409,7 @@ Conventions, on every page:
 - 开发者日常使用的英文词不必硬译，例如 policy、key、value、mapping、endpoint、worker、binding、
   wrapper、mock SDK、contract、shape、schema 和 API。先用中文解释它在当前场景中的作用，
   再保留代码里能搜索到的名称。
+- Robotics 文档中，表示机械臂、夹爪、相机等 ``RobotPart`` 时统一使用「零部件」。不要将所有 part 都机械地翻译为「零部件」：``action_parts`` 中的 part 按语境写成「动作项」或「对应的机器人动作」。介绍组合模型时，优先说明「零部件的名称、层级和访问路径」，避免「按名称组织的部件树」「对外公开的部件树」等抽象且冗长的表达；API 名 ``parts`` 和 ``children`` 保留原文，分别解释为 connection 支持的零部件和组合中的直接下一级。
 - 标题只写读者已经理解的任务或概念。不要先在标题中抛出 ``exports``、``children`` 一类
   实现名，再到正文里补定义。
 - 少用「本节将」「接下来」「此时」「因此」「这样就能」「值得注意的是」串联每一段。

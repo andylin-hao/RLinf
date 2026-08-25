@@ -29,7 +29,7 @@ ZeroMQ 发布，RLinf 中的 PICO intervention wrapper 订阅该数据流，并�
      - Actor、rollout、可选相机采集
      - NVIDIA GPU、RLinf
    * - **Franka 控制节点** (node 1 或单节点)
-     - Franka 机械臂部件、env worker、VR 数据订阅
+     - Franka 机械臂、env worker、VR 数据订阅
      - Franka、ROS Noetic、serl_franka_controllers、pyzmq
    * - **VR / PICO PC**
      - 运行 XRoboToolkit 和 VR 数据发布进程

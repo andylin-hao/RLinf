@@ -8,7 +8,7 @@
 1. 在本地实现移动底盘
 ----------------------
 
-移动底盘是一个可控制部件：它报告自身位姿，并接收速度命令。实现时继承 ``MobileBase``，让类本身直接表明设备类别。厂商 SDK 应在 ``_open()`` 中导入；只导入该模块而不连接硬件的节点无需安装 SDK。
+移动底盘是一个可控零部件：它报告自身位姿，并接收速度命令。实现时继承 ``MobileBase``，让类本身直接表明设备类别。厂商 SDK 应在 ``_open()`` 中导入；只导入该模块而不连接硬件的节点无需安装 SDK。
 
 .. code-block:: python
 
@@ -66,7 +66,7 @@
 
 这里约定 ``pose`` 为 ``[x, y, yaw]``，``velocity`` 为 ``[linear_velocity, angular_velocity]``。这些名称和单位会进入任务、policy 与数据集，因此应采用长期稳定的规范字段，而不是直接暴露厂商 SDK 的方法名。
 
-与其他部件组合前，先单独连接并控制底盘：
+与其他零部件组合前，先单独连接并控制底盘：
 
 .. code-block:: python
 
@@ -89,7 +89,7 @@
 2. 与现有机械臂组合
 --------------------
 
-移动底盘不应附带另一套机械臂驱动。可以直接复用现有 Franka connection 中的部件，将底盘、机械臂和末端执行器组合为一个移动操作机器人：
+移动底盘不应附带另一套机械臂驱动。可以直接复用现有 Franka connection 提供的零部件，将底盘、机械臂和末端执行器组合为一个移动操作机器人：
 
 .. code-block:: python
 
@@ -115,15 +115,15 @@
        arm=arm_connection,
    )
 
-底盘和 Franka 机械臂都是尚未连接的 ``RobotPart``，因此组合方式相同：直接传给 ``Robot``，由参数名决定公开路径。``base=base`` 建立 ``base`` 路径，``arm=arm_connection`` 建立 ``arm`` 路径。
+底盘和 Franka 机械臂都是尚未连接的 ``RobotPart``，因此组合方式相同：直接传给 ``Robot``，由参数名决定访问路径。``base=base`` 建立 ``base`` 路径，``arm=arm_connection`` 建立 ``arm`` 路径。
 
-两者的区别在于是否还承载其他部件。底盘没有 child 部件；Franka 机械臂则通过同一个硬件 session 承载末端执行器。因此，直接组合机械臂时，末端执行器会自动出现在 ``arm.end_effector``，机器人 builder 无需再维护一份末端执行器清单。
+两者的区别在于是否还承载其他零部件。底盘没有直接挂载的零部件；Franka 机械臂则通过同一个硬件 session 承载末端执行器。因此，直接组合机械臂时，末端执行器会自动出现在 ``arm.end_effector``，机器人 builder 无需再维护一份末端执行器清单。
 
-只有当共享 session 本身不是可读取部件时，才需要调用 ``part(name)``。例如，双臂控制器可以通过 ``session.part("left")`` 取出左臂，再将返回的 ``RobotPart`` 组合到机器人树中。
+只有当共享 session 本身不能返回观测时，才需要调用 ``part(name)``。例如，双臂控制器可以通过 ``session.part("left")`` 取出左臂，再将返回的 ``RobotPart`` 加入机器人的组合结构。
 
-``PartGroup`` 会在组合阶段检查这一边界。构造函数只接受 ``RobotPart`` 或另一个 ``PartGroup``；如果传入不可读取的裸 ``Connection``，异常会直接指出出错的参数名。
+``PartGroup`` 会在组合阶段检查这一边界。构造函数只接受 ``RobotPart`` 或另一个 ``PartGroup``；如果传入本身不能返回观测的裸 ``Connection``，异常会直接指出出错的参数名。
 
-如果沿用 Franka 的标准部件名称，可以直接复用已有的 ``build_arms``：
+如果沿用 Franka 的标准零部件名称，可以直接复用已有的 ``build_arms``：
 
 .. code-block:: python
 
@@ -135,9 +135,9 @@
    )
    robot = MobileManipulator(base=base, **arm_parts)
 
-将 ``FrankaRobot.build_arms`` 替换为其他机器人系列提供的部件构建方法，或者使用 ``PartGroup`` 组合多条机械臂，都不需要修改移动底盘。机器人由所选部件及其名称构成，无需为移动操作机器人增加专用字段或基类。
+将 ``FrankaRobot.build_arms`` 替换为其他机器人系列提供的零部件构建方法，或者使用 ``PartGroup`` 组合多条机械臂，都不需要修改移动底盘。机器人由所选零部件及其名称构成，无需为移动操作机器人增加专用字段或基类。
 
-打开硬件前，可以检查公开路径、部署节点和连接归属：
+打开硬件前，可以检查零部件路径、部署节点和连接归属：
 
 .. code-block:: text
 
@@ -147,7 +147,7 @@
    └── arm                 FrankaROSArm         node=0     via FrankaROSArm#2
        └── end_effector    MethodEndEffector    node=0     via FrankaROSArm#2
 
-``arm`` 与 ``arm.end_effector`` 的 ``via`` 相同，表示二者共用一条 Franka connection；底盘使用另一条独立 connection。连接后，部件路径、节点和资源归属保持不变；如果 connection 位于远程节点，class 名称会显示为 RemoteFrankaROSArm 等合成类型。
+``arm`` 与 ``arm.end_effector`` 的 ``via`` 相同，表示二者共用一条 Franka connection；底盘使用另一条独立 connection。连接后，零部件路径、节点和资源归属保持不变；如果 connection 位于远程节点，class 名称会显示为 RemoteFrankaROSArm 等合成类型。
 
 连接后，观测和动作按照组合时定义的名称访问：
 
@@ -159,7 +159,7 @@
        base_pose = observation["base"]["pose"]
        arm_pose = observation["arm"]["tcp_pose"]
 
-       # 部分动作树只控制底盘。
+       # 只发送底盘动作。
        robot.send_action(
            {"base": {"velocity": np.array([0.1, 0.0], dtype=np.float32)}}
        )
@@ -177,12 +177,12 @@
    finally:
        robot.disconnect()
 
-``PartGroup.send_action`` 接受不完整的动作树，因此导航任务只需发送 ``base`` 动作，无需为机械臂补充保持当前位置的命令。动作同时包含底盘和机械臂时，RLinf 可以并行调用两条独立连接；机械臂与末端执行器共用连接，仍会按照声明顺序调用。
+``PartGroup.send_action`` 接受只包含部分路径的动作字典，因此导航任务只需发送 ``base`` 动作，无需为机械臂补充保持当前位置的命令。动作同时包含底盘和机械臂时，RLinf 可以并行调用两条独立连接；机械臂与末端执行器共用连接，仍会按照声明顺序调用。
 
 3. 在真机环境中使用组合机器人
 ------------------------------
 
-硬件代码定义底盘如何运动，任务代码则定义目标位置、成功条件以及 policy 实际控制的部件。下面的 ``RobotTask`` 只向 policy 暴露底盘；同一机器人中已经组合的机械臂保持空闲：
+硬件代码定义底盘如何运动，任务代码则定义目标位置、成功条件以及 policy 实际控制的零部件。下面的 ``RobotTask`` 只向 policy 提供底盘观测和动作；同一机器人中已经组合的机械臂保持空闲：
 
 .. code-block:: python
 
@@ -256,14 +256,14 @@
    finally:
        env.close()
 
-创建 ``RobotTaskEnv`` 时会连接整个组合机器人，``close()`` 则负责断开。移动操作任务可以在 observation space、action space 和动作树中加入 ``arm`` 与 ``arm.end_effector`` 路径，无需修改底盘 driver 或机器人组合。
+创建 ``RobotTaskEnv`` 时会连接整个组合机器人，``close()`` 则负责断开。移动操作任务可以在 observation space、action space 和动作字典中加入 ``arm`` 与 ``arm.end_effector`` 路径，无需修改底盘 driver 或机器人组合。
 
 如需通过 RLinf 分布式 ``RealWorldEnv`` 启动该任务，应先注册 Gymnasium ID，并在 env YAML 中设置 ``env_type: real`` 和对应 ID。当前 rollout 接口使用面向 policy 的 ``state`` 与 ``frames`` 观测；已有 policy 采用该表示时，请在环境边界配置 ``LegacyObservationAdapter`` 和 ``VectorActionAdapter``。任务注册、YAML、wrapper 与兼容性检查请参阅 :doc:`新增真机任务 <new_task>`。
 
 4. 将同一组合部署到硬件节点
 ----------------------------
 
-placement 只决定各条连接在哪个节点打开，不改变任务访问部件的路径。例如，可以将底盘控制器放在节点 0，将 Franka 控制器放在节点 1：
+placement 只决定各条连接在哪个节点打开，不改变任务访问零部件的路径。例如，可以将底盘控制器放在节点 0，将 Franka 控制器放在节点 1：
 
 .. code-block:: python
 
@@ -282,7 +282,7 @@ placement 只决定各条连接在哪个节点打开，不改变任务访问部�
        arm=arm_connection,
    )
 
-构造这些对象时只会记录参数、``node_rank`` 和 ``worker_name``，不会导入厂商 SDK 或打开设备。``Connection`` 的 metaclass 会先取走 placement 参数，再调用驱动自身的 ``__init__``，因此新驱动的构造函数只需声明硬件相关参数。``robot.connect()`` 会在每条连接指定的节点上将其打开一次。跨节点的连接会在目标节点重新构造，部件树中的原对象则切换为对应的 view。机器人仍持有相同的部件对象，调用代码无需区分部署位置。
+构造这些对象时只会记录参数、``node_rank`` 和 ``worker_name``，不会导入厂商 SDK 或打开设备。``Connection`` 的 metaclass 会先取走 placement 参数，再调用驱动自身的 ``__init__``，因此新驱动的构造函数只需声明硬件相关参数。``robot.connect()`` 会在每条连接指定的节点上将其打开一次。跨节点的连接会在目标节点重新构造，机器人组合中的原对象则切换为对应的 view。机器人仍持有相同的零部件对象，调用代码无需区分部署位置。
 
 如果后续 connection 打开失败，机器人会关闭此前已经成功打开的 connection。driver 如果在 ``_open()`` 内部获取部分资源后抛出异常，仍需自行完成清理；由于该 connection 尚未完成连接，机器人无法代为回滚。
 
@@ -344,7 +344,7 @@ placement 只决定各条连接在哪个节点打开，不改变任务访问部�
                arm=arm_connection,
            )
 
-``MobileBase.backend()`` 根据硬件配置中的名称找到对应 driver。``build()`` 随后组合尚未连接的部件，以及从共享连接中选择的部件，不会打开任何设备。连接地址、backend 选择和 placement 写入机器人配置；目标位置、奖励、复位姿态与 episode 长度仍属于任务配置。
+``MobileBase.backend()`` 根据硬件配置中的名称找到对应 driver。``build()`` 随后组合尚未连接的零部件，以及从共享连接中选出的零部件，不会打开任何设备。连接地址、backend 选择和 placement 写入机器人配置；目标位置、奖励、复位姿态与 episode 长度仍属于任务配置。
 
 ``build()`` 应保留明确的参数签名。``Robot.of_type()`` 和 ``build_robot()`` 会将关键字参数直接传给 ``build()``；注册过程不会自动展开 ``RobotConfig`` 实例，也不应丢弃 builder 无法识别的字段。如果配置中出现未支持的 key，应在这一边界直接报错，而不是由 ``**kwargs`` 吸收后静默忽略。
 
@@ -446,9 +446,9 @@ env 收到 ``RobotInfo`` 后，需要显式调用已注册的 builder。schedule
 
 这些 contract 位于 ``tests/robot_contracts``，mock SDK 位于 ``tests/robot_mocks``。二者仅用于测试，不会随 ``rlinf`` 包发布。
 
-这些 contract 会重复执行连接和断开流程。``PartContract`` 检查单个部件的观测字段及 shape；提供速度样例后，还会验证该动作可以执行，并拒绝未知动作字段。``RobotContract`` 检查机器人能否在连接前输出结构说明，验证顶层组合叶子，并在 ``connect()`` 中注入失败以检查回滚行为。
+这些 contract 会重复执行连接和断开流程。``PartContract`` 检查单个零部件的观测字段及 shape；提供速度样例后，还会验证该动作可以执行，并拒绝未知动作字段。``RobotContract`` 检查机器人能否在连接前输出结构说明，验证顶层组合中的叶子节点，并在 ``connect()`` 中注入失败以检查回滚行为。
 
-目前，``RobotContract`` 会将承载 rider 的 ``RobotPart`` 视为一个叶子，不会继续逐项检查这些 rider。因此，新增机器人时还应直接检查本次引入的路径和 owner：
+目前，``RobotContract`` 会将承载其他零部件的 ``RobotPart`` 视为一个叶子节点，不会继续逐项检查其 ``children``。因此，新增机器人时还应直接检查本次引入的路径和 owner：
 
 .. code-block:: python
 
@@ -463,7 +463,7 @@ env 收到 ``RobotInfo`` 后，需要显式调用已注册的 builder。schedule
    assert end_effector.owner is robot.child("arm").owner
    assert len(robot.owners()) == 2
 
-只有当新增 SDK session 会对应多个部件时，才需要增加 ``ConnectionContract``。该 contract 会检查 session 生命周期，以及 ``parts`` 中各部件的观测。还应逐项断言 ``connection.part(name).owner is connection``；目前 contract 不会自行调用 ``part(name)`` 检查 owner 绑定。本例新增的是单个叶子 ``MobileBase``，并复用已经测试过的 Franka connection，因此无需为底盘增加共享 session 测试。
+只有当新增 SDK session 同时支持多个零部件时，才需要增加 ``ConnectionContract``。该 contract 会检查 session 生命周期，以及 ``parts`` 中各零部件的观测。还应逐项断言 ``connection.part(name).owner is connection``；目前 contract 不会自行调用 ``part(name)`` 检查 owner 绑定。本例新增的是单个叶子 ``MobileBase``，并复用已经测试过的 Franka connection，因此无需为底盘增加共享 session 测试。
 
 这些检查覆盖了项目中实际出现过的故障。contract 检查失败时，错误信息会列出具体原因，例如：
 
@@ -486,7 +486,7 @@ env 收到 ``RobotInfo`` 后，需要显式调用已注册的 builder。schedule
 使用 mock SDK 验证
 ~~~~~~~~~~~~~~~~~~
 
-设备 SDK 只在 ``_open()`` 中导入。``tests/robot_mocks`` 中的 mock SDK 允许真实部件类在没有硬件和厂商 SDK 的机器上运行。
+设备 SDK 只在 ``_open()`` 中导入。``tests/robot_mocks`` 中的 mock SDK 允许真实的零部件类在没有硬件和厂商 SDK 的机器上运行。
 
 首先检查机器人的组合结构和生命周期：
 
@@ -496,9 +496,9 @@ env 收到 ``RobotInfo`` 后，需要显式调用已注册的 builder。schedule
        --arg base_endpoint=tcp://mobile-base:7000 \
        --arg arm_ip=10.0.0.2 --arg node_rank=0 --arg controller_node_rank=0
 
-脚本会列出部件路径、共享连接和部署节点，然后读取观测并断开。未声明的观测、错误的 shape、误放入部件树的 connection，以及断开后仍报告已连接的资源都会导致检查失败。
+脚本会列出零部件路径、共享连接和部署节点，然后读取观测并断开。未声明的观测、错误的 shape、误将裸 ``Connection`` 加入机器人组合，以及断开后仍报告已连接的资源，都会导致检查失败。
 
-环境根据部件声明创建 observation space，因此观测 shape 必须与声明一致。
+环境根据零部件的声明创建 observation space，因此观测 shape 必须与声明一致。
 
 添加 ``--remote`` 后，mock 测试会保留各 connection 声明的 ``node_rank``。声明了节点的 connection 会部署到 scheduler worker 中；没有 ``node_rank`` 的 connection 仍在当前进程打开。该模式可进一步发现 worker 方法名称冲突和状态无法跨进程传递等问题。
 

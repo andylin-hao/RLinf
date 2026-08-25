@@ -25,7 +25,7 @@
       :link: robotics
       :link-type: doc
 
-      了解部件名称与观测、动作路径之间的对应关系。
+      了解零部件名称与观测、动作路径之间的对应关系。
 
    .. grid-item-card:: 机器人架构
       :link: robotics_architecture

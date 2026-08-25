@@ -242,7 +242,7 @@ Robotiq 夹爪通过 USB 转 RS485 适配器使用 **Modbus RTU** 协议通信�
                camera_type: zed            # "realsense" 或 "zed"
                gripper_type: robotiq       # "franka" 或 "robotiq"
                gripper_connection: "/dev/ttyUSB0"
-               controller_node_rank: 1     # 机械臂部件运行在 NUC 上
+               controller_node_rank: 1     # 机械臂控制连接运行在 NUC 上
                disable_validate: false
 
 .. list-table:: 新增硬件配置字段
@@ -264,7 +264,7 @@ Robotiq 夹爪通过 USB 转 RS485 适配器使用 **Modbus RTU** 协议通信�
        为 ``"franka"`` 时忽略。
    * - ``controller_node_rank``
      - ``null``
-     - 机械臂部件运行的节点 rank。为 ``null`` 时与 env worker
+     - 机械臂控制连接运行的节点 rank。为 ``null`` 时与 env worker
        共同部署。当机械臂和相机在不同机器上时需要设置。
 
 

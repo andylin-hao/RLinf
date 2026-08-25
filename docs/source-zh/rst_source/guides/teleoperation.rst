@@ -1,7 +1,7 @@
 遥操作
 ======
 
-遥操作允许操作者在 rollout 中接管 policy，可用于采集示教、纠正失败动作或运行 DAgger。接入时，建议先验证单台设备能否稳定读取数据，再配置 binding，最后组合多台设备。本页还会说明独立设备与 env 管理设备在 placement 上的差异。若尚未了解部件名称与动作路径的关系，请先阅读 :doc:`../concepts/robotics`。
+遥操作允许操作者在 rollout 中接管 policy，可用于采集示教、纠正失败动作或运行 DAgger。接入时，建议先验证单台设备能否稳定读取数据，再配置 binding，最后组合多台设备。本页还会说明独立设备与 env 管理设备在 placement 上的差异。若尚未了解零部件名称与动作路径的关系，请先阅读 :doc:`../concepts/robotics`。
 
 选择设备
 --------
@@ -56,7 +56,7 @@ reader 不依赖机器人或集群，可独立运行：
 组合多台设备
 ------------
 
-确认每台设备均可独立工作后，将 ``teleop`` 改为列表。每一项只负责其对应的机器人部件：
+确认每台设备均可独立工作后，将 ``teleop`` 改为列表。每一项只控制对应的机器人零部件：
 
 .. code-block:: yaml
 
@@ -78,7 +78,7 @@ reader 不依赖机器人或集群，可独立运行：
          frequency: 60
          config_file: null
 
-当机器人包含两个同类分支时，使用 ``drives`` 指定每台设备控制的分支。该字段是遥操作配置中唯一直接引用机器人部件名称的位置：
+当机器人包含两个同类分支时，使用 ``drives`` 指定每台设备控制的分支。该字段是遥操作配置中唯一直接引用零部件名称的位置：
 
 .. code-block:: yaml
 
@@ -88,12 +88,12 @@ reader 不依赖机器人或集群，可独立运行：
          - {gello_joint: {port: /dev/serial/by-id/...-left,  drives: left}}
          - {gello_joint: {port: /dev/serial/by-id/...-right, drives: right}}
 
-如果 binding 声明的部件不在机器人中，``TeleopGroup`` 会跳过该部件。如果某台设备无法匹配任何部件，或两台设备同时声明控制同一部件，系统会在构建阶段报错。
+如果 binding 声明的零部件不在机器人中，``TeleopGroup`` 会跳过对应动作。如果某台设备无法匹配任何零部件，或两台设备同时声明控制同一零部件，系统会在构建阶段报错。
 
 明确设备的资源归属
 ------------------
 
-内置遥操作构建器会在 env 进程中创建设备，再由 ``TeleopGroup.connect()`` 直接打开。遥操作设备不属于机器人树，因此 ``Robot.connect()`` 不会处理它的 placement。通过 ``env.*.teleop`` 配置设备时，应将设备接到 env worker 所在的机器。
+内置遥操作构建器会在 env 进程中创建设备，再由 ``TeleopGroup.connect()`` 直接打开。遥操作设备不会加入 ``Robot`` 的组合结构，因此 ``Robot.connect()`` 不会处理它的 placement。通过 ``env.*.teleop`` 配置设备时，应将设备接到 env worker 所在的机器。
 
 遥操作设备本身也是一条 ``Connection``，因此同样接受 ``node_rank``，连接时就在该节点打开：
 
@@ -108,7 +108,7 @@ reader 不依赖机器人或集群，可独立运行：
 
 该写法适用于独立诊断，也适用于 ``TeleopGroup``，因为 group 通过同一套 connection 接口打开每台设备。主臂的运行节点由构造时传入的 ``node_rank`` 决定。``env.*.teleop`` 配置目前尚未提供该字段，因此通过该配置创建的设备均在 env 进程中打开。
 
-每次采样只读取每台不同的设备一次。同一台设备即使同时控制两个部件，也只会打开一次；因此，SpaceMouse 同时控制机械臂和夹爪时仍只占用一个 HID 句柄。
+每次采样对每台独立设备只读取一次。同一台设备即使同时控制两个零部件，也只会打开一次；因此，SpaceMouse 同时控制机械臂和夹爪时仍只占用一个 HID 句柄。
 
 .. _teleop-rate:
 
@@ -170,6 +170,6 @@ builder 会先构建所有 backend entry，再创建 streamer。streamer 可能�
 后续阅读
 --------
 
-- :doc:`机器人模型 <../concepts/robotics>`：了解 binding 所引用的机器人部件路径。
+- :doc:`机器人模型 <../concepts/robotics>`：了解 binding 所引用的零部件路径。
 - :doc:`真机环境模型 <../concepts/realworld_envs>`：了解遥操作在 wrapper 栈中的位置。
 - :doc:`数据采集 <data_collection>`：记录操作者动作。

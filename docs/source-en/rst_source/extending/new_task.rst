@@ -228,23 +228,35 @@ about one reading at once, as a ``TeleopAction``:
 whose answer depends on state it just computed would otherwise have to leave
 that state behind, and nothing would enforce the order of the two calls.
 
-Pair the part and binding with an entry builder, then register it in ``DEVICES``
-in ``rlinf/envs/real/wrappers/teleop/builder.py``:
+Pair the device and binding in a ``TeleopBackend`` under
+``rlinf/envs/real/wrappers/teleop/backends.py``. Register the name that appears
+in the env config on that backend:
 
 .. code-block:: python
 
-   def _pedal(cfg, options, facts):
-       return TeleopEntry(
-           Pedal(port=options["port"]),
-           PedalGripperBinding(),
-           drives=options.get("drives"),
-       )
+   @TeleopBackend.register("pedal")
+   class PedalBackend(TeleopBackend):
+       @classmethod
+       def entry(cls, cfg, options, facts):
+           del cfg, facts
+           unknown = set(options) - {"port", "drives"}
+           if unknown:
+               raise ValueError(f"Unsupported pedal options: {sorted(unknown)}")
+           port = options.get("port")
+           if port is None:
+               raise ValueError("teleop device 'pedal' requires a port")
+           return TeleopEntry(
+               Pedal(port=port),
+               PedalGripperBinding(),
+               drives=options.get("drives"),
+           )
 
-   DEVICES = {..., "pedal": _pedal}
-
-The stack builder needs no device-specific branch. A config naming the device
-selects the registry entry, while a robot without an ``end_effector`` rejects
-the rig at build time.
+``entry()`` validates this config item and returns the device, binding, and
+optional target branch as one ``TeleopEntry``. Then add ``pedal`` to the
+environment's ``TELEOP`` tuple to declare that the env can represent the
+device's action. This does not register the device a second time: the shared
+builder resolves ``pedal`` through ``TeleopBackend``. A robot without an
+``end_effector`` rejects the rig at build time.
 
 Adding a Wrapper Instead
 ------------------------
