@@ -49,6 +49,7 @@ class FrankaGripper(BaseGripper):
         *,
         ros: Optional["ROSController"] = None,
         port: Optional[str] = None,
+        robot_ip: Optional[str] = None,
         **settings: Any,
     ) -> "FrankaGripper":
         """Declare a gripper that uses the arm's ROS session."""

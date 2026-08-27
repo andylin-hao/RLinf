@@ -106,6 +106,7 @@ class RobotiqGripper(BaseGripper):
         *,
         ros: Optional["ROSController"] = None,
         port: Optional[str] = None,
+        robot_ip: Optional[str] = None,
         **settings: Any,
     ) -> "RobotiqGripper":
         """Declare a gripper that uses a dedicated serial connection."""

@@ -18,7 +18,7 @@ from .base import (
     EndEffectorType,
     normalize_end_effector_type,
 )
-from .grippers import BaseGripper, FrankaGripper, RobotiqGripper
+from .grippers import BaseGripper, FrankaGripper, FrankyGripper, RobotiqGripper
 from .hands.ruiyan import RuiyanHand
 
 __all__ = [
@@ -27,6 +27,7 @@ __all__ = [
     "EndEffector",
     "EndEffectorType",
     "FrankaGripper",
+    "FrankyGripper",
     "RobotiqGripper",
     "RuiyanHand",
     "normalize_end_effector_type",

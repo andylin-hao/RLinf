@@ -14,10 +14,12 @@
 
 from .base import BaseGripper
 from .franka import FrankaGripper
+from .franky import FrankyGripper
 from .robotiq import RobotiqGripper
 
 __all__ = [
     "BaseGripper",
     "FrankaGripper",
+    "FrankyGripper",
     "RobotiqGripper",
 ]

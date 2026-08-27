@@ -82,6 +82,14 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 class FrankyArm(BaseArm):
     """Franka arm controlled through libfranka by Franky."""
 
+    #: Gripper backends this arm can build, by configuration name.
+    _GRIPPER_BACKENDS = {
+        "franka": "franky",
+        "franka_gripper": "franky",
+        "robotiq": "robotiq",
+        "robotiq_gripper": "robotiq",
+    }
+
     @classmethod
     def declare(
         cls,
@@ -185,20 +193,20 @@ class FrankyArm(BaseArm):
         gripper_connection: Optional[str],
         robot_ip: str,
     ) -> "BaseGripper":
-        """Create and connect the configured gripper from the registry."""
+        """Create and connect the configured gripper from the registry.
+
+        A Franka Hand is reached over libfranka at the arm's own IP, so it maps
+        onto the ``"franky"`` gripper backend rather than the ROS one that
+        ``"franka"`` names elsewhere.
+        """
         gt = (gripper_type or "robotiq").lower()
-        if gt in {"franka", "franka_gripper"}:
-            raise NotImplementedError(
-                "FrankyArm: the libfranka backend for the original "
-                "Franka Hand is not yet supported. Use gripper_type='robotiq' "
-                "for now."
-            )
-        if gt not in {"robotiq", "robotiq_gripper"}:
+        backend = self._GRIPPER_BACKENDS.get(gt)
+        if backend is None:
             raise ValueError(
                 f"FrankyArm: unsupported gripper_type={gripper_type!r}. "
-                "Supported: 'robotiq'."
+                f"Supported: {sorted(set(self._GRIPPER_BACKENDS))}."
             )
-        gripper = EndEffector.of(gt, port=gripper_connection)
+        gripper = EndEffector.of(backend, port=gripper_connection, robot_ip=robot_ip)
         # The arm owns the gripper lifecycle.
         gripper.connect()
         return gripper

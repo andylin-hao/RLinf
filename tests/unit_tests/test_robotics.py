@@ -3510,3 +3510,187 @@ def test_a_robot_can_be_disconnected_twice():
         robot.disconnect()
 
         assert not robot.is_connected
+
+
+def test_the_franka_hand_is_reachable_over_libfranka():
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        from rlinf.robotics.parts.end_effectors import EndEffector, FrankyGripper
+
+        assert EndEffector.backend("franky") is FrankyGripper
+        assert EndEffector.backend("franky_gripper") is FrankyGripper
+        # The ROS backend keeps the plain name; the two are different transports
+        # to the same hand.
+        assert EndEffector.backend("franka") is not FrankyGripper
+
+        gripper = EndEffector.of("franky", robot_ip="10.0.0.1")
+        assert isinstance(gripper, FrankyGripper)
+        assert not gripper.is_connected
+
+        # Before connecting, the nominal stroke stands in.
+        assert gripper.max_width == pytest.approx(0.08)
+
+        gripper.connect()
+        assert gripper.is_connected
+        assert gripper.is_ready()
+        # Connecting adopts the stroke this hand reports for itself.
+        assert gripper.max_width == pytest.approx(gripper._gripper.max_width)
+
+        gripper.disconnect()
+        assert not gripper.is_connected
+        assert not gripper.is_ready()
+
+
+def test_the_franka_hand_needs_the_arm_ip_it_hangs_from():
+    from rlinf.robotics.parts.end_effectors import FrankyGripper
+
+    with pytest.raises(ValueError, match="arm's own IP"):
+        FrankyGripper.declare(port="/dev/ttyUSB0")
+
+
+def test_the_franka_hand_commands_widths_in_metres():
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        from rlinf.robotics.parts.end_effectors import EndEffector
+
+        gripper = EndEffector.of("franky", robot_ip="10.0.0.1")
+        gripper.connect()
+        sdk = gripper._gripper
+
+        gripper.move(0.03)
+        assert sdk.commands[-1][:2] == ("move", 0.03)
+        assert gripper.position == pytest.approx(0.03)
+        assert not gripper.is_open
+
+        # Beyond the stroke clamps rather than raising.
+        gripper.move(0.5)
+        assert sdk.commands[-1][1] == pytest.approx(gripper.max_width)
+        assert gripper.is_open
+
+        # The end-effector interface reads and writes the same metre axis.
+        assert gripper.get_state() == pytest.approx([gripper.max_width])
+        gripper.command(np.asarray([0.02], dtype=np.float32))
+        assert gripper.position == pytest.approx(0.02)
+
+
+def test_the_franka_hand_grasps_within_the_force_it_can_apply():
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        from rlinf.robotics.parts.end_effectors import EndEffector
+
+        gripper = EndEffector.of("franky", robot_ip="10.0.0.1")
+        gripper.connect()
+        sdk = gripper._gripper
+
+        # A force written on the Robotiq scale is served at the hand's own.
+        gripper.close()
+        assert sdk.commands[-1][0] == "grasp"
+        assert sdk.commands[-1][3] == pytest.approx(40.0)
+
+        # A force the hand can apply is passed through.
+        gripper.close(force=25.0)
+        assert sdk.commands[-1][3] == pytest.approx(25.0)
+
+        # Normalized speed maps into the hand's m/s band, never past it.
+        gripper.open(speed=1.0)
+        assert sdk.commands[-1] == ("open", pytest.approx(0.1))
+        gripper.open(speed=0.0)
+        assert sdk.commands[-1] == ("open", pytest.approx(0.01))
+
+
+def test_a_refused_grasp_does_not_end_the_episode():
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        from rlinf.robotics.parts.end_effectors import EndEffector
+
+        gripper = EndEffector.of("franky", robot_ip="10.0.0.1")
+        gripper.connect()
+        sdk = gripper._gripper
+
+        def refuse(*_args, **_kwargs):
+            raise RuntimeError("libfranka: command rejected")
+
+        sdk.grasp = refuse
+        # Closing on air raises in libfranka; the hand stops and moves instead.
+        gripper.close()
+        assert [c[0] for c in sdk.commands[-2:]] == ["stop", "move"]
+        assert not gripper.is_open
+
+        sdk.open = refuse
+        gripper.open()
+        assert [c[0] for c in sdk.commands[-2:]] == ["stop", "move"]
+        assert gripper.is_open
+
+
+def test_a_franky_arm_builds_the_hand_its_config_names():
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        from rlinf.robotics.parts.arms.franky import FrankyArm
+        from rlinf.robotics.parts.end_effectors import FrankyGripper, RobotiqGripper
+
+        # 'franka' names the hand, and the arm reaches it over its own
+        # transport rather than the ROS one that name selects elsewhere.
+        arm = FrankyArm.declare("10.0.0.1", gripper_type="franka")
+        arm.connect()
+        assert isinstance(arm._gripper, FrankyGripper)
+        assert arm.get_observation()["tcp_pose"].shape == (7,)
+        arm.disconnect()
+
+        arm = FrankyArm.declare("10.0.0.1", gripper_connection="/dev/ttyUSB0")
+        arm.connect()
+        assert isinstance(arm._gripper, RobotiqGripper)
+        arm.disconnect()
+
+
+def test_a_franka_robot_composes_the_backend_and_hand_it_is_given():
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        from rlinf.robotics.parts.end_effectors import FrankyGripper
+        from rlinf.robotics.robots import FrankaRobot
+
+        robot = FrankaRobot.build(
+            robot_ip="10.0.0.1",
+            node_rank=0,
+            backend="franky",
+            gripper_type="franka",
+        )
+        assert type(robot.child("arm")).__name__ == "FrankyArm"
+
+        robot.connect()
+        assert isinstance(robot.child("arm")._gripper, FrankyGripper)
+        assert set(robot.get_observation()) == {"arm"}
+        robot.disconnect()
+
+
+def test_reading_the_hand_twice_costs_one_round_trip():
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        from rlinf.robotics.parts.end_effectors import EndEffector
+
+        gripper = EndEffector.of("franky", robot_ip="10.0.0.1")
+        gripper.connect()
+
+        reads = []
+        sdk = gripper._gripper
+        sdk._width = sdk.width
+        type(sdk).width = property(
+            lambda self: (reads.append(1), self._width)[1],
+            lambda self, value: setattr(self, "_width", value),
+        )
+
+        # An observation asks for both, and libfranka cannot produce a newer
+        # width within one poll period.
+        _, _ = gripper.position, gripper.is_open
+        assert len(reads) == 1
+
+        # Commanding the fingers means the cached width no longer describes them.
+        gripper.move(0.02)
+        _ = gripper.position
+        assert len(reads) == 2

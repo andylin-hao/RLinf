@@ -40,21 +40,31 @@ def franky() -> types.ModuleType:
             self.quaternion = np.asarray(HOME_TCP[3:], dtype=np.float64)
 
     class Gripper:
+        """Franka Hand as libfranka exposes it: a width, in metres."""
+
+        #: Stroke of the Franka Hand.
+        MAX_WIDTH = 0.08
+
         def __init__(self, *_args, **_kwargs):
-            self.position = 0.04
-            self.is_open = True
+            self.width = 0.04
+            self.max_width = self.MAX_WIDTH
+            #: Commands received, for assertions.
+            self.commands: list[Any] = []
 
-        def is_ready(self):
-            return True
+        def open(self, speed):
+            self.commands.append(("open", speed))
+            self.width = self.max_width
 
-        def open(self, speed=1.0):
-            self.is_open = True
+        def move(self, width, speed):
+            self.commands.append(("move", width, speed))
+            self.width = width
 
-        def close(self, speed=1.0):
-            self.is_open = False
+        def grasp(self, width, speed, force, epsilon_inner=0.0, epsilon_outer=0.0):
+            self.commands.append(("grasp", width, speed, force))
+            self.width = width
 
-        def cleanup(self):
-            pass
+        def stop(self):
+            self.commands.append(("stop",))
 
     class Model:
         def zero_jacobian(self, _frame, _state):

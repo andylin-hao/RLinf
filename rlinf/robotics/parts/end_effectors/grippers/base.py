@@ -34,9 +34,15 @@ class BaseGripper(BaseEndEffector, ABC):
         *,
         ros: Optional[Any] = None,
         port: Optional[str] = None,
+        robot_ip: Optional[str] = None,
         **settings: Any,
     ) -> "BaseGripper":
-        """Declare a gripper from the attachment settings offered by its arm."""
+        """Declare a gripper from the attachment settings offered by its arm.
+
+        An arm offers every attachment it can reach a gripper through -- a ROS
+        session, a serial port, its own IP -- and each backend takes the one it
+        uses and ignores the rest.
+        """
         raise NotImplementedError(
             f"{cls.__name__} does not say which attachment it is reached "
             "through. Override declare() to take the one it uses."
