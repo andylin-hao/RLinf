@@ -78,8 +78,10 @@ class FrankaRobot(Robot):
         node_rank: int,
         worker_rank: int = 0,
         env_idx: int = 0,
+        backend: Optional[str] = None,
         end_effector_type: Optional[str] = None,
         end_effector_config: Optional[dict] = None,
+        gripper_type: Optional[str] = None,
         gripper_connection: Optional[str] = None,
     ) -> dict[str, Any]:
         """Return the robot's named arm declarations.
@@ -90,6 +92,8 @@ class FrankaRobot(Robot):
             robot_ip,
             node_rank=node_rank,
             name=f"{cls.ROBOT_TYPE}Arm-{worker_rank}-{env_idx}",
+            backend=backend,
+            gripper_type=gripper_type,
             gripper_connection=gripper_connection,
             end_effector_type=end_effector_type,
             end_effector_config=end_effector_config,
