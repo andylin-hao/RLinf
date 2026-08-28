@@ -1031,13 +1031,21 @@ agentic_requirements_file() {
     printf '%s\n' "$path"
 }
 
+# Print the flags that reach the platform torch index, for installs that
+# unset UV_TORCH_BACKEND so it does not route every package there. The torch
+# overrides pin local versions such as 2.11.0+cu130, which only that index
+# serves, so an install that drops both cannot resolve them.
+platform_index_args() {
+    if [ -n "${PLATFORM_TORCH_INDEX:-}" ]; then
+        printf '%s\n' --extra-index-url "$PLATFORM_TORCH_INDEX" --index-strategy unsafe-best-match
+    fi
+}
+
 install_engine_requirements() {
     local req="$1" engine_specs engine_req
     engine_specs=$(sed -n 's/^# engine: //p' "$req")
     local index_args=()
-    if [ -n "${PLATFORM_TORCH_INDEX:-}" ]; then
-        index_args=(--extra-index-url "$PLATFORM_TORCH_INDEX" --index-strategy unsafe-best-match)
-    fi
+    mapfile -t index_args < <(platform_index_args)
     env -u UV_TORCH_BACKEND uv pip install "${index_args[@]}" -r "$req"
     if [ -n "$engine_specs" ]; then
         engine_req=$(mktemp)
@@ -2111,7 +2119,10 @@ install_lingbot_vla_model() {
     uv pip install -e $lingbotvla_dir/lingbotvla/models/vla/vision_models/MoGe --no-deps
 
     install_lerobot
-    env -u UV_TORCH_BACKEND uv pip install -r $SCRIPT_DIR/embodied/models/lingbotvla.txt
+    local index_args=()
+    mapfile -t index_args < <(platform_index_args)
+    env -u UV_TORCH_BACKEND uv pip install "${index_args[@]}" \
+        -r $SCRIPT_DIR/embodied/models/lingbotvla.txt
 
     case "$ENV_NAME" in
         robotwin)
@@ -2244,7 +2255,9 @@ install_qwen3_vl_model() {
 }
 
 install_lerobot() {
-    env -u UV_TORCH_BACKEND uv pip install \
+    local index_args=()
+    mapfile -t index_args < <(platform_index_args)
+    env -u UV_TORCH_BACKEND uv pip install "${index_args[@]}" \
         "git+${GITHUB_PREFIX}https://github.com/huggingface/lerobot.git@${LEROBOT_COMMIT}"
 }
 
@@ -2606,6 +2619,14 @@ install_franka_env() {
     source /opt/ros/noetic/setup.bash
     set -euo pipefail
     ROS_CATKIN_PATH=$(realpath "$VENV_DIR/franka_catkin_ws")
+    # LIBFRANKA_VERSION must match your Franka firmware, the same constraint
+    # install_franka_franky_env documents (compatibility matrix:
+    # https://frankarobotics.github.io/docs/compatibility.html). The two paths
+    # read the same variable and default differently -- 0.15.0 here, 0.19.0
+    # there -- because each default pairs with what that stack was tested
+    # against, not because one robot wants both. Set it explicitly when a rig
+    # runs both backends, and keep FRANKA_ROS_VERSION on a release that builds
+    # against the libfranka you choose.
     LIBFRANKA_VERSION=${LIBFRANKA_VERSION:-0.15.0}
     FRANKA_ROS_VERSION=${FRANKA_ROS_VERSION:-0.10.0}
 
