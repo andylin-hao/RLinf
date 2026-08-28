@@ -37,8 +37,8 @@ if not ray.is_initialized():
 import numpy as np  # noqa: E402
 from scipy.spatial.transform import Rotation as R  # noqa: E402
 
-from rlinf.robotics.parts.arms.franky import FrankyArm
-from rlinf.robotics.parts.end_effectors import EndEffector  # noqa: E402
+from rlinf.robotics.parts.arms.franky import FrankyArm  # noqa: E402
+from rlinf.robotics.robots import FrankaRobot  # noqa: E402
 
 # Franka Emika Panda factory "ready" pose.
 HOME_JOINTS = [0.0, -0.785, 0.0, -2.356, 0.0, 1.571, 0.785]
@@ -63,12 +63,17 @@ def main() -> None:
     gripper_connection = os.environ.get("FRANKA_GRIPPER_PORT")
 
     # The arm and the gripper open their own connections, so build each.
+    # Resolving the hand through the robot is what picks the libfranka driver
+    # for gripper_type=franka: this script drives a FrankyArm, and 'franka'
+    # names the hand, not the transport that reaches it.
     controller = FrankyArm(robot_ip=robot_ip, node_rank=0)
-    gripper = EndEffector.of(
-        f"{gripper_type}_gripper",
-        robot_ip=robot_ip,
-        port=gripper_connection,
+    gripper = FrankaRobot.declare_end_effector(
+        robot_ip,
         node_rank=0,
+        name="FrankyCheckEndEffector",
+        backend="franky",
+        gripper_type=gripper_type,
+        gripper_connection=gripper_connection,
     )
     controller.connect()
     gripper.connect()

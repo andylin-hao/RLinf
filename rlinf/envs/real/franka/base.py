@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import copy
-import queue
 import time
 from dataclasses import dataclass, field
 from itertools import cycle
@@ -33,7 +32,9 @@ from rlinf.robotics import (
     RobotInfo,
 )
 from rlinf.robotics.parts.arms.franka import FrankaRobotState
+from rlinf.robotics.parts.arms.franka_ros import FrankaROSArm
 from rlinf.robotics.parts.cameras import BaseCamera, CameraInfo
+from rlinf.robotics.parts.end_effectors import BaseEndEffector
 from rlinf.robotics.parts.end_effectors.base import (
     EndEffectorType,
     normalize_end_effector_type,
@@ -257,7 +258,7 @@ class FrankaEnv(gym.Env):
 
         # Wait for the controller's first valid state.
         start_time = time.time()
-        while not self._controller.is_robot_up():
+        while not self._arm.is_robot_up():
             time.sleep(0.5)
             if time.time() - start_time > 30:
                 self._logger.warning(
@@ -266,7 +267,7 @@ class FrankaEnv(gym.Env):
 
         self._interpolate_move(self._reset_pose)
         time.sleep(1.0)
-        self._franka_state = self._controller.get_state()
+        self._franka_state = self._arm.get_state()
 
         self._open_cameras()
         self.camera_player = VideoPlayer(self.config.enable_camera_player)
@@ -326,9 +327,14 @@ class FrankaEnv(gym.Env):
             camera_node_rank=camera_node_rank,
         )
         self.robot.connect()
-        self._controller = self.robot.child("arm").owner
+        # Naming the class each part is expected to be keeps the driver's own
+        # methods resolvable from here, and reports a mismatched composition at
+        # this line rather than as a missing attribute mid-episode.
+        self._arm: FrankaROSArm = self.robot.child("arm", FrankaROSArm)
         # The end effector is a part beside the arm, with its own connection.
-        self._end_effector = self.robot.child("end_effector")
+        self._end_effector: BaseEndEffector = self.robot.child(
+            "end_effector", BaseEndEffector
+        )
 
     def _setup_reward_worker(self) -> None:
         if not self.config.use_reward_model:
@@ -412,7 +418,7 @@ class FrankaEnv(gym.Env):
         time.sleep(max(0, (1.0 / self.config.step_frequency) - step_time))
 
         if not self.config.is_dummy:
-            self._franka_state = self._controller.get_state()
+            self._franka_state = self._arm.get_state()
         else:
             self._franka_state = self._franka_state
         observation = self._get_observation()
@@ -435,7 +441,7 @@ class FrankaEnv(gym.Env):
 
     def get_tcp_pose(self) -> np.ndarray:
         """Return the current TCP pose ``[x, y, z, qx, qy, qz, qw]``."""
-        self._franka_state = self._controller.get_state()
+        self._franka_state = self._arm.get_state()
         return self._franka_state.tcp_pose
 
     def get_action_scale(self) -> np.ndarray:
@@ -564,7 +570,7 @@ class FrankaEnv(gym.Env):
 
         self._success_hold_counter = 0
 
-        self._controller.reconfigure_compliance_params(self.config.compliance_param)
+        self._arm.reconfigure_compliance_params(self.config.compliance_param)
 
         # Periodically return the joints to their configured reset positions.
         joint_reset_cycle = next(self._joint_reset_cycle)
@@ -579,14 +585,14 @@ class FrankaEnv(gym.Env):
 
         self._clear_error()
         self._num_steps = 0
-        self._franka_state = self._controller.get_state()
+        self._franka_state = self._arm.get_state()
         observation = self._get_observation()
 
         return observation, {}
 
     def go_to_rest(self, joint_reset: bool = False) -> None:
         if joint_reset:
-            self._controller.reset_joint(self.config.joint_reset_qpos)
+            self._arm.reset_joint(self.config.joint_reset_qpos)
             time.sleep(0.5)
 
         # Move the arm to a fixed or randomized Cartesian reset pose.
@@ -603,12 +609,12 @@ class FrankaEnv(gym.Env):
         else:
             reset_pose = self._reset_pose.copy()
 
-        self._franka_state = self._controller.get_state()
+        self._franka_state = self._arm.get_state()
         cnt = 0
         while not np.allclose(self._franka_state.tcp_pose[:3], reset_pose[:3], 0.02):
             cnt += 1
             self._interpolate_move(reset_pose)
-            self._franka_state = self._controller.get_state()
+            self._franka_state = self._arm.get_state()
             if cnt > 2:
                 break
 
@@ -771,18 +777,16 @@ class FrankaEnv(gym.Env):
         return camera_infos
 
     def _open_cameras(self) -> None:
-        """Use cameras connected by the robot runtime.
+        """Take the cameras the robot composed and connected.
 
-        Dummy environments create local, unopened camera objects only to retain
-        the declared observation structure.
+        The env never builds a camera of its own: one is hardware the robot
+        owns, places, and releases, and a second object for the same device
+        would open it twice.
         """
-        if self.robot is not None:
-            self._cameras: dict[str, BaseCamera] = {
-                path.rsplit(".", 1)[-1]: camera
-                for path, camera in self.robot.parts_of_type(Camera).items()
-            }
-            return
-        self._cameras = {info.name: Camera.of(info) for info in self._camera_infos}
+        self._cameras: dict[str, BaseCamera] = {
+            path.rsplit(".", 1)[-1]: camera
+            for path, camera in self.robot.parts_of_type(Camera).items()
+        }
 
     def close(self) -> None:
         """Release all hardware resources including cameras and video player."""
@@ -795,10 +799,7 @@ class FrankaEnv(gym.Env):
         super().close()
 
     def _close_cameras(self) -> None:
-        """Close only cameras this env owns; the robot closes its own."""
-        if self.robot is None:
-            for camera in self._cameras.values():
-                camera.disconnect()
+        """Drop the camera references; the robot closes what it opened."""
         self._cameras = {}
 
     def _crop_frame(
@@ -843,27 +844,10 @@ class FrankaEnv(gym.Env):
         frames = {}
         display_frames = {}
         for name, camera in self._cameras.items():
-            frame = None
-            # Bound recovery attempts so persistent camera faults surface promptly.
-            for attempt in range(_CAMERA_REOPEN_ATTEMPTS):
-                try:
-                    frame = camera.get_frame()
-                    break
-                except queue.Empty:
-                    self._logger.warning(
-                        "Camera %s is not producing frames; reopening "
-                        "(attempt %d of %d).",
-                        name,
-                        attempt + 1,
-                        _CAMERA_REOPEN_ATTEMPTS,
-                    )
-                    time.sleep(_CAMERA_REOPEN_WAIT_S)
-                    camera.reopen()
-            if frame is None:
-                raise RuntimeError(
-                    f"Camera {name} produced no frame after "
-                    f"{_CAMERA_REOPEN_ATTEMPTS} reopen attempts."
-                )
+            # Bounded so a camera that is genuinely down surfaces promptly.
+            frame = camera.get_frame(
+                attempts=_CAMERA_REOPEN_ATTEMPTS, wait=_CAMERA_REOPEN_WAIT_S
+            )
 
             reshape_size = self.observation_space["frames"][name].shape[:2][::-1]
             cropped_frame, resized_frame = self._crop_frame(
@@ -895,7 +879,7 @@ class FrankaEnv(gym.Env):
         return position
 
     def _clear_error(self) -> None:
-        self._controller.clear_errors()
+        self._arm.clear_errors()
 
     def _binary_gripper_action(self, position: float) -> bool:
         """Execute a scaled binary gripper command."""
@@ -946,7 +930,7 @@ class FrankaEnv(gym.Env):
 
     def _interpolate_move(self, pose: np.ndarray, timeout: float = 1.5) -> None:
         num_steps = int(timeout * self.config.step_frequency)
-        self._franka_state: FrankaRobotState = self._controller.get_state()
+        self._franka_state: FrankaRobotState = self._arm.get_state()
         pos_path = np.linspace(
             self._franka_state.tcp_pose[:3], pose[:3], int(num_steps) + 1
         )
@@ -959,12 +943,12 @@ class FrankaEnv(gym.Env):
             self._move_action(pose.astype(np.float32))
             time.sleep(1.0 / self.config.step_frequency)
 
-        self._franka_state: FrankaRobotState = self._controller.get_state()
+        self._franka_state: FrankaRobotState = self._arm.get_state()
 
     def _move_action(self, position: np.ndarray) -> None:
         if not self.config.is_dummy:
             self._clear_error()
-            self._controller.move_arm(position.astype(np.float32))
+            self._arm.move_arm(position.astype(np.float32))
         else:
             print(f"Executing dummy action towards {position=}.")
 

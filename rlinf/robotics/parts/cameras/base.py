@@ -133,16 +133,47 @@ class BaseCamera(Camera, ABC):
         """Return the latest raw frame under the canonical camera key."""
         return {"frame": self.get_frame()}
 
-    def get_frame(self, timeout: float = 5) -> np.ndarray:
+    def get_frame(
+        self, timeout: float = 5, attempts: int = 1, wait: float = 0.0
+    ) -> np.ndarray:
         """Return the most recent frame (blocks up to *timeout* seconds).
 
+        A camera that stops producing frames is usually recoverable, so a
+        failed read reopens the device before the next attempt and before the
+        error reaches the caller. Reading is the only place that learns a
+        camera has stalled, which is why recovering it lives here rather than
+        in every loop that reads one.
+
         Args:
-            timeout: Maximum seconds to wait for a frame.
+            timeout: Maximum seconds to wait for a frame, per attempt.
+            attempts: How many times to ask before giving up.
+            wait: Seconds to settle after reopening, before the next attempt.
+
+        Raises:
+            queue.Empty: If no attempt produced a frame.
         """
         assert self._frame_capturing_start, (
             "Frame capturing is not started. Call connect() first."
         )
-        return self._frame_queue.get(timeout=timeout)
+        for attempt in range(1, max(attempts, 1) + 1):
+            try:
+                return self._frame_queue.get(timeout=timeout)
+            except queue.Empty:
+                get_logger().warning(
+                    "Camera %s produced no frame within %.2fs "
+                    "(attempt %d of %d); reopening.",
+                    self.name,
+                    timeout,
+                    attempt,
+                    max(attempts, 1),
+                )
+                self.reopen()
+                if wait:
+                    time.sleep(wait)
+        raise queue.Empty(
+            f"Camera {self.name} produced no frame after {max(attempts, 1)} "
+            "attempts, each followed by a reopen."
+        )
 
     # Internal capture loop
 

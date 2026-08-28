@@ -3846,3 +3846,58 @@ def test_a_later_subscriber_does_not_unready_an_existing_one():
             assert session.get_input_channel_status("/topic")
         finally:
             ROSController._shared = None
+
+
+def test_child_says_what_a_part_is_expected_to_be():
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        from rlinf.robotics.parts.arms.franky import FrankyArm
+        from rlinf.robotics.parts.end_effectors import BaseGripper
+        from rlinf.robotics.robots import FrankaRobot
+
+        robot = FrankaRobot.build(
+            robot_ip="10.0.0.1",
+            node_rank=0,
+            backend="franky",
+            gripper_type="franka",
+        )
+
+        # Naming the class is what lets a caller reach the driver's own methods
+        # with an editor able to resolve them.
+        hand = robot.child("end_effector", BaseGripper)
+        assert callable(hand.open) and callable(hand.close)
+        assert robot.child("arm", FrankyArm) is robot.child("arm")
+
+        # A composition that does not match is reported here, by name, rather
+        # than as a missing attribute somewhere later.
+        with pytest.raises(TypeError, match="not the FrankyArm"):
+            robot.child("end_effector", FrankyArm)
+
+
+def test_a_stalled_camera_is_reopened_before_the_caller_sees_the_error():
+    import queue
+
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        from rlinf.robotics.parts.cameras import Camera, CameraInfo
+
+        camera = Camera.of(CameraInfo(name="wrist", serial_number="MOCK0001"))
+        camera.connect()
+        try:
+            reopens = []
+            camera.reopen = lambda: reopens.append(1)
+
+            def stalled(timeout=None):
+                raise queue.Empty
+
+            camera._frame_queue.get = stalled
+
+            # Reading is where a stall is discovered, so recovering happens
+            # here rather than in every loop that reads a camera.
+            with pytest.raises(queue.Empty, match="after 3 attempts"):
+                camera.get_frame(timeout=0.01, attempts=3)
+            assert len(reopens) == 3
+        finally:
+            camera.disconnect()

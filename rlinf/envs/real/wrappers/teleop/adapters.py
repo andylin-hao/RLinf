@@ -73,7 +73,7 @@ class DualGelloJointStream(TeleopStreamer):
 
     def _controllers(self, env: gym.Env) -> tuple[Optional[Any], Optional[Any]]:
         inner = env.unwrapped
-        return getattr(inner, "_left_ctrl", None), getattr(inner, "_right_ctrl", None)
+        return getattr(inner, "_left_arm", None), getattr(inner, "_right_arm", None)
 
     def _hands(self, env: gym.Env) -> tuple[Optional[Any], Optional[Any]]:
         inner = env.unwrapped

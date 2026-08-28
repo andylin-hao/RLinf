@@ -37,7 +37,9 @@ from rlinf.robotics import (
     RobotInfo,
 )
 from rlinf.robotics.parts.arms.franka import FrankaRobotState
+from rlinf.robotics.parts.arms.franky import FrankyArm
 from rlinf.robotics.parts.cameras import BaseCamera, CameraInfo
+from rlinf.robotics.parts.end_effectors import BaseEndEffector
 from rlinf.robotics.teleop import ActionKind, ActionPart
 from rlinf.scheduler import WorkerInfo
 from rlinf.utils.logging import get_logger
@@ -205,7 +207,7 @@ class DualFrankaEnv(gym.Env):
             return
 
         # Wait for an initial valid state from each arm.
-        for label, ctrl in [("left", self._left_ctrl), ("right", self._right_ctrl)]:
+        for label, ctrl in [("left", self._left_arm), ("right", self._right_arm)]:
             t0 = time.time()
             while not ctrl.is_robot_up():
                 time.sleep(0.5)
@@ -217,8 +219,8 @@ class DualFrankaEnv(gym.Env):
                     )
 
         self._left_state, self._right_state = self._run_arm_calls(
-            self._left_ctrl.get_state,
-            self._right_ctrl.get_state,
+            self._left_arm.get_state,
+            self._right_arm.get_state,
         )
 
         # Retain the latest valid frame while an individual camera recovers.
@@ -295,24 +297,18 @@ class DualFrankaEnv(gym.Env):
         Camera paths are reduced to their declared leaf names because the
         observation space already encodes the arm side.
         """
-        if self.robot is not None:
-            self._cameras: dict[str, BaseCamera] = {}
-            for path, camera in self.robot.parts_of_type(Camera).items():
-                declared = path.rsplit(".", 1)[-1]
-                assert declared not in self._cameras, (
-                    f"Two cameras on this robot are both called {declared!r} "
-                    f"({path} collides). Camera names come from the env's own "
-                    "declarations, which have to be unique across the robot."
-                )
-                self._cameras[declared] = camera
-            return
-        self._cameras = {info.name: Camera.of(info) for info in self._camera_infos()}
+        self._cameras: dict[str, BaseCamera] = {}
+        for path, camera in self.robot.parts_of_type(Camera).items():
+            declared = path.rsplit(".", 1)[-1]
+            assert declared not in self._cameras, (
+                f"Two cameras on this robot are both called {declared!r} "
+                f"({path} collides). Camera names come from the env's own "
+                "declarations, which have to be unique across the robot."
+            )
+            self._cameras[declared] = camera
 
     def _close_cameras(self) -> None:
-        """Close only cameras this env owns; the robot closes its own."""
-        if self.robot is None:
-            for camera in self._cameras.values():
-                camera.disconnect()
+        """Drop the camera references; the robot closes what it opened."""
         self._cameras = {}
 
     def _crop_frame(
@@ -338,13 +334,14 @@ class DualFrankaEnv(gym.Env):
             try:
                 frame = camera.get_frame(timeout=_CAMERA_FRAME_TIMEOUT_S)
             except queue.Empty:
+                # get_frame has already reopened it; keep the loop at 10 Hz by
+                # reusing the last good frame while it comes back.
                 cached = self._last_camera_frame.get(name)
                 if cached is None:
                     raise RuntimeError(
                         f"Camera {name} stalled with no cached frame to fall back to."
                     )
-                self._logger.error("Camera %s stalled; reopening.", name)
-                camera.reopen()
+                self._logger.error("Camera %s stalled; using the last frame.", name)
                 frame = cached
 
             reshape_size = self.observation_space["frames"][name].shape[:2][::-1]
@@ -430,11 +427,18 @@ class DualFrankaEnv(gym.Env):
             cameras=base_cameras,
         )
         self.robot.connect()
-        self._left_ctrl = self.robot.child("left").child("arm").owner
-        self._right_ctrl = self.robot.child("right").child("arm").owner
+        # Naming the class each part is expected to be keeps the driver's own
+        # methods resolvable from here, and reports a mismatched composition at
+        # this line rather than as a missing attribute mid-episode.
+        self._left_arm: FrankyArm = self.robot.child("left").child("arm", FrankyArm)
+        self._right_arm: FrankyArm = self.robot.child("right").child("arm", FrankyArm)
         # Each hand is a part beside its arm, with its own connection.
-        self._left_hand = self.robot.child("left").child("end_effector")
-        self._right_hand = self.robot.child("right").child("end_effector")
+        self._left_hand: BaseEndEffector = self.robot.child("left").child(
+            "end_effector", BaseEndEffector
+        )
+        self._right_hand: BaseEndEffector = self.robot.child("right").child(
+            "end_effector", BaseEndEffector
+        )
 
     # Gymnasium reset and step.
 
@@ -488,15 +492,15 @@ class DualFrankaEnv(gym.Env):
             self._right_hand.open,
         )
         self._submit_arm_calls(
-            lambda: self._left_ctrl.reset_joint(self.config.joint_reset_qpos[0]),
-            lambda: self._right_ctrl.reset_joint(self.config.joint_reset_qpos[1]),
+            lambda: self._left_arm.reset_joint(self.config.joint_reset_qpos[0]),
+            lambda: self._right_arm.reset_joint(self.config.joint_reset_qpos[1]),
         )
         time.sleep(0.5)
         # State reads follow the reset on each arm's queue and therefore wait
         # for it, while the fixed settle delay overlaps the reset as before.
         self._left_state, self._right_state = self._run_arm_calls(
-            self._left_ctrl.get_state,
-            self._right_ctrl.get_state,
+            self._left_arm.get_state,
+            self._right_arm.get_state,
         )
 
     def reset(
@@ -529,8 +533,8 @@ class DualFrankaEnv(gym.Env):
         self._clear_errors()
 
         self._left_state, self._right_state = self._run_arm_calls(
-            self._left_ctrl.get_state,
-            self._right_ctrl.get_state,
+            self._left_arm.get_state,
+            self._right_arm.get_state,
         )
         return self._get_observation(), {}
 
@@ -543,7 +547,7 @@ class DualFrankaEnv(gym.Env):
 
         if not self.config.is_dummy:
             states = [self._left_state, self._right_state]
-            ctrls = [self._left_ctrl, self._right_ctrl]
+            ctrls = [self._left_arm, self._right_arm]
             hands = [self._left_hand, self._right_hand]
             dt = 1.0 / self.config.step_frequency
 
@@ -565,8 +569,8 @@ class DualFrankaEnv(gym.Env):
                 step_time = time.time() - start_time
                 time.sleep(max(0.0, (1.0 / self.config.step_frequency) - step_time))
             self._left_state, self._right_state = self._run_arm_calls(
-                self._left_ctrl.get_state,
-                self._right_ctrl.get_state,
+                self._left_arm.get_state,
+                self._right_arm.get_state,
             )
 
         observation = self._get_observation()
@@ -579,8 +583,8 @@ class DualFrankaEnv(gym.Env):
 
     def _clear_errors(self) -> None:
         self._run_arm_calls(
-            self._left_ctrl.clear_errors,
-            self._right_ctrl.clear_errors,
+            self._left_arm.clear_errors,
+            self._right_arm.clear_errors,
         )
 
     # Gripper and state helpers.
@@ -598,8 +602,8 @@ class DualFrankaEnv(gym.Env):
     def get_tcp_pose(self) -> np.ndarray:
         """Return concatenated TCP poses ``(14,)`` for both arms."""
         self._left_state, self._right_state = self._run_arm_calls(
-            self._left_ctrl.get_state,
-            self._right_ctrl.get_state,
+            self._left_arm.get_state,
+            self._right_arm.get_state,
         )
         return np.concatenate([self._left_state.tcp_pose, self._right_state.tcp_pose])
 

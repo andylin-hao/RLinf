@@ -686,20 +686,11 @@ class DOSW1Env(gym.Env):
         ]
 
     def _open_cameras(self) -> None:
-        """Use robot-owned cameras or connect local fallback cameras."""
-        if self.robot is not None:
-            self._cameras = list(self.robot.parts_of_type(Camera).values())
-            return
-        for info in self._camera_infos():
-            camera = Camera.of(info)
-            camera.connect()
-            self._cameras.append(camera)
+        """Take the cameras the robot composed and connected."""
+        self._cameras = list(self.robot.parts_of_type(Camera).values())
 
     def _close_cameras(self) -> None:
-        """Close only cameras this env owns; the robot closes its own."""
-        if self.robot is None:
-            for camera in self._cameras:
-                camera.disconnect()
+        """Drop the camera references; the robot closes what it opened."""
         self._cameras.clear()
 
     def _get_camera_frames(self) -> dict[str, np.ndarray]:

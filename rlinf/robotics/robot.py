@@ -14,14 +14,12 @@
 
 """Robot composition and lifecycle management."""
 
-from typing import TYPE_CHECKING, Any, ClassVar, Optional, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
-from .parts.base import PartGroup, RobotPart
+from .parts.base import PartGroup, RobotPart, RobotPartType
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from .discovery import RobotConfig, RobotDiscovery
-
-RobotPartType = TypeVar("RobotPartType", bound=RobotPart)
 
 
 class Robot(PartGroup):

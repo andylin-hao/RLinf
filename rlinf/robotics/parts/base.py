@@ -26,7 +26,15 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from functools import partial
 from importlib import import_module
-from typing import TYPE_CHECKING, Any, Callable, ClassVar, Optional, TypeVar
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    ClassVar,
+    Optional,
+    TypeVar,
+    overload,
+)
 
 from rlinf.utils.logging import get_logger
 
@@ -41,6 +49,7 @@ _ValueType = TypeVar("_ValueType")
 #: ``type[Arm]`` and ``Camera.backend("zed")`` a ``type[Camera]`` -- rather than
 #: a bare ``type``, which an editor cannot follow anywhere.
 DriverType = TypeVar("DriverType", bound="Connection")
+RobotPartType = TypeVar("RobotPartType", bound="RobotPart")
 
 #: What a part promises about one reading or one command: each name mapped to
 #: its ``{"shape": ..., "dtype": ...}``, or to ``{}`` where the driver says only
@@ -409,15 +418,46 @@ class RobotPart(Connection):
                 "and its action would go to the part instead. Rename the part."
             )
 
-    def child(self, name: str) -> "RobotPart":
-        """Return a child part by name."""
+    @overload
+    def child(self, name: str) -> "RobotPart": ...
+
+    @overload
+    def child(self, name: str, part_type: "type[RobotPartType]") -> "RobotPartType": ...
+
+    def child(
+        self, name: str, part_type: "Optional[type[RobotPartType]]" = None
+    ) -> "RobotPart":
+        """Return a child part by name.
+
+        Pass *part_type* to say what the caller expects the part to be. The
+        return is typed as that class, so an editor resolves its methods, and a
+        part that turns out to be something else is reported here rather than
+        as a missing attribute further along.
+
+        Args:
+            name: Name the part was composed under.
+            part_type: Class the part is expected to implement.
+
+        Raises:
+            KeyError: If no child has that name.
+            TypeError: If the part does not implement *part_type*.
+        """
         available = self.children
         if name not in available:
             raise KeyError(
                 f"{type(self).__name__} has no part {name!r}. "
                 f"Available: {sorted(available)}."
             )
-        return available[name]
+        part = available[name]
+        if part_type is not None and not isinstance(part, part_type):
+            raise TypeError(
+                f"{type(self).__name__} part {name!r} is a "
+                f"{type(part).__name__}, not the {part_type.__name__} the "
+                "caller expects. A remotely placed part answers as a "
+                "synthesized subclass of its own class, so this names a real "
+                "mismatch rather than placement."
+            )
+        return part
 
     @abstractmethod
     def get_observation(self) -> Observation:

@@ -274,9 +274,11 @@ def test_franka_builds_cameras_after_applying_hardware_info(monkeypatch):
         def connect(self):
             pass
 
-        def child(self, name):
-            # The env reaches for the arm and, beside it, the end effector.
+        def child(self, name, part_type=None):
+            # The env reaches for the arm and, beside it, the end effector,
+            # naming the class it expects each to be.
             assert name in ("arm", "end_effector")
+            assert part_type is not None, "the env should say what it expects"
             return SimpleNamespace(owner=object())
 
     def build(**kwargs):
