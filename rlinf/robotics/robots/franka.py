@@ -221,6 +221,10 @@ class FrankaConfig(RobotConfig):
 
     REQUIRES_CAMERA = True
 
+    backend: Optional[str] = None
+    """Arm backend this robot runs, such as ``"franka_ros"`` or ``"franky"``.
+    ``None`` leaves the choice to the robot class's own :attr:`BACKEND`."""
+
     robot_ip: Optional[str] = None
     """IP address of the robotic system.
     When unset in YAML it is auto-detected from the ``ROBOT_IP`` environment

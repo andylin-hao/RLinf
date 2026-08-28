@@ -15,9 +15,11 @@
 """Arm interfaces and the canonical observation schema."""
 
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from typing import Any, ClassVar, Optional, Protocol
 
 from rlinf.robotics.parts.base import ControllablePart, Features, Observation
+from rlinf.utils.logging import get_logger
 
 #: Canonical arm fields; mounted devices expose their own observations.
 ARM_STATE_FIELDS: tuple[str, ...] = (
@@ -129,3 +131,20 @@ class BaseArm(Arm, ABC):
         """Select the canonical fields out of this arm's state."""
         state = self.get_state().to_dict()
         return {name: state[name] for name in self.STATE_FIELDS}
+
+    def reconfigure_compliance_params(self, params: "Mapping[str, float]") -> None:
+        """Apply controller compliance settings while the arm is running.
+
+        Backends that fix their gains when the controller starts keep this
+        default. It reports the settings it could not apply rather than
+        dropping them, so a task tuned against one backend does not appear to
+        run with those gains on another.
+        """
+        if params:
+            get_logger().warning(
+                "%s cannot change compliance while running; %s were not "
+                "applied. Set them where this backend configures its "
+                "controller instead.",
+                type(self).__name__,
+                sorted(params),
+            )

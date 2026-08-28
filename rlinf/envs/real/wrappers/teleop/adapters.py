@@ -71,7 +71,7 @@ class DualGelloJointStream(TeleopStreamer):
         kwargs["options"] = options
         return kwargs
 
-    def _controllers(self, env: gym.Env) -> tuple[Optional[Any], Optional[Any]]:
+    def _arms(self, env: gym.Env) -> tuple[Optional[Any], Optional[Any]]:
         inner = env.unwrapped
         return getattr(inner, "_left_arm", None), getattr(inner, "_right_arm", None)
 
@@ -98,7 +98,7 @@ class DualGelloJointStream(TeleopStreamer):
 
     def ready_to_stream(self, env: gym.Env) -> bool:
         """Return whether both follower controllers are available."""
-        return self._controllers(env) != (None, None)
+        return self._arms(env) != (None, None)
 
     @property
     def _ready(self) -> bool:
@@ -120,24 +120,22 @@ class DualGelloJointStream(TeleopStreamer):
         """Move both followers to their leaders' current joint poses."""
         if not self._ready:
             return False
-        left_ctrl, right_ctrl = self._controllers(env)
-        if left_ctrl is None or right_ctrl is None:
+        left_arm, right_arm = self._arms(env)
+        if left_arm is None or right_arm is None:
             return False
         left_q, _, right_q, _ = self._joints()
         self._run_both(
             env,
-            lambda: left_ctrl.reset_joint(
-                np.asarray(left_q, dtype=np.float64).tolist()
-            ),
-            lambda: right_ctrl.reset_joint(
+            lambda: left_arm.reset_joint(np.asarray(left_q, dtype=np.float64).tolist()),
+            lambda: right_arm.reset_joint(
                 np.asarray(right_q, dtype=np.float64).tolist()
             ),
         )
         inner = env.unwrapped
         inner._left_state, inner._right_state = self._run_both(
             env,
-            left_ctrl.get_state,
-            right_ctrl.get_state,
+            left_arm.get_state,
+            right_arm.get_state,
         )
         return True
 
@@ -146,15 +144,17 @@ class DualGelloJointStream(TeleopStreamer):
         if not self._ready:
             time.sleep(self._period)
             return
-        left_ctrl, right_ctrl = self._controllers(env)
-        if left_ctrl is None or right_ctrl is None:
+        left_arm, right_arm = self._arms(env)
+        if left_arm is None or right_arm is None:
             return
 
         left_q, left_g, right_q, right_g = self._joints()
         self._run_both(
             env,
-            lambda: left_ctrl.move_joints(left_q.astype(np.float32)),
-            lambda: right_ctrl.move_joints(right_q.astype(np.float32)),
+            lambda: left_arm.send_action({"joint_position": left_q.astype(np.float32)}),
+            lambda: right_arm.send_action(
+                {"joint_position": right_q.astype(np.float32)}
+            ),
         )
 
         if not self.gripper_enabled:

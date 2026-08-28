@@ -229,10 +229,10 @@ class FrankaBinRelocationEnv(FrankaEnv):
     def go_to_rest(self, joint_reset: bool = False) -> None:
         """Lift clear of the slot before moving to the base rest pose."""
         self._end_effector_action(np.array([1.0]))
-        self._franka_state = self._arm.get_state()
+        self._franka_state = self._read_robot()
         self._move_action(self._franka_state.tcp_pose)
         time.sleep(0.5)
-        self._franka_state = self._arm.get_state()
+        self._franka_state = self._read_robot()
 
         # Lift before following the normal reset trajectory.
         reset_pose = copy.deepcopy(self._franka_state.tcp_pose)

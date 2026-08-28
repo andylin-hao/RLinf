@@ -3901,3 +3901,47 @@ def test_a_stalled_camera_is_reopened_before_the_caller_sees_the_error():
             assert len(reopens) == 3
         finally:
             camera.disconnect()
+
+
+def test_a_franka_env_commands_the_arm_through_the_robot():
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        from rlinf.robotics.parts.arms.base import Arm
+        from rlinf.robotics.robots import FrankaRobot
+
+        # Both Franka arm backends accept a Cartesian target through the part
+        # interface, which is what lets one env drive either of them.
+        for backend in ("franka_ros", "franky"):
+            robot = FrankaRobot.build(
+                robot_ip="10.0.0.1",
+                node_rank=0,
+                backend=backend,
+                gripper_type="franka",
+            )
+            robot.connect()
+            try:
+                assert "tcp_pose" in robot.child("arm", Arm).action_features
+                pose = np.array([0.4, 0.0, 0.3, 0.0, 1.0, 0.0, 0.0])
+                applied = robot.send_action({"arm": {"tcp_pose": pose}})
+                assert set(applied) == {"arm"}
+            finally:
+                robot.disconnect()
+
+
+def test_an_arm_reports_compliance_settings_it_cannot_apply(caplog):
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        from rlinf.robotics.parts.arms.franky import FrankyArm
+
+        arm = FrankyArm.declare("10.0.0.1")
+        arm.connect()
+        try:
+            # Silence is only correct when there was nothing to apply.
+            arm.reconfigure_compliance_params({})
+            with caplog.at_level("WARNING"):
+                arm.reconfigure_compliance_params({"translational_stiffness": 500})
+            assert "cannot change compliance" in caplog.text
+        finally:
+            arm.disconnect()

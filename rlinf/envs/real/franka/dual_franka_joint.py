@@ -119,9 +119,15 @@ class DualFrankaJointEnv(DualFrankaEnv):
             tj = self._clip_joints_to_limits(tj)
             target_joints.append(tj)
 
+        # Commanding the named part rather than the driver keeps this task
+        # working on any arm backend that accepts joint targets.
         self._run_arm_calls(
-            lambda: ctrls[0].move_joints(target_joints[0].astype(np.float32)),
-            lambda: ctrls[1].move_joints(target_joints[1].astype(np.float32)),
+            lambda: ctrls[0].send_action(
+                {"joint_position": target_joints[0].astype(np.float32)}
+            ),
+            lambda: ctrls[1].send_action(
+                {"joint_position": target_joints[1].astype(np.float32)}
+            ),
         )
 
     def _pace_between_action_and_state_read(self) -> bool:

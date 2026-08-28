@@ -31,8 +31,8 @@ from rlinf.robotics import (
     Robot,
     RobotInfo,
 )
+from rlinf.robotics.parts.arms.base import BaseArm
 from rlinf.robotics.parts.arms.franka import FrankaRobotState
-from rlinf.robotics.parts.arms.franka_ros import FrankaROSArm
 from rlinf.robotics.parts.cameras import BaseCamera, CameraInfo
 from rlinf.robotics.parts.end_effectors import BaseEndEffector
 from rlinf.robotics.parts.end_effectors.base import (
@@ -98,6 +98,9 @@ _CAMERA_REOPEN_WAIT_S = 5.0
 @dataclass
 class FrankaRobotConfig:
     robot_ip: Optional[str] = None
+    #: Arm backend this robot runs, such as ``"franka_ros"`` or ``"franky"``.
+    #: ``None`` leaves the choice to the robot's own default.
+    backend: Optional[str] = None
     camera_serials: Optional[list[str]] = None
     camera_names: Optional[dict[str, str]] = None
     camera_type: Optional[str] = None
@@ -223,6 +226,8 @@ class FrankaEnv(gym.Env):
             self.env_worker_rank = worker_info.rank
 
         self._franka_state = FrankaRobotState()
+        #: Cropped frames from the most recent whole-robot reading.
+        self._last_frames: dict[str, np.ndarray] = {}
         if not self.config.is_dummy:
             self._reset_pose = np.concatenate(
                 [
@@ -265,12 +270,14 @@ class FrankaEnv(gym.Env):
                     f"Waited {time.time() - start_time} seconds for Franka robot to be ready."
                 )
 
-        self._interpolate_move(self._reset_pose)
-        time.sleep(1.0)
-        self._franka_state = self._arm.get_state()
-
+        # Take the cameras before the first whole-robot read, which carries
+        # their frames along with the arm state.
         self._open_cameras()
         self.camera_player = VideoPlayer(self.config.enable_camera_player)
+
+        self._interpolate_move(self._reset_pose)
+        time.sleep(1.0)
+        self._franka_state = self._read_robot()
 
     @property
     def task_description(self) -> str:
@@ -291,6 +298,8 @@ class FrankaEnv(gym.Env):
             self.config.camera_type = getattr(
                 self.robot_info.config, "camera_type", "realsense"
             )
+        if self.config.backend is None:
+            self.config.backend = getattr(self.robot_info.config, "backend", None)
         if self.config.gripper_type is None:
             self.config.gripper_type = getattr(
                 self.robot_info.config, "gripper_type", "franka"
@@ -320,6 +329,7 @@ class FrankaEnv(gym.Env):
             env_idx=self.env_idx,
             node_rank=controller_node_rank,
             worker_rank=self.env_worker_rank,
+            backend=self.config.backend,
             end_effector_type=self.config.end_effector_type,
             end_effector_config=self.config.end_effector_config,
             gripper_connection=self.config.gripper_connection,
@@ -330,7 +340,7 @@ class FrankaEnv(gym.Env):
         # Naming the class each part is expected to be keeps the driver's own
         # methods resolvable from here, and reports a mismatched composition at
         # this line rather than as a missing attribute mid-episode.
-        self._arm: FrankaROSArm = self.robot.child("arm", FrankaROSArm)
+        self._arm: BaseArm = self.robot.child("arm", BaseArm)
         # The end effector is a part beside the arm, with its own connection.
         self._end_effector: BaseEndEffector = self.robot.child(
             "end_effector", BaseEndEffector
@@ -418,7 +428,7 @@ class FrankaEnv(gym.Env):
         time.sleep(max(0, (1.0 / self.config.step_frequency) - step_time))
 
         if not self.config.is_dummy:
-            self._franka_state = self._arm.get_state()
+            self._franka_state = self._read_robot()
         else:
             self._franka_state = self._franka_state
         observation = self._get_observation()
@@ -441,7 +451,7 @@ class FrankaEnv(gym.Env):
 
     def get_tcp_pose(self) -> np.ndarray:
         """Return the current TCP pose ``[x, y, z, qx, qy, qz, qw]``."""
-        self._franka_state = self._arm.get_state()
+        self._franka_state = self._read_robot()
         return self._franka_state.tcp_pose
 
     def get_action_scale(self) -> np.ndarray:
@@ -585,7 +595,7 @@ class FrankaEnv(gym.Env):
 
         self._clear_error()
         self._num_steps = 0
-        self._franka_state = self._arm.get_state()
+        self._franka_state = self._read_robot()
         observation = self._get_observation()
 
         return observation, {}
@@ -609,12 +619,12 @@ class FrankaEnv(gym.Env):
         else:
             reset_pose = self._reset_pose.copy()
 
-        self._franka_state = self._arm.get_state()
+        self._franka_state = self._read_robot()
         cnt = 0
         while not np.allclose(self._franka_state.tcp_pose[:3], reset_pose[:3], 0.02):
             cnt += 1
             self._interpolate_move(reset_pose)
-            self._franka_state = self._arm.get_state()
+            self._franka_state = self._read_robot()
             if cnt > 2:
                 break
 
@@ -838,16 +848,13 @@ class FrankaEnv(gym.Env):
         resized_frame = cv2.resize(cropped_frame, reshape_size)
         return cropped_frame, resized_frame
 
-    def _get_camera_frames(self) -> dict[str, np.ndarray]:
-        """Read and crop one frame per camera, reopening stalled devices."""
+    def _frames_from(self, reading: dict[str, Any]) -> dict[str, np.ndarray]:
+        """Crop and resize the frames one robot reading carried."""
         crops = {info.name: info.crop_region for info in self._camera_infos}
         frames = {}
         display_frames = {}
-        for name, camera in self._cameras.items():
-            # Bounded so a camera that is genuinely down surfaces promptly.
-            frame = camera.get_frame(
-                attempts=_CAMERA_REOPEN_ATTEMPTS, wait=_CAMERA_REOPEN_WAIT_S
-            )
+        for name in self._cameras:
+            frame = np.asarray(reading[name]["frame"])
 
             reshape_size = self.observation_space["frames"][name].shape[:2][::-1]
             cropped_frame, resized_frame = self._crop_frame(
@@ -930,7 +937,7 @@ class FrankaEnv(gym.Env):
 
     def _interpolate_move(self, pose: np.ndarray, timeout: float = 1.5) -> None:
         num_steps = int(timeout * self.config.step_frequency)
-        self._franka_state: FrankaRobotState = self._arm.get_state()
+        self._franka_state: FrankaRobotState = self._read_robot()
         pos_path = np.linspace(
             self._franka_state.tcp_pose[:3], pose[:3], int(num_steps) + 1
         )
@@ -943,18 +950,46 @@ class FrankaEnv(gym.Env):
             self._move_action(pose.astype(np.float32))
             time.sleep(1.0 / self.config.step_frequency)
 
-        self._franka_state: FrankaRobotState = self._arm.get_state()
+        self._franka_state: FrankaRobotState = self._read_robot()
 
     def _move_action(self, position: np.ndarray) -> None:
-        if not self.config.is_dummy:
-            self._clear_error()
-            self._arm.move_arm(position.astype(np.float32))
-        else:
+        if self.config.is_dummy:
             print(f"Executing dummy action towards {position=}.")
+            return
+        self._clear_error()
+        # Commanding the named part rather than the driver is what lets this
+        # env run on any arm backend that accepts a Cartesian target.
+        self.robot.send_action({"arm": {"tcp_pose": position.astype(np.float32)}})
+
+    def _read_robot(self) -> FrankaRobotState:
+        """Read every part once and refresh the cached arm and frame state.
+
+        Reading the robot rather than its drivers is what keeps this env
+        independent of which backend the arm runs, and parts on separate
+        connections answer at the same time instead of in turn.
+        """
+        reading = self.robot.get_observation()
+        self._franka_state = self._state_from(reading)
+        self._last_frames = self._frames_from(reading)
+        return self._franka_state
+
+    def _state_from(self, reading: dict[str, Any]) -> FrankaRobotState:
+        """Fill the arm state this env carries from one robot reading."""
+        state = FrankaRobotState()
+        for name, value in reading["arm"].items():
+            if hasattr(state, name):
+                setattr(state, name, value)
+        end_effector = np.asarray(reading["end_effector"]["state"])
+        if self._is_hand:
+            state.hand_position = end_effector
+        else:
+            state.gripper_position = float(end_effector[0])
+            state.gripper_open = bool(self._end_effector.is_open)
+        return state
 
     def _get_observation(self) -> dict[str, Any]:
         if not self.config.is_dummy:
-            frames = self._get_camera_frames()
+            frames = self._last_frames
             state: dict = {
                 "tcp_pose": self._franka_state.tcp_pose,
                 "tcp_vel": self._franka_state.tcp_vel,
