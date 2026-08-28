@@ -50,6 +50,7 @@ from rlinf.robotics.parts.arms.franky import (  # noqa: E402
     JOINT_LIMITS_UPPER,
     FrankyArm,
 )
+from rlinf.robotics.parts.end_effectors import EndEffector  # noqa: E402
 from rlinf.robotics.parts.teleop.readers.gello_joint import (  # noqa: E402
     GelloJointExpert,
 )
@@ -122,17 +123,19 @@ def fmt_deg(q: np.ndarray) -> str:
 
 
 def setup_franky():
-    """Connect to the local Franka via FrankyArm and wait until it is up."""
+    """Connect to the local Franka via FrankyArm and wait until it is up.
+
+    The Robotiq gripper opens alongside the arm, as it did when the arm still
+    built it, so this check keeps covering the serial port GELLO teleop needs.
+    """
     robot_ip = os.environ.get("FRANKA_ROBOT_IP", "172.16.0.2")
-    gripper_port = _resolve_local_robotiq_port()
     print(f"Connecting to Franka at {robot_ip} ...", flush=True)
-    controller = FrankyArm(
-        robot_ip=robot_ip,
-        gripper_type="robotiq",
-        gripper_connection=gripper_port,
-        node_rank=0,
+    controller = FrankyArm(robot_ip=robot_ip, node_rank=0)
+    gripper = EndEffector.of(
+        "robotiq_gripper", port=_resolve_local_robotiq_port(), node_rank=0
     )
     controller.connect()
+    gripper.connect()
     for _ in range(60):
         if controller.is_robot_up():
             break

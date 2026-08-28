@@ -117,7 +117,7 @@
 
 底盘和 Franka 机械臂都是尚未连接的 ``RobotPart``，因此组合方式相同：直接传给 ``Robot``，由参数名决定访问路径。``base=base`` 建立 ``base`` 路径，``arm=arm_connection`` 建立 ``arm`` 路径。
 
-两者的区别在于是否还承载其他零部件。底盘没有直接挂载的零部件；Franka 机械臂则通过同一个硬件 session 承载末端执行器。因此，直接组合机械臂时，末端执行器会自动出现在 ``arm.end_effector``，机器人 builder 无需再维护一份末端执行器清单。
+两者的区别在于是否还承载其他零部件。这里两者都没有：Franka Hand 有独立的通信端点，因此它本身就是一个零部件，与机械臂并列组合，而不在其下。如果机械臂通过自己的总线驱动夹爪，则确实承载了夹爪，组合机械臂时夹爪会一并出现在 ``arm.end_effector``，机器人 builder 无需再声明它。判断依据是设备是否持有自己的链路，而不是它安装在哪里。
 
 只有当共享 session 本身不能返回观测时，才需要调用 ``part(name)``。例如，双臂控制器可以通过 ``session.part("left")`` 取出左臂，再将返回的 ``RobotPart`` 加入机器人的组合结构。
 
@@ -135,6 +135,8 @@
    )
    robot = MobileManipulator(base=base, **arm_parts)
 
+``build_arms`` 同时返回机械臂和末端执行器，因此 ``**arm_parts`` 会一并加入两者。如果需要为它们单独命名，或将它们部署到不同节点，可分别调用 ``declare_arm`` 和 ``declare_end_effector``。
+
 将 ``FrankaRobot.build_arms`` 替换为其他机器人系列提供的零部件构建方法，或者使用 ``PartGroup`` 组合多条机械臂，都不需要修改移动底盘。机器人由所选零部件及其名称构成，无需为移动操作机器人增加专用字段或基类。
 
 打开硬件前，可以检查零部件路径、部署节点和连接归属：
@@ -143,11 +145,11 @@
 
    >>> print(robot.describe())
    MobileManipulator
-   ├── base                ExampleMobileBase    node=0     via ExampleMobileBase#1
-   └── arm                 FrankaROSArm         node=0     via FrankaROSArm#2
-       └── end_effector    MethodEndEffector    node=0     via FrankaROSArm#2
+   ├── base           ExampleMobileBase    node=0     via ExampleMobileBase#1
+   ├── arm            FrankaROSArm         node=0     via FrankaROSArm#2
+   └── end_effector   FrankaGripper        node=0     via FrankaGripper#3
 
-``arm`` 与 ``arm.end_effector`` 的 ``via`` 相同，表示二者共用一条 Franka connection；底盘使用另一条独立 connection。连接后，零部件路径、节点和资源归属保持不变；如果 connection 位于远程节点，class 名称会显示为 RemoteFrankaROSArm 等合成类型。
+三个零部件对应三个 ``via``，即三条各自打开一次的 connection。连接后，零部件路径、节点和资源归属保持不变；如果 connection 位于远程节点，class 名称会显示为 RemoteFrankaROSArm 等合成类型。
 
 连接后，观测和动作按照组合时定义的名称访问：
 
@@ -164,20 +166,18 @@
            {"base": {"velocity": np.array([0.1, 0.0], dtype=np.float32)}}
        )
 
-       # 任务也可以同时控制底盘和现有机械臂。
+       # 任务也可以同时控制底盘、机械臂和末端执行器。
        robot.send_action(
            {
                "base": {"velocity": base_velocity},
-               "arm": {
-                   "tcp_pose": arm_target,
-                   "end_effector": {"target": gripper_target},
-               },
+               "arm": {"tcp_pose": arm_target},
+               "end_effector": {"target": gripper_target},
            }
        )
    finally:
        robot.disconnect()
 
-``PartGroup.send_action`` 接受只包含部分路径的动作字典，因此导航任务只需发送 ``base`` 动作，无需为机械臂补充保持当前位置的命令。动作同时包含底盘和机械臂时，RLinf 可以并行调用两条独立连接；机械臂与末端执行器共用连接，仍会按照声明顺序调用。
+``PartGroup.send_action`` 接受只包含部分路径的动作字典，因此导航任务只需发送 ``base`` 动作，无需为机械臂补充保持当前位置的命令。这里三个分支各自持有连接，因此可以并行调用；共用同一条连接的分支则按声明顺序调用。
 
 3. 在真机环境中使用组合机器人
 ------------------------------
@@ -256,7 +256,7 @@
    finally:
        env.close()
 
-创建 ``RobotTaskEnv`` 时会连接整个组合机器人，``close()`` 则负责断开。移动操作任务可以在 observation space、action space 和动作字典中加入 ``arm`` 与 ``arm.end_effector`` 路径，无需修改底盘 driver 或机器人组合。
+创建 ``RobotTaskEnv`` 时会连接整个组合机器人，``close()`` 则负责断开。移动操作任务可以在 observation space、action space 和动作字典中加入 ``arm`` 与 ``end_effector`` 路径，无需修改底盘 driver 或机器人组合。
 
 如需通过 RLinf 分布式 ``RealWorldEnv`` 启动该任务，应先注册 Gymnasium ID，并在 env YAML 中设置 ``env_type: real`` 和对应 ID。当前 rollout 接口使用面向 policy 的 ``state`` 与 ``frames`` 观测；已有 policy 采用该表示时，请在环境边界配置 ``LegacyObservationAdapter`` 和 ``VectorActionAdapter``。任务注册、YAML、wrapper 与兼容性检查请参阅 :doc:`新增真机任务 <new_task>`。
 
@@ -458,10 +458,11 @@ env 收到 ``RobotInfo`` 后，需要显式调用已注册的 builder。schedule
        node_rank=0,
        controller_node_rank=0,
    )
-   assert set(robot.named_parts) == {"base", "arm", "arm.end_effector"}
-   end_effector = robot.child("arm").child("end_effector")
-   assert end_effector.owner is robot.child("arm").owner
-   assert len(robot.owners()) == 2
+   assert set(robot.named_parts) == {"base", "arm", "end_effector"}
+   end_effector = robot.child("end_effector")
+   # 末端执行器持有自己的链路，因此 owner 是它本身，而不是机械臂。
+   assert end_effector.owner is end_effector
+   assert len(robot.owners()) == 3
 
 只有当新增 SDK session 同时支持多个零部件时，才需要增加 ``ConnectionContract``。该 contract 会检查 session 生命周期，以及 ``parts`` 中各零部件的观测。还应逐项断言 ``connection.part(name).owner is connection``；目前 contract 不会自行调用 ``part(name)`` 检查 owner 绑定。本例新增的是单个叶子 ``MobileBase``，并复用已经测试过的 Franka connection，因此无需为底盘增加共享 session 测试。
 

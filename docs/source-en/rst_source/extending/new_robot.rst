@@ -144,11 +144,12 @@ the ``MobileBase`` subclass creates an unconnected ``RobotPart``, and the Franka
 arm is one too. The argument name becomes each part's public path in
 ``robot.children``.
 
-The difference is what they carry. The base carries nothing. The Franka arm
-carries its end effector on the same hardware session, so composing the arm
-composes the gripper with it, at ``arm.end_effector``. The robot does not name
-it and does not need to know it is there -- which is what lets an arm that
-decides at run time whether a gripper is fitted work without a robot edit.
+The difference is what they carry. Neither of these carries anything: a Franka
+Hand answers on its own endpoint, so it is a part in its own right and is
+composed beside the arm rather than under it. An arm that drives its gripper
+down its own bus does carry it, and then composing the arm brings the gripper
+along at ``arm.end_effector`` without the robot naming it. What decides is
+whether the device holds a link of its own, not where it is bolted.
 
 Name a part one at a time only when the robot's names differ from the driver's,
 or when a link is not a part at all and you have to pick from it: a two-arm
@@ -171,6 +172,10 @@ names are appropriate:
    )
    robot = MobileManipulator(base=base, **arm_parts)
 
+``build_arms`` returns the arm and the end effector, so ``**arm_parts`` adds
+both. Take the two separately with ``declare_arm`` and ``declare_end_effector``
+when you want to name them differently or put them on different nodes.
+
 Replacing ``FrankaRobot.build_arms`` with another robot family's part builder,
 or wrapping several arm parts in a ``PartGroup``, does not change the mobile base.
 The composition defines the robot; no base-specific arm slot or mobile-arm
@@ -182,14 +187,14 @@ Check those names and their resource ownership before opening hardware:
 
    >>> print(robot.describe())
    MobileManipulator
-   ├── base                ExampleMobileBase    node=0     via ExampleMobileBase#1
-   └── arm                 FrankaROSArm         node=0     via FrankaROSArm#2
-       └── end_effector    MethodEndEffector    node=0     via FrankaROSArm#2
+   ├── base           ExampleMobileBase    node=0     via ExampleMobileBase#1
+   ├── arm            FrankaROSArm         node=0     via FrankaROSArm#2
+   └── end_effector   FrankaGripper        node=0     via FrankaGripper#3
 
-The arm and end effector share one ``via`` because they use one Franka
-connection. The base has its own connection. The paths, nodes, and ownership
-remain visible after ``connect()``; a remotely placed connection then uses its
-synthesized class name, such as RemoteFrankaROSArm.
+Three parts, three ``via`` values, three connections opened once each. The
+paths, nodes, and ownership remain visible after ``connect()``; a remotely
+placed connection then uses its synthesized class name, such as
+RemoteFrankaROSArm.
 
 Once connected, observations and actions use the names from the composition:
 
@@ -206,23 +211,21 @@ Once connected, observations and actions use the names from the composition:
            {"base": {"velocity": np.array([0.1, 0.0], dtype=np.float32)}}
        )
 
-       # A task may also command the base and existing arm together.
+       # A task may also command the base, arm, and hand together.
        robot.send_action(
            {
                "base": {"velocity": base_velocity},
-               "arm": {
-                   "tcp_pose": arm_target,
-                   "end_effector": {"target": gripper_target},
-               },
+               "arm": {"tcp_pose": arm_target},
+               "end_effector": {"target": gripper_target},
            }
        )
    finally:
        robot.disconnect()
 
 ``PartGroup.send_action`` accepts a partial tree, so a navigation task need not
-send hold commands for the arm. When an action contains both connections,
-RLinf can dispatch them in parallel; the arm and end effector remain ordered
-because they share one connection.
+send hold commands for the arm. Here every branch has its own connection, so
+all three dispatch in parallel; branches that shared one would run in
+declaration order.
 
 3. Use the Robot in a Real-World Environment
 --------------------------------------------
@@ -306,7 +309,7 @@ an arm:
 
 ``RobotTaskEnv`` connects the composed robot when the environment is created
 and disconnects it in ``close()``. A manipulation task can expand the spaces
-and actions with ``arm`` and ``arm.end_effector``; the base driver and robot
+and actions with ``arm`` and ``end_effector``; the base driver and robot
 composition stay unchanged.
 
 To launch the task through RLinf's distributed ``RealWorldEnv``, register the
@@ -580,10 +583,11 @@ the paths and owners introduced by this robot:
        node_rank=0,
        controller_node_rank=0,
    )
-   assert set(robot.named_parts) == {"base", "arm", "arm.end_effector"}
-   end_effector = robot.child("arm").child("end_effector")
-   assert end_effector.owner is robot.child("arm").owner
-   assert len(robot.owners()) == 2
+   assert set(robot.named_parts) == {"base", "arm", "end_effector"}
+   end_effector = robot.child("end_effector")
+   # The hand holds its own link, so it owns itself rather than the arm.
+   assert end_effector.owner is end_effector
+   assert len(robot.owners()) == 3
 
 Add ``ConnectionContract`` only when the new SDK session backs several parts.
 It checks the session lifecycle and the observations returned by its ``parts``

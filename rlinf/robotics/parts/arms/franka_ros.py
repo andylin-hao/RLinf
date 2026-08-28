@@ -74,7 +74,7 @@ class FrankaROSArm(BaseArm):
         from franka_msgs.msg import ErrorRecoveryActionGoal, FrankaState
         from serl_franka_controllers.msg import ZeroJacobian
 
-        from rlinf.robotics.parts.transports.ros import shared_ros_session
+        from rlinf.robotics.parts.transports.ros import ROSController
 
         self._geom_msg = geom_msg
         self._rospy = rospy
@@ -82,7 +82,7 @@ class FrankaROSArm(BaseArm):
         self._FrankaState = FrankaState
         self._ZeroJacobian = ZeroJacobian
         self._ReconfClient = ReconfClient
-        self._ros = shared_ros_session()
+        self._ros = ROSController.shared()
         self._init_ros_channels()
         self.start_impedance()
         self._reconf_client = self._ReconfClient(
@@ -278,27 +278,3 @@ class FrankaROSArm(BaseArm):
             self._logger.debug(
                 f"Joint position reached {self._state.arm_joint_position}"
             )
-
-    def get_hand_type(self) -> str:
-        return self._end_effector_type.value
-
-    def get_hand_state(self) -> np.ndarray | None:
-        if self._end_effector_type.is_gripper:
-            return None
-        assert self._end_effector is not None
-        return self._end_effector.get_state()
-
-    def get_hand_detailed_state(self) -> dict[str, Any]:
-        if self._end_effector_type.is_gripper:
-            return {
-                "gripper_position": self._gripper.position,
-                "gripper_open": self._gripper.is_open,
-            }
-        assert self._end_effector is not None
-        return self._end_effector.get_detailed_state()
-
-    def get_hand_finger_names(self) -> list[str]:
-        if self._end_effector_type.is_gripper:
-            return ["gripper"]
-        assert self._end_effector is not None
-        return self._end_effector.finger_names

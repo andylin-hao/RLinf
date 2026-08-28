@@ -3792,17 +3792,16 @@ def test_ros_parts_share_one_session_per_process():
     from robot_mocks import mocked_sdks
 
     with mocked_sdks():
-        from rlinf.robotics.parts.transports import ros as ros_transport
-        from rlinf.robotics.parts.transports.ros import shared_ros_session
+        from rlinf.robotics.parts.transports.ros import ROSController
 
-        ros_transport.ros_controller._SHARED_SESSION = None
+        ROSController._shared = None
         try:
-            first = shared_ros_session()
+            first = ROSController.shared()
             # ROS 1 gives a process one node, so asking twice has to answer
             # with the session that node already belongs to.
-            assert shared_ros_session() is first
+            assert ROSController.shared() is first
         finally:
-            ros_transport.ros_controller._SHARED_SESSION = None
+            ROSController._shared = None
 
 
 def test_a_ros_hand_opens_without_an_arm_to_hand_it_a_session():

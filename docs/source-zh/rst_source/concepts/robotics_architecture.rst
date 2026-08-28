@@ -19,7 +19,7 @@
 
 构造底盘会创建一个尚未连接的 ``MobileBase`` 实例。该实例保存设备参数，``Connection`` 的 metaclass 则记录 ``node_rank`` 和 ``worker_name``，供后续 placement 使用。在调用 ``robot.connect()`` 前，代码不会导入厂商 SDK，也不会打开硬件。移动底盘本身能返回观测，policy 可直接访问，因此可以 ``base=base`` 传给 ``Robot``；参数名 ``base`` 会成为底盘的访问路径。
 
-一条硬件连接也可以同时支持多个零部件。例如，机械臂和夹爪共用一个 ROS session 时，任务仍应通过两条独立路径访问它们：
+一条硬件连接也可以同时支持多个零部件。例如，GimArm 的关节和夹爪共用一条 CAN 总线，一条链路同时应答两者，任务仍应通过两条独立路径访问它们：
 
 .. code-block:: text
 
@@ -37,7 +37,7 @@
 - ``PartGroup`` 或 ``Robot`` 的 ``children`` 保存组合时传入的直接成员。每个 key 都会成为观测和动作路径的一段，例如 ``left.arm``；任务、policy 和数据集使用这些路径访问零部件。
 - ``Connection`` 的 ``parts`` 列出同一硬件 session 支持的零部件。如果 connection 本身就是 ``RobotPart``，该 mapping 表示安装在它上的其他零部件；如果 connection 只表示共享 session，该 mapping 则列出可通过 ``part(name)`` 取出的零部件。这些名称属于 driver 内部，不会自动成为机器人的访问路径。
 
-组合时，``Robot(arm=connection)`` 将能返回观测的机械臂以 ``arm`` 为名加入 ``Robot``。机械臂承载的其他零部件会同时出现在下一级；例如，安装在机械臂上的夹爪位于 ``arm.end_effector``。访问路径、placement 和资源归属在 ``connect()`` 前已经确定，因此即使当前机器没有连接真机，也可以先检查组合结果。
+组合时，``Robot(arm=connection)`` 将能返回观测的机械臂以 ``arm`` 为名加入 ``Robot``。机械臂承载的其他零部件会同时出现在下一级；例如 GimArm 的夹爪位于 ``arm.end_effector``，因为它没有自己的链路，只能通过机械臂应答。决定层级的是连接方式，而不是安装位置：Franka Hand 同样固定在机械臂上，但它有独立的通信端点，因此与机械臂并列，而不在其下。访问路径、placement 和资源归属在 ``connect()`` 前已经确定，因此即使当前机器没有连接真机，也可以先检查组合结果。
 
 ``connection.part(name)`` 用于从一条本身不能返回观测的 connection 中选出某个零部件，例如从双臂 session 中选出左臂。只有这种情况才需要调用该方法。
 
@@ -53,9 +53,12 @@
    * - 不承载其他零部件的 ``RobotPart``，例如相机
      - ``Robot(wrist=camera)``
      - 相机的访问路径为 ``wrist``。
-   * - 承载其他零部件的 ``RobotPart``，例如带夹爪的机械臂
+   * - 承载其他零部件的 ``RobotPart``，例如夹爪与关节共用总线的机械臂
      - ``Robot(arm=connection)``
      - 机械臂的访问路径为 ``arm``，夹爪的访问路径为 ``arm.end_effector``。
+   * - 各自持有链路的两个零部件，例如机械臂与 Franka Hand
+     - ``Robot(arm=arm, end_effector=hand)``
+     - 两者各自成为顶层零部件，各自打开自己的连接。
    * - 本身不能返回观测的 ``Connection``，例如双臂 session
      - ``Robot(left=session.part("left"))``
      - 选出的零部件的访问路径为 ``left``。
@@ -76,7 +79,23 @@
        def build_arms(cls, **config):
            return {"arm": ExampleArm(config["robot_ip"], node_rank=config["node_rank"])}
 
-机械臂通过 ``parts`` 声明夹爪后，组合机械臂时会一并加入该夹爪。如果机器人 builder 再次声明夹爪，夹爪会成为机械臂的同级零部件，而不是安装在机械臂下的零部件；同时，builder 还需要同步维护一份重复清单。机械臂在运行时决定是否安装夹爪，或后续增加新零部件时，这份清单容易与实际硬件不一致。
+机器人 builder 为每条连接命名一个零部件。夹爪搭在机械臂链路上时，只声明机械臂即可：builder 再次声明夹爪，会使它变成机械臂的同级零部件，同时多出一份需要同步维护的清单；机械臂在运行时决定是否安装夹爪时，这份清单容易与实际硬件不一致。
+
+Franka 属于另一种情况。它的末端执行器自行打开 session，因此 builder 同时声明机械臂和末端执行器，两者互不归属：
+
+.. code-block:: python
+
+   class FrankaRobot(Robot):
+       @classmethod
+       def build_arms(cls, *, robot_ip, node_rank, **config):
+           return {
+               "arm": cls.declare_arm(robot_ip, node_rank=node_rank, name=...),
+               "end_effector": cls.declare_end_effector(
+                   robot_ip, node_rank=node_rank, name=..., **config
+               ),
+           }
+
+两种情况遵循同一条规则：为持有链路的对象命名；搭在链路上的零部件，随持有者一并加入。
 
 因此，driver 的 ``parts`` mapping 只包含该零部件承载的其他零部件，不包含它自身。系统会拒绝将零部件自身加入 ``parts``，从而避免形成无法终止的递归结构。
 
@@ -132,7 +151,9 @@
    class DualFrankaRobot(FrankaRobot):
        BACKEND = "franky"
 
-切换时只需修改 backend 名称。每个 backend 在自己的 ``declare()`` 中，将标准机械臂配置映射到相应构造函数；机器人无需了解某套实现需要 ROS package，而另一套实现需要夹爪串口。backend 无法满足的配置项应直接拒绝，不能静默丢弃，否则实际使用的末端执行器可能与配置不一致。
+切换时只需修改 backend 名称。每个 backend 在自己的 ``declare()`` 中，将标准机械臂配置映射到相应构造函数；机器人无需了解某套实现启动 ROS package，而另一套实现打开 libfranka session。机械臂只接受机械臂自身的配置：向 ``declare()`` 传入 ``gripper_type`` 会被直接拒绝，而不是静默丢弃，因为这类配置属于与它并列组合的末端执行器。
+
+Franka Hand 是本项目中唯一有两种驱动方式的设备 —— 经由 ROS topic，或经由自己的 libfranka session —— 因此 ``FrankaRobot`` 用 ``HAND_BACKENDS`` 记录从机械臂 backend 到末端执行器 driver 的对应关系。这一判断放在组合层，因为只有这里同时知道两者。如果配置直接写明 driver，例如 ``end_effector_type: franky_gripper``，则以配置为准。
 
 支持硬件枚举的 driver 还可以通过 ``SDK`` 声明厂商模块，并实现 ``discover()``。公共 discovery 流程会据此报告缺失的 SDK，并在持有设备的节点上校验相机 ID。厂商模块仍应在 ``_open()`` 或 ``discover()`` 中导入，不应在模块导入阶段加载。
 
@@ -187,7 +208,9 @@ env 层也使用相同的注册风格，但遥操作使用独立的 ``TeleopBack
 
 传给 ``Robot`` 的关键字参数会进入 ``robot.children``。上述机器人的顶层路径为 ``arm``，末端执行器则位于 ``arm.end_effector``。裸 ``Connection`` 本身不能返回观测，因此没有 ``children``；``PartGroup`` 的组成项已保存在 ``children`` 中，因此其 ``parts`` 为空。当共享 session 本身不能返回观测时，通过 ``connection.part(...)`` 取出需要组合的零部件。
 
-通过 ``part(name)`` 取出零部件时，共享 connection 会成为该 view 的 owner。因此 view 不需要实现 ``_open()``，也不应覆盖 ``connect()``。``parts`` 适用于这类借用共享 connection 的 view。如果设备拥有独立链路，例如通过 USB 连接的腕部相机，应将其显式加入 ``Robot`` 或某个 ``PartGroup``。这样相机会保留自己的 owner，``Robot.connect()`` 也会在指定节点上打开该设备。
+通过 ``part(name)`` 取出零部件时，共享 connection 会成为该 view 的 owner。因此 view 不需要实现 ``_open()``，也不应覆盖 ``connect()``。``parts`` 适用于这类借用共享 connection 的 view。
+
+两种形式的区别，取决于框架对 class 的一个判断，而不取决于配置：它是否实现了 ``_open()``。实现了的零部件持有自己的链路，保留自己的 owner 和 ``node_rank``，需要显式加入 ``Robot`` 或某个 ``PartGroup``；没有实现的零部件，则由声明它的 connection 接管。通过 USB 连接的腕部相机和 Franka Hand 属于前者，基于机械臂自身状态的 ``MethodEndEffector`` 属于后者。
 
 如果共享 session 本身没有可供 policy 使用的观测，应直接继承 ``Connection``，而不是 ``RobotPart``。Turtle2 的联动控制器采用这种形式：
 
@@ -213,6 +236,20 @@ env 层也使用相同的注册风格，但遥操作使用独立的 ``TeleopBack
 
 通过 ``part(name)`` 取出的所有零部件都指向同一个 connection 实例，因此底层控制器只会打开和释放一次。
 
+有些资源属于进程，而不属于某个 connection 对象。ROS 1 就是这里会遇到的情况：一个进程只有一个 node，因此同时使用 ROS 的机械臂和末端执行器，无论如何都会落在同一个 node 上。若由机械臂把 session 传给末端执行器，就会在两个本可独立的零部件之间引入依赖，因此基于 ROS 的零部件改为自行获取：
+
+.. code-block:: python
+
+   from rlinf.robotics.parts.transports.ros import ROSController
+
+
+   class ExampleROSGripper(BaseGripper):
+       def _open(self):
+           self._ros = ROSController.shared()
+           self._ros.connect_ros_channel(self._state_channel, JointState, self._on_state)
+           return self._ros
+
+``ROSController.shared()`` 会在文件锁保护下启动 ``roscore``（若尚未运行）并初始化 node，之后的调用方复用同一 controller。该 session 不会被关闭：``rospy`` 没有受支持的方式在 node 关闭后重新启动它。各零部件订阅和发布的 topic 互不相同，因此加入机械臂已经打开的 session 只是增加订阅，不会产生争用。
 先确定部署位置，再打开硬件
 ----------------------------
 
@@ -239,7 +276,9 @@ placement 参数与硬件构造参数一起传入。构造过程不会访问设�
 
 执行 ``connect()`` 时，机器人会为每个不同的 ``Connection`` 打开一次资源。没有 ``node_rank`` 的 connection 在本进程打开；带 ``node_rank`` 的 connection 在目标节点的 scheduler worker 中重新构造，组合中现有对象的具体 class 则切换为合成子类，公开方法和 property 转发到该 worker。对象 identity 不变，任务代码因而无需区分部署位置，``isinstance`` 的结果也与连接前一致。
 
-资源归属由对象 identity 决定。每个零部件的 ``owner`` 都表示谁为它打开连接：自带链路的机械臂的 owner 是自身，搭在共享 session 上的 view 的 owner 则是该 session。机器人连接 owner，而不是逐个连接零部件，因此一条连接只打开一次、只释放一次。位于不同连接上的零部件可以并行调用；共用一条连接的零部件按声明顺序调用，避免并发访问不支持该模式的厂商 SDK。
+资源归属由对象 identity 决定。每个零部件的 ``owner`` 都表示谁为它打开连接：自带链路的机械臂的 owner 是自身，搭在共享 session 上的 view 的 owner 则是该 session。机器人连接 owner，而不是逐个连接零部件，因此一条连接只打开一次、只释放一次。位于不同连接上的零部件可以并行调用；共用一条连接的零部件按声明顺序调用，避免并发访问不支持该模式的厂商 SDK。Franka 的机械臂和末端执行器各自持有链路，因此一次整机读取会同时取回两者，而不是依次等待。
+
+零部件各自持有链路，也意味着它们可能在同一台机器的不同进程中打开。只要访问的是不同端点，这就是正常情况：libfranka 的机械臂控制和末端执行器本来就在不同端口上。问题出在两个零部件访问同一端点时，此时报错通常只提到 socket，而不会指出真正的原因。因此，独占某个端点的零部件会按端点申请 ``DeviceClaim``：第二个申请者会立即被拒绝，并被告知当前持有者是谁。
 
 连接前检查组合结果
 ------------------
@@ -249,10 +288,10 @@ placement 参数与硬件构造参数一起传入。构造过程不会访问设�
 .. code-block:: text
 
    FrankaRobot
-   └── arm                 FrankaROSArm         node=1     via FrankaROSArm#1
-       └── end_effector    MethodEndEffector    node=1     via FrankaROSArm#1
+   ├── arm           FrankaROSArm         node=1     via FrankaROSArm#1
+   └── end_effector  FrankaGripper        node=1     via FrankaGripper#2
 
-``via`` 相同的行共用一个 ``Connection``。连接后，跨节点零部件会显示合成 class 名称，例如 RemoteFrankaROSArm。零部件路径、``node`` 和 owner 保持不变，但完整输出字符串不是稳定的序列化格式，不应存储或解析该字符串。
+``via`` 相同的行共用一个 ``Connection``。上面两行的 ``via`` 不同，由此可以最直接地看出末端执行器可以单独连接和恢复。连接后，跨节点零部件会显示合成 class 名称，例如 RemoteFrankaROSArm。零部件路径、``node`` 和 owner 保持不变，但完整输出字符串不是稳定的序列化格式，不应存储或解析该字符串。
 
 ``describe()`` 目前只显示组合结构、节点和资源归属，不显示 observation/action schema。若需检查字段和 shape，请使用 :doc:`添加机器人 <../extending/new_robot>` 中的 conformance 检查；该检查会通过 mock SDK 或真机打开连接后进行验证。
 

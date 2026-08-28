@@ -33,14 +33,12 @@ when a rollout or a debugging command fails:
    try:
        observation = robot.get_observation()
        tcp_pose = observation["arm"]["tcp_pose"]
-       gripper_width = observation["arm"]["end_effector"]["state"]
+       gripper_width = observation["end_effector"]["state"]
 
        robot.send_action(
            {
-               "arm": {
-                   "tcp_pose": target,
-                   "end_effector": {"target": width},
-               }
+               "arm": {"tcp_pose": target},
+               "end_effector": {"target": width},
            }
        )
    finally:
@@ -53,33 +51,46 @@ action to only the parts you want to command.
 Read the Tree
 -------------
 
-Part names are the public data contract. A single-arm Franka has one top-level
-``arm``. Its end effector is mounted on that arm and therefore appears below
-it:
+Part names are the public data contract. A single-arm Franka has an ``arm`` and
+an ``end_effector`` side by side:
 
 .. code-block:: text
 
    FrankaRobot
-   └── arm                 FrankaROSArm         node=1     via FrankaROSArm#1
-       └── end_effector    MethodEndEffector    node=1     via FrankaROSArm#1
+   ├── arm           FrankaROSArm         node=1     via FrankaROSArm#1
+   └── end_effector  FrankaGripper        node=1     via FrankaGripper#2
 
-The two rows share a ``via`` value because one Franka connection owns both
-parts. You do not need that detail to use the robot; it is there to make a
+The shape of the tree follows how the hardware is wired, not a convention. A
+Franka Hand answers on its own endpoint, so it is a part in its own right and
+stands beside the arm; the two ``via`` values differ because each opens its own
+connection. Read that as a promise: either can be opened, recovered, or placed
+on another node without touching the other.
+
+Where a device really is inseparable from its arm, the tree says so. A GimArm
+drives its gripper over the same CAN bus as the joints, so the gripper appears
+one level down and both rows name the same connection:
+
+.. code-block:: text
+
+   GimArmRobot
+   └── arm               GimArm               node=0     via GimArm#1
+       └── end_effector  MethodEndEffector    node=0     via GimArm#1
+
+You do not need the ``via`` column to use a robot. It is there to make a
 configuration mistake visible before the hardware moves.
 
-This distinction explains when a part is passed directly to ``Robot`` and when
-``part(name)`` is needed. ``FrankaROSArm`` is already a readable ``RobotPart``,
-so ``Robot(arm=arm)`` composes it directly and brings along the end effector it
-carries. A shared controller that is only a ``Connection`` is not readable;
-select one of the parts it backs with ``session.part("left")`` before composing
-it.
+Nesting also decides how a part is composed. ``FrankaROSArm`` is already a
+readable ``RobotPart``, so ``Robot(arm=arm, end_effector=hand)`` composes the
+two directly. A shared controller that is only a ``Connection`` is not readable
+on its own; select one of the parts it backs with ``session.part("left")``
+first.
 
-On a dual-arm robot, the same structure sits below ``left`` and ``right``:
+A dual-arm robot groups each side, and the same two parts sit under it:
 
 .. code-block:: python
 
    left_qpos = observation["left"]["arm"]["arm_joint_position"]
-   right_gripper = observation["right"]["arm"]["end_effector"]["state"]
+   right_gripper = observation["right"]["end_effector"]["state"]
 
 The tree can be nested as deeply as the hardware requires. There is no fixed
 ``arms`` or ``cameras`` slot, so a lift, head, or third arm does not need a new
@@ -91,7 +102,9 @@ Local and Remote Parts Look the Same
 The path does not say where a part runs. A camera attached to the current
 machine and an arm controlled from another node still appear in one observation
 tree. RLinf reads independent hardware connections concurrently and preserves
-the declared order for parts that share a connection.
+the declared order for parts that share a connection. On a Franka that is worth
+real time: the arm and the hand answer separately, so their readings overlap
+instead of queueing behind one another.
 
 Task and policy code therefore works with names and values, not Ray actors,
 RPCs, serial ports, or vendor sessions. Existing policies that expect flat

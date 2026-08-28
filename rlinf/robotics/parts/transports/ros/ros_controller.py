@@ -17,7 +17,7 @@ import pathlib
 import sys
 import threading
 import time
-from typing import Any, Callable, Optional
+from typing import Any, Callable, ClassVar, Optional
 
 import psutil
 import rospy
@@ -25,39 +25,39 @@ from filelock import FileLock
 
 from rlinf.utils.logging import get_logger
 
-#: This process's ROS session, and the lock that keeps two threads from
-#: racing to create it.
-_SHARED_SESSION: "Optional[ROSController]" = None
-_SHARED_SESSION_LOCK = threading.Lock()
-
-
-def shared_ros_session(ros_version: int = 1) -> "ROSController":
-    """Return the ROS session for this process, opening it on first use.
-
-    ROS 1 gives a process one node, so an arm, the end effector mounted on it,
-    and anything else ROS-backed have to share a session rather than each
-    opening their own. Asking for it here is what lets a part reach ROS without
-    being handed a session by whichever part happened to start first.
-
-    The session is never closed. ``rospy`` has no supported way to bring a node
-    back up once it is shut down, so a part that finished using ROS leaves the
-    node standing for whatever is still running.
-    """
-    global _SHARED_SESSION
-    with _SHARED_SESSION_LOCK:
-        if _SHARED_SESSION is None:
-            _SHARED_SESSION = ROSController(ros_version)
-        return _SHARED_SESSION
-
 
 class ROSController:
     """Manage ROS 1 publishers and subscribers for one robot.
 
-    Prefer :func:`shared_ros_session` over constructing this directly: ROS 1
-    allows one node per process, so parts that each build their own session
-    end up sharing a node anyway, and only the first call to
-    :func:`rospy.init_node` decides what that node is called.
+    Prefer :meth:`shared` over constructing this directly. ROS 1 allows one node
+    per process, so parts that each build their own controller end up on one
+    node anyway, and only the first call to :func:`rospy.init_node` decides what
+    that node is called.
     """
+
+    #: The session this process is already using, and the lock that keeps two
+    #: threads from racing to open it.
+    _shared: "ClassVar[Optional[ROSController]]" = None
+    _shared_lock: ClassVar[threading.Lock] = threading.Lock()
+
+    @classmethod
+    def shared(cls, ros_version: int = 1) -> "ROSController":
+        """Return the ROS session for this process, opening it on first use.
+
+        ROS 1 gives a process one node, so an arm, the end effector mounted on
+        it, and anything else ROS-backed have to share a session rather than
+        each opening their own. Asking for it here is what lets a part reach ROS
+        without being handed a session by whichever part happened to start
+        first.
+
+        The session is never closed. ``rospy`` has no supported way to bring a
+        node back up once it is shut down, so a part that has finished with ROS
+        leaves the node standing for whatever is still running.
+        """
+        with cls._shared_lock:
+            if cls._shared is None:
+                cls._shared = cls(ros_version)
+            return cls._shared
 
     def __init__(self, ros_version: int = 1) -> None:
         """Initialize the ROS controller."""

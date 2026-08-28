@@ -37,7 +37,8 @@ if not ray.is_initialized():
 import numpy as np  # noqa: E402
 from scipy.spatial.transform import Rotation as R  # noqa: E402
 
-from rlinf.robotics.parts.arms.franky import FrankyArm  # noqa: E402
+from rlinf.robotics.parts.arms.franky import FrankyArm
+from rlinf.robotics.parts.end_effectors import EndEffector  # noqa: E402
 
 # Franka Emika Panda factory "ready" pose.
 HOME_JOINTS = [0.0, -0.785, 0.0, -2.356, 0.0, 1.571, 0.785]
@@ -61,13 +62,16 @@ def main() -> None:
     gripper_type = os.environ.get("FRANKA_GRIPPER_TYPE", "robotiq")
     gripper_connection = os.environ.get("FRANKA_GRIPPER_PORT")
 
-    controller = FrankyArm(
+    # The arm and the gripper open their own connections, so build each.
+    controller = FrankyArm(robot_ip=robot_ip, node_rank=0)
+    gripper = EndEffector.of(
+        f"{gripper_type}_gripper",
         robot_ip=robot_ip,
-        gripper_type=gripper_type,
-        gripper_connection=gripper_connection,
+        port=gripper_connection,
         node_rank=0,
     )
     controller.connect()
+    gripper.connect()
 
     # Wait for the controller to publish a valid state.
     start_time = time.time()
@@ -166,17 +170,17 @@ def main() -> None:
                     f"{np.sqrt(np.mean(state.arm_joint_velocity**2)):.5f} rad/s"
                 )
             elif cmd == "open":
-                controller.open_gripper()
+                gripper.open()
                 print("gripper opened")
             elif cmd == "close":
-                controller.close_gripper()
+                gripper.close()
                 print("gripper closed")
             elif cmd == "grip":
                 if len(parts) != 2:
                     print("usage: grip <position, in the gripper's own units>")
                     continue
                 pos = float(parts[1])
-                controller.move_gripper(pos)
+                gripper.move(pos)
                 print(f"gripper moved to {pos}")
             else:
                 print(f"unknown cmd: {cmd_str}")
@@ -188,6 +192,7 @@ def main() -> None:
 
     print("shutting down...")
     try:
+        gripper.disconnect()
         controller.disconnect()
     except Exception:
         pass

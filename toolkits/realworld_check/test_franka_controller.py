@@ -21,6 +21,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 
 from rlinf.robotics.parts.arms.franka_ros import FrankaROSArm
+from rlinf.robotics.parts.end_effectors import EndEffector
 
 
 def _parse_args():
@@ -72,13 +73,17 @@ def main():
             "motor_ids": tuple(args.hand_motor_ids),
         }
 
-    controller = FrankaROSArm(
+    # The arm and the end effector open their own connections, so build and
+    # connect each one.
+    controller = FrankaROSArm(robot_ip=robot_ip, node_rank=0)
+    end_effector = EndEffector.of(
+        args.end_effector_type,
         robot_ip=robot_ip,
-        end_effector_type=args.end_effector_type,
-        end_effector_config=end_effector_config,
         node_rank=0,
+        **end_effector_config,
     )
     controller.connect()
+    end_effector.connect()
 
     start_time = time.time()
     while not controller.is_robot_up():
@@ -103,7 +108,7 @@ def main():
                 state = controller.get_state()
                 print(state.to_dict())
             elif cmd_str == "gethand":
-                print(controller.get_hand_detailed_state())
+                print(end_effector.get_detailed_state())
             else:
                 print(f"Unknown cmd: {cmd_str}")
         except KeyboardInterrupt:

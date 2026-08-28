@@ -28,9 +28,9 @@ hardware is opened until ``robot.connect()``. Because the object is already the
 logical part a policy should see, passing it as ``base=base`` adds it directly
 to the public tree. The argument name ``base`` becomes its public path.
 
-One hardware session may instead back several logical parts. Suppose a
-controller opens one ROS session for an arm and its gripper. A task should still
-see two parts:
+One hardware session may instead back several logical parts. A GimArm drives
+its joints and its gripper down the same CAN bus, so one link answers for both,
+and a task should still see two parts:
 
 .. code-block:: text
 
@@ -57,10 +57,13 @@ when the same names appear in both:
   paths by themselves.
 
 Composition joins the mappings. ``Robot(arm=connection)`` names a part, and
-what rides on that part comes with it, one level down: an arm's gripper is at
-``arm.end_effector`` because that is where the gripper is. These public paths,
-their placement, and their ownership are available before ``connect()``, which
-is why a composition can be inspected on a machine with no robot attached.
+what rides on that part comes with it, one level down: a GimArm gripper is at
+``arm.end_effector`` because it has no link of its own and answers through the
+arm's. Nesting tracks the connection, not the bolt pattern. A Franka Hand is
+mounted on its arm just as firmly, but it answers on its own endpoint, so it is
+named beside the arm rather than under it. These public paths, their placement,
+and their ownership are available before ``connect()``, which is why a
+composition can be inspected on a machine with no robot attached.
 
 ``connection.part(name)`` picks one part out of a link that is not a part
 itself, such as a session driving two arms. That is the only case that needs
@@ -78,9 +81,12 @@ Choose the form that matches what you are composing:
    * - A part with nothing riding it, such as a camera
      - ``Robot(wrist=camera)``
      - The part enters the tree under ``wrist``.
-   * - A part that carries others, such as an arm with a gripper
+   * - A part that carries others, such as an arm whose gripper shares its bus
      - ``Robot(arm=connection)``
      - The arm enters under ``arm``, its gripper under ``arm.end_effector``.
+   * - Two parts on their own links, such as an arm and a Franka Hand
+     - ``Robot(arm=arm, end_effector=hand)``
+     - Each enters under its own name and opens its own connection.
    * - A link that is not a part, such as a two-arm session
      - ``Robot(left=session.part("left"))``
      - The named part enters the tree under ``left``.
@@ -98,7 +104,8 @@ part it is what rides on it; for a ``PartGroup`` it is what the group was
 composed of. Walking the tree -- to describe it, to find every camera, to read
 it -- therefore never asks which kind of thing it is holding.
 
-That is what lets a robot name an arm and stop there:
+A robot therefore names one thing per connection. Where the gripper rides the
+arm's bus, naming the arm is enough:
 
 .. code-block:: python
 
@@ -107,11 +114,28 @@ That is what lets a robot name an arm and stop there:
        def build_arms(cls, **config):
            return {"arm": ExampleArm(config["robot_ip"], node_rank=config["node_rank"])}
 
-The gripper is composed because the arm carries it. Naming it here as well
-would put it *beside* the arm rather than on it, and would be a second list to
-keep in step: an arm that decides at run time whether a gripper is fitted, or
-that grows a part later, would be composed without it and nothing would report
-the omission.
+Naming the gripper here as well would put it beside the arm rather than on it,
+and would be a second list to keep in step: an arm that decides at run time
+whether a gripper is fitted would be composed without it and nothing would
+report the omission.
+
+A Franka is the other case. Its hand opens a session of its own, so the robot
+names both and neither owns the other:
+
+.. code-block:: python
+
+   class FrankaRobot(Robot):
+       @classmethod
+       def build_arms(cls, *, robot_ip, node_rank, **config):
+           return {
+               "arm": cls.declare_arm(robot_ip, node_rank=node_rank, name=...),
+               "end_effector": cls.declare_end_effector(
+                   robot_ip, node_rank=node_rank, name=..., **config
+               ),
+           }
+
+The rule is the same in both: name what holds a link, and what rides a link
+comes along with whatever holds it.
 
 The mapping a driver returns from ``parts`` therefore says what rides on it and
 never itself. Listing itself is refused, because a part does not ride itself and
@@ -195,10 +219,18 @@ A Franka is reached through libfranka or through ROS, so both register on
 
 Naming the backend is the whole of the swap. Each backend maps the standard arm
 settings onto its own constructor in its own ``declare()``, next to the
-constructor it serves, so the robot does not know that one stack wants a ROS
-package and the other a gripper port. A setting a backend cannot honour is
-refused rather than dropped, because the alternative is an arm running with an
-end effector the config did not ask for.
+constructor it serves, so the robot does not know that one stack launches a ROS
+package and the other opens a libfranka session. An arm takes arm settings only:
+hand a ``declare()`` a ``gripper_type`` and it refuses the call rather than
+dropping the setting, because those belong to the end effector composed beside
+it.
+
+The built-in Franka Hand is the one device this repository reaches two ways --
+over ROS topics, or over its own libfranka session -- so ``FrankaRobot`` keeps a
+``HAND_BACKENDS`` mapping from arm backend to hand driver. That choice lives at
+the composition root because it is the only place that knows both. A config that
+names a driver outright, as ``end_effector_type: franky_gripper``, is taken at
+its word.
 
 A driver that supports hardware enumeration can also declare its vendor module
 in ``SDK`` and implement ``discover()``. The shared discovery code then reports
@@ -241,8 +273,8 @@ Connect a Shared Hardware Session to the Robot Tree
 ---------------------------------------------------
 
 Define the ``parts`` mapping to say what rides on a connection. This arm is
-readable itself and also carries its gripper, so it lists the gripper and not
-itself:
+readable itself and also answers for its gripper, so it lists the gripper and
+not itself:
 
 .. code-block:: python
 
@@ -280,10 +312,15 @@ mapping, because nothing rides a group.
 Selecting a part with ``part(name)`` also tells a connection-backed view which
 connection opens it, so the view declares no lifecycle of its own: no
 ``_open()`` and no ``connect()`` override. Use ``parts`` for these borrowed
-views. A device with its own link, such as a wrist camera on USB, should be
+views.
+
+What decides between the two forms is one question the framework asks of the
+class, not of the configuration: does it define ``_open()``? A part that does
+holds its own link, keeps its own owner and its own ``node_rank``, and is
 composed explicitly as another child of the robot or of an assembly
-``PartGroup``. That explicit form gives the camera its own owner and ensures
-``Robot.connect()`` opens it on the node it named.
+``PartGroup``. A part that does not is adopted by whatever exports it. Both a
+wrist camera on USB and a Franka Hand take the first form; a ``MethodEndEffector``
+over an arm's own state takes the second.
 
 If reading the shared session itself has no useful meaning, subclass
 ``Connection`` rather than ``RobotPart``. A coupled Turtle2 controller follows
@@ -311,6 +348,29 @@ that form:
 
 Every choice points back to the same connection object, so the controller opens
 once and is released once.
+
+Some resources are shared by the process rather than by a connection object.
+ROS 1 is the case that shows up here: a process gets one node, so an arm and a
+hand that both speak ROS end up on the same node whatever they do. Passing a
+session from the arm to the hand would encode that as a dependency between two
+parts that are otherwise independent, so a ROS-backed part asks for it instead:
+
+.. code-block:: python
+
+   from rlinf.robotics.parts.transports.ros import ROSController
+
+
+   class ExampleROSGripper(BaseGripper):
+       def _open(self):
+           self._ros = ROSController.shared()
+           self._ros.connect_ros_channel(self._state_channel, JointState, self._on_state)
+           return self._ros
+
+``ROSController.shared()`` starts ``roscore`` if none is running, under a file
+lock, initializes the node, and hands every later caller the same controller. Nothing closes it,
+because ``rospy`` has no supported way to bring a node back up once it is shut
+down. Topics are the part's own, so joining a session an arm already opened adds
+subscriptions rather than competing for anything.
 
 Choose Placement Before Opening Hardware
 ----------------------------------------
@@ -351,7 +411,16 @@ with the connection opened on its behalf -- itself for an arm holding its own
 link, the shared session for a view riding one -- and the robot connects owners
 rather than parts. Parts on different connections may run concurrently; parts
 sharing one run in declaration order, because vendor sessions are rarely safe
-for concurrent access.
+for concurrent access. A Franka arm and its hand hold separate links, so a
+whole-robot reading fetches both at once rather than paying for them in turn.
+
+Independent ownership also means two parts can open from different processes on
+one machine. That is exactly right when they address different endpoints, which
+is the usual case -- libfranka answers arm control and the hand on separate
+ports. It goes wrong when two parts address the same endpoint, and the failure
+that follows names a socket rather than the mistake. A part that opens something
+exclusive takes a ``DeviceClaim`` keyed by the endpoint, so the second holder is
+refused immediately and told which part has the first.
 
 Inspect the Composition Before Connecting
 -----------------------------------------
@@ -362,10 +431,11 @@ is available before any hardware is opened:
 .. code-block:: text
 
    FrankaRobot
-   └── arm                 FrankaROSArm         node=1     via FrankaROSArm#1
-       └── end_effector    MethodEndEffector    node=1     via FrankaROSArm#1
+   ├── arm           FrankaROSArm         node=1     via FrankaROSArm#1
+   └── end_effector  FrankaGripper        node=1     via FrankaGripper#2
 
-Rows sharing ``via`` share one ``Connection``. After connecting, a placed part
+Rows sharing ``via`` share one ``Connection``; these two do not, which is the
+quickest way to see that the hand can be opened and recovered on its own. After connecting, a placed part
 uses a synthesized class name such as RemoteFrankaROSArm. Its path,
 ``node``, and ownership stay the same, but the complete output string is not a
 stable serialization format; use it as a diagnostic rather than storing or

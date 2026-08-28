@@ -168,7 +168,7 @@ YAML 配置
 当 **相机在 GPU 服务器**、**机械臂与夹爪在 NUC** 时，需在 ``hardware.configs`` 中指定相机/夹爪类型及控制器所在节点。
 字段说明与采集配置示例见 :doc:`../examples/embodied/franka_zed_robotiq`。
 
-训练时可将 ``env`` 放在 GPU 节点组（负责相机采集），并通过 ``controller_node_rank`` 将机械臂控制连接部署到 NUC：
+训练时可将 ``env`` 放在 GPU 节点组（负责相机采集），并将机械臂和夹爪部署到 NUC。二者是各自持有连接的独立零部件；由于接在同一台机器上，``controller_node_rank`` 会同时决定两者的部署位置：
 
 .. code-block:: yaml
 

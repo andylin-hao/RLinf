@@ -77,13 +77,13 @@ class FrankaGripper(BaseGripper):
         from franka_gripper.msg import GraspActionGoal, MoveActionGoal
         from sensor_msgs.msg import JointState
 
-        from rlinf.robotics.parts.transports.ros import shared_ros_session
+        from rlinf.robotics.parts.transports.ros import ROSController
 
         self._GraspActionGoal = GraspActionGoal
         self._MoveActionGoal = MoveActionGoal
         # Topics are the hand's own, so joining a session an arm already opened
         # adds subscriptions rather than competing for anything.
-        self._ros = shared_ros_session()
+        self._ros = ROSController.shared()
 
         self._ros.create_ros_channel(self._move_channel, MoveActionGoal, queue_size=1)
         self._ros.create_ros_channel(self._grasp_channel, GraspActionGoal, queue_size=1)
