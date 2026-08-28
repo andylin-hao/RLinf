@@ -19,6 +19,7 @@ from typing import Any, Optional
 
 import numpy as np
 
+from rlinf.robotics.parts.claims import DeviceClaim
 from rlinf.utils.logging import get_logger
 
 from ..base import EndEffector
@@ -98,6 +99,9 @@ class FrankyGripper(BaseGripper):
     ) -> None:
         self._logger = get_logger()
         self._robot_ip = robot_ip
+        # The hand answers on its own libfranka port, so it does not contend
+        # with arm control -- only with a second hand session.
+        self._claim = DeviceClaim(f"franky-hand:{robot_ip}", type(self).__name__)
         self._max_width = float(max_width)
         self._grasp_force = float(grasp_force)
         self._gripper = None
@@ -109,6 +113,7 @@ class FrankyGripper(BaseGripper):
         """Open the libfranka gripper session and prove it answers."""
         import franky
 
+        self._claim.acquire()
         gripper = franky.Gripper(self._robot_ip)
         # Reading width fails here rather than inside the first command if the
         # hand is absent or FCI is not released to this host.
@@ -124,9 +129,12 @@ class FrankyGripper(BaseGripper):
 
     def _release(self, device: Any) -> None:
         """Stop motion in flight and drop the session."""
-        self._stop_quiet()
-        self._gripper = None
-        self._width_read_at = None
+        try:
+            self._stop_quiet()
+        finally:
+            self._gripper = None
+            self._width_read_at = None
+            self._claim.release()
 
     # BaseGripper interface
 

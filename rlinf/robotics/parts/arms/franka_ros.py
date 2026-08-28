@@ -14,7 +14,7 @@
 
 import sys
 import time
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 import psutil
@@ -22,14 +22,7 @@ from scipy.spatial.transform import Rotation as R
 
 from rlinf.robotics.parts.arms.base import Arm, BaseArm
 from rlinf.robotics.parts.arms.franka import FrankaRobotState, validated_robot_ip
-from rlinf.robotics.parts.base import Action, Features, Observation, RobotPart
-from rlinf.robotics.parts.end_effectors import (
-    BaseEndEffector,
-    EndEffector,
-    EndEffectorType,
-    normalize_end_effector_type,
-)
-from rlinf.robotics.parts.views import MethodEndEffector
+from rlinf.robotics.parts.base import Action, Features, Observation
 from rlinf.utils.logging import get_logger
 
 
@@ -42,52 +35,29 @@ class FrankaROSArm(BaseArm):
         cls,
         address: str,
         *,
-        gripper_type: Optional[str] = None,
-        gripper_connection: Optional[str] = None,
-        end_effector_type: Optional[str] = None,
-        end_effector_config: Optional[dict[str, Any]] = None,
+        load_gripper: bool = True,
         **placement: Any,
     ) -> "FrankaROSArm":
-        """Declare a ROS-backed Franka arm and its end effector.
+        """Declare a ROS-backed Franka arm.
 
-        This backend does not support ``gripper_type``. Select the device with
-        ``end_effector_type`` instead.
+        The end effector is composed beside the arm and opens itself, so this
+        backend takes no end-effector settings. It still needs *load_gripper*,
+        which decides whether the ROS stack it launches brings up the Franka
+        Hand driver the arm's own topics share a robot with.
         """
-        if gripper_type is not None:
-            raise TypeError(
-                f"The franka_ros backend names its end effector outright, so "
-                f"gripper_type={gripper_type!r} would not be honoured. Set "
-                f"end_effector_type='{gripper_type}_gripper' instead."
-            )
-        return cls(
-            address,
-            end_effector_type=end_effector_type or "franka_gripper",
-            end_effector_config=end_effector_config or {},
-            gripper_connection=gripper_connection,
-            **placement,
-        )
+        return cls(address, load_gripper=load_gripper, **placement)
 
     def __init__(
         self,
         robot_ip: str,
         ros_pkg: str = "serl_franka_controllers",
-        end_effector_type: str = "franka_gripper",
-        end_effector_config: Optional[dict] = None,
-        gripper_type: Optional[str] = None,
-        gripper_connection: Optional[str] = None,
+        load_gripper: bool = True,
     ) -> None:
         self._logger = get_logger()
         self._robot_ip = validated_robot_ip(robot_ip, type(self).__name__)
         self._ros_pkg = ros_pkg
-        self._end_effector_type = normalize_end_effector_type(
-            end_effector_type,
-            gripper_type,
-        )
-        self._end_effector_config = end_effector_config or {}
-        self._gripper_connection = gripper_connection
+        self._load_gripper = load_gripper
         self._state = FrankaRobotState()
-        self._end_effector: BaseEndEffector | None = None
-        self._gripper = None
         self._impedance: psutil.Process | None = None
         self._joint: psutil.Process | None = None
 
@@ -95,20 +65,6 @@ class FrankaROSArm(BaseArm):
     def action_features(self) -> Features:
         """Describe the Cartesian pose command."""
         return {"tcp_pose": {}}
-
-    @property
-    def parts(self) -> dict[str, RobotPart]:
-        """Return the end effector exported by the arm connection."""
-        if self._end_effector_type.is_hand:
-            end_effector = MethodEndEffector(
-                self,
-                state_field="hand_position",
-                dims=6,
-                command="command_end_effector",
-            )
-        else:
-            end_effector = MethodEndEffector(self, state_field="gripper_position")
-        return {"end_effector": end_effector}
 
     def _open(self) -> Any:
         """Connect ROS channels, controller processes, and the end effector."""
@@ -118,7 +74,7 @@ class FrankaROSArm(BaseArm):
         from franka_msgs.msg import ErrorRecoveryActionGoal, FrankaState
         from serl_franka_controllers.msg import ZeroJacobian
 
-        from rlinf.robotics.parts.transports.ros import ROSController
+        from rlinf.robotics.parts.transports.ros import shared_ros_session
 
         self._geom_msg = geom_msg
         self._rospy = rospy
@@ -126,12 +82,8 @@ class FrankaROSArm(BaseArm):
         self._FrankaState = FrankaState
         self._ZeroJacobian = ZeroJacobian
         self._ReconfClient = ReconfClient
-        self._ros = ROSController()
+        self._ros = shared_ros_session()
         self._init_ros_channels()
-        self._init_end_effector(
-            self._end_effector_config,
-            self._gripper_connection,
-        )
         self.start_impedance()
         self._reconf_client = self._ReconfClient(
             "cartesian_impedance_controllerdynamic_reconfigure_compliance_param_node"
@@ -149,44 +101,9 @@ class FrankaROSArm(BaseArm):
         return action
 
     def _release(self, device: Any) -> None:
-        """Stop impedance control and release end-effector resources."""
+        """Stop impedance control, leaving the shared ROS session standing."""
         self.stop_impedance()
-        if self._end_effector is not None:
-            self._end_effector.disconnect()
-        if self._gripper is not None:
-            self._gripper.disconnect()
         self._ros = None
-
-    def _init_end_effector(
-        self,
-        end_effector_config: dict,
-        gripper_connection: Optional[str],
-    ) -> None:
-        if self._end_effector_type.is_gripper:
-            # The registry selects either a ROS-backed or serial gripper.
-            self._gripper = EndEffector.of(
-                self._end_effector_type.gripper_backend,
-                ros=self._ros,
-                port=gripper_connection,
-                **end_effector_config,
-            )
-            # The arm owns the gripper lifecycle.
-            self._gripper.connect()
-            self._logger.info(
-                "Gripper initialized: end_effector=%s",
-                self._end_effector_type.value,
-            )
-            return
-
-        self._end_effector = EndEffector.of(
-            self._end_effector_type,
-            **end_effector_config,
-        )
-        self._end_effector.connect()
-        self._logger.info(
-            "End-effector initialized: %s",
-            self._end_effector_type.value,
-        )
 
     def _init_ros_channels(self) -> None:
         """Initialize ROS channels for arm communication."""
@@ -248,30 +165,16 @@ class FrankaROSArm(BaseArm):
         self._logger.debug(f"Reconfigure compliance parameters: {params}")
 
     def is_robot_up(self) -> bool:
-        """Check whether the arm and active end-effector are ready."""
-        arm_ok = self._ros.get_input_channel_status(self._arm_state_channel)
-        if self._end_effector_type.is_gripper:
-            return arm_ok and self._gripper.is_ready()
-        return arm_ok
+        """Whether the arm answers. An end effector reports its own readiness."""
+        return self._ros.get_input_channel_status(self._arm_state_channel)
 
     def get_state(self) -> FrankaRobotState:
-        """Return the current Franka state."""
-        if self._end_effector_type.is_gripper:
-            self._state.gripper_position = self._gripper.position
-            self._state.gripper_open = self._gripper.is_open
-            self._state.hand_position = None
-        else:
-            assert self._end_effector is not None
-            self._state.hand_position = self._end_effector.get_state()
+        """Return the current Franka state. The end effector reports its own."""
         return self._state
 
     def start_impedance(self) -> None:
         """Start the impedance controller."""
-        load_gripper = (
-            "true"
-            if self._end_effector_type == EndEffectorType.FRANKA_GRIPPER
-            else "false"
-        )
+        load_gripper = "true" if self._load_gripper else "false"
         self._impedance = psutil.Popen(
             [
                 "roslaunch",
@@ -308,11 +211,7 @@ class FrankaROSArm(BaseArm):
             f"Invalid reset position, expected 7 dimensions but got {len(reset_pos)}"
         )
 
-        load_gripper = (
-            "true"
-            if self._end_effector_type == EndEffectorType.FRANKA_GRIPPER
-            else "false"
-        )
+        load_gripper = "true" if self._load_gripper else "false"
         self._rospy.set_param("/target_joint_positions", reset_pos)
         self._joint = psutil.Popen(
             [
@@ -352,49 +251,6 @@ class FrankaROSArm(BaseArm):
 
         self._ros.put_channel(self._arm_equilibrium_channel, pose_msg)
         self._logger.debug(f"Move arm to position: {position}")
-
-    def command_end_effector(self, action: np.ndarray) -> bool:
-        """Send an action to the active end-effector."""
-        if self._end_effector_type.is_gripper:
-            value = float(np.asarray(action).reshape(-1)[0])
-            if value <= -0.5 and self._state.gripper_open:
-                self.close_gripper()
-                return True
-            if value >= 0.5 and not self._state.gripper_open:
-                self.open_gripper()
-                return True
-            return False
-
-        assert self._end_effector is not None
-        return self._end_effector.command(action)
-
-    def reset_end_effector(self, target_state: np.ndarray | None = None) -> None:
-        """Reset the end-effector to a target or default state."""
-        if self._end_effector_type.is_gripper:
-            if target_state is not None:
-                self.command_end_effector(np.asarray(target_state))
-            return
-
-        assert self._end_effector is not None
-        self._end_effector.reset(target_state)
-
-    def open_gripper(self) -> None:
-        if self._end_effector_type.is_gripper:
-            self._gripper.open()
-            self._state.gripper_open = True
-        self._logger.debug("Open gripper")
-
-    def close_gripper(self) -> None:
-        if self._end_effector_type.is_gripper:
-            self._gripper.close()
-            self._state.gripper_open = False
-        self._logger.debug("Close gripper")
-
-    def move_gripper(self, width: float, speed: float = 0.3) -> None:
-        """Move the configured gripper to an opening width in metres."""
-        if self._end_effector_type.is_gripper:
-            self._gripper.move(width, speed)
-        self._logger.debug("Move gripper to width: %.4f m", width)
 
     def _wait_robot(self, sleep_time: int = 1) -> None:
         time.sleep(sleep_time)

@@ -71,15 +71,20 @@ class DualFrankaRobot(FrankaRobot):
         }
         arms = {}
         for side, (robot_ip, gripper_type, connection, node_rank) in sides.items():
-            declared = cls.declare_arm(
-                robot_ip,
-                node_rank=node_rank,
-                name=f"{cls.ROBOT_TYPE}Arm-{side}-{worker_rank}-{env_idx}",
-                gripper_type=gripper_type,
-                gripper_connection=connection,
-            )
             arms[side] = PartGroup(
-                arm=declared,
+                arm=cls.declare_arm(
+                    robot_ip,
+                    node_rank=node_rank,
+                    name=f"{cls.ROBOT_TYPE}Arm-{side}-{worker_rank}-{env_idx}",
+                ),
+                end_effector=cls.declare_end_effector(
+                    robot_ip,
+                    backend=cls.BACKEND,
+                    node_rank=node_rank,
+                    name=f"{cls.ROBOT_TYPE}EndEffector-{side}-{worker_rank}-{env_idx}",
+                    gripper_type=gripper_type,
+                    gripper_connection=connection,
+                ),
                 **Camera.declare((arm_cameras or {}).get(side), node_rank=node_rank),
             )
         return arms

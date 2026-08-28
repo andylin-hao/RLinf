@@ -12,6 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .ros_controller import ROSController
+from .ros_controller import ROSController, shared_ros_session
 
-__all__ = ["ROSController"]
+__all__ = ["ROSController", "shared_ros_session"]

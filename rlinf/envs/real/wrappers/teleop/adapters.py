@@ -75,6 +75,10 @@ class DualGelloJointStream(TeleopStreamer):
         inner = env.unwrapped
         return getattr(inner, "_left_ctrl", None), getattr(inner, "_right_ctrl", None)
 
+    def _hands(self, env: gym.Env) -> tuple[Optional[Any], Optional[Any]]:
+        inner = env.unwrapped
+        return getattr(inner, "_left_hand", None), getattr(inner, "_right_hand", None)
+
     @staticmethod
     def _run_both(env: gym.Env, left: Any, right: Any) -> tuple[Any, Any]:
         """Run paired controller calls through the env's arm queues."""
@@ -155,14 +159,17 @@ class DualGelloJointStream(TeleopStreamer):
 
         if not self.gripper_enabled:
             return
-        for index, (ctrl, grip) in enumerate(
-            zip((left_ctrl, right_ctrl), (left_g, right_g))
+        left_hand, right_hand = self._hands(env)
+        if left_hand is None or right_hand is None:
+            return
+        for index, (hand, grip) in enumerate(
+            zip((left_hand, right_hand), (left_g, right_g))
         ):
             is_open = grip.item() < 0.5
             if self._last_open[index] is None:
                 self._last_open[index] = is_open
             elif is_open != self._last_open[index]:
-                call = ctrl.open_gripper if is_open else ctrl.close_gripper
+                call = hand.open if is_open else hand.close
                 self._submit_one(env, index, call)
                 self._last_open[index] = is_open
 

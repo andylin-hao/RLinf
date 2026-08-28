@@ -51,6 +51,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 import numpy as np
 
+from rlinf.robotics.parts.claims import DeviceClaim
 from rlinf.utils.logging import get_logger
 
 from ..base import EndEffector
@@ -127,6 +128,8 @@ class RobotiqGripper(BaseGripper):
             )
         self._logger = get_logger()
         self._port = port
+        # A serial port carries one Modbus conversation at a time.
+        self._claim = DeviceClaim(f"robotiq:{port}", type(self).__name__)
         self._baudrate = baudrate
         self._slave_id = slave_id
         self._max_width = max_width
@@ -139,6 +142,7 @@ class RobotiqGripper(BaseGripper):
 
     def _open(self) -> Any:
         """Open the serial link and run the activation sequence."""
+        self._claim.acquire()
         client = _create_modbus_client(self._port, self._baudrate)
         client.connect()
         self._client = client
@@ -153,6 +157,7 @@ class RobotiqGripper(BaseGripper):
             # Release the serial port if activation fails after opening it.
             client.close()
             self._client = None
+            self._claim.release()
             raise
 
         self._logger.info(
@@ -205,8 +210,11 @@ class RobotiqGripper(BaseGripper):
         """Close the serial link the lifecycle handed back."""
         self._activated = False
         self._client = None
-        if device is not None:
-            device.close()
+        try:
+            if device is not None:
+                device.close()
+        finally:
+            self._claim.release()
 
     # Modbus helpers
 

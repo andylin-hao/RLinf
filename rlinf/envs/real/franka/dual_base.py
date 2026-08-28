@@ -432,6 +432,9 @@ class DualFrankaEnv(gym.Env):
         self.robot.connect()
         self._left_ctrl = self.robot.child("left").child("arm").owner
         self._right_ctrl = self.robot.child("right").child("arm").owner
+        # Each hand is a part beside its arm, with its own connection.
+        self._left_hand = self.robot.child("left").child("end_effector")
+        self._right_hand = self.robot.child("right").child("end_effector")
 
     # Gymnasium reset and step.
 
@@ -481,8 +484,8 @@ class DualFrankaEnv(gym.Env):
     def _go_to_rest(self, joint_reset: bool = False) -> None:
         del joint_reset
         self._submit_arm_calls(
-            self._left_ctrl.open_gripper,
-            self._right_ctrl.open_gripper,
+            self._left_hand.open,
+            self._right_hand.open,
         )
         self._submit_arm_calls(
             lambda: self._left_ctrl.reset_joint(self.config.joint_reset_qpos[0]),
@@ -541,6 +544,7 @@ class DualFrankaEnv(gym.Env):
         if not self.config.is_dummy:
             states = [self._left_state, self._right_state]
             ctrls = [self._left_ctrl, self._right_ctrl]
+            hands = [self._left_hand, self._right_hand]
             dt = 1.0 / self.config.step_frequency
 
             # Queue gripper commands before the next motion on each arm. The
@@ -550,7 +554,7 @@ class DualFrankaEnv(gym.Env):
                     actions[arm, self.GRIPPER_IDX_IN_ARM] * self.config.action_scale[2]
                 )
                 is_gripper_effective[arm] = self._gripper_action(
-                    arm, ctrls[arm], states[arm], gripper_val
+                    arm, hands[arm], gripper_val
                 )
 
             self._dispatch_arm_motion(actions, states, ctrls, dt)
@@ -581,13 +585,13 @@ class DualFrankaEnv(gym.Env):
 
     # Gripper and state helpers.
 
-    def _gripper_action(self, arm: int, ctrl: Any, state: Any, position: float) -> bool:
+    def _gripper_action(self, arm: int, hand: Any, position: float) -> bool:
         threshold = self.config.binary_gripper_threshold
-        if position <= -threshold and state.gripper_open:
-            self._submit_arm_call(arm, ctrl.close_gripper)
+        if position <= -threshold and hand.is_open:
+            self._submit_arm_call(arm, hand.close)
             return True
-        elif position >= threshold and not state.gripper_open:
-            self._submit_arm_call(arm, ctrl.open_gripper)
+        elif position >= threshold and not hand.is_open:
+            self._submit_arm_call(arm, hand.open)
             return True
         return False
 

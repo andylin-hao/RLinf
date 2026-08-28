@@ -162,8 +162,8 @@ class DualFrankaTCPEnv(DualFrankaEnv):
         state = {
             "gripper_position": np.array(
                 [
-                    self._left_state.gripper_position,
-                    self._right_state.gripper_position,
+                    self._left_hand.position,
+                    self._right_hand.position,
                 ],
                 dtype=np.float32,
             ),

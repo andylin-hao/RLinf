@@ -14,13 +14,18 @@
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, ClassVar, Optional
 
 from ..discovery import (
     RobotConfig,
 )
 from ..parts.arms.base import Arm
 from ..parts.cameras import Camera
+from ..parts.end_effectors import (
+    EndEffector,
+    EndEffectorType,
+    normalize_end_effector_type,
+)
 from ..robot import Robot
 
 
@@ -32,6 +37,17 @@ class FrankaRobot(Robot):
     """
 
     ROBOT_TYPE = "Franka"
+
+    #: Driver that reaches the built-in Franka Hand, by arm backend.
+    #:
+    #: The hand is one device with two drivers, and which applies follows the
+    #: arm this robot is built on: a ROS stack publishes to it, libfranka opens
+    #: its own session. A config that names the hand outright -- as
+    #: ``end_effector_type: franky_gripper`` -- is taken at its word instead.
+    HAND_BACKENDS: ClassVar[dict[str, str]] = {
+        "franka_ros": "franka_gripper",
+        "franky": "franky_gripper",
+    }
 
     BACKEND: str = "franka_ros"
     """Registered arm backend used by this robot.
@@ -48,27 +64,88 @@ class FrankaRobot(Robot):
         node_rank: int,
         name: str,
         backend: Optional[str] = None,
+        **settings: Any,
+    ) -> "Arm":
+        """Declare the arm alone. Its end effector is composed beside it."""
+        return Arm.backend(backend or cls.BACKEND).declare(
+            cls.resolved_ip(robot_ip, node_rank=node_rank, name=name),
+            node_rank=node_rank,
+            worker_name=name,
+            **settings,
+        )
+
+    @classmethod
+    def declare_end_effector(
+        cls,
+        robot_ip: Optional[str],
+        *,
+        node_rank: int,
+        name: str,
+        backend: Optional[str] = None,
         gripper_type: Optional[str] = None,
         gripper_connection: Optional[str] = None,
         end_effector_type: Optional[str] = None,
         end_effector_config: Optional[dict[str, Any]] = None,
-    ) -> "Arm":
-        """Declare an arm and the end effector exported by its connection."""
-        resolved_ip = robot_ip or resolve_robot_ip(node_rank)
-        if not resolved_ip:
-            raise ValueError(
-                f"Franka arm {name!r} has no 'robot_ip' and none could be "
-                f"resolved from node rank {node_rank}'s hardware infos."
-            )
-        return Arm.backend(backend or cls.BACKEND).declare(
-            resolved_ip,
-            gripper_type=gripper_type,
-            gripper_connection=gripper_connection,
-            end_effector_type=end_effector_type,
-            end_effector_config=end_effector_config,
+    ) -> "EndEffector":
+        """Declare the end effector this robot carries.
+
+        It opens its own connection, so it is placed and connected on its own,
+        and any arm backend composes with any end effector. It is offered every
+        attachment one might be reached through -- a ROS session, a serial
+        port, the arm's IP -- and each driver takes the one it uses.
+
+        Args:
+            robot_ip: Address of the arm the end effector is mounted on.
+            node_rank: Node the end effector is wired to.
+            name: Worker name when it is hosted remotely.
+            backend: Arm backend this robot is built on, which decides how a
+                built-in Franka Hand is reached. See :attr:`HAND_BACKENDS`.
+            gripper_type: Gripper fitted, when the config names one that way.
+            gripper_connection: Serial port, for a gripper reached over one.
+            end_effector_type: End effector fitted, naming a driver outright.
+            end_effector_config: Settings passed to that driver.
+        """
+        return EndEffector.of(
+            cls.resolved_end_effector_type(
+                backend=backend,
+                gripper_type=gripper_type,
+                end_effector_type=end_effector_type,
+            ),
+            robot_ip=cls.resolved_ip(robot_ip, node_rank=node_rank, name=name),
+            port=gripper_connection,
             node_rank=node_rank,
             worker_name=name,
+            **(end_effector_config or {}),
         )
+
+    @classmethod
+    def resolved_end_effector_type(
+        cls,
+        *,
+        backend: Optional[str] = None,
+        gripper_type: Optional[str] = None,
+        end_effector_type: Optional[str] = None,
+    ) -> str:
+        """Return the driver name for the end effector this robot carries."""
+        resolved = normalize_end_effector_type(
+            end_effector_type or "franka_gripper", gripper_type
+        )
+        if resolved is not EndEffectorType.FRANKA_GRIPPER:
+            return resolved.value
+        # Only the built-in hand is ambiguous: it is the one device this
+        # repository reaches two ways.
+        return cls.HAND_BACKENDS.get(backend or cls.BACKEND, resolved.value)
+
+    @staticmethod
+    def resolved_ip(robot_ip: Optional[str], *, node_rank: int, name: str) -> str:
+        """Return the configured arm IP, or the one enumerated on its node."""
+        resolved = robot_ip or resolve_robot_ip(node_rank)
+        if not resolved:
+            raise ValueError(
+                f"Franka part {name!r} has no 'robot_ip' and none could be "
+                f"resolved from node rank {node_rank}'s hardware infos."
+            )
+        return resolved
 
     @classmethod
     def build_arms(
@@ -79,27 +156,39 @@ class FrankaRobot(Robot):
         worker_rank: int = 0,
         env_idx: int = 0,
         backend: Optional[str] = None,
+        end_effector_node_rank: Optional[int] = None,
         end_effector_type: Optional[str] = None,
         end_effector_config: Optional[dict] = None,
         gripper_type: Optional[str] = None,
         gripper_connection: Optional[str] = None,
     ) -> dict[str, Any]:
-        """Return the robot's named arm declarations.
+        """Return the robot's named arm and end-effector declarations.
 
-        Subclasses can override this method to compose a different arm layout.
+        The two are siblings rather than one inside the other: an end effector
+        opens its own connection, so it keeps its own lifecycle and can sit on
+        a different node than the arm it is mounted on. Subclasses can override
+        this method to compose a different layout.
         """
-        connection = cls.declare_arm(
-            robot_ip,
-            node_rank=node_rank,
-            name=f"{cls.ROBOT_TYPE}Arm-{worker_rank}-{env_idx}",
-            backend=backend,
-            gripper_type=gripper_type,
-            gripper_connection=gripper_connection,
-            end_effector_type=end_effector_type,
-            end_effector_config=end_effector_config,
-        )
-        # The arm declaration includes the end effector exported by its connection.
-        return {"arm": connection}
+        return {
+            "arm": cls.declare_arm(
+                robot_ip,
+                node_rank=node_rank,
+                name=f"{cls.ROBOT_TYPE}Arm-{worker_rank}-{env_idx}",
+                backend=backend,
+            ),
+            "end_effector": cls.declare_end_effector(
+                robot_ip,
+                backend=backend,
+                node_rank=node_rank
+                if end_effector_node_rank is None
+                else end_effector_node_rank,
+                name=f"{cls.ROBOT_TYPE}EndEffector-{worker_rank}-{env_idx}",
+                gripper_type=gripper_type,
+                gripper_connection=gripper_connection,
+                end_effector_type=end_effector_type,
+                end_effector_config=end_effector_config,
+            ),
+        }
 
     @classmethod
     def build_cameras(

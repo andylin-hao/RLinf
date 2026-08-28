@@ -35,9 +35,11 @@ class FrankaGripper(BaseGripper):
     * ``/franka_gripper/grasp/goal`` for force-controlled grasps
     * ``/franka_gripper/joint_states`` for finger-joint feedback
 
+    The hand reaches ROS through this process's shared session, so it opens
+    and closes on its own and can be composed beside any arm, whether or not
+    that arm speaks ROS.
+
     Args:
-        ros: An initialized :class:`ROSController` instance shared with the
-            arm controller).
         max_width: Stroke of the hand in metres. The default is the Franka
             Hand's own; ``open()`` travels to it, and it bounds the axis
             :meth:`move` and :pyattr:`position` share.
@@ -52,17 +54,11 @@ class FrankaGripper(BaseGripper):
         robot_ip: Optional[str] = None,
         **settings: Any,
     ) -> "FrankaGripper":
-        """Declare a gripper that uses the arm's ROS session."""
-        return cls(ros=ros, **settings)
+        """Declare a hand that joins this process's ROS session."""
+        return cls(**settings)
 
-    def __init__(self, ros: "ROSController", max_width: float = 0.08) -> None:
-        if ros is None:
-            raise ValueError(
-                "A Franka Hand is driven over the arm's ROS session, so one "
-                "has to be passed. Only an arm holding that session can build "
-                "this gripper."
-            )
-        self._ros = ros
+    def __init__(self, max_width: float = 0.08) -> None:
+        self._ros: Optional["ROSController"] = None
         self._max_width = max_width
         self._GraspActionGoal = None
         self._MoveActionGoal = None
@@ -76,22 +72,28 @@ class FrankaGripper(BaseGripper):
         self._grasp_channel = "/franka_gripper/grasp/goal"
         self._state_channel = "/franka_gripper/joint_states"
 
-    def _open(self) -> None:
-        """Create the gripper channels on the arm's ROS session."""
+    def _open(self) -> Any:
+        """Join the ROS session and create the gripper's own channels."""
         from franka_gripper.msg import GraspActionGoal, MoveActionGoal
         from sensor_msgs.msg import JointState
 
+        from rlinf.robotics.parts.transports.ros import shared_ros_session
+
         self._GraspActionGoal = GraspActionGoal
         self._MoveActionGoal = MoveActionGoal
+        # Topics are the hand's own, so joining a session an arm already opened
+        # adds subscriptions rather than competing for anything.
+        self._ros = shared_ros_session()
 
         self._ros.create_ros_channel(self._move_channel, MoveActionGoal, queue_size=1)
         self._ros.create_ros_channel(self._grasp_channel, GraspActionGoal, queue_size=1)
         self._ros.connect_ros_channel(
             self._state_channel, JointState, self._on_state_msg
         )
+        return self._ros
 
     def _release(self, device: Any) -> None:
-        """Mark the gripper unavailable without closing the arm's ROS session."""
+        """Mark the hand unavailable, leaving the shared session standing."""
         self._is_ready_flag = False
 
     # BaseGripper interface
@@ -135,6 +137,8 @@ class FrankaGripper(BaseGripper):
         return self._is_open_flag
 
     def is_ready(self) -> bool:
+        if self._ros is None:
+            return False
         return self._ros.get_input_channel_status(self._state_channel)
 
     # ROS callback

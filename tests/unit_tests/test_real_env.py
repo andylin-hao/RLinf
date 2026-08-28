@@ -275,7 +275,8 @@ def test_franka_builds_cameras_after_applying_hardware_info(monkeypatch):
             pass
 
         def child(self, name):
-            assert name == "arm"
+            # The env reaches for the arm and, beside it, the end effector.
+            assert name in ("arm", "end_effector")
             return SimpleNamespace(owner=object())
 
     def build(**kwargs):
@@ -375,18 +376,15 @@ def test_dual_franka_does_not_wait_for_gripper_motion():
     entered = threading.Event()
     release = threading.Event()
 
-    class Controller:
-        def close_gripper(self):
+    class Hand:
+        is_open = True
+
+        def close(self):
             entered.set()
             assert release.wait(timeout=1.0)
 
     try:
-        changed = env._gripper_action(
-            0,
-            Controller(),
-            SimpleNamespace(gripper_open=True),
-            -1.0,
-        )
+        changed = env._gripper_action(0, Hand(), -1.0)
         assert changed
         assert entered.wait(timeout=1.0)
         assert not release.is_set(), "the control loop must not wait for the gripper"

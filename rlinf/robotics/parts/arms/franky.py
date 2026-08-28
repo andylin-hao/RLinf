@@ -29,9 +29,8 @@ from scipy.spatial.transform import Rotation as R
 
 from rlinf.robotics.parts.arms.base import Arm, BaseArm
 from rlinf.robotics.parts.arms.franka import FrankaRobotState, validated_robot_ip
-from rlinf.robotics.parts.base import Action, Features, Observation, RobotPart
-from rlinf.robotics.parts.end_effectors import EndEffector
-from rlinf.robotics.parts.views import MethodEndEffector
+from rlinf.robotics.parts.base import Action, Features, Observation
+from rlinf.robotics.parts.claims import DeviceClaim
 from rlinf.utils.logging import get_logger
 
 # Franka Panda joint position / velocity limits.
@@ -73,8 +72,6 @@ _MCL_CURRENT, _MCL_FUTURE = 1, 2
 
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
-    from rlinf.robotics.parts.end_effectors.grippers import BaseGripper
-
     pass
 
 
@@ -82,56 +79,14 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 class FrankyArm(BaseArm):
     """Franka arm controlled through libfranka by Franky."""
 
-    #: Gripper backends this arm can build, by configuration name.
-    _GRIPPER_BACKENDS = {
-        "franka": "franky",
-        "franka_gripper": "franky",
-        "robotiq": "robotiq",
-        "robotiq_gripper": "robotiq",
-    }
-
-    @classmethod
-    def declare(
-        cls,
-        address: str,
-        *,
-        gripper_type: Optional[str] = None,
-        gripper_connection: Optional[str] = None,
-        end_effector_type: Optional[str] = None,
-        end_effector_config: Optional[dict[str, Any]] = None,
-        **placement: Any,
-    ) -> "FrankyArm":
-        """Declare a libfranka-backed arm and its gripper.
-
-        This backend accepts ``gripper_type`` but does not support a separately
-        named ``end_effector_type``.
-        """
-        if end_effector_type is not None or end_effector_config:
-            raise TypeError(
-                "The franky backend builds its own gripper and cannot fit a "
-                f"named end effector ({end_effector_type!r}). Use the "
-                "'franka_ros' backend for that, or set gripper_type instead."
-            )
-        return cls(
-            address,
-            gripper_type=gripper_type or "robotiq",
-            gripper_connection=gripper_connection,
-            **placement,
-        )
-
-    def __init__(
-        self,
-        robot_ip: str,
-        gripper_type: str = "robotiq",
-        gripper_connection: Optional[str] = None,
-    ) -> None:
+    def __init__(self, robot_ip: str) -> None:
         self._logger = get_logger()
         self._robot_ip = validated_robot_ip(robot_ip, type(self).__name__)
-        self._gripper_type = gripper_type
-        self._gripper_connection = gripper_connection
+        # libfranka gives out arm control once; a second session anywhere on
+        # this machine reads as a UDP timeout in whichever holds it.
+        self._claim = DeviceClaim(f"franky-arm:{self._robot_ip}", type(self).__name__)
         self._franky = None
         self._robot = None
-        self._gripper = None
         self._tracker = None
         self._prev_target_q: Optional[np.ndarray] = None
         self._prev_target_ts: Optional[float] = None
@@ -144,14 +99,10 @@ class FrankyArm(BaseArm):
         """Describe supported joint and Cartesian targets."""
         return {"joint_position": {}, "tcp_pose": {}}
 
-    @property
-    def parts(self) -> dict[str, RobotPart]:
-        """Return the gripper exported by the arm connection."""
-        return {"end_effector": MethodEndEffector(self, state_field="gripper_position")}
-
     def _open(self) -> Any:
-        """Connect the robot and gripper SDKs."""
+        """Connect the arm's libfranka session."""
         self._apply_rt_hardening()
+        self._claim.acquire()
 
         import franky
 
@@ -160,11 +111,6 @@ class FrankyArm(BaseArm):
         self._robot.recover_from_errors()
         self._robot.relative_dynamics_factor = _DYNAMICS_FACTOR
         self._robot.set_collision_behavior(_TORQUE_THRESHOLD, _FORCE_THRESHOLD)
-        self._gripper = self._build_gripper(
-            gripper_type=self._gripper_type,
-            gripper_connection=self._gripper_connection,
-            robot_ip=self._robot_ip,
-        )
         self._logger.info(f"FrankyArm connected to robot at {self._robot_ip}")
         return self._robot
 
@@ -183,33 +129,12 @@ class FrankyArm(BaseArm):
         return action
 
     def _release(self, device: Any) -> None:
-        """Stop active motion and release the gripper connection."""
-        self.cleanup()
-        self._robot = None
-
-    def _build_gripper(
-        self,
-        gripper_type: str,
-        gripper_connection: Optional[str],
-        robot_ip: str,
-    ) -> "BaseGripper":
-        """Create and connect the configured gripper from the registry.
-
-        A Franka Hand is reached over libfranka at the arm's own IP, so it maps
-        onto the ``"franky"`` gripper backend rather than the ROS one that
-        ``"franka"`` names elsewhere.
-        """
-        gt = (gripper_type or "robotiq").lower()
-        backend = self._GRIPPER_BACKENDS.get(gt)
-        if backend is None:
-            raise ValueError(
-                f"FrankyArm: unsupported gripper_type={gripper_type!r}. "
-                f"Supported: {sorted(set(self._GRIPPER_BACKENDS))}."
-            )
-        gripper = EndEffector.of(backend, port=gripper_connection, robot_ip=robot_ip)
-        # The arm owns the gripper lifecycle.
-        gripper.connect()
-        return gripper
+        """Stop active motion and drop the libfranka session."""
+        try:
+            self.cleanup()
+        finally:
+            self._robot = None
+            self._claim.release()
 
     def _apply_rt_hardening(self) -> None:
         """Lock memory, raise priority, pin affinity. All best-effort."""
@@ -245,9 +170,10 @@ class FrankyArm(BaseArm):
             pass
 
     def is_robot_up(self) -> bool:
+        """Whether the arm answers. An end effector reports its own readiness."""
         try:
             _ = self._robot.state
-            return self._gripper.is_ready()
+            return True
         except Exception:
             return False
 
@@ -277,8 +203,6 @@ class FrankyArm(BaseArm):
         s.tcp_torque = K_F_ext[3:]
         s.arm_jacobian = jacobian
         s.tcp_vel = jacobian @ joint_vel
-        s.gripper_position = self._gripper.position
-        s.gripper_open = self._gripper.is_open
         return s
 
     def clear_errors(self) -> None:
@@ -439,21 +363,8 @@ class FrankyArm(BaseArm):
         )
         self._robot.move(motion)
 
-    def open_gripper(self) -> None:
-        self._gripper.open(speed=1.0)
-
-    def close_gripper(self) -> None:
-        self._gripper.close(speed=1.0)
-
-    def move_gripper(self, width: float, speed: float = 0.3) -> None:
-        """Move the configured gripper to an opening width in metres."""
-        self._gripper.move(width, speed)
-
     def cleanup(self) -> None:
+        """Stop any motion in flight; the arm holds nothing else to release."""
         self._stop_tracking_motion()
         self._stop_cart_tracking_motion()
         self._safe_join()
-        try:
-            self._gripper.disconnect()
-        except Exception:
-            pass

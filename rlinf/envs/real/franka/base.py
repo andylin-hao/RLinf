@@ -327,6 +327,8 @@ class FrankaEnv(gym.Env):
         )
         self.robot.connect()
         self._controller = self.robot.child("arm").owner
+        # The end effector is a part beside the arm, with its own connection.
+        self._end_effector = self.robot.child("end_effector")
 
     def _setup_reward_worker(self) -> None:
         if not self.config.use_reward_model:
@@ -448,7 +450,7 @@ class FrankaEnv(gym.Env):
 
     def get_gripper_open(self) -> bool:
         """Return whether the gripper is currently open."""
-        return bool(self._franka_state.gripper_open)
+        return bool(self._end_effector.is_open)
 
     def action_parts(self) -> tuple[ActionPart, ...]:
         """Return the Cartesian arm and configured end-effector action parts."""
@@ -612,7 +614,7 @@ class FrankaEnv(gym.Env):
 
         # Reset dexterous hands; individual tasks remain responsible for grippers.
         if self._is_hand:
-            self._controller.reset_end_effector(self.config.hand_reset_state)
+            self._end_effector.reset(np.asarray(self.config.hand_reset_state))
             self._last_hand_command = (
                 np.array(self.config.hand_reset_state, dtype=np.float64)
                 * self.config.hand_action_scale
@@ -899,16 +901,16 @@ class FrankaEnv(gym.Env):
         """Execute a scaled binary gripper command."""
         if (
             position <= -self.config.binary_gripper_threshold
-            and self._franka_state.gripper_open
+            and self._end_effector.is_open
         ):
-            self._controller.close_gripper()
+            self._end_effector.close()
             time.sleep(0.6)
             return True
         if (
             position >= self.config.binary_gripper_threshold
-            and not self._franka_state.gripper_open
+            and not self._end_effector.is_open
         ):
-            self._controller.open_gripper()
+            self._end_effector.open()
             time.sleep(0.6)
             return True
         return False
@@ -939,7 +941,7 @@ class FrankaEnv(gym.Env):
                 max_d = self.config.hand_max_delta_per_step
                 scaled = self._last_hand_command + np.clip(delta, -max_d, max_d)
             self._last_hand_command = scaled.copy()
-            self._controller.command_end_effector(scaled)
+            self._end_effector.command(scaled)
             return True
 
     def _interpolate_move(self, pose: np.ndarray, timeout: float = 1.5) -> None:
@@ -982,9 +984,7 @@ class FrankaEnv(gym.Env):
                     hand_pos = np.zeros(6)
                 state["hand_position"] = hand_pos
             else:
-                state["gripper_position"] = np.array(
-                    [self._franka_state.gripper_position]
-                )
+                state["gripper_position"] = np.array([self._end_effector.position])
             state = {
                 key: np.asarray(value, dtype=np.float32) for key, value in state.items()
             }

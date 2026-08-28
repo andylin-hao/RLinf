@@ -524,8 +524,13 @@ def test_pure_drivers_construct_without_scheduler_or_vendor_sdks():
     assert all(isinstance(driver, RobotPart) for driver in arms)
     assert not any(isinstance(driver, RobotPart) for driver in buses)
     assert all(not driver.is_connected for driver in arms + buses)
-    # Every connection declares the parts it exports.
-    assert all(driver.parts for driver in arms + buses)
+    # A connection exports the parts it genuinely backs. A Franka arm backs
+    # none: its end effector answers on its own endpoint and is composed
+    # beside it. A GimArm gripper shares the arm's bus, so the arm exports it.
+    assert not FrankaROSArm("10.0.0.1").parts
+    assert not FrankyArm("10.0.0.1").parts
+    assert all(driver.parts for driver in buses)
+    assert GimArm("can0", "gim_arm_xl", True, "parallel").parts
 
 
 class _BareArm(Arm):
@@ -641,34 +646,32 @@ def test_a_backend_maps_the_robot_settings_onto_its_own_constructor():
     from rlinf.robotics.robots import FrankaRobot
 
     ros = FrankaRobot.declare_arm(
-        "10.0.0.2",
-        node_rank=1,
-        name="arm",
-        backend="franka_ros",
-        end_effector_type="ruiyan_hand",
+        "10.0.0.2", node_rank=1, name="arm", backend="franka_ros"
     )
     assert type(ros).__name__ == "FrankaROSArm"
     assert ros.node_rank == 1, "placement must survive the mapping"
 
     franky = FrankaRobot.declare_arm(
-        "10.0.0.3",
-        node_rank=2,
-        name="arm",
-        backend="franky",
-        gripper_type="robotiq",
-        gripper_connection="/dev/ttyUSB0",
+        "10.0.0.3", node_rank=2, name="arm", backend="franky"
     )
     assert type(franky).__name__ == "FrankyArm"
     assert franky.node_rank == 2
 
-    # Unsupported hardware settings must fail instead of being ignored.
-    with pytest.raises(TypeError, match="cannot fit a named end effector"):
+    # An end effector is declared on its own, and takes its own placement.
+    hand = FrankaRobot.declare_end_effector(
+        "10.0.0.3", node_rank=4, name="hand", end_effector_type="ruiyan_hand"
+    )
+    assert type(hand).__name__ == "RuiyanHand"
+    assert hand.node_rank == 4, "an end effector is placed independently"
+
+    # End-effector settings reach the end effector, not the arm.
+    with pytest.raises(TypeError, match="does not take"):
         FrankaRobot.declare_arm(
             "10.0.0.3",
             node_rank=0,
             name="arm",
             backend="franky",
-            end_effector_type="ruiyan_hand",
+            gripper_type="robotiq",
         )
 
     # A backend with no matching options also rejects them.
@@ -823,18 +826,30 @@ def test_a_robot_composes_an_arm_and_gets_what_rides_on_it():
         from rlinf.robotics.robots import FrankaRobot, GimArmRobot
 
         arm = FrankaRobot.declare_arm("10.0.0.2", node_rank=0, name="arm")
-        assert list(arm.parts) == ["end_effector"], (
-            "an arm backs what rides on it, and is not one of them"
+        assert list(arm.parts) == [], (
+            "a Franka arm backs no end effector: the hand answers on its own "
+            "endpoint, so it is composed beside the arm rather than under it"
+        )
+        hand = FrankaRobot.declare_end_effector(
+            "10.0.0.2",
+            node_rank=0,
+            name="hand",
+            gripper_type="robotiq",
+            gripper_connection="/dev/ttyUSB0",
         )
 
-        robot = FrankaRobot(arm=arm)
-        assert list(robot.children) == ["arm"]
+        robot = FrankaRobot(arm=arm, end_effector=hand)
+        assert list(robot.children) == ["arm", "end_effector"]
         assert robot.child("arm") is arm
-        assert list(robot.child("arm").children) == ["end_effector"]
+        assert robot.child("end_effector") is hand
+        # Neither owns the other, so either can be placed on its own node.
+        assert hand.owner is hand and arm.owner is arm
 
         # Readings preserve the composed tree structure.
-        assert set(robot.observation_features["arm"]) >= {"tcp_pose", "end_effector"}
-        assert set(robot.action_features["arm"]) == {"tcp_pose", "end_effector"}
+        assert set(robot.observation_features["arm"]) >= {"tcp_pose"}
+        assert set(robot.observation_features["end_effector"]) == {"state"}
+        assert set(robot.action_features["arm"]) == {"tcp_pose"}
+        assert set(robot.action_features["end_effector"]) == {"target"}
 
         config = {
             "node_rank": 0,
@@ -1685,11 +1700,12 @@ def test_parts_on_separate_connections_still_run_together():
         node_rank=0,
     )
 
-    assert len(robot.owners()) == 2
+    # Four connections now: an arm and a hand on each side.
+    assert len(robot.owners()) == 4
     assert robot._batches() == [["left"], ["right"]]
-    # The gripper is batched with the arm whose connection it shares.
-    assert robot.child("left")._batches() == [["arm"]]
-    assert set(robot.child("left").child("arm").children) == {"end_effector"}
+    # The hand no longer shares the arm's connection, so the two run at once.
+    assert robot.child("left")._batches() == [["arm"], ["end_effector"]]
+    assert set(robot.child("left").children) >= {"arm", "end_effector"}
 
 
 def test_a_group_spanning_two_sessions_pulls_both_into_one_batch():
@@ -2599,12 +2615,11 @@ def test_a_franka_hand_is_commanded_in_metres_on_the_wire():
     from robot_mocks import mocked_sdks
 
     with mocked_sdks():
-        from rlinf.robotics.parts.arms.franka_ros import FrankaROSArm
+        from rlinf.robotics.parts.end_effectors import EndEffector
 
-        arm = FrankaROSArm("10.0.0.2", end_effector_type="franka_gripper")
-        arm.connect()
+        gripper = EndEffector.of("franka_gripper")
+        gripper.connect()
         try:
-            gripper = arm._gripper
             widths: list[float] = []
             put = gripper._ros.put_channel
 
@@ -2614,11 +2629,11 @@ def test_a_franka_hand_is_commanded_in_metres_on_the_wire():
 
             gripper._ros.put_channel = record
 
-            arm.open_gripper()
-            arm.move_gripper(0.05)
-            arm.move_gripper(gripper.max_width * 10)
+            gripper.open()
+            gripper.move(0.05)
+            gripper.move(gripper.max_width * 10)
         finally:
-            arm.disconnect()
+            gripper.disconnect()
 
     assert widths == pytest.approx([gripper.max_width, 0.05, gripper.max_width])
 
@@ -2638,7 +2653,7 @@ def test_every_end_effector_answers_the_same_questions():
                 worker_rank=0,
                 end_effector_type=end_effector_type,
             )
-            return robot.child("arm").child("end_effector")
+            return robot.child("end_effector")
 
         every = {
             "hand on a bus": franka("ruiyan_hand"),
@@ -2659,9 +2674,8 @@ def test_every_end_effector_answers_the_same_questions():
             assert set(part.observation_features) == {"state"}, label
             assert set(part.action_features) == {"target"}, label
 
-        # The generic hosted view also supports six-finger hands.
+        # A six-finger hand composes exactly where a gripper would.
         assert every["hand on a bus"].action_dim == 6
-        assert type(every["hand on a bus"]) is type(every["gripper on a bus"])
 
 
 def test_every_end_effector_reports_its_state_under_the_same_name():
@@ -2838,7 +2852,12 @@ def test_every_robot_composes_from_named_parts():
             gripper_type="default",
             control_mode="joint",
         ),
-        DualFrankaRobot.build_arms(left_robot_ip="1.2.3.4", right_robot_ip="1.2.3.5"),
+        DualFrankaRobot.build_arms(
+            left_robot_ip="1.2.3.4",
+            right_robot_ip="1.2.3.5",
+            left_gripper_connection="/dev/ttyUSB0",
+            right_gripper_connection="/dev/ttyUSB1",
+        ),
     ]
     for arms in built:
         for name, value in arms.items():
@@ -2860,16 +2879,25 @@ def test_one_connection_backs_every_part_that_names_it():
     from rlinf.robotics.robots.dual_franka import DualFrankaRobot
     from rlinf.robotics.robots.franka import FrankaRobot
 
-    single = FrankaRobot.build_arms(robot_ip="1.2.3.4", node_rank=0)
-    assert len({id(part.owner) for part in single.values()}) == 1
+    single = FrankaRobot.build_arms(
+        robot_ip="1.2.3.4", node_rank=0, gripper_connection="/dev/ttyUSB0"
+    )
+    # The arm and the hand each answer on their own endpoint, so each owns its
+    # own connection rather than borrowing one.
+    assert len({id(part.owner) for part in single.values()}) == len(single)
 
-    dual = DualFrankaRobot.build_arms(left_robot_ip="1.2.3.4", right_robot_ip="1.2.3.5")
+    dual = DualFrankaRobot.build_arms(
+        left_robot_ip="1.2.3.4",
+        right_robot_ip="1.2.3.5",
+        left_gripper_connection="/dev/ttyUSB0",
+        right_gripper_connection="/dev/ttyUSB1",
+    )
     sides = {
         side: {id(part.owner) for part in group.children.values()}
         for side, group in dual.items()
     }
-    assert len(sides["left"]) == 1 and len(sides["right"]) == 1
-    assert sides["left"] != sides["right"]
+    # No connection is shared between the two sides.
+    assert not (sides["left"] & sides["right"])
 
 
 def test_a_connection_with_several_parts_hands_each_of_them_out_by_name():
@@ -3060,17 +3088,15 @@ def test_a_real_arm_runs_against_a_faked_sdk():
     with mocked_sdks():
         from rlinf.robotics.parts.arms.franky import FrankyArm
 
-        arm = FrankyArm("10.0.0.1", gripper_connection="/dev/ttyUSB0")
+        arm = FrankyArm("10.0.0.1")
         arm.connect()
 
         assert arm.is_connected
-        # The arm connection exports its riders without becoming one of them.
-        assert set(arm.parts) == {"end_effector"}
-        assert set(arm.children) == {"end_effector"}
+        # The arm backs nothing else: its end effector is composed beside it.
+        assert not arm.parts and not arm.children
 
         observation = arm.get_observation()
         assert observation["tcp_pose"].shape == (7,)
-        assert arm.child("end_effector").get_observation()["state"].shape == (1,)
 
         arm.send_action({"joint_position": [0.0] * 7})
 
@@ -3078,14 +3104,17 @@ def test_a_real_arm_runs_against_a_faked_sdk():
         assert not arm.is_connected
 
 
-def test_franky_declaration_keeps_its_supported_gripper_default():
+def test_a_franky_arm_takes_no_end_effector_settings():
     from rlinf.robotics.parts.arms.franky import FrankyArm
 
     arm = FrankyArm.declare("10.0.0.1")
+    assert not arm.parts
 
-    assert arm._gripper_type == "robotiq"
-    with pytest.raises(ValueError, match="unsupported gripper_type"):
-        arm._build_gripper("unknown", None, "10.0.0.1")
+    # Settings the arm cannot honour are refused rather than dropped: the hand
+    # they describe is composed beside the arm, so they belong to it.
+    for unsupported in ("gripper_type", "gripper_connection", "end_effector_type"):
+        with pytest.raises(TypeError, match="does not take"):
+            FrankyArm.declare("10.0.0.1", **{unsupported: "whatever"})
 
 
 def test_the_bench_check_runs_a_whole_robot_on_fakes():
@@ -3481,16 +3510,21 @@ def test_describe_says_where_a_part_runs_before_anything_is_opened():
     class Bench(Robot):
         ROBOT_TYPE = "Bench"
 
-    robot = Bench(arm=FrankyArm("10.0.0.1", node_rank=2))
+    from rlinf.robotics.parts.end_effectors import EndEffector
+
+    robot = Bench(
+        arm=FrankyArm("10.0.0.1", node_rank=2),
+        end_effector=EndEffector.of("franky", robot_ip="10.0.0.1", node_rank=5),
+    )
 
     described = robot.describe()
 
     assert "Bench" in described
-    # Exported parts appear beneath their host arm.
     assert "arm" in described and "end_effector" in described
-    assert "node=2" in described, described
-    # Parts sharing one connection report the same owner.
-    assert described.count("FrankyArm#1") == 2, described
+    # Each part reports the node it was placed on, before anything opens.
+    assert "node=2" in described and "node=5" in described, described
+    # Separate connections, so neither is listed as owned by the other.
+    assert described.count("FrankyArm#1") == 1, described
 
 
 def test_a_robot_can_be_disconnected_twice():
@@ -3502,7 +3536,12 @@ def test_a_robot_can_be_disconnected_twice():
     class Bench(Robot):
         ROBOT_TYPE = "Bench"
 
-    robot = Bench(arm=FrankyArm("10.0.0.1", gripper_connection="/dev/mock-gripper"))
+    from rlinf.robotics.parts.end_effectors import EndEffector
+
+    robot = Bench(
+        arm=FrankyArm("10.0.0.1"),
+        end_effector=EndEffector.of("robotiq", port="/dev/mock-gripper"),
+    )
 
     with mocked_sdks():
         robot.connect()
@@ -3626,25 +3665,34 @@ def test_a_refused_grasp_does_not_end_the_episode():
         assert gripper.is_open
 
 
-def test_a_franky_arm_builds_the_hand_its_config_names():
+def test_a_robot_composes_the_hand_its_config_names():
     from robot_mocks import mocked_sdks
 
     with mocked_sdks():
-        from rlinf.robotics.parts.arms.franky import FrankyArm
-        from rlinf.robotics.parts.end_effectors import FrankyGripper, RobotiqGripper
+        from rlinf.robotics.parts.end_effectors import (
+            FrankaGripper,
+            FrankyGripper,
+            RobotiqGripper,
+        )
+        from rlinf.robotics.robots import FrankaRobot
 
-        # 'franka' names the hand, and the arm reaches it over its own
-        # transport rather than the ROS one that name selects elsewhere.
-        arm = FrankyArm.declare("10.0.0.1", gripper_type="franka")
-        arm.connect()
-        assert isinstance(arm._gripper, FrankyGripper)
-        assert arm.get_observation()["tcp_pose"].shape == (7,)
-        arm.disconnect()
+        def hand_of(**settings):
+            return FrankaRobot.declare_end_effector(
+                "10.0.0.1", node_rank=0, name="hand", **settings
+            )
 
-        arm = FrankyArm.declare("10.0.0.1", gripper_connection="/dev/ttyUSB0")
-        arm.connect()
-        assert isinstance(arm._gripper, RobotiqGripper)
-        arm.disconnect()
+        # The built-in hand is one device with two drivers, and the arm backend
+        # the robot is built on decides which of them reaches it.
+        assert isinstance(hand_of(gripper_type="franka"), FrankaGripper)
+        assert isinstance(
+            hand_of(gripper_type="franka", backend="franky"), FrankyGripper
+        )
+        # A config that names a driver outright is taken at its word.
+        assert isinstance(hand_of(end_effector_type="franky_gripper"), FrankyGripper)
+        assert isinstance(
+            hand_of(gripper_type="robotiq", gripper_connection="/dev/ttyUSB0"),
+            RobotiqGripper,
+        )
 
 
 def test_a_franka_robot_composes_the_backend_and_hand_it_is_given():
@@ -3661,11 +3709,13 @@ def test_a_franka_robot_composes_the_backend_and_hand_it_is_given():
             gripper_type="franka",
         )
         assert type(robot.child("arm")).__name__ == "FrankyArm"
+        assert isinstance(robot.child("end_effector"), FrankyGripper)
 
         robot.connect()
-        assert isinstance(robot.child("arm")._gripper, FrankyGripper)
-        assert set(robot.get_observation()) == {"arm"}
+        assert set(robot.get_observation()) == {"arm", "end_effector"}
+        assert robot.child("end_effector").is_connected
         robot.disconnect()
+        assert not robot.child("end_effector").is_connected
 
 
 def test_reading_the_hand_twice_costs_one_round_trip():
@@ -3694,3 +3744,81 @@ def test_reading_the_hand_twice_costs_one_round_trip():
         gripper.move(0.02)
         _ = gripper.position
         assert len(reads) == 2
+
+
+def test_one_part_at_a_time_holds_a_hardware_endpoint(tmp_path, monkeypatch):
+    from rlinf.robotics.parts import claims
+    from rlinf.robotics.parts.claims import DeviceClaim
+
+    monkeypatch.setattr(claims, "_CLAIM_DIR", str(tmp_path))
+
+    held = DeviceClaim("franky-arm:10.0.0.1", "FrankyArm")
+    held.acquire()
+
+    # A second part reaching for the same endpoint is told who has it, rather
+    # than being left to fail later inside a vendor SDK.
+    with pytest.raises(RuntimeError, match="FrankyArm"):
+        DeviceClaim("franky-arm:10.0.0.1", "OtherArm").acquire()
+
+    # An arm and the hand mounted on it answer on different endpoints, so
+    # holding one says nothing about the other.
+    beside = DeviceClaim("franky-hand:10.0.0.1", "FrankyGripper")
+    beside.acquire()
+    beside.release()
+
+    held.release()
+    # Releasing hands the endpoint on.
+    DeviceClaim("franky-arm:10.0.0.1", "OtherArm").acquire()
+
+
+def test_a_claim_survives_a_part_that_fails_to_open(tmp_path, monkeypatch):
+    from rlinf.robotics.parts import claims
+    from rlinf.robotics.parts.claims import DeviceClaim
+
+    monkeypatch.setattr(claims, "_CLAIM_DIR", str(tmp_path))
+
+    claim = DeviceClaim("robotiq:/dev/ttyUSB0", "RobotiqGripper")
+    try:
+        with claim:
+            raise RuntimeError("the port was there but the gripper was not")
+    except RuntimeError:
+        pass
+
+    # A failed open must not strand the endpoint for the rest of the session.
+    DeviceClaim("robotiq:/dev/ttyUSB0", "RobotiqGripper").acquire()
+
+
+def test_ros_parts_share_one_session_per_process():
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        from rlinf.robotics.parts.transports import ros as ros_transport
+        from rlinf.robotics.parts.transports.ros import shared_ros_session
+
+        ros_transport.ros_controller._SHARED_SESSION = None
+        try:
+            first = shared_ros_session()
+            # ROS 1 gives a process one node, so asking twice has to answer
+            # with the session that node already belongs to.
+            assert shared_ros_session() is first
+        finally:
+            ros_transport.ros_controller._SHARED_SESSION = None
+
+
+def test_a_ros_hand_opens_without_an_arm_to_hand_it_a_session():
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        from rlinf.robotics.parts.end_effectors import EndEffector, FrankaGripper
+
+        hand = EndEffector.of("franka_gripper")
+        assert isinstance(hand, FrankaGripper)
+
+        # No arm involved: the hand joins the session itself.
+        hand.connect()
+        try:
+            assert hand.is_connected
+            assert hand._ros is not None
+        finally:
+            hand.disconnect()
+        assert not hand.is_connected
