@@ -125,6 +125,11 @@ class ROSController:
     ) -> None:
         """Create a ROS subscriber.
 
+        Parts share this session, so several of them may subscribe to one
+        topic. A later subscriber does not reset what the topic has already
+        delivered: readiness describes the topic, and a part that has been
+        reading it does not stop because something else started listening too.
+
         Args:
             name: ROS topic name.
             data_class: Message type received from the topic.
@@ -136,7 +141,7 @@ class ROSController:
             self._input_channel_status[name] = True
             return callback(*args, **kwargs)
 
-        self._input_channel_status[name] = False
+        self._input_channel_status.setdefault(name, False)
         self._input_channels[name] = rospy.Subscriber(
             name, data_class, callback_wrapper
         )

@@ -3821,3 +3821,28 @@ def test_a_ros_hand_opens_without_an_arm_to_hand_it_a_session():
         finally:
             hand.disconnect()
         assert not hand.is_connected
+        # A hand that has let go of the session is not ready, whatever the
+        # topic is still delivering to whoever else is listening.
+        assert not hand.is_ready()
+
+
+def test_a_later_subscriber_does_not_unready_an_existing_one():
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        from rlinf.robotics.parts.transports.ros import ROSController
+
+        ROSController._shared = None
+        try:
+            session = ROSController.shared()
+            session.connect_ros_channel("/topic", object, lambda _msg: None)
+            session._input_channel_status["/topic"] = True
+
+            # A second part on the same session subscribes to the same topic.
+            session.connect_ros_channel("/topic", object, lambda _msg: None)
+
+            # The topic has been delivering all along, so the part already
+            # reading it must not be told it is no longer ready.
+            assert session.get_input_channel_status("/topic")
+        finally:
+            ROSController._shared = None

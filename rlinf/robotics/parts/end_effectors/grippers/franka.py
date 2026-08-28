@@ -65,7 +65,6 @@ class FrankaGripper(BaseGripper):
 
         self._position_value: float = 0.0
         self._is_open_flag: bool = True
-        self._is_ready_flag: bool = False
 
         # ROS channels.
         self._move_channel = "/franka_gripper/move/goal"
@@ -93,8 +92,8 @@ class FrankaGripper(BaseGripper):
         return self._ros
 
     def _release(self, device: Any) -> None:
-        """Mark the hand unavailable, leaving the shared session standing."""
-        self._is_ready_flag = False
+        """Let go of the session, which other parts keep using."""
+        self._ros = None
 
     # BaseGripper interface
 
@@ -145,4 +144,3 @@ class FrankaGripper(BaseGripper):
 
     def _on_state_msg(self, msg: Any) -> None:
         self._position_value = np.sum(msg.position)
-        self._is_ready_flag = True
