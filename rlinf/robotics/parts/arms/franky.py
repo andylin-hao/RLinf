@@ -352,13 +352,13 @@ class FrankyArm(BaseArm):
 
         self._cart_tracker.set_target(self._franky.Affine(T))
 
-    def reset_joint(self, reset_pos: list[float]) -> None:
-        assert len(reset_pos) == 7
+    def reset_joint(self, positions: list[float]) -> None:
+        assert len(positions) == 7
         self._stop_tracking_motion()
         self._stop_cart_tracking_motion()
         franky = self._franky
         motion = franky.JointMotion(
-            franky.JointState(position=np.asarray(reset_pos, dtype=np.float64)),
+            franky.JointState(position=np.asarray(positions, dtype=np.float64)),
             reference_type=franky.ReferenceType.Absolute,
         )
         self._robot.move(motion)

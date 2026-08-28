@@ -331,11 +331,11 @@ class GimArm(BaseArm):
         with self._lock:
             self._target_q = np.array(q_target, dtype=np.float64)
 
-    def reset_joint(self, reset_qpos: list[float], duration: float = 3.0) -> None:
+    def reset_joint(self, positions: list[float], duration: float = 3.0) -> None:
         """Move smoothly to a reset configuration.
 
         Args:
-            reset_qpos: Target joint positions ``(6,)`` in radians.
+            positions: Target joint positions ``(6,)`` in radians.
             duration: Time in seconds for the interpolation.
         """
         reading = self._sdk.get_reading()
@@ -344,7 +344,7 @@ class GimArm(BaseArm):
             return
 
         start_q = np.array(reading.position, dtype=np.float64)
-        target_q = np.array(reset_qpos, dtype=np.float64)
+        target_q = np.array(positions, dtype=np.float64)
         num_steps = max(1, int(duration / _CONTROL_DT))
 
         for step in range(num_steps + 1):

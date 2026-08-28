@@ -15,7 +15,7 @@
 """Arm interfaces and the canonical observation schema."""
 
 from abc import ABC, abstractmethod
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any, ClassVar, Optional, Protocol
 
 from rlinf.robotics.parts.base import ControllablePart, Features, Observation
@@ -103,6 +103,62 @@ class Arm(ControllablePart):
             )
         return cls(address, **placement)
 
+    # Operations every arm is asked for, beyond reading and commanding it.
+
+    def is_robot_up(self) -> bool:
+        """Whether the arm is ready to be read and commanded.
+
+        An arm whose only readiness signal is its connection keeps this
+        default. Backends that latch faults, or that wait for a controller to
+        publish a first reading, answer from that instead.
+        """
+        return self.is_connected
+
+    def clear_errors(self) -> None:
+        """Clear a latched fault so the arm accepts commands again.
+
+        The default suits an arm that latches none, which is why it is silent
+        rather than a refusal.
+        """
+
+    def reset_joint(self, positions: "Sequence[float]") -> None:
+        """Move the joints to a configuration, outside the action stream.
+
+        A reset travels further than one control step, so a backend runs it as
+        a position-controlled motion rather than through
+        :meth:`send_action`. There is no sensible default: an arm that cannot
+        do this says so, because a caller that asked to reset must not be left
+        believing the arm moved.
+
+        Args:
+            positions: Target joint positions, one per joint.
+
+        Raises:
+            NotImplementedError: If this backend cannot reset its joints.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} cannot reset its joints. Drive it to the "
+            "configuration you want through send_action, or use a backend that "
+            "implements reset_joint()."
+        )
+
+    def reconfigure_compliance_params(self, params: "Mapping[str, float]") -> None:
+        """Apply controller compliance settings while the arm is running.
+
+        Backends that fix their gains when the controller starts keep this
+        default. It reports the settings it could not apply rather than
+        dropping them, so a task tuned against one backend does not appear to
+        run with those gains on another.
+        """
+        if params:
+            get_logger().warning(
+                "%s cannot change compliance while running; %s were not "
+                "applied. Set them where this backend configures its "
+                "controller instead.",
+                type(self).__name__,
+                sorted(params),
+            )
+
 
 class BaseArm(Arm, ABC):
     """Arm base class that exposes fields from a state object."""
@@ -131,20 +187,3 @@ class BaseArm(Arm, ABC):
         """Select the canonical fields out of this arm's state."""
         state = self.get_state().to_dict()
         return {name: state[name] for name in self.STATE_FIELDS}
-
-    def reconfigure_compliance_params(self, params: "Mapping[str, float]") -> None:
-        """Apply controller compliance settings while the arm is running.
-
-        Backends that fix their gains when the controller starts keep this
-        default. It reports the settings it could not apply rather than
-        dropping them, so a task tuned against one backend does not appear to
-        run with those gains on another.
-        """
-        if params:
-            get_logger().warning(
-                "%s cannot change compliance while running; %s were not "
-                "applied. Set them where this backend configures its "
-                "controller instead.",
-                type(self).__name__,
-                sorted(params),
-            )

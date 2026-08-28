@@ -200,19 +200,19 @@ class FrankaROSArm(BaseArm):
     def clear_errors(self) -> None:
         self._ros.put_channel(self._arm_reset_channel, self._ErrorRecoveryActionGoal())
 
-    def reset_joint(self, reset_pos: list[float]) -> None:
+    def reset_joint(self, positions: list[float]) -> None:
         """Reset the joint positions of the robot arm."""
         self.stop_impedance()
         self.clear_errors()
         self._wait_robot()
         self.clear_errors()
 
-        assert len(reset_pos) == 7, (
-            f"Invalid reset position, expected 7 dimensions but got {len(reset_pos)}"
+        assert len(positions) == 7, (
+            f"Invalid reset position, expected 7 dimensions but got {len(positions)}"
         )
 
         load_gripper = "true" if self._load_gripper else "false"
-        self._rospy.set_param("/target_joint_positions", reset_pos)
+        self._rospy.set_param("/target_joint_positions", positions)
         self._joint = psutil.Popen(
             [
                 "roslaunch",
@@ -227,7 +227,7 @@ class FrankaROSArm(BaseArm):
         self._logger.debug("Joint reset begins")
         self.clear_errors()
 
-        self._wait_for_joint(reset_pos)
+        self._wait_for_joint(positions)
 
         self._joint.terminate()
         self._wait_robot()

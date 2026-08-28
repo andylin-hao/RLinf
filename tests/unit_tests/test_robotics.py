@@ -3945,3 +3945,59 @@ def test_an_arm_reports_compliance_settings_it_cannot_apply(caplog):
             assert "cannot change compliance" in caplog.text
         finally:
             arm.disconnect()
+
+
+def test_every_arm_answers_the_operations_the_contract_names():
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        from rlinf.robotics.parts.arms.base import Arm
+
+        for name in sorted(Arm.backends()):
+            arm = Arm.backend(name)
+            # A caller reaches for these without asking which backend it has.
+            assert callable(arm.is_robot_up)
+            assert callable(arm.clear_errors)
+            assert callable(arm.reset_joint)
+            assert callable(arm.reconfigure_compliance_params)
+
+
+def test_an_arm_that_cannot_reset_its_joints_says_so():
+    from rlinf.robotics.parts.arms.base import Arm
+    from rlinf.robotics.parts.base import Features
+
+    class PlainArm(Arm):
+        def __init__(self, address: str) -> None:
+            self.address = address
+
+        @property
+        def observation_features(self) -> Features:
+            return {}
+
+        @property
+        def action_features(self) -> Features:
+            return {}
+
+        def _open(self):
+            return "device"
+
+        def get_observation(self):
+            return {}
+
+        def send_action(self, action):
+            return action
+
+    arm = PlainArm("10.0.0.1")
+
+    # Readiness follows the connection when the backend has no other signal.
+    assert not arm.is_robot_up()
+    arm.connect()
+    assert arm.is_robot_up()
+    # Nothing latched, nothing to clear.
+    arm.clear_errors()
+
+    # A reset that cannot happen is refused rather than silently skipped, so a
+    # caller is never left believing the arm moved.
+    with pytest.raises(NotImplementedError, match="cannot reset its joints"):
+        arm.reset_joint([0.0] * 7)
+    arm.disconnect()
