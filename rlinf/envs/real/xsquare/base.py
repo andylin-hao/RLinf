@@ -25,12 +25,12 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 
 from rlinf.robotics import (
+    Camera,
     Robot,
     RobotInfo,
     Turtle2Config,
     Turtle2Robot,
 )
-from rlinf.robotics.parts.arms.turtle2 import Turtle2RobotState
 from rlinf.robotics.teleop import ActionKind, ActionPart
 from rlinf.scheduler import WorkerInfo
 from rlinf.utils.logging import get_logger
@@ -126,7 +126,11 @@ class Turtle2Env(gym.Env):
         assert (
             len(self.config.use_camera_ids) > 0 and len(self.config.use_camera_ids) <= 3
         ), "please choose camera IDs from [0, 1, 2]."
-        self._turtle2_state = Turtle2RobotState()
+        # A dummy env reads no hardware, so start from a zero pose the
+        # same shape the robot would report.
+        self._reading: dict[str, Any] = {
+            side: {"arm": {"tcp_pose": np.zeros(7)}} for side in ("left", "right")
+        }
         self._num_steps = 0
         self.robot: Robot | None = None
 
@@ -140,7 +144,7 @@ class Turtle2Env(gym.Env):
 
         # Reset the arms before reading the initial state.
         self._reset_arms()
-        self._turtle2_state = self._controller.get_state()
+        self._reading = self.robot.get_observation()
 
         self._check_cameras()
 
@@ -155,8 +159,6 @@ class Turtle2Env(gym.Env):
             worker_rank=self.env_worker_rank,
         )
         self.robot.connect()
-        # Both arms and cameras share the same owning ROS connection.
-        self._controller = self.robot.child("left").child("arm").owner
 
     def close(self) -> None:
         """Disconnect the composed Turtle2 runtime."""
@@ -224,7 +226,9 @@ class Turtle2Env(gym.Env):
             return
 
         self._logger.info("pre-reset")
-        self._controller.move_arm([0.2, 0, 0.1, 0, 0, 0, 0], [0.2, 0, 0.1, 0, 0, 0, 0])
+        self._command_arms(
+            np.array([0.2, 0, 0.1, 0, 0, 0, 0]), np.array([0.2, 0, 0.1, 0, 0, 0, 0])
+        )
         time.sleep(2.0)
 
         if self.config.enable_random_reset:
@@ -269,14 +273,16 @@ class Turtle2Env(gym.Env):
             repr(right_arm_reset_pose),
         )
 
-        self._controller.move_arm(left_arm_reset_pose, right_arm_reset_pose)
+        self._command_arms(
+            np.asarray(left_arm_reset_pose), np.asarray(right_arm_reset_pose)
+        )
 
         reach = False
         start_time = time.time()
         while not reach:
-            state = self._controller.get_state()
-            left_pos = state.follow1_pos
-            right_pos = state.follow2_pos
+            reading = self.robot.get_observation()
+            left_pos = reading["left"]["arm"]["tcp_pose"]
+            right_pos = reading["right"]["arm"]["tcp_pose"]
             left_reach = (
                 np.linalg.norm(left_pos[:6] - np.array(left_arm_reset_pose)[:6]) < 0.04
                 if 0 in self.config.use_arm_ids
@@ -304,11 +310,37 @@ class Turtle2Env(gym.Env):
         time.sleep(0.5)
         return
 
+    def _camera_parts(self) -> list[Camera]:
+        """The robot's cameras, in the order their ids were configured."""
+        cameras = self.robot.parts_of_type(Camera)
+        return [
+            cameras[f"wrist_{index + 1}"]
+            for index in range(len(self.config.use_camera_ids))
+            if f"wrist_{index + 1}" in cameras
+        ]
+
+    def _command_arms(self, left: np.ndarray, right: np.ndarray) -> None:
+        """Send both arm poses and gripper widths as one action.
+
+        Each pose is ``[x, y, z, rx, ry, rz, gripper_width]``: the first six
+        drive the arm and the last its gripper, which rides beneath it.
+        """
+        self.robot.send_action(
+            {
+                side: {
+                    "arm": {"tcp_pose": np.asarray(pose[:6], dtype=float)},
+                    "gripper": {"target": np.asarray([pose[6]], dtype=float)},
+                }
+                for side, pose in (("left", left), ("right", right))
+            }
+        )
+
     def _check_cameras(self) -> None:
         if self.config.is_dummy:
             return
 
-        cam1_ok, cam2_ok, cam3_ok = self._controller.check_cams()
+        ready = [camera.is_ready() for camera in self._camera_parts()]
+        cam1_ok, cam2_ok, cam3_ok = (ready + [False] * 3)[:3]
         if 0 in self.config.use_camera_ids and not cam1_ok:
             raise ValueError("Camera 1 not available.")
         if 1 in self.config.use_camera_ids and not cam2_ok:
@@ -325,7 +357,7 @@ class Turtle2Env(gym.Env):
 
         self._reset_arms()
         self._num_steps = 0
-        self._turtle2_state = self._controller.get_state()
+        self._reading = self.robot.get_observation()
         observation = self._get_observation()
         return observation, {}
 
@@ -375,8 +407,8 @@ class Turtle2Env(gym.Env):
         action = action.reshape(-1, 7)
         xyz_delta = action[:, :3]
 
-        next_position1 = self._turtle2_state.follow1_pos.copy()
-        next_position2 = self._turtle2_state.follow2_pos.copy()
+        next_position1 = self._reading["left"]["arm"]["tcp_pose"].copy()
+        next_position2 = self._reading["right"]["arm"]["tcp_pose"].copy()
 
         if 0 in self.config.use_arm_ids:
             next_position1[:3] = (
@@ -414,7 +446,7 @@ class Turtle2Env(gym.Env):
         next_position2 = next_position[1]
 
         if not self.config.is_dummy:
-            self._controller.move_arm(next_position1.tolist(), next_position2.tolist())
+            self._command_arms(next_position1, next_position2)
         else:
             pass
 
@@ -423,9 +455,7 @@ class Turtle2Env(gym.Env):
         time.sleep(max(0, (1.0 / self.config.step_frequency) - step_time))
 
         if not self.config.is_dummy:
-            self._turtle2_state = self._controller.get_state()
-        else:
-            self._turtle2_state = self._turtle2_state
+            self._reading = self.robot.get_observation()
         observation = self._get_observation()
         reward = self._calc_step_reward(observation)
         terminated = reward == 1
@@ -451,8 +481,8 @@ class Turtle2Env(gym.Env):
             ``use_dense_reward`` is set, or ``0.0`` otherwise.
         """
         if not self.config.is_dummy:
-            position1 = self._turtle2_state.follow1_pos[0:6]
-            position2 = self._turtle2_state.follow2_pos[0:6]
+            position1 = self._reading["left"]["arm"]["tcp_pose"][0:6]
+            position2 = self._reading["right"]["arm"]["tcp_pose"][0:6]
             delta1 = np.abs(position1 - self.config.target_ee_pose[0, 0:6])
             delta2 = np.abs(position2 - self.config.target_ee_pose[1, 0:6])
 
@@ -546,21 +576,24 @@ class Turtle2Env(gym.Env):
             Observation with ``state`` and ``frames`` dictionaries.
         """
         if not self.config.is_dummy:
-            frames = self._controller.get_cams(self.config.use_camera_ids)
+            frames = [
+                self._reading[f"wrist_{index + 1}"]["frame"]
+                for index in range(len(self.config.use_camera_ids))
+            ]
             assert len(frames) == len(self.config.use_camera_ids), "get frames failed."
             for i in range(len(frames)):
                 frames[i] = self._crop_frame(frames[i], (128, 128))
             tcp_pose = []
             if 0 in self.config.use_arm_ids:
                 tmp = np.zeros(7)
-                tmp[0:3] = self._turtle2_state.follow1_pos[0:3]
-                r1 = R.from_euler("xyz", self._turtle2_state.follow1_pos[3:6])
+                tmp[0:3] = self._reading["left"]["arm"]["tcp_pose"][0:3]
+                r1 = R.from_euler("xyz", self._reading["left"]["arm"]["tcp_pose"][3:6])
                 tmp[3:7] = r1.as_quat()
                 tcp_pose.append(tmp.copy())
             if 1 in self.config.use_arm_ids:
                 tmp = np.zeros(7)
-                tmp[0:3] = self._turtle2_state.follow2_pos[0:3]
-                r2 = R.from_euler("xyz", self._turtle2_state.follow2_pos[3:6])
+                tmp[0:3] = self._reading["right"]["arm"]["tcp_pose"][0:3]
+                r2 = R.from_euler("xyz", self._reading["right"]["arm"]["tcp_pose"][3:6])
                 tmp[3:7] = r2.as_quat()
                 tcp_pose.append(tmp.copy())
             tcp_pose = np.concatenate(tcp_pose, axis=0)

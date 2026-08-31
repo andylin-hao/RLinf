@@ -95,8 +95,11 @@ class GimArmPegInsertionEnv(GimArmEnv):
         """Close gripper on peg, retract to safe config, then move to reset pose."""
         if not self.config.is_dummy:
             if self.config.enable_gripper:
-                # Keep the peg secured during the reset trajectory.
-                self._controller.close_gripper()
+                # Keep the peg secured during the reset trajectory. The
+                # gripper is binary, so a negative target closes it.
+                self.robot.send_action(
+                    {"arm": {"end_effector": {"target": np.array([-1.0])}}}
+                )
                 time.sleep(0.3)
 
             # Retract clear of the insertion hole.

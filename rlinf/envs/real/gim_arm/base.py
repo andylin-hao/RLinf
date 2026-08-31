@@ -248,8 +248,9 @@ class GimArmEnv(gym.Env):
             cameras={info.name: info for info in self._camera_infos()},
         )
         self.robot.connect()
-        # The owning connection forwards driver-specific methods when remote.
-        self._controller = self.robot.child("arm").owner
+        # The arm part, for the operations the Arm contract names. Reading
+        # and commanding go through the robot, not through this handle.
+        self._controller = self.robot.child("arm")
 
     def _init_action_obs_spaces(self) -> None:
         """Initialize action and observation spaces."""
@@ -318,7 +319,7 @@ class GimArmEnv(gym.Env):
             q_target = np.clip(
                 action[:6], self._joint_limit_low, self._joint_limit_high
             )
-            self._controller.move_joints(q_target)
+            self.robot.send_action({"arm": {"joint_position": q_target}})
 
             gripper_action = float(action[6])
             is_gripper_effective = self._gripper_action(gripper_action)
@@ -519,21 +520,21 @@ class GimArmEnv(gym.Env):
         """
         if not self.config.enable_gripper:
             return False
-        if (
-            position <= -self.config.binary_gripper_threshold
-            and self._state.gripper_open
+        closing = position <= -self.config.binary_gripper_threshold
+        opening = position >= self.config.binary_gripper_threshold
+        # Only act on an edge, so a held command is not resent every step.
+        if not (closing and self._state.gripper_open) and not (
+            opening and not self._state.gripper_open
         ):
-            self._controller.close_gripper()
-            time.sleep(0.6)
-            return True
-        if (
-            position >= self.config.binary_gripper_threshold
-            and not self._state.gripper_open
-        ):
-            self._controller.open_gripper()
-            time.sleep(0.6)
-            return True
-        return False
+            return False
+
+        # The gripper rides on the arm, and its view is binary: the sign of
+        # the target opens or closes it.
+        self.robot.send_action(
+            {"arm": {"end_effector": {"target": np.array([1.0 if opening else -1.0])}}}
+        )
+        time.sleep(0.6)
+        return True
 
     # Utilities.
 
