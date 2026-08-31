@@ -193,12 +193,21 @@ class MethodCamera(Camera):
         host: The part owning the connection.
         method: Host method returning a frame.
         method_args: Fixed arguments identifying the camera, e.g. its id.
+        check_method: Host method taking a timeout and returning one health
+            flag per camera, indexed by the first of ``method_args``.
     """
 
-    def __init__(self, host: "Connection", method: str, *method_args: Any) -> None:
+    def __init__(
+        self,
+        host: "Connection",
+        method: str,
+        *method_args: Any,
+        check_method: Optional[str] = None,
+    ) -> None:
         self._host = self._owner = host
         self.method = method
         self.method_args = method_args
+        self.check_method = check_method
 
     @property
     def observation_features(self) -> Features:
@@ -207,6 +216,24 @@ class MethodCamera(Camera):
 
     def reset(self) -> None:
         """Camera views have no resettable state."""
+
+    def is_ready(self, timeout: float = 0.5) -> bool:
+        """Ask the host whether this camera is delivering frames.
+
+        Uses the host's ``check_method`` when it was given one, and otherwise
+        falls back to fetching a frame, which is the only check a host that
+        exposes no health method can offer.
+        """
+        if self.check_method is not None:
+            checks = getattr(self._host, self.check_method)(timeout)
+            return bool(
+                checks[self.method_args[0]] if self.method_args else all(checks)
+            )
+        try:
+            self.get_observation()
+        except Exception:
+            return False
+        return True
 
     def get_observation(self) -> Observation:
         """Fetch one frame through the configured host method."""

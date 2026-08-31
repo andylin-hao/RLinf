@@ -52,6 +52,18 @@ class Camera(RobotPart):
             for name, info in (cameras or {}).items()
         }
 
+    def is_ready(self, timeout: float = 0.5) -> bool:
+        """Whether this camera is delivering frames.
+
+        Separate from :pyattr:`is_connected`: a camera can be open while its
+        stream has stalled, which is what an env wants to know before it
+        starts an episode.
+
+        Args:
+            timeout: Seconds to wait for a frame before reporting not ready.
+        """
+        return True
+
 
 @dataclass
 class CameraInfo:
@@ -128,6 +140,16 @@ class BaseCamera(Camera, ABC):
         """Reconnect the camera on the node that owns it."""
         self.disconnect()
         self.connect()
+
+    def is_ready(self, timeout: float = 0.5) -> bool:
+        """Whether a frame can be read within *timeout*."""
+        if not self.is_connected:
+            return False
+        try:
+            self.get_frame(timeout=timeout)
+        except Exception:
+            return False
+        return True
 
     def get_observation(self) -> Observation:
         """Return the latest raw frame under the canonical camera key."""

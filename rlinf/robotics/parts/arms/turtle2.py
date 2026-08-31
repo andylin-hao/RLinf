@@ -97,7 +97,9 @@ class Turtle2Connection(Connection):
                 state_index=_GRIPPER_STATE_INDEX,
             )
         for index, camera_id in enumerate(self.camera_ids):
-            parts[f"wrist_{index + 1}"] = MethodCamera(self, "get_camera", camera_id)
+            parts[f"wrist_{index + 1}"] = MethodCamera(
+                self, "get_camera", camera_id, check_method="check_cams"
+            )
         return parts
 
     def _open(self) -> Any:
