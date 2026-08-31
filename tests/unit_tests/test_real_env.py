@@ -1757,10 +1757,10 @@ def test_a_device_that_means_something_else_is_refused():
 
 def _task_classes():
     """Return registered real-world task classes keyed by Gym ID."""
-    from rlinf.envs.real import dosw1, franka, gim_arm, xsquare
+    from rlinf.envs.real import dosw1, franka, gim_arm, so101, xsquare
 
     classes = {}
-    for module in (franka, dosw1, xsquare, gim_arm):
+    for module in (franka, dosw1, xsquare, gim_arm, so101):
         classes.update(getattr(module, "TASKS", {}))
     return classes
 
