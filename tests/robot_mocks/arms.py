@@ -374,17 +374,20 @@ def lerobot() -> dict[str, types.ModuleType]:
             self.positions.update(action)
             return dict(action)
 
-    follower = module(
-        "lerobot.robots.so101_follower",
-        SO101Follower=FakeSO101Follower,
-        SO101FollowerConfig=FakeSO101FollowerConfig,
-    )
-    made = {
-        parent.__name__: parent for parent in package("lerobot.robots.so101_follower")
-    }
-    made["lerobot.robots.so101_follower"] = follower
-    made["lerobot.robots"].so101_follower = follower
+    made = {parent.__name__: parent for parent in package("lerobot.robots.so_follower")}
+    # lerobot 0.4 merged the SO-family followers into so_follower; the driver
+    # prefers that path and falls back to the older one, so fake both.
+    for leaf in ("so_follower", "so101_follower"):
+        follower = module(
+            f"lerobot.robots.{leaf}",
+            SO101Follower=FakeSO101Follower,
+            SO101FollowerConfig=FakeSO101FollowerConfig,
+        )
+        made[f"lerobot.robots.{leaf}"] = follower
+        setattr(made["lerobot.robots"], leaf, follower)
     made["lerobot"].robots = made["lerobot.robots"]
+    # The driver gates on the Feetech SDK, which lerobot's feetech extra brings.
+    made["scservo_sdk"] = module("scservo_sdk")
     return made
 
 

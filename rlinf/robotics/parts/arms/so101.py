@@ -40,7 +40,7 @@ from rlinf.utils.logging import get_logger
 from .base import Arm, BaseArm
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
-    from lerobot.robots.so101_follower import SO101Follower
+    from lerobot.robots.so_follower import SO101Follower
 
 
 @dataclass
@@ -74,7 +74,7 @@ class SO101Arm(BaseArm):
             they can be placed on their own node.
     """
 
-    SDK = ("lerobot", "lerobot")
+    SDK = ("scservo_sdk", "lerobot[feetech]")
 
     #: Arm joints reported as ``arm_joint_position``, in bus order.
     MOTORS: tuple[str, ...] = (
@@ -169,7 +169,14 @@ class SO101Arm(BaseArm):
         hang a worker that has no terminal, so a missing calibration is
         reported instead. Run lerobot's own calibration once per arm first.
         """
-        from lerobot.robots.so101_follower import SO101Follower, SO101FollowerConfig
+        try:
+            # lerobot 0.4 merged the SO-family followers into one module.
+            from lerobot.robots.so_follower import SO101Follower, SO101FollowerConfig
+        except ImportError:  # pragma: no cover - older lerobot
+            from lerobot.robots.so101_follower import (
+                SO101Follower,
+                SO101FollowerConfig,
+            )
 
         robot = SO101Follower(
             SO101FollowerConfig(
