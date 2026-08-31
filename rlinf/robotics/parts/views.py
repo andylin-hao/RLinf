@@ -30,6 +30,17 @@ from .cameras.base import Camera
 from .end_effectors.base import EndEffector
 
 
+def host_state(host: Any) -> dict[str, Any]:
+    """Read a host's state, sharing the snapshot when it keeps one.
+
+    A view's host is normally a :class:`Connection`, which serves one read to
+    a part and its riders. Hosts are duck-typed though, so a plain object with
+    ``get_state`` is still allowed.
+    """
+    read = getattr(host, "read_state", None)
+    return state_to_dict(read() if callable(read) else host.get_state())
+
+
 def state_to_dict(state: Any) -> dict[str, Any]:
     """Normalize a host part's state object into a plain dictionary."""
     if isinstance(state, dict):
@@ -83,7 +94,7 @@ class MethodArm(Arm):
 
     def get_observation(self) -> Observation:
         """Select this view's fields out of the shared host state."""
-        state = state_to_dict(self._host.get_state())
+        state = host_state(self._host)
         if not self.state_fields:
             return state
         return {name: state[source] for name, source in self.state_fields.items()}
@@ -153,7 +164,7 @@ class MethodEndEffector(EndEffector):
 
     def get_state(self) -> np.ndarray:
         """Read the end-effector field out of the shared host state."""
-        state = state_to_dict(self._host.get_state())
+        state = host_state(self._host)
         value = np.asarray(state[self.state_field])
         if self.state_index is not None:
             value = value[self.state_index]

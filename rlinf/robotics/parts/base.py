@@ -21,8 +21,9 @@ by one session; ``RobotPart.children`` describes the public robot tree.
 """
 
 from abc import ABC, ABCMeta, abstractmethod
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, field
 from functools import partial
 from importlib import import_module
@@ -114,6 +115,7 @@ class Connection(ABC, metaclass=ConnectionMeta):
 
     #: Active vendor handle, or ``None`` while disconnected.
     _device: Any = None
+    _state_snapshot: "Optional[list[Any]]" = None
 
     #: Whether the metaclass should consume placement arguments.
     _TAKES_PLACEMENT: ClassVar[bool] = True
@@ -305,6 +307,37 @@ class Connection(ABC, metaclass=ConnectionMeta):
         stable device paths, or another identifier accepted by their config.
         """
         return set()
+
+    def read_state(self) -> Any:
+        """This connection's state, shared for the duration of one read.
+
+        A part and the riders it carries all want the same reading, and on a
+        serial bus each extra fetch costs a control cycle. While a snapshot is
+        open the first call reaches the hardware and the rest are served from
+        it. Outside a snapshot every call reaches the hardware, so a caller
+        that wants fresh state always gets it.
+        """
+        if self._state_snapshot is None:
+            return self.get_state()
+        if not self._state_snapshot:
+            # First reader inside the snapshot pays for the hardware read.
+            self._state_snapshot.append(self.get_state())
+        return self._state_snapshot[0]
+
+    @contextmanager
+    def snapshot_state(self) -> "Iterator[None]":
+        """Serve one hardware read to everything read inside this block."""
+        if self._state_snapshot is not None or not hasattr(self, "get_state"):
+            # Already inside a snapshot, or nothing to snapshot.
+            yield
+            return
+        # Opened empty and filled on first use, so a caller that only wants
+        # metadata never reaches the hardware at all.
+        self._state_snapshot = []
+        try:
+            yield
+        finally:
+            self._state_snapshot = None
 
     @classmethod
     def require_sdk(cls, where: str = "this machine") -> None:
@@ -614,10 +647,19 @@ class PartGroup(ControllablePart):
 
         ``include`` can omit child parts that do not contribute to the result.
         """
-        reading = dict(call(part))
-        for name, rider in part.children.items():
-            if include is None or include(rider):
-                reading[name] = PartGroup._read_part(rider, call, include)
+        # A group rides no connection of its own and refuses to name one, so
+        # there is nothing to snapshot here; its children snapshot themselves
+        # as they are reached.
+        owner = None if isinstance(part, PartGroup) else part.owner
+        snapshot = (
+            owner.snapshot_state() if isinstance(owner, Connection) else nullcontext()
+        )
+        # The part and its riders share one hardware read.
+        with snapshot:
+            reading = dict(call(part))
+            for name, rider in part.children.items():
+                if include is None or include(rider):
+                    reading[name] = PartGroup._read_part(rider, call, include)
         return reading
 
     @staticmethod

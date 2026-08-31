@@ -185,5 +185,5 @@ class BaseArm(Arm, ABC):
 
     def get_observation(self) -> Observation:
         """Select the canonical fields out of this arm's state."""
-        state = self.get_state().to_dict()
+        state = self.read_state().to_dict()
         return {name: state[name] for name in self.STATE_FIELDS}
