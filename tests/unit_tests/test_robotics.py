@@ -1850,6 +1850,90 @@ def _scripted_device(reading, produces=(), value=None, driving=True):
     return device
 
 
+def test_disconnecting_a_spacemouse_stops_its_thread_and_closes_the_handle():
+    """A daemon thread is not cleanup: it keeps polling a device nobody owns.
+
+    ``TeleopPart._release`` only calls ``close`` or ``stop``, so a reader that
+    defines neither leaks both its thread and its HID handle, and the next
+    connect finds the puck taken.
+    """
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks() as made:
+        from rlinf.robotics.parts.teleop import SpaceMouse
+
+        mouse = SpaceMouse()
+        mouse.connect()
+        reader = mouse._device
+        handle = made["pyspacemouse"].devices[-1]
+        assert reader.thread.is_alive()
+
+        mouse.disconnect()
+
+        assert not reader.thread.is_alive()
+        assert handle.closed
+
+
+def test_disconnecting_a_gello_stops_its_thread_and_releases_the_port():
+    """The same leak on the leader arm, which holds a serial port open."""
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks() as made:
+        from rlinf.robotics.parts.teleop import Gello
+
+        gello = Gello(port="/dev/mock-gello")
+        gello.connect()
+        reader = gello._device
+        agent = made["gello_teleop.gello_teleop_agent"].last_agent
+        assert reader.thread.is_alive()
+
+        gello.disconnect()
+
+        assert not reader.thread.is_alive()
+        assert agent.closed
+
+
+def test_disconnecting_a_gello_joint_releases_the_port_as_well():
+    """It already stopped its thread but left the serial port open."""
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks() as made:
+        from rlinf.robotics.parts.teleop import GelloJoint
+
+        gello = GelloJoint(port="/dev/mock-gello")
+        gello.connect()
+        reader = gello._device
+        agent = made["gello_teleop.gello_teleop_agent"].last_agent
+
+        gello.disconnect()
+
+        assert not reader.thread.is_alive()
+        assert agent.closed
+
+
+def test_a_device_can_be_reconnected_after_release():
+    """Release must leave a device reopenable, not a dead thread to restart."""
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        from rlinf.robotics.parts.teleop import SpaceMouse
+
+        mouse = SpaceMouse()
+        mouse.connect()
+        first = mouse._device
+        mouse.disconnect()
+
+        # A fresh reader, because threading.Thread cannot be restarted.
+        mouse.connect()
+        try:
+            second = mouse._device
+            assert second is not first
+            assert second.thread.is_alive()
+            assert mouse.get_observation()["twist"].shape == (6,)
+        finally:
+            mouse.disconnect()
+
+
 def _counting_device(produces=("arm",)):
     """Build a teleop device that reports how many times it was read."""
     from rlinf.robotics.parts.teleop import TeleopAction, TeleopDevice

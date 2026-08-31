@@ -144,17 +144,43 @@ class SpaceMouseExpert:
 
         self.state_lock = threading.Lock()
         self.latest_data: dict = {"action": np.zeros(6), "buttons": [0, 0]}
+        self._stop = False
         self.thread = threading.Thread(target=self._read_spacemouse, daemon=True)
         self.thread.start()
 
     def _read_spacemouse(self) -> None:
-        while True:
-            state = self._device.read()
+        while not self._stop:
+            device = self._device
+            if device is None:
+                return
+            try:
+                state = device.read()
+            except Exception:
+                # close() releases the HID handle this loop is reading, so a
+                # failure during shutdown is expected. Anything else is not.
+                if self._stop:
+                    return
+                raise
             with self.state_lock:
                 self.latest_data["action"] = np.array(
                     [-state.y, state.x, state.z, -state.roll, -state.pitch, -state.yaw]
                 )  # Express SpaceMouse axes in the robot base frame.
                 self.latest_data["buttons"] = state.buttons
+
+    def close(self) -> None:
+        """Stop the read loop and release the HID handle.
+
+        Without this the puck stays open and its thread keeps polling after
+        the device disconnects, so the next connect finds the HID handle
+        taken.
+        """
+        self._stop = True
+        thread = getattr(self, "thread", None)
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=1.0)
+        device, self._device = self._device, None
+        if device is not None:
+            device.close()
 
     def get_action(self) -> tuple[np.ndarray, list]:
         """Return the latest motion and button state."""

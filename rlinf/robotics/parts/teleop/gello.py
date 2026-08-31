@@ -143,6 +143,7 @@ class GelloExpert:
 
         self.state_lock = threading.Lock()
         self._ready = False
+        self._stop = False
         self.latest_data = {
             "target_pos": np.zeros(3),
             "target_quat": np.zeros(4),
@@ -154,7 +155,7 @@ class GelloExpert:
     def _read_gello(self) -> None:
         import time
 
-        while True:
+        while not self._stop:
             gello_joints, gello_gripper = self.agent.get_action()
             gello_gripper = np.array([gello_gripper])
             target_pos, target_quat = self.fk.get_fk(gello_joints)
@@ -166,6 +167,21 @@ class GelloExpert:
                 self._ready = True
 
             time.sleep(0.001)
+
+    def close(self) -> None:
+        """Stop the read loop and release the leader's serial port.
+
+        Without this the thread keeps polling the arm after the device
+        disconnects, and the port stays open against the next connect.
+        """
+        self._stop = True
+        thread = getattr(self, "thread", None)
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=1.0)
+        agent, self.agent = getattr(self, "agent", None), None
+        release = getattr(agent, "close", None) or getattr(agent, "stop", None)
+        if callable(release):
+            release()
 
     @property
     def ready(self) -> bool:

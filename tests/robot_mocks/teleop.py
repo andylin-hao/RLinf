@@ -39,7 +39,12 @@ def spacemouse() -> types.ModuleType:
     fake.buttons = (0, 0)
 
     class Device:
+        def __init__(self):
+            self.closed = False
+
         def read(self):
+            if self.closed:
+                raise OSError("read from a closed SpaceMouse")
             x, y, z, roll, pitch, yaw = fake.twist
             return types.SimpleNamespace(
                 x=x,
@@ -52,9 +57,18 @@ def spacemouse() -> types.ModuleType:
             )
 
         def close(self):
-            return None
+            self.closed = True
 
-    fake.open = lambda **_kwargs: Device()
+    # A fresh handle per open, as the real driver does, recorded so a test
+    # can see what became of one after the part that opened it disconnected.
+    fake.devices = []
+
+    def _open(**_kwargs):
+        device = Device()
+        fake.devices.append(device)
+        return device
+
+    fake.open = _open
     return fake
 
 
@@ -66,12 +80,14 @@ def gello() -> dict[str, types.ModuleType]:
     class GelloTeleopAgent:
         def __init__(self, port=None, **_kwargs):
             self.port = port
+            self.closed = False
+            agent_module.last_agent = self
 
         def get_action(self):
             return np.zeros(DOF), 0.0
 
         def close(self):
-            return None
+            self.closed = True
 
     class FrankaFK:
         def get_fk(self, _joints):

@@ -255,11 +255,15 @@ class GelloJointExpert:
             time.sleep(0.001)
 
     def close(self) -> None:
-        """Stop the background read loop."""
+        """Stop the read loop and release the leader's serial port."""
         self._stop = True
-        t = getattr(self, "thread", None)
-        if t is not None and t.is_alive():
-            t.join(timeout=1.0)
+        thread = getattr(self, "thread", None)
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=1.0)
+        agent, self.agent = getattr(self, "agent", None), None
+        release = getattr(agent, "close", None) or getattr(agent, "stop", None)
+        if callable(release):
+            release()
 
     @property
     def ready(self) -> bool:
