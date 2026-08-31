@@ -545,43 +545,64 @@ def test_control_is_held_between_samples_then_released():
     assert np.array_equal(env.stepped[2], POLICY)
 
 
+class _StubDevice:
+    """A teleop device that reads nothing, for arbitration tests.
+
+    Stands in for the parts of the device contract the group touches, so a
+    test can supply only the mapping it wants to exercise.
+    """
+
+    NEEDS = ()
+    CLIPS_TO_ACTION_SPACE = False
+    APPLIES_WHILE_IDLE = False
+    HOLD_WINDOW = None
+    is_connected = True
+
+    def get_observation(self):
+        return {}
+
+    def publish(self, reading):
+        return {}
+
+    def hold(self, context):
+        return {}
+
+    def on_action_chunk_begin(self):
+        pass
+
+    def on_reset(self, context=None):
+        pass
+
+    def connect(self):
+        pass
+
+    def disconnect(self):
+        pass
+
+    def drive(self, context, reading=None):
+        if reading is None:
+            reading = self.get_observation()
+        return self.action(reading, context)
+
+
 def test_an_unfilled_part_keeps_the_policy_action():
     import numpy as np
 
     from rlinf.envs.real.wrappers.teleop.composed import ComposedTeleop
-    from rlinf.robotics.teleop import (
-        ActionKind,
-        TeleopBinding,
-        TeleopEntry,
-        TeleopGroup,
-    )
+    from rlinf.robotics.actions import ActionKind
+    from rlinf.robotics.parts.teleop import TeleopEntry, TeleopGroup
 
-    class Fixed(TeleopBinding):
+    class Fixed(_StubDevice):
         PRODUCES = {"hand": ActionKind.HAND}
 
         def action(self, reading, context):
-            from rlinf.robotics.teleop import TeleopAction
+            from rlinf.robotics.parts.teleop import TeleopAction
 
             return TeleopAction(parts={"hand": np.full(6, 0.5)}, driving=True)
 
-        def reset(self):
-            pass
-
-    class Device:
-        is_connected = True
-
-        def get_observation(self):
-            return {}
-
-        def connect(self):
-            pass
-
-        def disconnect(self):
-            pass
-
     layout = {"arm": slice(0, 6), "hand": slice(6, 12)}
     group = TeleopGroup(
-        [TeleopEntry(Device(), Fixed())],
+        [TeleopEntry(Fixed())],
         available={"arm": ActionKind.CARTESIAN_DELTA, "hand": ActionKind.HAND},
     )
     device = ComposedTeleop(group, layout)
@@ -595,30 +616,19 @@ def test_an_unfilled_part_keeps_the_policy_action():
 
 def test_an_idle_glove_keeps_its_hand_pose_without_claiming_the_arm():
     from rlinf.envs.real.wrappers.teleop.composed import ComposedTeleop
-    from rlinf.robotics.teleop import (
-        ActionKind,
-        TeleopAction,
-        TeleopBinding,
-        TeleopEntry,
-        TeleopGroup,
-    )
+    from rlinf.robotics.actions import ActionKind
+    from rlinf.robotics.parts.teleop import TeleopAction, TeleopEntry, TeleopGroup
 
-    class HeldHand(TeleopBinding):
+    class HeldHand(_StubDevice):
         PRODUCES = {"hand": ActionKind.HAND}
         APPLIES_WHILE_IDLE = True
 
         def action(self, reading, context):
             return TeleopAction(parts={"hand": np.full(6, 0.5)}, driving=False)
 
-    class Device:
-        is_connected = True
-
-        def get_observation(self):
-            return {}
-
     layout = {"arm": slice(0, 6), "hand": slice(6, 12)}
     group = TeleopGroup(
-        [TeleopEntry(Device(), HeldHand())],
+        [TeleopEntry(HeldHand())],
         available={"arm": ActionKind.CARTESIAN_DELTA, "hand": ActionKind.HAND},
     )
     policy = np.arange(12, dtype=np.float64)
@@ -946,10 +956,10 @@ def test_no_teleop_wrapper_is_left_outside_teleop():
 
 
 def test_a_held_button_device_does_not_keep_control_after_release():
-    from rlinf.robotics.teleop import PicoBinding, PicoTcpBinding
+    from rlinf.robotics.parts.teleop import Pico, PicoTcp
 
-    assert PicoBinding.HOLD_WINDOW == 0.0
-    assert PicoTcpBinding.HOLD_WINDOW == 0.0
+    assert Pico.HOLD_WINDOW == 0.0
+    assert PicoTcp.HOLD_WINDOW == 0.0
 
 
 def test_streaming_device_lifecycle_without_hardware():
@@ -1408,8 +1418,9 @@ def test_no_device_is_named_in_the_wrapper_stack():
 
 
 def test_a_leader_arm_reads_the_joint_convention_from_the_env():
-    from rlinf.envs.real.wrappers.teleop.builder import EnvFacts, TeleopBackend
-    from rlinf.robotics.teleop import ActionKind
+    from rlinf.envs.real.wrappers.teleop.builder import EnvFacts
+    from rlinf.robotics.actions import ActionKind
+    from rlinf.robotics.parts.teleop import TeleopDevice
 
     facts = EnvFacts(
         layout={"left.arm": slice(0, 7), "left.end_effector": slice(7, 8)},
@@ -1419,17 +1430,18 @@ def test_a_leader_arm_reads_the_joint_convention_from_the_env():
         },
         joint_action_scale=0.25,
     )
-    entry = TeleopBackend.named("gello_joint").entry(
+    entry = TeleopDevice.named("gello_joint").from_config(
         {"left_gello_port": "/dev/left"}, {"drives": "left"}, facts
     )
 
-    assert entry.binding.use_delta is True
-    assert entry.binding.action_scale == 0.25
+    assert entry.device.use_delta is True
+    assert entry.device.action_scale == 0.25
 
 
 def test_an_entry_option_wins_over_the_env_default():
-    from rlinf.envs.real.wrappers.teleop.builder import EnvFacts, TeleopBackend
-    from rlinf.robotics.teleop import ActionKind
+    from rlinf.envs.real.wrappers.teleop.builder import EnvFacts
+    from rlinf.robotics.actions import ActionKind
+    from rlinf.robotics.parts.teleop import TeleopDevice
 
     facts = EnvFacts(
         layout={"left.arm": slice(0, 7), "left.end_effector": slice(7, 8)},
@@ -1439,20 +1451,19 @@ def test_an_entry_option_wins_over_the_env_default():
         },
         joint_action_scale=0.25,
     )
-    entry = TeleopBackend.named("gello_joint").entry(
+    entry = TeleopDevice.named("gello_joint").from_config(
         {"left_gello_port": "/dev/left"},
         {"drives": "left", "action_scale": 0.5},
         facts,
     )
 
-    assert entry.binding.action_scale == 0.5
-    assert entry.binding.use_delta is True
+    assert entry.device.action_scale == 0.5
+    assert entry.device.use_delta is True
 
 
 def test_a_failed_teleop_connect_leaves_no_device_open():
-    from rlinf.robotics.parts.teleop.devices import TeleopPart
-    from rlinf.robotics.teleop import ActionKind, SpaceMouseBinding, TeleopEntry
-    from rlinf.robotics.teleop.group import TeleopGroup
+    from rlinf.robotics.actions import ActionKind
+    from rlinf.robotics.parts.teleop import TeleopEntry, TeleopGroup, TeleopPart
 
     log: list[str] = []
 
@@ -1469,12 +1480,22 @@ def test_a_failed_teleop_connect_leaves_no_device_open():
         def _release(self, device):
             log.append(f"close:{self.tag}")
 
+        PRODUCES = {
+            "arm": ActionKind.CARTESIAN_DELTA,
+            "end_effector": ActionKind.GRIPPER,
+        }
+
         @property
         def observation_features(self):
             return {}
 
         def get_observation(self):
             return {}
+
+        def action(self, reading, context):
+            from rlinf.robotics.parts.teleop import TeleopAction
+
+            return TeleopAction()
 
     kinds = {
         f"{side}.{part}": kind
@@ -1486,10 +1507,8 @@ def test_a_failed_teleop_connect_leaves_no_device_open():
     }
     group = TeleopGroup(
         [
-            TeleopEntry(Device("first"), SpaceMouseBinding(), drives="left"),
-            TeleopEntry(
-                Device("second", fail=True), SpaceMouseBinding(), drives="right"
-            ),
+            TeleopEntry(Device("first"), drives="left"),
+            TeleopEntry(Device("second", fail=True), drives="right"),
         ],
         available=kinds,
     )
@@ -1503,9 +1522,9 @@ def test_a_failed_teleop_connect_leaves_no_device_open():
 
 
 def test_the_glove_reads_the_key_the_shipped_configs_set():
-    from rlinf.envs.real.wrappers.teleop.backends import TeleopBackend
+    from rlinf.robotics.parts.teleop import TeleopDevice
 
-    glove = TeleopBackend.named("glove")
+    glove = TeleopDevice.named("glove")
     cfg = {
         "glove_config": {
             "left_port": "/dev/ttyACM7",
@@ -1515,28 +1534,39 @@ def test_the_glove_reads_the_key_the_shipped_configs_set():
         }
     }
 
-    device = glove.entry(cfg, {}, None).device
+    device = glove.from_config(cfg, {}, None).device
     assert device._left_port == "/dev/ttyACM7"
     assert device._right_port == "/dev/ttyACM8"
     assert device._frequency == 90
     assert device._config_file == "/etc/glove.json"
 
     # Per-entry options override shared device configuration.
-    overridden = glove.entry(cfg, {"left_port": "/dev/override"}, None).device
+    overridden = glove.from_config(cfg, {"left_port": "/dev/override"}, None).device
     assert overridden._left_port == "/dev/override"
 
     # The documented default applies when the option is omitted.
-    assert glove.entry({}, {}, None).device._left_port == "/dev/ttyACM0"
+    assert glove.from_config({}, {}, None).device._left_port == "/dev/ttyACM0"
 
 
-def test_every_shipped_teleop_config_key_is_one_a_backend_reads():
+def test_every_shipped_teleop_config_key_is_one_a_device_reads():
     import pathlib
     import re
 
-    from rlinf.envs.real.wrappers.teleop.backends import TeleopBackend
+    from rlinf.robotics.parts.teleop import TeleopDevice
 
-    source = pathlib.Path("rlinf/envs/real/wrappers/teleop/backends.py").read_text()
-    read = set(re.findall(r'cfg\.get\(\s*"([a-z_]+)"', source))
+    # Every device reads its own config, so scan the whole devices package.
+    source = "".join(
+        path.read_text()
+        for path in pathlib.Path("rlinf/robotics/parts/teleop").glob("*.py")
+    )
+    read = set(re.findall(r'cfg\.get\(\s*f?"([a-z_{}]+)"', source))
+    # A key built per side, like "{drives}_gello_port", covers both sides.
+    read |= {
+        f"{side}_{key.split('}_', 1)[1]}"
+        for key in read
+        if key.startswith("{")
+        for side in ("left", "right")
+    }
 
     configured: set[str] = set()
     for path in pathlib.Path("examples/embodiment/config").glob("*.yaml"):
@@ -1546,48 +1576,54 @@ def test_every_shipped_teleop_config_key_is_one_a_backend_reads():
         configured |= {
             key
             for key in re.findall(r"^\s{4}([a-z_]+):", text, re.MULTILINE)
-            if key.split("_")[0] in TeleopBackend.names()
+            if key.split("_")[0] in TeleopDevice.names()
         }
 
     unread = sorted(configured - read)
-    assert not unread, f"configs set {unread}, which no teleop backend reads"
+    assert not unread, f"configs set {unread}, which no teleop device reads"
 
 
 def test_a_teleop_device_is_one_class_that_registers_itself():
-    from rlinf.envs.real.wrappers.teleop.backends import TeleopBackend
+    from rlinf.robotics.parts.teleop import TeleopDevice
 
-    assert TeleopBackend.names() == [
+    # The shipped devices are all registered. Asserting a superset rather than
+    # an exact list keeps adding one from editing this test.
+    assert set(TeleopDevice.names()) >= {
         "gello",
         "gello_joint",
         "glove",
         "pico",
         "spacemouse",
-    ]
+    }
 
-    # Each registry entry contains both device and builder behavior.
-    for name in TeleopBackend.names():
-        backend = TeleopBackend.named(name)
-        assert issubclass(backend, TeleopBackend)
-        assert callable(backend.entry)
-        assert callable(backend.streamer)
+    # One class answers all three questions: hardware, mapping, and config.
+    for name in TeleopDevice.names():
+        device_cls = TeleopDevice.named(name)
+        assert issubclass(device_cls, TeleopDevice)
+        assert callable(device_cls._open)
+        assert callable(device_cls.get_observation)
+        assert callable(device_cls.action)
+        assert callable(device_cls.from_config)
+        assert callable(device_cls.streamer)
+        assert device_cls.PRODUCES, f"{name} fills no action part"
 
-    # Only streaming backends override the default capability flag.
+    # Only a device that bypasses step overrides the streamer hook.
     quiet = [
         name
-        for name in TeleopBackend.names()
-        if "streamer" not in vars(TeleopBackend.named(name))
+        for name in TeleopDevice.names()
+        if "streamer" not in vars(TeleopDevice.named(name))
     ]
     assert "gello_joint" not in quiet, "the one device that streams must say so"
-    assert set(quiet) == {"gello", "glove", "pico", "spacemouse"}
+    assert set(quiet) >= {"gello", "glove", "pico", "spacemouse"}
 
     with pytest.raises(ValueError, match="Unknown teleop device"):
-        TeleopBackend.named("no_such_device")
+        TeleopDevice.named("no_such_device")
 
     # Duplicate names fail deterministically instead of depending on import order.
     with pytest.raises(ValueError, match="already registered"):
 
-        @TeleopBackend.register("pico")
-        class Second(TeleopBackend):
+        @TeleopDevice.register("pico")
+        class Second(TeleopDevice):
             @classmethod
             def entry(cls, cfg, options, facts):
                 raise AssertionError("never built")
@@ -1597,10 +1633,10 @@ def test_every_env_only_offers_teleop_devices_that_exist():
     from rlinf.envs.real.dosw1.base import DOSW1Env
     from rlinf.envs.real.franka.base import FrankaEnv
     from rlinf.envs.real.franka.dual_base import DualFrankaEnv
-    from rlinf.envs.real.wrappers.teleop.backends import TeleopBackend
     from rlinf.envs.real.xsquare.base import Turtle2Env
+    from rlinf.robotics.parts.teleop import TeleopDevice
 
-    known = set(TeleopBackend.names())
+    known = set(TeleopDevice.names())
     for env_cls in (FrankaEnv, DualFrankaEnv, Turtle2Env, DOSW1Env):
         offered = set(getattr(env_cls, "TELEOP", ()))
         unknown = sorted(offered - known)
@@ -1608,10 +1644,11 @@ def test_every_env_only_offers_teleop_devices_that_exist():
 
 
 def test_the_streamer_comes_from_the_registry_not_the_stack():
-    from rlinf.envs.real.wrappers.teleop.builder import EnvFacts, TeleopBackend
+    from rlinf.envs.real.wrappers.teleop.builder import EnvFacts
+    from rlinf.robotics.parts.teleop import TeleopDevice
 
     quiet = EnvFacts(layout={}, kinds={}, direct_stream=False)
-    assert TeleopBackend.named("gello_joint").streamer({}, quiet, []) is None
+    assert TeleopDevice.named("gello_joint").streamer({}, quiet, []) is None
 
 
 # Environment action declarations
@@ -1656,7 +1693,7 @@ def test_a_two_armed_robot_names_both_arms():
 def test_two_arms_of_the_same_width_can_mean_different_things():
     from rlinf.envs.real.franka.base import FrankaEnv
     from rlinf.envs.real.gim_arm.base import GimArmEnv
-    from rlinf.robotics.teleop import ActionKind
+    from rlinf.robotics.actions import ActionKind
 
     franka_arm = _declared(FrankaEnv, _is_hand=False)[0]
     gim_arm = _declared(GimArmEnv)[0]
@@ -1684,7 +1721,7 @@ def test_a_declaration_that_does_not_tile_the_action_is_refused():
     import gymnasium as gym
 
     from rlinf.envs.real.wrappers.teleop.layout import action_spec
-    from rlinf.robotics.teleop import ActionKind, ActionPart
+    from rlinf.robotics.actions import ActionKind, ActionPart
 
     class Wrong:
         action_space = gym.spaces.Box(-1, 1, (7,), np.float32)
@@ -1702,31 +1739,16 @@ def test_a_declaration_that_does_not_tile_the_action_is_refused():
 
 
 def test_a_device_that_means_something_else_is_refused():
-    from rlinf.robotics.teleop import (
-        ActionKind,
-        SpaceMouseBinding,
-        TeleopEntry,
-        TeleopGroup,
-    )
-
-    class Device:
-        is_connected = True
-
-        def get_observation(self):
-            return {}
-
-        def connect(self):
-            pass
-
-        def disconnect(self):
-            pass
+    from rlinf.robotics.actions import ActionKind
+    from rlinf.robotics.parts.teleop import SpaceMouse, TeleopEntry, TeleopGroup
 
     joint_arm = {
         "arm": ActionKind.JOINT_POSITION,
         "end_effector": ActionKind.GRIPPER,
     }
+    # A SpaceMouse drives Cartesian deltas, so it cannot fill a joint arm.
     with pytest.raises(ValueError, match="mean different things"):
-        TeleopGroup([TeleopEntry(Device(), SpaceMouseBinding())], available=joint_arm)
+        TeleopGroup([TeleopEntry(SpaceMouse())], available=joint_arm)
 
 
 # Teleoperation compatibility of shipped configurations
@@ -1924,17 +1946,21 @@ def test_shipped_configs_give_the_policy_the_action_width_it_expects():
     assert offenders == []
 
 
-def test_direct_stream_gello_opens_one_reader_per_port():
-    import sys
-    import types
-
+def test_direct_stream_gello_opens_one_reader_per_port(monkeypatch):
+    """The streamer reuses the group's devices instead of reopening ports."""
     import numpy as np
+
+    from rlinf.envs.real.wrappers.teleop import builder as builder_module
+    from rlinf.robotics.parts.teleop import (
+        GelloJoint,
+        TeleopDevice,
+        TeleopEntry,
+        gello_joint,
+    )
 
     opened = []
 
-    fake = types.ModuleType("rlinf.robotics.parts.teleop.readers.gello_joint")
-
-    class GelloJointExpert:
+    class FakeExpert:
         def __init__(self, port):
             opened.append(port)
             self.ready = True
@@ -1945,25 +1971,19 @@ def test_direct_stream_gello_opens_one_reader_per_port():
         def close(self):
             pass
 
-    fake.GelloJointExpert = GelloJointExpert
-    saved = sys.modules.get("rlinf.robotics.parts.teleop.readers.gello_joint")
-    sys.modules["rlinf.robotics.parts.teleop.readers.gello_joint"] = fake
-    try:
-        from rlinf.envs.real.wrappers.teleop.builder import EnvFacts, TeleopBackend
-        from rlinf.robotics.parts.teleop.devices import TeleopLeaderArm
-        from rlinf.robotics.teleop import TeleopEntry
+    # The reader lives in the device module now, so the class is what a test
+    # replaces rather than a separate module.
+    monkeypatch.setattr(gello_joint, "GelloJointExpert", FakeExpert)
 
-        arms = {
-            side: TeleopLeaderArm(port=f"/dev/{side}", joint_space=True)
-            for side in ("left", "right")
-        }
-        entries = [TeleopEntry(arm, None, drives=side) for side, arm in arms.items()]
+    arms = {side: GelloJoint(port=f"/dev/{side}") for side in ("left", "right")}
+    entries = [TeleopEntry(arm, drives=side) for side, arm in arms.items()]
+    try:
         for arm in arms.values():
             arm.connect()
         assert opened == ["/dev/left", "/dev/right"]
 
-        facts = EnvFacts(layout={}, kinds={}, direct_stream=True)
-        streamer = TeleopBackend.named("gello_joint").streamer({}, facts, entries)
+        facts = builder_module.EnvFacts(layout={}, kinds={}, direct_stream=True)
+        streamer = TeleopDevice.named("gello_joint").streamer({}, facts, entries)
 
         assert opened == ["/dev/left", "/dev/right"], (
             f"the streamer opened more readers: {opened}"
@@ -1971,10 +1991,8 @@ def test_direct_stream_gello_opens_one_reader_per_port():
         assert streamer.left_arm is arms["left"]
         assert streamer.right_arm is arms["right"]
     finally:
-        if saved is None:
-            sys.modules.pop("rlinf.robotics.parts.teleop.readers.gello_joint", None)
-        else:
-            sys.modules["rlinf.robotics.parts.teleop.readers.gello_joint"] = saved
+        for arm in arms.values():
+            arm.disconnect()
 
 
 def _so101_env(**overrides):

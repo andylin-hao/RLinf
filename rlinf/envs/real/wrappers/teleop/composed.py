@@ -21,7 +21,7 @@ from typing import Any, Mapping, Optional
 import gymnasium as gym
 import numpy as np
 
-from rlinf.robotics.teleop import TeleopGroup
+from rlinf.robotics.parts.teleop import TeleopGroup
 
 from .intervention import TeleopDevice, TeleopSample
 
@@ -30,7 +30,7 @@ class ComposedTeleop(TeleopDevice):
     """Flatten a teleoperation group into an environment action vector.
 
     Args:
-        group: Composed devices and bindings.
+        group: The composed devices.
         layout: Slice occupied by each named action part. Unset parts retain
             the policy action.
         timeout: How long the operator keeps control after their last active
@@ -67,7 +67,7 @@ class ComposedTeleop(TeleopDevice):
         if timeout is not None:
             self.timeout = timeout
 
-    #: Environment getters that provide optional binding context.
+    #: Environment getters that provide optional device context.
     CONTEXT_GETTERS = (
         ("tcp_pose", "get_tcp_pose"),
         ("action_scale", "get_action_scale"),
@@ -78,7 +78,7 @@ class ComposedTeleop(TeleopDevice):
 
     @classmethod
     def context_from(cls, env: gym.Env) -> dict[str, Any]:
-        """Collect the binding context exposed by an environment."""
+        """Collect the context an environment exposes to its devices."""
         context: dict[str, Any] = {}
         for key, getter in cls.CONTEXT_GETTERS:
             try:
@@ -96,7 +96,7 @@ class ComposedTeleop(TeleopDevice):
         return kwargs
 
     def reset(self, env: gym.Env) -> None:
-        """Reset bindings from the current robot state and realign the streamer."""
+        """Reset devices from the current robot state and realign the streamer."""
         self.group.reset(self.context_from(env))
         if self.streamer is not None:
             self.streamer.reset(env)

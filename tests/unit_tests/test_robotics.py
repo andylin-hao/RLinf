@@ -1620,14 +1620,9 @@ def test_env_packages_live_under_sim_or_real():
 
 def test_teleop_devices_are_parts_like_any_other_hardware():
     from rlinf.robotics.parts.base import RobotPart
-    from rlinf.robotics.parts.teleop import (
-        Glove,
-        PicoController,
-        SpaceMouse,
-        TeleopLeaderArm,
-    )
+    from rlinf.robotics.parts.teleop import Gello, Glove, Pico, SpaceMouse
 
-    devices = (SpaceMouse, TeleopLeaderArm, Glove, PicoController)
+    devices = (SpaceMouse, Gello, Glove, Pico)
 
     assert all(issubclass(device, RobotPart) for device in devices)
     assert not (_ROOT / "rlinf" / "envs" / "real" / "teleop" / "devices").exists()
@@ -1638,11 +1633,13 @@ def test_teleop_devices_are_parts_like_any_other_hardware():
     assert sorted(mouse.observation_features) == ["buttons", "twist"]
 
 
-def test_teleop_readers_do_not_import_gymnasium():
-    readers = _ROOT / "rlinf" / "robotics" / "parts" / "teleop" / "readers"
+def test_teleop_devices_do_not_import_gymnasium():
+    devices = _ROOT / "rlinf" / "robotics" / "parts" / "teleop"
+    modules = sorted(devices.glob("*.py"))
+    assert len(modules) > 5, "teleop device modules moved; update this guard"
     offenders = {
         path.name
-        for path in readers.glob("*.py")
+        for path in modules
         if re.search(r"^\s*(import|from)\s+gymnasium\b", path.read_text(), re.M)
     }
 
@@ -1828,11 +1825,13 @@ def test_observation_tree_follows_the_composition_on_real_parts():
 # Teleoperation composition
 
 
-def _scripted_device(reading):
-    """Build a teleoperation part that returns a fixed reading."""
-    from rlinf.robotics.parts.teleop.devices import TeleopPart
+def _scripted_device(reading, produces=(), value=None, driving=True):
+    """Build a teleop device that reads fixedly and fills fixed parts."""
+    from rlinf.robotics.parts.teleop import TeleopAction, TeleopDevice
 
-    class Scripted(TeleopPart):
+    class Scripted(TeleopDevice):
+        PRODUCES = _kinds(*produces)
+
         def _open(self):
             return object()
 
@@ -1843,14 +1842,88 @@ def _scripted_device(reading):
         def get_observation(self):
             return dict(reading)
 
+        def action(self, reading, context):
+            return TeleopAction(parts=dict.fromkeys(produces, value), driving=driving)
+
     device = Scripted()
     device.connect()
     return device
 
 
+def _counting_device(produces=("arm",)):
+    """Build a teleop device that reports how many times it was read."""
+    from rlinf.robotics.parts.teleop import TeleopAction, TeleopDevice
+
+    class Counting(TeleopDevice):
+        PRODUCES = _kinds(*produces)
+
+        def __init__(self):
+            super().__init__()
+            self.reads = 0
+
+        def _open(self):
+            return object()
+
+        @property
+        def observation_features(self):
+            return {"sample": {}}
+
+        def get_observation(self):
+            self.reads += 1
+            # A changing value, so two entries mapping different reads of the
+            # same instant show up as different actions rather than passing.
+            return {"sample": np.full(6, self.reads, dtype=float)}
+
+        def action(self, reading, context):
+            parts = dict.fromkeys(produces, np.asarray(reading["sample"]))
+            return TeleopAction(parts=parts, driving=True)
+
+    device = Counting()
+    device.connect()
+    return device
+
+
+def test_two_entries_sharing_a_device_read_it_once():
+    """Both entries must map the same instant, not two reads of it.
+
+    A shared device read per entry gives each a different sample of the same
+    moment, so one controller would drive two arms from torn readings.
+    """
+    from rlinf.robotics.parts.teleop import TeleopEntry, TeleopGroup
+
+    device = _counting_device()
+    group = TeleopGroup(
+        [
+            TeleopEntry(device, drives="left"),
+            TeleopEntry(device, drives="right"),
+        ],
+        available=_kinds("left.arm", "right.arm"),
+    )
+
+    parts, _, _ = group.action({})
+
+    assert device.reads == 1
+    assert np.array_equal(parts["left.arm"], parts["right.arm"])
+
+
+def test_a_device_of_its_own_is_read_inside_drive():
+    """The shared-read path must not cost an unshared device a second read."""
+    from rlinf.robotics.parts.teleop import TeleopEntry, TeleopGroup
+
+    left, right = _counting_device(), _counting_device()
+    group = TeleopGroup(
+        [TeleopEntry(left, drives="left"), TeleopEntry(right, drives="right")],
+        available=_kinds("left.arm", "right.arm"),
+    )
+
+    group.action({})
+
+    assert (left.reads, right.reads) == (1, 1)
+
+
 def _kinds(*names):
     """Build the action-kind mapping expected by a robot."""
-    from rlinf.robotics.teleop import ActionKind
+    from rlinf.robotics.actions import ActionKind
 
     per_name = {
         "hand": ActionKind.HAND,
@@ -1862,34 +1935,15 @@ def _kinds(*names):
     }
 
 
-def _binding(produces, value, driving=True):
-    from rlinf.robotics.teleop import TeleopBinding
-
-    class Fixed(TeleopBinding):
-        PRODUCES = _kinds(*produces)
-
-        def action(self, reading, context):
-            from rlinf.robotics.teleop import TeleopAction
-
-            return TeleopAction(parts=dict.fromkeys(produces, value), driving=driving)
-
-        def is_driving(self, reading):
-            return driving
-
-    return Fixed()
-
-
 def test_two_devices_merge_into_one_action():
     import numpy as np
 
-    from rlinf.robotics.teleop import TeleopEntry, TeleopGroup
+    from rlinf.robotics.parts.teleop import TeleopEntry, TeleopGroup
 
     group = TeleopGroup(
         [
-            TeleopEntry(_scripted_device({"twist": 1}), _binding(("arm",), np.ones(6))),
-            TeleopEntry(
-                _scripted_device({"angles": 2}), _binding(("hand",), np.ones(6) * 2)
-            ),
+            TeleopEntry(_scripted_device({"twist": 1}, ("arm",), np.ones(6))),
+            TeleopEntry(_scripted_device({"angles": 2}, ("hand",), np.ones(6) * 2)),
         ],
         available=_kinds(*("arm", "hand")),
     )
@@ -1904,13 +1958,12 @@ def test_two_devices_merge_into_one_action():
 def test_a_part_the_robot_lacks_is_not_filled():
     import numpy as np
 
-    from rlinf.robotics.teleop import TeleopEntry, TeleopGroup
+    from rlinf.robotics.parts.teleop import TeleopEntry, TeleopGroup
 
     group = TeleopGroup(
         [
             TeleopEntry(
-                _scripted_device({"twist": 1}),
-                _binding(("arm", "end_effector"), np.ones(6)),
+                _scripted_device({"twist": 1}, ("arm", "end_effector"), np.ones(6)),
             )
         ],
         available=_kinds(*("arm", "hand")),
@@ -1923,13 +1976,13 @@ def test_two_devices_claiming_one_part_is_refused():
     import numpy as np
     import pytest
 
-    from rlinf.robotics.teleop import TeleopEntry, TeleopGroup
+    from rlinf.robotics.parts.teleop import TeleopEntry, TeleopGroup
 
     with pytest.raises(ValueError, match="both drive"):
         TeleopGroup(
             [
-                TeleopEntry(_scripted_device({}), _binding(("arm",), np.ones(6))),
-                TeleopEntry(_scripted_device({}), _binding(("arm",), np.ones(6))),
+                TeleopEntry(_scripted_device({}, ("arm",), np.ones(6))),
+                TeleopEntry(_scripted_device({}, ("arm",), np.ones(6))),
             ],
             available=_kinds(*("arm",)),
         )
@@ -1939,11 +1992,11 @@ def test_a_device_that_fills_nothing_is_refused():
     import numpy as np
     import pytest
 
-    from rlinf.robotics.teleop import TeleopEntry, TeleopGroup
+    from rlinf.robotics.parts.teleop import TeleopEntry, TeleopGroup
 
     with pytest.raises(ValueError, match="fills none"):
         TeleopGroup(
-            [TeleopEntry(_scripted_device({}), _binding(("hand",), np.ones(6)))],
+            [TeleopEntry(_scripted_device({}, ("hand",), np.ones(6)))],
             available=_kinds(*("arm", "end_effector")),
         )
 
@@ -1951,16 +2004,12 @@ def test_a_device_that_fills_nothing_is_refused():
 def test_drives_separates_two_identical_leaders():
     import numpy as np
 
-    from rlinf.robotics.teleop import TeleopEntry, TeleopGroup
+    from rlinf.robotics.parts.teleop import TeleopEntry, TeleopGroup
 
     group = TeleopGroup(
         [
-            TeleopEntry(
-                _scripted_device({}), _binding(("arm",), np.ones(7)), drives="left"
-            ),
-            TeleopEntry(
-                _scripted_device({}), _binding(("arm",), np.ones(7) * 2), drives="right"
-            ),
+            TeleopEntry(_scripted_device({}, ("arm",), np.ones(7)), drives="left"),
+            TeleopEntry(_scripted_device({}, ("arm",), np.ones(7) * 2), drives="right"),
         ],
         available=_kinds(*("left.arm", "right.arm")),
     )
@@ -1971,31 +2020,37 @@ def test_drives_separates_two_identical_leaders():
     assert np.allclose(parts["right.arm"], 2.0)
 
 
-def test_one_device_listed_twice_is_read_once():
+def test_one_device_fills_every_part_it_produces_from_one_reading():
+    """A device says what it fills, so it is listed and read once."""
     import numpy as np
 
-    from rlinf.robotics.teleop import TeleopEntry, TeleopGroup
+    from rlinf.robotics.parts.teleop import TeleopEntry, TeleopGroup
 
-    device = _scripted_device({"twist": 1})
-    group = TeleopGroup(
-        [
-            TeleopEntry(device, _binding(("arm",), np.ones(6))),
-            TeleopEntry(device, _binding(("end_effector",), np.ones(1))),
-        ],
-        available=_kinds(*("arm", "end_effector")),
-    )
+    device = _scripted_device({"twist": 1}, ("arm", "end_effector"), np.ones(6))
+    group = TeleopGroup([TeleopEntry(device)], available=_kinds("arm", "end_effector"))
 
     assert len(group.devices) == 1
     assert group.parts == ("arm", "end_effector")
 
+    reads = []
+    plain = device.get_observation
+    device.get_observation = lambda: (reads.append(1), plain())[1]
+    parts, _, _ = group.action({})
+    assert len(reads) == 1, "the device was read more than once for one step"
+    assert sorted(parts) == ["arm", "end_effector"]
+
 
 def test_a_teleop_rig_waits_until_every_reader_is_ready():
-    from rlinf.robotics.parts.teleop.devices import TeleopPart
-    from rlinf.robotics.teleop import TeleopEntry, TeleopGroup
+    from rlinf.robotics.parts.teleop import TeleopDevice, TeleopEntry, TeleopGroup
 
-    class Starting(TeleopPart):
+    class Starting(TeleopDevice):
+        PRODUCES = _kinds("arm")
+
         def _open(self):
             return object()
+
+        def action(self, reading, context):
+            raise AssertionError("an unready reader must not be mapped")
 
         @property
         def ready(self):
@@ -2011,7 +2066,7 @@ def test_a_teleop_rig_waits_until_every_reader_is_ready():
     device = Starting()
     device.connect()
     group = TeleopGroup(
-        [TeleopEntry(device, _binding(("arm",), np.ones(6)))],
+        [TeleopEntry(device)],
         available=_kinds("arm"),
     )
 
@@ -2019,14 +2074,14 @@ def test_a_teleop_rig_waits_until_every_reader_is_ready():
 
 
 def test_spacemouse_reset_resyncs_the_gripper_and_reports_its_buttons():
-    from rlinf.robotics.teleop import SpaceMouseBinding
+    from rlinf.robotics.parts.teleop import SpaceMouse
 
-    binding = SpaceMouseBinding()
+    binding = SpaceMouse()
     opened = binding.action(
         {"twist": np.zeros(6), "buttons": [False, False]},
         {"gripper_open": True},
     )
-    binding.reset()
+    binding.on_reset()
     closed = binding.action(
         {"twist": np.zeros(6), "buttons": [True, False]},
         {"gripper_open": False},
@@ -2035,7 +2090,7 @@ def test_spacemouse_reset_resyncs_the_gripper_and_reports_its_buttons():
     assert opened.parts["end_effector"].item() > 0
     assert closed.parts["end_effector"].item() < 0
     assert closed.info == {"left": True, "right": False}
-    dex = SpaceMouseBinding(dexterous_hand=True).action(
+    dex = SpaceMouse(dexterous_hand=True).action(
         {"twist": np.zeros(6), "buttons": [True, False]},
         {"gripper_open": True},
     )
@@ -2043,7 +2098,7 @@ def test_spacemouse_reset_resyncs_the_gripper_and_reports_its_buttons():
 
 
 def test_leader_arm_only_takes_control_for_motion_or_an_active_gripper():
-    from rlinf.robotics.teleop import LeaderArmBinding
+    from rlinf.robotics.parts.teleop import Gello
 
     context = {
         "tcp_pose": np.array([0.3, 0.1, 0.4, 0.0, 0.0, 0.0, 1.0]),
@@ -2055,20 +2110,20 @@ def test_leader_arm_only_takes_control_for_motion_or_an_active_gripper():
         "grip": np.array([0.5]),
     }
 
-    assert not LeaderArmBinding().action(idle, context).driving
+    assert not Gello(port="/dev/unused").action(idle, context).driving
     assert (
-        not LeaderArmBinding(gripper=False)
+        not Gello(port="/dev/unused", gripper=False)
         .action({**idle, "grip": np.array([0.0])}, context)
         .driving
     )
     moved = {**idle, "position": idle["position"] + np.array([0.01, 0.0, 0.0])}
-    assert LeaderArmBinding().action(moved, context).driving
+    assert Gello(port="/dev/unused").action(moved, context).driving
 
 
 def test_leader_joint_uses_the_legacy_motion_and_gripper_thresholds():
-    from rlinf.robotics.teleop import LeaderJointBinding
+    from rlinf.robotics.parts.teleop import GelloJoint
 
-    binding = LeaderJointBinding(side=0)
+    binding = GelloJoint(port="/dev/unused", side=0)
     current = np.zeros((2, 7))
     idle = {"joint_position": np.zeros(7), "grip": np.array([0.5])}
 
@@ -2082,10 +2137,10 @@ def test_leader_joint_uses_the_legacy_motion_and_gripper_thresholds():
 def test_the_glove_holds_what_the_operator_posed():
     import numpy as np
 
-    from rlinf.robotics.teleop import GloveBinding
+    from rlinf.robotics.parts.teleop import Glove
 
-    glove = GloveBinding()
-    glove.reset({"hand_reset_pose": np.zeros(6)})
+    glove = Glove()
+    glove.on_reset({"hand_reset_pose": np.zeros(6)})
 
     posed = glove.action({"angles": np.full(6, 0.4)}, {"hand_driving": True}).parts[
         "hand"
@@ -2100,10 +2155,10 @@ def test_the_glove_holds_what_the_operator_posed():
 def test_the_glove_tracks_only_while_its_gate_is_held():
     import numpy as np
 
-    from rlinf.robotics.teleop import GloveBinding, SpaceMouseBinding
+    from rlinf.robotics.parts.teleop import Glove, SpaceMouse
 
-    mouse, glove = SpaceMouseBinding(), GloveBinding()
-    glove.reset({"hand_reset_pose": np.zeros(6)})
+    mouse, glove = SpaceMouse(), Glove()
+    glove.on_reset({"hand_reset_pose": np.zeros(6)})
 
     released = mouse.publish({"twist": np.zeros(6), "buttons": [False, False]})
     held = mouse.publish({"twist": np.zeros(6), "buttons": [False, True]})
@@ -2169,9 +2224,9 @@ def _pico_context():
 def test_a_controller_drives_the_arm_to_a_pose_it_can_reach():
     import numpy as np
 
-    from rlinf.robotics.teleop import PicoTcpBinding
+    from rlinf.robotics.parts.teleop import PicoTcp
 
-    binding = PicoTcpBinding(gripper=True, side=0)
+    binding = PicoTcp(gripper=True, side=0)
     device = _ScriptedController([((0.025, 0.0, 0.0), (0.0, 0.0, 0.0), True, -1)])
 
     parts = binding.action(device.get_observation(), _pico_context()).parts
@@ -2186,9 +2241,9 @@ def test_a_controller_drives_the_arm_to_a_pose_it_can_reach():
 def test_releasing_the_grip_mid_chunk_holds_the_arm_where_it_was_left():
     import numpy as np
 
-    from rlinf.robotics.teleop import PicoTcpBinding
+    from rlinf.robotics.parts.teleop import PicoTcp
 
-    binding = PicoTcpBinding(gripper=True, side=0, hold_current_when_inactive=False)
+    binding = PicoTcp(gripper=True, side=0, hold_current_when_inactive=False)
     device = _ScriptedController(
         [
             ((0.025, 0.0, 0.0), (0.0, 0.0, 0.0), True, -1),
@@ -2207,9 +2262,9 @@ def test_releasing_the_grip_mid_chunk_holds_the_arm_where_it_was_left():
 
 
 def test_holding_the_current_pose_leaves_the_gripper_to_the_policy():
-    from rlinf.robotics.teleop import PicoTcpBinding
+    from rlinf.robotics.parts.teleop import PicoTcp
 
-    binding = PicoTcpBinding(gripper=True, side=0, hold_current_when_inactive=True)
+    binding = PicoTcp(gripper=True, side=0, hold_current_when_inactive=True)
     device = _ScriptedController([((0.0, 0.0, 0.0), (0.0, 0.0, 0.0), False, 0)])
 
     parts = binding.action(device.get_observation(), _pico_context()).parts
@@ -2217,28 +2272,121 @@ def test_holding_the_current_pose_leaves_the_gripper_to_the_policy():
     assert set(parts) == {"arm"}
 
 
-def test_a_delta_binding_has_no_pose_to_hold():
-    from rlinf.robotics.teleop import PicoBinding, PicoTcpBinding
+def test_pico_builds_the_variant_the_arm_can_accept():
+    """One config name, two meanings; the arm's declared kind picks which.
 
-    assert PicoBinding(gripper=True).hold(_pico_context()) == {}
-    assert "arm" in PicoTcpBinding(gripper=True).hold(_pico_context())
+    Sending an absolute pose to an arm that expects a delta is the difference
+    between a few millimetres of motion and the arm jumping across its
+    workspace, so this is the decision worth pinning.
+    """
+    from types import SimpleNamespace
+
+    from rlinf.robotics.actions import ActionKind
+    from rlinf.robotics.parts.teleop import Pico, PicoDelta, PicoTcp, TeleopDevice
+
+    def built_for(kind):
+        facts = SimpleNamespace(kinds={"arm": kind})
+        return TeleopDevice.named("pico").from_config({}, {}, facts).device
+
+    delta = built_for(ActionKind.CARTESIAN_DELTA)
+    pose = built_for(ActionKind.CARTESIAN_POSE)
+
+    assert type(delta) is PicoDelta
+    assert type(pose) is PicoTcp
+    # The config name resolves to the family, so either one is a Pico.
+    assert isinstance(delta, Pico) and isinstance(pose, Pico)
+
+
+def test_the_pico_name_resolves_to_the_family_not_a_variant():
+    """Whatever from_config returns must be an instance of what was named."""
+    import inspect
+
+    from rlinf.robotics.parts.teleop import Pico, PicoDelta, PicoTcp, TeleopDevice
+
+    assert TeleopDevice.named("pico") is Pico
+    # Abstract, so the family cannot be mistaken for one of its variants.
+    assert inspect.isabstract(Pico)
+    # Siblings: neither variant is a kind of the other.
+    assert not issubclass(PicoTcp, PicoDelta)
+    assert not issubclass(PicoDelta, PicoTcp)
+
+
+def test_no_device_shadows_a_method_of_the_contract():
+    """A constructor argument must not overwrite a method the group calls.
+
+    The glove took a ``hold`` argument and stored it as ``self.hold``, which
+    replaced the ``hold()`` the group calls on every device. Any rig with a
+    glove in it then raised ``TypeError: 'bool' object is not callable`` from
+    ``TeleopGroup.hold``, and the caller in ``RealEnv.get_hold_actions`` only
+    catches ``AttributeError``, so it surfaced as a crash mid-episode.
+    """
+    from rlinf.robotics.parts.teleop import TeleopDevice
+
+    contract = (
+        "hold",
+        "action",
+        "drive",
+        "publish",
+        "get_observation",
+        "on_reset",
+        "on_action_chunk_begin",
+    )
+    for name in TeleopDevice.names():
+        device_cls = TeleopDevice.named(name)
+        for method in contract:
+            attr = getattr(device_cls, method, None)
+            assert attr is None or callable(attr), (
+                f"{device_cls.__name__}.{method} is {type(attr).__name__}, not callable"
+            )
+
+
+def test_a_glove_rig_can_be_asked_what_to_hold():
+    """The glove fills a part while idle but has no absolute pose to hold."""
+    from types import SimpleNamespace
+
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        from rlinf.robotics.actions import ActionKind
+        from rlinf.robotics.parts.teleop import TeleopDevice, TeleopGroup
+
+        facts = SimpleNamespace(
+            kinds={"hand": ActionKind.HAND},
+            joint_action_scale=0.1,
+            direct_stream=False,
+            layout={},
+        )
+        entry = TeleopDevice.named("glove").from_config(
+            {"glove_config": {"left_port": "/dev/mock-glove"}}, {}, facts
+        )
+        group = TeleopGroup([entry], available={"hand": ActionKind.HAND})
+        group.connect()
+        try:
+            # Empty, not an exception: the hand holds itself through
+            # APPLIES_WHILE_IDLE rather than through an absolute pose.
+            assert group.hold({"hand_reset_pose": np.zeros(6)}) == {}
+        finally:
+            group.disconnect()
+
+
+def test_a_delta_binding_has_no_pose_to_hold():
+    from rlinf.robotics.parts.teleop import PicoDelta, PicoTcp
+
+    assert PicoDelta(gripper=True).hold(_pico_context()) == {}
+    assert "arm" in PicoTcp(gripper=True).hold(_pico_context())
 
 
 def test_absolute_commands_are_clipped_but_deltas_are_not():
-    from rlinf.robotics.teleop import PicoBinding, PicoTcpBinding, SpaceMouseBinding
+    from rlinf.robotics.parts.teleop import PicoDelta, PicoTcp, SpaceMouse
 
-    assert PicoTcpBinding.CLIPS_TO_ACTION_SPACE
-    assert not PicoBinding.CLIPS_TO_ACTION_SPACE
-    assert not SpaceMouseBinding.CLIPS_TO_ACTION_SPACE
+    assert PicoTcp.CLIPS_TO_ACTION_SPACE
+    assert not PicoDelta.CLIPS_TO_ACTION_SPACE
+    assert not SpaceMouse.CLIPS_TO_ACTION_SPACE
 
 
 def test_each_side_reports_its_own_state():
-    from rlinf.robotics.teleop import (
-        ActionKind,
-        PicoTcpBinding,
-        TeleopEntry,
-        TeleopGroup,
-    )
+    from rlinf.robotics.actions import ActionKind
+    from rlinf.robotics.parts.teleop import PicoTcp, TeleopEntry, TeleopGroup
 
     layout = {
         "left.arm": ActionKind.CARTESIAN_POSE,
@@ -2246,14 +2394,23 @@ def test_each_side_reports_its_own_state():
         "right.arm": ActionKind.CARTESIAN_POSE,
         "right.end_effector": ActionKind.GRIPPER,
     }
-    entries = [
-        TeleopEntry(
-            _ScriptedController(
-                [((0.02, 0.0, 0.0), (0.0, 0.0, 0.0), side == "left", 1)]
-            ),
-            PicoTcpBinding(gripper=True, side=index),
-            drives=side,
+
+    def scripted(side, index):
+        """A PICO whose reading is replayed rather than read from hardware."""
+        replay = _ScriptedController(
+            [((0.02, 0.0, 0.0), (0.0, 0.0, 0.0), side == "left", 1)]
         )
+
+        class Scripted(PicoTcp):
+            def get_observation(self):
+                return replay.get_observation()
+
+        device = Scripted(gripper=True, side=index)
+        device._device = replay
+        return device
+
+    entries = [
+        TeleopEntry(scripted(side, index), drives=side)
         for index, side in enumerate(("left", "right"))
     ]
     group = TeleopGroup(entries, available=layout)
@@ -2268,21 +2425,21 @@ def test_each_side_reports_its_own_state():
 def test_reading_a_controller_does_not_need_the_robot():
     import inspect
 
-    from rlinf.robotics.parts.teleop.devices import PicoController
-    from rlinf.robotics.parts.teleop.readers import pico
+    from rlinf.robotics.parts.teleop import PicoDelta
+    from rlinf.robotics.parts.transports import pico
 
     source = inspect.getsource(pico.PicoExpert)
     for name in ("tcp_pose", "_ref_tcp"):
         assert name not in source, f"the reader still refers to {name!r}"
 
-    observation = PicoController.get_observation
+    observation = PicoDelta.get_observation
     assert "get_reading" in inspect.getsource(observation)
 
 
 def test_a_controller_reading_is_data_not_a_handle():
-    from rlinf.robotics.parts.teleop.devices import PicoController
+    from rlinf.robotics.parts.teleop import PicoDelta
 
-    features = PicoController(hand="right").observation_features
+    features = PicoDelta(hand="right").observation_features
 
     assert set(features) == {
         "held",
@@ -2296,9 +2453,9 @@ def test_a_controller_reading_is_data_not_a_handle():
 def test_the_arm_anchors_where_it_was_when_the_operator_took_hold():
     import numpy as np
 
-    from rlinf.robotics.teleop import PicoTcpBinding
+    from rlinf.robotics.parts.teleop import PicoTcp
 
-    binding = PicoTcpBinding(gripper=True, side=0)
+    binding = PicoTcp(gripper=True, side=0)
     device = _ScriptedController(
         [
             ((0.02, 0.0, 0.0), (0.0, 0.0, 0.0), True, 0),
@@ -2336,7 +2493,7 @@ def _pico_packet(x, y, z, yaw, grip, close=False, open_=False):
 
 def _pico_reader(**overrides):
     """Build a PICO reader backed by scripted packets."""
-    from rlinf.robotics.parts.teleop.readers.pico import PicoExpert
+    from rlinf.robotics.parts.transports.pico import PicoExpert
 
     config = {
         "hand": "right",
@@ -2421,10 +2578,10 @@ def test_a_dropped_link_reports_stale_rather_than_stale_motion():
 def test_the_binding_turns_a_reading_into_a_command_for_this_arm():
     import numpy as np
 
-    from rlinf.robotics.teleop import PicoTcpBinding
+    from rlinf.robotics.parts.teleop import PicoTcp
 
     reader = _pico_reader(operator_to_robot_yaw=0.0)
-    binding = PicoTcpBinding(gripper=True, side=0)
+    binding = PicoTcp(gripper=True, side=0)
     context = _pico_context()
 
     reader._snapshot = lambda: _pico_packet(0.0, 0.0, 0.0, 0.0, grip=0.95)
@@ -2449,11 +2606,11 @@ def test_every_device_family_is_shaped_the_same_way():
     with mocked_sdks():
         import rlinf.robotics.parts.cameras  # noqa: F401  - registers drivers
         import rlinf.robotics.parts.end_effectors  # noqa: F401
-        import rlinf.robotics.parts.teleop.devices  # noqa: F401
+        import rlinf.robotics.parts.teleop  # noqa: F401
         from rlinf.robotics.parts.arms.base import Arm, BaseArm
         from rlinf.robotics.parts.cameras.base import BaseCamera, Camera
         from rlinf.robotics.parts.end_effectors.base import BaseEndEffector, EndEffector
-        from rlinf.robotics.parts.teleop.devices import TeleopPart
+        from rlinf.robotics.parts.teleop import TeleopPart
 
         # Configured backend names resolve through their category registry.
         for category in (Arm, Camera, EndEffector):
@@ -2483,7 +2640,7 @@ def test_every_part_presents_a_device_category():
     from robot_mocks import mocked_sdks
 
     with mocked_sdks():
-        import rlinf.robotics.parts.teleop.devices  # noqa: F401
+        import rlinf.robotics.parts.teleop  # noqa: F401
         import rlinf.robotics.parts.views  # noqa: F401
         import rlinf.robotics.robots  # noqa: F401
         from rlinf.robotics.parts.arms.base import Arm
@@ -2491,7 +2648,7 @@ def test_every_part_presents_a_device_category():
         from rlinf.robotics.parts.cameras.base import Camera
         from rlinf.robotics.parts.end_effectors.base import EndEffector
         from rlinf.robotics.parts.mobility.base import MobileBase
-        from rlinf.robotics.parts.teleop.devices import TeleopPart
+        from rlinf.robotics.parts.teleop import TeleopPart
 
         Arm.backends()  # Load every arm backend module.
 
@@ -2519,7 +2676,7 @@ def test_every_part_family_opens_and_closes_the_same_way():
     from rlinf.robotics.parts.cameras.base import BaseCamera
     from rlinf.robotics.parts.end_effectors.base import BaseEndEffector
     from rlinf.robotics.parts.end_effectors.grippers.base import BaseGripper
-    from rlinf.robotics.parts.teleop.devices import TeleopPart
+    from rlinf.robotics.parts.teleop import TeleopPart
 
     for family in (TeleopPart, BaseCamera, BaseEndEffector, BaseGripper):
         assert hasattr(family, "_open"), f"{family.__name__} has no _open"
@@ -3339,7 +3496,7 @@ def test_no_robot_builder_absorbs_a_setting_it_does_not_use():
 
 
 def test_disconnect_releases_before_it_forgets_the_handle():
-    from rlinf.robotics.parts.teleop.devices import TeleopPart
+    from rlinf.robotics.parts.teleop import TeleopPart
 
     class Reader:
         def __init__(self):
@@ -3471,11 +3628,11 @@ def test_a_hosted_camera_reopens_on_the_node_that_holds_it():
 def test_a_held_hand_resumes_from_the_pose_the_env_reset_it_to():
     import numpy as np
 
-    from rlinf.robotics.teleop import GloveBinding
+    from rlinf.robotics.parts.teleop import Glove
 
     configured = np.array([0.4, 0.0, 0.0, 0.0, 0.0, 0.0])
-    glove = GloveBinding()
-    glove.reset({"hand_reset_pose": configured})
+    glove = Glove()
+    glove.on_reset({"hand_reset_pose": configured})
 
     first = glove.action({"angles": np.zeros(6)}, {}).parts["hand"]
 

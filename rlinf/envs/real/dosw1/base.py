@@ -35,10 +35,10 @@ from rlinf.robotics import (
     Robot,
     RobotInfo,
 )
+from rlinf.robotics.actions import ActionKind, ActionPart
 from rlinf.robotics.parts.arms import DOSW1Arm, DOSW1Connection
 from rlinf.robotics.parts.arms.dosw1 import DOSW1RobotState
 from rlinf.robotics.parts.cameras import BaseCamera, CameraInfo
-from rlinf.robotics.teleop import ActionKind, ActionPart
 from rlinf.scheduler import WorkerInfo
 from rlinf.utils.logging import get_logger
 

@@ -1,4 +1,4 @@
-# Copyright 2025 The RLinf Authors.
+# Copyright 2026 The RLinf Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,8 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Read PSI data-glove finger angles through ``rlinf_dexhand``."""
+"""Helpers shared by teleoperation devices."""
 
-from rlinf_dexhand.glove import GloveExpert
+from __future__ import annotations
 
-__all__ = ["GloveExpert"]
+import numpy as np
+
+
+def jittered_grip(is_open: bool) -> np.ndarray:
+    """Return a binary grip command with bounded training noise."""
+    if is_open:
+        return np.random.uniform(0.9, 1.0, size=(1,))
+    return np.random.uniform(-1.0, -0.9, size=(1,))

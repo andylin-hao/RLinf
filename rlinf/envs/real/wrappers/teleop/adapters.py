@@ -22,7 +22,7 @@ from typing import Any, Optional
 import gymnasium as gym
 import numpy as np
 
-from rlinf.robotics.parts.teleop import TeleopLeaderArm
+from rlinf.robotics.parts.teleop import GelloJoint
 
 from .streaming import TeleopStreamer
 
@@ -45,8 +45,8 @@ class DualGelloJointStream(TeleopStreamer):
 
     def __init__(
         self,
-        left_arm: "TeleopLeaderArm",
-        right_arm: "TeleopLeaderArm",
+        left_arm: "GelloJoint",
+        right_arm: "GelloJoint",
         gripper_enabled: bool = True,
         use_delta: bool = False,
         action_scale: float = 0.1,

@@ -36,9 +36,9 @@ from rlinf.robotics import (
     SO101Config,
     SO101Robot,
 )
+from rlinf.robotics.actions import ActionKind, ActionPart
 from rlinf.robotics.parts.arms.so101 import SO101Arm
 from rlinf.robotics.parts.cameras import BaseCamera, CameraInfo
-from rlinf.robotics.teleop import ActionKind, ActionPart
 from rlinf.scheduler import WorkerInfo
 from rlinf.utils.logging import get_logger
 

@@ -29,7 +29,7 @@ import gymnasium as gym
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
-from rlinf.robotics.teleop import ActionKind
+from rlinf.robotics.actions import ActionKind
 from rlinf.utils.rot6d import matrix_to_rot6d, rot6d_to_quat_xyzw_safe
 
 from .dual_base import DualFrankaEnv, DualFrankaRobotConfig

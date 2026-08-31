@@ -31,6 +31,7 @@ from rlinf.robotics import (
     Robot,
     RobotInfo,
 )
+from rlinf.robotics.actions import ActionKind, ActionPart
 from rlinf.robotics.parts.arms.base import BaseArm
 from rlinf.robotics.parts.arms.franka import FrankaRobotState
 from rlinf.robotics.parts.cameras import BaseCamera, CameraInfo
@@ -39,7 +40,6 @@ from rlinf.robotics.parts.end_effectors.base import (
     EndEffectorType,
     normalize_end_effector_type,
 )
-from rlinf.robotics.teleop import ActionKind, ActionPart
 from rlinf.scheduler import WorkerInfo
 from rlinf.utils.logging import get_logger
 

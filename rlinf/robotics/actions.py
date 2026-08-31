@@ -12,13 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Semantic action types shared by teleoperation bindings and environments.
+"""What a slot in a robot's action vector means.
 
-Action dimensions alone cannot distinguish Cartesian deltas, absolute poses,
-or joint targets. These types allow compatibility checks before hardware moves.
+An environment describes its own action layout with these, and anything that
+fills part of that layout -- a policy, an operator device -- is checked
+against what each slot was declared to mean. Nothing here is specific to
+teleoperation.
 """
-
-from __future__ import annotations
 
 import enum
 

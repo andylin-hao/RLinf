@@ -20,13 +20,13 @@ from typing import Any, Mapping, Optional, Sequence
 
 import gymnasium as gym
 
-from rlinf.robotics.teleop import TeleopGroup
+from rlinf.robotics.parts.teleop import TeleopDevice, TeleopGroup
 
-from .backends import EnvFacts, TeleopBackend
 from .composed import ComposedTeleop
+from .facts import EnvFacts
 from .layout import action_spec
 
-__all__ = ["EnvFacts", "TeleopBackend", "build_teleop"]
+__all__ = ["EnvFacts", "TeleopDevice", "build_teleop"]
 
 
 def build_teleop(
@@ -48,21 +48,21 @@ def build_teleop(
     facts = EnvFacts.about(env, spec.layout, spec.kinds)
 
     entries: list[Any] = []
-    asked: list[type[TeleopBackend]] = []
+    asked: list[type[TeleopDevice]] = []
     for item in devices:
         if isinstance(item, str):
             name, options = item, {}
         else:
             ((name, options),) = dict(item).items()
-        backend = TeleopBackend.named(name)
-        entries.append(backend.entry(cfg, options or {}, facts))
-        if backend not in asked:
-            asked.append(backend)
+        device_cls = TeleopDevice.named(name)
+        entries.append(device_cls.from_config(cfg, options or {}, facts))
+        if device_cls not in asked:
+            asked.append(device_cls)
 
     # Build a streamer after its group-owned devices exist.
     streamer = None
-    for backend in asked:
-        streamer = backend.streamer(cfg, facts, entries)
+    for device_cls in asked:
+        streamer = device_cls.streamer(cfg, facts, entries)
         if streamer is not None:
             break
 

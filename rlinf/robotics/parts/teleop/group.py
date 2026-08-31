@@ -18,30 +18,30 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Any, Iterable, Mapping, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Iterable, Mapping, Optional, Sequence
 
 import numpy as np
 
 from rlinf.utils.logging import get_logger
 
-from ..parts.teleop.devices import TeleopPart
-from .binding import TeleopBinding
-from .kinds import ActionKind
+from ...actions import ActionKind
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from .base import TeleopDevice, TeleopPart
 
 
 @dataclass
 class TeleopEntry:
-    """A teleoperation device, its binding, and optional target branch.
+    """A teleoperation device and the branch of the action it fills.
 
     Attributes:
-        device: The hardware the operator drives.
-        binding: Mapping from device readings to robot actions.
+        device: The device the operator drives, which also says how its
+            reading becomes robot action parts.
         drives: Branch of a multi-arm action this entry fills. ``None`` on a
-            robot with one of each part, where the binding's own names suffice.
+            robot with one of each part, where the device's own names suffice.
     """
 
-    device: TeleopPart
-    binding: TeleopBinding
+    device: "TeleopDevice"
     drives: Optional[str] = None
 
     @property
@@ -53,19 +53,18 @@ class TeleopEntry:
     def produces(self) -> dict[str, ActionKind]:
         """Return the qualified action parts produced by this entry."""
         if self.drives is None:
-            return dict(self.binding.PRODUCES)
+            return dict(self.device.PRODUCES)
         return {
-            f"{self.drives}.{part}": kind
-            for part, kind in self.binding.PRODUCES.items()
+            f"{self.drives}.{part}": kind for part, kind in self.device.PRODUCES.items()
         }
 
 
 class TeleopGroup:
-    """Combine device bindings into one named action.
+    """Combine what several devices drive into one named action.
 
     Args:
-        entries: Devices and bindings to compose.
-        available: Action parts the robot actually has. A binding offering a
+        entries: Devices to compose.
+        available: Action parts the robot actually has. A device offering a
             part outside this set does not fill it.
 
     Raises:
@@ -93,7 +92,7 @@ class TeleopGroup:
             ]
             if not claimed:
                 raise ValueError(
-                    f"{type(entry.binding).__name__} fills none of this robot's "
+                    f"{type(entry.device).__name__} fills none of this robot's "
                     f"action parts. It offers {list(entry.parts)}; the robot has "
                     f"{sorted(self.available or [])}."
                 )
@@ -101,15 +100,15 @@ class TeleopGroup:
             for part in claimed:
                 if part in filled:
                     raise ValueError(
-                        f"{type(entry.binding).__name__} and "
-                        f"{type(filled[part].binding).__name__} both drive "
+                        f"{type(entry.device).__name__} and "
+                        f"{type(filled[part].device).__name__} both drive "
                         f"{part!r}. Give one of them a different 'drives'."
                     )
                 filled[part] = entry
         return filled
 
     def _check_kinds(self, entry: TeleopEntry, claimed: list[str]) -> None:
-        """Reject bindings whose action meaning differs from the environment."""
+        """Reject devices whose action meaning differs from the environment."""
         if self.available is None:
             return
         produced = entry.produces
@@ -117,7 +116,7 @@ class TeleopGroup:
             wanted, offered = self.available[part], produced[part]
             if wanted != offered:
                 raise ValueError(
-                    f"{type(entry.binding).__name__} produces "
+                    f"{type(entry.device).__name__} produces "
                     f"{offered.value!r} for {part!r}, but this env's action "
                     f"expects {wanted.value!r} there. The two mean different "
                     "things by the same numbers."
@@ -174,18 +173,18 @@ class TeleopGroup:
             raise failures[-1]
 
     def reset(self, context: Mapping[str, Any] = MappingProxyType({})) -> None:
-        """Reset binding state using the robot's post-reset context."""
+        """Re-align every device to the robot after it resets."""
         for entry in self.entries:
-            entry.binding.reset(context)
+            entry.device.on_reset(context)
 
     def action(
         self, context: Mapping[str, Any]
     ) -> tuple[dict[str, np.ndarray], bool, dict[str, Any]]:
-        """Read every device and merge what its binding fills.
+        """Drive every device and merge the parts each one fills.
 
         Returns:
             The action parts by name, whether any operator is driving, and any
-            info the bindings want recorded.
+            info the devices want recorded.
         """
         # GELLO readers start in a deliberately invalid zero-pose state. The
         # previous wrappers waited until every configured reader was ready, so
@@ -197,26 +196,45 @@ class TeleopGroup:
         driving = False
         info: dict[str, Any] = {}
 
-        readings = {id(device): device.get_observation() for device in self.devices}
-        # Preserve order because one binding may publish context for the next.
+        # A device two entries share is read once, so both map the same
+        # instant. Anything driven by one entry reads inside drive(), which
+        # costs a placed device one round trip instead of two.
+        shared = self._shared_readings()
+
+        # Preserve order because one device may publish context for the next.
         running = dict(context)
         for entry in self.entries:
-            reading = readings[id(entry.device)]
-            running.update(entry.binding.publish(reading))
             self._require_context(entry, running)
-            asked = entry.binding.action(reading, running)
+            asked = entry.device.drive(running, shared.get(id(entry.device)))
+            running.update(asked.publishes)
             parts.update(self._claimed(entry, asked.parts))
             driving |= asked.driving
             info.update(self._reported(entry, asked.info))
         return parts, driving, info
 
+    def _shared_readings(self) -> dict[int, Mapping[str, Any]]:
+        """Read once per device that more than one entry drives.
+
+        Entries normally each own their device, and those read inside
+        ``drive``. Only a device claimed twice is read here, because the two
+        entries must agree on what the operator was doing.
+        """
+        counts: dict[int, int] = {}
+        for entry in self.entries:
+            counts[id(entry.device)] = counts.get(id(entry.device), 0) + 1
+        return {
+            id(device): device.get_observation()
+            for device in self.devices
+            if counts.get(id(device), 0) > 1
+        }
+
     @staticmethod
     def _require_context(entry: TeleopEntry, context: Mapping[str, Any]) -> None:
         """Validate that the environment supplied all required context."""
-        missing = [key for key in entry.binding.NEEDS if key not in context]
+        missing = [key for key in entry.device.NEEDS if key not in context]
         if missing:
             raise ValueError(
-                f"{type(entry.binding).__name__} needs {missing} from the robot "
+                f"{type(entry.device).__name__} needs {missing} from the robot "
                 f"it drives, which this env does not report. It offers "
                 f"{sorted(context)}."
             )
@@ -242,11 +260,11 @@ class TeleopGroup:
 
     @property
     def clipped_parts(self) -> tuple[str, ...]:
-        """Parts whose binding wants them clipped into the env's action space."""
+        """Parts whose device wants them clipped into the env's action space."""
         return tuple(
             part
             for part, entry in self._filled.items()
-            if entry.binding.CLIPS_TO_ACTION_SPACE
+            if entry.device.CLIPS_TO_ACTION_SPACE
         )
 
     @property
@@ -255,27 +273,27 @@ class TeleopGroup:
         return tuple(
             part
             for part, entry in self._filled.items()
-            if entry.binding.APPLIES_WHILE_IDLE
+            if entry.device.APPLIES_WHILE_IDLE
         )
 
     @property
     def hold_window(self) -> Optional[float]:
-        """Return the shortest hold window configured by the bindings."""
+        """Return the shortest hold window configured by the devices."""
         windows = [
-            entry.binding.HOLD_WINDOW
+            entry.device.HOLD_WINDOW
             for entry in self.entries
-            if entry.binding.HOLD_WINDOW is not None
+            if entry.device.HOLD_WINDOW is not None
         ]
         return min(windows) if windows else None
 
     def on_action_chunk_begin(self) -> None:
-        """Notify bindings that a new policy-action chunk has started."""
+        """Notify devices that a new policy-action chunk has started."""
         for entry in self.entries:
-            entry.binding.on_action_chunk_begin()
+            entry.device.on_action_chunk_begin()
 
     def hold(self, context: Mapping[str, Any]) -> dict[str, np.ndarray]:
         """Return named action parts that hold the current robot state."""
         parts: dict[str, np.ndarray] = {}
         for entry in self.entries:
-            parts.update(self._claimed(entry, entry.binding.hold(context)))
+            parts.update(self._claimed(entry, entry.device.hold(context)))
         return parts

@@ -31,7 +31,7 @@ from rlinf.robotics import (
     Turtle2Config,
     Turtle2Robot,
 )
-from rlinf.robotics.teleop import ActionKind, ActionPart
+from rlinf.robotics.actions import ActionKind, ActionPart
 from rlinf.scheduler import WorkerInfo
 from rlinf.utils.logging import get_logger
 

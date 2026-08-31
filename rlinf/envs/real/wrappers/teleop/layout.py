@@ -20,7 +20,7 @@ from dataclasses import dataclass
 
 import gymnasium as gym
 
-from rlinf.robotics.teleop import ActionKind, ActionPart
+from rlinf.robotics.actions import ActionKind, ActionPart
 
 
 @dataclass(frozen=True)

@@ -12,18 +12,47 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Operator devices exposed through the standard robot-part lifecycle.
+"""Operator input devices, the part category an operator drives.
 
-Bindings that map device readings to robot actions live in
-:mod:`rlinf.robotics.teleop`.
+Importing this package registers every shipped device, so a config can name
+one. Adding a device is one module here plus one line in ``_MODULES``.
 """
 
-from .devices import Glove, PicoController, SpaceMouse, TeleopLeaderArm, TeleopPart
+from importlib import import_module
+
+from .base import CONTEXT_KEYS, TeleopAction, TeleopDevice, TeleopPart
+from .group import TeleopEntry, TeleopGroup
+
+#: Modules holding registered devices, imported for their side effect.
+_MODULES = (
+    ".gello",
+    ".gello_joint",
+    ".glove",
+    ".pico",
+    ".spacemouse",
+)
+
+for _module in _MODULES:
+    import_module(_module, __name__)
+
+from .gello import Gello  # noqa: E402
+from .gello_joint import GelloJoint  # noqa: E402
+from .glove import Glove  # noqa: E402
+from .pico import Pico, PicoDelta, PicoTcp  # noqa: E402
+from .spacemouse import SpaceMouse  # noqa: E402
 
 __all__ = [
+    "CONTEXT_KEYS",
+    "Gello",
+    "GelloJoint",
     "Glove",
-    "PicoController",
+    "Pico",
+    "PicoDelta",
+    "PicoTcp",
     "SpaceMouse",
-    "TeleopLeaderArm",
+    "TeleopAction",
+    "TeleopDevice",
+    "TeleopEntry",
+    "TeleopGroup",
     "TeleopPart",
 ]

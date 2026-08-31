@@ -51,7 +51,7 @@ from rlinf.robotics.parts.arms.franky import (  # noqa: E402
     FrankyArm,
 )
 from rlinf.robotics.parts.end_effectors import EndEffector  # noqa: E402
-from rlinf.robotics.parts.teleop.readers.gello_joint import (  # noqa: E402
+from rlinf.robotics.parts.teleop.gello_joint import (  # noqa: E402
     GelloJointExpert,
 )
 

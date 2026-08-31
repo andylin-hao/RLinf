@@ -12,7 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Bindings from operator-device readings to robot actions."""
+"""PICO VR controller, driving an arm as Cartesian deltas or absolute poses.
+
+The two mappings share one config name: which one a robot gets follows from
+whether its arm action is a pose or a delta.
+"""
 
 from __future__ import annotations
 
@@ -22,217 +26,9 @@ from typing import Any, Mapping, Optional, Sequence
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
-from .binding import TeleopAction, TeleopBinding
-from .kinds import ActionKind
-
-
-def jittered_grip(is_open: bool) -> np.ndarray:
-    """Return a binary grip command with bounded training noise."""
-    if is_open:
-        return np.random.uniform(0.9, 1.0, size=(1,))
-    return np.random.uniform(-1.0, -0.9, size=(1,))
-
-
-class SpaceMouseBinding(TeleopBinding):
-    """Map SpaceMouse motion to arm deltas and latch gripper buttons."""
-
-    PRODUCES = {
-        "arm": ActionKind.CARTESIAN_DELTA,
-        "end_effector": ActionKind.GRIPPER,
-    }
-
-    # gripper_open is optional because the binding provides a default.
-    NEEDS = ()
-
-    def __init__(self, dexterous_hand: bool = False) -> None:
-        self.dexterous_hand = dexterous_hand
-        self._grip: Optional[np.ndarray] = None
-        self.left = False
-        self.right = False
-
-    def reset(self, context: Mapping[str, Any] = MappingProxyType({})) -> None:
-        """Release the buttons and resync the gripper after a reset."""
-        self.left = False
-        self.right = False
-        self._grip = None
-
-    def action(
-        self, reading: Mapping[str, Any], context: Mapping[str, Any]
-    ) -> TeleopAction:
-        """Map the twist onto the arm, and the buttons onto the gripper."""
-        buttons = reading["buttons"]
-        self.left, self.right = bool(buttons[0]), bool(buttons[1])
-
-        parts: dict[str, np.ndarray] = {"arm": np.asarray(reading["twist"])}
-
-        if self.left:
-            self._grip = jittered_grip(is_open=False)
-        elif self.right:
-            self._grip = jittered_grip(is_open=True)
-        elif self._grip is None:
-            self._grip = jittered_grip(is_open=bool(context.get("gripper_open", True)))
-        parts["end_effector"] = self._grip.copy()
-
-        moved = float(np.linalg.norm(reading["twist"])) > self.MOVEMENT_EPSILON
-        info = (
-            {"left": self.right, "right": self.left}
-            if self.dexterous_hand
-            else {"left": self.left, "right": self.right}
-        )
-        return TeleopAction(
-            parts=parts,
-            driving=moved or self.left or self.right,
-            info=info,
-        )
-
-    def publish(self, reading: Mapping[str, Any]) -> dict[str, Any]:
-        """Publish whether the glove-control button is held."""
-        return {"hand_driving": bool(reading["buttons"][1])}
-
-
-class LeaderArmBinding(TeleopBinding):
-    """Map a Cartesian leader pose to follower-relative deltas."""
-
-    PRODUCES = {
-        "arm": ActionKind.CARTESIAN_DELTA,
-        "end_effector": ActionKind.GRIPPER,
-    }
-
-    NEEDS = ("tcp_pose", "action_scale")
-
-    def __init__(self, gripper: bool = True) -> None:
-        self.gripper = gripper
-
-    def action(
-        self, reading: Mapping[str, Any], context: Mapping[str, Any]
-    ) -> TeleopAction:
-        """Difference the leader's pose against the follower's."""
-        tcp_pose = np.asarray(context["tcp_pose"])
-        scale = np.asarray(context["action_scale"])
-
-        delta_position = (np.asarray(reading["position"]) - tcp_pose[:3]) / scale[0]
-        rotation = (
-            R.from_quat(np.asarray(reading["orientation"]).copy())
-            * R.from_quat(tcp_pose[3:].copy()).inv()
-        )
-        delta_rotation = rotation.as_euler("xyz") / scale[1]
-
-        parts = {
-            "arm": np.clip(
-                np.concatenate((delta_position, delta_rotation), axis=0), -1.0, 1.0
-            )
-        }
-        gripper_active = False
-        if self.gripper:
-            grip = np.asarray(reading["grip"]) / scale[2]
-            grip = np.clip(-(2 * grip - 1.0), -1.0, 1.0)
-            parts["end_effector"] = grip
-            gripper_active = bool(np.abs(grip).item() > 0.5)
-        moved = float(np.linalg.norm(parts["arm"])) > self.MOVEMENT_EPSILON
-        return TeleopAction(parts=parts, driving=moved or gripper_active)
-
-
-class LeaderJointBinding(TeleopBinding):
-    """A leader arm reported in joint space, for one side of the robot.
-
-    Args:
-        side: Index of the arm this leader drives, for reading the follower's
-            joint positions.
-        use_delta: Whether the env takes joint deltas or absolute targets.
-        action_scale: Divisor turning a joint delta into a normalized action.
-    """
-
-    PRODUCES = {
-        "arm": ActionKind.JOINT_POSITION,
-        "end_effector": ActionKind.GRIPPER,
-    }
-
-    NEEDS = ("joint_positions",)
-
-    #: Match the threshold used by the former dual-GELLO wrapper.
-    MOVEMENT_EPSILON = 0.01
-
-    def __init__(
-        self, side: int = 0, use_delta: bool = False, action_scale: float = 0.1
-    ) -> None:
-        self.side = side
-        self.use_delta = use_delta
-        self.action_scale = action_scale
-        # Differencing against the follower makes this a delta, not a target.
-        self.PRODUCES = {
-            "arm": ActionKind.JOINT_DELTA if use_delta else ActionKind.JOINT_POSITION,
-            "end_effector": ActionKind.GRIPPER,
-        }
-
-    def action(
-        self, reading: Mapping[str, Any], context: Mapping[str, Any]
-    ) -> TeleopAction:
-        """Difference the leader's joints against the follower's."""
-        target = np.asarray(reading["joint_position"])
-        current = np.asarray(context["joint_positions"])[self.side]
-        if self.use_delta:
-            arm = np.clip((target - current) / self.action_scale, -1.0, 1.0)
-        else:
-            arm = target.copy()
-
-        grip = np.asarray(reading["grip"])
-        grip = np.clip(-(2 * grip - 1.0), -1.0, 1.0)
-        moved = float(np.linalg.norm(target - current)) > self.MOVEMENT_EPSILON
-        gripper_active = bool(np.abs(grip).item() > 0.5)
-        return TeleopAction(
-            parts={
-                "arm": arm,
-                "end_effector": grip,
-            },
-            driving=moved or gripper_active,
-        )
-
-
-class GloveBinding(TeleopBinding):
-    """Map glove motion to hand targets relative to a resettable baseline."""
-
-    PRODUCES = {"hand": ActionKind.HAND}
-    APPLIES_WHILE_IDLE = True
-
-    def __init__(self, hold: bool = True) -> None:
-        self.hold = hold
-        self._baseline: Optional[np.ndarray] = None
-        self._commanded = np.zeros(6, dtype=np.float64)
-        self._base = np.zeros(6, dtype=np.float64)
-        self._rebaseline = False
-
-    def reset(self, context: Mapping[str, Any] = MappingProxyType({})) -> None:
-        """Initialize the held hand pose from the post-reset context."""
-        start = context.get("hand_reset_pose")
-        self._commanded = (
-            np.zeros(6, dtype=np.float64)
-            if start is None
-            else np.asarray(start, dtype=np.float64).reshape(-1).copy()
-        )
-        self._base = self._commanded.copy()
-        self._baseline = None
-
-    def rebaseline(self) -> None:
-        """Re-zero the glove against the hand's current pose."""
-        self._rebaseline = True
-
-    def action(
-        self, reading: Mapping[str, Any], context: Mapping[str, Any]
-    ) -> TeleopAction:
-        """Track the operator's fingers, or hold where they left them."""
-        angles = np.asarray(reading["angles"], dtype=np.float64)
-        # Hold the latest command while glove control is inactive.
-        if context.get("hand_driving", False):
-            if self._rebaseline or self._baseline is None:
-                # Rebase at the control edge to avoid a command discontinuity.
-                self._baseline = angles.copy()
-                self._base = self._commanded.copy()
-                self._rebaseline = False
-            self._commanded = np.clip(self._base + (angles - self._baseline), 0.0, 1.0)
-        else:
-            self._baseline = None  # Rebase when control is next taken.
-        # The arm device's button decides who is driving, not the glove.
-        return TeleopAction(parts={"hand": self._commanded.copy()}, driving=False)
+from ...actions import ActionKind
+from ..base import Features, Observation
+from .base import TeleopAction, TeleopDevice
 
 
 def _rotvec_to_euler(action: np.ndarray, action_scale: Sequence[float]) -> np.ndarray:
@@ -251,14 +47,26 @@ def _rotvec_to_euler(action: np.ndarray, action_scale: Sequence[float]) -> np.nd
     return out
 
 
-class _PicoArmBinding(TeleopBinding):
-    """Shared state and helpers for PICO arm bindings.
+@TeleopDevice.register("pico")
+class Pico(TeleopDevice):
+    """A PICO controller driving one arm, in whichever terms that arm takes.
+
+    One handheld controller, two ways to say what it means: an arm that takes
+    a delta gets :class:`PicoDelta`, one that takes an absolute pose gets
+    :class:`PicoTcp`. Both are this class, so ``isinstance(device, Pico)``
+    holds whichever the env asked for, and everything that does not depend on
+    that choice -- the transport, the reading, the grip anchor -- lives here.
+
+    :meth:`from_config` picks between them. It is abstract, so the config name
+    resolves to the family rather than to either variant.
 
     Args:
         gripper: Whether this arm's action carries a gripper channel.
         side: Which arm's pose to read out of a dual-arm ``tcp_pose``.
     """
 
+    #: The delta variant's kinds. PicoTcp overrides the arm with an absolute
+    #: pose; the parts filled are the same either way.
     PRODUCES = {
         "arm": ActionKind.CARTESIAN_DELTA,
         "end_effector": ActionKind.GRIPPER,
@@ -269,10 +77,90 @@ class _PicoArmBinding(TeleopBinding):
     #: The controller reports an explicit held state, so no hold window is needed.
     HOLD_WINDOW = 0.0
 
-    def __init__(self, gripper: bool = True, side: int = 0) -> None:
+    def __init__(self, gripper: bool = True, side: int = 0, **pico_config: Any) -> None:
         self.gripper = bool(gripper)
         self.side = int(side)
+        self._config = pico_config
         self._held_from: Optional[tuple[np.ndarray, R]] = None
+
+    # Hardware.
+
+    def _open(self) -> Any:
+        from ..transports.pico import PicoExpert
+
+        return PicoExpert(**self._config)
+
+    @property
+    def ready(self) -> bool:
+        """Whether the reader can provide its explicit idle state.
+
+        Unlike a leader arm, the PICO reader returns a safe ``ready=False``
+        reading before the first controller packet arrives.
+        """
+        return self.is_connected
+
+    @property
+    def observation_features(self) -> Features:
+        """Whether the operator is driving, and how far they have moved."""
+        return {
+            "held": {"dtype": "bool", "shape": ()},
+            "position_delta": {"dtype": "float64", "shape": (3,)},
+            "rotation_delta": {"dtype": "float64", "shape": (3,)},
+            "grip_close": {"dtype": "bool", "shape": ()},
+            "grip_open": {"dtype": "bool", "shape": ()},
+        }
+
+    def get_observation(self) -> Observation:
+        """Read the controller."""
+        return self._device.get_reading()
+
+    @classmethod
+    def from_config(
+        cls, cfg: Mapping[str, Any], options: Mapping[str, Any], facts: Any
+    ) -> Any:
+        """Pick the pose or delta variant from the robot's arm action kind."""
+        from rlinf.envs.real.wrappers.teleop.pico_config import split_dual_config
+
+        from .group import TeleopEntry
+
+        drives = options.get("drives")
+        pico_cfg = dict(cfg.get("pico", {}))
+        hold = bool(
+            options.get(
+                "hold_current_when_inactive",
+                pico_cfg.pop("hold_current_when_inactive", True),
+            )
+        )
+        gripper = bool(options.get("gripper", not bool(cfg.get("no_gripper", True))))
+
+        # Match the device to the environment's Cartesian action semantics.
+        arm = facts.kinds.get("arm" if drives is None else f"{drives}.arm")
+        absolute = arm is ActionKind.CARTESIAN_POSE
+
+        if drives in ("left", "right"):
+            left_cfg, right_cfg = split_dual_config(pico_cfg)
+            device_cfg = left_cfg if drives == "left" else right_cfg
+            side = 0 if drives == "left" else 1
+        else:
+            device_cfg = {
+                key: value
+                for key, value in pico_cfg.items()
+                if key not in ("left", "right")
+            }
+            device_cfg.setdefault("hand", "right")
+            side = 0 if str(device_cfg["hand"]).lower() == "left" else 1
+
+        device = (
+            PicoTcp(
+                gripper=gripper,
+                side=side,
+                hold_current_when_inactive=hold,
+                **device_cfg,
+            )
+            if absolute
+            else PicoDelta(gripper=gripper, side=side, **device_cfg)
+        )
+        return TeleopEntry(device, drives=drives)
 
     def _measured_pose(self, context: Mapping[str, Any]) -> np.ndarray:
         pose = np.asarray(context["tcp_pose"], dtype=np.float32).reshape(-1)
@@ -368,12 +256,12 @@ class _PicoArmBinding(TeleopBinding):
             info["pico_gripper_close"] = bool(close)
         return info
 
-    def reset(self, context: Mapping[str, Any] = MappingProxyType({})) -> None:
+    def on_reset(self, context: Mapping[str, Any] = MappingProxyType({})) -> None:
         """Clear the pose anchor from the previous episode."""
         self._held_from = None
 
 
-class PicoBinding(_PicoArmBinding):
+class PicoDelta(Pico):
     """Map PICO motion to Cartesian arm deltas."""
 
     def action(
@@ -392,10 +280,10 @@ class PicoBinding(_PicoArmBinding):
         return TeleopAction(parts=parts, driving=True, info=info)
 
 
-class PicoTcpBinding(_PicoArmBinding):
+class PicoTcp(Pico):
     """Map PICO motion to absolute TCP pose commands.
 
-    When configured, the binding holds the latest pose after a mid-chunk
+    When configured, the device holds the latest pose after a mid-chunk
     release and clears that hold at the next action chunk.
 
     Args:
@@ -418,8 +306,9 @@ class PicoTcpBinding(_PicoArmBinding):
         gripper: bool = True,
         side: int = 0,
         hold_current_when_inactive: bool = True,
+        **pico_config: Any,
     ) -> None:
-        super().__init__(gripper=gripper, side=side)
+        super().__init__(gripper=gripper, side=side, **pico_config)
         self.hold_current_when_inactive = bool(hold_current_when_inactive)
         self._holding_after_release = False
         self._last_command: Optional[np.ndarray] = None
@@ -444,7 +333,7 @@ class PicoTcpBinding(_PicoArmBinding):
         """Compose an operator delta with the measured arm pose."""
         if action.size < 6:
             raise ValueError(
-                "PicoTcpBinding expects at least 6 motion dims from the reader, "
+                "PicoTcp expects at least 6 motion dims from the reader, "
                 f"got {action.size}."
             )
 
@@ -503,8 +392,8 @@ class PicoTcpBinding(_PicoArmBinding):
         """Clear the pose held after a mid-chunk release."""
         self._holding_after_release = False
 
-    def reset(self, context: Mapping[str, Any] = MappingProxyType({})) -> None:
+    def on_reset(self, context: Mapping[str, Any] = MappingProxyType({})) -> None:
         """Clear the held command and pose anchor."""
-        super().reset(context)
+        super().on_reset(context)
         self._holding_after_release = False
         self._last_command = None
