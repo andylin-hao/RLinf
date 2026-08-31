@@ -1593,6 +1593,7 @@ def test_a_teleop_device_is_one_class_that_registers_itself():
         "gello_joint",
         "glove",
         "pico",
+        "so101_leader",
         "spacemouse",
     }
 
@@ -1614,7 +1615,7 @@ def test_a_teleop_device_is_one_class_that_registers_itself():
         if "streamer" not in vars(TeleopDevice.named(name))
     ]
     assert "gello_joint" not in quiet, "the one device that streams must say so"
-    assert set(quiet) >= {"gello", "glove", "pico", "spacemouse"}
+    assert set(quiet) >= {"gello", "glove", "pico", "so101_leader", "spacemouse"}
 
     with pytest.raises(ValueError, match="Unknown teleop device"):
         TeleopDevice.named("no_such_device")
@@ -2158,5 +2159,128 @@ def test_so101_env_omits_frames_entirely_when_no_camera_is_configured():
             assert "frames" not in env.observation_space.spaces
             assert "frames" not in observation
             assert observation in env.observation_space
+        finally:
+            env.close()
+
+
+def test_so101_leader_reports_radians_and_a_zero_to_one_grip():
+    """The leader is the same servos as the follower, so it converts alike."""
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        from rlinf.robotics.parts.teleop import SO101Leader
+
+        leader = SO101Leader(port="/dev/mock-leader", calibration_id="lead")
+        leader.connect()
+        try:
+            leader._device.positions.update(
+                {"shoulder_pan.pos": 90.0, "gripper.pos": 40.0}
+            )
+            reading = leader.get_observation()
+            assert reading["joint_position"][0] == pytest.approx(np.pi / 2)
+            assert reading["grip"][0] == pytest.approx(0.4)
+            # It never reaches lerobot's interactive calibration.
+            assert leader._device.calibrate_calls == 0
+        finally:
+            leader.disconnect()
+
+
+def test_so101_leader_releases_the_servo_bus():
+    """lerobot spells release ``disconnect``, which the base class does not try.
+
+    The device overrides ``_release`` for exactly that reason. Without this the
+    serial port would leak on every disconnect and nothing would say so.
+    """
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        from rlinf.robotics.parts.teleop import SO101Leader
+
+        leader = SO101Leader(port="/dev/mock-leader")
+        leader.connect()
+        handle = leader._device
+        assert handle.is_connected
+        leader.disconnect()
+        assert not handle.is_connected
+
+
+def test_so101_leader_refuses_an_uncalibrated_arm():
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks() as made:
+        from rlinf.robotics.parts.teleop import SO101Leader
+
+        fake = made["lerobot.teleoperators.so_leader"].SO101Leader
+        fake.calibrated = False
+        try:
+            leader = SO101Leader(port="/dev/mock-leader")
+            with pytest.raises(RuntimeError, match="not calibrated"):
+                leader.connect()
+        finally:
+            fake.calibrated = True
+
+
+def test_so101_leader_only_drives_once_the_operator_moves_it():
+    """A leader resting in its holder must not take control from the policy."""
+    from rlinf.robotics.parts.teleop import SO101Leader
+
+    binding = SO101Leader(port="/dev/unused", movement_epsilon=0.01)
+    at_rest = {"joint_position": np.zeros(5), "grip": np.array([0.0])}
+    context = {"joint_positions": np.zeros((1, 5))}
+
+    assert not binding.action(at_rest, context).driving
+
+    moved = {"joint_position": np.array([0.5, 0, 0, 0, 0]), "grip": np.array([0.7])}
+    sample = binding.action(moved, context)
+    assert sample.driving
+    # The leader's pose is the follower's target, joint for joint.
+    assert sample.parts["arm"] == pytest.approx(moved["joint_position"])
+    # And the grip stays on the 0..1 axis the SO-101 env opens over.
+    assert sample.parts["end_effector"][0] == pytest.approx(0.7)
+
+
+def test_so101_env_is_driven_by_its_leader():
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        import gymnasium as gym
+
+        import rlinf.envs.real as real
+
+        real._load_all()
+        env = gym.make(
+            "SO101ReachEnv-v1",
+            override_cfg={
+                "port": "/dev/mock-so101",
+                "step_frequency": 1000.0,
+                "enable_camera_player": False,
+            },
+            worker_info=None,
+            robot_info=None,
+            env_idx=0,
+            env_cfg={
+                "teleop": [{"so101_leader": {"port": "/dev/mock-leader"}}],
+                "no_gripper": False,
+                "use_relative_frame": False,
+            },
+        )
+        try:
+            env.reset()
+            policy_action = np.zeros(6, dtype=np.float32)
+
+            observation, *_ = env.step(policy_action)
+            assert observation["state"]["arm_joint_position"] == pytest.approx(
+                np.zeros(5)
+            )
+
+            leader = list(env.get_wrapper_attr("device").group.devices)[0]
+            leader._device.positions.update(
+                {"shoulder_pan.pos": 45.0, "gripper.pos": 80.0}
+            )
+            observation, *_ = env.step(policy_action)
+            assert observation["state"]["arm_joint_position"][0] == pytest.approx(
+                np.deg2rad(45.0), abs=1e-4
+            )
+            assert observation["state"]["gripper_position"][0] == pytest.approx(0.8)
         finally:
             env.close()

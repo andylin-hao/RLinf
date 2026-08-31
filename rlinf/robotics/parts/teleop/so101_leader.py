@@ -1,0 +1,178 @@
+# Copyright 2026 The RLinf Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""SO-101 leader arm driving an SO-101 follower, joint for joint."""
+
+from typing import Any, Mapping, Optional
+
+import numpy as np
+
+from ...actions import ActionKind
+from ..base import Features, Observation
+from .base import TeleopAction, TeleopDevice
+
+#: Arm joints in bus order, matching the follower's.
+MOTORS: tuple[str, ...] = (
+    "shoulder_pan",
+    "shoulder_lift",
+    "elbow_flex",
+    "wrist_flex",
+    "wrist_roll",
+)
+
+#: The sixth servo, reported on lerobot's own 0..100 gripper scale.
+GRIPPER = "gripper"
+GRIPPER_SCALE = 100.0
+
+
+@TeleopDevice.register("so101_leader")
+class SO101Leader(TeleopDevice):
+    """SO-101 leader arm, reporting joint angles and grip.
+
+    The leader is the same five joints and gripper as the follower, held
+    rather than driven, so the operator's pose is the follower's target
+    directly. Readings arrive in the follower's own units -- radians and a
+    ``0..1`` grip -- so neither half has to convert.
+
+    Args:
+        port: Serial device the leader's servo bus is on.
+        calibration_id: lerobot calibration identifier for this leader.
+        movement_epsilon: Radians of leader motion, summed over the joints,
+            below which the operator counts as not driving.
+    """
+
+    SDK = ("scservo_sdk", "lerobot[feetech]")
+
+    PRODUCES = {
+        "arm": ActionKind.JOINT_POSITION,
+        "end_effector": ActionKind.GRIPPER,
+    }
+
+    NEEDS = ("joint_positions",)
+
+    #: Joint limits and the gripper range both come from the action space.
+    CLIPS_TO_ACTION_SPACE = True
+
+    MOVEMENT_EPSILON = 0.01
+
+    def __init__(
+        self,
+        port: str,
+        calibration_id: Optional[str] = None,
+        movement_epsilon: float = 0.01,
+    ) -> None:
+        self._port = port
+        self._calibration_id = calibration_id
+        self.MOVEMENT_EPSILON = movement_epsilon
+
+    @classmethod
+    def from_config(
+        cls, cfg: Mapping[str, Any], options: Mapping[str, Any], facts: Any
+    ) -> Any:
+        """Take the port and calibration id from options or the env config."""
+        from .group import TeleopEntry
+
+        port = options.get("port") or cfg.get("so101_leader_port")
+        if port is None:
+            raise ValueError(
+                "teleop device 'so101_leader' requires a 'port', or "
+                "'so101_leader_port' in the env config."
+            )
+        return TeleopEntry(
+            cls(
+                port=port,
+                calibration_id=options.get("calibration_id")
+                or cfg.get("so101_leader_id"),
+                movement_epsilon=float(options.get("movement_epsilon", 0.01)),
+            ),
+            drives=options.get("drives"),
+        )
+
+    # Hardware.
+
+    def _open(self) -> Any:
+        """Open the leader's servo bus and return lerobot's handle for it.
+
+        Calibration is not run here for the same reason the follower does not
+        run it: lerobot prompts on stdin when the servos disagree with the
+        calibration file, which would hang a worker that has no terminal.
+        """
+        try:
+            from lerobot.teleoperators.so_leader import SO101Leader, SO101LeaderConfig
+        except ImportError:  # pragma: no cover - older lerobot
+            from lerobot.teleoperators.so101_leader import (
+                SO101Leader,
+                SO101LeaderConfig,
+            )
+
+        leader = SO101Leader(
+            SO101LeaderConfig(
+                port=self._port, id=self._calibration_id, use_degrees=True
+            )
+        )
+        leader.connect(calibrate=False)
+        if not leader.is_calibrated:
+            leader.disconnect()
+            raise RuntimeError(
+                f"The SO-101 leader on {self._port!r} is not calibrated, and "
+                "calibrating it asks the operator to move the arm, which "
+                "cannot be done from here. Run lerobot's calibration for "
+                f"id={self._calibration_id!r} once, then start again."
+            )
+        return leader
+
+    def _release(self, device: Any) -> None:
+        """lerobot spells this ``disconnect``, which the base does not try."""
+        device.disconnect()
+
+    @property
+    def observation_features(self) -> Features:
+        """The operator's joint angles, and how far the trigger is squeezed."""
+        return {
+            "joint_position": {"shape": (5,), "dtype": "float32"},
+            "grip": {"shape": (1,), "dtype": "float32"},
+        }
+
+    def get_observation(self) -> Observation:
+        """Read the leader the operator is holding.
+
+        lerobot reports degrees and a ``0..100`` gripper; the follower speaks
+        radians and ``0..1``, so the conversion happens here rather than
+        leaving both units loose in the action.
+        """
+        reading = self._device.get_action()
+        joints = np.deg2rad([reading[f"{motor}.pos"] for motor in MOTORS])
+        grip = np.clip(reading[f"{GRIPPER}.pos"] / GRIPPER_SCALE, 0.0, 1.0)
+        return {
+            "joint_position": np.asarray(joints, dtype=np.float32),
+            "grip": np.asarray([grip], dtype=np.float32),
+        }
+
+    # Driving the robot.
+
+    def action(
+        self, reading: Mapping[str, Any], context: Mapping[str, Any]
+    ) -> TeleopAction:
+        """Take the leader's pose as the follower's target.
+
+        The grip stays on the ``0..1`` axis the SO-101 environment opens over,
+        rather than the signed axis a GELLO reports, so neither half clips.
+        """
+        target = np.asarray(reading["joint_position"], dtype=float)
+        current = np.asarray(context["joint_positions"])[0]
+        grip = np.asarray(reading["grip"], dtype=float).reshape(1)
+        # Idle until the operator actually moves, so the policy keeps control
+        # while the leader is just resting in its holder.
+        moved = float(np.linalg.norm(target - current)) > self.MOVEMENT_EPSILON
+        return TeleopAction(parts={"arm": target, "end_effector": grip}, driving=moved)

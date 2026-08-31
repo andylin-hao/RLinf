@@ -29,6 +29,7 @@ _MODULES = (
     ".gello_joint",
     ".glove",
     ".pico",
+    ".so101_leader",
     ".spacemouse",
 )
 
@@ -39,6 +40,7 @@ from .gello import Gello  # noqa: E402
 from .gello_joint import GelloJoint  # noqa: E402
 from .glove import Glove  # noqa: E402
 from .pico import Pico, PicoDelta, PicoTcp  # noqa: E402
+from .so101_leader import SO101Leader  # noqa: E402
 from .spacemouse import SpaceMouse  # noqa: E402
 
 __all__ = [
@@ -49,6 +51,7 @@ __all__ = [
     "Pico",
     "PicoDelta",
     "PicoTcp",
+    "SO101Leader",
     "SpaceMouse",
     "TeleopAction",
     "TeleopDevice",

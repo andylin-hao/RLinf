@@ -386,6 +386,59 @@ def lerobot() -> dict[str, types.ModuleType]:
         made[f"lerobot.robots.{leaf}"] = follower
         setattr(made["lerobot.robots"], leaf, follower)
     made["lerobot"].robots = made["lerobot.robots"]
+
+    class FakeSO101LeaderConfig:
+        def __init__(
+            self, port: str, id: Any = None, use_degrees: bool = True, **extra: Any
+        ) -> None:
+            self.port = port
+            self.id = id
+            self.use_degrees = use_degrees
+
+    class FakeSO101Leader:
+        #: Set false to model a leader whose calibration file is missing.
+        calibrated = True
+
+        def __init__(self, config: Any) -> None:
+            self.config = config
+            self.is_connected = False
+            self.is_calibrated = type(self).calibrated
+            self.calibrate_calls = 0
+            # Degrees and lerobot's 0..100 gripper, as the hardware reports.
+            self.positions = {
+                "shoulder_pan.pos": 0.0,
+                "shoulder_lift.pos": 0.0,
+                "elbow_flex.pos": 0.0,
+                "wrist_flex.pos": 0.0,
+                "wrist_roll.pos": 0.0,
+                "gripper.pos": 0.0,
+            }
+
+        def connect(self, calibrate: bool = True) -> None:
+            self.is_connected = True
+            if calibrate:
+                self.calibrate()
+
+        def calibrate(self) -> None:
+            self.calibrate_calls += 1
+
+        def disconnect(self) -> None:
+            self.is_connected = False
+
+        def get_action(self) -> dict[str, float]:
+            return dict(self.positions)
+
+    for parent in package("lerobot.teleoperators.so_leader"):
+        made.setdefault(parent.__name__, parent)
+    for leaf in ("so_leader", "so101_leader"):
+        leader = module(
+            f"lerobot.teleoperators.{leaf}",
+            SO101Leader=FakeSO101Leader,
+            SO101LeaderConfig=FakeSO101LeaderConfig,
+        )
+        made[f"lerobot.teleoperators.{leaf}"] = leader
+        setattr(made["lerobot.teleoperators"], leaf, leader)
+    made["lerobot"].teleoperators = made["lerobot.teleoperators"]
     # The driver gates on the Feetech SDK, which lerobot's feetech extra brings.
     made["scservo_sdk"] = module("scservo_sdk")
     return made

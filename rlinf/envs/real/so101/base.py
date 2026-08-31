@@ -131,8 +131,8 @@ class SO101Env(gym.Env):
     :pyattr:`SO101RobotConfig.target_joint_qpos`.
     """
 
-    # No registered teleoperation device produces this joint layout yet.
-    TELEOP = ()
+    # The leader arm is the same five joints and gripper as this follower.
+    TELEOP = ("so101_leader",)
     TELEOP_DEFAULT = "none"
     # The gripper is continuous, so the one-axis binary wrapper does not fit.
     ACTION_WRAPPERS = ()
@@ -158,6 +158,7 @@ class SO101Env(gym.Env):
         self._num_steps = 0
         self._success_hold_counter = 0
         self._last_gripper: Optional[float] = None
+        self._joints = np.zeros(_DOF)
         self.robot: Optional[SO101Robot] = None
 
         if not self.config.is_dummy:
@@ -321,6 +322,10 @@ class SO101Env(gym.Env):
         truncated = self._num_steps >= self.config.max_num_steps
         return observation, reward, terminated, truncated, {}
 
+    def get_joint_positions(self) -> np.ndarray:
+        """Arm joints as ``(1, 5)``, the shape teleop bindings index by arm."""
+        return self._joints.reshape(1, -1).copy()
+
     @property
     def num_steps(self) -> int:
         """Steps taken in the current episode."""
@@ -378,6 +383,7 @@ class SO101Env(gym.Env):
 
         # The driver works in float64; the declared space is float32, and an
         # observation outside its own space fails Gymnasium's env checker.
+        self._joints = np.asarray(reading["arm_joint_position"], dtype=float)
         observation: dict[str, Any] = {
             "state": {
                 "arm_joint_position": np.asarray(

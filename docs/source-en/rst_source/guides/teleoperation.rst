@@ -56,7 +56,7 @@ that the environment accepts.
 Check a Device First
 --------------------
 
-Every device reader can run without a robot or cluster:
+Every device can run without a robot or cluster:
 
 .. code-block:: bash
 
