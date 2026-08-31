@@ -1,7 +1,7 @@
 遥操作
 ======
 
-遥操作允许操作者在 rollout 中接管 policy，可用于采集示教、纠正失败动作或运行 DAgger。接入时，建议先验证单台设备能否稳定读取数据，再配置 binding，最后组合多台设备。本页还会说明独立设备与 env 管理设备在 placement 上的差异。若尚未了解零部件名称与动作路径的关系，请先阅读 :doc:`../concepts/robotics`。
+遥操作允许操作者在 rollout 中接管 policy，可用于采集示教、纠正失败动作或运行 DAgger。接入时，建议先验证单台设备能否稳定读取数据，确认无误后再组合多台设备。本页按这一顺序展开，最后说明独立设备与 env 管理设备在 placement 上的差异。若尚未了解零部件名称与动作路径的关系，请先阅读 :doc:`../concepts/robotics`。
 
 选择设备
 --------
@@ -36,6 +36,9 @@
    * - ``glove``
      - 弯曲手指控制灵巧手，与驱动机械臂的设备配合使用。
      - ``glove_config:`` 段
+   * - ``so101_leader``
+     - 操作 SO-101 主臂，其夹爪同时控制从臂夹爪。
+     - ``so101_leader_port``
    * - ``none``
      - 不接操作者设备，由 policy 独立控制。
      - 无
@@ -45,13 +48,13 @@
 验证设备读数
 ------------
 
-reader 不依赖机器人或集群，可独立运行：
+由后台线程持续轮询的设备——``gello``、``gello_joint`` 和 ``spacemouse``——不依赖机器人或集群，可独立运行：
 
 .. code-block:: bash
 
-   python -m rlinf.robotics.parts.teleop.readers.gello --port /dev/ttyUSB0
+   python -m rlinf.robotics.parts.teleop.gello --port /dev/ttyUSB0
 
-如果主臂只返回零值或 SpaceMouse 没有响应，请先通过 reader 排查接线和设备权限。完整机器人可使用 ``toolkits/realworld_check`` 检查；``check_robot_parts`` 会依次验证组合、读取和断开流程。
+如果主臂只返回零值或 SpaceMouse 没有响应，请先用该命令排查接线和设备权限。完整机器人可使用 ``toolkits/realworld_check`` 检查；``check_robot_parts`` 会依次验证组合、读取和断开流程。
 
 组合多台设备
 ------------
@@ -88,7 +91,7 @@ reader 不依赖机器人或集群，可独立运行：
          - {gello_joint: {port: /dev/serial/by-id/...-left,  drives: left}}
          - {gello_joint: {port: /dev/serial/by-id/...-right, drives: right}}
 
-如果 binding 声明的零部件不在机器人中，``TeleopGroup`` 会跳过对应动作。如果某台设备无法匹配任何零部件，或两台设备同时声明控制同一零部件，系统会在构建阶段报错。
+如果设备声明的零部件不在机器人中，``TeleopGroup`` 会跳过对应动作。如果某台设备无法匹配任何零部件，或两台设备同时声明控制同一零部件，系统会在构建阶段报错。
 
 明确设备的资源归属
 ------------------
@@ -99,7 +102,7 @@ reader 不依赖机器人或集群，可独立运行：
 
 .. code-block:: python
 
-   leader = TeleopLeaderArm("/dev/ttyUSB0", node_rank=1)
+   leader = Gello("/dev/ttyUSB0", node_rank=1)
    leader.connect()
    try:
        print(leader.get_observation())
@@ -129,38 +132,62 @@ reader 不依赖机器人或集群，可独立运行：
 新增设备
 --------
 
-新增遥操作设备时，需要实现两个职责明确的扩展点。首先，在 ``robotics/parts/teleop`` 中将硬件 reader 封装为 ``TeleopPart``，沿用标准 connection 生命周期，且不依赖 Gymnasium。随后，在 ``real/wrappers/teleop/backends.py`` 中实现面向配置的 ``TeleopBackend``，将设备与 binding 组合起来。该 registry 位于 env 层，因为 backend 需要读取 env 配置，并根据 env 声明的动作语义选择 binding。
-
-backend 应在实现该组合的同一文件中完成注册：
+一台设备对应 ``robotics/parts/teleop/`` 下的一个模块。继承 ``TeleopDevice``，为它注册一个配置名称，并声明它填充哪些动作：
 
 .. code-block:: python
 
-   @TeleopBackend.register("example")
-   class ExampleBackend(TeleopBackend):
-       @classmethod
-       def entry(cls, cfg, options, facts):
-           device_cfg = dict(cfg.get("example_config", {}))
-           unknown = set(options) - {"port", "drives"}
-           if unknown:
-               raise ValueError(f"Unsupported example options: {sorted(unknown)}")
-           port = options.get("port", device_cfg.get("port"))
-           if port is None:
-               raise ValueError("teleop device 'example' requires a port")
-           return TeleopEntry(
-               ExampleDevice(port=port),
-               ExampleBinding(),
-               drives=options.get("drives"),
-           )
+   @TeleopDevice.register("example")
+   class ExampleDevice(TeleopDevice):
+       PRODUCES = {"arm": ActionKind.JOINT_POSITION}
+       NEEDS = ("joint_positions",)
 
-``cfg`` 是完整的 env 配置段，用于读取设备级配置；``options`` 只属于当前列表项，可单独指定端口或 ``drives``。backend 应在此处校验允许的 key，避免拼写错误的硬件参数被静默忽略。
+       def __init__(self, port: str) -> None:
+           self._port = port
 
-``entry()`` 返回 ``TeleopEntry``，其中包含设备、解释设备读数的 binding，以及可选的目标分支。``facts`` 描述 env 的动作布局和语义，例如机械臂接收绝对位姿还是增量。backend 可据此选择正确的 binding，无需导入某个具体 env class。
+       def _open(self):
+           return ExampleSDK(self._port).open()
 
-只有当某台设备还要在独立线程中直接下发指令时，才需要覆盖 ``streamer()``；除 ``gello_joint`` 外，其余设备均使用默认实现并返回 ``None``，参见 :ref:`提高主从臂跟随频率 <teleop-rate>`。
+       @property
+       def observation_features(self) -> Features:
+           return {"joints": {"shape": (7,), "dtype": "float32"}}
 
-builder 会先构建所有 backend entry，再创建 streamer。streamer 可能接管并非由自身构造的设备；按照这一顺序创建，可确保 streamer 初始化时已经取得本次配置请求的全部设备和 binding。
+       def get_observation(self) -> Observation:
+           return {"joints": self._device.read()}
 
-最后，将注册名加入对应 env 的 ``TELEOP`` 元组，声明该 env 能够表示该设备产生的动作。这里无需再次注册设备；公共 builder 会通过 ``TeleopBackend`` 查询注册名并构建相应的 entry。
+       def action(self, reading, context) -> TeleopAction:
+           moved = np.linalg.norm(reading["joints"] - context["joint_positions"][0])
+           return TeleopAction({"arm": reading["joints"]}, driving=bool(moved > 0.01))
+
+``PRODUCES`` 声明设备填充哪些动作零部件及其语义，env 因此可以在打开硬件之前完成校验。``NEEDS`` 声明设备需要的机器人状态；无论有几台设备请求同一项状态，每次采样都只读取一次，并通过 ``context`` 传入。
+
+``_open()`` 负责连接硬件并返回句柄，设备随后通过 ``self._device`` 读取；``_release()`` 负责关闭。这与其他机器人零部件使用同一套 connection 生命周期，``node_rank`` 也由同一套机制处理，设备无需为此编写任何代码——所以上面的构造函数只接收自己的参数。
+
+``observation_features`` 在打开硬件之前声明读数结构，因此可以离线描述一套设备。该方法是抽象方法，未实现的设备无法实例化。
+
+``action()`` 返回 ``TeleopAction``，其中包含设备填充的动作零部件，以及本次采样操作者是否正在接管。若本次不产生动作，返回 ``driving=False``，控制权保留给 policy。
+
+面向配置的行为
+~~~~~~~~~~~~~~
+
+``from_config()`` 的默认实现会将该列表项自身的 options 作为关键字参数传给构造函数。只要设备的配置 key 与构造参数同名，就无需再写任何代码：上面的设备已经可以通过 ``{example: {port: /dev/ttyUSB0}}`` 使用。
+
+如果需要读取设备级配置段，或根据机器人的动作语义调整行为，则覆盖该方法：
+
+.. code-block:: python
+
+   @classmethod
+   def from_config(cls, cfg, options, facts):
+       settings = dict(cfg.get("example_config", {}))
+       settings.update({k: v for k, v in options.items() if k != "drives"})
+       if "port" not in settings:
+           raise ValueError("teleop device 'example' requires a port")
+       return TeleopEntry(cls(**settings), drives=options.get("drives"))
+
+``cfg`` 是完整的 env 配置段，用于读取设备级配置；``options`` 只属于当前列表项，可单独指定端口或 ``drives``。应在此处校验允许的 key，避免拼写错误的硬件参数被静默忽略。``facts`` 描述 env 的动作布局和语义，例如机械臂接收绝对位姿还是增量，设备可据此调整，无需导入某个具体 env class。
+
+只有当某台设备还要在独立线程中直接下发指令时，才需要覆盖 ``streamer()``；除 ``gello_joint`` 外，其余设备均使用默认实现并返回 ``None``，参见 :ref:`提高主从臂跟随频率 <teleop-rate>`。builder 会先构建所有 entry，再创建 streamer，因此 streamer 可以接管并非由自身构造的设备。
+
+最后，将注册名加入对应 env 的 ``TELEOP`` 元组，声明该 env 能够表示该设备产生的动作。这里无需再次注册设备。
 
 已废弃的配置项
 --------------
@@ -170,6 +197,6 @@ builder 会先构建所有 backend entry，再创建 streamer。streamer 可能�
 后续阅读
 --------
 
-- :doc:`机器人组成 <../concepts/robotics>`：了解 binding 所引用的零部件路径。
+- :doc:`机器人组成 <../concepts/robotics>`：了解设备所填充的零部件路径。
 - :doc:`真机任务与环境 <../concepts/realworld_envs>`：了解遥操作在 wrapper 栈中的位置。
 - :doc:`数据采集 <data_collection>`：记录操作者动作。

@@ -3,12 +3,10 @@ Teleoperation
 
 Teleoperation lets an operator replace the policy's action during a rollout to
 collect demonstrations, recover from a failure, or run DAgger. Start with one
-device and verify its readings. Then add a binding to the robot's named action
-parts; only after that works should you combine devices. This page also explains
-the current placement boundary for standalone and environment-owned devices.
-
-This page follows that order. For the underlying robot composition, see
-:doc:`../concepts/robotics`.
+device and verify its readings; only after that works should you combine
+devices. This page follows that order, and closes with the placement boundary
+for standalone and environment-owned devices. For the underlying robot
+composition, see :doc:`../concepts/robotics`.
 
 Choose a Device
 ---------------
@@ -44,6 +42,9 @@ For a single device, set its name:
    * - ``glove``
      - Bends the fingers of a dexterous hand, alongside a device on the arm.
      - ``glove_config:`` block
+   * - ``so101_leader``
+     - Poses an SO-101 leader arm; its own gripper commands the follower's.
+     - ``so101_leader_port``
    * - ``none``
      - Leaves the policy in control with no operator device.
      - None
@@ -56,11 +57,12 @@ that the environment accepts.
 Check a Device First
 --------------------
 
-Every device can run without a robot or cluster:
+The devices whose readers poll on their own thread -- ``gello``,
+``gello_joint`` and ``spacemouse`` -- run without a robot or cluster:
 
 .. code-block:: bash
 
-   python -m rlinf.robotics.parts.teleop.readers.gello --port /dev/ttyUSB0
+   python -m rlinf.robotics.parts.teleop.gello --port /dev/ttyUSB0
 
 When a leader arm reports only zeros or a spacemouse does not respond, this
 command isolates wiring and permission problems from environment configuration.
@@ -108,7 +110,7 @@ each device. This is the only configuration field that names a robot part:
          - {gello_joint: {port: /dev/serial/by-id/...-left,  drives: left}}
          - {gello_joint: {port: /dev/serial/by-id/...-right, drives: right}}
 
-A binding leaves any part the robot does not have unfilled. The builder rejects
+A device leaves any part the robot does not have unfilled. The builder rejects
 the rig if a device matches no part at all, or if two devices claim the same
 part.
 
@@ -125,7 +127,7 @@ A teleop device is a ``Connection`` like any other, so it accepts a
 
 .. code-block:: python
 
-   leader = TeleopLeaderArm("/dev/ttyUSB0", node_rank=1)
+   leader = Gello("/dev/ttyUSB0", node_rank=1)
    leader.connect()
    try:
        print(leader.get_observation())
@@ -166,58 +168,91 @@ instead of receiving malformed motion.
 Add a Device
 ------------
 
-Adding a teleop device involves two existing extension points. Implement the
-hardware reader as a ``TeleopPart`` under ``robotics/parts/teleop`` so it keeps
-the standard connection lifecycle and has no Gymnasium dependency. Implement
-the config-facing pairing as a ``TeleopBackend`` under
-``real/wrappers/teleop/backends.py``. The latter belongs to the environment
-layer because it reads env config and selects a binding for the action semantics
-declared by that env.
-
-Register the backend in the same file that implements the pairing:
+A device is one module under ``robotics/parts/teleop/``. Subclass
+``TeleopDevice``, register a config name for it, and say what it fills:
 
 .. code-block:: python
 
-   @TeleopBackend.register("example")
-   class ExampleBackend(TeleopBackend):
-       @classmethod
-       def entry(cls, cfg, options, facts):
-           device_cfg = dict(cfg.get("example_config", {}))
-           unknown = set(options) - {"port", "drives"}
-           if unknown:
-               raise ValueError(f"Unsupported example options: {sorted(unknown)}")
-           port = options.get("port", device_cfg.get("port"))
-           if port is None:
-               raise ValueError("teleop device 'example' requires a port")
-           return TeleopEntry(
-               ExampleDevice(port=port),
-               ExampleBinding(),
-               drives=options.get("drives"),
-           )
+   @TeleopDevice.register("example")
+   class ExampleDevice(TeleopDevice):
+       PRODUCES = {"arm": ActionKind.JOINT_POSITION}
+       NEEDS = ("joint_positions",)
 
-``cfg`` is the complete env section and contains the device-wide config block.
+       def __init__(self, port: str) -> None:
+           self._port = port
+
+       def _open(self):
+           return ExampleSDK(self._port).open()
+
+       @property
+       def observation_features(self) -> Features:
+           return {"joints": {"shape": (7,), "dtype": "float32"}}
+
+       def get_observation(self) -> Observation:
+           return {"joints": self._device.read()}
+
+       def action(self, reading, context) -> TeleopAction:
+           moved = np.linalg.norm(reading["joints"] - context["joint_positions"][0])
+           return TeleopAction({"arm": reading["joints"]}, driving=bool(moved > 0.01))
+
+``PRODUCES`` names the action parts the device fills and the meaning of each, so
+an environment can check the device against its own layout before any hardware
+is opened. ``NEEDS`` lists the robot state the device wants; each name is read
+once per sample and arrives in ``context``, whether one device asks for it or
+five do.
+
+``_open()`` reaches the hardware and returns the handle, which the device then
+reads through ``self._device``; ``_release()`` closes it. That is the same
+connection lifecycle every robot part follows, and the same machinery accepts
+``node_rank`` without the device writing anything for it -- which is why the
+constructor above takes only its own arguments.
+
+``observation_features`` declares the reading before any hardware is open, so a
+rig can be described offline. It is abstract, so a device that omits it cannot
+be instantiated.
+
+``action()`` returns a ``TeleopAction``: the parts it fills, and whether the
+operator is currently driving. A device that fills nothing this sample returns
+``driving=False`` and leaves the policy in control.
+
+Config-Facing Behaviour
+~~~~~~~~~~~~~~~~~~~~~~~
+
+The default ``from_config()`` passes the entry's own options through as keyword
+arguments, which is all a device needs whose config keys match its constructor.
+The example above is already reachable as ``{example: {port: /dev/ttyUSB0}}``
+with nothing further to write.
+
+Override it to read a key from the wider env config, or to choose behaviour from
+what the robot can accept:
+
+.. code-block:: python
+
+   @classmethod
+   def from_config(cls, cfg, options, facts):
+       settings = dict(cfg.get("example_config", {}))
+       settings.update({k: v for k, v in options.items() if k != "drives"})
+       if "port" not in settings:
+           raise ValueError("teleop device 'example' requires a port")
+       return TeleopEntry(cls(**settings), drives=options.get("drives"))
+
+``cfg`` is the complete env section and holds the device-wide config block.
 ``options`` belongs to this one list entry, so it can select a port or a
-``drives`` branch without changing other instances. Validate these keys at the
-backend boundary; a misspelled hardware option should not be silently ignored.
-
-``entry()`` returns a ``TeleopEntry`` containing the device, the binding that
-gives its readings meaning, and the optional branch it drives. ``facts``
-describes the env's action layout and semantics -- notably whether an arm takes
-an absolute pose or a delta -- so a backend can select the correct binding
-without importing a concrete env class.
+``drives`` branch without changing other instances. Validate these keys here; a
+misspelled hardware option should not be silently ignored. ``facts`` describes
+the env's action layout and semantics -- notably whether an arm takes an
+absolute pose or a delta -- so a device can adapt without importing a concrete
+env class.
 
 Override ``streamer()`` only for a device that also commands the robot on its
 own thread; the default returns nothing, which is what every device but
 ``gello_joint`` wants. See :ref:`When the Rate Is the Problem <teleop-rate>`.
-
-The builder creates every backend entry before it creates any streamer. A
-streamer may take over devices that it does not construct itself, so it can
-rely on all requested devices and bindings being available at that point.
+The builder creates every entry before it creates any streamer, so a streamer
+may take over devices it did not construct itself.
 
 Then list the registered name in the env's ``TELEOP`` tuple. This declaration
 states that the env can represent the device's action; it does not register the
-device again. The shared builder resolves the name through ``TeleopBackend`` and
-constructs the returned entry.
+device again.
 
 Retired Spellings
 -----------------
@@ -231,8 +266,8 @@ that takes effect, and the warning names what it replaced.
 Next
 ----
 
-- :doc:`Robot Composition <../concepts/robotics>`: the named robot paths targeted
-  by device bindings.
+- :doc:`Robot Composition <../concepts/robotics>`: the named robot paths a
+  device fills.
 - :doc:`Real-World Tasks and Environments <../concepts/realworld_envs>`: where teleop
   sits in the wrapper stack.
 - :doc:`Data Collection <data_collection>`: recording what an operator drove.

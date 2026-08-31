@@ -177,21 +177,21 @@ What You Do Not Need to Write
 Adding a Teleop Device
 ----------------------
 
-Adding a teleop device touches three layers: a part reads the hardware, a binding
-maps its readings to named robot action parts, and a registry entry pairs the
-two.
-
-The part belongs in ``rlinf/robotics/parts/teleop/devices.py`` and reads only the
-device hardware:
+A teleop device is one class in one module under
+``rlinf/robotics/parts/teleop/``. It answers three questions: how to reach the
+hardware, what the operator is doing, and what the robot should do about it.
 
 .. code-block:: python
 
-   class Pedal(TeleopPart):
+   @TeleopDevice.register("pedal")
+   class Pedal(TeleopDevice):
+       PRODUCES = {"end_effector": ActionKind.GRIPPER}
+
        def __init__(self, port: str) -> None:
            self._port = port
 
        def _open(self):
-           from .readers.pedal import PedalReader
+           from rlinf.robotics.parts.teleop.pedal import PedalReader
 
            return PedalReader(port=self._port)
 
@@ -202,21 +202,6 @@ device hardware:
        def get_observation(self):
            return {"pressed": np.asarray([self._device.is_pressed()])}
 
-``_open`` opens the hardware when the part connects and returns whatever speaks
-to it; that handle is ``self._device``. ``__init__`` only records the
-declaration, because declaration and construction may happen on different
-machines.
-
-The binding goes in ``rlinf/robotics/teleop/bindings.py``. ``PRODUCES`` maps each
-action part it fills to what the numbers *mean*, so a device offering a twist to
-a joint-space arm is refused rather than obeyed. ``action`` answers everything
-about one reading at once, as a ``TeleopAction``:
-
-.. code-block:: python
-
-   class PedalGripperBinding(TeleopBinding):
-       PRODUCES = {"end_effector": ActionKind.GRIPPER}
-
        def action(self, reading, context):
            pressed = bool(reading["pressed"])
            return TeleopAction(
@@ -224,46 +209,49 @@ about one reading at once, as a ``TeleopAction``:
                driving=pressed,
            )
 
-``driving`` is part of that one answer rather than a second call: a binding
-whose answer depends on state it just computed would otherwise have to leave
-that state behind, and nothing would enforce the order of the two calls.
+``_open`` reaches the hardware when the device connects and returns whatever
+speaks to it; that handle is ``self._device``. ``__init__`` only records the
+declaration, because declaration and connection may happen on different
+machines.
 
-Pair the device and binding in a ``TeleopBackend`` under
-``rlinf/envs/real/wrappers/teleop/backends.py``. Register the name that appears
-in the env config on that backend:
+``PRODUCES`` maps each action part the device fills to what its numbers *mean*,
+so a device offering a twist to a joint-space arm is refused rather than
+obeyed. ``action`` answers everything about one reading at once, as a
+``TeleopAction``. ``driving`` is part of that one answer rather than a second
+call: a device whose answer depends on state it just computed would otherwise
+have to leave that state behind, and nothing would enforce the order of the two
+calls.
+
+The name in ``register`` is the one the env config spells. Config becomes
+constructor arguments through ``from_config``, which by default passes the
+device's own options straight through, so the example above needs none. Override
+it to read a key from the wider env config, or to choose behaviour from the
+robot being driven:
 
 .. code-block:: python
 
-   @TeleopBackend.register("pedal")
-   class PedalBackend(TeleopBackend):
-       @classmethod
-       def entry(cls, cfg, options, facts):
-           del cfg, facts
-           unknown = set(options) - {"port", "drives"}
-           if unknown:
-               raise ValueError(f"Unsupported pedal options: {sorted(unknown)}")
-           port = options.get("port")
-           if port is None:
-               raise ValueError("teleop device 'pedal' requires a port")
-           return TeleopEntry(
-               Pedal(port=port),
-               PedalGripperBinding(),
-               drives=options.get("drives"),
-           )
+   @classmethod
+   def from_config(cls, cfg, options, facts):
+       port = options.get("port") or cfg.get("pedal_port")
+       if port is None:
+           raise ValueError("teleop device 'pedal' requires a port")
+       return TeleopEntry(cls(port=port), drives=options.get("drives"))
 
-``entry()`` validates this config item and returns the device, binding, and
-optional target branch as one ``TeleopEntry``. Then add ``pedal`` to the
-environment's ``TELEOP`` tuple to declare that the env can represent the
-device's action. This does not register the device a second time: the shared
-builder resolves ``pedal`` through ``TeleopBackend``. A robot without an
-``end_effector`` rejects the rig at build time.
+Finally add ``pedal`` to the environment's ``TELEOP`` tuple, which declares that
+the env can represent the device's action. That does not register it a second
+time: the shared builder resolves the name through ``TeleopDevice``. A robot
+without an ``end_effector`` rejects the rig at build time.
+
+A device that needs a second mapping of the same hardware -- joint targets
+rather than Cartesian ones, say -- subclasses the first and overrides
+``action``, as ``GelloJoint`` does with ``Gello``.
 
 Adding a Wrapper Instead
 ------------------------
 
 When the new behavior surrounds a rollout, add a wrapper. Put action replacement
 in ``teleop/`` and representation changes in ``transforms/``;
-rollout boundaries and scores belong in ``episode/``. A new teleop device is a
-part and a binding, as above, not a wrapper. For a new keyboard mode, subclass
+rollout boundaries and scores belong in ``episode/``. A new teleop device is one
+device class, as above, not a wrapper. For a new keyboard mode, subclass
 ``KeyboardSession``.
 :doc:`../concepts/realworld_envs` describes both extension points.

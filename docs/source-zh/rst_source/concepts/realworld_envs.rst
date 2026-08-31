@@ -105,21 +105,19 @@ wrapper 根据所承担的职责划分目录：
 
 遥操作代码按以下职责分层：
 
-- ``robotics/parts/teleop/readers/``：直接读取串口设备、HID 设备和头显。
-- ``robotics/parts/teleop/devices.py``：将 reader 封装为 ``TeleopPart``，并提供与机器人零部件一致的连接、观测和断开接口。
-- ``robotics/teleop/bindings.py``：声明设备读数对应哪些机器人动作，以及每项动作的语义。
-- ``real/wrappers/teleop/backends.py``：将配置名称注册到相应的设备与 binding 组合。
+- ``robotics/parts/teleop/<device>.py``：读取一台串口设备、HID 设备或头显，并声明其读数对应哪些机器人动作及各自的语义。它本身是 ``RobotPart``，因此拥有一致的连接、观测和断开接口，也可以放置到其他节点。
+- ``robotics/parts/teleop/base.py``：保存 registry 和各设备的公共逻辑；``group.py`` 将多台设备的动作合并为一个动作。
 - ``real/wrappers/teleop/builder.py``：解析配置中的设备名称；``composed.py`` 再根据零部件名称，将动作写入 env 声明的扁平 action vector。
 
-排查线缆或设备权限时，可单独运行 reader，无需启动机器人。同一台物理设备也可以通过不同的 binding 接入另一种动作空间。backend registry 保留在 env 层，是因为名称解析同时依赖 env 配置和该 env 声明的动作语义；如果将其放入 robotics 层，硬件 reader 将反向依赖 Gymnasium 配置。
+设备层不依赖 Gymnasium，因此排查线缆或设备权限时可以单独运行设备，无需启动机器人。将具名动作写入某个 env 的扁平 action vector 仍由 env 层负责，因为只有它知道该布局。
 
 连接机器人前，可使用以下命令检查主臂接线：
 
 .. code-block:: bash
 
-   python -m rlinf.robotics.parts.teleop.readers.gello --port /dev/ttyUSB0
+   python -m rlinf.robotics.parts.teleop.gello --port /dev/ttyUSB0
 
-遥操作设备本身也是 :class:`~rlinf.robotics.parts.base.RobotPart`。:class:`~rlinf.robotics.parts.teleop.devices.TeleopPart` 直接继承该类，因此沿用标准连接生命周期。构造设备时不会访问硬件；wrapper stack 启动后，``TeleopGroup.connect()`` 才会依次打开设备。
+遥操作设备本身也是 :class:`~rlinf.robotics.parts.base.RobotPart`。:class:`~rlinf.robotics.parts.teleop.base.TeleopPart` 直接继承该类，因此沿用标准连接生命周期。构造设备时不会访问硬件；wrapper stack 启动后，``TeleopGroup.connect()`` 才会依次打开设备。
 
 遥操作设备在类型上继承 ``RobotPart``，但不会加入 ``Robot`` 的组合结构。主臂读取操作者输入，而非机器人状态，因此 policy 不会观测该设备。设备控制哪些机器人零部件，由环境侧的 binding 决定。这个边界也影响 placement：内置遥操作构建器在 env 进程中打开设备，不会经过 ``Robot.connect()``。手动部署独立设备前，请先阅读 :doc:`遥操作指南 <../guides/teleoperation>`。
 
@@ -153,11 +151,11 @@ wrapper 根据所承担的职责划分目录：
    * - ``real/<robot>/``
      - 每个任务对应一个模块；``base.py`` 保存公共逻辑，``__init__.py`` 保存 ``TASKS`` 映射。
    * - ``robotics/parts/teleop/``
-     - 操作者设备及其 ``RobotPart`` 接口；底层 ``readers/`` 不依赖 Gymnasium。
-   * - ``robotics/teleop/``
-     - binding、动作含义和 ``TeleopGroup`` 组合。
+     - 每个操作者设备对应一个模块；``base.py`` 保存公共逻辑，``group.py`` 将多个设备合成一个动作。
+   * - ``robotics/actions.py``
+     - 动作向量中每一段的语义，env 与设备共用。
    * - ``real/wrappers/teleop/``
-     - ``TeleopBackend`` registry、设备选择、policy 与操作者动作仲裁、扁平动作布局，以及可选的直接推送路径。
+     - 设备选择、policy 与操作者动作仲裁、扁平动作布局，以及可选的直接推送路径。
    * - ``real/wrappers/transforms/``
      - 相对坐标系、四元数转欧拉角、夹爪维度裁剪。
    * - ``real/wrappers/episode/``

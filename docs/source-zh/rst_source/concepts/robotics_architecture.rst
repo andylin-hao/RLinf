@@ -175,7 +175,7 @@ robotics 代码中有两种 registry，它们所命名的对象不同：
 
 注册操作会关联 robot class、config class、discovery class 和 builder，但不会自动将 ``RobotConfig`` 实例转换为 builder 参数。``Robot.of_type()`` 和 ``build_robot()`` 会将接收到的关键字参数直接传给 ``build()``。因此，机器人的 builder 应提供明确的参数签名；如果 env 从 ``RobotInfo`` 获取硬件配置，应在一处显式完成参数转换。
 
-env 层也使用相同的注册风格，但遥操作使用独立的 ``TeleopBackend`` registry。一个遥操作名称对应设备及其 binding，不代表机器人零部件。该 registry 位于 ``rlinf/envs/real/wrappers/teleop``，避免 Gymnasium 配置进入 robotics 层。
+遥操作使用同样的注册风格，但拥有独立的 registry。``TeleopDevice.register()`` 注册的是操作者设备而非机器人零部件，如何把一项配置变成设备实例，则由设备自身的 ``from_config()`` 决定。该 registry 与设备位于同一目录 ``robotics/parts/teleop``，因此设备可以独立读取，也不依赖 Gymnasium。
 
 将共享连接中的零部件加入机器人
 ------------------------------

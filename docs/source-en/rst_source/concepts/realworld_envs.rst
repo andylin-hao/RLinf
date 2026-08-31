@@ -147,31 +147,28 @@ Keep Device I/O Separate from Action Meaning
 
 Teleoperation crosses several layers, but each layer has one job:
 
-- ``robotics/parts/teleop/readers/`` talks to serial devices, HID devices, and
-  headsets.
-- ``robotics/parts/teleop/devices.py`` presents each reader as a ``TeleopPart``
-  with the normal connect, observe, and disconnect lifecycle.
-- ``robotics/teleop/bindings.py`` explains what a reading means for named robot
-  action parts.
-- ``real/wrappers/teleop/backends.py`` registers each config name with the
-  device-and-binding pairing it constructs for an env.
+- ``robotics/parts/teleop/<device>.py`` talks to one serial device, HID device,
+  or headset, and says what its readings mean for named robot action parts. It
+  is a ``RobotPart``, so it has the normal connect, observe, and disconnect
+  lifecycle and can be placed on another node.
+- ``robotics/parts/teleop/base.py`` holds the registry and everything the
+  devices share; ``group.py`` merges several devices into one action.
 - ``real/wrappers/teleop/builder.py`` resolves the requested names, while
   ``composed.py`` writes their named actions into the env's flat vector.
 
-Keeping the layers separate lets you diagnose a cable before involving a robot,
-and lets one physical device acquire a different meaning through another
-binding. The backend registry remains in the env layer because resolving a name
-requires both env config and the action semantics that env declares. Moving it
-into robotics would make hardware readers depend on Gymnasium configuration.
+Keeping the device layer free of Gymnasium lets you diagnose a cable before
+involving a robot. The env layer stays responsible for turning named actions
+into the flat vector a particular env accepts, because only it knows that
+layout.
 
 You can therefore check a leader arm's wiring without involving a robot:
 
 .. code-block:: bash
 
-   python -m rlinf.robotics.parts.teleop.readers.gello --port /dev/ttyUSB0
+   python -m rlinf.robotics.parts.teleop.gello --port /dev/ttyUSB0
 
 A teleop device *is* a :class:`~rlinf.robotics.parts.base.RobotPart` --
-:class:`~rlinf.robotics.parts.teleop.devices.TeleopPart` inherits it -- which
+:class:`~rlinf.robotics.parts.teleop.base.TeleopPart` inherits it -- which
 gives the device the standard connection lifecycle. Construction remains inert;
 ``TeleopGroup.connect()`` opens each device when the wrapper stack starts.
 
@@ -218,13 +215,13 @@ Where the Code Lives
      - One module per task, plus ``base.py`` with the machinery they share and
        ``__init__.py`` with the ``TASKS`` table.
    * - ``robotics/parts/teleop/``
-     - Operator devices as parts, over low-level readers that import no
-       Gymnasium.
-   * - ``robotics/teleop/``
-     - Bindings, action meanings, and ``TeleopGroup`` composition.
+     - One module per operator device, plus ``base.py`` with what they share
+       and ``group.py`` composing several into one action.
+   * - ``robotics/actions.py``
+     - What a slot in an action vector means, used by envs and devices alike.
    * - ``real/wrappers/teleop/``
-     - The ``TeleopBackend`` registry, device selection, policy/operator
-       arbitration, flat action layout, and the optional direct-streaming path.
+     - Device selection, policy/operator arbitration, flat action layout, and
+       the optional direct-streaming path.
    * - ``real/wrappers/transforms/``
      - Relative frames, quaternion-to-Euler, gripper narrowing.
    * - ``real/wrappers/episode/``

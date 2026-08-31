@@ -262,12 +262,12 @@ receive directly to ``build()``. A registered robot should therefore give its
 builder an explicit, documented signature, and the environment that receives a
 ``RobotInfo`` should perform any required translation in one visible place.
 
-The environment layer uses the same registration style for teleoperation, but
-keeps a separate ``TeleopBackend`` registry. A teleop name selects a device and
-the binding that gives its reading meaning for an environment; it does not
-select a robot component. Keeping this registry under
-``rlinf/envs/real/wrappers/teleop`` prevents Gymnasium configuration from
-leaking into the robotics package.
+Teleoperation uses the same registration style in its own registry.
+``TeleopDevice.register()`` names an operator device rather than a robot
+component, and the device itself decides how a config entry becomes an instance
+through ``from_config()``. The registry lives in ``robotics/parts/teleop``
+beside the devices, so a device stays readable on its own and needs no
+Gymnasium.
 
 Connect a Shared Hardware Session to the Robot Tree
 ---------------------------------------------------

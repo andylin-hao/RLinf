@@ -146,18 +146,19 @@ env 类首先指定前一步定义的配置类型。对于多数任务，仅需�
 新增遥操作设备
 --------------
 
-接入遥操作设备涉及三部分：读取硬件的 ``TeleopPart``、将读数映射为机器人动作的 binding，以及将两者组合起来的 ``TeleopBackend``。
-
-``TeleopPart`` 位于 ``rlinf/robotics/parts/teleop/devices.py``，只负责读取设备硬件：
+一个遥操作设备就是 ``rlinf/robotics/parts/teleop/`` 下的一个类。它回答三个问题：如何连接硬件、操作者正在做什么、机器人应当如何响应。
 
 .. code-block:: python
 
-   class Pedal(TeleopPart):
+   @TeleopDevice.register("pedal")
+   class Pedal(TeleopDevice):
+       PRODUCES = {"end_effector": ActionKind.GRIPPER}
+
        def __init__(self, port: str) -> None:
            self._port = port
 
        def _open(self):
-           from .readers.pedal import PedalReader
+           from rlinf.robotics.parts.teleop.pedal import PedalReader
 
            return PedalReader(port=self._port)
 
@@ -168,15 +169,6 @@ env 类首先指定前一步定义的配置类型。对于多数任务，仅需�
        def get_observation(self):
            return {"pressed": np.asarray([self._device.is_pressed()])}
 
-``__init__`` 只保存端口等构造参数；``_open`` 在连接阶段打开硬件，返回值保存在 ``self._device``。因此，设备可以在当前进程中声明，再由目标节点创建。
-
-binding 位于 ``rlinf/robotics/teleop/bindings.py``。``PRODUCES`` 同时声明目标零部件的名称和动作语义，因此 twist 不会被错误地连接到关节角动作。``action`` 返回一个 ``TeleopAction``：
-
-.. code-block:: python
-
-   class PedalGripperBinding(TeleopBinding):
-       PRODUCES = {"end_effector": ActionKind.GRIPPER}
-
        def action(self, reading, context):
            pressed = bool(reading["pressed"])
            return TeleopAction(
@@ -184,32 +176,26 @@ binding 位于 ``rlinf/robotics/teleop/bindings.py``。``PRODUCES`` 同时声明
                driving=pressed,
            )
 
-``driving`` 与动作包含在同一个返回值中，从而避免为判断接管状态而再次读取设备或保存中间状态。
+``__init__`` 只保存端口等构造参数；``_open`` 在连接阶段打开硬件，返回值保存在 ``self._device``。因此设备可以在当前进程声明，再由目标节点创建。
 
-最后，在 ``rlinf/envs/real/wrappers/teleop/backends.py`` 中实现 ``TeleopBackend``，将设备与 binding 组合，并注册配置中使用的名称：
+``PRODUCES`` 同时声明目标零部件的名称和动作语义，因此 twist 不会被错误地接到关节角动作上。``action`` 用一个 ``TeleopAction`` 一次性给出全部结果：``driving`` 与动作在同一个返回值中，避免为判断接管状态而再次读取设备或保存中间状态。
+
+``register`` 中的名称就是配置里书写的名称。配置到构造参数的转换由 ``from_config`` 完成，其默认实现直接把设备自身的选项传给构造函数，因此上面的例子无需编写这一部分。若要读取更外层的 env 配置，或根据被驱动的机器人调整行为，可以覆盖它：
 
 .. code-block:: python
 
-   @TeleopBackend.register("pedal")
-   class PedalBackend(TeleopBackend):
-       @classmethod
-       def entry(cls, cfg, options, facts):
-           del cfg, facts
-           unknown = set(options) - {"port", "drives"}
-           if unknown:
-               raise ValueError(f"Unsupported pedal options: {sorted(unknown)}")
-           port = options.get("port")
-           if port is None:
-               raise ValueError("teleop device 'pedal' requires a port")
-           return TeleopEntry(
-               Pedal(port=port),
-               PedalGripperBinding(),
-               drives=options.get("drives"),
-           )
+   @classmethod
+   def from_config(cls, cfg, options, facts):
+       port = options.get("port") or cfg.get("pedal_port")
+       if port is None:
+           raise ValueError("teleop device 'pedal' requires a port")
+       return TeleopEntry(cls(port=port), drives=options.get("drives"))
 
-``entry()`` 负责校验当前配置项，并返回包含设备、binding 和可选目标分支的 ``TeleopEntry``。随后，将 ``pedal`` 加入对应 env 的 ``TELEOP`` 元组，声明该 env 可以表示这种设备产生的动作。这一步不会重复注册设备；公共 builder 会通过 ``TeleopBackend`` 查找 ``pedal``。如果机器人不包含 ``end_effector``，系统会在构建阶段报错。
+最后把 ``pedal`` 加入对应 env 的 ``TELEOP`` 元组，声明该 env 能够表示这种设备产生的动作。这一步不会重复注册设备，公共 builder 会通过 ``TeleopDevice`` 查找该名称。如果机器人不包含 ``end_effector``，系统会在构建阶段报错。
+
+如果同一套硬件需要第二种映射方式，例如输出关节角而非笛卡尔量，继承已有设备并覆盖 ``action`` 即可，``GelloJoint`` 与 ``Gello`` 就是这样的关系。
 
 新增 wrapper
 ------------
 
-如果新逻辑改变的是 rollout 周边行为，应新增 wrapper，而不是任务：动作接管放入 ``teleop/``，表示转换放入 ``transforms/``，rollout 起止和评分放入 ``episode/``。遥操作设备仍通过上述 ``TeleopPart`` 与 binding 接入；新的键盘模式应继承 ``KeyboardSession``。各目录的职责见 :doc:`../concepts/realworld_envs`。
+如果新逻辑改变的是 rollout 周边行为，应新增 wrapper，而不是任务：动作接管放入 ``teleop/``，表示转换放入 ``transforms/``，rollout 起止和评分放入 ``episode/``。遥操作设备仍按上述方式实现为一个设备类；新的键盘模式应继承 ``KeyboardSession``。各目录的职责见 :doc:`../concepts/realworld_envs`。
