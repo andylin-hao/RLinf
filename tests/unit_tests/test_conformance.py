@@ -75,6 +75,13 @@ SHIPPED = {
         "worker_rank": 0,
     },
     "DOSW1": {"node_rank": 0},
+    "SO101": {
+        "port": "/dev/mock-so101",
+        "calibration_id": "bench",
+        "node_rank": 0,
+        "env_idx": 0,
+        "worker_rank": 0,
+    },
 }
 
 

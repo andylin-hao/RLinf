@@ -23,7 +23,7 @@ from typing import Any
 
 import numpy as np
 
-from ._fakes import module
+from ._fakes import module, package
 
 #: Reachable, nonzero arm state used by the fake SDKs.
 HOME_JOINTS = (0.0, -0.4, 0.0, -2.0, 0.0, 1.6, 0.8)
@@ -309,8 +309,88 @@ def ros() -> dict[str, types.ModuleType]:
     return made
 
 
+def lerobot() -> dict[str, types.ModuleType]:
+    """Fake lerobot package exposing an SO-101 follower.
+
+    The follower holds one position per motor in lerobot's own units --
+    degrees for the arm joints, ``0..100`` for the gripper -- so a test can
+    assert that the driver converts rather than passes values through.
+    """
+
+    class FakeSO101FollowerConfig:
+        def __init__(
+            self,
+            port: str,
+            id: Any = None,
+            cameras: Any = None,
+            max_relative_target: Any = None,
+            use_degrees: bool = False,
+            **extra: Any,
+        ) -> None:
+            self.port = port
+            self.id = id
+            self.cameras = dict(cameras or {})
+            self.max_relative_target = max_relative_target
+            self.use_degrees = use_degrees
+            self.extra = extra
+
+    class FakeSO101Follower:
+        #: Set false to model an arm whose calibration file is missing.
+        calibrated = True
+
+        def __init__(self, config: Any) -> None:
+            self.config = config
+            self.is_connected = False
+            self.is_calibrated = type(self).calibrated
+            self.calibrate_calls = 0
+            self.sent: list[dict[str, float]] = []
+            self.positions = {
+                "shoulder_pan.pos": 0.0,
+                "shoulder_lift.pos": 0.0,
+                "elbow_flex.pos": 0.0,
+                "wrist_flex.pos": 0.0,
+                "wrist_roll.pos": 0.0,
+                "gripper.pos": 0.0,
+            }
+
+        def connect(self, calibrate: bool = True) -> None:
+            self.is_connected = True
+            if calibrate:
+                self.calibrate()
+
+        def calibrate(self) -> None:
+            # The real one blocks on input(); count calls so a test can show
+            # the driver never reaches it.
+            self.calibrate_calls += 1
+
+        def disconnect(self) -> None:
+            self.is_connected = False
+
+        def get_observation(self) -> dict[str, float]:
+            return dict(self.positions)
+
+        def send_action(self, action: dict[str, float]) -> dict[str, float]:
+            self.sent.append(dict(action))
+            self.positions.update(action)
+            return dict(action)
+
+    follower = module(
+        "lerobot.robots.so101_follower",
+        SO101Follower=FakeSO101Follower,
+        SO101FollowerConfig=FakeSO101FollowerConfig,
+    )
+    made = {
+        parent.__name__: parent for parent in package("lerobot.robots.so101_follower")
+    }
+    made["lerobot.robots.so101_follower"] = follower
+    made["lerobot.robots"].so101_follower = follower
+    made["lerobot"].robots = made["lerobot.robots"]
+    return made
+
+
 def modules(**_: Any) -> dict[str, types.ModuleType]:
     """Return fake arm SDKs keyed by import name."""
     made = {"franky": franky()}
     made.update(ros())
+    made.update(lerobot())
     return made

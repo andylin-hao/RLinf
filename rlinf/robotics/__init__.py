@@ -65,6 +65,8 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
         FrankaRobot,
         GimArmConfig,
         GimArmRobot,
+        SO101Config,
+        SO101Robot,
         Turtle2Config,
         Turtle2Robot,
     )
@@ -96,6 +98,8 @@ _MODULE_GROUPS: dict[str, tuple[str, ...]] = {
         "FrankaRobot",
         "GimArmConfig",
         "GimArmRobot",
+        "SO101Config",
+        "SO101Robot",
         "Turtle2Config",
         "Turtle2Robot",
     ),

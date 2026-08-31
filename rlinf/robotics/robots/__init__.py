@@ -21,6 +21,7 @@ from .dosw1 import DOSW1Robot, DOSW1RobotConfig
 from .dual_franka import DualFrankaConfig, DualFrankaRobot
 from .franka import FrankaConfig, FrankaRobot
 from .gim_arm import GimArmConfig, GimArmRobot
+from .so101 import SO101Config, SO101Robot
 from .turtle2 import Turtle2Config, Turtle2Robot
 
 __all__ = [
@@ -32,6 +33,8 @@ __all__ = [
     "FrankaRobot",
     "GimArmConfig",
     "GimArmRobot",
+    "SO101Config",
+    "SO101Robot",
     "Turtle2Config",
     "Turtle2Robot",
 ]

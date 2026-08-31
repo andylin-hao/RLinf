@@ -4001,3 +4001,104 @@ def test_an_arm_that_cannot_reset_its_joints_says_so():
     with pytest.raises(NotImplementedError, match="cannot reset its joints"):
         arm.reset_joint([0.0] * 7)
     arm.disconnect()
+
+
+def test_so101_reports_joints_in_radians_and_the_gripper_as_a_fraction():
+    """lerobot speaks degrees and 0..100; every other arm here speaks radians."""
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        from rlinf.robotics.parts.arms.so101 import SO101Arm
+
+        arm = SO101Arm("/dev/mock-so101", calibration_id="bench")
+        arm.connect()
+        arm._robot.positions.update(
+            {"shoulder_pan.pos": 90.0, "elbow_flex.pos": -45.0, "gripper.pos": 25.0}
+        )
+
+        state = arm.get_state()
+        assert state.arm_joint_position[0] == pytest.approx(np.pi / 2)
+        assert state.arm_joint_position[2] == pytest.approx(-np.pi / 4)
+        assert state.gripper_position[0] == pytest.approx(0.25)
+
+        # The arm reports joints only: it has no pose, force, or Jacobian.
+        assert set(arm.observation_features) == {"arm_joint_position"}
+        assert set(arm.get_observation()) == {"arm_joint_position"}
+
+        arm.disconnect()
+
+
+def test_so101_commands_are_converted_back_to_degrees():
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        from rlinf.robotics.parts.arms.so101 import SO101Arm
+
+        arm = SO101Arm("/dev/mock-so101")
+        arm.connect()
+
+        sent = arm.send_action({"joint_position": [np.pi / 2, 0.0, 0.0, 0.0, 0.0]})
+
+        wire = arm._robot.sent[-1]
+        assert wire["shoulder_pan.pos"] == pytest.approx(90.0)
+        # send_action reports what actually reached the arm, in radians.
+        assert sent["joint_position"][0] == pytest.approx(np.pi / 2)
+
+        arm.disconnect()
+
+
+def test_so101_gripper_rides_the_arm_connection():
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        from rlinf.robotics.parts.arms.so101 import SO101Arm
+
+        arm = SO101Arm("/dev/mock-so101")
+        arm.connect()
+
+        gripper = arm.children["end_effector"]
+        # It borrows the arm's connection rather than opening its own.
+        assert gripper.owner is arm
+
+        # Continuous, not binary: a partial opening reaches the servo.
+        assert gripper.control_mode == "continuous"
+        gripper.command(np.array([0.4]))
+        assert arm._robot.sent[-1]["gripper.pos"] == pytest.approx(40.0)
+
+        arm._robot.positions["gripper.pos"] = 60.0
+        assert gripper.get_state()[0] == pytest.approx(0.6)
+
+        arm.disconnect()
+
+
+def test_so101_never_prompts_for_calibration_and_refuses_an_uncalibrated_arm():
+    """Calibrating asks the operator to move the arm, so a worker cannot."""
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks() as made:
+        from rlinf.robotics.parts.arms.so101 import SO101Arm
+
+        follower = made["lerobot.robots.so101_follower"].SO101Follower
+
+        arm = SO101Arm("/dev/mock-so101", calibration_id="bench")
+        arm.connect()
+        # lerobot's calibrate() blocks on input(); it must never be reached.
+        assert arm._robot.calibrate_calls == 0
+        arm.disconnect()
+
+        follower.calibrated = False
+        try:
+            uncalibrated = SO101Arm("/dev/mock-so101", calibration_id="missing")
+            with pytest.raises(RuntimeError, match="not calibrated"):
+                uncalibrated.connect()
+            assert not uncalibrated.is_connected
+        finally:
+            follower.calibrated = True
+
+
+def test_so101_takes_no_separately_wired_end_effector():
+    """The gripper is a servo on the arm's own bus, not a fitted device."""
+    from rlinf.robotics.parts.arms.so101 import SO101Arm
+
+    with pytest.raises(TypeError, match="gripper_connection"):
+        SO101Arm.declare("/dev/mock-so101", gripper_connection="/dev/ttyUSB0")
