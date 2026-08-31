@@ -1975,3 +1975,170 @@ def test_direct_stream_gello_opens_one_reader_per_port():
             sys.modules.pop("rlinf.robotics.parts.teleop.readers.gello_joint", None)
         else:
             sys.modules["rlinf.robotics.parts.teleop.readers.gello_joint"] = saved
+
+
+def _so101_env(**overrides):
+    """Build an SO-101 reach env against the faked lerobot SDK."""
+    from rlinf.envs.real.so101 import SO101ReachEnv
+
+    settings = {
+        "port": "/dev/mock-so101",
+        "calibration_id": "bench",
+        "target_joint_qpos": [0.0] * 5,
+        # Do not pace the test at the real 10 Hz control rate.
+        "step_frequency": 1000.0,
+        # Headless: there is no display to show frames on.
+        "enable_camera_player": False,
+    }
+    settings.update(overrides)
+    return SO101ReachEnv(settings, env_idx=0)
+
+
+def test_so101_env_runs_a_whole_episode_against_a_faked_arm():
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        env = _so101_env(max_num_steps=3)
+        try:
+            observation, _ = env.reset()
+            assert set(observation["state"]) == {
+                "arm_joint_position",
+                "gripper_position",
+            }
+            assert observation["state"]["arm_joint_position"].shape == (5,)
+
+            # Five joints plus one gripper opening, which is 0..1 not -1..1.
+            assert env.action_space.shape == (6,)
+            assert env.action_space.low[5] == pytest.approx(0.0)
+            assert env.action_space.high[5] == pytest.approx(1.0)
+            assert [(part.name, part.width) for part in env.action_parts()] == [
+                ("arm", 5),
+                ("end_effector", 1),
+            ]
+
+            for _ in range(3):
+                _, _, _, truncated, _ = env.step(np.zeros(6, dtype=np.float32))
+            assert truncated, "the episode should truncate at max_num_steps"
+        finally:
+            env.close()
+
+
+def test_so101_env_commands_reach_the_arm_in_degrees():
+    """The env speaks radians; only the driver may speak lerobot's units."""
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        env = _so101_env()
+        try:
+            env.reset()
+            env.step(np.array([np.pi / 2, 0, 0, 0, 0, 0.25], dtype=np.float32))
+
+            follower = env._arm._robot
+            joints = follower.sent[-2]
+            assert joints["shoulder_pan.pos"] == pytest.approx(90.0)
+            assert follower.sent[-1]["gripper.pos"] == pytest.approx(25.0)
+        finally:
+            env.close()
+
+
+def test_so101_env_scores_the_distance_to_the_target_configuration():
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        env = _so101_env(target_joint_qpos=[0.0] * 5, reward_threshold=0.05)
+        try:
+            env.reset()
+            _, reward, terminated, _, _ = env.step(np.zeros(6, dtype=np.float32))
+            assert reward == pytest.approx(1.0)
+            assert terminated
+
+            # The fake arm holds whatever was last written, so a command away
+            # from the target is measured as a miss on the next read.
+            _, reward, terminated, _, _ = env.step(
+                np.array([1.0, 0, 0, 0, 0, 0.0], dtype=np.float32)
+            )
+            assert reward == pytest.approx(0.0)
+            assert not terminated
+        finally:
+            env.close()
+
+
+def test_so101_env_clips_an_action_to_the_joint_limits():
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        env = _so101_env(joint_limit_low=[-0.5] * 5, joint_limit_high=[0.5] * 5)
+        try:
+            env.reset()
+            env.step(np.array([10.0, -10.0, 0, 0, 0, 2.0], dtype=np.float32))
+
+            follower = env._arm._robot
+            joints = follower.sent[-2]
+            assert joints["shoulder_pan.pos"] == pytest.approx(np.rad2deg(0.5))
+            assert joints["shoulder_lift.pos"] == pytest.approx(np.rad2deg(-0.5))
+            # The gripper is clipped into 0..1 before it is scaled.
+            assert follower.sent[-1]["gripper.pos"] == pytest.approx(100.0)
+        finally:
+            env.close()
+
+
+def test_so101_env_runs_without_hardware_when_dummy():
+    """A dummy env samples its own space, so it needs no lerobot at all."""
+    from rlinf.envs.real.so101 import SO101ReachEnv
+
+    env = SO101ReachEnv({"is_dummy": True, "target_joint_qpos": [0.0] * 5})
+    try:
+        observation, _ = env.reset()
+        assert observation in env.observation_space
+        assert env.robot is None
+        env.step(np.zeros(6, dtype=np.float32))
+    finally:
+        env.close()
+
+
+def test_so101_reach_refuses_a_target_that_is_not_five_joints():
+    from rlinf.envs.real.so101 import SO101ReachEnv
+
+    with pytest.raises(ValueError, match="5 arm joints"):
+        SO101ReachEnv({"is_dummy": True, "target_joint_qpos": [0.0] * 6})
+
+
+def test_so101_task_is_registered_with_gymnasium():
+    import gymnasium as gym
+
+    import rlinf.envs.real as real
+
+    real._load_all()
+    assert "SO101ReachEnv-v1" in gym.registry
+
+
+def test_so101_env_resizes_camera_frames_to_the_declared_shape():
+    """A camera delivers its native resolution; the space fixes one size."""
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        env = _so101_env(camera_serials=["MOCK0001"], camera_type="realsense")
+        try:
+            observation, _ = env.reset()
+            frame = observation["frames"]["wrist_1"]
+            assert frame.shape == (128, 128, 3)
+            assert frame.dtype == np.uint8
+            # An observation outside its own space fails Gymnasium's checker.
+            assert observation in env.observation_space
+        finally:
+            env.close()
+
+
+def test_so101_env_omits_frames_entirely_when_no_camera_is_configured():
+    """Gymnasium rejects an empty Dict space, so the key is dropped instead."""
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        env = _so101_env()
+        try:
+            observation, _ = env.reset()
+            assert "frames" not in env.observation_space.spaces
+            assert "frames" not in observation
+            assert observation in env.observation_space
+        finally:
+            env.close()

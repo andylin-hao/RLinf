@@ -47,6 +47,13 @@ _EXPORTS: dict[str, str] = {
             "GimArmRobotConfig",
             "GimArmRobotState",
         ),
+        ".so101": (
+            "SO101Env",
+            "SO101ReachConfig",
+            "SO101ReachEnv",
+            "SO101RobotConfig",
+            "SO101RobotState",
+        ),
         ".xsquare": (
             "ButtonEnv",
             "Turtle2Env",
@@ -70,7 +77,14 @@ def _load_all() -> None:
     if _loaded:
         return
     _loaded = True
-    for module in (".dosw1", ".franka", ".gim_arm", ".xsquare", ".task_env"):
+    for module in (
+        ".dosw1",
+        ".franka",
+        ".gim_arm",
+        ".so101",
+        ".xsquare",
+        ".task_env",
+    ):
         importlib.import_module(module, __name__)
     env_module = importlib.import_module(".env", __name__)
     env_module.RealWorldEnv.realworld_setup()
