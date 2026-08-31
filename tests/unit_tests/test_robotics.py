@@ -2356,6 +2356,132 @@ def test_holding_the_current_pose_leaves_the_gripper_to_the_policy():
     assert set(parts) == {"arm"}
 
 
+def _pico_frame(position, grip=0.0, buttons=None, headset=None):
+    """One publisher frame, in the schema the shipped PICO configs describe."""
+    import json
+
+    return json.dumps(
+        {
+            "headset_pose": headset or [0.0, 1.5, 0.0, 0.0, 0.0, 0.0, 1.0],
+            "right_controller": {
+                "position": list(position),
+                "orientation": [0.0, 0.0, 0.0, 1.0],
+                "grip": grip,
+                "trigger": 0.0,
+            },
+            "buttons": buttons or {},
+        }
+    )
+
+
+def _stream_until(zmq, device, packet, wanted, tries=80):
+    """Publish one frame repeatedly until the reading reflects it.
+
+    The transport drops readings older than ``max_stale_s``, so a single frame
+    is not enough; a real publisher streams continuously.
+    """
+    import time
+
+    for _ in range(tries):
+        zmq.packets.append(packet)
+        time.sleep(0.004)
+        reading = device.get_observation()
+        if wanted(reading):
+            return reading
+    return device.get_observation()
+
+
+def test_the_pico_transport_links_calibrates_and_tracks_motion():
+    """Drive the ZMQ transport for real, rather than only its mapping.
+
+    The device's action mapping was covered, but nothing had ever opened the
+    socket, parsed a publisher frame, or exercised the calibration gate that
+    stands between a linked headset and a moving robot.
+    """
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks() as made:
+        from rlinf.robotics.parts.teleop.pico import PicoTcp
+        from rlinf.robotics.parts.transports import pico as transport
+
+        # The transport binds ``zmq`` as a module global at import time, so it
+        # keeps whichever fake was installed when it was first imported. Read
+        # it back from there rather than from ``made``, or this test only
+        # passes when it runs first.
+        zmq = transport.zmq
+        pico = PicoTcp(gripper=True, side=0, hand="right", zmq_addr="tcp://x:1")
+        pico.connect()
+        try:
+            socket = zmq.sockets[-1]
+            assert socket.address == "tcp://x:1"
+            assert socket.hwm == 10, "a stale-frame backlog would lag the operator"
+
+            # A headset that is linked but reporting garbage must not
+            # calibrate, and must not let a squeezed grip drive the robot.
+            broken = _pico_frame([0, 0, 0], grip=1.0, headset=[0.0] * 7)
+            reading = _stream_until(zmq, pico, broken, lambda r: r["ready"])
+            assert reading["ready"], "the link is up"
+            assert not reading["calibrated"], "a zero quaternion is not a pose"
+            assert not reading["held"], "uncalibrated must not drive"
+
+            # A valid headset pose calibrates on its own at start-up.
+            reading = _stream_until(
+                zmq, pico, _pico_frame([0, 0, 0]), lambda r: r["calibrated"]
+            )
+            assert reading["calibrated"]
+
+            # Grip is what hands control over.
+            held = _pico_frame([0, 0, 0], grip=1.0)
+            reading = _stream_until(zmq, pico, held, lambda r: r["held"])
+            assert reading["held"]
+            assert reading["control_value"] == pytest.approx(1.0)
+
+            # 10 cm along the controller's -Z is 10 cm along the robot's +X.
+            moved = _pico_frame([0, 0, -0.10], grip=1.0)
+            reading = _stream_until(
+                zmq,
+                pico,
+                moved,
+                lambda r: float(np.linalg.norm(r["position_delta"])) > 1e-6,
+            )
+            assert reading["position_delta"] == pytest.approx([0.1, 0.0, 0.0], abs=1e-6)
+
+            released = _pico_frame([0, 0, -0.10], grip=0.0)
+            reading = _stream_until(zmq, pico, released, lambda r: not r["held"])
+            assert not reading["held"]
+        finally:
+            pico.disconnect()
+
+        assert socket.closed, "the subscriber socket outlived the device"
+
+
+def test_a_stale_pico_link_stops_driving_the_robot():
+    """No frames means no motion, not the last motion repeated forever."""
+    import time
+
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks() as made:
+        from rlinf.robotics.parts.teleop.pico import PicoTcp
+        from rlinf.robotics.parts.transports import pico as transport
+
+        zmq = transport.zmq
+        pico = PicoTcp(gripper=True, side=0, hand="right", zmq_addr="tcp://x:1")
+        pico.connect()
+        try:
+            held = _pico_frame([0, 0, 0], grip=1.0)
+            assert _stream_until(zmq, pico, held, lambda r: r["held"])["held"]
+
+            # Publisher goes quiet for longer than the transport tolerates.
+            time.sleep(pico._device.max_stale_s + 0.05)
+            reading = pico.get_observation()
+
+            assert reading["stale"] is True
+            assert not reading["held"]
+        finally:
+            pico.disconnect()
+
+
 def test_pico_builds_the_variant_the_arm_can_accept():
     """One config name, two meanings; the arm's declared kind picks which.
 

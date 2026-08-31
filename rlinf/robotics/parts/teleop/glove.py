@@ -35,7 +35,6 @@ class Glove(TeleopDevice):
         right_port: Serial port of the right glove.
         frequency: Polling rate in Hz.
         config_file: Optional calibration file.
-        hold: Whether the hand keeps the last commanded pose while idle.
     """
 
     PRODUCES = {"hand": ActionKind.HAND}
@@ -50,13 +49,11 @@ class Glove(TeleopDevice):
         right_port: Optional[str] = None,
         frequency: int = 60,
         config_file: Optional[str] = None,
-        hold: bool = True,
     ) -> None:
         self._left_port = left_port
         self._right_port = right_port
         self._frequency = frequency
         self._config_file = config_file
-        self.hold_pose = hold
         self._baseline: Optional[np.ndarray] = None
         self._commanded = np.zeros(6, dtype=np.float64)
         self._base = np.zeros(6, dtype=np.float64)

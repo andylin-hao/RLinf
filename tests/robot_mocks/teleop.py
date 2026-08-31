@@ -135,9 +135,15 @@ def vr() -> types.ModuleType:
     class Socket:
         def __init__(self, *_a, **_k):
             self.subscribed = []
+            self.address = None
+            self.hwm = None
+            self.closed = False
 
         def connect(self, address):
             self.address = address
+
+        def set_hwm(self, value):
+            self.hwm = value
 
         def setsockopt_string(self, *_a, **_k):
             return None
@@ -145,23 +151,35 @@ def vr() -> types.ModuleType:
         def setsockopt(self, *_a, **_k):
             return None
 
-        def close(self):
-            return None
+        def close(self, linger=None):
+            self.closed = True
 
         def recv_string(self, flags=0):
             if not fake.packets:
                 raise fake.Again()
-            return fake.packets.pop(0)
+            packet = fake.packets.pop(0)
+            return packet if isinstance(packet, str) else packet.decode("utf-8")
 
-        recv = recv_string
+        def recv(self, flags=0):
+            """Bytes, as pyzmq gives them; the publisher sends JSON."""
+            packet = self.recv_string(flags)
+            return packet.encode("utf-8")
 
     class Context:
+        def __init__(self):
+            self.sockets = []
+            self.terminated = False
+
         def socket(self, _kind):
-            return Socket()
+            sock = Socket()
+            self.sockets.append(sock)
+            fake.sockets.append(sock)
+            return sock
 
         def term(self):
-            return None
+            self.terminated = True
 
+    fake.sockets: list[Any] = []
     fake.Context = lambda: Context()
     fake.SUB = "SUB"
     fake.SUBSCRIBE = "SUBSCRIBE"
@@ -170,6 +188,9 @@ def vr() -> types.ModuleType:
     fake.RCVTIMEO = "RCVTIMEO"
     fake.Again = type("Again", (Exception,), {})
     fake.ZMQError = type("ZMQError", (Exception,), {})
+    # pyzmq exposes the timeout exception as ``zmq.error.Again``, which is
+    # what the transport catches to keep polling.
+    fake.error = module("zmq.error", Again=fake.Again, ZMQError=fake.ZMQError)
     return fake
 
 
@@ -187,9 +208,12 @@ def keyboard() -> types.ModuleType:
 
 def modules(**_: Any) -> dict[str, types.ModuleType]:
     """Return fake teleoperation SDKs keyed by import name."""
+    zmq = vr()
     made: dict[str, types.ModuleType] = {
         "pyspacemouse": spacemouse(),
-        "zmq": vr(),
+        "zmq": zmq,
+        # The transport imports the submodule name to catch its timeout.
+        "zmq.error": zmq.error,
         "evdev": keyboard(),
     }
     made.update(gello())
