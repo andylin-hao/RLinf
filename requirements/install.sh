@@ -98,7 +98,7 @@ NO_INSTALL_RLINF_CMD="--no-install-project"
 SUPPORTED_TARGETS=("embodied" "agentic" "docs")
 SUPPORTED_ENGINES=("sglang" "vllm")
 SUPPORTED_MODELS=("openvla" "openvla-oft" "openpi" "gr00t" "gr00t_n1d6" "gr00t_n1d7" "dexbotic" "starvla" "lingbotvla" "dreamzero" "qwen3_vl" "abot_m0" "molmoact2" "evo1" "diffusion")
-SUPPORTED_ENVS=("behavior" "maniskill_libero" "libero" "metaworld" "calvin" "isaaclab" "robocasa" "robocasa365" "franka" "franka-dexhand" "franka-franky" "frankasim" "robotwin" "habitat" "opensora" "wan" "genesis" "xsquare_turtle2" "liberopro" "liberoplus" "roboverse" "embodichain" "d4rl" "dosw1" "gim_arm" "dummy" "polaris")
+SUPPORTED_ENVS=("behavior" "maniskill_libero" "libero" "metaworld" "calvin" "isaaclab" "robocasa" "robocasa365" "franka" "franka-dexhand" "franka-franky" "frankasim" "robotwin" "habitat" "opensora" "wan" "genesis" "xsquare_turtle2" "liberopro" "liberoplus" "roboverse" "embodichain" "d4rl" "dosw1" "gim_arm" "so101" "dummy" "polaris")
 
 #=======================Utility Functions=======================
 
@@ -2314,6 +2314,9 @@ install_env_only() {
         gim_arm)
             uv sync --extra gim_arm --active "${PLATFORM_UV_SYNC_ARGS[@]}" $NO_INSTALL_RLINF_CMD
             ;;
+        so101)
+            install_so101_env
+            ;;
         dosw1)
             install_dosw1_env
             ;;
@@ -2680,6 +2683,14 @@ install_franka_franky_env() {
 
 install_franka_dexhand_deps() {
     uv pip install "RLinf-dexterous-hands[glove]"
+}
+
+install_so101_env() {
+    uv sync --extra so101 --active "${PLATFORM_UV_SYNC_ARGS[@]}" $NO_INSTALL_RLINF_CMD
+    local index_args=()
+    mapfile -t index_args < <(platform_index_args)
+    env -u UV_TORCH_BACKEND uv pip install "${index_args[@]}" \
+        "lerobot[feetech]>=0.4.1,<0.7"
 }
 
 install_xsquare_turtle2_env() {
