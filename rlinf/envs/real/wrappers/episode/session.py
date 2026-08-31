@@ -22,7 +22,7 @@ from typing import Any, Iterator, Optional
 
 import gymnasium as gym
 
-from rlinf.robotics.parts.teleop.readers.keyboard import KeyboardListener
+from .keyboard import KeyboardListener
 
 
 class KeyboardSession(gym.Wrapper):

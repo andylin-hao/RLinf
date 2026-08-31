@@ -27,6 +27,7 @@ import gymnasium as gym
 import numpy as np
 
 from rlinf.envs.real.utils.video import VideoPlayer
+from rlinf.envs.real.wrappers.episode.keyboard import KeyboardListener
 from rlinf.robotics import (
     Camera,
     DOSW1Robot,
@@ -37,7 +38,6 @@ from rlinf.robotics import (
 from rlinf.robotics.parts.arms import DOSW1Arm, DOSW1Connection
 from rlinf.robotics.parts.arms.dosw1 import DOSW1RobotState
 from rlinf.robotics.parts.cameras import BaseCamera, CameraInfo
-from rlinf.robotics.parts.teleop.readers.keyboard import KeyboardListener
 from rlinf.robotics.teleop import ActionKind, ActionPart
 from rlinf.scheduler import WorkerInfo
 from rlinf.utils.logging import get_logger
