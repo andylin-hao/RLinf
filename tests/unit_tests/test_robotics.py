@@ -2400,7 +2400,7 @@ def test_the_pico_transport_links_calibrates_and_tracks_motion():
     """
     from robot_mocks import mocked_sdks
 
-    with mocked_sdks() as made:
+    with mocked_sdks():
         from rlinf.robotics.parts.teleop.pico import PicoTcp
         from rlinf.robotics.parts.transports import pico as transport
 
@@ -2461,7 +2461,7 @@ def test_a_stale_pico_link_stops_driving_the_robot():
 
     from robot_mocks import mocked_sdks
 
-    with mocked_sdks() as made:
+    with mocked_sdks():
         from rlinf.robotics.parts.teleop.pico import PicoTcp
         from rlinf.robotics.parts.transports import pico as transport
 
