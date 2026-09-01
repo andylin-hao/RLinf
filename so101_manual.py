@@ -129,7 +129,13 @@ def teleop(env, port: str, calibration_id) -> None:
     from rlinf.robotics.parts.teleop import SO101Leader
 
     leader = SO101Leader(port=port, calibration_id=calibration_id)
-    leader.connect()
+    try:
+        leader.connect()
+    except RuntimeError as error:
+        # An uncalibrated leader explains itself; do not bury that in a stack
+        # trace when the operator is sitting right here.
+        print(f"\n{error}\n")
+        return
     print("Following the leader arm. Ctrl-C to stop.")
     try:
         while True:

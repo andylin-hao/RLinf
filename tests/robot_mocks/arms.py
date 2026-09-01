@@ -19,6 +19,7 @@ from __future__ import annotations
 import threading
 import time
 import types
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -343,6 +344,12 @@ def lerobot() -> dict[str, types.ModuleType]:
             self.is_connected = False
             self.is_calibrated = type(self).calibrated
             self.calibrate_calls = 0
+            # lerobot's base class always sets this, from the arm's id.
+            self.calibration_fpath = (
+                Path.home()
+                / ".cache/huggingface/lerobot/calibration/robots/so101_follower"
+                / f"{config.id}.json"
+            )
             self.sent: list[dict[str, float]] = []
             self.positions = {
                 "shoulder_pan.pos": 0.0,
@@ -404,6 +411,12 @@ def lerobot() -> dict[str, types.ModuleType]:
             self.is_connected = False
             self.is_calibrated = type(self).calibrated
             self.calibrate_calls = 0
+            # lerobot's base class always sets this, from the arm's id.
+            self.calibration_fpath = (
+                Path.home()
+                / ".cache/huggingface/lerobot/calibration/teleoperators/so101_leader"
+                / f"{config.id}.json"
+            )
             # Degrees and lerobot's 0..100 gripper, as the hardware reports.
             self.positions = {
                 "shoulder_pan.pos": 0.0,

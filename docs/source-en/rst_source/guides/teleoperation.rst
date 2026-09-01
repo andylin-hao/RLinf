@@ -71,6 +71,20 @@ configuration. The SO-101 leader also prints the action it would command and
 whether it counts as driving, measured against where it last was, so an idle
 arm reads ``driving=False`` until you move it.
 
+An SO-101 leader needs lerobot's calibration before it reads anything, and
+refuses to open without it, naming the file it looked for. Calibrate it once
+from a terminal, giving the arm a name you will reuse in the env config as
+``so101_leader_id``:
+
+.. code-block:: bash
+
+   python -m rlinf.robotics.parts.teleop.so101_leader \
+       --port /dev/ttyACM1 --id left_leader --calibrate
+
+The procedure asks you to move the arm through its range, so it only runs when
+you pass ``--calibrate`` from a terminal. A configured device never starts it:
+a scheduler worker has no terminal to answer the prompts, and would hang.
+
 ``toolkits/realworld_check`` does the same for a complete robot;
 ``check_robot_parts`` walks one from composition through to disconnect.
 

@@ -2295,8 +2295,31 @@ def test_so101_leader_refuses_an_uncalibrated_arm():
         fake.calibrated = False
         try:
             leader = SO101Leader(port="/dev/mock-leader")
-            with pytest.raises(RuntimeError, match="not calibrated"):
+            with pytest.raises(RuntimeError, match="no calibration") as raised:
                 leader.connect()
+            # The refusal has to be actionable: the operator should be able to
+            # copy a command out of it rather than go looking for one.
+            assert "--calibrate" in str(raised.value)
+        finally:
+            fake.calibrated = True
+
+
+def test_so101_leader_calibrates_when_the_caller_asks():
+    """The standalone entry point has a terminal, so it may opt in."""
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks() as made:
+        from rlinf.robotics.parts.teleop import SO101Leader
+
+        fake = made["lerobot.teleoperators.so_leader"].SO101Leader
+        fake.calibrated = False
+        try:
+            leader = SO101Leader(port="/dev/mock-leader", calibrate=True)
+            # The same arm that refuses above now opens, because calibration
+            # is allowed to run.
+            leader.connect()
+            assert leader.is_connected
+            leader.disconnect()
         finally:
             fake.calibrated = True
 

@@ -50,6 +50,9 @@ class SO101Leader(TeleopDevice):
         calibration_id: lerobot calibration identifier for this leader.
         movement_epsilon: Radians of leader motion, summed over the joints,
             below which the operator counts as not driving.
+        calibrate: Whether to run lerobot's calibration when the arm has none.
+            It asks the operator to move the arm through its range, so only a
+            caller holding a terminal should turn it on.
     """
 
     SDK = ("scservo_sdk", "lerobot[feetech]")
@@ -71,16 +74,23 @@ class SO101Leader(TeleopDevice):
         port: str,
         calibration_id: Optional[str] = None,
         movement_epsilon: float = 0.01,
+        calibrate: bool = False,
     ) -> None:
         self._port = port
         self._calibration_id = calibration_id
         self.MOVEMENT_EPSILON = movement_epsilon
+        self._calibrate = calibrate
 
     @classmethod
     def from_config(
         cls, cfg: Mapping[str, Any], options: Mapping[str, Any], facts: Any
     ) -> Any:
-        """Take the port and calibration id from options or the env config."""
+        """Take the port and calibration id from options or the env config.
+
+        Calibration stays off for a configured device. It waits on stdin, and
+        a scheduler worker has no terminal to answer it from; the standalone
+        entry point is where an operator calibrates an arm.
+        """
         from .group import TeleopEntry
 
         port = options.get("port") or cfg.get("so101_leader_port")
@@ -104,9 +114,9 @@ class SO101Leader(TeleopDevice):
     def _open(self) -> Any:
         """Open the leader's servo bus and return lerobot's handle for it.
 
-        Calibration is not run here for the same reason the follower does not
-        run it: lerobot prompts on stdin when the servos disagree with the
-        calibration file, which would hang a worker that has no terminal.
+        Calibration is not run unless the caller asked for it. lerobot's
+        procedure asks the operator to move the arm through its range and
+        waits on stdin, which would hang a worker that has no terminal.
         """
         try:
             from lerobot.teleoperators.so_leader import SO101Leader, SO101LeaderConfig
@@ -123,13 +133,20 @@ class SO101Leader(TeleopDevice):
         )
         leader.connect(calibrate=False)
         if not leader.is_calibrated:
-            leader.disconnect()
-            raise RuntimeError(
-                f"The SO-101 leader on {self._port!r} is not calibrated, and "
-                "calibrating it asks the operator to move the arm, which "
-                "cannot be done from here. Run lerobot's calibration for "
-                f"id={self._calibration_id!r} once, then start again."
-            )
+            if not self._calibrate:
+                where = leader.calibration_fpath
+                leader.disconnect()
+                raise RuntimeError(
+                    f"The SO-101 leader on {self._port!r} has no calibration at "
+                    f"{where}. Calibrating asks the operator to move the arm "
+                    "through its range, so it does not run on its own here. "
+                    "Calibrate it once from a terminal with:\n\n"
+                    "    python -m rlinf.robotics.parts.teleop.so101_leader "
+                    f"--port {self._port} "
+                    f"--id {self._calibration_id or '<name-for-this-arm>'} "
+                    "--calibrate"
+                )
+            leader.calibrate()
         return leader
 
     def _release(self, device: Any) -> None:
@@ -189,9 +206,17 @@ if __name__ == "__main__":
     parser.add_argument(
         "--id", type=str, default=None, help="lerobot calibration id of the leader."
     )
+    parser.add_argument(
+        "--calibrate",
+        action="store_true",
+        help="Calibrate the arm first. It asks you to move it through its range.",
+    )
     args = parser.parse_args()
 
-    leader = SO101Leader(port=args.port, calibration_id=args.id)
+    # This is a terminal, so it can answer the prompts calibration asks.
+    leader = SO101Leader(
+        port=args.port, calibration_id=args.id, calibrate=args.calibrate
+    )
     leader.connect()
     # No follower to read, so the arm is measured against where it last was.
     # That is the same comparison action() makes, and it is what decides

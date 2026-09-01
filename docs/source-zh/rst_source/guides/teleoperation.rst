@@ -55,7 +55,18 @@
    python -m rlinf.robotics.parts.teleop.gello --port /dev/ttyUSB0
    python -m rlinf.robotics.parts.teleop.so101_leader --port /dev/ttyACM1
 
-如果主臂只返回零值或 SpaceMouse 没有响应，请先用该命令排查接线和设备权限。SO-101 主臂还会打印它将要下发的动作，以及与上一次读数相比是否算作接管；静止时显示 ``driving=False``，移动后才变为 ``True``。完整机器人可使用 ``toolkits/realworld_check`` 检查；``check_robot_parts`` 会依次验证组合、读取和断开流程。
+如果主臂只返回零值或 SpaceMouse 没有响应，请先用该命令排查接线和设备权限。SO-101 主臂还会打印它将要下发的动作，以及与上一次读数相比是否算作接管；静止时显示 ``driving=False``，移动后才变为 ``True``。
+
+SO-101 主臂必须先完成 lerobot 标定才能读数，否则设备会拒绝打开，并给出它查找的标定文件路径。请在终端中标定一次，并为这条手臂取一个名字，之后在 env 配置的 ``so101_leader_id`` 中沿用：
+
+.. code-block:: bash
+
+   python -m rlinf.robotics.parts.teleop.so101_leader \
+       --port /dev/ttyACM1 --id left_leader --calibrate
+
+标定过程会提示操作者把手臂活动到各个极限位置，因此只有在终端中显式传入 ``--calibrate`` 时才会执行。通过配置启动的设备不会触发标定：调度器的 worker 没有终端来回答提示，一旦触发就会挂起。
+
+完整机器人可使用 ``toolkits/realworld_check`` 检查；``check_robot_parts`` 会依次验证组合、读取和断开流程。
 
 组合多台设备
 ------------
