@@ -5,12 +5,14 @@
 
 本页所述真机任务专指 ``rlinf/envs/real`` 下的任务模块。如需为模拟器或 benchmark 新增 task，请参阅 :doc:`new_env`。
 
-如果硬件本身尚未接入，请先按照 :doc:`new_robot` 实现零部件，并确认观测和动作能够正常传递，再添加任务。
+核心任务流程不修改机器人构造、设备 placement 或遥操作。目标、compliance 参数、成功条件和复位行为属于任务，现有机器人与 wrapper stack 保持不变。如果硬件本身尚未接入，请先按照 :doc:`new_robot` 实现零部件，并确认观测和动作能够正常传递，再添加任务。如果还需要 RLinf 尚未提供的操作者设备或 wrapper，应先完成任务主流程，再将其作为文末所述的独立扩展处理。
 
-实施步骤
+核心流程包含五步：定义任务数据，将其绑定到 env class，注册稳定的 Gymnasium ID，为一次运行添加配置，并验证注册结果。后续章节说明哪些能力可直接复用，并介绍新增操作者设备和新增 wrapper 两类可选扩展；大多数任务无需执行这两部分。
+
+核心流程
 --------
 
-以下示例为 Franka 添加 ``WipeEnv-v1``。后续步骤会直接引用前面定义的配置类和 Gymnasium ID，因此应按顺序完成。
+以下示例为 Franka 添加 ``WipeEnv-v1``。每一步都会产生下一步的输入：dataclass 配置 env，env class 注册为 Gymnasium ID，YAML 选择该 ID，最后的检查则在硬件打开前确认整条解析路径可用。
 
 如果新任务使用关节空间机械臂，实施顺序不变，只需继承对应的 env 基类。``SO101ReachEnv-v1`` 和 ``examples/embodiment/config/env/so101_reach.yaml`` 展示了当前 SO-101 的实现：动作包含五个绝对关节目标和一个连续夹爪值。机器人中的夹爪路径仍为 ``arm.end_effector``，env 负责将这套嵌套接口转换为 policy 使用的六维动作。
 
@@ -21,9 +23,12 @@
 
 .. code-block:: python
 
+   import copy
    from dataclasses import dataclass, field
 
    import numpy as np
+
+   from rlinf.robotics.actions import ActionKind, ActionPart
 
    from .base import FrankaEnv, FrankaRobotConfig, compliance
 
@@ -45,19 +50,21 @@
            self.target_ee_pose = np.array(self.target_ee_pose)
            self.action_scale = np.array([0.02, 0.1, 1])
 
-阻抗参数只需声明与默认值不同的部分。``compliance()`` 会将其合并到 ``COMPLIANCE_DEFAULTS``；字段名错误或控制器不支持相应参数时，该函数会立即报错。
+这些字段分别回答任务执行中的不同问题：``task_description`` 提供语言指令，``target_ee_pose`` 定义目标，``reward_threshold`` 判断各项位姿误差是否足够小，``random_xy_range`` 控制复位时的随机范围；``action_scale`` 限制一次 policy 动作的移动幅度，``compliance_param`` 则配置执行动作时使用的控制器。
+
+阻抗参数只需声明与默认值不同的部分。``compliance()`` 会将差异项合并到 ``COMPLIANCE_DEFAULTS``；字段名错误或控制器不支持相应参数时，任务配置在构建阶段就会报错，不会将无效参数继续传给阻抗控制器。
 
 2. 定义 env 类
 ~~~~~~~~~~~~~~
 
-env 类首先指定前一步定义的配置类型。对于多数任务，仅需以下定义：
+配置类已经包含任务所需的数据，env class 接下来将这些数据接入现有机器人的执行流程。首先指定前一步定义的配置类型；对于多数任务，这就是全部实现：
 
 .. code-block:: python
 
    class WipeEnv(FrankaEnv):
        CONFIG_CLS = WipeConfig
 
-仅当任务行为确有差异时才覆盖相应方法。最常见的是 ``go_to_rest``：插销任务在返回初始位姿前需要先抬高末端，避免插销卡在插孔中。
+``CONFIG_CLS`` 告诉继承的构造流程应使用哪个 dataclass 解析 ``override_cfg``。仅当任务的运行行为确有差异时才覆盖相应 hook。最常见的是 ``go_to_rest``：插销任务在返回初始位姿前需要先抬高末端，避免插销卡在插孔中。
 
 .. code-block:: python
 
@@ -82,7 +89,7 @@ env 类首先指定前一步定义的配置类型。对于多数任务，仅需�
 3. 注册任务
 ~~~~~~~~~~~~
 
-在 ``rlinf/envs/real/<robot>/__init__.py`` 的 ``TASKS`` 映射中加入 env 类：
+env class 可以执行任务后，还需要一个供配置和数据集长期引用的稳定 ID。在 ``rlinf/envs/real/<robot>/__init__.py`` 的 ``TASKS`` mapping 中加入该 class：
 
 .. code-block:: python
 
@@ -98,7 +105,7 @@ env 类首先指定前一步定义的配置类型。对于多数任务，仅需�
 4. 添加环境配置
 ~~~~~~~~~~~~~~~
 
-在 ``examples/embodiment/config/env/`` 下新增 YAML 文件。``init_params.id`` 使用刚注册的 ID，任务字段写入 ``override_cfg``：
+注册 ID 后，YAML 可以为一次具体运行选择该任务，并提供随实验变化的参数。在 ``examples/embodiment/config/env/`` 下新增文件，结构如下：
 
 .. code-block:: yaml
 
@@ -111,10 +118,12 @@ env 类首先指定前一步定义的配置类型。对于多数任务，仅需�
      target_ee_pose: [0.5, 0.0, 0.1, -3.14, 0.0, 0.0]
      random_xy_range: 0.03
 
+``env_type: real`` 选择 RLinf 的真机 env adapter，``init_params.id`` 选择上一步注册的 Gymnasium 任务，``teleop`` 指定评估或数据采集使用的操作者设备。``override_cfg`` 会传给 ``WipeConfig``，其中每个 key 都应对应任务配置字段；机器人地址和 placement 仍应写在集群硬件配置中。
+
 5. 验证注册结果
 ~~~~~~~~~~~~~~~
 
-连接硬件前，先确认 ID 已完成注册且 entry point 可以解析：
+此时，从 YAML 到任务 class 的核心路径已经完整。连接硬件前，先导入真机 env package，并确认 ID 可以解析：
 
 .. code-block:: python
 
@@ -123,10 +132,12 @@ env 类首先指定前一步定义的配置类型。对于多数任务，仅需�
 
    assert "WipeEnv-v1" in registry
 
-``tests/unit_tests/test_real_env.py`` 会检查所有内置任务。请将新 ID 加入 ``EXPECTED_IDS``。
+``tests/unit_tests/test_real_env.py`` 会检查所有内置任务，请将新 ID 加入 ``EXPECTED_IDS``。这项断言只验证注册；如果任务改变了面向机器人的观测或动作路径，还需按照 :doc:`new_robot` 运行 mock 和真机检查。
 
 复用现有基础设施
 ----------------
+
+符合现有机器人与 wrapper contract 的任务完成以上五步即可。下列职责已经由相应层次负责，任务代码应直接调用或配置这些能力，不应再次实现：
 
 .. list-table::
    :header-rows: 1
@@ -148,7 +159,7 @@ env 类首先指定前一步定义的配置类型。对于多数任务，仅需�
 新增遥操作设备
 --------------
 
-一个遥操作设备就是 ``rlinf/robotics/parts/teleop/`` 下的一个类。它回答三个问题：如何连接硬件、操作者正在做什么、机器人应当如何响应。
+只有任务需要 RLinf 尚未提供的操作者设备时，才继续这一节。新设备属于可供多个任务复用的独立硬件扩展，应实现为 ``rlinf/robotics/parts/teleop/`` 下的一个 class。它需要回答三个问题：如何连接硬件、操作者正在做什么，以及机器人应当如何响应。
 
 .. code-block:: python
 
@@ -181,9 +192,9 @@ env 类首先指定前一步定义的配置类型。对于多数任务，仅需�
                driving=pressed,
            )
 
-``__init__`` 只保存端口等构造参数；``_open`` 在连接阶段打开硬件，返回值保存在 ``self._device``；``_release`` 在启动回滚、正常关闭和重连前释放同一个句柄。如果 reader 持有轮询线程，``_release`` 必须先通知线程停止并等待其退出。这样，设备可以在当前进程声明，再由目标节点打开。
+按照从配置选择到单次采样的顺序理解这个 class。``register("pedal")`` 定义配置名称，``PRODUCES`` 声明设备会填充夹爪动作；如果 env 不具备相应语义的路径，系统会在打开硬件前拒绝该设备。``__init__`` 只保存端口，因为声明与连接可能发生在不同机器；``_open()`` 创建硬件句柄并将其保存为 ``self._device``，``_release(device)`` 在启动回滚、正常关闭或重连时释放同一个句柄。句柄如果持有轮询线程，其关闭流程还必须停止并等待线程退出。
 
-``PRODUCES`` 同时声明目标零部件的名称和动作语义，因此 twist 不会被错误地接到关节角动作上。``action`` 用一个 ``TeleopAction`` 一次性给出全部结果：``driving`` 与动作在同一个返回值中，避免为判断接管状态而再次读取设备或保存中间状态。
+其余方法共同定义一次采样。``observation_features`` 在连接前声明 ``pressed`` 字段，``get_observation()`` 返回符合该 schema 的值；``action(reading, context)`` 再将读数转换为一个 ``TeleopAction``，同时包含夹爪动作和 ``driving`` 状态。将两者放在同一个返回值中，可以避免再次读取设备或保存隐式中间状态。
 
 ``register`` 中的名称就是配置里书写的名称。配置到构造参数的转换由 ``from_config`` 完成，其默认实现直接把设备自身的选项传给构造函数，因此上面的例子无需编写这一部分。若要读取更外层的 env 配置，或根据被驱动的机器人调整行为，可以覆盖它：
 
@@ -203,4 +214,4 @@ env 类首先指定前一步定义的配置类型。对于多数任务，仅需�
 新增 wrapper
 ------------
 
-如果新逻辑改变的是 rollout 周边行为，应新增 wrapper，而不是任务：动作接管放入 ``teleop/``，表示转换放入 ``transforms/``，rollout 起止和评分放入 ``episode/``。遥操作设备仍按上述方式实现为一个设备类；新的键盘模式应继承 ``KeyboardSession``。各目录的职责见 :doc:`../concepts/realworld_envs`。
+另一类可选扩展改变的是 env 边界，而不是硬件设备。如果新逻辑作用于 rollout 周边，应新增 wrapper：动作接管放入 ``teleop/``，表示转换放入 ``transforms/``，rollout 起止和评分放入 ``episode/``。遥操作设备仍按上一节实现为独立设备 class，新的键盘模式则继承 ``KeyboardSession``。:doc:`../concepts/realworld_envs` 在完整运行流程中说明了这两类扩展点的位置。

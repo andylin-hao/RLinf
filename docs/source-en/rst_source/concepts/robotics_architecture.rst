@@ -1,17 +1,29 @@
 Robotics Architecture
 =====================
 
-The introductory :doc:`Robotics Interface <robotics>` page shows the API used by
-tasks and environments. This page follows that interface down to hardware
-connections and across machine boundaries. Read it when you are adding a
-device, sharing one connection between several parts, or debugging placement
-and cleanup.
+Read this page when you need to implement the interface described in
+:doc:`Robotics Interface <robotics>`, share one hardware session between
+several parts, or diagnose placement and cleanup. The architecture must preserve
+one caller-visible structure while still opening every physical resource exactly
+once.
+
+The explanation follows that responsibility from the outside inward. It first
+separates public paths from hardware-backed parts, then assigns each role to a
+core type. From there it covers backend and robot registration, the ways a
+shared session enters the composition, and finally placement, inspection, and
+lifecycle. Reading in that order makes ownership a consequence of composition
+rather than an isolated implementation rule.
 
 Start from the Robot's Public Structure
 ---------------------------------------
 
-Start with the common one-to-one case: one hardware connection represents one
-logical part. A mobile base can enter the robot tree directly:
+The first question is what the task sees and how that view relates to the
+connection opened by a driver. Start with the one-to-one case, then introduce a
+shared connection; the difference gives ``children`` and ``parts`` their precise
+roles.
+
+In the common case, one hardware connection represents one logical part. A
+mobile base can enter the robot directly:
 
 .. code-block:: python
 
@@ -29,7 +41,9 @@ until ``robot.connect()``. Because the object is already the logical part a
 policy should see, passing it as ``base=base`` adds it directly to the public
 tree. The argument name ``base`` becomes its public path.
 
-One hardware session may instead back several logical parts. A GimArm drives
+The one-to-one case makes the public name and the hardware object look
+interchangeable. They separate as soon as one hardware session backs several
+logical parts. A GimArm drives
 its joints and its gripper down the same CAN bus, so one link answers for both,
 and a task should still see two parts:
 
@@ -57,7 +71,8 @@ when the same names appear in both:
   ``part(name)``. These names belong to the driver and do not become robot
   paths by themselves.
 
-Composition joins the mappings. ``Robot(arm=connection)`` names a part, and
+Composition is the operation that joins the mappings.
+``Robot(arm=connection)`` names a part, and
 what rides on that part comes with it, one level down: a GimArm gripper is at
 ``arm.end_effector`` because it has no link of its own and answers through the
 arm's. Nesting tracks the connection, not the bolt pattern. A Franka Hand is
@@ -66,11 +81,12 @@ named beside the arm rather than under it. These public paths, their placement,
 and their ownership are available before ``connect()``, which is why a
 composition can be inspected on a machine with no robot attached.
 
-``connection.part(name)`` picks one part out of a link that is not a part
-itself, such as a session driving two arms. That is the only case that needs
-it.
+This establishes the normal path: compose a readable part and inherit whatever
+it carries. ``connection.part(name)`` is reserved for the other case, where the
+link itself is not readable. It selects one part from such a link, as with a
+session driving two arms.
 
-Choose the form that matches what you are composing:
+The resulting forms can now be compared directly:
 
 .. list-table::
    :header-rows: 1
@@ -95,6 +111,7 @@ Choose the form that matches what you are composing:
      - ``Robot(left=PartGroup(...))``
      - The group and its named children enter under ``left``.
 
+Every row ends with something readable in the public structure.
 ``part(name)`` returns a ``RobotPart`` -- there is no intermediate type for a
 robot author to construct or annotate. ``PartGroup`` accepts a ``RobotPart`` or
 another ``PartGroup``, and rejects a bare ``Connection`` that cannot be read,
@@ -105,8 +122,9 @@ part it is what rides on it; for a ``PartGroup`` it is what the group was
 composed of. Walking the tree -- to describe it, to find every camera, to read
 it -- therefore never asks which kind of thing it is holding.
 
-A robot therefore names one thing per connection. Where the gripper rides the
-arm's bus, naming the arm is enough:
+Applying the distinction to a robot builder gives one practical rule: name one
+thing per connection. Where the gripper rides the arm's bus, naming the arm is
+enough:
 
 .. code-block:: python
 
@@ -144,6 +162,10 @@ the tree would have no bottom.
 
 The Core Types
 --------------
+
+With the public structure and hardware mapping separated, five types can each
+take one responsibility. Read the table from resource ownership through to the
+complete robot; each row adds only the behavior required by the next layer.
 
 .. list-table::
    :header-rows: 1
@@ -185,6 +207,11 @@ driver class itself.
 Select an Implementation from Configuration
 -------------------------------------------
 
+Composition determines which capabilities exist; configuration still has to
+select the concrete implementation for each capability. This section follows
+that selection at three levels: a device backend, a standard family builder,
+and a complete registered robot.
+
 Suppose a camera config says ``camera_type: zed``. The robot builder should not
 need a switch statement that imports every camera driver. Instead, each driver
 registers the names that configs use, and the device family resolves the name:
@@ -205,7 +232,8 @@ family, and the registry belongs to the *category* -- ``Camera``, ``Arm``,
 class. Backend names are case-insensitive, and registering the same name for
 two classes is an error.
 
-A family adds a builder when its config has a standard shape. ``Camera.of()``
+Resolving a class is enough for a direct constructor. A family adds a builder
+when its config has a standard shape. ``Camera.of()``
 takes a ``CameraInfo`` and reads the backend off it; ``EndEffector.of()`` takes
 a name and whatever the arm fitting it can offer; ``Arm.declare()`` maps a
 robot's arm settings onto one backend's constructor. In each case the mapping
@@ -246,7 +274,8 @@ a missing SDK clearly and validates configured camera identifiers on the node
 that owns them. Vendor imports still belong in ``_open()`` or ``discover()``,
 not at module import time.
 
-Two registries appear in the robotics package, and they name different things:
+Backend selection completes one part, but callers may also select a complete
+robot composition by name. The two registries therefore name different things:
 
 .. list-table::
    :header-rows: 1
@@ -270,6 +299,7 @@ receive directly to ``build()``. A registered robot should therefore give its
 builder an explicit, documented signature, and the environment that receives a
 ``RobotInfo`` should perform any required translation in one visible place.
 
+Robot registration completes the hardware side of the selection flow.
 Teleoperation uses the same registration style in its own registry.
 ``TeleopDevice.register()`` names an operator device rather than a robot
 component, and the device itself decides how a config entry becomes an instance
@@ -280,9 +310,14 @@ Gymnasium.
 Connect a Shared Hardware Session to the Robot Tree
 ---------------------------------------------------
 
-Define the ``parts`` mapping to say what rides on a connection. This arm is
-readable itself and also answers for its gripper, so it lists the gripper and
-not itself:
+Once a backend is selected, its connection must expose any logical parts that
+share the resource. There are three cases to distinguish: a readable part can
+carry another part, a bare connection can export several selectable parts, and
+a process-wide transport can be acquired independently by several connections.
+
+Start with a readable carrier. Define the ``parts`` mapping to say what rides on
+a connection. This arm is readable itself and also answers for its gripper, so
+it lists the gripper and not itself:
 
 .. code-block:: python
 
@@ -317,8 +352,9 @@ beneath the part that carries them. A bare ``Connection`` answers no
 one at a time with ``part(name)``. A ``PartGroup`` has an empty ``parts``
 mapping, because nothing rides a group.
 
-Selecting a part with ``part(name)`` also tells a connection-backed view which
-connection opens it, so the view declares no lifecycle of its own: no
+The carrier form needs no explicit selection because the arm enters the robot
+itself. In the second form, selecting a part with ``part(name)`` also tells a
+connection-backed view which connection opens it, so the view declares no lifecycle of its own: no
 ``_open()`` and no ``connect()`` override. Use ``parts`` for these borrowed
 views.
 
@@ -330,9 +366,9 @@ composed explicitly as another child of the robot or of an assembly
 wrist camera on USB and a Franka Hand take the first form; a ``MethodEndEffector``
 over an arm's own state takes the second.
 
-If reading the shared session itself has no useful meaning, subclass
-``Connection`` rather than ``RobotPart``. A coupled Turtle2 controller follows
-that form:
+If reading the shared session itself has no useful meaning, the second form is
+to subclass ``Connection`` rather than ``RobotPart`` and select the parts it
+backs. A coupled Turtle2 controller follows that form:
 
 .. code-block:: python
 
@@ -357,7 +393,8 @@ that form:
 Every choice points back to the same connection object, so the controller opens
 once and is released once.
 
-Some resources are shared by the process rather than by a connection object.
+The third form is not represented by ``parts`` at all. Some resources are
+shared by the process rather than by a connection object.
 ROS 1 is the case that shows up here: a process gets one node, so an arm and a
 hand that both speak ROS end up on the same node whatever they do. Passing a
 session from the arm to the hand would encode that as a dependency between two
@@ -375,17 +412,20 @@ parts that are otherwise independent, so a ROS-backed part asks for it instead:
            return self._ros
 
 ``ROSController.shared()`` starts ``roscore`` if none is running, under a file
-lock, initializes the node, and hands every later caller the same controller. Nothing closes it,
-because ``rospy`` has no supported way to bring a node back up once it is shut
-down. Topics are the part's own, so joining a session an arm already opened adds
-subscriptions rather than competing for anything.
+lock, initializes the node, and hands every later caller the same controller.
+Nothing closes it because ``rospy`` has no supported way to bring a node back up
+once it is shut down. Topics are the part's own, so joining a session an arm
+already opened adds subscriptions rather than competing for anything. These
+three forms now identify every owner the placement layer has to open.
 
 Choose Placement Before Opening Hardware
 ----------------------------------------
 
-Pass placement alongside the hardware constructor arguments. Construction is
-inert; ``Robot.connect()`` decides whether to open the existing object locally
-or rebuild it in a worker on the selected node:
+Composition identifies each owning connection before hardware opens. Placement
+adds a node to that owner without changing the part path or category seen by a
+caller. Pass placement alongside the hardware constructor arguments;
+``Robot.connect()`` later decides whether to open the existing object locally or
+rebuild it in a worker on the selected node:
 
 .. code-block:: python
 
@@ -440,8 +480,10 @@ refused immediately and told which part has the first.
 Inspect the Composition Before Connecting
 -----------------------------------------
 
-``Robot.describe()`` reads the composed tree, so node and ownership information
-is available before any hardware is opened:
+Because composition and placement are both declarations, they can be checked
+before lifecycle failures or physical motion obscure a mistake.
+``Robot.describe()`` reads that declaration and reports paths, nodes, and
+ownership without opening hardware:
 
 .. code-block:: text
 
@@ -450,8 +492,9 @@ is available before any hardware is opened:
    └── end_effector  FrankaGripper        node=1     via FrankaGripper#2
 
 Rows sharing ``via`` share one ``Connection``; these two do not, which is the
-quickest way to see that the hand can be opened and recovered on its own. After connecting, a placed part
-uses a synthesized class name such as RemoteFrankaROSArm. Its path,
+quickest way to see that the hand can be opened and recovered on its own. After
+connecting, a placed part uses a synthesized class name such as
+RemoteFrankaROSArm. Its path,
 ``node``, and ownership stay the same, but the complete output string is not a
 stable serialization format; use it as a diagnostic rather than storing or
 parsing it.
@@ -463,6 +506,10 @@ connection with a mock SDK or the real device.
 
 Follow the Lifecycle
 --------------------
+
+After the declaration is validated, every connection follows the same four
+stages. The table gives the caller-visible sequence; the paragraphs below assign
+cleanup and rollback to the layer that can actually perform them.
 
 .. list-table::
    :header-rows: 1
@@ -485,7 +532,8 @@ Follow the Lifecycle
        one closes on its node before its worker is stopped, and becomes an
        ordinary unopened object again.
 
-``_open()`` returns the vendor object, and ``_release(device)`` receives that
+The driver participates in the connect and disconnect stages through a matched
+pair. ``_open()`` returns the vendor object, and ``_release(device)`` receives that
 same object. Cleanup should release the argument rather than look it up again on
 ``self``.
 
@@ -497,7 +545,8 @@ device. A device category that wraps its drivers has ``_opened()`` and
 ``_closing()`` for that: ``BaseCamera`` starts and stops its capture loop
 there, beside the camera wherever it ended up.
 
-Robot startup rolls back the connections that completed successfully if a
+The matched pair handles normal shutdown. Partial failure adds one boundary:
+robot startup rolls back the connections that completed successfully if a
 later connection fails. A driver's ``_open()`` must still release anything it
 acquired before raising, because no completed connection exists for the robot
 to close in that case. After fixing the hardware, you can call ``connect()`` on
@@ -507,7 +556,9 @@ closed connections to a reconnectable state.
 Use Typed Parts for Setup and Reset
 -----------------------------------
 
-Common setup operations belong to device-category contracts, so callers use
+Once ``connect()`` has opened the owners, setup should return to the public part
+categories instead of exposing lifecycle machinery to the task. Common setup
+operations belong to device-category contracts, so callers use
 the part rather than reaching through its owner. Pass the expected category to
 ``child()`` to check the composition and retain a precise return type:
 
@@ -534,7 +585,9 @@ parts it backs.
 Preserve the Import Boundary
 ----------------------------
 
-Part modules must not import ``rlinf.scheduler`` or Gymnasium.
+The public categories remain usable on their own because the dependency
+direction mirrors the runtime boundary described above. Part modules must not
+import ``rlinf.scheduler`` or Gymnasium.
 ``rlinf/robotics/placement/handles.py`` is the bridge, loaded lazily by
 ``Connection.connect()`` and only for a connection that named a node.
 
@@ -554,6 +607,9 @@ helpers such as ``get_logger``, and those reach further.
 
 Find the Implementation
 -----------------------
+
+The architecture maps to the source tree in the same order: core contracts,
+device families, remote placement, robot composition, and discovery.
 
 .. list-table::
    :header-rows: 1
@@ -587,6 +643,8 @@ Find the Implementation
 
 Next
 ----
+
+Continue with the implementation task that brought you to this page:
 
 - :doc:`Adding a Robot <../extending/new_robot>` applies these pieces in order.
 - :doc:`Placement <placement>` explains how scheduler resources map onto nodes

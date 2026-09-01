@@ -40,11 +40,23 @@ When the two disagree, the style guide wins.
    and representative call sites. When two related types are accepted by one
    API, explain what each represents and why both forms are valid. Pair this pass
    with **docs-check** for broader doc-to-code validation.
-5. **Plan progressive disclosure across the page.** Lead with the normal local
+5. **Plan the page as one continuous article.** This is a basic requirement for
+   every page type, not only Concepts, Guides, or code documentation. Write down the reader's
+   starting state, the result promised by the page, and one sentence explaining
+   why each section follows the previous one. Lead with the normal local
    workflow, then the common extension, composition with existing components,
    remote or distributed use, and finally ownership or scheduler internals. Use
    only the stages that fit the topic, but do not use the internal class hierarchy
    as the teaching outline.
+   - Give the page introduction a result, scope, and roadmap.
+   - Give each section an opening paragraph that connects it to the established
+     state and identifies the question it resolves; do not merely restate the
+     heading.
+   - Within a section, order paragraphs as distinction → API → example →
+     interpretation → consequence or transition.
+   - For an interface workflow, list every public call used by the primary
+     example and explain it in caller order, including important inputs, return
+     values, lifecycle effects, and how one result feeds the next call.
 6. **Apply the voice rules** to every paragraph: second person, imperative,
    outcome first, no throat-clearing, short sentences, annotate non-trivial
    commands ("What this does: 1… 2…").
@@ -52,7 +64,9 @@ When the two disagree, the style guide wins.
      exact API term → example → edge cases.
    - A heading must be understandable before its section is read. Do not put an
      unexplained implementation term in a heading and define it below.
-7. **Make examples demonstrate use, not only syntax.** For an extensible
+7. **Make examples demonstrate use, not only syntax.** Introduce the outcome of
+   each non-trivial code block before it and interpret the relevant result or
+   lifecycle effect afterwards. For an extensible
    abstraction, show how the new component composes with an existing one, how a
    caller reads or controls it, and how it participates in the relevant task or
    environment.
@@ -98,6 +112,15 @@ When the two disagree, the style guide wins.
 
 **Any page**
 - [ ] Opens with the outcome, second person, no throat-clearing.
+- [ ] The introduction establishes the reader's situation, scope, result, and
+      the order in which the page reaches it.
+- [ ] Reading only the introduction and each section's opening paragraph yields
+      a coherent outline; every section states why it belongs at that point.
+- [ ] Paragraphs within a section form a dependency chain rather than a
+      reorderable list of facts.
+- [ ] Every public operation used by the primary example is explained in caller
+      order, with relevant inputs, return values, and lifecycle effects.
+- [ ] Every non-trivial code block is framed by its purpose and interpretation.
 - [ ] New terms are explained before they appear in headings, cards, or tables.
 - [ ] Public types, return values, lifecycle statements, and config names match
       the implementation and representative call sites.
@@ -131,3 +154,10 @@ When the two disagree, the style guide wins.
 - Run the **`docs-check`** skill (doc-to-code correctness + EN/ZH parity).
 - Confirm: no new bullet-list index pages, no throat-clearing intros, and no
   literal `**` leaking into built ZH pages from CJK-glued bold.
+- For every article, read the introduction followed only by section leads, then
+  read the complete page. Reject the page if the short pass does not form a
+  logical outline. Apply the same rule compactly to indexes and references: the
+  lead must establish what the page routes or lets readers look up, and the
+  cards, tables, or entries must follow a deliberate order. When a page teaches
+  an interface, reject it if the full pass leaves primary-example API calls
+  unexplained.

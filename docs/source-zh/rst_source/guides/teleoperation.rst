@@ -1,12 +1,12 @@
 遥操作
 ======
 
-遥操作允许操作者在 rollout 中接管 policy，可用于采集示教、纠正失败动作或运行 DAgger。接入时，建议先验证单台设备能否稳定读取数据，确认无误后再组合多台设备。本页按这一顺序展开，最后说明独立设备与 env 管理设备在 placement 上的差异。若尚未了解零部件名称与动作路径的关系，请先阅读 :doc:`../concepts/robotics`。
+遥操作允许操作者在 rollout 中接管 policy，可用于采集示教、纠正失败动作或运行 DAgger。接入时，应先根据动作语义选择设备并独立验证硬件，再组合多台设备、确定各条 connection 的归属，只有更新频率确实不足时才调整直推模式。本页先完成这条使用路径，最后沿用同样的顺序说明如何新增设备。若尚未了解设备动作所对应的机器人路径，请先阅读 :doc:`../concepts/robotics`。
 
 选择设备
 --------
 
-仅使用一台设备时，在配置中填写设备名称：
+选择设备时，应同时考虑机器人需要的动作语义和操作者可用的硬件。下表中的每台设备都会产生特定含义的动作，例如机械臂笛卡尔增量或关节目标，有些设备还需要端口或标定信息。仅使用一台匹配设备时，在配置中填写其名称：
 
 .. code-block:: yaml
 
@@ -43,12 +43,12 @@
      - 不接操作者设备，由 policy 独立控制。
      - 无
 
-设备输出必须与环境声明的动作类型一致。例如，双臂 Franka 不提供单臂笛卡尔动作，因此配置 ``spacemouse`` 时会直接报错，并列出当前环境支持的设备。
+上表用于初步确定硬件，env 还会执行最终的语义检查。设备输出必须与环境声明的动作类型一致；例如，双臂 Franka 不提供单臂笛卡尔动作，因此配置 ``spacemouse`` 时会直接报错，并列出当前环境支持的设备。
 
 验证设备读数
 ------------
 
-有四台设备可以独立读取，不需要机器人、env 或集群：``gello``、``gello_joint``、``so101_leader`` 和 ``spacemouse``。
+选定设备后，应先验证 connection 和读数，再引入机器人或 env 配置。``gello``、``gello_joint``、``so101_leader`` 和 ``spacemouse`` 均提供独立运行命令：
 
 .. code-block:: bash
 
@@ -71,7 +71,7 @@ SO-101 主臂必须先完成 lerobot 标定才能读数，否则设备会拒绝�
 组合多台设备
 ------------
 
-确认每台设备均可独立工作后，将 ``teleop`` 改为列表。每一项只控制对应的机器人零部件：
+确认每台设备均可独立工作后，按照三个层次组合整套设备：先列出设备，再补充设备级硬件参数，只有同类分支无法区分时才使用 ``drives``。第一步是将 ``teleop`` 改为列表，每一项只控制对应的机器人零部件：
 
 .. code-block:: yaml
 
@@ -108,7 +108,7 @@ SO-101 主臂必须先完成 lerobot 标定才能读数，否则设备会拒绝�
 明确设备的资源归属
 ------------------
 
-内置遥操作构建器会在 env 进程中创建设备，再由 ``TeleopGroup.connect()`` 直接打开。遥操作设备不会加入 ``Robot`` 的组合结构，因此 ``Robot.connect()`` 不会处理它的 placement。通过 ``env.*.teleop`` 配置设备时，应将设备接到 env worker 所在的机器。
+设备组合通过语义检查后，还需要确定每条设备 connection 由哪个进程持有。内置遥操作构建器会在 env 进程中创建设备，再由 ``TeleopGroup.connect()`` 直接打开。遥操作设备不会加入 ``Robot`` 的组合结构，因此 ``Robot.connect()`` 不会处理它的 placement。通过 ``env.*.teleop`` 配置设备时，应将设备接到 env worker 所在的机器。
 
 遥操作设备本身也是一条 ``Connection``，因此同样接受 ``node_rank``，连接时就在该节点打开：
 
@@ -130,7 +130,7 @@ SO-101 主臂必须先完成 lerobot 标定才能读数，否则设备会拒绝�
 提高主从臂跟随频率
 ------------------
 
-如果主臂目标仅按 policy 的执行频率下发，从臂可能出现跟随延迟。直推模式使用独立线程，以约 1 kHz 的频率向控制器发送关节目标；``env.step`` 仍会读取状态，但不再转发运动指令：
+placement 决定设备在哪里读取，常规 env loop 则决定动作下发频率。如果主臂目标仅按 policy 的执行频率下发，从臂可能出现跟随延迟。直推模式使用独立线程，以约 1 kHz 的频率向控制器发送关节目标；``env.step`` 仍会读取状态，但不再转发运动指令：
 
 .. code-block:: yaml
 
@@ -144,7 +144,7 @@ SO-101 主臂必须先完成 lerobot 标定才能读数，否则设备会拒绝�
 新增设备
 --------
 
-一台设备对应 ``robotics/parts/teleop/`` 下的一个模块。继承 ``TeleopDevice``，为它注册一个配置名称，并声明它填充哪些动作：
+前面的使用流程依赖四项设备 contract：配置能够解析到已注册的 class，生命周期方法持有一条硬件句柄，观测方法产生符合声明的读数，``action()`` 再将读数转换为具名的机器人动作。新增设备时，应在 ``robotics/parts/teleop/`` 下用一个模块实现这些 contract：
 
 .. code-block:: python
 
@@ -175,20 +175,18 @@ SO-101 主臂必须先完成 lerobot 标定才能读数，否则设备会拒绝�
            moved = np.linalg.norm(reading["joints"] - context["joint_positions"][0])
            return TeleopAction({"arm": reading["joints"]}, driving=bool(moved > 0.01))
 
-``PRODUCES`` 声明设备填充哪些动作零部件及其语义，env 因此可以在打开硬件之前完成校验。``NEEDS`` 声明设备需要的机器人状态；无论有几台设备请求同一项状态，每次采样都只读取一次，并通过 ``context`` 传入。
+按照 builder 和 sampler 的调用顺序理解这个 class。``register("example")`` 定义配置名称；``PRODUCES`` 声明设备填充哪些动作零部件及其语义，env 因此可以在打开硬件前完成校验；``NEEDS`` 声明映射动作时需要哪些机器人状态。无论有几台设备请求同一项状态，每次采样都只读取一次，并通过 ``context`` 传入。
 
-``_open()`` 负责连接硬件并返回句柄，设备随后通过 ``self._device`` 读取；``_release()`` 负责关闭。这与其他机器人零部件使用同一套 connection 生命周期，``node_rank`` 也由同一套机制处理，设备无需为此编写任何代码——所以上面的构造函数只接收自己的参数。
+``__init__()`` 只记录端口。``_open()`` 随后创建并返回硬件句柄，设备通过 ``self._device`` 使用它；``_release(device)`` 负责关闭同一个句柄。公共 connection 层会处理可选的 ``node_rank``，因此 driver 构造函数只需包含自身的硬件参数。
 
 如果句柄在后台线程中持续轮询，应在它自己的 ``close()`` 中先通知线程停止，再等待其退出；默认的 ``_release()`` 会找到并调用该方法。``gello``、``gello_joint`` 和 ``spacemouse`` 都采用这种写法，因此都不需要覆盖 ``_release()``。``TeleopGroup.disconnect()`` 会按相反顺序关闭设备，并在某台设备关闭失败后继续处理其他设备，但它无法结束不属于自己的线程。把清理逻辑放在线程所在的位置，可以保证独立诊断和 env 托管设备都能正常断开和重连。
 
-``observation_features`` 在打开硬件之前声明读数结构，因此可以离线描述一套设备。该方法是抽象方法，未实现的设备无法实例化。
-
-``action()`` 返回 ``TeleopAction``，其中包含设备填充的动作零部件，以及本次采样操作者是否正在接管。若本次不产生动作，返回 ``driving=False``，控制权保留给 policy。
+连接后，``observation_features`` 提供离线可读的 schema，``get_observation()`` 返回与之对应的 ``joints`` 读数。sampler 将该读数和 ``NEEDS`` 指定的状态传给 ``action()``，其 ``TeleopAction`` 返回值同时包含需要填充的零部件和操作者是否正在接管。若本次采样不产生动作，则返回 ``driving=False``，控制权保留给 policy。
 
 面向配置的行为
 ~~~~~~~~~~~~~~
 
-``from_config()`` 的默认实现会将该列表项自身的 options 作为关键字参数传给构造函数。只要设备的配置 key 与构造参数同名，就无需再写任何代码：上面的设备已经可以通过 ``{example: {port: /dev/ttyUSB0}}`` 使用。
+至此，class contract 已支持直接构造；要从 env YAML 使用，还需将每个配置项映射到这些构造参数。``from_config()`` 的默认实现会将当前列表项的 options 作为关键字参数传给构造函数。只要配置 key 与构造参数同名，就无需再写任何代码：上面的设备已经可以通过 ``{example: {port: /dev/ttyUSB0}}`` 使用。
 
 如果需要读取设备级配置段，或根据机器人的动作语义调整行为，则覆盖该方法：
 
@@ -211,10 +209,12 @@ SO-101 主臂必须先完成 lerobot 标定才能读数，否则设备会拒绝�
 已废弃的配置项
 --------------
 
-旧配置使用 ``teleop_device`` 指定设备，或通过 ``use_spacemouse``、``use_gello``、``use_gello_joint`` 和 ``use_pico`` 启用设备。这些字段仍可读取，但会产生 deprecation warning。如果旧字段与 ``teleop`` 同时出现，系统以 ``teleop`` 为准，并在 warning 中列出被覆盖的字段。
+新配置应使用前文所示的 ``teleop``。旧配置可能仍包含已废弃的写法：使用 ``teleop_device`` 指定设备，或通过 ``use_spacemouse``、``use_gello``、``use_gello_joint`` 和 ``use_pico`` 启用设备。这些字段仍可读取，但会产生 deprecation warning；如果旧字段与 ``teleop`` 同时出现，系统以 ``teleop`` 为准，并在 warning 中列出被覆盖的字段。
 
 后续阅读
 --------
+
+完成设备选择、组合、归属和实现后，可根据当前工作继续阅读相应主题：
 
 - :doc:`机器人接口 <../concepts/robotics>`：了解设备所填充的零部件路径。
 - :doc:`真机任务与环境 <../concepts/realworld_envs>`：了解遥操作在 wrapper 栈中的位置。

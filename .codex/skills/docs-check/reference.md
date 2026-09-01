@@ -143,6 +143,20 @@ perfectly legal.
 - [ ] Internal RLinf doc links use `:doc:`/relative links (no hardcoded ReadTheDocs `.../rst_source/...` URLs)
 
 ### Natural language
+- [ ] Continuity is checked for every article type, not only Concepts, Guides,
+      Extending, or code documentation
+- [ ] The page opening establishes the reader's situation, result, scope, and
+      reading order
+- [ ] The page introduction plus section leads form a coherent outline by
+      themselves
+- [ ] Every section lead connects to the preceding state and names one question
+      the section resolves
+- [ ] Paragraphs within a section follow a dependency chain rather than a
+      reorderable list of facts
+- [ ] Every public call in the primary example is explained in caller order,
+      including important inputs, returns, and lifecycle effects
+- [ ] Non-trivial code blocks are introduced by purpose and followed by an
+      interpretation that advances the workflow
 - [ ] The explanation starts from a reader-visible situation, then names the implementation
 - [ ] Every API term is explained before it appears in a concept/guide/extending heading
 - [ ] Examples connect technical names back to the plain-language model

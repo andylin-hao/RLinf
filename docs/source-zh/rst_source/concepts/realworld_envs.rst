@@ -1,14 +1,14 @@
 真机任务与环境
 ==============
 
-真机环境将机器人与任务组合，并在外层添加遥操作、人工结果标记和数据转换等 wrapper。
+真机环境先将机器人与一项任务组合，再在外层加入遥操作、人工结果标记和数据转换等 wrapper。新增行为前，应先判断它属于硬件能力、任务目标还是 rollout 外层流程，避免把不同职责继续堆入 env subclass。
 
-新增逻辑时，可根据职责确定代码位置：直接读写硬件的逻辑属于机器人零部件；奖励、成功条件和复位流程属于任务；只改变 rollout 控制方式或数据表示的逻辑属于 wrapper。若尚未了解零部件如何组合，请先阅读 :doc:`robotics`。
+本页沿数据在环境栈中的流向展开：先定义任务配置与 env 类，再通过 Gymnasium ID 注册；随后说明 env 如何持有并读写一台组合机器人，最后按照执行顺序介绍 wrapper、遥操作设备、动作仲裁和 episode 控制。若尚未了解机器人访问路径，请先阅读 :doc:`机器人接口 <robotics>`。
 
-任务由配置和少量覆盖组成
---------------------------
+定义任务数据与行为
+------------------
 
-``rlinf/envs/real/franka/`` 中的每个任务对应一个模块，公共逻辑位于 ``base.py``。通常只需新增一个配置 dataclass；任务需要特殊复位流程时，再覆盖相应的 env 方法。
+先处理任务之间真正不同的内容：目标、成功条件、控制器参数和任务特有的复位运动。``rlinf/envs/real/franka/`` 中的每个任务对应一个模块；dataclass 保存这些配置值，无法用数据表达的行为则由 env class 覆盖，公共逻辑继续留在 ``base.py``。
 
 .. code-block:: python
 
@@ -31,12 +31,12 @@
            # 先抬离插孔，再返回初始位姿，避免插销卡住。
            ...
 
-``compliance()`` 将任务参数合并到 ``COMPLIANCE_DEFAULTS``。字段名错误或控制器不支持相应参数时，该函数会立即报错。插销任务只覆盖一项参数，bin relocation 覆盖十一项；位姿、奖励阈值和复位随机范围也分别保存在对应的任务配置中。
+``PegInsertionConfig`` 为继承的 env 逻辑统一提供目标、随机范围和控制器设置，``CONFIG_CLS`` 则告诉 ``PegInsertionEnv`` 应构造哪一种配置。``go_to_rest()`` 只覆盖与插销任务相关的复位顺序。``compliance()`` 将任务参数合并到 ``COMPLIANCE_DEFAULTS``；字段名错误或控制器不支持相应参数时，该函数会立即报错。插销任务只覆盖一项参数，bin relocation 覆盖十一项，其余任务数据也保存在各自配置中。
 
 注册任务
 --------
 
-``TASKS`` 只记录 Gymnasium ID 与 env 类之间的对应关系。wrapper 由 env 自行声明，无需写入注册表：
+任务的配置和行为确定后，需要用稳定 ID 供配置文件和数据集引用。``TASKS`` 只记录 Gymnasium ID 与 env class 的对应关系；wrapper 由 env 自行声明，不进入第二套注册流程：
 
 .. code-block:: python
 
@@ -48,16 +48,16 @@
 
    _ENTRY_POINTS = register_tasks(__name__, globals(), TASKS)
 
-``register_tasks`` 根据该映射生成 Gymnasium entry point。用户配置和数据集元数据都会保存 Gym ID，因此数据采集开始后不应随意修改 ID。
+``register_tasks`` 将每一项映射转换为 Gymnasium entry point，并把生成结果保存在 ``_ENTRY_POINTS``。用户配置和数据集元数据都会保存 Gym ID，因此数据采集开始后不应随意修改 ID。
 
 通过机器人接口读写硬件
 ----------------------
 
-env 持有一台组合完成的机器人。它构建机械臂、末端执行器和相机，调用 ``robot.connect()`` 打开硬件，并在 ``close()`` 中释放同一台机器人。每一步的观测和动作都通过 ``robot.get_observation()`` 和 ``robot.send_action()`` 完成，不直接访问 driver 或厂商 SDK。
+注册决定构造哪个 env class，env 实例随后在整个生命周期内持有同一台组合机器人。初始化时，它构建机械臂、末端执行器和相机，并调用 ``robot.connect()``；``close()`` 再通过 ``robot.disconnect()`` 释放资源。每个 step 只从 ``robot.get_observation()`` 取得一份嵌套观测，并通过 ``robot.send_action()`` 下发具名动作，不在旁路直接访问 driver 或厂商 SDK。
 
 不同硬件结构使用同一边界。Franka 的机械臂和末端执行器分别打开连接，因此使用并列路径；SO-101 的夹爪是机械臂总线上的另一个伺服，因此使用 ``arm.end_effector``。``SO101ReachEnv-v1`` 仍通过这套嵌套接口读写硬件，再将数据转换为 policy 使用的六维关节与夹爪向量。
 
-不属于单步动作流的初始化操作，可以通过类型明确的零部件完成：
+单步读写接口保持精简，就绪检查和复位则需要设备类别提供的方法。env 可以从同一机器人中保留具类型零部件，用于完成这些初始化操作：
 
 .. code-block:: python
 
@@ -71,12 +71,12 @@ env 持有一台组合完成的机器人。它构建机械臂、末端执行器�
    arm.reset_joint(reset_qpos)
    ready = all(camera.is_ready() for camera in cameras.values())
 
-相机的 placement 和生命周期仍由机器人负责。env 可以保留相机引用用于处理画面，但不应为同一设备构建或关闭第二个对象。env 还应复用一次整机读取结果来构造当前步的状态和画面，避免混入后续 SDK 读取的数据。
+``child("arm", Arm)`` 检查任务要求的机械臂路径，并返回用于就绪检查和复位的 ``Arm`` 接口。``parts_of_type(Camera)`` 按完整路径返回所有相机，使 env 无需假设相机名称。相机的 placement 和生命周期仍由机器人管理；env 可以保留引用用于处理画面，但不应为同一设备构建或关闭第二个对象。构造当前步的状态和画面时，还应复用一次整机读取结果，避免混入后续 SDK 读取的数据。
 
-按职责组织 wrapper
--------------------
+按照职责组织 wrapper
+---------------------
 
-wrapper 根据所承担的职责划分目录：
+至此，基础 env 已经定义任务行为和硬件读写。wrapper 只应改变外层 rollout 流程，并根据所转换的内容划分目录：
 
 .. list-table::
    :header-rows: 1
@@ -91,7 +91,7 @@ wrapper 根据所承担的职责划分目录：
    * - ``episode/``
      - 控制 rollout 的起止和评分。这些信息由现场操作者提供，而非由传感器产生。
 
-``build_stack`` 根据 env 声明组装 wrapper，所有机器人共用同一套构建流程。
+``build_stack`` 根据 env 配置和声明依次应用这些 wrapper，并返回最外层 env；不同机器人共用同一套构建流程。
 
 .. code-block:: python
 
@@ -100,7 +100,7 @@ wrapper 根据所承担的职责划分目录：
 在环境侧处理动作接管
 --------------------
 
-:doc:`遥操作指南 <../guides/teleoperation>` 介绍设备选择和 binding。环境侧处理两个问题：在相邻采样之间保持接管状态，以及将以零部件名称为 key 的动作写入环境使用的扁平 action vector。
+根据前面的职责划分，动作替换属于 ``teleop/``。:doc:`遥操作指南 <../guides/teleoperation>` 介绍设备选择和 binding，本节继续跟踪动作在 env 侧的两个步骤：先在操作者与 policy 之间仲裁，再将选中的具名动作写入 env 使用的扁平 action vector。
 
 ``TeleopIntervention`` 会在短时间内保留最近一次操作者动作，避免两次设备采样之间切回 policy。PICO 使用 grip 明确标识接管区间，因此将 ``timeout`` 设为 0，并在松开后立即交还控制权。数据采集器从 ``intervene_action`` 读取仲裁后的动作。
 
@@ -126,13 +126,13 @@ wrapper 根据所承担的职责划分目录：
 分离设备读取与动作映射
 ----------------------
 
-遥操作代码按以下职责分层：
+env 侧仲裁能够保持清晰，前提是设备读取与动作映射分开。下面沿一次遥操作采样，从设备、group 到 wrapper 说明各层职责：
 
 - ``robotics/parts/teleop/<device>.py``：读取一台串口设备、HID 设备或头显，并声明其读数对应哪些机器人动作及各自的语义。它本身是 ``RobotPart``，因此拥有一致的连接、观测和断开接口，也可以放置到其他节点。
 - ``robotics/parts/teleop/base.py``：保存 registry 和各设备的公共逻辑；``group.py`` 将多台设备的动作合并为一个动作。
 - ``real/wrappers/teleop/builder.py``：解析配置中的设备名称；``composed.py`` 再根据零部件名称，将动作写入 env 声明的扁平 action vector。
 
-设备层不依赖 Gymnasium，因此排查线缆或设备权限时可以单独运行设备，无需启动机器人。将具名动作写入某个 env 的扁平 action vector 仍由 env 层负责，因为只有它知道该布局。
+前两层产生具名动作，第三层才知道这些名称如何写入具体 env 的向量。设备层不依赖 Gymnasium，因此排查线缆或设备权限时可以单独运行设备，无需启动机器人；扁平 action vector 的转换仍由 env 层完成，因为只有它知道对应布局。
 
 连接机器人前，可使用以下命令检查主臂接线：
 
@@ -147,7 +147,7 @@ wrapper 根据所承担的职责划分目录：
 将 episode 控制置于独立层
 -------------------------
 
-标记成功、放弃当前 rollout 或切换 policy 都不会修改机器人动作。此类 wrapper 位于 ``episode/``，并共用 :class:`KeyboardSession`。该类负责键盘监听、防抖，以及在 reset 时清空队列，避免机械臂返回初始位姿期间的输入影响下一个 episode。
+并非所有操作者输入都属于遥操作。标记成功、放弃当前 rollout 或切换 policy 改变的是 episode 状态，而不是前一节仲裁得到的动作。此类 wrapper 位于 ``episode/``，并共用 :class:`KeyboardSession`。该类负责键盘监听、防抖，以及在 reset 时清空队列，避免机械臂返回初始位姿期间的输入影响下一个 episode。
 
 新增控制模式时，读取 ``presses()`` 并定义各按键的含义：
 
@@ -164,6 +164,8 @@ wrapper 根据所承担的职责划分目录：
 
 代码位置
 --------
+
+代码目录沿用前述数据流顺序，从任务构建、机器人读写到三类 wrapper 分别组织：
 
 .. list-table::
    :header-rows: 1
@@ -194,6 +196,8 @@ wrapper 根据所承担的职责划分目录：
 
 后续阅读
 --------
+
+根据需要扩展的层次继续阅读：
 
 - :doc:`新增真机任务 <../extending/new_task>`：按步骤接入新的真机任务。
 - :doc:`机器人接口 <robotics>`：了解如何读取和控制底层机器人。

@@ -119,6 +119,52 @@ sharp edge, and not selling anything.
 - **Say the thing; don't announce it.** "`build` never mentions the gripper"
   beats "Notice that `build` never mentions the gripper".
 
+### Build a continuous article
+
+Every article needs a continuous line of thought, not a sequence of locally
+correct paragraphs. Its introduction, sections, examples, and transitions must
+let a reader follow one question from the page title to the final result. The
+amount of prose varies by page type: an index may establish its purpose in one
+sentence before routing through cards, and a reference page may lead with what
+can be looked up and how entries are organized. Neither is exempt from having a
+clear lead and a deliberate order.
+
+- **Give the page a lead.** The opening should establish the reader's situation,
+  the result the page will help them reach, the boundary of the topic, and the
+  order in which the page develops it. A list of features or implementation
+  areas is not a lead. A reader should be able to predict why the second section
+  follows the first.
+- **Give every section a lead.** Open a section by connecting it to the state
+  established above and naming the one question the section resolves. Do not
+  begin abruptly with a code block, table, API name, or isolated fact. The lead
+  should add direction, not merely repeat the heading.
+- **Make paragraphs depend on one another.** Develop the section as a chain:
+  establish the distinction, introduce the relevant API, show it in a complete
+  example, interpret the result, then carry that result into the next concern.
+  Reordering the paragraphs should change the explanation; if it does not, the
+  section is probably a fact list.
+- **Explain an interface in call order.** When a section teaches a workflow,
+  account for each public operation the example relies on, in the order a caller
+  uses it. State what the operation accepts or returns, why it is needed at that
+  point, and how its result feeds the next call. Do not place several unfamiliar
+  methods in one example and explain only the most interesting two.
+- **Frame and interpret examples.** Before a code block, state the concrete
+  result it demonstrates. After it, explain the important return values,
+  ownership or lifecycle effects, and the next decision the reader can now
+  make. Avoid line-by-line narration, but never leave the example to carry the
+  conceptual transition by itself.
+- **Close the local loop.** End a section with the established result or the
+  condition that motivates the next section when that relationship is not
+  already obvious. Use a real dependency between ideas rather than a generic
+  transition such as "Next, we discuss...".
+
+Before accepting any article, read only its introduction and the opening
+paragraph of each section. They should form a coherent outline on their own.
+Then read the full page and verify that each paragraph advances that outline.
+When the article teaches an interface, also verify that every API used in the
+primary example is explained and that every code block advances the same
+narrative.
+
 ## Information architecture
 
 RLinf docs are organized into eight single-purpose top-level axes, in this order:
@@ -472,14 +518,20 @@ After each change:
 - Confirm no new bullet-list index pages, no throat-clearing intros, and no
   `**bold**` glued between CJK characters.
 
-For Concepts and Guides pages, also read the page top to bottom in both
-languages before merging, and rewrite if any of these are true:
+For every article, also read the page top to bottom in both languages before
+merging, and rewrite if any of these are true:
 
 - Most paragraphs are the same length and end in a sentence about why the design
   is good.
 - Sentences begin cold and stop the moment the fact lands, with no transition
   between paragraphs or sections.
 - The ZH page tracks the EN sentence for sentence.
+- The page introduction does not establish a result, scope, and reading order.
+- A section can be moved elsewhere without changing the surrounding
+  explanation, or begins with code or an API name before stating why it is
+  needed.
+- The primary example calls public methods that the surrounding prose never
+  explains, or explains them in an order unrelated to the workflow.
 
 Cadence is the hardest thing to hear in your own prose, so a second pass by a
 different writer — human or model — catches what a self-review will not. Give

@@ -4,14 +4,19 @@ Teleoperation
 Teleoperation lets an operator replace the policy's action during a rollout to
 collect demonstrations, recover from a failure, or run DAgger. Start with one
 device and verify its readings; only after that works should you combine
-devices. This page follows that order, and closes with the placement boundary
-for standalone and environment-owned devices. For the underlying robot
-composition, see :doc:`../concepts/robotics`.
+devices. This page follows the complete setup path: choose a device by the
+action it produces, check its hardware in isolation, compose a rig, decide
+where each connection opens, and adjust the update rate only when needed. The
+last sections use the same path to explain how to add a device. For the robot
+paths those actions fill, see :doc:`../concepts/robotics`.
 
 Choose a Device
 ---------------
 
-For a single device, set its name:
+Begin with the action the robot expects and the hardware available to the
+operator. Each registered device below produces a particular action meaning,
+such as a Cartesian arm delta or joint target, and may require a port or
+calibration. For a single matching device, set its name:
 
 .. code-block:: yaml
 
@@ -49,7 +54,8 @@ For a single device, set its name:
      - Leaves the policy in control with no operator device.
      - None
 
-An environment accepts only devices that match the robot's control paths. A
+The table narrows the hardware choice; the environment performs the final
+semantic check. It accepts only devices that match the robot's control paths. A
 dual-arm Franka, for example, has no single-arm Cartesian path, so it rejects
 ``spacemouse`` instead of ignoring the setting. The error also lists the devices
 that the environment accepts.
@@ -57,8 +63,9 @@ that the environment accepts.
 Check a Device First
 --------------------
 
-Four devices read on their own, with no robot, env or cluster: ``gello``,
-``gello_joint``, ``so101_leader`` and ``spacemouse``.
+After choosing a device, verify its connection and reading before introducing
+robot or env configuration. Four devices provide standalone commands:
+``gello``, ``gello_joint``, ``so101_leader`` and ``spacemouse``.
 
 .. code-block:: bash
 
@@ -91,8 +98,10 @@ arm reads ``driving=False`` until you move it.
 Compose Devices After One Works
 -------------------------------
 
-Once each device works alone, put them in a list. Each entry contributes actions
-for the named robot parts it can drive:
+Once each device works alone, compose the rig in three stages: list its devices,
+add device-wide hardware settings, then use ``drives`` only where identical
+branches would otherwise be ambiguous. Start by putting the device names in a
+list; each entry contributes actions for the robot parts it can drive:
 
 .. code-block:: yaml
 
@@ -136,7 +145,9 @@ part.
 Keep Device Ownership Explicit
 ------------------------------
 
-The built-in teleop builder creates devices in the environment process, and
+The rig is now semantically valid; the next decision is which process owns each
+device connection. The built-in teleop builder creates devices in the
+environment process, and
 ``TeleopGroup.connect()`` opens them there. A teleop device does not belong to
 the robot tree, so ``Robot.connect()`` does not place it. Plug devices configured
 through ``env.*.teleop`` into the machine that runs the environment worker.
@@ -168,8 +179,10 @@ gripper therefore uses a single HID handle.
 When the Rate Is the Problem
 ----------------------------
 
-A follower tracks poorly when it receives leader-arm targets only at the
-policy's step rate. Direct streaming moves that path onto a thread that pushes
+Placement determines where a device reads, but the normal env loop still
+determines how often it commands the robot. If a follower tracks poorly because
+leader-arm targets arrive only at the policy's step rate, direct streaming moves
+that path onto a thread that pushes
 joint targets to the controllers at roughly 1 kHz. ``env.step`` continues to
 read state but no longer forwards motion:
 
@@ -187,8 +200,11 @@ instead of receiving malformed motion.
 Add a Device
 ------------
 
-A device is one module under ``robotics/parts/teleop/``. Subclass
-``TeleopDevice``, register a config name for it, and say what it fills:
+The setup above relies on four device contracts: configuration selects a
+registered class, lifecycle methods own one hardware handle, observation methods
+produce one declared reading, and ``action()`` maps that reading to named robot
+actions. A new device implements those contracts in one module under
+``robotics/parts/teleop/``:
 
 .. code-block:: python
 
@@ -219,17 +235,17 @@ A device is one module under ``robotics/parts/teleop/``. Subclass
            moved = np.linalg.norm(reading["joints"] - context["joint_positions"][0])
            return TeleopAction({"arm": reading["joints"]}, driving=bool(moved > 0.01))
 
-``PRODUCES`` names the action parts the device fills and the meaning of each, so
-an environment can check the device against its own layout before any hardware
-is opened. ``NEEDS`` lists the robot state the device wants; each name is read
-once per sample and arrives in ``context``, whether one device asks for it or
-five do.
+Read the class in the order the builder and sampler use it.
+``register("example")`` defines the config name. ``PRODUCES`` names the action
+parts the device fills and the meaning of each, so the env can check the device
+against its layout before hardware opens. ``NEEDS`` lists the robot state the
+mapping requires; each requested value is read once per sample and arrives in
+``context``, whether one device requests it or five do.
 
-``_open()`` reaches the hardware and returns the handle, which the device then
-reads through ``self._device``; ``_release()`` closes it. That is the same
-connection lifecycle every robot part follows, and the same machinery accepts
-``node_rank`` without the device writing anything for it -- which is why the
-constructor above takes only its own arguments.
+``__init__()`` records only the port. ``_open()`` later creates and returns the
+hardware handle, which becomes ``self._device``; ``_release(device)`` closes the
+same handle. The shared connection layer adds optional ``node_rank`` handling,
+so the driver constructor contains only its hardware parameters.
 
 A handle that polls in a background thread must stop and join that thread in
 its own ``close()``, which the default ``_release()`` finds and calls. That is
@@ -240,18 +256,19 @@ it does not own exit. Keeping the cleanup beside the thread makes disconnect
 and reconnect reliable for standalone diagnostics and environment-managed
 devices alike.
 
-``observation_features`` declares the reading before any hardware is open, so a
-rig can be described offline. It is abstract, so a device that omits it cannot
-be instantiated.
-
-``action()`` returns a ``TeleopAction``: the parts it fills, and whether the
-operator is currently driving. A device that fills nothing this sample returns
+After connection, ``observation_features`` supplies the offline schema and
+``get_observation()`` returns the matching ``joints`` reading. The sampler
+passes that reading and the values named by ``NEEDS`` to ``action()``. Its
+``TeleopAction`` return contains both the parts to fill and whether the operator
+is currently driving. A device that fills nothing in a sample returns
 ``driving=False`` and leaves the policy in control.
 
 Config-Facing Behaviour
 ~~~~~~~~~~~~~~~~~~~~~~~
 
-The default ``from_config()`` passes the entry's own options through as keyword
+The class contract is complete for direct construction. To make it useful from
+env YAML, map each config entry to those constructor arguments. The default
+``from_config()`` passes the entry's own options through as keyword
 arguments, which is all a device needs whose config keys match its constructor.
 The example above is already reachable as ``{example: {port: /dev/ttyUSB0}}``
 with nothing further to write.
@@ -290,7 +307,9 @@ device again.
 Retired Spellings
 -----------------
 
-``teleop_device`` named a single device, and the booleans ``use_spacemouse``,
+New configurations should use ``teleop`` as shown above. Older runs may still
+contain retired spellings: ``teleop_device`` named a single device, and the
+booleans ``use_spacemouse``,
 ``use_gello``, ``use_gello_joint``, and ``use_pico`` each switched one on. All
 of them still work and warn. Where ``teleop`` appears alongside one of them --
 which happens when a run config sits on an older base -- ``teleop`` is the one
@@ -298,6 +317,9 @@ that takes effect, and the warning names what it replaced.
 
 Next
 ----
+
+With selection, composition, ownership, and implementation covered, continue
+with the part of the workflow you are setting up:
 
 - :doc:`Robotics Interface <../concepts/robotics>`: the named robot paths a
   device fills.

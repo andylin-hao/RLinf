@@ -9,18 +9,27 @@ you can launch.
 This guide covers task modules under ``rlinf/envs/real``. To add a task to a
 simulator or benchmark, follow :doc:`new_env` instead.
 
-You will not change robot construction, device placement, or teleoperation.
-Targets, compliance settings, success rules, and reset behavior belong to the
-task; the existing robot and wrapper stack remain in place. If the hardware
-itself is new, follow :doc:`new_robot` first and return here once one observation
-and action can pass through it.
+For the core task path, leave robot construction, device placement, and
+teleoperation unchanged. Targets, compliance settings, success rules, and reset
+behavior belong to the task; the existing robot and wrapper stack remain in
+place. If the hardware itself is new, follow :doc:`new_robot` first and return
+here once one observation and action can pass through it. If the task also needs
+an operator device or wrapper that RLinf does not provide, complete the task
+path first and treat that as the separate extension described near the end.
 
-Steps
------
+The core workflow has five steps: define the task data, bind it to an env class,
+register a stable Gymnasium ID, configure one run, and verify the registration.
+The sections after that explain which infrastructure is already provided and
+cover two optional extensions—a new operator device or a new wrapper—that most
+tasks do not need.
+
+Core Workflow
+-------------
 
 The examples below add a ``WipeEnv-v1`` task to the existing Franka support.
-Follow them in order: later steps refer to the config class and Gymnasium ID
-chosen earlier.
+Each step produces an input for the next one: the dataclass configures the env,
+the env class is registered under an ID, the YAML selects that ID, and the final
+check confirms that the whole lookup path is available before hardware opens.
 
 For a joint-space arm, use the same sequence with its existing env base.
 ``SO101ReachEnv-v1`` and ``examples/embodiment/config/env/so101_reach.yaml`` are
@@ -29,7 +38,7 @@ gripper action. The robot still exposes the gripper at
 ``arm.end_effector``; the env is responsible for presenting the flat six-value
 action expected by its policy.
 
-1. Write the config
+1. Write the Config
 ~~~~~~~~~~~~~~~~~~~
 
 Create ``rlinf/envs/real/<robot>/<task>.py`` beside the other tasks for that
@@ -37,9 +46,12 @@ robot. Inherit its config dataclass and add the fields required by your task:
 
 .. code-block:: python
 
+   import copy
    from dataclasses import dataclass, field
 
    import numpy as np
+
+   from rlinf.robotics.actions import ActionKind, ActionPart
 
    from .base import FrankaEnv, FrankaRobotConfig, compliance
 
@@ -61,25 +73,35 @@ robot. Inherit its config dataclass and add the fields required by your task:
            self.target_ee_pose = np.array(self.target_ee_pose)
            self.action_scale = np.array([0.02, 0.1, 1])
 
-State only the gains that differ. ``compliance()`` merges them onto
-``COMPLIANCE_DEFAULTS`` and raises on any gain the controller does not accept. A
-misspelled gain stops here instead of reaching the impedance controller and
-being ignored.
+The fields answer distinct questions. ``task_description`` supplies the
+language instruction, ``target_ee_pose`` defines the goal, and
+``reward_threshold`` decides when each pose error is small enough.
+``random_xy_range`` controls reset variation. ``action_scale`` limits how far
+one policy action moves the arm, while ``compliance_param`` configures the
+controller used during that motion.
 
-2. Write the env
+State only compliance gains that differ. ``compliance()`` merges them onto
+``COMPLIANCE_DEFAULTS`` and raises on any gain the controller does not accept.
+A misspelled gain therefore fails while the task config is built instead of
+reaching the impedance controller and being ignored.
+
+2. Write the Env
 ~~~~~~~~~~~~~~~~
 
-Set the env class's config type. For many tasks, that is the whole class:
+The config contains all task values; the env class now attaches those values to
+the existing robot-specific execution flow. Set the class's config type first.
+For many tasks, that is the entire class:
 
 .. code-block:: python
 
    class WipeEnv(FrankaEnv):
        CONFIG_CLS = WipeConfig
 
-Override a hook only when the task needs different behavior. ``go_to_rest`` is
-the common case because homing depends on the task's end pose. Peg insertion,
-for example, lifts clear of the slot first; otherwise the peg catches on the way
-up:
+``CONFIG_CLS`` tells the inherited constructor which dataclass to build from
+``override_cfg``. Override a runtime hook only when the task needs different
+behavior. ``go_to_rest`` is the common case because homing depends on the task's
+end pose. Peg insertion, for example, lifts clear of the slot first; otherwise
+the peg catches on the way up:
 
 .. code-block:: python
 
@@ -104,10 +126,11 @@ is matched against what each part means rather than how wide it is:
 The declared widths must add up to the action space exactly; a mismatch is an
 error rather than a slice that lands somewhere unintended.
 
-3. Register it
-~~~~~~~~~~~~~~
+3. Register the Task
+~~~~~~~~~~~~~~~~~~~~
 
-Add one entry to the robot's ``TASKS`` table in
+Once the class can run the task, give it the stable ID that configs and datasets
+will store. Add one entry to the robot's ``TASKS`` table in
 ``rlinf/envs/real/<robot>/__init__.py``, naming the env class:
 
 .. code-block:: python
@@ -126,12 +149,12 @@ The wrapper stack does not appear here: the env declared it above, and
 User configs and dataset metadata store the gym id. Changing it later breaks
 those references. Choose the name before collecting data.
 
-4. Add the env config
+4. Add the Env Config
 ~~~~~~~~~~~~~~~~~~~~~
 
-Add a YAML file under ``examples/embodiment/config/env/``. Keep the registered
-id at the path shown below and describe the task fields in ``override_cfg``;
-these fields come from your config dataclass:
+The ID makes the task discoverable; the YAML now selects it for one run and
+supplies the values that vary by experiment. Add a file under
+``examples/embodiment/config/env/`` with this structure:
 
 .. code-block:: yaml
 
@@ -144,11 +167,18 @@ these fields come from your config dataclass:
      target_ee_pose: [0.5, 0.0, 0.1, -3.14, 0.0, 0.0]
      random_xy_range: 0.03
 
-5. Check it
-~~~~~~~~~~~
+``env_type: real`` selects RLinf's physical-environment adapter, and
+``init_params.id`` selects the Gymnasium task registered in the previous step.
+``teleop`` names the operator device for evaluation or data collection.
+``override_cfg`` is passed to ``WipeConfig``, so every key there must be a task
+config field; robot addresses and placement remain in the cluster hardware
+configuration.
 
-Before connecting hardware, confirm that the id is registered and its entry
-point resolves:
+5. Check the Registration
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The core path is now complete from YAML to task class. Before connecting
+hardware, import the real-world env package and confirm that the ID resolves:
 
 .. code-block:: python
 
@@ -158,10 +188,17 @@ point resolves:
    assert "WipeEnv-v1" in registry
 
 ``tests/unit_tests/test_real_env.py`` makes the same assertion for every shipped
-task. Add your id to ``EXPECTED_IDS`` there.
+task. Add your ID to ``EXPECTED_IDS`` there. A passing assertion establishes
+registration only; run the mock and hardware checks from :doc:`new_robot` when
+the task changes the robot-facing observation or action path.
 
-What You Do Not Need to Write
+Reuse Existing Infrastructure
 -----------------------------
+
+The five steps above are enough for a task that fits the existing robot and
+wrapper contracts. The following responsibilities stay in their current
+layers, so task code should call or configure them instead of reimplementing
+them:
 
 .. list-table::
    :header-rows: 1
@@ -184,7 +221,9 @@ What You Do Not Need to Write
 Adding a Teleop Device
 ----------------------
 
-A teleop device is one class in one module under
+Stop here unless the task requires an operator device that RLinf does not
+already provide. A new device is a separate hardware extension: it can be
+reused by several tasks and belongs in one module under
 ``rlinf/robotics/parts/teleop/``. It answers three questions: how to reach the
 hardware, what the operator is doing, and what the robot should do about it.
 
@@ -219,20 +258,21 @@ hardware, what the operator is doing, and what the robot should do about it.
                driving=pressed,
            )
 
-``_open`` reaches the hardware when the device connects and returns whatever
-speaks to it; that handle is ``self._device``. ``_release`` closes the same
-handle during rollback, normal shutdown, and reconnect. ``__init__`` only
-records the declaration, because declaration and connection may happen on
-different machines. If a reader owns a polling thread, stop and join that
-thread before returning from ``_release``.
+Read the class from selection to sampling. ``register("pedal")`` defines the
+config name, and ``PRODUCES`` states that the device supplies a gripper action;
+an env that lacks that semantic path rejects it before hardware opens.
+``__init__`` records the port because declaration and connection may occur on
+different machines. ``_open()`` creates the hardware handle, which becomes
+``self._device``, and ``_release(device)`` closes that same handle during
+rollback, normal shutdown, or reconnect. If the handle owns a polling thread,
+its close path must stop and join the thread.
 
-``PRODUCES`` maps each action part the device fills to what its numbers *mean*,
-so a device offering a twist to a joint-space arm is refused rather than
-obeyed. ``action`` answers everything about one reading at once, as a
-``TeleopAction``. ``driving`` is part of that one answer rather than a second
-call: a device whose answer depends on state it just computed would otherwise
-have to leave that state behind, and nothing would enforce the order of the two
-calls.
+The remaining methods define one sample. ``observation_features`` declares the
+``pressed`` field before connection, and ``get_observation()`` returns a value
+with that schema. ``action(reading, context)`` converts the reading into one
+``TeleopAction`` containing both the gripper value and ``driving`` state. Keeping
+them in one return value avoids a second device read or hidden intermediate
+state.
 
 The name in ``register`` is the one the env config spells. Config becomes
 constructor arguments through ``from_config``, which by default passes the
@@ -261,9 +301,10 @@ rather than Cartesian ones, say -- subclasses the first and overrides
 Adding a Wrapper Instead
 ------------------------
 
-When the new behavior surrounds a rollout, add a wrapper. Put action replacement
-in ``teleop/`` and representation changes in ``transforms/``;
-rollout boundaries and scores belong in ``episode/``. A new teleop device is one
-device class, as above, not a wrapper. For a new keyboard mode, subclass
-``KeyboardSession``.
-:doc:`../concepts/realworld_envs` describes both extension points.
+The other optional extension changes the env boundary rather than a hardware
+device. When behavior surrounds a rollout, add a wrapper: put action
+replacement in ``teleop/``, representation changes in ``transforms/``, and
+rollout boundaries or scores in ``episode/``. A new teleop device remains one
+device class, as above, while a new keyboard mode subclasses
+``KeyboardSession``. :doc:`../concepts/realworld_envs` places both extension
+points in the complete runtime flow.

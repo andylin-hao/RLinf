@@ -72,6 +72,23 @@ If scope is unclear, default to checking:
    - Translations preserve technical meaning (do not rename code symbols).
    - Corresponding EN/ZH pages use equivalent stable internal links.
 6. Verify natural-language flow:
+   - Treat continuity as a requirement for every article, including landing,
+     recipe, reference, and non-code prose pages. Adapt the depth of the lead to
+     the page type, but do not exempt a page from establishing its purpose and
+     order.
+   - The page introduction establishes the reader's starting situation, the
+     promised result, the topic boundary, and the order of the explanation.
+   - Read the introduction followed only by each section's opening paragraph.
+     They must form a coherent outline in which every section follows from the
+     state established before it.
+   - Each section opens by stating the question it resolves and its connection
+     to the surrounding workflow; it does not begin abruptly with code, a table,
+     an API identifier, or a fact unrelated to the previous section.
+   - Paragraphs develop one argument in dependency order rather than forming a
+     reorderable list of correct facts.
+   - Every public operation in the primary example is explained in caller order,
+     including the relevant input or return value and lifecycle effect. Each
+     non-trivial code block has a stated purpose and an interpretation.
    - Start from a concrete reader question, explain the idea in ordinary
      language, then introduce the exact API term and example.
    - Headings, cards, and opening sentences do not introduce unexplained
@@ -97,6 +114,9 @@ If scope is unclear, default to checking:
 - `Major`: Inconsistent docs that likely mislead users.
 - `Major`: An unexplained implementation term in a heading or opening breaks the
   reading flow on a concept, guide, or extending page.
+- `Major`: A page or section lacks a lead, sections do not form a logical
+  progression, or the primary example uses public operations that the prose
+  never explains.
 - `Minor`: Wording/terminology drift without immediate breakage.
 - `Minor`: Formulaic or translated prose is understandable but does not read
   naturally in its language.

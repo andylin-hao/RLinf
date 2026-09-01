@@ -35,6 +35,12 @@ defaults. `AGENTS.md` remains authoritative when details change.
 - Use natural, professional technical language in docs, comments, PRs, reviews,
   and conversation. Avoid casual chat, bureaucratic phrasing, promotional prose,
   and formulaic AI-like cadence.
+- Treat continuity as a basic requirement for every article and substantive
+  explanation, not only code documentation. Establish the reader's situation,
+  result, scope, and reading order at the start; connect each section to the
+  preceding state; make paragraphs depend on one another; and frame and
+  interpret examples. Explain interface operations in caller order, including
+  the relevant inputs, returns, and lifecycle effects.
 - Explain the reader-visible situation before naming the implementation. Teach
   the normal workflow first, followed by extension, composition, remote use, and
   internal architecture only when each layer becomes relevant.

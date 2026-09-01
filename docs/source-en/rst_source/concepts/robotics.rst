@@ -1,22 +1,25 @@
 Robotics Interface
 ==================
 
-RLinf presents a robot as named parts with one observation and action
-interface. An arm, end effector, camera, or mobile base occupies one path in
-that interface. The same paths appear in observations and, for controllable
-parts, in actions.
+Use the robotics interface when a task or environment needs to inspect, open,
+read, command, and close a physical robot without depending on its driver. An
+arm, end effector, camera, or mobile base occupies a named path. Observations
+and actions use those same paths, so the structure a caller sees remains stable
+when a device backend or deployment changes.
 
-This page covers the interface used by tasks and environments. It starts with
-an existing robot, then explains how paths follow hardware composition and why
-the same code works for local and remotely placed parts. Hardware sessions,
-ownership, and worker placement are covered separately in
-:doc:`Robotics Architecture <robotics_architecture>`.
+This page follows one complete call sequence first. It explains how to build a
+robot, inspect its structure, select typed parts, manage the connection
+lifecycle, and exchange observations and actions. The later sections show where
+the paths come from, how composition preserves the interface, and where the
+robot boundary sits in an environment. Hardware sessions, ownership, and worker
+placement are developed in :doc:`Robotics Architecture <robotics_architecture>`.
 
 Use the Interface
 -----------------
 
-Build the robot, inspect it before opening hardware, and keep
-``disconnect()`` in a ``finally`` block:
+A normal caller uses the interface in four phases: construct and inspect the
+robot, select any parts needed for setup, connect and exchange data, then release
+the hardware. The following example keeps those phases visible in one place:
 
 .. code-block:: python
 
@@ -41,7 +44,7 @@ Build the robot, inspect it before opening hardware, and keep
        tcp_pose = observation["arm"]["tcp_pose"]
        gripper_state = observation["end_effector"]["state"]
 
-       robot.send_action(
+       applied = robot.send_action(
            {
                "arm": {"tcp_pose": target},
                "end_effector": {"target": width},
@@ -50,23 +53,47 @@ Build the robot, inspect it before opening hardware, and keep
    finally:
        robot.disconnect()
 
-``get_observation()`` reads the named interface once and returns one nested
-dictionary. ``send_action()`` accepts the matching action tree; it may contain
-only the branches to command in this step.
+``build_robot()`` resolves the registered robot type and returns an unconnected
+``Robot``. Construction records hardware arguments and placement, but it does
+not import a vendor SDK or open a device. ``describe()`` reads that declaration,
+so it can report paths, nodes, and connection ownership before the hardware is
+powered or reachable.
 
-Use ``child(name, ExpectedType)`` when setup or reset code needs a part's
-standard methods. The expected type is checked immediately and is also the
-return type seen by an editor. For example, every ``Arm`` provides
-``is_robot_up()``, ``clear_errors()``, and ``reset_joint()`` regardless of its
-backend or placement. ``parts_of_type(Camera)`` is useful when a task needs all
-cameras but does not depend on their configured names.
+Setup code then selects the capabilities it needs. ``child("arm", Arm)`` returns
+the part at ``arm`` and checks that it implements ``Arm``; the expected class is
+also the static return type seen by an editor. ``parts_of_type(Camera)`` walks
+the full composition and returns every matching camera keyed by its dotted path.
+Use ``child()`` when a path is part of the task contract, and
+``parts_of_type()`` when the task needs a category without depending on camera
+names.
+
+``connect()`` opens each owning connection once and rolls back connections
+already opened if a later one fails. Once connected, category methods such as
+``Arm.is_robot_up()`` and ``Camera.is_ready()`` check whether the devices can be
+used; ``clear_errors()`` and ``reset_joint()`` are available for setup outside
+the per-step action stream.
+
+The step loop uses two calls. ``get_observation()`` reads the composed robot once
+and returns a nested dictionary whose keys are the part paths.
+``send_action()`` accepts the corresponding action branches, dispatches only the
+branches present in this step, and returns the action each part actually sent as
+``applied``. Finally, ``disconnect()`` closes the owning connections in reverse
+order. Keeping it in ``finally`` guarantees cleanup after a failed read or
+command, and repeated calls are safe.
+
+The lifecycle is the same for every robot. What changes between robots is the
+set and nesting of the paths inside the observation and action dictionaries.
 
 Read the Interface Paths
 ------------------------
 
-Part names define the public data contract. A single-arm Franka has ``arm``
-and ``end_effector`` at the same level because the arm and Franka Hand open
-separate endpoints:
+To interpret the dictionaries returned above, start with how a path is formed.
+The name assigned during composition becomes a path segment; a part carried by
+another part adds the next segment. Comparing Franka and SO-101 shows both
+cases.
+
+A single-arm Franka has ``arm`` and ``end_effector`` at the same level because
+the arm and Franka Hand open separate endpoints:
 
 .. code-block:: text
 
@@ -74,12 +101,12 @@ separate endpoints:
    ├── arm           FrankaROSArm         node=1     via FrankaROSArm#1
    └── end_effector  FrankaGripper        node=1     via FrankaGripper#2
 
-The different ``via`` values show that each part owns a connection. Either can
-be placed, recovered, or replaced without changing the other.
+The different ``via`` values show that each part owns a connection. The two
+top-level names therefore address two independently managed parts.
 
-Some hardware is inseparable at the connection boundary. An SO-101 drives its
-five arm joints and gripper through one servo bus, so the end effector appears
-under the arm and both paths use the same connection:
+SO-101 represents the other case. Its five arm joints and gripper use one servo
+bus, so the end effector appears below the arm and both paths use the same
+connection:
 
 .. code-block:: text
 
@@ -103,21 +130,29 @@ The corresponding observation and action follow that structure:
        }
    )
 
-``describe()`` exposes ``via`` for diagnosis; task code uses paths and values.
-The complete text is not a serialization format and should not be parsed.
+The nested action is not a second API: it is the same ``send_action()`` call
+with one more path segment. ``describe()`` exposes ``via`` to explain why the
+segment is nested and which paths share a resource; task code uses the paths and
+values. The complete description is diagnostic text, not a serialization format.
 
 Compose Parts Without Changing the Interface
 --------------------------------------------
 
-A readable part enters a robot directly. For example,
-``Robot(base=base, arm=arm, end_effector=hand)`` publishes the three keyword
-names as paths. If a shared controller is only a ``Connection`` and cannot be
-observed itself, select the readable value it backs first, as in
-``session.part("left")``.
+The previous section showed the paths a caller receives. Composition creates
+those paths by joining readable parts under names, without changing how the
+caller later reads or commands them.
 
-A part may carry other parts. Those parts appear below it automatically, which
-is why the SO-101 gripper is reached as ``arm.end_effector``. A dual-arm robot
-can add ``left`` and ``right`` groups above the same interface:
+A ``RobotPart`` can enter a robot directly. For example,
+``Robot(base=base, arm=arm, end_effector=hand)`` uses the three keyword names as
+top-level paths. A bare ``Connection`` is different: it owns a shared hardware
+session but has no observation of its own. Select one readable part from it with
+``session.part("left")`` before passing the returned ``RobotPart`` to a robot.
+
+A part may also carry readable children backed by the same connection. Those
+children appear below it automatically, which is why the SO-101 gripper is
+reached as ``arm.end_effector``. When several parts form a reusable assembly,
+``PartGroup`` adds one more named level. A dual-arm robot can therefore place
+``left`` and ``right`` groups above the same arm interface:
 
 .. code-block:: python
 
@@ -125,54 +160,65 @@ can add ``left`` and ``right`` groups above the same interface:
    right_gripper = observation["right"]["end_effector"]["state"]
 
 There are no fixed ``arms`` or ``cameras`` slots. A mobile base, lift, head, or
-third arm can be composed under a stable name without adding another robot API.
+third arm enters under a stable name, while callers continue to use
+``get_observation()`` and ``send_action()``. With the public structure settled,
+an environment can treat the complete composition as one device boundary.
 
 Use the Same Boundary in an Environment
 ---------------------------------------
 
-An environment should read and command the composed robot, not its vendor
-drivers. One call to ``robot.get_observation()`` gives the environment a
-consistent input for building its policy-facing ``state`` and ``frames``. A
-part and anything sharing its connection also reuse one underlying state
-snapshot during that read.
+An environment turns the named robot data into the observation and action format
+expected by a policy. It should therefore enter through the same complete
+interface rather than read a driver beside it: one
+``robot.get_observation()`` supplies the state used to build both policy-facing
+``state`` and ``frames``, and ``robot.send_action()`` is the only per-step path
+back to hardware. A part and any children sharing its connection reuse one
+underlying state snapshot during that read.
 
-Direct part access remains appropriate for operations that are outside the
-per-step action stream. Current real-world environments use typed ``Arm``
-parts for readiness, error recovery, and joint reset; they find cameras through
-``parts_of_type(Camera)`` while the robot retains camera placement and
-lifecycle ownership.
+The typed part references selected before ``connect()`` remain useful for work
+outside the step loop. Current real-world environments use ``Arm`` for readiness,
+error recovery, and joint reset, and use ``parts_of_type(Camera)`` to find frame
+sources. The robot still owns the placement and lifecycle of those cameras; the
+environment only consumes their observations.
 
-Existing policies that expect flat vectors can use
-``LegacyObservationAdapter`` and ``VectorActionAdapter`` at the environment
-boundary. The robot interface itself remains named and nested.
+Existing policies that expect flat vectors use ``LegacyObservationAdapter`` and
+``VectorActionAdapter`` at this boundary. The adapters translate representation;
+the robot interface remains named and nested. That separation is also what lets
+placement change without reaching task code.
 
 Keep Placement Out of Task Code
 -------------------------------
 
-A path does not say where its part runs. A camera in the environment process
-and an arm on another node still appear in one observation. Independent
-connections are read and commanded concurrently; branches sharing one
-connection run in declaration order so the vendor session is not accessed
-concurrently.
+A path identifies a capability, not the process that hosts it. A camera in the
+environment process and an arm on another node still appear in the same
+observation because placement is recorded on each owning connection, outside
+the path. Independent connections are read and commanded concurrently;
+branches sharing one connection run in declaration order so the vendor session
+is not accessed concurrently.
 
-Task and policy code therefore depends on names and values rather than Ray
+Task and policy code consequently depends on names and values rather than Ray
 actors, RPCs, serial ports, or vendor sessions. Moving a connection changes its
-placement declaration, not the task interface.
+placement declaration, not the calls or data described on this page. One final
+boundary remains: a robot knows how hardware behaves, but not what the rollout
+is trying to achieve.
 
 Keep Task Logic Separate
 ------------------------
 
-A part knows how to sense or move hardware. It does not decide whether a
-rollout succeeded. Reward, termination, task-specific reset behavior, and
-Gymnasium spaces belong to a ``RobotTask`` or a concrete real-world env;
-``RobotTaskEnv`` is available when a task follows the generic interface.
+A part defines how to sense or move hardware; a task defines why those readings
+and motions matter. Reward, termination, task-specific reset behavior, and
+Gymnasium spaces therefore belong to a ``RobotTask`` or a concrete real-world
+env. ``RobotTaskEnv`` joins a generic task to the robot and owns the lifecycle,
+while specialized envs can use the same robot calls directly.
 
-This boundary lets one robot run several tasks without changing device code,
-and lets a task retain its policy-facing schema when hardware moves between
-nodes.
+The result is two independent contracts: robot paths remain stable across tasks
+and placement, while a task can change its policy-facing schema without changing
+a driver.
 
 Choose What to Read Next
 ------------------------
+
+Continue from the boundary you need to change:
 
 - To add a task on supported physical hardware, continue with
   :doc:`New Real-World Tasks <../extending/new_task>`.

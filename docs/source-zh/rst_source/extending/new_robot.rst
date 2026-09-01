@@ -1,14 +1,16 @@
 添加机器人
 ==========
 
-本指南以新增移动底盘为例，先在本地验证底盘的观测与动作，再将其与 RLinf 已有的 Franka 机械臂组合为移动操作机器人，最后接入真机 Gymnasium 环境和集群配置。按照这一顺序排查问题，可以先确认设备接口，再处理组合和部署。
+本指南以新增移动底盘为例，最终得到一个已注册的底盘 backend、稳定的观测与动作 contract、可复用的机器人 builder、集群配置，以及无需真机即可运行的测试。完成这些内容后，底盘可以与 RLinf 已有的 Franka 机械臂组成移动操作机器人，并通过真机 Gymnasium 环境使用。
+
+整个接入过程分为四个检查点：先让单个本地零部件完成连接、读写和释放，再与现有零部件组合并接入任务；组合确认后，将同一声明迁移到配置、注册和 placement；最后依次运行 contract、远程 mock 和真机检查。按照这一顺序处理，故障会落在明确的层次，而不会同时混入 driver、组合和 scheduler 问题。
 
 开始前，请阅读 :doc:`机器人接口 <../concepts/robotics>`。如果 RLinf 已经能够连接目标硬件，而变更仅涉及奖励、复位流程或成功条件，请参阅 :doc:`新增真机任务 <new_task>`。
 
 1. 在本地实现移动底盘
 ----------------------
 
-移动底盘是一个可控零部件：它报告自身位姿，并接收速度命令。实现时继承 ``MobileBase``，让类本身直接表明设备类别。厂商 SDK 应在 ``_open()`` 中导入；只导入该模块而不连接硬件的节点无需安装 SDK。
+移动底盘是一个可控零部件：它报告自身位姿，并接收速度命令。本节按照生命周期顺序实现这项 contract：先记录声明，再打开和释放设备，随后声明数据 schema，并实现读取、复位和控制。继承 ``MobileBase`` 后，调用方和 builder 依赖的是稳定设备类别，而不是厂商 class。
 
 .. code-block:: python
 
@@ -62,9 +64,11 @@
            )
            return {"velocity": velocity}
 
-装饰器将该 driver 注册为 ``example`` backend。已经持有具体 class 的代码仍可直接构造实例；从配置构建机器人时，则可通过 ``MobileBase.backend("example")`` 解析 driver。这个 registry 用于选择可互换的设备 driver，不代表完整机器人类型；后文会使用 ``register_type()`` 注册机器人。
+按照从声明到使用的顺序阅读这个 class。``__init__()`` 只记录 endpoint，不打开硬件，因为构造与连接可能发生在不同进程。``_open()`` 在持有 connection 的节点导入厂商 SDK，并返回 client；连接期间，该对象保存在 ``self._device``，断开时同一对象再传给 ``_release(device)``。
 
-这里约定 ``pose`` 为 ``[x, y, yaw]``，``velocity`` 为 ``[linear_velocity, angular_velocity]``。这些名称和单位会进入任务、policy 与数据集，因此应采用长期稳定的规范字段，而不是直接暴露厂商 SDK 的方法名。
+``observation_features`` 与 ``action_features`` 在硬件打开前声明接口。这里约定 ``pose`` 为 ``[x, y, yaw]``，``velocity`` 为 ``[linear_velocity, angular_velocity]``；``get_observation()`` 与 ``send_action()`` 返回的名称、shape 和 dtype 必须与声明一致，``send_action()`` 还会返回实际下发的速度。``reset()`` 则处理 episode 复位时位于单步动作流之外的停止操作。这些字段会进入任务、policy 与数据集，因此应采用长期稳定的物理含义，而不是直接暴露厂商 SDK 方法名。
+
+``@MobileBase.register("example")`` 最后为 driver 注册配置中使用的 backend 名称。持有具体 class 的代码仍可直接构造实例；从配置构建机器人时，则通过 ``MobileBase.backend("example")`` 解析同一个 class。这个 registry 只选择可互换的移动底盘 driver，后文会另行注册完整机器人组合。
 
 与其他零部件组合前，先单独连接并控制底盘：
 
@@ -80,7 +84,7 @@
    finally:
        base.disconnect()
 
-``_open()`` 的返回值会保存到 ``self._device``，断开时同一对象作为参数传给 ``_release(device)``。清理逻辑应停止并释放参数 ``device``，不要重新从 ``self`` 读取。基类已经保证 ``connect()`` 和 ``disconnect()`` 可重复调用；如果设备需要自定义生命周期，也应保留这一性质。
+这次独立检查先排除组合层的影响。``connect()`` 调用 ``_open()``，两个数据方法通过 ``self._device`` 访问 client，``disconnect()`` 再将该句柄传给 ``_release()``。基类已经保证两个生命周期调用可重复执行；设备增加清理逻辑时，也应保留这一性质。
 
 .. warning::
 
@@ -105,37 +109,22 @@
        node_rank=0,
        worker_name="ExampleMobileBase-0-0",
    )
-   arm_connection = FrankaRobot.declare_arm(
-       "10.0.0.2",
-       node_rank=0,
-       name="FrankaArm-0-0",
-   )
-   robot = MobileManipulator(
-       base=base,
-       arm=arm_connection,
-   )
-
-底盘和 Franka 机械臂都是尚未连接的 ``RobotPart``，因此组合方式相同：直接传给 ``Robot``，由参数名决定访问路径。``base=base`` 建立 ``base`` 路径，``arm=arm_connection`` 建立 ``arm`` 路径。
-
-两者的区别在于是否还承载其他零部件。这里两者都没有：Franka Hand 有独立的通信端点，因此它本身就是一个零部件，与机械臂并列组合，而不在其下。如果机械臂通过自己的总线驱动夹爪，则确实承载了夹爪，组合机械臂时夹爪会一并出现在 ``arm.end_effector``，机器人 builder 无需再声明它。判断依据是设备是否持有自己的链路，而不是它安装在哪里。
-
-只有当共享 session 本身不能返回观测时，才需要调用 ``part(name)``。例如，双臂控制器可以通过 ``session.part("left")`` 取出左臂，再将返回的 ``RobotPart`` 加入机器人的组合结构。
-
-``PartGroup`` 会在组合阶段检查这一边界。构造函数只接受 ``RobotPart`` 或另一个 ``PartGroup``；如果传入本身不能返回观测的裸 ``Connection``，异常会直接指出出错的参数名。
-
-如果沿用 Franka 的标准零部件名称，可以直接复用已有的 ``build_arms``：
-
-.. code-block:: python
-
    arm_parts = FrankaRobot.build_arms(
        robot_ip="10.0.0.2",
        node_rank=0,
        worker_rank=0,
        env_idx=0,
    )
-   robot = MobileManipulator(base=base, **arm_parts)
+   robot = MobileManipulator(
+       base=base,
+       **arm_parts,
+   )
 
-``build_arms`` 同时返回机械臂和末端执行器，因此 ``**arm_parts`` 会一并加入两者。如果需要为它们单独命名，或将它们部署到不同节点，可分别调用 ``declare_arm`` 和 ``declare_end_effector``。
+这三个声明以同一种形式进入 ``MobileManipulator``。构造移动底盘得到尚未连接的 ``RobotPart``；``build_arms()`` 返回一个字典，标准 key 为 ``arm`` 和 ``end_effector``，每个 value 都是尚未连接的 ``RobotPart``。展开这个 mapping 后，两项会一并传给机器人。``Robot`` 的每个关键字参数都接受一个 ``RobotPart`` 或嵌套的 ``PartGroup``，参数名就是对应的公开路径，因此最终得到 ``base``、``arm`` 和 ``end_effector`` 三条路径。
+
+Franka builder 将末端执行器单独返回，是因为 Franka Hand 会打开自己的 connection。如果某种机械臂通过自身总线驱动夹爪，夹爪就会作为机械臂的 child，组合机械臂后形成 ``arm.end_effector``。零部件采用哪种结构取决于通信资源的归属，而不是机械安装位置。
+
+如果标准名称不适用，或机械臂与末端执行器需要分别 placement，可以单独调用 ``declare_arm()`` 和 ``declare_end_effector()``。还有一种情况需要先做选择：共享 session 可能是不能直接返回观测的裸 ``Connection``，此时应先调用 ``session.part("left")`` 等方法取得可读的 ``RobotPart``，再传给机器人。``PartGroup`` 会在构造阶段拒绝裸的不可读 connection，并在错误中指出对应参数名。
 
 将 ``FrankaRobot.build_arms`` 替换为其他机器人系列提供的零部件构建方法，或者使用 ``PartGroup`` 组合多条机械臂，都不需要修改移动底盘。机器人由所选零部件及其名称构成，无需为移动操作机器人增加专用字段或基类。
 
@@ -260,7 +249,9 @@
    finally:
        env.close()
 
-创建 ``RobotTaskEnv`` 时会连接整个组合机器人，``close()`` 则负责断开。移动操作任务可以在 observation space、action space 和动作字典中加入 ``arm`` 与 ``end_effector`` 路径，无需修改底盘 driver 或机器人组合。
+应按照 env 的调用顺序理解这段任务代码。``observation_space`` 与 ``action_space`` 在 episode 开始前声明 policy 边界，``observe()`` 再从完整机器人观测中选出对应的 ``base`` 分支。``reset()`` 先停止并复位机器人，再返回首个观测；每次调用 ``step()`` 时，任务依次下发标准动作、读取新位姿，并从同一份状态计算奖励、终止条件和诊断信息。
+
+``RobotTaskEnv(robot, task)`` 将这些任务规则与组合机器人连接起来。构造 env 时会连接机器人，Gymnasium 的 ``reset()`` 与 ``step()`` 会转发给任务，``close()`` 则负责断开。移动操作任务可以在两类 space 和动作字典中加入 ``arm`` 与 ``end_effector``，无需修改底盘 driver 或机器人组合。
 
 如需通过 RLinf 分布式 ``RealWorldEnv`` 启动该任务，应先注册 Gymnasium ID，并在 env YAML 中设置 ``env_type: real`` 和对应 ID。当前 rollout 接口使用面向 policy 的 ``state`` 与 ``frames`` 观测；已有 policy 采用该表示时，请在环境边界配置 ``LegacyObservationAdapter`` 和 ``VectorActionAdapter``。任务注册、YAML、wrapper 与兼容性检查请参阅 :doc:`新增真机任务 <new_task>`。
 
@@ -287,7 +278,7 @@ placement 只决定各条连接在哪个节点打开，不改变任务访问零�
        **arm_parts,
    )
 
-构造这些对象时只会记录参数、``node_rank`` 和 ``worker_name``，不会导入厂商 SDK 或打开设备。``Connection`` 的 metaclass 会先取走 placement 参数，再调用驱动自身的 ``__init__``，因此新驱动的构造函数只需声明硬件相关参数。``robot.connect()`` 会在每条连接指定的节点上将其打开一次。跨节点的连接会在目标节点重新构造，机器人组合中的原对象则切换为对应的 view。机器人仍持有相同的零部件对象，调用代码无需区分部署位置。
+构造这些对象时只会记录硬件参数和 placement，不会导入厂商 SDK 或打开设备。connection 层会单独处理 ``node_rank`` 与 ``worker_name``，driver 的 ``__init__`` 只需声明硬件参数。``robot.connect()`` 会在声明的节点上将每条独立 connection 打开一次；跨节点的 connection 会在目标节点重新构造，机器人中的原对象转为转发 view。零部件路径和调用方式保持不变，因此任务代码无需判断部署位置。
 
 如果后续 connection 打开失败，机器人会关闭此前已经成功打开的 connection。driver 如果在 ``_open()`` 内部获取部分资源后抛出异常，仍需自行完成清理；由于该 connection 尚未完成连接，机器人无法代为回滚。
 
@@ -347,7 +338,9 @@ placement 只决定各条连接在哪个节点打开，不改变任务访问零�
            )
            return cls(base=base, **arm_parts)
 
-``MobileBase.backend()`` 根据硬件配置中的名称找到对应 driver。``build()`` 随后组合尚未连接的零部件，以及从共享连接中选出的零部件，不会打开任何设备。连接地址、backend 选择和 placement 写入机器人配置；目标位置、奖励、复位姿态与 episode 长度仍属于任务配置。
+配置字段与 builder 分别描述同一构造过程的输入和执行顺序。``base_backend`` 选择已注册的移动底盘 driver，``base_endpoint`` 与 ``arm_ip`` 标识两台设备，``controller_node_rank`` 可将机械臂部署到机器人资源所在节点之外；``worker_rank`` 和 ``env_idx`` 用于生成能够区分 env 实例的 worker 名称。
+
+``build()`` 按照这一顺序使用各项输入：先通过 ``MobileBase.backend()`` 解析底盘 class，并按指定 placement 声明底盘；再确定机械臂节点，通过 ``FrankaRobot.build_arms()`` 获取标准的机械臂与末端执行器声明；最后返回由三个零部件组成、但尚未连接的机器人。目标位置、奖励、复位姿态与 episode 长度仍属于任务配置，因为切换任务不应改变硬件抽象。
 
 ``build()`` 应保留明确的参数签名。``Robot.of_type()`` 和 ``build_robot()`` 会将关键字参数直接传给 ``build()``；注册过程不会自动展开 ``RobotConfig`` 实例，也不应丢弃 builder 无法识别的字段。如果配置中出现未支持的 key，应在这一边界直接报错，而不是由 ``**kwargs`` 吸收后静默忽略。
 
@@ -358,7 +351,7 @@ placement 只决定各条连接在哪个节点打开，不改变任务访问零�
 6. 注册机器人类型
 -----------------
 
-大多数机器人无需单独实现 discovery class。在模块末尾注册机器人及其配置即可；``register_type()`` 会创建标准 discovery class，并关联当前机器人的 ``build()``：
+builder 已经能够根据明确参数构造机器人；注册则为这一组合提供可供 discovery 和配置引用的稳定名称。大多数机器人无需单独实现 discovery class，只需在模块末尾注册机器人及其配置，``register_type()`` 会创建标准 discovery class，并关联当前机器人的 ``build()``：
 
 .. code-block:: python
 
@@ -373,7 +366,7 @@ placement 只决定各条连接在哪个节点打开，不改变任务访问零�
 7. 配置集群
 -----------
 
-将物理硬件信息写入 ``cluster.node_groups.hardware``。每项配置都会由已注册的 config class 解析，并在硬件 discovery 过程中生成 ``RobotInfo``。连接地址和 ``node_rank`` 等部署参数应保留在 YAML 中，不应硬编码到 Python 代码中：
+注册完成后，``MobileManipulator`` 已可按名称解析；集群配置接着提供具体硬件实例及其 placement。物理硬件信息写入 ``cluster.node_groups.hardware``，每项配置由已注册的 config class 解析，并在硬件 discovery 过程中生成 ``RobotInfo``。连接地址和 ``node_rank`` 等部署参数应保留在 YAML 中，不应硬编码到 Python 代码中：
 
 .. code-block:: yaml
 
@@ -394,7 +387,7 @@ placement 只决定各条连接在哪个节点打开，不改变任务访问零�
        - label: arm_controller
          node_ranks: 1
 
-这里的 ``node_rank`` 表示配置中的机器人资源由哪个节点持有，``controller_node_rank`` 则将复用的 Franka connection 部署到对应控制节点。env 配置另行选择 Gym ID，因此同一套硬件组合可以服务于导航、移动操作或数据采集任务。
+这些字段与前文的构造流程逐一对应：``type`` 选择已注册的机器人，每个 ``configs`` 项生成一条硬件记录；``node_rank`` 指定该记录由哪个节点持有，``base_backend`` 和两个地址标识具体设备，``controller_node_rank`` 则将复用的 Franka connection 部署到控制节点。env 配置另行选择 Gym ID，因此同一套硬件组合可以服务于导航、移动操作或数据采集任务。
 
 env 收到 ``RobotInfo`` 后，需要显式调用已注册的 builder。scheduler 提供的 env worker rank 等运行时信息也在这一边界加入：
 
@@ -417,7 +410,9 @@ env 收到 ``RobotInfo`` 后，需要显式调用已注册的 builder。schedule
 8. 测试集成
 -----------
 
-运行 contract 前，应先在 ``tests/robot_mocks/`` 中为示例 SDK 添加一个 fake，并将其加入 ``sdk_modules()``。这个 fake 只需实现上文实际调用的 ``get_pose()``、``set_velocity()``、``stop()`` 和 ``close()``。统一注册后，单元测试、检查脚本和远程 mock worker 会使用同一份 fake。
+至此，代码已经跨过单个设备 contract、机器人组合和远程 placement 三个边界，测试也应按照这一顺序进行：先运行 contract 并直接断言公开路径，再使用真实 class 配合 fake SDK 检查本地与远程组合，最后才连接真机。
+
+contract 层需要先在 ``tests/robot_mocks/`` 中为示例 SDK 添加一个最小 fake，并将其加入 ``sdk_modules()``。这个 fake 只需实现上文实际调用的 ``get_pose()``、``set_velocity()``、``stop()`` 和 ``close()``。统一注册后，单元测试、检查脚本和远程 mock worker 会使用同一份 fake。
 
 随后在 ``tests/unit_tests/`` 中新增测试，并使用 ``PartContract`` 和 ``RobotContract`` 检查新底盘及组合机器人：
 
@@ -493,7 +488,7 @@ env 收到 ``RobotInfo`` 后，需要显式调用已注册的 builder。schedule
 使用 mock SDK 验证
 ~~~~~~~~~~~~~~~~~~
 
-设备 SDK 只在 ``_open()`` 中导入。``tests/robot_mocks`` 中的 mock SDK 允许真实的零部件类在没有硬件和厂商 SDK 的机器上运行。
+contract 已分别验证各项公开约定，下一步需要检查完整组合，并通过 ``--remote`` 覆盖进程边界。设备 SDK 只在 ``_open()`` 中导入，因此 ``tests/robot_mocks`` 中的 mock SDK 可以让真实零部件 class 在没有硬件和厂商 SDK 的机器上运行。
 
 首先检查机器人的组合结构和生命周期：
 
@@ -546,3 +541,5 @@ mock 测试通过后，再检查真机的时序、标定和 SDK 行为。确认�
    python -m toolkits.realworld_check.check_robot_parts MobileManipulator \
        --arg base_endpoint=tcp://mobile-base:7000 \
        --arg arm_ip=10.0.0.2 --arg node_rank=0 --arg controller_node_rank=1
+
+该命令使用已安装的厂商 SDK。脚本会先在连接前显示组合结构，再按声明节点打开每个 owner，读取所有零部件并将结果与 feature 声明比较，最后断开并确认没有资源仍报告为已连接。脚本不会发送动作；运动范围和急停行为仍需按照平台的真机调试流程单独验证。

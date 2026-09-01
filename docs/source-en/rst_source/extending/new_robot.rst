@@ -3,8 +3,16 @@ Adding a Robot
 
 This guide adds a mobile base, composes it with RLinf's existing Franka arm, and
 drives the resulting mobile manipulator through a real-world Gymnasium
-environment. The example starts with the base in one process. Placement and
-hardware discovery come only after its observations and actions work locally.
+environment. By the end, the base will have a registered backend, a declared
+observation and action contract, a reusable robot builder, cluster configuration,
+and tests that run before the physical platform moves.
+
+The work proceeds through four checkpoints. First, make one local part complete
+its own lifecycle and data exchange. Next, compose it with existing parts and use
+the result in a task. Then move the same declaration into configuration,
+registration, and placement. Finally, verify the contract, the remote mock path,
+and the real device in that order. Keeping these checkpoints separate makes a
+failure point to one layer.
 
 Before continuing, read :doc:`Robotics Interface <../concepts/robotics>`. If RLinf
 already knows how to connect the hardware and you only need a new reward, reset,
@@ -14,9 +22,10 @@ or success condition, follow :doc:`New Real-World Tasks <new_task>` instead.
 ------------------------------------
 
 A mobile base is one controllable robot part: it reports its pose and accepts a
-velocity command. Inherit ``MobileBase`` so the class states that role directly.
-Keep the vendor SDK import inside ``_open()``; nodes that only import the module do
-not need the SDK installed.
+velocity command. This section implements that contract in lifecycle order:
+record the declaration, open and release the device, declare the data schema,
+then read, reset, and command it. Inherit ``MobileBase`` so callers and builders
+can rely on that category rather than a vendor class.
 
 .. code-block:: python
 
@@ -70,17 +79,25 @@ not need the SDK installed.
            )
            return {"velocity": velocity}
 
-The decorator gives this driver the backend name ``example``. Code that already
-has the concrete class can still instantiate it directly; a
-configuration-driven builder can instead resolve it with
-``MobileBase.backend("example")``. This registry names interchangeable device
-drivers, not complete robot types. The robot type is registered later with
-``register_type()``.
+Read the class from declaration to use. ``__init__()`` records only the endpoint;
+it must not open hardware because construction and connection may occur in
+different processes. ``_open()`` imports the vendor SDK at the node that owns
+the connection and returns its client. That client becomes ``self._device``
+while connected, and the same object is later passed to ``_release(device)``.
 
-Here ``pose`` is ``[x, y, yaw]`` and ``velocity`` is
-``[linear_velocity, angular_velocity]``. Use names and units that match the
-canonical interface you want tasks and datasets to retain; do not expose a
-vendor method name as a policy field.
+``observation_features`` and ``action_features`` declare the interface before a
+device is open. Here ``pose`` is ``[x, y, yaw]`` and ``velocity`` is
+``[linear_velocity, angular_velocity]``. ``get_observation()`` and
+``send_action()`` must return values with those names, shapes, and dtypes;
+``send_action()`` returns the velocity actually applied. ``reset()`` handles the
+out-of-band stop used when an episode resets. Choose stable physical names and
+units rather than exposing vendor method names as policy fields.
+
+Finally, ``@MobileBase.register("example")`` gives the driver the backend name
+used by configuration. Code with the concrete class can instantiate it directly;
+a builder calls ``MobileBase.backend("example")`` to resolve the same class. This
+registry names interchangeable mobile-base drivers. A later section registers
+the complete robot composition separately.
 
 Connect the base directly before composing it with anything else:
 
@@ -96,11 +113,11 @@ Connect the base directly before composing it with anything else:
    finally:
        base.disconnect()
 
-Whatever ``_open()`` returns becomes ``self._device``. Cleanup receives that
-same object as ``_release(device)``, so stop and release the argument rather
-than reading it back from ``self``. ``connect()`` and ``disconnect()`` are
-idempotent in the base class; preserve that property if the device needs a
-custom lifecycle.
+This direct check exercises the public sequence before composition adds any
+other variable. ``connect()`` calls ``_open()``, the two data methods use
+``self._device``, and ``disconnect()`` passes that handle to ``_release()``.
+Both lifecycle calls are idempotent in the base class; preserve that property if
+the device needs additional cleanup.
 
 .. warning::
 
@@ -129,52 +146,39 @@ Franka connection:
        node_rank=0,
        worker_name="ExampleMobileBase-0-0",
    )
-   arm_connection = FrankaRobot.declare_arm(
-       "10.0.0.2",
-       node_rank=0,
-       name="FrankaArm-0-0",
-   )
-   robot = MobileManipulator(
-       base=base,
-       arm=arm_connection,
-   )
-
-Both arguments are composed the same way, because both are parts. Constructing
-the ``MobileBase`` subclass creates an unconnected ``RobotPart``, and the Franka
-arm is one too. The argument name becomes each part's public path in
-``robot.children``.
-
-The difference is what they carry. Neither of these carries anything: a Franka
-Hand answers on its own endpoint, so it is a part in its own right and is
-composed beside the arm rather than under it. An arm that drives its gripper
-down its own bus does carry it, and then composing the arm brings the gripper
-along at ``arm.end_effector`` without the robot naming it. What decides is
-whether the device holds a link of its own, not where it is bolted.
-
-Name a part one at a time only when the robot's names differ from the driver's,
-or when a link is not a part at all and you have to pick from it: a two-arm
-session is composed with ``session.part("left")``.
-
-``PartGroup`` checks this boundary as soon as the robot is composed. It accepts
-a ``RobotPart`` or another ``PartGroup``. A bare ``Connection`` that is not a
-readable part is rejected with an error that names the invalid keyword.
-
-The existing arm builder can shorten the same composition when its standard
-names are appropriate:
-
-.. code-block:: python
-
    arm_parts = FrankaRobot.build_arms(
        robot_ip="10.0.0.2",
        node_rank=0,
        worker_rank=0,
        env_idx=0,
    )
-   robot = MobileManipulator(base=base, **arm_parts)
+   robot = MobileManipulator(
+       base=base,
+       **arm_parts,
+   )
 
-``build_arms`` returns the arm and the end effector, so ``**arm_parts`` adds
-both. Take the two separately with ``declare_arm`` and ``declare_end_effector``
-when you want to name them differently or put them on different nodes.
+The three declarations reach ``MobileManipulator`` in one form. Constructing
+the mobile base returns an unconnected ``RobotPart``. ``build_arms()`` returns
+a dictionary with the standard keys ``arm`` and ``end_effector``; each value is
+an unconnected ``RobotPart``. Expanding that mapping passes both parts to the
+robot. A
+``Robot`` accepts one ``RobotPart`` or nested ``PartGroup`` for each keyword,
+and each keyword becomes that value's public path. The resulting paths are
+therefore ``base``, ``arm``, and ``end_effector``.
+
+The Franka builder returns the hand separately because it opens its own
+connection. An arm whose gripper uses the arm's bus instead carries that
+gripper as a child, so composing the arm also creates
+``arm.end_effector``. Communication ownership, rather than the mechanical
+mounting point, determines which layout a builder returns.
+
+Use ``declare_arm()`` and ``declare_end_effector()`` separately when the
+standard names do not fit or the two connections need different placement.
+There is one other case: a shared session may be a bare ``Connection`` that
+cannot return observations itself. Select a readable part first, for example
+``session.part("left")``, and pass that returned ``RobotPart`` to the robot.
+``PartGroup`` rejects a bare, non-readable connection during construction and
+names the invalid keyword in the error.
 
 Replacing ``FrankaRobot.build_arms`` with another robot family's part builder,
 or wrapping several arm parts in a ``PartGroup``, does not change the mobile base.
@@ -313,10 +317,19 @@ an arm:
    finally:
        env.close()
 
-``RobotTaskEnv`` connects the composed robot when the environment is created
-and disconnects it in ``close()``. A manipulation task can expand the spaces
-and actions with ``arm`` and ``end_effector``; the base driver and robot
-composition stay unchanged.
+Read the task in the order the environment calls it. ``observation_space`` and
+``action_space`` declare the policy boundary before an episode starts;
+``observe()`` then selects the matching ``base`` branch from the larger robot
+observation. ``reset()`` stops and resets the robot before returning the first
+observation. On each step, ``step()`` sends the canonical action, reads the new
+pose, and derives reward, termination, and diagnostic information from the same
+state.
+
+``RobotTaskEnv(robot, task)`` joins these task rules to the composed runtime. It
+connects the robot during construction, forwards Gymnasium ``reset()`` and
+``step()`` to the task, and disconnects in ``close()``. A manipulation task can
+expand both spaces and the action dictionary with ``arm`` and
+``end_effector``; the base driver and robot composition remain unchanged.
 
 To launch the task through RLinf's distributed ``RealWorldEnv``, register the
 environment with Gymnasium and set ``env_type: real`` plus its Gym ID in the env
@@ -350,14 +363,13 @@ example, keep the base controller on node 0 and the Franka controller on node 1:
        **arm_parts,
    )
 
-Constructing these objects records their arguments, ``node_rank``, and
-``worker_name`` but does not import either vendor SDK or open hardware. The
-metaclass on ``Connection`` consumes the placement keywords before the driver's
-``__init__`` runs, so a new driver only declares hardware-specific parameters.
-``robot.connect()`` opens each distinct connection once, on the node that
-connection named. A connection bound for another node is rebuilt there and the
-object in the tree becomes a view of it, so the robot holds the same parts
-either way and nothing in your code branches on placement.
+Constructing these objects records their hardware arguments and placement but
+does not import either vendor SDK or open hardware. The connection layer handles
+``node_rank`` and ``worker_name`` separately, so the driver's ``__init__`` only
+declares hardware-specific parameters. ``robot.connect()`` opens each distinct
+connection once on its declared node. A remote connection is rebuilt there and
+the object in the robot becomes a forwarding view; the paths and calls remain
+the same, so task code does not branch on placement.
 
 If a later connection fails, the robot closes the connections that completed
 before it. A driver must still clean up resources acquired inside a failing
@@ -422,11 +434,20 @@ declaration rather than copying its SDK or lifecycle code:
            )
            return cls(base=base, **arm_parts)
 
-``MobileBase.backend()`` resolves the driver name declared in the hardware
-config. The builder then composes unconnected parts and selections from shared
-connections; it does not open either device. Connection addresses, backend
-selection, and placement belong here. Targets, rewards, reset poses, and
-episode horizons remain in the task config.
+The config and builder describe different parts of the same construction.
+``base_backend`` selects a registered mobile-base driver,
+``base_endpoint`` and ``arm_ip`` identify the two devices, and
+``controller_node_rank`` can place the arm away from the node that owns the
+robot record. ``worker_rank`` and ``env_idx`` identify the environment instance
+in generated worker names.
+
+``build()`` consumes those values in the same order. It first resolves the base
+class with ``MobileBase.backend()``, then declares the base with its placement.
+Next it resolves the arm node, asks ``FrankaRobot.build_arms()`` for the
+standard arm and end-effector declarations, and returns the three-part robot.
+The result is still disconnected. Targets, rewards, reset poses, and episode
+horizons remain in the task config because changing a task must not rebuild the
+hardware abstraction.
 
 Keep the signature explicit. ``Robot.of_type()`` and ``build_robot()`` forward
 their keyword arguments directly to ``build()``; registration does not unpack a
@@ -443,9 +464,11 @@ absorbed by ``**kwargs`` and silently ignored.
 6. Register the Robot Type
 --------------------------
 
-Most robots do not need a discovery class of their own. Register the robot and
-its config at the end of the module; ``register_type()`` creates the standard
-discovery class and associates it with ``build()``:
+The builder now creates the robot from explicit arguments. Registration gives
+that composition a stable name for discovery and configuration. Most robots do
+not need a discovery class of their own: register the robot and its config at
+the end of the module, and ``register_type()`` creates the standard discovery
+class and associates it with ``build()``:
 
 .. code-block:: python
 
@@ -477,7 +500,8 @@ configured Python environment must be able to import the module.
 7. Configure the Cluster
 ------------------------
 
-The cluster describes physical resources under
+Registration makes ``MobileManipulator`` resolvable; the cluster now supplies
+one physical instance and its placement. Hardware entries live under
 ``cluster.node_groups.hardware``. Each entry is parsed with the registered
 config class and becomes a ``RobotInfo`` during hardware discovery. Put
 endpoints and node ranks in this YAML rather than embedding a deployment in
@@ -502,10 +526,14 @@ Python:
        - label: arm_controller
          node_ranks: 1
 
-Here ``node_rank`` identifies the node that owns the configured robot resource;
-``controller_node_rank`` places the reused Franka connection on its controller node.
-The env config selects the Gym ID separately, so the same hardware composition
-can serve navigation, mobile manipulation, or data-collection tasks.
+The fields now follow the construction path above. ``type`` selects the
+registered robot; each item in ``configs`` creates one hardware record.
+``node_rank`` identifies the node that owns that record,
+``base_backend`` and the two addresses identify its devices, and
+``controller_node_rank`` places the reused Franka connection on its controller
+node. The env config selects the Gym ID separately, so the same hardware
+composition can serve navigation, mobile manipulation, or data-collection
+tasks.
 
 The environment receives that ``RobotInfo`` and calls the registered builder
 explicitly. This is the visible boundary where scheduler metadata such as the
@@ -533,7 +561,13 @@ it into each task.
 8. Test the Integration
 -----------------------
 
-Before running a contract, add a minimal fake for the example SDK under
+The implementation has crossed three boundaries: one device contract, a
+composed robot, and remote placement. Validate them in the same order. Begin
+with unit-level contracts and direct path assertions, continue with the real
+classes against fake SDKs locally and remotely, and connect physical hardware
+only after those checks pass.
+
+For the contract layer, add a minimal fake for the example SDK under
 ``tests/robot_mocks/`` and include it in ``sdk_modules()``. The fake needs
 only the device-side methods used above: ``get_pose()``, ``set_velocity()``,
 ``stop()``, and ``close()``. Registering it in one place makes the same fake
@@ -635,7 +669,9 @@ environment. None of it requires physical hardware.
 Run It Against Faked SDKs
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
-A part imports its vendor SDK when it opens, never at import time, so a fake in
+The contracts establish each public promise in isolation. The next check runs
+the complete composition and, with ``--remote``, the process boundary. A part
+imports its vendor SDK when it opens, never at import time, so a fake in
 ``sys.modules`` is enough to run the real part classes with nothing on the
 other end of the cable. ``tests/robot_mocks`` holds one fake per SDK.
 
@@ -706,3 +742,10 @@ drop ``--mock`` and run the same check against it:
    python -m toolkits.realworld_check.check_robot_parts MobileManipulator \
        --arg base_endpoint=tcp://mobile-base:7000 \
        --arg arm_ip=10.0.0.2 --arg node_rank=0 --arg controller_node_rank=1
+
+This run uses the installed vendor SDKs. It describes the composition before
+connecting, opens each owner on its declared node, reads every part and compares
+the result with its feature declaration, then disconnects and verifies that no
+resource still reports itself open. It does not send an action, so test motion
+limits and emergency-stop behavior separately under the platform's normal bench
+procedure.

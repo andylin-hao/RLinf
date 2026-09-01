@@ -1,12 +1,16 @@
 机器人架构
 ==========
 
-编写任务时，只需了解 :doc:`机器人接口 <robotics>` 中的零部件路径和读写方法。接入新设备、让多个零部件共享硬件连接，或排查跨节点部署与资源回收问题时，再参考本页的实现细节。
+需要实现 :doc:`机器人接口 <robotics>`、让多个零部件共用一条硬件连接，或排查 placement 与资源回收问题时，请阅读本页。架构层需要同时满足两项要求：任务始终看到稳定的访问路径，每项物理资源又只能由一个明确的 owner 打开和释放。
+
+本页按照责任从外向内展开：先区分任务使用的组合结构与 driver 支持的零部件，再用核心类型承接这些职责；随后说明 backend 和机器人注册、共享 session 的三种接入形式，最后进入 placement、组合检查和生命周期。按照这一顺序阅读，可以从组合关系推导资源归属，而不必孤立记忆每条规则。
 
 从任务使用的访问路径出发
 --------------------------
 
-先看最常见的一对一情况：一条硬件连接只对应一个零部件。移动底盘可以直接加入 ``Robot``：
+首先要回答两个相互关联的问题：任务能够看到什么，以及 driver 为此打开哪条连接。本节先从一条连接对应一个零部件的情况开始，再引入共享连接，由此说明 ``children`` 与 ``parts`` 各自表示什么。
+
+在最常见的一对一情况下，一条硬件连接只对应一个零部件。移动底盘可以直接加入 ``Robot``：
 
 .. code-block:: python
 
@@ -19,7 +23,7 @@
 
 构造底盘会创建一个尚未连接的 ``MobileBase`` 实例。该实例保存设备参数，connection 层同时记录 ``node_rank`` 和 ``worker_name``，供后续 placement 使用。在调用 ``robot.connect()`` 前，代码不会导入厂商 SDK，也不会打开硬件。移动底盘本身能返回观测，policy 可直接访问，因此可以 ``base=base`` 传给 ``Robot``；参数名 ``base`` 会成为底盘的访问路径。
 
-一条硬件连接也可以同时支持多个零部件。例如，GimArm 的关节和夹爪共用一条 CAN 总线，一条链路同时应答两者，任务仍应通过两条独立路径访问它们：
+一对一关系会让访问路径与硬件对象看起来没有区别；一条连接支持多个零部件时，两者才真正分开。例如，GimArm 的关节和夹爪共用一条 CAN 总线，一条链路同时应答两者，任务仍应通过两条独立路径访问它们：
 
 .. code-block:: text
 
@@ -37,11 +41,11 @@
 - ``PartGroup`` 或 ``Robot`` 的 ``children`` 保存组合时传入的直接成员。每个 key 都会成为观测和动作路径的一段，例如 ``left.arm``；任务、policy 和数据集使用这些路径访问零部件。
 - ``Connection`` 的 ``parts`` 列出同一硬件 session 支持的零部件。如果 connection 本身就是 ``RobotPart``，该 mapping 表示安装在它上的其他零部件；如果 connection 只表示共享 session，该 mapping 则列出可通过 ``part(name)`` 取出的零部件。这些名称属于 driver 内部，不会自动成为机器人的访问路径。
 
-组合时，``Robot(arm=connection)`` 将能返回观测的机械臂以 ``arm`` 为名加入 ``Robot``。机械臂承载的其他零部件会同时出现在下一级；例如 GimArm 的夹爪位于 ``arm.end_effector``，因为它没有自己的链路，只能通过机械臂应答。决定层级的是连接方式，而不是安装位置：Franka Hand 同样固定在机械臂上，但它有独立的通信端点，因此与机械臂并列，而不在其下。访问路径、placement 和资源归属在 ``connect()`` 前已经确定，因此即使当前机器没有连接真机，也可以先检查组合结果。
+组合操作将这两个 mapping 连接起来。``Robot(arm=connection)`` 将能返回观测的机械臂以 ``arm`` 为名加入 ``Robot``，机械臂承载的其他零部件则同时出现在下一级。例如，GimArm 的夹爪位于 ``arm.end_effector``，因为它没有自己的链路，只能通过机械臂应答。决定层级的是连接方式，而不是安装位置：Franka Hand 同样固定在机械臂上，但它有独立的通信端点，因此与机械臂并列。访问路径、placement 和资源归属在 ``connect()`` 前已经确定，因此即使当前机器没有连接真机，也可以先检查组合结果。
 
-``connection.part(name)`` 用于从一条本身不能返回观测的 connection 中选出某个零部件，例如从双臂 session 中选出左臂。只有这种情况才需要调用该方法。
+以上是常规路径：组合一个可读零部件，并自动带入它承载的下级零部件。只有 connection 本身不能返回观测时，才调用 ``connection.part(name)``，例如从双臂 session 中选出左臂。
 
-应根据待组合对象选择对应写法：
+几种组合形式可以据此直接比较：
 
 .. list-table::
    :header-rows: 1
@@ -66,11 +70,11 @@
      - ``Robot(left=PartGroup(...))``
      - 该 group 位于 ``left``，其中的具名零部件继续使用下一级路径。
 
-``part(name)`` 返回的就是一个 ``RobotPart``，中间没有任何需要机器人开发者构造或标注的类型。``PartGroup`` 接收 ``RobotPart`` 或另一个 ``PartGroup``；传入本身不能返回观测的裸 ``Connection`` 会被拒绝，并指出出错的参数名。
+表中每种写法最终都会向组合结构提供可读对象。``part(name)`` 返回的就是一个 ``RobotPart``，中间没有需要机器人开发者构造或标注的类型。``PartGroup`` 接收 ``RobotPart`` 或另一个 ``PartGroup``；传入本身不能返回观测的裸 ``Connection`` 会被拒绝，并指出出错的参数名。
 
 在组合结构中，``children`` 始终表示当前对象的直接下一级。对 ``RobotPart`` 而言，它表示该零部件承载的其他零部件；对 ``PartGroup`` 而言，它表示组合该 group 时传入的具名成员。因此，查找相机、生成结构说明或读取观测时，无需根据当前对象的具体类型切换遍历方式。
 
-因此，机器人定义中只需声明机械臂：
+将上述区别应用到机器人 builder，可以得到一条实际规则：每条 connection 只命名一个持有者。夹爪搭在机械臂链路上时，机器人定义中只需声明机械臂：
 
 .. code-block:: python
 
@@ -102,6 +106,8 @@ Franka 属于另一种情况。它的末端执行器自行打开 session，因�
 核心类型
 --------
 
+明确组合结构与硬件 mapping 后，可以将各项职责分配给五个核心类型。下表从资源连接逐层展开到完整机器人，每一层只增加上层调用所需的能力。
+
 .. list-table::
    :header-rows: 1
    :widths: 28 72
@@ -126,6 +132,8 @@ Franka 属于另一种情况。它的末端执行器自行打开 session，因�
 通过配置选择具体实现
 --------------------
 
+组合结构确定有哪些能力，配置还需要为每项能力选择具体实现。本节依次说明设备 backend、设备类别 builder 和完整机器人类型的选择过程。
+
 假设相机配置中写有 ``camera_type: zed``，机器人 builder 不应再维护一个导入所有相机 driver 的分支表。每个 driver 直接注册配置中使用的名称，再由设备类别完成查找：
 
 .. code-block:: python
@@ -140,7 +148,7 @@ Franka 属于另一种情况。它的末端执行器自行打开 session，因�
 
 所有设备类别都会继承 ``Connection.register()`` 和 ``backend()``，而且 registry 属于具体设备类别，例如 ``Camera``、``Arm`` 和 ``EndEffector``，因为配置里写的是一类设备，而不是某个基类。backend 名称不区分大小写；两个 class 注册同一名称时会直接报错。
 
-如果某类设备具有固定的配置结构，还可以提供构建入口：``Camera.of()`` 接收 ``CameraInfo`` 并从中读出 backend；``EndEffector.of()`` 接收名称，以及安装它的机械臂所能提供的接入方式；``Arm.declare()`` 把机器人层面的机械臂配置映射到某个 backend 自己的构造函数上。这些映射都写在驱动里、紧挨着它所服务的构造函数，因此新增一个 backend 不需要改动任何负责选择 backend 的代码。
+直接调用构造函数时，解析出 class 已经足够。如果某类设备具有固定的配置结构，还可以提供构建入口：``Camera.of()`` 接收 ``CameraInfo`` 并从中读出 backend；``EndEffector.of()`` 接收名称，以及安装它的机械臂所能提供的接入方式；``Arm.declare()`` 把机器人层面的机械臂配置映射到某个 backend 自己的构造函数上。这些映射都写在驱动里、紧挨着它所服务的构造函数，因此新增一个 backend 不需要改动负责选择 backend 的代码。
 
 机械臂尤其适合采用这套机制，因为同一套硬件可能支持多种 backend。Franka 可以通过 libfranka 或 ROS 控制，因此两种实现都注册到 ``Arm``，机器人只需指定其中一种：
 
@@ -159,7 +167,7 @@ Franka Hand 是本项目中唯一有两种驱动方式的设备 —— 经由 RO
 
 支持硬件枚举的 driver 还可以通过 ``SDK`` 声明厂商模块，并实现 ``discover()``。公共 discovery 流程会据此报告缺失的 SDK，并在持有设备的节点上校验相机 ID。厂商模块仍应在 ``_open()`` 或 ``discover()`` 中导入，不应在模块导入阶段加载。
 
-robotics 代码中有两种 registry，它们所命名的对象不同：
+完成单个零部件的 backend 选择后，调用方还可能按名称选择整台机器人的组合。因此，robotics 代码中的两种 registry 分别命名不同对象：
 
 .. list-table::
    :header-rows: 1
@@ -177,12 +185,14 @@ robotics 代码中有两种 registry，它们所命名的对象不同：
 
 注册操作会关联 robot class、config class、discovery class 和 builder，但不会自动将 ``RobotConfig`` 实例转换为 builder 参数。``Robot.of_type()`` 和 ``build_robot()`` 会将接收到的关键字参数直接传给 ``build()``。因此，机器人的 builder 应提供明确的参数签名；如果 env 从 ``RobotInfo`` 获取硬件配置，应在一处显式完成参数转换。
 
-遥操作使用同样的注册风格，但拥有独立的 registry。``TeleopDevice.register()`` 注册的是操作者设备而非机器人零部件，如何把一项配置变成设备实例，则由设备自身的 ``from_config()`` 决定。该 registry 与设备位于同一目录 ``robotics/parts/teleop``，因此设备可以独立读取，也不依赖 Gymnasium。
+机器人注册完成了硬件侧的选择流程。遥操作沿用相同风格，但拥有独立的 registry。``TeleopDevice.register()`` 注册的是操作者设备而非机器人零部件，如何把一项配置变成设备实例，则由设备自身的 ``from_config()`` 决定。该 registry 与设备位于同一目录 ``robotics/parts/teleop``，因此设备可以独立读取，也不依赖 Gymnasium。
 
 将共享连接中的零部件加入机器人
 ------------------------------
 
-一条硬件 session 同时支持多个供 policy 使用的零部件时，通过 ``parts`` 声明它们。下面的机械臂本身可以读取观测，同时将夹爪作为单独的零部件提供给 ``Robot``：
+backend 确定后，还要把共享资源支持的逻辑零部件接入组合结构。这里需要区分三种形式：可读零部件承载下级零部件、裸 connection 导出多个可选零部件，以及多个 connection 共同取得进程级 transport。
+
+先看可读零部件承载下级零部件的情况。一条硬件 session 同时支持多个供 policy 使用的零部件时，通过 ``parts`` 声明它们。下面的机械臂本身可以读取观测，同时将夹爪作为单独的零部件提供给 ``Robot``：
 
 .. code-block:: python
 
@@ -210,11 +220,11 @@ robotics 代码中有两种 registry，它们所命名的对象不同：
 
 传给 ``Robot`` 的关键字参数会进入 ``robot.children``。上述机器人的顶层路径为 ``arm``，末端执行器则位于 ``arm.end_effector``。裸 ``Connection`` 本身不能返回观测，因此没有 ``children``；``PartGroup`` 的组成项已保存在 ``children`` 中，因此其 ``parts`` 为空。当共享 session 本身不能返回观测时，通过 ``connection.part(...)`` 取出需要组合的零部件。
 
-通过 ``part(name)`` 取出零部件时，共享 connection 会成为该 view 的 owner。因此 view 不需要实现 ``_open()``，也不应覆盖 ``connect()``。``parts`` 适用于这类借用共享 connection 的 view。
+上述机械臂自身会进入机器人，因此无需显式选择。第二种形式需要调用 ``part(name)``：取出零部件后，共享 connection 会成为该 view 的 owner。因此 view 不需要实现 ``_open()``，也不应覆盖 ``connect()``。``parts`` 适用于这类借用共享 connection 的 view。
 
 两种形式的区别，取决于框架对 class 的一个判断，而不取决于配置：它是否实现了 ``_open()``。实现了的零部件持有自己的链路，保留自己的 owner 和 ``node_rank``，需要显式加入 ``Robot`` 或某个 ``PartGroup``；没有实现的零部件，则由声明它的 connection 接管。通过 USB 连接的腕部相机和 Franka Hand 属于前者，基于机械臂自身状态的 ``MethodEndEffector`` 属于后者。
 
-如果共享 session 本身没有可供 policy 使用的观测，应直接继承 ``Connection``，而不是 ``RobotPart``。Turtle2 的联动控制器采用这种形式：
+如果共享 session 本身没有可供 policy 使用的观测，应直接继承 ``Connection``，而不是 ``RobotPart``，再逐项选择它支持的零部件。Turtle2 的联动控制器采用这种形式：
 
 .. code-block:: python
 
@@ -238,7 +248,7 @@ robotics 代码中有两种 registry，它们所命名的对象不同：
 
 通过 ``part(name)`` 取出的所有零部件都指向同一个 connection 实例，因此底层控制器只会打开和释放一次。
 
-有些资源属于进程，而不属于某个 connection 对象。ROS 1 就是这里会遇到的情况：一个进程只有一个 node，因此同时使用 ROS 的机械臂和末端执行器，无论如何都会落在同一个 node 上。若由机械臂把 session 传给末端执行器，就会在两个本可独立的零部件之间引入依赖，因此基于 ROS 的零部件改为自行获取：
+第三种形式不通过 ``parts`` 表示。有些资源属于整个进程，而不属于某个 connection 对象。ROS 1 就是这里会遇到的情况：一个进程只有一个 node，因此同时使用 ROS 的机械臂和末端执行器，无论如何都会落在同一个 node 上。若由机械臂把 session 传给末端执行器，就会在两个本可独立的零部件之间引入依赖，因此基于 ROS 的零部件改为自行获取：
 
 .. code-block:: python
 
@@ -251,12 +261,12 @@ robotics 代码中有两种 registry，它们所命名的对象不同：
            self._ros.connect_ros_channel(self._state_channel, JointState, self._on_state)
            return self._ros
 
-``ROSController.shared()`` 会在文件锁保护下检查 ``roscore``；如果尚未运行，则先启动它，再初始化 node。之后的调用方复用同一 controller。该 session 不会被关闭：``rospy`` 没有受支持的方式在 node 关闭后重新启动它。各零部件订阅和发布的 topic 互不相同，因此加入机械臂已经打开的 session 只是增加订阅，不会产生争用。
+``ROSController.shared()`` 会在文件锁保护下检查 ``roscore``；如果尚未运行，则先启动它，再初始化 node。之后的调用方复用同一 controller。该 session 不会被关闭：``rospy`` 没有受支持的方式在 node 关闭后重新启动它。各零部件订阅和发布的 topic 互不相同，因此加入机械臂已经打开的 session 只是增加订阅，不会产生争用。至此，三种形式都能确定 placement 层需要打开的 owner。
 
 先确定部署位置，再打开硬件
 ----------------------------
 
-placement 参数与硬件构造参数一起传入。构造过程不会访问设备；``Robot.connect()`` 会根据目标节点，选择在本进程打开现有对象，或在远程 worker 中按相同参数重新构造：
+组合阶段已经确定每条 owner connection，placement 只需为 owner 指定节点，不改变调用方看到的路径或设备类别。placement 参数与硬件构造参数一起传入；构造过程不会访问设备，``Robot.connect()`` 才会根据目标节点选择在本进程打开现有对象，或在远程 worker 中按相同参数重新构造：
 
 .. code-block:: python
 
@@ -288,7 +298,7 @@ placement 参数与硬件构造参数一起传入。构造过程不会访问设�
 连接前检查组合结果
 ------------------
 
-``Robot.describe()`` 读取已完成的组合结构，因此在打开任何硬件之前就能查看零部件路径、部署节点和资源归属：
+组合与 placement 都属于声明，因此应在生命周期错误或真机运动掩盖问题前完成检查。``Robot.describe()`` 读取已完成的组合结构，在打开任何硬件之前就能查看零部件路径、部署节点和资源归属：
 
 .. code-block:: text
 
@@ -302,6 +312,8 @@ placement 参数与硬件构造参数一起传入。构造过程不会访问设�
 
 资源生命周期
 ------------
+
+声明检查完成后，每条 connection 都经过相同的四个阶段。下表先给出调用方看到的顺序，后续段落再说明 driver、机器人和设备类别各自承担哪部分清理与回滚。
 
 .. list-table::
    :header-rows: 1
@@ -318,16 +330,16 @@ placement 参数与硬件构造参数一起传入。构造过程不会访问设�
    * - 断开
      - ``Connection`` 释放 ``_open()`` 实际返回的设备。跨节点的连接先在它所在的节点上关闭，再停掉 worker，然后恢复成一个未打开的普通对象。
 
-``_open()`` 返回的厂商对象会原样传给 ``_release(device)``。清理逻辑应释放参数 ``device``，不要重新从 ``self`` 读取。
+driver 通过一组配对方法参与连接和断开：``_open()`` 返回的厂商对象会原样传给 ``_release(device)``。清理逻辑应释放参数 ``device``，不要重新从 ``self`` 读取。
 
 driver 应实现 ``_open()`` 与 ``_release()``，不要覆盖 ``connect()`` 和 ``disconnect()``。后两个方法负责选择设备的运行节点；覆盖它们会绕过跨节点部署流程。例如，在 ``super().connect()`` 返回后启动线程，线程会运行在持有零部件对象的进程，而非实际持有设备的 worker。设备类别如需在 driver 生命周期外增加处理，可实现 ``_opened()`` 和 ``_closing()``。``BaseCamera`` 使用这两个 hook 启停取流循环，确保循环与相机运行在同一节点。
 
-如果后续 connection 打开失败，``Robot.connect()`` 会回滚此前已成功打开的 connection。但如果 driver 在 ``_open()`` 内部只完成了部分初始化就抛出异常，driver 仍需要自行释放已获取的资源，因为此时尚没有可供机器人关闭的完整 connection。排除故障后，可对同一对象再次调用 ``connect()``。已成功关闭的 connection 也可重复调用 ``disconnect()``，并保持可重新连接状态。
+配对方法覆盖正常关闭，部分失败还需要划清另一条边界。如果后续 connection 打开失败，``Robot.connect()`` 会回滚此前已成功打开的 connection；但 driver 在 ``_open()`` 内部只完成部分初始化就抛出异常时，仍需自行释放已获取的资源，因为此时尚没有可供机器人关闭的完整 connection。排除故障后，可对同一对象再次调用 ``connect()``。已成功关闭的 connection 也可重复调用 ``disconnect()``，并保持可重新连接状态。
 
 按类型获取零部件
 ----------------
 
-常用的初始化操作已纳入设备类别的 contract，调用时应使用零部件本身，而不是继续访问其 ``owner``。向 ``child()`` 传入预期类型，可以同时检查组合结果并获得准确的返回类型：
+``connect()`` 打开 owner 后，初始化逻辑应回到公开设备类别，不应把生命周期细节暴露给任务。常用操作已纳入设备类别的 contract，调用时使用零部件本身；向 ``child()`` 传入预期类型，可以同时检查组合结果并获得准确的返回类型：
 
 .. code-block:: python
 
@@ -347,7 +359,7 @@ driver 应实现 ``_open()`` 与 ``_release()``，不要覆盖 ``connect()`` 和
 保持导入边界
 ------------
 
-零部件模块不能导入 ``rlinf.scheduler`` 和 Gymnasium。只有当一条连接指定了节点时，``Connection.connect()`` 才会延迟加载桥接层 ``rlinf/robotics/placement/handles.py``。
+公开设备类别能够独立使用，是因为代码依赖方向与前述运行边界一致。零部件模块不能导入 ``rlinf.scheduler`` 和 Gymnasium；只有一条连接指定了节点时，``Connection.connect()`` 才会延迟加载桥接层 ``rlinf/robotics/placement/handles.py``。
 
 这条规则的意义在于依赖方向。scheduler 是通用框架，robotics 只是它的一个扩展，因此 scheduler 从不导入本包：它按配置里写明的名称导入 ``hardware_policy_modules``，再调用这些模块注册的 discovery 类。Gymnasium 则位于另一侧，属于使用机器人的 env 层。只有组合层——placement、discovery、机器人构建器——会反向导入这两者，驱动因而能够作为独立的硬件代码被阅读和测试。
 
@@ -355,6 +367,8 @@ driver 应实现 ``_open()`` 与 ``_release()``，不要覆盖 ``connect()`` 和
 
 代码位置
 --------
+
+上述职责按照相同顺序落在代码目录中：核心 contract、设备类别、远程 placement、机器人组合和 discovery。
 
 .. list-table::
    :header-rows: 1
@@ -383,6 +397,8 @@ driver 应实现 ``_open()`` 与 ``_release()``，不要覆盖 ``connect()`` 和
 
 后续阅读
 --------
+
+根据当前需要实现或排查的环节继续阅读：
 
 - :doc:`添加机器人 <../extending/new_robot>`：按照实际接入顺序应用本页介绍的类型和机制。
 - :doc:`placement <placement>`：了解调度器资源如何映射到节点和 GPU。
