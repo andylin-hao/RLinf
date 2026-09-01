@@ -22,7 +22,6 @@ into the same base-frame action convention used by FrankaEnv.
 from __future__ import annotations
 
 import json
-import logging
 import threading
 import time
 from typing import Any, Mapping, Optional
@@ -30,7 +29,9 @@ from typing import Any, Mapping, Optional
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
-logger = logging.getLogger(__name__)
+from rlinf.utils.logging import get_logger
+
+logger = get_logger()
 
 try:
     import zmq

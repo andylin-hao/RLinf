@@ -954,7 +954,7 @@ class FrankaEnv(gym.Env):
 
     def _move_action(self, position: np.ndarray) -> None:
         if self.config.is_dummy:
-            print(f"Executing dummy action towards {position=}.")
+            self._logger.info("Executing dummy action towards %s.", position)
             return
         self._clear_error()
         # Commanding the named part rather than the driver is what lets this
