@@ -44,7 +44,7 @@ For a single device, set its name:
      - ``glove_config:`` block
    * - ``so101_leader``
      - Poses an SO-101 leader arm; its own gripper commands the follower's.
-     - ``so101_leader_port``
+     - ``so101_leader_port``, ``so101_leader_id``
    * - ``none``
      - Leaves the policy in control with no operator device.
      - None
@@ -65,12 +65,6 @@ Four devices read on their own, with no robot, env or cluster: ``gello``,
    python -m rlinf.robotics.parts.teleop.gello --port /dev/ttyUSB0
    python -m rlinf.robotics.parts.teleop.so101_leader --port /dev/ttyACM1
 
-When a leader arm reports only zeros or a spacemouse does not respond, this
-command isolates wiring and permission problems from environment
-configuration. The SO-101 leader also prints the action it would command and
-whether it counts as driving, measured against where it last was, so an idle
-arm reads ``driving=False`` until you move it.
-
 An SO-101 leader needs lerobot's calibration before it reads anything, and
 refuses to open without it, naming the file it looked for. Calibrate it once
 from a terminal, giving the arm a name you will reuse in the env config as
@@ -84,6 +78,12 @@ from a terminal, giving the arm a name you will reuse in the env config as
 The procedure asks you to move the arm through its range, so it only runs when
 you pass ``--calibrate`` from a terminal. A configured device never starts it:
 a scheduler worker has no terminal to answer the prompts, and would hang.
+
+When a leader arm reports only zeros or a spacemouse does not respond, this
+command isolates wiring and permission problems from environment
+configuration. The SO-101 leader also prints the action it would command and
+whether it counts as driving, measured against where it last was, so an idle
+arm reads ``driving=False`` until you move it.
 
 ``toolkits/realworld_check`` does the same for a complete robot;
 ``check_robot_parts`` walks one from composition through to disconnect.
@@ -231,11 +231,14 @@ connection lifecycle every robot part follows, and the same machinery accepts
 ``node_rank`` without the device writing anything for it -- which is why the
 constructor above takes only its own arguments.
 
-Readers that poll in a background thread must stop and join that thread in
-``_release()``. ``TeleopGroup.disconnect()`` closes devices in reverse order
-and continues after one close fails, but it cannot make a reader-owned thread
-exit. Keeping thread cleanup with the reader makes disconnect and reconnect
-reliable for standalone diagnostics and environment-managed devices alike.
+A handle that polls in a background thread must stop and join that thread in
+its own ``close()``, which the default ``_release()`` finds and calls. That is
+where ``gello``, ``gello_joint`` and ``spacemouse`` put it, and it is why none
+of them override ``_release()``. ``TeleopGroup.disconnect()`` closes devices in
+reverse order and continues after one close fails, but it cannot make a thread
+it does not own exit. Keeping the cleanup beside the thread makes disconnect
+and reconnect reliable for standalone diagnostics and environment-managed
+devices alike.
 
 ``observation_features`` declares the reading before any hardware is open, so a
 rig can be described offline. It is abstract, so a device that omits it cannot

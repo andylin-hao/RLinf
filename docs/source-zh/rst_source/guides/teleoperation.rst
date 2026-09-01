@@ -38,7 +38,7 @@
      - ``glove_config:`` 段
    * - ``so101_leader``
      - 操作 SO-101 主臂，其夹爪同时控制从臂夹爪。
-     - ``so101_leader_port``
+     - ``so101_leader_port``、``so101_leader_id``
    * - ``none``
      - 不接操作者设备，由 policy 独立控制。
      - 无
@@ -55,8 +55,6 @@
    python -m rlinf.robotics.parts.teleop.gello --port /dev/ttyUSB0
    python -m rlinf.robotics.parts.teleop.so101_leader --port /dev/ttyACM1
 
-如果主臂只返回零值或 SpaceMouse 没有响应，请先用该命令排查接线和设备权限。SO-101 主臂还会打印它将要下发的动作，以及与上一次读数相比是否算作接管；静止时显示 ``driving=False``，移动后才变为 ``True``。
-
 SO-101 主臂必须先完成 lerobot 标定才能读数，否则设备会拒绝打开，并给出它查找的标定文件路径。请在终端中标定一次，并为这条手臂取一个名字，之后在 env 配置的 ``so101_leader_id`` 中沿用：
 
 .. code-block:: bash
@@ -65,6 +63,8 @@ SO-101 主臂必须先完成 lerobot 标定才能读数，否则设备会拒绝�
        --port /dev/ttyACM1 --id left_leader --calibrate
 
 标定过程会提示操作者把手臂活动到各个极限位置，因此只有在终端中显式传入 ``--calibrate`` 时才会执行。通过配置启动的设备不会触发标定：调度器的 worker 没有终端来回答提示，一旦触发就会挂起。
+
+如果主臂只返回零值或 SpaceMouse 没有响应，请先用该命令排查接线和设备权限。SO-101 主臂还会打印它将要下发的动作，以及与上一次读数相比是否算作接管；静止时显示 ``driving=False``，移动后才变为 ``True``。
 
 完整机器人可使用 ``toolkits/realworld_check`` 检查；``check_robot_parts`` 会依次验证组合、读取和断开流程。
 
@@ -179,7 +179,7 @@ SO-101 主臂必须先完成 lerobot 标定才能读数，否则设备会拒绝�
 
 ``_open()`` 负责连接硬件并返回句柄，设备随后通过 ``self._device`` 读取；``_release()`` 负责关闭。这与其他机器人零部件使用同一套 connection 生命周期，``node_rank`` 也由同一套机制处理，设备无需为此编写任何代码——所以上面的构造函数只接收自己的参数。
 
-如果 reader 在后台线程中持续轮询，``_release()`` 必须先通知线程停止，再等待其退出。``TeleopGroup.disconnect()`` 会按相反顺序关闭设备，并在某台设备关闭失败后继续处理其他设备，但它无法代替 reader 结束自己的线程。将这部分清理逻辑保留在 reader 所在的设备类中，可以保证独立诊断和 env 托管设备都能正常断开和重连。
+如果句柄在后台线程中持续轮询，应在它自己的 ``close()`` 中先通知线程停止，再等待其退出；默认的 ``_release()`` 会找到并调用该方法。``gello``、``gello_joint`` 和 ``spacemouse`` 都采用这种写法，因此都不需要覆盖 ``_release()``。``TeleopGroup.disconnect()`` 会按相反顺序关闭设备，并在某台设备关闭失败后继续处理其他设备，但它无法结束不属于自己的线程。把清理逻辑放在线程所在的位置，可以保证独立诊断和 env 托管设备都能正常断开和重连。
 
 ``observation_features`` 在打开硬件之前声明读数结构，因此可以离线描述一套设备。该方法是抽象方法，未实现的设备无法实例化。
 
