@@ -14,170 +14,53 @@
 
 """Real-world robot environments, tasks, and wrapper integration.
 
-Public symbols load lazily to avoid importing optional robotics and vision
-dependencies until an environment is requested.
+Reaching :class:`RealWorldEnv` imports every robot package, which is what
+registers their Gymnasium tasks. That is deferred until it is asked for,
+because those packages pull in optional robotics and vision dependencies.
+
+Environment classes live in the package for the robot they drive --
+``rlinf.envs.real.so101.SO101ReachEnv`` and its siblings -- and importing one
+registers that robot's tasks on its own.
 """
 
 import importlib
-import typing
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
-    # Static declarations for the names __getattr__ resolves lazily.
-    # A test keeps this block synchronized with _EXPORTS.
-    from .dosw1 import (
-        DOSW1Config,
-        DOSW1Env,
-        PickEnv,
-    )
     from .env import RealWorldEnv
-    from .franka import (
-        BottleEnv,
-        DexpnpEnv,
-        DualFrankaEnv,
-        DualFrankaJointEnv,
-        DualFrankaJointRobotConfig,
-        DualFrankaRobotConfig,
-        DualFrankaTCPEnv,
-        DualFrankaTCPRobotConfig,
-        FrankaBinRelocationEnv,
-        FrankaEnv,
-        FrankaRobotConfig,
-        FrankaRobotState,
-        PegInsertionEnv,
-    )
-    from .gim_arm import (
-        GimArmEnv,
-        GimArmPegInsertionEnv,
-        GimArmRobotConfig,
-        GimArmRobotState,
-    )
-    from .so101 import (
-        SO101Env,
-        SO101ReachConfig,
-        SO101ReachEnv,
-        SO101RobotConfig,
-        SO101RobotState,
-    )
-    from .task_env import (
-        RobotTask,
-        RobotTaskEnv,
-    )
-    from .xsquare import (
-        ButtonEnv,
-        Turtle2Env,
-        Turtle2RobotConfig,
-        Turtle2RobotState,
-    )
 
-#: Public symbol mapped to its defining module.
-_EXPORTS: dict[str, str] = {
-    name: module
-    for module, names in {
-        ".dosw1": ("DOSW1Config", "DOSW1Env", "PickEnv"),
-        ".franka": (
-            "BottleEnv",
-            "DexpnpEnv",
-            "DualFrankaEnv",
-            "DualFrankaJointEnv",
-            "DualFrankaJointRobotConfig",
-            "DualFrankaRobotConfig",
-            "DualFrankaTCPEnv",
-            "DualFrankaTCPRobotConfig",
-            "FrankaBinRelocationEnv",
-            "FrankaEnv",
-            "FrankaRobotConfig",
-            "FrankaRobotState",
-            "PegInsertionEnv",
-        ),
-        ".gim_arm": (
-            "GimArmEnv",
-            "GimArmPegInsertionEnv",
-            "GimArmRobotConfig",
-            "GimArmRobotState",
-        ),
-        ".so101": (
-            "SO101Env",
-            "SO101ReachConfig",
-            "SO101ReachEnv",
-            "SO101RobotConfig",
-            "SO101RobotState",
-        ),
-        ".xsquare": (
-            "ButtonEnv",
-            "Turtle2Env",
-            "Turtle2RobotConfig",
-            "Turtle2RobotState",
-        ),
-        ".env": ("RealWorldEnv",),
-        ".task_env": ("RobotTask", "RobotTaskEnv"),
-    }.items()
-    for name in names
-}
+__all__ = ["RealWorldEnv"]
 
-__all__ = [
-    "BottleEnv",
-    "ButtonEnv",
-    "DOSW1Config",
-    "DOSW1Env",
-    "DexpnpEnv",
-    "DualFrankaEnv",
-    "DualFrankaJointEnv",
-    "DualFrankaJointRobotConfig",
-    "DualFrankaRobotConfig",
-    "DualFrankaTCPEnv",
-    "DualFrankaTCPRobotConfig",
-    "FrankaBinRelocationEnv",
-    "FrankaEnv",
-    "FrankaRobotConfig",
-    "FrankaRobotState",
-    "GimArmEnv",
-    "GimArmPegInsertionEnv",
-    "GimArmRobotConfig",
-    "GimArmRobotState",
-    "PegInsertionEnv",
-    "PickEnv",
-    "RealWorldEnv",
-    "RobotTask",
-    "RobotTaskEnv",
-    "SO101Env",
-    "SO101ReachConfig",
-    "SO101ReachEnv",
-    "SO101RobotConfig",
-    "SO101RobotState",
-    "Turtle2Env",
-    "Turtle2RobotConfig",
-    "Turtle2RobotState",
-]
+#: Robot packages whose import registers their Gymnasium tasks.
+_ROBOT_PACKAGES = (
+    ".dosw1",
+    ".franka",
+    ".gim_arm",
+    ".so101",
+    ".xsquare",
+    ".task_env",
+)
 
 _loaded = False
 
 
 def _load_all() -> None:
-    """Import all robot packages and register their Gymnasium tasks."""
+    """Import every robot package and register its Gymnasium tasks."""
     global _loaded
     if _loaded:
         return
     _loaded = True
-    for module in (
-        ".dosw1",
-        ".franka",
-        ".gim_arm",
-        ".so101",
-        ".xsquare",
-        ".task_env",
-    ):
+    for module in _ROBOT_PACKAGES:
         importlib.import_module(module, __name__)
     env_module = importlib.import_module(".env", __name__)
     env_module.RealWorldEnv.realworld_setup()
 
 
-def __getattr__(name: str) -> "typing.Any":
-    """Load the real-world envs the first time one of their names is used."""
-    module_name = _EXPORTS.get(name)
-    if module_name is None:
+def __getattr__(name: str) -> Any:
+    """Load the real-world envs the first time ``RealWorldEnv`` is used."""
+    if name != "RealWorldEnv":
         raise AttributeError(name)
     _load_all()
-    value = getattr(importlib.import_module(module_name, __name__), name)
+    value = importlib.import_module(".env", __name__).RealWorldEnv
     globals()[name] = value
     return value

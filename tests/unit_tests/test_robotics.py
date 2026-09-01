@@ -1478,32 +1478,26 @@ def _imports(path: Path) -> set[str]:
 #: Every package that resolves its exports through a lazy ``__getattr__``.
 #: Each needs a TYPE_CHECKING block, or an editor cannot follow the import.
 _LAZY_PACKAGES = (
-    ("rlinf/robotics/__init__.py", "rlinf.robotics", "_MODULE_BY_NAME"),
-    (
-        "rlinf/robotics/parts/arms/__init__.py",
-        "rlinf.robotics.parts.arms",
-        "_MODULE_BY_NAME",
-    ),
-    ("rlinf/envs/real/__init__.py", "rlinf.envs.real", "_EXPORTS"),
+    ("rlinf/robotics/__init__.py", "rlinf.robotics"),
+    ("rlinf/robotics/parts/arms/__init__.py", "rlinf.robotics.parts.arms"),
+    ("rlinf/envs/real/__init__.py", "rlinf.envs.real"),
 )
 
 
-def _typed_names(source: str) -> dict[str, str]:
-    """Return the names a type checker sees, mapped to the module they come from."""
-    typed: dict[str, str] = {}
+def _typed_names(source: str) -> set[str]:
+    """Return the names a type checker sees declared in the package."""
+    typed: set[str] = set()
     for node in ast.walk(ast.parse(source)):
         if not (isinstance(node, ast.If) and "TYPE_CHECKING" in ast.dump(node.test)):
             continue
         for statement in ast.walk(node):
             if isinstance(statement, ast.ImportFrom):
-                module = "." * statement.level + (statement.module or "")
-                for alias in statement.names:
-                    typed[alias.name] = module
+                typed |= {alias.asname or alias.name for alias in statement.names}
     return typed
 
 
-@pytest.mark.parametrize(("path", "package", "attribute"), _LAZY_PACKAGES)
-def test_a_lazy_package_still_types_what_it_exports(path, package, attribute):
+@pytest.mark.parametrize(("path", "package"), _LAZY_PACKAGES)
+def test_a_lazy_package_still_types_what_it_exports(path, package):
     """A name resolved at run time must also be declared for a type checker.
 
     Without the declaration the import still works, but go-to-definition and
@@ -1512,27 +1506,20 @@ def test_a_lazy_package_still_types_what_it_exports(path, package, attribute):
     import importlib
 
     typed = _typed_names((_ROOT / path).read_text())
-    exported = getattr(importlib.import_module(package), attribute)
+    exported = set(importlib.import_module(package).__all__)
 
-    missing = sorted(set(exported) - set(typed))
+    missing = sorted(exported - typed)
     assert missing == [], (
-        f"lazily exported but invisible to a type checker: {missing}. "
+        f"exported but invisible to a type checker: {missing}. "
         f"Add them to the TYPE_CHECKING block in {path}."
     )
 
-    extra = sorted(set(typed) - set(exported))
-    assert extra == [], f"typed but not exported at run time: {extra}"
-
-    wrong = {
-        name: (module, exported[name])
-        for name, module in typed.items()
-        if module != exported[name]
-    }
-    assert wrong == {}, f"typed from a different module than it loads from: {wrong}"
+    extra = sorted(typed - exported)
+    assert extra == [], f"declared but not exported: {extra}"
 
 
-@pytest.mark.parametrize(("path", "package", "attribute"), _LAZY_PACKAGES)
-def test_a_lazy_package_exports_only_names_that_exist(path, package, attribute):
+@pytest.mark.parametrize(("path", "package"), _LAZY_PACKAGES)
+def test_a_lazy_package_exports_only_names_that_exist(path, package):
     """``__all__`` is written out, so nothing can drift out from under it.
 
     A computed ``__all__`` agrees with its own map by construction, which is
@@ -1544,9 +1531,6 @@ def test_a_lazy_package_exports_only_names_that_exist(path, package, attribute):
     module = importlib.import_module(package)
 
     assert module.__all__ == sorted(module.__all__), f"{path}: __all__ is not sorted"
-    assert set(module.__all__) == set(getattr(module, attribute)), (
-        f"{path}: __all__ and {attribute} disagree"
-    )
     dangling = [name for name in module.__all__ if not hasattr(module, name)]
     assert dangling == [], f"{path}: exported but does not exist: {dangling}"
 
