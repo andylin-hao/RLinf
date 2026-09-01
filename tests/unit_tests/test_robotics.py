@@ -2622,6 +2622,47 @@ def test_a_glove_rig_can_be_asked_what_to_hold():
             group.disconnect()
 
 
+def test_an_end_effector_answers_for_its_own_kind():
+    """A part reports what it is, so an env need not trust its config.
+
+    The kind used to live only on the EndEffectorType enum, which meant the
+    Franka env branched on the config it built the part from and then called
+    BaseGripper-only members through a BaseEndEffector.
+    """
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        from rlinf.robotics.parts.end_effectors import EndEffector
+        from rlinf.robotics.parts.end_effectors.base import BaseEndEffector
+
+        gripper = EndEffector.of("robotiq", port="/dev/mock-gripper")
+
+        assert gripper.is_gripper
+        assert not gripper.is_hand
+        # The verbs an env drives it with are on the declared type, not on a
+        # subclass it would have to downcast to.
+        for name in ("open", "close", "is_open", "is_gripper", "is_hand"):
+            assert hasattr(BaseEndEffector, name), name
+
+
+def test_a_grasp_is_not_a_move_to_zero_width():
+    """close() holds an object; command() only travels to a width.
+
+    Routing binary close through send_action would call move() and quietly
+    drop the grasp force, so the two stay separate verbs.
+    """
+    import inspect
+
+    from rlinf.robotics.parts.end_effectors.grippers.franka import FrankaGripper
+
+    close = inspect.getsource(FrankaGripper.close)
+    move = inspect.getsource(FrankaGripper.move)
+
+    assert "force" in close, "closing must request a grasp force"
+    assert "Grasp" in close, "closing goes through the grasp action"
+    assert "force" not in move, "moving positions without force"
+
+
 def test_a_delta_binding_has_no_pose_to_hold():
     from rlinf.robotics.parts.teleop import PicoDelta, PicoTcp
 

@@ -100,6 +100,44 @@ class EndEffector(ControllablePart, ABC):
         """
 
     @property
+    def is_gripper(self) -> bool:
+        """Whether this end effector opens and closes on one axis.
+
+        An environment asks the part rather than the configuration it was
+        built from, so the two cannot drift apart.
+        """
+        return False
+
+    @property
+    def is_hand(self) -> bool:
+        """Whether this end effector poses several fingers."""
+        return not self.is_gripper
+
+    def open(self, speed: float = 0.3) -> None:
+        """Release fully.
+
+        Latching is a separate verb from :meth:`command`, which positions
+        without force. An end effector that does not latch has nothing to do
+        here.
+        """
+
+    def close(self, speed: float = 0.3, force: float = 130.0) -> None:
+        """Grasp closed at ``force``, in Newtons.
+
+        This is not ``command`` with a zero target: a grasp holds an object
+        against the requested force, where a move only travels to a width.
+        """
+
+    @property
+    def is_open(self) -> bool:
+        """Whether the end effector is holding nothing.
+
+        A gripper reports its own latch state. Anything that does not open and
+        close on one axis has no closed state to report, so it reads as open.
+        """
+        return True
+
+    @property
     def observation_features(self) -> Features:
         """Describe the canonical end-effector state."""
         return {"state": {"shape": (self.state_dim,), "dtype": "float32"}}

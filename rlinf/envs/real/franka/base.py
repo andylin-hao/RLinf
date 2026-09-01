@@ -342,9 +342,19 @@ class FrankaEnv(gym.Env):
         # this line rather than as a missing attribute mid-episode.
         self._arm: BaseArm = self.robot.child("arm", BaseArm)
         # The end effector is a part beside the arm, with its own connection.
+        # A mismatch here means the declared spaces do not fit the hardware
+        # that turned up, which surfaces later as a shape error mid-episode.
         self._end_effector: BaseEndEffector = self.robot.child(
             "end_effector", BaseEndEffector
         )
+        if self._end_effector.is_hand is not self._ee_type.is_hand:
+            raise ValueError(
+                f"end_effector_type={self.config.end_effector_type!r} declares a "
+                f"{'hand' if self._ee_type.is_hand else 'gripper'}, but the robot "
+                f"built a {type(self._end_effector).__name__}. The action and "
+                "observation spaces were sized from the config, so they would "
+                "not fit this part."
+            )
 
     def _setup_reward_worker(self) -> None:
         if not self.config.use_reward_model:
@@ -643,8 +653,17 @@ class FrankaEnv(gym.Env):
 
     @property
     def _is_hand(self) -> bool:
-        """Whether the active end-effector is a dexterous hand."""
-        return self._ee_type.is_hand
+        """Whether the active end-effector is a dexterous hand.
+
+        Asked of the part once one exists. Gymnasium spaces are declared
+        before hardware is set up, and a dummy env never sets any up, so the
+        configured type answers until then. :meth:`_setup_hardware` checks the
+        two agree rather than letting them drift.
+        """
+        end_effector = getattr(self, "_end_effector", None)
+        if end_effector is None:
+            return self._ee_type.is_hand
+        return end_effector.is_hand
 
     def _init_action_obs_spaces(self) -> None:
         """Initialize spaces and Cartesian safety limits.
@@ -919,7 +938,7 @@ class FrankaEnv(gym.Env):
         Returns:
             ``True`` if the action caused a meaningful state change.
         """
-        if self._ee_type.is_gripper:
+        if self._end_effector.is_gripper:
             # Preserve the established binary gripper action contract.
             position = float(ee_action[0]) * self.config.action_scale[2]
             return self._binary_gripper_action(position)
@@ -1003,7 +1022,9 @@ class FrankaEnv(gym.Env):
                     hand_pos = np.zeros(6)
                 state["hand_position"] = hand_pos
             else:
-                state["gripper_position"] = np.array([self._end_effector.position])
+                state["gripper_position"] = np.asarray(
+                    self._end_effector.get_state()[:1], dtype=np.float64
+                )
             state = {
                 key: np.asarray(value, dtype=np.float32) for key, value in state.items()
             }

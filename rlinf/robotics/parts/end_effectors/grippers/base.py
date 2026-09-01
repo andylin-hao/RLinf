@@ -48,6 +48,11 @@ class BaseGripper(BaseEndEffector, ABC):
             "through. Override declare() to take the one it uses."
         )
 
+    @property
+    def is_gripper(self) -> bool:
+        """Every driver in this category opens and closes on one axis."""
+        return True
+
     @abstractmethod
     def open(self, speed: float = 0.3) -> None:
         """Fully open the gripper.

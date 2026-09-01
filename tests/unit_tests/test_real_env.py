@@ -279,7 +279,9 @@ def test_franka_builds_cameras_after_applying_hardware_info(monkeypatch):
             # naming the class it expects each to be.
             assert name in ("arm", "end_effector")
             assert part_type is not None, "the env should say what it expects"
-            return SimpleNamespace(owner=object())
+            # is_hand is part of the end-effector contract: the env asks the
+            # part which kind it is rather than trusting the config alone.
+            return SimpleNamespace(owner=object(), is_hand=False, is_gripper=True)
 
     def build(**kwargs):
         captured.update(kwargs)
