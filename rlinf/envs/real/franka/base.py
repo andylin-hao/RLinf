@@ -23,6 +23,7 @@ import gymnasium as gym
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
+from rlinf.envs.real.utils.seeding import seed_sampled_spaces
 from rlinf.envs.real.utils.video import VideoPlayer
 from rlinf.robotics import (
     Camera,
@@ -584,6 +585,9 @@ class FrankaEnv(gym.Env):
         seed: Optional[int] = None,
         options: Optional[dict[str, Any]] = None,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
+        # A run with no hardware samples this space instead of reading,
+        # so seeding it is what makes such a run reproducible.
+        seed_sampled_spaces(seed, self._base_observation_space)
         if self.config.is_dummy:
             observation = self._get_observation()
             return observation, {}

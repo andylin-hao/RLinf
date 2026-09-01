@@ -174,6 +174,52 @@ def _assert_legacy_transition(env) -> None:
     env.close()
 
 
+@pytest.mark.parametrize(
+    ("module_name", "class_name", "override"),
+    [
+        (
+            "rlinf.envs.real.franka",
+            "FrankaEnv",
+            {"camera_serials": ["dummy"], "step_frequency": 10000.0},
+        ),
+        ("rlinf.envs.real.so101", "SO101ReachEnv", {}),
+    ],
+)
+def test_a_hardware_free_env_repeats_with_a_seed(module_name, class_name, override):
+    """reset(seed=...) must pin what a dummy env reports.
+
+    With no hardware the env samples its declared space, and a Gymnasium
+    space seeds itself from entropy. Two runs of one config then disagree on
+    every value, so a dummy end-to-end run can only catch a change of shape.
+    That is how an observation built from two different moments went
+    unnoticed: it was correctly shaped every time.
+    """
+    import importlib
+
+    from robot_mocks import mocked_sdks
+
+    def observe(seed):
+        with mocked_sdks():
+            env_cls = getattr(importlib.import_module(module_name), class_name)
+            cfg = {"is_dummy": True, "enable_camera_player": False, **override}
+            try:
+                env = env_cls(
+                    override_cfg=cfg, worker_info=None, robot_info=None, env_idx=0
+                )
+            except TypeError:
+                env = env_cls(cfg)
+            observation, _ = env.reset(seed=seed)
+            return np.concatenate(
+                [
+                    np.asarray(v).reshape(-1)
+                    for _, v in sorted(observation["state"].items())
+                ]
+            )
+
+    assert np.array_equal(observe(7), observe(7)), "the same seed must repeat"
+    assert not np.array_equal(observe(7), observe(8)), "a different seed must differ"
+
+
 def test_a_franka_observation_comes_from_one_snapshot():
     """Every field a policy sees must describe the same instant.
 

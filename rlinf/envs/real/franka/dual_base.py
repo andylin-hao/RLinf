@@ -28,6 +28,7 @@ import gymnasium as gym
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
+from rlinf.envs.real.utils.seeding import seed_sampled_spaces
 from rlinf.envs.real.utils.video import VideoPlayer
 from rlinf.robotics import (
     Camera,
@@ -507,6 +508,9 @@ class DualFrankaEnv(gym.Env):
         self, *, seed: Optional[int] = None, options: Optional[dict[str, Any]] = None
     ) -> tuple[Any, dict[str, Any]]:
         """Reset both arms unless teleoperation requests pose continuity."""
+        # A run with no hardware samples this space instead of reading,
+        # so seeding it is what makes such a run reproducible.
+        seed_sampled_spaces(seed, self.observation_space)
         del seed
         skip_reset_to_home = bool((options or {}).get("skip_reset_to_home", False))
         self._num_steps = 0

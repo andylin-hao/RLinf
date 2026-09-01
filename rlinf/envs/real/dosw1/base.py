@@ -26,6 +26,7 @@ import cv2
 import gymnasium as gym
 import numpy as np
 
+from rlinf.envs.real.utils.seeding import seed_sampled_spaces
 from rlinf.envs.real.utils.video import VideoPlayer
 from rlinf.envs.real.wrappers.episode.keyboard import KeyboardListener
 from rlinf.robotics import (
@@ -209,6 +210,9 @@ class DOSW1Env(gym.Env):
         options: Optional[dict] = None,
         joint_reset: bool = False,
     ) -> tuple[dict, dict]:
+        # A run with no hardware samples this space instead of reading,
+        # so seeding it is what makes such a run reproducible.
+        seed_sampled_spaces(seed, self.observation_space)
         if self.config.is_dummy:
             return self._get_observation(), {}
 

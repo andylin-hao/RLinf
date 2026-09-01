@@ -29,6 +29,7 @@ import cv2
 import gymnasium as gym
 import numpy as np
 
+from rlinf.envs.real.utils.seeding import seed_sampled_spaces
 from rlinf.envs.real.utils.video import VideoPlayer
 from rlinf.robotics import (
     Camera,
@@ -337,6 +338,9 @@ class SO101Env(gym.Env):
         options: Optional[dict[str, Any]] = None,
     ) -> tuple[Any, dict[str, Any]]:
         """Return the arm to its rest configuration."""
+        # A run with no hardware samples this space instead of reading,
+        # so seeding it is what makes such a run reproducible.
+        seed_sampled_spaces(seed, self._base_observation_space)
         self._num_steps = 0
         self._success_hold_counter = 0
         self._last_gripper = None
