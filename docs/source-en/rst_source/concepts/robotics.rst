@@ -1,11 +1,12 @@
 Robotics Interface
 ==================
 
-Use the robotics interface when a task or environment needs to inspect, open,
-read, command, and close a physical robot without depending on its driver. An
-arm, end effector, camera, or mobile base occupies a named path. Observations
-and actions use those same paths, so the structure a caller sees remains stable
-when a device backend or deployment changes.
+When a task or environment operates a physical robot, it should use the
+robotics interface instead of calling a concrete driver. The interface exposes
+an arm, end effector, camera, or mobile base through a stable name and path, and
+provides common operations for inspection, connection management,
+observations, and actions. As long as those paths remain unchanged, a backend
+or placement can change without changing task code.
 
 This page follows one complete call sequence first. It explains how to build a
 robot, inspect its structure, select typed parts, manage the connection

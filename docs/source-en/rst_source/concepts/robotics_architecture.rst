@@ -1,18 +1,17 @@
 Robotics Architecture
 =====================
 
-Read this page when you need to implement the interface described in
-:doc:`Robotics Interface <robotics>`, share one hardware session between
-several parts, or diagnose placement and cleanup. The architecture must preserve
-one caller-visible structure while still opening every physical resource exactly
-once.
+This page explains the implementation behind :doc:`Robotics Interface
+<robotics>`: how task-facing part paths map to hardware connections, how several
+parts share one connection, and how placement and lifecycle management ensure
+that every physical resource is opened and released exactly once.
 
-The explanation follows that responsibility from the outside inward. It first
-separates public paths from hardware-backed parts, then assigns each role to a
-core type. From there it covers backend and robot registration, the ways a
-shared session enters the composition, and finally placement, inspection, and
-lifecycle. Reading in that order makes ownership a consequence of composition
-rather than an isolated implementation rule.
+The explanation starts with the relationship between task-facing paths and
+driver-side connections. It then assigns responsibilities to the core types,
+covers backend and robot registration and the three forms of shared session,
+and finishes with placement, pre-connection inspection, and lifecycle. This
+order establishes which parts the robot contains before determining which
+connection manages each resource.
 
 Start from the Robot's Public Structure
 ---------------------------------------
