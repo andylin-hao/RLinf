@@ -57,15 +57,20 @@ that the environment accepts.
 Check a Device First
 --------------------
 
-The devices whose readers poll on their own thread -- ``gello``,
-``gello_joint`` and ``spacemouse`` -- run without a robot or cluster:
+Four devices read on their own, with no robot, env or cluster: ``gello``,
+``gello_joint``, ``so101_leader`` and ``spacemouse``.
 
 .. code-block:: bash
 
    python -m rlinf.robotics.parts.teleop.gello --port /dev/ttyUSB0
+   python -m rlinf.robotics.parts.teleop.so101_leader --port /dev/ttyACM1
 
 When a leader arm reports only zeros or a spacemouse does not respond, this
-command isolates wiring and permission problems from environment configuration.
+command isolates wiring and permission problems from environment
+configuration. The SO-101 leader also prints the action it would command and
+whether it counts as driving, measured against where it last was, so an idle
+arm reads ``driving=False`` until you move it.
+
 ``toolkits/realworld_check`` does the same for a complete robot;
 ``check_robot_parts`` walks one from composition through to disconnect.
 

@@ -48,13 +48,14 @@
 验证设备读数
 ------------
 
-由后台线程持续轮询的设备——``gello``、``gello_joint`` 和 ``spacemouse``——不依赖机器人或集群，可独立运行：
+有四台设备可以独立读取，不需要机器人、env 或集群：``gello``、``gello_joint``、``so101_leader`` 和 ``spacemouse``。
 
 .. code-block:: bash
 
    python -m rlinf.robotics.parts.teleop.gello --port /dev/ttyUSB0
+   python -m rlinf.robotics.parts.teleop.so101_leader --port /dev/ttyACM1
 
-如果主臂只返回零值或 SpaceMouse 没有响应，请先用该命令排查接线和设备权限。完整机器人可使用 ``toolkits/realworld_check`` 检查；``check_robot_parts`` 会依次验证组合、读取和断开流程。
+如果主臂只返回零值或 SpaceMouse 没有响应，请先用该命令排查接线和设备权限。SO-101 主臂还会打印它将要下发的动作，以及与上一次读数相比是否算作接管；静止时显示 ``driving=False``，移动后才变为 ``True``。完整机器人可使用 ``toolkits/realworld_check`` 检查；``check_robot_parts`` 会依次验证组合、读取和断开流程。
 
 组合多台设备
 ------------

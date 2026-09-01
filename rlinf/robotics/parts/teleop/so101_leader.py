@@ -176,3 +176,43 @@ class SO101Leader(TeleopDevice):
         # while the leader is just resting in its holder.
         moved = float(np.linalg.norm(target - current)) > self.MOVEMENT_EPSILON
         return TeleopAction(parts={"arm": target, "end_effector": grip}, driving=moved)
+
+
+if __name__ == "__main__":
+    import argparse
+    import time
+
+    parser = argparse.ArgumentParser(description="Read an SO-101 leader arm.")
+    parser.add_argument(
+        "--port", type=str, required=True, help="Serial port of the leader arm."
+    )
+    parser.add_argument(
+        "--id", type=str, default=None, help="lerobot calibration id of the leader."
+    )
+    args = parser.parse_args()
+
+    leader = SO101Leader(port=args.port, calibration_id=args.id)
+    leader.connect()
+    # No follower to read, so the arm is measured against where it last was.
+    # That is the same comparison action() makes, and it is what decides
+    # whether the operator has taken control.
+    previous = leader.get_observation()["joint_position"]
+    try:
+        with np.printoptions(precision=3, suppress=True):
+            while True:
+                action = leader.action(
+                    leader.get_observation(), {"joint_positions": previous[None, :]}
+                )
+                arm = action.parts["arm"]
+                grip = float(action.parts["end_effector"][0])
+                print(
+                    f"joints={np.rad2deg(arm)} deg  grip={grip:.2f}  "
+                    f"driving={action.driving}   ",
+                    end="\r",
+                )
+                previous = arm
+                time.sleep(0.1)
+    except KeyboardInterrupt:
+        print()
+    finally:
+        leader.disconnect()

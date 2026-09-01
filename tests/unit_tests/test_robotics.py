@@ -1660,6 +1660,29 @@ def test_teleop_devices_are_parts_like_any_other_hardware():
     assert sorted(mouse.observation_features) == ["buttons", "twist"]
 
 
+def test_the_guide_names_every_device_that_runs_standalone():
+    """The list in the guide is what an operator reaches for first.
+
+    It named three devices while four have an entry point, so the SO-101
+    leader could not be checked on its own even though it can be.
+    """
+    devices = _ROOT / "rlinf" / "robotics" / "parts" / "teleop"
+    standalone = {
+        path.stem
+        for path in devices.glob("*.py")
+        if '__name__ == "__main__"' in path.read_text()
+    }
+    guide = (
+        _ROOT / "docs" / "source-en" / "rst_source" / "guides" / "teleoperation.rst"
+    ).read_text()
+    section = guide.split("Check a Device First")[1].split("Compose Devices")[0]
+
+    missing = sorted(name for name in standalone if f"``{name}``" not in section)
+    assert missing == [], (
+        f"these run standalone but the guide does not say so: {missing}"
+    )
+
+
 def test_teleop_devices_do_not_import_gymnasium():
     devices = _ROOT / "rlinf" / "robotics" / "parts" / "teleop"
     modules = sorted(devices.glob("*.py"))
