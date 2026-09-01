@@ -19,6 +19,10 @@ Run it, then type commands::
     python so101_manual.py --port /dev/ttyACM0 --id my-arm
     python so101_manual.py --mock          # no hardware, to try the commands
 
+Add --leader to hand the arm over to an SO-101 leader, then type "teleop"::
+
+    python so101_manual.py --port /dev/ttyACM0 --leader /dev/ttyACM1
+
 The arm has joint encoders and no kinematic model, so "up" and "forward"
 are single joint moves rather than Cartesian ones: up bends the shoulder
 and forward bends the elbow.
@@ -51,6 +55,7 @@ HELP = """
   open / close     the gripper
   home             back to the rest pose
   where            print the joint angles
+  teleop           follow the leader arm until Ctrl-C (needs --leader)
   quit
 
 Add a number to repeat a move: "up 3". One move is --step degrees.
@@ -62,6 +67,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", default="/dev/ttyACM0", help="serial port")
     parser.add_argument("--id", default=None, help="lerobot calibration id")
+    parser.add_argument(
+        "--leader", default=None, help="serial port of an SO-101 leader arm"
+    )
+    parser.add_argument(
+        "--leader-id", default=None, help="lerobot calibration id of the leader"
+    )
     parser.add_argument(
         "--step", type=float, default=5.0, help="degrees per move (default 5)"
     )
@@ -97,12 +108,43 @@ def main() -> None:
             }
         )
         try:
-            drive(env, step=np.deg2rad(args.step), invert=args.invert)
+            drive(
+                env,
+                step=np.deg2rad(args.step),
+                invert=args.invert,
+                leader_port=args.leader,
+                leader_id=args.leader_id,
+            )
         finally:
             env.close()
 
 
-def drive(env, step: float, invert: bool) -> None:
+def teleop(env, port: str, calibration_id) -> None:
+    """Let an SO-101 leader arm drive the follower until Ctrl-C.
+
+    The leader is the same five joints and gripper, so its reading is the
+    follower's target with no conversion. It reports a pose whether or not
+    anyone is holding it, and only takes over once it has actually moved.
+    """
+    from rlinf.robotics.parts.teleop import SO101Leader
+
+    leader = SO101Leader(port=port, calibration_id=calibration_id)
+    leader.connect()
+    print("Following the leader arm. Ctrl-C to stop.")
+    try:
+        while True:
+            action = leader.drive({"joint_positions": env.get_joint_positions()})
+            if not action.driving:
+                continue
+            command = np.append(action.parts["arm"], action.parts["end_effector"])
+            env.step(command.astype(np.float32))
+    except KeyboardInterrupt:
+        print("\nStopped following.")
+    finally:
+        leader.disconnect()
+
+
+def drive(env, step: float, invert: bool, leader_port=None, leader_id=None) -> None:
     """Read commands until the operator quits."""
     observation, _ = env.reset()
     # Absolute joint targets: start where the arm already is, so the first
@@ -137,6 +179,16 @@ def drive(env, step: float, invert: bool) -> None:
         if name == "where":
             print("  joints:", np.round(np.rad2deg(target), 1), "deg")
             print("  gripper:", round(grip, 2))
+            continue
+        if name == "teleop":
+            if leader_port is None:
+                print("teleop needs a leader arm: pass --leader /dev/ttyACM1")
+                continue
+            teleop(env, leader_port, leader_id)
+            # Pick up where the leader left the arm. Commanding the pre-teleop
+            # target here would snap it back across the workspace.
+            target = env.get_joint_positions()[0].astype(float)
+            print("  joints:", np.round(np.rad2deg(target), 1), "deg")
             continue
         if name == "home":
             target = np.zeros_like(target)
