@@ -18,10 +18,39 @@ Driver modules load lazily so importing the package does not require every arm
 SDK.
 """
 
-# ruff: noqa: F822
-
 from importlib import import_module
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    # Static declarations for the names __getattr__ resolves lazily.
+    # A test keeps this block synchronized with _MODULE_BY_NAME.
+    from .base import (
+        ARM_STATE_FIELDS,
+        Arm,
+        ArmState,
+        BaseArm,
+    )
+    from .dosw1 import (
+        DOSW1Arm,
+        DOSW1Connection,
+        DOSW1EndEffector,
+        DOSW1RobotState,
+    )
+    from .franka import FrankaRobotState
+    from .franka_ros import FrankaROSArm
+    from .franky import FrankyArm
+    from .gim_arm import (
+        GimArm,
+        GimArmRobotState,
+    )
+    from .so101 import (
+        SO101Arm,
+        SO101RobotState,
+    )
+    from .turtle2 import (
+        Turtle2Connection,
+        Turtle2RobotState,
+    )
 
 _MODULE_BY_NAME: dict[str, str] = {
     "ARM_STATE_FIELDS": ".base",
@@ -30,7 +59,6 @@ _MODULE_BY_NAME: dict[str, str] = {
     "BaseArm": ".base",
     "DOSW1Arm": ".dosw1",
     "DOSW1RobotState": ".dosw1",
-    "DOSW1ConnectionConfig": ".dosw1",
     "DOSW1EndEffector": ".dosw1",
     "DOSW1Connection": ".dosw1",
     "FrankaROSArm": ".franka_ros",
@@ -44,7 +72,25 @@ _MODULE_BY_NAME: dict[str, str] = {
     "Turtle2RobotState": ".turtle2",
 }
 
-__all__ = sorted(_MODULE_BY_NAME)
+__all__ = [
+    "ARM_STATE_FIELDS",
+    "Arm",
+    "ArmState",
+    "BaseArm",
+    "DOSW1Arm",
+    "DOSW1Connection",
+    "DOSW1EndEffector",
+    "DOSW1RobotState",
+    "FrankaROSArm",
+    "FrankaRobotState",
+    "FrankyArm",
+    "GimArm",
+    "GimArmRobotState",
+    "SO101Arm",
+    "SO101RobotState",
+    "Turtle2Connection",
+    "Turtle2RobotState",
+]
 
 
 def load_drivers() -> None:

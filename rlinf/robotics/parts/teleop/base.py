@@ -36,7 +36,16 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, ClassVar, Mapping, Optional, Sequence
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    ClassVar,
+    Mapping,
+    Optional,
+    Sequence,
+    TypeVar,
+)
 
 import numpy as np
 
@@ -46,6 +55,10 @@ from ..base import RobotPart
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from .group import TeleopEntry
 
+
+#: Bound where a device class is decorated, so registration returns that
+#: class rather than the base it registers into.
+RegisteredDevice = TypeVar("RegisteredDevice", bound="TeleopDevice")
 
 #: Context fields a device may request through ``TeleopDevice.NEEDS``.
 CONTEXT_KEYS = (
@@ -133,10 +146,10 @@ class TeleopDevice(TeleopPart):
     @classmethod
     def register(
         cls, *names: str
-    ) -> "Any":  # Callable[[type[TeleopDevice]], type[TeleopDevice]]
+    ) -> "Callable[[type[RegisteredDevice]], type[RegisteredDevice]]":
         """Register a device under the names a config spells it with."""
 
-        def add(device_cls: "type[TeleopDevice]") -> "type[TeleopDevice]":
+        def add(device_cls: "type[RegisteredDevice]") -> "type[RegisteredDevice]":
             for name in names:
                 key = name.lower()
                 taken = TeleopDevice._REGISTRY.get(key)

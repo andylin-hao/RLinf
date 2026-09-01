@@ -438,7 +438,7 @@ class SO101Env(gym.Env):
         declared = self.observation_space["frames"]
         frames: dict[str, np.ndarray] = {}
         for camera in getattr(self, "_cameras", []):
-            name = camera._camera_info.name
+            name = camera.name
             try:
                 # Cameras deliver their native resolution; the space fixes one.
                 size = declared[name].shape[:2][::-1]

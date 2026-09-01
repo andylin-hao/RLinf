@@ -20,6 +20,55 @@ dependencies until an environment is requested.
 
 import importlib
 import typing
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    # Static declarations for the names __getattr__ resolves lazily.
+    # A test keeps this block synchronized with _EXPORTS.
+    from .dosw1 import (
+        DOSW1Config,
+        DOSW1Env,
+        PickEnv,
+    )
+    from .env import RealWorldEnv
+    from .franka import (
+        BottleEnv,
+        DexpnpEnv,
+        DualFrankaEnv,
+        DualFrankaJointEnv,
+        DualFrankaJointRobotConfig,
+        DualFrankaRobotConfig,
+        DualFrankaTCPEnv,
+        DualFrankaTCPRobotConfig,
+        FrankaBinRelocationEnv,
+        FrankaEnv,
+        FrankaRobotConfig,
+        FrankaRobotState,
+        PegInsertionEnv,
+    )
+    from .gim_arm import (
+        GimArmEnv,
+        GimArmPegInsertionEnv,
+        GimArmRobotConfig,
+        GimArmRobotState,
+    )
+    from .so101 import (
+        SO101Env,
+        SO101ReachConfig,
+        SO101ReachEnv,
+        SO101RobotConfig,
+        SO101RobotState,
+    )
+    from .task_env import (
+        RobotTask,
+        RobotTaskEnv,
+    )
+    from .xsquare import (
+        ButtonEnv,
+        Turtle2Env,
+        Turtle2RobotConfig,
+        Turtle2RobotState,
+    )
 
 #: Public symbol mapped to its defining module.
 _EXPORTS: dict[str, str] = {
@@ -66,7 +115,40 @@ _EXPORTS: dict[str, str] = {
     for name in names
 }
 
-__all__ = sorted(_EXPORTS)
+__all__ = [
+    "BottleEnv",
+    "ButtonEnv",
+    "DOSW1Config",
+    "DOSW1Env",
+    "DexpnpEnv",
+    "DualFrankaEnv",
+    "DualFrankaJointEnv",
+    "DualFrankaJointRobotConfig",
+    "DualFrankaRobotConfig",
+    "DualFrankaTCPEnv",
+    "DualFrankaTCPRobotConfig",
+    "FrankaBinRelocationEnv",
+    "FrankaEnv",
+    "FrankaRobotConfig",
+    "FrankaRobotState",
+    "GimArmEnv",
+    "GimArmPegInsertionEnv",
+    "GimArmRobotConfig",
+    "GimArmRobotState",
+    "PegInsertionEnv",
+    "PickEnv",
+    "RealWorldEnv",
+    "RobotTask",
+    "RobotTaskEnv",
+    "SO101Env",
+    "SO101ReachConfig",
+    "SO101ReachEnv",
+    "SO101RobotConfig",
+    "SO101RobotState",
+    "Turtle2Env",
+    "Turtle2RobotConfig",
+    "Turtle2RobotState",
+]
 
 _loaded = False
 

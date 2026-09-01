@@ -19,8 +19,6 @@ action contracts, and robots compose those parts into named trees. Symbols are
 loaded lazily so importing this package does not require every vendor SDK.
 """
 
-# ruff: noqa: F401, F822
-
 from importlib import import_module
 from typing import TYPE_CHECKING, Any
 
@@ -123,7 +121,50 @@ _MODULE_BY_NAME: dict[str, str] = {
     name: module for module, names in _MODULE_GROUPS.items() for name in names
 }
 
-__all__ = sorted(_MODULE_BY_NAME)
+__all__ = [
+    "ARM_STATE_FIELDS",
+    "Action",
+    "Arm",
+    "ArmState",
+    "BaseArm",
+    "BaseCamera",
+    "Camera",
+    "CameraInfo",
+    "Connection",
+    "ControllablePart",
+    "DOSW1Robot",
+    "DOSW1RobotConfig",
+    "DualFrankaConfig",
+    "DualFrankaRobot",
+    "EndEffector",
+    "Features",
+    "FrankaConfig",
+    "FrankaRobot",
+    "GimArmConfig",
+    "GimArmRobot",
+    "LegacyObservationAdapter",
+    "MethodArm",
+    "MethodCamera",
+    "MethodEndEffector",
+    "MobileBase",
+    "Observation",
+    "PartGroup",
+    "Robot",
+    "RobotAutoConfig",
+    "RobotConfig",
+    "RobotDiscovery",
+    "RobotInfo",
+    "RobotPart",
+    "RobotRegistration",
+    "SO101Config",
+    "SO101Robot",
+    "Turtle2Config",
+    "Turtle2Robot",
+    "VectorActionAdapter",
+    "VectorActionBinding",
+    "build_robot",
+    "register_robot",
+]
 
 #: Discovery classes only exist once every robot module has registered itself.
 _DISCOVERY_NAMES = frozenset(_MODULE_GROUPS[".discovery"])

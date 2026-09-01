@@ -316,6 +316,11 @@ def test_gim_arm_reopens_the_existing_camera_after_a_stall(monkeypatch):
             self.reads = 0
             self.reopens = 0
 
+        @property
+        def name(self) -> str:
+            """As BaseCamera exposes it, so the env need not reach inside."""
+            return self._camera_info.name
+
         def get_frame(self):
             self.reads += 1
             if self.reads == 1:

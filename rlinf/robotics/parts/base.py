@@ -50,6 +50,10 @@ _ValueType = TypeVar("_ValueType")
 #: ``type[Arm]`` and ``Camera.backend("zed")`` a ``type[Camera]`` -- rather than
 #: a bare ``type``, which an editor cannot follow anywhere.
 DriverType = TypeVar("DriverType", bound="Connection")
+
+#: Bound where a driver class is decorated, so registration returns that
+#: class rather than the category it registers into.
+RegisteredDriver = TypeVar("RegisteredDriver", bound="Connection")
 RobotPartType = TypeVar("RobotPartType", bound="RobotPart")
 
 #: What a part promises about one reading or one command: each name mapped to
@@ -244,8 +248,8 @@ class Connection(ABC, metaclass=ConnectionMeta):
 
     @classmethod
     def register(
-        cls: "type[DriverType]", *names: str
-    ) -> "Callable[[type[DriverType]], type[DriverType]]":
+        cls, *names: str
+    ) -> "Callable[[type[RegisteredDriver]], type[RegisteredDriver]]":
         """Register a driver in this device category.
 
         Names are case-insensitive. A name cannot refer to two different
@@ -257,7 +261,7 @@ class Connection(ABC, metaclass=ConnectionMeta):
             class RealSenseCamera(BaseCamera): ...
         """
 
-        def add(driver_cls: "type[DriverType]") -> "type[DriverType]":
+        def add(driver_cls: "type[RegisteredDriver]") -> "type[RegisteredDriver]":
             # Store the registry on the category, not on Connection.
             if "_BACKENDS" not in cls.__dict__:
                 cls._BACKENDS = {}

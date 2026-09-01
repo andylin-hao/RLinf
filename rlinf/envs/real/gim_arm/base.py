@@ -491,16 +491,16 @@ class GimArmEnv(gym.Env):
         for camera in self._cameras:
             try:
                 frame = camera.get_frame()
-                reshape_size = self.observation_space["frames"][
-                    camera._camera_info.name
-                ].shape[:2][::-1]
+                reshape_size = self.observation_space["frames"][camera.name].shape[:2][
+                    ::-1
+                ]
                 cropped, resized = self._crop_frame(frame, reshape_size)
-                frames[camera._camera_info.name] = resized[..., ::-1]  # BGR input.
-                display_frames[camera._camera_info.name] = resized
-                display_frames[f"{camera._camera_info.name}_full"] = cropped
+                frames[camera.name] = resized[..., ::-1]  # BGR input.
+                display_frames[camera.name] = resized
+                display_frames[f"{camera.name}_full"] = cropped
             except queue.Empty:
                 self._logger.warning(
-                    f"Camera {camera._camera_info.name} not producing frames. "
+                    f"Camera {camera.name} not producing frames. "
                     "Waiting 5s and retrying."
                 )
                 time.sleep(5)

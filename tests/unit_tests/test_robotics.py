@@ -1475,12 +1475,23 @@ def _imports(path: Path) -> set[str]:
     return modules
 
 
-def test_the_lazy_package_still_types_what_it_exports():
-    source = (_ROOT / "rlinf" / "robotics" / "__init__.py").read_text()
-    tree = ast.parse(source)
+#: Every package that resolves its exports through a lazy ``__getattr__``.
+#: Each needs a TYPE_CHECKING block, or an editor cannot follow the import.
+_LAZY_PACKAGES = (
+    ("rlinf/robotics/__init__.py", "rlinf.robotics", "_MODULE_BY_NAME"),
+    (
+        "rlinf/robotics/parts/arms/__init__.py",
+        "rlinf.robotics.parts.arms",
+        "_MODULE_BY_NAME",
+    ),
+    ("rlinf/envs/real/__init__.py", "rlinf.envs.real", "_EXPORTS"),
+)
 
+
+def _typed_names(source: str) -> dict[str, str]:
+    """Return the names a type checker sees, mapped to the module they come from."""
     typed: dict[str, str] = {}
-    for node in ast.walk(tree):
+    for node in ast.walk(ast.parse(source)):
         if not (isinstance(node, ast.If) and "TYPE_CHECKING" in ast.dump(node.test)):
             continue
         for statement in ast.walk(node):
@@ -1488,24 +1499,56 @@ def test_the_lazy_package_still_types_what_it_exports():
                 module = "." * statement.level + (statement.module or "")
                 for alias in statement.names:
                     typed[alias.name] = module
+    return typed
 
-    from rlinf.robotics import _MODULE_BY_NAME
 
-    missing = sorted(set(_MODULE_BY_NAME) - set(typed))
+@pytest.mark.parametrize(("path", "package", "attribute"), _LAZY_PACKAGES)
+def test_a_lazy_package_still_types_what_it_exports(path, package, attribute):
+    """A name resolved at run time must also be declared for a type checker.
+
+    Without the declaration the import still works, but go-to-definition and
+    completion do not, because nothing runs ``__getattr__`` at edit time.
+    """
+    import importlib
+
+    typed = _typed_names((_ROOT / path).read_text())
+    exported = getattr(importlib.import_module(package), attribute)
+
+    missing = sorted(set(exported) - set(typed))
     assert missing == [], (
         f"lazily exported but invisible to a type checker: {missing}. "
-        "Add them to the TYPE_CHECKING block in rlinf/robotics/__init__.py."
+        f"Add them to the TYPE_CHECKING block in {path}."
     )
 
-    extra = sorted(set(typed) - set(_MODULE_BY_NAME))
+    extra = sorted(set(typed) - set(exported))
     assert extra == [], f"typed but not exported at run time: {extra}"
 
     wrong = {
-        name: (module, _MODULE_BY_NAME[name])
+        name: (module, exported[name])
         for name, module in typed.items()
-        if module != _MODULE_BY_NAME[name]
+        if module != exported[name]
     }
     assert wrong == {}, f"typed from a different module than it loads from: {wrong}"
+
+
+@pytest.mark.parametrize(("path", "package", "attribute"), _LAZY_PACKAGES)
+def test_a_lazy_package_exports_only_names_that_exist(path, package, attribute):
+    """``__all__`` is written out, so nothing can drift out from under it.
+
+    A computed ``__all__`` agrees with its own map by construction, which is
+    how ``DOSW1ConnectionConfig`` survived in this list after the class was
+    gone. Ruff's F822 catches that only against a literal.
+    """
+    import importlib
+
+    module = importlib.import_module(package)
+
+    assert module.__all__ == sorted(module.__all__), f"{path}: __all__ is not sorted"
+    assert set(module.__all__) == set(getattr(module, attribute)), (
+        f"{path}: __all__ and {attribute} disagree"
+    )
+    dangling = [name for name in module.__all__ if not hasattr(module, name)]
+    assert dangling == [], f"{path}: exported but does not exist: {dangling}"
 
 
 def test_scheduler_has_no_robotics_dependency():
