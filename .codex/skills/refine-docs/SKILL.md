@@ -48,7 +48,10 @@ When the two disagree, the style guide wins.
    remote or distributed use, and finally ownership or scheduler internals. Use
    only the stages that fit the topic, but do not use the internal class hierarchy
    as the teaching outline.
-   - Give the page introduction a result, scope, and roadmap.
+   - Start the first prose sentence by stating directly what the page explains,
+     enables, routes, or lets the reader look up. A leading figure may come
+     first, but background prose may not postpone the page's purpose.
+   - Give the rest of the page introduction a result, scope, and roadmap.
    - Give each section an opening paragraph that connects it to the established
      state and identifies the question it resolves; do not merely restate the
      heading.
@@ -111,6 +114,8 @@ When the two disagree, the style guide wins.
 ## Quick checklists by page type
 
 **Any page**
+- [ ] The first prose sentence states directly what the page does; it does not
+      make the reader infer the purpose from background.
 - [ ] Opens with the outcome, second person, no throat-clearing.
 - [ ] The introduction establishes the reader's situation, scope, result, and
       the order in which the page reaches it.

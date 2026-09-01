@@ -1,19 +1,17 @@
 Robotics Interface
 ==================
 
-When a task or environment operates a physical robot, it should use the
-robotics interface instead of calling a concrete driver. The interface exposes
-an arm, end effector, camera, or mobile base through a stable name and path, and
-provides common operations for inspection, connection management,
-observations, and actions. As long as those paths remain unchanged, a backend
-or placement can change without changing task code.
+This page explains how task and environment code uses the robotics interface to
+inspect, connect, read from, and control a physical robot. It follows one
+complete call sequence, then shows how stable part paths support composition and
+where an environment converts robot data for a policy. Hardware sessions,
+resource ownership, and worker placement are covered in
+:doc:`Robotics Architecture <robotics_architecture>`.
 
-This page follows one complete call sequence first. It explains how to build a
-robot, inspect its structure, select typed parts, manage the connection
-lifecycle, and exchange observations and actions. The later sections show where
-the paths come from, how composition preserves the interface, and where the
-robot boundary sits in an environment. Hardware sessions, ownership, and worker
-placement are developed in :doc:`Robotics Architecture <robotics_architecture>`.
+The robotics interface exposes an arm, end effector, camera, or mobile base
+through a stable name and path. Observations and actions use those same paths,
+so task code does not depend on a concrete driver. As long as the paths remain
+unchanged, a backend or placement can change without changing the caller.
 
 Use the Interface
 -----------------

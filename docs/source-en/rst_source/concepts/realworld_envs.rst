@@ -1,10 +1,10 @@
 Real-World Tasks and Environments
 =================================
 
-A real-world environment joins a robot to one task, then surrounds that pair
-with rollout behavior such as operator intervention, manual outcome labels, and
-representation transforms. Use this page to decide which layer should own new
-behavior before adding another env subclass or wrapper.
+This page explains how a real-world environment combines one robot with one task
+and adds rollout behavior such as operator intervention, manual outcome labels,
+and representation transforms. Use the resulting ownership boundaries to place
+new behavior before adding another env subclass or wrapper.
 
 The page follows data through the stack. It begins with the task config and env
 class, registers that class under a Gymnasium ID, then shows how the constructed

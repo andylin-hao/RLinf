@@ -145,6 +145,8 @@ perfectly legal.
 ### Natural language
 - [ ] Continuity is checked for every article type, not only Concepts, Guides,
       Extending, or code documentation
+- [ ] The first prose sentence states the page's purpose directly, after any
+      leading figure, instead of making the reader infer it from background
 - [ ] The page opening establishes the reader's situation, result, scope, and
       reading order
 - [ ] The page introduction plus section leads form a coherent outline by

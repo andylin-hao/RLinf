@@ -76,6 +76,9 @@ If scope is unclear, default to checking:
      recipe, reference, and non-code prose pages. Adapt the depth of the lead to
      the page type, but do not exempt a page from establishing its purpose and
      order.
+   - The first prose sentence after the title, or after a leading figure, states
+     directly what the page explains, enables, routes, or lets the reader look
+     up. Background must not delay the page's purpose until a later paragraph.
    - The page introduction establishes the reader's starting situation, the
      promised result, the topic boundary, and the order of the explanation.
    - Read the introduction followed only by each section's opening paragraph.

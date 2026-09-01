@@ -1,14 +1,13 @@
 Teleoperation
 =============
 
-Teleoperation lets an operator replace the policy's action during a rollout to
-collect demonstrations, recover from a failure, or run DAgger. Start with one
-device and verify its readings; only after that works should you combine
-devices. This page follows the complete setup path: choose a device by the
-action it produces, check its hardware in isolation, compose a rig, decide
-where each connection opens, and adjust the update rate only when needed. The
-last sections use the same path to explain how to add a device. For the robot
-paths those actions fill, see :doc:`../concepts/robotics`.
+This page explains how to add teleoperation to a rollout for demonstration
+collection, failure recovery, or DAgger. It follows the complete setup path:
+choose a device by the action it produces, verify its readings in isolation,
+compose a rig, decide where each connection opens, and adjust the update rate
+only when needed. The final sections apply the same sequence to adding a new
+device. For the robot paths those actions fill, see
+:doc:`../concepts/robotics`.
 
 Choose a Device
 ---------------

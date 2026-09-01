@@ -16,7 +16,12 @@ These apply to every page:
 
 - **Second person, imperative.** "You'll fine-tune…", "Run the script", "Set `cluster.num_nodes`".
   Never "RLinf provides a comprehensive guide to launching and managing…".
-- **Outcome first.** Open every page and section with what the reader gets, then how.
+- **State the page's purpose first.** The first prose sentence after the title,
+  or after a leading figure, must say directly what the page explains, enables,
+  routes, or lets the reader look up. Do not begin with background and wait until
+  a later paragraph to reveal why the page exists.
+- **Outcome first.** After stating the page's purpose, explain what the reader
+  gets and how. Open each section with the result it establishes.
 - **No throat-clearing.** Cut "This section provides a comprehensive guide to … within the RLinf framework, focusing on…". Start with the verb or the result.
 - **Annotate commands.** After any non-trivial command, say what it does ("What this does: 1… 2…") and point to where to configure it further.
 - **Name what you mean.** Prefer `Robot.connect`, `PartGroup`, `Placement` to "the
@@ -129,11 +134,12 @@ sentence before routing through cards, and a reference page may lead with what
 can be looked up and how entries are organized. Neither is exempt from having a
 clear lead and a deliberate order.
 
-- **Give the page a lead.** The opening should establish the reader's situation,
-  the result the page will help them reach, the boundary of the topic, and the
-  order in which the page develops it. A list of features or implementation
-  areas is not a lead. A reader should be able to predict why the second section
-  follows the first.
+- **Give the page a lead.** Begin with a direct statement of what the page does.
+  The rest of the opening should establish the reader's situation, the result
+  the page will help them reach, the boundary of the topic, and the order in
+  which the page develops it. A list of features or implementation areas is not
+  a lead. A reader should be able to predict why the second section follows the
+  first.
 - **Give every section a lead.** Open a section by connecting it to the state
   established above and naming the one question the section resolves. Do not
   begin abruptly with a code block, table, API name, or isolated fact. The lead
@@ -484,6 +490,7 @@ would say it to a colleague.
 
 Conventions, on every page:
 
+- 标题后的第一句应直接说明本页介绍什么、帮助读者完成什么，或可供查阅什么。若页面以图片开头，则从图片后的第一句开始遵循此要求。不要先铺陈背景，到后文才交代页面用途。
 - 全角标点：，。、；：（）「」。中文句子里不要混用半角逗号句号。
 - 中文与英文、数字之间空一格，例如「在 node_rank 指定的节点上」。
 - 中文正文不要按列宽手动换行。每个段落或列表项的正文在 RST 源文件中保持一行；reStructuredText 会把段内换行渲染成空格，在两个汉字之间留下不自然的间隔。标题、directive、表格和代码块所需的结构换行不受此规则影响。
@@ -527,6 +534,7 @@ merging, and rewrite if any of these are true:
   between paragraphs or sections.
 - The ZH page tracks the EN sentence for sentence.
 - The page introduction does not establish a result, scope, and reading order.
+- The first prose sentence does not state the page's purpose directly.
 - A section can be moved elsewhere without changing the surrounding
   explanation, or begins with code or an API name before stating why it is
   needed.

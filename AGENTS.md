@@ -174,12 +174,15 @@ release notes, commit messages, and user-facing replies.
 
 - Treat narrative continuity as a basic requirement for every article and
   substantive explanation, not a convention limited to code documentation. The
-  opening establishes the reader's situation, result, scope, and reading order;
-  each section connects to the state established before it; paragraphs form a
-  dependency chain; and examples are introduced and interpreted. When teaching
-  an interface, explain its operations in caller order, including the relevant
-  inputs, returns, and lifecycle effects. Indexes and reference pages may do this
-  compactly, but are not exempt from a clear purpose and deliberate order.
+  first prose sentence states directly what the page explains, enables, routes,
+  or lets the reader look up; do not postpone that purpose behind background.
+  The rest of the opening establishes the reader's situation, result, scope, and
+  reading order; each section connects to the state established before it;
+  paragraphs form a dependency chain; and examples are introduced and
+  interpreted. When teaching an interface, explain its operations in caller
+  order, including the relevant inputs, returns, and lifecycle effects. Indexes
+  and reference pages may do this compactly, but are not exempt from a clear
+  purpose and deliberate order.
 - Use natural, professional technical language. Write like an engineer explaining
   a system clearly: neither casual developer chat nor formal bureaucracy. Avoid
   colloquial phrases such as “看看长什么样”, “等需要时再看”, and “不用跟着改”, as

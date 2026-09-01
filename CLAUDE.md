@@ -36,8 +36,10 @@ defaults. `AGENTS.md` remains authoritative when details change.
   and conversation. Avoid casual chat, bureaucratic phrasing, promotional prose,
   and formulaic AI-like cadence.
 - Treat continuity as a basic requirement for every article and substantive
-  explanation, not only code documentation. Establish the reader's situation,
-  result, scope, and reading order at the start; connect each section to the
+  explanation, not only code documentation. Make the first prose sentence state
+  directly what the page explains, enables, routes, or lets the reader look up;
+  do not postpone that purpose behind background. Then establish the reader's
+  situation, result, scope, and reading order; connect each section to the
   preceding state; make paragraphs depend on one another; and frame and
   interpret examples. Explain interface operations in caller order, including
   the relevant inputs, returns, and lifecycle effects.
