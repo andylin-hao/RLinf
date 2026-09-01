@@ -938,7 +938,7 @@ class FrankaEnv(gym.Env):
         Returns:
             ``True`` if the action caused a meaningful state change.
         """
-        if self._end_effector.is_gripper:
+        if not self._is_hand:
             # Preserve the established binary gripper action contract.
             position = float(ee_action[0]) * self.config.action_scale[2]
             return self._binary_gripper_action(position)
@@ -1022,8 +1022,8 @@ class FrankaEnv(gym.Env):
                     hand_pos = np.zeros(6)
                 state["hand_position"] = hand_pos
             else:
-                state["gripper_position"] = np.asarray(
-                    self._end_effector.get_state()[:1], dtype=np.float64
+                state["gripper_position"] = np.array(
+                    [self._franka_state.gripper_position]
                 )
             state = {
                 key: np.asarray(value, dtype=np.float32) for key, value in state.items()

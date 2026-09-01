@@ -174,6 +174,34 @@ def _assert_legacy_transition(env) -> None:
     env.close()
 
 
+def test_a_franka_observation_comes_from_one_snapshot():
+    """Every field a policy sees must describe the same instant.
+
+    _read_robot takes one snapshot per step and the observation is built from
+    it. Reading the gripper live instead would mix two moments in one
+    recorded transition, by up to a control period.
+    """
+    import ast
+    import inspect
+    import textwrap
+
+    source = textwrap.dedent(inspect.getsource(FrankaEnv._get_observation))
+    tree = ast.parse(source)
+
+    reads = {
+        ast.unparse(node.value)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Attribute)
+        and ast.unparse(node).startswith(("self._franka_state", "self._end_effector"))
+    }
+    live = sorted(r for r in reads if r.startswith("self._end_effector"))
+
+    assert live == [], (
+        f"the observation reads hardware directly: {live}. "
+        "Take the value from self._franka_state, which _read_robot fills once."
+    )
+
+
 def test_franka_dummy_preserves_legacy_policy_schema():
     env = FrankaEnv(
         override_cfg={
