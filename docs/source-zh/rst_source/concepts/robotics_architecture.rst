@@ -1,7 +1,7 @@
 机器人架构
 ==========
 
-编写任务时，只需知道机器人由哪些具名零部件组成，以及观测和动作使用哪些访问路径。接入新设备、让多个零部件共享硬件连接，或排查远程部署与资源回收问题时，再参考本页的实现细节。若尚未了解零部件名称与访问路径的关系，请先阅读 :doc:`robotics`。
+编写任务时，只需了解 :doc:`机器人接口 <robotics>` 中的零部件路径和读写方法。接入新设备、让多个零部件共享硬件连接，或排查跨节点部署与资源回收问题时，再参考本页的实现细节。
 
 从任务使用的访问路径出发
 --------------------------
@@ -17,7 +17,7 @@
    )
    robot = Robot(base=base)
 
-构造底盘会创建一个尚未连接的 ``MobileBase`` 实例。该实例保存设备参数，``Connection`` 的 metaclass 则记录 ``node_rank`` 和 ``worker_name``，供后续 placement 使用。在调用 ``robot.connect()`` 前，代码不会导入厂商 SDK，也不会打开硬件。移动底盘本身能返回观测，policy 可直接访问，因此可以 ``base=base`` 传给 ``Robot``；参数名 ``base`` 会成为底盘的访问路径。
+构造底盘会创建一个尚未连接的 ``MobileBase`` 实例。该实例保存设备参数，connection 层同时记录 ``node_rank`` 和 ``worker_name``，供后续 placement 使用。在调用 ``robot.connect()`` 前，代码不会导入厂商 SDK，也不会打开硬件。移动底盘本身能返回观测，policy 可直接访问，因此可以 ``base=base`` 传给 ``Robot``；参数名 ``base`` 会成为底盘的访问路径。
 
 一条硬件连接也可以同时支持多个零部件。例如，GimArm 的关节和夹爪共用一条 CAN 总线，一条链路同时应答两者，任务仍应通过两条独立路径访问它们：
 
@@ -118,6 +118,8 @@ Franka 属于另一种情况。它的末端执行器自行打开 session，因�
      - 由具名 ``children`` 组成的可读、可控单元，可表示机械臂总成、躯干或其他嵌套结构。
    * - ``Robot``
      - 最外层的 ``PartGroup``，还管理注册，并知道每条连接运行在哪个节点上。
+
+设备类别还定义了不随 backend 变化的通用操作。所有 ``Arm`` 都提供就绪状态检查、错误恢复和关节复位方法；某个 backend 不支持关节复位时，``reset_joint()`` 会明确报错。所有 ``EndEffector`` 都通过 ``state`` 返回观测，并通过 ``target`` 接收动作。``Camera.is_ready()`` 则用于区分相机已打开与实际能够产生画面这两种状态。
 
 跨节点运行的零部件不使用单独的 API 类型。带 ``node_rank`` 的 connection 会在目标节点的 worker 中重新构造，本地对象则切换为由原 driver class 合成的子类。对象 identity 保持不变，``isinstance`` 仍会匹配原 driver 和设备类别，公开方法与 property 则转发到远程 worker。``Camera``、``MobileBase`` 等类别不需要为 placement 另外注册 proxy。
 
@@ -249,7 +251,8 @@ robotics 代码中有两种 registry，它们所命名的对象不同：
            self._ros.connect_ros_channel(self._state_channel, JointState, self._on_state)
            return self._ros
 
-``ROSController.shared()`` 会在文件锁保护下启动 ``roscore``（若尚未运行）并初始化 node，之后的调用方复用同一 controller。该 session 不会被关闭：``rospy`` 没有受支持的方式在 node 关闭后重新启动它。各零部件订阅和发布的 topic 互不相同，因此加入机械臂已经打开的 session 只是增加订阅，不会产生争用。
+``ROSController.shared()`` 会在文件锁保护下检查 ``roscore``；如果尚未运行，则先启动它，再初始化 node。之后的调用方复用同一 controller。该 session 不会被关闭：``rospy`` 没有受支持的方式在 node 关闭后重新启动它。各零部件订阅和发布的 topic 互不相同，因此加入机械臂已经打开的 session 只是增加订阅，不会产生争用。
+
 先确定部署位置，再打开硬件
 ----------------------------
 
@@ -277,6 +280,8 @@ placement 参数与硬件构造参数一起传入。构造过程不会访问设�
 执行 ``connect()`` 时，机器人会为每个不同的 ``Connection`` 打开一次资源。没有 ``node_rank`` 的 connection 在本进程打开；带 ``node_rank`` 的 connection 在目标节点的 scheduler worker 中重新构造，组合中现有对象的具体 class 则切换为合成子类，公开方法和 property 转发到该 worker。对象 identity 不变，任务代码因而无需区分部署位置，``isinstance`` 的结果也与连接前一致。
 
 资源归属由对象 identity 决定。每个零部件的 ``owner`` 都表示谁为它打开连接：自带链路的机械臂的 owner 是自身，搭在共享 session 上的 view 的 owner 则是该 session。机器人连接 owner，而不是逐个连接零部件，因此一条连接只打开一次、只释放一次。位于不同连接上的零部件可以并行调用；共用一条连接的零部件按声明顺序调用，避免并发访问不支持该模式的厂商 SDK。Franka 的机械臂和末端执行器各自持有链路，因此一次整机读取会同时取回两者，而不是依次等待。
+
+整机读取也是 env 获取一致状态的边界。``PartGroup.get_observation()`` 每次只访问各分支一次；读取某个零部件时，它与共享 connection 的下级零部件复用同一份状态快照，避免为夹爪再次读取伺服总线。env 应保留这一次调用的结果，再据此构造 policy 使用的状态和相机画面，不应混用 driver 或 SDK 的额外读取结果。
 
 零部件各自持有链路，也意味着它们可能在同一台机器的不同进程中打开。只要访问的是不同端点，这就是正常情况：libfranka 的机械臂控制和末端执行器本来就在不同端口上。问题出在两个零部件访问同一端点时，此时报错通常只提到 socket，而不会指出真正的原因。因此，独占某个端点的零部件会按端点申请 ``DeviceClaim``：第二个申请者会立即被拒绝，并被告知当前持有者是谁。
 
@@ -319,25 +324,32 @@ driver 应实现 ``_open()`` 与 ``_release()``，不要覆盖 ``connect()`` 和
 
 如果后续 connection 打开失败，``Robot.connect()`` 会回滚此前已成功打开的 connection。但如果 driver 在 ``_open()`` 内部只完成了部分初始化就抛出异常，driver 仍需要自行释放已获取的资源，因为此时尚没有可供机器人关闭的完整 connection。排除故障后，可对同一对象再次调用 ``connect()``。已成功关闭的 connection 也可重复调用 ``disconnect()``，并保持可重新连接状态。
 
-调用设备专有方法
---------------------
+按类型获取零部件
+----------------
 
-placement 的两端都由 driver class 派生而来，因此标准零部件接口之外的公开方法也会跨节点转发。通过零部件的 ``owner`` 取得其所在的连接，再调用所需方法：
+常用的初始化操作已纳入设备类别的 contract，调用时应使用零部件本身，而不是继续访问其 ``owner``。向 ``child()`` 传入预期类型，可以同时检查组合结果并获得准确的返回类型：
 
 .. code-block:: python
 
-   controller = robot.child("arm").owner
-   controller.is_robot_up()
-   controller.reset_joint(home_qpos)
+   from rlinf.robotics import Arm, Camera
 
-无论这条机械臂在本机还是在其他节点上，写法都相同，也无需额外拆包返回值。任务代码仍应通过标准观测和动作路径访问零部件；初始化、诊断或无法纳入通用零部件接口的厂商操作才直接使用连接。
+   arm = robot.child("arm", Arm)
+   if not arm.is_robot_up():
+       raise RuntimeError("The arm is not ready.")
+   arm.clear_errors()
+   arm.reset_joint(home_qpos)
+
+   cameras = robot.parts_of_type(Camera)
+   ready = all(camera.is_ready() for camera in cameras.values())
+
+跨节点部署后的 view 仍是原零部件 class 的子类，因此上述调用在本地和远程部署下完全一致。路径或类别不符合预期时，``child()`` 会在 episode 开始前报错，而不是等到调用不存在的方法时才失败。``owner`` 主要用于检查生命周期归属；只有某项厂商专有操作确实属于共享 connection、而不属于其中任何零部件时，才需直接调用 owner。
 
 保持导入边界
 ------------
 
 零部件模块不能导入 ``rlinf.scheduler`` 和 Gymnasium。只有当一条连接指定了节点时，``Connection.connect()`` 才会延迟加载桥接层 ``rlinf/robotics/placement/handles.py``。
 
-这条规则的意义在于依赖方向。scheduler 是通用框架，robotics 只是它的一个扩展，因此 scheduler 从不导入本包：它按配置里写明的名字导入硬件策略模块，再调用这些模块注册进来的 discovery 类。Gymnasium 则位于另一侧，属于消费机器人的 env 层。只有组合层——placement、discovery、机器人构建器——会反向导入这两者，驱动因而能够作为纯粹的硬件代码被阅读和测试。
+这条规则的意义在于依赖方向。scheduler 是通用框架，robotics 只是它的一个扩展，因此 scheduler 从不导入本包：它按配置里写明的名称导入 ``hardware_policy_modules``，再调用这些模块注册的 discovery 类。Gymnasium 则位于另一侧，属于使用机器人的 env 层。只有组合层——placement、discovery、机器人构建器——会反向导入这两者，驱动因而能够作为独立的硬件代码被阅读和测试。
 
 上述限制不包括 Ray。Ray 是 RLinf 的基础依赖，运行节点已经安装该依赖。该规则也不保证导入零部件模块时不会加载其他模块；零部件仍可使用 ``rlinf.utils`` 中的 ``get_logger`` 等公共工具。``tests/unit_tests/test_robotics.py`` 会检查两个方向的导入边界。
 
@@ -353,7 +365,7 @@ placement 的两端都由 driver class 派生而来，因此标准零部件接�
    * - ``robotics/parts/base.py``
      - ``Connection``、``RobotPart``、``ControllablePart``、``PartGroup``，以及组合阶段的类型检查和 driver registry。
    * - ``robotics/parts/arms/``
-     - ``Arm`` 类别与 ``BaseArm``，以及注册到它们之上的各个 backend：Franky、Franka ROS、GimArm 和联动控制器。
+     - ``Arm`` 类别与 ``BaseArm``，以及注册到它们之上的各个 backend：Franky、Franka ROS、GimArm、SO-101 和联动控制器。
    * - ``robotics/parts/cameras/``
      - 相机生命周期，以及 RealSense、ZED 和 Lumos 实现。
    * - ``robotics/parts/end_effectors/``

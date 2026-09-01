@@ -22,6 +22,13 @@ The examples below add a ``WipeEnv-v1`` task to the existing Franka support.
 Follow them in order: later steps refer to the config class and Gymnasium ID
 chosen earlier.
 
+For a joint-space arm, use the same sequence with its existing env base.
+``SO101ReachEnv-v1`` and ``examples/embodiment/config/env/so101_reach.yaml`` are
+the current references for five absolute joint targets plus one continuous
+gripper action. The robot still exposes the gripper at
+``arm.end_effector``; the env is responsible for presenting the flat six-value
+action expected by its policy.
+
 1. Write the config
 ~~~~~~~~~~~~~~~~~~~
 
@@ -191,9 +198,12 @@ hardware, what the operator is doing, and what the robot should do about it.
            self._port = port
 
        def _open(self):
-           from rlinf.robotics.parts.teleop.pedal import PedalReader
+           from example_pedal_sdk import PedalClient
 
-           return PedalReader(port=self._port)
+           return PedalClient(port=self._port)
+
+       def _release(self, device) -> None:
+           device.close()
 
        @property
        def observation_features(self):
@@ -203,16 +213,18 @@ hardware, what the operator is doing, and what the robot should do about it.
            return {"pressed": np.asarray([self._device.is_pressed()])}
 
        def action(self, reading, context):
-           pressed = bool(reading["pressed"])
+           pressed = bool(reading["pressed"][0])
            return TeleopAction(
                parts={"end_effector": np.array([-1.0 if pressed else 1.0])},
                driving=pressed,
            )
 
 ``_open`` reaches the hardware when the device connects and returns whatever
-speaks to it; that handle is ``self._device``. ``__init__`` only records the
-declaration, because declaration and connection may happen on different
-machines.
+speaks to it; that handle is ``self._device``. ``_release`` closes the same
+handle during rollback, normal shutdown, and reconnect. ``__init__`` only
+records the declaration, because declaration and connection may happen on
+different machines. If a reader owns a polling thread, stop and join that
+thread before returning from ``_release``.
 
 ``PRODUCES`` maps each action part the device fills to what its numbers *mean*,
 so a device offering a twist to a joint-space arm is refused rather than

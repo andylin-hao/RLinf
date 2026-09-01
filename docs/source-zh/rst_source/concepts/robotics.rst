@@ -1,29 +1,37 @@
-机器人组成
-==========
+机器人接口
+============
 
-在 RLinf 中，机器人由机械臂、夹爪、相机和移动底盘等零部件组成。每个零部件都有稳定的名称；层级化的名称既是观测数据的 key，也是发送动作时使用的路径。所有零部件都能返回观测，可控零部件还可以接收动作。
+RLinf 通过具名零部件提供统一的观测和动作接口。机械臂、末端执行器、相机和移动底盘等零部件都有稳定的访问路径；观测按这些路径组织，可控零部件的动作也使用相同路径。
 
-如果仅需编写任务、接入 policy 或调试现有机器人，了解上述组成方式即可。以下以 Franka 为例，说明如何查看机器人的组成、读写具名零部件，以及划分任务代码与硬件代码的边界。接入新设备或排查底层问题时，再参阅架构文档中的 worker、远程调用和硬件连接机制。
+本页介绍任务和 env 实际使用的机器人接口：先读取和控制已支持的机器人，再说明访问路径如何反映硬件连接关系，以及本地与跨节点部署为何共用一套调用方式。硬件 session、资源归属和 worker placement 等实现细节见 :doc:`机器人架构 <robotics_architecture>`。
 
-使用现有机器人
---------------
+使用机器人接口
+------------------
 
-通过注册名构建机器人后，可先调用 ``describe()`` 检查零部件名称、访问路径和部署位置。该方法不会连接硬件，因此可在机械臂上电前运行。实际使用时，建议将 ``disconnect()`` 置于 ``finally`` 块中，确保 rollout 或调试命令发生异常时仍能关闭硬件连接。
+构建机器人后，可在打开硬件前检查其零部件路径和部署位置。实际运行时，建议将 ``disconnect()`` 置于 ``finally`` 块中：
 
 .. code-block:: python
 
-   from rlinf.robotics import build_robot
+   from rlinf.robotics import Arm, Camera, build_robot
 
    robot = build_robot("Franka", robot_ip="10.0.0.1", node_rank=1)
 
-   # 这一步不会打开任何硬件。
+   # 机器人未上电或尚不可达时也可以执行。
    print(robot.describe())
+
+   arm = robot.child("arm", Arm)
+   cameras = robot.parts_of_type(Camera)
 
    robot.connect()
    try:
+       if not arm.is_robot_up():
+           raise RuntimeError("The arm is connected but not ready.")
+       if not all(camera.is_ready() for camera in cameras.values()):
+           raise RuntimeError("A camera is not delivering frames.")
+
        observation = robot.get_observation()
        tcp_pose = observation["arm"]["tcp_pose"]
-       gripper_width = observation["end_effector"]["state"]
+       gripper_state = observation["end_effector"]["state"]
 
        robot.send_action(
            {
@@ -34,12 +42,14 @@
    finally:
        robot.disconnect()
 
-``get_observation()`` 返回嵌套字典，其层级与机器人中零部件的组合关系一致。调用 ``send_action()`` 时沿用相同路径，只需指定本次要控制的零部件，不必传入其他分支。
+``get_observation()`` 会读取一次整个机器人，并按零部件路径返回嵌套字典。``send_action()`` 接收层级相同的动作字典；每次只需指定本次要控制的分支。
 
-以零部件名称访问观测和动作
---------------------------
+初始化或复位逻辑需要调用某类零部件的通用方法时，使用 ``child(name, ExpectedType)``。该方法会立即检查实际类型，编辑器也能据此推断返回值。例如，所有 ``Arm`` 都提供 ``is_robot_up()``、``clear_errors()`` 和 ``reset_joint()``，不受 backend 或 placement 影响。如果任务需要遍历所有相机、但不依赖具体名称，可使用 ``parts_of_type(Camera)``。
 
-单臂 Franka 的顶层是并列的 ``arm`` 和 ``end_effector``：
+按路径访问零部件
+--------------------
+
+零部件名称定义对外数据接口。单臂 Franka 的 ``arm`` 和 ``end_effector`` 位于同一层级，因为机械臂和 Franka Hand 分别打开独立端点：
 
 .. code-block:: text
 
@@ -47,45 +57,75 @@
    ├── arm           FrankaROSArm         node=1     via FrankaROSArm#1
    └── end_effector  FrankaGripper        node=1     via FrankaGripper#2
 
-组合层级取决于硬件的实际连接方式，而不是固定约定。Franka Hand 有独立的通信端点，因此它本身就是一个零部件，与机械臂并列；两行的 ``via`` 值不同，说明二者各自持有一条 connection。由此带来的保证是：连接、恢复或调整其中一个的部署节点，都不影响另一个。
+``via`` 不同表示两个零部件各自持有 connection，因此可以分别调整部署位置、恢复连接或替换实现。
 
-如果某个设备确实与机械臂不可分离，层级也会如实反映。GimArm 的夹爪与关节共用一条 CAN 总线，因此夹爪位于 ``arm`` 分支下，两行的 connection 相同：
+有些硬件在连接层面不可分开。SO-101 的五个机械臂关节和夹爪共用一条伺服总线，因此末端执行器位于机械臂下一级，两条路径的 connection 相同：
 
 .. code-block:: text
 
-   GimArmRobot
-   └── arm               GimArm               node=0     via GimArm#1
-       └── end_effector  MethodEndEffector    node=0     via GimArm#1
+   SO101Robot
+   └── arm               SO101Arm             node=0     via SO101Arm#1
+       └── end_effector  MethodEndEffector    node=0     via SO101Arm#1
 
-日常使用机器人时不需要关注 ``via`` 一列。它的作用是在硬件动作之前，把配置错误暴露出来。
+观测和动作也遵循这一层级：
 
-层级同样决定了零部件的组合方式。``FrankaROSArm`` 本身就是能返回观测的 ``RobotPart``，因此可通过 ``Robot(arm=arm, end_effector=hand)`` 直接组合。如果某个共享控制器只是 ``Connection``、本身不能返回观测，则需先通过 ``session.part("left")`` 取出其中的零部件，再将其加入 ``Robot``。
+.. code-block:: python
 
-双臂机器人在顶层增加 ``left`` 和 ``right`` 两个分支，每一侧仍然是这两个零部件：
+   joint_position = observation["arm"]["arm_joint_position"]
+   gripper_state = observation["arm"]["end_effector"]["state"]
+
+   robot.send_action(
+       {
+           "arm": {
+               "joint_position": joint_target,
+               "end_effector": {"target": gripper_target},
+           }
+       }
+   )
+
+``describe()`` 中的 ``via`` 适合用于排查组合和资源归属问题，日常任务代码只需使用访问路径和对应数据。完整输出字符串不是稳定的序列化格式，不应存储或解析。
+
+组合零部件时保持接口一致
+----------------------------
+
+能够返回观测的零部件可以直接加入机器人。例如，``Robot(base=base, arm=arm, end_effector=hand)`` 中的三个关键字参数名会分别成为访问路径。如果共享控制器只是 ``Connection``、本身不能观测，则需先通过 ``session.part("left")`` 取出它支持的可读零部件。
+
+一个零部件也可以承载其他零部件，这些零部件会自动出现在它的下一级。因此，SO-101 的夹爪使用 ``arm.end_effector`` 路径。双臂机器人可以在外层增加 ``left`` 和 ``right`` 两个 group，内部仍使用相同的零部件接口：
 
 .. code-block:: python
 
    left_qpos = observation["left"]["arm"]["arm_joint_position"]
    right_gripper = observation["right"]["end_effector"]["state"]
 
-这种组合关系可以继续嵌套。RLinf 不预设 ``arms``、``cameras`` 等固定分组；新增升降机构、云台或第三条机械臂时，只需为新零部件命名，并将其加入合适的层级。
+RLinf 不预设 ``arms`` 或 ``cameras`` 等固定字段。新增移动底盘、升降机构、云台或第三条机械臂时，只需为它选择稳定名称，无需再增加一套机器人 API。
 
-调用方式与部署位置解耦
-----------------------
-
-零部件的访问路径只表示其在机器人中的位置，不包含部署信息。本机相机和远端机械臂仍使用同一套观测层级。RLinf 会并行访问相互独立的硬件连接；共用同一连接的零部件则按声明顺序访问。这一点在 Franka 上直接影响耗时：机械臂和夹爪各自应答，两次读取可以重叠，而不必排队等待。
-
-任务和 policy 代码只依赖零部件的名称和数据，不需要区分底层使用的是 Ray actor、RPC、串口还是厂商 SDK。现有 policy 如果仍接收扁平向量，可在环境边界使用 ``LegacyObservationAdapter`` 和 ``VectorActionAdapter`` 完成格式转换。
-
-区分硬件驱动与任务逻辑
+在 env 中统一读写机器人
 ------------------------
 
-硬件 driver 读取传感器并控制执行器。rollout 的成功条件、奖励、终止条件、复位流程和 Gymnasium space 由 ``RobotTask`` 定义；``RobotTaskEnv`` 再将任务与机器人组合。为同一台机器人切换任务时，无需修改底层设备代码。
+env 应通过组合后的机器人读写硬件，不应直接访问厂商 driver。每次调用 ``robot.get_observation()`` 都会为 env 提供一份完整读取结果，用于构造 policy 需要的 ``state`` 和 ``frames``。在同一次读取中，共享 connection 的零部件会复用同一份底层状态快照。
+
+对于不属于单步动作流的操作，可以直接使用具体零部件。当前真机 env 通过类型明确的 ``Arm`` 检查就绪状态、恢复错误并复位关节；相机则通过 ``parts_of_type(Camera)`` 查找，其 placement 和生命周期仍由机器人负责。
+
+现有 policy 如果仍使用扁平向量，可在 env 边界通过 ``LegacyObservationAdapter`` 和 ``VectorActionAdapter`` 转换。机器人接口本身仍保留具名嵌套结构。
+
+任务代码不依赖部署位置
+----------------------
+
+访问路径不包含零部件的运行位置。位于 env 进程的相机和运行在其他节点的机械臂，仍出现在同一份观测中。使用不同 connection 的零部件可以并行读写；共享 connection 的分支则按声明顺序执行，避免并发访问不支持该模式的厂商 SDK。
+
+因此，任务和 policy 代码只依赖零部件名称及其数据，无需感知 Ray actor、RPC、串口或厂商 session。调整 connection 的部署位置时，不需修改任务接口。
+
+分离硬件能力与任务逻辑
+----------------------
+
+零部件负责读取传感器或控制执行器，不判断 rollout 是否成功。奖励、终止条件、任务特有的复位流程和 Gymnasium space 应由 ``RobotTask`` 或具体的真机 env 定义；遵循通用任务接口时，可使用 ``RobotTaskEnv`` 组合任务与机器人。
+
+这一边界使同一台机器人可以运行多个任务，也使任务在硬件调整到其他节点后仍能保持 policy 侧数据格式稳定。
 
 后续阅读
 --------
 
 - :doc:`新增真机任务 <../extending/new_task>`：在已支持的真机上添加任务。
 - :doc:`添加机器人 <../extending/new_robot>`：接入本地传感器、执行器或整台机器人。
-- :doc:`机器人架构 <robotics_architecture>`：了解 ``parts`` 和 ``children`` 分别表示什么，以及共享 connection、``PartGroup``、资源生命周期和 worker placement。
+- :doc:`机器人架构 <robotics_architecture>`：了解 ``parts`` 与 ``children`` 的区别，以及共享 connection、``PartGroup``、资源生命周期和 worker placement。
 - :doc:`遥操作 <../guides/teleoperation>`：组合多种操作者设备。

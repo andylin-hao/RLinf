@@ -145,7 +145,12 @@
            self._port = port
 
        def _open(self):
-           return ExampleSDK(self._port).open()
+           device = ExampleSDK(self._port)
+           device.open()
+           return device
+
+       def _release(self, device) -> None:
+           device.close()
 
        @property
        def observation_features(self) -> Features:
@@ -161,6 +166,8 @@
 ``PRODUCES`` 声明设备填充哪些动作零部件及其语义，env 因此可以在打开硬件之前完成校验。``NEEDS`` 声明设备需要的机器人状态；无论有几台设备请求同一项状态，每次采样都只读取一次，并通过 ``context`` 传入。
 
 ``_open()`` 负责连接硬件并返回句柄，设备随后通过 ``self._device`` 读取；``_release()`` 负责关闭。这与其他机器人零部件使用同一套 connection 生命周期，``node_rank`` 也由同一套机制处理，设备无需为此编写任何代码——所以上面的构造函数只接收自己的参数。
+
+如果 reader 在后台线程中持续轮询，``_release()`` 必须先通知线程停止，再等待其退出。``TeleopGroup.disconnect()`` 会按相反顺序关闭设备，并在某台设备关闭失败后继续处理其他设备，但它无法代替 reader 结束自己的线程。将这部分清理逻辑保留在 reader 所在的设备类中，可以保证独立诊断和 env 托管设备都能正常断开和重连。
 
 ``observation_features`` 在打开硬件之前声明读数结构，因此可以离线描述一套设备。该方法是抽象方法，未实现的设备无法实例化。
 
@@ -197,6 +204,6 @@
 后续阅读
 --------
 
-- :doc:`机器人组成 <../concepts/robotics>`：了解设备所填充的零部件路径。
+- :doc:`机器人接口 <../concepts/robotics>`：了解设备所填充的零部件路径。
 - :doc:`真机任务与环境 <../concepts/realworld_envs>`：了解遥操作在 wrapper 栈中的位置。
 - :doc:`数据采集 <data_collection>`：记录操作者动作。

@@ -3,7 +3,7 @@
 
 本指南以新增移动底盘为例，先在本地验证底盘的观测与动作，再将其与 RLinf 已有的 Franka 机械臂组合为移动操作机器人，最后接入真机 Gymnasium 环境和集群配置。按照这一顺序排查问题，可以先确认设备接口，再处理组合和部署。
 
-开始前，请阅读 :doc:`机器人组成 <../concepts/robotics>`。如果 RLinf 已经能够连接目标硬件，而变更仅涉及奖励、复位流程或成功条件，请参阅 :doc:`新增真机任务 <new_task>`。
+开始前，请阅读 :doc:`机器人接口 <../concepts/robotics>`。如果 RLinf 已经能够连接目标硬件，而变更仅涉及奖励、复位流程或成功条件，请参阅 :doc:`新增真机任务 <new_task>`。
 
 1. 在本地实现移动底盘
 ----------------------
@@ -93,7 +93,7 @@
 
 .. code-block:: python
 
-   from rlinf.robotics import FrankaRobot, Robot
+   from rlinf.robotics import Arm, FrankaRobot, Robot
 
 
    class MobileManipulator(Robot):
@@ -157,6 +157,10 @@
 
    robot.connect()
    try:
+       arm = robot.child("arm", Arm)
+       if not arm.is_robot_up():
+           raise RuntimeError("The arm is not ready.")
+
        observation = robot.get_observation()
        base_pose = observation["base"]["pose"]
        arm_pose = observation["arm"]["tcp_pose"]
@@ -177,7 +181,7 @@
    finally:
        robot.disconnect()
 
-``PartGroup.send_action`` 接受只包含部分路径的动作字典，因此导航任务只需发送 ``base`` 动作，无需为机械臂补充保持当前位置的命令。这里三个分支各自持有连接，因此可以并行调用；共用同一条连接的分支则按声明顺序调用。
+``child("arm", Arm)`` 会检查零部件类别，并让初始化代码直接使用机械臂的通用方法，无需继续访问 connection owner。这种类型检查在跨节点部署后仍然有效。``PartGroup.send_action`` 接受只包含部分路径的动作字典，因此导航任务只需发送 ``base`` 动作，无需为机械臂补充保持当前位置的命令。这里三个分支各自持有连接，因此可以并行调用；共用同一条连接的分支则按声明顺序调用。
 
 3. 在真机环境中使用组合机器人
 ------------------------------
@@ -188,7 +192,7 @@
 
    import gymnasium as gym
 
-   from rlinf.envs.real import RobotTask, RobotTaskEnv
+   from rlinf.envs.real.task_env import RobotTask, RobotTaskEnv
 
 
    class DriveToTarget(RobotTask):
@@ -272,14 +276,15 @@ placement 只决定各条连接在哪个节点打开，不改变任务访问零�
        node_rank=0,
        worker_name="ExampleMobileBase-0-0",
    )
-   arm_connection = FrankaRobot.declare_arm(
-       "10.0.0.2",
+   arm_parts = FrankaRobot.build_arms(
+       robot_ip="10.0.0.2",
        node_rank=1,
-       name="FrankaArm-0-0",
+       worker_rank=0,
+       env_idx=0,
    )
    robot = MobileManipulator(
        base=base,
-       arm=arm_connection,
+       **arm_parts,
    )
 
 构造这些对象时只会记录参数、``node_rank`` 和 ``worker_name``，不会导入厂商 SDK 或打开设备。``Connection`` 的 metaclass 会先取走 placement 参数，再调用驱动自身的 ``__init__``，因此新驱动的构造函数只需声明硬件相关参数。``robot.connect()`` 会在每条连接指定的节点上将其打开一次。跨节点的连接会在目标节点重新构造，机器人组合中的原对象则切换为对应的 view。机器人仍持有相同的零部件对象，调用代码无需区分部署位置。
@@ -334,15 +339,13 @@ placement 只决定各条连接在哪个节点打开，不改变任务访问零�
                if controller_node_rank is None
                else controller_node_rank
            )
-           arm_connection = FrankaRobot.declare_arm(
-               arm_ip,
+           arm_parts = FrankaRobot.build_arms(
+               robot_ip=arm_ip,
                node_rank=arm_node_rank,
-               name=f"FrankaArm-{worker_rank}-{env_idx}",
+               worker_rank=worker_rank,
+               env_idx=env_idx,
            )
-           return cls(
-               base=base,
-               arm=arm_connection,
-           )
+           return cls(base=base, **arm_parts)
 
 ``MobileBase.backend()`` 根据硬件配置中的名称找到对应 driver。``build()`` 随后组合尚未连接的零部件，以及从共享连接中选出的零部件，不会打开任何设备。连接地址、backend 选择和 placement 写入机器人配置；目标位置、奖励、复位姿态与 episode 长度仍属于任务配置。
 
@@ -446,11 +449,13 @@ env 收到 ``RobotInfo`` 后，需要显式调用已注册的 builder。schedule
 
 这些 contract 位于 ``tests/robot_contracts``，mock SDK 位于 ``tests/robot_mocks``。二者仅用于测试，不会随 ``rlinf`` 包发布。
 
-这些 contract 会重复执行连接和断开流程。``PartContract`` 检查单个零部件的观测字段及 shape；提供速度样例后，还会验证该动作可以执行，并拒绝未知动作字段。``RobotContract`` 检查机器人能否在连接前输出结构说明，验证顶层组合中的叶子节点，并在 ``connect()`` 中注入失败以检查回滚行为。
+这些 contract 会重复执行连接和断开流程。``PartContract`` 检查单个零部件的观测字段及 shape；提供速度样例后，还会验证该动作可以执行，并拒绝未知动作字段。``RobotContract`` 会在连接前检查结构说明，递归遍历所有可读零部件，包括承载在其他零部件下的路径，并检查资源归属。它还会在 ``connect()`` 中注入失败，验证启动回滚。
 
-目前，``RobotContract`` 会将承载其他零部件的 ``RobotPart`` 视为一个叶子节点，不会继续逐项检查其 ``children``。因此，新增机器人时还应直接检查本次引入的路径和 owner：
+对于机器人对外承诺的路径和类别，仍应增加直接断言。contract 可以验证通用行为，但无法判断路径名称是否与任务的约定一致：
 
 .. code-block:: python
+
+   from rlinf.robotics import Arm, EndEffector
 
    robot = MobileManipulator.build(
        base_endpoint="tcp://mobile-base:7000",
@@ -459,7 +464,8 @@ env 收到 ``RobotInfo`` 后，需要显式调用已注册的 builder。schedule
        controller_node_rank=0,
    )
    assert set(robot.named_parts) == {"base", "arm", "end_effector"}
-   end_effector = robot.child("end_effector")
+   arm = robot.child("arm", Arm)
+   end_effector = robot.child("end_effector", EndEffector)
    # 末端执行器持有自己的链路，因此 owner 是它本身，而不是机械臂。
    assert end_effector.owner is end_effector
    assert len(robot.owners()) == 3
@@ -527,6 +533,8 @@ env 收到 ``RobotInfo`` 后，需要显式调用已注册的 builder。schedule
      - ``realworld_xsquare_turtle2_mock_sac_cnn``
    * - DOSW1
      - ``dosw1_mock_sac_mlp_pick``
+   * - SO-101
+     - ``so101_mock_sac_mlp_reach``
 
 连接真机
 ~~~~~~~~

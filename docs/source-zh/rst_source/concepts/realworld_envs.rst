@@ -50,6 +50,29 @@
 
 ``register_tasks`` 根据该映射生成 Gymnasium entry point。用户配置和数据集元数据都会保存 Gym ID，因此数据采集开始后不应随意修改 ID。
 
+通过机器人接口读写硬件
+----------------------
+
+env 持有一台组合完成的机器人。它构建机械臂、末端执行器和相机，调用 ``robot.connect()`` 打开硬件，并在 ``close()`` 中释放同一台机器人。每一步的观测和动作都通过 ``robot.get_observation()`` 和 ``robot.send_action()`` 完成，不直接访问 driver 或厂商 SDK。
+
+不同硬件结构使用同一边界。Franka 的机械臂和末端执行器分别打开连接，因此使用并列路径；SO-101 的夹爪是机械臂总线上的另一个伺服，因此使用 ``arm.end_effector``。``SO101ReachEnv-v1`` 仍通过这套嵌套接口读写硬件，再将数据转换为 policy 使用的六维关节与夹爪向量。
+
+不属于单步动作流的初始化操作，可以通过类型明确的零部件完成：
+
+.. code-block:: python
+
+   from rlinf.robotics import Arm, Camera
+
+   arm = robot.child("arm", Arm)
+   cameras = robot.parts_of_type(Camera)
+
+   if not arm.is_robot_up():
+       raise RuntimeError("The arm is not ready.")
+   arm.reset_joint(reset_qpos)
+   ready = all(camera.is_ready() for camera in cameras.values())
+
+相机的 placement 和生命周期仍由机器人负责。env 可以保留相机引用用于处理画面，但不应为同一设备构建或关闭第二个对象。env 还应复用一次整机读取结果来构造当前步的状态和画面，避免混入后续 SDK 读取的数据。
+
 按职责组织 wrapper
 -------------------
 
@@ -173,4 +196,4 @@ wrapper 根据所承担的职责划分目录：
 --------
 
 - :doc:`新增真机任务 <../extending/new_task>`：按步骤接入新的真机任务。
-- :doc:`机器人组成 <robotics>`：了解零部件名称、访问路径及组合方式。
+- :doc:`机器人接口 <robotics>`：了解如何读取和控制底层机器人。

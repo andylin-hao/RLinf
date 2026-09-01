@@ -12,6 +12,8 @@
 
 以下示例为 Franka 添加 ``WipeEnv-v1``。后续步骤会直接引用前面定义的配置类和 Gymnasium ID，因此应按顺序完成。
 
+如果新任务使用关节空间机械臂，实施顺序不变，只需继承对应的 env 基类。``SO101ReachEnv-v1`` 和 ``examples/embodiment/config/env/so101_reach.yaml`` 展示了当前 SO-101 的实现：动作包含五个绝对关节目标和一个连续夹爪值。机器人中的夹爪路径仍为 ``arm.end_effector``，env 负责将这套嵌套接口转换为 policy 使用的六维动作。
+
 1. 定义任务配置
 ~~~~~~~~~~~~~~~
 
@@ -158,9 +160,12 @@ env 类首先指定前一步定义的配置类型。对于多数任务，仅需�
            self._port = port
 
        def _open(self):
-           from rlinf.robotics.parts.teleop.pedal import PedalReader
+           from example_pedal_sdk import PedalClient
 
-           return PedalReader(port=self._port)
+           return PedalClient(port=self._port)
+
+       def _release(self, device) -> None:
+           device.close()
 
        @property
        def observation_features(self):
@@ -170,13 +175,13 @@ env 类首先指定前一步定义的配置类型。对于多数任务，仅需�
            return {"pressed": np.asarray([self._device.is_pressed()])}
 
        def action(self, reading, context):
-           pressed = bool(reading["pressed"])
+           pressed = bool(reading["pressed"][0])
            return TeleopAction(
                parts={"end_effector": np.array([-1.0 if pressed else 1.0])},
                driving=pressed,
            )
 
-``__init__`` 只保存端口等构造参数；``_open`` 在连接阶段打开硬件，返回值保存在 ``self._device``。因此设备可以在当前进程声明，再由目标节点创建。
+``__init__`` 只保存端口等构造参数；``_open`` 在连接阶段打开硬件，返回值保存在 ``self._device``；``_release`` 在启动回滚、正常关闭和重连前释放同一个句柄。如果 reader 持有轮询线程，``_release`` 必须先通知线程停止并等待其退出。这样，设备可以在当前进程声明，再由目标节点打开。
 
 ``PRODUCES`` 同时声明目标零部件的名称和动作语义，因此 twist 不会被错误地接到关节角动作上。``action`` 用一个 ``TeleopAction`` 一次性给出全部结果：``driving`` 与动作在同一个返回值中，避免为判断接管状态而再次读取设备或保存中间状态。
 

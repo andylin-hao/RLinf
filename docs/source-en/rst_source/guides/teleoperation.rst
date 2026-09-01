@@ -182,7 +182,12 @@ A device is one module under ``robotics/parts/teleop/``. Subclass
            self._port = port
 
        def _open(self):
-           return ExampleSDK(self._port).open()
+           device = ExampleSDK(self._port)
+           device.open()
+           return device
+
+       def _release(self, device) -> None:
+           device.close()
 
        @property
        def observation_features(self) -> Features:
@@ -206,6 +211,12 @@ reads through ``self._device``; ``_release()`` closes it. That is the same
 connection lifecycle every robot part follows, and the same machinery accepts
 ``node_rank`` without the device writing anything for it -- which is why the
 constructor above takes only its own arguments.
+
+Readers that poll in a background thread must stop and join that thread in
+``_release()``. ``TeleopGroup.disconnect()`` closes devices in reverse order
+and continues after one close fails, but it cannot make a reader-owned thread
+exit. Keeping thread cleanup with the reader makes disconnect and reconnect
+reliable for standalone diagnostics and environment-managed devices alike.
 
 ``observation_features`` declares the reading before any hardware is open, so a
 rig can be described offline. It is abstract, so a device that omits it cannot
@@ -266,7 +277,7 @@ that takes effect, and the warning names what it replaced.
 Next
 ----
 
-- :doc:`Robot Composition <../concepts/robotics>`: the named robot paths a
+- :doc:`Robotics Interface <../concepts/robotics>`: the named robot paths a
   device fills.
 - :doc:`Real-World Tasks and Environments <../concepts/realworld_envs>`: where teleop
   sits in the wrapper stack.

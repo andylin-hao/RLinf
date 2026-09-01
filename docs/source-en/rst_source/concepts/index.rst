@@ -23,11 +23,11 @@ Choose a Concept Area
 
       Understand placement strategies, execution modes, and replay buffers.
 
-   .. grid-item-card:: Robot Composition
+   .. grid-item-card:: Robotics Interface
       :link: robotics
       :link-type: doc
 
-      Use a robot as a tree of named observation and action parts.
+      Read and control a robot through named parts.
 
    .. grid-item-card:: Robotics Architecture
       :link: robotics_architecture
@@ -46,6 +46,6 @@ Choose a Concept Area
 
    Execution <execution-model/index>
    Scheduling <scheduling-model/index>
-   Robot Composition <robotics>
+   Robotics Interface <robotics>
    Robotics Architecture <robotics_architecture>
    Real-World Tasks and Environments <realworld_envs>

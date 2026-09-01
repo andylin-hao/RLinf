@@ -21,11 +21,11 @@
 
       了解 placement、执行模式与 replay buffer 的工作机制。
 
-   .. grid-item-card:: 机器人组成
+   .. grid-item-card:: 机器人接口
       :link: robotics
       :link-type: doc
 
-      了解零部件名称与观测、动作路径之间的对应关系。
+      通过具名零部件读取和控制机器人。
 
    .. grid-item-card:: 机器人架构
       :link: robotics_architecture
@@ -44,6 +44,6 @@
 
    执行 <execution-model/index>
    调度 <scheduling-model/index>
-   机器人组成 <robotics>
+   机器人接口 <robotics>
    机器人架构 <robotics_architecture>
    真机任务与环境 <realworld_envs>

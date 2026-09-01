@@ -6,7 +6,7 @@ drives the resulting mobile manipulator through a real-world Gymnasium
 environment. The example starts with the base in one process. Placement and
 hardware discovery come only after its observations and actions work locally.
 
-Before continuing, read :doc:`Robot Composition <../concepts/robotics>`. If RLinf
+Before continuing, read :doc:`Robotics Interface <../concepts/robotics>`. If RLinf
 already knows how to connect the hardware and you only need a new reward, reset,
 or success condition, follow :doc:`New Real-World Tasks <new_task>` instead.
 
@@ -117,7 +117,7 @@ Franka connection:
 
 .. code-block:: python
 
-   from rlinf.robotics import FrankaRobot, Robot
+   from rlinf.robotics import Arm, FrankaRobot, Robot
 
 
    class MobileManipulator(Robot):
@@ -202,6 +202,10 @@ Once connected, observations and actions use the names from the composition:
 
    robot.connect()
    try:
+       arm = robot.child("arm", Arm)
+       if not arm.is_robot_up():
+           raise RuntimeError("The arm is not ready.")
+
        observation = robot.get_observation()
        base_pose = observation["base"]["pose"]
        arm_pose = observation["arm"]["tcp_pose"]
@@ -222,10 +226,12 @@ Once connected, observations and actions use the names from the composition:
    finally:
        robot.disconnect()
 
-``PartGroup.send_action`` accepts a partial tree, so a navigation task need not
-send hold commands for the arm. Here every branch has its own connection, so
-all three dispatch in parallel; branches that shared one would run in
-declaration order.
+``child("arm", Arm)`` checks the expected category and gives setup code the
+standard arm methods without reaching through the connection owner. The same
+typed value works after remote placement. ``PartGroup.send_action`` accepts a
+partial tree, so a navigation task need not send hold commands for the arm.
+Here every branch has its own connection, so all three dispatch in parallel;
+branches that shared one would run in declaration order.
 
 3. Use the Robot in a Real-World Environment
 --------------------------------------------
@@ -239,7 +245,7 @@ an arm:
 
    import gymnasium as gym
 
-   from rlinf.envs.real import RobotTask, RobotTaskEnv
+   from rlinf.envs.real.task_env import RobotTask, RobotTaskEnv
 
 
    class DriveToTarget(RobotTask):
@@ -333,14 +339,15 @@ example, keep the base controller on node 0 and the Franka controller on node 1:
        node_rank=0,
        worker_name="ExampleMobileBase-0-0",
    )
-   arm_connection = FrankaRobot.declare_arm(
-       "10.0.0.2",
+   arm_parts = FrankaRobot.build_arms(
+       robot_ip="10.0.0.2",
        node_rank=1,
-       name="FrankaArm-0-0",
+       worker_rank=0,
+       env_idx=0,
    )
    robot = MobileManipulator(
        base=base,
-       arm=arm_connection,
+       **arm_parts,
    )
 
 Constructing these objects records their arguments, ``node_rank``, and
@@ -407,12 +414,13 @@ declaration rather than copying its SDK or lifecycle code:
                if controller_node_rank is None
                else controller_node_rank
            )
-           arm_connection = FrankaRobot.declare_arm(
-               arm_ip,
+           arm_parts = FrankaRobot.build_arms(
+               robot_ip=arm_ip,
                node_rank=arm_node_rank,
-               name=f"FrankaArm-{worker_rank}-{env_idx}",
+               worker_rank=worker_rank,
+               env_idx=env_idx,
            )
-           return cls(base=base, arm=arm_connection)
+           return cls(base=base, **arm_parts)
 
 ``MobileBase.backend()`` resolves the driver name declared in the hardware
 config. The builder then composes unconnected parts and selections from shared
@@ -567,15 +575,18 @@ They live in ``tests/robot_contracts``, beside the fake SDKs in
 The contracts connect, read, disconnect, repeat the lifecycle, and disconnect
 once more. ``PartContract`` compares one part's observation names and shapes
 with its declaration. When it receives the velocity sample, it also checks that
-the action is accepted and an unknown field is refused. ``RobotContract`` checks
-that the robot can be described before connecting, validates the composed
-top-level leaves, and injects a failure during ``connect()`` to verify rollback.
+the action is accepted and an unknown field is refused. ``RobotContract``
+describes the robot before connecting, walks every readable part including
+parts carried below another part, checks ownership, and injects a failure during
+``connect()`` to verify rollback.
 
-The contract currently treats a ``RobotPart`` that carries riders as one leaf;
-it does not separately walk those riders. Add direct composition assertions for
-the paths and owners introduced by this robot:
+Add direct assertions for the public paths and categories this robot promises.
+The contract verifies general behavior, but it cannot decide whether a path was
+given the name your tasks expect:
 
 .. code-block:: python
+
+   from rlinf.robotics import Arm, EndEffector
 
    robot = MobileManipulator.build(
        base_endpoint="tcp://mobile-base:7000",
@@ -584,7 +595,8 @@ the paths and owners introduced by this robot:
        controller_node_rank=0,
    )
    assert set(robot.named_parts) == {"base", "arm", "end_effector"}
-   end_effector = robot.child("end_effector")
+   arm = robot.child("arm", Arm)
+   end_effector = robot.child("end_effector", EndEffector)
    # The hand holds its own link, so it owns itself rather than the arm.
    assert end_effector.owner is end_effector
    assert len(robot.owners()) == 3
@@ -679,6 +691,8 @@ observation space and the runner all run as they would on a bench:
      - ``realworld_xsquare_turtle2_mock_sac_cnn``
    * - DOSW1
      - ``dosw1_mock_sac_mlp_pick``
+   * - SO-101
+     - ``so101_mock_sac_mlp_reach``
 
 Run It Against the Robot
 ~~~~~~~~~~~~~~~~~~~~~~~~

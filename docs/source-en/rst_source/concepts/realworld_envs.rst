@@ -70,6 +70,40 @@ so a task is one row:
 configs and dataset metadata both store the gym id. Renaming it later leaves
 those references stale.
 
+Drive Hardware Through the Robotics Interface
+---------------------------------------------
+
+The env owns one composed robot. It builds the arm, end effector, and cameras,
+calls ``robot.connect()``, and releases the same robot in ``close()``. Per-step
+observations and actions go through ``robot.get_observation()`` and
+``robot.send_action()`` rather than through a driver or vendor SDK.
+
+This boundary is shared by different hardware layouts. Franka exposes its arm
+and end effector as sibling paths because they open separate connections.
+SO-101 exposes ``arm.end_effector`` because its gripper is another servo on the
+arm bus. ``SO101ReachEnv-v1`` still reads and commands that nested interface,
+then converts it to the six-value joint-and-gripper vector its policy expects.
+
+Setup code may retain a typed part for operations outside the step stream:
+
+.. code-block:: python
+
+   from rlinf.robotics import Arm, Camera
+
+   arm = robot.child("arm", Arm)
+   cameras = robot.parts_of_type(Camera)
+
+   if not arm.is_robot_up():
+       raise RuntimeError("The arm is not ready.")
+   arm.reset_joint(reset_qpos)
+   ready = all(camera.is_ready() for camera in cameras.values())
+
+The robot remains responsible for camera placement and lifecycle. The env may
+keep camera references for frame processing, but it does not construct or close
+a second object for the same device. One whole-robot observation is also reused
+when the env builds its state and frames, so values from one step are not mixed
+with a later SDK read.
+
 Three Kinds of Wrapper
 ----------------------
 
@@ -242,4 +276,5 @@ Next
 ----
 
 - :doc:`New Real-World Tasks <../extending/new_task>`: follow the step-by-step guide.
-- :doc:`Robot Composition <robotics>`: how the robot underneath is composed.
+- :doc:`Robotics Interface <robotics>`: how the robot underneath is read and
+  controlled.

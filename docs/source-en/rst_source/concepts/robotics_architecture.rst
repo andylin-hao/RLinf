@@ -1,10 +1,11 @@
 Robotics Architecture
 =====================
 
-The introductory :doc:`robotics` page treats a robot as a tree of named parts.
-This page follows that tree down to hardware connections and across machine
-boundaries. Read it when you are adding a device, sharing one connection between
-several parts, or debugging placement and cleanup.
+The introductory :doc:`Robotics Interface <robotics>` page shows the API used by
+tasks and environments. This page follows that interface down to hardware
+connections and across machine boundaries. Read it when you are adding a
+device, sharing one connection between several parts, or debugging placement
+and cleanup.
 
 Start from the Robot's Public Structure
 ---------------------------------------
@@ -22,11 +23,11 @@ logical part. A mobile base can enter the robot tree directly:
    robot = Robot(base=base)
 
 Constructing the base creates an actual but unconnected ``MobileBase``. It
-stores the device settings, while the ``Connection`` metaclass records
-``node_rank`` and ``worker_name`` for placement. No SDK is imported and no
-hardware is opened until ``robot.connect()``. Because the object is already the
-logical part a policy should see, passing it as ``base=base`` adds it directly
-to the public tree. The argument name ``base`` becomes its public path.
+stores the device settings and the connection layer records ``node_rank`` and
+``worker_name`` for placement. No SDK is imported and no hardware is opened
+until ``robot.connect()``. Because the object is already the logical part a
+policy should see, passing it as ``base=base`` adds it directly to the public
+tree. The argument name ``base`` becomes its public path.
 
 One hardware session may instead back several logical parts. A GimArm drives
 its joints and its gripper down the same CAN bus, so one link answers for both,
@@ -165,6 +166,13 @@ The Core Types
    * - ``Robot``
      - The outermost ``PartGroup``. It also owns registration and knows which
        node each of its connections runs on.
+
+Device categories add operations that callers can rely on across backends.
+Every ``Arm`` reports readiness, clears errors, and supports a named joint-reset
+operation or raises ``NotImplementedError`` for that operation. Every
+``EndEffector`` reports its canonical ``state`` and accepts a ``target`` action.
+``Camera.is_ready()`` distinguishes an open camera from one that is actually
+delivering frames.
 
 There is no separate type for a part running elsewhere. A connection given a
 ``node_rank`` is rebuilt in a worker on that node, and the object you already
@@ -414,6 +422,13 @@ sharing one run in declaration order, because vendor sessions are rarely safe
 for concurrent access. A Franka arm and its hand hold separate links, so a
 whole-robot reading fetches both at once rather than paying for them in turn.
 
+A whole-robot read also defines the consistency boundary used by environments.
+``PartGroup.get_observation()`` visits each branch once. While it reads one
+part, that part and any children sharing its connection reuse one state
+snapshot, so a servo bus is not sampled again for its gripper. An environment
+should retain that one result when it constructs policy-facing state and camera
+frames rather than mixing it with direct driver or SDK reads.
+
 Independent ownership also means two parts can open from different processes on
 one machine. That is exactly right when they address different endpoints, which
 is the usual case -- libfranka answers arm control and the hand on separate
@@ -489,23 +504,32 @@ to close in that case. After fixing the hardware, you can call ``connect()`` on
 the same robot again. ``disconnect()`` is idempotent and returns successfully
 closed connections to a reconnectable state.
 
-Reach Device-Specific Methods on the Part Itself
-------------------------------------------------
+Use Typed Parts for Setup and Reset
+-----------------------------------
 
-Both halves of placement are derived from the driver class, so a method outside
-the standard part contract travels for the same reason the driver has it. Ask a
-part which connection it rides, then call the method:
+Common setup operations belong to device-category contracts, so callers use
+the part rather than reaching through its owner. Pass the expected category to
+``child()`` to check the composition and retain a precise return type:
 
 .. code-block:: python
 
-   controller = robot.child("arm").owner
-   controller.is_robot_up()
-   controller.reset_joint(home_qpos)
+   from rlinf.robotics import Arm, Camera
 
-The expression is the same whether that arm is on this bench or on another
-node, and there is no result to unwrap. Keep task code on the standard
-observation and action tree; reach for the connection for setup, diagnostics,
-or a vendor operation with no canonical part method.
+   arm = robot.child("arm", Arm)
+   if not arm.is_robot_up():
+       raise RuntimeError("The arm is not ready.")
+   arm.clear_errors()
+   arm.reset_joint(home_qpos)
+
+   cameras = robot.parts_of_type(Camera)
+   ready = all(camera.is_ready() for camera in cameras.values())
+
+The same calls work locally and after placement because the remote view remains
+a subclass of the original part. A wrong path or category is reported by
+``child()`` before a missing method surfaces during an episode. Use ``owner``
+to inspect lifecycle ownership; call it directly only for a vendor-specific
+operation that genuinely belongs to a shared connection rather than one of the
+parts it backs.
 
 Preserve the Import Boundary
 ----------------------------
@@ -542,7 +566,7 @@ Find the Implementation
        the composition checks and driver registry.
    * - ``robotics/parts/arms/``
      - The ``Arm`` category and ``BaseArm``, then the backends that register on
-       them: Franky, Franka ROS, GimArm, and the coupled controllers.
+       them: Franky, Franka ROS, GimArm, SO-101, and the coupled controllers.
    * - ``robotics/parts/cameras/``
      - Camera lifecycle and RealSense, ZED, and Lumos implementations.
    * - ``robotics/parts/end_effectors/``
