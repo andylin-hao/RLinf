@@ -16,6 +16,7 @@ import os
 import queue
 import threading
 import warnings
+from typing import Optional
 
 import cv2
 import numpy as np
@@ -25,6 +26,8 @@ class VideoPlayer:
     def __init__(self, enable: bool = True) -> None:
         self.queue = queue.Queue()
         self.is_running = False
+        # Declared either way, so stop() and a type checker can both read it.
+        self._run_thread: Optional[threading.Thread] = None
         if not enable:
             return
         self._run_thread = threading.Thread(target=self._play, daemon=True)
@@ -36,7 +39,7 @@ class VideoPlayer:
 
     def stop(self) -> None:
         """Stop the display thread if it was started."""
-        thread = getattr(self, "_run_thread", None)
+        thread = self._run_thread
         if thread is None:
             return
         self.queue.put(None)

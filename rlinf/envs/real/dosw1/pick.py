@@ -161,7 +161,7 @@ class PickEnv(DOSW1Env):
             return
 
         if self.holding_object:
-            self.sdk.open_gripper()
+            self.open_grippers()
             time.sleep(0.4)
             self.holding_object = False
 

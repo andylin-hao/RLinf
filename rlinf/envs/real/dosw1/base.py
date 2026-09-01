@@ -36,8 +36,9 @@ from rlinf.robotics import (
     RobotInfo,
 )
 from rlinf.robotics.actions import ActionKind, ActionPart
-from rlinf.robotics.parts.arms import DOSW1Arm, DOSW1Connection
+from rlinf.robotics.parts.arms import DOSW1Arm
 from rlinf.robotics.parts.arms.dosw1 import DOSW1RobotState
+from rlinf.robotics.parts.base import Observation
 from rlinf.robotics.parts.cameras import BaseCamera, CameraInfo
 from rlinf.scheduler import WorkerInfo
 from rlinf.utils.logging import get_logger
@@ -148,7 +149,7 @@ class DOSW1Env(gym.Env):
             self.node_rank = worker_info.cluster_node_rank
             self.env_worker_rank = worker_info.rank
 
-        self.sdk: DOSW1Connection | None = None
+        self._arms: dict[str, DOSW1Arm] = {}
         self.robot: Robot | None = None
         if not config.is_dummy:
             self._apply_robot_info(robot_info)
@@ -164,11 +165,10 @@ class DOSW1Env(gym.Env):
                 cameras={info.name: info for info in self._camera_infos()},
             )
             self.robot.connect()
-            left_driver = cast(
-                DOSW1Arm,
-                self.robot.child("left").child("arm"),
-            )
-            self.sdk = left_driver.sdk
+            self._arms = {
+                side: cast(DOSW1Arm, self.robot.child(side).child("arm", DOSW1Arm))
+                for side in ("left", "right")
+            }
             self._go_to_home()
             time.sleep(1.0)
 
@@ -200,7 +200,7 @@ class DOSW1Env(gym.Env):
         self._camera_player = VideoPlayer(config.enable_camera_player)
 
         if not config.is_dummy:
-            self.robot_state = self.sdk.get_state()
+            self.robot_state = self._robot_state()
 
     def reset(
         self,
@@ -246,7 +246,7 @@ class DOSW1Env(gym.Env):
             self.set_control_mode(ControlMode.MODEL, source="reset_no_human_in_loop")
         self._num_steps = 0
         self.manual_done = False
-        self.robot_state = self.sdk.get_state()
+        self.robot_state = self._robot_state()
 
         return self._get_observation(), {}
 
@@ -281,7 +281,7 @@ class DOSW1Env(gym.Env):
         elapsed = time.time() - t0
         time.sleep(max(0.0, 1.0 / self.config.step_frequency - elapsed))
 
-        self.robot_state = self.sdk.get_state()
+        self.robot_state = self._robot_state()
         obs = self._get_observation()
         gripper_changed = (
             abs(self.robot_state.left_gripper - prev_left_gripper) > 1e-6
@@ -310,11 +310,11 @@ class DOSW1Env(gym.Env):
                 except Exception:
                     pass
             self._keyboard = None
-        if self.sdk is not None:
+        if self.robot is not None:
             if self.robot is not None:
                 self.robot.disconnect()
             else:
-                self.sdk.disconnect()
+                self.robot.disconnect()
 
     def set_keyboard_event_callback(
         self, callback: Callable[[bool], object] | None
@@ -335,8 +335,8 @@ class DOSW1Env(gym.Env):
     def _set_leader_follow_enabled(self, *, enabled: bool, source: str) -> None:
         enabled = bool(enabled)
         self._leader_follow_enabled = enabled
-        if self.sdk is not None:
-            set_enabled = getattr(self.sdk, "set_leader_arm_enabled", None)
+        if self._arms:
+            set_enabled = self._arms["left"].set_leader_arm_enabled
             if callable(set_enabled):
                 try:
                     set_enabled(enabled)
@@ -386,7 +386,7 @@ class DOSW1Env(gym.Env):
         if np.all(np.isinf(lo_limit)) and np.all(np.isinf(hi_limit)):
             return target_joint
 
-        ee = self.sdk.forward_kinematics(target_joint.tolist())
+        ee = self._arms["left"].forward_kinematics(target_joint.tolist())
         if self._ee_in_box(ee, lo_limit, hi_limit):
             return target_joint
 
@@ -394,7 +394,7 @@ class DOSW1Env(gym.Env):
         for _ in range(8):
             mid = (lo + hi) / 2
             interp = current_joint + mid * (target_joint - current_joint)
-            ee = self.sdk.forward_kinematics(interp.tolist())
+            ee = self._arms["left"].forward_kinematics(interp.tolist())
             if self._ee_in_box(ee, lo_limit, hi_limit):
                 lo = mid
             else:
@@ -439,8 +439,7 @@ class DOSW1Env(gym.Env):
         left_gripper = self._clip_gripper_width(float(action[6]))
         right_gripper = self._clip_gripper_width(float(action[13]))
 
-        self.sdk.left_go_joint(left_joint.tolist(), left_gripper)
-        self.sdk.right_go_joint(right_joint.tolist(), right_gripper)
+        self._command_arms(left_joint, left_gripper, right_joint, right_gripper)
 
         actual = np.empty(ACTION_DIM, dtype=np.float64)
         actual[:6] = left_joint
@@ -459,10 +458,11 @@ class DOSW1Env(gym.Env):
         return actual
 
     def snapshot_teleop_init(self) -> None:
-        self._teleop_init_lead_left = self.sdk.get_left_lead_joint().copy()
-        self._teleop_init_lead_right = self.sdk.get_right_lead_joint().copy()
-        self._teleop_init_follow_left = self.sdk.get_left_joint().copy()
-        self._teleop_init_follow_right = self.sdk.get_right_joint().copy()
+        reading = self._read_arms()
+        self._teleop_init_lead_left = reading["left"]["lead_joint_position"].copy()
+        self._teleop_init_lead_right = reading["right"]["lead_joint_position"].copy()
+        self._teleop_init_follow_left = self._joint_and_gripper(reading["left"])
+        self._teleop_init_follow_right = self._joint_and_gripper(reading["right"])
 
     def _compute_teleop_command(
         self,
@@ -476,8 +476,9 @@ class DOSW1Env(gym.Env):
             width.
         """
         cfg = self.config
-        lead_left = self.sdk.get_left_lead_joint()
-        lead_right = self.sdk.get_right_lead_joint()
+        reading = self._read_arms()
+        lead_left = reading["left"]["lead_joint_position"]
+        lead_right = reading["right"]["lead_joint_position"]
         init_lead_left = self._teleop_init_lead_left
         init_lead_right = self._teleop_init_lead_right
         init_follow_left = self._teleop_init_follow_left
@@ -532,8 +533,7 @@ class DOSW1Env(gym.Env):
             self._compute_teleop_command(cur_left, cur_right)
         )
 
-        self.sdk.left_go_joint(left_joint.tolist(), left_gripper)
-        self.sdk.right_go_joint(right_joint.tolist(), right_gripper)
+        self._command_arms(left_joint, left_gripper, right_joint, right_gripper)
         self.teleop_target_left_gripper = left_gripper
 
         actual = np.empty(ACTION_DIM, dtype=np.float64)
@@ -577,13 +577,13 @@ class DOSW1Env(gym.Env):
     def _forward_leader_to_follower(self) -> None:
         if not self._leader_follow_enabled:
             return
-        cur_left = self.sdk.get_left_joint()[:6]
-        cur_right = self.sdk.get_right_joint()[:6]
+        reading = self._read_arms()
+        cur_left = reading["left"]["joint_position"]
+        cur_right = reading["right"]["joint_position"]
         left_joint, left_gripper, right_joint, right_gripper = (
             self._compute_teleop_command(cur_left, cur_right)
         )
-        self.sdk.left_go_joint(left_joint.tolist(), left_gripper)
-        self.sdk.right_go_joint(right_joint.tolist(), right_gripper)
+        self._command_arms(left_joint, left_gripper, right_joint, right_gripper)
 
     def _get_observation(self) -> dict[str, Any]:
         if self.config.is_dummy:
@@ -654,15 +654,67 @@ class DOSW1Env(gym.Env):
             }
         )
 
-    def _go_to_home(self) -> None:
-        self.sdk.left_go_joint(
-            self.config.left_reset_joint,
-            self.config.left_reset_gripper,
-            interp=True,
+    def open_grippers(self) -> None:
+        """Open both grippers, each arm holding the joints it is already at."""
+        reading = self._read_arms()
+        self._command_arms(
+            reading["left"]["joint_position"],
+            float(self.config.gripper_width_max),
+            reading["right"]["joint_position"],
+            float(self.config.gripper_width_max),
         )
-        self.sdk.right_go_joint(
-            self.config.right_reset_joint,
-            self.config.right_reset_gripper,
+
+    def _joint_and_gripper(self, reading: Observation) -> np.ndarray:
+        """Return one arm's six joints and gripper width as ``(7,)``."""
+        return np.concatenate(
+            [reading["joint_position"], reading["gripper_width"]]
+        ).astype(np.float64)
+
+    def _robot_state(self) -> DOSW1RobotState:
+        """Compose the follower state from what both arms report."""
+        reading = self._read_arms()
+        return DOSW1RobotState(
+            left_joint_positions=reading["left"]["joint_position"].copy(),
+            left_gripper=float(reading["left"]["gripper_width"][0]),
+            right_joint_positions=reading["right"]["joint_position"].copy(),
+            right_gripper=float(reading["right"]["gripper_width"][0]),
+            timestamp=time.time(),
+        )
+
+    def _command_arms(
+        self,
+        left_joint: np.ndarray,
+        left_gripper: float,
+        right_joint: np.ndarray,
+        right_gripper: float,
+        interp: bool = False,
+    ) -> None:
+        """Send one action to each arm, joints and gripper together."""
+        for side, joint, gripper in (
+            ("left", left_joint, left_gripper),
+            ("right", right_joint, right_gripper),
+        ):
+            action = {
+                "joint_position": np.asarray(joint, dtype=np.float64).reshape(6),
+                "gripper_width": np.asarray([gripper], dtype=np.float64),
+            }
+            if interp:
+                self._arms[side].reset_joint(
+                    action["joint_position"], float(action["gripper_width"][0])
+                )
+            else:
+                self._arms[side].send_action(action)
+
+    def _read_arms(self) -> dict[str, Observation]:
+        """Read both arms once; each read carries joints, gripper and leader."""
+        return {side: arm.get_observation() for side, arm in self._arms.items()}
+
+    def _go_to_home(self) -> None:
+        self._command_arms(
+            np.asarray(self.config.left_reset_joint, dtype=np.float64),
+            float(self.config.left_reset_gripper),
+            np.asarray(self.config.right_reset_joint, dtype=np.float64),
+            float(self.config.right_reset_gripper),
             interp=True,
         )
         time.sleep(3.0)

@@ -175,10 +175,9 @@ class GelloExpert:
         disconnects, and the port stays open against the next connect.
         """
         self._stop = True
-        thread = getattr(self, "thread", None)
-        if thread is not None and thread.is_alive():
-            thread.join(timeout=1.0)
-        agent, self.agent = getattr(self, "agent", None), None
+        if self.thread.is_alive():
+            self.thread.join(timeout=1.0)
+        agent, self.agent = self.agent, None
         release = getattr(agent, "close", None) or getattr(agent, "stop", None)
         if callable(release):
             release()

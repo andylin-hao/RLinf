@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Optional, Sequence
 
 import numpy as np
 
@@ -372,40 +372,128 @@ class DOSW1Arm(Arm):
         self.sdk = self._owner = sdk
         self.side = side
 
+    # The connection names its two arms with distinct methods. Resolving them
+    # once, by name, keeps every call site readable to a type checker.
+
+    def _read_joint(self) -> np.ndarray:
+        """Return this side's six joints and gripper width as ``(7,)``."""
+        if self.side == "left":
+            return self.sdk.get_left_joint()
+        return self.sdk.get_right_joint()
+
+    def _read_pose(self) -> np.ndarray:
+        """Return this side's end-effector pose."""
+        if self.side == "left":
+            return self.sdk.get_left_pose()
+        return self.sdk.get_right_pose()
+
+    def _read_lead_joint(self) -> np.ndarray:
+        """Return this side's leader-arm joints."""
+        if self.side == "left":
+            return self.sdk.get_left_lead_joint()
+        return self.sdk.get_right_lead_joint()
+
+    def _go_joint(
+        self, joint: list[float], gripper: float, interp: bool = False
+    ) -> None:
+        """Command this side's joints and gripper in one call."""
+        if self.side == "left":
+            self.sdk.left_go_joint(joint, gripper, interp=interp)
+        else:
+            self.sdk.right_go_joint(joint, gripper, interp=interp)
+
     @property
     def observation_features(self) -> Features:
-        """Describe the DOSW1 joint and end-effector pose state."""
+        """Describe the DOSW1 joint, gripper, pose and leader-arm state.
+
+        The gripper travels beside the joints here as it does in the action,
+        so a caller reads both halves of one ``go_joint`` in one round trip.
+        ``lead_joint_position`` is the operator's leader arm for this side,
+        and reads as zeros while the leader link is disabled.
+        """
         return {
             "joint_position": {"shape": (6,), "dtype": "float64"},
+            "gripper_width": {"shape": (1,), "dtype": "float64"},
             "tcp_pose": {"shape": (6,), "dtype": "float64"},
+            "lead_joint_position": {"shape": (7,), "dtype": "float64"},
         }
 
     @property
     def action_features(self) -> Features:
-        """Describe the absolute joint-position command."""
-        return {"joint_position": {"shape": (6,), "dtype": "float64"}}
+        """Describe the absolute joint-position and gripper command.
+
+        The hardware takes joints and gripper width in one call, so both
+        travel in one action. Omitting ``gripper_width`` holds the current
+        width, which is what a caller that only moves the arm wants.
+        """
+        return {
+            "joint_position": {"shape": (6,), "dtype": "float64"},
+            "gripper_width": {"shape": (1,), "dtype": "float64"},
+        }
 
     def reset(self) -> None:
         """Leave reset targets to the task configuration."""
 
     def get_observation(self) -> Observation:
-        """Read this arm's joint state and end-effector pose."""
-        get_joint = getattr(self.sdk, f"get_{self.side}_joint")
-        get_pose = getattr(self.sdk, f"get_{self.side}_pose")
+        """Read this arm's joints, gripper, pose and leader arm."""
+        current = self._read_joint()
         return {
-            "joint_position": get_joint()[:6].copy(),
-            "tcp_pose": get_pose().copy(),
+            "joint_position": current[:6].copy(),
+            "gripper_width": current[6:7].copy(),
+            "tcp_pose": self._read_pose().copy(),
+            "lead_joint_position": self._read_lead_joint().copy(),
         }
 
+    def set_leader_arm_enabled(self, enabled: bool) -> None:
+        """Link or unlink the operator's leader arms.
+
+        One switch covers the rig: both arms share a session, so either one
+        answers for it. Teleoperation needs the link, and a policy rollout
+        does not.
+        """
+        self.sdk.set_leader_arm_enabled(enabled)
+
+    def reset_joint(
+        self,
+        positions: "Sequence[float]",
+        gripper_width: Optional[float] = None,
+    ) -> None:
+        """Travel to a configuration, interpolated, outside the action stream.
+
+        A reset moves further than one control step, so the SDK interpolates
+        it. The gripper rides along for the same reason it does in
+        :meth:`send_action`: two commands would countermand each other.
+        """
+        current = self._read_joint()
+        width = float(current[6]) if gripper_width is None else float(gripper_width)
+        self._go_joint(list(positions), width, interp=True)
+
+    def forward_kinematics(self, joint_position: "Sequence[float]") -> np.ndarray:
+        """Return the end-effector pose these joints would reach."""
+        return self.sdk.forward_kinematics(list(joint_position))
+
     def send_action(self, action: Action) -> Observation:
-        """Apply an absolute joint target while retaining gripper width."""
-        if set(action) != {"joint_position"}:
-            raise KeyError("DOSW1 arm action must contain only 'joint_position'.")
+        """Apply an absolute joint target, and the gripper width beside it.
+
+        Both reach the arm in a single ``go_joint`` call. Commanding them
+        separately would make each command read the other half back and
+        restate it, so the second would countermand the first mid-motion.
+        """
+        unknown = set(action) - {"joint_position", "gripper_width"}
+        if unknown or "joint_position" not in action:
+            raise KeyError(
+                "DOSW1 arm action takes 'joint_position' and optionally "
+                f"'gripper_width'; got {sorted(action)}."
+            )
         target = np.asarray(action["joint_position"], dtype=np.float64).reshape(6)
-        current = getattr(self.sdk, f"get_{self.side}_joint")()
-        command = getattr(self.sdk, f"{self.side}_go_joint")
-        command(target.tolist(), float(current[6]))
-        return {"joint_position": target}
+        if "gripper_width" in action:
+            width = float(
+                np.asarray(action["gripper_width"], dtype=np.float64).reshape(1)[0]
+            )
+        else:
+            width = float(self._read_joint()[6])
+        self._go_joint(target.tolist(), width)
+        return {"joint_position": target, "gripper_width": np.asarray([width])}
 
 
 class DOSW1EndEffector(EndEffector):
@@ -435,15 +523,22 @@ class DOSW1EndEffector(EndEffector):
     def reset(self) -> None:
         """Leave reset width to the task configuration."""
 
+    def _read_joint(self) -> np.ndarray:
+        """Return this side's six joints and gripper width as ``(7,)``."""
+        if self.side == "left":
+            return self.sdk.get_left_joint()
+        return self.sdk.get_right_joint()
+
     def get_state(self) -> np.ndarray:
         """Read this gripper's current width."""
-        current = getattr(self.sdk, f"get_{self.side}_joint")()
-        return np.asarray(current[6:7], dtype=np.float64)
+        return np.asarray(self._read_joint()[6:7], dtype=np.float64)
 
     def command(self, action: np.ndarray) -> bool:
         """Apply a gripper target while retaining joint positions."""
         target = np.asarray(action, dtype=np.float64).reshape(1)
-        current = getattr(self.sdk, f"get_{self.side}_joint")()
-        go_joint = getattr(self.sdk, f"{self.side}_go_joint")
-        go_joint(current[:6].tolist(), float(target[0]))
+        current = self._read_joint()
+        if self.side == "left":
+            self.sdk.left_go_joint(current[:6].tolist(), float(target[0]))
+        else:
+            self.sdk.right_go_joint(current[:6].tolist(), float(target[0]))
         return True

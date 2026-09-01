@@ -175,9 +175,8 @@ class SpaceMouseExpert:
         taken.
         """
         self._stop = True
-        thread = getattr(self, "thread", None)
-        if thread is not None and thread.is_alive():
-            thread.join(timeout=1.0)
+        if self.thread.is_alive():
+            self.thread.join(timeout=1.0)
         device, self._device = self._device, None
         if device is not None:
             device.close()

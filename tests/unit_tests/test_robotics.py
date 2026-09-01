@@ -2622,6 +2622,68 @@ def test_a_glove_rig_can_be_asked_what_to_hold():
             group.disconnect()
 
 
+def _dosw1_arm_with_recorded_commands():
+    """Return a left DOSW1 arm and the go_joint calls it issues."""
+    from rlinf.robotics.parts.arms.dosw1 import DOSW1Connection
+
+    connection = DOSW1Connection(robot_url="localhost", is_dummy=True)
+    connection.connect()
+    issued: list[tuple[tuple[float, ...], float]] = []
+    original = connection.left_go_joint
+
+    def record(joints, gripper, **kwargs):
+        issued.append((tuple(round(v, 4) for v in joints), round(gripper, 4)))
+        return original(joints, gripper, **kwargs)
+
+    connection.left_go_joint = record
+    return connection.parts["left"], issued
+
+
+def test_one_dosw1_action_is_one_hardware_command():
+    """Joints and gripper reach the arm together, as the SDK takes them.
+
+    They used to be separate parts, each restating the other half from a
+    read-back. Driving both issued two go_joint calls, and the second
+    countermanded the first with joints read mid-motion.
+    """
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        arm, issued = _dosw1_arm_with_recorded_commands()
+
+        arm.send_action(
+            {
+                "joint_position": np.full(6, 0.25),
+                "gripper_width": np.array([0.03]),
+            }
+        )
+
+        assert issued == [((0.25,) * 6, 0.03)], issued
+
+
+def test_a_dosw1_action_without_a_gripper_holds_the_current_width():
+    """Omitting the gripper keeps it where it is, as it did before."""
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        arm, issued = _dosw1_arm_with_recorded_commands()
+        held = float(arm.sdk.get_left_joint()[6])
+
+        arm.send_action({"joint_position": np.full(6, 0.4)})
+
+        assert issued == [((0.4,) * 6, round(held, 4))], issued
+
+
+def test_a_dosw1_arm_still_refuses_an_action_it_does_not_have():
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        arm, _ = _dosw1_arm_with_recorded_commands()
+
+        with pytest.raises(KeyError):
+            arm.send_action({"tcp_pose": np.zeros(6)})
+
+
 def test_an_end_effector_answers_for_its_own_kind():
     """A part reports what it is, so an env need not trust its config.
 
