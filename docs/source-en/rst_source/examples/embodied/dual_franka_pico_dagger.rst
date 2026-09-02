@@ -345,6 +345,83 @@ sampler uses ``intervene_flag`` to expose only action chunks whose non-padded
 frames are all human corrections.
 
 
+Arm Compliance
+~~~~~~~~~~~~~~
+
+The default Cartesian gains suit a policy rollout, where the target pose moves
+in small steps. Under PICO the target follows a human hand, and those gains let
+the tool tip trail behind it, which an operator compensates for by overshooting.
+The values below are the ones used for PICO collection on a Franka Panda. They
+belong to the arm rather than to a task, so they go on the ``DualFranka``
+hardware config beside the arm IPs:
+
+.. code-block:: yaml
+
+   cluster:
+     node_groups:
+       - label: franka
+         node_ranks: 0
+         hardware:
+           type: DualFranka
+           configs:
+             - left_robot_ip: LEFT_ROBOT_IP
+               right_robot_ip: RIGHT_ROBOT_IP
+               node_rank: 0
+               compliance:
+                 translational_stiffness: 1000
+                 rotational_stiffness: 50
+                 translational_clip: 0.008
+                 rotational_clip: 0.04
+                 max_step: 0.03
+                 max_step_rad: 0.10
+
+.. list-table::
+   :header-rows: 1
+   :widths: 28 11 11 50
+
+   * - Setting
+     - Default
+     - PICO
+     - Why it changes
+   * - ``translational_stiffness``
+     - 500
+     - 1000
+     - N/m. Doubled so the tip keeps up with the hand instead of trailing it.
+   * - ``rotational_stiffness``
+     - 40
+     - 50
+     - Nm/rad. Raised for the same reason on orientation.
+   * - ``translational_clip``
+     - 0.05
+     - 0.008
+     - m. Largest position error acted on. Cut so the stiffer gain cannot lunge
+       at a distant target.
+   * - ``rotational_clip``
+     - 0.3
+     - 0.04
+     - rad. The same, for orientation error.
+   * - ``max_step``
+     - 0.10
+     - 0.03
+     - m. Furthest one commanded target may sit from the previous one. Cut so
+       hand tremor cannot become a fast motion.
+   * - ``max_step_rad``
+     - 0.30
+     - 0.10
+     - rad. The same, for orientation.
+
+State only the settings that differ; anything omitted keeps its default, and a
+misspelled one raises while the config is built. To give the two arms different
+gains, set ``left_compliance`` or ``right_compliance``; each falls back to
+``compliance``.
+
+These settings reach the arm through the ``franky`` backend and govern every
+Cartesian motion on it, so a policy rollout during DAgger obeys the same gains
+the operator does. The ``franka_ros`` backend ignores them because its own
+controller owns its gains, and GELLO joint teleoperation is unaffected because
+it commands joints rather than a Cartesian target.
+
+
 Start the PICO Data Stream
 --------------------------
 

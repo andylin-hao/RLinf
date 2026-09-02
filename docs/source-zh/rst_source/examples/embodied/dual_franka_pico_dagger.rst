@@ -322,6 +322,69 @@ collector 保存。启用 ``only_save_expert: True`` 后，sampler 使用
 ``intervene_flag``，只暴露所有非 padding 帧均为人工纠正的 action chunk。
 
 
+机械臂柔顺性参数
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+默认的 Cartesian 增益面向 policy rollout，此时目标位姿按小步变化。而在 PICO 遥操作中目标跟随人手移动，这组默认增益会让末端落后于手部，操作者往往用过冲来补偿。下面是 Franka Panda 上 PICO 采集实际使用的取值。它们属于机械臂本身而非某个任务，因此写在 ``DualFranka`` 硬件配置中，与机械臂 IP 并列：
+
+.. code-block:: yaml
+
+   cluster:
+     node_groups:
+       - label: franka
+         node_ranks: 0
+         hardware:
+           type: DualFranka
+           configs:
+             - left_robot_ip: LEFT_ROBOT_IP
+               right_robot_ip: RIGHT_ROBOT_IP
+               node_rank: 0
+               compliance:
+                 translational_stiffness: 1000
+                 rotational_stiffness: 50
+                 translational_clip: 0.008
+                 rotational_clip: 0.04
+                 max_step: 0.03
+                 max_step_rad: 0.10
+
+.. list-table::
+   :header-rows: 1
+   :widths: 28 11 11 50
+
+   * - 参数
+     - 默认值
+     - PICO
+     - 调整原因
+   * - ``translational_stiffness``
+     - 500
+     - 1000
+     - N/m。加倍后末端能跟上手部，而不是持续落后。
+   * - ``rotational_stiffness``
+     - 40
+     - 50
+     - Nm/rad。姿态方向出于同样原因调高。
+   * - ``translational_clip``
+     - 0.05
+     - 0.008
+     - m，控制器实际响应的最大位置误差。调小以避免更高的刚度在目标较远时产生猛冲。
+   * - ``rotational_clip``
+     - 0.3
+     - 0.04
+     - rad，姿态误差上的同类限制。
+   * - ``max_step``
+     - 0.10
+     - 0.03
+     - m，单次下发目标相对上一个目标的最大距离。调小以避免手部抖动变成快速运动。
+   * - ``max_step_rad``
+     - 0.30
+     - 0.10
+     - rad，姿态方向上的同类限制。
+
+只需写出与默认值不同的项，未写出的项保持默认；参数名拼写错误会在构建配置时直接报错。若要让两条机械臂使用不同增益，可另外设置 ``left_compliance`` 或 ``right_compliance``，未设置时各自回落到 ``compliance``。
+
+这些参数通过 ``franky`` backend 生效，作用于该机械臂的每一次 Cartesian 运动，因此 DAgger 中的 policy rollout 与操作者遵循同一组增益。``franka_ros`` backend 会忽略它们，因为其增益由该 backend 自己的控制器持有；GELLO 关节遥操作同样不受影响，因为它下发的是关节目标而非 Cartesian 目标。
+
+
 启动 PICO 数据流
 ----------------------------------------
 

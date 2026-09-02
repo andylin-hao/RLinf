@@ -196,6 +196,12 @@ Enable direct streaming only when tracking visibly lags. Because ``env.step`` no
 longer dispatches joint targets in this mode, a misconfigured rig remains still
 instead of receiving malformed motion.
 
+Lag has a second cause that a higher rate does not fix. If the follower reaches
+its targets smoothly but settles behind the leader, the arm's compliance gains
+are too soft. :doc:`Dual Franka PICO Collection and DAgger
+<../examples/embodied/dual_franka_pico_dagger>` lists the Franka settings and
+the values tuned for teleoperation.
+
 Add a Device
 ------------
 
