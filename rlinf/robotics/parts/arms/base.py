@@ -16,6 +16,7 @@
 
 from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, fields
 from typing import Any, ClassVar, Optional, Protocol
 
 from rlinf.robotics.parts.base import ControllablePart, Features, Observation
@@ -31,6 +32,43 @@ ARM_STATE_FIELDS: tuple[str, ...] = (
     "tcp_torque",
     "arm_jacobian",
 )
+
+
+@dataclass
+class CartesianCompliance:
+    """Cartesian impedance settings for a backend that runs the control loop."""
+
+    translational_stiffness: float = 500.0  # N/m
+    rotational_stiffness: float = 40.0  # Nm/rad
+    nullspace_stiffness: float = 5.0  # Nm/rad, holds the elbow
+    translational_clip: float = 0.05  # m, largest error acted on
+    rotational_clip: float = 0.3  # rad, largest error acted on
+    max_step: float = 0.10  # m per call, 0 disables
+    max_step_rad: float = 0.30  # rad per call, 0 disables
+    max_delta_tau: float = 0.3  # Nm per control cycle
+    gains_time_constant: float = 0.1  # s to blend a gain change
+    stiffness_cap: float = 1200.0  # N/m, most a task may ask for
+    rotational_stiffness_cap: float = 80.0  # Nm/rad, most a task may ask for
+    clip_floor: float = 0.005  # m, least a task may ask for
+    rotational_clip_floor: float = 0.02  # rad, least a task may ask for
+
+    @classmethod
+    def from_config(
+        cls, value: "CartesianCompliance | Mapping[str, float] | None"
+    ) -> "CartesianCompliance":
+        """Build settings from a YAML mapping, rejecting unknown keys."""
+        if value is None:
+            return cls()
+        if isinstance(value, cls):
+            return value
+        given = dict(value)
+        unknown = set(given) - {f.name for f in fields(cls)}
+        if unknown:
+            raise KeyError(
+                f"Unknown compliance settings {sorted(unknown)}. "
+                f"Known: {sorted(f.name for f in fields(cls))}."
+            )
+        return cls(**{key: float(val) for key, val in given.items()})
 
 
 class ArmState(Protocol):
@@ -75,6 +113,7 @@ class Arm(ControllablePart):
         gripper_connection: Optional[str] = None,
         end_effector_type: Optional[str] = None,
         end_effector_config: Optional[dict] = None,
+        compliance: "Optional[CartesianCompliance]" = None,
         **placement: Any,
     ) -> "Arm":
         """Declare an unconnected arm from standard robot settings.
@@ -85,6 +124,8 @@ class Arm(ControllablePart):
             gripper_connection: Where that gripper is attached.
             end_effector_type: End effector fitted, when the arm builds it.
             end_effector_config: Settings for that end effector.
+            compliance: Cartesian impedance settings, ignored by backends
+                whose controller owns its gains.
             **placement: Placement arguments forwarded to the connection.
         """
         offered = {
@@ -93,6 +134,12 @@ class Arm(ControllablePart):
             "end_effector_type": end_effector_type,
             "end_effector_config": end_effector_config,
         }
+        cls.refuse_unused(**offered)
+        return cls(address, **placement)
+
+    @classmethod
+    def refuse_unused(cls, **offered: Any) -> None:
+        """Reject offered settings this backend would otherwise drop."""
         unused = sorted(name for name, value in offered.items() if value is not None)
         if unused:
             raise TypeError(
@@ -101,34 +148,18 @@ class Arm(ControllablePart):
                 f"and running another. Override {cls.__name__}.declare() to "
                 "map them onto its constructor, or drop them from the config."
             )
-        return cls(address, **placement)
 
     # Operations every arm is asked for, beyond reading and commanding it.
 
     def is_robot_up(self) -> bool:
-        """Whether the arm is ready to be read and commanded.
-
-        An arm whose only readiness signal is its connection keeps this
-        default. Backends that latch faults, or that wait for a controller to
-        publish a first reading, answer from that instead.
-        """
+        """Whether the arm is ready to be read and commanded."""
         return self.is_connected
 
     def clear_errors(self) -> None:
-        """Clear a latched fault so the arm accepts commands again.
-
-        The default suits an arm that latches none, which is why it is silent
-        rather than a refusal.
-        """
+        """Clear a latched fault so the arm accepts commands again."""
 
     def reset_joint(self, positions: "Sequence[float]") -> None:
         """Move the joints to a configuration, outside the action stream.
-
-        A reset travels further than one control step, so a backend runs it as
-        a position-controlled motion rather than through
-        :meth:`send_action`. There is no sensible default: an arm that cannot
-        do this says so, because a caller that asked to reset must not be left
-        believing the arm moved.
 
         Args:
             positions: Target joint positions, one per joint.
@@ -143,13 +174,7 @@ class Arm(ControllablePart):
         )
 
     def reconfigure_compliance_params(self, params: "Mapping[str, float]") -> None:
-        """Apply controller compliance settings while the arm is running.
-
-        Backends that fix their gains when the controller starts keep this
-        default. It reports the settings it could not apply rather than
-        dropping them, so a task tuned against one backend does not appear to
-        run with those gains on another.
-        """
+        """Apply a task's compliance request, as far as the backend can."""
         if params:
             get_logger().warning(
                 "%s cannot change compliance while running; %s were not "

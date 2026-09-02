@@ -448,6 +448,32 @@ def test_dual_franka_runs_independent_arm_calls_concurrently():
             executor.shutdown(wait=True)
 
 
+def test_dual_franka_applies_a_tasks_compliance_to_both_arms():
+    env = DualFrankaJointEnv.__new__(DualFrankaJointEnv)
+    env.config = SimpleNamespace(compliance_param={"translational_stiffness": 800})
+    env._arm_executors = (
+        ThreadPoolExecutor(max_workers=1),
+        ThreadPoolExecutor(max_workers=1),
+    )
+
+    class Arm:
+        def __init__(self):
+            self.applied = None
+
+        def reconfigure_compliance_params(self, params):
+            self.applied = params
+
+    env._left_arm, env._right_arm = Arm(), Arm()
+    try:
+        env._reconfigure_compliance()
+    finally:
+        for executor in env._arm_executors:
+            executor.shutdown(wait=True)
+
+    assert env._left_arm.applied == {"translational_stiffness": 800}
+    assert env._right_arm.applied == {"translational_stiffness": 800}
+
+
 def test_dual_franka_does_not_wait_for_gripper_motion():
     env = DualFrankaJointEnv.__new__(DualFrankaJointEnv)
     env.config = SimpleNamespace(binary_gripper_threshold=0.5)

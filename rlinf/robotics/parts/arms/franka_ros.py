@@ -36,6 +36,7 @@ class FrankaROSArm(BaseArm):
         address: str,
         *,
         load_gripper: bool = True,
+        compliance: Any = None,
         **placement: Any,
     ) -> "FrankaROSArm":
         """Declare a ROS-backed Franka arm.
@@ -45,6 +46,9 @@ class FrankaROSArm(BaseArm):
         which decides whether the ROS stack it launches brings up the Franka
         Hand driver the arm's own topics share a robot with.
         """
+        # Its controller owns its gains; a task's request arrives through
+        # reconfigure_compliance_params instead.
+        del compliance
         return cls(address, load_gripper=load_gripper, **placement)
 
     def __init__(

@@ -331,6 +331,7 @@ class FrankaEnv(gym.Env):
             node_rank=controller_node_rank,
             worker_rank=self.env_worker_rank,
             backend=self.config.backend,
+            compliance=getattr(self.robot_info.config, "compliance", None),
             end_effector_type=self.config.end_effector_type,
             end_effector_config=self.config.end_effector_config,
             gripper_connection=self.config.gripper_connection,

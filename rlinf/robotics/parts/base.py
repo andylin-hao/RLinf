@@ -28,7 +28,6 @@ from dataclasses import dataclass, field
 from functools import partial
 from importlib import import_module
 from typing import (
-    TYPE_CHECKING,
     Any,
     Callable,
     ClassVar,
@@ -38,10 +37,6 @@ from typing import (
 )
 
 from rlinf.utils.logging import get_logger
-
-if TYPE_CHECKING:
-    pass
-
 
 _KeyType = TypeVar("_KeyType")
 _ValueType = TypeVar("_ValueType")

@@ -14,12 +14,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Mapping, Optional
 
 from ..discovery import (
     RobotConfig,
 )
+from ..parts.arms.base import CartesianCompliance
 from ..parts.base import PartGroup
 from ..parts.cameras import Camera
 from .franka import FrankaRobot
@@ -47,6 +48,8 @@ class DualFrankaRobot(FrankaRobot):
         right_gripper_type: str = "robotiq",
         left_gripper_connection: Optional[str] = None,
         right_gripper_connection: Optional[str] = None,
+        left_compliance: Optional[CartesianCompliance] = None,
+        right_compliance: Optional[CartesianCompliance] = None,
         arm_cameras: Optional[Mapping[str, Mapping[str, Any]]] = None,
     ) -> dict[str, Any]:
         """Return the left and right arm groups with their wrist cameras."""
@@ -61,21 +64,30 @@ class DualFrankaRobot(FrankaRobot):
                 left_gripper_type,
                 left_gripper_connection,
                 shared if left_node_rank is None else left_node_rank,
+                left_compliance,
             ),
             "right": (
                 right_robot_ip,
                 right_gripper_type,
                 right_gripper_connection,
                 shared if right_node_rank is None else right_node_rank,
+                right_compliance,
             ),
         }
         arms = {}
-        for side, (robot_ip, gripper_type, connection, node_rank) in sides.items():
+        for side, (
+            robot_ip,
+            gripper_type,
+            connection,
+            node_rank,
+            compliance,
+        ) in sides.items():
             arms[side] = PartGroup(
                 arm=cls.declare_arm(
                     robot_ip,
                     node_rank=node_rank,
                     name=f"{cls.ROBOT_TYPE}Arm-{side}-{worker_rank}-{env_idx}",
+                    compliance=compliance,
                 ),
                 end_effector=cls.declare_end_effector(
                     robot_ip,
@@ -107,6 +119,16 @@ class DualFrankaConfig(RobotConfig):
     """IP address of the right Franka arm.
     When unset in YAML it is auto-detected from the ``RIGHT_ROBOT_IP``
     environment variable on the node where the arm is enumerated."""
+
+    compliance: CartesianCompliance = field(default_factory=CartesianCompliance)
+    """Cartesian impedance settings shared by both arms.
+    Ignored by backends that own their gains."""
+
+    left_compliance: Optional[CartesianCompliance] = None
+    """Impedance settings for the left arm. Falls back to :attr:`compliance`."""
+
+    right_compliance: Optional[CartesianCompliance] = None
+    """Impedance settings for the right arm. Falls back to :attr:`compliance`."""
 
     left_camera_serials: Optional[list[str]] = None
     """Camera serial numbers for the left arm's wrist camera(s)."""
@@ -164,6 +186,12 @@ class DualFrankaConfig(RobotConfig):
             self.right_camera_serials = list(self.right_camera_serials)
         if self.base_camera_serials:
             self.base_camera_serials = list(self.base_camera_serials)
+
+        self.compliance = CartesianCompliance.from_config(self.compliance)
+        for side in ("left_compliance", "right_compliance"):
+            given = getattr(self, side)
+            if given is not None:
+                setattr(self, side, CartesianCompliance.from_config(given))
 
 
 DualFrankaRobot.register_type(DualFrankaConfig)

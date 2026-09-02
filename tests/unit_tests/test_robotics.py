@@ -4450,21 +4450,35 @@ def test_a_franka_env_commands_the_arm_through_the_robot():
 
 
 def test_an_arm_reports_compliance_settings_it_cannot_apply(caplog):
-    from robot_mocks import mocked_sdks
+    from rlinf.robotics.parts.arms.base import Arm
+    from rlinf.robotics.parts.base import Features
 
-    with mocked_sdks():
-        from rlinf.robotics.parts.arms.franky import FrankyArm
+    class PlainArm(Arm):
+        def __init__(self, address: str) -> None:
+            self.address = address
 
-        arm = FrankyArm.declare("10.0.0.1")
-        arm.connect()
-        try:
-            # Silence is only correct when there was nothing to apply.
-            arm.reconfigure_compliance_params({})
-            with caplog.at_level("WARNING"):
-                arm.reconfigure_compliance_params({"translational_stiffness": 500})
-            assert "cannot change compliance" in caplog.text
-        finally:
-            arm.disconnect()
+        @property
+        def observation_features(self) -> Features:
+            return {}
+
+        @property
+        def action_features(self) -> Features:
+            return {}
+
+        def _open(self):
+            return "device"
+
+        def get_observation(self):
+            return {}
+
+        def send_action(self, action):
+            return action
+
+    arm = PlainArm("10.0.0.1")
+    arm.reconfigure_compliance_params({})
+    with caplog.at_level("WARNING"):
+        arm.reconfigure_compliance_params({"translational_stiffness": 500})
+    assert "cannot change compliance" in caplog.text
 
 
 def test_every_arm_answers_the_operations_the_contract_names():
@@ -4622,3 +4636,104 @@ def test_so101_takes_no_separately_wired_end_effector():
 
     with pytest.raises(TypeError, match="gripper_connection"):
         SO101Arm.declare("/dev/mock-so101", gripper_connection="/dev/ttyUSB0")
+
+
+def test_an_arm_takes_the_compliance_its_robot_was_configured_with():
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        from rlinf.robotics.parts.arms.base import CartesianCompliance
+        from rlinf.robotics.robots import FrankaRobot
+
+        settings = CartesianCompliance(translational_stiffness=900.0, max_step=0.02)
+        robot = FrankaRobot.build(
+            robot_ip="10.0.0.1",
+            node_rank=0,
+            backend="franky",
+            gripper_type="franka",
+            compliance=settings,
+        )
+        arm = robot.child("arm")
+        # The settings belong to the arm, so a second arm may hold others and a
+        # remotely placed one carries them to the node it opens on.
+        assert arm._compliance is settings
+        assert arm._cart_k_t == 900.0
+
+        # An arm whose controller owns its gains is offered the same settings
+        # and ignores them, rather than refusing to be built.
+        ros = FrankaRobot.declare_arm(
+            "10.0.0.1",
+            node_rank=0,
+            name="arm",
+            backend="franka_ros",
+            compliance=settings,
+        )
+        assert type(ros).__name__ == "FrankaROSArm"
+
+
+def test_a_compliance_request_is_held_to_what_the_backend_can_run():
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        from rlinf.robotics.parts.arms.base import CartesianCompliance
+        from rlinf.robotics.parts.arms.franky import FrankyArm
+
+        arm = FrankyArm.declare(
+            "10.0.0.1",
+            compliance=CartesianCompliance(stiffness_cap=1200.0, clip_floor=0.005),
+        )
+        arm.connect()
+        try:
+            # A task written for a real-time controller asks for more stiffness
+            # and tighter clips than a client-side loop can hold.
+            arm.reconfigure_compliance_params(
+                {
+                    "translational_stiffness": 2000,
+                    "rotational_stiffness": 150,
+                    "translational_clip_x": 0.003,
+                    "translational_clip_neg_x": 0.001,
+                    "rotational_clip_x": 0.001,
+                }
+            )
+            assert arm._cart_k_t == 1200.0
+            assert arm._cart_k_r == 80.0
+            # The looser of each direction pair, floored.
+            assert arm._cart_trans_clip[0] == pytest.approx(0.005)
+            assert arm._cart_rot_clip[0] == pytest.approx(0.02)
+
+            # Nothing asked for, nothing changed.
+            before = arm._cart_k_t
+            arm.reconfigure_compliance_params({})
+            assert arm._cart_k_t == before
+        finally:
+            arm.disconnect()
+
+
+def test_a_yaml_compliance_mapping_becomes_settings():
+    from omegaconf import OmegaConf
+
+    from rlinf.robotics.parts.arms.base import CartesianCompliance
+    from rlinf.robotics.robots.franka import FrankaConfig
+
+    default = FrankaConfig(node_rank=0, robot_ip="172.16.0.2")
+    assert isinstance(default.compliance, CartesianCompliance)
+
+    for mapping in (
+        {"translational_stiffness": 1000, "rotational_stiffness": 50},
+        OmegaConf.create({"translational_stiffness": 1000, "rotational_stiffness": 50}),
+    ):
+        config = FrankaConfig(node_rank=0, robot_ip="172.16.0.2", compliance=mapping)
+        assert isinstance(config.compliance, CartesianCompliance)
+        assert config.compliance.translational_stiffness == pytest.approx(1000)
+        assert config.compliance.rotational_stiffness == pytest.approx(50)
+        # Unstated settings keep their defaults.
+        assert config.compliance.max_step == pytest.approx(
+            CartesianCompliance().max_step
+        )
+
+    with pytest.raises(KeyError, match="translational_stifness"):
+        FrankaConfig(
+            node_rank=0,
+            robot_ip="172.16.0.2",
+            compliance={"translational_stifness": 1000},
+        )

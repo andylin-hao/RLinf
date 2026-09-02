@@ -20,6 +20,14 @@ from typing import Any, Optional
 
 import numpy as np
 
+# Franka Panda joint travel, in radians, and speed limits with the same
+# 0.1 rad/s margin Polymetis uses.
+JOINT_LIMITS_LOWER = np.array(
+    [-2.8973, -1.7628, -2.8973, -3.0718, -2.8973, -0.0175, -2.8973]
+)
+JOINT_LIMITS_UPPER = np.array([2.8973, 1.7628, 2.8973, -0.0698, 2.8973, 3.7525, 2.8973])
+JOINT_VEL_LIMITS = np.array([2.075, 2.075, 2.075, 2.075, 2.51, 2.51, 2.51])
+
 
 @dataclass
 class FrankaRobotState:

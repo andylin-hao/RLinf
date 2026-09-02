@@ -13,13 +13,13 @@
 # limitations under the License.
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, ClassVar, Optional
 
 from ..discovery import (
     RobotConfig,
 )
-from ..parts.arms.base import Arm
+from ..parts.arms.base import Arm, CartesianCompliance
 from ..parts.cameras import Camera
 from ..parts.end_effectors import (
     EndEffector,
@@ -156,6 +156,7 @@ class FrankaRobot(Robot):
         worker_rank: int = 0,
         env_idx: int = 0,
         backend: Optional[str] = None,
+        compliance: Optional[CartesianCompliance] = None,
         end_effector_node_rank: Optional[int] = None,
         end_effector_type: Optional[str] = None,
         end_effector_config: Optional[dict] = None,
@@ -175,6 +176,7 @@ class FrankaRobot(Robot):
                 node_rank=node_rank,
                 name=f"{cls.ROBOT_TYPE}Arm-{worker_rank}-{env_idx}",
                 backend=backend,
+                compliance=compliance,
             ),
             "end_effector": cls.declare_end_effector(
                 robot_ip,
@@ -221,6 +223,9 @@ class FrankaConfig(RobotConfig):
 
     REQUIRES_CAMERA = True
 
+    compliance: CartesianCompliance = field(default_factory=CartesianCompliance)
+    """Cartesian impedance settings, ignored by backends that own their gains."""
+
     backend: Optional[str] = None
     """Arm backend this robot runs, such as ``"franka_ros"`` or ``"franky"``.
     ``None`` leaves the choice to the robot class's own :attr:`BACKEND`."""
@@ -264,6 +269,8 @@ class FrankaConfig(RobotConfig):
 
         if self.camera_serials:
             self.camera_serials = list(self.camera_serials)
+
+        self.compliance = CartesianCompliance.from_config(self.compliance)
 
 
 def resolve_robot_ip(node_rank: int) -> Optional[str]:

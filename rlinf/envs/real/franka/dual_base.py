@@ -20,6 +20,7 @@ import queue
 import time
 from concurrent.futures import Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
+from functools import partial
 from itertools import cycle
 from typing import Any, Callable, Optional, TypeVar
 
@@ -38,6 +39,7 @@ from rlinf.robotics import (
     RobotInfo,
 )
 from rlinf.robotics.actions import ActionKind, ActionPart
+from rlinf.robotics.parts.arms.base import CartesianCompliance
 from rlinf.robotics.parts.arms.franka import FrankaRobotState
 from rlinf.robotics.parts.arms.franky import FrankyArm
 from rlinf.robotics.parts.cameras import BaseCamera, CameraInfo
@@ -404,6 +406,15 @@ class DualFrankaEnv(gym.Env):
                 right_node = hw.right_controller_node_rank
         return left_node, right_node
 
+    def _side_compliance(self, side: str) -> Optional[CartesianCompliance]:
+        """Return one arm's impedance settings, or the shared ones."""
+        if self.robot_info is None:
+            return None
+        hw = self.robot_info.config
+        return getattr(hw, f"{side}_compliance", None) or getattr(
+            hw, "compliance", None
+        )
+
     def _setup_hardware(self) -> None:
         assert self.env_idx >= 0, f"env_idx must be set for {type(self).__name__}."
 
@@ -424,6 +435,8 @@ class DualFrankaEnv(gym.Env):
             or self._DEFAULT_GRIPPER_TYPE,
             left_gripper_connection=self.config.left_gripper_connection,
             right_gripper_connection=self.config.right_gripper_connection,
+            left_compliance=self._side_compliance("left"),
+            right_compliance=self._side_compliance("right"),
             arm_cameras=arm_cameras,
             cameras=base_cameras,
         )
@@ -519,6 +532,8 @@ class DualFrankaEnv(gym.Env):
         if self.config.is_dummy:
             return self._get_observation(), {}
 
+        self._reconfigure_compliance()
+
         joint_cycle = next(self._joint_reset_cycle)
         joint_reset = joint_cycle == 0
         if joint_reset:
@@ -589,6 +604,13 @@ class DualFrankaEnv(gym.Env):
         self._run_arm_calls(
             self._left_arm.clear_errors,
             self._right_arm.clear_errors,
+        )
+
+    def _reconfigure_compliance(self) -> None:
+        params = self.config.compliance_param
+        self._run_arm_calls(
+            partial(self._left_arm.reconfigure_compliance_params, params),
+            partial(self._right_arm.reconfigure_compliance_params, params),
         )
 
     # Gripper and state helpers.

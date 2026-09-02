@@ -27,7 +27,7 @@ import gymnasium as gym
 import numpy as np
 
 from rlinf.robotics.actions import ActionKind
-from rlinf.robotics.parts.arms.franky import JOINT_LIMITS_LOWER, JOINT_LIMITS_UPPER
+from rlinf.robotics.parts.arms.franka import JOINT_LIMITS_LOWER, JOINT_LIMITS_UPPER
 
 from .dual_base import DualFrankaEnv, DualFrankaRobotConfig
 

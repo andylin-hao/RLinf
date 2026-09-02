@@ -23,7 +23,7 @@ from typing import Any, Mapping, Optional, Sequence
 
 import numpy as np
 
-from rlinf.robotics.parts.arms.franky import (
+from rlinf.robotics.parts.arms.franka import (
     JOINT_LIMITS_LOWER,
     JOINT_LIMITS_UPPER,
 )
