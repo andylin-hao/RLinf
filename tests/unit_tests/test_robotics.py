@@ -1371,8 +1371,7 @@ def test_declaring_cameras_needs_no_config_class():
     assert not declared["scene"].is_connected, "declaring a camera must not open it"
     assert Camera.declare(None) == {}
     # Backend resolution uses the category registry.
-    assert BaseCamera.backend("rs") is BaseCamera.backend("realsense")
-    assert set(BaseCamera.backends()) >= {"realsense", "rs", "zed", "lumos"}
+    assert set(BaseCamera.backends()) >= {"realsense", "zed", "lumos"}
     with pytest.raises(ValueError, match="Unsupported BaseCamera backend"):
         BaseCamera.backend("no-such-camera")
 

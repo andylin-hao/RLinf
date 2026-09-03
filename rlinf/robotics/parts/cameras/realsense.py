@@ -19,7 +19,7 @@ import numpy as np
 from .base import BaseCamera, Camera, CameraInfo
 
 
-@Camera.register("realsense", "rs")
+@Camera.register("realsense")
 class RealSenseCamera(BaseCamera):
     """Camera capture for Intel RealSense cameras.
 
@@ -28,7 +28,7 @@ class RealSenseCamera(BaseCamera):
     https://github.com/IntelRealSense/librealsense/blob/jupyter/notebooks/quick_start_live.ipynb.
     """
 
-    SDK = ("pyrealsense2", "pyrealsense2")
+    SDK = "pyrealsense2"
 
     def __init__(self, camera_info: CameraInfo) -> None:
         super().__init__(camera_info)

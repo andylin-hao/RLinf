@@ -45,7 +45,7 @@ class LumosCamera(BaseCamera):
     * a numeric string or int interpreted as a V4L2 device index
     """
 
-    SDK = ("cv2", "opencv-python")
+    SDK = "cv2"
 
     _NATIVE_W = 1280
     _NATIVE_H = 1280

@@ -247,13 +247,15 @@ class Connection(ABC, metaclass=ConnectionMeta):
     ) -> "Callable[[type[RegisteredDriver]], type[RegisteredDriver]]":
         """Register a driver in this device category.
 
-        Names are case-insensitive. A name cannot refer to two different
-        drivers.
+        Names are case-insensitive, and a name cannot refer to two different
+        drivers. Give one name unless callers genuinely reach the driver by
+        two, as grippers are: by the short backend name and by the
+        :class:`EndEffectorType` value.
 
         Example::
 
-            @BaseCamera.register("realsense", "rs")
-            class RealSenseCamera(BaseCamera): ...
+            @EndEffector.register("franka", "franka_gripper")
+            class FrankaGripper(BaseGripper): ...
         """
 
         def add(driver_cls: "type[RegisteredDriver]") -> "type[RegisteredDriver]":
@@ -295,8 +297,8 @@ class Connection(ABC, metaclass=ConnectionMeta):
 
     # Local device discovery.
 
-    #: Vendor dependency as ``(module_name, installation_name)``.
-    SDK: ClassVar[Optional[tuple[str, str]]] = None
+    #: Module this driver imports from its vendor SDK.
+    SDK: ClassVar[Optional[str]] = None
 
     @classmethod
     def discover(cls) -> set[str]:
@@ -347,13 +349,13 @@ class Connection(ABC, metaclass=ConnectionMeta):
         """
         if cls.SDK is None:
             return
-        module, install_name = cls.SDK
         try:
-            import_module(module)
+            import_module(cls.SDK)
         except ModuleNotFoundError as missing:
             raise ModuleNotFoundError(
-                f"{install_name} is required for {cls.__name__}, "
-                f"but it is not installed on {where}."
+                f"{cls.__name__} needs the {cls.SDK!r} module, which is not "
+                f"installed on {where}. Install this robot's dependencies "
+                "with requirements/install.sh."
             ) from missing
 
     # Composition

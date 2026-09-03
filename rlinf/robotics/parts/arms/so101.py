@@ -59,7 +59,7 @@ class SO101RobotState:
         return asdict(self)
 
 
-@Arm.register("so101", "so101_follower")
+@Arm.register("so101")
 class SO101Arm(BaseArm):
     """SO-101 follower arm on a Feetech serial bus, via lerobot.
 
@@ -74,7 +74,7 @@ class SO101Arm(BaseArm):
             they can be placed on their own node.
     """
 
-    SDK = ("scservo_sdk", "lerobot[feetech]")
+    SDK = "scservo_sdk"
 
     #: Arm joints reported as ``arm_joint_position``, in bus order.
     MOTORS: tuple[str, ...] = (

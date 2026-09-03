@@ -55,7 +55,7 @@ class SO101Leader(TeleopDevice):
             caller holding a terminal should turn it on.
     """
 
-    SDK = ("scservo_sdk", "lerobot[feetech]")
+    SDK = "scservo_sdk"
 
     PRODUCES = {
         "arm": ActionKind.JOINT_POSITION,

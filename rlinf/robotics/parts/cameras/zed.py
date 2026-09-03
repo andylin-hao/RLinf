@@ -40,7 +40,7 @@ class ZEDCamera(BaseCamera):
     to produce BGR, consistent with the RealSense pipeline.
     """
 
-    SDK = ("pyzed.sl", "pyzed (the Stereolabs ZED SDK)")
+    SDK = "pyzed.sl"
 
     def __init__(self, camera_info: CameraInfo) -> None:
         super().__init__(camera_info)
