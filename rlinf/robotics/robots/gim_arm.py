@@ -44,7 +44,7 @@ class GimArmRobot(Robot):
         """Return the arm declaration, including its optional gripper."""
         from ..parts.arms.gim_arm import GimArm
 
-        connection = GimArm(
+        arm = GimArm(
             can_interface,
             arm_variant,
             enable_gripper,
@@ -54,7 +54,7 @@ class GimArmRobot(Robot):
             worker_name=f"GimArm-{worker_rank}-{env_idx}",
         )
         # The arm connection exports its gripper when one is enabled.
-        return {"arm": connection}
+        return {"arm": arm}
 
     @classmethod
     def build_cameras(

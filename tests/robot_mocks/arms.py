@@ -460,9 +460,8 @@ def lerobot() -> dict[str, types.ModuleType]:
 def pyagxarm() -> dict[str, types.ModuleType]:
     """Fake ``pyAgxArm`` exposing an AgileX Piper arm and its gripper.
 
-    The driver holds joint angles in radians and the gripper width in metres,
-    which is what the real SDK reports, so a test can assert that RLinf carries
-    the gripper as a fraction and the pose as a quaternion.
+    Holds radians and metres, as the real SDK reports, so a test can assert
+    that RLinf carries the gripper as a fraction and the pose as a quaternion.
     """
 
     class ArmModel:
@@ -481,7 +480,7 @@ def pyagxarm() -> dict[str, types.ModuleType]:
     class NeroFW:
         DEFAULT = "default"
 
-    #: Joint travel the real SDK reports for the standard piper.
+    #: Travel the real SDK reports for the standard piper.
     LIMITS = [
         [-2.617994, 2.617994],
         [0.0, 3.141593],
@@ -513,7 +512,7 @@ def pyagxarm() -> dict[str, types.ModuleType]:
 
     class GripperStatus:
         def __init__(self):
-            #: Width in metres, as the real gripper reports it.
+            # Width in metres, as the real gripper reports.
             self.value = 0.0
             self.force = 1.0
             self.mode = "width"
@@ -524,7 +523,6 @@ def pyagxarm() -> dict[str, types.ModuleType]:
     class FakeGripper:
         def __init__(self):
             self.status = GripperStatus()
-            #: Commands received, for assertions.
             self.sent: list[dict[str, float]] = []
 
         def get_gripper_status(self):
@@ -559,11 +557,9 @@ def pyagxarm() -> dict[str, types.ModuleType]:
             self._connected = False
             self.effector = None
             self.speed_percent = None
-            #: Joint targets received, in radians.
             self.sent: list[list[float]] = []
             self.cleared = 0
             self.enabled = False
-            # Radians and metres, as the real SDK reports.
             self.joints = [0.0] * 6
             self.pose = [0.3, 0.0, 0.2, 0.0, 0.0, 0.0]
 
@@ -613,7 +609,7 @@ def pyagxarm() -> dict[str, types.ModuleType]:
             self.motion_mode = motion_mode
 
         def get_joint_angles(self):
-            # Nothing is reported until the read thread is running.
+            # Nothing is reported until the read thread runs.
             return Message(list(self.joints)) if self._connected else None
 
         def get_tcp_pose(self):

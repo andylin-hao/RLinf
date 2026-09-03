@@ -27,19 +27,16 @@ from ..robot import Robot
 class PiperRobot(Robot):
     """Composable AgileX Piper robot.
 
-    The AgxGripper shares the arm's CAN bus, so the part tree is ``arm`` with
+    The AgxGripper shares the arm's bus, so the tree is ``arm`` with
     ``arm.end_effector`` beneath it, plus any cameras.
     """
 
     ROBOT_TYPE = "Piper"
 
     BACKEND: str = "pyagxarm"
-    """Registered arm backend used by this robot.
-
-    Named for the SDK that drives the arm rather than for the arm itself, so
+    """Registered arm backend, named for the SDK rather than the arm so
     another driver for the same hardware registers beside it. Subclasses and
-    :attr:`PiperConfig.backend` may select another. See ``Arm.backends()``
-    for the available names."""
+    :attr:`PiperConfig.backend` may select another."""
 
     @classmethod
     def build_arms(
@@ -129,27 +126,24 @@ class PiperConfig(RobotConfig):
     """Configuration for an AgileX Piper robot."""
 
     backend: Optional[str] = None
-    """Arm backend this robot runs, such as ``"pyagxarm"``. ``None`` leaves the
-    choice to the robot class's own :attr:`PiperRobot.BACKEND`."""
+    """Arm backend, such as ``"pyagxarm"``. ``None`` uses
+    :attr:`PiperRobot.BACKEND`."""
 
     can_channel: str = "can0"
-    """CAN channel the arm is on. A netdev name such as ``"can0"`` for
-    socketcan, or a serial device path for slcan. Bring the interface up at
-    1 Mbit/s before a run starts; the SDK does not configure it."""
+    """CAN channel the arm is on. Bring it up at 1 Mbit/s before a run starts;
+    the SDK does not configure it."""
 
     can_interface: str = "socketcan"
-    """python-can backend: ``"socketcan"`` on Linux, ``"slcan"`` on macOS,
-    ``"agx_cando"`` on Windows."""
+    """python-can backend: ``"socketcan"``, ``"slcan"``, or ``"agx_cando"``."""
 
     model: str = "piper"
     """Arm variant: ``"piper"``, ``"piper_h"``, ``"piper_l"``, or
-    ``"piper_x"``. The variants differ in reach and joint travel, and the arm
-    clips commands against the travel its variant reports."""
+    ``"piper_x"``. Commands are clipped to the travel the variant reports."""
 
     firmware: str = "default"
-    """Firmware profile the SDK speaks: ``"default"`` for S-V1.8-2 and older,
-    then ``"v183"``, ``"v188"``, ``"v189"``. Read the arm's firmware version
-    once and set this; the wrong profile talks the wrong protocol."""
+    """Firmware profile: ``"default"`` for S-V1.8-2 and older, then
+    ``"v183"``, ``"v188"``, ``"v189"``. The wrong one talks the wrong
+    protocol to the same arm."""
 
     speed_percent: int = 30
     """Percentage of maximum speed used for commanded motion."""
@@ -158,12 +152,10 @@ class PiperConfig(RobotConfig):
     """Gripping force in newtons, up to 3.0."""
 
     gripper_max_width: float = 0.07
-    """Gripper stroke at full opening, in metres. The AgxGripper is configured
-    at the factory for either 0.07 or 0.1 m."""
+    """Stroke at full opening, in metres. Set at the factory to 0.07 or 0.1."""
 
     with_gripper: bool = True
-    """Whether an AgxGripper is fitted. When false the arm exports no end
-    effector and the robot has no gripper path."""
+    """Whether an AgxGripper is fitted. When false there is no gripper path."""
 
     camera_serials: Optional[list[str]] = None
     """Camera identifiers. ``None`` or ``[]`` runs without cameras."""

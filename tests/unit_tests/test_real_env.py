@@ -2308,7 +2308,7 @@ def test_piper_env_runs_a_whole_episode_against_a_faked_arm():
             assert observation["state"]["arm_joint_position"].shape == (6,)
             assert observation["state"]["tcp_pose"].shape == (7,)
 
-            # Six joints plus one gripper opening, which is 0..1 not -1..1.
+            # The gripper axis is 0..1, not -1..1.
             assert env.action_space.shape == (7,)
             assert env.action_space.low[6] == pytest.approx(0.0)
             assert env.action_space.high[6] == pytest.approx(1.0)
@@ -2354,10 +2354,9 @@ def test_piper_env_clips_an_action_to_the_joint_limits():
 
             joints = env._arm._robot.sent[-1]
             assert joints[0] == pytest.approx(0.5)
-            # The env's own lower bound is looser than the arm's, so the arm
-            # holds joint 2 at the travel its firmware accepts.
+            # The env bound is looser than the arm's, so the arm holds joint 2
+            # at the travel its firmware accepts.
             assert joints[1] == pytest.approx(0.0)
-            # The gripper is clipped into 0..1 before it is scaled.
             assert env._arm._gripper.sent[-1]["value"] == pytest.approx(0.07)
         finally:
             env.close()

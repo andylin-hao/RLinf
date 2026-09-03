@@ -33,9 +33,6 @@ class SO101Robot(Robot):
 
     ROBOT_TYPE = "SO101"
 
-    #: Registered arm backend. A subclass may select another.
-    BACKEND: str = "so101"
-
     @classmethod
     def build_arms(
         cls,
@@ -48,16 +45,16 @@ class SO101Robot(Robot):
         env_idx: int = 0,
     ) -> dict[str, Any]:
         """Return the arm declaration, including the gripper it exports."""
-        from ..parts.arms import Arm
+        from ..parts.arms.so101 import SO101Arm
 
-        connection = Arm.backend(cls.BACKEND).declare(
+        arm = SO101Arm.declare(
             port,
             calibration_id=calibration_id,
             max_relative_target=max_relative_target,
             node_rank=node_rank,
             worker_name=f"{cls.ROBOT_TYPE}Arm-{worker_rank}-{env_idx}",
         )
-        return {"arm": connection}
+        return {"arm": arm}
 
     @classmethod
     def build_cameras(

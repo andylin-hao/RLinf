@@ -14,23 +14,13 @@
 
 """AgileX Piper arm, driven through ``pyAgxArm`` over a CAN bus.
 
-The backend registers as ``pyagxarm``, after the SDK rather than the arm, so a
-driver for the same hardware over a different SDK registers beside it.
+Registered as ``pyagxarm``, after the SDK, so a driver for the same arm over
+another SDK registers beside it. The AgxGripper shares the bus and is exported
+beneath the arm.
 
-The Piper is a 6-DOF arm whose AgxGripper hangs off the same CAN bus, so the
-gripper is exported as a part beneath the arm rather than wired separately.
-
-``pyAgxArm`` reports and accepts radians, metres, and newtons, so this module
-converts only what RLinf states differently: the gripper is carried as an
-opening fraction rather than a width, and the end pose as a quaternion rather
-than Euler angles.
-
-Three SDK behaviours shape the lifecycle here. Reads return ``None`` until the
-first CAN frame of their kind arrives, so opening waits for feedback before
-handing the arm over. An effector can be initialised once per instance and
-wants to exist before ``connect()``. And both ``disable()`` and the SDK's own
-``reset()`` cut motor power, which drops a raised arm, so neither is used for
-releasing a connection or for clearing a fault.
+``pyAgxArm`` already works in radians, metres, and newtons. Note that its
+``disable()`` and ``reset()`` both cut motor power, dropping a raised arm, so
+neither is used here.
 """
 
 import time
@@ -53,14 +43,13 @@ class PiperRobotState:
     """State snapshot for the AgileX Piper arm."""
 
     tcp_pose: np.ndarray = field(default_factory=lambda: np.zeros(7))
-    """Tool pose ``[x, y, z, qx, qy, qz, qw]`` in the arm base frame, metres
-    and a quaternion. Equal to the flange pose until a TCP offset is set."""
+    """``[x, y, z, qx, qy, qz, qw]`` in the base frame, metres and quaternion."""
 
     arm_joint_position: np.ndarray = field(default_factory=lambda: np.zeros(6))
-    """Joint positions ``[q1, ..., q6]`` in radians."""
+    """Joint positions in radians."""
 
     gripper_position: np.ndarray = field(default_factory=lambda: np.zeros(1))
-    """Gripper opening as a fraction, ``0.0`` shut to ``1.0`` at full stroke."""
+    """Opening as a fraction of the stroke, 0 shut to 1 open."""
 
     def to_dict(self) -> dict[str, Any]:
         """Convert the dataclass to a serializable dictionary."""
@@ -72,33 +61,29 @@ class PiperArm(BaseArm):
     """AgileX Piper arm on a CAN bus, via ``pyAgxArm``.
 
     Args:
-        channel: CAN channel. A netdev name such as ``"can0"`` for socketcan,
-            or a serial path for slcan. Bring the interface up at the
-            configured bitrate before connecting.
-        interface: python-can interface backend: ``"socketcan"`` on Linux,
-            ``"slcan"`` on macOS, ``"agx_cando"`` on Windows.
-        bitrate: CAN bitrate. The Piper runs at 1 Mbit/s.
-        model: Arm variant, one of ``"piper"``, ``"piper_h"``, ``"piper_l"``,
-            or ``"piper_x"``. The variants differ in reach and joint travel.
-        firmware: Firmware profile the SDK should speak, one of ``"default"``
-            (S-V1.8-2 and older), ``"v183"``, ``"v188"``, or ``"v189"``. The
-            wrong profile talks the wrong protocol to the same arm.
+        channel: CAN channel, such as ``"can0"``. Bring the interface up at
+            ``bitrate`` before connecting; the SDK does not configure it.
+        interface: python-can backend: ``"socketcan"``, ``"slcan"``, or
+            ``"agx_cando"``.
+        bitrate: CAN bitrate.
+        model: Arm variant: ``"piper"``, ``"piper_h"``, ``"piper_l"``, or
+            ``"piper_x"``.
+        firmware: Firmware profile: ``"default"`` for S-V1.8-2 and older, then
+            ``"v183"``, ``"v188"``, ``"v189"``. The wrong one talks the wrong
+            protocol to the same arm.
         speed_percent: Percentage of maximum speed for commanded motion.
         gripper_force: Gripping force in newtons, up to 3.0.
-        gripper_max_width: Stroke at full opening, in metres. The AgxGripper is
-            configured at the factory for either 0.07 or 0.1 m.
-        with_gripper: Whether an AgxGripper is fitted. When false the arm
-            exports no end effector.
+        gripper_max_width: Stroke at full opening, in metres. Set at the
+            factory to either 0.07 or 0.1.
+        with_gripper: Whether an AgxGripper is fitted.
     """
 
     SDK = ("pyAgxArm", "pyAgxArm")
 
-    #: Number of arm joints reported as ``arm_joint_position``.
     DOF: ClassVar[int] = 6
 
-    #: Joint travel of the standard ``piper``, in radians, as the SDK's own
-    #: configuration reports it. The other variants differ, so a connected arm
-    #: clips against the limits its own configuration carries.
+    #: Travel of the standard ``piper``, in radians. A connected arm replaces
+    #: these with the limits its own variant reports.
     JOINT_LIMITS_LOWER: ClassVar[np.ndarray] = np.array(
         [-2.617994, 0.0, -2.967060, -1.745330, -1.221730, -2.094396]
     )
@@ -106,16 +91,12 @@ class PiperArm(BaseArm):
         [2.617994, 3.141593, 0.0, 1.745330, 1.221730, 2.094396]
     )
 
-    #: Longest wait for the motors to enable and for the first feedback frame,
-    #: in seconds.
+    #: Seconds to wait on the arm, and how often to look.
     ENABLE_TIMEOUT_S: ClassVar[float] = 5.0
     FEEDBACK_TIMEOUT_S: ClassVar[float] = 2.0
-
-    #: Poll interval while waiting on the arm, in seconds.
     POLL_S: ClassVar[float] = 0.01
 
-    #: The Piper reports joints and an end pose. It exposes no Cartesian
-    #: velocity, external force, or Jacobian.
+    #: No Cartesian velocity, external force, or Jacobian is reported.
     STATE_FIELDS = ("tcp_pose", "arm_joint_position")
 
     def __init__(
@@ -145,8 +126,7 @@ class PiperArm(BaseArm):
         self._gripper: Any = None
         self._limits_lower = self.JOINT_LIMITS_LOWER
         self._limits_upper = self.JOINT_LIMITS_UPPER
-        # One session per CAN channel: a second arm here would fight the first
-        # for the bus rather than fail, and the error would name a socket.
+        # Two arms on one channel would fight for the bus rather than fail.
         self._claim = DeviceClaim(f"piper-arm:{channel}", type(self).__name__)
 
     @classmethod
@@ -162,9 +142,8 @@ class PiperArm(BaseArm):
     ) -> "PiperArm":
         """Declare a Piper on the CAN channel named by ``address``.
 
-        The AgxGripper shares that bus and is initialised through the arm's own
-        SDK handle, so it is neither chosen nor wired separately. Whether one
-        is fitted is the ``with_gripper`` setting.
+        The AgxGripper shares that bus, so it is neither chosen nor wired
+        separately; ``with_gripper`` says whether one is fitted.
         """
         cls.refuse_unused(
             gripper_type=gripper_type,
@@ -197,8 +176,8 @@ class PiperArm(BaseArm):
     def parts(self) -> dict[str, RobotPart]:
         """Return the gripper this arm carries on its own bus.
 
-        The gripper takes any opening in range, so the view drives it through
-        :meth:`move_gripper` rather than falling back to open and close.
+        It takes any opening in range, so the view drives it through
+        :meth:`move_gripper` rather than binary open and close.
         """
         if not self._with_gripper:
             return {}
@@ -214,7 +193,7 @@ class PiperArm(BaseArm):
         try:
             from pyAgxArm import AgxArmFactory, create_agx_arm_config
 
-            # The vendor spells the keyword "firmeware_version".
+            # The vendor spells it "firmeware_version".
             config = create_agx_arm_config(
                 robot=self._model,
                 firmeware_version=self._firmware,
@@ -223,8 +202,7 @@ class PiperArm(BaseArm):
                 bitrate=self._bitrate,
             )
             robot = AgxArmFactory.create_arm(config)
-            # An effector can only be initialised once per driver, and the SDK
-            # asks for it before the read thread starts.
+            # Once per driver, and before the read thread starts.
             if self._with_gripper:
                 self._gripper = robot.init_effector(robot.OPTIONS.EFFECTOR.AGX_GRIPPER)
             robot.connect()
@@ -300,8 +278,8 @@ class PiperArm(BaseArm):
     def _release(self, device: Any) -> None:
         """Close the CAN session, leaving the motors holding their position.
 
-        The arm is neither disabled nor reset here: both cut motor power, which
-        drops a raised arm, and closing a connection should not move anything.
+        Neither disabled nor reset: both cut motor power, and closing a
+        connection should not move the arm.
         """
         try:
             self._close(device)
@@ -323,8 +301,8 @@ class PiperArm(BaseArm):
         """Return a reading's payload, or say that the feed has stopped.
 
         Raises:
-            RuntimeError: If the SDK has no message of this kind. Feedback was
-                present when the arm opened, so this means the feed stopped.
+            RuntimeError: If the SDK has no message of this kind. Opening
+                waited for feedback, so this means it stopped.
         """
         if reading is None:
             raise RuntimeError(
@@ -338,8 +316,7 @@ class PiperArm(BaseArm):
         """Read the tool pose and convert its Euler angles to a quaternion."""
         pose = self._require("a tool pose", self._robot.get_tcp_pose())
         translation = np.asarray(pose[:3], dtype=float)
-        # The SDK composes orientation as R = Rz @ Ry @ Rx, which is an
-        # extrinsic xyz rotation, and returns [qx, qy, qz, qw] like RLinf.
+        # The SDK composes orientation as R = Rz @ Ry @ Rx: an extrinsic xyz.
         quaternion = R.from_euler("xyz", np.asarray(pose[3:6], dtype=float)).as_quat()
         return np.concatenate([translation, quaternion])
 
@@ -369,8 +346,8 @@ class PiperArm(BaseArm):
     def move_joints(self, q_target: "Sequence[float]") -> np.ndarray:
         """Command absolute joint positions in radians.
 
-        Targets are held to the arm's travel, because a request beyond it
-        faults the arm rather than being ignored.
+        Targets are held to the arm's travel: a request beyond it faults the
+        arm rather than being ignored.
 
         Returns:
             The target actually sent, in radians.
@@ -382,7 +359,7 @@ class PiperArm(BaseArm):
                 f"{target.shape}."
             )
         target = np.clip(target, self._limits_lower, self._limits_upper)
-        # move_j selects joint mode itself, so the mode is not restated here.
+        # move_j selects joint mode itself.
         self._robot.move_j([float(value) for value in target])
         return target
 
@@ -413,8 +390,7 @@ class PiperArm(BaseArm):
         """Move to a rest pose in radians.
 
         The arm paces itself from ``speed_percent``, so ``duration`` is
-        accepted for the arm contract and not used. This is a move, not the
-        SDK's ``reset()``, which powers the motors off.
+        accepted for the arm contract and not used.
         """
         del duration
         self.move_joints(positions)

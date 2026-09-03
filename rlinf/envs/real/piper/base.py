@@ -315,8 +315,7 @@ class PiperEnv(gym.Env):
                 )
                 self._last_gripper = opening
                 arm_action["end_effector"] = {"target": np.array([opening])}
-            # One action for the whole arm: the gripper rides beneath it, so
-            # the robot dispatches both without reaching for the driver.
+            # The gripper rides beneath the arm, so one call dispatches both.
             self.robot.send_action({"arm": arm_action})
 
         self._num_steps += 1
@@ -391,12 +390,11 @@ class PiperEnv(gym.Env):
         """Return the arm state and any camera frames."""
         if self.config.is_dummy:
             return self._base_observation_space.sample()
-        # One read of the whole robot. The arm reports its joints, its pose,
-        # and the gripper it carries, so nothing here reaches past the tree.
+        # One read of the whole robot, gripper included.
         reading = self.robot.get_observation()["arm"]
 
-        # The driver works in float64; the declared space is float32, and an
-        # observation outside its own space fails Gymnasium's env checker.
+        # The driver works in float64; an observation outside its own declared
+        # space fails Gymnasium's env checker.
         self._joints = np.asarray(reading["arm_joint_position"], dtype=float)
         state: dict[str, Any] = {
             "arm_joint_position": np.asarray(
