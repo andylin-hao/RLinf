@@ -78,7 +78,10 @@ class PiperArm(BaseArm):
         with_gripper: Whether an AgxGripper is fitted.
     """
 
-    SDK = ("pyAgxArm", "pyAgxArm")
+    SDK = (
+        "pyAgxArm",
+        "pyAgxArm @ git+https://github.com/agilexrobotics/pyAgxArm.git",
+    )
 
     DOF: ClassVar[int] = 6
 
