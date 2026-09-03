@@ -2293,6 +2293,31 @@ def _piper_env(**overrides):
     return PiperReachEnv(settings, env_idx=0)
 
 
+def test_entry_points_reach_realworldenv_through_its_package():
+    """Importing the submodule directly skips the loader that registers robots.
+
+    ``rlinf.envs.real`` registers every robot type and Gymnasium task from its
+    ``__getattr__``. Reaching ``RealWorldEnv`` at ``rlinf.envs.real.env``
+    bypasses that, and a config naming a hardware type then fails with an
+    empty registry.
+    """
+    import pathlib
+    import re
+
+    root = pathlib.Path(__file__).resolve().parents[2]
+    offenders = []
+    for path in list((root / "examples").rglob("*.py")) + list(
+        (root / "toolkits").rglob("*.py")
+    ):
+        if re.search(r"^from rlinf\.envs\.real\.env import", path.read_text(), re.M):
+            offenders.append(str(path.relative_to(root)))
+
+    assert offenders == [], (
+        "import RealWorldEnv from rlinf.envs.real, not rlinf.envs.real.env: "
+        f"{offenders}"
+    )
+
+
 def test_piper_env_runs_a_whole_episode_against_a_faked_arm():
     from robot_mocks import mocked_sdks
 

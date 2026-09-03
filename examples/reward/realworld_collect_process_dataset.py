@@ -36,7 +36,7 @@ import numpy as np
 import torch
 
 from rlinf.data.datasets.reward_model import RewardDatasetPayload
-from rlinf.envs.real.env import RealWorldEnv
+from rlinf.envs.real import RealWorldEnv
 from rlinf.envs.real.wrappers.episode.keyboard import KeyboardListener
 from rlinf.scheduler import Cluster, ComponentPlacement, Worker
 from rlinf.utils.logging import get_logger

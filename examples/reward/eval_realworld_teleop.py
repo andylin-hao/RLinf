@@ -33,7 +33,7 @@ import hydra
 import numpy as np
 from omegaconf import OmegaConf
 
-from rlinf.envs.real.env import RealWorldEnv
+from rlinf.envs.real import RealWorldEnv
 from rlinf.scheduler import Cluster, Worker
 from rlinf.utils.logging import get_logger
 from rlinf.utils.placement import HybridComponentPlacement
