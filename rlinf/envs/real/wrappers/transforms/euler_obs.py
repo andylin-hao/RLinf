@@ -34,8 +34,7 @@ class Quat2EulerWrapper(gym.ObservationWrapper):
     #: Arms this wrapper reads unless told otherwise.
     ARMS: int = 1
 
-    #: Length of one pose, before and after the conversion.
-    QUAT_DIM = 7
+    #: Length of one pose after the conversion.
     EULER_DIM = 6
 
     #: Match the environment pose dtype; SciPy returns float64 by default.
