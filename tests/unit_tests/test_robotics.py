@@ -4768,6 +4768,42 @@ def test_piper_clearing_errors_does_not_cut_motor_power():
         assert driver.enabled
 
 
+def test_piper_backend_is_named_for_its_sdk():
+    """A second driver for the same arm must be able to register beside it."""
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        from rlinf.robotics.parts.arms import Arm
+        from rlinf.robotics.parts.arms.piper import PiperArm
+        from rlinf.robotics.robots.piper import PiperRobot
+
+        # Registered as the SDK, not as the robot, so "piper" stays free for
+        # a driver built on a different SDK.
+        assert Arm.backend("pyagxarm") is PiperArm
+        assert PiperRobot.BACKEND == "pyagxarm"
+        # Lookup is case-insensitive, so a config may spell it pyAgxArm.
+        assert Arm.backend("pyAgxArm") is PiperArm
+        with pytest.raises(ValueError, match="Unsupported"):
+            Arm.backend("piper")
+
+
+def test_a_piper_robot_takes_the_backend_its_config_names():
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        from rlinf.robotics.parts.arms.piper import PiperArm
+        from rlinf.robotics.robots.piper import PiperRobot
+
+        robot = PiperRobot.build(can_channel="can0", node_rank=0, backend="pyAgxArm")
+        try:
+            assert isinstance(robot.child("arm"), PiperArm)
+        finally:
+            robot.disconnect()
+
+        with pytest.raises(ValueError, match="Unsupported"):
+            PiperRobot.build(can_channel="can0", node_rank=0, backend="piper_sdk")
+
+
 def test_piper_takes_no_separately_wired_end_effector():
     """The AgxGripper is on the arm's own bus, not a fitted device."""
     from rlinf.robotics.parts.arms.piper import PiperArm

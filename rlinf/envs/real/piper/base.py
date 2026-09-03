@@ -54,6 +54,10 @@ class PiperRobotConfig:
     :class:`~rlinf.robotics.RobotInfo`.
     """
 
+    backend: Optional[str] = None
+    """Arm backend. ``None`` takes it from hardware info, which in turn
+    defaults to :attr:`PiperRobot.BACKEND`."""
+
     can_channel: Optional[str] = None
     """CAN channel the arm is on. ``None`` takes it from hardware info."""
 
@@ -195,6 +199,7 @@ class PiperEnv(gym.Env):
         if self.robot_info is not None:
             hardware = self.robot_info.config
             for name in (
+                "backend",
                 "can_channel",
                 "can_interface",
                 "model",
@@ -218,6 +223,7 @@ class PiperEnv(gym.Env):
         # Cameras are declared here, after discovery has filled the serials.
         self.robot = PiperRobot.build(
             can_channel=self.config.can_channel,
+            backend=self.config.backend,
             can_interface=self.config.can_interface or "socketcan",
             model=self.config.model or "piper",
             firmware=self.config.firmware or "default",

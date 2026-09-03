@@ -33,8 +33,13 @@ class PiperRobot(Robot):
 
     ROBOT_TYPE = "Piper"
 
-    #: Registered arm backend. A subclass may select another.
-    BACKEND: str = "piper"
+    BACKEND: str = "pyagxarm"
+    """Registered arm backend used by this robot.
+
+    Named for the SDK that drives the arm rather than for the arm itself, so
+    another driver for the same hardware registers beside it. Subclasses and
+    :attr:`PiperConfig.backend` may select another. See ``Arm.backends()``
+    for the available names."""
 
     @classmethod
     def build_arms(
@@ -42,6 +47,7 @@ class PiperRobot(Robot):
         *,
         can_channel: str,
         node_rank: int,
+        backend: Optional[str] = None,
         can_interface: str = "socketcan",
         model: str = "piper",
         firmware: str = "default",
@@ -55,7 +61,7 @@ class PiperRobot(Robot):
         """Return the arm declaration, including the gripper it exports."""
         from ..parts.arms import Arm
 
-        connection = Arm.backend(cls.BACKEND).declare(
+        arm = Arm.backend(backend or cls.BACKEND).declare(
             can_channel,
             interface=can_interface,
             model=model,
@@ -67,7 +73,7 @@ class PiperRobot(Robot):
             node_rank=node_rank,
             worker_name=f"{cls.ROBOT_TYPE}Arm-{worker_rank}-{env_idx}",
         )
-        return {"arm": connection}
+        return {"arm": arm}
 
     @classmethod
     def build_cameras(
@@ -85,6 +91,7 @@ class PiperRobot(Robot):
         *,
         can_channel: str,
         node_rank: int,
+        backend: Optional[str] = None,
         can_interface: str = "socketcan",
         model: str = "piper",
         firmware: str = "default",
@@ -101,6 +108,7 @@ class PiperRobot(Robot):
         return cls(
             **cls.build_arms(
                 can_channel=can_channel,
+                backend=backend,
                 can_interface=can_interface,
                 model=model,
                 firmware=firmware,
@@ -119,6 +127,10 @@ class PiperRobot(Robot):
 @dataclass
 class PiperConfig(RobotConfig):
     """Configuration for an AgileX Piper robot."""
+
+    backend: Optional[str] = None
+    """Arm backend this robot runs, such as ``"pyagxarm"``. ``None`` leaves the
+    choice to the robot class's own :attr:`PiperRobot.BACKEND`."""
 
     can_channel: str = "can0"
     """CAN channel the arm is on. A netdev name such as ``"can0"`` for

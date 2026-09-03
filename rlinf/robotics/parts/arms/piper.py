@@ -14,6 +14,9 @@
 
 """AgileX Piper arm, driven through ``pyAgxArm`` over a CAN bus.
 
+The backend registers as ``pyagxarm``, after the SDK rather than the arm, so a
+driver for the same hardware over a different SDK registers beside it.
+
 The Piper is a 6-DOF arm whose AgxGripper hangs off the same CAN bus, so the
 gripper is exported as a part beneath the arm rather than wired separately.
 
@@ -64,7 +67,7 @@ class PiperRobotState:
         return asdict(self)
 
 
-@Arm.register("piper", "agilex_piper")
+@Arm.register("pyagxarm")
 class PiperArm(BaseArm):
     """AgileX Piper arm on a CAN bus, via ``pyAgxArm``.
 
