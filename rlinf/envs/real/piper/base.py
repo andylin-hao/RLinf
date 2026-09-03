@@ -68,7 +68,8 @@ class PiperRobotConfig:
     """Arm variant. ``None`` takes it from hardware info."""
 
     firmware: Optional[str] = None
-    """Firmware profile. ``None`` takes it from hardware info."""
+    """Firmware profile. ``None`` takes it from hardware info, which in turn
+    reads the version off the arm."""
 
     speed_percent: Optional[int] = None
     """Percentage of maximum speed. ``None`` takes it from hardware info."""
@@ -226,7 +227,7 @@ class PiperEnv(gym.Env):
             backend=self.config.backend,
             can_interface=self.config.can_interface or "socketcan",
             model=self.config.model or "piper",
-            firmware=self.config.firmware or "default",
+            firmware=self.config.firmware,
             speed_percent=(
                 30 if self.config.speed_percent is None else self.config.speed_percent
             ),

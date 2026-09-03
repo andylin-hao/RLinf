@@ -4786,6 +4786,57 @@ def test_a_single_backend_robot_does_not_load_every_arm_driver():
             robot.disconnect()
 
 
+def test_piper_asks_the_arm_which_protocol_it_speaks():
+    """The profile frames the CAN messages, so guessing it talks nonsense."""
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        from rlinf.robotics.parts.arms.piper import PiperArm
+
+        arm = PiperArm.declare("can0")
+        arm.connect()
+        try:
+            # The mock arm reports S-V1.8-9, which resolves to v189 -- not the
+            # "default" profile, which covers S-V1.8-2 and older.
+            assert arm._robot.config["firmeware_version"] == "v189"
+        finally:
+            arm.disconnect()
+
+
+def test_piper_takes_the_firmware_profile_it_is_given():
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks() as made:
+        from rlinf.robotics.parts.arms.piper import PiperArm
+
+        arm = PiperArm.declare("can0", firmware="v183")
+        arm.connect()
+        try:
+            assert arm._robot.config["firmeware_version"] == "v183"
+            # Pinning it means the arm is never asked.
+            assert arm._robot.get_firmware()["software_version"] == "S-V1.8-9"
+        finally:
+            arm.disconnect()
+        del made
+
+
+def test_piper_refuses_to_guess_when_the_arm_will_not_say():
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks() as made:
+        from rlinf.robotics.parts.arms.piper import PiperArm
+
+        fake = made["pyAgxArm"].AgxArmFactory.create_arm({}).__class__
+        fake.firmware_version = None
+        try:
+            arm = PiperArm.declare("can0")
+            with pytest.raises(RuntimeError, match="did not report a firmware"):
+                arm.connect()
+            assert not arm.is_connected
+        finally:
+            fake.firmware_version = "S-V1.8-9"
+
+
 def test_piper_backend_is_named_for_its_sdk():
     """A second driver for the same arm must be able to register beside it."""
     from robot_mocks import mocked_sdks

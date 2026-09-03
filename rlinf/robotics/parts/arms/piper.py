@@ -68,9 +68,10 @@ class PiperArm(BaseArm):
         bitrate: CAN bitrate.
         model: Arm variant: ``"piper"``, ``"piper_h"``, ``"piper_l"``, or
             ``"piper_x"``.
-        firmware: Firmware profile: ``"default"`` for S-V1.8-2 and older, then
-            ``"v183"``, ``"v188"``, ``"v189"``. The wrong one talks the wrong
-            protocol to the same arm.
+        firmware: Firmware profile. ``None`` reads the version off the arm
+            and picks the matching one, which is what you want unless the arm
+            cannot be reached to ask. Pin it with ``"default"`` for S-V1.8-2
+            and older, then ``"v183"``, ``"v188"``, ``"v189"``.
         speed_percent: Percentage of maximum speed for commanded motion.
         gripper_force: Gripping force in newtons, up to 3.0.
         gripper_max_width: Stroke at full opening, in metres. Set at the
@@ -91,6 +92,10 @@ class PiperArm(BaseArm):
         [2.617994, 3.141593, 0.0, 1.745330, 1.221730, 2.094396]
     )
 
+    #: Profile used only to ask an arm its version before the real driver is
+    #: built. Any profile can carry that query.
+    PROBE_FIRMWARE: ClassVar[str] = "default"
+
     #: Seconds to wait on the arm, and how often to look.
     ENABLE_TIMEOUT_S: ClassVar[float] = 5.0
     FEEDBACK_TIMEOUT_S: ClassVar[float] = 2.0
@@ -106,7 +111,7 @@ class PiperArm(BaseArm):
         interface: str = "socketcan",
         bitrate: int = 1000000,
         model: str = "piper",
-        firmware: str = "default",
+        firmware: Optional[str] = None,
         speed_percent: int = 30,
         gripper_force: float = 1.0,
         gripper_max_width: float = 0.07,
@@ -191,16 +196,10 @@ class PiperArm(BaseArm):
         """Build the SDK driver, open the bus, and enable the motors."""
         self._claim.acquire()
         try:
-            from pyAgxArm import AgxArmFactory, create_agx_arm_config
+            from pyAgxArm import AgxArmFactory
 
-            # The vendor spells it "firmeware_version".
-            config = create_agx_arm_config(
-                robot=self._model,
-                firmeware_version=self._firmware,
-                interface=self._interface,
-                channel=self._channel,
-                bitrate=self._bitrate,
-            )
+            firmware = self._firmware or self._detect_firmware()
+            config = self._config_for(firmware)
             robot = AgxArmFactory.create_arm(config)
             # Once per driver, and before the read thread starts.
             if self._with_gripper:
@@ -222,6 +221,53 @@ class PiperArm(BaseArm):
             self._interface,
         )
         return robot
+
+    def _config_for(self, firmware: str) -> dict:
+        """Return the SDK config for this arm on a given firmware profile."""
+        from pyAgxArm import create_agx_arm_config
+
+        # The vendor spells it "firmeware_version".
+        return create_agx_arm_config(
+            robot=self._model,
+            firmeware_version=firmware,
+            interface=self._interface,
+            channel=self._channel,
+            bitrate=self._bitrate,
+        )
+
+    def _detect_firmware(self) -> str:
+        """Ask the arm which firmware it runs and return the SDK profile.
+
+        The profile decides how the driver frames CAN messages, and the arm
+        only reports its version once something is talking to it. So a short
+        session opens, reads, and closes before the real driver is built, as
+        the SDK's own documentation describes. Falling back to the oldest
+        profile would silently speak the wrong protocol to a current arm, so a
+        failed probe says so instead.
+
+        Raises:
+            RuntimeError: If the arm does not report a usable version.
+        """
+        from pyAgxArm import AgxArmFactory, resolve_firmware_profile
+
+        probe = AgxArmFactory.create_arm(self._config_for(self.PROBE_FIRMWARE))
+        try:
+            probe.connect()
+            reported = probe.get_firmware()
+        finally:
+            probe.disconnect()
+
+        version = (reported or {}).get("software_version")
+        if not version:
+            raise RuntimeError(
+                f"The Piper on {self._channel!r} did not report a firmware "
+                "version, so its protocol cannot be chosen for it. Check the "
+                "arm is powered and the bus is up, or set 'firmware' to the "
+                "profile matching its version."
+            )
+        profile = resolve_firmware_profile(self._model, version)
+        self._logger.info("Piper reports %s, using profile %r", version, profile)
+        return profile
 
     def _adopt_joint_limits(self, config: dict) -> None:
         """Clip against the limits this variant's configuration carries."""

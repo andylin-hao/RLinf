@@ -539,6 +539,8 @@ def pyagxarm() -> dict[str, types.ModuleType]:
     class FakeArm:
         #: Set false to model an arm whose motors refuse to enable.
         enables = True
+        #: What get_firmware() reports; None models an arm that will not say.
+        firmware_version = "S-V1.8-9"
 
         class OPTIONS:
             class EFFECTOR:
@@ -583,6 +585,13 @@ def pyagxarm() -> dict[str, types.ModuleType]:
 
         def get_fps(self):
             return 100.0
+
+        def get_firmware(self, timeout=1.0, min_interval=1.0):
+            return (
+                {"software_version": type(self).firmware_version}
+                if self._connected
+                else None
+            )
 
         def enable(self, joint_index=255):
             self.enabled = type(self).enables
@@ -634,7 +643,11 @@ def pyagxarm() -> dict[str, types.ModuleType]:
             return FakeArm(config)
 
     def resolve_firmware_profile(robot, firmware_version):
-        return PiperFW.DEFAULT
+        # The real mapping: S-V1.8-9 and later is v189, and so down.
+        minor = firmware_version.rsplit("-", 1)[-1]
+        return {"9": PiperFW.V189, "8": PiperFW.V188}.get(
+            minor, PiperFW.V183 if minor in "34567" else PiperFW.DEFAULT
+        )
 
     return {
         "pyAgxArm": module(

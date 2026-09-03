@@ -47,7 +47,7 @@ class PiperRobot(Robot):
         backend: Optional[str] = None,
         can_interface: str = "socketcan",
         model: str = "piper",
-        firmware: str = "default",
+        firmware: Optional[str] = None,
         speed_percent: int = 30,
         gripper_force: float = 1.0,
         gripper_max_width: float = 0.07,
@@ -91,7 +91,7 @@ class PiperRobot(Robot):
         backend: Optional[str] = None,
         can_interface: str = "socketcan",
         model: str = "piper",
-        firmware: str = "default",
+        firmware: Optional[str] = None,
         speed_percent: int = 30,
         gripper_force: float = 1.0,
         gripper_max_width: float = 0.07,
@@ -140,10 +140,10 @@ class PiperConfig(RobotConfig):
     """Arm variant: ``"piper"``, ``"piper_h"``, ``"piper_l"``, or
     ``"piper_x"``. Commands are clipped to the travel the variant reports."""
 
-    firmware: str = "default"
-    """Firmware profile: ``"default"`` for S-V1.8-2 and older, then
-    ``"v183"``, ``"v188"``, ``"v189"``. The wrong one talks the wrong
-    protocol to the same arm."""
+    firmware: Optional[str] = None
+    """Firmware profile. ``None`` reads the version off the arm and picks the
+    matching one. Pin it -- ``"default"`` for S-V1.8-2 and older, then
+    ``"v183"``, ``"v188"``, ``"v189"`` -- only to override that."""
 
     speed_percent: int = 30
     """Percentage of maximum speed used for commanded motion."""
