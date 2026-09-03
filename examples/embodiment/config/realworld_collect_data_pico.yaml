@@ -23,10 +23,8 @@ cluster:
         configs:
           - robot_ip: ROBOT_IP    # Replace with your Franka IP
             node_rank: 0
-            # Arm driver: "franka_ros" needs a ROS stack, "franky" talks
-            # libfranka directly and needs none.
+            # "franka_ros" needs a ROS stack; "franky" talks libfranka.
             backend: franka_ros
-            # RealSense serial numbers, as strings.
             camera_serials: ["CAMERA_SERIAL_1", "CAMERA_SERIAL_2"]
 
 runner:

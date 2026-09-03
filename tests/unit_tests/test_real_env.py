@@ -2293,13 +2293,43 @@ def _piper_env(**overrides):
     return PiperReachEnv(settings, env_idx=0)
 
 
-def test_entry_points_reach_realworldenv_through_its_package():
-    """Importing the submodule directly skips the loader that registers robots.
+def test_a_hardware_type_resolves_without_importing_the_robot_package():
+    """The lookup loads the modules that register hardware configs.
 
-    ``rlinf.envs.real`` registers every robot type and Gymnasium task from its
-    ``__getattr__``. Reaching ``RealWorldEnv`` at ``rlinf.envs.real.env``
-    bypasses that, and a config naming a hardware type then fails with an
-    empty registry.
+    In a subprocess, because this one has already imported them.
+    """
+    import pathlib
+    import subprocess
+    import sys
+
+    program = (
+        "import sys\n"
+        "from rlinf.scheduler.cluster.config import ClusterConfig\n"
+        "from rlinf.scheduler.hardware import NodeHardwareConfig\n"
+        "assert not [m for m in sys.modules if m.startswith('rlinf.robotics')]\n"
+        "assert not NodeHardwareConfig._hardware_config_registry\n"
+        "from omegaconf import OmegaConf\n"
+        "cfg = OmegaConf.create({'num_nodes': 1, 'component_placement':"
+        " {'env': {'node_group': 'f', 'placement': 0}}, 'node_groups':"
+        " [{'label': 'f', 'node_ranks': 0, 'hardware': {'type': 'Franka',"
+        " 'configs': [{'robot_ip': '0.0.0.0', 'node_rank': 0}]}}]})\n"
+        "hw = ClusterConfig.from_dict_cfg(cfg).node_groups[0].hardware\n"
+        "print(type(hw.configs[0]).__name__)\n"
+    )
+    done = subprocess.run(
+        [sys.executable, "-c", program],
+        capture_output=True,
+        text=True,
+        cwd=str(pathlib.Path(__file__).resolve().parents[2]),
+    )
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.strip() == "FrankaConfig", done.stdout
+
+
+def test_entry_points_reach_realworldenv_through_its_package():
+    """``rlinf.envs.real`` registers its Gymnasium tasks from ``__getattr__``.
+
+    Reaching ``RealWorldEnv`` at ``rlinf.envs.real.env`` bypasses that.
     """
     import pathlib
     import re
