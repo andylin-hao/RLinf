@@ -68,6 +68,7 @@ class FrankyArm(BaseArm):
     #: mlockall(2) flags.
     MCL_CURRENT: ClassVar[int] = 1
     MCL_FUTURE: ClassVar[int] = 2
+    MCL_ONFAULT: ClassVar[int] = 4
 
     @classmethod
     def declare(
@@ -165,7 +166,13 @@ class FrankyArm(BaseArm):
             libc = ctypes.CDLL(
                 ctypes.util.find_library("c") or "libc.so.6", use_errno=True
             )
-            if libc.mlockall(self.MCL_CURRENT | self.MCL_FUTURE) != 0:
+            # Locking on fault keeps the guarantee without reading every
+            # mapped library off disk, which costs minutes on a cold cache
+            # once the process has loaded torch.
+            flags = self.MCL_CURRENT | self.MCL_FUTURE
+            if libc.mlockall(flags | self.MCL_ONFAULT) != 0 and (
+                libc.mlockall(flags) != 0
+            ):
                 self._logger.warning(f"mlockall: {os.strerror(ctypes.get_errno())}")
         except Exception as e:
             self._logger.warning(f"mlockall unavailable: {e}")
