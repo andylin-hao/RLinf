@@ -2703,7 +2703,7 @@ def test_an_end_effector_answers_for_its_own_kind():
         from rlinf.robotics.parts.end_effectors import EndEffector
         from rlinf.robotics.parts.end_effectors.base import BaseEndEffector
 
-        gripper = EndEffector.of("robotiq", port="/dev/mock-gripper")
+        gripper = EndEffector.of("robotiq_gripper", port="/dev/mock-gripper")
 
         assert gripper.is_gripper
         assert not gripper.is_hand
@@ -3100,7 +3100,7 @@ def test_a_gripper_is_commanded_in_the_units_it_reports():
     from rlinf.robotics.parts.end_effectors import EndEffector
 
     with mocked_sdks():
-        gripper = EndEffector.of("robotiq", port="/dev/mock-gripper")
+        gripper = EndEffector.of("robotiq_gripper", port="/dev/mock-gripper")
         gripper.connect()
         try:
             assert gripper.max_width > 0
@@ -3181,7 +3181,7 @@ def test_every_end_effector_answers_the_same_questions():
             .child("left")
             .child("gripper"),
             "gripper on its own port": EndEffector.of(
-                "robotiq", port="/dev/mock-gripper"
+                "robotiq_gripper", port="/dev/mock-gripper"
             ),
         }
 
@@ -3203,7 +3203,7 @@ def test_every_end_effector_reports_its_state_under_the_same_name():
     with mocked_sdks():
         from rlinf.robotics.parts.end_effectors.base import EndEffectorType
 
-        gripper = EndEffector.of("robotiq", port="/dev/mock-gripper")
+        gripper = EndEffector.of("robotiq_gripper", port="/dev/mock-gripper")
         hand = EndEffector.of(EndEffectorType.RUIYAN_HAND, port="/dev/mock-hand")
 
         for part in (gripper, hand):
@@ -4033,7 +4033,7 @@ def test_describe_says_where_a_part_runs_before_anything_is_opened():
 
     robot = Bench(
         arm=FrankyArm("10.0.0.1", node_rank=2),
-        end_effector=EndEffector.of("franky", robot_ip="10.0.0.1", node_rank=5),
+        end_effector=EndEffector.of("franky_gripper", robot_ip="10.0.0.1", node_rank=5),
     )
 
     described = robot.describe()
@@ -4059,7 +4059,7 @@ def test_a_robot_can_be_disconnected_twice():
 
     robot = Bench(
         arm=FrankyArm("10.0.0.1"),
-        end_effector=EndEffector.of("robotiq", port="/dev/mock-gripper"),
+        end_effector=EndEffector.of("robotiq_gripper", port="/dev/mock-gripper"),
     )
 
     with mocked_sdks():
@@ -4076,13 +4076,12 @@ def test_the_franka_hand_is_reachable_over_libfranka():
     with mocked_sdks():
         from rlinf.robotics.parts.end_effectors import EndEffector, FrankyGripper
 
-        assert EndEffector.backend("franky") is FrankyGripper
         assert EndEffector.backend("franky_gripper") is FrankyGripper
-        # The ROS backend keeps the plain name; the two are different transports
-        # to the same hand.
-        assert EndEffector.backend("franka") is not FrankyGripper
+        # Two drivers for one Franka Hand, not two names for one driver:
+        # franka_gripper publishes over ROS, franky_gripper opens libfranka.
+        assert EndEffector.backend("franka_gripper") is not FrankyGripper
 
-        gripper = EndEffector.of("franky", robot_ip="10.0.0.1")
+        gripper = EndEffector.of("franky_gripper", robot_ip="10.0.0.1")
         assert isinstance(gripper, FrankyGripper)
         assert not gripper.is_connected
 
@@ -4113,7 +4112,7 @@ def test_the_franka_hand_commands_widths_in_metres():
     with mocked_sdks():
         from rlinf.robotics.parts.end_effectors import EndEffector
 
-        gripper = EndEffector.of("franky", robot_ip="10.0.0.1")
+        gripper = EndEffector.of("franky_gripper", robot_ip="10.0.0.1")
         gripper.connect()
         sdk = gripper._gripper
 
@@ -4139,7 +4138,7 @@ def test_the_franka_hand_grasps_within_the_force_it_can_apply():
     with mocked_sdks():
         from rlinf.robotics.parts.end_effectors import EndEffector
 
-        gripper = EndEffector.of("franky", robot_ip="10.0.0.1")
+        gripper = EndEffector.of("franky_gripper", robot_ip="10.0.0.1")
         gripper.connect()
         sdk = gripper._gripper
 
@@ -4165,7 +4164,7 @@ def test_a_refused_grasp_does_not_end_the_episode():
     with mocked_sdks():
         from rlinf.robotics.parts.end_effectors import EndEffector
 
-        gripper = EndEffector.of("franky", robot_ip="10.0.0.1")
+        gripper = EndEffector.of("franky_gripper", robot_ip="10.0.0.1")
         gripper.connect()
         sdk = gripper._gripper
 
@@ -4243,7 +4242,7 @@ def test_reading_the_hand_twice_costs_one_round_trip():
     with mocked_sdks():
         from rlinf.robotics.parts.end_effectors import EndEffector
 
-        gripper = EndEffector.of("franky", robot_ip="10.0.0.1")
+        gripper = EndEffector.of("franky_gripper", robot_ip="10.0.0.1")
         gripper.connect()
 
         reads = []

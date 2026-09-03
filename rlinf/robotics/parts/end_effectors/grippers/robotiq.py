@@ -89,7 +89,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from rlinf.robotics.parts.transports.ros import ROSController
 
 
-@EndEffector.register("robotiq", "robotiq_gripper")
+@EndEffector.register("robotiq_gripper")
 class RobotiqGripper(BaseGripper):
     """Control a Robotiq 2F-85 or 2F-140 over Modbus RTU.
 

@@ -51,7 +51,7 @@ _FORCE_SCALE_LIMIT_N = 100.0
 _STATE_PERIOD_S = 0.03
 
 
-@EndEffector.register("franky", "franky_gripper")
+@EndEffector.register("franky_gripper")
 class FrankyGripper(BaseGripper):
     """Franka Emika Hand reached over libfranka rather than ROS.
 

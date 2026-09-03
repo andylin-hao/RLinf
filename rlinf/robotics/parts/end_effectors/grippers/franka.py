@@ -25,7 +25,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from rlinf.robotics.parts.transports.ros import ROSController
 
 
-@EndEffector.register("franka", "franka_gripper")
+@EndEffector.register("franka_gripper")
 class FrankaGripper(BaseGripper):
     """Franka Emika parallel-jaw gripper (ROS-based).
 

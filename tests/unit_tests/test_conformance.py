@@ -207,7 +207,7 @@ def test_a_gripper_keeps_the_part_contract():
 
     with mocked_sdks():
         failures = PartContract(
-            lambda: EndEffector.of("robotiq", port="/dev/mock-gripper"),
+            lambda: EndEffector.of("robotiq_gripper", port="/dev/mock-gripper"),
             action={"target": np.zeros(1, dtype=np.float32)},
         ).failures()
 

@@ -179,22 +179,6 @@ class EndEffectorType(str, Enum):
     def is_hand(self) -> bool:
         return self == type(self).RUIYAN_HAND
 
-    @property
-    def gripper_backend(self) -> str:
-        """Return the registered driver name for this gripper.
-
-        ``FRANKA_GRIPPER`` and ``FRANKY_GRIPPER`` are the same Franka Hand
-        reached two ways: over a ROS session, or over its own libfranka one.
-        """
-        backends = {
-            type(self).FRANKA_GRIPPER: "franka",
-            type(self).FRANKY_GRIPPER: "franky",
-            type(self).ROBOTIQ_GRIPPER: "robotiq",
-        }
-        if self not in backends:
-            raise ValueError(f"{self.value!r} is not a gripper type")
-        return backends[self]
-
 
 def normalize_end_effector_type(
     end_effector_type: str | EndEffectorType,
