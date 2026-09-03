@@ -1863,11 +1863,18 @@ def test_a_device_that_means_something_else_is_refused():
 
 
 def _task_classes():
-    """Return registered real-world task classes keyed by Gym ID."""
-    from rlinf.envs.real import dosw1, franka, gim_arm, so101, xsquare
+    """Return registered real-world task classes keyed by Gym ID.
+
+    The robot packages are read from the list the env package itself loads,
+    so a newly added robot is covered here without editing this helper.
+    """
+    import importlib
+
+    import rlinf.envs.real as real
 
     classes = {}
-    for module in (franka, dosw1, xsquare, gim_arm, so101):
+    for name in real._ROBOT_PACKAGES:
+        module = importlib.import_module(name, real.__name__)
         classes.update(getattr(module, "TASKS", {}))
     return classes
 
@@ -2265,6 +2272,173 @@ def test_so101_env_omits_frames_entirely_when_no_camera_is_configured():
             observation, _ = env.reset()
             assert "frames" not in env.observation_space.spaces
             assert "frames" not in observation
+            assert observation in env.observation_space
+        finally:
+            env.close()
+
+
+def _piper_env(**overrides):
+    """Build a Piper reach env against the faked pyAgxArm SDK."""
+    from rlinf.envs.real.piper import PiperReachEnv
+
+    settings = {
+        "can_channel": "can0",
+        "target_joint_qpos": [0.0] * 6,
+        # Do not pace the test at the real 10 Hz control rate.
+        "step_frequency": 1000.0,
+        # Headless: there is no display to show frames on.
+        "enable_camera_player": False,
+    }
+    settings.update(overrides)
+    return PiperReachEnv(settings, env_idx=0)
+
+
+def test_piper_env_runs_a_whole_episode_against_a_faked_arm():
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        env = _piper_env(max_num_steps=3)
+        try:
+            observation, _ = env.reset()
+            assert set(observation["state"]) == {
+                "arm_joint_position",
+                "tcp_pose",
+                "gripper_position",
+            }
+            assert observation["state"]["arm_joint_position"].shape == (6,)
+            assert observation["state"]["tcp_pose"].shape == (7,)
+
+            # Six joints plus one gripper opening, which is 0..1 not -1..1.
+            assert env.action_space.shape == (7,)
+            assert env.action_space.low[6] == pytest.approx(0.0)
+            assert env.action_space.high[6] == pytest.approx(1.0)
+            assert [(part.name, part.width) for part in env.action_parts()] == [
+                ("arm", 6),
+                ("end_effector", 1),
+            ]
+
+            for _ in range(3):
+                _, _, _, truncated, _ = env.step(np.zeros(7, dtype=np.float32))
+            assert truncated, "the episode should truncate at max_num_steps"
+        finally:
+            env.close()
+
+
+def test_piper_env_commands_reach_the_arm_in_radians():
+    """pyAgxArm takes radians, so nothing on this path rescales them."""
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        env = _piper_env()
+        try:
+            env.reset()
+            env.step(np.array([0.5, 1.0, -1.0, 0, 0, 0, 0.25], dtype=np.float32))
+
+            assert env._arm._robot.sent[-1] == pytest.approx(
+                [0.5, 1.0, -1.0, 0.0, 0.0, 0.0]
+            )
+            # A 0..1 opening becomes a width in metres.
+            assert env._arm._gripper.sent[-1]["value"] == pytest.approx(0.0175)
+        finally:
+            env.close()
+
+
+def test_piper_env_clips_an_action_to_the_joint_limits():
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        env = _piper_env(joint_limit_low=[-0.5] * 6, joint_limit_high=[0.5] * 6)
+        try:
+            env.reset()
+            env.step(np.array([10.0, -10.0, 0, 0, 0, 0, 2.0], dtype=np.float32))
+
+            joints = env._arm._robot.sent[-1]
+            assert joints[0] == pytest.approx(0.5)
+            # The env's own lower bound is looser than the arm's, so the arm
+            # holds joint 2 at the travel its firmware accepts.
+            assert joints[1] == pytest.approx(0.0)
+            # The gripper is clipped into 0..1 before it is scaled.
+            assert env._arm._gripper.sent[-1]["value"] == pytest.approx(0.07)
+        finally:
+            env.close()
+
+
+def test_piper_env_scores_the_distance_to_the_target_configuration():
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        env = _piper_env(target_joint_qpos=[0.0] * 6, reward_threshold=0.05)
+        try:
+            env.reset()
+            _, reward, terminated, _, _ = env.step(np.zeros(7, dtype=np.float32))
+            assert reward == pytest.approx(1.0)
+            assert terminated
+
+            # The fake arm holds whatever was last written, so a command away
+            # from the target is measured as a miss on the next read.
+            _, reward, terminated, _, _ = env.step(
+                np.array([1.0, 0, 0, 0, 0, 0, 0.0], dtype=np.float32)
+            )
+            assert reward == pytest.approx(0.0)
+            assert not terminated
+        finally:
+            env.close()
+
+
+def test_piper_env_runs_without_hardware_when_dummy():
+    """A dummy env samples its own space, so it needs no pyAgxArm at all."""
+    from rlinf.envs.real.piper import PiperReachEnv
+
+    env = PiperReachEnv({"is_dummy": True, "target_joint_qpos": [0.0] * 6})
+    try:
+        observation, _ = env.reset()
+        assert observation in env.observation_space
+        assert env.robot is None
+        env.step(np.zeros(7, dtype=np.float32))
+    finally:
+        env.close()
+
+
+def test_piper_env_without_a_gripper_has_a_six_wide_action():
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        env = _piper_env(with_gripper=False)
+        try:
+            observation, _ = env.reset()
+            assert "gripper_position" not in observation["state"]
+            assert [part.name for part in env.action_parts()] == ["arm"]
+            assert observation in env.observation_space
+        finally:
+            env.close()
+
+
+def test_piper_reach_refuses_a_target_that_is_not_six_joints():
+    from rlinf.envs.real.piper import PiperReachEnv
+
+    with pytest.raises(ValueError, match="6 arm joints"):
+        PiperReachEnv({"is_dummy": True, "target_joint_qpos": [0.0] * 5})
+
+
+def test_piper_task_is_registered_with_gymnasium():
+    import gymnasium as gym
+
+    import rlinf.envs.real as real
+
+    real._load_all()
+    assert "PiperReachEnv-v1" in gym.registry
+
+
+def test_piper_env_resizes_camera_frames_to_the_declared_shape():
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        env = _piper_env(camera_serials=["MOCK0001"], camera_type="realsense")
+        try:
+            observation, _ = env.reset()
+            frame = observation["frames"]["wrist_1"]
+            assert frame.shape == (128, 128, 3)
+            assert frame.dtype == np.uint8
             assert observation in env.observation_space
         finally:
             env.close()

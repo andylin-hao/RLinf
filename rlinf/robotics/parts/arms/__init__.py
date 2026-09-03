@@ -43,6 +43,10 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
         GimArm,
         GimArmRobotState,
     )
+    from .piper import (
+        PiperArm,
+        PiperRobotState,
+    )
     from .so101 import (
         SO101Arm,
         SO101RobotState,
@@ -66,6 +70,8 @@ _MODULE_BY_NAME: dict[str, str] = {
     "FrankyArm": ".franky",
     "GimArm": ".gim_arm",
     "GimArmRobotState": ".gim_arm",
+    "PiperArm": ".piper",
+    "PiperRobotState": ".piper",
     "SO101Arm": ".so101",
     "SO101RobotState": ".so101",
     "Turtle2Connection": ".turtle2",
@@ -86,6 +92,8 @@ __all__ = [
     "FrankyArm",
     "GimArm",
     "GimArmRobotState",
+    "PiperArm",
+    "PiperRobotState",
     "SO101Arm",
     "SO101RobotState",
     "Turtle2Connection",

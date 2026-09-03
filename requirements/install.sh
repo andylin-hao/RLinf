@@ -102,7 +102,7 @@ NO_INSTALL_RLINF_CMD="--no-install-project"
 SUPPORTED_TARGETS=("embodied" "agentic" "docs")
 SUPPORTED_ENGINES=("sglang" "vllm")
 SUPPORTED_MODELS=("openvla" "openvla-oft" "openpi" "gr00t" "gr00t_n1d6" "gr00t_n1d7" "dexbotic" "starvla" "lingbotvla" "dreamzero" "cosmos3" "qwen3_vl" "abot_m0" "molmoact2" "evo1" "diffusion")
-SUPPORTED_ENVS=("behavior" "maniskill_libero" "libero" "metaworld" "calvin" "isaaclab" "robocasa" "robocasa365" "franka" "franka-dexhand" "franka-franky" "frankasim" "robotwin" "habitat" "opensora" "wan" "genesis" "xsquare_turtle2" "liberopro" "liberoplus" "roboverse" "embodichain" "d4rl" "dosw1" "gim_arm" "so101" "dummy" "polaris")
+SUPPORTED_ENVS=("behavior" "maniskill_libero" "libero" "metaworld" "calvin" "isaaclab" "robocasa" "robocasa365" "franka" "franka-dexhand" "franka-franky" "frankasim" "robotwin" "habitat" "opensora" "wan" "genesis" "xsquare_turtle2" "liberopro" "liberoplus" "roboverse" "embodichain" "d4rl" "dosw1" "gim_arm" "so101" "piper" "dummy" "polaris")
 
 #=======================Utility Functions=======================
 
@@ -2440,6 +2440,9 @@ install_env_only() {
         so101)
             install_so101_env
             ;;
+        piper)
+            install_piper_env
+            ;;
         dosw1)
             install_dosw1_env
             ;;
@@ -2806,6 +2809,14 @@ install_franka_franky_env() {
 
 install_franka_dexhand_deps() {
     uv pip install "RLinf-dexterous-hands[glove]"
+}
+
+install_piper_env() {
+    uv sync --extra piper --active "${PLATFORM_UV_SYNC_ARGS[@]}" $NO_INSTALL_RLINF_CMD
+    local index_args=()
+    mapfile -t index_args < <(platform_index_args)
+    env -u UV_TORCH_BACKEND uv pip install "${index_args[@]}" \
+        "pyAgxArm @ git+${GITHUB_PREFIX}https://github.com/agilexrobotics/pyAgxArm.git@4b0f06585db3324222616999afeda9037df2e8bd"
 }
 
 install_so101_env() {

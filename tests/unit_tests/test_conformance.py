@@ -82,6 +82,12 @@ SHIPPED = {
         "env_idx": 0,
         "worker_rank": 0,
     },
+    "Piper": {
+        "can_channel": "can0",
+        "node_rank": 0,
+        "env_idx": 0,
+        "worker_rank": 0,
+    },
 }
 
 

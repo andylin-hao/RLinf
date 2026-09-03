@@ -4630,6 +4630,152 @@ def test_so101_never_prompts_for_calibration_and_refuses_an_uncalibrated_arm():
             follower.calibrated = True
 
 
+def test_piper_reports_radians_metres_and_a_quaternion():
+    """pyAgxArm speaks radians and metres; only the pose needs converting."""
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        from rlinf.robotics.parts.arms.piper import PiperArm
+
+        arm = PiperArm.declare("can0")
+        arm.connect()
+        arm._robot.joints = [0.1, 0.5, -0.4, 0.2, 0.3, -0.1]
+        # A quarter turn about Z, as the SDK reports it: extrinsic xyz Euler.
+        arm._robot.pose = [0.3, 0.05, 0.25, 0.0, 0.0, np.pi / 2]
+        arm._gripper.status.value = 0.035
+
+        state = arm.get_state()
+        assert state.arm_joint_position[1] == pytest.approx(0.5)
+        # The pose becomes [x, y, z, qx, qy, qz, qw], as every other arm gives.
+        assert state.tcp_pose.shape == (7,)
+        assert state.tcp_pose[:3] == pytest.approx([0.3, 0.05, 0.25])
+        assert state.tcp_pose[3:] == pytest.approx(
+            [0.0, 0.0, np.sqrt(0.5), np.sqrt(0.5)]
+        )
+        # The gripper is carried as a fraction of its stroke, not a width.
+        assert state.gripper_position[0] == pytest.approx(0.5)
+
+        # The arm reports joints and a pose, and no velocity or force.
+        assert set(arm.observation_features) == {"arm_joint_position", "tcp_pose"}
+
+        arm.disconnect()
+
+
+def test_piper_commands_go_out_in_radians_and_are_held_to_the_travel():
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        from rlinf.robotics.parts.arms.piper import PiperArm
+
+        arm = PiperArm.declare("can0")
+        arm.connect()
+
+        sent = arm.send_action({"joint_position": [0.0, 1.0, -1.0, 0.0, 0.0, 0.0]})
+        assert arm._robot.sent[-1] == pytest.approx([0.0, 1.0, -1.0, 0.0, 0.0, 0.0])
+        assert sent["joint_position"][1] == pytest.approx(1.0)
+
+        # Joints 2 and 3 only travel one way, so a request through zero is
+        # clipped rather than faulting the arm.
+        arm.send_action({"joint_position": [0.0, -5.0, 5.0, 0.0, 0.0, 0.0]})
+        assert arm._robot.sent[-1][1] == pytest.approx(0.0)
+        assert arm._robot.sent[-1][2] == pytest.approx(0.0)
+
+        arm.disconnect()
+
+
+def test_piper_gripper_rides_the_arm_connection():
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        from rlinf.robotics.parts.arms.piper import PiperArm
+
+        arm = PiperArm.declare("can0")
+        arm.connect()
+
+        gripper = arm.children["end_effector"]
+        # It borrows the arm's CAN session rather than opening its own.
+        assert gripper.owner is arm
+        assert gripper.control_mode == "continuous"
+
+        gripper.command(np.array([0.5]))
+        # A fraction becomes a width in metres, with the configured force.
+        assert arm._gripper.sent[-1] == {"value": 0.035, "force": 1.0}
+
+        arm._gripper.status.value = 0.07
+        assert gripper.get_state()[0] == pytest.approx(1.0)
+
+        arm.disconnect()
+
+
+def test_piper_without_a_gripper_exports_no_end_effector():
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        from rlinf.robotics.parts.arms.piper import PiperArm
+
+        arm = PiperArm.declare("can0", with_gripper=False)
+        arm.connect()
+        try:
+            assert "end_effector" not in arm.children
+            with pytest.raises(RuntimeError, match="without a "):
+                arm.move_gripper([1.0])
+        finally:
+            arm.disconnect()
+
+
+def test_piper_refuses_to_hand_over_an_arm_that_never_enabled():
+    """Enabling is what makes a command take effect, so it has to succeed."""
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks() as made:
+        from rlinf.robotics.parts.arms.piper import PiperArm
+
+        fake = made["pyAgxArm"].AgxArmFactory.create_arm({}).__class__
+        fake.enables = False
+        try:
+            arm = PiperArm.declare("can0")
+            arm.ENABLE_TIMEOUT_S = 0.05
+            with pytest.raises(RuntimeError, match="did not enable"):
+                arm.connect()
+            assert not arm.is_connected
+            # A refused open must not leave the CAN channel claimed.
+            second = PiperArm.declare("can0")
+            second.ENABLE_TIMEOUT_S = 0.05
+            with pytest.raises(RuntimeError, match="did not enable"):
+                second.connect()
+        finally:
+            fake.enables = True
+
+
+def test_piper_clearing_errors_does_not_cut_motor_power():
+    """The SDK's reset() and disable() drop a raised arm; neither is used."""
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        from rlinf.robotics.parts.arms.piper import PiperArm
+
+        arm = PiperArm.declare("can0")
+        arm.connect()
+
+        arm.clear_errors()
+        assert arm._robot.cleared == 1
+        assert arm._robot.enabled, "clearing a fault must leave the motors on"
+
+        driver = arm._robot
+        arm.disconnect()
+        # Releasing closes the bus and leaves the motors holding position.
+        assert not driver.is_connected()
+        assert driver.enabled
+
+
+def test_piper_takes_no_separately_wired_end_effector():
+    """The AgxGripper is on the arm's own bus, not a fitted device."""
+    from rlinf.robotics.parts.arms.piper import PiperArm
+
+    with pytest.raises(TypeError, match="gripper_connection"):
+        PiperArm.declare("can0", gripper_connection="/dev/ttyUSB0")
+
+
 def test_so101_takes_no_separately_wired_end_effector():
     """The gripper is a servo on the arm's own bus, not a fitted device."""
     from rlinf.robotics.parts.arms.so101 import SO101Arm

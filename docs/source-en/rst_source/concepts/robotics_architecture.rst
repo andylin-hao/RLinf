@@ -621,7 +621,8 @@ device families, remote placement, robot composition, and discovery.
        the composition checks and driver registry.
    * - ``robotics/parts/arms/``
      - The ``Arm`` category and ``BaseArm``, then the backends that register on
-       them: Franky, Franka ROS, GimArm, SO-101, and the coupled controllers.
+       them: Franky, Franka ROS, GimArm, SO-101, Piper, and the coupled
+       controllers.
    * - ``robotics/parts/cameras/``
      - Camera lifecycle and RealSense, ZED, and Lumos implementations.
    * - ``robotics/parts/end_effectors/``

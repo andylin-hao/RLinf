@@ -530,6 +530,8 @@ contract 已分别验证各项公开约定，下一步需要检查完整组合�
      - ``dosw1_mock_sac_mlp_pick``
    * - SO-101
      - ``so101_mock_sac_mlp_reach``
+   * - Piper
+     - ``piper_mock_sac_mlp_reach``
 
 连接真机
 ~~~~~~~~

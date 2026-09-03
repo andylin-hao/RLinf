@@ -457,9 +457,207 @@ def lerobot() -> dict[str, types.ModuleType]:
     return made
 
 
+def pyagxarm() -> dict[str, types.ModuleType]:
+    """Fake ``pyAgxArm`` exposing an AgileX Piper arm and its gripper.
+
+    The driver holds joint angles in radians and the gripper width in metres,
+    which is what the real SDK reports, so a test can assert that RLinf carries
+    the gripper as a fraction and the pose as a quaternion.
+    """
+
+    class ArmModel:
+        NERO = "nero"
+        PIPER = "piper"
+        PIPER_H = "piper_h"
+        PIPER_L = "piper_l"
+        PIPER_X = "piper_x"
+
+    class PiperFW:
+        DEFAULT = "default"
+        V183 = "v183"
+        V188 = "v188"
+        V189 = "v189"
+
+    class NeroFW:
+        DEFAULT = "default"
+
+    #: Joint travel the real SDK reports for the standard piper.
+    LIMITS = [
+        [-2.617994, 2.617994],
+        [0.0, 3.141593],
+        [-2.967060, 0.0],
+        [-1.745330, 1.745330],
+        [-1.221730, 1.221730],
+        [-2.094396, 2.094396],
+    ]
+
+    def create_agx_arm_config(
+        robot="piper", comm="can", firmeware_version="default", **kwargs
+    ):
+        names = [f"joint{index}" for index in range(1, 7)]
+        return {
+            "robot": robot,
+            "firmeware_version": firmeware_version,
+            "joint_names": names,
+            "joint_limits": dict(zip(names, LIMITS)),
+            "comm": {"type": comm, "can": dict(kwargs)},
+        }
+
+    class Message:
+        """The SDK wraps every reading with its rate and timestamp."""
+
+        def __init__(self, msg):
+            self.msg = msg
+            self.hz = 100.0
+            self.timestamp = 0.0
+
+    class GripperStatus:
+        def __init__(self):
+            #: Width in metres, as the real gripper reports it.
+            self.value = 0.0
+            self.force = 1.0
+            self.mode = "width"
+            self.foc_status = types.SimpleNamespace(
+                driver_enable_status=True, driver_error_status=False
+            )
+
+    class FakeGripper:
+        def __init__(self):
+            self.status = GripperStatus()
+            #: Commands received, for assertions.
+            self.sent: list[dict[str, float]] = []
+
+        def get_gripper_status(self):
+            return Message(self.status)
+
+        def move_gripper_m(self, value=0.0, force=1.0):
+            self.sent.append({"value": value, "force": force})
+            self.status.value = value
+            self.status.force = force
+
+        def move_gripper_deg(self, value=0.0, force=1.0):
+            self.sent.append({"deg": value, "force": force})
+
+    class FakeArm:
+        #: Set false to model an arm whose motors refuse to enable.
+        enables = True
+
+        class OPTIONS:
+            class EFFECTOR:
+                AGX_GRIPPER = "agx_gripper"
+                REVO2 = "revo2"
+
+            class MOTION_MODE:
+                J = "j"
+
+            class INSTALLATION_POS:
+                HORIZONTAL = "horizontal"
+
+        def __init__(self, config):
+            self.config = config
+            self.joint_nums = 6
+            self._connected = False
+            self.effector = None
+            self.speed_percent = None
+            #: Joint targets received, in radians.
+            self.sent: list[list[float]] = []
+            self.cleared = 0
+            self.enabled = False
+            # Radians and metres, as the real SDK reports.
+            self.joints = [0.0] * 6
+            self.pose = [0.3, 0.0, 0.2, 0.0, 0.0, 0.0]
+
+        def init_effector(self, effector):
+            if self.effector is not None:
+                raise RuntimeError("an effector is already initialised")
+            self.effector = FakeGripper()
+            return self.effector
+
+        def connect(self, start_read_thread=True):
+            self._connected = True
+
+        def disconnect(self, join_timeout=1.0):
+            self._connected = False
+
+        def is_connected(self):
+            return self._connected
+
+        def is_ok(self):
+            return self._connected
+
+        def get_fps(self):
+            return 100.0
+
+        def enable(self, joint_index=255):
+            self.enabled = type(self).enables
+            return self.enabled
+
+        def disable(self, joint_index=255):
+            self.enabled = False
+            return True
+
+        def reset(self):
+            self.enabled = False
+
+        def electronic_emergency_stop(self):
+            self.enabled = False
+
+        def clear_joint_error(self, joint_index=255, timeout=1.0):
+            self.cleared += 1
+            return True
+
+        def set_speed_percent(self, percent=100):
+            self.speed_percent = percent
+
+        def set_motion_mode(self, motion_mode="p"):
+            self.motion_mode = motion_mode
+
+        def get_joint_angles(self):
+            # Nothing is reported until the read thread is running.
+            return Message(list(self.joints)) if self._connected else None
+
+        def get_tcp_pose(self):
+            return Message(list(self.pose)) if self._connected else None
+
+        def get_flange_pose(self):
+            return self.get_tcp_pose()
+
+        def get_arm_status(self):
+            status = types.SimpleNamespace(
+                ctrl_mode=1, arm_status=0, mode_feedback=1, motion_status=0
+            )
+            return Message(status) if self._connected else None
+
+        def move_j(self, joints):
+            self.sent.append(list(joints))
+            self.joints = list(joints)
+
+    class AgxArmFactory:
+        @classmethod
+        def create_arm(cls, config, **kwargs):
+            return FakeArm(config)
+
+    def resolve_firmware_profile(robot, firmware_version):
+        return PiperFW.DEFAULT
+
+    return {
+        "pyAgxArm": module(
+            "pyAgxArm",
+            create_agx_arm_config=create_agx_arm_config,
+            AgxArmFactory=AgxArmFactory,
+            ArmModel=ArmModel,
+            PiperFW=PiperFW,
+            NeroFW=NeroFW,
+            resolve_firmware_profile=resolve_firmware_profile,
+            __version__="1.0.0",
+        )
+    }
+
+
 def modules(**_: Any) -> dict[str, types.ModuleType]:
     """Return fake arm SDKs keyed by import name."""
     made = {"franky": franky()}
     made.update(ros())
     made.update(lerobot())
+    made.update(pyagxarm())
     return made

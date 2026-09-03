@@ -729,6 +729,8 @@ observation space and the runner all run as they would on a bench:
      - ``dosw1_mock_sac_mlp_pick``
    * - SO-101
      - ``so101_mock_sac_mlp_reach``
+   * - Piper
+     - ``piper_mock_sac_mlp_reach``
 
 Run It Against the Robot
 ~~~~~~~~~~~~~~~~~~~~~~~~
