@@ -2156,20 +2156,31 @@ def test_so101_env_runs_a_whole_episode_against_a_faked_arm():
             env.close()
 
 
-def test_so101_env_commands_reach_the_arm_in_degrees():
-    """The env speaks radians; only the driver may speak lerobot's units."""
+def test_so101_env_keeps_its_action_in_radians_across_a_degree_driver():
+    """The env speaks radians; only the driver may speak lerobot's units.
+
+    The arm runs in a scheduler worker, so the fake servo bus is not reachable
+    from here. Read the action back instead: the driver converts on the way
+    out and again on the way in, so a stray conversion anywhere on the env's
+    side of the boundary would come back scaled.
+    ``test_so101_commands_are_converted_back_to_degrees`` pins the degrees
+    themselves, against an arm declared in this process.
+    """
     from robot_mocks import mocked_sdks
 
     with mocked_sdks():
         env = _so101_env()
         try:
             env.reset()
-            env.step(np.array([np.pi / 2, 0, 0, 0, 0, 0.25], dtype=np.float32))
+            observation, *_ = env.step(
+                np.array([np.pi / 2, 0, 0, 0, 0, 0.25], dtype=np.float32)
+            )
 
-            follower = env._arm._robot
-            joints = follower.sent[-2]
-            assert joints["shoulder_pan.pos"] == pytest.approx(90.0)
-            assert follower.sent[-1]["gripper.pos"] == pytest.approx(25.0)
+            state = observation["state"]
+            assert state["arm_joint_position"][0] == pytest.approx(np.pi / 2)
+            # The gripper stays the 0..1 opening the env declares, not
+            # lerobot's 0..100.
+            assert state["gripper_position"][0] == pytest.approx(0.25)
         finally:
             env.close()
 
@@ -2203,14 +2214,15 @@ def test_so101_env_clips_an_action_to_the_joint_limits():
         env = _so101_env(joint_limit_low=[-0.5] * 5, joint_limit_high=[0.5] * 5)
         try:
             env.reset()
-            env.step(np.array([10.0, -10.0, 0, 0, 0, 2.0], dtype=np.float32))
+            observation, *_ = env.step(
+                np.array([10.0, -10.0, 0, 0, 0, 2.0], dtype=np.float32)
+            )
 
-            follower = env._arm._robot
-            joints = follower.sent[-2]
-            assert joints["shoulder_pan.pos"] == pytest.approx(np.rad2deg(0.5))
-            assert joints["shoulder_lift.pos"] == pytest.approx(np.rad2deg(-0.5))
+            state = observation["state"]
+            assert state["arm_joint_position"][0] == pytest.approx(0.5)
+            assert state["arm_joint_position"][1] == pytest.approx(-0.5)
             # The gripper is clipped into 0..1 before it is scaled.
-            assert follower.sent[-1]["gripper.pos"] == pytest.approx(100.0)
+            assert state["gripper_position"][0] == pytest.approx(1.0)
         finally:
             env.close()
 
@@ -2380,20 +2392,31 @@ def test_piper_env_runs_a_whole_episode_against_a_faked_arm():
 
 
 def test_piper_env_commands_reach_the_arm_in_radians():
-    """pyAgxArm takes radians, so nothing on this path rescales them."""
+    """pyAgxArm takes radians, so nothing on this path rescales them.
+
+    The arm runs in a scheduler worker, so the fake CAN session is not
+    reachable from here; the action is read back instead.
+    ``test_piper_commands_go_out_in_radians_and_are_held_to_the_travel`` and
+    ``test_piper_gripper_rides_the_arm_connection`` pin what reaches the SDK,
+    against an arm declared in this process.
+    """
     from robot_mocks import mocked_sdks
 
     with mocked_sdks():
         env = _piper_env()
         try:
             env.reset()
-            env.step(np.array([0.5, 1.0, -1.0, 0, 0, 0, 0.25], dtype=np.float32))
+            observation, *_ = env.step(
+                np.array([0.5, 1.0, -1.0, 0, 0, 0, 0.25], dtype=np.float32)
+            )
 
-            assert env._arm._robot.sent[-1] == pytest.approx(
+            state = observation["state"]
+            assert state["arm_joint_position"] == pytest.approx(
                 [0.5, 1.0, -1.0, 0.0, 0.0, 0.0]
             )
-            # A 0..1 opening becomes a width in metres.
-            assert env._arm._gripper.sent[-1]["value"] == pytest.approx(0.0175)
+            # The env carries the gripper as a 0..1 opening, not the width in
+            # metres the SDK is given.
+            assert state["gripper_position"][0] == pytest.approx(0.25)
         finally:
             env.close()
 
@@ -2405,14 +2428,16 @@ def test_piper_env_clips_an_action_to_the_joint_limits():
         env = _piper_env(joint_limit_low=[-0.5] * 6, joint_limit_high=[0.5] * 6)
         try:
             env.reset()
-            env.step(np.array([10.0, -10.0, 0, 0, 0, 0, 2.0], dtype=np.float32))
+            observation, *_ = env.step(
+                np.array([10.0, -10.0, 0, 0, 0, 0, 2.0], dtype=np.float32)
+            )
 
-            joints = env._arm._robot.sent[-1]
+            joints = observation["state"]["arm_joint_position"]
             assert joints[0] == pytest.approx(0.5)
             # The env bound is looser than the arm's, so the arm holds joint 2
             # at the travel its firmware accepts.
             assert joints[1] == pytest.approx(0.0)
-            assert env._arm._gripper.sent[-1]["value"] == pytest.approx(0.07)
+            assert observation["state"]["gripper_position"][0] == pytest.approx(1.0)
         finally:
             env.close()
 
