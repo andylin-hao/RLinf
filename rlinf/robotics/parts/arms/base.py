@@ -14,10 +14,13 @@
 
 """Arm interfaces and the canonical observation schema."""
 
+import time
 from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, fields
 from typing import Any, ClassVar, Optional, Protocol
+
+import numpy as np
 
 from rlinf.robotics.parts.base import ControllablePart, Features, Observation
 from rlinf.utils.logging import get_logger
@@ -191,6 +194,12 @@ class BaseArm(Arm, ABC):
     #: The fields this arm reports. A driver may narrow it.
     STATE_FIELDS: ClassVar[tuple[str, ...]] = ARM_STATE_FIELDS
 
+    #: Joint movement between two polls below which the arm counts as stopped.
+    SETTLE_TOLERANCE: ClassVar[float] = np.deg2rad(0.5)
+
+    #: Seconds between polls while waiting for the arm to stop.
+    SETTLE_POLL_INTERVAL: ClassVar[float] = 0.05
+
     @abstractmethod
     def _open(self) -> Any:
         """Open the arm connection and return its device handle."""
@@ -212,3 +221,34 @@ class BaseArm(Arm, ABC):
         """Select the canonical fields out of this arm's state."""
         state = self.read_state().to_dict()
         return {name: state[name] for name in self.STATE_FIELDS}
+
+    def wait_until_still(self, duration: float = 3.0) -> None:
+        """Block until the joints stop moving, or ``duration`` expires.
+
+        A backend whose commands return while the arm is still travelling
+        calls this from :meth:`reset_joint`, so that a state read taken
+        afterwards reports where the arm came to rest rather than the pose it
+        was leaving. Settling is the test rather than reaching the target,
+        because an arm holds a configuration a little short of it under load.
+        """
+        deadline = time.monotonic() + duration
+        previous = self._joint_reading()
+        while time.monotonic() < deadline:
+            time.sleep(self.SETTLE_POLL_INTERVAL)
+            current = self._joint_reading()
+            if np.all(np.abs(current - previous) < self.SETTLE_TOLERANCE):
+                return
+            previous = current
+        get_logger().warning(
+            "%s had not stopped moving after %.1fs.", type(self).__name__, duration
+        )
+
+    def _joint_reading(self) -> np.ndarray:
+        """The joint positions the settle test compares, in radians.
+
+        Read through :meth:`get_state` rather than :meth:`read_state`, whose
+        reading is frozen for the duration of a snapshot; a poll needs a
+        fresh one every time. Override to read fewer fields than the whole
+        state object.
+        """
+        return np.asarray(self.get_state().arm_joint_position, dtype=float)

@@ -330,11 +330,14 @@ class PiperArm(BaseArm):
         """Read joints, tool pose, and gripper into canonical units."""
         return PiperRobotState(
             tcp_pose=self._tcp_pose(),
-            arm_joint_position=np.asarray(
-                self._require("joint angles", self._robot.get_joint_angles()),
-                dtype=float,
-            ),
+            arm_joint_position=self._joint_reading(),
             gripper_position=np.asarray([self._gripper_opening()], dtype=float),
+        )
+
+    def _joint_reading(self) -> np.ndarray:
+        """Read just the joint angles, skipping the tool pose a poll ignores."""
+        return np.asarray(
+            self._require("joint angles", self._robot.get_joint_angles()), dtype=float
         )
 
     def _require(self, what: str, reading: Any) -> Any:
@@ -427,13 +430,15 @@ class PiperArm(BaseArm):
         self.move_gripper([0.0])
 
     def reset_joint(self, positions: "Sequence[float]", duration: float = 3.0) -> None:
-        """Move to a rest pose in radians.
+        """Move to a rest pose in radians, returning once the arm has stopped.
 
-        The arm paces itself from ``speed_percent``, so ``duration`` is
-        accepted for the arm contract and not used.
+        ``move_j`` returns while the arm is still travelling at
+        ``speed_percent``, so this waits for it, as the other arm backends
+        do. Without it a state read taken straight after a reset reports the
+        pose the arm is leaving. Gives up after ``duration`` seconds.
         """
-        del duration
         self.move_joints(positions)
+        self.wait_until_still(duration)
 
     def clear_errors(self) -> None:
         """Clear latched joint faults, without cutting motor power."""

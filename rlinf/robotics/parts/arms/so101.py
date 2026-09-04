@@ -265,13 +265,15 @@ class SO101Arm(BaseArm):
         self.move_gripper([0.0])
 
     def reset_joint(self, positions: "Sequence[float]", duration: float = 3.0) -> None:
-        """Move to a rest pose in radians.
+        """Move to a rest pose in radians, returning once the arm has stopped.
 
-        lerobot's bus writes a goal position and returns, so ``duration`` is
-        accepted for the arm contract but the servos set their own pace.
+        lerobot's bus writes a goal position and returns while the servos are
+        still travelling, so this waits for them, as the other arm backends
+        do. Without it a state read taken straight after a reset reports the
+        pose the arm is leaving. Gives up after ``duration`` seconds.
         """
-        del duration
         self.move_joints(positions)
+        self.wait_until_still(duration)
 
     def is_robot_up(self) -> bool:
         """Report whether the servo bus and any lerobot cameras are live."""

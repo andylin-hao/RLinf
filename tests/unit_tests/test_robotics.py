@@ -21,6 +21,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any, Optional, cast
@@ -4637,6 +4638,84 @@ def test_so101_never_prompts_for_calibration_and_refuses_an_uncalibrated_arm():
             assert not uncalibrated.is_connected
         finally:
             follower.calibrated = True
+
+
+def test_so101_reset_waits_for_the_servos_to_stop_moving():
+    """The servo bus returns while the arm travels, so a reset waits for it."""
+    from types import SimpleNamespace
+
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        from rlinf.robotics.parts.arms.so101 import SO101Arm
+
+        arm = SO101Arm.declare("/dev/ttyACM0", calibration_id="test")
+        arm.connect()
+        # Three frames of travel, then a pose it holds a little short of the
+        # target, as the servos do under gravity.
+        frames = [[0.0] * 5, [0.3] * 5, [0.6] * 5] + [[0.62] * 5] * 20
+        seen: list[list[float]] = []
+
+        def report():
+            frame = frames[min(len(seen), len(frames) - 1)]
+            seen.append(frame)
+            return SimpleNamespace(arm_joint_position=np.array(frame, dtype=float))
+
+        arm.get_state = report
+        arm.reset_joint([0.0] * 5)
+        # It read on until two frames agreed, rather than reporting the pose
+        # the arm was leaving.
+        assert len(seen) == 5
+
+        arm.disconnect()
+
+
+def test_piper_reset_waits_for_the_arm_to_stop_moving():
+    """move_j returns while the arm is still travelling, so a reset waits."""
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        from rlinf.robotics.parts.arms.piper import PiperArm
+
+        arm = PiperArm.declare("can0")
+        arm.connect()
+        frames = [[0.0] * 6, [0.3] * 6, [0.6] * 6] + [[0.62] * 6] * 20
+        seen: list[list[float]] = []
+
+        def report():
+            frame = frames[min(len(seen), len(frames) - 1)]
+            seen.append(frame)
+            return np.array(frame, dtype=float)
+
+        arm._joint_reading = report
+        arm.reset_joint([0.0] * 6)
+        assert len(seen) == 5
+
+        arm.disconnect()
+
+
+def test_an_arm_that_never_stops_gives_up_instead_of_blocking():
+    """A jammed or driven arm must not hold a reset open for ever."""
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        from rlinf.robotics.parts.arms.piper import PiperArm
+
+        arm = PiperArm.declare("can0")
+        arm.connect()
+
+        def climbing():
+            climbing.angle += 0.5
+            return np.full(6, climbing.angle)
+
+        climbing.angle = 0.0
+        arm._joint_reading = climbing
+
+        start = time.monotonic()
+        arm.wait_until_still(0.2)
+        assert 0.2 <= time.monotonic() - start < 1.0
+
+        arm.disconnect()
 
 
 def test_piper_reports_radians_metres_and_a_quaternion():
