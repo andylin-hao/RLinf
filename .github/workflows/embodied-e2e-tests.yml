@@ -360,6 +360,63 @@ jobs:
           rm -rf .venv
           uv cache prune
 
+  embodied-realworld-collect-data-mock-test:
+    runs-on: embodied
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Create embodied environment
+        run: |
+          unset UV_DEFAULT_INDEX
+          export UV_PATH=/workspace/dataset/.uv
+          export UV_LINK_MODE=symlink
+          export UV_CACHE_DIR=/workspace/dataset/.uv_cache
+          export UV_PYTHON_INSTALL_DIR=/workspace/dataset/.uv_python
+          bash requirements/install.sh embodied --env franka
+
+      - name: Real-world data collection mock-robot test
+        timeout-minutes: 20
+        run: |
+          unset PYTHONPATH
+          export REPO_PATH=$(pwd)
+          source .venv/bin/activate
+          bash tests/e2e_tests/embodied/run.sh realworld_collect_data_mock
+
+      - name: Clean up
+        run: |
+          rm -rf .venv
+          uv cache prune
+
+  embodied-realworld-collect-dataset-mock-test:
+    runs-on: embodied
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Create embodied environment
+        run: |
+          unset UV_DEFAULT_INDEX
+          export UV_PATH=/workspace/dataset/.uv
+          export UV_LINK_MODE=symlink
+          export UV_CACHE_DIR=/workspace/dataset/.uv_cache
+          export UV_PYTHON_INSTALL_DIR=/workspace/dataset/.uv_python
+          bash requirements/install.sh embodied --env franka
+
+      - name: Reward-dataset labelling mock-robot test
+        timeout-minutes: 20
+        run: |
+          unset PYTHONPATH
+          export REPO_PATH=$(pwd)
+          source .venv/bin/activate
+          export RLINF_FAKE_KEYS=c,a,a
+          bash tests/e2e_tests/embodied/run.sh realworld_collect_dataset_mock
+
+      - name: Clean up
+        run: |
+          rm -rf .venv
+          uv cache prune
+
   embodied-mlp-realworld-piper-mock-sac-test:
     runs-on: embodied
     steps:

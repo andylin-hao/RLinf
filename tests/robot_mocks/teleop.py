@@ -195,14 +195,62 @@ def vr() -> types.ModuleType:
 
 
 def keyboard() -> types.ModuleType:
-    """Return an ``evdev`` module with no attached keyboards."""
+    """Return an ``evdev`` module with one keyboard that types labels.
+
+    ``RLINF_FAKE_KEYS`` names the keys it presses, cycling forever, so a run
+    that waits for an operator can reach its target unattended. Left unset the
+    device reports no presses, which is the shape a test wants when the
+    keyboard is only incidental.
+    """
+    import os
+    import time
+
+    codes = types.SimpleNamespace(EV_KEY=1, KEY_A=30, KEY_B=48, KEY_C=46, KEY_Q=16)
+    by_name = {"a": codes.KEY_A, "b": codes.KEY_B, "c": codes.KEY_C, "q": codes.KEY_Q}
+    # The listener maps a code back to its name through bytype.
+    codes.bytype = {
+        codes.EV_KEY: {code: f"KEY_{n.upper()}" for n, code in by_name.items()}
+    }
+
+    class Device:
+        def __init__(self, path: str) -> None:
+            self.name = "fake keyboard"
+            self.path = path
+            self.closed = False
+
+        def capabilities(self, verbose: bool = False) -> dict[int, list[int]]:
+            # Every key the listener requires, so it accepts this as a keyboard.
+            return {codes.EV_KEY: [codes.KEY_A, codes.KEY_B, codes.KEY_C, codes.KEY_Q]}
+
+        def read_loop(self):
+            keys = [
+                by_name[name.strip().lower()]
+                for name in os.environ.get("RLINF_FAKE_KEYS", "").split(",")
+                if name.strip().lower() in by_name
+            ]
+            if not keys:
+                # No script: block rather than spin, as a quiet keyboard does.
+                while not self.closed:
+                    time.sleep(0.05)
+                return
+            # A consumer may read the held key rather than the press edge, so
+            # each key is held for a beat before it is released.
+            dwell = float(os.environ.get("RLINF_FAKE_KEY_DWELL", "0.3"))
+            while not self.closed:
+                for code in keys:
+                    yield types.SimpleNamespace(type=codes.EV_KEY, code=code, value=1)
+                    time.sleep(dwell)
+                    yield types.SimpleNamespace(type=codes.EV_KEY, code=code, value=0)
+                    time.sleep(0.02)
+
+        def close(self) -> None:
+            self.closed = True
+
     return module(
         "evdev",
-        InputDevice=lambda _path: types.SimpleNamespace(
-            name="fake", path=_path, read_loop=lambda: iter(()), close=lambda: None
-        ),
-        list_devices=lambda: [],
-        ecodes=types.SimpleNamespace(EV_KEY=1, KEY_A=30, KEY_B=48, KEY_C=46),
+        InputDevice=Device,
+        list_devices=lambda: ["/dev/input/event-fake"],
+        ecodes=codes,
     )
 
 
