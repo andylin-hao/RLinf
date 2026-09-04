@@ -2241,7 +2241,7 @@ def test_so101_task_is_registered_with_gymnasium():
 
     import rlinf.envs.real as real
 
-    real._load_all()
+    real.load_tasks()
     assert "SO101ReachEnv-v1" in gym.registry
 
 
@@ -2479,7 +2479,7 @@ def test_piper_task_is_registered_with_gymnasium():
 
     import rlinf.envs.real as real
 
-    real._load_all()
+    real.load_tasks()
     assert "PiperReachEnv-v1" in gym.registry
 
 
@@ -2605,7 +2605,7 @@ def test_so101_env_is_driven_by_its_leader():
 
         import rlinf.envs.real as real
 
-        real._load_all()
+        real.load_tasks()
         env = gym.make(
             "SO101ReachEnv-v1",
             override_cfg={

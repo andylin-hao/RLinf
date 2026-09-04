@@ -96,6 +96,11 @@ class RealWorldEnv(gym.Env):
         if worker_info is not None and env_idx < len(worker_info.hardware_infos):
             robot_info = worker_info.hardware_infos[env_idx]
         override_cfg = copy.deepcopy(self.override_cfg)
+        # A worker that was handed this class by value never ran the package
+        # import that registers the task ids.
+        from rlinf.envs.real import load_tasks
+
+        load_tasks()
         env = gym.make(
             id=self.cfg.init_params.id,
             override_cfg=override_cfg,

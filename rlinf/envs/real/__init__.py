@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from .env import RealWorldEnv
 
-__all__ = ["RealWorldEnv"]
+__all__ = ["RealWorldEnv", "load_tasks"]
 
 #: Robot packages whose import registers their Gymnasium tasks.
 _ROBOT_PACKAGES = (
@@ -45,8 +45,12 @@ _ROBOT_PACKAGES = (
 _loaded = False
 
 
-def _load_all() -> None:
-    """Import every robot package and register its Gymnasium tasks."""
+def load_tasks() -> None:
+    """Import every robot package and register its Gymnasium tasks.
+
+    Idempotent, and safe to call from a process that reached a submodule
+    directly rather than through this package.
+    """
     global _loaded
     if _loaded:
         return
@@ -61,7 +65,7 @@ def __getattr__(name: str) -> Any:
     """Load the real-world envs the first time ``RealWorldEnv`` is used."""
     if name != "RealWorldEnv":
         raise AttributeError(name)
-    _load_all()
+    load_tasks()
     value = importlib.import_module(".env", __name__).RealWorldEnv
     globals()[name] = value
     return value

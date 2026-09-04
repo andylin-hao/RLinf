@@ -107,9 +107,15 @@ def franky() -> types.ModuleType:
 
         def __init__(self, *_args, **_kwargs):
             self.targets: list[Any] = []
+            self.gains: list[dict[str, Any]] = []
 
         def set_target(self, target, **kwargs):
             self.targets.append((target, kwargs))
+
+        def set_gains(self, **kwargs):
+            # The real tracker retunes a running loop; only the clips need a
+            # rebuild, which is why the driver calls this for gains alone.
+            self.gains.append(kwargs)
 
         def stop(self):
             return None

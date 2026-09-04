@@ -325,9 +325,25 @@ class Connection(ABC, metaclass=ConnectionMeta):
             self._state_snapshot.append(self.get_state())
         return self._state_snapshot[0]
 
+    def read_subtree(self, kind: str) -> dict[str, Any]:
+        """Read this part and the riders it carries, in one pass.
+
+        Placed remotely this is a single call, so the whole subtree is read on
+        the node holding the hardware and the riders share one read of it.
+
+        Args:
+            kind: A key of :pyattr:`PartGroup.SUBTREE_READS`.
+        """
+        return PartGroup._read_part(self, kind)
+
     @contextmanager
-    def snapshot_state(self) -> "Iterator[None]":
-        """Serve one hardware read to everything read inside this block."""
+    def _snapshot_state(self) -> "Iterator[None]":
+        """Serve one hardware read to everything read inside this block.
+
+        Private, so it never joins the surface a remote view forwards: a
+        context manager cannot be held open across a process boundary. A
+        remote part snapshots on its own node, inside :meth:`read_subtree`.
+        """
         if self._state_snapshot is not None or not hasattr(self, "get_state"):
             # Already inside a snapshot, or nothing to snapshot.
             yield
@@ -610,7 +626,7 @@ class PartGroup(ControllablePart):
     def observation_features(self) -> Features:
         """Describe each part's observation under its name."""
         return {
-            name: PartGroup._read_part(part, lambda p: p.observation_features)
+            name: PartGroup._read_part(part, "observation_features")
             for name, part in self._children.items()
         }
 
@@ -618,11 +634,7 @@ class PartGroup(ControllablePart):
     def action_features(self) -> Features:
         """Describe each controllable part's action under its name."""
         return {
-            name: PartGroup._read_part(
-                part,
-                lambda p: p.action_features,
-                include=lambda p: isinstance(p, ControllablePart),
-            )
+            name: PartGroup._read_part(part, "action_features")
             for name, part in self._children.items()
             if isinstance(part, ControllablePart)
         }
@@ -638,29 +650,54 @@ class PartGroup(ControllablePart):
                 seen.setdefault(id(owner), owner)
         return list(seen.values())
 
+    #: What each kind of subtree read collects from a part, and which riders
+    #: contribute to it. A key travels to another node in place of a callable,
+    #: so a remote part can read its own subtree.
+    SUBTREE_READS: ClassVar[
+        dict[
+            str,
+            tuple[
+                "Callable[[RobotPart], Mapping[str, Any]]",
+                "Optional[Callable[[RobotPart], bool]]",
+            ],
+        ]
+    ] = {
+        "observation": (lambda part: part.get_observation(), None),
+        "observation_features": (lambda part: part.observation_features, None),
+        "action_features": (
+            lambda part: part.action_features,
+            lambda part: isinstance(part, ControllablePart),
+        ),
+    }
+
     @staticmethod
-    def _read_part(
-        part: "RobotPart",
-        call: "Callable[[RobotPart], Mapping[str, Any]]",
-        include: "Optional[Callable[[RobotPart], bool]]" = None,
-    ) -> dict[str, Any]:
+    def _read_part(part: "RobotPart", kind: str) -> dict[str, Any]:
         """Read a part and recursively nest its children.
 
-        ``include`` can omit child parts that do not contribute to the result.
+        Args:
+            part: The part to read.
+            kind: A key of :pyattr:`PartGroup.SUBTREE_READS`, naming what to
+                collect and which riders contribute.
         """
+        # A remote part reads its own subtree, so one call crosses the process
+        # boundary and the riders still share one read of the hardware.
+        if part._group is not None and not isinstance(part, PartGroup):
+            return part.read_subtree(kind)
+
+        call, include = PartGroup.SUBTREE_READS[kind]
         # A group rides no connection of its own and refuses to name one, so
         # there is nothing to snapshot here; its children snapshot themselves
         # as they are reached.
         owner = None if isinstance(part, PartGroup) else part.owner
         snapshot = (
-            owner.snapshot_state() if isinstance(owner, Connection) else nullcontext()
+            owner._snapshot_state() if isinstance(owner, Connection) else nullcontext()
         )
         # The part and its riders share one hardware read.
         with snapshot:
             reading = dict(call(part))
             for name, rider in part.children.items():
                 if include is None or include(rider):
-                    reading[name] = PartGroup._read_part(rider, call, include)
+                    reading[name] = PartGroup._read_part(rider, kind)
         return reading
 
     @staticmethod
@@ -777,9 +814,7 @@ class PartGroup(ControllablePart):
 
     def get_observation(self) -> Observation:
         """Read observations into the named part tree."""
-        return self._fan_out(
-            lambda part: self._read_part(part, lambda p: p.get_observation())
-        )
+        return self._fan_out(lambda part: self._read_part(part, "observation"))
 
     def send_action(self, action: Action) -> Observation:
         """Dispatch each named action to the part that owns it."""

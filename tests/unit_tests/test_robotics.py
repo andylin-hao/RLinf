@@ -1484,7 +1484,7 @@ _LAZY_PACKAGES = (
 
 
 def _typed_names(source: str) -> set[str]:
-    """Return the names a type checker sees declared in the package."""
+    """Return the names declared for a type checker in a TYPE_CHECKING block."""
     typed: set[str] = set()
     for node in ast.walk(ast.parse(source)):
         if not (isinstance(node, ast.If) and "TYPE_CHECKING" in ast.dump(node.test)):
@@ -1493,6 +1493,15 @@ def _typed_names(source: str) -> set[str]:
             if isinstance(statement, ast.ImportFrom):
                 typed |= {alias.asname or alias.name for alias in statement.names}
     return typed
+
+
+def _module_defined(source: str) -> set[str]:
+    """Return the names the module defines outright, which need no declaring."""
+    defined: set[str] = set()
+    for node in ast.parse(source).body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            defined.add(node.name)
+    return defined
 
 
 @pytest.mark.parametrize(("path", "package"), _LAZY_PACKAGES)
@@ -1504,10 +1513,12 @@ def test_a_lazy_package_still_types_what_it_exports(path, package):
     """
     import importlib
 
-    typed = _typed_names((_ROOT / path).read_text())
+    source = (_ROOT / path).read_text()
+    typed = _typed_names(source)
     exported = set(importlib.import_module(package).__all__)
 
-    missing = sorted(exported - typed)
+    # A name the module defines itself is already visible to a type checker.
+    missing = sorted(exported - typed - _module_defined(source))
     assert missing == [], (
         f"exported but invisible to a type checker: {missing}. "
         f"Add them to the TYPE_CHECKING block in {path}."
