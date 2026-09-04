@@ -56,11 +56,15 @@ if str(_TESTS) not in sys.path:
 from robot_contracts import ObservationContract  # noqa: E402
 
 
-def _mocked_sdks(remote=False):
-    """The fake vendor SDKs, which live with the tests rather than the package."""
+def _mocked_sdks():
+    """The fake vendor SDKs, which live with the tests rather than the package.
+
+    Only the SDKs are faked, so parts are placed on nodes exactly as a real
+    run places them, and each worker installs the fakes for itself.
+    """
     from robot_mocks import mocked_sdks
 
-    return mocked_sdks(remote=remote)
+    return mocked_sdks()
 
 
 def literal(text: str) -> Any:
@@ -264,8 +268,7 @@ def main() -> int:
     parser.add_argument(
         "--remote",
         action="store_true",
-        help="with --mock, place parts on nodes as a real run does, each "
-        "worker installing the fakes for itself",
+        help="also compare a placed robot with a local one, part by part",
     )
     parser.add_argument(
         "--arg",
@@ -286,7 +289,7 @@ def main() -> int:
     try:
         if args.mock:
             print("[mock] vendor SDKs are faked; this checks the code, not a robot")
-            with _mocked_sdks(remote=args.remote):
+            with _mocked_sdks():
                 return check(args.robot_type, kwargs, remote=args.remote)
         return check(args.robot_type, kwargs, remote=args.remote)
     except Exception:  # noqa: BLE001 - a bench check reports anything

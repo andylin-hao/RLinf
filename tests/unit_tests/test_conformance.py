@@ -44,7 +44,7 @@ from rlinf.robotics.parts.base import (  # noqa: E402
 SHIPPED = {
     "Franka": {
         "robot_ip": "0.0.0.0",
-        "node_rank": 1,
+        "node_rank": 0,
         "env_idx": 0,
         "worker_rank": 0,
     },
@@ -148,10 +148,13 @@ def test_building_a_camera_opens_no_device(camera_type):
             camera_type=camera_type,
             resolution=(64, 48),
         )
-        camera = Camera.of(info, node_rank=2)
+        # No node rank, so the camera opens here and the fake it records
+        # against is this process's. Placement is covered by the robot
+        # contract, which hosts its parts for real.
+        camera = Camera.of(info)
 
         assert not camera.is_connected
-        assert camera.node_rank == 2
+        assert camera.node_rank is None
         if sdk_name is not None:
             opened = getattr(sdks[sdk_name], opened_attr)
             assert opened == [], (

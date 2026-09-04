@@ -199,9 +199,17 @@ class Connection(ABC, metaclass=ConnectionMeta):
                 raise
             return
 
-        from ..placement import host
+        from ..placement import abandon, host
 
         group, view = host(self)
+        try:
+            # A worker is created asynchronously, so one whose device refused
+            # to open is still on its way down here. Waiting surfaces that,
+            # rather than reporting a robot that was never opened.
+            group._is_ready().wait()
+        except BaseException:
+            abandon(group)
+            raise
         self._group = group
         self._local_cls = type(self)
         self._device = group

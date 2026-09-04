@@ -120,15 +120,16 @@ def _reach_worker_processes() -> dict[str, str]:
 
 
 @contextlib.contextmanager
-def mocked_sdks(
-    *, extra: dict[str, Any] | None = None, remote: bool = False
-) -> Iterator[dict[str, Any]]:
+def mocked_sdks(*, extra: dict[str, Any] | None = None) -> Iterator[dict[str, Any]]:
     """Install fake SDKs for the duration of the context.
+
+    Only the vendor SDKs are faked. Everything else behaves as it does in a
+    real run: a part with a ``node_rank`` is hosted in a scheduler worker,
+    which installs the same fakes for itself. A test that wants a part in this
+    process declares it without a ``node_rank``, as production does.
 
     Args:
         extra: More modules to install, by dotted name.
-        remote: Whether workers should install their own fake SDKs. If false,
-            all parts are built in the current process.
 
     Yields:
         Installed modules available for test assertions.
@@ -143,29 +144,10 @@ def mocked_sdks(
     patches: list[tuple[Any, str, Any]] = []
     saved_environ = {}
 
-    if remote:
-        # Workers install the fakes for themselves, so placement runs for real.
-        for name, value in _reach_worker_processes().items():
-            saved_environ[name] = os.environ.get(name)
-            os.environ[name] = value
-    else:
-        # Clear remote placement so every connection opens in this process.
-        from dataclasses import replace as _replace
-
-        from rlinf.robotics.parts import base as _base
-
-        _connect = _base.Connection.connect
-
-        def _connect_here(self):
-            if (
-                self._remote_info is not None
-                and self._remote_info.node_rank is not None
-            ):
-                self._remote_info = _replace(self._remote_info, node_rank=None)
-            _connect(self)
-
-        patches.append((_base.Connection, "connect", _connect))
-        _base.Connection.connect = _connect_here
+    # Workers install the fakes for themselves, so placement runs for real.
+    for name, value in _reach_worker_processes().items():
+        saved_environ[name] = os.environ.get(name)
+        os.environ[name] = value
     # Modules that start processes rather than only talking to an SDK. A fake
     # module in sys.modules arrives too late for these, because they import
     # psutil at module scope.

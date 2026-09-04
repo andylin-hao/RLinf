@@ -17,6 +17,6 @@
 This package is the scheduler integration boundary for ``rlinf.robotics``.
 """
 
-from .handles import PartWorkerHost, host, remote_view_of, shutdown
+from .handles import PartWorkerHost, abandon, host, remote_view_of, shutdown
 
-__all__ = ["PartWorkerHost", "host", "remote_view_of", "shutdown"]
+__all__ = ["PartWorkerHost", "abandon", "host", "remote_view_of", "shutdown"]

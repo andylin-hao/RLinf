@@ -211,8 +211,7 @@ class PiperArm(BaseArm):
             robot.set_speed_percent(self._speed_percent)
             self._await_feedback(robot)
         except BaseException:
-            self._close(self._robot)
-            self._claim.release()
+            self._release(self._robot)
             raise
         self._logger.info(
             "Piper %s connected on %s (%s)",
@@ -312,24 +311,19 @@ class PiperArm(BaseArm):
                 )
             time.sleep(self.POLL_S)
 
-    def _close(self, robot: Any) -> None:
-        """Drop the SDK handles, leaving the motors holding their position."""
-        try:
-            if robot is not None:
-                robot.disconnect()
-        finally:
-            self._robot = None
-            self._gripper = None
-
     def _release(self, device: Any) -> None:
         """Close the CAN session, leaving the motors holding their position.
 
         Neither disabled nor reset: both cut motor power, and closing a
-        connection should not move the arm.
+        connection should not move the arm. Also used to unwind a failed
+        open, so ``device`` may be ``None``.
         """
         try:
-            self._close(device)
+            if device is not None:
+                device.disconnect()
         finally:
+            self._robot = None
+            self._gripper = None
             self._claim.release()
 
     def get_state(self) -> PiperRobotState:

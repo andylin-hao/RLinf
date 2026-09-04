@@ -27,6 +27,7 @@ from uuid import uuid4
 from rlinf.scheduler import Cluster, NodePlacementStrategy, Worker
 from rlinf.scheduler.worker.worker import WorkerMeta
 from rlinf.scheduler.worker.worker_group import WorkerGroup
+from rlinf.utils.logging import get_logger
 
 from ..parts.base import Connection, ConnectionMeta
 
@@ -248,6 +249,24 @@ def host(connection: Connection) -> "tuple[WorkerGroup, type[Connection]]":
         worker_name=remote_info.worker_name,
     ).launch()
     return group, remote_view_of(remote_info.connection_cls)
+
+
+def abandon(group: "WorkerGroup") -> None:
+    """Tear down a group whose worker never became usable.
+
+    Used while rolling back a failed connect, so a teardown problem must not
+    replace the failure being reported.
+    """
+    close = getattr(group, "_close", None)
+    if not callable(close):
+        return
+    try:
+        close()
+    except Exception as teardown:
+        get_logger().warning(
+            "Could not release the worker for a connection that failed to open: %s",
+            teardown,
+        )
 
 
 def shutdown(group: "WorkerGroup") -> None:
