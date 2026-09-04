@@ -16,12 +16,17 @@
 
 Run it, then type commands::
 
-    python so101_manual.py --port /dev/ttyACM0 --id my-arm
-    python so101_manual.py --mock          # no hardware, to try the commands
+    python -m toolkits.realworld_check.test_so101_env --port /dev/ttyACM1 --id my-arm
+    python -m toolkits.realworld_check.test_so101_env --mock   # no hardware
 
 Add --leader to hand the arm over to an SO-101 leader, then type "teleop"::
 
-    python so101_manual.py --port /dev/ttyACM0 --leader /dev/ttyACM1
+    python -m toolkits.realworld_check.test_so101_env \\
+        --port /dev/ttyACM1 --leader /dev/ttyACM0
+
+It starts by folding the arm to :pydata:`WRAP_POSE_DEG`, so a session always
+begins from the same place. Pass --no-reset to leave it where it stands, for
+when it is holding something or parked against a fixture.
 
 The arm has joint encoders and no kinematic model, so "up" and "forward"
 are single joint moves rather than Cartesian ones: up bends the shoulder
@@ -29,8 +34,15 @@ and forward bends the elbow.
 """
 
 import argparse
+import contextlib
+import signal
 
 import numpy as np
+
+# The pose the arm folds into when parked: upper arm laid back, forearm
+# folded over it. A couple of degrees short of the pose it ships in, which
+# sits just outside the configured shoulder limit.
+WRAP_POSE_DEG = (0.0, -99.0, 95.0, 65.0, 0.0)
 
 # shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll
 COMMANDS = {
@@ -80,6 +92,12 @@ def main() -> None:
         "--invert", action="store_true", help="flip every direction's sign"
     )
     parser.add_argument(
+        "--no-reset",
+        dest="reset",
+        action="store_false",
+        help="start from where the arm stands instead of folding it first",
+    )
+    parser.add_argument(
         "--mock", action="store_true", help="run against a fake arm, no hardware"
     )
     args = parser.parse_args()
@@ -88,7 +106,7 @@ def main() -> None:
         import sys
         from pathlib import Path
 
-        sys.path.insert(0, str(Path(__file__).parent / "tests"))
+        sys.path.insert(0, str(Path(__file__).parents[2] / "tests"))
         from robot_mocks import mocked_sdks
 
         context = mocked_sdks()
@@ -105,6 +123,7 @@ def main() -> None:
                 "port": args.port,
                 "calibration_id": args.id,
                 "enable_camera_player": False,
+                "reset_joint_qpos": list(np.deg2rad(WRAP_POSE_DEG)),
             }
         )
         try:
@@ -112,11 +131,25 @@ def main() -> None:
                 env,
                 step=np.deg2rad(args.step),
                 invert=args.invert,
+                reset=args.reset,
                 leader_port=args.leader,
                 leader_id=args.leader_id,
             )
         finally:
-            env.close()
+            # Closing releases the arm's Ray actor. An interrupt landing here
+            # would strand it, and its name is taken until it goes.
+            with _deferred_interrupts():
+                env.close()
+
+
+@contextlib.contextmanager
+def _deferred_interrupts():
+    """Hold Ctrl-C until the block finishes, so teardown always completes."""
+    previous = signal.signal(signal.SIGINT, signal.SIG_IGN)
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGINT, previous)
 
 
 def teleop(env, port: str, calibration_id) -> None:
@@ -145,18 +178,39 @@ def teleop(env, port: str, calibration_id) -> None:
             command = np.append(action.parts["arm"], action.parts["end_effector"])
             env.step(command.astype(np.float32))
     except KeyboardInterrupt:
-        print("\nStopped following.")
+        pass
     finally:
-        leader.disconnect()
+        # A second Ctrl-C lands while the first one is still unwinding, and
+        # would leave the leader's serial port open.
+        with _deferred_interrupts():
+            leader.disconnect()
+            print("\nStopped following.")
 
 
-def drive(env, step: float, invert: bool, leader_port=None, leader_id=None) -> None:
+def _read_pose(env) -> tuple[np.ndarray, float]:
+    """Return the arm's joint angles in radians and its gripper opening."""
+    reading = env.robot.get_observation()["arm"]
+    # A copy, not a view: the observation is read-only and the caller
+    # accumulates its moves into this array.
+    joints = np.array(reading["arm_joint_position"], dtype=float)
+    grip = float(np.asarray(reading["end_effector"]["state"]).reshape(-1)[0])
+    return joints, grip
+
+
+def drive(
+    env,
+    step: float,
+    invert: bool,
+    reset: bool = True,
+    leader_port=None,
+    leader_id=None,
+) -> None:
     """Read commands until the operator quits."""
-    observation, _ = env.reset()
+    if reset:
+        env.reset()
     # Absolute joint targets: start where the arm already is, so the first
     # command moves it by one step rather than snapping somewhere.
-    target = np.asarray(observation["state"]["arm_joint_position"], dtype=float)
-    grip = float(observation["state"]["gripper_position"][0])
+    target, grip = _read_pose(env)
     sign = -1.0 if invert else 1.0
     print(HELP)
 
@@ -193,11 +247,13 @@ def drive(env, step: float, invert: bool, leader_port=None, leader_id=None) -> N
             teleop(env, leader_port, leader_id)
             # Pick up where the leader left the arm. Commanding the pre-teleop
             # target here would snap it back across the workspace.
-            target = env.get_joint_positions()[0].astype(float)
+            target, grip = _read_pose(env)
             print("  joints:", np.round(np.rad2deg(target), 1), "deg")
             continue
         if name == "home":
-            target = np.zeros_like(target)
+            # The pose the session started from, not all zeros, which stands
+            # the arm straight up.
+            target = np.asarray(env.config.reset_joint_qpos, dtype=float)
         elif name == "open":
             grip = 1.0
         elif name == "close":
@@ -209,9 +265,12 @@ def drive(env, step: float, invert: bool, leader_port=None, leader_id=None) -> N
             print(f"'{name}' is not a command; type help")
             continue
 
-        observation, *_ = env.step(np.append(target, grip).astype(np.float32))
-        # The arm clips what it cannot reach, so follow what it actually did.
-        target = np.asarray(observation["state"]["arm_joint_position"], dtype=float)
+        env.step(np.append(target, grip).astype(np.float32))
+        # step() returns while the servos are still travelling, and the arm
+        # clips what it cannot reach, so wait and then report where it
+        # actually came to rest.
+        env.robot.child("arm").wait_until_still()
+        target, _ = _read_pose(env)
         print("  joints:", np.round(np.rad2deg(target), 1), "deg")
 
 
