@@ -28,6 +28,9 @@ It starts by folding the arm to :pydata:`WRAP_POSE_DEG`, so a session always
 begins from the same place. Pass --no-reset to leave it where it stands, for
 when it is holding something or parked against a fixture.
 
+Pass --enable-camera-player to enable the camera preview window. It is
+disabled by default.
+
 The arm has joint encoders and no kinematic model, so "up" and "forward"
 are single joint moves rather than Cartesian ones: up bends the shoulder
 and forward bends the elbow.
@@ -100,6 +103,11 @@ def main() -> None:
     parser.add_argument(
         "--mock", action="store_true", help="run against a fake arm, no hardware"
     )
+    parser.add_argument(
+        "--enable-camera-player",
+        action="store_true",
+        help="enable the camera preview window (disabled by default)",
+    )
     args = parser.parse_args()
 
     if args.mock:
@@ -122,7 +130,7 @@ def main() -> None:
             {
                 "port": args.port,
                 "calibration_id": args.id,
-                "enable_camera_player": False,
+                "enable_camera_player": args.enable_camera_player,
                 "reset_joint_qpos": list(np.deg2rad(WRAP_POSE_DEG)),
             }
         )
