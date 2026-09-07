@@ -499,6 +499,8 @@ class DOSW1Arm(Arm):
 class DOSW1EndEffector(EndEffector):
     """Gripper view exported by a shared DOSW1 connection."""
 
+    is_gripper = True
+
     def __init__(self, sdk: DOSW1Connection, side: str) -> None:
         if side not in {"left", "right"}:
             raise ValueError("DOSW1 gripper side must be 'left' or 'right'.")
@@ -519,9 +521,6 @@ class DOSW1EndEffector(EndEffector):
     def control_mode(self) -> str:
         """Return the continuous-width control mode."""
         return "continuous"
-
-    def reset(self) -> None:
-        """Leave reset width to the task configuration."""
 
     def _read_joint(self) -> np.ndarray:
         """Return this side's six joints and gripper width as ``(7,)``."""

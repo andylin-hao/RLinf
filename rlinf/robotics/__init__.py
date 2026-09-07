@@ -50,7 +50,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     )
     from .parts.arms import ARM_STATE_FIELDS, Arm, ArmState, BaseArm
     from .parts.cameras import BaseCamera, Camera, CameraInfo
-    from .parts.end_effectors import EndEffector
+    from .parts.end_effectors import BaseGripper, BaseHand, EndEffector
     from .parts.mobility import MobileBase
     from .parts.views import MethodArm, MethodCamera, MethodEndEffector
     from .robot import Robot
@@ -85,7 +85,7 @@ _MODULE_GROUPS: dict[str, tuple[str, ...]] = {
     ".parts.arms": ("ARM_STATE_FIELDS", "Arm", "ArmState", "BaseArm"),
     # Load each device category only when requested.
     ".parts.cameras": ("BaseCamera", "Camera", "CameraInfo"),
-    ".parts.end_effectors": ("EndEffector",),
+    ".parts.end_effectors": ("BaseGripper", "BaseHand", "EndEffector"),
     ".parts.mobility": ("MobileBase",),
     ".robot": ("Robot",),
     ".parts.views": ("MethodArm", "MethodCamera", "MethodEndEffector"),
@@ -132,6 +132,8 @@ __all__ = [
     "ArmState",
     "BaseArm",
     "BaseCamera",
+    "BaseGripper",
+    "BaseHand",
     "Camera",
     "CameraInfo",
     "Connection",

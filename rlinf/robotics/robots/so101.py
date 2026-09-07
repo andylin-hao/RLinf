@@ -97,8 +97,8 @@ class SO101Robot(Robot):
 class SO101Config(RobotConfig):
     """Configuration for an SO-101 robot."""
 
-    port: str = "/dev/ttyACM0"
-    """Serial device the Feetech servo bus is on."""
+    serial_port: str = "/dev/ttyACM0"
+    """Serial device the Feetech servo bus is on; resolved from SERIAL_PORT."""
 
     calibration_id: Optional[str] = None
     """lerobot calibration identifier for this arm.
@@ -112,7 +112,8 @@ class SO101Config(RobotConfig):
     clamping, which lets a large action step move the arm at full speed."""
 
     camera_serials: Optional[list[str]] = None
-    """Camera identifiers. ``None`` or ``[]`` runs without cameras."""
+    """Camera identifiers. ``None`` discovers cameras during enumeration;
+    ``[]`` explicitly selects no cameras."""
 
     camera_type: str = "realsense"
     """Camera backend: ``"realsense"``, ``"zed"``, or ``"lumos"``."""

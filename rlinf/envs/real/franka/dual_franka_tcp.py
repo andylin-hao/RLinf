@@ -32,14 +32,14 @@ from scipy.spatial.transform import Rotation as R
 from rlinf.robotics.actions import ActionKind
 from rlinf.utils.rot6d import matrix_to_rot6d, rot6d_to_quat_xyzw_safe
 
-from .dual_base import DualFrankaEnv, DualFrankaRobotConfig
+from .dual_base import DualFrankaEnv, DualFrankaEnvConfig
 
 ACTION_DIM_PER_ARM = 10  # xyz, 6D rotation, and gripper.
 PROPRIO_DIM_PER_ARM = 9  # xyz and 6D rotation; gripper uses a separate slot.
 
 
 @dataclass
-class DualFrankaTCPRobotConfig(DualFrankaRobotConfig):
+class DualFrankaTCPEnvConfig(DualFrankaEnvConfig):
     """Config for :class:`DualFrankaTCPEnv`."""
 
     # Other orientation representations are rejected during space initialization.
@@ -49,7 +49,7 @@ class DualFrankaTCPRobotConfig(DualFrankaRobotConfig):
 class DualFrankaTCPEnv(DualFrankaEnv):
     """Dual-arm Franka environment with absolute TCP waypoint actions."""
 
-    CONFIG_CLS: type[DualFrankaTCPRobotConfig] = DualFrankaTCPRobotConfig
+    CONFIG_CLS: type[DualFrankaTCPEnvConfig] = DualFrankaTCPEnvConfig
 
     PER_ARM_ACTION_DIM = ACTION_DIM_PER_ARM
     GRIPPER_IDX_IN_ARM = 9  # Gripper channel after xyz and 6D rotation.

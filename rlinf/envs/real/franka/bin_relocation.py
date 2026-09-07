@@ -30,13 +30,13 @@ from .base import (
     _CAMERA_REOPEN_ATTEMPTS,
     _CAMERA_REOPEN_WAIT_S,
     FrankaEnv,
-    FrankaRobotConfig,
+    FrankaEnvConfig,
     compliance,
 )
 
 
 @dataclass
-class BinEnvConfig(FrankaRobotConfig):
+class BinEnvConfig(FrankaEnvConfig):
     task_description: str = "Pick up the object and put it into another bin"
     random_xy_range: float = 0.01  # Reset-position perturbation.
     clip_x_range: float = 0.10  # Safety-box half-width along x.

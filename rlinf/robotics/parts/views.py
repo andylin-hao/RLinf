@@ -118,6 +118,7 @@ class MethodEndEffector(EndEffector):
         host: The part owning the connection.
         state_field: Host state field holding the end-effector value.
         dims: Width of the state and target vectors.
+        is_gripper: Whether the host exports a gripper through this view.
         command: Host method taking a continuous target. When ``None`` the
             view falls back to binary open/close on the sign of ``target[0]``.
         open_method: Host method that opens, in binary mode.
@@ -135,6 +136,8 @@ class MethodEndEffector(EndEffector):
         open_method: str = "open_gripper",
         close_method: str = "close_gripper",
         state_index: Optional[Union[int, slice]] = None,
+        *,
+        is_gripper: bool = False,
     ) -> None:
         self._host = self._owner = host
         self.state_field = state_field
@@ -143,6 +146,7 @@ class MethodEndEffector(EndEffector):
         self.open_method = open_method
         self.close_method = close_method
         self.state_index = state_index
+        self.is_gripper = is_gripper
 
     @property
     def action_dim(self) -> int:
@@ -158,9 +162,6 @@ class MethodEndEffector(EndEffector):
     def control_mode(self) -> str:
         """Return continuous or binary control according to the host API."""
         return "continuous" if self.method is not None else "binary"
-
-    def reset(self) -> None:
-        """Leave task-specific end-effector reset to the task environment."""
 
     def get_state(self) -> np.ndarray:
         """Read the end-effector field out of the shared host state."""

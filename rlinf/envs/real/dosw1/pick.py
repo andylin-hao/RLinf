@@ -20,7 +20,7 @@ from typing import Any, Optional
 
 import numpy as np
 
-from rlinf.envs.real.dosw1.base import ControlMode, DOSW1Config, DOSW1Env
+from rlinf.envs.real.dosw1.base import ControlMode, DOSW1Env, DOSW1EnvConfig
 from rlinf.robotics.discovery import RobotInfo
 from rlinf.scheduler import WorkerInfo
 
@@ -34,7 +34,7 @@ def _default_lift_joint() -> np.ndarray:
 
 
 @dataclass
-class PickConfig(DOSW1Config):
+class PickConfig(DOSW1EnvConfig):
     """Configuration for the DOSW1 single-arm pick task."""
 
     target_grasp_joint: np.ndarray = field(default_factory=_default_grasp_joint)

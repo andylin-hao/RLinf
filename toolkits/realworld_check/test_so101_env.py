@@ -31,6 +31,12 @@ when it is holding something or parked against a fixture.
 Pass --enable-camera-player to enable the camera preview window. It is
 disabled by default.
 
+Hardware enumeration reads SERIAL_PORT, CALIBRATION_ID, and CAMERA_SERIALS
+through the scheduler's shared resolver. For configured arms, --port selects one
+without changing its calibration. With no configured arms, --port and --id
+describe the local arm.
+Camera discovery follows the same path as the scheduler's node probe.
+
 The arm has joint encoders and no kinematic model, so "up" and "forward"
 are single joint moves rather than Cartesian ones: up bends the shoulder
 and forward bends the elbow.
@@ -39,6 +45,7 @@ and forward bends the elbow.
 import argparse
 import contextlib
 import signal
+from pathlib import Path
 
 import numpy as np
 
@@ -80,7 +87,11 @@ If a direction goes the wrong way on your arm, pass --invert.
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--port", default="/dev/ttyACM0", help="serial port")
+    parser.add_argument(
+        "--port",
+        default=None,
+        help="select a configured arm or set the local serial port",
+    )
     parser.add_argument("--id", default=None, help="lerobot calibration id")
     parser.add_argument(
         "--leader", default=None, help="serial port of an SO-101 leader arm"
@@ -112,7 +123,6 @@ def main() -> None:
 
     if args.mock:
         import sys
-        from pathlib import Path
 
         sys.path.insert(0, str(Path(__file__).parents[2] / "tests"))
         from robot_mocks import mocked_sdks
@@ -125,14 +135,36 @@ def main() -> None:
 
     with context:
         from rlinf.envs.real.so101 import SO101ReachEnv
+        from rlinf.robotics import SO101Config
+        from rlinf.robotics.discovery import RobotAutoConfig, RobotDiscovery
+
+        configs = RobotAutoConfig.resolve([], SO101Config, node_rank=0)
+        if not configs:
+            configs = [SO101Config(node_rank=0)]
+            if args.port is not None:
+                configs[0].serial_port = args.port
+        elif args.port is not None:
+            configs = [config for config in configs if config.serial_port == args.port]
+            if not configs:
+                parser.error(
+                    "No configured SO-101 matches --port. Check SERIAL_PORT and "
+                    "CALIBRATION_ID; an existing arm's port cannot be rewritten."
+                )
+        if len(configs) != 1:
+            parser.error("Several SO-101 arms are configured; select one with --port.")
+        if not Path(configs[0].serial_port).is_absolute():
+            parser.error("The SO-101 serial port must be an absolute device path.")
+        if args.id is not None:
+            configs[0].calibration_id = args.id
+        discovery = RobotDiscovery.registry["SO101"].discovery_cls
+        resources = discovery.enumerate(node_rank=0, configs=configs)
 
         env = SO101ReachEnv(
             {
-                "port": args.port,
-                "calibration_id": args.id,
                 "enable_camera_player": args.enable_camera_player,
                 "reset_joint_qpos": list(np.deg2rad(WRAP_POSE_DEG)),
-            }
+            },
+            robot_info=resources.infos[0],
         )
         try:
             drive(

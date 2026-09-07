@@ -19,7 +19,7 @@ from __future__ import annotations
 from rlinf.envs.real.registry import register_tasks
 from rlinf.robotics.parts.arms.piper import PiperRobotState
 
-from .base import PiperEnv, PiperRobotConfig
+from .base import PiperEnv, PiperEnvConfig
 from .reach import PiperReachConfig, PiperReachEnv
 
 TASKS = {"PiperReachEnv-v1": PiperReachEnv}
@@ -31,7 +31,7 @@ __all__ = [
     "PiperEnv",
     "PiperReachConfig",
     "PiperReachEnv",
-    "PiperRobotConfig",
+    "PiperEnvConfig",
     "PiperRobotState",
     *_ENTRY_POINTS,
 ]

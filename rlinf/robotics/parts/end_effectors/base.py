@@ -15,7 +15,7 @@
 """Abstract base class for robot end-effectors."""
 
 from abc import ABC, abstractmethod
-from enum import Enum
+from collections.abc import Callable
 from typing import Any, ClassVar
 
 import numpy as np
@@ -31,18 +31,53 @@ class EndEffector(ControllablePart, ABC):
     """
 
     @classmethod
-    def of(
-        cls, end_effector_type: "str | EndEffectorType", **settings: Any
-    ) -> "EndEffector":
+    def register(
+        cls, *names: str, arm_backend: str | None = None
+    ) -> Callable[[type["EndEffector"]], type["EndEffector"]]:
+        """Register driver names, optionally scoped to an arm backend.
+
+        Scoped aliases select a transport for a device that can be reached
+        through several arm backends. Unscoped names remain available with
+        any arm. Each driver registers its own aliases.
+        """
+        if arm_backend is None:
+            return super().register(*names)
+
+        def add(driver: type["EndEffector"]) -> type["EndEffector"]:
+            for name in names:
+                key = (arm_backend.lower(), name.lower())
+                taken = cls._ARM_BACKENDS.get(key)
+                if taken is not None and taken is not driver:
+                    raise ValueError(
+                        f"End-effector alias {key!r} is already registered."
+                    )
+                cls._ARM_BACKENDS[key] = driver
+            return driver
+
+        return add
+
+    _ARM_BACKENDS: ClassVar[dict[tuple[str, str], type["EndEffector"]]] = {}
+
+    @classmethod
+    def backend(
+        cls, name: str, *, arm_backend: str | None = None
+    ) -> type["EndEffector"]:
+        """Resolve a driver, preferring an alias for the supplied arm backend."""
+        if arm_backend is not None:
+            driver = cls._ARM_BACKENDS.get((arm_backend.lower(), name.lower()))
+            if driver is not None:
+                return driver
+        return super().backend(name)
+
+    @classmethod
+    def of(cls, end_effector_type: str, **settings: Any) -> "EndEffector":
         """Declare an end effector from a registered backend name.
 
         Args:
-            end_effector_type: A registered name, or an
-                :class:`EndEffectorType` carrying one.
+            end_effector_type: A registered driver name.
             **settings: Offered to that driver's :meth:`declare`.
         """
-        name = getattr(end_effector_type, "value", end_effector_type)
-        return cls.backend(name).declare(**settings)
+        return cls.backend(end_effector_type).declare(**settings)
 
     #: Ways an end effector can be reached, offered to every backend.
     #: A backend takes the one it uses by naming it in :meth:`declare`.
@@ -65,20 +100,30 @@ class EndEffector(ControllablePart, ABC):
             }
         )
 
+    #: Vector sizes and control mode, available before a connection is opened.
+    #: Registered drivers declare these on the class so dummy tasks can inspect
+    #: the same contract without constructing a device. Shared views may expose
+    #: instance properties when their host determines the sizes.
     @property
     @abstractmethod
     def action_dim(self) -> int:
-        """Dimensionality of the end-effector action vector."""
+        """Width of the command vector; fixed drivers override with an integer."""
 
     @property
     @abstractmethod
     def state_dim(self) -> int:
-        """Dimensionality of the end-effector state vector."""
+        """Width of the state vector; fixed drivers override with an integer."""
 
     @property
     @abstractmethod
     def control_mode(self) -> str:
-        """Control mode: ``"binary"`` (open/close) or ``"continuous"``."""
+        """Control mode: ``binary`` or ``continuous``."""
+
+    #: Whether the part opens and closes on one axis.
+    is_gripper: bool = False
+
+    #: Whether the part controls a hand with articulated fingers.
+    is_hand: bool = False
 
     @abstractmethod
     def get_state(self) -> np.ndarray:
@@ -98,20 +143,6 @@ class EndEffector(ControllablePart, ABC):
             ``True`` if the command caused a meaningful state change
             (e.g. gripper opened/closed), ``False`` otherwise.
         """
-
-    @property
-    def is_gripper(self) -> bool:
-        """Whether this end effector opens and closes on one axis.
-
-        An environment asks the part rather than the configuration it was
-        built from, so the two cannot drift apart.
-        """
-        return False
-
-    @property
-    def is_hand(self) -> bool:
-        """Whether this end effector poses several fingers."""
-        return not self.is_gripper
 
     def open(self, speed: float = 0.3) -> None:
         """Release fully.
@@ -158,89 +189,14 @@ class EndEffector(ControllablePart, ABC):
         self.command(action["target"])
         return {"target": action["target"]}
 
-
-class EndEffectorType(str, Enum):
-    """Supported end-effector types for the Franka robot arm."""
-
-    FRANKA_GRIPPER = "franka_gripper"
-    FRANKY_GRIPPER = "franky_gripper"
-    ROBOTIQ_GRIPPER = "robotiq_gripper"
-    RUIYAN_HAND = "ruiyan_hand"
-
-    @property
-    def is_gripper(self) -> bool:
-        return self in (
-            type(self).FRANKA_GRIPPER,
-            type(self).FRANKY_GRIPPER,
-            type(self).ROBOTIQ_GRIPPER,
-        )
-
-    @property
-    def is_hand(self) -> bool:
-        return self == type(self).RUIYAN_HAND
-
-
-def normalize_end_effector_type(
-    end_effector_type: str | EndEffectorType,
-    gripper_type: str | None = None,
-) -> EndEffectorType:
-    if isinstance(end_effector_type, str):
-        end_effector_type = EndEffectorType(end_effector_type)
-
-    if end_effector_type.is_hand or gripper_type is None:
-        return end_effector_type
-    # A driver named outright is kept: only the generic 'franka_gripper'
-    # default is still open to being narrowed by gripper_type.
-    if end_effector_type in (
-        EndEffectorType.ROBOTIQ_GRIPPER,
-        EndEffectorType.FRANKY_GRIPPER,
-    ):
-        return end_effector_type
-
-    gt = gripper_type.lower()
-    if gt == "franka":
-        return EndEffectorType.FRANKA_GRIPPER
-    if gt == "robotiq":
-        return EndEffectorType.ROBOTIQ_GRIPPER
-    raise ValueError(
-        f"Unsupported gripper_type={gripper_type!r}. "
-        "Supported types: 'franka', 'robotiq'."
-    )
-
-
-class BaseEndEffector(EndEffector, ABC):
-    """Base class for end effectors with an independent connection."""
-
-    @abstractmethod
-    def _open(self) -> Any:
-        """Open the end effector and return its device handle."""
-
-    @abstractmethod
-    def _release(self, device: Any) -> None:
-        """Release the handle returned by :meth:`_open`."""
-
-    @property
-    def finger_names(self) -> list[str]:
-        """Human-readable names for each DOF.
-
-        Subclasses may override this to provide meaningful labels.
-        The default returns generic names ``["dof_0", "dof_1", ...]``.
-        """
-        return [f"dof_{i}" for i in range(self.state_dim)]
-
     def get_detailed_state(self) -> dict[str, Any]:
-        """Return diagnostic state using the generic position representation."""
-        state = self.get_state()
-        return {
-            "positions": state.tolist(),
-            "finger_names": self.finger_names,
-        }
+        """Return diagnostic positions; drivers may add device-specific fields."""
+        return {"positions": self.get_state().tolist()}
 
-    @abstractmethod
     def reset(self, target_state: np.ndarray | None = None) -> None:
-        """Reset the end-effector to a default or specified state.
+        """Command an optional reset target; otherwise leave the state unchanged.
 
-        Args:
-            target_state: Optional target state. If ``None``, reset to the
-                implementation-defined default.
+        Drivers with a device-specific default reset pose override this method.
         """
+        if target_state is not None:
+            self.command(target_state)

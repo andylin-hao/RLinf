@@ -50,6 +50,14 @@ _ENV = {
         "CAMERA_SERIALS": "gimcam",
         "DISABLE_VALIDATE": "true",
     },
+    "so101_create": {
+        "SERIAL_PORT": "/dev/ttyACM0,/dev/ttyACM1",
+        "CALIBRATION_ID": "leader,follower",
+        "CAMERA_SERIALS": "camA,camB",
+        "DISABLE_VALIDATE": "true,true",
+        "PORT": "8080",
+        "ID": "web-service",
+    },
     # A shared field without the identifier (ROBOT_IP) -> no robot created.
     "gating": {"CAMERA_SERIALS": "serialA,serialB"},
     # Too few values for the two explicit configs.
@@ -83,6 +91,11 @@ _MANAGED = (
     "GRIPPER_TYPE",
     "ARM_VARIANT",
     "LEFT_ARM_PORT",
+    "SERIAL_PORT",
+    "CALIBRATION_ID",
+    "MAX_RELATIVE_TARGET",
+    "PORT",
+    "ID",
 )
 for _name in _MANAGED:
     os.environ.pop(_name, None)
@@ -228,6 +241,21 @@ def run_gim_create() -> None:
     assert worker[0]["camera_serials"] == ["gimcam"]
 
 
+def run_so101_create() -> None:
+    """Keep serial ports paired with calibration IDs through worker placement."""
+    cluster = Cluster(cluster_cfg=cluster_cfg("so101", "SO101", []))
+    configs = enumerated_configs(cluster, "SO101")
+    expected = [("/dev/ttyACM0", "leader"), ("/dev/ttyACM1", "follower")]
+    assert [(c.serial_port, c.calibration_id) for c in configs] == expected
+    per_robot = worker_configs(cluster, "so101", [[0], [1]])
+    assert [
+        (worker[0]["serial_port"], worker[0]["calibration_id"]) for worker in per_robot
+    ] == expected
+    assert all(
+        "port" not in worker[0] and "id" not in worker[0] for worker in per_robot
+    )
+
+
 def run_gating() -> None:
     """Confirm that shared fields alone do not create a Franka robot."""
     cluster = Cluster(cluster_cfg=cluster_cfg("franka", "Franka", []))
@@ -348,6 +376,7 @@ RUNNERS = {
     "create_single": run_create_single,
     "explicit_fill": run_explicit_fill,
     "gim_create": run_gim_create,
+    "so101_create": run_so101_create,
     "gating": run_gating,
     "mismatch_low": run_mismatch_ip,
     "mismatch_high": run_mismatch_ip,

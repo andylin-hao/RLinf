@@ -103,7 +103,6 @@ env:
       # Not dummy: every hardware path runs. run.sh installs the fake vendor
       # SDKs, so what answers is a robot that is not there.
       is_dummy: False
-      camera_serials: ["MOCK0001", ]
     auto_reset: True
     ignore_terminations: True
     use_fixed_reset_state_ids: False
@@ -113,7 +112,6 @@ env:
     total_num_envs: 1
     override_cfg:
       is_dummy: False
-      camera_serials: ["MOCK0001", ]
 
 rollout:
   group_name: "RolloutGroup"

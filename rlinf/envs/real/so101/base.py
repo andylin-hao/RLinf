@@ -29,6 +29,7 @@ import cv2
 import gymnasium as gym
 import numpy as np
 
+from rlinf.envs.real.utils.config import get_hardware_config
 from rlinf.envs.real.utils.seeding import seed_sampled_spaces
 from rlinf.envs.real.utils.video import VideoPlayer
 from rlinf.robotics import (
@@ -53,27 +54,8 @@ _DOF = len(SO101Arm.MOTORS)
 
 
 @dataclass
-class SO101RobotConfig:
-    """Environment-side configuration for an SO-101.
-
-    Connection fields left as ``None`` are filled from the enumerated
-    :class:`~rlinf.robotics.RobotInfo`.
-    """
-
-    port: Optional[str] = None
-    """Serial device the servo bus is on. ``None`` takes it from hardware info."""
-
-    calibration_id: Optional[str] = None
-    """lerobot calibration identifier. The file it names must already exist."""
-
-    max_relative_target: Optional[int] = None
-    """Per-step joint limit in degrees applied by lerobot, or ``None``."""
-
-    camera_serials: Optional[list[str]] = None
-    """Camera identifiers. ``None`` takes them from hardware info."""
-
-    camera_type: Optional[str] = None
-    """Camera backend. ``None`` takes it from hardware info."""
+class SO101EnvConfig:
+    """Task, control, and observation settings for an SO-101 environment."""
 
     enable_camera_player: bool = True
     """Whether to show captured frames in a viewer window."""
@@ -129,7 +111,7 @@ class SO101Env(gym.Env):
 
     An action is ``(6,)``: five joint positions in radians followed by a
     gripper opening in ``0..1``. Reward compares the measured joints with
-    :pyattr:`SO101RobotConfig.target_joint_qpos`.
+    :pyattr:`SO101EnvConfig.target_joint_qpos`.
     """
 
     # The leader arm is the same five joints and gripper as this follower.
@@ -141,13 +123,16 @@ class SO101Env(gym.Env):
 
     def __init__(
         self,
-        config: SO101RobotConfig,
-        worker_info: Optional[WorkerInfo],
-        robot_info: "Optional[RobotInfo[SO101Config]]",
-        env_idx: int,
+        config: SO101EnvConfig,
+        worker_info: Optional[WorkerInfo] = None,
+        robot_info: "Optional[RobotInfo[SO101Config]]" = None,
+        env_idx: int = 0,
     ) -> None:
         self._logger = get_logger()
         self.config = config
+        self.hardware = get_hardware_config(
+            SO101Config, robot_info, is_dummy=config.is_dummy
+        )
         self.robot_info = robot_info
         self.env_idx = env_idx
         self.node_rank = 0
@@ -165,9 +150,7 @@ class SO101Env(gym.Env):
         if not self.config.is_dummy:
             self._setup_hardware()
 
-        if self.config.camera_serials is None:
-            self.config.camera_serials = []
-        if not self.config.camera_serials:
+        if not self.hardware.camera_serials:
             self._logger.info(
                 "No camera serials configured. "
                 "Observations will not contain camera frames."
@@ -185,38 +168,17 @@ class SO101Env(gym.Env):
     # Hardware setup.
 
     def _setup_hardware(self) -> None:
-        """Compose and connect the robot, filling gaps from hardware info."""
-        assert self.env_idx >= 0, "env_idx must be set for SO101Env."
-
-        if self.robot_info is not None:
-            hardware = self.robot_info.config
-            if self.config.port is None:
-                self.config.port = hardware.port
-            if self.config.calibration_id is None:
-                self.config.calibration_id = hardware.calibration_id
-            if self.config.max_relative_target is None:
-                self.config.max_relative_target = hardware.max_relative_target
-            if self.config.camera_serials is None:
-                self.config.camera_serials = hardware.camera_serials
-            if self.config.camera_type is None:
-                self.config.camera_type = getattr(hardware, "camera_type", "realsense")
-            controller_node_rank = getattr(hardware, "controller_node_rank", None)
-        else:
-            controller_node_rank = None
-
-        if self.config.port is None:
-            raise ValueError(
-                "An SO-101 needs a serial port. Set 'port' on the env config, "
-                "or let hardware discovery supply it."
-            )
+        """Compose and connect the configured hardware."""
+        assert self.env_idx >= 0, "env_idx must be nonnegative."
+        hardware = self.hardware
+        controller_node_rank = hardware.controller_node_rank
         if controller_node_rank is None:
             controller_node_rank = self.node_rank
 
-        # Cameras are declared here, after discovery has filled the serials.
         self.robot = SO101Robot.build(
-            port=self.config.port,
-            calibration_id=self.config.calibration_id,
-            max_relative_target=self.config.max_relative_target,
+            port=hardware.serial_port,
+            calibration_id=hardware.calibration_id,
+            max_relative_target=hardware.max_relative_target,
             env_idx=self.env_idx,
             node_rank=controller_node_rank,
             worker_rank=self.env_worker_rank,
@@ -255,7 +217,7 @@ class SO101Env(gym.Env):
             f"wrist_{index + 1}": gym.spaces.Box(
                 0, 255, shape=(128, 128, 3), dtype=np.uint8
             )
-            for index in range(len(self.config.camera_serials or []))
+            for index in range(len(self.hardware.camera_serials or []))
         }
         # Gymnasium's env checker rejects an empty Dict space, so an arm with
         # no camera reports no 'frames' key at all rather than an empty one.
@@ -351,7 +313,7 @@ class SO101Env(gym.Env):
         return self._get_observation(), {}
 
     def go_to_rest(self) -> None:
-        """Move to :pyattr:`SO101RobotConfig.reset_joint_qpos`."""
+        """Move to :pyattr:`SO101EnvConfig.reset_joint_qpos`."""
         self._arm.reset_joint(self.config.reset_joint_qpos)
 
     # Reward.
@@ -407,14 +369,14 @@ class SO101Env(gym.Env):
 
     def _camera_infos(self) -> list[CameraInfo]:
         """Return declarations for the configured wrist cameras."""
-        camera_type = self.config.camera_type or "realsense"
+        camera_type = self.hardware.camera_type or "realsense"
         return [
             CameraInfo(
                 name=f"wrist_{index + 1}",
                 serial_number=serial,
                 camera_type=camera_type,
             )
-            for index, serial in enumerate(self.config.camera_serials or [])
+            for index, serial in enumerate(self.hardware.camera_serials or [])
         ]
 
     def _open_cameras(self) -> None:

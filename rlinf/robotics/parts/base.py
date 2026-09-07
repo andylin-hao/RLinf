@@ -256,9 +256,7 @@ class Connection(ABC, metaclass=ConnectionMeta):
         """Register a driver in this device category.
 
         Names are case-insensitive, and a name cannot refer to two different
-        drivers. Give one name unless callers genuinely reach the driver by
-        two, as grippers are: by the short backend name and by the
-        :class:`EndEffectorType` value.
+        drivers. A driver may register aliases for existing configuration names.
 
         Example::
 

@@ -14,18 +14,14 @@
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, ClassVar, Optional
+from typing import Any, Optional
 
 from ..discovery import (
     RobotConfig,
 )
 from ..parts.arms.base import Arm, CartesianCompliance
 from ..parts.cameras import Camera
-from ..parts.end_effectors import (
-    EndEffector,
-    EndEffectorType,
-    normalize_end_effector_type,
-)
+from ..parts.end_effectors import EndEffector
 from ..robot import Robot
 
 
@@ -37,17 +33,6 @@ class FrankaRobot(Robot):
     """
 
     ROBOT_TYPE = "Franka"
-
-    #: Driver that reaches the built-in Franka Hand, by arm backend.
-    #:
-    #: The hand is one device with two drivers, and which applies follows the
-    #: arm this robot is built on: a ROS stack publishes to it, libfranka opens
-    #: its own session. A config that names the hand outright -- as
-    #: ``end_effector_type: franky_gripper`` -- is taken at its word instead.
-    HAND_BACKENDS: ClassVar[dict[str, str]] = {
-        "franka_ros": "franka_gripper",
-        "franky": "franky_gripper",
-    }
 
     BACKEND: str = "franka_ros"
     """Registered arm backend used by this robot.
@@ -99,42 +84,42 @@ class FrankaRobot(Robot):
             node_rank: Node the end effector is wired to.
             name: Worker name when it is hosted remotely.
             backend: Arm backend this robot is built on, which decides how a
-                built-in Franka Hand is reached. See :attr:`HAND_BACKENDS`.
+                built-in Franka Hand is reached through registered aliases.
             gripper_type: Gripper fitted, when the config names one that way.
             gripper_connection: Serial port, for a gripper reached over one.
             end_effector_type: End effector fitted, naming a driver outright.
             end_effector_config: Settings passed to that driver.
         """
-        return EndEffector.of(
-            cls.resolved_end_effector_type(
-                backend=backend,
-                gripper_type=gripper_type,
-                end_effector_type=end_effector_type,
-            ),
+        settings = {"port": gripper_connection, **(end_effector_config or {})}
+        return cls.end_effector_class(
+            backend=backend,
+            gripper_type=gripper_type,
+            end_effector_type=end_effector_type,
+        ).declare(
             robot_ip=cls.resolved_ip(robot_ip, node_rank=node_rank, name=name),
-            port=gripper_connection,
             node_rank=node_rank,
             worker_name=name,
-            **(end_effector_config or {}),
+            **settings,
         )
 
     @classmethod
-    def resolved_end_effector_type(
+    def end_effector_class(
         cls,
         *,
         backend: Optional[str] = None,
         gripper_type: Optional[str] = None,
         end_effector_type: Optional[str] = None,
-    ) -> str:
-        """Return the driver name for the end effector this robot carries."""
-        resolved = normalize_end_effector_type(
-            end_effector_type or "franka_gripper", gripper_type
+    ) -> type[EndEffector]:
+        """Resolve an explicit driver or an arm-specific gripper alias.
+
+        An explicit end_effector_type takes precedence over gripper_type and
+        selects that exact driver regardless of the arm backend.
+        """
+        if end_effector_type is not None:
+            return EndEffector.backend(end_effector_type)
+        return EndEffector.backend(
+            gripper_type or "franka", arm_backend=backend or cls.BACKEND
         )
-        if resolved is not EndEffectorType.FRANKA_GRIPPER:
-            return resolved.value
-        # Only the built-in hand is ambiguous: it is the one device this
-        # repository reaches two ways.
-        return cls.HAND_BACKENDS.get(backend or cls.BACKEND, resolved.value)
 
     @staticmethod
     def resolved_ip(robot_ip: Optional[str], *, node_rank: int, name: str) -> str:
@@ -244,11 +229,16 @@ class FrankaConfig(RobotConfig):
     """Camera backend: ``"realsense"``, ``"zed"``, or ``"lumos"``."""
 
     gripper_type: str = "franka"
-    """Gripper backend: ``"franka"`` (ROS-based) or ``"robotiq"`` (Modbus RTU)."""
+    """Registered gripper alias, resolved for the selected arm backend."""
 
     gripper_connection: Optional[str] = None
-    """Serial port for Robotiq grippers (e.g. ``"/dev/ttyUSB0"``).
-    Ignored when *gripper_type* is ``"franka"``."""
+    """Serial attachment offered to the selected end-effector driver."""
+
+    end_effector_type: Optional[str] = None
+    """Explicit end-effector driver; otherwise selected from gripper_type."""
+
+    end_effector_config: dict[str, Any] = field(default_factory=dict)
+    """Constructor settings for the end-effector driver."""
 
     camera_node_rank: Optional[int] = None
     """Node the cameras are plugged into.

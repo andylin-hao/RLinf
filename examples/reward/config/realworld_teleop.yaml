@@ -47,7 +47,6 @@ env:
     max_episode_steps: 10000
     override_cfg:
       target_ee_pose: TARGET_EE_POSE
-      camera_serials: ["0123456789"]
 
 reward:
   use_reward_model: True

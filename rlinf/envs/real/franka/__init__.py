@@ -17,15 +17,14 @@
 from __future__ import annotations
 
 from rlinf.envs.real.registry import register_tasks
-from rlinf.robotics.parts.end_effectors.base import EndEffectorType
 
-from .base import FrankaEnv, FrankaRobotConfig, FrankaRobotState
+from .base import FrankaEnv, FrankaEnvConfig, FrankaRobotState
 from .bin_relocation import FrankaBinRelocationEnv
 from .bottle import BottleEnv
 from .dex_pnp import DexpnpEnv
-from .dual_base import DualFrankaEnv, DualFrankaRobotConfig
-from .dual_franka_joint import DualFrankaJointEnv, DualFrankaJointRobotConfig
-from .dual_franka_tcp import DualFrankaTCPEnv, DualFrankaTCPRobotConfig
+from .dual_base import DualFrankaEnv, DualFrankaEnvConfig
+from .dual_franka_joint import DualFrankaJointEnv, DualFrankaJointEnvConfig
+from .dual_franka_tcp import DualFrankaTCPEnv, DualFrankaTCPEnvConfig
 from .peg_insertion import PegInsertionEnv
 
 #: Mapping from Gymnasium IDs to registered Franka environment classes.
@@ -47,14 +46,13 @@ __all__ = [
     "DexpnpEnv",
     "DualFrankaEnv",
     "DualFrankaJointEnv",
-    "DualFrankaJointRobotConfig",
-    "DualFrankaRobotConfig",
+    "DualFrankaJointEnvConfig",
+    "DualFrankaEnvConfig",
     "DualFrankaTCPEnv",
-    "DualFrankaTCPRobotConfig",
-    "EndEffectorType",
+    "DualFrankaTCPEnvConfig",
     "FrankaBinRelocationEnv",
     "FrankaEnv",
-    "FrankaRobotConfig",
+    "FrankaEnvConfig",
     "FrankaRobotState",
     "PegInsertionEnv",
     *_ENTRY_POINTS,

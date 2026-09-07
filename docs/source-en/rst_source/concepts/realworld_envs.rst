@@ -25,7 +25,7 @@ beside the shared ``base.py``:
 .. code-block:: python
 
    @dataclass
-   class PegInsertionConfig(FrankaRobotConfig):
+   class PegInsertionConfig(FrankaEnvConfig):
        task_description: str = "peg and insertion"
        target_ee_pose: np.ndarray = field(default_factory=lambda: np.zeros(6))
        random_xy_range: float = 0.05
@@ -51,6 +51,80 @@ any gain the controller does not accept. A misspelled key fails here instead of
 reaching the impedance controller and being ignored. Peg insertion states one
 gain; bin relocation states eleven. Everything else in the config describes the
 task itself: poses, reward thresholds, and reset randomization.
+
+Keep Hardware in the Robot Descriptor
+-------------------------------------
+
+A task changes the goal, reset motion, reward, action limits, and image processing.
+The robot's addresses, camera serials and backends, gripper attachment, and
+placement describe the rig. Keep those values in the hardware config under
+``cluster.node_groups[].hardware.configs``; ``env.train.override_cfg`` and
+``env.eval.override_cfg`` accept only environment and task settings. For example,
+``enable_camera_player`` controls presentation and remains an env setting.
+Omit ``camera_serials`` to discover cameras through the selected backend
+(RealSense by default); discovery orders them by serial number. Provide serials
+only when the rig needs a particular subset or order. An explicit empty list
+selects no cameras on robots that support camera-free operation.
+
+A standalone check uses the same enumeration path as a scheduler launch. The
+following example reads SO-101 settings from node-local environment variables,
+resolves camera serials, and validates the camera devices before constructing the
+environment:
+
+.. code-block:: python
+
+   from rlinf.envs.real.so101 import SO101ReachEnv
+   from rlinf.robotics.discovery import RobotDiscovery
+
+   # Set SERIAL_PORT and CALIBRATION_ID for this rig.
+   discovery = RobotDiscovery.registry["SO101"].discovery_cls
+   resources = discovery.enumerate(node_rank=0, configs=[])
+   if resources is None or len(resources.infos) != 1:
+       raise ValueError("Configure one SO-101 for this check.")
+
+   env = SO101ReachEnv(
+       {"enable_camera_player": False, "target_joint_qpos": [0.0] * 5},
+       robot_info=resources.infos[0],
+   )
+   try:
+       observation, info = env.reset()
+       print(observation["state"])
+   finally:
+       env.close()
+
+``enumerate()`` returns hardware descriptors without opening an arm control
+connection. Each ``RobotInfo`` contains the resolved typed config in ``config``.
+Environment construction connects the robot and may move it to its reset pose;
+``reset()`` starts an episode and returns the task observation and info dictionary.
+``close()`` releases the robot's connections. The SO-101 bench tool follows this
+path too. ``SO101Config.serial_port`` and ``calibration_id`` resolve from
+``SERIAL_PORT`` and ``CALIBRATION_ID`` through the shared resolver, so an
+unrelated ``PORT=8080`` cannot select a serial device. With configured arms, ``--port``
+selects an exact match and retains that arm's calibration; an unmatched port
+is an error. Without configured arms, ``--port`` and ``--id`` describe a local
+arm. ``--id`` explicitly sets the selected arm's calibration identifier.
+In SO-101 hardware YAML entries, replace ``port`` with ``serial_port``.
+The bench flags ``--port`` and ``--id`` select the serial port and calibration
+identifier respectively.
+
+During a scheduled run, the node probe performs enumeration, worker placement
+assigns a ``RobotInfo``, and ``RealWorldEnv`` passes it to the task constructor.
+The environment reads its hardware config without modifying it. A task override
+such as ``camera_serials`` or ``robot_ip`` is now rejected; move it to the
+hardware entry. Dummy environments may omit ``robot_info`` when the hardware
+defaults describe the required observation space. To sample another camera
+layout or end effector, supply a descriptor for that layout as well. Franka
+requires at least one camera even in dummy mode, so its dummy constructors
+always need a descriptor with camera serials. These serials can be synthetic
+for offline runs; dummy construction does not open or probe devices.
+
+The shared task dataclasses are named ``FrankaEnvConfig``,
+``DualFrankaEnvConfig``, ``SO101EnvConfig``, ``PiperEnvConfig``,
+``GimArmEnvConfig``, ``DOSW1EnvConfig``, and ``Turtle2EnvConfig``. Their hardware
+counterparts remain in ``rlinf.robotics.robots``. For Turtle2, camera channels
+move from the task's ``use_camera_ids`` to the hardware field ``camera_ids``.
+Piper's ``with_gripper`` hardware field determines whether the action has six
+joint values or seven values including the gripper opening.
 
 Register the Task
 -----------------
@@ -192,6 +266,12 @@ list:
    env:
      eval:
        teleop: [spacemouse, glove]
+
+Device names come from the ``TeleopDevice`` registry. Devices that retain old
+boolean configuration flags declare them in their own ``LEGACY_FLAGS`` mapping;
+``TeleopDevice.legacy_flags()`` collects those aliases for the configuration
+reader. Existing flags still emit deprecation warnings, and ``teleop`` takes
+precedence when configuration layering supplies both forms.
 
 Keep Device I/O Separate from Action Meaning
 --------------------------------------------

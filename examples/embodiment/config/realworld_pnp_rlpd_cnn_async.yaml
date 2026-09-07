@@ -116,7 +116,6 @@ env:
 
     override_cfg:
       target_ee_pose: TARGET_EE_POSE
-      camera_serials: ["CAMERA_SERIAL1", "CAMERA_SERIAL2"]
       use_dense_reward: False
       is_dummy: false
       max_num_steps: 150

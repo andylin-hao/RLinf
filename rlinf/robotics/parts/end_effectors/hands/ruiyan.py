@@ -23,12 +23,13 @@ from typing import Any, Optional
 
 import numpy as np
 
-from rlinf.robotics.parts.end_effectors.base import BaseEndEffector, EndEffector
+from rlinf.robotics.parts.end_effectors.base import EndEffector
+from rlinf.robotics.parts.end_effectors.hands.base import BaseHand
 from rlinf.utils.logging import get_logger
 
 
 @EndEffector.register("ruiyan_hand")
-class RuiyanHand(BaseEndEffector):
+class RuiyanHand(BaseHand):
     """Ruiyan dexterous hand backed by ``rlinf_dexhand``.
 
     Install the driver package first::
@@ -45,6 +46,9 @@ class RuiyanHand(BaseEndEffector):
     """
 
     _NUM_DOFS = 6
+    action_dim = _NUM_DOFS
+    state_dim = _NUM_DOFS
+    control_mode = "continuous"
     _FINGER_NAMES = [
         "thumb_rotation",
         "thumb_bend",
@@ -53,6 +57,20 @@ class RuiyanHand(BaseEndEffector):
         "ring",
         "pinky",
     ]
+
+    @classmethod
+    def declare(
+        cls,
+        *,
+        ros: Any = None,
+        port: Optional[str] = None,
+        robot_ip: Optional[str] = None,
+        **settings: Any,
+    ) -> "RuiyanHand":
+        """Declare a hand using its serial port and driver settings."""
+        if port is not None:
+            settings["port"] = port
+        return cls(**settings)
 
     def __init__(
         self,
@@ -76,18 +94,6 @@ class RuiyanHand(BaseEndEffector):
         self._logger = get_logger()
 
     # Properties
-
-    @property
-    def action_dim(self) -> int:
-        return self._NUM_DOFS
-
-    @property
-    def state_dim(self) -> int:
-        return self._NUM_DOFS
-
-    @property
-    def control_mode(self) -> str:
-        return "continuous"
 
     @property
     def finger_names(self) -> list[str]:

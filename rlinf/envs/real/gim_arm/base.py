@@ -24,6 +24,7 @@ import gymnasium as gym
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
+from rlinf.envs.real.utils.config import get_hardware_config
 from rlinf.envs.real.utils.seeding import seed_sampled_spaces
 from rlinf.envs.real.utils.video import VideoPlayer
 from rlinf.robotics import (
@@ -46,30 +47,8 @@ _DEFAULT_JOINT_LIMIT_HIGH = np.array([1.4, 0.0, 3.0, 1.5, 1.5, 1.90])
 
 
 @dataclass
-class GimArmRobotConfig:
-    """Configuration for :class:`GimArmEnv`.
-
-    Unset hardware connection fields are populated from
-    :class:`~rlinf.robotics.RobotInfo`.
-    """
-
-    can_interface: Optional[str] = None
-    """CAN socket interface name (e.g. ``"can0"``)."""
-
-    arm_variant: Optional[str] = None
-    """Arm variant: ``"gim_arm"`` or ``"gim_arm_xl"``."""
-
-    camera_serials: Optional[list[str]] = None
-    """Ordered list of camera serial numbers for observations."""
-
-    camera_type: Optional[str] = None
-    """Camera backend: ``"realsense"`` or ``"zed"``."""
-
-    enable_gripper: bool = True
-    """Whether the gripper is attached."""
-
-    gripper_type: str = "parallel"
-    """Gripper mechanical type: ``"parallel"`` or ``"single_side"``."""
+class GimArmEnvConfig:
+    """Task, control, and observation settings for a GimArm environment."""
 
     control_mode: str = "momentum_observer"
     """Arm control mode: ``"idle"``, ``"gravity_comp"``, ``"momentum_observer"``, ``"position"``, or ``"torque"``."""
@@ -156,13 +135,16 @@ class GimArmEnv(gym.Env):
 
     def __init__(
         self,
-        config: GimArmRobotConfig,
-        worker_info: Optional[WorkerInfo],
-        robot_info: Optional[RobotInfo[GimArmConfig]],
-        env_idx: int,
+        config: GimArmEnvConfig,
+        worker_info: Optional[WorkerInfo] = None,
+        robot_info: Optional[RobotInfo[GimArmConfig]] = None,
+        env_idx: int = 0,
     ) -> None:
         self._logger = get_logger()
         self.config = config
+        self.hardware = get_hardware_config(
+            GimArmConfig, robot_info, is_dummy=config.is_dummy
+        )
         self.robot_info = robot_info
         self.env_idx = env_idx
         self.node_rank = 0
@@ -182,9 +164,7 @@ class GimArmEnv(gym.Env):
             self._setup_hardware()
 
         # Camera-free setups expose an empty frames dictionary.
-        if self.config.camera_serials is None:
-            self.config.camera_serials = []
-        if not self.config.camera_serials:
+        if not self.hardware.camera_serials:
             self._logger.info(
                 "No camera serials configured. "
                 "Observations will not contain camera frames."
@@ -214,34 +194,18 @@ class GimArmEnv(gym.Env):
     # Hardware setup.
 
     def _setup_hardware(self) -> None:
-        assert self.env_idx >= 0, "env_idx must be set for GimArmEnv."
-        assert isinstance(self.robot_info, RobotInfo) and isinstance(
-            self.robot_info.config, GimArmConfig
-        ), f"robot_info must contain a GimArmConfig, but got {type(self.robot_info)}."
-
-        # Fill unset connection fields from enumerated hardware configuration.
-        if self.config.can_interface is None:
-            self.config.can_interface = self.robot_info.config.can_interface
-        if self.config.arm_variant is None:
-            self.config.arm_variant = self.robot_info.config.arm_variant
-        if self.config.camera_serials is None:
-            self.config.camera_serials = self.robot_info.config.camera_serials
-        if self.config.camera_type is None:
-            self.config.camera_type = getattr(
-                self.robot_info.config, "camera_type", "realsense"
-            )
-
-        controller_node_rank = getattr(
-            self.robot_info.config, "controller_node_rank", None
-        )
+        """Compose and connect the configured hardware."""
+        assert self.env_idx >= 0, "env_idx must be nonnegative."
+        hardware = self.hardware
+        controller_node_rank = hardware.controller_node_rank
         if controller_node_rank is None:
             controller_node_rank = self.node_rank
 
         self.robot = GimArmRobot.build(
-            can_interface=self.config.can_interface,
-            arm_variant=self.config.arm_variant,
-            enable_gripper=self.config.enable_gripper,
-            gripper_type=self.config.gripper_type,
+            can_interface=hardware.can_interface,
+            arm_variant=hardware.arm_variant,
+            enable_gripper=hardware.enable_gripper,
+            gripper_type=hardware.gripper_type,
             control_mode=self.config.control_mode,
             env_idx=self.env_idx,
             node_rank=controller_node_rank,
@@ -284,7 +248,7 @@ class GimArmEnv(gym.Env):
                         f"wrist_{k + 1}": gym.spaces.Box(
                             0, 255, shape=(128, 128, 3), dtype=np.uint8
                         )
-                        for k in range(len(self.config.camera_serials or []))
+                        for k in range(len(self.hardware.camera_serials or []))
                     }
                 ),
             }
@@ -447,14 +411,14 @@ class GimArmEnv(gym.Env):
 
     def _camera_infos(self) -> list[CameraInfo]:
         """Return declarations for the configured wrist cameras."""
-        camera_type = self.config.camera_type or "realsense"
+        camera_type = self.hardware.camera_type or "realsense"
         return [
             CameraInfo(
                 name=f"wrist_{index + 1}",
                 serial_number=serial,
                 camera_type=camera_type,
             )
-            for index, serial in enumerate(self.config.camera_serials or [])
+            for index, serial in enumerate(self.hardware.camera_serials or [])
         ]
 
     def _open_cameras(self) -> None:
@@ -522,7 +486,7 @@ class GimArmEnv(gym.Env):
         Returns:
             ``True`` if a gripper state transition occurred (penalty applies).
         """
-        if not self.config.enable_gripper:
+        if not self.hardware.enable_gripper:
             return False
         closing = position <= -self.config.binary_gripper_threshold
         opening = position >= self.config.binary_gripper_threshold

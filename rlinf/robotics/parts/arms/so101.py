@@ -157,7 +157,10 @@ class SO101Arm(BaseArm):
         """
         return {
             "end_effector": MethodEndEffector(
-                self, state_field="gripper_position", command="move_gripper"
+                self,
+                state_field="gripper_position",
+                command="move_gripper",
+                is_gripper=True,
             )
         }
 

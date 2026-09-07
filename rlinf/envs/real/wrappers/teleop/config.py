@@ -29,13 +29,7 @@ from __future__ import annotations
 import warnings
 from typing import Any, Mapping, Optional, Sequence
 
-#: Retired flag -> the device it selected.
-LEGACY_FLAGS: dict[str, str] = {
-    "use_spacemouse": "spacemouse",
-    "use_gello": "gello",
-    "use_pico": "pico",
-    "use_gello_joint": "gello_joint",
-}
+from rlinf.robotics.parts.teleop import TeleopDevice
 
 #: Selection that leaves control with the policy.
 NO_DEVICE = "none"
@@ -43,18 +37,19 @@ NO_DEVICE = "none"
 
 def _legacy_selection(cfg: Mapping[str, Any]) -> tuple[Optional[str], list[str]]:
     """Return the device the retired booleans select, and which were present."""
-    present = [flag for flag in LEGACY_FLAGS if flag in cfg]
+    legacy_flags = TeleopDevice.legacy_flags()
+    present = [flag for flag in legacy_flags if flag in cfg]
     enabled = [flag for flag in present if bool(cfg[flag])]
 
     if len(enabled) > 1:
         raise ValueError(
             "Only one teleop device can be active at a time, but "
             f"{', '.join(sorted(enabled))} are all enabled. Replace them with a "
-            f"single 'teleop_device: {LEGACY_FLAGS[enabled[0]]}'."
+            f"single 'teleop_device: {legacy_flags[enabled[0]]}'."
         )
     if not present:
         return None, []
-    return (LEGACY_FLAGS[enabled[0]] if enabled else NO_DEVICE), present
+    return (legacy_flags[enabled[0]] if enabled else NO_DEVICE), present
 
 
 def resolve_teleop_device(
@@ -168,7 +163,9 @@ def resolve_teleop_devices(
         return [] if device == NO_DEVICE else [device]
 
     # The current key supersedes legacy keys inherited through config layering.
-    superseded = [key for key in ("teleop_device", *LEGACY_FLAGS) if key in cfg]
+    superseded = [
+        key for key in ("teleop_device", *TeleopDevice.legacy_flags()) if key in cfg
+    ]
     if superseded:
         warnings.warn(
             f"'teleop' supersedes {', '.join(sorted(superseded))} in this env "

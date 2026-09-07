@@ -19,7 +19,7 @@ from __future__ import annotations
 from rlinf.envs.real.registry import register_tasks
 from rlinf.robotics.parts.arms.so101 import SO101RobotState
 
-from .base import SO101Env, SO101RobotConfig
+from .base import SO101Env, SO101EnvConfig
 from .reach import SO101ReachConfig, SO101ReachEnv
 
 TASKS = {"SO101ReachEnv-v1": SO101ReachEnv}
@@ -31,7 +31,7 @@ __all__ = [
     "SO101Env",
     "SO101ReachConfig",
     "SO101ReachEnv",
-    "SO101RobotConfig",
+    "SO101EnvConfig",
     "SO101RobotState",
     *_ENTRY_POINTS,
 ]

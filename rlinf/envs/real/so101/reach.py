@@ -27,11 +27,11 @@ import numpy as np
 from rlinf.robotics.discovery import RobotInfo
 from rlinf.scheduler import WorkerInfo
 
-from .base import _DOF, SO101Env, SO101RobotConfig
+from .base import _DOF, SO101Env, SO101EnvConfig
 
 
 @dataclass
-class SO101ReachConfig(SO101RobotConfig):
+class SO101ReachConfig(SO101EnvConfig):
     """Configuration for :class:`SO101ReachEnv`."""
 
     enable_random_reset: bool = False

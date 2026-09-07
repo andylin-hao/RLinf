@@ -260,12 +260,93 @@ hand a ``declare()`` a ``gripper_type`` and it refuses the call rather than
 dropping the setting, because those belong to the end effector composed beside
 it.
 
-The built-in Franka Hand is the one device this repository reaches two ways --
-over ROS topics, or over its own libfranka session -- so ``FrankaRobot`` keeps a
-``HAND_BACKENDS`` mapping from arm backend to hand driver. That choice lives at
-the composition root because it is the only place that knows both. A config that
-names a driver outright, as ``end_effector_type: franky_gripper``, is taken at
-its word.
+End-effectors register their own names and aliases in the same way. For a device
+with several transports, a driver can scope an alias to an arm backend:
+``FrankyGripper`` registers ``franka`` with ``arm_backend="franky"``, while
+``FrankaGripper`` provides the unscoped ``franka`` alias for ROS. The robot passes
+its arm backend to ``EndEffector.backend()`` when resolving ``gripper_type``.
+Each driver owns its registration; adding a transport needs no brand table in
+the robot builder.
+
+When you set ``end_effector_type``, the builder resolves that exact registered
+name without applying arm-specific aliases. It takes precedence over
+``gripper_type``. This includes ``franka_gripper``: it now always selects the
+ROS driver. Use ``gripper_type: franka`` with no ``end_effector_type`` to select
+the built-in gripper according to the arm backend.
+
+All end effectors share one base, ``EndEffector``, which defines the registry,
+state, commands, and reset interface. ``BaseGripper`` adds one-axis gripper
+operations and declares ``is_gripper = True``. ``BaseHand`` declares
+``is_hand = True`` and adds finger labels to diagnostic state. Both flags default
+to false on ``EndEffector``; another tool can implement this interface without
+being classified as a hand or gripper. Generic diagnostics return positions;
+finger labels belong to hand diagnostics.
+
+Connection ownership follows ``Connection.owner`` for every specialization.
+An independent driver implements ``_open()`` and ``_release()``. A shared view
+uses its owner's connection. The same ``EndEffector`` interface covers both,
+and ``reset(target_state)`` commands an explicit target; a driver can override
+reset to supply its own default pose. ``MethodEndEffector`` takes an explicit
+``is_gripper=True`` when its host exports a gripper; dimensions do not determine
+the device's capabilities.
+
+The selected driver also supplies ``action_dim`` and ``state_dim``. Registered
+independent drivers expose dimensions and capability flags as class attributes
+so a dummy environment can read the contract without constructing or connecting
+a device. A shared connection view may compute dimensions from its host.
+Franka environments use the dimensions for action and observation spaces and
+require a driver that declares exactly one of ``is_hand`` or ``is_gripper``.
+Other tools need a task that defines their action interpretation; Franka rejects
+them before opening hardware. Wrappers select gripper actions through
+``ActionKind.GRIPPER``.
+
+For example, register a hand variant with a lower default current and compose it
+with the existing Franka arm. The inherited driver still owns serial access,
+state, and commands:
+
+.. code-block:: python
+
+   import numpy as np
+
+   from rlinf.robotics import FrankaRobot
+   from rlinf.robotics.parts.end_effectors import EndEffector, RuiyanHand
+
+
+   @EndEffector.register("gentle_tool")
+   class GentleHand(RuiyanHand):
+       """Ruiyan hand with a lower default motor current."""
+
+       def __init__(self, **settings):
+           super().__init__(**{"default_current": 400, **settings})
+
+
+   robot = FrankaRobot.build(
+       robot_ip="172.16.0.2",
+       node_rank=0,
+       end_effector_type="gentle_tool",
+       end_effector_config={"port": "/dev/ttyUSB0"},
+   )
+   try:
+       robot.connect()
+       tool = robot.child("end_effector", EndEffector)
+       target = np.full(tool.action_dim, 0.5, dtype=np.float32)
+       robot.send_action({"end_effector": {"target": target}})
+       positions = robot.get_observation()["end_effector"]["state"]
+   finally:
+       robot.disconnect()
+
+``build()`` declares both parts, and ``connect()`` opens their connections.
+The command uses the driver's action width; the returned ``positions`` array
+uses its state width. ``disconnect()`` releases both parts, including when a
+command fails. To use this variant in a Franka task, import its module before
+environment construction and set the hardware entry's ``end_effector_type`` to
+``gentle_tool`` and ``end_effector_config.port`` to its serial port. The task's
+hand reset and target arrays must match the driver's dimensions. Placing the
+part remotely keeps the same state and command interface.
+
+The controller check tool lists ``EndEffector.backends()`` as its accepted
+names. Pass driver-specific options as a JSON object through
+``--end-effector-config``; omitted values use the driver's defaults.
 
 A driver that supports hardware enumeration can also declare its vendor module
 in ``SDK`` and implement ``discover()``. The shared discovery code then reports

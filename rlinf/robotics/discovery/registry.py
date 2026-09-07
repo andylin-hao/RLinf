@@ -50,7 +50,7 @@ class RobotConfig(HardwareConfig):
     that dials it.
     """
 
-    def model(self, robot_type: str) -> str:
+    def hardware_model(self, robot_type: str) -> str:
         """Return the hardware model reported to the scheduler."""
         return robot_type
 
@@ -131,7 +131,7 @@ class RobotDiscovery(Hardware):
             infos.append(
                 RobotInfo(
                     type=cls.HW_TYPE,
-                    model=config.model(cls.HW_TYPE),
+                    model=config.hardware_model(cls.HW_TYPE),
                     config=config,
                 )
             )

@@ -29,6 +29,7 @@ import gymnasium as gym
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
+from rlinf.envs.real.utils.config import get_hardware_config
 from rlinf.envs.real.utils.seeding import seed_sampled_spaces
 from rlinf.envs.real.utils.video import VideoPlayer
 from rlinf.robotics import (
@@ -43,7 +44,7 @@ from rlinf.robotics.parts.arms.base import CartesianCompliance
 from rlinf.robotics.parts.arms.franka import FrankaRobotState
 from rlinf.robotics.parts.arms.franky import FrankyArm
 from rlinf.robotics.parts.cameras import BaseCamera, CameraInfo
-from rlinf.robotics.parts.end_effectors import BaseEndEffector
+from rlinf.robotics.parts.end_effectors import EndEffector
 from rlinf.scheduler import WorkerInfo
 from rlinf.utils.logging import get_logger
 
@@ -54,24 +55,8 @@ _ArmResult = TypeVar("_ArmResult")
 
 
 @dataclass
-class DualFrankaRobotConfig:
+class DualFrankaEnvConfig:
     """Configuration for the dual-arm Franka environment."""
-
-    left_robot_ip: Optional[str] = None
-    right_robot_ip: Optional[str] = None
-
-    left_camera_serials: Optional[list[str]] = None
-    right_camera_serials: Optional[list[str]] = None
-    base_camera_serials: Optional[list[str]] = None
-    camera_type: Optional[str] = None
-    base_camera_type: Optional[str] = None
-    left_camera_type: Optional[str] = None
-    right_camera_type: Optional[str] = None
-
-    left_gripper_type: Optional[str] = None
-    right_gripper_type: Optional[str] = None
-    left_gripper_connection: Optional[str] = None
-    right_gripper_connection: Optional[str] = None
 
     enable_camera_player: bool = False
     is_dummy: bool = False
@@ -137,7 +122,7 @@ class DualFrankaEnv(gym.Env):
 
     TRANSFORMS = ()
 
-    CONFIG_CLS: type[DualFrankaRobotConfig] = DualFrankaRobotConfig
+    CONFIG_CLS: type[DualFrankaEnvConfig] = DualFrankaEnvConfig
     PER_ARM_ACTION_DIM: int = 0
     GRIPPER_IDX_IN_ARM: int = 0
 
@@ -162,18 +147,19 @@ class DualFrankaEnv(gym.Env):
             ("left", "right"),
         )
 
-    _DEFAULT_GRIPPER_TYPE: str = "robotiq"
-
     def __init__(
         self,
         override_cfg: dict[str, Any],
-        worker_info: Optional[WorkerInfo],
-        robot_info: Optional[RobotInfo[DualFrankaConfig]],
-        env_idx: int,
+        worker_info: Optional[WorkerInfo] = None,
+        robot_info: Optional[RobotInfo[DualFrankaConfig]] = None,
+        env_idx: int = 0,
     ) -> None:
         config = self.CONFIG_CLS(**override_cfg)
         self._logger = get_logger()
         self.config = config
+        self.hardware = get_hardware_config(
+            DualFrankaConfig, robot_info, is_dummy=config.is_dummy
+        )
         self._task_description = config.task_description
         self.robot_info = robot_info
         self.env_idx = env_idx
@@ -254,15 +240,23 @@ class DualFrankaEnv(gym.Env):
 
         Per-slot ``*_camera_type`` falls back to the global ``camera_type``.
         """
-        default_ct = self.config.camera_type or "realsense"
+        default_ct = self.hardware.camera_type or "realsense"
         specs: list[tuple[str, str, str]] = []
-        if self.config.base_camera_serials:
-            ct = self.config.base_camera_type or default_ct
-            for j, serial in enumerate(self.config.base_camera_serials):
+        if self.hardware.base_camera_serials:
+            ct = self.hardware.base_camera_type or default_ct
+            for j, serial in enumerate(self.hardware.base_camera_serials):
                 specs.append((f"base_{j}_rgb", serial, ct))
         for arm, serials, slot_ct in (
-            ("left", self.config.left_camera_serials, self.config.left_camera_type),
-            ("right", self.config.right_camera_serials, self.config.right_camera_type),
+            (
+                "left",
+                self.hardware.left_camera_serials,
+                self.hardware.left_camera_type,
+            ),
+            (
+                "right",
+                self.hardware.right_camera_serials,
+                self.hardware.right_camera_type,
+            ),
         ):
             if not serials:
                 continue
@@ -359,82 +353,38 @@ class DualFrankaEnv(gym.Env):
 
     # Hardware setup.
 
-    def _resolve_hw_overrides(self) -> None:
-        if self.robot_info is None:
-            return
-        assert isinstance(self.robot_info, RobotInfo) and isinstance(
-            self.robot_info.config, DualFrankaConfig
-        ), (
-            "robot_info must contain a DualFrankaConfig, "
-            f"but got {type(self.robot_info)}."
-        )
-        hw = self.robot_info.config
-        # Fields inherit from hardware configuration when unset by the task.
-        hw_fallback_fields: tuple[tuple[str, object], ...] = (
-            ("left_robot_ip", None),
-            ("right_robot_ip", None),
-            ("left_camera_serials", None),
-            ("right_camera_serials", None),
-            ("base_camera_serials", None),
-            ("camera_type", "realsense"),
-            ("base_camera_type", None),
-            ("left_camera_type", None),
-            ("right_camera_type", None),
-            ("left_gripper_connection", None),
-            ("right_gripper_connection", None),
-        )
-        for field_name, default in hw_fallback_fields:
-            if getattr(self.config, field_name, None) is None:
-                setattr(self.config, field_name, getattr(hw, field_name, default))
-        for side in ("left_gripper_type", "right_gripper_type"):
-            if getattr(self.config, side, None) is None:
-                setattr(
-                    self.config,
-                    side,
-                    getattr(hw, side, self._DEFAULT_GRIPPER_TYPE),
-                )
-
     def _resolve_controller_node_ranks(self) -> tuple[int, int]:
         """Return controller node ranks with hardware overrides applied."""
-        left_node = self.node_rank
-        right_node = self.node_rank
-        if self.robot_info is not None:
-            hw = self.robot_info.config
-            if hw.left_controller_node_rank is not None:
-                left_node = hw.left_controller_node_rank
-            if hw.right_controller_node_rank is not None:
-                right_node = hw.right_controller_node_rank
-        return left_node, right_node
+        hardware = self.hardware
+        left_node = hardware.left_controller_node_rank
+        right_node = hardware.right_controller_node_rank
+        return (
+            self.node_rank if left_node is None else left_node,
+            self.node_rank if right_node is None else right_node,
+        )
 
     def _side_compliance(self, side: str) -> Optional[CartesianCompliance]:
         """Return one arm's impedance settings, or the shared ones."""
-        if self.robot_info is None:
-            return None
-        hw = self.robot_info.config
-        return getattr(hw, f"{side}_compliance", None) or getattr(
-            hw, "compliance", None
-        )
+        hardware = self.hardware
+        return getattr(hardware, f"{side}_compliance") or hardware.compliance
 
     def _setup_hardware(self) -> None:
         assert self.env_idx >= 0, f"env_idx must be set for {type(self).__name__}."
 
-        self._resolve_hw_overrides()
         left_node, right_node = self._resolve_controller_node_ranks()
 
         arm_cameras, base_cameras = self._camera_declarations()
         self.robot = DualFrankaRobot.build(
-            left_robot_ip=self.config.left_robot_ip,
-            right_robot_ip=self.config.right_robot_ip,
+            left_robot_ip=self.hardware.left_robot_ip,
+            right_robot_ip=self.hardware.right_robot_ip,
             env_idx=self.env_idx,
             left_node_rank=left_node,
             right_node_rank=right_node,
             worker_rank=self.env_worker_rank,
-            left_gripper_type=self.config.left_gripper_type
-            or self._DEFAULT_GRIPPER_TYPE,
-            right_gripper_type=self.config.right_gripper_type
-            or self._DEFAULT_GRIPPER_TYPE,
-            left_gripper_connection=self.config.left_gripper_connection,
-            right_gripper_connection=self.config.right_gripper_connection,
+            left_gripper_type=self.hardware.left_gripper_type,
+            right_gripper_type=self.hardware.right_gripper_type,
+            left_gripper_connection=self.hardware.left_gripper_connection,
+            right_gripper_connection=self.hardware.right_gripper_connection,
             left_compliance=self._side_compliance("left"),
             right_compliance=self._side_compliance("right"),
             arm_cameras=arm_cameras,
@@ -447,11 +397,11 @@ class DualFrankaEnv(gym.Env):
         self._left_arm: FrankyArm = self.robot.child("left").child("arm", FrankyArm)
         self._right_arm: FrankyArm = self.robot.child("right").child("arm", FrankyArm)
         # Each hand is a part beside its arm, with its own connection.
-        self._left_hand: BaseEndEffector = self.robot.child("left").child(
-            "end_effector", BaseEndEffector
+        self._left_hand: EndEffector = self.robot.child("left").child(
+            "end_effector", EndEffector
         )
-        self._right_hand: BaseEndEffector = self.robot.child("right").child(
-            "end_effector", BaseEndEffector
+        self._right_hand: EndEffector = self.robot.child("right").child(
+            "end_effector", EndEffector
         )
 
     # Gymnasium reset and step.

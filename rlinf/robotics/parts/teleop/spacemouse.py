@@ -38,6 +38,8 @@ class SpaceMouse(TeleopDevice):
             which swaps which button the info reports as each side.
     """
 
+    LEGACY_FLAGS = {"use_spacemouse": "spacemouse"}
+
     PRODUCES = {
         "arm": ActionKind.CARTESIAN_DELTA,
         "end_effector": ActionKind.GRIPPER,

@@ -14,6 +14,7 @@
 
 
 import argparse
+import json
 import os
 import time
 
@@ -34,28 +35,37 @@ def _parse_args():
     parser.add_argument(
         "--end-effector-type",
         default="franka_gripper",
-        choices=["franka_gripper", "robotiq_gripper", "ruiyan_hand"],
+        choices=sorted(EndEffector.backends()),
         help="Mounted end-effector type.",
     )
     parser.add_argument(
         "--hand-port",
         default=None,
-        help="Serial port for Ruiyan hand, e.g. /dev/ttyUSB0.",
+        help="End-effector serial port, e.g. /dev/ttyUSB0.",
     )
     parser.add_argument(
         "--hand-baudrate",
         type=int,
-        default=460800,
-        help="Serial baudrate for Ruiyan hand.",
+        default=None,
+        help="End-effector serial baudrate; defaults to the driver setting.",
     )
     parser.add_argument(
         "--hand-motor-ids",
         type=int,
         nargs="+",
-        default=[1, 2, 3, 4, 5, 6],
-        help="Motor IDs for Ruiyan hand.",
+        default=None,
+        help="End-effector motor IDs; defaults to the driver setting.",
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--end-effector-config",
+        type=json.loads,
+        default={},
+        help='Driver settings as a JSON object, e.g. {"port": "/dev/ttyUSB0"}.',
+    )
+    args = parser.parse_args()
+    if not isinstance(args.end_effector_config, dict):
+        parser.error("--end-effector-config must be a JSON object")
+    return args
 
 
 def main():
@@ -63,15 +73,17 @@ def main():
     robot_ip = args.robot_ip
     assert robot_ip is not None, "Please set the FRANKA_ROBOT_IP environment variable."
 
-    end_effector_config = {}
-    if args.end_effector_type == "ruiyan_hand":
-        if args.hand_port is None:
-            raise ValueError("--hand-port is required when using ruiyan_hand.")
-        end_effector_config = {
-            "port": args.hand_port,
-            "baudrate": args.hand_baudrate,
-            "motor_ids": tuple(args.hand_motor_ids),
-        }
+    end_effector_config = dict(args.end_effector_config)
+    for key, value in (
+        ("port", args.hand_port),
+        ("baudrate", args.hand_baudrate),
+        (
+            "motor_ids",
+            tuple(args.hand_motor_ids) if args.hand_motor_ids is not None else None,
+        ),
+    ):
+        if value is not None:
+            end_effector_config[key] = value
 
     # The arm and the end effector open their own connections, so build and
     # connect each one.
@@ -108,7 +120,7 @@ def main():
                 state = controller.get_state()
                 print(state.to_dict())
             elif cmd_str == "gethand":
-                print(end_effector.get_detailed_state())
+                print(end_effector.get_observation())
             else:
                 print(f"Unknown cmd: {cmd_str}")
         except KeyboardInterrupt:

@@ -28,6 +28,7 @@ import cv2
 import gymnasium as gym
 import numpy as np
 
+from rlinf.envs.real.utils.config import get_hardware_config
 from rlinf.envs.real.utils.seeding import seed_sampled_spaces
 from rlinf.envs.real.utils.video import VideoPlayer
 from rlinf.robotics import (
@@ -47,41 +48,8 @@ _DOF = PiperArm.DOF
 
 
 @dataclass
-class PiperRobotConfig:
-    """Environment-side configuration for a Piper.
-
-    Connection fields left as ``None`` are filled from the enumerated
-    :class:`~rlinf.robotics.RobotInfo`.
-    """
-
-    backend: Optional[str] = None
-    """Arm backend. ``None`` takes it from hardware info, which in turn
-    defaults to :attr:`PiperRobot.BACKEND`."""
-
-    can_channel: Optional[str] = None
-    """CAN channel the arm is on. ``None`` takes it from hardware info."""
-
-    can_interface: Optional[str] = None
-    """python-can backend. ``None`` takes it from hardware info."""
-
-    model: Optional[str] = None
-    """Arm variant. ``None`` takes it from hardware info."""
-
-    firmware: Optional[str] = None
-    """Firmware profile. ``None`` takes it from hardware info, which in turn
-    reads the version off the arm."""
-
-    speed_percent: Optional[int] = None
-    """Percentage of maximum speed. ``None`` takes it from hardware info."""
-
-    with_gripper: bool = True
-    """Whether an AgxGripper is fitted."""
-
-    camera_serials: Optional[list[str]] = None
-    """Camera identifiers. ``None`` takes them from hardware info."""
-
-    camera_type: Optional[str] = None
-    """Camera backend. ``None`` takes it from hardware info."""
+class PiperEnvConfig:
+    """Task, control, and observation settings for a Piper environment."""
 
     enable_camera_player: bool = True
     """Whether to show captured frames in a viewer window."""
@@ -135,9 +103,9 @@ class PiperRobotConfig:
 class PiperEnv(gym.Env):
     """Piper environment with absolute joint-position actions.
 
-    An action is ``(7,)``: six joint positions in radians followed by a gripper
-    opening in ``0..1``. Reward compares the measured joints with
-    :pyattr:`PiperRobotConfig.target_joint_qpos`.
+    An action contains six joint positions in radians and, when a gripper is
+    attached, its opening in ``0..1``. Reward compares the measured joints with
+    :pyattr:`PiperEnvConfig.target_joint_qpos`.
     """
 
     # No registered teleoperation device produces this joint layout.
@@ -149,13 +117,16 @@ class PiperEnv(gym.Env):
 
     def __init__(
         self,
-        config: PiperRobotConfig,
-        worker_info: Optional[WorkerInfo],
-        robot_info: "Optional[RobotInfo[PiperConfig]]",
-        env_idx: int,
+        config: PiperEnvConfig,
+        worker_info: Optional[WorkerInfo] = None,
+        robot_info: "Optional[RobotInfo[PiperConfig]]" = None,
+        env_idx: int = 0,
     ) -> None:
         self._logger = get_logger()
         self.config = config
+        self.hardware = get_hardware_config(
+            PiperConfig, robot_info, is_dummy=config.is_dummy
+        )
         self.robot_info = robot_info
         self.env_idx = env_idx
         self.node_rank = 0
@@ -173,9 +144,7 @@ class PiperEnv(gym.Env):
         if not self.config.is_dummy:
             self._setup_hardware()
 
-        if self.config.camera_serials is None:
-            self.config.camera_serials = []
-        if not self.config.camera_serials:
+        if not self.hardware.camera_serials:
             self._logger.info(
                 "No camera serials configured. "
                 "Observations will not contain camera frames."
@@ -193,45 +162,23 @@ class PiperEnv(gym.Env):
     # Hardware setup.
 
     def _setup_hardware(self) -> None:
-        """Compose and connect the robot, filling gaps from hardware info."""
-        assert self.env_idx >= 0, "env_idx must be set for PiperEnv."
-
-        controller_node_rank = None
-        if self.robot_info is not None:
-            hardware = self.robot_info.config
-            for name in (
-                "backend",
-                "can_channel",
-                "can_interface",
-                "model",
-                "firmware",
-                "speed_percent",
-                "camera_serials",
-                "camera_type",
-            ):
-                if getattr(self.config, name, None) is None:
-                    setattr(self.config, name, getattr(hardware, name, None))
-            controller_node_rank = getattr(hardware, "controller_node_rank", None)
-
-        if self.config.can_channel is None:
-            raise ValueError(
-                "A Piper needs a CAN channel. Set 'can_channel' on the env "
-                "config, or let hardware discovery supply it."
-            )
+        """Compose and connect the configured hardware."""
+        assert self.env_idx >= 0, "env_idx must be nonnegative."
+        hardware = self.hardware
+        controller_node_rank = hardware.controller_node_rank
         if controller_node_rank is None:
             controller_node_rank = self.node_rank
 
-        # Cameras are declared here, after discovery has filled the serials.
         self.robot = PiperRobot.build(
-            can_channel=self.config.can_channel,
-            backend=self.config.backend,
-            can_interface=self.config.can_interface or "socketcan",
-            model=self.config.model or "piper",
-            firmware=self.config.firmware,
-            speed_percent=(
-                30 if self.config.speed_percent is None else self.config.speed_percent
-            ),
-            with_gripper=self.config.with_gripper,
+            can_channel=hardware.can_channel,
+            backend=hardware.backend,
+            can_interface=hardware.can_interface,
+            model=hardware.model,
+            firmware=hardware.firmware,
+            speed_percent=hardware.speed_percent,
+            gripper_force=hardware.gripper_force,
+            gripper_max_width=hardware.gripper_max_width,
+            with_gripper=hardware.with_gripper,
             env_idx=self.env_idx,
             node_rank=controller_node_rank,
             worker_rank=self.env_worker_rank,
@@ -251,16 +198,18 @@ class PiperEnv(gym.Env):
             self.config.joint_limit_high, dtype=np.float64
         )
 
-        # Six bounded joints, then a gripper opening in 0..1.
-        action_low = np.append(self._joint_limit_low, 0.0).astype(np.float32)
-        action_high = np.append(self._joint_limit_high, 1.0).astype(np.float32)
+        action_low = self._joint_limit_low.astype(np.float32)
+        action_high = self._joint_limit_high.astype(np.float32)
+        if self.hardware.with_gripper:
+            action_low = np.append(action_low, np.float32(0.0))
+            action_high = np.append(action_high, np.float32(1.0))
         self.action_space = gym.spaces.Box(action_low, action_high)
 
         state: dict[str, gym.Space] = {
             "arm_joint_position": gym.spaces.Box(-np.inf, np.inf, shape=(_DOF,)),
             "tcp_pose": gym.spaces.Box(-np.inf, np.inf, shape=(7,)),
         }
-        if self.config.with_gripper:
+        if self.hardware.with_gripper:
             state["gripper_position"] = gym.spaces.Box(0, 1, shape=(1,))
         spaces: dict[str, gym.Space] = {"state": gym.spaces.Dict(state)}
 
@@ -268,7 +217,7 @@ class PiperEnv(gym.Env):
             f"wrist_{index + 1}": gym.spaces.Box(
                 0, 255, shape=(128, 128, 3), dtype=np.uint8
             )
-            for index in range(len(self.config.camera_serials or []))
+            for index in range(len(self.hardware.camera_serials or []))
         }
         # Gymnasium's env checker rejects an empty Dict space, so an arm with
         # no camera reports no 'frames' key at all rather than an empty one.
@@ -283,7 +232,7 @@ class PiperEnv(gym.Env):
     def action_parts(self) -> tuple[ActionPart, ...]:
         """Return the joint-position and gripper action parts."""
         parts = [ActionPart("arm", _DOF, ActionKind.JOINT_POSITION)]
-        if self.config.with_gripper:
+        if self.hardware.with_gripper:
             parts.append(ActionPart("end_effector", 1, ActionKind.GRIPPER))
         return tuple(parts)
 
@@ -308,7 +257,7 @@ class PiperEnv(gym.Env):
                     action[:_DOF], self._joint_limit_low, self._joint_limit_high
                 )
             }
-            if self.config.with_gripper:
+            if self.hardware.with_gripper:
                 opening = float(np.clip(action[_DOF], 0.0, 1.0))
                 gripper_moved = (
                     self._last_gripper is not None
@@ -361,7 +310,7 @@ class PiperEnv(gym.Env):
         return self._get_observation(), {}
 
     def go_to_rest(self) -> None:
-        """Move to :pyattr:`PiperRobotConfig.reset_joint_qpos`."""
+        """Move to :pyattr:`PiperEnvConfig.reset_joint_qpos`."""
         self._arm.reset_joint(self.config.reset_joint_qpos)
 
     # Reward.
@@ -403,7 +352,7 @@ class PiperEnv(gym.Env):
             ),
             "tcp_pose": np.asarray(reading["tcp_pose"], dtype=np.float32),
         }
-        if self.config.with_gripper:
+        if self.hardware.with_gripper:
             state["gripper_position"] = np.asarray(
                 reading["end_effector"]["state"], dtype=np.float32
             )
@@ -417,14 +366,14 @@ class PiperEnv(gym.Env):
 
     def _camera_infos(self) -> list[CameraInfo]:
         """Return declarations for the configured wrist cameras."""
-        camera_type = self.config.camera_type or "realsense"
+        camera_type = self.hardware.camera_type or "realsense"
         return [
             CameraInfo(
                 name=f"wrist_{index + 1}",
                 serial_number=serial,
                 camera_type=camera_type,
             )
-            for index, serial in enumerate(self.config.camera_serials or [])
+            for index, serial in enumerate(self.hardware.camera_serials or [])
         ]
 
     def _open_cameras(self) -> None:

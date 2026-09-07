@@ -13,7 +13,7 @@
 .. code-block:: python
 
    @dataclass
-   class PegInsertionConfig(FrankaRobotConfig):
+   class PegInsertionConfig(FrankaEnvConfig):
        task_description: str = "peg and insertion"
        target_ee_pose: np.ndarray = field(default_factory=lambda: np.zeros(6))
        random_xy_range: float = 0.05
@@ -32,6 +32,40 @@
            ...
 
 ``PegInsertionConfig`` 为继承的 env 逻辑统一提供目标、随机范围和控制器设置，``CONFIG_CLS`` 则告诉 ``PegInsertionEnv`` 应构造哪一种配置。``go_to_rest()`` 只覆盖与插销任务相关的复位顺序。``compliance()`` 将任务参数合并到 ``COMPLIANCE_DEFAULTS``；字段名错误或控制器不支持相应参数时，该函数会立即报错。插销任务只覆盖一项参数，bin relocation 覆盖十一项，其余任务数据也保存在各自配置中。
+
+将硬件设置保留在机器人描述中
+----------------------------
+
+任务决定目标、复位动作、奖励、动作限制和图像处理方式。机器人的地址、相机序列号与 backend、夹爪配置及 placement 则描述真机设备，应写在 ``cluster.node_groups[].hardware.configs`` 中。``env.train.override_cfg`` 和 ``env.eval.override_cfg`` 只接受环境与任务设置。例如，``enable_camera_player`` 控制图像显示，仍属于环境配置。省略 ``camera_serials`` 时，系统通过选定的 backend（默认为 RealSense）发现相机，并按序列号排序。只有需要选择部分相机或指定顺序时才填写序列号；对于支持无相机运行的机器人，显式空列表表示不使用相机。
+
+独立检查工具与 scheduler 启动使用相同的枚举流程。下面的示例从节点本地环境变量读取 SO-101 设置，解析相机序列号并验证相机设备，然后创建环境：
+
+.. code-block:: python
+
+   from rlinf.envs.real.so101 import SO101ReachEnv
+   from rlinf.robotics.discovery import RobotDiscovery
+
+   # Set SERIAL_PORT and CALIBRATION_ID for this rig.
+   discovery = RobotDiscovery.registry["SO101"].discovery_cls
+   resources = discovery.enumerate(node_rank=0, configs=[])
+   if resources is None or len(resources.infos) != 1:
+       raise ValueError("Configure one SO-101 for this check.")
+
+   env = SO101ReachEnv(
+       {"enable_camera_player": False, "target_joint_qpos": [0.0] * 5},
+       robot_info=resources.infos[0],
+   )
+   try:
+       observation, info = env.reset()
+       print(observation["state"])
+   finally:
+       env.close()
+
+``enumerate()`` 返回硬件描述，不会打开机械臂的控制连接。每个 ``RobotInfo`` 的 ``config`` 保存解析后的类型化配置。环境构造函数连接机器人，并可能将其移动到复位姿态；``reset()`` 开始一个 episode，返回任务观测和 info 字典；``close()`` 释放机器人的连接。SO-101 检查工具也使用这一流程。``SO101Config.serial_port`` 和 ``calibration_id`` 通过共享 resolver 从 ``SERIAL_PORT`` 和 ``CALIBRATION_ID`` 解析，因此无关的 ``PORT=8080`` 不会被当作串口地址。已有机械臂配置时，``--port`` 必须精确匹配其中一个串口，并保留该机械臂的 calibration；找不到匹配项会报错。没有机械臂配置时，``--port`` 和 ``--id`` 用于描述本地机械臂。``--id`` 显式设置选中机械臂的 calibration 标识。SO-101 硬件 YAML 条目中的 ``port`` 应改为 ``serial_port``。检查工具的 ``--port`` 和 ``--id`` 分别选择串口和 calibration 标识。
+
+通过 scheduler 运行时，节点 probe 完成枚举，worker placement 分配 ``RobotInfo``，再由 ``RealWorldEnv`` 将其传给任务构造函数。环境只读取其中的硬件配置，不修改原对象。``camera_serials``、``robot_ip`` 等字段不再允许出现在任务 override 中，应移至硬件条目。若硬件默认值已能描述所需的观测空间，dummy 环境可以省略 ``robot_info``；需要其他相机布局或末端执行器时，也应传入对应布局的描述。Franka 在 dummy 模式下也要求至少一个相机，因此构造时始终需要带有相机序列号的描述。离线运行可以使用虚拟序列号；dummy 构造过程不会打开或探测设备。
+
+共享任务 dataclass 分别命名为 ``FrankaEnvConfig``、``DualFrankaEnvConfig``、``SO101EnvConfig``、``PiperEnvConfig``、``GimArmEnvConfig``、``DOSW1EnvConfig`` 和 ``Turtle2EnvConfig``，对应的硬件配置仍位于 ``rlinf.robotics.robots``。Turtle2 的相机通道从任务字段 ``use_camera_ids`` 移至硬件字段 ``camera_ids``。Piper 的硬件字段 ``with_gripper`` 决定 action 包含 6 个关节值，还是包含夹爪开度的 7 个值。
 
 注册任务
 --------
@@ -122,6 +156,8 @@
    env:
      eval:
        teleop: [spacemouse, glove]
+
+设备名称来自 ``TeleopDevice`` registry。需要兼容旧布尔配置项的设备，在自己的 ``LEGACY_FLAGS`` mapping 中声明这些别名，由 ``TeleopDevice.legacy_flags()`` 汇总后交给配置读取逻辑。旧配置项仍会触发弃用警告；配置叠加后同时出现两种形式时，以 ``teleop`` 为准。
 
 分离设备读取与动作映射
 ----------------------

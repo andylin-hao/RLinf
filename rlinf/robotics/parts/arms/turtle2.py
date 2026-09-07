@@ -95,6 +95,7 @@ class Turtle2Connection(Connection):
                 state_field=f"{prefix}_pos",
                 command=f"move_{side}_gripper",
                 state_index=_GRIPPER_STATE_INDEX,
+                is_gripper=True,
             )
         for index, camera_id in enumerate(self.camera_ids):
             parts[f"wrist_{index + 1}"] = MethodCamera(

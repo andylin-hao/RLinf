@@ -23,6 +23,7 @@ import gymnasium as gym
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
+from rlinf.envs.real.utils.config import get_hardware_config
 from rlinf.envs.real.utils.seeding import seed_sampled_spaces
 from rlinf.envs.real.utils.video import VideoPlayer
 from rlinf.robotics import (
@@ -36,11 +37,7 @@ from rlinf.robotics.actions import ActionKind, ActionPart
 from rlinf.robotics.parts.arms.base import BaseArm
 from rlinf.robotics.parts.arms.franka import FrankaRobotState
 from rlinf.robotics.parts.cameras import BaseCamera, CameraInfo
-from rlinf.robotics.parts.end_effectors import BaseEndEffector
-from rlinf.robotics.parts.end_effectors.base import (
-    EndEffectorType,
-    normalize_end_effector_type,
-)
+from rlinf.robotics.parts.end_effectors import EndEffector
 from rlinf.scheduler import WorkerInfo
 from rlinf.utils.logging import get_logger
 
@@ -97,16 +94,10 @@ _CAMERA_REOPEN_WAIT_S = 5.0
 
 
 @dataclass
-class FrankaRobotConfig:
-    robot_ip: Optional[str] = None
-    #: Arm backend this robot runs, such as ``"franka_ros"`` or ``"franky"``.
-    #: ``None`` leaves the choice to the robot's own default.
-    backend: Optional[str] = None
-    camera_serials: Optional[list[str]] = None
+class FrankaEnvConfig:
+    """Task, control, and observation settings for a Franka environment."""
+
     camera_names: Optional[dict[str, str]] = None
-    camera_type: Optional[str] = None
-    gripper_type: Optional[str] = None
-    gripper_connection: Optional[str] = None
     enable_camera_player: bool = True
     # Per-camera [top, left, bottom, right] crop fractions, keyed by serial.
     camera_crop_regions: Optional[dict[str, list[float]]] = None
@@ -153,10 +144,6 @@ class FrankaRobotConfig:
     task_description: str = ""
     success_hold_steps: int = 1  # Consecutive successful steps required.
 
-    # End-effector selection and control parameters.
-    end_effector_type: str = "franka_gripper"
-    # Extra kwargs forwarded to the end-effector constructor.
-    end_effector_config: dict = field(default_factory=dict)
     # Target hand pose used for dense-reward success criteria (6-D).
     hand_target_state: np.ndarray = field(default_factory=lambda: np.zeros(6))
     # Default hand pose after ``reset()`` (6-D).
@@ -201,22 +188,22 @@ class FrankaEnv(gym.Env):
     #: Representation transforms applied after episode wrappers.
     TRANSFORMS = ("RelativeFrame", "Quat2EulerWrapper")
 
-    CONFIG_CLS: type[FrankaRobotConfig] = FrankaRobotConfig
+    CONFIG_CLS: type[FrankaEnvConfig] = FrankaEnvConfig
 
     def __init__(
         self,
         override_cfg: dict[str, Any],
-        worker_info: Optional[WorkerInfo],
-        robot_info: Optional[RobotInfo[FrankaConfig]],
-        env_idx: int,
+        worker_info: Optional[WorkerInfo] = None,
+        robot_info: Optional[RobotInfo[FrankaConfig]] = None,
+        env_idx: int = 0,
     ) -> None:
         config = self.CONFIG_CLS(**override_cfg)
         self._logger = get_logger()
         self.config = config
-        self.config.end_effector_type = normalize_end_effector_type(
-            self.config.end_effector_type,
-            self.config.gripper_type,
-        ).value
+        self.hardware = get_hardware_config(
+            FrankaConfig, robot_info, is_dummy=config.is_dummy
+        )
+        self._validate_end_effector()
         self._task_description = config.task_description
         self.robot_info = robot_info
         self.env_idx = env_idx
@@ -254,9 +241,11 @@ class FrankaEnv(gym.Env):
             self._camera_infos = self._build_camera_infos()
 
         # Initialize spaces after camera declarations are available.
-        assert self._camera_infos, (
-            "At least one camera serial must be provided for FrankaEnv."
-        )
+        if not self._camera_infos:
+            raise ValueError(
+                "FrankaEnv requires robot_info with at least one camera serial, "
+                "including in dummy mode."
+            )
         self._init_action_obs_spaces()
 
         if self.config.is_dummy:
@@ -287,54 +276,26 @@ class FrankaEnv(gym.Env):
     def _setup_hardware(self) -> None:
         assert self.env_idx >= 0, "env_idx must be set for FrankaEnv."
 
-        # Fill unset connection fields from enumerated hardware configuration.
-        assert isinstance(self.robot_info, RobotInfo) and isinstance(
-            self.robot_info.config, FrankaConfig
-        ), f"robot_info must contain a FrankaConfig, but got {type(self.robot_info)}."
-        if self.config.robot_ip is None:
-            self.config.robot_ip = self.robot_info.config.robot_ip
-        if self.config.camera_serials is None:
-            self.config.camera_serials = self.robot_info.config.camera_serials
-        if self.config.camera_type is None:
-            self.config.camera_type = getattr(
-                self.robot_info.config, "camera_type", "realsense"
-            )
-        if self.config.backend is None:
-            self.config.backend = getattr(self.robot_info.config, "backend", None)
-        if self.config.gripper_type is None:
-            self.config.gripper_type = getattr(
-                self.robot_info.config, "gripper_type", "franka"
-            )
-        if self.config.gripper_connection is None:
-            self.config.gripper_connection = getattr(
-                self.robot_info.config, "gripper_connection", None
-            )
-        self.config.end_effector_type = normalize_end_effector_type(
-            self.config.end_effector_type,
-            self.config.gripper_type,
-        ).value
-        # Hardware discovery may be the source of the camera serials. Build the
-        # declarations only after those values have been applied.
+        hardware = self.hardware
         self._camera_infos = self._build_camera_infos()
 
         # Default the arm controller to the environment worker's node.
-        controller_node_rank = getattr(
-            self.robot_info.config, "controller_node_rank", None
-        )
+        controller_node_rank = hardware.controller_node_rank
         if controller_node_rank is None:
             controller_node_rank = self.node_rank
         # The composed robot owns camera placement and lifecycle.
-        camera_node_rank = getattr(self.robot_info.config, "camera_node_rank", None)
+        camera_node_rank = hardware.camera_node_rank
         self.robot = FrankaRobot.build(
-            robot_ip=self.config.robot_ip,
+            robot_ip=self.hardware.robot_ip,
             env_idx=self.env_idx,
             node_rank=controller_node_rank,
             worker_rank=self.env_worker_rank,
-            backend=self.config.backend,
-            compliance=getattr(self.robot_info.config, "compliance", None),
-            end_effector_type=self.config.end_effector_type,
-            end_effector_config=self.config.end_effector_config,
-            gripper_connection=self.config.gripper_connection,
+            backend=self.hardware.backend,
+            gripper_type=self.hardware.gripper_type,
+            compliance=hardware.compliance,
+            end_effector_type=self.hardware.end_effector_type,
+            end_effector_config=self.hardware.end_effector_config,
+            gripper_connection=self.hardware.gripper_connection,
             cameras={info.name: info for info in self._camera_infos},
             camera_node_rank=camera_node_rank,
         )
@@ -344,19 +305,7 @@ class FrankaEnv(gym.Env):
         # this line rather than as a missing attribute mid-episode.
         self._arm: BaseArm = self.robot.child("arm", BaseArm)
         # The end effector is a part beside the arm, with its own connection.
-        # A mismatch here means the declared spaces do not fit the hardware
-        # that turned up, which surfaces later as a shape error mid-episode.
-        self._end_effector: BaseEndEffector = self.robot.child(
-            "end_effector", BaseEndEffector
-        )
-        if self._end_effector.is_hand is not self._ee_type.is_hand:
-            raise ValueError(
-                f"end_effector_type={self.config.end_effector_type!r} declares a "
-                f"{'hand' if self._ee_type.is_hand else 'gripper'}, but the robot "
-                f"built a {type(self._end_effector).__name__}. The action and "
-                "observation spaces were sized from the config, so they would "
-                "not fit this part."
-            )
+        self._end_effector: EndEffector = self.robot.child("end_effector", EndEffector)
 
     def _setup_reward_worker(self) -> None:
         if not self.config.use_reward_model:
@@ -485,7 +434,7 @@ class FrankaEnv(gym.Env):
         if self._is_hand:
             return (
                 ActionPart("arm", 6, ActionKind.CARTESIAN_DELTA),
-                ActionPart("hand", 6, ActionKind.HAND),
+                ActionPart("hand", self._ee_interface.action_dim, ActionKind.HAND),
             )
         return (
             ActionPart("arm", 6, ActionKind.CARTESIAN_DELTA),
@@ -652,31 +601,35 @@ class FrankaEnv(gym.Env):
             )
 
     @property
-    def _ee_type(self) -> EndEffectorType:
-        """Cached end-effector type enum."""
-        return EndEffectorType(self.config.end_effector_type)
+    def _ee_interface(self) -> EndEffector | type[EndEffector]:
+        """Return the connected part, or its driver contract for dummy runs."""
+        end_effector = getattr(self, "_end_effector", None)
+        if end_effector is not None:
+            return end_effector
+        return FrankaRobot.end_effector_class(
+            backend=self.hardware.backend,
+            gripper_type=self.hardware.gripper_type,
+            end_effector_type=self.hardware.end_effector_type,
+        )
 
     @property
     def _is_hand(self) -> bool:
-        """Whether the active end-effector is a dexterous hand.
+        """Return whether the selected driver exposes a finger pose."""
+        return self._ee_interface.is_hand
 
-        Asked of the part once one exists. Gymnasium spaces are declared
-        before hardware is set up, and a dummy env never sets any up, so the
-        configured type answers until then. :meth:`_setup_hardware` checks the
-        two agree rather than letting them drift.
-        """
-        end_effector = getattr(self, "_end_effector", None)
-        if end_effector is None:
-            return self._ee_type.is_hand
-        return end_effector.is_hand
+    def _validate_end_effector(self) -> None:
+        """Require an action interpretation supported by this task family."""
+        part = self._ee_interface
+        if part.is_hand == part.is_gripper:
+            raise ValueError(
+                "FrankaEnv requires an end effector declaring exactly one of "
+                "is_hand or is_gripper. Other tools need a task-specific action layout."
+            )
+        if part.is_gripper and (part.action_dim != 1 or part.state_dim != 1):
+            raise ValueError("FrankaEnv requires scalar gripper actions and state.")
 
     def _init_action_obs_spaces(self) -> None:
-        """Initialize spaces and Cartesian safety limits.
-
-        The action dimension adapts to the active end-effector:
-        - Gripper: 7-D (6 arm + 1 gripper)
-        - Dexterous hand: 12-D (6 arm + 6 hand DOFs)
-        """
+        """Initialize spaces from the end effector and Cartesian safety limits."""
         self._xyz_safe_space = gym.spaces.Box(
             low=self.config.ee_pose_limit_min[:3],
             high=self.config.ee_pose_limit_max[:3],
@@ -689,7 +642,7 @@ class FrankaEnv(gym.Env):
         )
 
         # The arm has six Cartesian values; the end-effector size varies.
-        ee_action_dim = 6 if self._is_hand else 1
+        ee_action_dim = self._ee_interface.action_dim
         total_action_dim = 6 + ee_action_dim
         self.action_space = gym.spaces.Box(
             np.ones((total_action_dim,), dtype=np.float32) * -1,
@@ -700,11 +653,9 @@ class FrankaEnv(gym.Env):
         # Match the state field and dimension to the selected end effector.
         if self._is_hand:
             ee_state_key = "hand_position"
-            ee_state_dim = 6
             ee_low, ee_high = 0.0, 1.0
         else:
             ee_state_key = "gripper_position"
-            ee_state_dim = 1
             ee_low, ee_high = -1.0, 1.0
 
         self.observation_space = gym.spaces.Dict(
@@ -716,7 +667,7 @@ class FrankaEnv(gym.Env):
                         ),
                         "tcp_vel": gym.spaces.Box(-np.inf, np.inf, shape=(6,)),
                         ee_state_key: gym.spaces.Box(
-                            ee_low, ee_high, shape=(ee_state_dim,)
+                            ee_low, ee_high, shape=(self._ee_interface.state_dim,)
                         ),
                         "tcp_force": gym.spaces.Box(-np.inf, np.inf, shape=(3,)),
                         "tcp_torque": gym.spaces.Box(-np.inf, np.inf, shape=(3,)),
@@ -778,12 +729,12 @@ class FrankaEnv(gym.Env):
         return normalized_crop_region
 
     def _build_camera_infos(self) -> list[CameraInfo]:
-        if self.config.camera_serials is None:
+        if self.hardware.camera_serials is None:
             return []
 
-        ordered_serials = [str(serial) for serial in self.config.camera_serials]
+        ordered_serials = [str(serial) for serial in self.hardware.camera_serials]
 
-        default_camera_type = self.config.camera_type or "realsense"
+        default_camera_type = self.hardware.camera_type or "realsense"
         camera_names = self.config.camera_names or {}
         camera_crop_regions = self.config.camera_crop_regions or {}
         camera_infos: list[CameraInfo] = []
@@ -1024,7 +975,7 @@ class FrankaEnv(gym.Env):
             if self._is_hand:
                 hand_pos = self._franka_state.hand_position
                 if hand_pos is None:
-                    hand_pos = np.zeros(6)
+                    hand_pos = np.zeros(self._ee_interface.state_dim)
                 state["hand_position"] = hand_pos
             else:
                 state["gripper_position"] = np.array(

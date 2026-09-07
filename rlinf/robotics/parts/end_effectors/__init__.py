@@ -12,23 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .base import (
-    BaseEndEffector,
-    EndEffector,
-    EndEffectorType,
-    normalize_end_effector_type,
-)
+from .base import EndEffector
 from .grippers import BaseGripper, FrankaGripper, FrankyGripper, RobotiqGripper
-from .hands.ruiyan import RuiyanHand
+from .hands import BaseHand, RuiyanHand
 
 __all__ = [
-    "BaseEndEffector",
+    "BaseHand",
     "BaseGripper",
     "EndEffector",
-    "EndEffectorType",
     "FrankaGripper",
     "FrankyGripper",
     "RobotiqGripper",
     "RuiyanHand",
-    "normalize_end_effector_type",
 ]

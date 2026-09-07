@@ -55,6 +55,8 @@ def _run_scenario(mode: str) -> subprocess.CompletedProcess:
         "explicit_fill",
         # GimArm resolves through its own identifier variable.
         "gim_create",
+        # Serial ports and calibration IDs remain paired on assigned workers.
+        "so101_create",
         # Shared fields alone do not create a robot.
         "gating",
         # The identifier env var has too few values for the configs.

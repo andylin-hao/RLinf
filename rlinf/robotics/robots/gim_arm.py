@@ -125,7 +125,7 @@ class GimArmConfig(RobotConfig):
     """Node rank where the arm part should run.
     When ``None`` (default), co-located with the env worker."""
 
-    def model(self, robot_type: str) -> str:
+    def hardware_model(self, robot_type: str) -> str:
         """Report the arm variant, which changes reach and payload."""
         return f"{robot_type}_{self.arm_variant}"
 

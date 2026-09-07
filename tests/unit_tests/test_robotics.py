@@ -245,7 +245,9 @@ def test_driver_views_expose_composed_part_api():
         commands={"tcp_pose": "move_arm"},
         state_fields=("tcp_pose", "arm_joint_position"),
     )
-    end_effector = MethodEndEffector(driver, state_field="gripper_position")
+    end_effector = MethodEndEffector(
+        driver, state_field="gripper_position", is_gripper=True
+    )
     target = np.ones(7)
 
     assert set(arm.get_observation()) == {"tcp_pose", "arm_joint_position"}
@@ -314,7 +316,9 @@ def test_builtin_robots_expose_standard_composition_layouts():
     assert set(triple.parts_of_type(PartGroup)) == {"left", "right", "third"}
 
 
-def test_register_robot_registers_policy_and_config(monkeypatch):
+@pytest.fixture
+def isolated_robot_registries(monkeypatch):
+    """Keep test-local discovery policies out of later Ray node probes."""
     monkeypatch.setattr(RobotDiscovery, "registry", RobotDiscovery.registry.copy())
     monkeypatch.setattr(Hardware, "hw_types", Hardware.hw_types.copy())
     monkeypatch.setattr(Hardware, "policy_registry", Hardware.policy_registry.copy())
@@ -324,6 +328,8 @@ def test_register_robot_registers_policy_and_config(monkeypatch):
         NodeHardwareConfig._hardware_config_registry.copy(),
     )
 
+
+def test_register_robot_registers_policy_and_config(isolated_robot_registries):
     @dataclass
     class TestRobotConfig(RobotConfig):
         connection: str = "loopback"
@@ -1229,7 +1235,7 @@ def test_a_device_with_its_own_link_keeps_it_when_a_connection_lists_it():
     )
 
     # Views without their own connection are adopted by the host.
-    gripper = MethodEndEffector(arm, state_field="gripper_position")
+    gripper = MethodEndEffector(arm, state_field="gripper_position", is_gripper=True)
     assert gripper.owner is arm
 
 
@@ -2703,17 +2709,11 @@ def test_a_dosw1_arm_still_refuses_an_action_it_does_not_have():
 
 
 def test_an_end_effector_answers_for_its_own_kind():
-    """A part reports what it is, so an env need not trust its config.
-
-    The kind used to live only on the EndEffectorType enum, which meant the
-    Franka env branched on the config it built the part from and then called
-    BaseGripper-only members through a BaseEndEffector.
-    """
+    """An environment reads gripper capability through the common interface."""
     from robot_mocks import mocked_sdks
 
     with mocked_sdks():
         from rlinf.robotics.parts.end_effectors import EndEffector
-        from rlinf.robotics.parts.end_effectors.base import BaseEndEffector
 
         gripper = EndEffector.of("robotiq_gripper", port="/dev/mock-gripper")
 
@@ -2722,7 +2722,7 @@ def test_an_end_effector_answers_for_its_own_kind():
         # The verbs an env drives it with are on the declared type, not on a
         # subclass it would have to downcast to.
         for name in ("open", "close", "is_open", "is_gripper", "is_hand"):
-            assert hasattr(BaseEndEffector, name), name
+            assert hasattr(EndEffector, name), name
 
 
 def test_a_grasp_is_not_a_move_to_zero_width():
@@ -2983,7 +2983,7 @@ def test_every_device_family_is_shaped_the_same_way():
         import rlinf.robotics.parts.teleop  # noqa: F401
         from rlinf.robotics.parts.arms.base import Arm, BaseArm
         from rlinf.robotics.parts.cameras.base import BaseCamera, Camera
-        from rlinf.robotics.parts.end_effectors.base import BaseEndEffector, EndEffector
+        from rlinf.robotics.parts.end_effectors.base import EndEffector
         from rlinf.robotics.parts.teleop import TeleopPart
 
         # Configured backend names resolve through their category registry.
@@ -2995,13 +2995,13 @@ def test_every_device_family_is_shaped_the_same_way():
 
         # Driver classes implement both lifecycle hooks unless the category
         # provides one shared release implementation.
-        for base in (BaseArm, BaseCamera, BaseEndEffector, TeleopPart):
+        for base in (BaseArm, BaseCamera, TeleopPart):
             assert base._open.__isabstractmethod__, (
                 f"{base.__name__} lets a driver inherit _open, so one that "
                 "never wrote it fails at the first connect instead of at "
                 "class definition"
             )
-        for base in (BaseArm, BaseCamera, BaseEndEffector):
+        for base in (BaseArm, BaseCamera):
             assert base._release.__isabstractmethod__, base.__name__
         assert not getattr(TeleopPart._release, "__isabstractmethod__", False), (
             "TeleopPart releases every reader the same way, so it does it once"
@@ -3048,22 +3048,22 @@ def test_every_part_family_opens_and_closes_the_same_way():
     import inspect
 
     from rlinf.robotics.parts.cameras.base import BaseCamera
-    from rlinf.robotics.parts.end_effectors.base import BaseEndEffector
+    from rlinf.robotics.parts.end_effectors.base import EndEffector
     from rlinf.robotics.parts.end_effectors.grippers.base import BaseGripper
     from rlinf.robotics.parts.teleop import TeleopPart
 
-    for family in (TeleopPart, BaseCamera, BaseEndEffector, BaseGripper):
+    for family in (TeleopPart, BaseCamera, EndEffector, BaseGripper):
         assert hasattr(family, "_open"), f"{family.__name__} has no _open"
         assert hasattr(family, "_release"), f"{family.__name__} has no _release"
 
     # Retired lifecycle hook names are no longer accepted.
-    for family in (BaseCamera, BaseEndEffector):
+    for family in (BaseCamera, EndEffector):
         source = inspect.getsource(family)
         for retired in ("_close_device", "def initialize", "def shutdown"):
             assert retired not in source, f"{family.__name__} still has {retired}"
 
     # Placement-aware connect/disconnect remain owned by Connection.
-    for family in (TeleopPart, BaseCamera, BaseEndEffector, BaseGripper):
+    for family in (TeleopPart, BaseCamera, EndEffector, BaseGripper):
         for public in ("connect", "disconnect"):
             assert public not in vars(family), (
                 f"{family.__name__} overrides {public}; a part placed on another "
@@ -3077,33 +3077,26 @@ def test_every_part_family_opens_and_closes_the_same_way():
     )
 
 
-def test_a_gripper_is_an_end_effector_rather_than_a_second_kind_of_one():
+def test_end_effector_specializations_share_connection_ownership():
     import inspect
 
-    from rlinf.robotics.parts.end_effectors.base import BaseEndEffector, EndEffector
-    from rlinf.robotics.parts.end_effectors.grippers.base import BaseGripper
+    from rlinf.robotics.parts.base import Connection
+    from rlinf.robotics.parts.end_effectors import BaseGripper, BaseHand, EndEffector
     from rlinf.robotics.parts.views import MethodEndEffector
 
-    assert issubclass(BaseGripper, BaseEndEffector)
-
-    # Grippers and other end effectors share one lifecycle declaration.
-    for hook in ("_open", "_release"):
-        assert BaseGripper.__dict__.get(hook) is None, (
-            f"BaseGripper re-declares {hook}; it should inherit the one contract"
-        )
-        assert getattr(BaseEndEffector, hook).__isabstractmethod__, (
-            f"{hook} must be required, or a driver that never wrote one fails "
-            "at the first connect instead of at class definition"
+    for category in (BaseGripper, BaseHand, MethodEndEffector):
+        assert issubclass(category, EndEffector)
+        assert category.connect is Connection.connect
+        assert category.disconnect is Connection.disconnect
+        assert list(inspect.signature(category.reset).parameters) == list(
+            inspect.signature(EndEffector.reset).parameters
         )
 
-    # ``reset`` has one signature across the category.
-    assert list(inspect.signature(BaseGripper.reset).parameters) == list(
-        inspect.signature(BaseEndEffector.reset).parameters
-    )
-
-    # A hosted view borrows its connection and therefore needs no ``_open``.
-    assert issubclass(MethodEndEffector, EndEffector)
-    assert not issubclass(MethodEndEffector, BaseEndEffector)
+    # A view uses its owner's connection; independent drivers implement hooks.
+    assert MethodEndEffector._open is Connection._open
+    for driver in set(EndEffector.backends().values()):
+        assert driver._open is not Connection._open
+        assert driver._release is not Connection._release
 
 
 def test_a_gripper_is_commanded_in_the_units_it_reports():
@@ -3213,10 +3206,8 @@ def test_every_end_effector_reports_its_state_under_the_same_name():
     from robot_mocks import mocked_sdks
 
     with mocked_sdks():
-        from rlinf.robotics.parts.end_effectors.base import EndEffectorType
-
         gripper = EndEffector.of("robotiq_gripper", port="/dev/mock-gripper")
-        hand = EndEffector.of(EndEffectorType.RUIYAN_HAND, port="/dev/mock-hand")
+        hand = EndEffector.of("ruiyan_hand", port="/dev/mock-hand")
 
         for part in (gripper, hand):
             name = type(part).__name__
@@ -3458,8 +3449,14 @@ def test_a_connection_with_several_parts_hands_each_of_them_out_by_name():
 # Bench-check integration
 
 
+@pytest.fixture
+def fake_robot_type(isolated_robot_registries):
+    """Provide a bench robot factory with registrations scoped to this test."""
+    return _fake_robot_type
+
+
 def _fake_robot_type(broken=None):
-    """Register a robot made of fakes, and yield its type name."""
+    """Register a robot made of fakes and return its type name."""
     import numpy as np
 
     from rlinf.robotics.discovery import RobotConfig, RobotDiscovery, register_robot
@@ -3547,17 +3544,19 @@ def _run_bench(robot_type):
     return check(robot_type, {})
 
 
-def test_the_bench_check_passes_a_healthy_robot():
-    assert _run_bench(_fake_robot_type()) == 0
+def test_the_bench_check_passes_a_healthy_robot(fake_robot_type):
+    assert _run_bench(fake_robot_type()) == 0
 
 
-def test_the_bench_check_catches_an_observation_that_was_never_declared():
-    assert _run_bench(_fake_robot_type("Mismatch")) == 1
+def test_the_bench_check_catches_an_observation_that_was_never_declared(
+    fake_robot_type,
+):
+    assert _run_bench(fake_robot_type("Mismatch")) == 1
 
 
-def test_a_connection_left_in_the_tree_is_refused_at_composition():
+def test_a_connection_left_in_the_tree_is_refused_at_composition(fake_robot_type):
     with pytest.raises(TypeError, match="backs parts without being one"):
-        _run_bench(_fake_robot_type("Connection"))
+        _run_bench(fake_robot_type("Connection"))
 
 
 # Production parts with fake SDKs

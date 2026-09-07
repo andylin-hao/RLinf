@@ -163,7 +163,52 @@ Franka 属于另一种情况。它的末端执行器自行打开 session，因�
 
 切换时只需修改 backend 名称。每个 backend 在自己的 ``declare()`` 中，将标准机械臂配置映射到相应构造函数；机器人无需了解某套实现启动 ROS package，而另一套实现打开 libfranka session。机械臂只接受机械臂自身的配置：向 ``declare()`` 传入 ``gripper_type`` 会被直接拒绝，而不是静默丢弃，因为这类配置属于与它并列组合的末端执行器。
 
-Franka Hand 是本项目中唯一有两种驱动方式的设备 —— 经由 ROS topic，或经由自己的 libfranka session —— 因此 ``FrankaRobot`` 用 ``HAND_BACKENDS`` 记录从机械臂 backend 到末端执行器 driver 的对应关系。这一判断放在组合层，因为只有这里同时知道两者。如果配置直接写明 driver，例如 ``end_effector_type: franky_gripper``，则以配置为准。
+末端执行器也由各自的 driver 注册名称和别名。同一设备支持多种连接方式时，driver 可以为别名指定机械臂 backend：``FrankyGripper`` 通过 ``arm_backend="franky"`` 注册 ``franka`` 别名，``FrankaGripper`` 则提供不限定 backend 的 ``franka`` 别名，通过 ROS 连接。机器人解析 ``gripper_type`` 时，将机械臂 backend 传给 ``EndEffector.backend()``。新增连接方式只需在相应 driver 中注册，无需修改机器人构建函数中的品牌对应表。
+
+设置 ``end_effector_type`` 后，构建函数直接按注册名称选择 driver，不再应用机械臂专用别名；该字段优先于 ``gripper_type``。这也适用于 ``franka_gripper``，它现在始终选择 ROS driver。如果需要按机械臂 backend 选择内置夹爪，请设置 ``gripper_type: franka``，并省略 ``end_effector_type``。
+
+所有末端执行器共用 ``EndEffector`` 基类，由它定义 registry、状态、命令和 reset 接口。``BaseGripper`` 提供单轴夹爪操作，并声明 ``is_gripper = True``；``BaseHand`` 声明 ``is_hand = True``，并在诊断状态中提供手指标签。这两个标志在 ``EndEffector`` 上均默认为 false，因此其他工具可以实现同一接口，而不被归为手或夹爪。通用诊断返回位置，手指标签属于手部诊断。
+
+各类末端执行器都通过 ``Connection.owner`` 确定连接归属。独立 driver 实现 ``_open()`` 和 ``_release()``，共享连接的 view 使用所属连接；两者共用 ``EndEffector`` 接口。``reset(target_state)`` 发送指定目标，driver 可以重写 reset 以提供自身的默认复位姿态。通过 ``MethodEndEffector`` 暴露夹爪时，由持有连接的 driver 显式传入 ``is_gripper=True``，不根据维度推断设备能力。
+
+driver 还提供 ``action_dim`` 和 ``state_dim``。独立连接的注册 driver 将维度和能力标志定义为类属性，使 dummy 环境无需构造或连接设备就能读取接口约定；共享连接的 view 则可以根据所属连接计算维度。Franka 环境据此确定动作和观测空间的维度，并要求 driver 只声明 ``is_hand`` 或 ``is_gripper`` 中的一项。其他工具需要任务定义相应的动作解释方式，Franka 环境会在打开硬件前拒绝这些工具。wrapper 通过 ``ActionKind.GRIPPER`` 识别夹爪动作。
+
+下面注册一个默认电流较低的手部 driver，并将它与现有 Franka 机械臂组合。串口访问、状态读取和控制命令均由继承的 driver 负责：
+
+.. code-block:: python
+
+   import numpy as np
+
+   from rlinf.robotics import FrankaRobot
+   from rlinf.robotics.parts.end_effectors import EndEffector, RuiyanHand
+
+
+   @EndEffector.register("gentle_tool")
+   class GentleHand(RuiyanHand):
+       """Ruiyan hand with a lower default motor current."""
+
+       def __init__(self, **settings):
+           super().__init__(**{"default_current": 400, **settings})
+
+
+   robot = FrankaRobot.build(
+       robot_ip="172.16.0.2",
+       node_rank=0,
+       end_effector_type="gentle_tool",
+       end_effector_config={"port": "/dev/ttyUSB0"},
+   )
+   try:
+       robot.connect()
+       tool = robot.child("end_effector", EndEffector)
+       target = np.full(tool.action_dim, 0.5, dtype=np.float32)
+       robot.send_action({"end_effector": {"target": target}})
+       positions = robot.get_observation()["end_effector"]["state"]
+   finally:
+       robot.disconnect()
+
+``build()`` 声明两个零部件，``connect()`` 打开各自的连接。命令向量采用 driver 的动作维度，返回的 ``positions`` 数组采用其状态维度。``disconnect()`` 释放两个零部件，命令失败时也会执行。要在 Franka 任务中使用这个变体，请在构造环境前导入它所在的模块，将硬件条目的 ``end_effector_type`` 设为 ``gentle_tool``，并在 ``end_effector_config.port`` 中填写串口路径。任务中的手部复位和目标数组需要匹配 driver 的维度。将零部件放到远程节点时，状态和命令接口保持一致。
+
+控制器检查工具从 ``EndEffector.backends()`` 获取可选名称。通过 ``--end-effector-config`` 传入 JSON object 格式的 driver 参数；省略的值采用 driver 自身的默认值。
 
 支持硬件枚举的 driver 还可以通过 ``SDK`` 声明厂商模块，并实现 ``discover()``。公共 discovery 流程会据此报告缺失的 SDK，并在持有设备的节点上校验相机 ID。厂商模块仍应在 ``_open()`` 或 ``discover()`` 中导入，不应在模块导入阶段加载。
 

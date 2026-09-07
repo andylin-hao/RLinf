@@ -24,6 +24,7 @@ import gymnasium as gym
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
+from rlinf.envs.real.utils.config import get_hardware_config
 from rlinf.envs.real.utils.seeding import seed_sampled_spaces
 from rlinf.robotics import (
     Camera,
@@ -38,8 +39,7 @@ from rlinf.utils.logging import get_logger
 
 
 @dataclass
-class Turtle2RobotConfig:
-    use_camera_ids: list[int] = field(default_factory=lambda: [2])
+class Turtle2EnvConfig:
     use_arm_ids: list[int] = field(default_factory=lambda: [1])
 
     is_dummy: bool = True
@@ -98,10 +98,10 @@ class Turtle2Env(gym.Env):
 
     def __init__(
         self,
-        config: Turtle2RobotConfig,
-        worker_info: Optional[WorkerInfo],
-        robot_info: Optional[RobotInfo[Turtle2Config]],
-        env_idx: int,
+        config: Turtle2EnvConfig,
+        worker_info: Optional[WorkerInfo] = None,
+        robot_info: Optional[RobotInfo[Turtle2Config]] = None,
+        env_idx: int = 0,
     ) -> None:
         """Initialize a Turtle2 environment.
 
@@ -113,6 +113,9 @@ class Turtle2Env(gym.Env):
         """
         self._logger = get_logger()
         self.config = config
+        self.hardware = get_hardware_config(
+            Turtle2Config, robot_info, is_dummy=config.is_dummy
+        )
         self.robot_info = robot_info
         self.env_idx = env_idx
         self.node_rank = 0
@@ -125,7 +128,7 @@ class Turtle2Env(gym.Env):
             "please choose arm IDs from [0, 1]."
         )
         assert (
-            len(self.config.use_camera_ids) > 0 and len(self.config.use_camera_ids) <= 3
+            len(self.hardware.camera_ids) > 0 and len(self.hardware.camera_ids) <= 3
         ), "please choose camera IDs from [0, 1, 2]."
         # A dummy env reads no hardware, so start from a zero pose the
         # same shape the robot would report.
@@ -154,7 +157,7 @@ class Turtle2Env(gym.Env):
 
         self.robot = Turtle2Robot.build(
             frequency=self.config.smooth_frequency,
-            camera_ids=self.config.use_camera_ids,
+            camera_ids=self.hardware.camera_ids,
             env_idx=self.env_idx,
             node_rank=self.node_rank,
             worker_rank=self.env_worker_rank,
@@ -211,7 +214,7 @@ class Turtle2Env(gym.Env):
                         f"wrist_{k + 1}": gym.spaces.Box(
                             0, 255, shape=(128, 128, 3), dtype=np.uint8
                         )
-                        for k in range(len(self.config.use_camera_ids))
+                        for k in range(len(self.hardware.camera_ids))
                     }
                 ),
             }
@@ -316,7 +319,7 @@ class Turtle2Env(gym.Env):
         cameras = self.robot.parts_of_type(Camera)
         return [
             cameras[f"wrist_{index + 1}"]
-            for index in range(len(self.config.use_camera_ids))
+            for index in range(len(self.hardware.camera_ids))
             if f"wrist_{index + 1}" in cameras
         ]
 
@@ -342,11 +345,11 @@ class Turtle2Env(gym.Env):
 
         ready = [camera.is_ready() for camera in self._camera_parts()]
         cam1_ok, cam2_ok, cam3_ok = (ready + [False] * 3)[:3]
-        if 0 in self.config.use_camera_ids and not cam1_ok:
+        if 0 in self.hardware.camera_ids and not cam1_ok:
             raise ValueError("Camera 1 not available.")
-        if 1 in self.config.use_camera_ids and not cam2_ok:
+        if 1 in self.hardware.camera_ids and not cam2_ok:
             raise ValueError("Camera 2 not available.")
-        if 2 in self.config.use_camera_ids and not cam3_ok:
+        if 2 in self.hardware.camera_ids and not cam3_ok:
             raise ValueError("Camera 3 not available.")
 
     def reset(
@@ -582,9 +585,9 @@ class Turtle2Env(gym.Env):
         if not self.config.is_dummy:
             frames = [
                 self._reading[f"wrist_{index + 1}"]["frame"]
-                for index in range(len(self.config.use_camera_ids))
+                for index in range(len(self.hardware.camera_ids))
             ]
-            assert len(frames) == len(self.config.use_camera_ids), "get frames failed."
+            assert len(frames) == len(self.hardware.camera_ids), "get frames failed."
             for i in range(len(frames)):
                 frames[i] = self._crop_frame(frames[i], (128, 128))
             tcp_pose = []
@@ -605,7 +608,7 @@ class Turtle2Env(gym.Env):
                 "tcp_pose": tcp_pose,
             }
             frames_dict = {}
-            for k in range(len(self.config.use_camera_ids)):
+            for k in range(len(self.hardware.camera_ids)):
                 frames_dict[f"wrist_{k + 1}"] = frames[k]
 
             observation = {

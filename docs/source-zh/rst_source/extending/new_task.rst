@@ -30,11 +30,11 @@
 
    from rlinf.robotics.actions import ActionKind, ActionPart
 
-   from .base import FrankaEnv, FrankaRobotConfig, compliance
+   from .base import FrankaEnv, FrankaEnvConfig, compliance
 
 
    @dataclass
-   class WipeConfig(FrankaRobotConfig):
+   class WipeConfig(FrankaEnvConfig):
        task_description: str = "wipe the surface"
        target_ee_pose: np.ndarray = field(default_factory=lambda: np.zeros(6))
        reward_threshold: np.ndarray = field(

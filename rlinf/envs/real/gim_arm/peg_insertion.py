@@ -23,11 +23,11 @@ import numpy as np
 from rlinf.robotics.discovery import RobotInfo
 from rlinf.scheduler import WorkerInfo
 
-from .base import GimArmEnv, GimArmRobotConfig
+from .base import GimArmEnv, GimArmEnvConfig
 
 
 @dataclass
-class GimArmPegInsertionConfig(GimArmRobotConfig):
+class GimArmPegInsertionConfig(GimArmEnvConfig):
     """Configuration for :class:`GimArmPegInsertionEnv`."""
 
     target_ee_pose: np.ndarray = field(default_factory=lambda: np.zeros(6))
@@ -37,7 +37,7 @@ class GimArmPegInsertionConfig(GimArmRobotConfig):
         default_factory=lambda: np.array([0.01, 0.01, 0.01, 0.2, 0.2, 0.2])
     )
     """Per-axis success tolerances ``[x, y, z, rx, ry, rz]``.
-    Only XYZ entries are currently consulted (see ``GimArmRobotConfig.reward_threshold``)."""
+    Only XYZ entries are currently consulted (see ``GimArmEnvConfig.reward_threshold``)."""
 
     clip_x_range: float = 0.05
     clip_y_range: float = 0.05
@@ -94,7 +94,7 @@ class GimArmPegInsertionEnv(GimArmEnv):
     def go_to_rest(self, joint_reset: bool = False) -> None:
         """Close gripper on peg, retract to safe config, then move to reset pose."""
         if not self.config.is_dummy:
-            if self.config.enable_gripper:
+            if self.hardware.enable_gripper:
                 # Keep the peg secured during the reset trajectory. The
                 # gripper is binary, so a negative target closes it.
                 self.robot.send_action(

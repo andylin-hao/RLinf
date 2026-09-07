@@ -31,12 +31,12 @@ import gymnasium as gym
 import numpy as np
 import pytest
 
-from rlinf.envs.real.dosw1.base import DOSW1Config, DOSW1Env
+from rlinf.envs.real.dosw1.base import DOSW1Env, DOSW1EnvConfig
 from rlinf.envs.real.franka.base import FrankaEnv
 from rlinf.envs.real.franka.dual_franka_joint import (
     DualFrankaJointEnv,
 )
-from rlinf.envs.real.gim_arm.base import GimArmEnv, GimArmRobotConfig
+from rlinf.envs.real.gim_arm.base import GimArmEnv, GimArmEnvConfig
 from rlinf.envs.real.task_env import RobotTask, RobotTaskEnv
 from rlinf.envs.real.wrappers.teleop.config import (  # noqa: E402
     NO_DEVICE,
@@ -48,12 +48,36 @@ from rlinf.envs.real.wrappers.teleop.intervention import (  # noqa: E402
     TeleopIntervention,
     TeleopSample,
 )
-from rlinf.envs.real.xsquare.base import Turtle2Env, Turtle2RobotConfig
-from rlinf.robotics import ControllablePart, PartGroup, Robot
+from rlinf.envs.real.xsquare.base import Turtle2Env, Turtle2EnvConfig
+from rlinf.robotics import (
+    ControllablePart,
+    DualFrankaConfig,
+    FrankaConfig,
+    PartGroup,
+    PiperConfig,
+    Robot,
+    SO101Config,
+)
 
 _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
+
+
+def _robot_info(config):
+    """Describe test hardware without probing a physical device."""
+    if config is None:
+        return None
+    from rlinf.robotics.discovery import RobotDiscovery, RobotInfo
+
+    robot_type = next(
+        name
+        for name, registration in RobotDiscovery.registry.items()
+        if isinstance(config, registration.config_cls)
+    )
+    return RobotInfo(
+        type=robot_type, model=config.hardware_model(robot_type), config=config
+    )
 
 
 class DummyDriver(ControllablePart):
@@ -180,7 +204,7 @@ def _assert_legacy_transition(env) -> None:
         (
             "rlinf.envs.real.franka",
             "FrankaEnv",
-            {"camera_serials": ["dummy"], "step_frequency": 10000.0},
+            {"step_frequency": 10000.0},
         ),
         ("rlinf.envs.real.so101", "SO101ReachEnv", {}),
     ],
@@ -204,7 +228,14 @@ def test_a_hardware_free_env_repeats_with_a_seed(module_name, class_name, overri
             cfg = {"is_dummy": True, "enable_camera_player": False, **override}
             try:
                 env = env_cls(
-                    override_cfg=cfg, worker_info=None, robot_info=None, env_idx=0
+                    override_cfg=cfg,
+                    worker_info=None,
+                    env_idx=0,
+                    robot_info=_robot_info(
+                        FrankaConfig(node_rank=0, camera_serials=["dummy"])
+                        if class_name == "FrankaEnv"
+                        else None
+                    ),
                 )
             except TypeError:
                 env = env_cls(cfg)
@@ -252,13 +283,12 @@ def test_franka_dummy_preserves_legacy_policy_schema():
     env = FrankaEnv(
         override_cfg={
             "is_dummy": True,
-            "camera_serials": ["dummy"],
             "enable_camera_player": False,
             "step_frequency": 10000.0,
         },
         worker_info=None,
-        robot_info=None,
         env_idx=0,
+        robot_info=_robot_info(FrankaConfig(node_rank=0, camera_serials=["dummy"])),
     )
 
     assert env.action_space.shape == (7,)
@@ -270,13 +300,14 @@ def test_dual_franka_dummy_preserves_legacy_policy_schema():
     env = DualFrankaJointEnv(
         override_cfg={
             "is_dummy": True,
-            "base_camera_serials": ["dummy"],
             "enable_camera_player": False,
             "step_frequency": 10000.0,
         },
         worker_info=None,
-        robot_info=None,
         env_idx=0,
+        robot_info=_robot_info(
+            DualFrankaConfig(node_rank=0, base_camera_serials=["dummy"])
+        ),
     )
 
     assert env.action_space.shape == (16,)
@@ -286,9 +317,8 @@ def test_dual_franka_dummy_preserves_legacy_policy_schema():
 
 def test_gim_arm_dummy_preserves_legacy_policy_schema():
     env = GimArmEnv(
-        config=GimArmRobotConfig(
+        config=GimArmEnvConfig(
             is_dummy=True,
-            camera_serials=[],
             enable_camera_player=False,
             step_frequency=10000.0,
         ),
@@ -304,9 +334,8 @@ def test_gim_arm_dummy_preserves_legacy_policy_schema():
 
 def test_dosw1_dummy_preserves_legacy_policy_schema():
     env = DOSW1Env(
-        config=DOSW1Config(
+        config=DOSW1EnvConfig(
             is_dummy=True,
-            camera_serials=[],
             camera_names=[],
             enable_camera_player=False,
             step_frequency=10000.0,
@@ -323,7 +352,7 @@ def test_dosw1_dummy_preserves_legacy_policy_schema():
 
 def test_turtle2_dummy_preserves_legacy_policy_schema():
     env = Turtle2Env(
-        config=Turtle2RobotConfig(
+        config=Turtle2EnvConfig(
             is_dummy=True,
             step_frequency=10000.0,
         ),
@@ -338,7 +367,7 @@ def test_turtle2_dummy_preserves_legacy_policy_schema():
 
 
 def test_franka_builds_cameras_after_applying_hardware_info(monkeypatch):
-    from rlinf.envs.real.franka.base import FrankaRobotConfig
+    from rlinf.envs.real.franka.base import FrankaEnvConfig
     from rlinf.robotics import FrankaConfig, RobotInfo
     from rlinf.robotics.robots.franka import FrankaRobot
 
@@ -363,7 +392,7 @@ def test_franka_builds_cameras_after_applying_hardware_info(monkeypatch):
 
     monkeypatch.setattr(FrankaRobot, "build", build)
     env = FrankaEnv.__new__(FrankaEnv)
-    env.config = FrankaRobotConfig(camera_serials=None, camera_type=None)
+    env.config = FrankaEnvConfig()
     env.robot_info = RobotInfo(
         type="Robot",
         model="Franka",
@@ -376,6 +405,7 @@ def test_franka_builds_cameras_after_applying_hardware_info(monkeypatch):
     env.env_idx = 0
     env.node_rank = 0
     env.env_worker_rank = 3
+    env.hardware = env.robot_info.config
 
     env._setup_hardware()
 
@@ -1222,13 +1252,18 @@ def _dummy_franka(env_cls=None, **overrides):
 
     cfg = {
         "is_dummy": True,
-        "camera_serials": ["dummy"],
         "enable_camera_player": False,
         "step_frequency": 10000.0,
     }
+    robot_info = overrides.pop(
+        "robot_info", _robot_info(FrankaConfig(node_rank=0, camera_serials=["dummy"]))
+    )
     cfg.update(overrides)
     return (env_cls or FrankaEnv)(
-        override_cfg=cfg, worker_info=None, robot_info=None, env_idx=0
+        override_cfg=cfg,
+        worker_info=None,
+        env_idx=0,
+        robot_info=robot_info,
     )
 
 
@@ -1291,7 +1326,13 @@ def test_the_no_gripper_default_does_not_wrap_a_dexterous_hand():
 
     wrapped = build_stack(
         _dummy_franka(
-            end_effector_type="ruiyan_hand",
+            robot_info=_robot_info(
+                FrankaConfig(
+                    node_rank=0,
+                    camera_serials=["dummy"],
+                    end_effector_type="ruiyan_hand",
+                )
+            ),
             hand_target_state=np.zeros(6),
             hand_reset_state=np.zeros(6),
         ),
@@ -1304,11 +1345,11 @@ def test_the_no_gripper_default_does_not_wrap_a_dexterous_hand():
 
 
 def test_gim_arm_keeps_the_unwrapped_legacy_action_and_observation_schema():
-    from rlinf.envs.real.gim_arm.base import GimArmEnv, GimArmRobotConfig
+    from rlinf.envs.real.gim_arm.base import GimArmEnv, GimArmEnvConfig
     from rlinf.envs.real.wrappers import build_stack
 
     env = GimArmEnv(
-        config=GimArmRobotConfig(is_dummy=True),
+        config=GimArmEnvConfig(is_dummy=True),
         worker_info=None,
         robot_info=None,
         env_idx=0,
@@ -1328,15 +1369,19 @@ def test_dual_franka_keeps_the_legacy_no_gripper_default():
     env = DualFrankaJointEnv(
         override_cfg={
             "is_dummy": True,
-            "base_camera_serials": ["dummy"],
-            "left_camera_serials": [],
-            "right_camera_serials": [],
             "enable_camera_player": False,
             "step_frequency": 10000.0,
         },
         worker_info=None,
-        robot_info=None,
         env_idx=0,
+        robot_info=_robot_info(
+            DualFrankaConfig(
+                node_rank=0,
+                base_camera_serials=["dummy"],
+                left_camera_serials=[],
+                right_camera_serials=[],
+            )
+        ),
     )
 
     with pytest.raises(NotImplementedError, match="no_gripper"):
@@ -1383,14 +1428,13 @@ def test_every_registered_task_builds_through_its_entry_point():
             env_id,
             override_cfg={
                 "is_dummy": True,
-                "camera_serials": ["dummy"],
                 "enable_camera_player": False,
                 "step_frequency": 10000.0,
             },
             worker_info=None,
-            robot_info=None,
             env_idx=0,
             env_cfg=cfg,
+            robot_info=_robot_info(FrankaConfig(node_rank=0, camera_serials=["dummy"])),
         )
         env.reset()
         env.close()
@@ -1775,7 +1819,12 @@ def test_every_env_declares_parts_that_tile_its_action():
 
     cases = [
         (7, _declared(FrankaEnv, _is_hand=False)),
-        (12, _declared(FrankaEnv, _is_hand=True)),
+        (
+            12,
+            _declared(
+                FrankaEnv, _is_hand=True, _ee_interface=SimpleNamespace(action_dim=6)
+            ),
+        ),
         (7, _declared(GimArmEnv)),
         (7, _declared(Turtle2Env, config=SimpleNamespace(use_arm_ids=[1]))),
         (14, _declared(Turtle2Env, config=SimpleNamespace(use_arm_ids=[0, 1]))),
@@ -2045,11 +2094,27 @@ def test_shipped_configs_give_the_policy_the_action_width_it_expects():
             env_cls = classes.get(env_id)
             if env_cls is None or not issubclass(env_cls, FrankaEnv):
                 continue
+            hardware_configs = [
+                config
+                for group in doc.get("cluster", {}).get("node_groups", [])
+                if group.get("hardware", {}).get("type") == "Franka"
+                for config in group["hardware"].get("configs", [])
+            ]
             end_effector = str(
-                section["override_cfg"].get("end_effector_type", "franka_gripper")
+                hardware_configs[0].get("end_effector_type", "franka_gripper")
+                if hardware_configs
+                else "franka_gripper"
+            )
+            from rlinf.robotics.robots.franka import FrankaRobot
+
+            hardware = hardware_configs[0] if hardware_configs else {}
+            driver = FrankaRobot.end_effector_class(
+                backend=hardware.get("backend"),
+                gripper_type=hardware.get("gripper_type"),
+                end_effector_type=hardware.get("end_effector_type"),
             )
             parts = FrankaEnv.action_parts(
-                SimpleNamespace(_is_hand=end_effector.endswith("hand"))
+                SimpleNamespace(_is_hand=driver.is_hand, _ee_interface=driver)
             )
             width = sum(part.width for part in parts)
             if width != action_dim:
@@ -2110,13 +2175,11 @@ def test_direct_stream_gello_opens_one_reader_per_port(monkeypatch):
             arm.disconnect()
 
 
-def _so101_env(**overrides):
+def _so101_env(robot_info=None, **overrides):
     """Build an SO-101 reach env against the faked lerobot SDK."""
     from rlinf.envs.real.so101 import SO101ReachEnv
 
     settings = {
-        "port": "/dev/mock-so101",
-        "calibration_id": "bench",
         "target_joint_qpos": [0.0] * 5,
         # Do not pace the test at the real 10 Hz control rate.
         "step_frequency": 1000.0,
@@ -2124,7 +2187,16 @@ def _so101_env(**overrides):
         "enable_camera_player": False,
     }
     settings.update(overrides)
-    return SO101ReachEnv(settings, env_idx=0)
+    return SO101ReachEnv(
+        settings,
+        env_idx=0,
+        robot_info=robot_info
+        or _robot_info(
+            SO101Config(
+                node_rank=0, serial_port="/dev/mock-so101", calibration_id="bench"
+            )
+        ),
+    )
 
 
 def test_so101_env_runs_a_whole_episode_against_a_faked_arm():
@@ -2262,7 +2334,16 @@ def test_so101_env_resizes_camera_frames_to_the_declared_shape():
     from robot_mocks import mocked_sdks
 
     with mocked_sdks():
-        env = _so101_env(camera_serials=["MOCK0001"], camera_type="realsense")
+        env = _so101_env(
+            robot_info=_robot_info(
+                SO101Config(
+                    node_rank=0,
+                    serial_port="/dev/mock-so101",
+                    camera_serials=["MOCK0001"],
+                    camera_type="realsense",
+                )
+            )
+        )
         try:
             observation, _ = env.reset()
             frame = observation["frames"]["wrist_1"]
@@ -2289,12 +2370,11 @@ def test_so101_env_omits_frames_entirely_when_no_camera_is_configured():
             env.close()
 
 
-def _piper_env(**overrides):
+def _piper_env(robot_info=None, **overrides):
     """Build a Piper reach env against the faked pyAgxArm SDK."""
     from rlinf.envs.real.piper import PiperReachEnv
 
     settings = {
-        "can_channel": "can0",
         "target_joint_qpos": [0.0] * 6,
         # Do not pace the test at the real 10 Hz control rate.
         "step_frequency": 1000.0,
@@ -2302,7 +2382,11 @@ def _piper_env(**overrides):
         "enable_camera_player": False,
     }
     settings.update(overrides)
-    return PiperReachEnv(settings, env_idx=0)
+    return PiperReachEnv(
+        settings,
+        env_idx=0,
+        robot_info=robot_info or _robot_info(PiperConfig(node_rank=0)),
+    )
 
 
 def test_a_hardware_type_resolves_without_importing_the_robot_package():
@@ -2482,11 +2566,15 @@ def test_piper_env_without_a_gripper_has_a_six_wide_action():
     from robot_mocks import mocked_sdks
 
     with mocked_sdks():
-        env = _piper_env(with_gripper=False)
+        env = _piper_env(
+            robot_info=_robot_info(PiperConfig(node_rank=0, with_gripper=False))
+        )
         try:
             observation, _ = env.reset()
             assert "gripper_position" not in observation["state"]
             assert [part.name for part in env.action_parts()] == ["arm"]
+            assert env.action_space.shape == (6,)
+            observation, *_ = env.step(np.zeros(6, dtype=np.float32))
             assert observation in env.observation_space
         finally:
             env.close()
@@ -2512,7 +2600,13 @@ def test_piper_env_resizes_camera_frames_to_the_declared_shape():
     from robot_mocks import mocked_sdks
 
     with mocked_sdks():
-        env = _piper_env(camera_serials=["MOCK0001"], camera_type="realsense")
+        env = _piper_env(
+            robot_info=_robot_info(
+                PiperConfig(
+                    node_rank=0, camera_serials=["MOCK0001"], camera_type="realsense"
+                )
+            )
+        )
         try:
             observation, _ = env.reset()
             frame = observation["frames"]["wrist_1"]
@@ -2634,18 +2728,21 @@ def test_so101_env_is_driven_by_its_leader():
         env = gym.make(
             "SO101ReachEnv-v1",
             override_cfg={
-                "port": "/dev/mock-so101",
                 "step_frequency": 1000.0,
                 "enable_camera_player": False,
             },
             worker_info=None,
-            robot_info=None,
             env_idx=0,
             env_cfg={
                 "teleop": [{"so101_leader": {"port": "/dev/mock-leader"}}],
                 "no_gripper": False,
                 "use_relative_frame": False,
             },
+            robot_info=_robot_info(
+                SO101Config(
+                    node_rank=0, serial_port="/dev/mock-so101", calibration_id="bench"
+                )
+            ),
         )
         try:
             env.reset()

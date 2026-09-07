@@ -40,6 +40,8 @@ class Gello(TeleopDevice):
         gripper: Whether the follower has a gripper to drive.
     """
 
+    LEGACY_FLAGS = {"use_gello": "gello"}
+
     PRODUCES = {
         "arm": ActionKind.CARTESIAN_DELTA,
         "end_effector": ActionKind.GRIPPER,

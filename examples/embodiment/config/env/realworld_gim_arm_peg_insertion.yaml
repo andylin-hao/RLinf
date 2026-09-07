@@ -29,10 +29,7 @@ override_cfg:
   is_dummy: false
   # Hardware fields left unset are filled from the cluster's hardware block
   # when the env worker is placed in the group that carries the arm.
-  arm_variant: gim_arm_xl
   control_mode: momentum_observer
-  enable_gripper: True
-  gripper_type: parallel
   enable_camera_player: False
   step_frequency: 10.0
   # Reward only: the arm is driven by joint angles, not by this pose.

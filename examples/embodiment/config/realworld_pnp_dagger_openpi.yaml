@@ -113,7 +113,6 @@ env:
     override_cfg:
       target_ee_pose: TARGET_EE_POSE
       success_hold_steps: 1
-      camera_serials: ["SERIAL1", "SERIAL2"]
       use_dense_reward: False
 
   eval:
@@ -128,7 +127,6 @@ env:
     override_cfg:
       target_ee_pose: TARGET_EE_POSE
       success_hold_steps: 1
-      camera_serials: ["SERIAL1", "SERIAL2"]
       use_dense_reward: False
 
 rollout:

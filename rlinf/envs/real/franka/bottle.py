@@ -18,11 +18,11 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from .base import FrankaEnv, FrankaRobotConfig, compliance
+from .base import FrankaEnv, FrankaEnvConfig, compliance
 
 
 @dataclass
-class BottleConfig(FrankaRobotConfig):
+class BottleConfig(FrankaEnvConfig):
     task_description: str = "screw the bottle cap onto the bottle"
     target_ee_pose: np.ndarray = field(default_factory=lambda: np.zeros(6))
     reward_threshold: np.ndarray = field(

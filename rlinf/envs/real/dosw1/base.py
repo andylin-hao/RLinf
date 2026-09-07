@@ -26,6 +26,7 @@ import cv2
 import gymnasium as gym
 import numpy as np
 
+from rlinf.envs.real.utils.config import get_hardware_config
 from rlinf.envs.real.utils.seeding import seed_sampled_spaces
 from rlinf.envs.real.utils.video import VideoPlayer
 from rlinf.envs.real.wrappers.episode.keyboard import KeyboardListener
@@ -59,16 +60,9 @@ IMAGE_H, IMAGE_W = 128, 128
 
 
 @dataclass
-class DOSW1Config:
-    """Configuration for one DOSW1 dual-arm robot instance."""
+class DOSW1EnvConfig:
+    """Task, control, and observation settings for a DOSW1 environment."""
 
-    robot_url: str = "localhost"
-    left_arm_port: int = 50051
-    right_arm_port: int = 50053
-    left_lead_port: int = 50050
-    right_lead_port: int = 50052
-
-    camera_serials: Optional[list[str]] = None
     camera_names: list[str] = field(
         default_factory=lambda: ["cam_front", "cam_left", "cam_right"]
     )
@@ -136,13 +130,16 @@ class DOSW1Env(gym.Env):
 
     def __init__(
         self,
-        config: DOSW1Config,
-        worker_info: Optional[WorkerInfo],
-        robot_info: Optional[RobotInfo[DOSW1RobotConfig]],
-        env_idx: int,
+        config: DOSW1EnvConfig,
+        worker_info: Optional[WorkerInfo] = None,
+        robot_info: Optional[RobotInfo[DOSW1RobotConfig]] = None,
+        env_idx: int = 0,
     ) -> None:
         self._logger = get_logger()
         self.config = config
+        self.hardware = get_hardware_config(
+            DOSW1RobotConfig, robot_info, is_dummy=config.is_dummy
+        )
         self.env_idx = env_idx
         self.node_rank = 0
         self.env_worker_rank = 0
@@ -153,13 +150,12 @@ class DOSW1Env(gym.Env):
         self._arms: dict[str, DOSW1Arm] = {}
         self.robot: Robot | None = None
         if not config.is_dummy:
-            self._apply_robot_info(robot_info)
             self.robot = DOSW1Robot.build(
-                robot_url=config.robot_url,
-                left_arm_port=config.left_arm_port,
-                right_arm_port=config.right_arm_port,
-                left_lead_port=config.left_lead_port,
-                right_lead_port=config.right_lead_port,
+                robot_url=self.hardware.robot_url,
+                left_arm_port=self.hardware.left_arm_port,
+                right_arm_port=self.hardware.right_arm_port,
+                left_lead_port=self.hardware.left_lead_port,
+                right_lead_port=self.hardware.right_lead_port,
                 enable_human_in_loop=config.enable_human_in_loop,
                 gripper_width_max=config.gripper_width_max,
                 is_dummy=config.is_dummy,
@@ -724,14 +720,13 @@ class DOSW1Env(gym.Env):
         time.sleep(3.0)
 
     def effective_camera_names(self) -> list[str]:
-        serials = self.config.camera_serials or []
+        serials = self.hardware.camera_serials or []
         names = self.config.camera_names or []
         return names[: len(serials)] if serials else names
 
     def _camera_infos(self) -> list[CameraInfo]:
-        """Return camera declarations, discovering serials when needed."""
-        serials = self.config.camera_serials or self._discover_camera_serials()
-        self.config.camera_serials = list(serials)
+        """Return declarations for the cameras in the hardware config."""
+        serials = self.hardware.camera_serials or []
         names = self.config.camera_names or []
         return [
             CameraInfo(
@@ -764,36 +759,6 @@ class DOSW1Env(gym.Env):
             display_frames[camera.name] = resized
         self._camera_player.put_frame(display_frames)
         return frames
-
-    @staticmethod
-    def _discover_camera_serials() -> list[str]:
-        """Discover RealSense serial numbers attached to this node."""
-        from rlinf.robotics.parts.cameras import BaseCamera
-
-        return sorted(BaseCamera.backend("realsense").discover())
-
-    def _apply_robot_info(
-        self, robot_info: Optional[RobotInfo[DOSW1RobotConfig]]
-    ) -> None:
-        if robot_info is None:
-            return
-        assert isinstance(robot_info, RobotInfo) and isinstance(
-            robot_info.config, DOSW1RobotConfig
-        ), f"robot_info must contain a DOSW1RobotConfig, but got {type(robot_info)}."
-        hw = robot_info.config
-        if hw.camera_serials:
-            self.config.camera_serials = list(hw.camera_serials)
-        if hw.robot_url and str(hw.robot_url).strip():
-            self.config.robot_url = str(hw.robot_url).strip()
-        for attr in (
-            "left_arm_port",
-            "right_arm_port",
-            "left_lead_port",
-            "right_lead_port",
-        ):
-            value = getattr(hw, attr, None)
-            if value is not None:
-                setattr(self.config, attr, int(value))
 
     def episode_wrappers(self, cfg: Mapping[str, Any]) -> list[Any]:
         """Return the optional leader-follower keyboard wrapper."""

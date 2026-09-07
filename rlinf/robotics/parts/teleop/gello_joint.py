@@ -46,6 +46,8 @@ class GelloJoint(Gello):
         action_scale: Divisor turning a joint delta into a normalized action.
     """
 
+    LEGACY_FLAGS = {"use_gello_joint": "gello_joint"}
+
     PRODUCES = {
         "arm": ActionKind.JOINT_POSITION,
         "end_effector": ActionKind.GRIPPER,

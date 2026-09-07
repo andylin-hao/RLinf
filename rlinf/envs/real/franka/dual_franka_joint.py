@@ -29,13 +29,13 @@ import numpy as np
 from rlinf.robotics.actions import ActionKind
 from rlinf.robotics.parts.arms.franka import JOINT_LIMITS_LOWER, JOINT_LIMITS_UPPER
 
-from .dual_base import DualFrankaEnv, DualFrankaRobotConfig
+from .dual_base import DualFrankaEnv, DualFrankaEnvConfig
 
 ACTION_DIM_PER_ARM = 8  # Seven joints and one gripper channel.
 
 
 @dataclass
-class DualFrankaJointRobotConfig(DualFrankaRobotConfig):
+class DualFrankaJointEnvConfig(DualFrankaEnvConfig):
     """Config for :class:`DualFrankaJointEnv`."""
 
     joint_position_limits_lower: np.ndarray = field(
@@ -60,7 +60,7 @@ class DualFrankaJointRobotConfig(DualFrankaRobotConfig):
 class DualFrankaJointEnv(DualFrankaEnv):
     """Dual-arm Franka env with 16-D joint-space actions."""
 
-    CONFIG_CLS: type[DualFrankaJointRobotConfig] = DualFrankaJointRobotConfig
+    CONFIG_CLS: type[DualFrankaJointEnvConfig] = DualFrankaJointEnvConfig
 
     PER_ARM_ACTION_DIM = ACTION_DIM_PER_ARM
     GRIPPER_IDX_IN_ARM = 7  # Gripper channel after the seven arm joints.

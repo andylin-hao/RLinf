@@ -18,11 +18,11 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from .base import FrankaEnv, FrankaRobotConfig, compliance
+from .base import FrankaEnv, FrankaEnvConfig, compliance
 
 
 @dataclass
-class DexpnpConfig(FrankaRobotConfig):
+class DexpnpConfig(FrankaEnvConfig):
     target_ee_pose: np.ndarray = field(default_factory=lambda: np.zeros(6))
     reward_threshold: np.ndarray = field(
         default_factory=lambda: np.array([0.01, 0.01, 0.01, 0.2, 0.2, 0.2])

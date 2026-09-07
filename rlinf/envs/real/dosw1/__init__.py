@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from rlinf.envs.real.registry import register_tasks
 
-from .base import ControlMode, DOSW1Config, DOSW1Env
+from .base import ControlMode, DOSW1Env, DOSW1EnvConfig
 from .pick import PickEnv
 
 #: Mapping from Gymnasium IDs to DOSW1 environment classes.
@@ -29,7 +29,7 @@ _ENTRY_POINTS = register_tasks(__name__, globals(), TASKS)
 __all__ = [
     "TASKS",
     "ControlMode",
-    "DOSW1Config",
+    "DOSW1EnvConfig",
     "DOSW1Env",
     "PickEnv",
     *_ENTRY_POINTS,

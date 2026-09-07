@@ -140,7 +140,7 @@ class NodeHardwareConfig:
             )
         )
 
-        self.configs = [hardware_config_class(**config) for config in self.configs]
+        self.configs = [hardware_config_class(**config) for config in plain_configs]
 
 
 @dataclass
@@ -166,7 +166,7 @@ class HardwareResource:
 
     @property
     def count(self) -> int:
-        """Get the count of hardware infos."""
+        """Number of hardware infos."""
         return len(self.infos)
 
 

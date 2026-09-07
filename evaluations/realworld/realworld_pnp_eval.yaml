@@ -59,7 +59,6 @@ env:
 
     override_cfg:
       target_ee_pose: TARGET_EE_POSE
-      camera_serials: ["SERIAL1", "SERIAL2"]
       task_description: null  # e.g. "pick up the object and place it into the container"
 
 rollout:

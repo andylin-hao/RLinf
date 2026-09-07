@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from ..discovery import (
@@ -87,7 +87,10 @@ class Turtle2Robot(Robot):
 
 @dataclass
 class Turtle2Config(RobotConfig):
-    """Placement configuration for a Turtle2 robot."""
+    """Hardware and placement configuration for a Turtle2 robot."""
+
+    camera_ids: list[int] = field(default_factory=lambda: [2])
+    """Camera channels exposed by the shared Turtle2 connection, in order."""
 
     def __post_init__(self) -> None:
         """Post-initialization to validate the configuration."""

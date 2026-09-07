@@ -27,11 +27,11 @@ import numpy as np
 from rlinf.robotics.discovery import RobotInfo
 from rlinf.scheduler import WorkerInfo
 
-from .base import _DOF, PiperEnv, PiperRobotConfig
+from .base import _DOF, PiperEnv, PiperEnvConfig
 
 
 @dataclass
-class PiperReachConfig(PiperRobotConfig):
+class PiperReachConfig(PiperEnvConfig):
     """Configuration for :class:`PiperReachEnv`."""
 
     enable_random_reset: bool = False

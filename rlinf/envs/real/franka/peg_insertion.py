@@ -17,11 +17,11 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from .base import FrankaEnv, FrankaRobotConfig, compliance
+from .base import FrankaEnv, FrankaEnvConfig, compliance
 
 
 @dataclass
-class PegInsertionConfig(FrankaRobotConfig):
+class PegInsertionConfig(FrankaEnvConfig):
     task_description: str = "peg and insertion"
     target_ee_pose: np.ndarray = field(default_factory=lambda: np.zeros(6))
     reward_threshold: np.ndarray = field(

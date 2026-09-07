@@ -18,6 +18,8 @@ import gymnasium as gym
 import numpy as np
 from gymnasium.spaces import Box
 
+from rlinf.robotics.actions import ActionKind, ActionPart
+
 
 class GripperCloseEnv(gym.ActionWrapper):
     """Remove the gripper action and keep the gripper closed."""
@@ -29,9 +31,15 @@ class GripperCloseEnv(gym.ActionWrapper):
     @classmethod
     def applies_to(cls, env: gym.Env) -> bool:
         """Return whether the env uses a one-axis gripper action."""
-        config = getattr(env.unwrapped, "config", None)
-        end_effector = str(getattr(config, "end_effector_type", ""))
-        return not end_effector.endswith("hand")
+        parts = env.get_wrapper_attr("action_parts")()
+        return (
+            env.action_space.shape == (7,)
+            and bool(parts)
+            and parts[-1].kind is ActionKind.GRIPPER
+            and parts[-1].width == 1
+            and sum(part.width for part in parts[:-1]) == 6
+            and all(part.kind is not ActionKind.GRIPPER for part in parts[:-1])
+        )
 
     def __init__(self, env: gym.Env) -> None:
         super().__init__(env)
@@ -39,12 +47,12 @@ class GripperCloseEnv(gym.ActionWrapper):
         assert ub.shape == (7,)
         self.action_space = Box(ub.low[:6], ub.high[:6])
 
-    def action_parts(self) -> tuple[str, ...]:
+    def action_parts(self) -> tuple[ActionPart, ...]:
         """Return the wrapped action parts without the end effector."""
         return tuple(
             part
             for part in self.env.get_wrapper_attr("action_parts")()
-            if part.name not in ("end_effector", "hand")
+            if part.kind is not ActionKind.GRIPPER
         )
 
     def action(self, action: np.ndarray) -> np.ndarray:

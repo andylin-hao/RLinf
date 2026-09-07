@@ -131,7 +131,11 @@ class GimArm(BaseArm):
         """Return the gripper exported by this arm connection, if configured."""
         if not self._enable_gripper:
             return {}
-        return {"end_effector": MethodEndEffector(self, state_field="gripper_position")}
+        return {
+            "end_effector": MethodEndEffector(
+                self, state_field="gripper_position", is_gripper=True
+            )
+        }
 
     def _open(self) -> Any:
         """Connect the CAN SDK and start the feedforward control loop."""

@@ -15,14 +15,13 @@
 """Environment-side teleoperation configuration and action arbitration."""
 
 from .composed import ComposedTeleop
-from .config import LEGACY_FLAGS, NO_DEVICE, resolve_teleop_devices
+from .config import NO_DEVICE, resolve_teleop_devices
 from .facts import EnvFacts
 from .intervention import TeleopDevice, TeleopIntervention, TeleopSample
 from .layout import action_layout
 from .streaming import TeleopStreamer
 
 __all__ = [
-    "LEGACY_FLAGS",
     "NO_DEVICE",
     "ComposedTeleop",
     "EnvFacts",

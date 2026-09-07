@@ -141,6 +141,9 @@ class TeleopDevice(TeleopPart):
     #: small residual movement constantly, so each one sets its own threshold.
     MOVEMENT_EPSILON: float = 0.001
 
+    #: Retired configuration flags mapped to this device's registered names.
+    LEGACY_FLAGS: Mapping[str, str] = {}
+
     # Registry.
 
     @classmethod
@@ -196,6 +199,15 @@ class TeleopDevice(TeleopPart):
         if not TeleopDevice._REGISTRY:
             cls._load_devices()
         return sorted(TeleopDevice._REGISTRY)
+
+    @classmethod
+    def legacy_flags(cls) -> dict[str, str]:
+        """Return retired configuration aliases declared by registered devices."""
+        return {
+            flag: target
+            for name in cls.names()
+            for flag, target in cls.named(name).LEGACY_FLAGS.items()
+        }
 
     # Construction from configuration.
 

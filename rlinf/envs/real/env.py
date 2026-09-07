@@ -29,6 +29,7 @@ from torch import Tensor
 
 from rlinf.envs.real.venv import NoAutoResetSyncVectorEnv
 from rlinf.envs.utils import to_tensor
+from rlinf.robotics.discovery import RobotInfo
 from rlinf.scheduler import WorkerInfo
 
 #: One batched observation, by the keys the runner reads: ``states``, the image
@@ -94,7 +95,9 @@ class RealWorldEnv(gym.Env):
         worker_info: WorkerInfo = self.worker_info
         robot_info = None
         if worker_info is not None and env_idx < len(worker_info.hardware_infos):
-            robot_info = worker_info.hardware_infos[env_idx]
+            allocated = worker_info.hardware_infos[env_idx]
+            if isinstance(allocated, RobotInfo):
+                robot_info = allocated
         override_cfg = copy.deepcopy(self.override_cfg)
         # A worker that was handed this class by value never ran the package
         # import that registers the task ids.

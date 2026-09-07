@@ -35,10 +35,6 @@ init_params:
 override_cfg:
   is_dummy: false
   task_description: "dual arm joint-space manipulation task"
-  # Only "robotiq" is currently supported on the franky/libfranka stack.
-  # The libfranka Franka Hand backend is planned but not yet implemented.
-  left_gripper_type: robotiq
-  right_gripper_type: robotiq
   # Joint action mode: "absolute" for direct GELLO mapping, "delta" for RL.
   joint_action_mode: "absolute"
   # Scaling factor for delta mode (rad per unit action). Ignored in absolute.

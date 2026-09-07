@@ -36,7 +36,8 @@ cluster:
         type: SO101
         configs:
           - node_rank: 0
-            port: /dev/ttyACM0
+            serial_port: /dev/ttyACM0
+            camera_serials: [MOCK0001, MOCK0002]
 
 runner:
   task_type: embodied
@@ -93,7 +94,6 @@ env:
     total_num_envs: 1
     override_cfg:
       is_dummy: False
-      camera_serials: ["MOCK0001", "MOCK0002"]
       enable_camera_player: False
       use_dense_reward: True
       max_num_steps: 10
@@ -108,7 +108,6 @@ env:
     total_num_envs: 1
     override_cfg:
       is_dummy: False
-      camera_serials: ["MOCK0001", "MOCK0002"]
       enable_camera_player: False
 
 rollout:

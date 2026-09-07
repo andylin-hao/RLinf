@@ -17,10 +17,10 @@ from typing import Any, Optional
 
 import numpy as np
 
-from rlinf.robotics.parts.end_effectors.base import BaseEndEffector
+from rlinf.robotics.parts.end_effectors.base import EndEffector
 
 
-class BaseGripper(BaseEndEffector, ABC):
+class BaseGripper(EndEffector, ABC):
     """One-axis end-effector interface for parallel grippers.
 
     Drivers implement :meth:`open`, :meth:`close`, and :meth:`move`; this class
@@ -48,10 +48,10 @@ class BaseGripper(BaseEndEffector, ABC):
             "through. Override declare() to take the one it uses."
         )
 
-    @property
-    def is_gripper(self) -> bool:
-        """Every driver in this category opens and closes on one axis."""
-        return True
+    is_gripper = True
+    action_dim = 1
+    state_dim = 1
+    control_mode = "continuous"
 
     @abstractmethod
     def open(self, speed: float = 0.3) -> None:
@@ -106,21 +106,6 @@ class BaseGripper(BaseEndEffector, ABC):
         raise NotImplementedError
 
     # End-effector interface derived from the gripper primitives.
-
-    @property
-    def state_dim(self) -> int:
-        """Return the one-dimensional gripper state size."""
-        return 1
-
-    @property
-    def action_dim(self) -> int:
-        """Return the one-dimensional gripper action size."""
-        return 1
-
-    @property
-    def control_mode(self) -> str:
-        """Return ``"continuous"`` for absolute-width control."""
-        return "continuous"
 
     def get_state(self) -> np.ndarray:
         """Return the opening width in metres as a one-element vector."""

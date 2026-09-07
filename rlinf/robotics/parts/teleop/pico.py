@@ -67,6 +67,8 @@ class Pico(TeleopDevice):
 
     #: The delta variant's kinds. PicoTcp overrides the arm with an absolute
     #: pose; the parts filled are the same either way.
+    LEGACY_FLAGS = {"use_pico": "pico"}
+
     PRODUCES = {
         "arm": ActionKind.CARTESIAN_DELTA,
         "end_effector": ActionKind.GRIPPER,

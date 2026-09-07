@@ -17,13 +17,13 @@ from typing import Any, Optional
 
 import numpy as np
 
-from rlinf.envs.real.xsquare.base import Turtle2Env, Turtle2RobotConfig
+from rlinf.envs.real.xsquare.base import Turtle2Env, Turtle2EnvConfig
 from rlinf.robotics.discovery import RobotInfo
 from rlinf.scheduler import WorkerInfo
 
 
 @dataclass
-class ButtonEnvConfig(Turtle2RobotConfig):
+class ButtonEnvConfig(Turtle2EnvConfig):
     random_xy_range: float = 0.05
     clip_x_range: float = 0.05
     clip_y_range: float = 0.05
