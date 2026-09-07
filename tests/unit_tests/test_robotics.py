@@ -4639,6 +4639,53 @@ def test_so101_never_prompts_for_calibration_and_refuses_an_uncalibrated_arm():
             follower.calibrated = True
 
 
+def test_so101_stops_pushing_jaws_that_cannot_close():
+    """A stalled gripper is held where it stopped, not driven at full torque.
+
+    lerobot gives the gripper a low overload threshold, so jaws left pushing
+    against something latch a fault that outlives the connection.
+    """
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        from lerobot.robots.so_follower import SO101Follower
+
+        from rlinf.robotics.parts.arms.so101 import SO101Arm
+
+        arm = SO101Arm.declare("/dev/ttyACM0", calibration_id="test")
+        arm.connect()
+        # Something between the jaws: they stop at 30 however hard they push.
+        SO101Follower.jaw_limit = 30.0
+        try:
+            arm.close_gripper()
+        finally:
+            SO101Follower.jaw_limit = None
+
+        # The last thing sent is where the jaws came to rest, not the shut
+        # position they could never reach.
+        assert arm._robot.sent[-1] == pytest.approx({"gripper.pos": 30.0})
+
+        arm.disconnect()
+
+
+def test_so101_frees_the_gripper_before_closing_the_bus():
+    """lerobot releases the gripper last; this frees it first."""
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        from rlinf.robotics.parts.arms.so101 import SO101Arm
+
+        arm = SO101Arm.declare("/dev/ttyACM0", calibration_id="test")
+        arm.connect()
+        device = arm._robot
+        arm.disconnect()
+
+        assert device.teardown == [
+            ("disable_torque", "gripper"),
+            ("disconnect", None),
+        ]
+
+
 def test_so101_reset_waits_for_the_servos_to_stop_moving():
     """The servo bus returns while the arm travels, so a reset waits for it."""
     from types import SimpleNamespace

@@ -28,6 +28,7 @@ Two things differ from the lerobot API and are converted here:
   vector ordered by :pyattr:`SO101Arm.MOTORS`.
 """
 
+import time
 from dataclasses import asdict, dataclass, field
 from typing import TYPE_CHECKING, Any, Optional, Sequence
 
@@ -90,6 +91,15 @@ class SO101Arm(BaseArm):
 
     #: lerobot's gripper scale. Its own normalisation, not a servo unit.
     GRIPPER_SCALE: float = 100.0
+
+    #: Bus rate the STS3215 servos run at, matching lerobot's default.
+    BAUDRATE: int = 1_000_000
+
+    #: Gripper travel, on that scale, below which the jaws count as stopped.
+    GRIPPER_TOLERANCE: float = 2.0
+
+    #: Seconds to watch the jaws before giving up on them reaching a target.
+    GRIPPER_SETTLE_TIMEOUT: float = 1.0
 
     #: The SO-101 reports joints only; it carries no pose or force sensing.
     STATE_FIELDS = ("arm_joint_position",)
@@ -192,7 +202,19 @@ class SO101Arm(BaseArm):
                 use_degrees=True,
             )
         )
-        robot.connect(calibrate=False)
+        try:
+            robot.connect(calibrate=False)
+        except RuntimeError as error:
+            faulted = self._faulted_motors()
+            if not faulted:
+                raise
+            raise RuntimeError(
+                f"The SO-101 on {self._port!r} cannot start: motor(s) "
+                f"{faulted} report a latched fault, which lerobot reports as "
+                "a missing motor. The gripper reaches this by being held "
+                "shut against something until its overload protection trips. "
+                "Power-cycle the arm's supply to clear it"
+            ) from error
         if not robot.is_calibrated:
             robot.disconnect()
             raise RuntimeError(
@@ -205,8 +227,46 @@ class SO101Arm(BaseArm):
         self._robot = robot
         return robot
 
+    def _faulted_motors(self) -> dict[int, int]:
+        """Return ``{motor id: error byte}`` for servos answering with a fault.
+
+        lerobot drops a motor that replies with an error set, so its check
+        cannot tell a faulted servo from an absent one. Reading the bus
+        directly separates the two.
+        """
+        try:
+            import scservo_sdk as scs
+        except ImportError:  # pragma: no cover - lerobot ships this
+            return {}
+
+        port = scs.PortHandler(self._port)
+        try:
+            if not port.openPort():
+                return {}
+            port.setBaudRate(self.BAUDRATE)
+            packets = scs.PacketHandler(0)
+            faults = {}
+            for motor_id in range(1, len(self.MOTORS) + 2):
+                _, result, error = packets.ping(port, motor_id)
+                if result == scs.COMM_SUCCESS and error:
+                    faults[motor_id] = error
+            return faults
+        except Exception:  # noqa: BLE001 - a diagnostic must not mask the error
+            return {}
+        finally:
+            port.closePort()
+
     def _release(self, device: "SO101Follower") -> None:
-        """Close the servo bus."""
+        """Close the servo bus, letting the gripper go slack first.
+
+        lerobot disables torque in motor order, so the gripper goes last and
+        stays energised while the arm is released around it. Freeing it first
+        means a session never ends with the jaws straining.
+        """
+        try:
+            device.bus.disable_torque(self.GRIPPER)
+        except Exception as error:  # noqa: BLE001 - the bus may already be gone
+            self._logger.debug("Could not release the SO-101 gripper: %s", error)
         try:
             device.disconnect()
         finally:
@@ -258,6 +318,40 @@ class SO101Arm(BaseArm):
         value = float(np.asarray(target, dtype=float).reshape(-1)[0])
         opening = float(np.clip(value, 0.0, 1.0)) * self.GRIPPER_SCALE
         self._robot.send_action({f"{self.GRIPPER}.pos": opening})
+        self._relieve_gripper(opening)
+
+    def _gripper_reading(self) -> float:
+        """The jaws' present opening, on lerobot's scale."""
+        return float(self._robot.get_observation()[f"{self.GRIPPER}.pos"])
+
+    def _relieve_gripper(self, opening: float) -> None:
+        """Stop pushing once the jaws stop moving short of ``opening``.
+
+        Jaws that close on an object, or on each other, never reach the
+        commanded opening, and a position servo answers that by pushing for
+        as long as the command stands. lerobot gives this motor a low
+        overload threshold, so a held stall latches a fault that outlives the
+        connection and clears only when the supply is cycled. Re-commanding
+        where the jaws actually came to rest ends the strain and leaves them
+        closed on whatever they hold.
+
+        Returns at once unless a move was actually asked for, so a control
+        loop commanding small changes never waits.
+        """
+        previous = self._gripper_reading()
+        if abs(previous - opening) <= self.GRIPPER_TOLERANCE:
+            return
+
+        deadline = time.monotonic() + self.GRIPPER_SETTLE_TIMEOUT
+        while time.monotonic() < deadline:
+            time.sleep(self.SETTLE_POLL_INTERVAL)
+            current = self._gripper_reading()
+            if abs(current - opening) <= self.GRIPPER_TOLERANCE:
+                return
+            if abs(current - previous) < self.GRIPPER_TOLERANCE:
+                break
+            previous = current
+        self._robot.send_action({f"{self.GRIPPER}.pos": self._gripper_reading()})
 
     def open_gripper(self) -> None:
         """Open the gripper fully."""

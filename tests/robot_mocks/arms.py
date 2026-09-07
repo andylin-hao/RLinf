@@ -341,12 +341,29 @@ def lerobot() -> dict[str, types.ModuleType]:
             self.use_degrees = use_degrees
             self.extra = extra
 
+    class FakeSO101Bus:
+        """The motor bus lerobot exposes on a follower."""
+
+        def __init__(self, owner: Any) -> None:
+            self.owner = owner
+
+        def disable_torque(self, motors: Any = None, num_retry: int = 0) -> None:
+            self.owner.teardown.append(("disable_torque", motors))
+
     class FakeSO101Follower:
         #: Set false to model an arm whose calibration file is missing.
         calibrated = True
 
+        #: Opening the jaws cannot close past, modelling something held
+        #: between them. ``None`` lets them reach whatever is commanded.
+        jaw_limit: Any = None
+
         def __init__(self, config: Any) -> None:
             self.config = config
+            self.bus = FakeSO101Bus(self)
+            # Ordered record of the shutdown, so a test can show the gripper
+            # is freed before the bus closes.
+            self.teardown: list[tuple[str, Any]] = []
             self.is_connected = False
             self.is_calibrated = type(self).calibrated
             self.calibrate_calls = 0
@@ -377,6 +394,7 @@ def lerobot() -> dict[str, types.ModuleType]:
             self.calibrate_calls += 1
 
         def disconnect(self) -> None:
+            self.teardown.append(("disconnect", None))
             self.is_connected = False
 
         def get_observation(self) -> dict[str, float]:
@@ -385,6 +403,12 @@ def lerobot() -> dict[str, types.ModuleType]:
         def send_action(self, action: dict[str, float]) -> dict[str, float]:
             self.sent.append(dict(action))
             self.positions.update(action)
+            limit = type(self).jaw_limit
+            if limit is not None and "gripper.pos" in action:
+                # Jaws that meet something stop there, whatever was asked for.
+                self.positions["gripper.pos"] = max(
+                    float(action["gripper.pos"]), float(limit)
+                )
             return dict(action)
 
     made = {parent.__name__: parent for parent in package("lerobot.robots.so_follower")}
