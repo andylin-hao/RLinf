@@ -99,7 +99,13 @@ class SO101Arm(BaseArm):
     GRIPPER_TOLERANCE: float = 2.0
 
     #: Seconds to watch the jaws before giving up on them reaching a target.
-    GRIPPER_SETTLE_TIMEOUT: float = 1.0
+    GRIPPER_SETTLE_TIMEOUT: float = 3.0
+
+    #: Consecutive still polls that mean the jaws have stopped rather than
+    #: not yet started. One is not enough: a servo barely moves in the first
+    #: poll after a command, and treating that as a stall freezes the jaws
+    #: where they stand.
+    GRIPPER_STALL_POLLS: int = 3
 
     #: The SO-101 reports joints only; it carries no pose or force sensing.
     STATE_FIELDS = ("arm_joint_position",)
@@ -343,13 +349,18 @@ class SO101Arm(BaseArm):
             return
 
         deadline = time.monotonic() + self.GRIPPER_SETTLE_TIMEOUT
+        still = 0
         while time.monotonic() < deadline:
             time.sleep(self.SETTLE_POLL_INTERVAL)
             current = self._gripper_reading()
             if abs(current - opening) <= self.GRIPPER_TOLERANCE:
                 return
             if abs(current - previous) < self.GRIPPER_TOLERANCE:
-                break
+                still += 1
+                if still >= self.GRIPPER_STALL_POLLS:
+                    break
+            else:
+                still = 0
             previous = current
         self._robot.send_action({f"{self.GRIPPER}.pos": self._gripper_reading()})
 

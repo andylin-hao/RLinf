@@ -4639,6 +4639,35 @@ def test_so101_never_prompts_for_calibration_and_refuses_an_uncalibrated_arm():
             follower.calibrated = True
 
 
+def test_so101_lets_travelling_jaws_reach_their_target():
+    """Jaws barely move in the first poll; that is not a stall.
+
+    Treating it as one froze the gripper a fraction of the way open.
+    """
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        from lerobot.robots.so_follower import SO101Follower
+
+        from rlinf.robotics.parts.arms.so101 import SO101Arm
+
+        arm = SO101Arm.declare("/dev/ttyACM0", calibration_id="test")
+        arm.connect()
+        # Jaws that need several reads to cross and have not moved by the
+        # first poll of the watch loop.
+        SO101Follower.jaw_step = 12.0
+        SO101Follower.jaw_lag = 2
+        try:
+            arm.open_gripper()
+            opening = arm.get_state().gripper_position[0]
+        finally:
+            SO101Follower.jaw_step = None
+            SO101Follower.jaw_lag = 1
+
+        assert opening == pytest.approx(1.0, abs=0.05)
+        arm.disconnect()
+
+
 def test_so101_stops_pushing_jaws_that_cannot_close():
     """A stalled gripper is held where it stopped, not driven at full torque.
 

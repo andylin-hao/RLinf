@@ -358,12 +358,22 @@ def lerobot() -> dict[str, types.ModuleType]:
         #: between them. ``None`` lets them reach whatever is commanded.
         jaw_limit: Any = None
 
+        #: Travel per reading, modelling jaws that take several polls to
+        #: arrive. ``None`` puts them there at once.
+        jaw_step: Any = None
+
+        #: Readings after a command during which the jaws have not visibly
+        #: moved yet, modelling a servo getting under way.
+        jaw_lag: int = 1
+
         def __init__(self, config: Any) -> None:
             self.config = config
             self.bus = FakeSO101Bus(self)
             # Ordered record of the shutdown, so a test can show the gripper
             # is freed before the bus closes.
             self.teardown: list[tuple[str, Any]] = []
+            self.jaw_goal: Any = None
+            self.jaw_reads = 0
             self.is_connected = False
             self.is_calibrated = type(self).calibrated
             self.calibrate_calls = 0
@@ -398,10 +408,32 @@ def lerobot() -> dict[str, types.ModuleType]:
             self.is_connected = False
 
         def get_observation(self) -> dict[str, float]:
+            step = type(self).jaw_step
+            if step is not None:
+                # Real jaws cover ground over several reads, and barely move
+                # on the first one after a command.
+                goal, at = self.jaw_goal, self.positions["gripper.pos"]
+                if goal is not None and self.jaw_reads < type(self).jaw_lag:
+                    # Still getting under way: nothing has moved yet.
+                    self.jaw_reads += 1
+                    return dict(self.positions)
+                if goal is not None and at != goal:
+                    travel = min(float(step), abs(goal - at))
+                    at += travel if goal > at else -travel
+                    limit = type(self).jaw_limit
+                    self.positions["gripper.pos"] = (
+                        at if limit is None else max(at, float(limit))
+                    )
             return dict(self.positions)
 
         def send_action(self, action: dict[str, float]) -> dict[str, float]:
             self.sent.append(dict(action))
+            if "gripper.pos" in action:
+                self.jaw_goal = float(action["gripper.pos"])
+                self.jaw_reads = 0
+            if type(self).jaw_step is not None:
+                # Arrival is the reader's job while the jaws are travelling.
+                return dict(action)
             self.positions.update(action)
             limit = type(self).jaw_limit
             if limit is not None and "gripper.pos" in action:
