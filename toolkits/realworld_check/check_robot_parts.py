@@ -42,7 +42,7 @@ import ast
 import pathlib
 import sys
 import traceback
-from typing import Any
+from typing import Any, Optional
 
 from rlinf.robotics.parts.base import Connection, PartGroup, RobotPart
 
@@ -53,7 +53,52 @@ _TESTS = pathlib.Path(__file__).resolve().parents[2] / "tests"
 if str(_TESTS) not in sys.path:
     sys.path.insert(0, str(_TESTS))
 
-from robot_contracts import ObservationContract  # noqa: E402
+
+class ObservationContract:
+    """Check a part's observations against its declared features."""
+
+    def __init__(self, part: Any, where: str) -> None:
+        self.part = part
+        self.where = where
+
+    @staticmethod
+    def declared_shape(feature: Any) -> Optional[tuple]:
+        """Return the declared shape, or ``None`` for an unshaped feature."""
+        if isinstance(feature, dict):
+            shape = feature.get("shape")
+            if isinstance(shape, (tuple, list)):
+                return tuple(shape)
+        return None
+
+    def failures(self) -> list[str]:
+        """Return all observation key and shape mismatches."""
+        try:
+            observation = self.part.get_observation()
+        except Exception as error:  # noqa: BLE001 - a check reports anything
+            return [
+                f"{self.where}: get_observation raised {type(error).__name__}: {error}"
+            ]
+
+        features = self.part.observation_features
+        found: list[str] = []
+        extra = sorted(set(observation) - set(features))
+        missing = sorted(set(features) - set(observation))
+        if extra:
+            found.append(f"{self.where} observes {extra}, which it never declared")
+        if missing:
+            found.append(f"{self.where} declares {missing}, which it does not observe")
+
+        for key in sorted(set(features) & set(observation)):
+            wanted = self.declared_shape(features[key])
+            actual = getattr(observation[key], "shape", None)
+            if wanted is None or actual is None:
+                continue
+            if tuple(actual) != tuple(wanted):
+                found.append(
+                    f"{self.where} observes {key} with shape {tuple(actual)}, "
+                    f"declares {tuple(wanted)}"
+                )
+        return found
 
 
 def _mocked_sdks():
@@ -223,8 +268,6 @@ def check(robot_type: str, kwargs: dict[str, Any], remote: bool = False) -> int:
             key: getattr(value, "shape", type(value).__name__)
             for key, value in observation.items()
         }
-        # The same comparison the conformance suite makes, so a bench run and
-        # a contributor's test agree about what a part promised.
         mismatches = ObservationContract(part, path).failures()
         failures += mismatches
         note = "  " + "; ".join(mismatches) if mismatches else ""

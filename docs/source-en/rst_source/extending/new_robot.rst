@@ -573,85 +573,12 @@ only the device-side methods used above: ``get_pose()``, ``set_velocity()``,
 ``stop()``, and ``close()``. Registering it in one place makes the same fake
 available to unit tests, the bench checker, and remote mock workers.
 
-Then add a test under ``tests/unit_tests/`` and point the contract classes at
-what you wrote. The contracts state the promises the rest of the framework
-relies on:
-
-.. code-block:: python
-
-   from robot_contracts import PartContract, RobotContract
-   from robot_mocks import mocked_sdks
-
-
-   def test_mobile_base_conforms():
-       assert MobileBase.backend("example") is ExampleMobileBase
-       with mocked_sdks():
-           PartContract(
-               lambda: ExampleMobileBase("tcp://mobile-base:7000"),
-               action={"velocity": np.zeros(2, dtype=np.float32)},
-           ).assert_kept()
-
-
-   def test_mobile_manipulator_conforms():
-       with mocked_sdks():
-           RobotContract(
-               lambda: MobileManipulator.build(
-                   base_endpoint="tcp://mobile-base:7000",
-                   arm_ip="10.0.0.2",
-                   node_rank=0,
-                   controller_node_rank=0,
-               )
-           ).assert_kept()
-
-They live in ``tests/robot_contracts``, beside the fake SDKs in
-``tests/robot_mocks``, because they check RLinf rather than being part of it.
-
-The contracts connect, read, disconnect, repeat the lifecycle, and disconnect
-once more. ``PartContract`` compares one part's observation names and shapes
-with its declaration. When it receives the velocity sample, it also checks that
-the action is accepted and an unknown field is refused. ``RobotContract``
-describes the robot before connecting, walks every readable part including
-parts carried below another part, checks ownership, and injects a failure during
-``connect()`` to verify rollback.
-
-Add direct assertions for the public paths and categories this robot promises.
-The contract verifies general behavior, but it cannot decide whether a path was
-given the name your tasks expect:
-
-.. code-block:: python
-
-   from rlinf.robotics import Arm, EndEffector
-
-   robot = MobileManipulator.build(
-       base_endpoint="tcp://mobile-base:7000",
-       arm_ip="10.0.0.2",
-       node_rank=0,
-       controller_node_rank=0,
-   )
-   assert set(robot.named_parts) == {"base", "arm", "end_effector"}
-   arm = robot.child("arm", Arm)
-   end_effector = robot.child("end_effector", EndEffector)
-   # The hand holds its own link, so it owns itself rather than the arm.
-   assert end_effector.owner is end_effector
-   assert len(robot.owners()) == 3
-
-Add ``ConnectionContract`` only when the new SDK session backs several parts.
-It checks the session lifecycle and the observations returned by its ``parts``
-mapping. Also assert that ``connection.part(name).owner is connection`` for each
-selected part; the contract does not currently make that selection itself. This
-example adds one leaf ``MobileBase`` and reuses the already-tested Franka
-connection, so there is no new shared session to test.
-
-These checks cover failures the package has previously encountered. A contract
-failure names the broken promise rather than only the assertion, and lists all
-failures at once:
-
-.. code-block:: text
-
-   ConformanceError: ExampleMobileBase does not keep 2:
-     - ExampleMobileBase: reconnecting raised RuntimeError: threads can only be started
-       once; stall recovery closes a connection and opens it again
-     - ExampleMobileBase observes pose with shape (4,), declares (3,)
+Then add a test under ``tests/unit_tests/`` beside the component you extended:
+a new part or robot belongs in ``test_robotics.py``, and the environment that
+drives it in ``test_real_env.py``. Cover the lifecycle the framework relies on
+-- connect, reconnect, disconnect, and a disconnect that runs twice -- along
+with the observation names and shapes the part declares, and a connect that
+fails partway, which must leave no robot behind.
 
 The rest of the integration is testable the same way. Cover the part contract,
 composition paths, connection lifecycle, discovery registration, and the schema
@@ -659,8 +586,7 @@ policies expect:
 
 .. code-block:: bash
 
-   pytest tests/unit_tests/test_robotics.py tests/unit_tests/test_conformance.py \
-       tests/unit_tests/test_real_env.py
+   pytest tests/unit_tests/test_robotics.py tests/unit_tests/test_real_env.py
 
 These exercise the scheduler import boundary, part composition, the task and
 robot split, and the policy-facing schema of every built-in real-world

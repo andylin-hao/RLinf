@@ -414,74 +414,13 @@ env 收到 ``RobotInfo`` 后，需要显式调用已注册的 builder。schedule
 
 contract 层需要先在 ``tests/robot_mocks/`` 中为示例 SDK 添加一个最小 fake，并将其加入 ``sdk_modules()``。这个 fake 只需实现上文实际调用的 ``get_pose()``、``set_velocity()``、``stop()`` 和 ``close()``。统一注册后，单元测试、检查脚本和远程 mock worker 会使用同一份 fake。
 
-随后在 ``tests/unit_tests/`` 中新增测试，并使用 ``PartContract`` 和 ``RobotContract`` 检查新底盘及组合机器人：
-
-.. code-block:: python
-
-   from robot_contracts import PartContract, RobotContract
-   from robot_mocks import mocked_sdks
-
-
-   def test_mobile_base_conforms():
-       assert MobileBase.backend("example") is ExampleMobileBase
-       with mocked_sdks():
-           PartContract(
-               lambda: ExampleMobileBase("tcp://mobile-base:7000"),
-               action={"velocity": np.zeros(2, dtype=np.float32)},
-           ).assert_kept()
-
-
-   def test_mobile_manipulator_conforms():
-       with mocked_sdks():
-           RobotContract(
-               lambda: MobileManipulator.build(
-                   base_endpoint="tcp://mobile-base:7000",
-                   arm_ip="10.0.0.2",
-                   node_rank=0,
-                   controller_node_rank=0,
-               )
-           ).assert_kept()
-
-这些 contract 位于 ``tests/robot_contracts``，mock SDK 位于 ``tests/robot_mocks``。二者仅用于测试，不会随 ``rlinf`` 包发布。
-
-这些 contract 会重复执行连接和断开流程。``PartContract`` 检查单个零部件的观测字段及 shape；提供速度样例后，还会验证该动作可以执行，并拒绝未知动作字段。``RobotContract`` 会在连接前检查结构说明，递归遍历所有可读零部件，包括承载在其他零部件下的路径，并检查资源归属。它还会在 ``connect()`` 中注入失败，验证启动回滚。
-
-对于机器人对外承诺的路径和类别，仍应增加直接断言。contract 可以验证通用行为，但无法判断路径名称是否与任务的约定一致：
-
-.. code-block:: python
-
-   from rlinf.robotics import Arm, EndEffector
-
-   robot = MobileManipulator.build(
-       base_endpoint="tcp://mobile-base:7000",
-       arm_ip="10.0.0.2",
-       node_rank=0,
-       controller_node_rank=0,
-   )
-   assert set(robot.named_parts) == {"base", "arm", "end_effector"}
-   arm = robot.child("arm", Arm)
-   end_effector = robot.child("end_effector", EndEffector)
-   # 末端执行器持有自己的链路，因此 owner 是它本身，而不是机械臂。
-   assert end_effector.owner is end_effector
-   assert len(robot.owners()) == 3
-
-只有当新增 SDK session 同时支持多个零部件时，才需要增加 ``ConnectionContract``。该 contract 会检查 session 生命周期，以及 ``parts`` 中各零部件的观测。还应逐项断言 ``connection.part(name).owner is connection``；目前 contract 不会自行调用 ``part(name)`` 检查 owner 绑定。本例新增的是单个叶子 ``MobileBase``，并复用已经测试过的 Franka connection，因此无需为底盘增加共享 session 测试。
-
-这些检查覆盖了项目中实际出现过的故障。contract 检查失败时，错误信息会列出具体原因，例如：
-
-.. code-block:: text
-
-   ConformanceError: ExampleMobileBase does not keep 2:
-     - ExampleMobileBase: reconnecting raised RuntimeError: threads can only be started
-       once; stall recovery closes a connection and opens it again
-     - ExampleMobileBase observes pose with shape (4,), declares (3,)
+随后在 ``tests/unit_tests/`` 中，按照被扩展的组件补充测试：新增的零部件或机器人写入 ``test_robotics.py``，驱动它的环境写入 ``test_real_env.py``。测试需要覆盖框架依赖的生命周期——连接、重复连接、断开，以及重复断开，并检查零部件声明的观测字段名称与 shape。还应构造一次中途失败的连接：此时不应交回任何机器人。
 
 测试还应覆盖组合路径、connection 生命周期、注册、硬件发现，以及现有 policy 依赖的数据结构：
 
 .. code-block:: bash
 
-   pytest tests/unit_tests/test_robotics.py tests/unit_tests/test_conformance.py \
-       tests/unit_tests/test_real_env.py
+   pytest tests/unit_tests/test_robotics.py tests/unit_tests/test_real_env.py
 
 上述测试不依赖真实硬件。
 
