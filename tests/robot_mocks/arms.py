@@ -72,11 +72,18 @@ def franky() -> types.ModuleType:
             return np.zeros((6, 7))
 
     class Robot:
+        instances: list[Any] = []
+
         def __init__(self, ip):
+            self.instances.append(self)
             self.ip = ip
             self.relative_dynamics_factor = 1.0
             self.model = Model()
             self.moved = []
+            self.is_in_control = False
+            self.motion_error: Exception | None = None
+            self.recovery_count = 0
+            self.trackers: list[Any] = []
 
         @property
         def state(self):
@@ -91,6 +98,7 @@ def franky() -> types.ModuleType:
             )
 
         def recover_from_errors(self):
+            self.recovery_count += 1
             return True
 
         def set_collision_behavior(self, *_args):
@@ -100,14 +108,29 @@ def franky() -> types.ModuleType:
             self.moved.append(motion)
 
         def join_motion(self):
+            if self.motion_error is not None:
+                error, self.motion_error = self.motion_error, None
+                raise error
             return True
+
+        def poll_motion(self):
+            if self.is_in_control:
+                return False
+            return self.join_motion()
 
     class _Tracker:
         """Record impedance targets for assertions."""
 
-        def __init__(self, *_args, **_kwargs):
+        def __init__(self, robot, **_kwargs):
+            self._robot = robot
+            robot.is_in_control = True
+            robot.trackers.append(self)
             self.targets: list[Any] = []
             self.gains: list[dict[str, Any]] = []
+
+        @property
+        def is_running(self):
+            return self._robot.is_in_control
 
         def set_target(self, target, **kwargs):
             self.targets.append((target, kwargs))
@@ -118,7 +141,8 @@ def franky() -> types.ModuleType:
             self.gains.append(kwargs)
 
         def stop(self):
-            return None
+            self._robot.is_in_control = False
+            self._robot.join_motion()
 
     return module(
         "franky",

@@ -17,15 +17,17 @@
 from __future__ import annotations
 
 import ast
+import ctypes
 import os
 import re
 import runpy
 import subprocess
 import sys
 import time
+from collections.abc import Iterator
 from dataclasses import dataclass, fields
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from typing import Any, Optional, cast
 
 import numpy as np
@@ -3659,6 +3661,189 @@ def test_a_franky_arm_takes_no_end_effector_settings():
     for unsupported in ("gripper_type", "gripper_connection", "end_effector_type"):
         with pytest.raises(TypeError, match="does not take"):
             FrankyArm.declare("10.0.0.1", **{unsupported: "whatever"})
+
+
+@pytest.fixture
+def franky_arm(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> Iterator[tuple[FrankyArm, ModuleType]]:
+    from robot_mocks import mocked_sdks
+
+    from rlinf.robotics.parts import claims
+
+    monkeypatch.setattr(claims, "_CLAIM_DIR", str(tmp_path))
+    monkeypatch.setattr(
+        ctypes,
+        "CDLL",
+        lambda *args, **kwargs: SimpleNamespace(mlockall=lambda flags: 0),
+    )
+    monkeypatch.setattr(os, "sched_setscheduler", lambda *args: None)
+    monkeypatch.setattr(os, "sched_setaffinity", lambda *args: None)
+    with mocked_sdks() as sdk:
+        arm = FrankyArm("10.0.0.1")
+        arm.connect()
+        try:
+            yield arm, sdk["franky"]
+        finally:
+            arm.disconnect()
+
+
+_FRANKY_TEST_JOINTS = [0.0, 0.0, 0.0, -1.5, 0.0, 1.5, 0.0]
+
+
+def _franky_target(mode: str) -> dict[str, np.ndarray]:
+    if mode == "joint":
+        return {"joint_position": np.array(_FRANKY_TEST_JOINTS)}
+    return {"tcp_pose": np.array([0.4, 0.0, 0.3, 0.0, 1.0, 0.0, 0.0])}
+
+
+def _fail_franky_controller(robot: Any) -> RuntimeError:
+    error = RuntimeError("communication_constraints_violation")
+    robot.motion_error = error
+    robot.is_in_control = False
+    return error
+
+
+@pytest.mark.parametrize("mode", ["joint", "Cartesian"])
+@pytest.mark.parametrize(
+    "operation", ["read", "recover", "reset", "joint", "Cartesian", "compliance"]
+)
+def test_franky_stopped_controller_rejects_calls_until_reconnect(
+    franky_arm: tuple[FrankyArm, ModuleType], mode: str, operation: str
+) -> None:
+    arm, sdk = franky_arm
+    arm.send_action(_franky_target(mode))
+    robot = sdk.Robot.instances[-1]
+    tracker = robot.trackers[-1]
+    target_count = len(tracker.targets)
+    recovery_count = robot.recovery_count
+    cause = _fail_franky_controller(robot)
+    calls = {
+        "read": arm.get_observation,
+        "recover": arm.clear_errors,
+        "reset": lambda: arm.reset_joint(_FRANKY_TEST_JOINTS),
+        "joint": lambda: arm.send_action(_franky_target("joint")),
+        "Cartesian": lambda: arm.send_action(_franky_target("Cartesian")),
+        "compliance": lambda: arm.reconfigure_compliance_params(
+            {"translational_stiffness": 800}
+        ),
+    }
+
+    # Polling consumes the SDK error; retries must retain the original cause.
+    for _ in range(2):
+        with pytest.raises(RuntimeError, match=f"{mode} impedance controller") as exc:
+            calls[operation]()
+        assert exc.value.__cause__ is cause
+        assert "communication_constraints_violation" in str(exc.value)
+    assert robot.motion_error is None
+    assert len(tracker.targets) == target_count
+    assert robot.recovery_count == recovery_count
+    assert robot.moved == []
+    assert not arm.is_robot_up()
+
+    arm.disconnect()
+    arm.disconnect()
+    arm.connect()
+    arm.send_action(_franky_target(mode))
+    assert arm.is_robot_up()
+    assert arm.get_observation()["tcp_pose"].shape == (7,)
+
+
+@pytest.mark.parametrize("mode", ["joint", "Cartesian"])
+def test_franky_stopped_controller_without_sdk_error_still_fails(
+    franky_arm: tuple[FrankyArm, ModuleType], mode: str
+) -> None:
+    arm, sdk = franky_arm
+    arm.send_action(_franky_target(mode))
+    sdk.Robot.instances[-1].is_in_control = False
+    with pytest.raises(RuntimeError, match="stopped unexpectedly") as exc:
+        arm.send_action(_franky_target(mode))
+    assert exc.value.__cause__ is None
+
+
+@pytest.mark.parametrize("mode", ["joint", "Cartesian"])
+def test_franky_controller_failure_during_target_update_is_reported(
+    franky_arm: tuple[FrankyArm, ModuleType], mode: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    arm, sdk = franky_arm
+    arm.send_action(_franky_target(mode))
+    robot = sdk.Robot.instances[-1]
+    monkeypatch.setattr(
+        robot.trackers[-1],
+        "set_target",
+        lambda *args, **kwargs: _fail_franky_controller(robot),
+    )
+    with pytest.raises(RuntimeError, match="communication_constraints_violation"):
+        arm.send_action(_franky_target(mode))
+
+
+@pytest.mark.parametrize("mode", ["joint", "Cartesian"])
+def test_franky_controller_failure_during_state_read_is_reported(
+    franky_arm: tuple[FrankyArm, ModuleType], mode: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    arm, sdk = franky_arm
+    arm.send_action(_franky_target(mode))
+    original_state = sdk.Robot.state.fget
+
+    def state(robot):
+        _fail_franky_controller(robot)
+        return original_state(robot)
+
+    monkeypatch.setattr(sdk.Robot, "state", property(state))
+    with pytest.raises(RuntimeError, match="communication_constraints_violation"):
+        arm.get_observation()
+
+
+@pytest.mark.parametrize("mode", ["joint", "Cartesian"])
+@pytest.mark.parametrize("operation", ["switch", "reset", "disconnect"])
+def test_franky_motion_error_while_stopping_is_not_recovered(
+    franky_arm: tuple[FrankyArm, ModuleType], mode: str, operation: str
+) -> None:
+    arm, sdk = franky_arm
+    arm.send_action(_franky_target(mode))
+    robot = sdk.Robot.instances[-1]
+    # The control thread can fail between the health check and stop/join.
+    robot.motion_error = RuntimeError("joint_reflex")
+    recovery_count = robot.recovery_count
+    if operation == "disconnect":
+        arm.disconnect()
+        arm.disconnect()
+        assert not arm.is_connected
+        arm.connect()
+        arm.send_action(_franky_target(mode))
+    else:
+        with pytest.raises(RuntimeError, match="joint_reflex"):
+            if operation == "reset":
+                arm.reset_joint(_FRANKY_TEST_JOINTS)
+            else:
+                arm.send_action(
+                    _franky_target("Cartesian" if mode == "joint" else "joint")
+                )
+        with pytest.raises(RuntimeError, match="joint_reflex"):
+            arm.clear_errors()
+        assert robot.moved == []
+    assert robot.recovery_count == recovery_count
+
+
+def test_franky_healthy_tracking_can_switch_reset_and_rebuild_compliance(
+    franky_arm: tuple[FrankyArm, ModuleType],
+) -> None:
+    arm, sdk = franky_arm
+    arm.send_action(_franky_target("joint"))
+    arm.send_action(_franky_target("Cartesian"))
+    robot = sdk.Robot.instances[-1]
+    arm.reconfigure_compliance_params({"translational_stiffness": 800})
+    assert robot.is_in_control
+    assert robot.trackers[-1].gains[-1]["translational_stiffness"] == 800
+    arm.send_action(_franky_target("Cartesian"))
+    arm.reconfigure_compliance_params({"translational_clip_x": 0.06})
+    arm.send_action(_franky_target("Cartesian"))
+    arm.send_action(_franky_target("joint"))
+    arm.reset_joint(_FRANKY_TEST_JOINTS)
+    assert len(robot.moved) == 1
+    arm.send_action(_franky_target("Cartesian"))
+    assert arm.is_robot_up()
+    assert arm.get_observation()["tcp_pose"].shape == (7,)
 
 
 def test_the_bench_check_runs_a_whole_robot_on_fakes():

@@ -23,7 +23,7 @@ import ctypes.util
 import os
 import time
 from collections.abc import Mapping
-from typing import Any, ClassVar, Optional
+from typing import Any, ClassVar, NoReturn, Optional
 
 import numpy as np
 from scipy.spatial.transform import Rotation as R
@@ -115,6 +115,7 @@ class FrankyArm(BaseArm):
         self._prev_target_q: Optional[np.ndarray] = None
         self._prev_target_ts: Optional[float] = None
         self._cart_tracker = None
+        self._tracking_error: Optional[RuntimeError] = None
         self._prev_cart_target_xyz: Optional[np.ndarray] = None
         self._prev_cart_target_quat: Optional[np.ndarray] = None
 
@@ -135,6 +136,7 @@ class FrankyArm(BaseArm):
         self._robot.recover_from_errors()
         self._robot.relative_dynamics_factor = self.DYNAMICS_FACTOR
         self._robot.set_collision_behavior(self.TORQUE_THRESHOLD, self.FORCE_THRESHOLD)
+        self._tracking_error = None
         self._logger.info(f"FrankyArm connected to robot at {self._robot_ip}")
         return self._robot
 
@@ -193,7 +195,7 @@ class FrankyArm(BaseArm):
                 self._logger.warning(f"sched_setaffinity failed: {e}")
 
     def _safe_join(self) -> None:
-        # Drain latched motion errors during setup and teardown.
+        # Cleanup still releases the session after a motion error.
         try:
             self._robot.join_motion()
         except Exception:
@@ -202,12 +204,15 @@ class FrankyArm(BaseArm):
     def is_robot_up(self) -> bool:
         """Whether the arm answers. An end effector reports its own readiness."""
         try:
+            self._check_tracking_motion()
             _ = self._robot.state
+            self._check_tracking_motion()
             return True
         except Exception:
             return False
 
     def get_state(self) -> FrankaRobotState:
+        self._check_tracking_motion()
         raw = self._robot.state
         affine = raw.O_T_EE
         # Franky and SciPy both use xyzw quaternion order.
@@ -233,10 +238,12 @@ class FrankyArm(BaseArm):
         s.tcp_torque = K_F_ext[3:]
         s.arm_jacobian = jacobian
         s.tcp_vel = jacobian @ joint_vel
+        self._check_tracking_motion()
         return s
 
     def reconfigure_compliance_params(self, params: "Mapping[str, float]") -> None:
         """Cap the request to what a client-side loop can hold, and apply it."""
+        self._check_tracking_motion()
         if not params:
             return
 
@@ -299,15 +306,47 @@ class FrankyArm(BaseArm):
             rotational_stiffness=k_r,
             nullspace_stiffness=k_ns,
         )
+        self._check_tracking_motion()
 
     def clear_errors(self) -> None:
+        """Recover setup errors without clearing a failed tracking session."""
+        self._check_tracking_motion()
         self._robot.recover_from_errors()
 
+    def _fail_tracking(self, kind: str, cause: Optional[Exception] = None) -> NoReturn:
+        message = (
+            f"Franka {kind} impedance controller stopped unexpectedly at "
+            f"{self._robot_ip}. Disconnect and reconnect the arm before continuing."
+        )
+        if cause is not None:
+            message += f" Motion error: {cause}"
+        self._tracking_error = RuntimeError(message)
+        raise self._tracking_error from cause
+
+    def _check_tracking_motion(self) -> None:
+        """Surface a stopped controller's asynchronous error before recovery."""
+        if self._tracking_error is not None:
+            raise self._tracking_error
+        for kind, tracker in (
+            ("joint", self._tracker),
+            ("Cartesian", self._cart_tracker),
+        ):
+            if tracker is None or tracker.is_running:
+                continue
+            try:
+                # set_target() only updates a reference; poll_motion() retrieves
+                # the exception retained by the SDK's control thread.
+                self._robot.poll_motion()
+            except Exception as error:
+                self._fail_tracking(kind, error)
+            self._fail_tracking(kind)
+
     def _ensure_tracking_motion(self) -> None:
+        self._check_tracking_motion()
         if self._tracker is not None:
             return
         self._stop_cart_tracking_motion()
-        self._safe_join()
+        self._robot.join_motion()
         self._robot.recover_from_errors()
         self._tracker = self._franky.JointImpedanceTracker(
             self._robot,
@@ -320,15 +359,14 @@ class FrankyArm(BaseArm):
     def _stop_tracking_motion(self) -> None:
         if self._tracker is None:
             return
-        # tracker.stop may re-raise a latched asynchronous reflex error.
         try:
             self._tracker.stop()
         except Exception as e:
-            self._logger.warning(f"joint tracker.stop surfaced latched error: {e}")
-        self._tracker = None
-        self._prev_target_q = None
-        self._prev_target_ts = None
-        self._safe_join()
+            self._fail_tracking("joint", e)
+        finally:
+            self._tracker = None
+            self._prev_target_q = None
+            self._prev_target_ts = None
         self._robot.recover_from_errors()
 
     def move_joints(self, joint_positions: np.ndarray) -> None:
@@ -351,12 +389,14 @@ class FrankyArm(BaseArm):
         self._tracker.set_target(q, dq=dq_ff)
         self._prev_target_q = q
         self._prev_target_ts = now
+        self._check_tracking_motion()
 
     def _ensure_cart_tracking_motion(self) -> None:
+        self._check_tracking_motion()
         if self._cart_tracker is not None:
             return
         self._stop_tracking_motion()
-        self._safe_join()
+        self._robot.join_motion()
         self._robot.recover_from_errors()
         nullspace_target = np.asarray(self._robot.state.q, dtype=np.float64).copy()
 
@@ -386,11 +426,11 @@ class FrankyArm(BaseArm):
         try:
             self._cart_tracker.stop()
         except Exception as e:
-            self._logger.warning(f"cart tracker.stop surfaced latched error: {e}")
-        self._cart_tracker = None
-        self._prev_cart_target_xyz = None
-        self._prev_cart_target_quat = None
-        self._safe_join()
+            self._fail_tracking("Cartesian", e)
+        finally:
+            self._cart_tracker = None
+            self._prev_cart_target_xyz = None
+            self._prev_cart_target_quat = None
         self._robot.recover_from_errors()
 
     def move_tcp_pose(self, pose: np.ndarray) -> None:
@@ -447,9 +487,11 @@ class FrankyArm(BaseArm):
         T[:3, 3] = xyz
 
         self._cart_tracker.set_target(self._franky.Affine(T))
+        self._check_tracking_motion()
 
     def reset_joint(self, positions: list[float]) -> None:
         assert len(positions) == 7
+        self._check_tracking_motion()
         self._stop_tracking_motion()
         self._stop_cart_tracking_motion()
         franky = self._franky
@@ -461,6 +503,9 @@ class FrankyArm(BaseArm):
 
     def cleanup(self) -> None:
         """Stop any motion in flight; the arm holds nothing else to release."""
-        self._stop_tracking_motion()
-        self._stop_cart_tracking_motion()
+        for stop in (self._stop_tracking_motion, self._stop_cart_tracking_motion):
+            try:
+                stop()
+            except Exception as error:
+                self._logger.warning(f"Controller cleanup reported: {error}")
         self._safe_join()
