@@ -366,6 +366,39 @@ def test_turtle2_dummy_preserves_legacy_policy_schema():
     _assert_legacy_transition(env)
 
 
+def _turtle2_camera_check(camera_ids, ready):
+    """Run _check_cameras against a rig with the given cameras."""
+    env = Turtle2Env.__new__(Turtle2Env)
+    env.config = SimpleNamespace(is_dummy=False)
+    env.hardware = SimpleNamespace(camera_ids=list(camera_ids))
+    env._camera_parts = lambda: [
+        SimpleNamespace(is_ready=lambda state=state: state) for state in ready
+    ]
+    env._check_cameras()
+
+
+def test_turtle2_accepts_a_camera_selected_by_a_nonzero_id():
+    """``camera_ids`` selects hardware; the parts are named by position.
+
+    The shipped default is ``[2]``, one camera, so reading the id as a slot
+    rejected a healthy rig.
+    """
+    _turtle2_camera_check([2], [True])
+    _turtle2_camera_check([1], [True])
+    _turtle2_camera_check([0, 1, 2], [True, True, True])
+
+
+def test_turtle2_refuses_a_camera_that_is_not_delivering():
+    """A stalled camera is still named by the id that selected it."""
+    with pytest.raises(ValueError, match="Camera 3 not available"):
+        _turtle2_camera_check([2], [False])
+    # Built short: the robot has fewer cameras than the config asked for.
+    with pytest.raises(ValueError, match="Camera 3 not available"):
+        _turtle2_camera_check([2], [])
+    with pytest.raises(ValueError, match="Camera 2 not available"):
+        _turtle2_camera_check([0, 1, 2], [True, False, True])
+
+
 def test_franka_builds_cameras_after_applying_hardware_info(monkeypatch):
     from rlinf.envs.real.franka.base import FrankaEnvConfig
     from rlinf.robotics import FrankaConfig, RobotInfo

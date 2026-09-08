@@ -340,17 +340,19 @@ class Turtle2Env(gym.Env):
         )
 
     def _check_cameras(self) -> None:
+        """Refuse a rig whose configured cameras are not all delivering.
+
+        ``camera_ids`` selects hardware, while the parts are named in the
+        order those ids were given, so a camera is found by its position and
+        named in the error by the id that selected it.
+        """
         if self.config.is_dummy:
             return
 
-        ready = [camera.is_ready() for camera in self._camera_parts()]
-        cam1_ok, cam2_ok, cam3_ok = (ready + [False] * 3)[:3]
-        if 0 in self.hardware.camera_ids and not cam1_ok:
-            raise ValueError("Camera 1 not available.")
-        if 1 in self.hardware.camera_ids and not cam2_ok:
-            raise ValueError("Camera 2 not available.")
-        if 2 in self.hardware.camera_ids and not cam3_ok:
-            raise ValueError("Camera 3 not available.")
+        parts = self._camera_parts()
+        for position, camera_id in enumerate(self.hardware.camera_ids):
+            if position >= len(parts) or not parts[position].is_ready():
+                raise ValueError(f"Camera {camera_id + 1} not available.")
 
     def reset(
         self, *, seed: Optional[int] = None, options: Optional[dict[str, Any]] = None
