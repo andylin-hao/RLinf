@@ -166,6 +166,37 @@ RLinf:
   implementation, repeat the signature, advertise the design, or mention an
   absent dependency unless that fact changes how a caller uses the code.
 
+### Where a test goes
+
+`tests/unit_tests/` holds one file per core component, named for the component:
+`test_comm.py`, `test_worker.py`, `test_placement.py`, `test_channel.py`,
+`test_cluster_config.py`, `test_weight_syncer.py`, `test_robotics.py`,
+`test_real_env.py`, `test_conformance.py`. A fix or a feature adds its cases to
+the file for the component it touches.
+
+Do not add a file per change. A new file needs a new component, not a new bug:
+`test_<the_fix_i_just_made>.py` is the thing this rule exists to prevent, and a
+reviewer should ask for it to be folded into the component's file. The same goes
+for a file named after a symptom, a platform, or a single function.
+
+Test the component through the contract a caller uses. A test that reaches past
+that contract into private attributes pins the implementation rather than the
+behaviour, and breaks on refactors that changed nothing a caller can see. Where
+a value is only observable inside the implementation -- a unit conversion, a
+wire format -- test it at the layer that owns it, and let the layer above assert
+what it can see.
+
+Mocks describe the world outside RLinf: vendor SDKs, hardware, remote services.
+`tests/robot_mocks/` is the shared set for robots, and `tests/robot_contracts/`
+holds the conformance suites every robot must pass. A test whose body is mostly
+mock setup is usually asserting that the mocks were called, which no future
+regression will fail. Prefer a real object, a fake at the process edge, or no
+test at all.
+
+Delete a test that has stopped earning its place. Coverage of a line is not the
+point; catching a regression is. If you cannot say which change would break a
+test, it is not protecting anything.
+
 ### Writing and communication
 
 These rules apply to all language communication in the project, including
