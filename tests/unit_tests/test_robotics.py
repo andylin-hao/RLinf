@@ -19,15 +19,18 @@ from __future__ import annotations
 import ast
 import os
 import re
+import runpy
 import subprocess
 import sys
 import time
 from dataclasses import dataclass, fields
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Optional, cast
 
 import numpy as np
 import pytest
+from scipy.spatial.transform import Rotation as R
 
 import rlinf.robotics.robots.franka as franka_module
 from rlinf.robotics import (
@@ -62,11 +65,22 @@ from rlinf.robotics.parts.arms import (
     Turtle2Connection,
 )
 from rlinf.robotics.parts.arms.franka import FrankaRobotState
+from rlinf.robotics.parts.end_effectors import BaseHand
 from rlinf.scheduler.hardware import (
     Hardware,
     HardwareConfig,
     HardwareResource,
     NodeHardwareConfig,
+)
+from rlinf.utils.rot6d import (
+    SE3_to_pose,
+    matrix_to_rot6d,
+    pose_to_SE3,
+    quat_xyzw_to_rot6d,
+    rot6d_to_matrix,
+    rot6d_to_quat_xyzw,
+    se3_body_compose,
+    se3_body_delta,
 )
 
 _ROOT = Path(__file__).resolve().parents[2]
@@ -5152,3 +5166,489 @@ def test_a_yaml_compliance_mapping_becomes_settings():
             robot_ip="172.16.0.2",
             compliance={"translational_stifness": 1000},
         )
+
+
+class PoseTool(BaseHand):
+    """Three-axis test device whose name says nothing about its capabilities."""
+
+    action_dim = 3
+    state_dim = 3
+    control_mode = "continuous"
+
+    def __init__(self, gain=1.0):
+        self.gain = gain
+        self.position = np.zeros(3, dtype=np.float32)
+
+    def _open(self):
+        return object()
+
+    def _release(self, device):
+        pass
+
+    def get_state(self):
+        return self.position.copy()
+
+    def command(self, action):
+        self.position = self.gain * np.asarray(action, dtype=np.float32)
+        return True
+
+    def reset(self, target_state=None):
+        self.position = (
+            np.zeros(3) if target_state is None else np.asarray(target_state)
+        )
+
+
+@pytest.fixture
+def registered_tool(monkeypatch):
+    monkeypatch.setattr(EndEffector, "_BACKENDS", EndEffector.backends().copy())
+    monkeypatch.setattr(EndEffector, "_ARM_BACKENDS", EndEffector._ARM_BACKENDS.copy())
+    EndEffector.register("pose_tool")(PoseTool)
+    return PoseTool
+
+
+@pytest.mark.parametrize("backend", ["franka_ros", "franky"])
+def test_custom_driver_composes_with_each_franka_arm(registered_tool, backend):
+    from robot_mocks import mocked_sdks
+
+    from rlinf.robotics import FrankaRobot
+
+    with mocked_sdks():
+        robot = FrankaRobot.build(
+            robot_ip="10.0.0.1",
+            node_rank=0,
+            backend=backend,
+            gripper_type="robotiq",
+            end_effector_type="pose_tool",
+            end_effector_config={"gain": 2.0},
+        )
+        tool = robot.child("end_effector", EndEffector)
+        assert isinstance(tool, registered_tool)
+        assert not tool.is_connected
+        try:
+            robot.connect()
+            robot.send_action({"end_effector": {"target": np.ones(3)}})
+            np.testing.assert_array_equal(
+                robot.get_observation()["end_effector"]["state"], [2, 2, 2]
+            )
+        finally:
+            robot.disconnect()
+        assert not tool.is_connected
+
+
+def test_dummy_env_and_wrapper_use_custom_driver_contract(registered_tool, monkeypatch):
+    from rlinf.envs.real.franka import FrankaEnv
+    from rlinf.envs.real.wrappers import build_stack
+    from rlinf.robotics import FrankaConfig, RobotInfo
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("A dummy environment must not construct or connect a driver")
+
+    monkeypatch.setattr(registered_tool, "__init__", forbidden)
+    info = RobotInfo(
+        type="Franka",
+        model="Franka",
+        config=FrankaConfig(
+            node_rank=0,
+            camera_serials=["dummy"],
+            end_effector_type="pose_tool",
+        ),
+    )
+    env = FrankaEnv({"is_dummy": True, "hand_reset_state": [0.0] * 3}, robot_info=info)
+    wrapped = build_stack(
+        env, {"teleop": "none", "no_gripper": True, "use_relative_frame": False}
+    )
+    try:
+        observation, _ = wrapped.reset()
+        assert wrapped.action_space.shape == (9,)
+        assert observation["state"]["hand_position"].shape == (3,)
+        assert env.action_parts()[-1].width == 3
+    finally:
+        wrapped.close()
+
+
+def test_connected_env_uses_part_dimensions(registered_tool):
+    from rlinf.envs.real.franka import FrankaEnv
+
+    tool = registered_tool(gain=1.0)
+    env = FrankaEnv.__new__(FrankaEnv)
+    env._end_effector = tool
+    env._last_hand_command = None
+    env.config = SimpleNamespace(hand_action_scale=1.0)
+    assert env.action_parts()[-1].width == 3
+    env._end_effector_action(np.array([0.2, 0.4, 0.6]))
+    np.testing.assert_allclose(tool.get_state(), [0.2, 0.4, 0.6])
+
+
+def test_driver_registers_its_own_arm_alias(registered_tool):
+    from rlinf.robotics import FrankaRobot
+    from rlinf.robotics.parts.end_effectors import FrankaGripper
+
+    EndEffector.register("franka", arm_backend="custom_arm")(registered_tool)
+    assert FrankaRobot.end_effector_class(backend="custom_arm") is registered_tool
+    assert FrankaRobot.end_effector_class(backend="franka_ros") is FrankaGripper
+    assert EndEffector.backend("POSE_TOOL") is registered_tool
+    with pytest.raises(ValueError, match="already registered"):
+        EndEffector.register("franka", arm_backend="custom_arm")(FrankaGripper)
+
+
+@pytest.mark.parametrize("backend", ["franka_ros", "franky"])
+def test_explicit_driver_takes_precedence_over_gripper_alias(backend):
+    from rlinf.robotics import FrankaRobot
+    from rlinf.robotics.parts.end_effectors import FrankaGripper
+
+    assert (
+        FrankaRobot.end_effector_class(
+            backend=backend,
+            gripper_type="robotiq",
+            end_effector_type="franka_gripper",
+        )
+        is FrankaGripper
+    )
+
+
+def test_unknown_driver_reports_registry_names():
+    from rlinf.robotics import FrankaRobot
+
+    with pytest.raises(ValueError, match="Registered:"):
+        FrankaRobot.end_effector_class(end_effector_type="missing")
+
+
+def test_remote_view_retains_driver_metadata(registered_tool):
+    from rlinf.robotics.placement import remote_view_of
+
+    view = remote_view_of(registered_tool)
+    assert view.action_dim == view.state_dim == 3
+    assert view.is_gripper is False
+    assert view.is_hand is True
+    assert "command" in view.__dict__
+    assert "get_state" in view.__dict__
+
+
+def test_shared_gripper_views_report_their_capability():
+    from rlinf.robotics import MethodEndEffector
+    from rlinf.robotics.parts.arms.dosw1 import DOSW1EndEffector
+
+    for tool in (
+        MethodEndEffector(None, "width", is_gripper=True),
+        DOSW1EndEffector(None, "left"),
+    ):
+        assert tool.is_gripper
+        assert not tool.is_hand
+
+    class HandView(MethodEndEffector, BaseHand):
+        pass
+
+    fingers = HandView(None, "fingers", dims=3)
+    assert fingers.is_hand
+    assert not fingers.is_gripper
+
+
+def test_controller_cli_accepts_registered_driver_and_settings(
+    registered_tool, monkeypatch
+):
+    from toolkits.realworld_check.test_franka_controller import _parse_args
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "check",
+            "--end-effector-type",
+            "pose_tool",
+            "--end-effector-config",
+            '{"gain": 2}',
+        ],
+    )
+    args = _parse_args()
+    tool = EndEffector.of(args.end_effector_type, **args.end_effector_config)
+    assert tool.gain == 2
+    assert args.hand_baudrate is None
+    assert args.hand_motor_ids is None
+
+
+def test_teleop_device_owns_its_retired_flag(monkeypatch):
+    from rlinf.envs.real.wrappers.teleop.config import resolve_teleop_devices
+    from rlinf.robotics.parts.teleop import TeleopDevice
+
+    monkeypatch.setattr(TeleopDevice, "_REGISTRY", TeleopDevice._REGISTRY.copy())
+
+    @TeleopDevice.register("test_operator")
+    class Operator(TeleopDevice):
+        LEGACY_FLAGS = {"enable_test_operator": "test_operator"}
+
+    with pytest.warns(DeprecationWarning, match="enable_test_operator"):
+        assert resolve_teleop_devices(
+            {"enable_test_operator": True}, supported=["test_operator"]
+        ) == ["test_operator"]
+    with pytest.warns(DeprecationWarning, match="supersedes"):
+        assert (
+            resolve_teleop_devices(
+                {"teleop": "none", "enable_test_operator": True},
+                supported=["test_operator"],
+            )
+            == []
+        )
+
+
+@pytest.mark.parametrize("dims", [1, 3, 6])
+def test_generic_end_effector_has_no_inferred_capability(dims):
+    from rlinf.robotics import MethodEndEffector
+
+    tool = MethodEndEffector(None, "state", dims=dims)
+    assert not tool.is_hand
+    assert not tool.is_gripper
+
+
+def test_hand_specialization_owns_finger_diagnostics():
+    tool = PoseTool()
+    assert tool.is_hand
+    assert not tool.is_gripper
+    assert tool.get_detailed_state() == {
+        "positions": [0.0, 0.0, 0.0],
+        "finger_names": ["dof_0", "dof_1", "dof_2"],
+    }
+    assert not hasattr(EndEffector, "finger_names")
+
+
+@pytest.mark.parametrize("is_dummy", [False, True])
+def test_franka_rejects_unclassified_tool_before_opening_hardware(
+    monkeypatch, is_dummy
+):
+    from unittest.mock import Mock
+
+    from rlinf.envs.real.franka import FrankaEnv
+    from rlinf.robotics import FrankaConfig, FrankaRobot, RobotInfo
+
+    monkeypatch.setattr(EndEffector, "_BACKENDS", EndEffector.backends().copy())
+
+    @EndEffector.register("probe")
+    class Probe(EndEffector):
+        action_dim = state_dim = 3
+        control_mode = "continuous"
+
+        def get_state(self):
+            return np.zeros(3)
+
+        def command(self, action):
+            return True
+
+    build = Mock()
+    monkeypatch.setattr(FrankaRobot, "build", build)
+    config = FrankaConfig(
+        node_rank=0, camera_serials=["dummy"], end_effector_type="probe"
+    )
+    info = RobotInfo(type="Franka", model="Franka", config=config)
+    with pytest.raises(ValueError, match="exactly one of is_hand or is_gripper"):
+        FrankaEnv({"is_dummy": is_dummy}, robot_info=info)
+    build.assert_not_called()
+    assert isinstance(EndEffector.of("probe"), Probe)
+
+
+def test_shared_hand_uses_its_owners_lifecycle_and_reset():
+    from rlinf.robotics import Connection, MethodEndEffector, Robot
+
+    class Session(Connection):
+        def __init__(self):
+            self.positions = np.zeros(3)
+            self.events = []
+
+        def _open(self):
+            self.events.append("open")
+            return object()
+
+        def _release(self, device):
+            self.events.append("release")
+
+        def get_state(self):
+            return {"fingers": self.positions}
+
+        def move(self, target):
+            self.positions = np.asarray(target)
+
+    class HandView(MethodEndEffector, BaseHand):
+        pass
+
+    session = Session()
+    tool = HandView(session, "fingers", dims=3, command="move")
+    robot = Robot(hand=tool)
+    try:
+        robot.connect()
+        robot.connect()
+        tool.reset(np.array([0.2, 0.4, 0.6]))
+        tool.disconnect()
+        assert session.is_connected
+        np.testing.assert_allclose(tool.get_state(), [0.2, 0.4, 0.6])
+        assert tool.is_hand
+    finally:
+        robot.disconnect()
+        robot.disconnect()
+    assert session.events == ["open", "release"]
+
+
+SCRIPT = (
+    Path(__file__).resolve().parents[2]
+    / "toolkits/realworld_check/test_franka_camera.py"
+)
+
+
+def camera_sdk(monkeypatch, serials, *, fail_read=False):
+    events = []
+
+    class Config:
+        def enable_device(self, serial):
+            self.serial = serial
+
+        def enable_stream(self, *args):
+            pass
+
+    class Pipeline:
+        def start(self, config):
+            self.serial = config.serial
+            events.append((self.serial, "start"))
+
+        def wait_for_frames(self):
+            if fail_read:
+                raise RuntimeError("frame timeout")
+            events.append((self.serial, "frame"))
+
+        def stop(self):
+            events.append((self.serial, "stop"))
+
+    devices = [
+        SimpleNamespace(get_info=lambda key, serial=serial: serial)
+        for serial in serials
+    ]
+    sdk = SimpleNamespace(
+        context=lambda: SimpleNamespace(devices=devices),
+        camera_info=SimpleNamespace(serial_number="serial"),
+        stream=SimpleNamespace(color="color"),
+        format=SimpleNamespace(bgr8="bgr8"),
+        config=Config,
+        pipeline=Pipeline,
+    )
+    monkeypatch.setitem(sys.modules, "pyrealsense2", sdk)
+    monkeypatch.setattr("time.sleep", lambda seconds: None)
+    return events
+
+
+def test_camera_tool_reads_every_camera_and_releases_each(monkeypatch):
+    events = camera_sdk(monkeypatch, ["scene", "wrist"])
+
+    runpy.run_path(str(SCRIPT), run_name="__main__")
+
+    for serial in ("scene", "wrist"):
+        assert events.count((serial, "frame")) == 20
+        assert events.count((serial, "stop")) == 1
+    assert events.index(("scene", "stop")) < events.index(("wrist", "start"))
+
+
+def test_camera_tool_releases_stream_when_a_read_fails(monkeypatch):
+    events = camera_sdk(monkeypatch, ["wrist"], fail_read=True)
+
+    with pytest.raises(RuntimeError, match="frame timeout"):
+        runpy.run_path(str(SCRIPT), run_name="__main__")
+
+    assert events[-1] == ("wrist", "stop")
+
+
+def test_camera_tool_reports_no_devices(monkeypatch):
+    events = camera_sdk(monkeypatch, [])
+
+    with pytest.raises(RuntimeError, match="No RealSense cameras"):
+        runpy.run_path(str(SCRIPT), run_name="__main__")
+
+    assert events == []
+
+
+RNG = np.random.default_rng(0)
+N = 1000
+TOL = 1e-5
+
+
+def _random_rotations(n: int, rng: np.random.Generator = RNG):
+    return R.random(n, random_state=rng.integers(1 << 31))
+
+
+def test_matrix_rot6d_round_trip_batched():
+    mats = _random_rotations(N).as_matrix()  # (N, 3, 3)
+    r6 = matrix_to_rot6d(mats)  # (N, 6)
+    assert r6.shape == (N, 6)
+    R_rec = rot6d_to_matrix(r6)  # (N, 3, 3)
+    assert R_rec.shape == (N, 3, 3)
+    max_err = float(np.max(np.abs(R_rec - mats)))
+    assert max_err < TOL, f"max round-trip error {max_err:.2e}"
+
+
+def test_decoded_matrix_is_valid_SO3():
+    r6 = matrix_to_rot6d(_random_rotations(N).as_matrix())
+    R_rec = rot6d_to_matrix(r6).astype(np.float64)
+    # Determinant ~= 1
+    dets = np.linalg.det(R_rec)
+    assert np.allclose(dets, 1.0, atol=TOL), f"dets range [{dets.min()}, {dets.max()}]"
+    # Orthogonality: R^T R = I
+    eye = np.einsum("...ji,...jk->...ik", R_rec, R_rec)
+    assert np.allclose(eye, np.eye(3), atol=TOL)
+
+
+def test_quat_rot6d_round_trip():
+    quat = _random_rotations(N).as_quat()  # xyzw
+    r6 = quat_xyzw_to_rot6d(quat)
+    assert r6.shape == (N, 6)
+    quat_rec = rot6d_to_quat_xyzw(r6)
+    # Quaternion sign ambiguity: compare via rotation angle between q and q_rec
+    rel = R.from_quat(quat_rec) * R.from_quat(quat).inv()
+    ang = rel.magnitude()  # radians, in [0, π]
+    assert np.all(ang < 1e-4), f"max quat-angle error {float(ang.max()):.2e} rad"
+
+
+def test_rot6d_to_matrix_rejects_degenerate_r1():
+    r6 = np.zeros(6, dtype=np.float32)
+    r6[3] = 1.0  # r1 == 0, r2 nonzero
+    with pytest.raises(ValueError, match="r1"):
+        rot6d_to_matrix(r6)
+
+
+def test_rot6d_to_matrix_rejects_collinear():
+    r6 = np.array([1.0, 0.0, 0.0, 2.0, 0.0, 0.0], dtype=np.float32)  # r2 ∥ r1
+    with pytest.raises(ValueError, match="collinear"):
+        rot6d_to_matrix(r6)
+
+
+def test_SE3_pose_round_trip_single():
+    rng = np.random.default_rng(1)
+    for _ in range(100):
+        xyz = rng.normal(size=3).astype(np.float32)
+        r6 = matrix_to_rot6d(R.random(random_state=rng.integers(1 << 31)).as_matrix())
+        T = pose_to_SE3(xyz, r6)
+        assert T.shape == (4, 4)
+        assert np.allclose(T[3], [0, 0, 0, 1])
+        xyz_rec, r6_rec = SE3_to_pose(T)
+        assert np.allclose(xyz_rec, xyz, atol=TOL)
+        # r6 round-trip via SE(3) uses matrix columns → exact up to float32
+        R_orig = rot6d_to_matrix(r6)
+        R_rec = rot6d_to_matrix(r6_rec)
+        assert np.allclose(R_rec, R_orig, atol=TOL)
+
+
+def test_SE3_body_delta_compose_round_trip():
+    """For random (T_state, T_abs), compose(T_state, delta) == T_abs."""
+    rng = np.random.default_rng(2)
+    H = 20  # chunk length; must match action_horizon
+    for _ in range(50):
+        xyz_s = rng.normal(size=3)
+        r6_s = matrix_to_rot6d(R.random(random_state=rng.integers(1 << 31)).as_matrix())
+        T_state = pose_to_SE3(xyz_s, r6_s)
+
+        # Chunked absolute targets
+        xyz_abs = rng.normal(size=(H, 3))
+        mats_abs = R.random(H, random_state=rng.integers(1 << 31)).as_matrix()
+        r6_abs = matrix_to_rot6d(mats_abs)
+        T_abs = pose_to_SE3(xyz_abs, r6_abs)
+        assert T_abs.shape == (H, 4, 4)
+
+        # T_state broadcasts to (H, 4, 4) on the left
+        T_delta = se3_body_delta(T_state, T_abs)
+        T_rec = se3_body_compose(T_state, T_delta)
+
+        assert np.allclose(T_rec[..., :3, :3], T_abs[..., :3, :3], atol=1e-6)
+        assert np.allclose(T_rec[..., :3, 3], T_abs[..., :3, 3], atol=1e-6)

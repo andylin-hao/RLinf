@@ -16,21 +16,35 @@
 
 from __future__ import annotations
 
+import dataclasses
 import importlib
+import importlib.util
+import io
+import os
+import pickle
 import re
+import subprocess
 import sys
+import textwrap
 import threading
 import time
+import types
 import warnings
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Optional
+from unittest.mock import Mock
 
 import gymnasium as gym
 import numpy as np
 import pytest
+import torch
+from omegaconf import OmegaConf
 
+import rlinf.scheduler.hardware.accelerators.nvidia_gpu as nvidia_gpu
+import rlinf.utils.robosuite_compat as robosuite_compat
+from rlinf.envs.real import load_tasks
 from rlinf.envs.real.dosw1.base import DOSW1Env, DOSW1EnvConfig
 from rlinf.envs.real.franka.base import FrankaEnv
 from rlinf.envs.real.franka.dual_franka_joint import (
@@ -49,6 +63,7 @@ from rlinf.envs.real.wrappers.teleop.intervention import (  # noqa: E402
     TeleopSample,
 )
 from rlinf.envs.real.xsquare.base import Turtle2Env, Turtle2EnvConfig
+from rlinf.envs.sim.robotwin.seed_utils import partition_success_seeds
 from rlinf.robotics import (
     ControllablePart,
     DualFrankaConfig,
@@ -57,6 +72,16 @@ from rlinf.robotics import (
     PiperConfig,
     Robot,
     SO101Config,
+)
+from rlinf.robotics.discovery import RobotDiscovery
+from rlinf.scheduler.hardware.accelerators.nvidia_gpu import (
+    EGL_DEVICE_ID_ENV_VARS,
+    NvidiaGPUManager,
+)
+from rlinf.scheduler.manager.net_emulation import (
+    CrossDCPair,
+    NetEmulationConfig,
+    NetEmulationManager,
 )
 
 _ROOT = Path(__file__).resolve().parents[2]
@@ -2793,3 +2818,1289 @@ def test_so101_env_is_driven_by_its_leader():
             assert observation["state"]["gripper_position"][0] == pytest.approx(0.8)
         finally:
             env.close()
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "evaluations/realworld/realworld_pnp_eval.yaml",
+        "evaluations/realworld/realworld_pnp_eval_dreamzero.yaml",
+        "evaluations/realworld/realworld_pnp_eval_pi05_sft_RTC.yaml",
+        "examples/embodiment/config/realworld_pnp_dagger_openpi.yaml",
+        "examples/embodiment/config/realworld_pnp_rlpd_cnn_async.yaml",
+        "examples/reward/config/realworld_teleop.yaml",
+    ],
+)
+def test_pnp_examples_discover_cameras_without_serial_placeholders(path):
+    import yaml
+    from robot_mocks import mocked_sdks
+
+    from rlinf.robotics import FrankaConfig
+    from rlinf.robotics.parts.cameras import BaseCamera
+
+    root = Path(__file__).resolve().parents[2]
+    doc = yaml.safe_load((root / path).read_text())
+    entries = [
+        config
+        for group in doc["cluster"]["node_groups"]
+        if group.get("hardware", {}).get("type") == "Franka"
+        for config in group["hardware"]["configs"]
+    ]
+    assert entries
+    with mocked_sdks():
+        discovered = sorted(BaseCamera.backend("realsense").discover())
+        assert discovered
+        for entry in entries:
+            assert "camera_serials" not in entry
+            config = FrankaConfig(**entry)
+            resources = RobotDiscovery.registry["Franka"].discovery_cls.enumerate(
+                config.node_rank, [config]
+            )
+            assert resources.infos[0].config.camera_serials == discovered
+
+
+def test_shipped_realworld_task_overrides_contain_no_hardware_fields():
+    import yaml
+
+    load_tasks()
+    hardware_fields = {
+        field.name
+        for registration in RobotDiscovery.registry.values()
+        for field in dataclasses.fields(registration.config_cls)
+    }
+    root = Path(__file__).resolve().parents[2]
+    offenders = []
+
+    def check(node, path):
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if key == "override_cfg" and isinstance(value, dict):
+                    overlap = hardware_fields.intersection(value)
+                    if overlap:
+                        offenders.append((str(path.relative_to(root)), sorted(overlap)))
+                check(value, path)
+        elif isinstance(node, list):
+            for value in node:
+                check(value, path)
+
+    for directory in (
+        "examples",
+        "evaluations",
+        "tests",
+    ):
+        for path in (root / directory).rglob("*.yaml"):
+            check(yaml.safe_load(path.read_text()), path)
+    assert offenders == []
+
+
+@pytest.mark.parametrize(
+    "robot_type,env_id,hardware,frames,action_width",
+    [
+        (
+            "Franka",
+            "FrankaEnv-v1",
+            {"camera_serials": ["MOCK0001"], "end_effector_type": "ruiyan_hand"},
+            ["wrist_1"],
+            12,
+        ),
+        (
+            "DualFranka",
+            "DualFrankaJointEnv-v1",
+            {
+                "base_camera_serials": ["MOCK0001"],
+                "left_camera_serials": ["MOCK0002"],
+                "right_camera_serials": [],
+            },
+            ["base_0_rgb", "left_wrist_0_rgb"],
+            16,
+        ),
+        (
+            "SO101",
+            "SO101ReachEnv-v1",
+            {
+                "serial_port": "/dev/bench",
+                "calibration_id": "bench",
+                "camera_serials": ["MOCK0001", "MOCK0002"],
+            },
+            ["wrist_1", "wrist_2"],
+            6,
+        ),
+        (
+            "Piper",
+            "PiperReachEnv-v1",
+            {"model": "piper_h", "with_gripper": False, "camera_serials": []},
+            [],
+            6,
+        ),
+        (
+            "GimArm",
+            "GimArmPegInsertionEnv-v1",
+            {
+                "arm_variant": "gim_arm",
+                "enable_gripper": False,
+                "camera_serials": ["MOCK0001"],
+            },
+            ["wrist_1"],
+            7,
+        ),
+        (
+            "DOSW1",
+            "DOSW1PickEnv-v1",
+            {"robot_url": "bench", "camera_serials": ["MOCK0001"]},
+            ["cam_front"],
+            14,
+        ),
+        ("Turtle2", "ButtonEnv-v1", {"camera_ids": [0, 2]}, ["wrist_1", "wrist_2"], 7),
+    ],
+)
+def test_task_schema_uses_enumerated_hardware_without_changing_it(
+    robot_type, env_id, hardware, frames, action_width
+):
+    from robot_mocks import mocked_sdks
+
+    load_tasks()
+    registration = RobotDiscovery.registry[robot_type]
+    config = registration.config_cls(node_rank=0, **hardware)
+    with mocked_sdks():
+        resources = registration.discovery_cls.enumerate(0, [config])
+        info = resources.infos[0]
+        before = pickle.dumps(info)
+        env = gym.make(
+            env_id,
+            override_cfg={"is_dummy": True, "enable_camera_player": False}
+            if robot_type != "Turtle2"
+            else {"is_dummy": True},
+            worker_info=None,
+            robot_info=info,
+            env_idx=0,
+            env_cfg={
+                "teleop": "none",
+                "no_gripper": False,
+                "use_relative_frame": False,
+            },
+        )
+        try:
+            observation, _ = env.reset(seed=3)
+            assert sorted(observation.get("frames", {})) == sorted(frames)
+            assert env.action_space.shape == (action_width,)
+            assert pickle.dumps(info) == before
+            assert not set(hardware) & {
+                field.name for field in dataclasses.fields(env.unwrapped.config)
+            }
+            if robot_type == "Piper":
+                assert info.model == "Piper"
+                assert info.config.model == "piper_h"
+        finally:
+            env.close()
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("port", "/dev/wrong-arm"),
+        ("serial_port", "/dev/wrong-arm"),
+        ("camera_serials", ["wrong-camera"]),
+        ("calibration_id", "wrong-id"),
+    ],
+)
+def test_task_overrides_cannot_redirect_the_allocated_robot(field, value):
+    from rlinf.envs.real.so101 import SO101ReachEnv
+
+    with pytest.raises(TypeError, match=field):
+        SO101ReachEnv({"is_dummy": True, field: value})
+
+
+def test_env_rejects_wrong_hardware_before_opening_an_arm(monkeypatch):
+    from rlinf.envs.real.so101 import SO101ReachEnv
+    from rlinf.robotics import PiperConfig, RobotInfo, SO101Robot
+
+    build = Mock()
+    monkeypatch.setattr(SO101Robot, "build", build)
+    info = RobotInfo(type="Piper", model="Piper", config=PiperConfig(node_rank=0))
+    with pytest.raises(TypeError, match="Expected SO101Config"):
+        SO101ReachEnv({}, robot_info=info)
+    build.assert_not_called()
+
+
+def test_real_env_requires_a_robot_descriptor(monkeypatch):
+    from rlinf.envs.real.so101 import SO101ReachEnv
+    from rlinf.robotics import SO101Robot
+
+    build = Mock()
+    monkeypatch.setattr(SO101Robot, "build", build)
+    with pytest.raises(ValueError, match="Supply robot_info"):
+        SO101ReachEnv({})
+    build.assert_not_called()
+
+
+@pytest.mark.parametrize("controller_node_rank", [None, 7])
+def test_franka_preserves_hardware_and_placement_at_construction(
+    monkeypatch, controller_node_rank
+):
+    from rlinf.envs.real.franka import FrankaEnv
+    from rlinf.robotics import FrankaConfig, FrankaRobot, RobotInfo
+
+    config = FrankaConfig(
+        node_rank=3,
+        robot_ip="bench",
+        controller_node_rank=controller_node_rank,
+        camera_node_rank=5,
+        camera_type="zed",
+        camera_serials=["camera"],
+        end_effector_type="ruiyan_hand",
+        end_effector_config={"port": "/dev/hand"},
+    )
+    info = RobotInfo(type="Franka", model="Franka", config=config)
+    before = pickle.dumps(info)
+    build = Mock(side_effect=RuntimeError("stop before opening hardware"))
+    monkeypatch.setattr(FrankaRobot, "build", build)
+    with pytest.raises(RuntimeError, match="stop before opening hardware"):
+        FrankaEnv(
+            {},
+            robot_info=info,
+            worker_info=SimpleNamespace(cluster_node_rank=3, rank=2),
+            env_idx=4,
+        )
+    kwargs = build.call_args.kwargs
+    assert kwargs["robot_ip"] == "bench"
+    assert kwargs["node_rank"] == (3 if controller_node_rank is None else 7)
+    assert kwargs["camera_node_rank"] == 5
+    assert kwargs["worker_rank"] == 2
+    assert kwargs["env_idx"] == 4
+    assert kwargs["end_effector_type"] == "ruiyan_hand"
+    assert kwargs["end_effector_config"] == {"port": "/dev/hand"}
+    camera = kwargs["cameras"]["wrist_1"]
+    assert camera.serial_number == "camera"
+    assert camera.camera_type == "zed"
+    assert pickle.dumps(info) == before
+
+
+@pytest.mark.parametrize("has_robot", [False, True])
+def test_worker_passes_robot_descriptors_and_allows_dummy_cpu_placement(has_robot):
+    from omegaconf import OmegaConf
+
+    from rlinf.envs.real import RealWorldEnv
+    from rlinf.robotics import RobotInfo, SO101Config
+    from rlinf.scheduler.hardware import HardwareInfo
+
+    allocated = (
+        RobotInfo(
+            type="SO101",
+            model="SO101",
+            config=SO101Config(node_rank=0, camera_serials=["camera"]),
+        )
+        if has_robot
+        else HardwareInfo(type="CPU", model="CPU")
+    )
+    wrapper = RealWorldEnv.__new__(RealWorldEnv)
+    wrapper.worker_info = SimpleNamespace(
+        hardware_infos=[allocated], cluster_node_rank=0, rank=0
+    )
+    wrapper.override_cfg = {"is_dummy": True, "enable_camera_player": False}
+    wrapper.cfg = OmegaConf.create(
+        {"init_params": {"id": "SO101ReachEnv-v1"}, "teleop": "none"}
+    )
+    env = wrapper._create_env(0)
+    try:
+        observation, _ = env.reset()
+        assert bool(observation.get("frames")) is has_robot
+        assert env.unwrapped.robot_info is (allocated if has_robot else None)
+    finally:
+        env.close()
+
+
+@pytest.fixture
+def so101_tool(monkeypatch):
+    from robot_mocks import mocked_sdks
+
+    from rlinf.envs.real import so101
+    from rlinf.robotics import SO101Config
+    from toolkits.realworld_check import test_so101_env as tool
+
+    for field in dataclasses.fields(SO101Config):
+        monkeypatch.delenv(field.name.upper(), raising=False)
+    constructor = Mock(return_value=Mock())
+    monkeypatch.setattr(so101, "SO101ReachEnv", constructor)
+    monkeypatch.setattr(tool, "drive", Mock())
+
+    def run(*flags):
+        monkeypatch.setattr(sys, "argv", ["test_so101_env", *flags])
+        with mocked_sdks():
+            tool.main()
+
+    return run, constructor
+
+
+@pytest.mark.parametrize(
+    "flags,port,calibration,player",
+    [
+        ([], "/dev/from-env", "from-env", False),
+        (
+            ["--port", "/dev/from-env", "--id", "from-cli", "--enable-camera-player"],
+            "/dev/from-env",
+            "from-cli",
+            True,
+        ),
+    ],
+)
+def test_so101_tool_enumerates_environment_and_cli_settings(
+    monkeypatch, so101_tool, flags, port, calibration, player
+):
+    monkeypatch.setenv("SERIAL_PORT", "/dev/from-env")
+    monkeypatch.setenv("CALIBRATION_ID", "from-env")
+    monkeypatch.setenv("CAMERA_SERIALS", "MOCK0001,MOCK0002")
+    monkeypatch.setenv("MAX_RELATIVE_TARGET", "12")
+    run, constructor = so101_tool
+    run(*flags)
+    config = constructor.call_args.kwargs["robot_info"].config
+    assert config.serial_port == port
+    assert config.calibration_id == calibration
+    assert config.camera_serials == ["MOCK0001", "MOCK0002"]
+    assert config.max_relative_target == 12
+    assert constructor.call_args.args[0]["enable_camera_player"] is player
+    constructor.return_value.close.assert_called_once_with()
+
+
+@pytest.mark.parametrize("explicit_port", [False, True])
+def test_so101_tool_ignores_unrelated_process_environment(
+    monkeypatch, so101_tool, explicit_port
+):
+    from rlinf.robotics import SO101Config
+
+    monkeypatch.setenv("PORT", "8080")
+    monkeypatch.setenv("ID", "unrelated-service-id")
+    run, constructor = so101_tool
+    run(*(["--port", "/dev/ttyACM1", "--id", "follower"] if explicit_port else []))
+    config = constructor.call_args.kwargs["robot_info"].config
+    assert config.serial_port == (
+        "/dev/ttyACM1" if explicit_port else SO101Config(node_rank=0).serial_port
+    )
+    assert config.calibration_id == ("follower" if explicit_port else None)
+
+
+@pytest.mark.parametrize("ports", [None, "/dev/ttyACM0", "/dev/ttyACM0,/dev/ttyACM1"])
+def test_so101_tool_rejects_a_port_not_in_the_configured_rig(
+    monkeypatch, so101_tool, ports, capsys
+):
+    monkeypatch.setenv(
+        "CALIBRATION_ID",
+        "leader,follower" if ports and "," in ports else "leader",
+    )
+    if ports is not None:
+        monkeypatch.setenv("SERIAL_PORT", ports)
+    run, constructor = so101_tool
+    with pytest.raises(SystemExit) as error:
+        run("--port", "/dev/typo")
+    assert error.value.code == 2
+    assert "No configured SO-101 matches --port" in capsys.readouterr().err
+    constructor.assert_not_called()
+
+
+def test_so101_tool_selects_a_port_with_its_own_calibration(monkeypatch, so101_tool):
+    monkeypatch.setenv("SERIAL_PORT", "/dev/ttyACM0,/dev/ttyACM1")
+    monkeypatch.setenv("CALIBRATION_ID", "leader,follower")
+    monkeypatch.setenv("MAX_RELATIVE_TARGET", "5,12")
+    run, constructor = so101_tool
+    run("--port", "/dev/ttyACM1")
+    config = constructor.call_args.kwargs["robot_info"].config
+    assert (config.serial_port, config.calibration_id, config.max_relative_target) == (
+        "/dev/ttyACM1",
+        "follower",
+        12,
+    )
+
+
+def test_so101_tool_requires_selection_with_multiple_arms(monkeypatch, so101_tool):
+    monkeypatch.setenv("SERIAL_PORT", "/dev/ttyACM0,/dev/ttyACM1")
+    monkeypatch.setenv("CALIBRATION_ID", "leader,follower")
+    run, constructor = so101_tool
+    with pytest.raises(SystemExit):
+        run()
+    constructor.assert_not_called()
+
+
+def test_dummy_franka_requires_an_explicit_camera_layout():
+    from rlinf.envs.real.franka import FrankaEnv
+    from rlinf.robotics import FrankaConfig, RobotInfo
+
+    with pytest.raises(ValueError, match="including in dummy mode"):
+        FrankaEnv({"is_dummy": True})
+    info = RobotInfo(
+        type="Franka",
+        model="Franka",
+        config=FrankaConfig(node_rank=0, camera_serials=["dummy"]),
+    )
+    env = FrankaEnv({"is_dummy": True}, robot_info=info)
+    try:
+        observation, _ = env.reset()
+        assert observation in env.observation_space
+        assert list(observation["frames"]) == ["wrist_1"]
+        assert env.robot is None
+    finally:
+        env.close()
+
+
+def test_dual_franka_hardware_defaults_build_supported_franky_grippers():
+    from rlinf.robotics import DualFrankaConfig, DualFrankaRobot
+    from rlinf.robotics.parts.end_effectors import EndEffector
+    from rlinf.robotics.parts.end_effectors.grippers.franky import FrankyGripper
+
+    config = DualFrankaConfig(node_rank=0)
+    assert config.left_gripper_type == config.right_gripper_type == "franka"
+    robot = DualFrankaRobot.build(
+        left_robot_ip="192.0.2.1",
+        right_robot_ip="192.0.2.2",
+        left_gripper_type=config.left_gripper_type,
+        right_gripper_type=config.right_gripper_type,
+    )
+    grippers = robot.parts_of_type(EndEffector)
+    assert len(grippers) == 2
+    assert all(isinstance(gripper, FrankyGripper) for gripper in grippers.values())
+
+
+def test_scheduler_hardware_passes_plain_nested_settings_to_the_hand(monkeypatch):
+    from omegaconf import OmegaConf
+    from robot_mocks import mocked_sdks
+
+    from rlinf.robotics import FrankaRobot
+    from rlinf.scheduler.hardware import NodeHardwareConfig
+
+    source = OmegaConf.create(
+        {
+            "type": "Franka",
+            "configs": [
+                {
+                    "node_rank": 0,
+                    "end_effector_type": "ruiyan_hand",
+                    "end_effector_config": {
+                        "port": "/dev/hand",
+                        "motor_ids": [1, 2, 3, 4, 5, 6],
+                        "default_state": [0.0] * 6,
+                    },
+                }
+            ],
+        }
+    )
+    hardware = NodeHardwareConfig(**source).configs[0]
+    settings = hardware.end_effector_config
+    assert type(settings) is dict
+    assert type(settings["motor_ids"]) is list
+    assert type(settings["default_state"]) is list
+    with mocked_sdks():
+        import rlinf_dexhand.ruiyan as sdk
+
+        driver = Mock()
+        monkeypatch.setattr(sdk, "RuiyanHandDriver", driver)
+        hand = FrankaRobot.declare_end_effector(
+            robot_ip="192.0.2.1",
+            node_rank=None,
+            name="test-hand",
+            end_effector_type=hardware.end_effector_type,
+            end_effector_config=settings,
+        )
+        hand.connect()
+        try:
+            for name, value in settings.items():
+                assert driver.call_args.kwargs[name] == value
+            assert type(driver.call_args.kwargs["motor_ids"]) is list
+            assert type(driver.call_args.kwargs["default_state"]) is list
+        finally:
+            hand.disconnect()
+
+
+MUJOCO_EGL_DEVICE_ID, EGL_DEVICE_ID = EGL_DEVICE_ID_ENV_VARS
+
+_MANAGED_ENV_VARS = ("CUDA_VISIBLE_DEVICES", "MUJOCO_GL", *EGL_DEVICE_ID_ENV_VARS)
+
+# The node from the bug report: nine EGL devices, of which four are GPUs, and an
+# EGL enumeration order that does not follow the CUDA one.
+_EGL_INDEX_BY_CUDA_ORDINAL = {0: 2, 1: 3, 2: 0, 3: 1}
+
+
+@pytest.fixture(autouse=True)
+def _clean_env(monkeypatch):
+    for name in _MANAGED_ENV_VARS:
+        monkeypatch.delenv(name, raising=False)
+    nvidia_gpu._egl_index_by_cuda_device.cache_clear()
+    yield
+    nvidia_gpu._egl_index_by_cuda_device.cache_clear()
+
+
+@pytest.fixture(autouse=True)
+def _restore_meta_path():
+    saved = list(sys.meta_path)
+    yield
+    sys.meta_path[:] = saved
+
+
+@pytest.fixture
+def egl_devices(monkeypatch):
+    """Enumerate the bug report's EGL topology instead of the real driver."""
+    monkeypatch.setattr(
+        nvidia_gpu,
+        "_query_egl_index_by_cuda_ordinal",
+        lambda: dict(_EGL_INDEX_BY_CUDA_ORDINAL),
+    )
+
+
+@pytest.fixture
+def no_egl(monkeypatch):
+    """A node whose driver cannot be asked about EGL devices."""
+
+    def unavailable():
+        raise OSError("libEGL.so.1: cannot open shared object file")
+
+    monkeypatch.setattr(nvidia_gpu, "_query_egl_index_by_cuda_ordinal", unavailable)
+
+
+def _become_a_rendering_worker(monkeypatch, cuda_device_id="3", egl_device_id="1"):
+    """Reproduce a worker whose EGL index and CUDA device id disagree."""
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", cuda_device_id)
+    monkeypatch.setenv("MUJOCO_GL", "egl")
+    monkeypatch.setenv(MUJOCO_EGL_DEVICE_ID, egl_device_id)
+
+
+def _accelerator_env_var(monkeypatch, visible_accelerators: list[str]) -> dict:
+    monkeypatch.setattr(nvidia_gpu, "_torch_needs_avoid_record_streams", lambda: False)
+    return NvidiaGPUManager.get_accelerator_env_var(visible_accelerators)
+
+
+# ---------------------------------------------------------------------------
+# CUDA -> EGL mapping
+# ---------------------------------------------------------------------------
+
+
+def test_every_cuda_device_maps_to_its_own_egl_index(egl_devices):
+    resolved = {
+        cuda_id: NvidiaGPUManager.get_egl_device_id(cuda_id) for cuda_id in range(4)
+    }
+
+    assert resolved == _EGL_INDEX_BY_CUDA_ORDINAL
+
+
+def test_the_mapping_accepts_the_string_ids_placement_speaks_in(egl_devices):
+    assert NvidiaGPUManager.get_egl_device_id("2") == 0
+
+
+def test_ordinals_are_translated_through_cuda_visible_devices(monkeypatch, egl_devices):
+    # EGL_CUDA_DEVICE_NV reports a device's position in CUDA_VISIBLE_DEVICES, so
+    # in a process that only sees some GPUs those ordinals are not device ids.
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "4,5,6,7")
+
+    assert NvidiaGPUManager.get_egl_device_id(4) == 2
+    assert NvidiaGPUManager.get_egl_device_id(7) == 1
+    # Devices this process cannot see have no readable mapping.
+    assert NvidiaGPUManager.get_egl_device_id(0) is None
+
+
+def test_an_unmapped_device_has_no_egl_index(egl_devices):
+    assert NvidiaGPUManager.get_egl_device_id(8) is None
+
+
+def test_a_uuid_device_has_no_egl_index(egl_devices):
+    assert NvidiaGPUManager.get_egl_device_id("GPU-05d35c06-da01") is None
+
+
+def test_the_mapping_is_empty_when_the_driver_cannot_be_queried(no_egl):
+    assert NvidiaGPUManager.get_egl_device_id(0) is None
+
+
+def test_the_driver_is_queried_once(monkeypatch):
+    calls = []
+
+    def counting_query():
+        calls.append(None)
+        return dict(_EGL_INDEX_BY_CUDA_ORDINAL)
+
+    monkeypatch.setattr(nvidia_gpu, "_query_egl_index_by_cuda_ordinal", counting_query)
+
+    NvidiaGPUManager.get_egl_device_id(0)
+    NvidiaGPUManager.get_egl_device_id(1)
+
+    assert len(calls) == 1
+
+
+# ---------------------------------------------------------------------------
+# Worker env vars
+# ---------------------------------------------------------------------------
+
+
+def test_the_worker_gets_the_egl_index_of_its_own_gpu(monkeypatch, egl_devices):
+    monkeypatch.setenv("MUJOCO_GL", "egl")
+
+    env_vars = _accelerator_env_var(monkeypatch, ["3"])
+
+    assert env_vars["CUDA_VISIBLE_DEVICES"] == "3"
+    # A CUDA device id is not an EGL index, so it must not be passed through.
+    assert env_vars[MUJOCO_EGL_DEVICE_ID] == "1"
+    assert env_vars[EGL_DEVICE_ID] == "1"
+
+
+def test_a_multi_gpu_worker_renders_on_its_first_gpu(monkeypatch, egl_devices):
+    monkeypatch.setenv("MUJOCO_GL", "egl")
+
+    env_vars = _accelerator_env_var(monkeypatch, ["2", "3"])
+
+    assert env_vars[MUJOCO_EGL_DEVICE_ID] == "0"
+
+
+@pytest.mark.parametrize("backend", ["osmesa", "glx"])
+def test_cpu_rendering_sets_no_egl_device(monkeypatch, egl_devices, backend):
+    monkeypatch.setenv("MUJOCO_GL", backend)
+
+    env_vars = _accelerator_env_var(monkeypatch, ["3"])
+
+    assert not [name for name in EGL_DEVICE_ID_ENV_VARS if name in env_vars]
+
+
+@pytest.mark.parametrize("backend", ["", "glfw", "OSMesa"])
+def test_backends_robosuite_rewrites_to_egl_get_a_device(
+    monkeypatch, egl_devices, backend
+):
+    # robosuite 1.4.1 forces GPU rendering to EGL for every value that is not
+    # literally "osmesa" or "glx", down to the casing, so anything else has to
+    # be treated as EGL here too.
+    monkeypatch.setenv("MUJOCO_GL", backend)
+
+    env_vars = _accelerator_env_var(monkeypatch, ["3"])
+
+    assert env_vars[MUJOCO_EGL_DEVICE_ID] == "1"
+
+
+def test_a_worker_without_gpus_gets_no_egl_device(monkeypatch, egl_devices):
+    monkeypatch.setenv("MUJOCO_GL", "egl")
+
+    env_vars = _accelerator_env_var(monkeypatch, [])
+
+    assert not [name for name in EGL_DEVICE_ID_ENV_VARS if name in env_vars]
+
+
+def test_an_unmappable_device_falls_back_to_the_cuda_id(monkeypatch, no_egl):
+    # The pre-existing behaviour: right whenever the two namespaces happen to
+    # agree, which is the common single-node case.
+    monkeypatch.setenv("MUJOCO_GL", "egl")
+
+    env_vars = _accelerator_env_var(monkeypatch, ["3"])
+
+    assert env_vars[MUJOCO_EGL_DEVICE_ID] == "3"
+    assert env_vars[EGL_DEVICE_ID] == "3"
+
+
+# ---------------------------------------------------------------------------
+# robosuite import shim
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def fake_robosuite(tmp_path, monkeypatch):
+    """A stand-in for robosuite that records the environment it was imported with."""
+    bindings = tmp_path / "robosuite" / "utils"
+    bindings.mkdir(parents=True)
+    (tmp_path / "robosuite" / "__init__.py").write_text("")
+    (bindings / "__init__.py").write_text("")
+    (bindings / "binding_utils.py").write_text(
+        textwrap.dedent(
+            """
+            import os
+
+            SAW_DEVICE_ID = os.environ.get("MUJOCO_EGL_DEVICE_ID", None)
+            """
+        )
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    yield tmp_path
+    for name in [n for n in sys.modules if n.split(".")[0] == "robosuite"]:
+        del sys.modules[name]
+
+
+def test_the_device_is_hidden_from_the_robosuite_import_check(
+    monkeypatch, fake_robosuite
+):
+    # robosuite 1.4.1 asserts MUJOCO_EGL_DEVICE_ID occurs in
+    # CUDA_VISIBLE_DEVICES, which a correct EGL index generally does not.
+    _become_a_rendering_worker(monkeypatch)
+    robosuite_compat.install_robosuite_egl_device_shim()
+
+    bindings = importlib.import_module("robosuite.utils.binding_utils")
+
+    assert bindings.SAW_DEVICE_ID is None
+    assert os.environ[MUJOCO_EGL_DEVICE_ID] == "1"
+
+
+def test_other_modules_import_with_the_device_visible(monkeypatch, fake_robosuite):
+    _become_a_rendering_worker(monkeypatch)
+    robosuite_compat.install_robosuite_egl_device_shim()
+
+    assert importlib.import_module("robosuite") is not None
+    assert os.environ[MUJOCO_EGL_DEVICE_ID] == "1"
+
+
+def test_a_failed_robosuite_import_still_restores_the_device(
+    monkeypatch, fake_robosuite
+):
+    _become_a_rendering_worker(monkeypatch)
+    (fake_robosuite / "robosuite" / "utils" / "binding_utils.py").write_text(
+        "raise RuntimeError('import failed')"
+    )
+    robosuite_compat.install_robosuite_egl_device_shim()
+
+    with pytest.raises(RuntimeError, match="import failed"):
+        importlib.import_module("robosuite.utils.binding_utils")
+
+    assert os.environ[MUJOCO_EGL_DEVICE_ID] == "1"
+
+
+def test_installing_the_shim_repeatedly_leaves_one_finder():
+    # Importing rlinf.envs has already installed it once.
+    robosuite_compat.install_robosuite_egl_device_shim()
+    robosuite_compat.install_robosuite_egl_device_shim()
+
+    finders = [
+        finder
+        for finder in sys.meta_path
+        if isinstance(finder, robosuite_compat._RobosuiteBindingsFinder)
+    ]
+    assert len(finders) == 1
+
+
+def test_importing_the_env_package_installs_the_shim():
+    # Simulator subprocesses re-import rlinf.envs in a fresh interpreter and rely
+    # on it to install the shim before any simulator is imported.
+    child = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            textwrap.dedent(
+                """
+                import sys
+
+                import rlinf.envs  # noqa: F401
+                from rlinf.utils.robosuite_compat import _RobosuiteBindingsFinder
+
+                assert any(
+                    isinstance(f, _RobosuiteBindingsFinder) for f in sys.meta_path
+                )
+                assert "rlinf.scheduler" not in sys.modules, (
+                    "the env package must not drag the scheduler into every "
+                    "simulator subprocess"
+                )
+                """
+            ),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert child.returncode == 0, child.stderr
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("robosuite") is None, reason="robosuite is not installed"
+)
+def test_real_robosuite_imports_with_a_mismatched_egl_index():
+    # The EGL index and the CUDA ordinal disagree here, which is what robosuite
+    # 1.4.1 refuses to import with.
+    env = os.environ.copy()
+    env.update(
+        {"CUDA_VISIBLE_DEVICES": "3", "MUJOCO_GL": "osmesa", MUJOCO_EGL_DEVICE_ID: "1"}
+    )
+    child = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            textwrap.dedent(
+                """
+                import os
+
+                import rlinf.envs  # installs the shim
+                import robosuite.utils.binding_utils  # noqa: F401
+
+                assert os.environ["MUJOCO_EGL_DEVICE_ID"] == "1"
+                """
+            ),
+        ],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert child.returncode == 0, child.stderr
+
+
+class _FakeCudaTensor:
+    def torch(self):
+        return torch.tensor([1.0])
+
+
+class _FakePx:
+    def __init__(self):
+        self.cuda_articulation_link_data = _FakeCudaTensor()
+        self.cuda_articulation_qacc = _FakeCudaTensor()
+        self.cuda_articulation_qf = _FakeCudaTensor()
+        self.cuda_articulation_qpos = _FakeCudaTensor()
+        self.cuda_articulation_qvel = _FakeCudaTensor()
+        self.cuda_articulation_target_qpos = _FakeCudaTensor()
+        self.cuda_articulation_target_qvel = _FakeCudaTensor()
+        self.cuda_rigid_body_data = _FakeCudaTensor()
+        self.cuda_rigid_dynamic_data = _FakeCudaTensor()
+
+    def gpu_update_articulation_kinematics(self):
+        return None
+
+
+class _FakeScene:
+    def __init__(self):
+        self.px = _FakePx()
+        self.timestep = None
+
+    def get_timestep(self):
+        return 0.02
+
+    def set_timestep(self, timestep):
+        self.timestep = timestep
+
+    def _gpu_apply_all(self):
+        return None
+
+    def _gpu_fetch_all(self):
+        return None
+
+
+class _FakeBatchedRng:
+    rngs = ["rng"]
+
+
+class _FakeController:
+    def __init__(self):
+        self.loaded_state = None
+
+    def get_state(self):
+        return {"controller": torch.tensor([1.0])}
+
+    def set_state(self, state):
+        self.loaded_state = state
+
+
+class _FakeAgent:
+    def __init__(self):
+        self.controller = _FakeController()
+
+
+class _FakeEnv:
+    def __init__(self):
+        self.unwrapped = self
+        self.device = "cpu"
+        self.scene = _FakeScene()
+        self._main_rng = "main_rng"
+        self._batched_main_rng = _FakeBatchedRng()
+        self._main_seed = 123
+        self._episode_rng = "episode_rng"
+        self._batched_episode_rng = _FakeBatchedRng()
+        self._episode_seed = 456
+        self.action_space = "action_space"
+        self.single_action_space = "single_action_space"
+        self._orig_single_action_space = "orig_single_action_space"
+        self._elapsed_steps = torch.tensor([3])
+        self._init_raw_obs = {"obs": torch.tensor([1.0])}
+        self.agent = _FakeAgent()
+        self.task_reset_states = {}
+        self.task_metric_states = {}
+        self.reset_seed = None
+        self.reset_options = None
+        self.loaded_state = None
+
+    def get_state(self):
+        return {"sim": torch.tensor([2.0])}
+
+    def reset(self, seed=None, options=None):
+        self.reset_seed = seed
+        self.reset_options = options
+
+    def set_state(self, state):
+        self.loaded_state = state
+
+
+class _FakeManiskillEnv:
+    pass
+
+
+def _load_maniskill_offload_module(monkeypatch):
+    repo_root = Path(__file__).resolve().parents[2]
+    module_path = (
+        repo_root / "rlinf" / "envs" / "sim" / "maniskill" / "maniskill_offload_env.py"
+    )
+
+    fake_package = types.ModuleType("rlinf.envs.sim.maniskill")
+    fake_package.__path__ = [str(module_path.parent)]
+    fake_env_module = types.ModuleType("rlinf.envs.sim.maniskill.maniskill_env")
+    fake_env_module.ManiskillEnv = _FakeManiskillEnv
+
+    monkeypatch.setitem(sys.modules, "rlinf.envs.sim.maniskill", fake_package)
+    monkeypatch.setitem(
+        sys.modules, "rlinf.envs.sim.maniskill.maniskill_env", fake_env_module
+    )
+    monkeypatch.delitem(
+        sys.modules, "rlinf.envs.sim.maniskill.maniskill_offload_env", raising=False
+    )
+
+    spec = importlib.util.spec_from_file_location(
+        "rlinf.envs.sim.maniskill.maniskill_offload_env", module_path
+    )
+    module = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, module)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _make_core(module):
+    core = object.__new__(module._ManiskillEnvCore)
+    core.env = _FakeEnv()
+    core.seed = 10
+    core.device = "cpu"
+    core.prev_step_reward = torch.tensor([0.5])
+    core.reset_state_ids = torch.tensor([1])
+    core._generator = torch.Generator()
+    core._generator.manual_seed(0)
+    core.is_start = True
+    core.record_metrics = False
+    return core
+
+
+def test_maniskill_offload_state_does_not_require_record_video_counter(monkeypatch):
+    module = _load_maniskill_offload_module(monkeypatch)
+    core = _make_core(module)
+
+    state_buffer = core.get_state()
+    state = torch.load(io.BytesIO(state_buffer), map_location="cpu", weights_only=False)
+
+    assert "video_cnt" not in state
+
+
+def test_maniskill_offload_load_state_accepts_state_without_video_counter(
+    monkeypatch,
+):
+    module = _load_maniskill_offload_module(monkeypatch)
+    monkeypatch.setattr(
+        module, "set_batch_rng_state", lambda rng_state: _FakeBatchedRng()
+    )
+    core = _make_core(module)
+
+    source_state = torch.load(
+        io.BytesIO(core.get_state()),
+        map_location="cpu",
+        weights_only=False,
+    )
+    assert "video_cnt" not in source_state
+
+    core.load_state(_serialize_state(source_state))
+
+    assert core.env.reset_seed == core.seed
+    assert core.env.reset_options == {"reconfigure": False}
+    torch.testing.assert_close(core.env.loaded_state["sim"], torch.tensor([2.0]))
+    assert core.env.scene.timestep == 0.02
+    assert not hasattr(core, "video_cnt")
+
+
+def test_maniskill_offload_load_state_ignores_legacy_video_counter(monkeypatch):
+    module = _load_maniskill_offload_module(monkeypatch)
+    monkeypatch.setattr(
+        module, "set_batch_rng_state", lambda rng_state: _FakeBatchedRng()
+    )
+    core = _make_core(module)
+
+    source_state = torch.load(
+        io.BytesIO(core.get_state()),
+        map_location="cpu",
+        weights_only=False,
+    )
+    source_state["video_cnt"] = 7
+
+    core.load_state(_serialize_state(source_state))
+
+    assert not hasattr(core, "video_cnt")
+
+
+def _serialize_state(state):
+    buffer = io.BytesIO()
+    torch.save(state, buffer)
+    return buffer.getvalue()
+
+
+def test_net_emulation_config_parses_legacy_crossdc_pairs():
+    cfg = OmegaConf.create(
+        {
+            "enabled": True,
+            "symmetric": True,
+            "crossdc_pairs": [
+                {"src": "Env:0", "dst": "Actor:0", "delay_ms": 10},
+            ],
+            "bandwidth_groups": [],
+        }
+    )
+
+    net_cfg = NetEmulationConfig.from_cfg(cfg)
+
+    assert net_cfg is not None
+    assert net_cfg.crossdc_pairs == (
+        CrossDCPair(src="Env:0", dst="Actor:0", delay_ms=10.0),
+    )
+
+
+def test_net_emulation_config_endpoint_ranges_equal_explicit_lists():
+    def build_cfg(src, dst, members):
+        return OmegaConf.create(
+            {
+                "enabled": True,
+                "symmetric": True,
+                "crossdc_pairs": [
+                    {"src": src, "dst": dst, "delay_ms": 10},
+                ],
+                "bandwidth_groups": [
+                    {"members": members, "bandwidth_mbps": 1000},
+                ],
+            }
+        )
+
+    explicit_cfg = build_cfg(
+        ["Env:0", "Env:1"],
+        ["Actor:0", "Actor:1"],
+        ["Env:0", "Env:1", "Actor:0", "Actor:1"],
+    )
+    range_cfg = build_cfg(["Env:0-1"], ["Actor:0-1"], ["Env:0-1", "Actor:0-1"])
+
+    assert NetEmulationConfig.from_cfg(range_cfg) == NetEmulationConfig.from_cfg(
+        explicit_cfg
+    )
+
+
+@pytest.mark.parametrize("field_name", ["src", "dst"])
+def test_net_emulation_config_rejects_empty_crossdc_pair_endpoint_lists(field_name):
+    cfg = OmegaConf.create(
+        {
+            "enabled": True,
+            "symmetric": True,
+            "crossdc_pairs": [
+                {
+                    "src": ["Env:0"],
+                    "dst": ["Actor:0"],
+                    "delay_ms": 10,
+                },
+            ],
+            "bandwidth_groups": [],
+        }
+    )
+    cfg.crossdc_pairs[0][field_name] = []
+
+    with pytest.raises(ValueError, match=field_name):
+        NetEmulationConfig.from_cfg(cfg)
+
+
+def test_net_emulation_config_disabled_returns_none():
+    cfg = OmegaConf.create({"enabled": False, "crossdc_pairs": []})
+
+    assert NetEmulationConfig.from_cfg(cfg) is None
+    assert NetEmulationConfig.from_cfg(None) is None
+
+
+def _manager(**overrides):
+    """Build a NetEmulationManager directly, bypassing the Ray actor launch."""
+    cfg = {
+        "enabled": True,
+        "symmetric": True,
+        "crossdc_pairs": [
+            {"src": "EnvGroup:0", "dst": "ActorGroup:0", "delay_ms": 100}
+        ],
+        "bandwidth_groups": [],
+    }
+    cfg.update(overrides)
+    return NetEmulationManager(cfg)
+
+
+def test_reserve_returns_zero_for_unemulated_links():
+    manager = _manager()
+
+    assert manager.reserve("EnvGroup:0", "RolloutGroup:0", 1024) == 0.0
+
+
+def test_reserve_applies_link_delay_in_both_directions():
+    manager = _manager()
+
+    assert manager.reserve("EnvGroup:0", "ActorGroup:0", 0) == pytest.approx(
+        0.1, abs=0.02
+    )
+    # symmetric: true mirrors every configured pair.
+    assert manager.reserve("ActorGroup:0", "EnvGroup:0", 0) == pytest.approx(
+        0.1, abs=0.02
+    )
+
+
+def test_reserve_ignores_group_suffix_in_endpoint_names():
+    """Endpoints may be written with or without the trailing ``Group``."""
+    manager = _manager(
+        crossdc_pairs=[{"src": "Env:0", "dst": "Actor:0", "delay_ms": 100}]
+    )
+
+    assert manager.reserve("EnvGroup:0", "ActorGroup:0", 0) == pytest.approx(
+        0.1, abs=0.02
+    )
+
+
+def test_reserve_charges_transfer_time_against_the_bandwidth_budget():
+    # 8 Mbps == 1 MB/s, so a 1 MB payload occupies the link for one second.
+    manager = _manager(
+        bandwidth_groups=[
+            {"members": ["EnvGroup:0"], "bandwidth_mbps": 8},
+            {"members": ["ActorGroup:0"], "bandwidth_mbps": 8},
+        ]
+    )
+
+    one_mb = 1_000_000
+    assert manager.reserve("EnvGroup:0", "ActorGroup:0", one_mb) == pytest.approx(
+        1.1, abs=0.02
+    )
+    # The uplink is still busy, so a second send queues behind the first.
+    assert manager.reserve("EnvGroup:0", "ActorGroup:0", one_mb) == pytest.approx(
+        2.1, abs=0.02
+    )
+
+
+def test_estimate_payload_size_counts_tensor_storage():
+    tensor = torch.zeros(256, dtype=torch.float32)  # 1024 bytes of data
+
+    assert NetEmulationManager.estimate_payload_size_bytes(tensor) == 1024
+    assert NetEmulationManager.estimate_payload_size_bytes(None) == 0
+
+
+def test_estimate_payload_size_walks_nested_containers():
+    payload = {"a": torch.zeros(256, dtype=torch.float32), "b": [torch.zeros(256)]}
+
+    size = NetEmulationManager.estimate_payload_size_bytes(payload)
+
+    # Two tensors of 1024 bytes each, plus per-tensor overhead and pickled keys.
+    assert size > 2048
+    assert size < 2048 + 4 * 256
+
+
+def test_estimate_payload_size_falls_back_to_pickle_for_plain_objects():
+    payload = {"task": "pick up the cube", "step": 7}
+
+    size = NetEmulationManager.estimate_payload_size_bytes(payload)
+
+    assert size == len(pickle.dumps(payload, protocol=pickle.HIGHEST_PROTOCOL))
+
+
+def test_reserve_broadcast_charges_the_uplink_once():
+    # 8 Mbps == 1 MB/s on each side.
+    manager = _manager(
+        crossdc_pairs=[
+            {"src": "Env:0", "dst": ["Actor:0", "Actor:1"], "delay_ms": 100}
+        ],
+        bandwidth_groups=[
+            {"members": ["Env:0"], "bandwidth_mbps": 8},
+            {"members": ["Actor:0", "Actor:1"], "bandwidth_mbps": 8},
+        ],
+    )
+
+    one_mb = 1_000_000
+    # Both receivers share one bandwidth group, so the payload crosses the link
+    # once: 1s uplink + 0.1s delay, not 2s.
+    assert manager.reserve_broadcast(
+        "EnvGroup:0", ["ActorGroup:0", "ActorGroup:1"], one_mb
+    ) == pytest.approx(1.1, abs=0.02)
+
+
+def test_reserve_broadcast_waits_for_the_slowest_destination():
+    manager = _manager(
+        crossdc_pairs=[
+            {"src": "Env:0", "dst": "Actor:0", "delay_ms": 50},
+            {"src": "Env:0", "dst": "Actor:1", "delay_ms": 200},
+        ],
+    )
+
+    assert manager.reserve_broadcast(
+        "EnvGroup:0", ["ActorGroup:0", "ActorGroup:1"], 0
+    ) == pytest.approx(0.2, abs=0.02)
+
+
+def test_reserve_broadcast_ignores_unemulated_destinations():
+    manager = _manager()
+
+    assert (
+        manager.reserve_broadcast("EnvGroup:0", ["RolloutGroup:0", "EnvGroup:1"], 4096)
+        == 0.0
+    )
+
+
+def _first_eval_seeds(
+    *,
+    seed_count: int,
+    total_num_envs: int,
+    total_num_processes: int,
+    group_size: int = 1,
+    base_seed: int = 0,
+) -> list[int]:
+    success_seeds = torch.arange(seed_count, dtype=torch.long)
+    selected_seeds = []
+    for seed_offset in range(total_num_processes):
+        num_envs = total_num_envs // total_num_processes
+        num_group = num_envs // group_size
+        worker_seeds = partition_success_seeds(
+            success_seeds,
+            base_seed=base_seed,
+            seed_offset=seed_offset,
+            total_num_processes=total_num_processes,
+            num_group=num_group,
+        )
+        selected_seeds.extend(worker_seeds[:num_group].tolist())
+    return selected_seeds
+
+
+@pytest.mark.parametrize(
+    ("seed_count", "total_num_envs", "total_num_processes"),
+    [
+        (320, 128, 4),
+        (320, 128, 8),
+        (320, 128, 16),
+        (260, 128, 4),
+        (200, 128, 8),
+        (150, 128, 4),
+    ],
+)
+def test_robotwin_eval_success_seeds_do_not_overlap_across_workers(
+    seed_count: int,
+    total_num_envs: int,
+    total_num_processes: int,
+):
+    """Regression test for duplicate RoboTwin eval seeds across EnvWorkers."""
+    selected_seeds = _first_eval_seeds(
+        seed_count=seed_count,
+        total_num_envs=total_num_envs,
+        total_num_processes=total_num_processes,
+    )
+
+    assert len(selected_seeds) == total_num_envs
+    assert len(set(selected_seeds)) == total_num_envs
+
+
+def test_robotwin_eval_success_seed_order_is_controlled_by_base_seed():
+    selected_seed_0 = _first_eval_seeds(
+        seed_count=320,
+        total_num_envs=128,
+        total_num_processes=4,
+        base_seed=0,
+    )
+    selected_seed_0_again = _first_eval_seeds(
+        seed_count=320,
+        total_num_envs=128,
+        total_num_processes=4,
+        base_seed=0,
+    )
+    selected_seed_1 = _first_eval_seeds(
+        seed_count=320,
+        total_num_envs=128,
+        total_num_processes=4,
+        base_seed=1,
+    )
+
+    assert selected_seed_0 == selected_seed_0_again
+    assert selected_seed_0 != selected_seed_1
