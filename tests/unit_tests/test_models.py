@@ -14,16 +14,21 @@
 
 """Model registration, embeddings, and the reward-model helpers."""
 
+from __future__ import annotations
+
+import asyncio
 import importlib.util
 import sys
 import time
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 import torch
 from omegaconf import OmegaConf
 
+from rlinf.algorithms.losses import compute_ppo_critic_loss
 from rlinf.config import SupportedModel
 from rlinf.hybrid_engines.fsdp.utils import get_fsdp_wrap_policy
 from rlinf.models import get_model, register_model
@@ -31,6 +36,13 @@ from rlinf.models.embodiment.modules.rlt_token_transformer import (
     RLTTokenTransformer,
 )
 from rlinf.utils.env_helpers import HistoryManager
+from rlinf.utils.env_helpers.delay_sampler import (
+    ConstantDelaySampler,
+    DelaySampler,
+    ExponentialDelaySampler,
+    GaussianDelaySampler,
+    UniformDelaySampler,
+)
 
 
 class _DummyModel:
@@ -339,3 +351,296 @@ def test_build_history_input_emits_on_interval_tick():
         torch.tensor([12]),
         torch.tensor([13]),
     ]
+
+
+VALUE_CLIP = 0.2
+HUBER_DELTA = 10.0
+
+
+def _critic_metrics(values, prev_values, returns, loss_mask=None):
+    _, metrics = compute_ppo_critic_loss(
+        values=values,
+        returns=returns,
+        prev_values=prev_values,
+        value_clip=VALUE_CLIP,
+        huber_delta=HUBER_DELTA,
+        loss_mask=loss_mask,
+    )
+    return metrics
+
+
+def test_value_clip_ratio_is_zero_when_no_update_is_clipped():
+    prev_values = torch.zeros(4, 8)
+    values = torch.full((4, 8), VALUE_CLIP / 2)
+    returns = torch.zeros(4, 8)
+
+    metrics = _critic_metrics(values, prev_values, returns)
+
+    assert float(metrics["critic/value_clip_ratio"]) == pytest.approx(0.0)
+
+
+def test_value_clip_ratio_reports_the_fraction_of_clipped_updates():
+    prev_values = torch.zeros(4, 8)
+    returns = torch.zeros(4, 8)
+    # Half of the entries move outside the trust region, half stay inside.
+    values = torch.full((4, 8), VALUE_CLIP / 2)
+    values[:, :4] = 10 * VALUE_CLIP
+
+    metrics = _critic_metrics(values, prev_values, returns)
+
+    assert float(metrics["critic/value_clip_ratio"]) == pytest.approx(0.5)
+
+
+def test_value_clip_ratio_grows_with_the_size_of_the_value_update():
+    prev_values = torch.zeros(4, 8)
+    returns = torch.zeros(4, 8)
+
+    ratios = [
+        float(
+            _critic_metrics(torch.full((4, 8), scale), prev_values, returns)[
+                "critic/value_clip_ratio"
+            ]
+        )
+        for scale in (0.5 * VALUE_CLIP, 2 * VALUE_CLIP)
+    ]
+
+    assert ratios == [pytest.approx(0.0), pytest.approx(1.0)]
+
+
+def test_value_clip_ratio_ignores_masked_out_entries():
+    prev_values = torch.zeros(4, 8)
+    returns = torch.zeros(4, 8)
+    loss_mask = torch.zeros(4, 8, dtype=torch.bool)
+    loss_mask[:, :2] = True
+
+    # Every valid entry is clipped; every padded entry is not.
+    values = torch.zeros(4, 8)
+    values[:, :2] = 10 * VALUE_CLIP
+
+    metrics = _critic_metrics(values, prev_values, returns, loss_mask=loss_mask)
+
+    assert float(metrics["critic/value_clip_ratio"]) == pytest.approx(1.0)
+
+
+def test_value_clip_ratio_broadcasts_a_narrower_loss_mask():
+    prev_values = torch.zeros(4, 8, 3)
+    returns = torch.zeros(4, 8, 3)
+    loss_mask = torch.zeros(4, 8, 1, dtype=torch.bool)
+    loss_mask[:, :4] = True
+
+    values = torch.zeros(4, 8, 3)
+    values[:, :2] = 10 * VALUE_CLIP
+
+    metrics = _critic_metrics(values, prev_values, returns, loss_mask=loss_mask)
+
+    # 2 of the 4 unmasked steps are clipped.
+    assert float(metrics["critic/value_clip_ratio"]) == pytest.approx(0.5)
+
+
+def test_value_clip_ratio_is_zero_when_every_entry_is_masked_out():
+    prev_values = torch.zeros(4, 8)
+    returns = torch.zeros(4, 8)
+    loss_mask = torch.zeros(4, 8, dtype=torch.bool)
+    values = torch.full((4, 8), 10 * VALUE_CLIP)
+
+    metrics = _critic_metrics(values, prev_values, returns, loss_mask=loss_mask)
+
+    assert float(metrics["critic/value_clip_ratio"]) == pytest.approx(0.0)
+
+
+def test_value_loss_is_unchanged_by_the_metric_computation():
+    torch.manual_seed(0)
+    prev_values = torch.randn(4, 8)
+    values = torch.randn(4, 8, requires_grad=True)
+    returns = torch.randn(4, 8)
+
+    loss, metrics = compute_ppo_critic_loss(
+        values=values,
+        returns=returns,
+        prev_values=prev_values,
+        value_clip=VALUE_CLIP,
+        huber_delta=HUBER_DELTA,
+        loss_mask=None,
+    )
+
+    value_pred_clipped = prev_values + (values - prev_values).clamp(
+        -VALUE_CLIP, VALUE_CLIP
+    )
+    expected = torch.max(
+        torch.nn.functional.huber_loss(
+            values, returns, delta=HUBER_DELTA, reduction="none"
+        ),
+        torch.nn.functional.huber_loss(
+            value_pred_clipped, returns, delta=HUBER_DELTA, reduction="none"
+        ),
+    ).mean()
+
+    assert float(loss.detach()) == pytest.approx(float(expected.detach()), abs=1e-6)
+    assert loss.requires_grad
+    assert not metrics["critic/value_clip_ratio"].requires_grad
+
+
+def test_create_builds_expected_sampler_types():
+    constant = DelaySampler.create(
+        OmegaConf.create({"type": "constant", "delay": 0.12})
+    )
+    uniform = DelaySampler.create(
+        OmegaConf.create({"type": "uniform", "min_delay": 0.03, "max_delay": 0.08})
+    )
+    exponential = DelaySampler.create(
+        OmegaConf.create({"type": "exponential", "rate": 0.5})
+    )
+    gaussian = DelaySampler.create(
+        OmegaConf.create({"type": "gaussian", "mean": 0.20, "stddev": 0.03})
+    )
+
+    assert isinstance(constant, ConstantDelaySampler)
+    assert isinstance(uniform, UniformDelaySampler)
+    assert isinstance(exponential, ExponentialDelaySampler)
+    assert isinstance(gaussian, GaussianDelaySampler)
+
+
+def test_create_accepts_none():
+    assert DelaySampler.create(None) is None
+
+
+def test_same_seed_produces_same_sequence_per_sampler():
+    first = UniformDelaySampler(min_delay=0.1, max_delay=0.2, seed=2026)
+    second = UniformDelaySampler(min_delay=0.1, max_delay=0.2, seed=2026)
+
+    assert first.sample(8) == second.sample(8)
+
+
+def test_constant_sampler_uses_seconds_helpers():
+    sampler = ConstantDelaySampler(delay=0.25)
+
+    assert sampler.sample(3) == [0.25, 0.25, 0.25]
+    assert sampler.sample_one() == 0.25
+
+
+def test_gaussian_sampler_never_returns_negative_seconds():
+    sampler = GaussianDelaySampler(mean=0, stddev=0.1, seed=0)
+
+    assert all(delay >= 0 for delay in sampler.sample(100))
+
+
+def test_invalid_ranges_raise_clear_errors():
+    with pytest.raises(ValueError, match="min_delay must be <="):
+        UniformDelaySampler(min_delay=0.2, max_delay=0.1)
+
+    with pytest.raises(ValueError, match="rate must be > 0"):
+        ExponentialDelaySampler(rate=0)
+
+
+def test_num_samples_must_be_non_negative_int():
+    sampler = ConstantDelaySampler(delay=1)
+
+    with pytest.raises(TypeError, match="num_samples must be an int"):
+        sampler.sample(1.5)  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match="num_samples must be >= 0"):
+        sampler.sample(-1)
+
+
+class _FakeEnv:
+    """Minimal non-gym env exposing the chunk_step/reset surface."""
+
+    def chunk_step(self, *args, **kwargs):
+        return "stepped"
+
+    def reset(self, *args, **kwargs):
+        return "obs", {}
+
+
+# Mock gymnasium and its transitive imports for unit-test environments that
+# do not install the embodied extras. A minimal gym.Wrapper shim is enough
+# because InsertDelay only delegates to self.env.
+
+
+class _FakeGymEnv:
+    pass
+
+
+class _FakeGymWrapper:
+    def __init__(self, env):
+        self.env = env
+
+
+_fake_gym = MagicMock()
+_fake_gym.Env = _FakeGymEnv
+_fake_gym.Wrapper = _FakeGymWrapper
+
+if "gymnasium" not in sys.modules:
+    sys.modules["gymnasium"] = _fake_gym
+if "imageio" not in sys.modules:
+    sys.modules["imageio"] = MagicMock()
+
+
+def _delayed_env(delay: float):
+    from rlinf.envs.wrappers import InsertDelay
+
+    return InsertDelay(
+        _FakeEnv(), OmegaConf.create({"type": "constant", "delay": delay})
+    )
+
+
+def test_chunk_step_does_not_block_the_caller():
+    env = _delayed_env(0.5)
+
+    start = time.monotonic()
+    assert env.chunk_step() == "stepped"
+    elapsed = time.monotonic() - start
+
+    # The delay is sampled, not slept: blocking here would stall the event loop.
+    assert elapsed < 0.05
+
+
+def test_wait_delay_waits_out_the_accumulated_delay():
+    env = _delayed_env(0.05)
+    env.chunk_step()
+    env.chunk_step()
+
+    start = time.monotonic()
+    asyncio.run(env.wait_delay())
+    elapsed = time.monotonic() - start
+
+    # Both sampled delays are paid, never dropped.
+    assert elapsed == pytest.approx(0.1, abs=0.03)
+
+
+def test_wait_delay_yields_to_other_coroutines():
+    env = _delayed_env(0.2)
+    env.chunk_step()
+    progressed = []
+
+    async def main():
+        async def ticker():
+            for _ in range(4):
+                await asyncio.sleep(0.01)
+                progressed.append(1)
+
+        await asyncio.gather(env.wait_delay(), ticker())
+
+    asyncio.run(main())
+    # A blocking sleep would have starved the ticker entirely.
+    assert len(progressed) == 4
+
+
+def test_wait_delay_is_a_noop_when_nothing_is_pending():
+    env = _delayed_env(0.5)
+
+    start = time.monotonic()
+    asyncio.run(env.wait_delay())
+
+    assert time.monotonic() - start < 0.05
+
+
+def test_delay_metrics_report_every_sample():
+    env = _delayed_env(0.03)
+    env.chunk_step()
+    env.reset()
+
+    metrics = env.insert_delay_metrics()
+
+    assert metrics.tolist() == pytest.approx([0.03, 0.03])
+    assert env.insert_delay_metrics().numel() == 0

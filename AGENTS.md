@@ -171,8 +171,9 @@ RLinf:
 `tests/unit_tests/` holds one file per core component, named for the component:
 `test_comm.py`, `test_worker.py`, `test_placement.py`, `test_channel.py`,
 `test_cluster_config.py`, `test_weight_syncer.py`, `test_robotics.py`,
-`test_real_env.py`, `test_conformance.py`. A fix or a feature adds its cases to
-the file for the component it touches.
+`test_real_env.py`, `test_conformance.py`, `test_data.py`, `test_models.py`,
+`test_utils.py`. A fix or a feature adds its cases to the file for the
+component it touches.
 
 Do not add a file per change. A new file needs a new component, not a new bug:
 `test_<the_fix_i_just_made>.py` is the thing this rule exists to prevent, and a
