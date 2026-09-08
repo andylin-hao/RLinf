@@ -179,6 +179,10 @@ jobs:
               - 'rlinf/envs/**'
               - 'rlinf/workers/actor/fsdp_actor_worker_pipeline.py'
               - 'tests/unit_tests/**'
+              # The conformance suite the unit tests run, and the root
+              # conftest that puts both it and the mocks on the path.
+              - 'tests/robot_contracts/**'
+              - 'tests/conftest.py'
               - '.github/workflows/unit-tests.yml'
             scheduler_test_filter: &scheduler
               - *shared

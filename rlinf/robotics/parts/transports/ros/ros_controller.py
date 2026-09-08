@@ -17,13 +17,15 @@ import pathlib
 import sys
 import threading
 import time
-from typing import Any, Callable, ClassVar, Optional
+from typing import TYPE_CHECKING, Any, Callable, ClassVar, Optional
 
 import psutil
-import rospy
 from filelock import FileLock
 
 from rlinf.utils.logging import get_logger
+
+if TYPE_CHECKING:
+    import rospy
 
 
 class ROSController:
@@ -87,6 +89,8 @@ class ROSController:
                     time.sleep(1)  # Allow roscore to accept connections.
 
         # Initialize the ROS node.
+        import rospy
+
         rospy.init_node("franka_controller", anonymous=True)
 
         # ROS channels.
@@ -106,7 +110,7 @@ class ROSController:
         return self._input_channel_status.get(name, False)
 
     def create_ros_channel(
-        self, name: str, data_class: rospy.Message, queue_size: Optional[int] = None
+        self, name: str, data_class: "rospy.Message", queue_size: Optional[int] = None
     ) -> None:
         """Create a ROS publisher.
 
@@ -116,12 +120,14 @@ class ROSController:
             queue_size: Publisher queue size. Zero selects an unbounded queue;
                 ``None`` enables synchronous publishing.
         """
+        import rospy
+
         self._output_channels[name] = rospy.Publisher(
             name, data_class, queue_size=queue_size
         )
 
     def connect_ros_channel(
-        self, name: str, data_class: rospy.Message, callback: Callable
+        self, name: str, data_class: "rospy.Message", callback: Callable
     ) -> None:
         """Create a ROS subscriber.
 
@@ -141,12 +147,14 @@ class ROSController:
             self._input_channel_status[name] = True
             return callback(*args, **kwargs)
 
+        import rospy
+
         self._input_channel_status.setdefault(name, False)
         self._input_channels[name] = rospy.Subscriber(
             name, data_class, callback_wrapper
         )
 
-    def put_channel(self, name: str, data: rospy.Message) -> None:
+    def put_channel(self, name: str, data: "rospy.Message") -> None:
         """Publish a message on a configured channel.
 
         Args:

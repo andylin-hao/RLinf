@@ -78,7 +78,7 @@ algorithm:
   entropy_tuning:
     alpha_type: softplus # choose from ["softplus", "exp", "fixed_alpha"], set to "softplus" or "exp" to enable automatic entropy tuning
     initial_alpha: 0.01  # Initial temperature value
-    target_entropy: -6  # Target entropy (-action_dim)
+    target_entropy: -7  # Target entropy (-action_dim)
     optim:
       lr: 3.0e-4  # Learning rate for temperature parameter
       lr_scheduler: torch_constant
@@ -139,8 +139,8 @@ actor:
 
   model:
     model_path: "/workspace/dataset/resnet"
-    state_dim: 25
-    action_dim: 6
+    state_dim: 26
+    action_dim: 7
 
   optim:
     clip_grad: 10.0

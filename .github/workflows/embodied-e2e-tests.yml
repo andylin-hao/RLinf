@@ -373,6 +373,10 @@ jobs:
           export UV_LINK_MODE=symlink
           export UV_CACHE_DIR=/workspace/dataset/.uv_cache
           export UV_PYTHON_INSTALL_DIR=/workspace/dataset/.uv_python
+          # These configs drive a mock Franka over the franky backend, so the
+          # ROS toolchain is never used, and ROS Noetic has no packages for the
+          # runners on Ubuntu 22.04.
+          export SKIP_ROS=1
           bash requirements/install.sh embodied --env franka
 
       - name: Real-world data collection mock-robot test
@@ -401,6 +405,10 @@ jobs:
           export UV_LINK_MODE=symlink
           export UV_CACHE_DIR=/workspace/dataset/.uv_cache
           export UV_PYTHON_INSTALL_DIR=/workspace/dataset/.uv_python
+          # These configs drive a mock Franka over the franky backend, so the
+          # ROS toolchain is never used, and ROS Noetic has no packages for the
+          # runners on Ubuntu 22.04.
+          export SKIP_ROS=1
           bash requirements/install.sh embodied --env franka
 
       - name: Reward-dataset labelling mock-robot test

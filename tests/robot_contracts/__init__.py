@@ -33,8 +33,42 @@ The module is test infrastructure and does not depend on pytest.
 
 from __future__ import annotations
 
+import signal
 from abc import ABC, abstractmethod
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any, Callable, Optional, Sequence
+
+
+@contextmanager
+def worker_failures_expected() -> Iterator[None]:
+    """Ignore the scheduler's report that a worker died.
+
+    A rollback check refuses to open on purpose, which kills the worker
+    hosting the part. The cluster answers a worker death with SIGUSR1, and
+    that handler kills the remaining actors and exits the process -- which
+    here is the test process. The signal is also delivered asynchronously,
+    so it can land long after the check that provoked it, and even during a
+    later test. Hold this for a whole suite that runs contracts, not for one
+    refusal.
+
+    Restoring is best effort: a handler can only be installed from the main
+    thread, and a caller running elsewhere simply keeps the one in place.
+    """
+    try:
+        previous = signal.getsignal(signal.SIGUSR1)
+        signal.signal(signal.SIGUSR1, signal.SIG_IGN)
+    except (AttributeError, ValueError, OSError):
+        yield
+        return
+    try:
+        yield
+    finally:
+        try:
+            signal.signal(signal.SIGUSR1, previous)
+        except (ValueError, OSError):
+            pass
+
 
 __all__ = [
     "ConformanceError",

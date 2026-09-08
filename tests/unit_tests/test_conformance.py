@@ -32,6 +32,7 @@ from robot_contracts import (  # noqa: E402
     ConnectionContract,
     PartContract,
     RobotContract,
+    worker_failures_expected,
 )
 
 from rlinf.robotics.parts.base import (  # noqa: E402
@@ -39,6 +40,21 @@ from rlinf.robotics.parts.base import (  # noqa: E402
     ControllablePart,
     RobotPart,
 )
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _expect_worker_failures():
+    """Hold the SIGUSR1 guard for as long as this suite runs.
+
+    The rollback checks kill workers on purpose. A worker group reports the
+    death from its own ``_wait_for_results`` thread, so the signal arrives
+    whenever that thread next looks -- during a later test, during a
+    teardown, or after the last test has finished. Nothing narrower than the
+    session reliably covers it.
+    """
+    with worker_failures_expected():
+        yield
+
 
 #: Shipped robot types and the settings required by their builders.
 SHIPPED = {
