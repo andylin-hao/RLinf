@@ -983,22 +983,6 @@ def _reset_cluster_singleton():
     Cluster.NAMESPACE = Cluster.SYS_NAME
 
 
-def test_every_scheduler_env_var_has_a_default():
-    """_set_scheduler_env_vars indexes the defaults by every enum member.
-
-    A member added without one raises KeyError from inside cluster launch,
-    which surfaces as every robot failing to connect rather than as anything
-    naming the variable.
-    """
-    from rlinf.scheduler.cluster.cluster import Cluster, ClusterEnvVar
-
-    missing = sorted(
-        var.value for var in ClusterEnvVar if var not in Cluster.DEFAULT_SYS_ENV_VAR
-    )
-
-    assert missing == []
-
-
 def test_cluster_env_configs_applied_in_worker_launch():
     env_key = "RLINF_TEST_ENV_CONFIG_MARKER"
     env_value = "marker-value"

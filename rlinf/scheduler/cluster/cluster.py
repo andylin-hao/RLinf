@@ -66,13 +66,6 @@ class ClusterEnvVar(str, Enum):
     COMM_NET_DEVICES = "COMM_NET_DEVICES"
     """Network devices to use for inter-node communication."""
 
-    RAY_NUM_CPUS = "RAY_NUM_CPUS"
-    """CPUs to give a Ray instance this process starts for itself.
-
-    Ray sizes its idle worker pool from the host's CPU count, which is the
-    wrong number inside a container that sees every core but is held to a
-    fraction of the memory. Unset, Ray decides as it always has."""
-
     EXT_MODULE = "EXT_MODULE"
     """Load extension modules specified via EXT_MODULE environment variable.
 
@@ -139,7 +132,6 @@ class Cluster:
         ClusterEnvVar.TIMEOUT: "180",
         ClusterEnvVar.NODE_RANK: None,
         ClusterEnvVar.COMM_NET_DEVICES: None,
-        ClusterEnvVar.RAY_NUM_CPUS: None,
         ClusterEnvVar.EXT_MODULE: None,
         ClusterEnvVar.NET_EMULATION: "0",
         ClusterEnvVar.PATH_ENV_MERGE_MODE: PathEnvMergeMode.APPEND.value,
@@ -363,9 +355,6 @@ class Cluster:
                 "logging_level": Cluster.LOGGING_LEVEL,
                 "namespace": Cluster.NAMESPACE,
             }
-            num_cpus = Cluster.get_sys_env_var(ClusterEnvVar.RAY_NUM_CPUS)
-            if num_cpus:
-                ray_init_kwargs["num_cpus"] = int(num_cpus)
             if self._ray_code_sync_fragment is not None:
                 ray_init_kwargs["runtime_env"] = dict(self._ray_code_sync_fragment)
             ray.init(**ray_init_kwargs)
