@@ -206,6 +206,8 @@ jobs:
               - '.github/workflows/ci-tests.yml'
               - '.agents/skills/**'
               - '.claude/skills/**'
+              - 'AGENTS.md'
+              - 'CLAUDE.md'
             all_changes_filter: &all_changes
               - *install
               - *docker
