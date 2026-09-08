@@ -391,6 +391,59 @@ def test_turtle2_dummy_preserves_legacy_policy_schema():
     _assert_legacy_transition(env)
 
 
+class _TerminatingEnv(gym.Env):
+    """Terminates on its second step and counts how often it is reset."""
+
+    observation_space = gym.spaces.Box(-1, 1, shape=(1,), dtype=np.float32)
+    action_space = gym.spaces.Box(-1, 1, shape=(1,), dtype=np.float32)
+
+    def __init__(self):
+        self.step_count = 0
+        self.resets = 0
+
+    def reset(self, *, seed=None, options=None):
+        self.resets += 1
+        self.step_count = 0
+        return np.array([0.0], dtype=np.float32), {}
+
+    def step(self, action):
+        self.step_count += 1
+        return (
+            np.array([self.step_count], dtype=np.float32),
+            float(self.step_count),
+            self.step_count >= 2,
+            False,
+            {},
+        )
+
+
+def test_the_vector_env_keeps_stepping_a_terminated_env():
+    """The runner resets on its own schedule, so the batch must not.
+
+    gymnasium renamed the batch arrays in 1.x and added an autoreset mode
+    whose DISABLED setting refuses to step a terminated env rather than
+    carrying on, so both halves are worth pinning: nothing is reset, and the
+    observation is the one the env produced after it terminated.
+    """
+    from rlinf.envs.real.venv import NoAutoResetSyncVectorEnv
+
+    env = NoAutoResetSyncVectorEnv([_TerminatingEnv, _TerminatingEnv])
+    try:
+        env.reset(seed=0)
+        after_reset = [inner.resets for inner in env.envs]
+        for _ in range(4):
+            observation, reward, terminated, truncated, _ = env.step(
+                np.zeros((2, 1), dtype=np.float32)
+            )
+
+        assert [inner.resets for inner in env.envs] == after_reset
+        assert terminated.tolist() == [True, True]
+        assert observation.ravel().tolist() == [4.0, 4.0]
+        assert reward.tolist() == [4.0, 4.0]
+    finally:
+        env.close()
+
+
 def _turtle2_camera_check(camera_ids, ready):
     """Run _check_cameras against a rig with the given cameras."""
     env = Turtle2Env.__new__(Turtle2Env)

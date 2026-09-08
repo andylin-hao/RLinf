@@ -35,10 +35,31 @@ from gymnasium.vector.utils import (
     write_to_shared_memory,
 )
 from gymnasium.vector.vector_env import VectorEnv
+
+try:  # gymnasium >= 1.0
+    from gymnasium.vector.vector_env import AutoresetMode
+except ImportError:  # gymnasium 0.29, which lerobot < 0.4 pins
+    AutoresetMode = None
 from numpy.typing import NDArray
 
 
 class NoAutoResetSyncVectorEnv(SyncVectorEnv):
+    """A vector env that keeps stepping an env after it reports termination.
+
+    Both gymnasium lines are in use here: the envs that install lerobot get
+    1.x, which every lerobot from 0.4.1 requires, while the Franka and xsquare
+    extras pin 0.29.1. The batch arrays were renamed between them, and 1.x
+    added an ``autoreset_mode`` whose ``DISABLED`` setting is close to this
+    but not the same -- it refuses to step an env that terminated until the
+    caller resets it, where this one simply carries on.
+    """
+
+    def __init__(self, env_fns: Any, **kwargs: Any) -> None:
+        """Declare that this env resets on its own schedule, where 1.x asks."""
+        if AutoresetMode is not None:
+            kwargs.setdefault("autoreset_mode", AutoresetMode.DISABLED)
+        super().__init__(env_fns, **kwargs)
+
     def step(
         self, actions: Any
     ) -> tuple[Any, NDArray[Any], NDArray[Any], NDArray[Any], dict[str, Any]]:
@@ -49,27 +70,41 @@ class NoAutoResetSyncVectorEnv(SyncVectorEnv):
             and info dictionaries.
         """
         self._actions = actions
+        # reset() rebinds these arrays in 1.x, so read them per step.
+        if AutoresetMode is None:
+            terminations, truncations = self._terminateds, self._truncateds
+        else:
+            terminations, truncations = self._terminations, self._truncations
+
         observations, infos = [], {}
         for i, (env, action) in enumerate(zip(self.envs, self._actions)):
             (
                 observation,
                 self._rewards[i],
-                self._terminateds[i],
-                self._truncateds[i],
+                terminations[i],
+                truncations[i],
                 info,
             ) = env.step(action)
 
             observations.append(observation)
             infos = self._add_info(infos, info, i)
-        self.observations = concatenate(
-            self.single_observation_space, observations, self.observations
-        )
+
+        if AutoresetMode is None:
+            self.observations = concatenate(
+                self.single_observation_space, observations, self.observations
+            )
+            batched = self.observations
+        else:
+            self._observations = concatenate(
+                self.single_observation_space, observations, self._observations
+            )
+            batched = self._observations
 
         return (
-            deepcopy(self.observations) if self.copy else self.observations,
+            deepcopy(batched) if self.copy else batched,
             np.copy(self._rewards),
-            np.copy(self._terminateds),
-            np.copy(self._truncateds),
+            np.copy(terminations),
+            np.copy(truncations),
             infos,
         )
 
