@@ -3053,3 +3053,881 @@ def test_compressed_send_skips_size_estimation_without_net_emulation():
         object_type=CollectiveGroup.TENSOR,
         tensor_data=tensor_data,
     )
+
+
+IPC_SENDER_GROUP_NAME = "sender_ipc_worker_group"
+IPC_RECEIVER_GROUP_NAME = "receiver_ipc_worker_group"
+
+# --- Helper Functions ---
+
+
+def ipc_get_device(rank=0):
+    """Returns the appropriate torch device, setting it for the current process."""
+    if accelerator_is_available():
+        # In a real worker, LOCAL_RANK would be set. We simulate it.
+        local_rank = int(os.environ.get("LOCAL_RANK", rank))
+        Worker.torch_platform.set_device(local_rank)
+        return torch.device(f"{Worker.torch_device_type}:{local_rank}")
+    return torch.device("cpu")
+
+
+# --- Worker Definitions ---
+class IpcSenderWorker(Worker):
+    """Worker responsible for sending data in IPC tests."""
+
+    def __init__(self):
+        super().__init__()
+        ipc_get_device()
+
+    def async_wait(self, work):
+        """Waits for an async operation to complete."""
+
+        async def wait(work):
+            if work:
+                return await work.async_wait()
+
+        return asyncio.run(wait(work))
+
+    def send_single_tensor(self, on_cpu, async_op, group_name):
+        """Sends a single tensor using send_tensor."""
+        device = "cpu" if on_cpu else ipc_get_device()
+        tensor = torch.ones(3, 3, device=device) * self._rank
+        is_async = async_op > 0
+        work = self.send_tensor(
+            tensor, group_name, dst_rank=self._rank, async_op=is_async
+        )
+        if is_async and work:
+            if async_op == 1:
+                work.wait()
+            else:
+                self.async_wait(work)
+        return True
+
+    def send_tensor_list(self, on_cpu, async_op, group_name):
+        """Sends a list of tensors using send."""
+        device = "cpu" if on_cpu else ipc_get_device()
+        tensors = [torch.ones(2, 2, device=device) * (self._rank + i) for i in range(3)]
+        is_async = async_op > 0
+        work = self.send(tensors, group_name, dst_rank=self._rank, async_op=is_async)
+        if is_async and work:
+            if async_op == 1:
+                work.wait()
+            else:
+                self.async_wait(work)
+        return True
+
+    def send_mixed_gpu_tensor_list(self, async_op, group_name):
+        """Sends a list of tensors from different accelerators."""
+        num_gpus = accelerator_device_count()
+        tensors = [
+            torch.ones(2, 2, device=ipc_get_device(i % num_gpus)) * (self._rank + i)
+            for i in range(num_gpus)
+        ]
+        is_async = async_op > 0
+        work = self.send(tensors, group_name, dst_rank=self._rank, async_op=is_async)
+        if is_async and work:
+            if async_op == 1:
+                work.wait()
+            else:
+                self.async_wait(work)
+        return True
+
+
+class IpcReceiverWorker(Worker):
+    """Worker responsible for receiving data in IPC tests."""
+
+    def __init__(self):
+        super().__init__()
+        ipc_get_device()
+
+    def async_wait(self, work):
+        """Waits for an async operation to complete."""
+
+        async def wait(work):
+            if work:
+                return await work.async_wait()
+
+        return asyncio.run(wait(work))
+
+    def recv_single_tensor(self, on_cpu, async_op, group_name):
+        """Receives a single tensor using recv_tensor."""
+        device = "cpu" if on_cpu else ipc_get_device()
+        tensor = torch.empty(3, 3, device=device)
+        is_async = async_op > 0
+        work = self.recv_tensor(
+            tensor, group_name, src_rank=self._rank, async_op=is_async
+        )
+        if is_async and work:
+            if async_op == 1:
+                work.wait()
+            else:
+                self.async_wait(work)
+        return tensor
+
+    def recv_tensor_list(self, async_op, group_name):
+        """Receives a list of tensors using recv."""
+        is_async = async_op > 0
+        work = self.recv(group_name, src_rank=self._rank, async_op=is_async)
+        if is_async and work:
+            if async_op == 1:
+                return work.wait()
+            else:
+                return self.async_wait(work)
+        return work
+
+
+# --- Pytest Setup ---
+
+
+@pytest.fixture(scope="module")
+def ipc_cluster():
+    """Provides a Cluster instance for the tests."""
+    if not accelerator_is_available() or accelerator_device_count() < 1:
+        pytest.skip("IPC/Uncertain Peer tests require at least 1 accelerator.")
+    # Use all accelerators on one node to test same-node communication
+    return Cluster(num_nodes=1)
+
+
+def create_worker_groups(ipc_cluster, sender_gpus, receiver_gpus):
+    """Helper to create worker groups with specific GPU assignments."""
+    sender_placement = PackedPlacementStrategy(
+        start_hardware_rank=sender_gpus[0], end_hardware_rank=sender_gpus[-1]
+    )
+    sender_group = IpcSenderWorker.create_group().launch(
+        cluster=ipc_cluster,
+        name=IPC_SENDER_GROUP_NAME,
+        placement_strategy=sender_placement,
+    )
+
+    receiver_placement = PackedPlacementStrategy(
+        start_hardware_rank=receiver_gpus[0], end_hardware_rank=receiver_gpus[-1]
+    )
+    receiver_group = IpcReceiverWorker.create_group().launch(
+        cluster=ipc_cluster,
+        name=IPC_RECEIVER_GROUP_NAME,
+        placement_strategy=receiver_placement,
+    )
+    return sender_group, receiver_group
+
+
+@pytest.fixture(scope="class")
+def single_shared_gpu_groups(ipc_cluster):
+    """Workers on the exact same single GPU."""
+    global IPC_SENDER_GROUP_NAME, IPC_RECEIVER_GROUP_NAME
+    IPC_SENDER_GROUP_NAME = "sender_ipc_worker_group_single"
+    IPC_RECEIVER_GROUP_NAME = "receiver_ipc_worker_group_single"
+    yield create_worker_groups(ipc_cluster, sender_gpus=[0], receiver_gpus=[0])
+
+
+@pytest.fixture(scope="class")
+def multi_shared_gpu_groups(ipc_cluster):
+    """Workers with access to the same pool of multiple accelerators."""
+    global IPC_SENDER_GROUP_NAME, IPC_RECEIVER_GROUP_NAME
+    IPC_SENDER_GROUP_NAME = "sender_ipc_worker_group_multi"
+    IPC_RECEIVER_GROUP_NAME = "receiver_ipc_worker_group_multi"
+    if accelerator_device_count() < 2:
+        pytest.skip("Multi-accelerator tests require at least 2 accelerators.")
+    all_gpus = list(range(accelerator_device_count()))
+    yield create_worker_groups(
+        ipc_cluster, sender_gpus=all_gpus, receiver_gpus=all_gpus
+    )
+
+
+# --- Test Class ---
+
+
+class TestSameDeviceCommunication:
+    """
+    Tests for send/recv when sender and receiver might share GPU resources,
+    triggering IPC or uncertain peer logic.
+    """
+
+    def _run_test(
+        self, worker_groups, sender_method, receiver_method, sender_args, receiver_args
+    ):
+        sender_group, receiver_group = worker_groups
+        sender_results = getattr(sender_group, sender_method)(*sender_args)
+        receiver_results = getattr(receiver_group, receiver_method)(*receiver_args)
+        # Wait for both to complete
+        results = sender_results.wait()
+        results = receiver_results.wait()
+        # Return only the receiver's result for verification
+        return results
+
+    @pytest.mark.parametrize("async_op", [0, 1, 2], ids=["sync", "async", "asyncio"])
+    def test_single_tensor_on_single_shared_gpu(
+        self, single_shared_gpu_groups, async_op
+    ):
+        """Tests send_tensor/recv_tensor on one shared GPU (triggers direct IPC)."""
+        result = self._run_test(
+            single_shared_gpu_groups,
+            "send_single_tensor",
+            "recv_single_tensor",
+            (False, async_op, IPC_RECEIVER_GROUP_NAME),
+            (False, async_op, IPC_SENDER_GROUP_NAME),
+        )
+        result = result[0]
+        expected = torch.ones(3, 3) * 0  # Sender rank is 0
+        assert torch.equal(result.cpu(), expected)
+
+    @pytest.mark.parametrize("async_op", [0, 1, 2], ids=["sync", "async", "asyncio"])
+    def test_tensor_list_on_single_shared_gpu(self, single_shared_gpu_groups, async_op):
+        """Tests send/recv for a tensor list on one shared GPU (triggers direct IPC)."""
+        results = self._run_test(
+            single_shared_gpu_groups,
+            "send_tensor_list",
+            "recv_tensor_list",
+            (False, async_op, IPC_RECEIVER_GROUP_NAME),
+            (async_op, IPC_SENDER_GROUP_NAME),
+        )
+        results = results[0]
+        assert isinstance(results, list)
+        for i, tensor in enumerate(results):
+            expected = torch.ones(2, 2) * i  # Sender rank 0 + i
+            assert torch.equal(tensor.cpu(), expected)
+
+    @pytest.mark.parametrize("async_op", [0, 1, 2], ids=["sync", "async", "asyncio"])
+    def test_single_tensor_on_multi_shared_gpu(self, multi_shared_gpu_groups, async_op):
+        """Tests send_tensor/recv_tensor with overlapping GPUs (triggers uncertain peer)."""
+        result = self._run_test(
+            multi_shared_gpu_groups,
+            "send_single_tensor",
+            "recv_single_tensor",
+            (False, async_op, IPC_RECEIVER_GROUP_NAME),
+            (False, async_op, IPC_SENDER_GROUP_NAME),
+        )
+        result = result[0]
+        expected = torch.ones(3, 3) * 0  # Sender rank is 0
+        assert torch.equal(result.cpu(), expected)
+
+    @pytest.mark.parametrize("async_op", [0, 1, 2], ids=["sync", "async", "asyncio"])
+    def test_mixed_gpu_tensor_list_on_multi_shared_gpu(
+        self, multi_shared_gpu_groups, async_op
+    ):
+        """Tests send/recv with a list of tensors on different GPUs from a shared pool."""
+        results = self._run_test(
+            multi_shared_gpu_groups,
+            "send_mixed_gpu_tensor_list",
+            "recv_tensor_list",
+            (
+                async_op,
+                IPC_RECEIVER_GROUP_NAME,
+            ),
+            (
+                async_op,
+                IPC_SENDER_GROUP_NAME,
+            ),
+        )
+        assert isinstance(results, list)
+        num_gpus = accelerator_device_count()
+        assert len(results) == num_gpus
+        for i, tensor in enumerate(results):
+            tensor = tensor[0]
+            expected = torch.ones(2, 2) * i  # Sender rank 0 + i
+            assert torch.equal(tensor.cpu(), expected)
+
+
+if __name__ == "__main__":
+    pytest.main(["-v", __file__])
+
+
+pytestmark = pytest.mark.skipif(
+    not accelerator_is_available(),
+    reason="GLOO host staging only runs for accelerator tensors",
+)
+
+ACCEL_DEVICE = Worker.torch_device_type
+
+
+def make_tensors(layout: str):
+    """Build a (source, destination) accelerator tensor pair with a given layout.
+
+    Args:
+        layout (str): ``contiguous`` or ``transposed``. A transposed tensor is
+            dense but not contiguous, which is the layout that ``empty_like``
+            staging used to scramble.
+
+    Returns:
+        tuple[torch.Tensor, torch.Tensor]: The filled source tensor and a
+            zeroed destination tensor with the same shape, dtype and strides.
+
+    """
+    src = torch.arange(24, dtype=torch.float32, device=ACCEL_DEVICE).reshape(4, 6)
+    dst = torch.zeros(4, 6, dtype=torch.float32, device=ACCEL_DEVICE)
+    if layout == "transposed":
+        src, dst = src.t(), dst.t()
+        assert not src.is_contiguous()
+    return src, dst
+
+
+def fake_gloo_transfer(staged: torch.Tensor, recv_buffer: torch.Tensor):
+    """Copy ``staged`` into ``recv_buffer`` the way GLOO moves a tensor.
+
+    GLOO hands the backend a raw pointer plus an element count, so it reads and
+    writes storage linearly and ignores strides entirely. Aliasing the storage
+    reproduces that faithfully: a staging buffer that kept the user tensor's
+    strides gets filled in the wrong order rather than raising.
+    """
+    flat_recv = torch.empty(0, dtype=recv_buffer.dtype).set_(
+        recv_buffer.untyped_storage(), 0, (recv_buffer.numel(),), (1,)
+    )
+    flat_recv.copy_(staged.reshape(-1))
+
+
+@pytest.mark.parametrize("layout", ["contiguous", "transposed"])
+def test_staged_send_buffer_is_pinned_and_contiguous(layout):
+    """The send-side staging buffer is pinned, contiguous and in wire order."""
+    src, _ = make_tensors(layout)
+
+    staged = MultiChannelProcessGroup._stage_to_pinned_cpu(src)
+
+    assert staged.is_pinned()
+    assert staged.is_contiguous()
+    assert torch.equal(staged, src.cpu())
+
+
+def new_recv_buffer(tensor: torch.Tensor) -> torch.Tensor:
+    """Allocate the recv staging buffer the way ``recv`` and ``broadcast`` do.
+
+    Mirrors the inline ``torch.empty(..., pin_memory=True)`` at those two call
+    sites. They must not go back to ``torch.empty_like``, which preserves the
+    destination's strides; ``test_empty_like_recv_buffer_scrambles`` pins down
+    what that would cost.
+    """
+    return torch.empty(tensor.shape, dtype=tensor.dtype, pin_memory=True)
+
+
+def test_empty_like_recv_buffer_scrambles():
+    """Show why the recv sites allocate with ``empty`` rather than ``empty_like``.
+
+    Whether ``empty_like`` preserves the source strides is backend dependent:
+    it does on CUDA and does not on Ascend, which is itself why the call sites
+    must not depend on it. Skip where the buffer already comes back contiguous,
+    since there is then no corruption to demonstrate.
+    """
+    src, dst = make_tensors("transposed")
+    bad_buffer = torch.empty_like(dst, device="cpu")
+    if bad_buffer.is_contiguous():
+        pytest.skip("empty_like already yields a contiguous host buffer here")
+
+    pg = object.__new__(MultiChannelProcessGroup)
+    pg._no_accel_ccl = True
+    staged = MultiChannelProcessGroup._stage_to_pinned_cpu(src)
+    fake_gloo_transfer(staged, bad_buffer)
+    pg._copy_to_accel_tensor(CollectiveGroup.ACCEL, dst, bad_buffer)
+    Worker.torch_platform.synchronize()
+
+    assert not torch.equal(dst, src)
+
+
+@pytest.mark.parametrize("layout", ["contiguous", "transposed"])
+def test_host_staging_round_trip_preserves_values(layout):
+    """A tensor survives stage -> wire -> unstage with its layout restored."""
+    src, dst = make_tensors(layout)
+    # Only _no_accel_ccl is read by _copy_to_accel_tensor; building a real
+    # group would need a live two-rank rendezvous.
+    pg = object.__new__(MultiChannelProcessGroup)
+    pg._no_accel_ccl = True
+
+    staged = MultiChannelProcessGroup._stage_to_pinned_cpu(src)
+    recv_buffer = new_recv_buffer(dst)
+    assert recv_buffer.is_pinned() and recv_buffer.is_contiguous()
+    fake_gloo_transfer(staged, recv_buffer)
+    pg._copy_to_accel_tensor(CollectiveGroup.ACCEL, dst, recv_buffer)
+    Worker.torch_platform.synchronize()
+
+    assert torch.equal(dst, src)
+    assert dst.stride() == src.stride()
+
+
+def test_stage_to_pinned_cpu_passes_through_host_tensors():
+    """A host tensor is not pinned again, but is still made contiguous."""
+    host_tensor = torch.arange(24, dtype=torch.float32).reshape(4, 6).t()
+
+    staged = MultiChannelProcessGroup._stage_to_pinned_cpu(host_tensor)
+
+    assert staged.device.type == "cpu"
+    assert staged.is_contiguous()
+    assert torch.equal(staged, host_tensor)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def is_accel():
+    """Return True only on CUDA; IPC broadcast is not supported on NPU."""
+    return accelerator_is_available()
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for _classify_broadcast_ranks – no hardware needed
+# ---------------------------------------------------------------------------
+
+
+def _make_fake_group(worker_specs):
+    """Minimal stub satisfying _classify_broadcast_ranks' _group_info.workers access.
+
+    worker_specs: list of (cluster_node_rank, available_accelerators) tuples.
+    """
+    workers = [
+        SimpleNamespace(cluster_node_rank=node, available_accelerators=list(devs))
+        for node, devs in worker_specs
+    ]
+    return SimpleNamespace(_group_info=SimpleNamespace(workers=workers))
+
+
+def _classify(worker_specs, src_rank=0):
+    fake = _make_fake_group(worker_specs)
+    return CollectiveGroup._classify_broadcast_ranks(fake, src_rank)
+
+
+class TestClassifyBroadcastRanks:
+    """Unit tests for CollectiveGroup._classify_broadcast_ranks.
+
+    Verifies all three output buckets:
+      definitely_same – both workers have exactly one accelerator and it matches
+      uncertain       – overlapping multi-device sets that need a runtime exchange
+      definitely_diff – no device overlap or different broadcast_cluster node
+    """
+
+    def test_single_device_same_gpu(self):
+        """Two workers, same node, identical single GPU → definitely_same."""
+        same, uncertain, diff = _classify([(0, [0]), (0, [0])])
+        assert same == [1] and uncertain == [] and diff == []
+
+    def test_single_device_different_gpu(self):
+        """Two workers, same node, distinct single GPUs → definitely_diff."""
+        same, uncertain, diff = _classify([(0, [0]), (0, [1])])
+        assert same == [] and uncertain == [] and diff == [1]
+
+    def test_different_nodes_same_device_index(self):
+        """Same device index but different cluster nodes → definitely_diff."""
+        same, uncertain, diff = _classify([(0, [0]), (1, [0])])
+        assert same == [] and uncertain == [] and diff == [1]
+
+    def test_multi_device_overlap_both_multi(self):
+        """src=[0,1] dst=[0,1]: overlapping multi-device sets → uncertain."""
+        same, uncertain, diff = _classify([(0, [0, 1]), (0, [0, 1])])
+        assert same == [] and uncertain == [1] and diff == []
+
+    def test_src_multi_dst_single_overlap(self):
+        """src=[0,1] dst=[0]: overlap exists but src has multiple devices → uncertain."""
+        same, uncertain, diff = _classify([(0, [0, 1]), (0, [0])])
+        assert same == [] and uncertain == [1] and diff == []
+
+    def test_src_single_dst_multi_overlap(self):
+        """src=[0] dst=[0,1]: overlap exists but dst has multiple devices → uncertain."""
+        same, uncertain, diff = _classify([(0, [0]), (0, [0, 1])])
+        assert same == [] and uncertain == [1] and diff == []
+
+    def test_multi_device_no_overlap(self):
+        """src=[0,1] dst=[2,3]: both multi-device but no intersection → definitely_diff."""
+        same, uncertain, diff = _classify([(0, [0, 1]), (0, [2, 3])])
+        assert same == [] and uncertain == [] and diff == [1]
+
+    def test_multi_worker_mixed_classification(self):
+        """Five workers covering all three buckets simultaneously."""
+        # rank0 = src [0]
+        # rank1 = same node, [0]     → definitely_same
+        # rank2 = same node, [1]     → definitely_diff
+        # rank3 = same node, [0, 1]  → uncertain
+        # rank4 = node 1,   [0]      → definitely_diff (different node)
+        specs = [(0, [0]), (0, [0]), (0, [1]), (0, [0, 1]), (1, [0])]
+        same, uncertain, diff = _classify(specs, src_rank=0)
+        assert same == [1]
+        assert uncertain == [3]
+        assert set(diff) == {2, 4}
+
+    def test_non_zero_src_rank(self):
+        """Classification is correct when src is not rank 0."""
+        # rank0=[0], rank1=[0] (src), rank2=[1]
+        same, uncertain, diff = _classify([(0, [0]), (0, [0]), (0, [1])], src_rank=1)
+        assert same == [0] and uncertain == [] and diff == [2]
+
+
+def _group_by_device(worker_specs, ranks):
+    fake = _make_fake_group(worker_specs)
+    return CollectiveGroup._group_ranks_by_device(fake, ranks)
+
+
+class TestGroupRanksByDevice:
+    """Unit tests for CollectiveGroup._group_ranks_by_device.
+
+    The helper partitions different-device receivers so that only one
+    representative per physical accelerator joins the accelerator collective;
+    the remaining same-device receivers are served via IPC by that
+    representative. This is what stops NCCL from ever seeing two ranks on the
+    same accelerator.
+    """
+
+    def test_all_distinct_devices(self):
+        """Distinct single GPUs → every rank is its own representative."""
+        specs = [(0, [0]), (0, [1]), (0, [2])]
+        assert _group_by_device(specs, [0, 1, 2]) == [[0], [1], [2]]
+
+    def test_shared_device_grouped(self):
+        """Two receivers on one GPU, one on another → grouped, first is rep."""
+        # rank0=gpu0, rank1=gpu0, rank2=gpu1
+        specs = [(0, [0]), (0, [0]), (0, [1])]
+        assert _group_by_device(specs, [0, 1, 2]) == [[0, 1], [2]]
+
+    def test_same_index_different_node_not_grouped(self):
+        """Same device index on different nodes is not the same accelerator."""
+        specs = [(0, [0]), (1, [0])]
+        assert _group_by_device(specs, [0, 1]) == [[0], [1]]
+
+    def test_multi_device_workers_are_singletons(self):
+        """Multi-accelerator workers can't be matched statically → singletons."""
+        specs = [(0, [0, 1]), (0, [0, 1])]
+        assert _group_by_device(specs, [0, 1]) == [[0], [1]]
+
+    def test_representative_is_first_in_input_order(self):
+        """Within a device group the representative follows input order."""
+        # ranks 2 and 0 share gpu5; rank 2 comes first in the input list.
+        specs = [(0, [5]), (0, [9]), (0, [5])]
+        groups = _group_by_device(specs, [2, 1, 0])
+        assert groups == [[2, 0], [1]]
+
+    def test_empty_input(self):
+        """No different-device receivers → no groups."""
+        assert _group_by_device([(0, [0])], []) == []
+
+
+# ---------------------------------------------------------------------------
+# Integration tests – CUDA only; skipped on NPU
+# ---------------------------------------------------------------------------
+
+_ACTOR_SAME = "bcast_sync_actor_same"
+_ROLLOUT_SAME = "bcast_sync_rollout_same"
+_ACTOR_DIFF = "bcast_sync_actor_diff"
+_ROLLOUT_DIFF = "bcast_sync_rollout_diff"
+_ACTOR_MIXED = "bcast_sync_actor_mixed"
+_ROLLOUT_MIXED = "bcast_sync_rollout_mixed"
+_ACTOR_SHARED = "bcast_sync_actor_shared"
+_ROLLOUT_SHARED_A = "bcast_sync_rollout_shared_a"
+_ROLLOUT_SHARED_B = "bcast_sync_rollout_shared_b"
+_ACTOR_SPLIT = "bcast_sync_actor_split"
+_ROLLOUT_SPLIT_A = "bcast_sync_rollout_split_a"
+_ROLLOUT_SPLIT_B = "bcast_sync_rollout_split_b"
+_ROLLOUT_SPLIT_C = "bcast_sync_rollout_split_c"
+
+
+class _BroadcastWorker(Worker):
+    def __init__(self):
+        super().__init__()
+        Worker.torch_platform.set_device(int(os.environ.get("LOCAL_RANK", 0)))
+
+    def run(self, groups, value, is_src):
+        device = f"{Worker.torch_device_type}:{Worker.torch_platform.current_device()}"
+        payload = torch.full((4, 4), float(value), device=device) if is_src else None
+        return self.broadcast(payload, groups=groups)
+
+
+@pytest.fixture(scope="module")
+def broadcast_cluster():
+    if not is_accel():
+        pytest.skip("Hybrid broadcast IPC integration tests require CUDA.")
+    return Cluster(num_nodes=1)
+
+
+@pytest.fixture(scope="class")
+def same_gpu_groups(broadcast_cluster):
+    """Both worker groups pinned to GPU 0 – exercises the IPC (definitely-same) path."""
+    placement = NodePlacementStrategy([0])
+    actor = _BroadcastWorker.create_group().launch(
+        cluster=broadcast_cluster,
+        placement_strategy=placement,
+        name=_ACTOR_SAME,
+    )
+    rollout = _BroadcastWorker.create_group().launch(
+        cluster=broadcast_cluster,
+        placement_strategy=placement,
+        name=_ROLLOUT_SAME,
+    )
+    yield actor, rollout
+    actor._close()
+    rollout._close()
+
+
+@pytest.fixture(scope="class")
+def diff_gpu_groups(broadcast_cluster):
+    """Actor on GPU 0, rollout on GPU 1 – exercises the NCCL sub-group (diff-device) path."""
+    if accelerator_device_count() < 2:
+        pytest.skip("Different-GPU broadcast test requires at least 2 GPUs.")
+    actor = _BroadcastWorker.create_group().launch(
+        cluster=broadcast_cluster,
+        placement_strategy=PackedPlacementStrategy(0, 0),
+        name=_ACTOR_DIFF,
+    )
+    rollout = _BroadcastWorker.create_group().launch(
+        cluster=broadcast_cluster,
+        placement_strategy=PackedPlacementStrategy(1, 1),
+        name=_ROLLOUT_DIFF,
+    )
+    yield actor, rollout
+    actor._close()
+    rollout._close()
+
+
+@pytest.fixture(scope="class")
+def mixed_gpu_groups(broadcast_cluster):
+    """Actor on GPU 0; rollout group with one worker on GPU 0 and one on GPU 1.
+
+    The rollout receiver on GPU 0 is same-device as the actor (IPC path),
+    while the rollout receiver on GPU 1 is different-device (collective
+    sub-group path). Exercises the hybrid path that uses both routes in a
+    single broadcast call.
+    """
+    if accelerator_device_count() < 2:
+        pytest.skip("Mixed-GPU broadcast test requires at least 2 GPUs.")
+    actor = _BroadcastWorker.create_group().launch(
+        cluster=broadcast_cluster,
+        placement_strategy=PackedPlacementStrategy(0, 0),
+        name=_ACTOR_MIXED,
+    )
+    rollout = _BroadcastWorker.create_group().launch(
+        cluster=broadcast_cluster,
+        placement_strategy=PackedPlacementStrategy(0, 1),
+        name=_ROLLOUT_MIXED,
+    )
+    yield actor, rollout
+    actor._close()
+    rollout._close()
+
+
+@pytest.fixture(scope="class")
+def shared_diff_gpu_groups(broadcast_cluster):
+    """Actor on GPU 0; two separate rollout workers BOTH pinned to GPU 1.
+
+    Both receivers are different-device from the actor (GPU 0) yet share GPU 1
+    with each other. A naive full-group collective would place two ranks on
+    GPU 1, which NCCL rejects. The broadcast must therefore send to a single
+    GPU-1 representative through the accelerator collective sub-group, and have
+    that representative re-broadcast to the other GPU-1 receiver via CUDA IPC.
+
+    Two receivers on one physical GPU are created with two independent groups
+    each packed onto hardware rank 1 (RLinf assigns devices via
+    CUDA_VISIBLE_DEVICES and does not reserve GPUs in Ray, so co-location is
+    allowed); a single packed group would instead spread its workers across
+    distinct GPUs.
+    """
+    if accelerator_device_count() < 2:
+        pytest.skip("Shared-device receiver broadcast test requires at least 2 GPUs.")
+    actor = _BroadcastWorker.create_group().launch(
+        cluster=broadcast_cluster,
+        placement_strategy=PackedPlacementStrategy(0, 0),
+        name=_ACTOR_SHARED,
+    )
+    rollout_a = _BroadcastWorker.create_group().launch(
+        cluster=broadcast_cluster,
+        placement_strategy=PackedPlacementStrategy(1, 1),
+        name=_ROLLOUT_SHARED_A,
+    )
+    rollout_b = _BroadcastWorker.create_group().launch(
+        cluster=broadcast_cluster,
+        placement_strategy=PackedPlacementStrategy(1, 1),
+        name=_ROLLOUT_SHARED_B,
+    )
+    yield actor, rollout_a, rollout_b
+    actor._close()
+    rollout_a._close()
+    rollout_b._close()
+
+
+@pytest.fixture(scope="class")
+def split_diff_gpu_groups(broadcast_cluster):
+    """Actor on GPU 0; receivers on GPU 1 (shared pair) and GPU 2 (distinct).
+
+    Exercises the hybrid path with two different-device representatives at once:
+    GPU 1 has two receivers (one representative + one IPC peer) and GPU 2 has a
+    single receiver (its own representative). The accelerator collective spans
+    src + one representative per distinct device (GPU 1 and GPU 2), and the
+    GPU-1 representative re-broadcasts to its peer via IPC.
+    """
+    if accelerator_device_count() < 3:
+        pytest.skip("Split shared/distinct broadcast test requires at least 3 GPUs.")
+    actor = _BroadcastWorker.create_group().launch(
+        cluster=broadcast_cluster,
+        placement_strategy=PackedPlacementStrategy(0, 0),
+        name=_ACTOR_SPLIT,
+    )
+    rollout_a = _BroadcastWorker.create_group().launch(
+        cluster=broadcast_cluster,
+        placement_strategy=PackedPlacementStrategy(1, 1),
+        name=_ROLLOUT_SPLIT_A,
+    )
+    rollout_b = _BroadcastWorker.create_group().launch(
+        cluster=broadcast_cluster,
+        placement_strategy=PackedPlacementStrategy(1, 1),
+        name=_ROLLOUT_SPLIT_B,
+    )
+    rollout_c = _BroadcastWorker.create_group().launch(
+        cluster=broadcast_cluster,
+        placement_strategy=PackedPlacementStrategy(2, 2),
+        name=_ROLLOUT_SPLIT_C,
+    )
+    yield actor, rollout_a, rollout_b, rollout_c
+    actor._close()
+    rollout_a._close()
+    rollout_b._close()
+    rollout_c._close()
+
+
+class TestBroadcastHybridSync:
+    """Integration tests for the hybrid IPC / NCCL-sub-group broadcast routing.
+
+    Skipped entirely on NPU because CUDA IPC is not available there.
+    """
+
+    def _run(self, actor_g, rollout_g, actor_name, rollout_name, value=42.0):
+        groups = [(actor_name, [0]), (rollout_name, [0])]
+        actor_h = actor_g.run(groups, value, is_src=True)
+        rollout_h = rollout_g.run(groups, value, is_src=False)
+        return actor_h.wait()[0], rollout_h.wait()[0]
+
+    def test_same_gpu_broadcast_value(self, same_gpu_groups):
+        """Both groups on GPU 0: broadcast takes the IPC path and delivers the correct value."""
+        actor_g, rollout_g = same_gpu_groups
+        actor_r, rollout_r = self._run(actor_g, rollout_g, _ACTOR_SAME, _ROLLOUT_SAME)
+        expected = torch.full((4, 4), 42.0)
+        assert torch.equal(actor_r.cpu(), expected)
+        assert torch.equal(rollout_r.cpu(), expected)
+
+    def test_same_gpu_broadcast_result_on_accelerator(self, same_gpu_groups):
+        """Received tensor stays on the accelerator (not migrated to CPU by IPC path)."""
+        actor_g, rollout_g = same_gpu_groups
+        _, rollout_r = self._run(
+            actor_g, rollout_g, _ACTOR_SAME, _ROLLOUT_SAME, value=7.0
+        )
+        assert rollout_r.device.type == Worker.torch_device_type
+
+    def test_same_gpu_broadcast_repeated(self, same_gpu_groups):
+        """Multiple consecutive broadcasts stay correct (IPC comm_id counters stay in sync)."""
+        actor_g, rollout_g = same_gpu_groups
+        for v in [1.0, 2.0, 3.0]:
+            _, rollout_r = self._run(
+                actor_g, rollout_g, _ACTOR_SAME, _ROLLOUT_SAME, value=v
+            )
+            expected = torch.full((4, 4), v)
+            assert torch.equal(rollout_r.cpu(), expected), f"Mismatch at value={v}"
+
+    def test_diff_gpu_broadcast_value(self, diff_gpu_groups):
+        """Actor on GPU 0, rollout on GPU 1: broadcast uses the NCCL sub-group path."""
+        actor_g, rollout_g = diff_gpu_groups
+        actor_r, rollout_r = self._run(actor_g, rollout_g, _ACTOR_DIFF, _ROLLOUT_DIFF)
+        expected = torch.full((4, 4), 42.0)
+        assert torch.equal(actor_r.cpu(), expected)
+        assert torch.equal(rollout_r.cpu(), expected)
+
+    def _run_mixed(self, actor_g, rollout_g, value=17.0):
+        """Drive a broadcast with one same-GPU receiver and one diff-GPU receiver."""
+        groups = [(_ACTOR_MIXED, [0]), (_ROLLOUT_MIXED, [0, 1])]
+        actor_h = actor_g.run(groups, value, is_src=True)
+        rollout_h = rollout_g.run(groups, value, is_src=False)
+        return actor_h.wait(), rollout_h.wait()
+
+    def test_mixed_gpu_broadcast_value(self, mixed_gpu_groups):
+        """Hybrid path: src + one same-GPU receiver (IPC) + one diff-GPU receiver
+        (collective sub-group), all in a single broadcast call.
+        """
+        actor_g, rollout_g = mixed_gpu_groups
+        actor_results, rollout_results = self._run_mixed(actor_g, rollout_g)
+        expected = torch.full((4, 4), 17.0)
+        assert len(actor_results) == 1
+        assert torch.equal(actor_results[0].cpu(), expected)
+        assert len(rollout_results) == 2, (
+            "expected 2 rollout receivers for the mixed topology"
+        )
+        for r in rollout_results:
+            assert torch.equal(r.cpu(), expected)
+
+    def test_mixed_gpu_broadcast_repeated(self, mixed_gpu_groups):
+        """Multiple consecutive mixed broadcasts stay correct so IPC and
+        sub-group comm_id counters remain in sync across calls.
+        """
+        actor_g, rollout_g = mixed_gpu_groups
+        for v in [4.0, 5.0, 6.0]:
+            _, rollout_results = self._run_mixed(actor_g, rollout_g, value=v)
+            expected = torch.full((4, 4), v)
+            for r in rollout_results:
+                assert torch.equal(r.cpu(), expected), f"Mismatch at value={v}"
+
+    def _run_shared(self, actor_g, rollout_a_g, rollout_b_g, value=23.0):
+        """Broadcast where both receivers share GPU 1 (different from src on GPU 0)."""
+        groups = [
+            (_ACTOR_SHARED, [0]),
+            (_ROLLOUT_SHARED_A, [0]),
+            (_ROLLOUT_SHARED_B, [0]),
+        ]
+        actor_h = actor_g.run(groups, value, is_src=True)
+        a_h = rollout_a_g.run(groups, value, is_src=False)
+        b_h = rollout_b_g.run(groups, value, is_src=False)
+        return actor_h.wait()[0], a_h.wait()[0], b_h.wait()[0]
+
+    def test_shared_diff_gpu_broadcast_value(self, shared_diff_gpu_groups):
+        """Both receivers on GPU 1 (different from the GPU-0 src): the GPU-1
+        representative receives via the collective sub-group, then re-broadcasts
+        to the other GPU-1 receiver via IPC. A plain full-group collective would
+        have failed with two ranks on GPU 1.
+        """
+        actor_g, rollout_a_g, rollout_b_g = shared_diff_gpu_groups
+        actor_r, a_r, b_r = self._run_shared(actor_g, rollout_a_g, rollout_b_g)
+        expected = torch.full((4, 4), 23.0)
+        assert torch.equal(actor_r.cpu(), expected)
+        for r in (a_r, b_r):
+            assert r.device.type == Worker.torch_device_type
+            assert torch.equal(r.cpu(), expected)
+
+    def test_shared_diff_gpu_broadcast_repeated(self, shared_diff_gpu_groups):
+        """Repeated shared-device broadcasts keep the sub-group and IPC comm_id
+        counters in sync across calls.
+        """
+        actor_g, rollout_a_g, rollout_b_g = shared_diff_gpu_groups
+        for v in [8.0, 9.0, 10.0]:
+            _, a_r, b_r = self._run_shared(actor_g, rollout_a_g, rollout_b_g, value=v)
+            expected = torch.full((4, 4), v)
+            for r in (a_r, b_r):
+                assert torch.equal(r.cpu(), expected), f"Mismatch at value={v}"
+
+    def _run_split(self, actor_g, a_g, b_g, c_g, value=31.0):
+        """Broadcast with a shared GPU-1 pair plus a distinct GPU-2 receiver."""
+        groups = [
+            (_ACTOR_SPLIT, [0]),
+            (_ROLLOUT_SPLIT_A, [0]),
+            (_ROLLOUT_SPLIT_B, [0]),
+            (_ROLLOUT_SPLIT_C, [0]),
+        ]
+        actor_h = actor_g.run(groups, value, is_src=True)
+        a_h = a_g.run(groups, value, is_src=False)
+        b_h = b_g.run(groups, value, is_src=False)
+        c_h = c_g.run(groups, value, is_src=False)
+        return actor_h.wait()[0], a_h.wait()[0], b_h.wait()[0], c_h.wait()[0]
+
+    def test_split_diff_gpu_broadcast_value(self, split_diff_gpu_groups):
+        """Two different-device representatives in one broadcast: GPU 1 (shared
+        pair, served via collective + IPC) and GPU 2 (distinct, served via the
+        collective only). Both representatives plus src form the collective; no
+        two collective members share an accelerator.
+        """
+        actor_g, a_g, b_g, c_g = split_diff_gpu_groups
+        actor_r, a_r, b_r, c_r = self._run_split(actor_g, a_g, b_g, c_g)
+        expected = torch.full((4, 4), 31.0)
+        assert torch.equal(actor_r.cpu(), expected)
+        for r in (a_r, b_r, c_r):
+            assert r.device.type == Worker.torch_device_type
+            assert torch.equal(r.cpu(), expected)
+
+    def test_split_diff_gpu_broadcast_repeated(self, split_diff_gpu_groups):
+        """Repeated split-topology broadcasts stay correct across calls."""
+        actor_g, a_g, b_g, c_g = split_diff_gpu_groups
+        for v in [11.0, 12.0, 13.0]:
+            _, a_r, b_r, c_r = self._run_split(actor_g, a_g, b_g, c_g, value=v)
+            expected = torch.full((4, 4), v)
+            for r in (a_r, b_r, c_r):
+                assert torch.equal(r.cpu(), expected), f"Mismatch at value={v}"
+
+
+if __name__ == "__main__":
+    pytest.main(["-v", __file__])
