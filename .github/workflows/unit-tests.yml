@@ -50,7 +50,10 @@ jobs:
           uv venv
           source .venv/bin/activate
           UV_TORCH_BACKEND=auto uv sync
-          uv pip install gymnasium imageio
+          # This job builds its venv by hand rather than through install.sh, so
+          # it does not get the embodied extra. The real-world envs import cv2
+          # at module scope, as they do gymnasium and imageio.
+          uv pip install gymnasium imageio opencv-python
           uv pip install "transformers<=5.9.0"
 
       - name: Run pytest
