@@ -693,7 +693,7 @@ def test_direct_gello_stream_keeps_both_arm_commands_concurrent():
             executor.shutdown(wait=True)
 
 
-class FakeEnv:
+class FakeEnv(gym.Env):
     """Record actions passed to ``step``."""
 
     def __init__(self) -> None:
@@ -1258,7 +1258,7 @@ def _keyboard_session(monkeypatch, queued):
 
     monkeypatch.setattr(session_module, "KeyboardListener", FakeListener)
 
-    class Env:
+    class Env(gym.Env):
         def __init__(self):
             self.resets = 0
 
@@ -1329,7 +1329,7 @@ def test_euler_conversion_is_one_wrapper_for_any_arm_count():
         Quat2EulerWrapper,
     )
 
-    class Env:
+    class Env(gym.Env):
         def __init__(self, dim):
             self.observation_space = spaces.Dict(
                 {

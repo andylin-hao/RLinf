@@ -22,10 +22,12 @@ jobs:
         run: |
           export PYTHONPATH=$(pwd):$(pwd)/tests/unit_tests
           source .venv/bin/activate
+          status=0
           for file in tests/unit_tests/test_*.py; do
-              pytest "$file"
+              pytest "$file" || status=1
               ray stop
           done
+          exit $status
 
       - name: Run doctest
         timeout-minutes: 20
@@ -58,10 +60,12 @@ jobs:
         run: |
           export PYTHONPATH=$(pwd):$(pwd)/tests/unit_tests:$PYTHONPATH 
           source .venv/bin/activate
+          status=0
           for file in tests/unit_tests/test_*.py; do
-              pytest "$file"
+              pytest "$file" || status=1
               ray stop
           done
+          exit $status
 
   unit-tests-rocm:
     runs-on: rocm
@@ -84,10 +88,12 @@ jobs:
         run: |
           export PYTHONPATH=$(pwd):$(pwd)/tests/unit_tests:$PYTHONPATH
           source .venv/bin/activate
+          status=0
           for file in tests/unit_tests/test_*.py; do
-              pytest "$file"
+              pytest "$file" || status=1
               ray stop
           done
+          exit $status
 
       - name: Clean up
         run: |
@@ -115,10 +121,12 @@ jobs:
         run: |
           export PYTHONPATH=$(pwd):$(pwd)/tests/unit_tests:$PYTHONPATH
           source .venv/bin/activate
+          status=0
           for file in tests/unit_tests/test_*.py; do
-              pytest "$file"
+              pytest "$file" || status=1
               ray stop
           done
+          exit $status
 
       - name: Clean up
         run: |
@@ -146,10 +154,12 @@ jobs:
         run: |
           export PYTHONPATH=$(pwd):$(pwd)/tests/unit_tests:$PYTHONPATH
           source .venv/bin/activate
+          status=0
           for file in tests/unit_tests/test_*.py; do
-              pytest "$file"
+              pytest "$file" || status=1
               ray stop
           done
+          exit $status
 
       - name: Clean up
         run: |
