@@ -22,12 +22,12 @@ jobs:
         run: |
           export PYTHONPATH=$(pwd):$(pwd)/tests/unit_tests
           source .venv/bin/activate
-          status=0
           for file in tests/unit_tests/test_*.py; do
-              pytest "$file" || status=1
+              code=0
+              pytest "$file" || code=$?
               ray stop
+              [ $code -eq 0 ] || exit $code
           done
-          exit $status
 
       - name: Run doctest
         timeout-minutes: 20
@@ -60,12 +60,12 @@ jobs:
         run: |
           export PYTHONPATH=$(pwd):$(pwd)/tests/unit_tests:$PYTHONPATH 
           source .venv/bin/activate
-          status=0
           for file in tests/unit_tests/test_*.py; do
-              pytest "$file" || status=1
+              code=0
+              pytest "$file" || code=$?
               ray stop
+              [ $code -eq 0 ] || exit $code
           done
-          exit $status
 
   unit-tests-rocm:
     runs-on: rocm
@@ -88,12 +88,12 @@ jobs:
         run: |
           export PYTHONPATH=$(pwd):$(pwd)/tests/unit_tests:$PYTHONPATH
           source .venv/bin/activate
-          status=0
           for file in tests/unit_tests/test_*.py; do
-              pytest "$file" || status=1
+              code=0
+              pytest "$file" || code=$?
               ray stop
+              [ $code -eq 0 ] || exit $code
           done
-          exit $status
 
       - name: Clean up
         run: |
@@ -121,12 +121,12 @@ jobs:
         run: |
           export PYTHONPATH=$(pwd):$(pwd)/tests/unit_tests:$PYTHONPATH
           source .venv/bin/activate
-          status=0
           for file in tests/unit_tests/test_*.py; do
-              pytest "$file" || status=1
+              code=0
+              pytest "$file" || code=$?
               ray stop
+              [ $code -eq 0 ] || exit $code
           done
-          exit $status
 
       - name: Clean up
         run: |
@@ -154,12 +154,12 @@ jobs:
         run: |
           export PYTHONPATH=$(pwd):$(pwd)/tests/unit_tests:$PYTHONPATH
           source .venv/bin/activate
-          status=0
           for file in tests/unit_tests/test_*.py; do
-              pytest "$file" || status=1
+              code=0
+              pytest "$file" || code=$?
               ray stop
+              [ $code -eq 0 ] || exit $code
           done
-          exit $status
 
       - name: Clean up
         run: |
