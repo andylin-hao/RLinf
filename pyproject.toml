@@ -95,9 +95,6 @@ embodied = [
     "peft",
     "timm",
     "imageio[ffmpeg]",
-    # Nine modules under rlinf/envs/real import cv2 at module scope, to resize
-    # camera frames and to show them. Every robot extra carries it; without it
-    # here, the no-hardware install cannot import the envs it exists to run.
     "opencv-python",
     "gymnasium",
     "gym",

@@ -2250,8 +2250,6 @@ def test_so101_env_keeps_its_action_in_radians_across_a_degree_driver():
 
             state = observation["state"]
             assert state["arm_joint_position"][0] == pytest.approx(np.pi / 2)
-            # The gripper stays the 0..1 opening the env declares, not
-            # lerobot's 0..100.
             assert state["gripper_position"][0] == pytest.approx(0.25)
         finally:
             env.close()
@@ -2498,8 +2496,6 @@ def test_piper_env_commands_reach_the_arm_in_radians():
             assert state["arm_joint_position"] == pytest.approx(
                 [0.5, 1.0, -1.0, 0.0, 0.0, 0.0]
             )
-            # The env carries the gripper as a 0..1 opening, not the width in
-            # metres the SDK is given.
             assert state["gripper_position"][0] == pytest.approx(0.25)
         finally:
             env.close()

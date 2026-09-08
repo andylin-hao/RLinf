@@ -2812,8 +2812,6 @@ install_franka_dexhand_deps() {
 }
 
 install_piper_env() {
-    # Pair the env extra with the standard embodied one, as dosw1 does: the
-    # embodied entry script imports the reward workers, which need transformers.
     uv sync --extra embodied --extra piper --active "${PLATFORM_UV_SYNC_ARGS[@]}" $NO_INSTALL_RLINF_CMD
     local index_args=()
     mapfile -t index_args < <(platform_index_args)
@@ -2822,8 +2820,6 @@ install_piper_env() {
 }
 
 install_so101_env() {
-    # Pair the env extra with the standard embodied one, as dosw1 does: the
-    # embodied entry script imports the reward workers, which need transformers.
     uv sync --extra embodied --extra so101 --active "${PLATFORM_UV_SYNC_ARGS[@]}" $NO_INSTALL_RLINF_CMD
     local index_args=()
     mapfile -t index_args < <(platform_index_args)
