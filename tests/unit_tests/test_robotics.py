@@ -87,6 +87,17 @@ from rlinf.utils.rot6d import (
     se3_body_delta,
 )
 
+pytestmark = pytest.mark.skipif(
+    Worker.accelerator_type == AcceleratorType.MUSA_GPU,
+    reason=(
+        "The MUSA image reserves a large virtual address space in every "
+        "process that imports torch_musa, so a process that opens robot parts "
+        "in real workers runs out of thread-local storage and aborts inside "
+        "glibc rather than reporting a test. Running each such test in its own "
+        "process was not enough."
+    ),
+)
+
 _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
@@ -3854,14 +3865,6 @@ def test_franky_healthy_tracking_can_switch_reset_and_rebuild_compliance(
 
 
 @pytest.mark.placement
-@pytest.mark.skipif(
-    Worker.accelerator_type == AcceleratorType.MUSA_GPU,
-    reason=(
-        "Opening a DualFranka places four part workers at once, which this "
-        "runner does not survive; the same robot took the conformance suite "
-        "down before it was removed."
-    ),
-)
 def test_the_bench_check_runs_a_whole_robot_on_fakes():
     from robot_mocks import mocked_sdks
 
