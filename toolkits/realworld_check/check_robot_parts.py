@@ -245,45 +245,50 @@ def check(robot_type: str, kwargs: dict[str, Any], remote: bool = False) -> int:
         print(line)
 
     print("[3/5] connecting")
+    # Connecting places parts in scheduler workers, so every exit from here on
+    # has to disconnect: a part left open strands the worker hosting it, and a
+    # long run leaks one per check.
     robot.connect()
-    if not robot.is_connected:
-        print("    FAIL: the robot does not report itself connected")
-        return 1
-    for owner in robot.owners():
-        where = "here" if owner.node_rank is None else f"node {owner.node_rank}"
-        print(f"    {type(owner).__name__:24} open {where}")
-
-    print("[4/5] observing every part")
     failures = []
-    for path, part in walk(robot):
-        if isinstance(part, Connection) and not isinstance(part, RobotPart):
-            failures.append(f"{path} is a Connection and should not be in the tree")
-            continue
-        try:
-            observation = part.get_observation()
-        except Exception as error:  # noqa: BLE001 - a bench check reports anything
-            failures.append(f"{path}: {type(error).__name__}: {error}")
-            continue
-        shapes = {
-            key: getattr(value, "shape", type(value).__name__)
-            for key, value in observation.items()
-        }
-        mismatches = ObservationContract(part, path).failures()
-        failures += mismatches
-        note = "  " + "; ".join(mismatches) if mismatches else ""
-        print(f"    {path:24} {shapes}{note}")
+    try:
+        if not robot.is_connected:
+            print("    FAIL: the robot does not report itself connected")
+            return 1
+        for owner in robot.owners():
+            where = "here" if owner.node_rank is None else f"node {owner.node_rank}"
+            print(f"    {type(owner).__name__:24} open {where}")
 
-    if remote:
-        print("[4b/5] comparing a placed robot with a local one")
-        mismatches = parity_failures(robot_type, kwargs, robot)
-        failures += mismatches
-        for line in mismatches:
-            print(f"    {line}")
-        if not mismatches:
-            print("    every part describes the same either side of the boundary")
+        print("[4/5] observing every part")
+        for path, part in walk(robot):
+            if isinstance(part, Connection) and not isinstance(part, RobotPart):
+                failures.append(f"{path} is a Connection and should not be in the tree")
+                continue
+            try:
+                observation = part.get_observation()
+            except Exception as error:  # noqa: BLE001 - a bench check reports anything
+                failures.append(f"{path}: {type(error).__name__}: {error}")
+                continue
+            shapes = {
+                key: getattr(value, "shape", type(value).__name__)
+                for key, value in observation.items()
+            }
+            mismatches = ObservationContract(part, path).failures()
+            failures += mismatches
+            note = "  " + "; ".join(mismatches) if mismatches else ""
+            print(f"    {path:24} {shapes}{note}")
 
-    print("[5/5] disconnecting")
-    robot.disconnect()
+        if remote:
+            print("[4b/5] comparing a placed robot with a local one")
+            mismatches = parity_failures(robot_type, kwargs, robot)
+            failures += mismatches
+            for line in mismatches:
+                print(f"    {line}")
+            if not mismatches:
+                print("    every part describes the same either side of the boundary")
+    finally:
+        print("[5/5] disconnecting")
+        robot.disconnect()
+
     still = [path for path, part in walk(robot) if getattr(part, "is_connected", False)]
     if still:
         failures.append(f"still connected after disconnect: {still}")
