@@ -1,113 +1,26 @@
 SO101 Setup and Control
 =======================
 
+This doc walks you through setting up an SO101 arm and running the RLinf
+hardware test script to read feedback and check joint and gripper movement.
+
 .. figure:: https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/lerobot/SO101_Follower.webp
    :align: center
    :width: 70%
 
    SO-101 follower with its gripper. Image: Hugging Face LeRobot.
 
-Connect an SO-101 follower to RLinf, read its joints and gripper, and send a
-command through the robotics interface. Install and calibrate the arm first,
-check it locally, then add cameras or a leader as your application requires.
-Use the task-extension guide to define a real-world task: the supplied reach
-environment and mock SAC run are integration scaffolding, not a validated task
-or training recipe.
-
 Overview
 --------
 
-SO101 support uses LeRobot to control five arm joints and a gripper on one
-serial bus. The current MLP and SAC configuration tests that hardware interface
-through mock SDKs.
-
-.. grid:: 2 4 4 4
-   :gutter: 2
-
-   .. grid-item-card:: Models
-      :text-align: center
-
-      MLP policy (integration test)
-
-   .. grid-item-card:: Algorithms
-      :text-align: center
-
-      SAC (integration test)
-
-   .. grid-item-card:: Tasks
-      :text-align: center
-
-      User-defined; reach scaffold
-
-   .. grid-item-card:: Hardware
-      :text-align: center
-
-      SO-101 follower · USB serial
-
-| **You'll do:** install dependencies → configure motors → calibrate → test follower and leader → add a task.
-| **Prerequisites:** :doc:`Installation </rst_source/start/installation>` · SO-101 hardware · Linux controller · USB serial connection.
-
-Tasks
-~~~~~
-
-The existing examples establish how to use the hardware and connect it to an
-environment. Define and validate the physical task separately.
-
-.. list-table::
-   :header-rows: 1
-   :widths: 25 40 35
-
-   * - Purpose
-     - Entry Point
-     - Scope
-   * - Local hardware use
-     - ``SO101Robot`` with ``SO101Arm``
-     - Read state and command the follower's arm and gripper.
-   * - Environment scaffold
-     - ``SO101ReachEnv-v1``; ``env/so101_reach.yaml``
-     - Illustrates joint targets, reset, and reward wiring.
-   * - Integration test
-     - ``so101_mock_sac_mlp_reach``
-     - Runs SAC with mock SDKs; does not establish physical task performance.
-
-Observation and Action
-~~~~~~~~~~~~~~~~~~~~~~
-
-Use radians at the RLinf interface. The driver converts between these values
-and LeRobot's degrees, and between a fractional gripper opening and LeRobot's
-``0..100`` gripper scale.
-
-.. list-table::
-   :header-rows: 1
-   :widths: 23 77
-
-   * - Field
-     - Contract
-   * - Observation
-     - ``arm.arm_joint_position``: five radians, ordered as ``shoulder_pan``,
-       ``shoulder_lift``, ``elbow_flex``, ``wrist_flex``, ``wrist_roll``;
-       ``arm.end_effector.state``: one gripper opening in ``[0, 1]``.
-       The scaffold's flat state has six values. No TCP pose, force, or torque
-       observation is supplied.
-   * - Action
-     - ``arm.joint_position``: five absolute joint targets in radians;
-       ``arm.end_effector.target``: one opening, ``0`` closed and ``1`` open.
-       The scaffold's flat action has six values; targets are not deltas.
-   * - Images
-     - Optional cameras. The scaffold centre-crops and resizes each image to
-       ``(128, 128, 3)`` under ``frames.wrist_1``, ``frames.wrist_2``, etc.
-       Without cameras it omits ``frames``; the mock MLP ignores images.
-   * - Reward
-     - The scaffold uses joint distance for dense reward or a per-joint
-       tolerance for sparse reward. Define reward and success for your own task.
-   * - Prompt
-     - The scaffold reports ``reach a joint configuration``.
+The test runs on the Linux machine connected to the arm. It requires no GPU or
+model checkpoint. RLinf does not yet provide a supported real-world task or
+training workflow for SO101; this guide covers hardware checks only.
 
 Hardware Setup
 --------------
 
-Prepare the follower and its controller machine first. A leader and camera are
-optional additions; neither is required for the initial joint and gripper check.
+Prepare the arm and controller machine before installing the software.
 
 .. list-table::
    :header-rows: 1
@@ -119,12 +32,6 @@ optional additions; neither is required for the initial joint and gripper check.
      - SO-101 arm with its gripper, servo controller, and the power supply specified for the kit.
    * - Controller machine
      - Linux computer with a USB connection to the follower's servo controller.
-   * - Leader (optional)
-     - A separate SO-101 leader, its power supply, and a second USB serial connection.
-   * - Camera (optional)
-     - Intel RealSense camera connected to the controller for image checks.
-   * - GPU (optional)
-     - One supported GPU for the mock SAC test, separate from the local hardware check.
 
 For an unassembled arm, follow the parts and assembly instructions in the
 `LeRobot SO-101 guide <https://huggingface.co/docs/lerobot/so101>`_. Configure new
@@ -156,8 +63,7 @@ Install the robot dependencies from the repository root:
 
 The installer includes LeRobot with Feetech support. Run subsequent commands
 from this checkout with the environment activated. See
-:doc:`Installation </rst_source/start/installation>` for platform prerequisites;
-no model checkpoint is needed for the interface examples or the mock MLP test.
+:doc:`Installation </rst_source/start/installation>` for platform prerequisites.
 
 Find the Port and Configure the Motors
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -214,7 +120,7 @@ Replace the port with your device. Move the joints to the middle positions
 shown in the guide, confirm the prompt, then move each joint through its travel
 as instructed. The tool reports the saved calibration file. Keep it under the
 account used for RLinf and reuse the ID as
-``calibration_id="rlinf_follower"``; do not substitute the leader's calibration.
+``--id rlinf_follower``; do not substitute the leader's calibration.
 
 .. warning::
 
@@ -225,32 +131,15 @@ account used for RLinf and reuse the ID as
 Run It
 ------
 
-With the follower calibrated, check its joints and gripper through RLinf. An
-``SO101Arm`` declaration records the port and calibration settings without
-opening hardware. ``SO101Robot`` names the arm ``arm`` and exposes its gripper
-at ``arm.end_effector`` on the same connection.
-
-Testing the Setup
-~~~~~~~~~~~~~~~~~
-
-Rehearse the existing interactive check without hardware first:
-
-.. code-block:: bash
-
-   CAMERA_SERIALS='' python -m toolkits.realworld_check.test_so101_env --mock
-
-At the prompt, enter ``where``, ``up``, ``where``, and ``quit``. The mock
-exercises the actual environment and driver with a fake servo bus. The toolkit
-uses a scheduler worker, so it may start a local Ray instance; no GPU is needed
-for this check. ``CAMERA_SERIALS=''`` explicitly disables camera discovery.
+With the follower calibrated, use the interactive test to check its joints and
+gripper. The script may start a local Ray instance to communicate with the arm.
 
 .. warning::
 
    On hardware, the environment constructor moves the arm to the folded rest
    pose ``[0, -99, 95, 65, 0]`` degrees. Clear that motion path before launching
    the toolkit. Its ``--no-reset`` flag skips a later reset but does not bypass
-   this initial movement. Use the Python interface example below to connect
-   without commanding a rest pose.
+   this initial movement.
 
 With the follower calibrated and room for the initial fold, run:
 
@@ -259,6 +148,8 @@ With the follower calibrated and room for the initial fold, run:
    CAMERA_SERIALS='' python -m toolkits.realworld_check.test_so101_env \
      --port /dev/ttyACM0 --id rlinf_follower --step 2
 
+Replace the port with your device and use the ID from calibration.
+``CAMERA_SERIALS=''`` disables camera discovery so the check uses only the arm.
 Enter these commands one at a time, allowing each move to finish:
 
 .. code-block:: text
@@ -275,185 +166,13 @@ the tool vertically. Joint feedback is printed after each move; ``open`` and
 ``close`` test the gripper. ``quit`` closes the environment and its arm worker.
 Use ``help`` for the other joint directions.
 
-Use the Robot Interface
-~~~~~~~~~~~~~~~~~~~~~~~
-
-For a local connection without a reset or scheduler worker, run this Python
-example from the same environment.
-The example reads the current joint positions and gripper opening, then sends
-those values back as targets. ``connect()`` opens the calibrated arm;
-``get_observation()`` returns the nested state used to construct the action.
-
-.. code-block:: python
-
-   from rlinf.robotics import SO101Robot
-   from rlinf.robotics.parts.arms.so101 import SO101Arm
-   from rlinf.utils.logging import get_logger
-
-   logger = get_logger()
-   robot = SO101Robot(
-       arm=SO101Arm.declare(
-           "/dev/ttyACM0", calibration_id="rlinf_follower", max_relative_target=5
-       )
-   )
-   robot.connect()
-   try:
-       reading = robot.get_observation()["arm"]
-       logger.info("Joint positions: %s", reading["arm_joint_position"])
-       robot.send_action(
-           {
-               "arm": {
-                   "joint_position": reading["arm_joint_position"],
-                   "end_effector": {"target": reading["end_effector"]["state"]},
-               }
-           }
-       )
-   finally:
-       robot.disconnect()
-
-``send_action()`` dispatches the nested targets and returns a dictionary of
-dispatched action values, not a new measurement. Read again to measure the
-result. ``disconnect()`` releases the arm and its shared gripper connection.
-Omitting ``node_rank`` keeps the example local and does not require a Ray cluster.
-
-The optional ``max_relative_target`` limit is passed to LeRobot in degrees:
-``5`` limits each joint target relative to the current joint position. It does
-not change RLinf's radian action units. Its default, ``None``, disables this
-clamping.
-
-Add a Camera
-~~~~~~~~~~~~
-
-To read images alongside the arm state, replace the robot declaration above
-with this composition. ``CameraInfo`` describes a physical camera;
-``Camera.declare()`` returns named, unconnected camera parts. The robot installer includes RealSense support on x86 Linux.
-
-Select the RealSense driver with ``Camera.backend("realsense")`` and list
-attached serial numbers with ``discover()``:
-
-.. code-block:: python
-
-   from rlinf.robotics import Camera
-
-   logger.info("RealSense serials: %s", Camera.backend("realsense").discover())
-
-Use one of the reported serial numbers as ``CAMERA_SERIAL`` in the following
-code, then connect and read an image:
-
-.. code-block:: python
-
-   from rlinf.robotics import Camera, CameraInfo
-
-   robot = SO101Robot(
-       arm=SO101Arm.declare(
-           "/dev/ttyACM0", calibration_id="rlinf_follower", max_relative_target=5
-       ),
-       **Camera.declare(
-           {"wrist_1": CameraInfo(name="wrist_1", serial_number="CAMERA_SERIAL")}
-       ),
-   )
-   robot.connect()
-   try:
-       image = robot.get_observation()["wrist_1"]["frame"]
-       logger.info("Camera image shape: %s", image.shape)
-   finally:
-       robot.disconnect()
-
-The default camera backend is RealSense. The image uses the camera's configured
-resolution; the environment prepares it for a policy. The robot opens and
-closes both connections. See
-:doc:`Robotics Interface </rst_source/concepts/robotics>` for other compositions.
-
-Use a Leader Arm
-~~~~~~~~~~~~~~~~
-
-For operator input, set up a separate SO-101 leader on its own serial port.
-Find the port as you did for the follower; the example uses ``/dev/ttyACM1``.
-For new motors, configure them individually using the same prompt-driven wiring
-sequence:
-
-.. code-block:: bash
-
-   lerobot-setup-motors \
-     --teleop.type=so101_leader \
-     --teleop.port=/dev/ttyACM1
-
-After assembling the leader, calibrate it and inspect its input with this
-terminal command. It reads the leader without driving a follower:
-
-.. code-block:: bash
-
-   python -m rlinf.robotics.parts.teleop.so101_leader \
-     --port /dev/ttyACM1 --id rlinf_leader --calibrate
-
-Follow the calibration prompts, inspect the reported joints and grip, then
-press Ctrl+C to close the connection. The environment's ``teleop`` setting can
-select ``so101_leader`` with ``port`` and ``calibration_id`` options. The leader
-produces the same five joint targets and continuous gripper opening as the
-follower. Keep ``teleop: none`` until you configure that device; see the
-teleoperation workflow in :doc:`New Real-World Tasks </rst_source/extending/new_task>`.
-
-After closing the leader check, launch the follower toolkit with both ports
-and calibration IDs:
-
-.. code-block:: bash
-
-   CAMERA_SERIALS='' python -m toolkits.realworld_check.test_so101_env \
-     --port /dev/ttyACM0 --id rlinf_follower \
-     --leader /dev/ttyACM1 --leader-id rlinf_leader
-
-The follower initially folds as described above. Place the leader close to
-that pose, enter ``teleop``, then move it a little and verify the follower
-tracks it. These are absolute joint targets. Press Ctrl+C to stop following
-and return to the prompt, then enter ``quit`` to release the follower.
-
-Check the Integration Without Hardware
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-The existing mock run checks the scheduler, environment, rollout, and actor
-path on a machine with one supported GPU:
-
-.. code-block:: bash
-
-   bash tests/e2e_tests/embodied/run.sh so101_mock_sac_mlp_reach \
-     runner.logger.log_path="$REPO_PATH/logs/so101_mock"
-
-The launcher enables mock SDKs because the config name contains ``mock``. It
-uses the real env implementation with ``is_dummy: False``, two fake cameras,
-and an MLP with ``action_dim: 6`` and ``obs_dim: 6``. This is a short software
-integration check; it does not need physical calibration or validate a task.
+To use the arm in your own program or attach cameras, see
+:doc:`Robotics Interface </rst_source/concepts/robotics>`.
 
 New Real-World Tasks
 --------------------
 
-After verifying your hardware, define the task's observations, reset procedure,
-reward, and success condition using
-:doc:`New Real-World Tasks </rst_source/extending/new_task>`. SO101 currently has
-hardware support and a reach scaffold, but no validated real-world task recipe.
-
-Start from ``SO101Env`` and ``SO101EnvConfig`` in
-``rlinf/envs/real/so101/base.py``. The adjacent ``reach.py`` shows how to build a
-task config from ``override_cfg`` and pass it into the base constructor; do not
-copy the Franka-specific ``CONFIG_CLS`` shortcut from the guide. Register the
-new class in ``rlinf/envs/real/so101/__init__.py`` under ``TASKS``, then copy
-``examples/embodiment/config/env/so101_reach.yaml`` and select your Gymnasium ID
-with ``init_params.id``. A task that needs Cartesian state must also supply
-forward kinematics or another source of pose observations.
-
-Keep hardware settings in the cluster's ``hardware`` block with ``type: SO101``:
-``serial_port`` selects the follower, ``calibration_id`` selects its calibration,
-and ``camera_serials: []`` selects no cameras. Task settings belong in
-``env.train.override_cfg``. The existing mock config shows how to place ``env``
-in the node group that carries the robot. For a controller on another machine,
-follow :doc:`Multi-Node Training </rst_source/guides/multi_node>` and
-:doc:`Robotics Architecture </rst_source/concepts/robotics_architecture>`.
-
-Visualization and Results
--------------------------
-
-The mock run writes TensorBoard logs under ``logs/so101_mock``. Use them to
-inspect software execution, not to measure physical task success. There are no
-validated task results or pretrained task weights for this example. Once your
-task is implemented, configure logging and video using
-:doc:`Training Metrics </rst_source/reference/metrics>` and
-:doc:`Logging </rst_source/guides/logger>`.
+After the hardware checks pass, follow
+:doc:`New Real-World Tasks </rst_source/extending/new_task>` to define a task's
+reset procedure, observations, actions, reward, and success condition. A working
+real-world task is required before starting training.

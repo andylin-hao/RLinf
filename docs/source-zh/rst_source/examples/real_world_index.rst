@@ -3,7 +3,7 @@
 
 按机器人硬件选择配置与使用指南。Franka 机械臂及其组合设备请从 Franka 页面开始；GimArm、XSquare Turtle2、Dexmal DOS-W1、AgileX Piper 和 SO101 请进入对应页面。
 
-每个章节都给出遥操作、数据采集、Sim-to-Real 迁移、部署或在线 RL 所需的配置路径。
+根据硬件检查、遥操作、数据采集、Sim-to-Real 迁移、部署或在线 RL 的需求，选择相应指南。
 
 .. raw:: html
 
@@ -65,7 +65,7 @@
 Piper 与 SO101 配置
 --------------------------------
 
-通过以下指南完成机械臂连接与测试，再定义自己的任务。
+通过以下指南连接机械臂并运行硬件测试脚本。Piper 和 SO101 目前尚未提供真机任务或训练流程。
 
 .. grid:: 1 2 2 2
    :gutter: 2
@@ -74,13 +74,13 @@ Piper 与 SO101 配置
       :link: embodied/piper
       :link-type: doc
 
-      配置 CAN，检查 Piper 关节、夹爪及相机组合。
+      配置 CAN，运行 Piper 关节与夹爪测试脚本。
 
    .. grid-item-card:: SO101
       :link: embodied/so101
       :link-type: doc
 
-      配置电机、标定 SO-101，并检查 follower 与 leader 控制。
+      配置电机、标定 SO-101，并运行关节与夹爪测试脚本。
 
 .. toctree::
    :hidden:

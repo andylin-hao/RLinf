@@ -25,7 +25,8 @@ jobs:
           for file in tests/unit_tests/test_*.py; do
               code=0
               pytest "$file" || code=$?
-              ray stop
+              # A Ray agent may exit during cleanup; retry with a fresh process list.
+              ray stop || ray stop --force
               [ $code -eq 0 ] || exit $code
           done
 
@@ -63,7 +64,8 @@ jobs:
           for file in tests/unit_tests/test_*.py; do
               code=0
               pytest "$file" || code=$?
-              ray stop
+              # A Ray agent may exit during cleanup; retry with a fresh process list.
+              ray stop || ray stop --force
               [ $code -eq 0 ] || exit $code
           done
 
@@ -91,7 +93,8 @@ jobs:
           for file in tests/unit_tests/test_*.py; do
               code=0
               pytest "$file" || code=$?
-              ray stop
+              # A Ray agent may exit during cleanup; retry with a fresh process list.
+              ray stop || ray stop --force
               [ $code -eq 0 ] || exit $code
           done
 
@@ -124,7 +127,8 @@ jobs:
           for file in tests/unit_tests/test_*.py; do
               code=0
               pytest "$file" || code=$?
-              ray stop
+              # A Ray agent may exit during cleanup; retry with a fresh process list.
+              ray stop || ray stop --force
               [ $code -eq 0 ] || exit $code
           done
 
@@ -164,7 +168,8 @@ jobs:
           for file in tests/unit_tests/test_*.py; do
               code=0
               pytest "$file" -m "not placement" || code=$?
-              ray stop
+              # A Ray agent may exit during cleanup; retry with a fresh process list.
+              ray stop || ray stop --force
               [ $code -eq 0 ] || exit $code
           done
           # A placement test hosts parts in real workers. The MUSA image
@@ -180,7 +185,8 @@ jobs:
           for test in $placement_tests; do
               code=0
               pytest "tests/unit_tests/$test" || code=$?
-              ray stop
+              # A Ray agent may exit during cleanup; retry with a fresh process list.
+              ray stop || ray stop --force
               [ $code -eq 0 ] || exit $code
           done
 
