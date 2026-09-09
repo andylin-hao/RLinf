@@ -68,12 +68,14 @@ from rlinf.robotics.parts.arms import (
 )
 from rlinf.robotics.parts.arms.franka import FrankaRobotState
 from rlinf.robotics.parts.end_effectors import BaseHand
+from rlinf.scheduler import Worker
 from rlinf.scheduler.hardware import (
     Hardware,
     HardwareConfig,
     HardwareResource,
     NodeHardwareConfig,
 )
+from rlinf.scheduler.hardware.accelerators.accelerator import AcceleratorType
 from rlinf.utils.rot6d import (
     SE3_to_pose,
     matrix_to_rot6d,
@@ -3852,6 +3854,14 @@ def test_franky_healthy_tracking_can_switch_reset_and_rebuild_compliance(
 
 
 @pytest.mark.placement
+@pytest.mark.skipif(
+    Worker.accelerator_type == AcceleratorType.MUSA_GPU,
+    reason=(
+        "Opening a DualFranka places four part workers at once, which this "
+        "runner does not survive; the same robot took the conformance suite "
+        "down before it was removed."
+    ),
+)
 def test_the_bench_check_runs_a_whole_robot_on_fakes():
     from robot_mocks import mocked_sdks
 
