@@ -1,0 +1,347 @@
+SO101 配置与控制
+================
+
+.. figure:: https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/lerobot/SO101_Follower.webp
+   :align: center
+   :width: 70%
+
+   SO-101 follower 及其夹爪。图片来源：Hugging Face LeRobot。
+
+将 SO-101 follower 接入 RLinf，读取关节与夹爪状态，并通过机器人接口发送控制指令。先安装依赖、完成标定并在本机检查，再按应用需要加入相机或 leader。真实任务需参考任务扩展指南自行定义：现有 reach 环境和 mock SAC 配置仅用于集成检查，尚无经过验证的任务或训练方案。
+
+概览
+----
+
+SO101 通过 LeRobot 控制同一串行总线上的 5 个机械臂关节和夹爪。当前 MLP 与 SAC 配置使用 mock SDK 检查这条硬件接口调用链。
+
+.. grid:: 2 4 4 4
+   :gutter: 2
+
+   .. grid-item-card:: 模型
+      :text-align: center
+
+      MLP policy（集成测试）
+
+   .. grid-item-card:: 算法
+      :text-align: center
+
+      SAC（集成测试）
+
+   .. grid-item-card:: 任务
+      :text-align: center
+
+      自定义任务；reach 示例框架
+
+   .. grid-item-card:: 硬件
+      :text-align: center
+
+      SO-101 follower · USB 串口
+
+| **操作流程：** 安装依赖 → 配置电机 → 标定 → 测试 follower 与 leader → 新增任务。
+| **前置条件：** :doc:`安装 </rst_source/start/installation>` · SO-101 硬件 · Linux 控制主机 · USB 串口连接。
+
+任务
+~~~~
+
+现有示例用于连接硬件并将其接入环境。实际任务的定义与验证需要另外完成。
+
+.. list-table::
+   :header-rows: 1
+   :widths: 25 40 35
+
+   * - 用途
+     - 入口
+     - 范围
+   * - 本机硬件操作
+     - ``SO101Robot`` 与 ``SO101Arm``
+     - 读取状态，控制 follower 的机械臂与夹爪。
+   * - 环境示例框架
+     - ``SO101ReachEnv-v1``；``env/so101_reach.yaml``
+     - 展示关节目标、复位和奖励的接入方式。
+   * - 集成测试
+     - ``so101_mock_sac_mlp_reach``
+     - 使用 mock SDK 运行 SAC，不代表物理任务性能。
+
+观测与动作
+~~~~~~~~~~
+
+RLinf 接口统一使用弧度。驱动负责在弧度与 LeRobot 的角度之间转换，并将夹爪的比例开度转换为 LeRobot 使用的 ``0..100`` 范围。
+
+.. list-table::
+   :header-rows: 1
+   :widths: 23 77
+
+   * - 字段
+     - Contract
+   * - Observation
+     - ``arm.arm_joint_position``：5 个关节角，单位为弧度，顺序为 ``shoulder_pan``、``shoulder_lift``、``elbow_flex``、``wrist_flex``、``wrist_roll``；``arm.end_effector.state``：1 个夹爪开度，范围为 ``[0, 1]``。示例框架的一维状态包含 6 个数值，不提供 TCP 位姿、力或力矩观测。
+   * - Action
+     - ``arm.joint_position``：5 个绝对关节目标，单位为弧度；``arm.end_effector.target``：1 个夹爪开度，``0`` 为闭合，``1`` 为全开。示例框架的一维动作包含 6 个数值，关节目标不是增量。
+   * - Images
+     - 相机可选。示例框架对每张图像居中裁剪并缩放为 ``(128, 128, 3)``，存入 ``frames.wrist_1``、``frames.wrist_2`` 等 key。没有相机时不包含 ``frames``；mock MLP 不使用图像。
+   * - Reward
+     - 示例框架按关节距离计算稠密奖励，或按逐关节容差计算稀疏奖励。实际任务需要自行定义奖励与成功条件。
+   * - Prompt
+     - 示例框架返回 ``reach a joint configuration``。
+
+硬件配置
+--------
+
+先准备 follower 及其控制主机。leader 和相机均为可选设备，首次关节与夹爪检查不需要接入它们。
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - 组件
+     - 要求
+   * - Follower
+     - SO-101 机械臂及其夹爪、舵机控制板和套件指定的电源。
+   * - 控制主机
+     - 通过 USB 连接 follower 舵机控制板的 Linux 计算机。
+   * - Leader（可选）
+     - 独立的 SO-101 leader、电源和第二条 USB 串口连接。
+   * - 相机（可选）
+     - 连接到控制主机的 Intel RealSense 相机，用于图像检查。
+   * - GPU（可选）
+     - mock SAC 测试需要一张受支持的 GPU，本机硬件检查无需 GPU。
+
+未组装的机械臂请先参考 `LeRobot SO-101 指南 <https://huggingface.co/docs/lerobot/so101>`_ 中的零件清单与组装说明。完成接线前，需要逐个配置新电机；下方安装流程包含相应命令。
+
+安装
+----
+
+在控制主机上按下方自定义环境流程安装机器人依赖。后续检查均在同一仓库目录和已激活的环境中运行。
+
+机器人控制节点
+~~~~~~~~~~~~~~
+
+在连接机器人的主机上克隆 RLinf，然后安装对应环境。
+
+.. include:: _setup_common.rst
+   :end-before: 然后，使用
+
+在仓库根目录安装机器人依赖：
+
+.. code-block:: bash
+
+   # Mainland China users can add --use-mirror for faster downloads.
+   bash requirements/install.sh embodied --env so101
+   source .venv/bin/activate
+   export REPO_PATH="$PWD"
+
+安装脚本包含 LeRobot 及 Feetech 支持。后续命令均在此仓库目录中运行，并保持环境已激活。平台要求见 :doc:`安装 </rst_source/start/installation>`；接口示例和 mock MLP 测试均无需下载模型 checkpoint。
+
+查找串口并配置电机
+^^^^^^^^^^^^^^^^^^
+
+连接舵机控制板的 USB 线缆，以及套件指定的电源。先查找 follower 对应的串口：
+
+.. code-block:: bash
+
+   lerobot-find-port
+
+按提示拔下 USB 线缆，再重新接入。工具报告的设备路径就是后续使用的串口；以下示例假设为 ``/dev/ttyACM0``。检查设备权限和当前用户组：
+
+.. code-block:: bash
+
+   ls -l /dev/ttyACM0
+   id -nG
+
+在 Ubuntu 上，如果串口属于 ``dialout`` 组，运行程序的账号也需要加入该组。若尚未加入，执行 ``sudo usermod -aG dialout "$USER"``，退出登录并重新登录，然后回到仓库目录，重新激活 ``.venv``。USB 重新接入后，应再次确认串口路径。
+
+新电机或更换后的电机需要按上游指南的接线顺序，逐个设置 ID 与波特率；此步骤通常只需执行一次：
+
+.. code-block:: bash
+
+   lerobot-setup-motors \
+     --robot.type=so101_follower \
+     --robot.port=/dev/ttyACM0
+
+每次仅将提示中指定的电机连接到控制板。工具设置该电机的 ID 和波特率后，才会提示连接下一个。6 个电机全部配置完成后，按指南完成组装并恢复串联接线。已配置好的机械臂可跳过电机配置，但仍需使用 RLinf 将采用的 ID 完成标定。
+
+标定 Follower
+^^^^^^^^^^^^^
+
+电机配置与组装完成后，在终端中标定 follower，再让 RLinf 打开串行总线：
+
+.. code-block:: bash
+
+   lerobot-calibrate \
+     --robot.type=so101_follower \
+     --robot.port=/dev/ttyACM0 \
+     --robot.id=rlinf_follower
+
+将串口替换为实际设备。按照指南将关节移到中间位置并确认提示，再按要求逐个移动关节，覆盖其运动范围。工具会报告保存的标定文件；请保留在运行 RLinf 的账号下，并使用相同的 ``calibration_id="rlinf_follower"``。follower 不能使用 leader 的标定文件。
+
+.. warning::
+
+   RLinf worker 不会交互式标定 follower。标定缺失或与硬件不一致时，连接会失败。启动 worker 前，先用运行机械臂的账号完成标定。
+
+运行
+----
+
+follower 标定完成后，可检查关节与夹爪接口。``SO101Arm`` 声明记录串口和标定参数，但不打开硬件；``SO101Robot`` 将机械臂命名为 ``arm``，夹爪位于 ``arm.end_effector``，两者共用连接。
+
+测试配置
+~~~~~~~~
+
+先在无硬件模式下演练现有交互式检查工具：
+
+.. code-block:: bash
+
+   CAMERA_SERIALS='' python -m toolkits.realworld_check.test_so101_env --mock
+
+在提示符后依次输入 ``where``、``up``、``where`` 和 ``quit``。mock 使用假舵机总线，但运行实际环境与驱动。此工具通过 scheduler worker 访问机械臂，可能启动本机 Ray 实例；这项检查无需 GPU。``CAMERA_SERIALS=''`` 明确关闭相机发现。
+
+.. warning::
+
+   在硬件模式下，环境构造函数会将机械臂移至折叠姿态，关节角为 ``[0, -99, 95, 65, 0]`` 度。启动前请清空这条运动路径。``--no-reset`` 只跳过后续的一次复位，无法跳过构造时的运动。若需连接时不发送复位目标，请使用下方的 Python 接口示例。
+
+确认 follower 已标定，且初始折叠动作的路径无遮挡后，运行：
+
+.. code-block:: bash
+
+   CAMERA_SERIALS='' python -m toolkits.realworld_check.test_so101_env \
+     --port /dev/ttyACM0 --id rlinf_follower --step 2
+
+逐条输入以下指令，每次运动完成后再继续：
+
+.. code-block:: text
+
+   where
+   up
+   down
+   open
+   close
+   quit
+
+``up`` 和 ``down`` 分别将肩关节角度增加或减少 2 度，并非让末端沿竖直方向移动。每次关节运动后会打印反馈；``open`` 与 ``close`` 用于测试夹爪。``quit`` 关闭环境及其机械臂 worker。输入 ``help`` 可查看其他关节方向。
+
+使用机器人接口
+~~~~~~~~~~~~~~
+
+若希望在本机直接连接，不复位、不启动 scheduler worker，可在同一环境中运行以下 Python 示例。``connect()`` 打开已标定的机械臂，``get_observation()`` 返回嵌套状态。示例读取当前关节位置与夹爪开度，再将这些数值作为目标发送回机器人。
+
+.. code-block:: python
+
+   from rlinf.robotics import SO101Robot
+   from rlinf.robotics.parts.arms.so101 import SO101Arm
+   from rlinf.utils.logging import get_logger
+
+   logger = get_logger()
+   robot = SO101Robot(
+       arm=SO101Arm.declare(
+           "/dev/ttyACM0", calibration_id="rlinf_follower", max_relative_target=5
+       )
+   )
+   robot.connect()
+   try:
+       reading = robot.get_observation()["arm"]
+       logger.info("Joint positions: %s", reading["arm_joint_position"])
+       robot.send_action(
+           {
+               "arm": {
+                   "joint_position": reading["arm_joint_position"],
+                   "end_effector": {"target": reading["end_effector"]["state"]},
+               }
+           }
+       )
+   finally:
+       robot.disconnect()
+
+``send_action()`` 分发嵌套目标，返回已分发动作值的字典；如需测量执行结果，应再次读取观测。``disconnect()`` 释放机械臂及其与夹爪共用的连接。不指定 ``node_rank`` 时，示例在本机进程中运行，无需 Ray 集群。
+
+可选的 ``max_relative_target`` 按角度传给 LeRobot，``5`` 表示每个关节目标相对当前位置的变化不超过 5 度。RLinf 动作仍使用弧度。该参数默认为 ``None``，表示不启用此限制。
+
+加入相机
+~~~~~~~~
+
+如果需要同时读取图像和机械臂状态，可将上例的机器人声明替换为以下组合。``CameraInfo`` 描述物理相机，``Camera.declare()`` 返回按名称组织、尚未连接的相机零部件。机器人安装脚本在 x86 Linux 上包含 RealSense 支持。
+
+通过 ``Camera.backend("realsense")`` 选择相机驱动，再调用 ``discover()`` 列出已连接相机的序列号：
+
+.. code-block:: python
+
+   from rlinf.robotics import Camera
+
+   logger.info("RealSense serials: %s", Camera.backend("realsense").discover())
+
+将下例中的 ``CAMERA_SERIAL`` 替换为列出的一个序列号，再连接并读取图像：
+
+.. code-block:: python
+
+   from rlinf.robotics import Camera, CameraInfo
+
+   robot = SO101Robot(
+       arm=SO101Arm.declare(
+           "/dev/ttyACM0", calibration_id="rlinf_follower", max_relative_target=5
+       ),
+       **Camera.declare(
+           {"wrist_1": CameraInfo(name="wrist_1", serial_number="CAMERA_SERIAL")}
+       ),
+   )
+   robot.connect()
+   try:
+       image = robot.get_observation()["wrist_1"]["frame"]
+       logger.info("Camera image shape: %s", image.shape)
+   finally:
+       robot.disconnect()
+
+默认相机 backend 为 RealSense。接口按相机配置的分辨率返回图像，由环境准备 policy 所需的输入。机器人统一打开与关闭两条连接；其他组合方式见 :doc:`机器人接口 </rst_source/concepts/robotics>`。
+
+使用 Leader 机械臂
+~~~~~~~~~~~~~~~~~~
+
+需要操作员输入时，为 SO-101 leader 单独配置串口。按 follower 的方法查找设备，以下示例使用 ``/dev/ttyACM1``。新电机仍需按提示逐个接线并完成配置：
+
+.. code-block:: bash
+
+   lerobot-setup-motors \
+     --teleop.type=so101_leader \
+     --teleop.port=/dev/ttyACM1
+
+leader 组装完成后，通过以下终端命令标定并检查输入。此命令只读取 leader，不驱动 follower：
+
+.. code-block:: bash
+
+   python -m rlinf.robotics.parts.teleop.so101_leader \
+     --port /dev/ttyACM1 --id rlinf_leader --calibrate
+
+按提示完成标定，检查输出的关节与夹爪读数，然后按 Ctrl+C 关闭连接。环境的 ``teleop`` 可选择 ``so101_leader``，通过 ``port`` 和 ``calibration_id`` 配置设备。leader 生成与 follower 一致的 5 个关节目标和连续夹爪开度。设备尚未配置时保持 ``teleop: none``；遥操作接入流程见 :doc:`新增真机任务 </rst_source/extending/new_task>`。
+
+关闭 leader 检查后，向 follower 测试工具传入两台机械臂的串口与标定 ID：
+
+.. code-block:: bash
+
+   CAMERA_SERIALS='' python -m toolkits.realworld_check.test_so101_env \
+     --port /dev/ttyACM0 --id rlinf_follower \
+     --leader /dev/ttyACM1 --leader-id rlinf_leader
+
+follower 启动时仍会按前述流程折叠。将 leader 移至接近该姿态的位置，输入 ``teleop``，小幅移动并检查 follower 是否跟随。发送的是绝对关节目标。按 Ctrl+C 停止跟随并返回提示符，再输入 ``quit`` 释放 follower。
+
+无硬件集成检查
+~~~~~~~~~~~~~~
+
+在配有一张受支持 GPU 的主机上，可运行现有 mock 配置，检查 scheduler、环境、rollout 与 actor 的完整调用流程：
+
+.. code-block:: bash
+
+   bash tests/e2e_tests/embodied/run.sh so101_mock_sac_mlp_reach \
+     runner.logger.log_path="$REPO_PATH/logs/so101_mock"
+
+配置名包含 ``mock``，启动脚本因此启用 mock SDK。测试使用实际环境实现，设置 ``is_dummy: False``，接入两台假相机，并采用 ``action_dim: 6``、``obs_dim: 6`` 的 MLP。这只是短时软件集成检查，无需物理标定，也不验证任务效果。
+
+新增真机任务
+------------
+
+硬件检查通过后，参考 :doc:`新增真机任务 </rst_source/extending/new_task>` 定义任务观测、复位流程、奖励和成功条件。SO101 当前具备硬件接口与 reach 示例框架，尚无经过验证的真机任务方案。
+
+从 ``rlinf/envs/real/so101/base.py`` 中的 ``SO101Env`` 与 ``SO101EnvConfig`` 开始。相邻的 ``reach.py`` 展示了如何从 ``override_cfg`` 构造任务配置并传给基类构造函数；指南中的 ``CONFIG_CLS`` 简写仅适用于 Franka。将新任务类加入 ``rlinf/envs/real/so101/__init__.py`` 的 ``TASKS``，再复制 ``examples/embodiment/config/env/so101_reach.yaml``，通过 ``init_params.id`` 选择新注册的 Gymnasium ID。若任务需要笛卡尔空间状态，还需加入正运动学或其他位姿观测来源。
+
+硬件参数放在集群的 ``hardware`` 配置中，设置 ``type: SO101``：``serial_port`` 指定 follower，``calibration_id`` 选择其标定，``camera_serials: []`` 表示不使用相机。任务参数放在 ``env.train.override_cfg`` 中。现有 mock 配置展示了如何将 ``env`` 放置到携带机器人硬件的 node group。控制器位于另一台主机时，参考 :doc:`多节点训练 </rst_source/guides/multi_node>` 和 :doc:`机器人架构 </rst_source/concepts/robotics_architecture>`。
+
+可视化与结果
+------------
+
+mock 运行将 TensorBoard 日志写入 ``logs/so101_mock``，用于检查软件执行流程，不代表物理任务成功率。此示例尚无经过验证的任务结果或预训练任务权重。完成自己的任务后，可按 :doc:`训练指标 </rst_source/reference/metrics>` 和 :doc:`日志记录 </rst_source/guides/logger>` 配置日志与视频。
