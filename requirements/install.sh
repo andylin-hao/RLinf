@@ -1982,24 +1982,12 @@ EOF
 }
 
 install_streamingvla_model() {
-    case "$ENV_NAME" in
-        libero)
-            create_and_sync_venv
-            install_common_embodied_deps
-            install_libero_env
-            uv pip install "rlinf-openpi==0.1.1"
-            install_flash_attn
-            ;;
-        *)
-            echo "Environment '$ENV_NAME' is not supported for StreamingVLA model. Only libero is supported." >&2
-            exit 1
-            ;;
-    esac
+    if [ "$ENV_NAME" != "libero" ]; then
+        echo "Environment '$ENV_NAME' is not supported for StreamingVLA model. Only libero is supported." >&2
+        exit 1
+    fi
 
-    uv pip install -r "$SCRIPT_DIR/embodied/models/openpi.txt"
-    bash $SCRIPT_DIR/embodied/download_assets.sh --assets openpi
-    uv pip install "tokenizers>=0.21,<0.22"
-    uv pip uninstall pynvml || true
+    install_openpi_model
 }
 
 install_molmoact2_model() {
