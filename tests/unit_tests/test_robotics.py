@@ -3851,6 +3851,7 @@ def test_franky_healthy_tracking_can_switch_reset_and_rebuild_compliance(
     assert arm.get_observation()["tcp_pose"].shape == (7,)
 
 
+@pytest.mark.placement
 def test_the_bench_check_runs_a_whole_robot_on_fakes():
     from robot_mocks import mocked_sdks
 
@@ -3873,6 +3874,7 @@ def test_the_bench_check_runs_a_whole_robot_on_fakes():
         )
 
 
+@pytest.mark.placement
 def test_every_shipped_robot_runs_on_faked_sdks():
     from robot_mocks import mocked_sdks
 
@@ -4428,6 +4430,7 @@ def test_a_robot_composes_the_hand_its_config_names():
         )
 
 
+@pytest.mark.placement
 def test_a_franka_robot_composes_the_backend_and_hand_it_is_given():
     from robot_mocks import mocked_sdks
 
@@ -4636,6 +4639,7 @@ def test_a_stalled_camera_is_reopened_before_the_caller_sees_the_error():
             camera.disconnect()
 
 
+@pytest.mark.placement
 def test_a_franka_env_commands_the_arm_through_the_robot():
     from robot_mocks import mocked_sdks
 
@@ -5396,6 +5400,7 @@ def registered_tool(monkeypatch):
     return PoseTool
 
 
+@pytest.mark.placement
 @pytest.mark.parametrize("backend", ["franka_ros", "franky"])
 def test_custom_driver_composes_with_each_franka_arm(registered_tool, backend):
     from robot_mocks import mocked_sdks
