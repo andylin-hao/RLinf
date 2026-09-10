@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
+import math
 import sys
 import time
 from pathlib import Path
@@ -644,3 +645,188 @@ def test_delay_metrics_report_every_sample():
 
     assert metrics.tolist() == pytest.approx([0.03, 0.03])
     assert env.insert_delay_metrics().numel() == 0
+
+
+def _sfp_targets(**kwargs):
+    from rlinf.models.embodiment.openpi_rlinf.pi0_model.sfp import (
+        compute_sfp_flow_targets,
+    )
+
+    return compute_sfp_flow_targets(**kwargs)
+
+
+def _sfp_trajectory(actions, action_states):
+    return torch.cumsum(torch.cat([action_states[:, None], actions], dim=1), dim=1)
+
+
+def test_sfp_position_and_velocity_follow_the_action_trajectory():
+    horizon, dim = 4, 2
+    actions = torch.arange(1.0, horizon * dim + 1).reshape(1, horizon, dim)
+    action_states = torch.tensor([[10.0, -5.0]])
+    trajectory = _sfp_trajectory(actions, action_states)
+    noise = torch.zeros(1, 1, dim)
+
+    # t = 0.5 of a 4-step chunk lands exactly on the start of segment 2.
+    x_t, u_t = _sfp_targets(
+        actions=actions,
+        action_states=action_states,
+        time=torch.tensor([0.5]),
+        noise=noise,
+        action_horizon=horizon,
+    )
+    torch.testing.assert_close(x_t, trajectory[:, 2:3])
+    torch.testing.assert_close(u_t, (trajectory[:, 3:4] - trajectory[:, 2:3]) * horizon)
+
+    # Halfway into that segment the position interpolates and the velocity, which
+    # is constant along a segment, does not change.
+    x_mid, u_mid = _sfp_targets(
+        actions=actions,
+        action_states=action_states,
+        time=torch.tensor([0.625]),
+        noise=noise,
+        action_horizon=horizon,
+    )
+    torch.testing.assert_close(
+        x_mid, trajectory[:, 2:3] + 0.5 * (trajectory[:, 3:4] - trajectory[:, 2:3])
+    )
+    torch.testing.assert_close(u_mid, u_t)
+
+
+def test_sfp_trajectory_starts_at_the_action_state():
+    horizon, dim = 4, 2
+    action_states = torch.tensor([[10.0, -5.0]])
+
+    x_t, _ = _sfp_targets(
+        actions=torch.ones(1, horizon, dim),
+        action_states=action_states,
+        time=torch.full((1,), 1e-6),
+        noise=torch.zeros(1, 1, dim),
+        action_horizon=horizon,
+    )
+
+    torch.testing.assert_close(x_t, action_states[:, None], atol=1e-4, rtol=0)
+
+
+def test_sfp_injected_noise_decays_along_the_trajectory():
+    horizon, dim = 4, 2
+    kwargs = {
+        "actions": torch.zeros(1, horizon, dim),
+        "action_states": torch.zeros(1, dim),
+        "noise": torch.ones(1, 1, dim),
+        "action_horizon": horizon,
+        "sigma": 0.16,
+        "noise_decay": 4.0,
+    }
+
+    early, _ = _sfp_targets(time=torch.tensor([0.01]), **kwargs)
+    late, _ = _sfp_targets(time=torch.tensor([0.99]), **kwargs)
+
+    # A flat trajectory leaves only the injected noise, which shrinks as the
+    # sample approaches the end of the chunk.
+    assert early.abs().max() > late.abs().max()
+    torch.testing.assert_close(late, torch.full_like(late, 0.16 * math.exp(-3.96)))
+
+
+def test_sfp_rejects_a_noise_shape_meant_for_a_whole_chunk():
+    horizon, dim = 4, 2
+
+    with pytest.raises(ValueError, match="noise must have shape"):
+        _sfp_targets(
+            actions=torch.zeros(1, horizon, dim),
+            action_states=torch.zeros(1, dim),
+            time=torch.tensor([0.5]),
+            noise=torch.zeros(1, horizon, dim),
+            action_horizon=horizon,
+        )
+
+
+def test_sfp_config_reads_the_openpi_block():
+    from rlinf.models.embodiment.openpi_rlinf.utils.sfp_utils import build_sfp_config
+
+    default = build_sfp_config(OmegaConf.create({"task": "sft"}))
+    assert not default.use_sfp
+
+    configured = build_sfp_config(
+        OmegaConf.create({"use_sfp": True, "sfp_sigma": 0.2, "sfp_noise_decay": 3.0})
+    )
+    assert (configured.use_sfp, configured.sigma, configured.noise_decay) == (
+        True,
+        0.2,
+        3.0,
+    )
+
+
+@pytest.mark.parametrize("task", ["eval", "rl"])
+def test_sfp_is_refused_by_the_tasks_without_a_trajectory_sampler(task):
+    from rlinf.models.embodiment.openpi_rlinf.utils.model_builders import _reject_sfp
+
+    _reject_sfp(OmegaConf.create({"use_sfp": False}), task)
+
+    with pytest.raises(ValueError, match="use_sfp is not supported"):
+        _reject_sfp(OmegaConf.create({"use_sfp": True}), task)
+
+
+class _FakePi0Core(torch.nn.Module):
+    """Stands in for the Pi0 core to observe which objective the wrapper picks."""
+
+    action_dim = 32
+    action_horizon = 10
+
+    def __init__(self):
+        super().__init__()
+        self.weight = torch.nn.Parameter(torch.zeros(1))
+        self.calls: list = []
+
+    def compute_loss(self, observation, actions, **kwargs):
+        self.calls.append("flow_matching")
+        return torch.zeros(actions.shape[0], self.action_horizon) + self.weight
+
+    def compute_sfp_loss(self, observation, actions, **kwargs):
+        self.calls.append(("sfp", kwargs.get("sigma"), kwargs.get("noise_decay")))
+        return torch.zeros(actions.shape[0], 1) + self.weight
+
+
+def _sft_batch():
+    return (
+        {
+            "image": {},
+            "image_mask": {},
+            "state": torch.zeros(2, 32),
+            "action_states": torch.zeros(2, 32),
+        },
+        torch.zeros(2, 10, 32),
+    )
+
+
+@pytest.mark.parametrize(
+    ("use_sfp", "expected"),
+    [(False, ["flow_matching"]), (True, [("sfp", 0.2, 3.0)])],
+)
+def test_sft_wrapper_selects_the_objective_from_use_sfp(use_sfp, expected):
+    from rlinf.models.embodiment.openpi_rlinf.utils.model_builders import (
+        _build_sft_model,
+    )
+
+    core = _FakePi0Core()
+    model_cfg = OmegaConf.create(
+        {"use_sfp": use_sfp, "sfp_sigma": 0.2, "sfp_noise_decay": 3.0}
+    )
+
+    wrapper = _build_sft_model(model_cfg, core, num_steps=10, action_env_dim=7)
+    wrapper.sft_forward(_sft_batch())
+
+    assert core.calls == expected
+
+
+def test_sfp_and_rlt_objectives_are_mutually_exclusive():
+    from rlinf.models.embodiment.openpi_rlinf.utils.model_builders import (
+        _build_sft_model,
+    )
+
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        _build_sft_model(
+            OmegaConf.create({"use_sfp": True, "use_rlt": True}),
+            _FakePi0Core(),
+            num_steps=10,
+            action_env_dim=7,
+        )

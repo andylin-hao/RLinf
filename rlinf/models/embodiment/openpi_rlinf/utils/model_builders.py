@@ -32,6 +32,7 @@ from __future__ import annotations
 import logging
 
 from rlinf.models.embodiment.openpi_rlinf.utils.rlt_utils import build_rlt_config
+from rlinf.models.embodiment.openpi_rlinf.utils.sfp_utils import build_sfp_config
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,21 @@ def _resolve_data_kwargs(cfg):
     if data_kwargs is not None:
         data_kwargs = OmegaConf.to_container(data_kwargs, resolve=True)
     return data_kwargs
+
+
+def _reject_sfp(model_cfg, task: str) -> None:
+    """Refuse the tasks that would need an SFP trajectory sampler.
+
+    An SFP checkpoint has the same shape as any Pi0.5 one, so eval and RL would
+    load it and silently run the flow-matching sampler, which integrates the
+    wrong field. Until a trajectory sampler exists, say so instead.
+    """
+    if build_sfp_config(model_cfg).use_sfp:
+        raise ValueError(
+            f"actor.model.openpi.use_sfp is not supported with task={task!r}: "
+            "Streaming Flow Policy needs a trajectory sampler that is not "
+            "implemented yet. Use task='sft' to train."
+        )
 
 
 def _build_eval_model(
@@ -71,6 +87,7 @@ def _build_eval_model(
         build_openpi_transforms,
     )
 
+    _reject_sfp(model_cfg, "eval")
     config_name = str(OmegaConf.select(model_cfg, "config_name", default=""))
     if not config_name:
         raise ValueError(
@@ -107,7 +124,8 @@ def _build_sft_model(
     The observation/action transform is applied upstream in the environment SFT
     data loader, which routes each frame through the same openpi transform
     pipeline the eval/RL paths use, so the SFT model holds no processor and no
-    transforms — it just computes the flow-matching loss.
+    transforms — it just computes the training loss. ``openpi.use_sfp`` and
+    ``openpi.use_rlt`` select which objective that is.
     """
     from rlinf.models.embodiment.openpi_rlinf.sft_action_model import (
         OpenPiPytorchSFTActionModel,
@@ -118,6 +136,7 @@ def _build_sft_model(
         num_steps=num_steps,
         action_env_dim=action_env_dim,
         rlt_cfg=build_rlt_config(model_cfg),
+        sfp_cfg=build_sfp_config(model_cfg),
     )
 
 
@@ -139,6 +158,8 @@ def _build_rl_model(
     knobs (``rl_cfg``, value head, freeze) on top.
     """
     from omegaconf import OmegaConf
+
+    _reject_sfp(model_cfg, "rl")
 
     from rlinf.models.embodiment.openpi_rlinf.rl_action_model import (
         OpenPiPytorchRLActionModel,

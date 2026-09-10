@@ -28,6 +28,7 @@ import torch.nn.functional as F
 
 from . import gemma, model, pointnet, siglip
 from .pi0_config import Pi0Config
+from .sfp import compute_sfp_flow_targets
 from .utils import _str_to_dtype
 
 logger = logging.getLogger("openpi")
@@ -385,6 +386,92 @@ class Pi0(model.BaseModel):
         v_t = self.action_out_proj(suffix_out[:, -self.action_horizon :])
 
         return torch.mean(torch.square(v_t - u_t), dim=-1)
+
+    def compute_sfp_loss(
+        self,
+        observation: model.Observation,
+        actions: torch.Tensor,
+        *,
+        train: bool = False,
+        rng: torch.Generator | None = None,
+        noise: torch.Tensor | None = None,
+        time: torch.Tensor | None = None,
+        sigma: float = 0.16,
+        noise_decay: float = 4.0,
+    ) -> torch.Tensor:
+        """Compute the Streaming Flow Policy loss.
+
+        The action expert sees a single token carrying the noised position on
+        the action trajectory and regresses the trajectory velocity there,
+        instead of the flow-matching displacement of a whole chunk. This
+        requires ``observation.action_states``, which the SFP data config adds
+        to every sample; :mod:`rlinf.models.embodiment.openpi_rlinf.pi0_model.sfp`
+        describes the normalization the trajectory depends on.
+
+        Returns:
+            loss: (B, 1) per-sample MSE loss
+        """
+        if observation.action_states is None:
+            raise ValueError(
+                "SFP training requires observation.action_states. Select an SFP "
+                "data config (e.g. actor.model.openpi.config_name="
+                "'pi05_libero_sfp') so the loader supplies it."
+            )
+        B = actions.shape[0]
+        device = actions.device
+
+        observation = model.preprocess_observation(observation, train=train, rng=rng)
+        # The trajectory is a cumulative sum, so read the states before the
+        # compute-dtype cast and build the targets in float32 throughout.
+        action_states = observation.action_states
+        observation = model._observation_to_dtype(observation, self.embed_dtype)
+
+        if time is None:
+            time = (
+                torch.distributions.Beta(torch.tensor(1.5), torch.tensor(1.0))
+                .sample((B,))
+                .to(device=device)
+            )
+            time = time * 0.999 + 0.001
+        time = time.to(device=device, dtype=torch.float32)
+        if noise is None:
+            noise = torch.randn(
+                (B, 1, actions.shape[-1]),
+                device=device,
+                dtype=torch.float32,
+                generator=rng,
+            )
+
+        x_t, u_t = compute_sfp_flow_targets(
+            actions,
+            action_states,
+            time,
+            noise,
+            action_horizon=self.action_horizon,
+            sigma=sigma,
+            noise_decay=noise_decay,
+        )
+
+        # One forward pass for prefix + the single SFP suffix token
+        prefix_tokens, prefix_mask, prefix_ar_mask = self.embed_prefix(observation)
+        suffix_tokens, suffix_mask, suffix_ar_mask, adarms_cond = self.embed_suffix(
+            observation, x_t, time
+        )
+
+        input_mask = torch.cat([prefix_mask, suffix_mask], dim=1)
+        ar_mask = torch.cat([prefix_ar_mask, suffix_ar_mask], dim=0)
+        attn_mask = make_attn_mask(input_mask, ar_mask)
+        positions = torch.cumsum(input_mask.int(), dim=1) - 1
+
+        _, suffix_out = self.llm(
+            [prefix_tokens, suffix_tokens],
+            positions=positions,
+            mask=attn_mask,
+            adarms_cond=[None, adarms_cond],
+        )[0]
+
+        v_t = self.velocity_from_suffix(suffix_out[:, -1:])
+        return torch.mean(torch.square(v_t.float() - u_t), dim=-1)
 
     def build_prefix_cache(
         self, observation: model.Observation

@@ -28,16 +28,22 @@ from rlinf.models.embodiment.openpi_rlinf.pi0_model.pi0 import Pi0, make_attn_ma
 from rlinf.models.embodiment.openpi_rlinf.utils.rlt_utils import (
     OpenPiPytorchRLTConfig,
 )
+from rlinf.models.embodiment.openpi_rlinf.utils.sfp_utils import (
+    OpenPiPytorchSfpConfig,
+)
 
 
 class OpenPiPytorchSFTActionModel(OpenPiPytorchActionModel):
     """SFT variant of :class:`OpenPiPytorchActionModel`.
 
-    With ``openpi.use_rlt=False`` this computes the ordinary flow-matching loss.
-    With ``openpi.use_rlt=True`` it keeps the same VLA loss and adds the legacy
-    RLT-token reconstruction objective:
+    By default this computes the ordinary flow-matching loss. Two objectives can
+    replace or extend it, each selected from ``actor.model.openpi``:
 
-    ``loss = rlt_loss + rlt_alpha * vla_loss``.
+    * ``use_sfp=True`` swaps in the Streaming Flow Policy loss, which regresses
+      the action-trajectory velocity from one suffix token instead of denoising
+      a whole chunk. It needs ``action_states`` in every sample.
+    * ``use_rlt=True`` keeps the VLA loss and adds the legacy RLT-token
+      reconstruction objective: ``loss = rlt_loss + rlt_alpha * vla_loss``.
     """
 
     def __init__(
@@ -47,6 +53,7 @@ class OpenPiPytorchSFTActionModel(OpenPiPytorchActionModel):
         num_steps: int,
         action_env_dim: int,
         rlt_cfg: OpenPiPytorchRLTConfig | None = None,
+        sfp_cfg: OpenPiPytorchSfpConfig | None = None,
     ):
         super().__init__(
             pi0_model,
@@ -54,6 +61,12 @@ class OpenPiPytorchSFTActionModel(OpenPiPytorchActionModel):
             action_env_dim=action_env_dim,
             rlt_cfg=rlt_cfg,
         )
+        self.sfp_cfg = sfp_cfg or OpenPiPytorchSfpConfig()
+        if self.sfp_cfg.use_sfp and self.rlt_cfg.use_rlt:
+            raise ValueError(
+                "actor.model.openpi.use_sfp and use_rlt are mutually exclusive; "
+                "the RLT objective extends flow matching, not SFP."
+            )
 
     def forward(self, forward_type: ForwardType = ForwardType.SFT, **kwargs):
         """Dispatch — SFT variant only supports :attr:`ForwardType.SFT`."""
@@ -78,6 +91,16 @@ class OpenPiPytorchSFTActionModel(OpenPiPytorchActionModel):
         observation, actions = self._unpack_sft_batch(data)
         observation = self._observation_to_device(observation)
         actions = self._actions_to_device(actions)
+        if self.sfp_cfg.use_sfp:
+            per_sample_loss = self.model.compute_sfp_loss(
+                observation,
+                actions,
+                train=True,
+                sigma=self.sfp_cfg.sigma,
+                noise_decay=self.sfp_cfg.noise_decay,
+            )
+            return per_sample_loss.mean()
+
         if not self.rlt_cfg.use_rlt:
             per_timestep_loss = self.model.compute_loss(
                 observation, actions, train=True
@@ -137,6 +160,7 @@ class OpenPiPytorchSFTActionModel(OpenPiPytorchActionModel):
             token_ar_mask=_move(observation.token_ar_mask),
             token_loss_mask=_move(observation.token_loss_mask),
             pcd_xyz=_move(observation.pcd_xyz),
+            action_states=_move(observation.action_states),
         )
 
     def _actions_to_device(self, actions: Any) -> torch.Tensor:
