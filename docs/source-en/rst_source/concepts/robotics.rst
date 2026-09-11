@@ -189,8 +189,9 @@ sources. The robot still owns the placement and lifecycle of those cameras; the
 environment only consumes their observations.
 
 ``TaskEnv`` builds the policy's ``state`` and ``frames`` from that one reading,
-as its ``ObservationSpec`` lists them. The policy's representation lives there;
-the robot interface remains named and nested. That separation is also what lets
+as its ``ObservationSpec`` declares them, key by key, with the encoding and
+colour order a checkpoint was trained on. The policy's representation lives
+there; the robot interface remains named and nested. That separation is also what lets
 placement change without reaching task code.
 
 Keep Placement Out of Task Code
@@ -214,9 +215,9 @@ Keep Task Logic Separate
 
 A part defines how to sense or move hardware; a task defines why those readings
 and motions matter. Reward, termination, and task-specific reset behavior
-therefore belong to a ``Task``, and what a policy's action means belongs to a
-``Control``. ``TaskEnv`` joins a task, a control, and a robot, checks that the
-robot has what the other two need, and owns the lifecycle. Specialized envs that
+therefore belong to a ``Task``, and what a policy's numbers mean belongs to the
+channels of an ``ActionLayout``. ``TaskEnv`` joins a task, a layout, and a
+robot, checks that the robot has what they need, and owns the lifecycle. Specialized envs that
 have not moved onto it use the same robot calls directly.
 
 The result is two independent contracts: robot paths remain stable across tasks

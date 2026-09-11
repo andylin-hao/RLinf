@@ -90,7 +90,7 @@ class BinRelocation(CartesianTarget):
         side = self.BIN_OFFSET if self.task_id == 0 else -self.BIN_OFFSET
         pose[1] = self.config.target_ee_pose[1] + side
 
-        context.control.release(parts)
+        context.action.release(parts)
         hold(parts)
         time.sleep(0.5)
         lift(parts, context, 0.10)

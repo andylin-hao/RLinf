@@ -19,12 +19,16 @@ in ``0..1`` on the same CAN session. It reports its six joints and the tool pose
 its own controller solves for, so a task may score either.
 """
 
-from rlinf.envs.real.control import (
+from rlinf.envs.real.policy import (
+    ActionLayout,
     ContinuousGripper,
-    JointControlConfig,
-    JointPositionControl,
+    JointActionConfig,
+    JointPositions,
+    ObservationSpec,
+    Source,
+    StateKey,
 )
-from rlinf.envs.real.task_env import ObservationSpec, RegisteredTaskEnv, StateField
+from rlinf.envs.real.task_env import RegisteredTaskEnv
 from rlinf.robotics import PiperConfig, PiperRobot
 from rlinf.robotics.parts.arms.piper import PiperArm
 from rlinf.robotics.parts.cameras import CameraInfo
@@ -34,19 +38,28 @@ class PiperEnv(RegisteredTaskEnv):
     """A task on a Piper, driven by absolute joint targets."""
 
     ROBOT = PiperRobot
-    CONTROL = JointPositionControl
+    ACTION_CONFIG = JointActionConfig
     DEFAULTS = {
         "joint_limit_low": tuple(PiperArm.JOINT_LIMITS_LOWER),
         "joint_limit_high": tuple(PiperArm.JOINT_LIMITS_UPPER),
     }
 
     @classmethod
-    def make_control(
-        cls, hardware: PiperConfig, config: JointControlConfig, options: None = None
-    ) -> JointPositionControl:
+    def make_action(
+        cls, hardware: PiperConfig, config: JointActionConfig, options: None = None
+    ) -> ActionLayout:
         """Six joints, then the gripper's opening when one is fitted."""
-        gripper = ContinuousGripper() if hardware.with_gripper else None
-        return JointPositionControl(config, dof=PiperArm.DOF, gripper=gripper)
+        channels = [
+            JointPositions(
+                "arm",
+                low=config.joint_limit_low,
+                high=config.joint_limit_high,
+                dof=PiperArm.DOF,
+            )
+        ]
+        if hardware.with_gripper:
+            channels.append(ContinuousGripper("arm"))
+        return ActionLayout(channels)
 
     @classmethod
     def make_observation(
@@ -54,16 +67,19 @@ class PiperEnv(RegisteredTaskEnv):
     ) -> ObservationSpec:
         """Joints and tool pose, the gripper's opening, and the cameras."""
         state = [
-            StateField("arm_joint_position", "arm_joint_position", (PiperArm.DOF,)),
-            StateField("tcp_pose", "tcp_pose", (7,)),
+            StateKey(
+                "arm_joint_position",
+                (PiperArm.DOF,),
+                (Source("arm_joint_position"),),
+            ),
+            StateKey("tcp_pose", (7,), (Source("tcp_pose"),)),
         ]
         if hardware.with_gripper:
             state.append(
-                StateField(
+                StateKey(
                     "gripper_position",
-                    "state",
                     (1,),
-                    end_effector=True,
+                    (Source("state", end_effector=True),),
                     low=0.0,
                     high=1.0,
                 )

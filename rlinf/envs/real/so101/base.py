@@ -21,12 +21,16 @@ gripper share one servo bus, so both go out in one joint-space command.
 
 import numpy as np
 
-from rlinf.envs.real.control import (
+from rlinf.envs.real.policy import (
+    ActionLayout,
     ContinuousGripper,
-    JointControlConfig,
-    JointPositionControl,
+    JointActionConfig,
+    JointPositions,
+    ObservationSpec,
+    Source,
+    StateKey,
 )
-from rlinf.envs.real.task_env import ObservationSpec, RegisteredTaskEnv, StateField
+from rlinf.envs.real.task_env import RegisteredTaskEnv
 from rlinf.robotics import SO101Config, SO101Robot
 from rlinf.robotics.parts.arms.so101 import SO101Arm
 from rlinf.robotics.parts.cameras import CameraInfo
@@ -41,7 +45,7 @@ class SO101Env(RegisteredTaskEnv):
     """A task on an SO-101, driven by absolute joint targets."""
 
     ROBOT = SO101Robot
-    CONTROL = JointPositionControl
+    ACTION_CONFIG = JointActionConfig
     # The leader arm is the same five joints and gripper as this follower.
     TELEOP = ("so101_leader",)
     DEFAULTS = {
@@ -50,12 +54,20 @@ class SO101Env(RegisteredTaskEnv):
     }
 
     @classmethod
-    def make_control(
-        cls, hardware: SO101Config, config: JointControlConfig, options: None = None
-    ) -> JointPositionControl:
+    def make_action(
+        cls, hardware: SO101Config, config: JointActionConfig, options: None = None
+    ) -> ActionLayout:
         """Five joints, then the gripper's opening."""
-        return JointPositionControl(
-            config, dof=SO101Arm.DOF, gripper=ContinuousGripper()
+        return ActionLayout(
+            (
+                JointPositions(
+                    "arm",
+                    low=config.joint_limit_low,
+                    high=config.joint_limit_high,
+                    dof=SO101Arm.DOF,
+                ),
+                ContinuousGripper("arm"),
+            )
         )
 
     @classmethod
@@ -64,12 +76,15 @@ class SO101Env(RegisteredTaskEnv):
     ) -> ObservationSpec:
         """Joints, the gripper's opening, and the cameras."""
         state = (
-            StateField("arm_joint_position", "arm_joint_position", (SO101Arm.DOF,)),
-            StateField(
+            StateKey(
+                "arm_joint_position",
+                (SO101Arm.DOF,),
+                (Source("arm_joint_position"),),
+            ),
+            StateKey(
                 "gripper_position",
-                "state",
                 (1,),
-                end_effector=True,
+                (Source("state", end_effector=True),),
                 low=0.0,
                 high=1.0,
             ),

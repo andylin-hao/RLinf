@@ -242,24 +242,25 @@ branches that shared one would run in declaration order.
 
 Hardware code says how to move the base. Two other pieces decide what happens
 on it during an episode: a *task* decides where the base should go and when the
-episode succeeds, and a *control* decides what a policy's action means. Neither
-is specific to this robot. ``TaskEnv`` takes the composed robot, a task, and a
-control, and runs episodes with them:
+episode succeeds, and an *action layout* decides what a policy's numbers mean.
+Neither is specific to this robot. ``TaskEnv`` takes the composed robot, a
+task, and the layout, and runs episodes with them:
 
 .. code-block:: python
 
-   import gymnasium as gym
-
-   from rlinf.envs.real.control import Applied, Control
-   from rlinf.envs.real.task_env import (
+   from rlinf.envs.real.policy import (
+       ActionLayout,
+       Channel,
+       Command,
        ObservationSpec,
-       StateField,
-       TaskEnv,
-       TaskEnvConfig,
+       Phase,
+       Source,
+       StateKey,
    )
+   from rlinf.envs.real.task_env import TaskEnv, TaskEnvConfig
    from rlinf.envs.real.tasks import Evaluation, Needs, Task
    from rlinf.robotics import MobileBase
-   from rlinf.robotics.actions import ActionKind, ActionPart
+   from rlinf.robotics.actions import ActionKind
 
 
    class DriveToTarget(Task):
@@ -281,34 +282,38 @@ control, and runs episodes with them:
            return Evaluation(reward=float(reached), in_zone=reached)
 
 
-   class BaseVelocityControl(Control):
+   class Drive(Channel):
+       """Two numbers, straight onto the base's velocity."""
+
        LIMITS = np.array([0.5, 1.0], dtype=np.float32)
 
        def __init__(self):
-           super().__init__(config=None)
+           super().__init__(
+               role="base",
+               name="base",
+               width=2,
+               kind=ActionKind.BASE_VELOCITY,
+               phase=Phase.WITH,
+           )
+
+       def bounds(self):
+           return -self.LIMITS, self.LIMITS
 
        def requirements(self):
            return {
                "base": Needs(kind=MobileBase, commands=frozenset({"velocity"}))
            }
 
-       def action_parts(self):
-           return (ActionPart("base", 2, ActionKind.BASE_VELOCITY),)
-
-       def action_space(self):
-           return gym.spaces.Box(-self.LIMITS, self.LIMITS)
-
-       def apply(self, parts, action, reading):
-           parts.robot.send_action({"base": {"velocity": action}})
-           return Applied()
+       def command(self, parts, values, reading):
+           return Command(send={"base": {"velocity": values}})
 
 
    env = TaskEnv(
        robot,
        DriveToTarget([1.0, 0.0]),
-       BaseVelocityControl(),
+       ActionLayout((Drive(),)),
        observation=ObservationSpec(
-           (StateField("base_pose", "pose", (3,), role="base"),)
+           (StateKey("base_pose", (3,), (Source("pose", role="base"),)),)
        ),
        config=TaskEnvConfig(max_num_steps=200),
    )
@@ -321,7 +326,7 @@ control, and runs episodes with them:
        env.close()
 
 Read the example in the order the environment uses it. Both the task and the
-control name the role ``base`` and state what the part filling it must be,
+channel name the role ``base`` and state what the part filling it must be,
 report, and accept. ``TaskEnv`` binds each role to a part of the composed robot
 and checks those declarations before it connects anything: a robot with no
 ``MobileBase``, or one whose base does not accept ``velocity``, is refused with
@@ -329,19 +334,20 @@ a ``RequirementError`` that names the role and what the part offers. Only then
 does construction connect the robot.
 
 ``reset()`` calls the task's ``reset``, which stops the base, and returns the
-first observation. Each ``step()`` clips the action to the control's
-``action_space``, lets the control turn it into a part command, waits out the
-control period, reads the whole robot once, and asks the task to score that
-reading. ``ObservationSpec`` says what the policy sees: here one ``state``
-entry, ``base_pose``, read from the base's ``pose``. ``close()`` disconnects
-the robot.
+first observation. Each ``step()`` clips the action to the layout's bounds,
+lets each channel turn its own slice into a part command, waits out the control
+period, reads the whole robot once, and asks the task to score that reading.
+``ObservationSpec`` says what the policy sees: here one ``state`` entry,
+``base_pose``, read from the base's ``pose``. ``close()`` disconnects the
+robot.
 
-The arm is on the robot but untouched, because neither the task nor the control
-names it. A manipulation task adds an ``arm`` role, and a control that drives
-it adds the arm's slice of the action; the base driver and the robot
-composition stay as they are. RLinf ships controls for absolute joint targets
-and tasks such as joint reach in ``rlinf.envs.real.control`` and
-``rlinf.envs.real.tasks``, and any of them runs on this robot wherever its
+The arm is on the robot but untouched, because neither the task nor the layout
+names it. A manipulation task adds an ``arm`` role, and the layout gains that
+arm's channels beside the base's; the base driver and the robot composition
+stay as they are. That is also how a second arm is added, since a channel names
+the role it drives. RLinf ships channels for joint targets, tool-pose deltas
+and end effectors in ``rlinf.envs.real.policy``, and tasks such as joint reach
+in ``rlinf.envs.real.tasks``, and any of them runs on this robot wherever its
 requirements are met.
 
 To launch a task through RLinf's distributed ``RealWorldEnv``, give it a

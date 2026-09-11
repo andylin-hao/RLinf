@@ -36,7 +36,7 @@ config dataclass and a class that adds its reset motion to ``CartesianTarget``:
 
        def reset(self, parts, context):
            # Grip the peg and lift it clear of the slot before homing.
-           context.control.grasp(parts)
+           context.action.grasp(parts)
            hold(parts)
            lift(parts, context, 0.10)
            self.go_to_rest(parts, context)
@@ -44,12 +44,13 @@ config dataclass and a class that adds its reset motion to ``CartesianTarget``:
 ``PegInsertionConfig`` gives the task one typed source for the target, the
 workspace around it, and reset randomization. The task states what it needs
 from the robot, an arm that reports ``tcp_pose``, and never builds an action:
-``context.control.grasp()`` closes the gripper through the same channel a policy
-drives, whichever control the robot is driven by.
+``context.action.grasp()`` closes the gripper through the same channel a policy
+drives, whichever channels the robot is driven by.
 
 A robot preset such as ``FrankaEnv`` in ``rlinf/envs/real/franka/base.py``
-supplies the other half: the robot class, the control that turns a policy
-action into part commands, and the observation layout the policy reads. A task
+supplies the other half: the robot class, the action channels that turn a
+policy's numbers into part commands, and the observation layout the policy
+reads. A task
 id is then one registration naming the task and the robot-side settings it wants
 by default:
 
@@ -142,8 +143,8 @@ move from the task's ``use_camera_ids`` to the hardware field ``camera_ids``.
 Single-arm Franka, Piper, SO-101, and GimArm tasks run on ``TaskEnv``. A run still
 passes one flat ``override_cfg``; each key goes to whichever of three configs
 declares it: ``RegisteredTaskEnvConfig`` for how an episode runs, the cameras,
-and a reward model; the control's config, ``CartesianControlConfig`` or
-``JointControlConfig``, for action scales, gains, and joint bounds; and the
+and a reward model; the action channels' config, ``PoseActionConfig`` or
+``JointActionConfig``, for action scales, gains, and joint bounds; and the
 task's config, such as ``PegInsertionConfig`` or ``JointReachConfig``, for
 targets and reward. A preset with settings of its own adds a fourth, such as
 GimArm's ``GimArmOptions`` for the controller mode. A key none of them declares
@@ -187,18 +188,19 @@ Drive Hardware Through the Robotics Interface
 
 Registration determines which env is created; the constructed ``TaskEnv`` then
 owns one composed robot for its entire lifetime. It binds the parts the task,
-control, and observation need, connects the robot during initialization, and
+action layout, and observation need, connects the robot during initialization,
+and
 disconnects it from ``close()``. Each step obtains one nested result from
-``robot.get_observation()``, and the control sends named branches through
+``robot.get_observation()``, and the channels send named branches through
 ``robot.send_action()`` rather than reaching around the robot to a driver or
 vendor SDK.
 
 This boundary is shared by different hardware layouts. Franka exposes its arm
 and end effector as sibling paths because they open separate connections.
 SO-101 exposes ``arm.end_effector`` because its gripper is another servo on the
-arm bus. Binding finds the end effector either way, so ``JointPositionControl``
-sends SO-101's joint targets and gripper opening in one command without
-knowing where the gripper sits.
+arm bus. Binding finds the end effector either way, so SO-101's joint channel
+and gripper channel go out in one command without either of them knowing where
+the gripper sits.
 
 The step interface is deliberately small, but reset and readiness need category
 methods outside that stream. A task reaches them through the parts bound to its
@@ -220,7 +222,7 @@ Run One Task on Different Robots
 --------------------------------
 
 Because a task names what it needs rather than which robot provides it, one
-task class runs on robots with different kinematics and different controls.
+task class runs on robots with different kinematics and different channels.
 ``PegInsertionEnv-v1`` and ``GimArmPegInsertionEnv-v1`` both run
 ``PegInsertion``:
 
@@ -239,21 +241,22 @@ task class runs on robots with different kinematics and different controls.
 
 The Franka preset moves the tool by Cartesian deltas inside the task's
 workspace. The GimArm preset sends absolute joint targets, for which a tool
-workspace has no meaning, so its control ignores it. The reward is the same on
+workspace has no meaning, so its channels ignore it. The reward is the same on
 both, the tool's distance to the seated peg, because both arms report
 ``tcp_pose``. Only the reset differs: a GimArm cannot be sent a tool pose, so
 ``reset_mode="joint"`` retracts and rests through joint configurations instead
 of lifting the tool. An option like this names a real difference between arms;
 the task never branches on the robot's type.
 
-Settings that belong to one robot rather than to the task or the control, such
+Settings that belong to one robot rather than to the task or its channels, such
 as GimArm's controller mode, live in the preset's ``OPTIONS`` dataclass, which
 the preset passes on to ``Robot.from_config``. A preset's default for a setting
 its task does not declare is dropped, so a preset's defaults never stop it
 running another task.
 
 The unit tests compose ``PegInsertion(PegInsertionConfig(reset_mode="joint"))``
-with ``JointPositionControl`` on a fake joint arm, without a Gymnasium ID. The
+with a joint channel and a binary gripper channel on a fake joint arm, without
+a Gymnasium ID. The
 same composition tries an existing task on a new robot before that robot has a
 preset.
 
@@ -439,14 +442,16 @@ through robot I/O and the three wrapper families:
      - ``RealWorldEnv``, the vectorized env the framework instantiates from
        ``env_type: real``.
    * - ``real/task_env.py``
-     - ``TaskEnv``, which runs one task on one robot through one control, and
-       ``RegisteredTaskEnv``, which builds those from a run's config for a
+     - ``TaskEnv``, which runs one task on one robot, and
+       ``RegisteredTaskEnv``, which builds it from a run's config for a
        Gymnasium ID.
    * - ``real/tasks/``
      - Tasks written once for any robot that meets their requirements, and the
        requirement check that binds them to a robot's parts.
-   * - ``real/control/``
-     - How a policy's action vector becomes commands to a robot's parts.
+   * - ``real/policy/``
+     - What the policy sends and reads: the action channels of each robot's
+       layout, and the observation keys, encodings and colour order a
+       checkpoint is trained against.
 
 Next
 ----

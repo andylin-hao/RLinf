@@ -11,7 +11,7 @@ simulator or benchmark, follow :doc:`new_env` instead.
 A task says what counts as doing the job: where the target is, what the robot
 must report to be scored, how the scene is put back between episodes, and what
 each step earns. It never builds an action. How a policy's action reaches the
-arm belongs to the robot's control, and connecting and placing the hardware
+arm belongs to the robot's action channels, and connecting and placing the hardware
 belongs to the robot, so one task runs on every robot that reports what it
 needs. If the hardware itself is new, follow :doc:`new_robot` first and return
 here once one observation and action can pass through it. If the task also needs
@@ -99,9 +99,9 @@ instruction a run gets unless it sets ``task_description``.
 The env calls the task's methods in this order. ``requirements()`` names what
 each role's part must report, here ``tcp_force`` beside the ``tcp_pose``
 ``CartesianTarget`` needs, and is checked before the robot connects.
-``workspace`` is handed to the control, which keeps every commanded pose inside
+``workspace`` is handed to the channels, which keep every commanded pose inside
 it. ``home()`` runs once after connecting, and ``reset()`` at the start of each
-episode, after the control has applied the arm's compliance gains. The wipe
+episode, after the channels have applied the arm's compliance gains. The wipe
 lifts the cloth clear before ``go_to_rest()`` returns the arm to rest; peg
 insertion grips its peg and lifts it clear of the hole in the same place.
 ``evaluate()`` scores the reading taken after each step. ``in_zone`` counts
@@ -119,9 +119,9 @@ hardware connects:
 Joint-space arms use the same pattern with a joint task. Piper and SO-101 both
 run ``JointReach``: ``SO101ReachEnv-v1`` is the whole registration
 ``class SO101ReachEnv(SO101Env): TASK = JointReach``, and ``PiperReachEnv-v1``
-registers the same class on Piper. The preset's ``JointPositionControl`` turns
-the policy's flat action, five absolute joint targets plus one continuous
-gripper value on SO-101, into commands for ``arm`` and ``arm.end_effector``.
+registers the same class on Piper. The preset's action layout turns the
+policy's flat action, five absolute joint targets plus one continuous gripper
+value on SO-101, into commands for ``arm`` and ``arm.end_effector``.
 ``examples/embodiment/config/env/so101_reach.yaml`` is the reference run
 config.
 
@@ -148,9 +148,9 @@ decides which one this ID drives. Create ``rlinf/envs/real/franka/wipe.py``:
            "action_scale": (0.02, 0.1, 1.0),
        }
 
-``FrankaEnv`` supplies the robot, the Cartesian control, the observation
-layout, and the teleop devices; the registration names the task and the
-settings this task wants by default. ``action_scale`` limits how far one policy
+``FrankaEnv`` supplies the robot, the action channels, the observation layout,
+and the teleop devices; the registration names the task and the settings this
+task wants by default. ``action_scale`` limits how far one policy
 action moves the tool, and ``compliance_param`` sets the impedance controller
 used during that motion. State only the gains that differ: ``compliance()``
 merges them onto ``COMPLIANCE_DEFAULTS`` and raises on any gain the controller
@@ -174,7 +174,7 @@ entry to the robot's ``TASKS`` table in ``rlinf/envs/real/franka/__init__.py``:
    }
 
 ``register_tasks`` builds the entry point and registers the id with Gymnasium.
-The wrapper stack does not appear here: the control declares the wrappers that
+The wrapper stack does not appear here: the action layout declares the wrappers that
 fit its action, and ``build_stack`` reads that declaration.
 
 Registering ``WipeEnv-v1`` also registers ``Wipe-v1``, which runs ``Wipe`` on
@@ -207,8 +207,8 @@ supplies the values that vary by experiment. Add a file under
 ``init_params.id`` selects the Gymnasium task registered in the previous step.
 ``teleop`` names the operator device for evaluation or data collection.
 ``override_cfg`` is one flat mapping, and each key goes to the one config that
-declares it: the env's for how an episode runs, the control's for scales and
-gains, and ``WipeConfig`` for the task. A key none of them declares is refused.
+declares it: the env's for how an episode runs, the action channels' for scales
+and gains, and ``WipeConfig`` for the task. A key none of them declares is refused.
 Robot addresses and placement remain in the cluster hardware configuration.
 
 4. Check the Registration
@@ -227,7 +227,7 @@ hardware, import the real-world env package and confirm that the ID resolves:
 ``tests/unit_tests/test_real_env.py`` makes the same assertion for every shipped
 task. Add your ID to ``EXPECTED_IDS`` there, and a row to ``TASK_SCHEMAS`` for
 the observation and action a policy will be trained on. To run the task without
-a Gymnasium ID, compose it by hand as ``TaskEnv(robot, Wipe(), control,
+a Gymnasium ID, compose it by hand as ``TaskEnv(robot, Wipe(), layout,
 observation=...)``; the unit tests do this on fake parts. A passing assertion
 establishes registration only; run the mock and hardware checks from
 :doc:`new_robot` when the task changes the robot-facing observation or action
@@ -250,10 +250,10 @@ them:
    * - Connecting and placing hardware
      - ``Robot.connect``; see :doc:`../concepts/robotics`.
    * - Turning a policy action into arm, gripper and hand commands
-     - The robot preset's control, such as ``CartesianDeltaControl`` or
-       ``JointPositionControl``.
+     - The channels of the robot preset's ``ActionLayout``, such as
+       ``PoseDelta``, ``JointPositions`` and the end-effector channels.
    * - Keeping commanded poses in bounds
-     - The task's ``workspace``, which the control clips every pose to.
+     - The task's ``workspace``, which the pose channel clips every pose to.
    * - Scoring with a learned reward model
      - ``use_reward_model``, which the env worker sets from the run's
        ``reward`` section.

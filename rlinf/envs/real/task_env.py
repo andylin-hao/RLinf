@@ -12,17 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""The Gymnasium env that runs one task on one robot through one control.
+"""The Gymnasium env that runs one task on one robot.
 
-:class:`TaskEnv` is the only env a task needs: a composed
-:class:`~rlinf.robotics.Robot`, a :class:`~rlinf.envs.real.tasks.Task`, and a
-:class:`~rlinf.envs.real.control.Control` go in, and it owns the step loop,
-episode bookkeeping, and the robot's lifecycle. The robot is passed in as it
-is; nothing robot-specific lives here.
+:class:`TaskEnv` takes a composed :class:`~rlinf.robotics.Robot`, a
+:class:`~rlinf.envs.real.tasks.Task`, and the two halves of the policy's
+contract -- an :class:`~rlinf.envs.real.policy.ActionLayout` and an
+:class:`~rlinf.envs.real.policy.ObservationSpec` -- and owns the step loop,
+episode bookkeeping, and the robot's lifecycle. Nothing robot-specific lives
+here.
 
-:class:`RegisteredTaskEnv` builds those three from the ``override_cfg`` and
-hardware a run is given, so a Gymnasium id can name one. Each robot package
-subclasses it once with the robot's control and observation layout, and each
+:class:`RegisteredTaskEnv` builds those from the ``override_cfg`` and hardware
+a run is given, so a Gymnasium id can name one. Each robot package subclasses
+it once to say how its robot is driven and what its policy reads, and each
 task id is then one more line on top.
 """
 
@@ -38,7 +39,7 @@ from typing import Any, ClassVar, Optional
 import gymnasium as gym
 import numpy as np
 
-from rlinf.envs.real.control import Applied, Control
+from rlinf.envs.real.policy import ActionLayout, Applied, ObservationSpec
 from rlinf.envs.real.tasks import Needs, Parts, ResetContext, Task, bind
 from rlinf.envs.real.tasks.requirements import combine
 from rlinf.envs.real.utils.config import get_hardware_config
@@ -119,55 +120,18 @@ class RegisteredTaskEnvConfig(TaskEnvConfig):
             }
 
 
-@dataclass(frozen=True)
-class StateField:
-    """One entry of the policy's ``state``, and where the robot reports it.
-
-    Attributes:
-        key: Name in the observation. The policy sees state keys in sorted
-            order, so a key is part of the vector's layout.
-        field: Name the part reports it under.
-        shape: Shape in the observation.
-        role: The role whose part reports it.
-        end_effector: Read it from the end effector the role's part carries.
-        low: Lower bound of the space.
-        high: Upper bound of the space.
-        absent: What to report for an end-effector field when the part
-            carries no end effector, so a rig without one keeps the policy's
-            layout. ``None`` requires the end effector.
-    """
-
-    key: str
-    field: str
-    shape: tuple[int, ...]
-    role: str = "arm"
-    end_effector: bool = False
-    low: float = -np.inf
-    high: float = np.inf
-    absent: Optional[float] = None
-
-
-@dataclass(frozen=True)
-class ObservationSpec:
-    """The observation a policy reads: state fields, then camera frames."""
-
-    state: tuple[StateField, ...]
-    cameras: tuple[CameraInfo, ...] = ()
-    frame_size: tuple[int, int] = (128, 128)
-
-
 class TaskEnv(gym.Env):
-    """Run ``task`` on ``robot``, driven through ``control``.
+    """Run ``task`` on ``robot``, driven by the policy's action layout.
 
-    Construction checks that the robot has what the task, control, and
-    observation need, before connecting it, then connects it, waits for its
-    arms, and homes it. A dummy env takes no robot and samples its observation
-    space instead.
+    Construction checks that the robot has what the task, the action layout,
+    and the observation need, before connecting it, then connects it, waits
+    for its arms, and homes it. A dummy env takes no robot and samples its
+    observation space instead.
 
     Args:
         robot: The composed robot, connected or not; ``None`` when dummy.
         task: What the episode is for.
-        control: How a policy's action reaches the robot.
+        action: The channels a policy's action is cut into.
         observation: What the policy reads.
         config: How episodes run.
         reward_model: Scores each step's policy frames in place of the task
@@ -192,7 +156,7 @@ class TaskEnv(gym.Env):
         self,
         robot: Optional[Robot],
         task: Task,
-        control: Control,
+        action: ActionLayout,
         *,
         observation: ObservationSpec,
         config: Optional[TaskEnvConfig] = None,
@@ -204,13 +168,13 @@ class TaskEnv(gym.Env):
         self._logger = get_logger()
         self.robot = robot
         self.task = task
-        self.control = control
+        self.action = action
         self.observation = observation
         self.reward_model = reward_model
-        task.validate(control.dof())
-        control.confine(task.workspace)
+        task.validate(action.dof())
+        action.confine(task.workspace)
 
-        self.action_space = control.action_space()
+        self.action_space = action.space()
         self.observation_space = self._observation_space()
         # A wrapper may rewrite the space it is handed in place; a dummy env
         # samples this private copy so its observations keep the raw layout.
@@ -235,13 +199,13 @@ class TaskEnv(gym.Env):
 
     @property
     def ACTION_WRAPPERS(self) -> tuple[str, ...]:  # noqa: N802 - wrapper protocol
-        """Action wrappers that fit the control's action layout."""
-        return self.control.ACTION_WRAPPERS
+        """Action wrappers that fit this action layout."""
+        return self.action.wrappers
 
     @property
     def TRANSFORMS(self) -> tuple[str, ...]:  # noqa: N802 - wrapper protocol
         """Observation and action transforms that fit it."""
-        return self.control.TRANSFORMS
+        return self.action.transforms
 
     @property
     def task_description(self) -> str:
@@ -255,7 +219,7 @@ class TaskEnv(gym.Env):
 
     def action_parts(self) -> tuple[ActionPart, ...]:
         """Named slices of the action, for teleop and action wrappers."""
-        return self.control.action_parts()
+        return self.action.parts()
 
     # Context teleoperation devices read to line their commands up with the
     # action. A getter returns ``None`` where the control has no such thing.
@@ -263,9 +227,9 @@ class TaskEnv(gym.Env):
     def get_joint_positions(self) -> Optional[np.ndarray]:
         """Joints of each driven arm as ``(arms, dof)``, zeros before a read.
 
-        ``None`` when the control does not know how many joints it drives.
+        ``None`` when no channel commands joints.
         """
-        dofs = self.control.dof()
+        dofs = self.action.dof()
         if not dofs:
             return None
         rows = []
@@ -286,9 +250,9 @@ class TaskEnv(gym.Env):
         ``None`` when the action is not a Cartesian delta.
         """
         roles = [
-            part.name
-            for part in self.control.action_parts()
-            if part.kind is ActionKind.CARTESIAN_DELTA
+            channel.role
+            for channel in self.action.channels
+            if channel.kind is ActionKind.CARTESIAN_DELTA
         ]
         if not roles or self.parts is None:
             return None
@@ -297,17 +261,15 @@ class TaskEnv(gym.Env):
 
     def get_action_scale(self) -> Optional[np.ndarray]:
         """What one unit of each action channel moves."""
-        return self.control.action_scale()
+        return self.action.teleop_context(self.parts).get("action_scale")
 
     def get_gripper_open(self) -> Optional[bool]:
         """Whether the gripper is open, for a device that toggles it."""
-        if self.parts is None:
-            return None
-        return self.control.gripper_open(self.parts)
+        return self.action.teleop_context(self.parts).get("gripper_open")
 
     def get_hand_reset_pose(self) -> Optional[np.ndarray]:
         """The hand's resting finger pose."""
-        return self.control.hand_reset_pose()
+        return self.action.teleop_context(self.parts).get("hand_reset_pose")
 
     # Gymnasium API.
 
@@ -324,7 +286,7 @@ class TaskEnv(gym.Env):
         seed_sampled_spaces(seed, self._sample_space)
         self._num_steps = 0
         self._hold = 0
-        self.control.reset(self.parts)
+        self.action.reset(self.parts)
         if self.config.is_dummy:
             return self._sample_space.sample(), {}
         self.task.reset(self.parts, self._context(options))
@@ -338,7 +300,7 @@ class TaskEnv(gym.Env):
         action = np.clip(action, self.action_space.low, self.action_space.high)
         applied = Applied()
         if not self.config.is_dummy:
-            applied = self.control.apply(
+            applied = self.action.apply(
                 self.parts, action, self.parts.read(self._reading or {})
             )
         self._num_steps += 1
@@ -368,8 +330,10 @@ class TaskEnv(gym.Env):
         spec = self.observation
         state = gym.spaces.Dict(
             {
-                field.key: gym.spaces.Box(field.low, field.high, shape=field.shape)
-                for field in spec.state
+                key.key: gym.spaces.Box(
+                    key.low, key.high, shape=key.shape, dtype=key.dtype
+                )
+                for key in spec.state
             }
         )
         spaces: dict[str, gym.Space] = {"state": state}
@@ -397,23 +361,25 @@ class TaskEnv(gym.Env):
         return gym.spaces.Dict(spaces)
 
     def _requirements(self) -> dict[str, Needs]:
-        """What the task, the control, and the observed state need together."""
-        needs = combine(self.task.requirements(), self.control.requirements())
-        for field in self.observation.state:
-            need = needs.get(field.role, Needs())
-            if field.end_effector:
-                if field.absent is not None:
-                    continue
-                extra = Needs(kind=need.kind, end_effector="any")
-            else:
-                extra = Needs(kind=need.kind, observes=frozenset({field.field}))
-            needs[field.role] = need | extra
+        """What the task, the action layout, and the observation need together."""
+        needs = combine(self.task.requirements(), self.action.requirements())
+        for declared in self.observation.requirements():
+            for role, need in declared.items():
+                # A role the task or the layout already named keeps its part
+                # category; the observation only adds fields to read.
+                known = needs.get(role, Needs())
+                needs[role] = known | Needs(
+                    kind=known.kind,
+                    observes=need.observes,
+                    commands=need.commands,
+                    end_effector=need.end_effector,
+                )
         return needs
 
     def _context(self, options: Optional[Mapping[str, Any]] = None) -> ResetContext:
         return ResetContext(
             rng=self.np_random,
-            control=self.control,
+            action=self.action,
             options=options or {},
             rate_hz=self.config.step_frequency,
         )
@@ -457,17 +423,7 @@ class TaskEnv(gym.Env):
     def _observe(self) -> dict[str, Any]:
         """Read the robot once and build the policy's observation from it."""
         self._reading = self._read()
-        view = self.parts.read(self._reading)
-        state = {}
-        for field in self.observation.state:
-            if field.end_effector:
-                source = view.end_effector(field.role)
-                if source is None:
-                    state[field.key] = np.full(field.shape, field.absent, np.float32)
-                    continue
-            else:
-                source = view.part(field.role)
-            state[field.key] = np.array(source[field.field], dtype=np.float32)
+        state = self.observation.read(self.parts.read(self._reading))
         observation: dict[str, Any] = {"state": state}
         if self.observation.cameras:
             frames, depths, display = {}, {}, {}
@@ -475,10 +431,16 @@ class TaskEnv(gym.Env):
             for camera in self.observation.cameras:
                 captured = self._reading[camera.name]
                 frame, cropped = policy_frame(
-                    captured["frame"], size, camera.crop_region
+                    captured["frame"],
+                    size,
+                    camera.crop_region,
+                    to_rgb=self.observation.to_rgb,
                 )
                 frames[camera.name] = frame
-                display[camera.name] = frame[..., ::-1]
+                # The viewer shows the camera's own colours either way.
+                display[camera.name] = (
+                    frame[..., ::-1] if self.observation.to_rgb else frame
+                )
                 display[f"{camera.name}_full"] = cropped
                 if camera.enable_depth and "depth" in captured:
                     depths[camera.name] = policy_depth(
@@ -506,12 +468,8 @@ class TaskEnv(gym.Env):
             reward, in_zone = evaluation.reward, evaluation.in_zone
         self._hold = self._hold + 1 if in_zone else 0
         config = self.task.config
-        if (
-            config.enable_gripper_penalty
-            and applied.ee_effective
-            and not applied.is_hand
-        ):
-            reward -= config.gripper_penalty
+        if config.enable_gripper_penalty:
+            reward -= config.gripper_penalty * applied.penalties
         return reward
 
 
@@ -563,9 +521,9 @@ def split_overrides(
 class RegisteredTaskEnv(TaskEnv):
     """A :class:`TaskEnv` built from a run's config, as a Gymnasium id needs.
 
-    A robot package subclasses this once, naming its robot and control and
-    describing what its policy observes. A task id is then a subclass that
-    names the task and any defaults it differs by::
+    A robot package subclasses this once, saying how its robot is driven and
+    what its policy reads. A task id is then a subclass that names the task
+    and any defaults it differs by::
 
         class PiperReachEnv(PiperEnv):
             TASK = JointReach
@@ -577,8 +535,8 @@ class RegisteredTaskEnv(TaskEnv):
     #: The robot class, composed from its registered hardware config.
     ROBOT: ClassVar[type[Robot]]
 
-    #: The control class; its ``CONFIG`` takes the run's control settings.
-    CONTROL: ClassVar[type[Control]]
+    #: Config dataclass for the settings this robot's action channels take.
+    ACTION_CONFIG: ClassVar[type]
 
     #: The task this id runs.
     TASK: ClassVar[type[Task]]
@@ -593,11 +551,8 @@ class RegisteredTaskEnv(TaskEnv):
     #: the class hierarchy like :attr:`DEFAULTS`.
     RETIRED: ClassVar[Mapping[str, str]] = {}
 
-    #: Cameras the policy needs, checked before any hardware is touched.
-    MIN_CAMERAS: ClassVar[int] = 0
-
     #: Settings the preset reads itself, as a dataclass: options it passes to
-    #: the robot, such as a controller mode, and how it builds its control.
+    #: the robot, such as a controller mode, and how it builds its channels.
     #: ``None`` when it reads none.
     OPTIONS: ClassVar[Optional[type]] = None
 
@@ -609,7 +564,7 @@ class RegisteredTaskEnv(TaskEnv):
         env_idx: int = 0,
     ) -> None:
         cls = type(self)
-        owners = [RegisteredTaskEnvConfig, cls.CONTROL.CONFIG, cls.TASK.CONFIG]
+        owners = [RegisteredTaskEnvConfig, cls.ACTION_CONFIG, cls.TASK.CONFIG]
         if cls.OPTIONS is not None:
             owners.append(cls.OPTIONS)
         # A preset's default for a setting its task does not have is dropped,
@@ -629,7 +584,7 @@ class RegisteredTaskEnv(TaskEnv):
                     DeprecationWarning,
                     stacklevel=2,
                 )
-        config, control_config, task_config, *options = split_overrides(
+        config, action_config, task_config, *options = split_overrides(
             settings, owners, owner=cls.__name__
         )
         self.options = options[0] if options else None
@@ -641,14 +596,15 @@ class RegisteredTaskEnv(TaskEnv):
         # Everything a config can get wrong is checked before the robot is
         # composed, so a bad run never opens hardware.
         task = cls.TASK(task_config)
-        control = cls.make_control(self.hardware, control_config, self.options)
+        action = cls.make_action(self.hardware, action_config, self.options)
         cameras = tuple(cls.camera_infos(self.hardware, config))
-        if len(cameras) < cls.MIN_CAMERAS:
+        observation = cls.make_observation(self.hardware, cameras)
+        if len(cameras) < observation.min_cameras:
             raise ValueError(
                 f"{cls.__name__} requires robot_info with at least "
-                f"{cls.MIN_CAMERAS} camera serial(s), including in dummy mode."
+                f"{observation.min_cameras} camera serial(s), including in "
+                "dummy mode."
             )
-        observation = cls.make_observation(self.hardware, cameras)
 
         robot, reward_model = None, None
         node_rank = worker_info.cluster_node_rank if worker_info else 0
@@ -677,7 +633,7 @@ class RegisteredTaskEnv(TaskEnv):
         super().__init__(
             robot,
             task,
-            control,
+            action,
             observation=observation,
             config=config,
             reward_model=reward_model,
@@ -727,17 +683,17 @@ class RegisteredTaskEnv(TaskEnv):
             )
 
     @classmethod
-    def make_control(
+    def make_action(
         cls, hardware: RobotConfig, config: Any, options: Any = None
-    ) -> Control:
-        """The control this robot is driven with, from its hardware and settings.
+    ) -> ActionLayout:
+        """The channels this robot's action is cut into.
 
         Args:
             hardware: The robot's hardware config.
-            config: The run's control settings, a ``CONTROL.CONFIG``.
+            config: The run's action settings, an :attr:`ACTION_CONFIG`.
             options: The preset's own settings, an :attr:`OPTIONS`, or ``None``.
         """
-        raise NotImplementedError(f"{cls.__name__} does not define make_control().")
+        raise NotImplementedError(f"{cls.__name__} does not define make_action().")
 
     @classmethod
     def robot_options(cls, options: Any) -> Mapping[str, Any]:

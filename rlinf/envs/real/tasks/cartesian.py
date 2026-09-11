@@ -42,7 +42,7 @@ from .requirements import Needs, Parts, Reading
 from .workspace import Workspace
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
-    from rlinf.envs.real.control import Applied
+    from rlinf.envs.real.policy import Applied
 
 
 def _pose_array(value: Optional[Sequence[float]]) -> Optional[np.ndarray]:
@@ -221,7 +221,7 @@ def release_and_back_off(parts: Parts, context: ResetContext) -> None:
     The object gets 5 s to settle before the tool rises 3 cm, and 2 s more
     before it rises another 2 cm.
     """
-    context.control.release(parts)
+    context.action.release(parts)
     hold(parts)
     arm = parts.arm()
     pose = tool_pose(arm)
@@ -318,7 +318,7 @@ class CartesianTarget(Task):
                 break
             arm.move_to(pose, duration=1.5, rate_hz=context.rate_hz, clear_errors=True)
 
-        context.control.rest_end_effector(parts)
+        context.action.rest_end_effectors(parts)
         arm.clear_errors()
 
     def reset_joints_if_due(self, parts: Parts, context: ResetContext) -> None:

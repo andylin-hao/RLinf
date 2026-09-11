@@ -175,22 +175,23 @@ Franka builder 将末端执行器单独返回，是因为 Franka Hand 会打开�
 3. 在真机环境中使用组合机器人
 ------------------------------
 
-硬件代码定义底盘如何运动。episode 中还有两件事需要决定：任务（task）决定底盘应当到达哪里、何时算作成功，控制（control）决定 policy 输出的动作表示什么含义。二者都不依赖这台机器人。``TaskEnv`` 接收组合好的机器人、一个任务和一个控制，并用它们运行 episode：
+硬件代码定义底盘如何运动。episode 中还有两件事需要决定：任务（task）决定底盘应当到达哪里、何时算作成功，动作布局（action layout）决定 policy 输出的数字表示什么含义。二者都不依赖这台机器人。``TaskEnv`` 接收组合好的机器人、一个任务和这个布局，并用它们运行 episode：
 
 .. code-block:: python
 
-   import gymnasium as gym
-
-   from rlinf.envs.real.control import Applied, Control
-   from rlinf.envs.real.task_env import (
+   from rlinf.envs.real.policy import (
+       ActionLayout,
+       Channel,
+       Command,
        ObservationSpec,
-       StateField,
-       TaskEnv,
-       TaskEnvConfig,
+       Phase,
+       Source,
+       StateKey,
    )
+   from rlinf.envs.real.task_env import TaskEnv, TaskEnvConfig
    from rlinf.envs.real.tasks import Evaluation, Needs, Task
    from rlinf.robotics import MobileBase
-   from rlinf.robotics.actions import ActionKind, ActionPart
+   from rlinf.robotics.actions import ActionKind
 
 
    class DriveToTarget(Task):
@@ -212,34 +213,38 @@ Franka builder 将末端执行器单独返回，是因为 Franka Hand 会打开�
            return Evaluation(reward=float(reached), in_zone=reached)
 
 
-   class BaseVelocityControl(Control):
+   class Drive(Channel):
+       """两个数字，直接作为底盘速度。"""
+
        LIMITS = np.array([0.5, 1.0], dtype=np.float32)
 
        def __init__(self):
-           super().__init__(config=None)
+           super().__init__(
+               role="base",
+               name="base",
+               width=2,
+               kind=ActionKind.BASE_VELOCITY,
+               phase=Phase.WITH,
+           )
+
+       def bounds(self):
+           return -self.LIMITS, self.LIMITS
 
        def requirements(self):
            return {
                "base": Needs(kind=MobileBase, commands=frozenset({"velocity"}))
            }
 
-       def action_parts(self):
-           return (ActionPart("base", 2, ActionKind.BASE_VELOCITY),)
-
-       def action_space(self):
-           return gym.spaces.Box(-self.LIMITS, self.LIMITS)
-
-       def apply(self, parts, action, reading):
-           parts.robot.send_action({"base": {"velocity": action}})
-           return Applied()
+       def command(self, parts, values, reading):
+           return Command(send={"base": {"velocity": values}})
 
 
    env = TaskEnv(
        robot,
        DriveToTarget([1.0, 0.0]),
-       BaseVelocityControl(),
+       ActionLayout((Drive(),)),
        observation=ObservationSpec(
-           (StateField("base_pose", "pose", (3,), role="base"),)
+           (StateKey("base_pose", (3,), (Source("pose", role="base"),)),)
        ),
        config=TaskEnvConfig(max_num_steps=200),
    )
@@ -251,13 +256,13 @@ Franka builder 将末端执行器单独返回，是因为 Franka Hand 会打开�
    finally:
        env.close()
 
-应按照 env 的调用顺序理解这段代码。任务和控制都声明了 ``base`` 这个角色（role），并说明承担该角色的零部件必须是什么类别、报告哪些字段、接受哪些命令。``TaskEnv`` 会在连接任何设备之前，把每个角色绑定到组合机器人上的零部件，并逐项核对这些声明：如果机器人没有 ``MobileBase``，或者底盘不接受 ``velocity``，构造会抛出 ``RequirementError``，并指出是哪个角色、对应零部件实际提供了什么。核对通过后，构造过程才会连接机器人。
+应按照 env 的调用顺序理解这段代码。任务和通道（channel）都声明了 ``base`` 这个角色（role），并说明承担该角色的零部件必须是什么类别、报告哪些字段、接受哪些命令。``TaskEnv`` 会在连接任何设备之前，把每个角色绑定到组合机器人上的零部件，并逐项核对这些声明：如果机器人没有 ``MobileBase``，或者底盘不接受 ``velocity``，构造会抛出 ``RequirementError``，并指出是哪个角色、对应零部件实际提供了什么。核对通过后，构造过程才会连接机器人。
 
-``reset()`` 调用任务的 ``reset``（这里是让底盘停下），再返回首个观测。每次 ``step()`` 先把动作裁剪到控制的 ``action_space`` 内，交给控制转换成零部件命令，等待一个控制周期，然后对整台机器人读取一次，并请任务基于这次读数评分。``ObservationSpec`` 描述 policy 看到的内容：这里只有一个 ``state`` 条目 ``base_pose``，读自底盘的 ``pose``。``close()`` 负责断开机器人。
+``reset()`` 调用任务的 ``reset``\ （这里是让底盘停下），再返回首个观测。每次 ``step()`` 先把动作裁剪到布局声明的范围内，由每个通道把自己那一段转换成零部件命令，等待一个控制周期，然后对整台机器人读取一次，并请任务基于这次读数评分。``ObservationSpec`` 描述 policy 看到的内容：这里只有一个 ``state`` 条目 ``base_pose``，读自底盘的 ``pose``。``close()`` 负责断开机器人。
 
-机械臂虽然在机器人上，却不会被驱动，因为任务和控制都没有提到它。移动操作任务会增加一个 ``arm`` 角色，驱动它的控制会在动作中加入机械臂那一段；底盘 driver 与机器人组合都无需改动。RLinf 在 ``rlinf.envs.real.control`` 和 ``rlinf.envs.real.tasks`` 中提供了绝对关节目标控制以及关节到达等任务，只要这台机器人满足它们的要求，就可以直接运行。
+机械臂虽然在机器人上，却不会被驱动，因为任务和布局都没有提到它。移动操作任务会增加一个 ``arm`` 角色，布局中也会在底盘通道旁加入机械臂的通道；底盘 driver 与机器人组合都无需改动。由于通道自己声明驱动哪个角色，增加第二条机械臂也是同样的做法。RLinf 在 ``rlinf.envs.real.policy`` 中提供了关节目标、末端位姿增量和末端执行器等通道，在 ``rlinf.envs.real.tasks`` 中提供了关节到达等任务，只要这台机器人满足它们的要求，就可以直接运行。
 
-如需通过 RLinf 分布式 ``RealWorldEnv`` 启动任务，需要为它注册 Gymnasium ID：先为这台机器人继承一次 ``RegisteredTaskEnv``，写明机器人类、控制以及 policy 的观测内容，再为每个任务各继承一层。注册、YAML 与 wrapper 的具体做法请参阅 :doc:`新增真机任务 <new_task>`。
+如需通过 RLinf 分布式 ``RealWorldEnv`` 启动任务，需要为它注册 Gymnasium ID：先为这台机器人继承一次 ``RegisteredTaskEnv``，写明机器人类、它的动作通道以及 policy 的观测内容，再为每个任务各继承一层。注册、YAML 与 wrapper 的具体做法请参阅 :doc:`新增真机任务 <new_task>`。
 
 4. 将同一组合部署到硬件节点
 ----------------------------

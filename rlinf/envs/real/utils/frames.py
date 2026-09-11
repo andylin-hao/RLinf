@@ -76,7 +76,11 @@ def crop(frame: np.ndarray, region: Optional[CropRegion] = None) -> np.ndarray:
 
 
 def policy_frame(
-    frame: np.ndarray, size: tuple[int, int], region: Optional[CropRegion] = None
+    frame: np.ndarray,
+    size: tuple[int, int],
+    region: Optional[CropRegion] = None,
+    *,
+    to_rgb: bool = True,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Crop and resize a BGR frame, and return it for the policy and the viewer.
 
@@ -84,14 +88,18 @@ def policy_frame(
         frame: The camera's BGR frame, ``(height, width, 3)``.
         size: The ``(height, width)`` the observation space declares.
         region: Where the camera looks at the task; ``None`` for the centre.
+        to_rgb: Flip the channels, for a policy trained on RGB. A policy
+            trained on the driver's own BGR asks for ``False``.
 
     Returns:
-        The resized frame in RGB for the policy, and the crop in BGR as the
-        camera saw it, for display.
+        The resized frame in the policy's channel order, and the crop in BGR
+        as the camera saw it, for display.
     """
     cropped = crop(frame, region)
     resized = cv2.resize(cropped, (size[1], size[0]))
-    return np.ascontiguousarray(resized[..., ::-1]), cropped
+    if to_rgb:
+        resized = resized[..., ::-1]
+    return np.ascontiguousarray(resized), cropped
 
 
 def policy_depth(

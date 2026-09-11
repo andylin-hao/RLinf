@@ -3922,17 +3922,11 @@ def test_a_worker_installs_the_fakes_for_itself():
 def test_a_wrapper_that_narrows_the_action_declares_it():
     from types import SimpleNamespace
 
-    from rlinf.envs.real.control import (
-        BinaryGripper,
-        CartesianControlConfig,
-        CartesianDeltaControl,
-    )
+    from rlinf.envs.real.policy import ActionLayout, BinaryGripper, PoseDelta
     from rlinf.envs.real.wrappers.transforms import GripperCloseEnv
 
-    control = CartesianDeltaControl(
-        CartesianControlConfig(), end_effector=BinaryGripper()
-    )
-    inner = SimpleNamespace(action_parts=control.action_parts)
+    layout = ActionLayout((PoseDelta("arm"), BinaryGripper("arm")))
+    inner = SimpleNamespace(action_parts=layout.parts)
     wrapper = GripperCloseEnv.__new__(GripperCloseEnv)
     wrapper.env = SimpleNamespace(get_wrapper_attr=lambda name: getattr(inner, name))
 
@@ -5787,18 +5781,19 @@ def test_dummy_env_and_wrapper_use_custom_driver_contract(registered_tool, monke
 
 
 def test_a_hand_is_driven_one_channel_per_finger_of_its_driver(registered_tool):
-    from rlinf.envs.real.control import CartesianControlConfig
     from rlinf.envs.real.franka import FrankaEnv
+    from rlinf.envs.real.policy import PoseActionConfig
     from rlinf.robotics import FrankaConfig
 
     hardware = FrankaConfig(node_rank=0, end_effector_type="pose_tool")
-    control = FrankaEnv.make_control(
-        hardware, CartesianControlConfig(hand_reset_state=[0.0] * 3)
+    layout = FrankaEnv.make_action(
+        hardware, PoseActionConfig(hand_reset_state=[0.0] * 3)
     )
-    assert control.action_parts()[-1].width == 3
+    assert layout.parts()[-1].width == 3
 
     tool = registered_tool(gain=1.0)
-    control.end_effector.command(tool, np.array([0.2, 0.4, 0.6]))
+    parts = SimpleNamespace(end_effector=lambda role="arm": tool)
+    layout.channels[-1].command(parts, np.array([0.2, 0.4, 0.6]), None)
     np.testing.assert_allclose(tool.get_state(), [0.2, 0.4, 0.6])
 
 

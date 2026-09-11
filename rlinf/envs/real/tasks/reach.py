@@ -30,7 +30,7 @@ from .base import Evaluation, ResetContext, Task, TaskConfig
 from .requirements import Needs, Parts, Reading
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
-    from rlinf.envs.real.control import Applied
+    from rlinf.envs.real.policy import Applied
 
 
 @dataclass
@@ -96,7 +96,7 @@ class JointReach(Task):
         if self.config.enable_random_reset:
             noise = self.config.random_joint_noise
             pose = pose + context.rng.uniform(-noise, noise, size=pose.shape)
-            limits = context.control.joint_limits()
+            limits = context.action.joint_limits()
             if limits is not None:
                 pose = np.clip(pose, *limits)
         parts.arm().reset_joint(list(pose))

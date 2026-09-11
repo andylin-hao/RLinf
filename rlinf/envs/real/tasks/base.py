@@ -32,7 +32,7 @@ from .requirements import Needs, Parts, Reading
 from .workspace import Workspace
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
-    from rlinf.envs.real.control import Applied, Control
+    from rlinf.envs.real.policy import ActionLayout, Applied
 
 
 @dataclass
@@ -77,8 +77,9 @@ class ResetContext:
     rng: np.random.Generator
     """The env's generator, seeded by ``reset(seed=...)``."""
 
-    control: "Control"
-    """The control the env is driven with, for its limits."""
+    action: "ActionLayout"
+    """The action layout the env is driven with: its limits, and the
+    end-effector verbs a reset asks for."""
 
     options: Mapping[str, Any] = field(default_factory=dict)
     """The ``options`` passed to ``reset``."""

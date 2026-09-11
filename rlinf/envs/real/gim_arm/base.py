@@ -22,12 +22,17 @@ tool pose and wrench its controller solves for, so a task may score either.
 from dataclasses import dataclass
 from typing import Any
 
-from rlinf.envs.real.control import (
+from rlinf.envs.real.policy import (
+    ActionLayout,
     BinaryGripper,
-    JointControlConfig,
-    JointPositionControl,
+    JointActionConfig,
+    JointPositions,
+    ObservationSpec,
+    Phase,
+    Source,
+    StateKey,
 )
-from rlinf.envs.real.task_env import ObservationSpec, RegisteredTaskEnv, StateField
+from rlinf.envs.real.task_env import RegisteredTaskEnv
 from rlinf.robotics import GimArmConfig, GimArmRobot
 from rlinf.robotics.parts.arms.gim_arm import GimArm
 from rlinf.robotics.parts.cameras import CameraInfo
@@ -54,7 +59,7 @@ class GimArmEnv(RegisteredTaskEnv):
     """A task on a GimArm, driven by absolute joint targets."""
 
     ROBOT = GimArmRobot
-    CONTROL = JointPositionControl
+    ACTION_CONFIG = JointActionConfig
     OPTIONS = GimArmOptions
     DEFAULTS = {
         "joint_limit_low": _DEFAULT_JOINT_LIMIT_LOW,
@@ -67,15 +72,27 @@ class GimArmEnv(RegisteredTaskEnv):
     }
 
     @classmethod
-    def make_control(
-        cls, hardware: GimArmConfig, config: JointControlConfig, options: GimArmOptions
-    ) -> JointPositionControl:
+    def make_action(
+        cls, hardware: GimArmConfig, config: JointActionConfig, options: GimArmOptions
+    ) -> ActionLayout:
         """Six joints, then a binary gripper channel, kept without a gripper."""
-        return JointPositionControl(
-            config,
-            dof=GimArm.DOF,
-            gripper=BinaryGripper(threshold=options.binary_gripper_threshold),
-            gripper_fitted=hardware.enable_gripper,
+        return ActionLayout(
+            (
+                JointPositions(
+                    "arm",
+                    low=config.joint_limit_low,
+                    high=config.joint_limit_high,
+                    dof=GimArm.DOF,
+                ),
+                # The arm's controller does not carry the gripper, so it is
+                # latched after the joints are on their way.
+                BinaryGripper(
+                    "arm",
+                    threshold=options.binary_gripper_threshold,
+                    phase=Phase.AFTER,
+                    fitted=hardware.enable_gripper,
+                ),
+            )
         )
 
     @classmethod
@@ -84,20 +101,22 @@ class GimArmEnv(RegisteredTaskEnv):
     ) -> ObservationSpec:
         """Tool pose, twist and wrench, joints, the gripper, and the cameras."""
         state = (
-            StateField("tcp_pose", "tcp_pose", (7,)),
-            StateField("tcp_vel", "tcp_vel", (6,)),
-            StateField("arm_joint_position", "arm_joint_position", (GimArm.DOF,)),
-            StateField(
+            StateKey("tcp_pose", (7,), (Source("tcp_pose"),)),
+            StateKey("tcp_vel", (6,), (Source("tcp_vel"),)),
+            StateKey(
+                "arm_joint_position",
+                (GimArm.DOF,),
+                (Source("arm_joint_position"),),
+            ),
+            StateKey(
                 "gripper_position",
-                "state",
                 (1,),
-                end_effector=True,
+                (Source("state", end_effector=True, absent=0.0),),
                 low=-1.0,
                 high=1.0,
-                absent=0.0,
             ),
-            StateField("tcp_force", "tcp_force", (3,)),
-            StateField("tcp_torque", "tcp_torque", (3,)),
+            StateKey("tcp_force", (3,), (Source("tcp_force"),)),
+            StateKey("tcp_torque", (3,), (Source("tcp_torque"),)),
         )
         return ObservationSpec(state, cameras=cameras)
 

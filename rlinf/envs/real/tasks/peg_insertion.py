@@ -114,7 +114,7 @@ class PegInsertion(CartesianTarget):
         if self._joint_mode:
             self._reset_through_joints(parts, context)
             return
-        context.control.grasp(parts)
+        context.action.grasp(parts)
         hold(parts)
         lift(parts, context, 0.10)
         self.go_to_rest(parts, context)
@@ -124,12 +124,12 @@ class PegInsertion(CartesianTarget):
         if self.config.enable_random_reset:
             noise = self.config.random_joint_noise
             rest = rest + context.rng.uniform(-noise, noise, size=rest.shape)
-            limits = context.control.joint_limits()
+            limits = context.action.joint_limits()
             if limits is not None:
                 rest = np.clip(rest, *limits)
 
         arm = parts.arm()
-        context.control.grasp(parts)
+        context.action.grasp(parts)
         if self.config.safe_retract_qpos is not None:
             arm.reset_joint(list(self.config.safe_retract_qpos))
             time.sleep(0.5)

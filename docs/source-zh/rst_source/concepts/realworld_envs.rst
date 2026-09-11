@@ -25,14 +25,14 @@
 
        def reset(self, parts, context):
            # 先夹紧插销并抬离插孔，再返回初始位姿。
-           context.control.grasp(parts)
+           context.action.grasp(parts)
            hold(parts)
            lift(parts, context, 0.10)
            self.go_to_rest(parts, context)
 
-``PegInsertionConfig`` 为任务统一提供目标、目标周围的工作空间和复位随机范围。任务只声明它对机器人的要求，即一个上报 ``tcp_pose`` 的机械臂，从不构造动作：无论机器人使用哪种控制，``context.control.grasp()`` 都通过 policy 所驱动的同一通道闭合夹爪。
+``PegInsertionConfig`` 为任务统一提供目标、目标周围的工作空间和复位随机范围。任务只声明它对机器人的要求，即一个上报 ``tcp_pose`` 的机械臂，从不构造动作：无论机器人使用哪些通道，``context.action.grasp()`` 都通过 policy 所驱动的同一通道闭合夹爪。
 
-``rlinf/envs/real/franka/base.py`` 中的 ``FrankaEnv`` 等机器人 preset 提供另一半：机器人 class、把 policy 动作转换为零部件命令的控制，以及 policy 读取的观测布局。任务 ID 于是只需一次注册，指定任务以及该任务默认需要的机器人侧设置：
+``rlinf/envs/real/franka/base.py`` 中的 ``FrankaEnv`` 等机器人 preset 提供另一半：机器人 class、把 policy 的数字转换为零部件命令的动作通道，以及 policy 读取的观测布局。任务 ID 于是只需一次注册，指定任务以及该任务默认需要的机器人侧设置：
 
 .. code-block:: python
 
@@ -79,7 +79,7 @@
 
 拥有独立 env 的机器人，其任务 dataclass 保持原名：``DualFrankaEnvConfig``、``DOSW1EnvConfig`` 和 ``Turtle2EnvConfig``，对应的硬件配置仍位于 ``rlinf.robotics.robots``。Turtle2 的相机通道从任务字段 ``use_camera_ids`` 移至硬件字段 ``camera_ids``。
 
-单臂 Franka、Piper、SO-101 和 GimArm 的任务运行在 ``TaskEnv`` 上。运行时仍然只传入一个扁平的 ``override_cfg``，其中每个 key 交给声明它的那一个配置：``RegisteredTaskEnvConfig`` 负责 episode 如何运行、相机和 reward model；控制的配置（``CartesianControlConfig`` 或 ``JointControlConfig``）负责动作缩放、增益和关节范围；任务配置（例如 ``PegInsertionConfig`` 或 ``JointReachConfig``）负责目标与奖励。有自身设置的 preset 会再增加一个配置，例如 GimArm 用于控制模式的 ``GimArmOptions``。这些配置都没有声明的 key 会被拒绝，``hand_target_state`` 等已停用的 key 会被丢弃并给出警告。Piper 的硬件字段 ``with_gripper`` 决定 action 包含 6 个关节值，还是包含夹爪开度的 7 个值。
+单臂 Franka、Piper、SO-101 和 GimArm 的任务运行在 ``TaskEnv`` 上。运行时仍然只传入一个扁平的 ``override_cfg``，其中每个 key 交给声明它的那一个配置：``RegisteredTaskEnvConfig`` 负责 episode 如何运行、相机和 reward model；动作通道的配置（``PoseActionConfig`` 或 ``JointActionConfig``）负责动作缩放、增益和关节范围；任务配置（例如 ``PegInsertionConfig`` 或 ``JointReachConfig``）负责目标与奖励。有自身设置的 preset 会再增加一个配置，例如 GimArm 用于控制模式的 ``GimArmOptions``。这些配置都没有声明的 key 会被拒绝，``hand_target_state`` 等已停用的 key 会被丢弃并给出警告。Piper 的硬件字段 ``with_gripper`` 决定 action 包含 6 个关节值，还是包含夹爪开度的 7 个值。
 
 注册任务
 --------
@@ -103,9 +103,9 @@
 通过机器人接口读写硬件
 ----------------------
 
-注册决定构造哪个 env，``TaskEnv`` 实例随后在整个生命周期内持有同一台组合机器人。初始化时，它绑定任务、控制和观测所需的零部件，并连接机器人；``close()`` 再断开连接。每个 step 只从 ``robot.get_observation()`` 取得一份嵌套观测，控制通过 ``robot.send_action()`` 下发具名动作，不在旁路直接访问 driver 或厂商 SDK。
+注册决定构造哪个 env，``TaskEnv`` 实例随后在整个生命周期内持有同一台组合机器人。初始化时，它绑定任务、动作布局和观测所需的零部件，并连接机器人；``close()`` 再断开连接。每个 step 只从 ``robot.get_observation()`` 取得一份嵌套观测，各个通道通过 ``robot.send_action()`` 下发具名动作，不在旁路直接访问 driver 或厂商 SDK。
 
-不同硬件结构使用同一边界。Franka 的机械臂和末端执行器分别打开连接，因此使用并列路径；SO-101 的夹爪是机械臂总线上的另一个伺服，因此使用 ``arm.end_effector``。绑定在两种结构下都能找到末端执行器，所以 ``JointPositionControl`` 无需知道夹爪的位置，就能把 SO-101 的关节目标和夹爪开度放在一条命令中下发。
+不同硬件结构使用同一边界。Franka 的机械臂和末端执行器分别打开连接，因此使用并列路径；SO-101 的夹爪是机械臂总线上的另一个伺服，因此使用 ``arm.end_effector``。绑定在两种结构下都能找到末端执行器，所以 SO-101 的关节通道和夹爪通道都无需知道夹爪的位置，就能把关节目标和夹爪开度放在一条命令中下发。
 
 单步读写接口保持精简，就绪检查和复位则需要设备类别提供的方法。任务通过绑定到其角色上的零部件访问这些方法，零部件按类别提供类型：
 
@@ -120,7 +120,7 @@
 在不同机器人上运行同一任务
 --------------------------
 
-任务只规定自己需要什么，而不指定由哪台机器人提供，因此同一个任务 class 可以在运动学和控制方式都不同的机器人上运行。``PegInsertionEnv-v1`` 和 ``GimArmPegInsertionEnv-v1`` 运行的都是 ``PegInsertion``：
+任务只规定自己需要什么，而不指定由哪台机器人提供，因此同一个任务 class 可以在运动学和动作通道都不同的机器人上运行。``PegInsertionEnv-v1`` 和 ``GimArmPegInsertionEnv-v1`` 运行的都是 ``PegInsertion``：
 
 .. code-block:: python
 
@@ -135,11 +135,11 @@
            "safe_retract_qpos": (0.0, -1.5, 1.5, 0.0, 0.0, 0.0),
        }
 
-Franka preset 在任务的工作空间内以笛卡尔增量移动末端。GimArm preset 下发绝对关节目标，末端工作空间对关节命令没有意义，因此它的控制会忽略工作空间。两者的奖励相同，都是末端到插销就位位姿的距离，因为两台机械臂都上报 ``tcp_pose``。唯一的区别在复位：GimArm 无法接收末端位姿，所以 ``reset_mode="joint"`` 通过关节配置回缩和停靠，而不是抬起末端。这样的选项对应机械臂之间真实存在的差异；任务从不根据机器人类型分支。
+Franka preset 在任务的工作空间内以笛卡尔增量移动末端。GimArm preset 下发绝对关节目标，末端工作空间对关节命令没有意义，因此它的通道会忽略工作空间。两者的奖励相同，都是末端到插销就位位姿的距离，因为两台机械臂都上报 ``tcp_pose``。唯一的区别在复位：GimArm 无法接收末端位姿，所以 ``reset_mode="joint"`` 通过关节配置回缩和停靠，而不是抬起末端。这样的选项对应机械臂之间真实存在的差异；任务从不根据机器人类型分支。
 
-属于某台机器人、而不属于任务或控制的设置，例如 GimArm 的控制模式，放在 preset 的 ``OPTIONS`` dataclass 中，由 preset 传给 ``Robot.from_config``。preset 为其任务未声明的设置提供的默认值会被丢弃，因此 preset 的默认值不会妨碍它运行其他任务。
+属于某台机器人、而不属于任务或其通道的设置，例如 GimArm 的控制模式，放在 preset 的 ``OPTIONS`` dataclass 中，由 preset 传给 ``Robot.from_config``。preset 为其任务未声明的设置提供的默认值会被丢弃，因此 preset 的默认值不会妨碍它运行其他任务。
 
-单元测试在一个假关节机械臂上把 ``PegInsertion(PegInsertionConfig(reset_mode="joint"))`` 与 ``JointPositionControl`` 组合起来，不经过任何 Gymnasium ID。新机器人在拥有 preset 之前，也可以用同样的组合方式试运行现有任务。
+单元测试在一个假关节机械臂上把 ``PegInsertion(PegInsertionConfig(reset_mode="joint"))`` 与一个关节通道、一个二值夹爪通道组合起来，不经过任何 Gymnasium ID。新机器人在拥有 preset 之前，也可以用同样的组合方式试运行现有任务。
 
 按照职责组织 wrapper
 ---------------------
@@ -262,11 +262,11 @@ env 侧仲裁能够保持清晰，前提是设备读取与动作映射分开。�
    * - ``real/env.py``
      - ``RealWorldEnv``，框架根据 ``env_type: real`` 创建的向量化环境类。
    * - ``real/task_env.py``
-     - ``TaskEnv`` 通过一个控制在一台机器人上运行一个任务；``RegisteredTaskEnv`` 根据运行配置构造它们，供 Gymnasium ID 使用。
+     - ``TaskEnv`` 在一台机器人上运行一个任务；``RegisteredTaskEnv`` 根据运行配置构造它，供 Gymnasium ID 使用。
    * - ``real/tasks/``
      - 只编写一次、可在任何满足要求的机器人上运行的任务，以及把任务绑定到机器人零部件的要求核对。
-   * - ``real/control/``
-     - 把 policy 的动作向量转换为零部件命令的控制。
+   * - ``real/policy/``
+     - policy 发出和读取的内容：每台机器人布局中的动作通道，以及 checkpoint 所依赖的观测 key、编码方式和颜色顺序。
 
 后续阅读
 --------

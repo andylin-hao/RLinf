@@ -140,13 +140,14 @@ class HoldingArm(Arm):
 
 def _reach_on(arm: HoldingArm, **settings):
     """Compose joint reach, joint control, and ``arm`` into one env."""
-    from rlinf.envs.real.control import JointControlConfig, JointPositionControl
-    from rlinf.envs.real.task_env import (
+    from rlinf.envs.real.policy import (
+        ActionLayout,
+        JointPositions,
         ObservationSpec,
-        StateField,
-        TaskEnv,
-        TaskEnvConfig,
+        Source,
+        StateKey,
     )
+    from rlinf.envs.real.task_env import TaskEnv, TaskEnvConfig
     from rlinf.envs.real.tasks import JointReach, JointReachConfig
 
     return TaskEnv(
@@ -156,9 +157,9 @@ def _reach_on(arm: HoldingArm, **settings):
                 target_joint_qpos=[0.5, -0.5], reset_joint_qpos=[0.1, 0.1], **settings
             )
         ),
-        JointPositionControl(JointControlConfig([-1.0, -1.0], [1.0, 1.0]), dof=2),
+        ActionLayout((JointPositions("arm", low=[-1.0, -1.0], high=[1.0, 1.0]),)),
         observation=ObservationSpec(
-            (StateField("arm_joint_position", "arm_joint_position", (2,)),)
+            (StateKey("arm_joint_position", (2,), (Source("arm_joint_position"),)),)
         ),
         config=TaskEnvConfig(
             step_frequency=1000.0, enable_camera_player=False, max_num_steps=2
@@ -205,16 +206,19 @@ def test_a_task_refuses_a_robot_it_cannot_run_on_before_connecting_it():
 
 def test_a_task_drives_a_mobile_base_through_its_own_control():
     """A role binds to whatever part category it names, not only an arm."""
-    from rlinf.envs.real.control import Applied, Control
-    from rlinf.envs.real.task_env import (
+    from rlinf.envs.real.policy import (
+        ActionLayout,
+        Channel,
+        Command,
         ObservationSpec,
-        StateField,
-        TaskEnv,
-        TaskEnvConfig,
+        Phase,
+        Source,
+        StateKey,
     )
+    from rlinf.envs.real.task_env import TaskEnv, TaskEnvConfig
     from rlinf.envs.real.tasks import Evaluation, Needs, RequirementError, Task
     from rlinf.robotics import MobileBase
-    from rlinf.robotics.actions import ActionKind, ActionPart
+    from rlinf.robotics.actions import ActionKind
 
     class Base(MobileBase):
         def __init__(self) -> None:
@@ -246,30 +250,34 @@ def test_a_task_drives_a_mobile_base_through_its_own_control():
             reached = bool(abs(reading.part("base")["pose"][0] - 0.5) < 0.05)
             return Evaluation(reward=float(reached), in_zone=reached)
 
-    class BaseVelocityControl(Control):
+    class Drive(Channel):
+        """One channel, two numbers, straight onto the base's velocity."""
+
         def __init__(self):
-            super().__init__(config=None)
+            super().__init__(
+                role="base",
+                name="base",
+                width=2,
+                kind=ActionKind.BASE_VELOCITY,
+                phase=Phase.WITH,
+            )
+
+        def bounds(self):
+            return -np.ones(2), np.ones(2)
 
         def requirements(self):
             return {"base": Needs(kind=MobileBase, commands=frozenset({"velocity"}))}
 
-        def action_parts(self):
-            return (ActionPart("base", 2, ActionKind.BASE_VELOCITY),)
-
-        def action_space(self):
-            return gym.spaces.Box(-1.0, 1.0, shape=(2,))
-
-        def apply(self, parts, action, reading):
-            parts.robot.send_action({"base": {"velocity": action}})
-            return Applied()
+        def command(self, parts, values, reading):
+            return Command(send={"base": {"velocity": values}})
 
     def build(robot):
         return TaskEnv(
             robot,
             DriveToTarget(),
-            BaseVelocityControl(),
+            ActionLayout((Drive(),)),
             observation=ObservationSpec(
-                (StateField("base_pose", "pose", (3,), role="base"),)
+                (StateKey("base_pose", (3,), (Source("pose", role="base"),)),)
             ),
             config=TaskEnvConfig(step_frequency=1000.0, enable_camera_player=False),
         )
@@ -285,6 +293,206 @@ def test_a_task_drives_a_mobile_base_through_its_own_control():
 
     with pytest.raises(RequirementError, match="role 'base' needs a MobileBase"):
         build(Robot(arm=HoldingArm()))
+
+
+def test_one_layout_drives_two_arms_from_one_action(monkeypatch):
+    """Two arms are two sets of channels, not a second env class."""
+    from rlinf.envs.real.policy import (
+        ActionLayout,
+        BinaryGripper,
+        JointPositions,
+        ObservationSpec,
+        Phase,
+        Source,
+        StateKey,
+    )
+    from rlinf.envs.real.task_env import TaskEnv, TaskEnvConfig
+    from rlinf.envs.real.tasks import Evaluation, Needs, Task, TaskConfig
+    from rlinf.robotics.parts.base import PartGroup
+
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+    sides = ("left", "right")
+
+    #: Each arm has its own target, so the order they concatenate in shows.
+    targets = {"left": 0.5, "right": -0.5}
+
+    class ReachBoth(Task):
+        """Each arm at its own joint target."""
+
+        def requirements(self):
+            return {
+                side: Needs(observes=frozenset({"arm_joint_position"}))
+                for side in sides
+            }
+
+        def evaluate(self, reading, applied):
+            hit = all(
+                np.allclose(
+                    reading.arm(side)["arm_joint_position"], targets[side], atol=0.05
+                )
+                for side in sides
+            )
+            return Evaluation(reward=float(hit), in_zone=hit)
+
+    log: list = []
+    arms = {side: HoldingArm() for side in sides}
+    robot = Robot(
+        **{
+            side: PartGroup(arm=arms[side], end_effector=LatchGripper(log))
+            for side in sides
+        }
+    )
+    channels = []
+    for side in sides:
+        channels.append(
+            JointPositions(side, low=[-1.0, -1.0], high=[1.0, 1.0], name=f"{side}.arm")
+        )
+        channels.append(
+            BinaryGripper(
+                side,
+                settle_s=0.0,
+                phase=Phase.AFTER,
+                name=f"{side}.end_effector",
+            )
+        )
+    env = TaskEnv(
+        robot,
+        ReachBoth(TaskConfig(enable_gripper_penalty=True, gripper_penalty=0.1)),
+        ActionLayout(channels),
+        observation=ObservationSpec(
+            (
+                StateKey(
+                    "joint_position",
+                    (4,),
+                    tuple(Source("arm_joint_position", role=side) for side in sides),
+                ),
+            )
+        ),
+        config=TaskEnvConfig(step_frequency=1000.0, enable_camera_player=False),
+    )
+    try:
+        assert env.action_space.shape == (6,)
+        assert [part.name for part in env.action_parts()] == [
+            "left.arm",
+            "left.end_effector",
+            "right.arm",
+            "right.end_effector",
+        ]
+        env.reset(seed=0)
+        observation, reward, *_ = env.step(
+            np.array([0.5, 0.5, -1.0, -0.5, -0.5, -1.0], np.float32)
+        )
+        # One key, both arms, in the order the sources were declared.
+        assert observation["state"]["joint_position"] == pytest.approx(
+            [0.5, 0.5, -0.5, -0.5]
+        )
+        # Both arms reached their target, and both grippers closed, so the
+        # task is charged twice.
+        assert [entry[0] for entry in log] == ["close", "close"]
+        assert reward == pytest.approx(1.0 - 2 * 0.1)
+    finally:
+        env.close()
+
+
+def test_a_state_key_can_encode_what_the_policy_reads():
+    """A vendor's pose becomes the pose a policy was trained on."""
+    from scipy.spatial.transform import Rotation as R
+
+    from rlinf.envs.real.policy import (
+        Source,
+        StateKey,
+        pose_as_rot6d,
+        pose_from_euler,
+    )
+    from rlinf.envs.real.tasks.requirements import Bound, Reading
+
+    # What an arm reports whose controller thinks in Euler angles, and keeps
+    # its gripper width in the same vector.
+    vendor = np.array([0.5, 0.0, 0.1, np.pi, 0.0, 0.3, 0.02])
+    view = Reading({"arm": {"tcp_pose": vendor}}, {"arm": Bound(part="arm")})
+
+    quat = StateKey(
+        "tcp_pose", (7,), (Source("tcp_pose", encode=pose_from_euler),)
+    ).read(view)
+    assert quat[:3] == pytest.approx(vendor[:3])
+    expected = R.from_euler("xyz", vendor[3:6]).as_quat()
+    assert (R.from_quat(quat[3:]) * R.from_quat(expected).inv()).magnitude() < 1e-6
+
+    rot6d = StateKey(
+        "tcp_pose_rot6d",
+        (9,),
+        (Source("tcp_pose", encode=lambda v: pose_as_rot6d(pose_from_euler(v))),),
+    ).read(view)
+    assert rot6d.shape == (9,)
+    assert rot6d[:3] == pytest.approx(vendor[:3])
+    assert rot6d.dtype == np.float32
+
+
+def test_a_channel_acts_where_its_phase_says(monkeypatch):
+    """The same channels, one phase apart, command in a different order."""
+    from rlinf.envs.real.policy import ActionLayout, BinaryGripper, Phase, PoseDelta
+
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+
+    def order(phase):
+        from rlinf.envs.real.tasks import bind
+
+        log: list = []
+        robot = Robot(arm=PoseArm(log), end_effector=LatchGripper(log))
+        robot.connect()
+        layout = ActionLayout(
+            (PoseDelta("arm"), BinaryGripper("arm", settle_s=0.0, phase=phase))
+        )
+        parts = bind(robot, layout.requirements(), owner="test")
+        try:
+            layout.apply(
+                parts,
+                np.array([0, 0, 0, 0, 0, 0, -1.0]),
+                parts.read(robot.get_observation()),
+            )
+        finally:
+            robot.disconnect()
+        return [entry[0] for entry in log]
+
+    assert order(Phase.BEFORE) == ["close", "clear", "arm"]
+    assert order(Phase.AFTER) == ["clear", "arm", "close"]
+
+
+def test_a_policy_can_be_trained_on_the_drivers_own_colours():
+    """A robot whose checkpoints saw BGR declares BGR, and keeps it."""
+    import dataclasses
+
+    from robot_mocks import mocked_sdks
+    from robot_mocks.cameras import FRAME_BGR
+
+    from rlinf.envs.real.so101 import SO101Env
+    from rlinf.envs.real.tasks import JointReach
+
+    class BgrReachEnv(SO101Env):
+        TASK = JointReach
+
+        @classmethod
+        def make_observation(cls, hardware, cameras):
+            spec = SO101Env.make_observation(hardware, cameras)
+            return dataclasses.replace(spec, frame_order="bgr")
+
+    with mocked_sdks():
+        env = BgrReachEnv(
+            {"enable_camera_player": False, "step_frequency": 10000.0},
+            robot_info=_robot_info(
+                SO101Config(
+                    node_rank=0,
+                    serial_port="/dev/mock-so101",
+                    camera_serials=["MOCK0001"],
+                )
+            ),
+        )
+        try:
+            observation, _ = env.reset()
+            centre = observation["frames"]["wrist_1"][64, 64]
+            assert tuple(centre) == FRAME_BGR
+        finally:
+            env.close()
 
 
 def test_every_setting_has_exactly_one_owner():
@@ -548,17 +756,15 @@ class LatchGripper(EndEffector):
 
 def _fixture_on(log: list, task_cls=None, *, euler=(0.0, 0.0, 0.0), **settings):
     """Compose a fixture task, Cartesian control, and a pose arm into one env."""
-    from rlinf.envs.real.control import (
+    from rlinf.envs.real.policy import (
+        ActionLayout,
         BinaryGripper,
-        CartesianControlConfig,
-        CartesianDeltaControl,
-    )
-    from rlinf.envs.real.task_env import (
         ObservationSpec,
-        StateField,
-        TaskEnv,
-        TaskEnvConfig,
+        PoseDelta,
+        Source,
+        StateKey,
     )
+    from rlinf.envs.real.task_env import TaskEnv, TaskEnvConfig
     from rlinf.envs.real.tasks import PegInsertion
 
     task_cls = task_cls or PegInsertion
@@ -572,14 +778,18 @@ def _fixture_on(log: list, task_cls=None, *, euler=(0.0, 0.0, 0.0), **settings):
     return TaskEnv(
         Robot(arm=PoseArm(log, euler), end_effector=LatchGripper(log)),
         task_cls(task_cls.CONFIG(**config)),
-        CartesianDeltaControl(
-            CartesianControlConfig(action_scale=(0.02, 0.1, 1.0)),
-            end_effector=BinaryGripper(settle_s=0.0),
+        ActionLayout(
+            (
+                PoseDelta("arm", scales=(0.02, 0.1, 1.0)),
+                BinaryGripper("arm", settle_s=0.0),
+            )
         ),
         observation=ObservationSpec(
             (
-                StateField("tcp_pose", "tcp_pose", (7,)),
-                StateField("gripper_position", "state", (1,), end_effector=True),
+                StateKey("tcp_pose", (7,), (Source("tcp_pose"),)),
+                StateKey(
+                    "gripper_position", (1,), (Source("state", end_effector=True),)
+                ),
             )
         ),
         config=TaskEnvConfig(step_frequency=1000.0, enable_camera_player=False),
@@ -708,17 +918,20 @@ def test_every_fixture_task_resets_and_steps_on_a_pose_arm(monkeypatch, task_nam
 
 
 def test_a_hand_is_rate_limited_from_its_resting_pose():
-    from rlinf.envs.real.control import HandCommand
+    from rlinf.envs.real.policy import HandCommand
 
     sent = []
     hand = SimpleNamespace(
         command=lambda target: sent.append(np.array(target)),
         reset=lambda state: sent.append(("rest", list(state))),
     )
-    command = HandCommand(2, scale=2.0, max_delta=0.5, reset_state=[0.1, 0.1])
+    channel = HandCommand(
+        "arm", dim=2, scale=2.0, max_delta=0.5, reset_state=[0.1, 0.1]
+    )
+    parts = SimpleNamespace(end_effector=lambda role="arm": hand)
 
-    command.rest(hand)
-    command.command(hand, np.array([1.0, 0.0]))
+    channel.rest(parts)
+    channel.command(parts, np.array([1.0, 0.0]), None)
 
     assert sent[0] == ("rest", [0.1, 0.1])
     # 2.0 wanted, from the scaled rest of 0.2: at most 0.5 closer.
@@ -773,8 +986,9 @@ def test_a_run_override_wins_over_a_task_default():
         reset_ee_pose=[0.3, 0.0, 0.3, 3.14, 0.0, 0.0],
     )
     try:
-        assert env.control.config.action_scale == pytest.approx([0.5, 0.2, 1.0])
-        assert env.control.config.compliance_param == {"translational_stiffness": 900}
+        pose = env.action.channels[0]
+        assert pose.scales == pytest.approx([0.5, 0.2, 1.0])
+        assert pose.compliance == {"translational_stiffness": 900}
         assert env.task.config.ee_pose_limit_min == pytest.approx([-1.0] * 6)
         assert env.task.config.reset_ee_pose[0] == pytest.approx(0.3)
         # What the run left alone is still derived around the target.
@@ -861,17 +1075,16 @@ class JointPoseArm(Arm):
 
 def _joint_peg_on(log: list, *, gripper: bool = True, **settings):
     """Peg insertion on an arm driven by joint targets, with no Gymnasium id."""
-    from rlinf.envs.real.control import (
+    from rlinf.envs.real.policy import (
+        ActionLayout,
         BinaryGripper,
-        JointControlConfig,
-        JointPositionControl,
-    )
-    from rlinf.envs.real.task_env import (
+        JointPositions,
         ObservationSpec,
-        StateField,
-        TaskEnv,
-        TaskEnvConfig,
+        Phase,
+        Source,
+        StateKey,
     )
+    from rlinf.envs.real.task_env import TaskEnv, TaskEnvConfig
     from rlinf.envs.real.tasks import PegInsertion, PegInsertionConfig
 
     parts = {"arm": JointPoseArm(log)}
@@ -887,17 +1100,19 @@ def _joint_peg_on(log: list, *, gripper: bool = True, **settings):
                 **settings,
             )
         ),
-        JointPositionControl(
-            JointControlConfig([-2.0] * 6, [2.0] * 6),
-            dof=6,
-            gripper=BinaryGripper(settle_s=0.0),
-            gripper_fitted=gripper,
+        ActionLayout(
+            (
+                JointPositions("arm", low=[-2.0] * 6, high=[2.0] * 6),
+                BinaryGripper("arm", settle_s=0.0, phase=Phase.AFTER, fitted=gripper),
+            )
         ),
         observation=ObservationSpec(
             (
-                StateField("arm_joint_position", "arm_joint_position", (6,)),
-                StateField(
-                    "gripper_position", "state", (1,), end_effector=True, absent=0.0
+                StateKey("arm_joint_position", (6,), (Source("arm_joint_position"),)),
+                StateKey(
+                    "gripper_position",
+                    (1,),
+                    (Source("state", end_effector=True, absent=0.0),),
                 ),
             )
         ),
@@ -953,16 +1168,16 @@ def test_a_joint_arm_without_its_gripper_keeps_the_gripper_channel(monkeypatch):
 
 
 def test_peg_insertion_is_one_task_on_franka_and_gim_arm():
-    from rlinf.envs.real.control import CartesianDeltaControl, JointPositionControl
     from rlinf.envs.real.franka import PegInsertionEnv
+    from rlinf.envs.real.policy import JointPositions, PoseDelta
     from rlinf.envs.real.tasks import PegInsertion
 
     franka = _dummy_franka(PegInsertionEnv)
     gim_arm = _dummy_gim_arm()
     try:
         assert type(franka.task) is type(gim_arm.task) is PegInsertion
-        assert isinstance(franka.control, CartesianDeltaControl)
-        assert isinstance(gim_arm.control, JointPositionControl)
+        assert isinstance(franka.action.channels[0], PoseDelta)
+        assert isinstance(gim_arm.action.channels[0], JointPositions)
         assert franka.task.config.reset_mode == "cartesian"
         assert gim_arm.task.config.reset_mode == "joint"
     finally:
@@ -2392,8 +2607,8 @@ def test_a_task_env_runs_with_its_own_config():
 
     assert env.task_description == "peg and insertion"
     # Task-specific gains override shared defaults.
-    assert set(env.control.config.compliance_param) == set(COMPLIANCE_DEFAULTS)
-    assert env.control.config.compliance_param["translational_stiffness"] == 2000
+    assert set(env.action.channels[0].compliance) == set(COMPLIANCE_DEFAULTS)
+    assert env.action.channels[0].compliance["translational_stiffness"] == 2000
 
     env.reset()
     observation, reward, terminated, truncated, info = env.step(
@@ -2805,24 +3020,21 @@ def _declared(cls, **attrs):
 
 
 def test_every_env_declares_parts_that_tile_its_action():
-    from rlinf.envs.real.control import (
-        BinaryGripper,
-        CartesianControlConfig,
-        CartesianDeltaControl,
-        HandCommand,
-    )
     from rlinf.envs.real.dosw1.base import DOSW1Env
+    from rlinf.envs.real.policy import (
+        ActionLayout,
+        BinaryGripper,
+        HandCommand,
+        PoseDelta,
+    )
     from rlinf.envs.real.xsquare.base import Turtle2Env
 
     def cartesian(end_effector):
-        control = CartesianDeltaControl(
-            CartesianControlConfig(), end_effector=end_effector
-        )
-        return control.action_parts()
+        return ActionLayout((PoseDelta("arm"), end_effector)).parts()
 
     cases = [
-        (7, cartesian(BinaryGripper())),
-        (12, cartesian(HandCommand(6))),
+        (7, cartesian(BinaryGripper("arm"))),
+        (12, cartesian(HandCommand("arm", dim=6))),
         (7, _dummy_gim_arm().action_parts()),
         (7, _declared(Turtle2Env, config=SimpleNamespace(use_arm_ids=[1]))),
         (14, _declared(Turtle2Env, config=SimpleNamespace(use_arm_ids=[0, 1]))),
@@ -3101,17 +3313,17 @@ def test_shipped_configs_give_the_policy_the_action_width_it_expects():
                 if hardware_configs
                 else "franka_gripper"
             )
-            from rlinf.envs.real.control import CartesianControlConfig
+            from rlinf.envs.real.policy import PoseActionConfig
 
             hardware = hardware_configs[0] if hardware_configs else {}
-            parts = FrankaEnv.make_control(
+            parts = FrankaEnv.make_action(
                 SimpleNamespace(
                     backend=hardware.get("backend"),
                     gripper_type=hardware.get("gripper_type"),
                     end_effector_type=hardware.get("end_effector_type"),
                 ),
-                CartesianControlConfig(),
-            ).action_parts()
+                PoseActionConfig(),
+            ).parts()
             width = sum(part.width for part in parts)
             if width != action_dim:
                 offenders.append(

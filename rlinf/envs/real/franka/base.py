@@ -22,13 +22,18 @@ tool, the gripper's opening or the fingers' pose, and at least one camera.
 
 from typing import Any
 
-from rlinf.envs.real.control import (
+from rlinf.envs.real.policy import (
+    ActionLayout,
     BinaryGripper,
-    CartesianControlConfig,
-    CartesianDeltaControl,
     HandCommand,
+    ObservationSpec,
+    Phase,
+    PoseActionConfig,
+    PoseDelta,
+    Source,
+    StateKey,
 )
-from rlinf.envs.real.task_env import ObservationSpec, RegisteredTaskEnv, StateField
+from rlinf.envs.real.task_env import RegisteredTaskEnv
 from rlinf.envs.real.tasks import CartesianTarget
 from rlinf.robotics import FrankaConfig, FrankaRobot
 from rlinf.robotics.parts.cameras import CameraInfo
@@ -80,11 +85,10 @@ class FrankaEnv(RegisteredTaskEnv):
     """
 
     ROBOT = FrankaRobot
-    CONTROL = CartesianDeltaControl
+    ACTION_CONFIG = PoseActionConfig
     TASK = CartesianTarget
     TELEOP = ("spacemouse", "gello", "glove", "pico")
     TELEOP_DEFAULT = "spacemouse"
-    MIN_CAMERAS = 1
     DEFAULTS = {"joint_reset_qpos": (0.0, 0.0, 0.0, -1.9, -0.0, 2.0, 0.0)}
     RETIRED = {
         "hand_target_state": "No task scores the hand's pose.",
@@ -116,24 +120,42 @@ class FrankaEnv(RegisteredTaskEnv):
         return part
 
     @classmethod
-    def make_control(
+    def make_action(
         cls,
         hardware: FrankaConfig,
-        config: CartesianControlConfig,
+        config: PoseActionConfig,
         options: None = None,
-    ) -> CartesianDeltaControl:
+    ) -> ActionLayout:
         """Tool deltas, then one gripper channel or one channel per finger."""
         part = cls.end_effector_class(hardware)
         if part.is_hand:
             end_effector: Any = HandCommand(
-                part.action_dim,
+                "arm",
+                dim=part.action_dim,
                 scale=config.hand_action_scale,
                 max_delta=config.hand_max_delta_per_step,
                 reset_state=config.hand_reset_state,
             )
         else:
-            end_effector = BinaryGripper(threshold=config.binary_gripper_threshold)
-        return CartesianDeltaControl(config, end_effector=end_effector)
+            # The grasp closes before the arm moves away from it.
+            end_effector = BinaryGripper(
+                "arm",
+                threshold=config.binary_gripper_threshold,
+                scale=float(config.action_scale[2]),
+                phase=Phase.BEFORE,
+            )
+        return ActionLayout(
+            (
+                PoseDelta(
+                    "arm",
+                    scales=config.action_scale,
+                    compliance=config.compliance_param,
+                ),
+                end_effector,
+            ),
+            wrappers=("GripperCloseEnv",),
+            transforms=("RelativeFrame", "Quat2EulerWrapper"),
+        )
 
     @classmethod
     def make_observation(
@@ -142,23 +164,27 @@ class FrankaEnv(RegisteredTaskEnv):
         """Tool pose, twist and wrench, the end effector, and the cameras."""
         part = cls.end_effector_class(hardware)
         if part.is_hand:
-            effector = StateField(
+            effector = StateKey(
                 "hand_position",
-                "state",
                 (part.state_dim,),
-                end_effector=True,
+                (Source("state", end_effector=True),),
                 low=0.0,
                 high=1.0,
             )
         else:
-            effector = StateField(
-                "gripper_position", "state", (1,), end_effector=True, low=-1.0, high=1.0
+            effector = StateKey(
+                "gripper_position",
+                (1,),
+                (Source("state", end_effector=True),),
+                low=-1.0,
+                high=1.0,
             )
         state = (
-            StateField("tcp_pose", "tcp_pose", (7,)),
-            StateField("tcp_vel", "tcp_vel", (6,)),
+            StateKey("tcp_pose", (7,), (Source("tcp_pose"),)),
+            StateKey("tcp_vel", (6,), (Source("tcp_vel"),)),
             effector,
-            StateField("tcp_force", "tcp_force", (3,)),
-            StateField("tcp_torque", "tcp_torque", (3,)),
+            StateKey("tcp_force", (3,), (Source("tcp_force"),)),
+            StateKey("tcp_torque", (3,), (Source("tcp_torque"),)),
         )
-        return ObservationSpec(state, cameras=cameras)
+        # A Franka policy always reads at least one camera.
+        return ObservationSpec(state, cameras=cameras, min_cameras=1)
