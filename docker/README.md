@@ -39,10 +39,11 @@ docker build -f docker/Dockerfile \
 (`registry.mthreads.com/mcctest/ai/training-suite:$MUSA_VER`), which already
 carries a MUSA-built torch plus `torch-musa`. `install.sh` therefore installs no
 torch of its own — it creates the venv with `--system-site-packages` on the
-image's interpreter and skips every CUDA-only package (flash-attn, apex, and the
-vLLM/SGLang kernels). The `embodied-maniskill_libero` target builds the subset of
-models that need none of them (`openpi` and `gr00t`) when `PLATFORM=musa`. Build
-and run it with the `mthreads` container runtime:
+image's interpreter and skips CUDA-only package builds while preserving the
+vendor's MUSA builds. The `embodied-maniskill_libero` target installs the same
+nine model environments on MUSA as on the other platforms, including
+`openvla-oft`, `openpi`, and `gr00t`. Build and run it with the `mthreads`
+container runtime:
 
 Build with BuildKit — the legacy builder resolves every `FROM` in the
 Dockerfile, including the CUDA and ROCm bases on Docker Hub that a MUSA host

@@ -8,24 +8,32 @@ Choose a model or policy class to find its installation, checkpoint, and RL trai
 Hardware Support
 ----------------
 
-NVIDIA is the default backend in the model recipes. For AMD, Huawei Ascend, or Moore Threads, use the combinations below; the links open setup and launch instructions on the model page. These combinations have hardware e2e jobs in the repository.
+NVIDIA is the default backend in the model recipes. AMD ROCm, Huawei Ascend
+CANN, and Moore Threads MUSA also support the three model families below on
+LIBERO. Follow a model link for installation and launch instructions. The
+validation column distinguishes supported paths from those that also run in a
+hardware e2e job.
 
 .. list-table::
    :header-rows: 1
-   :widths: 22 36 42
+   :widths: 22 32 28 18
 
    * - Model
      - Hardware
      - Environment and Scope
+     - Non-NVIDIA e2e
    * - :doc:`OpenVLA-OFT <embodied/openvla_oft>`
-     - :ref:`AMD ROCm <openvla-oft-amd>` · :ref:`Huawei Ascend CANN <openvla-oft-ascend>`
+     - :ref:`AMD ROCm · Huawei Ascend CANN · Moore Threads MUSA <openvla-oft-hardware>`
      - LIBERO · Goal GRPO
+     - AMD · Ascend
    * - :doc:`GR00T N1.5 <embodied/gr00t>`
-     - :ref:`Huawei Ascend CANN <gr00t-hardware>`
+     - :ref:`AMD ROCm · Huawei Ascend CANN · Moore Threads MUSA <gr00t-hardware>`
      - LIBERO · Spatial PPO
-   * - :doc:`π₀.₅ (OpenPI) <embodied/pi0>`
-     - :ref:`Moore Threads MUSA <pi0-hardware>`
-     - LIBERO-10 · ManiSkill plate-25 PPO; ManiSkill requires vendor simulator packages and CPU physics.
+     - Ascend
+   * - :doc:`π₀ / π₀.₅ (OpenPI) <embodied/pi0>`
+     - :ref:`AMD ROCm · Huawei Ascend CANN · Moore Threads MUSA <pi0-hardware>`
+     - LIBERO for π₀ / π₀.₅; ManiSkill for π₀.₅ on MUSA with vendor simulator packages and CPU physics.
+     - MUSA π₀.₅
 
 Model Recipes
 -------------
@@ -43,7 +51,7 @@ Open a model page for the full workflow and its supported environments.
          <a href="embodied/openvla_oft.html" style="text-decoration: underline; color: blue;">
            <b>OpenVLA-OFT</b>
          </a><br>
-         LIBERO training on NVIDIA CUDA, AMD ROCm, and Huawei Ascend CANN
+         LIBERO training on NVIDIA CUDA, AMD ROCm, Huawei Ascend CANN, and Moore Threads MUSA
        </p>
      </div>
 

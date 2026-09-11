@@ -16,7 +16,7 @@ GR00T模型强化学习训练
 
 .. note::
 
-   RLinf 同时支持 GR00T-N1.5、GR00T-N1.6 和 GR00T-N1.7。N1.6 引入了流匹配动作头、FSDP 训练和更强的跨具身支持；N1.7 则进一步将官方 backbone 升级到 Cosmos-Reason2-2B / Qwen3-VL，并显著扩展了官方通用 state/action 空间。版本差异以 **N1.5** / **N1.6** / **N1.7** 标注区分。
+   RLinf 同时支持 GR00T-N1.5、GR00T-N1.6 和 GR00T-N1.7。N1.6 引入了流匹配动作头、FSDP 训练和更强的跨具身支持；N1.7 则进一步将官方 backbone 升级到 Cosmos-Reason2-2B / Qwen3-VL，并显著扩展了官方通用 state/action 空间。版本差异以 **N1.5** / **N1.6** / **N1.7** 标注区分。本页的 AMD、昇腾与 MUSA 步骤适用于 N1.5 + LIBERO；这些后端上的 N1.6、N1.7 与 IsaacLab 需要分别验证。
 
 概览
 ----------------------------------------
@@ -44,7 +44,7 @@ GR00T模型强化学习训练
    .. grid-item-card:: 硬件
       :text-align: center
 
-      NVIDIA CUDA · :ref:`华为昇腾 CANN <gr00t-hardware>` （N1.5，LIBERO）
+      NVIDIA CUDA · :ref:`AMD ROCm · 华为昇腾 CANN · 摩尔线程 MUSA <gr00t-hardware>` （N1.5，LIBERO）
 
 | **你将完成：** 安装目标 GR00T 版本 → 下载 SFT / 任务 checkpoint → 选择配置 → 启动 ``run_embodiment.sh`` → 观察 ``env/success_once``。
 | **前置条件：** :doc:`安装 </rst_source/start/installation>` · 一个 GR00T LIBERO checkpoint（见下文）。
@@ -543,7 +543,29 @@ GR00T-N1.5的动作头包含dropout层，这会干扰对数概率的计算，因
 在不同硬件后端上运行
 --------------------
 
-NVIDIA 使用上面各版本对应的安装流程。华为昇腾 CANN 的 e2e 作业覆盖 **GR00T N1.5 + LIBERO-Spatial + PPO**，这一范围不包含 N1.6、N1.7 或 IsaacLab。GR00T N1.5 也有 MUSA 兼容补丁，但当前工作流尚无 GR00T 的 MUSA e2e 作业。
+NVIDIA 使用上面各版本对应的安装流程。AMD ROCm、华为昇腾 CANN 和摩尔线程 MUSA 都支持 GR00T N1.5 在 LIBERO 上运行；昇腾的 LIBERO-Spatial PPO 路径还有硬件 e2e 作业。非 NVIDIA 的说明不包含 N1.6、N1.7 与 IsaacLab。
+
+AMD ROCm
+~~~~~~~~
+
+ROCm 使用 PyTorch 的 CUDA 兼容 API，因此 GR00T N1.5 可直接使用共用的 AMD accelerator 与安装路径，无需模型专用补丁。
+
+.. include:: _amd_libero.rst
+
+发布镜像已经包含 N1.5 环境：
+
+.. code-block:: bash
+
+   source switch_env gr00t
+
+若在 ROCm 宿主机上直接安装：
+
+.. code-block:: bash
+
+   bash requirements/install.sh --platform amd --rocm 6.4 embodied --model gr00t --env libero
+   source .venv/bin/activate
+
+省略 ``--rocm`` 可自动检测已安装的版本；中国大陆用户可添加 ``--use-mirror``。
 
 华为昇腾 CANN
 ~~~~~~~~~~~~~
@@ -552,7 +574,7 @@ NVIDIA 使用上面各版本对应的安装流程。华为昇腾 CANN 的 e2e �
 
 .. include:: _ascend_libero.rst
 
-进入 RLinf 容器后，激活 N1.5 环境：
+进入已发布的 RLinf 容器后，激活 N1.5 环境：
 
 .. code-block:: bash
 
@@ -566,6 +588,25 @@ NVIDIA 使用上面各版本对应的安装流程。华为昇腾 CANN 的 e2e �
    source .venv/bin/activate
 
 中国大陆用户可添加 ``--use-mirror``。安装脚本在 aarch64 上按需从源码构建 ``decord``，应用昇腾专用的 TensorFlow 版本约束，并跳过 CUDA flash-attention。加载模型时，RLinf 会应用 N1.5 的 NPU 补丁。
+
+摩尔线程 MUSA
+~~~~~~~~~~~~~
+
+MUSA 使用共用设备与安装路径，并为 RADIO backbone 中的 CUDA capability 检查应用 N1.5 兼容补丁。厂商镜像提供可用的 MUSA flash-attention。
+
+.. include:: _musa_libero.rst
+
+进入容器后，安装 GR00T N1.5 与 LIBERO：
+
+.. code-block:: bash
+
+   bash requirements/install.sh --platform musa embodied --model gr00t --env libero
+   source .venv/bin/activate
+
+中国大陆用户可添加 ``--use-mirror``。worker 检测到 MUSA accelerator 后，模型加载会自动应用对应补丁。
+
+在 AMD、昇腾或 MUSA 上启动 LIBERO
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 按前面的模型下载步骤获取 N1.5 Spatial checkpoint，并在 ``examples/embodiment/config/libero_spatial_ppo_gr00t.yaml`` 中设置路径。
 
@@ -581,7 +622,7 @@ NVIDIA 使用上面各版本对应的安装流程。华为昇腾 CANN 的 e2e �
 
    bash examples/embodiment/run_embodiment.sh libero_spatial_ppo_gr00t
 
-若要使用昇腾 CI 配置做一次短程运行，设置 ``REPO_PATH`` 并覆盖其中的 checkpoint 路径：
+若要在昇腾上使用硬件 CI 配置做一次短程运行，设置 ``REPO_PATH`` 并覆盖 checkpoint 路径：
 
 .. code-block:: bash
 
@@ -590,7 +631,7 @@ NVIDIA 使用上面各版本对应的安装流程。华为昇腾 CANN 的 e2e �
       actor.model.model_path="$PWD/RLinf-Gr00t-SFT-Spatial" \
       rollout.model.model_path="$PWD/RLinf-Gr00t-SFT-Spatial"
 
-该命令使用 ``tests/e2e_tests/embodied/libero_spatial_ppo_gr00t.yaml`` 和 OSMesa 渲染，与 ``.github/workflows/embodied-e2e-tests.yml`` 中的硬件作业一致。
+AMD 与 MUSA 当前没有 GR00T 硬件 e2e 作业，可使用上面的常规示例做短程运行，并按需减小 placement 与 batch size。
 
 可视化与结果
 ----------------------------------------

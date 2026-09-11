@@ -7,7 +7,7 @@ OpenVLA-OFT 强化学习训练
 
    原始 OFT 微调研究的 LIBERO 结果（图片来源：`OpenVLA-OFT 项目 <https://openvla-oft.github.io/>`__）。
 
-使用 RLinf 对 OpenVLA-OFT 进行强化学习微调。本页先介绍 NVIDIA 上的 LIBERO + GRPO 训练流程，再说明如何在 AMD ROCm 和华为昇腾 CANN 上安装并运行同一模型。原始 OpenVLA 模型的训练流程见 :doc:`maniskill`。
+使用 RLinf 对 OpenVLA-OFT 进行强化学习微调。本页先介绍 NVIDIA 上的 LIBERO + GRPO 训练流程，再说明如何在 AMD ROCm、华为昇腾 CANN 和摩尔线程 MUSA 上安装并运行同一模型。原始 OpenVLA 模型的训练流程见 :doc:`maniskill`。
 
 概览
 ----
@@ -35,7 +35,7 @@ OpenVLA-OFT 强化学习训练
    .. grid-item-card:: 硬件
       :text-align: center
 
-      NVIDIA CUDA · :ref:`AMD ROCm <openvla-oft-amd>` · :ref:`华为昇腾 CANN <openvla-oft-ascend>` （LIBERO）
+      NVIDIA CUDA · :ref:`AMD ROCm · 华为昇腾 CANN · 摩尔线程 MUSA <openvla-oft-hardware>` （LIBERO）
 
 | **你将完成：** 安装 → 下载 LIBERO-Goal checkpoint → 设置模型路径 → 启动 GRPO → 观察 ``env/success_once``。
 | **前置条件：** :doc:`安装 </rst_source/start/installation>` · 所选后端的硬件和驱动。
@@ -43,7 +43,7 @@ OpenVLA-OFT 强化学习训练
 任务
 ~~~~
 
-可先运行 LIBERO-Goal；AMD 和昇腾的硬件 e2e 作业也使用这个任务。其他模拟器的完整流程保留在各自页面中。
+可先运行 LIBERO-Goal；AMD 和昇腾的硬件 e2e 作业也使用这个任务。MUSA 支持相同的 LIBERO 流程，但当前没有对应的硬件 e2e 作业。其他模拟器的完整流程保留在各自页面中。
 
 .. list-table::
    :header-rows: 1
@@ -101,7 +101,7 @@ LIBERO 训练流程根据图像和任务提示生成动作块。
 安装
 ----
 
-默认流程使用下方的 NVIDIA 安装步骤。AMD 或昇腾用户请先完成 :ref:`对应后端的安装 <openvla-oft-hardware>`，再下载模型。
+默认流程使用下方的 NVIDIA 安装步骤。AMD、昇腾或 MUSA 用户请先完成 :ref:`对应后端的安装 <openvla-oft-hardware>`，再下载模型。
 
 .. include:: _setup_common.rst
 
@@ -152,38 +152,22 @@ LIBERO 训练流程根据图像和任务提示生成动作块。
 在不同硬件后端上运行
 --------------------
 
-NVIDIA 使用上面的安装与启动流程。``.github/workflows/embodied-e2e-tests.yml`` 中有 AMD ROCm 和华为昇腾 CANN 的 OpenVLA-OFT + LIBERO-Goal GRPO e2e 作业。以下后端说明仅覆盖 LIBERO，概览中列出的其他环境需要分别验证。
+NVIDIA 使用上面的安装与启动流程。AMD ROCm、华为昇腾 CANN 和摩尔线程 MUSA 都支持 OpenVLA-OFT 在 LIBERO 上运行；``.github/workflows/embodied-e2e-tests.yml`` 还包含 AMD 与昇腾的 LIBERO-Goal GRPO 硬件 e2e 作业。MUSA 支持来自共用平台安装器、scheduler 设备 API 与模型运行路径。以下说明不代表概览中的其他环境也已支持这些后端。
 
 .. _openvla-oft-amd:
 
 AMD ROCm
 ~~~~~~~~
 
-启动 ROCm LIBERO 镜像，并将 AMD 设备开放给容器：
+可以启动 ROCm 容器，也可以在已安装 ROCm 的宿主机上直接安装。
+
+.. include:: _amd_libero.rst
+
+发布镜像已经包含该模型环境：
 
 .. code-block:: bash
 
-   docker run -it --rm \
-      --device=/dev/kfd --device=/dev/dri --group-add video \
-      --ipc=host --shm-size 20g --network host \
-      -v "$PWD":/workspace/RLinf -w /workspace/RLinf \
-      rlinf/rlinf:agentic-rlinf0.3-libero-rocm6.4 bash
    source switch_env openvla-oft
-
-ROCm 7.2.3 对应的镜像 tag 为 ``agentic-rlinf0.3-libero-rocm7.2.3``。中国大陆用户可使用 ``docker.1ms.run/rlinf/rlinf`` 下的同名 tag。如需从当前代码构建，在宿主机执行以下命令，再将上面容器命令中的镜像替换为 ``rlinf-libero-rocm6.4``：
-
-.. code-block:: bash
-
-   DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile \
-      --build-arg PLATFORM=amd \
-      --build-arg ROCM_VER=6.4 \
-      --build-arg 'ROCM_ARCHS=gfx90a;gfx942' \
-      --build-arg BUILD_TARGET=embodied-libero \
-      -t rlinf-libero-rocm6.4 .
-
-.. warning::
-
-   ``ROCM_ARCHS`` 必须与目标 GPU 匹配。Docker 构建期间可能无法访问设备，``flash-attn`` 等扩展需要显式指定架构。Dockerfile 会将这些值传给 ROCm 构建工具。
 
 若宿主机已安装 ROCm，也可以直接安装依赖：
 
@@ -192,7 +176,7 @@ ROCm 7.2.3 对应的镜像 tag 为 ``agentic-rlinf0.3-libero-rocm7.2.3``。中�
    bash requirements/install.sh --platform amd --rocm 6.4 embodied --model openvla-oft --env libero
    source .venv/bin/activate
 
-省略 ``--rocm`` 可自动检测已安装的版本；中国大陆用户可添加 ``--use-mirror``。完成后按 :ref:`下方步骤启动 LIBERO <openvla-oft-backend-launch>`。
+省略 ``--rocm`` 可自动检测已安装的版本；中国大陆用户可添加 ``--use-mirror``。
 
 .. _openvla-oft-ascend:
 
@@ -203,7 +187,7 @@ ROCm 7.2.3 对应的镜像 tag 为 ``agentic-rlinf0.3-libero-rocm7.2.3``。中�
 
 .. include:: _ascend_libero.rst
 
-进入 RLinf 容器后，激活模型环境：
+进入已发布的 RLinf 容器后，激活模型环境：
 
 .. code-block:: bash
 
@@ -218,12 +202,30 @@ ROCm 7.2.3 对应的镜像 tag 为 ``agentic-rlinf0.3-libero-rocm7.2.3``。中�
 
 中国大陆用户可添加 ``--use-mirror``。安装脚本在昇腾上会跳过 CUDA flash-attention 的构建。
 
+.. _openvla-oft-musa:
+
+摩尔线程 MUSA
+~~~~~~~~~~~~~
+
+在摩尔线程容器内运行。安装器会复用镜像中的 MUSA 版 PyTorch 与 ``torch_musa``，避免被通用 torch wheel 覆盖。
+
+.. include:: _musa_libero.rst
+
+进入容器后，选择 MUSA 平台安装 OpenVLA-OFT：
+
+.. code-block:: bash
+
+   bash requirements/install.sh --platform musa embodied --model openvla-oft --env libero
+   source .venv/bin/activate
+
+中国大陆用户可添加 ``--use-mirror``。RLinf 会检测 MUSA 设备，并沿用其他 GPU 后端的 placement 配置完成分配。
+
 .. _openvla-oft-backend-launch:
 
-在 AMD 或昇腾上启动 LIBERO
-~~~~~~~~~~~~~~~~~~~~~~~~~~
+在 AMD、昇腾或 MUSA 上启动 LIBERO
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-完成任一后端的安装后，按前面的说明下载 LIBERO-Goal checkpoint 并设置模型路径。在同一 shell 中启用软件渲染。
+完成其中一种后端的安装后，按前面的说明下载 LIBERO-Goal checkpoint 并设置模型路径。在同一 shell 中启用软件渲染。
 
 .. include:: _libero_osmesa.rst
 
@@ -233,7 +235,7 @@ ROCm 7.2.3 对应的镜像 tag 为 ``agentic-rlinf0.3-libero-rocm7.2.3``。中�
 
    bash examples/embodiment/run_embodiment.sh libero_goal_grpo_openvlaoft
 
-若要用硬件 CI 配置做一次短程检查，将两个 worker 都指向本地 checkpoint：
+若要在 AMD 或昇腾上使用硬件 CI 配置做一次短程检查，将两个 worker 都指向本地 checkpoint：
 
 .. code-block:: bash
 
@@ -242,7 +244,7 @@ ROCm 7.2.3 对应的镜像 tag 为 ``agentic-rlinf0.3-libero-rocm7.2.3``。中�
       actor.model.model_path="$PWD/checkpoints/Openvla-oft-SFT-libero-goal-traj1" \
       rollout.model.model_path="$PWD/checkpoints/Openvla-oft-SFT-libero-goal-traj1"
 
-测试脚本的第二个参数选择渲染后端；训练脚本的第二个参数选择 robot platform。使用训练脚本时，通过环境变量指定 OSMesa。
+测试脚本的第二个参数选择渲染后端。MUSA 当前没有 OpenVLA-OFT 硬件 e2e 作业，可使用上面的常规示例做短程运行，并按需减小 placement 与 batch size。
 
 可视化与结果
 ------------

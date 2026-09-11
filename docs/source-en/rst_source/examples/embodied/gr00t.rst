@@ -18,6 +18,8 @@ SFT cold-start, PPO training, evaluation, and visualization.
 .. note::
 
    RLinf supports GR00T-N1.5, GR00T-N1.6, and GR00T-N1.7. N1.6 introduced the Flow-Matching Action Head, FSDP-based training, and stronger cross-embodiment support. N1.7 further upgrades the official backbone to Cosmos-Reason2-2B / Qwen3-VL and expands the official universal state/action space. Version-specific differences are marked with **N1.5** / **N1.6** / **N1.7** labels.
+   The AMD, Ascend, and MUSA instructions on this page cover N1.5 with LIBERO;
+   validate N1.6, N1.7, and IsaacLab separately on those backends.
 
 Overview
 --------
@@ -45,7 +47,7 @@ Fine-tune GR00T (N1.5 / N1.6 / N1.7) on LIBERO with PPO (actor-critic).
    .. grid-item-card:: Hardware
       :text-align: center
 
-      NVIDIA CUDA · :ref:`Huawei Ascend CANN <gr00t-hardware>` (N1.5, LIBERO)
+      NVIDIA CUDA · :ref:`AMD ROCm · Huawei Ascend CANN · Moore Threads MUSA <gr00t-hardware>` (N1.5, LIBERO)
 
 | **You'll do:** install the target GR00T version → download the SFT / task checkpoint → pick a config → launch ``run_embodiment.sh`` → watch ``env/success_once``.
 | **Prerequisites:** :doc:`Installation </rst_source/start/installation>` · a GR00T LIBERO checkpoint (steps below).
@@ -547,10 +549,34 @@ Update the SFT model path:
 Run on Different Hardware Backends
 ----------------------------------
 
-NVIDIA uses the version-specific setup above. Huawei Ascend CANN has an e2e
-job for **GR00T N1.5 + LIBERO-Spatial + PPO**. This coverage does not extend to
-N1.6, N1.7, or IsaacLab. GR00T N1.5 also has MUSA compatibility patches, but
-there is no GR00T MUSA e2e job in the current workflow.
+NVIDIA uses the version-specific setup above. AMD ROCm, Huawei Ascend CANN, and
+Moore Threads MUSA support GR00T N1.5 on LIBERO. The Ascend LIBERO-Spatial PPO
+path also has a hardware e2e job. N1.6, N1.7, and IsaacLab remain outside this
+non-NVIDIA recipe.
+
+AMD ROCm
+~~~~~~~~
+
+ROCm uses PyTorch's CUDA-compatible API, so GR00T N1.5 follows the shared AMD
+accelerator and installation path without a model-specific patch.
+
+.. include:: _amd_libero.rst
+
+The published image already contains the N1.5 environment:
+
+.. code-block:: bash
+
+   source switch_env gr00t
+
+For a native installation on a ROCm host:
+
+.. code-block:: bash
+
+   bash requirements/install.sh --platform amd --rocm 6.4 embodied --model gr00t --env libero
+   source .venv/bin/activate
+
+Omit ``--rocm`` to detect the installed version, or add ``--use-mirror`` for
+downloads from mainland China.
 
 Huawei Ascend CANN
 ~~~~~~~~~~~~~~~~~~
@@ -559,7 +585,7 @@ Use the Ascend LIBERO container or a host with CANN and the NPU driver installed
 
 .. include:: _ascend_libero.rst
 
-Inside the RLinf container, activate the N1.5 environment:
+Inside the published RLinf container, activate the N1.5 environment:
 
 .. code-block:: bash
 
@@ -577,6 +603,28 @@ Add ``--use-mirror`` for downloads from mainland China. The installer builds
 pins, and skips CUDA flash-attention. RLinf applies the N1.5 NPU patches when
 loading the model.
 
+Moore Threads MUSA
+~~~~~~~~~~~~~~~~~~
+
+MUSA uses the shared device and installation path plus an N1.5 compatibility
+patch for the RADIO backbone's CUDA capability check. The vendor image provides
+a working MUSA flash-attention build.
+
+.. include:: _musa_libero.rst
+
+Inside the container, install GR00T N1.5 and LIBERO:
+
+.. code-block:: bash
+
+   bash requirements/install.sh --platform musa embodied --model gr00t --env libero
+   source .venv/bin/activate
+
+Add ``--use-mirror`` for downloads from mainland China. Model loading applies
+the MUSA patch automatically when the worker detects a MUSA accelerator.
+
+Launch LIBERO on AMD, Ascend, or MUSA
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 Download the N1.5 Spatial checkpoint from the model section above and set the
 paths in ``examples/embodiment/config/libero_spatial_ppo_gr00t.yaml``.
 
@@ -592,8 +640,8 @@ Launch the configured PPO run:
 
    bash examples/embodiment/run_embodiment.sh libero_spatial_ppo_gr00t
 
-For a short run with the Ascend CI configuration, set ``REPO_PATH`` and override
-its checkpoint paths:
+For a short hardware-CI run on Ascend, set ``REPO_PATH`` and override the
+checkpoint paths:
 
 .. code-block:: bash
 
@@ -602,9 +650,8 @@ its checkpoint paths:
       actor.model.model_path="$PWD/RLinf-Gr00t-SFT-Spatial" \
       rollout.model.model_path="$PWD/RLinf-Gr00t-SFT-Spatial"
 
-This uses ``tests/e2e_tests/embodied/libero_spatial_ppo_gr00t.yaml`` and the
-OSMesa renderer, matching the hardware job in
-``.github/workflows/embodied-e2e-tests.yml``.
+AMD and MUSA have no dedicated GR00T hardware e2e job. Use the regular recipe
+above for a short run and reduce its placement and batch sizes when needed.
 
 Visualization and Results
 -------------------------

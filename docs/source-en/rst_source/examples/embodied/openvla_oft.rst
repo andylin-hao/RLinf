@@ -9,7 +9,7 @@ RL on OpenVLA-OFT
 
 Fine-tune OpenVLA-OFT with reinforcement learning in RLinf. This recipe starts
 with LIBERO and GRPO on NVIDIA, then shows how to install and launch the same
-model on AMD ROCm and Huawei Ascend CANN. For the original OpenVLA model, see
+model on AMD ROCm, Huawei Ascend CANN, and Moore Threads MUSA. For the original OpenVLA model, see
 :doc:`maniskill`.
 
 Overview
@@ -39,7 +39,7 @@ The linked simulator pages cover its other environments.
    .. grid-item-card:: Hardware
       :text-align: center
 
-      NVIDIA CUDA · :ref:`AMD ROCm <openvla-oft-amd>` · :ref:`Huawei Ascend CANN <openvla-oft-ascend>` (LIBERO)
+      NVIDIA CUDA · :ref:`AMD ROCm · Huawei Ascend CANN · Moore Threads MUSA <openvla-oft-hardware>` (LIBERO)
 
 | **You'll do:** install → download a LIBERO-Goal checkpoint → set model paths → launch GRPO → watch ``env/success_once``.
 | **Prerequisites:** :doc:`Installation </rst_source/start/installation>` · hardware and drivers for your selected backend.
@@ -47,8 +47,9 @@ The linked simulator pages cover its other environments.
 Tasks
 ~~~~~
 
-Start with LIBERO-Goal, which also has hardware e2e jobs for AMD and Ascend.
-Other simulator workflows remain on their own pages.
+Start with LIBERO-Goal. AMD and Ascend also run this path in hardware e2e jobs;
+MUSA uses the same supported LIBERO recipe without a hardware e2e job. Other
+simulator workflows remain on their own pages.
 
 .. list-table::
    :header-rows: 1
@@ -106,7 +107,7 @@ The LIBERO recipe uses images and a task prompt to produce action chunks.
 Installation
 ------------
 
-Use the NVIDIA setup below for the default recipe. For AMD or Ascend, use
+Use the NVIDIA setup below for the default recipe. For AMD, Ascend, or MUSA, use
 :ref:`the backend setup <openvla-oft-hardware>` before downloading the model.
 
 .. include:: _setup_common.rst
@@ -164,46 +165,27 @@ and batch sizes for your devices; see :doc:`../../concepts/placement` and
 Run on Different Hardware Backends
 ----------------------------------
 
-NVIDIA uses the installation and launch above. AMD ROCm and Huawei Ascend CANN
-have OpenVLA-OFT + LIBERO-Goal GRPO e2e jobs in
-``.github/workflows/embodied-e2e-tests.yml``. The backend instructions below cover
-LIBERO; they do not establish support for every environment in the Overview.
+NVIDIA uses the installation and launch above. AMD ROCm, Huawei Ascend CANN,
+and Moore Threads MUSA support OpenVLA-OFT on LIBERO. AMD and Ascend also run
+the LIBERO-Goal GRPO path in ``.github/workflows/embodied-e2e-tests.yml``;
+MUSA support follows the shared platform installer, scheduler device API, and
+model path. These instructions do not establish support for every environment
+in the Overview.
 
 .. _openvla-oft-amd:
 
 AMD ROCm
 ~~~~~~~~
 
-Start the ROCm LIBERO image with access to the AMD devices:
+Start a ROCm container or install on a host with ROCm available.
+
+.. include:: _amd_libero.rst
+
+The published image already contains this model environment:
 
 .. code-block:: bash
 
-   docker run -it --rm \
-      --device=/dev/kfd --device=/dev/dri --group-add video \
-      --ipc=host --shm-size 20g --network host \
-      -v "$PWD":/workspace/RLinf -w /workspace/RLinf \
-      rlinf/rlinf:agentic-rlinf0.3-libero-rocm6.4 bash
    source switch_env openvla-oft
-
-The ROCm 7.2.3 image uses tag ``agentic-rlinf0.3-libero-rocm7.2.3``. For faster
-downloads in mainland China, use ``docker.1ms.run/rlinf/rlinf`` with the same tag.
-To build from your checkout, run this on the host and use
-``rlinf-libero-rocm6.4`` in the container command above:
-
-.. code-block:: bash
-
-   DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile \
-      --build-arg PLATFORM=amd \
-      --build-arg ROCM_VER=6.4 \
-      --build-arg 'ROCM_ARCHS=gfx90a;gfx942' \
-      --build-arg BUILD_TARGET=embodied-libero \
-      -t rlinf-libero-rocm6.4 .
-
-.. warning::
-
-   Match ``ROCM_ARCHS`` to the target GPUs. During Docker builds the devices may
-   be invisible, so extensions such as ``flash-attn`` need explicit architecture
-   values. The Dockerfile forwards them to the ROCm build tools.
 
 For a native installation on a host with ROCm already installed:
 
@@ -213,7 +195,7 @@ For a native installation on a host with ROCm already installed:
    source .venv/bin/activate
 
 Omit ``--rocm`` to detect the installed version, or add ``--use-mirror`` for
-downloads from mainland China. Continue with :ref:`the LIBERO launch below <openvla-oft-backend-launch>`.
+downloads from mainland China.
 
 .. _openvla-oft-ascend:
 
@@ -224,7 +206,7 @@ Choose a container or install on a host with CANN and its NPU driver available.
 
 .. include:: _ascend_libero.rst
 
-Inside the RLinf container, activate the model environment:
+Inside the published RLinf container, activate the model environment:
 
 .. code-block:: bash
 
@@ -241,13 +223,35 @@ through the Ascend option:
 Add ``--use-mirror`` for downloads from mainland China. The installer skips the
 CUDA flash-attention build on Ascend.
 
+.. _openvla-oft-musa:
+
+Moore Threads MUSA
+~~~~~~~~~~~~~~~~~~
+
+Run inside a Moore Threads container. The installer reuses the image's MUSA
+builds of PyTorch and ``torch_musa`` instead of replacing them.
+
+.. include:: _musa_libero.rst
+
+Inside the container, install OpenVLA-OFT with the MUSA platform selected:
+
+.. code-block:: bash
+
+   bash requirements/install.sh --platform musa embodied --model openvla-oft --env libero
+   source .venv/bin/activate
+
+Add ``--use-mirror`` for downloads from mainland China. RLinf detects the MUSA
+devices and assigns them through the same placement configuration used on the
+other GPU backends.
+
 .. _openvla-oft-backend-launch:
 
-Launch LIBERO on AMD or Ascend
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Launch LIBERO on AMD, Ascend, or MUSA
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-After either backend setup, download the LIBERO-Goal checkpoint and set the
-model paths as described above. Enable software rendering in that same shell.
+After completing one of the backend setups, download the LIBERO-Goal checkpoint
+and set the model paths as described above. Enable software rendering in that
+same shell.
 
 .. include:: _libero_osmesa.rst
 
@@ -257,7 +261,7 @@ Start the configured GRPO run:
 
    bash examples/embodiment/run_embodiment.sh libero_goal_grpo_openvlaoft
 
-For a short check using the hardware CI config, point both workers to the local
+For a short hardware-CI check on AMD or Ascend, point both workers to the local
 checkpoint and run:
 
 .. code-block:: bash
@@ -267,9 +271,9 @@ checkpoint and run:
       actor.model.model_path="$PWD/checkpoints/Openvla-oft-SFT-libero-goal-traj1" \
       rollout.model.model_path="$PWD/checkpoints/Openvla-oft-SFT-libero-goal-traj1"
 
-The test runner's second argument selects the renderer. The training wrapper's
-second argument selects the robot platform; pass OSMesa through the environment
-variables when using that wrapper.
+The test runner's second argument selects the renderer. MUSA has no dedicated
+OpenVLA-OFT hardware e2e job, so use the regular recipe above for a short run
+and reduce its placement and batch sizes when needed.
 
 Visualization and Results
 -------------------------
