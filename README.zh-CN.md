@@ -292,16 +292,16 @@ RLinf 支持 World Action Model（WAM）和 Vision-Language-Action Model（VLA�
 
 #### 硬件支持
 
-先选择模型与环境组合，再点击硬件列中的链接查看运行步骤。前面的表格分别列出各类组件；下表记录硬件示例所覆盖的三个模型系列及其支持路径。LIBERO 是各类硬件共同支持的环境，最后一行另列已经验证的 MUSA ManiSkill 路径。✅ 表示代码与安装器支持该组合；🧪 表示 [当前 CI 工作流](.github/workflows/embodied-e2e-tests.yml)还会在对应硬件上运行 e2e 作业；— 表示目前没有该组合的支持文档。
+先选择模型与环境组合，再点击硬件列中的链接查看运行步骤。前面的表格分别列出各类组件；下表记录硬件示例所覆盖的三个模型系列及其支持路径。LIBERO 是各类硬件共同支持的环境，最后一行另列 MUSA ManiSkill 路径。✅ 表示代码与安装器支持该组合；— 表示目前没有该组合的支持文档。
 
 | 模型 | 环境 | NVIDIA CUDA | 华为昇腾 CANN | 摩尔线程 MUSA | AMD ROCm |
 |---|---|:---:|:---:|:---:|:---:|
-| [OpenVLA-OFT](docs/source-zh/rst_source/examples/embodied/openvla_oft.rst) | LIBERO | ✅ 🧪 | [✅ 🧪](docs/source-zh/rst_source/examples/embodied/openvla_oft.rst) | [✅](docs/source-zh/rst_source/examples/embodied/openvla_oft.rst) | [✅ 🧪](docs/source-zh/rst_source/examples/embodied/openvla_oft.rst) |
-| [GR00T N1.5](docs/source-zh/rst_source/examples/embodied/gr00t.rst) | LIBERO | ✅ 🧪 | [✅ 🧪](docs/source-zh/rst_source/examples/embodied/gr00t.rst) | [✅](docs/source-zh/rst_source/examples/embodied/gr00t.rst) | [✅](docs/source-zh/rst_source/examples/embodied/gr00t.rst) |
-| [π₀ / π₀.₅ (OpenPI)](docs/source-zh/rst_source/examples/embodied/pi0.rst) | LIBERO | ✅ 🧪 | [✅](docs/source-zh/rst_source/examples/embodied/pi0.rst) | [✅（π₀.₅ 🧪）](docs/source-zh/rst_source/examples/embodied/pi0.rst) | [✅](docs/source-zh/rst_source/examples/embodied/pi0.rst) |
-| [π₀.₅ (OpenPI)](docs/source-zh/rst_source/examples/embodied/pi0.rst) | ManiSkill | ✅ 🧪 | — | [✅* 🧪](docs/source-zh/rst_source/examples/embodied/pi0.rst) | — |
+| [OpenVLA-OFT](docs/source-zh/rst_source/examples/embodied/openvla_oft.rst) | LIBERO | ✅ | [✅](docs/source-zh/rst_source/examples/embodied/openvla_oft.rst) | [✅](docs/source-zh/rst_source/examples/embodied/openvla_oft.rst) | [✅](docs/source-zh/rst_source/examples/embodied/openvla_oft.rst) |
+| [GR00T N1.5](docs/source-zh/rst_source/examples/embodied/gr00t.rst) | LIBERO | ✅ | [✅](docs/source-zh/rst_source/examples/embodied/gr00t.rst) | [✅](docs/source-zh/rst_source/examples/embodied/gr00t.rst) | [✅](docs/source-zh/rst_source/examples/embodied/gr00t.rst) |
+| [π₀ / π₀.₅ (OpenPI)](docs/source-zh/rst_source/examples/embodied/pi0.rst) | LIBERO | ✅ | [✅](docs/source-zh/rst_source/examples/embodied/pi0.rst) | [✅](docs/source-zh/rst_source/examples/embodied/pi0.rst) | [✅](docs/source-zh/rst_source/examples/embodied/pi0.rst) |
+| [π₀.₅ (OpenPI)](docs/source-zh/rst_source/examples/embodied/pi0.rst) | ManiSkill | ✅ | — | [✅*](docs/source-zh/rst_source/examples/embodied/pi0.rst) | — |
 
-\* MUSA 上的 ManiSkill 依赖厂商修改过的 SAPIEN、ManiSkill 及 CPU 物理仿真。AMD、昇腾和 MUSA 上的 LIBERO 使用 OSMesa。非 NVIDIA 的 GR00T 支持范围为 N1.5；N1.6、N1.7、SFT、推理引擎及其他模拟器需要分别验证。硬件 e2e 只表示对应路径已有验证，不限定后端支持范围。
+\* MUSA 上的 ManiSkill 依赖厂商修改过的 SAPIEN、ManiSkill 及 CPU 物理仿真。AMD、昇腾和 MUSA 上的 LIBERO 使用 OSMesa。非 NVIDIA 的 GR00T 支持范围为 N1.5；N1.6、N1.7、SFT、推理引擎及其他模拟器需要分别验证。
 
 ### 智能体强化学习
 
