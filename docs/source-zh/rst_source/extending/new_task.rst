@@ -116,7 +116,9 @@ env 按以下顺序调用任务的方法。``requirements()`` 规定每个角色
        "WipeEnv-v1": WipeEnv,
    }
 
-``register_tasks`` 根据该映射生成 entry point，并将其注册到 Gymnasium。wrapper 无需在此配置：控制声明了与其动作相匹配的 wrapper，``build_stack`` 会读取这项声明。Gym ID 会写入用户配置和数据集元数据，因此数据采集开始后不应再修改 ID。
+``register_tasks`` 根据该映射生成 entry point，并将其注册到 Gymnasium。wrapper 无需在此配置：控制声明了与其动作相匹配的 wrapper，``build_stack`` 会读取这项声明。注册 ``WipeEnv-v1`` 的同时也会注册 ``Wipe-v1``，它在运行所分配的机器人上执行 ``Wipe``；其他机器人注册 ``Wipe`` 后会自动加入该 ID，无需新增 ID。
+
+Gym ID 会写入用户配置和数据集元数据，因此数据采集开始后不应再修改 ID。
 
 3. 添加环境配置
 ~~~~~~~~~~~~~~~

@@ -24,12 +24,12 @@ from functools import partial
 from itertools import cycle
 from typing import Any, Callable, Optional, TypeVar
 
-import cv2
 import gymnasium as gym
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
 from rlinf.envs.real.utils.config import get_hardware_config
+from rlinf.envs.real.utils.frames import policy_depth, policy_frame
 from rlinf.envs.real.utils.seeding import seed_sampled_spaces
 from rlinf.envs.real.utils.video import VideoPlayer
 from rlinf.robotics import (
@@ -315,20 +315,6 @@ class DualFrankaEnv(gym.Env):
         """Drop the camera references; the robot closes what it opened."""
         self._cameras = {}
 
-    def _crop_frame(
-        self,
-        frame: np.ndarray,
-        reshape_size: tuple[int, int],
-        interpolation: int = cv2.INTER_LINEAR,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        h, w = frame.shape[:2]
-        crop_size = min(h, w)
-        start_x = (w - crop_size) // 2
-        start_y = (h - crop_size) // 2
-        cropped = frame[start_y : start_y + crop_size, start_x : start_x + crop_size]
-        resized = cv2.resize(cropped, reshape_size, interpolation=interpolation)
-        return cropped, resized
-
     def _get_camera_observation(
         self,
     ) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
@@ -354,17 +340,12 @@ class DualFrankaEnv(gym.Env):
                 self._logger.error("Camera %s stalled; using the last frame.", name)
                 reading = cached
 
-            reshape_size = self.observation_space["frames"][name].shape[:2][::-1]
-            cropped, resized = self._crop_frame(reading["frame"], reshape_size)
-            frames[name] = resized[..., ::-1]
-            display_frames[name] = resized
+            size = self.observation_space["frames"][name].shape[:2]
+            frames[name], cropped = policy_frame(reading["frame"], size)
+            display_frames[name] = frames[name][..., ::-1]
             display_frames[f"{name}_full"] = cropped
             if "depth" in reading:
-                # Averaging a depth map invents distances between an object and
-                # whatever is behind it, so this resamples by nearest instead.
-                _, depths[name] = self._crop_frame(
-                    reading["depth"], reshape_size, interpolation=cv2.INTER_NEAREST
-                )
+                depths[name] = policy_depth(reading["depth"], size)
             self._last_camera_frame[name] = reading
 
         self.camera_player.put_frame(display_frames)

@@ -1913,6 +1913,66 @@ EXPECTED_IDS = {
 }
 
 
+#: Robot-free ids, one per task, with the robot-bound id each resolves to.
+TASK_IDS = {
+    "CartesianTarget-v1": {"Franka": "FrankaEnv-v1"},
+    "PegInsertion-v1": {
+        "Franka": "PegInsertionEnv-v1",
+        "GimArm": "GimArmPegInsertionEnv-v1",
+    },
+    "BottleCap-v1": {"Franka": "BottleEnv-v1"},
+    "BinRelocation-v1": {"Franka": "FrankaBinRelocationEnv-v1"},
+    "PickPlace-v1": {"Franka": "DexpnpEnv-v1"},
+    "JointReach-v1": {"Piper": "PiperReachEnv-v1", "SO101": "SO101ReachEnv-v1"},
+}
+
+
+def test_a_task_id_runs_the_task_on_the_robot_it_is_given():
+    from gymnasium.envs.registration import registry
+
+    load_tasks()
+    hardware = {
+        "Franka": FrankaConfig(node_rank=0, camera_serials=["dummy"]),
+        "GimArm": GimArmConfig(node_rank=0, camera_serials=["dummy"]),
+        "Piper": PiperConfig(node_rank=0, camera_serials=["dummy"]),
+        "SO101": SO101Config(node_rank=0, camera_serials=["dummy"]),
+    }
+    for task_id, robots in TASK_IDS.items():
+        for robot_type, robot_id in robots.items():
+            env = gym.make(
+                task_id,
+                override_cfg={"is_dummy": True, "enable_camera_player": False},
+                worker_info=None,
+                robot_info=_robot_info(hardware[robot_type]),
+                env_idx=0,
+                env_cfg={"teleop": "none"},
+            )
+            try:
+                expected = registry[robot_id].entry_point.rpartition("create_")[2]
+                assert type(env.unwrapped).__name__ == expected, (task_id, robot_type)
+            finally:
+                env.close()
+
+    with pytest.raises(ValueError, match="no preset for 'Piper'"):
+        gym.make(
+            "PegInsertion-v1",
+            override_cfg={"is_dummy": True},
+            worker_info=None,
+            robot_info=_robot_info(hardware["Piper"]),
+            env_idx=0,
+            env_cfg={},
+        )
+    with pytest.raises(ValueError, match="was given none"):
+        gym.make(
+            "PegInsertion-v1",
+            override_cfg={"is_dummy": True},
+            worker_info=None,
+            robot_info=None,
+            env_idx=0,
+            env_cfg={},
+        )
+
+
 def test_no_robot_keeps_a_tasks_subpackage():
     leftovers = [name for name in _ROBOTS if (_REAL / name / "tasks").exists()]
 
@@ -1941,7 +2001,7 @@ def test_every_entry_point_resolves():
 
     assert RealWorldEnv is not None
     unresolved = []
-    for env_id in sorted(EXPECTED_IDS):
+    for env_id in sorted(EXPECTED_IDS | set(TASK_IDS)):
         entry_point = registry[env_id].entry_point
         module_name, _, attribute = str(entry_point).partition(":")
         module = importlib.import_module(module_name)
@@ -2017,7 +2077,7 @@ def test_wrappers_are_split_by_what_they_change():
     loose = sorted(
         path.stem for path in real.glob("*.py") if path.name != "__init__.py"
     )
-    assert loose == ["env", "registry", "task_env", "venv"], loose
+    assert loose == ["env", "registry", "task_env", "task_ids", "venv"], loose
 
 
 def test_no_teleop_wrapper_is_left_outside_teleop():

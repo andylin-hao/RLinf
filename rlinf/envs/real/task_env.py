@@ -31,7 +31,7 @@ import dataclasses
 import queue
 import time
 import warnings
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, ClassVar, Optional
 
@@ -170,7 +170,8 @@ class TaskEnv(gym.Env):
         control: How a policy's action reaches the robot.
         observation: What the policy reads.
         config: How episodes run.
-        reward_model: Scores steps in place of the task when given.
+        reward_model: Scores each step's policy frames in place of the task
+            when given, such as a :class:`RewardModel`.
     """
 
     metadata = {"render_modes": []}
@@ -195,7 +196,7 @@ class TaskEnv(gym.Env):
         *,
         observation: ObservationSpec,
         config: Optional[TaskEnvConfig] = None,
-        reward_model: Optional[RewardModel] = None,
+        reward_model: Optional[Callable[[Mapping[str, np.ndarray]], float]] = None,
     ) -> None:
         self.config = config if config is not None else TaskEnvConfig()
         if robot is None and not self.config.is_dummy:

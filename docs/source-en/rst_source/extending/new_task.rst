@@ -177,6 +177,10 @@ entry to the robot's ``TASKS`` table in ``rlinf/envs/real/franka/__init__.py``:
 The wrapper stack does not appear here: the control declares the wrappers that
 fit its action, and ``build_stack`` reads that declaration.
 
+Registering ``WipeEnv-v1`` also registers ``Wipe-v1``, which runs ``Wipe`` on
+whichever robot the run is given; a second robot that registers ``Wipe`` joins
+it without a new ID.
+
 User configs and dataset metadata store the gym id. Changing it later breaks
 those references. Choose the name before collecting data.
 

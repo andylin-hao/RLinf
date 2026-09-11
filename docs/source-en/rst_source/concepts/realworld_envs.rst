@@ -175,6 +175,13 @@ generated names in ``_ENTRY_POINTS``. User
 configs and dataset metadata both store the gym id. Renaming it later leaves
 those references stale.
 
+Each task registered on a robot this way also gets a robot-free ID named after
+the task, such as ``PegInsertion-v1`` or ``JointReach-v1``. It runs the task on
+the robot the run is given, taking that robot's preset from
+``robot_info.type``, so a config can name the task and leave the robot to the
+cluster's hardware section. The robot-bound IDs stay registered. A dummy run
+with no robot descriptor has no robot to choose from and still uses one of them.
+
 Drive Hardware Through the Robotics Interface
 ---------------------------------------------
 

@@ -46,7 +46,6 @@ from rlinf.robotics import (
     EndEffector,
     FrankaRobot,
     GimArmConfig,
-    LegacyObservationAdapter,
     MethodArm,
     MethodEndEffector,
     PartGroup,
@@ -56,8 +55,6 @@ from rlinf.robotics import (
     RobotDiscovery,
     RobotPart,
     Turtle2Config,
-    VectorActionAdapter,
-    VectorActionBinding,
     register_robot,
 )
 from rlinf.robotics.parts.arms import (
@@ -436,46 +433,6 @@ def test_a_connection_hands_out_the_part_it_backs_not_a_controllable_one():
     assert not isinstance(wrist, ControllablePart)
     with pytest.raises(TypeError, match="not controllable"):
         Robot(wrist=wrist).send_action({"wrist": {}})
-
-
-def test_legacy_adapters_preserve_policy_facing_layouts():
-    canonical_observation = {
-        "arms": {
-            "left": {"state": {"joint_position": np.arange(6)}},
-            "right": {"state": {"joint_position": np.arange(6, 12)}},
-        },
-        "cameras": {
-            "front": {"rgb": np.zeros((8, 8, 3), dtype=np.uint8)},
-        },
-    }
-    observation_adapter = LegacyObservationAdapter(
-        state_fields={
-            "left_joint_position": ("arms", "left", "state", "joint_position"),
-            "right_joint_position": (
-                "arms",
-                "right",
-                "state",
-                "joint_position",
-            ),
-        },
-        frame_fields={"front": ("cameras", "front", "rgb")},
-    )
-    action_adapter = VectorActionAdapter(
-        action_dim=12,
-        bindings=[
-            VectorActionBinding(("arms", "left", "arm", "target"), 0, 6),
-            VectorActionBinding(("arms", "right", "arm", "target"), 6, 12),
-        ],
-    )
-
-    legacy_observation = observation_adapter.adapt(canonical_observation)
-    canonical_action = action_adapter.adapt(np.arange(12))
-
-    assert set(legacy_observation) == {"state", "frames"}
-    assert legacy_observation["state"]["left_joint_position"].tolist() == list(range(6))
-    assert canonical_action["arms"]["right"]["arm"]["target"].tolist() == list(
-        range(6, 12)
-    )
 
 
 def test_all_builtin_configs_construct_from_a_node_rank_alone():
@@ -1600,7 +1557,7 @@ def test_robotics_devices_do_not_depend_on_the_scheduler_or_gym():
     robotics_dir = _ROOT / "rlinf" / "robotics"
     device_paths = [
         robotics_dir / "robot.py",
-        robotics_dir / "adapters.py",
+        robotics_dir / "pose.py",
         *robotics_dir.joinpath("parts").rglob("*.py"),
     ]
     forbidden = ("gymnasium", "rlinf.scheduler")
