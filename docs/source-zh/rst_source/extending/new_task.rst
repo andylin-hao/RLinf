@@ -14,7 +14,7 @@
 
 以下示例为 Franka 添加 ``WipeEnv-v1``。每一步都会产生下一步的输入：dataclass 配置 env，env class 注册为 Gymnasium ID，YAML 选择该 ID，最后的检查则在硬件打开前确认整条解析路径可用。
 
-如果新任务使用关节空间机械臂，实施顺序不变，只需继承对应的 env 基类。``SO101ReachEnv-v1`` 和 ``examples/embodiment/config/env/so101_reach.yaml`` 展示了当前 SO-101 的实现：动作包含五个绝对关节目标和一个连续夹爪值。机器人中的夹爪路径仍为 ``arm.end_effector``，env 负责将这套嵌套接口转换为 policy 使用的六维动作。
+关节空间机械臂的流程更短。Piper 和 SO-101 运行 ``rlinf/envs/real/tasks`` 中只编写一次的任务：``SO101ReachEnv-v1`` 的注册只有 ``class SO101ReachEnv(SO101Env): TASK = JointReach`` 一行，``PiperReachEnv-v1`` 则在 Piper 上注册同一个 ``JointReach``。preset 中的 ``JointPositionControl`` 把 policy 的扁平动作（SO-101 上是五个绝对关节目标加一个连续夹爪值）转换为发给 ``arm`` 和 ``arm.end_effector`` 的命令。运行配置可参考 ``examples/embodiment/config/env/so101_reach.yaml``。
 
 1. 定义任务配置
 ~~~~~~~~~~~~~~~

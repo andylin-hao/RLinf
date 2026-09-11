@@ -65,7 +65,9 @@
 
 通过 scheduler 运行时，节点 probe 完成枚举，worker placement 分配 ``RobotInfo``，再由 ``RealWorldEnv`` 将其传给任务构造函数。环境只读取其中的硬件配置，不修改原对象。``camera_serials``、``robot_ip`` 等字段不再允许出现在任务 override 中，应移至硬件条目。若硬件默认值已能描述所需的观测空间，dummy 环境可以省略 ``robot_info``；需要其他相机布局或末端执行器时，也应传入对应布局的描述。Franka 在 dummy 模式下也要求至少一个相机，因此构造时始终需要带有相机序列号的描述。离线运行可以使用虚拟序列号；dummy 构造过程不会打开或探测设备。
 
-共享任务 dataclass 分别命名为 ``FrankaEnvConfig``、``DualFrankaEnvConfig``、``SO101EnvConfig``、``PiperEnvConfig``、``GimArmEnvConfig``、``DOSW1EnvConfig`` 和 ``Turtle2EnvConfig``，对应的硬件配置仍位于 ``rlinf.robotics.robots``。Turtle2 的相机通道从任务字段 ``use_camera_ids`` 移至硬件字段 ``camera_ids``。Piper 的硬件字段 ``with_gripper`` 决定 action 包含 6 个关节值，还是包含夹爪开度的 7 个值。
+共享任务 dataclass 分别命名为 ``FrankaEnvConfig``、``DualFrankaEnvConfig``、``GimArmEnvConfig``、``DOSW1EnvConfig`` 和 ``Turtle2EnvConfig``，对应的硬件配置仍位于 ``rlinf.robotics.robots``。Turtle2 的相机通道从任务字段 ``use_camera_ids`` 移至硬件字段 ``camera_ids``。
+
+Piper 和 SO-101 的任务运行在 ``TaskEnv`` 上。运行时仍然只传入一个扁平的 ``override_cfg``，其中每个 key 交给声明它的那一个配置：``TaskEnvConfig`` 负责 episode 如何运行，控制的 ``JointControlConfig`` 负责关节范围，任务配置（例如 ``JointReachConfig``）负责目标与奖励。三者都没有声明的 key 会被拒绝。Piper 的硬件字段 ``with_gripper`` 决定 action 包含 6 个关节值，还是包含夹爪开度的 7 个值。
 
 注册任务
 --------
@@ -228,7 +230,11 @@ env 侧仲裁能够保持清晰，前提是设备读取与动作映射分开。�
    * - ``real/env.py``
      - ``RealWorldEnv``，框架根据 ``env_type: real`` 创建的向量化环境类。
    * - ``real/task_env.py``
-     - ``RobotTask`` 和 ``RobotTaskEnv`` 划定任务逻辑与硬件代码的边界。
+     - ``TaskEnv`` 通过一个控制在一台机器人上运行一个任务；``RegisteredTaskEnv`` 根据运行配置构造它们，供 Gymnasium ID 使用。
+   * - ``real/tasks/``
+     - 只编写一次、可在任何满足要求的机器人上运行的任务，以及把任务绑定到机器人零部件的要求核对。
+   * - ``real/control/``
+     - 把 policy 的动作向量转换为零部件命令的控制。
 
 后续阅读
 --------

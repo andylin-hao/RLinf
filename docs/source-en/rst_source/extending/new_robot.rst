@@ -240,104 +240,115 @@ branches that shared one would run in declaration order.
 3. Use the Robot in a Real-World Environment
 --------------------------------------------
 
-Hardware code says how to move the base. Task code decides where to move it,
-when an episode succeeds, and which subset of the robot a policy controls. The
-following ``RobotTask`` exposes only the base even though the robot also carries
-an arm:
+Hardware code says how to move the base. Two other pieces decide what happens
+on it during an episode: a *task* decides where the base should go and when the
+episode succeeds, and a *control* decides what a policy's action means. Neither
+is specific to this robot. ``TaskEnv`` takes the composed robot, a task, and a
+control, and runs episodes with them:
 
 .. code-block:: python
 
    import gymnasium as gym
 
-   from rlinf.envs.real.task_env import RobotTask, RobotTaskEnv
+   from rlinf.envs.real.control import Applied, Control
+   from rlinf.envs.real.task_env import (
+       ObservationSpec,
+       StateField,
+       TaskEnv,
+       TaskEnvConfig,
+   )
+   from rlinf.envs.real.tasks import Evaluation, Needs, Task
+   from rlinf.robotics import MobileBase
+   from rlinf.robotics.actions import ActionKind, ActionPart
 
 
-   class DriveToTarget(RobotTask):
-       def __init__(self, target_xy: np.ndarray):
+   class DriveToTarget(Task):
+       DESCRIPTION = "drive the mobile manipulator to the target"
+
+       def __init__(self, target_xy):
+           super().__init__()
            self.target_xy = np.asarray(target_xy, dtype=np.float32)
 
-       @property
-       def description(self) -> str:
-           return "drive the mobile manipulator to the target"
+       def requirements(self):
+           return {"base": Needs(kind=MobileBase, observes=frozenset({"pose"}))}
 
-       @property
-       def observation_space(self) -> gym.Space:
-           return gym.spaces.Dict(
-               {
-                   "base": gym.spaces.Dict(
-                       {
-                           "pose": gym.spaces.Box(
-                               -np.inf, np.inf, shape=(3,), dtype=np.float32
-                           )
-                       }
-                   )
-               }
-           )
+       def reset(self, parts, context):
+           parts.part("base").reset()
 
-       @property
-       def action_space(self) -> gym.Space:
-           return gym.spaces.Dict(
-               {
-                   "base": gym.spaces.Dict(
-                       {
-                           "velocity": gym.spaces.Box(
-                               low=np.array([-0.5, -1.0], dtype=np.float32),
-                               high=np.array([0.5, 1.0], dtype=np.float32),
-                           )
-                       }
-                   )
-               }
-           )
-
-       @staticmethod
-       def observe(robot: Robot) -> dict:
-           return {"base": robot.get_observation()["base"]}
-
-       def reset(self, robot: Robot, *, seed=None, options=None):
-           del seed, options
-           robot.reset()
-           return self.observe(robot), {}
-
-       def step(self, robot: Robot, action: dict):
-           robot.send_action(action)
-           observation = self.observe(robot)
-           distance = float(
-               np.linalg.norm(observation["base"]["pose"][:2] - self.target_xy)
-           )
-           reached = distance < 0.05
-           return observation, float(reached), reached, False, {"distance": distance}
+       def evaluate(self, reading, applied):
+           position = reading.part("base")["pose"][:2]
+           reached = float(np.linalg.norm(position - self.target_xy)) < 0.05
+           return Evaluation(reward=float(reached), in_zone=reached)
 
 
-   env = RobotTaskEnv(robot, DriveToTarget(np.array([1.0, 0.0])))
+   class BaseVelocityControl(Control):
+       LIMITS = np.array([0.5, 1.0], dtype=np.float32)
+
+       def __init__(self):
+           super().__init__(config=None)
+
+       def requirements(self):
+           return {
+               "base": Needs(kind=MobileBase, commands=frozenset({"velocity"}))
+           }
+
+       def action_parts(self):
+           return (ActionPart("base", 2, ActionKind.BASE_VELOCITY),)
+
+       def action_space(self):
+           return gym.spaces.Box(-self.LIMITS, self.LIMITS)
+
+       def apply(self, parts, action, reading):
+           parts.robot.send_action({"base": {"velocity": action}})
+           return Applied()
+
+
+   env = TaskEnv(
+       robot,
+       DriveToTarget([1.0, 0.0]),
+       BaseVelocityControl(),
+       observation=ObservationSpec(
+           (StateField("base_pose", "pose", (3,), role="base"),)
+       ),
+       config=TaskEnvConfig(max_num_steps=200),
+   )
    try:
        observation, info = env.reset()
        observation, reward, terminated, truncated, info = env.step(
-           {"base": {"velocity": np.array([0.1, 0.0], dtype=np.float32)}}
+           np.array([0.1, 0.0], dtype=np.float32)
        )
    finally:
        env.close()
 
-Read the task in the order the environment calls it. ``observation_space`` and
-``action_space`` declare the policy boundary before an episode starts;
-``observe()`` then selects the matching ``base`` branch from the larger robot
-observation. ``reset()`` stops and resets the robot before returning the first
-observation. On each step, ``step()`` sends the canonical action, reads the new
-pose, and derives reward, termination, and diagnostic information from the same
-state.
+Read the example in the order the environment uses it. Both the task and the
+control name the role ``base`` and state what the part filling it must be,
+report, and accept. ``TaskEnv`` binds each role to a part of the composed robot
+and checks those declarations before it connects anything: a robot with no
+``MobileBase``, or one whose base does not accept ``velocity``, is refused with
+a ``RequirementError`` that names the role and what the part offers. Only then
+does construction connect the robot.
 
-``RobotTaskEnv(robot, task)`` joins these task rules to the composed runtime. It
-connects the robot during construction, forwards Gymnasium ``reset()`` and
-``step()`` to the task, and disconnects in ``close()``. A manipulation task can
-expand both spaces and the action dictionary with ``arm`` and
-``end_effector``; the base driver and robot composition remain unchanged.
+``reset()`` calls the task's ``reset``, which stops the base, and returns the
+first observation. Each ``step()`` clips the action to the control's
+``action_space``, lets the control turn it into a part command, waits out the
+control period, reads the whole robot once, and asks the task to score that
+reading. ``ObservationSpec`` says what the policy sees: here one ``state``
+entry, ``base_pose``, read from the base's ``pose``. ``close()`` disconnects
+the robot.
 
-To launch the task through RLinf's distributed ``RealWorldEnv``, register the
-environment with Gymnasium and set ``env_type: real`` plus its Gym ID in the env
-YAML. The current rollout interface expects policy-facing ``state`` and
-``frames`` observations, so add ``LegacyObservationAdapter`` and
-``VectorActionAdapter`` when the policy uses that representation. Follow
-:doc:`New Real-World Tasks <new_task>` for registration, YAML, wrappers, and
-compatibility checks.
+The arm is on the robot but untouched, because neither the task nor the control
+names it. A manipulation task adds an ``arm`` role, and a control that drives
+it adds the arm's slice of the action; the base driver and the robot
+composition stay as they are. RLinf ships controls for absolute joint targets
+and tasks such as joint reach in ``rlinf.envs.real.control`` and
+``rlinf.envs.real.tasks``, and any of them runs on this robot wherever its
+requirements are met.
+
+To launch a task through RLinf's distributed ``RealWorldEnv``, give it a
+Gymnasium ID. Subclass ``RegisteredTaskEnv`` once for the robot, naming its
+robot class and control and describing what its policy observes, and once per
+task on top of that. Follow :doc:`New Real-World Tasks <new_task>` for
+registration, YAML, and wrappers.
 
 4. Place the Same Composition on Hardware Nodes
 ------------------------------------------------
@@ -458,7 +469,7 @@ absorbed by ``**kwargs`` and silently ignored.
 .. warning::
 
    Call ``connect()`` before reading observations or sending commands, and
-   ``disconnect()`` during teardown. ``RobotTaskEnv`` performs both lifecycle
+   ``disconnect()`` during teardown. ``TaskEnv`` performs both lifecycle
    operations when it owns the robot.
 
 6. Register the Robot Type

@@ -188,8 +188,8 @@ error recovery, and joint reset, and use ``parts_of_type(Camera)`` to find frame
 sources. The robot still owns the placement and lifecycle of those cameras; the
 environment only consumes their observations.
 
-Existing policies that expect flat vectors use ``LegacyObservationAdapter`` and
-``VectorActionAdapter`` at this boundary. The adapters translate representation;
+``TaskEnv`` builds the policy's ``state`` and ``frames`` from that one reading,
+as its ``ObservationSpec`` lists them. The policy's representation lives there;
 the robot interface remains named and nested. That separation is also what lets
 placement change without reaching task code.
 
@@ -213,10 +213,11 @@ Keep Task Logic Separate
 ------------------------
 
 A part defines how to sense or move hardware; a task defines why those readings
-and motions matter. Reward, termination, task-specific reset behavior, and
-Gymnasium spaces therefore belong to a ``RobotTask`` or a concrete real-world
-env. ``RobotTaskEnv`` joins a generic task to the robot and owns the lifecycle,
-while specialized envs can use the same robot calls directly.
+and motions matter. Reward, termination, and task-specific reset behavior
+therefore belong to a ``Task``, and what a policy's action means belongs to a
+``Control``. ``TaskEnv`` joins a task, a control, and a robot, checks that the
+robot has what the other two need, and owns the lifecycle. Specialized envs that
+have not moved onto it use the same robot calls directly.
 
 The result is two independent contracts: robot paths remain stable across tasks
 and placement, while a task can change its policy-facing schema without changing

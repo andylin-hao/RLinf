@@ -12,14 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Joint reach on a Piper."""
+"""Controls: how a policy's action reaches a robot's parts."""
 
-from rlinf.envs.real.tasks import JointReach
+from .base import Applied, Control
+from .end_effectors import ContinuousGripper
+from .joint import JointControlConfig, JointPositionControl
 
-from .base import PiperEnv
-
-
-class PiperReachEnv(PiperEnv):
-    """Reach and hold a target joint configuration on a Piper."""
-
-    TASK = JointReach
+__all__ = [
+    "Applied",
+    "ContinuousGripper",
+    "Control",
+    "JointControlConfig",
+    "JointPositionControl",
+]

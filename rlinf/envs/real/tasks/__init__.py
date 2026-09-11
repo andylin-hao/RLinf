@@ -12,24 +12,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Piper tasks, and the preset they are built on."""
+"""Real-world tasks, written once and run on any robot that meets them.
 
-from __future__ import annotations
+Gymnasium ids are registered by the robot packages, which pair a task with
+the control and observation layout of one robot.
+"""
 
-from rlinf.envs.real.registry import register_tasks
-from rlinf.robotics.parts.arms.piper import PiperRobotState
-
-from .base import PiperEnv
-from .reach import PiperReachEnv
-
-TASKS = {"PiperReachEnv-v1": PiperReachEnv}
-
-_ENTRY_POINTS = register_tasks(__name__, globals(), TASKS)
+from .base import Evaluation, ResetContext, Task, TaskConfig
+from .reach import JointReach, JointReachConfig
+from .requirements import Bound, Needs, Parts, Reading, RequirementError, bind
 
 __all__ = [
-    "TASKS",
-    "PiperEnv",
-    "PiperReachEnv",
-    "PiperRobotState",
-    *_ENTRY_POINTS,
+    "Needs",
+    "Bound",
+    "Evaluation",
+    "JointReach",
+    "JointReachConfig",
+    "Parts",
+    "Reading",
+    "RequirementError",
+    "ResetContext",
+    "Task",
+    "TaskConfig",
+    "bind",
 ]

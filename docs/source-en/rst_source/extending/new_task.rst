@@ -30,12 +30,14 @@ Each step produces an input for the next one: the dataclass configures the env,
 the env class is registered under an ID, the YAML selects that ID, and the final
 check confirms that the whole lookup path is available before hardware opens.
 
-For a joint-space arm, use the same sequence with its existing env base.
-``SO101ReachEnv-v1`` and ``examples/embodiment/config/env/so101_reach.yaml`` are
-the current references for five absolute joint targets plus one continuous
-gripper action. The robot still exposes the gripper at
-``arm.end_effector``; the env is responsible for presenting the flat six-value
-action expected by its policy.
+Joint-space arms take a shorter path. Piper and SO-101 run tasks written once
+in ``rlinf/envs/real/tasks``: ``SO101ReachEnv-v1`` is the whole registration
+``class SO101ReachEnv(SO101Env): TASK = JointReach``, and ``PiperReachEnv-v1``
+registers the same ``JointReach`` on Piper. The preset's
+``JointPositionControl`` turns the policy's flat action, five absolute joint
+targets plus one continuous gripper value on SO-101, into commands for
+``arm`` and ``arm.end_effector``. ``examples/embodiment/config/env/so101_reach.yaml``
+is the reference run config.
 
 1. Write the Config
 ~~~~~~~~~~~~~~~~~~~

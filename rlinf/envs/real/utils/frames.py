@@ -1,0 +1,75 @@
+# Copyright 2026 The RLinf Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Turn a camera's native frame into the square image a policy reads.
+
+Every camera driver delivers BGR at its own resolution. A policy sees RGB at
+the size its observation space declares, cropped to the view the camera was
+mounted for. Depth goes through the same crop so each pixel still lines up
+with the colour one beside it.
+"""
+
+from typing import Optional
+
+import cv2
+import numpy as np
+
+#: A fractional crop, ``(top, left, bottom, right)``, each in ``0..1``.
+CropRegion = tuple[float, float, float, float]
+
+
+def crop(frame: np.ndarray, region: Optional[CropRegion] = None) -> np.ndarray:
+    """Cut ``region`` out of ``frame``, or its centred square when ``None``."""
+    height, width = frame.shape[:2]
+    if region is not None:
+        top, left, bottom, right = region
+        return frame[
+            int(height * top) : int(height * bottom),
+            int(width * left) : int(width * right),
+        ]
+    side = min(height, width)
+    top = (height - side) // 2
+    left = (width - side) // 2
+    return frame[top : top + side, left : left + side]
+
+
+def policy_frame(
+    frame: np.ndarray, size: tuple[int, int], region: Optional[CropRegion] = None
+) -> tuple[np.ndarray, np.ndarray]:
+    """Crop and resize a BGR frame, and return it for the policy and the viewer.
+
+    Args:
+        frame: The camera's BGR frame, ``(height, width, 3)``.
+        size: The ``(height, width)`` the observation space declares.
+        region: Where the camera looks at the task; ``None`` for the centre.
+
+    Returns:
+        The resized frame in RGB for the policy, and the crop in BGR as the
+        camera saw it, for display.
+    """
+    cropped = crop(frame, region)
+    resized = cv2.resize(cropped, (size[1], size[0]))
+    return np.ascontiguousarray(resized[..., ::-1]), cropped
+
+
+def policy_depth(
+    depth: np.ndarray, size: tuple[int, int], region: Optional[CropRegion] = None
+) -> np.ndarray:
+    """Crop and resize a depth map to match :func:`policy_frame`.
+
+    Averaging a depth map invents distances between an object and whatever is
+    behind it, so this resamples by nearest neighbour.
+    """
+    cropped = crop(np.asarray(depth, dtype=np.float32), region)
+    return cv2.resize(cropped, (size[1], size[0]), interpolation=cv2.INTER_NEAREST)

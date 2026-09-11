@@ -119,12 +119,18 @@ always need a descriptor with camera serials. These serials can be synthetic
 for offline runs; dummy construction does not open or probe devices.
 
 The shared task dataclasses are named ``FrankaEnvConfig``,
-``DualFrankaEnvConfig``, ``SO101EnvConfig``, ``PiperEnvConfig``,
-``GimArmEnvConfig``, ``DOSW1EnvConfig``, and ``Turtle2EnvConfig``. Their hardware
-counterparts remain in ``rlinf.robotics.robots``. For Turtle2, camera channels
-move from the task's ``use_camera_ids`` to the hardware field ``camera_ids``.
-Piper's ``with_gripper`` hardware field determines whether the action has six
-joint values or seven values including the gripper opening.
+``DualFrankaEnvConfig``, ``GimArmEnvConfig``, ``DOSW1EnvConfig``, and
+``Turtle2EnvConfig``. Their hardware counterparts remain in
+``rlinf.robotics.robots``. For Turtle2, camera channels move from the task's
+``use_camera_ids`` to the hardware field ``camera_ids``.
+
+Piper and SO-101 tasks run on ``TaskEnv``. A run still passes one flat
+``override_cfg``; each key goes to whichever of three configs declares it:
+``TaskEnvConfig`` for how an episode runs, the control's ``JointControlConfig``
+for the joint bounds, and the task's config, such as ``JointReachConfig``, for
+targets and reward. A key none of them declares is refused. Piper's
+``with_gripper`` hardware field determines whether the action has six joint
+values or seven values including the gripper opening.
 
 Register the Task
 -----------------
@@ -373,8 +379,14 @@ through robot I/O and the three wrapper families:
      - ``RealWorldEnv``, the vectorized env the framework instantiates from
        ``env_type: real``.
    * - ``real/task_env.py``
-     - ``RobotTask`` and ``RobotTaskEnv`` define the boundary between task logic
-       and hardware.
+     - ``TaskEnv``, which runs one task on one robot through one control, and
+       ``RegisteredTaskEnv``, which builds those from a run's config for a
+       Gymnasium ID.
+   * - ``real/tasks/``
+     - Tasks written once for any robot that meets their requirements, and the
+       requirement check that binds them to a robot's parts.
+   * - ``real/control/``
+     - How a policy's action vector becomes commands to a robot's parts.
 
 Next
 ----

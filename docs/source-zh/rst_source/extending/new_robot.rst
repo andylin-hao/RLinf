@@ -175,85 +175,89 @@ Franka builder 将末端执行器单独返回，是因为 Franka Hand 会打开�
 3. 在真机环境中使用组合机器人
 ------------------------------
 
-硬件代码定义底盘如何运动，任务代码则定义目标位置、成功条件以及 policy 实际控制的零部件。下面的 ``RobotTask`` 只向 policy 提供底盘观测和动作；同一机器人中已经组合的机械臂保持空闲：
+硬件代码定义底盘如何运动。episode 中还有两件事需要决定：任务（task）决定底盘应当到达哪里、何时算作成功，控制（control）决定 policy 输出的动作表示什么含义。二者都不依赖这台机器人。``TaskEnv`` 接收组合好的机器人、一个任务和一个控制，并用它们运行 episode：
 
 .. code-block:: python
 
    import gymnasium as gym
 
-   from rlinf.envs.real.task_env import RobotTask, RobotTaskEnv
+   from rlinf.envs.real.control import Applied, Control
+   from rlinf.envs.real.task_env import (
+       ObservationSpec,
+       StateField,
+       TaskEnv,
+       TaskEnvConfig,
+   )
+   from rlinf.envs.real.tasks import Evaluation, Needs, Task
+   from rlinf.robotics import MobileBase
+   from rlinf.robotics.actions import ActionKind, ActionPart
 
 
-   class DriveToTarget(RobotTask):
-       def __init__(self, target_xy: np.ndarray):
+   class DriveToTarget(Task):
+       DESCRIPTION = "drive the mobile manipulator to the target"
+
+       def __init__(self, target_xy):
+           super().__init__()
            self.target_xy = np.asarray(target_xy, dtype=np.float32)
 
-       @property
-       def description(self) -> str:
-           return "drive the mobile manipulator to the target"
+       def requirements(self):
+           return {"base": Needs(kind=MobileBase, observes=frozenset({"pose"}))}
 
-       @property
-       def observation_space(self) -> gym.Space:
-           return gym.spaces.Dict(
-               {
-                   "base": gym.spaces.Dict(
-                       {
-                           "pose": gym.spaces.Box(
-                               -np.inf, np.inf, shape=(3,), dtype=np.float32
-                           )
-                       }
-                   )
-               }
-           )
+       def reset(self, parts, context):
+           parts.part("base").reset()
 
-       @property
-       def action_space(self) -> gym.Space:
-           return gym.spaces.Dict(
-               {
-                   "base": gym.spaces.Dict(
-                       {
-                           "velocity": gym.spaces.Box(
-                               low=np.array([-0.5, -1.0], dtype=np.float32),
-                               high=np.array([0.5, 1.0], dtype=np.float32),
-                           )
-                       }
-                   )
-               }
-           )
-
-       @staticmethod
-       def observe(robot: Robot) -> dict:
-           return {"base": robot.get_observation()["base"]}
-
-       def reset(self, robot: Robot, *, seed=None, options=None):
-           del seed, options
-           robot.reset()
-           return self.observe(robot), {}
-
-       def step(self, robot: Robot, action: dict):
-           robot.send_action(action)
-           observation = self.observe(robot)
-           distance = float(
-               np.linalg.norm(observation["base"]["pose"][:2] - self.target_xy)
-           )
-           reached = distance < 0.05
-           return observation, float(reached), reached, False, {"distance": distance}
+       def evaluate(self, reading, applied):
+           position = reading.part("base")["pose"][:2]
+           reached = float(np.linalg.norm(position - self.target_xy)) < 0.05
+           return Evaluation(reward=float(reached), in_zone=reached)
 
 
-   env = RobotTaskEnv(robot, DriveToTarget(np.array([1.0, 0.0])))
+   class BaseVelocityControl(Control):
+       LIMITS = np.array([0.5, 1.0], dtype=np.float32)
+
+       def __init__(self):
+           super().__init__(config=None)
+
+       def requirements(self):
+           return {
+               "base": Needs(kind=MobileBase, commands=frozenset({"velocity"}))
+           }
+
+       def action_parts(self):
+           return (ActionPart("base", 2, ActionKind.BASE_VELOCITY),)
+
+       def action_space(self):
+           return gym.spaces.Box(-self.LIMITS, self.LIMITS)
+
+       def apply(self, parts, action, reading):
+           parts.robot.send_action({"base": {"velocity": action}})
+           return Applied()
+
+
+   env = TaskEnv(
+       robot,
+       DriveToTarget([1.0, 0.0]),
+       BaseVelocityControl(),
+       observation=ObservationSpec(
+           (StateField("base_pose", "pose", (3,), role="base"),)
+       ),
+       config=TaskEnvConfig(max_num_steps=200),
+   )
    try:
        observation, info = env.reset()
        observation, reward, terminated, truncated, info = env.step(
-           {"base": {"velocity": np.array([0.1, 0.0], dtype=np.float32)}}
+           np.array([0.1, 0.0], dtype=np.float32)
        )
    finally:
        env.close()
 
-应按照 env 的调用顺序理解这段任务代码。``observation_space`` 与 ``action_space`` 在 episode 开始前声明 policy 边界，``observe()`` 再从完整机器人观测中选出对应的 ``base`` 分支。``reset()`` 先停止并复位机器人，再返回首个观测；每次调用 ``step()`` 时，任务依次下发标准动作、读取新位姿，并从同一份状态计算奖励、终止条件和诊断信息。
+应按照 env 的调用顺序理解这段代码。任务和控制都声明了 ``base`` 这个角色（role），并说明承担该角色的零部件必须是什么类别、报告哪些字段、接受哪些命令。``TaskEnv`` 会在连接任何设备之前，把每个角色绑定到组合机器人上的零部件，并逐项核对这些声明：如果机器人没有 ``MobileBase``，或者底盘不接受 ``velocity``，构造会抛出 ``RequirementError``，并指出是哪个角色、对应零部件实际提供了什么。核对通过后，构造过程才会连接机器人。
 
-``RobotTaskEnv(robot, task)`` 将这些任务规则与组合机器人连接起来。构造 env 时会连接机器人，Gymnasium 的 ``reset()`` 与 ``step()`` 会转发给任务，``close()`` 则负责断开。移动操作任务可以在两类 space 和动作字典中加入 ``arm`` 与 ``end_effector``，无需修改底盘 driver 或机器人组合。
+``reset()`` 调用任务的 ``reset``（这里是让底盘停下），再返回首个观测。每次 ``step()`` 先把动作裁剪到控制的 ``action_space`` 内，交给控制转换成零部件命令，等待一个控制周期，然后对整台机器人读取一次，并请任务基于这次读数评分。``ObservationSpec`` 描述 policy 看到的内容：这里只有一个 ``state`` 条目 ``base_pose``，读自底盘的 ``pose``。``close()`` 负责断开机器人。
 
-如需通过 RLinf 分布式 ``RealWorldEnv`` 启动该任务，应先注册 Gymnasium ID，并在 env YAML 中设置 ``env_type: real`` 和对应 ID。当前 rollout 接口使用面向 policy 的 ``state`` 与 ``frames`` 观测；已有 policy 采用该表示时，请在环境边界配置 ``LegacyObservationAdapter`` 和 ``VectorActionAdapter``。任务注册、YAML、wrapper 与兼容性检查请参阅 :doc:`新增真机任务 <new_task>`。
+机械臂虽然在机器人上，却不会被驱动，因为任务和控制都没有提到它。移动操作任务会增加一个 ``arm`` 角色，驱动它的控制会在动作中加入机械臂那一段；底盘 driver 与机器人组合都无需改动。RLinf 在 ``rlinf.envs.real.control`` 和 ``rlinf.envs.real.tasks`` 中提供了绝对关节目标控制以及关节到达等任务，只要这台机器人满足它们的要求，就可以直接运行。
+
+如需通过 RLinf 分布式 ``RealWorldEnv`` 启动任务，需要为它注册 Gymnasium ID：先为这台机器人继承一次 ``RegisteredTaskEnv``，写明机器人类、控制以及 policy 的观测内容，再为每个任务各继承一层。注册、YAML 与 wrapper 的具体做法请参阅 :doc:`新增真机任务 <new_task>`。
 
 4. 将同一组合部署到硬件节点
 ----------------------------
@@ -346,7 +350,7 @@ placement 只决定各条连接在哪个节点打开，不改变任务访问零�
 
 .. warning::
 
-   读取观测或发送命令前必须调用 ``connect()``，清理阶段必须调用 ``disconnect()``。由 ``RobotTaskEnv`` 持有机器人时，这两个生命周期操作分别在环境创建和 ``close()`` 中完成。
+   读取观测或发送命令前必须调用 ``connect()``，清理阶段必须调用 ``disconnect()``。由 ``TaskEnv`` 持有机器人时，这两个生命周期操作分别在环境创建和 ``close()`` 中完成。
 
 6. 注册机器人类型
 -----------------

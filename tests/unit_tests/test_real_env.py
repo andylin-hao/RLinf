@@ -51,7 +51,6 @@ from rlinf.envs.real.franka.dual_franka_joint import (
     DualFrankaJointEnv,
 )
 from rlinf.envs.real.gim_arm.base import GimArmEnv, GimArmEnvConfig
-from rlinf.envs.real.task_env import RobotTask, RobotTaskEnv
 from rlinf.envs.real.wrappers.teleop.config import (  # noqa: E402
     NO_DEVICE,
     resolve_teleop_device,
@@ -65,10 +64,9 @@ from rlinf.envs.real.wrappers.teleop.intervention import (  # noqa: E402
 from rlinf.envs.real.xsquare.base import Turtle2Env, Turtle2EnvConfig
 from rlinf.envs.sim.robotwin.seed_utils import partition_success_seeds
 from rlinf.robotics import (
-    ControllablePart,
+    Arm,
     DualFrankaConfig,
     FrankaConfig,
-    PartGroup,
     PiperConfig,
     Robot,
     SO101Config,
@@ -105,112 +103,254 @@ def _robot_info(config):
     )
 
 
-class DummyDriver(ControllablePart):
-    def __init__(self) -> None:
-        self.connected = False
-        self.last_action: dict[str, Any] | None = None
+class HoldingArm(Arm):
+    """A two-joint arm that holds whatever joint target it was last sent."""
 
-    @property
-    def is_connected(self) -> bool:
-        return self.connected
+    DOF = 2
+
+    def __init__(self, commands: tuple[str, ...] = ("joint_position",)) -> None:
+        self.commands = commands
+        self.joints = np.zeros(2)
+        self.rests: list[list[float]] = []
 
     @property
     def observation_features(self) -> dict[str, Any]:
-        return {"position": {"shape": (1,)}}
+        return {"arm_joint_position": {}}
 
     @property
     def action_features(self) -> dict[str, Any]:
-        return {"target": {"shape": (1,)}}
+        return {name: {} for name in self.commands}
 
-    def connect(self) -> None:
-        self.connected = True
-
-    def reset(self) -> None:
-        self.last_action = None
+    def _open(self) -> Any:
+        return "device"
 
     def get_observation(self) -> dict[str, Any]:
-        return {"position": np.zeros(1)}
+        return {"arm_joint_position": self.joints.copy()}
 
     def send_action(self, action: dict[str, Any]) -> dict[str, Any]:
-        self.last_action = action
+        self.joints = np.asarray(action["joint_position"], dtype=float)
         return action
 
-    def disconnect(self) -> None:
-        self.connected = False
+    def reset_joint(self, positions) -> None:
+        self.joints = np.asarray(positions, dtype=float)
+        self.rests.append([float(value) for value in positions])
 
 
-class DummyTask(RobotTask):
-    @property
-    def description(self) -> str:
-        return "Move the test arm."
+def _reach_on(arm: HoldingArm, **settings):
+    """Compose joint reach, joint control, and ``arm`` into one env."""
+    from rlinf.envs.real.control import JointControlConfig, JointPositionControl
+    from rlinf.envs.real.task_env import (
+        ObservationSpec,
+        StateField,
+        TaskEnv,
+        TaskEnvConfig,
+    )
+    from rlinf.envs.real.tasks import JointReach, JointReachConfig
 
-    @property
-    def observation_space(self) -> gym.Space:
-        return gym.spaces.Dict(
-            {"position": gym.spaces.Box(-1.0, 1.0, shape=(1,), dtype=np.float32)}
-        )
-
-    @property
-    def action_space(self) -> gym.Space:
-        return gym.spaces.Dict(
-            {
-                "arms": gym.spaces.Dict(
-                    {
-                        "arm": gym.spaces.Dict(
-                            {
-                                "arm": gym.spaces.Dict(
-                                    {
-                                        "target": gym.spaces.Box(
-                                            -1.0,
-                                            1.0,
-                                            shape=(1,),
-                                            dtype=np.float32,
-                                        )
-                                    }
-                                )
-                            }
-                        )
-                    }
-                )
-            }
-        )
-
-    def reset(
-        self,
-        robot: Robot,
-        *,
-        seed: Optional[int] = None,
-        options: Optional[dict[str, Any]] = None,
-    ) -> tuple[dict[str, Any], dict[str, Any]]:
-        del seed, options
-        robot.reset()
-        return {"position": np.zeros(1, dtype=np.float32)}, {}
-
-    def step(
-        self,
-        robot: Robot,
-        action: dict[str, Any],
-    ) -> tuple[dict[str, Any], float, bool, bool, dict[str, Any]]:
-        robot.send_action(action)
-        return {"position": np.ones(1, dtype=np.float32)}, 1.0, True, False, {}
+    return TaskEnv(
+        Robot(arm=arm),
+        JointReach(
+            JointReachConfig(
+                target_joint_qpos=[0.5, -0.5], reset_joint_qpos=[0.1, 0.1], **settings
+            )
+        ),
+        JointPositionControl(JointControlConfig([-1.0, -1.0], [1.0, 1.0]), dof=2),
+        observation=ObservationSpec(
+            (StateField("arm_joint_position", "arm_joint_position", (2,)),)
+        ),
+        config=TaskEnvConfig(
+            step_frequency=1000.0, enable_camera_player=False, max_num_steps=2
+        ),
+    )
 
 
-def test_robot_task_env_composes_task_and_robot_lifecycles():
-    driver = DummyDriver()
-    robot = Robot(arm=PartGroup(arm=driver))
-    env = RobotTaskEnv(robot, DummyTask())
-    action = {"arm": {"arm": {"target": np.array([0.5])}}}
+def test_a_task_runs_on_a_robot_composed_by_hand():
+    """No Gymnasium id and no robot preset: a task, a control, and a robot."""
+    arm = HoldingArm()
+    env = _reach_on(arm)
+    # Construction connects the robot and homes it once.
+    assert arm.is_connected
+    assert arm.rests == [[0.1, 0.1]]
 
-    observation, _ = env.reset(seed=3)
-    transition = env.step(action)
+    observation, _ = env.reset(seed=0)
+    assert observation["state"]["arm_joint_position"] == pytest.approx([0.1, 0.1])
 
-    assert env.task_description == "Move the test arm."
-    assert observation["position"].tolist() == [0.0]
-    assert transition[0]["position"].tolist() == [1.0]
-    assert driver.last_action is not None
-    assert driver.last_action["target"].tolist() == [0.5]
+    _, reward, terminated, _, _ = env.step(np.array([0.5, -0.5], dtype=np.float32))
+    assert (reward, terminated) == (1.0, True)
+    # The action is clipped to the joint bounds before the arm sees it.
+    _, reward, terminated, truncated, _ = env.step(
+        np.array([2.0, 0.0], dtype=np.float32)
+    )
+    assert arm.joints == pytest.approx([1.0, 0.0])
+    assert (reward, terminated, truncated) == (0.0, False, True)
+
     env.close()
-    assert not driver.is_connected
+    assert not arm.is_connected
+
+
+def test_a_task_refuses_a_robot_it_cannot_run_on_before_connecting_it():
+    from rlinf.envs.real.tasks import RequirementError
+
+    arm = HoldingArm(commands=("tcp_pose",))
+    with pytest.raises(
+        RequirementError,
+        match=r"JointReach cannot run on Robot: arm \(HoldingArm\) does not accept "
+        r"\['joint_position'\]; it accepts \['tcp_pose'\]",
+    ):
+        _reach_on(arm)
+    assert not arm.is_connected
+
+
+def test_a_task_drives_a_mobile_base_through_its_own_control():
+    """A role binds to whatever part category it names, not only an arm."""
+    from rlinf.envs.real.control import Applied, Control
+    from rlinf.envs.real.task_env import (
+        ObservationSpec,
+        StateField,
+        TaskEnv,
+        TaskEnvConfig,
+    )
+    from rlinf.envs.real.tasks import Evaluation, Needs, RequirementError, Task
+    from rlinf.robotics import MobileBase
+    from rlinf.robotics.actions import ActionKind, ActionPart
+
+    class Base(MobileBase):
+        def __init__(self) -> None:
+            self.pose = np.zeros(3, dtype=np.float32)
+
+        @property
+        def observation_features(self):
+            return {"pose": {"shape": (3,), "dtype": "float32"}}
+
+        @property
+        def action_features(self):
+            return {"velocity": {"shape": (2,), "dtype": "float32"}}
+
+        def _open(self):
+            return "device"
+
+        def get_observation(self):
+            return {"pose": self.pose.copy()}
+
+        def send_action(self, action):
+            self.pose[0] += action["velocity"][0]
+            return action
+
+    class DriveToTarget(Task):
+        def requirements(self):
+            return {"base": Needs(kind=MobileBase, observes=frozenset({"pose"}))}
+
+        def evaluate(self, reading, applied):
+            reached = bool(abs(reading.part("base")["pose"][0] - 0.5) < 0.05)
+            return Evaluation(reward=float(reached), in_zone=reached)
+
+    class BaseVelocityControl(Control):
+        def __init__(self):
+            super().__init__(config=None)
+
+        def requirements(self):
+            return {"base": Needs(kind=MobileBase, commands=frozenset({"velocity"}))}
+
+        def action_parts(self):
+            return (ActionPart("base", 2, ActionKind.BASE_VELOCITY),)
+
+        def action_space(self):
+            return gym.spaces.Box(-1.0, 1.0, shape=(2,))
+
+        def apply(self, parts, action, reading):
+            parts.robot.send_action({"base": {"velocity": action}})
+            return Applied()
+
+    def build(robot):
+        return TaskEnv(
+            robot,
+            DriveToTarget(),
+            BaseVelocityControl(),
+            observation=ObservationSpec(
+                (StateField("base_pose", "pose", (3,), role="base"),)
+            ),
+            config=TaskEnvConfig(step_frequency=1000.0, enable_camera_player=False),
+        )
+
+    env = build(Robot(base=Base()))
+    try:
+        observation, _ = env.reset()
+        assert set(observation["state"]) == {"base_pose"}
+        _, reward, terminated, _, _ = env.step(np.array([0.5, 0.0], dtype=np.float32))
+        assert (reward, terminated) == (1.0, True)
+    finally:
+        env.close()
+
+    with pytest.raises(RequirementError, match="role 'base' needs a MobileBase"):
+        build(Robot(arm=HoldingArm()))
+
+
+def test_every_setting_has_exactly_one_owner():
+    from dataclasses import dataclass
+
+    from rlinf.envs.real.task_env import split_overrides
+
+    @dataclass
+    class Pace:
+        step_frequency: float = 10.0
+
+    @dataclass
+    class Goal:
+        target: float = 0.0
+
+    @dataclass
+    class AlsoPace:
+        step_frequency: float = 5.0
+
+    pace, goal = split_overrides(
+        {"step_frequency": 2.0, "target": 1.0}, (Pace, Goal), owner="Env"
+    )
+    assert (pace.step_frequency, goal.target) == (2.0, 1.0)
+    with pytest.raises(TypeError, match=r"unexpected keyword arguments \['typo'\]"):
+        split_overrides({"typo": 1}, (Pace, Goal), owner="Env")
+    with pytest.raises(TypeError, match="declared by both Pace and AlsoPace"):
+        split_overrides({}, (Pace, AlsoPace), owner="Env")
+
+
+def test_joint_reach_is_one_task_on_piper_and_so101():
+    from rlinf.envs.real.piper import PiperReachEnv
+    from rlinf.envs.real.so101 import SO101ReachEnv
+    from rlinf.envs.real.tasks import JointReach
+
+    piper = PiperReachEnv({"is_dummy": True})
+    so101 = SO101ReachEnv({"is_dummy": True})
+    try:
+        assert type(piper.task) is type(so101.task) is JointReach
+        assert piper.action_space.shape == (7,)
+        assert so101.action_space.shape == (6,)
+    finally:
+        piper.close()
+        so101.close()
+
+
+def test_registered_envs_only_configure():
+    """A robot preset or task id may not grow its own step loop."""
+    from rlinf.envs.real import load_tasks
+    from rlinf.envs.real.task_env import RegisteredTaskEnv
+
+    load_tasks()
+    registered = [
+        cls
+        for cls in _subclasses(RegisteredTaskEnv)
+        if cls.__module__.startswith("rlinf.")
+    ]
+    assert registered
+    loop = {"__init__", "reset", "step", "close", "_observe", "_read", "_score"}
+    runs_itself = {cls.__name__: sorted(loop & set(vars(cls))) for cls in registered}
+    assert not any(runs_itself.values()), runs_itself
+
+
+def _subclasses(cls: type) -> list[type]:
+    found = []
+    for child in cls.__subclasses__():
+        found.append(child)
+        found.extend(_subclasses(child))
+    return found
 
 
 def _assert_legacy_transition(env) -> None:
@@ -2700,6 +2840,56 @@ def test_so101_env_resizes_camera_frames_to_the_declared_shape():
             env.close()
 
 
+def test_a_policy_receives_its_frames_in_rgb():
+    """Every camera delivers BGR; every policy reads RGB, on every robot."""
+    from robot_mocks import mocked_sdks
+    from robot_mocks.cameras import FRAME_BGR
+
+    with mocked_sdks():
+        env = _so101_env(
+            robot_info=_robot_info(
+                SO101Config(
+                    node_rank=0,
+                    serial_port="/dev/mock-so101",
+                    camera_serials=["MOCK0001"],
+                )
+            )
+        )
+        try:
+            observation, _ = env.reset()
+            centre = observation["frames"]["wrist_1"][64, 64]
+            assert tuple(centre) == tuple(reversed(FRAME_BGR))
+        finally:
+            env.close()
+
+
+def test_a_step_reads_the_robot_once(monkeypatch):
+    """Arm and cameras come from one reading, so they describe one moment."""
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        env = _so101_env(
+            robot_info=_robot_info(
+                SO101Config(
+                    node_rank=0,
+                    serial_port="/dev/mock-so101",
+                    camera_serials=["MOCK0001"],
+                )
+            )
+        )
+        try:
+            env.reset()
+            reads = []
+            read = env.robot.get_observation
+            monkeypatch.setattr(
+                env.robot, "get_observation", lambda: reads.append(1) or read()
+            )
+            env.step(np.zeros(6, dtype=np.float32))
+            assert len(reads) == 1
+        finally:
+            env.close()
+
+
 def test_so101_env_omits_frames_entirely_when_no_camera_is_configured():
     """Gymnasium rejects an empty Dict space, so the key is dropped instead."""
     from robot_mocks import mocked_sdks
@@ -3273,8 +3463,17 @@ def test_task_schema_uses_enumerated_hardware_without_changing_it(
             assert sorted(observation.get("frames", {})) == sorted(frames)
             assert env.action_space.shape == (action_width,)
             assert pickle.dumps(info) == before
+            inner = env.unwrapped
+            configs = [inner.config] + [
+                owner.config
+                for owner in (
+                    getattr(inner, "task", None),
+                    getattr(inner, "control", None),
+                )
+                if owner is not None
+            ]
             assert not set(hardware) & {
-                field.name for field in dataclasses.fields(env.unwrapped.config)
+                field.name for config in configs for field in dataclasses.fields(config)
             }
             if robot_type == "Piper":
                 assert info.model == "Piper"
