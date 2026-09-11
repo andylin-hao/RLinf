@@ -117,7 +117,10 @@ class FrankaEnv(RegisteredTaskEnv):
 
     @classmethod
     def make_control(
-        cls, hardware: FrankaConfig, config: CartesianControlConfig
+        cls,
+        hardware: FrankaConfig,
+        config: CartesianControlConfig,
+        options: None = None,
     ) -> CartesianDeltaControl:
         """Tool deltas, then one gripper channel or one channel per finger."""
         part = cls.end_effector_class(hardware)

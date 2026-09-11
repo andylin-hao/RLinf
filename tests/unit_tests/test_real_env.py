@@ -50,7 +50,7 @@ from rlinf.envs.real.franka.base import FrankaEnv
 from rlinf.envs.real.franka.dual_franka_joint import (
     DualFrankaJointEnv,
 )
-from rlinf.envs.real.gim_arm.base import GimArmEnv, GimArmEnvConfig
+from rlinf.envs.real.gim_arm import GimArmPegInsertionEnv
 from rlinf.envs.real.wrappers.teleop.config import (  # noqa: E402
     NO_DEVICE,
     resolve_teleop_device,
@@ -68,6 +68,7 @@ from rlinf.robotics import (
     DualFrankaConfig,
     EndEffector,
     FrankaConfig,
+    GimArmConfig,
     PiperConfig,
     Robot,
     SO101Config,
@@ -824,6 +825,181 @@ def test_a_run_names_and_crops_cameras_by_serial():
         _dummy_franka(robot_info=info, camera_crop_regions={"123": [0.5, 0, 0.5, 1]})
 
 
+class JointPoseArm(Arm):
+    """A six-joint arm that reports a fixed tool pose and logs its joints."""
+
+    DOF = 6
+
+    def __init__(self, log: list) -> None:
+        self.log = log
+        self.joints = np.zeros(6)
+
+    @property
+    def observation_features(self) -> dict[str, Any]:
+        return {"tcp_pose": {}, "arm_joint_position": {}}
+
+    @property
+    def action_features(self) -> dict[str, Any]:
+        return {"joint_position": {}}
+
+    def _open(self) -> Any:
+        return "device"
+
+    def get_observation(self) -> dict[str, Any]:
+        pose = np.array([0.5, 0.0, 0.1, 0.0, 0.0, 0.0, 1.0])
+        return {"tcp_pose": pose, "arm_joint_position": self.joints.copy()}
+
+    def send_action(self, action: dict[str, Any]) -> dict[str, Any]:
+        self.joints = np.asarray(action["joint_position"], dtype=float)
+        self.log.append(("move", self.joints.round(3).tolist()))
+        return action
+
+    def reset_joint(self, positions) -> None:
+        self.joints = np.asarray(positions, dtype=float)
+        self.log.append(("rest", [float(value) for value in positions]))
+
+
+def _joint_peg_on(log: list, *, gripper: bool = True, **settings):
+    """Peg insertion on an arm driven by joint targets, with no Gymnasium id."""
+    from rlinf.envs.real.control import (
+        BinaryGripper,
+        JointControlConfig,
+        JointPositionControl,
+    )
+    from rlinf.envs.real.task_env import (
+        ObservationSpec,
+        StateField,
+        TaskEnv,
+        TaskEnvConfig,
+    )
+    from rlinf.envs.real.tasks import PegInsertion, PegInsertionConfig
+
+    parts = {"arm": JointPoseArm(log)}
+    if gripper:
+        parts["end_effector"] = LatchGripper(log)
+    return TaskEnv(
+        Robot(**parts),
+        PegInsertion(
+            PegInsertionConfig(
+                reset_mode="joint",
+                target_ee_pose=[0.5, 0.0, 0.1, 0.0, 0.0, 0.0],
+                enable_random_reset=False,
+                **settings,
+            )
+        ),
+        JointPositionControl(
+            JointControlConfig([-2.0] * 6, [2.0] * 6),
+            dof=6,
+            gripper=BinaryGripper(settle_s=0.0),
+            gripper_fitted=gripper,
+        ),
+        observation=ObservationSpec(
+            (
+                StateField("arm_joint_position", "arm_joint_position", (6,)),
+                StateField(
+                    "gripper_position", "state", (1,), end_effector=True, absent=0.0
+                ),
+            )
+        ),
+        config=TaskEnvConfig(step_frequency=1000.0, enable_camera_player=False),
+    )
+
+
+def test_peg_insertion_rests_through_joints_on_an_arm_driven_by_joints(monkeypatch):
+    """The Franka task, unchanged, on a joint arm: the reset goes by joints."""
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+    log: list = []
+    env = _joint_peg_on(
+        log,
+        reset_joint_qpos=[0.1] * 6,
+        safe_retract_qpos=[0.0, -1.5, 1.5, 0.0, 0.0, 0.0],
+        joint_reset_qpos=[0.3] * 6,
+    )
+    try:
+        # Built and homed at the rest configuration, as the arm cannot take
+        # the tool pose a Cartesian rest would send.
+        assert log == [("rest", [0.1] * 6)]
+        log.clear()
+        env.reset(seed=0, options={"joint_reset": True})
+        assert log == [
+            ("close",),
+            ("rest", [0.0, -1.5, 1.5, 0.0, 0.0, 0.0]),
+            ("rest", [0.3] * 6),
+            ("rest", [0.1] * 6),
+        ]
+        log.clear()
+        _, reward, terminated, _, _ = env.step(np.array([0.2] * 6 + [1.0], np.float32))
+        # The arm moves first, then the gripper opens.
+        assert log == [("move", [0.2] * 6), ("open",)]
+        # The pose the arm reports is the seated peg; the gripper change costs.
+        assert (reward, terminated) == (pytest.approx(0.9), False)
+    finally:
+        env.close()
+
+
+def test_a_joint_arm_without_its_gripper_keeps_the_gripper_channel(monkeypatch):
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+    log: list = []
+    env = _joint_peg_on(log, gripper=False)
+    try:
+        observation, _ = env.reset(seed=0)
+        assert env.action_space.shape == (7,)
+        assert observation["state"]["gripper_position"] == pytest.approx([0.0])
+        _, reward, *_ = env.step(np.array([0.0] * 6 + [-1.0], np.float32))
+        assert reward == 1.0
+        assert "close" not in [entry[0] for entry in log]
+    finally:
+        env.close()
+
+
+def test_peg_insertion_is_one_task_on_franka_and_gim_arm():
+    from rlinf.envs.real.control import CartesianDeltaControl, JointPositionControl
+    from rlinf.envs.real.franka import PegInsertionEnv
+    from rlinf.envs.real.tasks import PegInsertion
+
+    franka = _dummy_franka(PegInsertionEnv)
+    gim_arm = _dummy_gim_arm()
+    try:
+        assert type(franka.task) is type(gim_arm.task) is PegInsertion
+        assert isinstance(franka.control, CartesianDeltaControl)
+        assert isinstance(gim_arm.control, JointPositionControl)
+        assert franka.task.config.reset_mode == "cartesian"
+        assert gim_arm.task.config.reset_mode == "joint"
+    finally:
+        franka.close()
+        gim_arm.close()
+
+
+def test_a_robot_default_for_a_setting_the_task_lacks_is_dropped():
+    """A GimArm preset default for the joint reset does not stop joint reach."""
+    from rlinf.envs.real.gim_arm import GimArmEnv
+    from rlinf.envs.real.tasks import JointReach
+
+    class GimArmReach(GimArmEnv):
+        TASK = JointReach
+
+    env = GimArmReach(
+        {"is_dummy": True, "enable_camera_player": False},
+        robot_info=_robot_info(GimArmConfig(node_rank=0, camera_serials=["dummy"])),
+    )
+    env.close()
+    with pytest.raises(TypeError, match="joint_reset_qpos"):
+        GimArmReach({"is_dummy": True, "joint_reset_qpos": [0.0] * 6})
+
+
+def test_gim_arm_passes_its_control_mode_to_the_arm(monkeypatch):
+    from rlinf.robotics import GimArmRobot
+
+    build = Mock(side_effect=RuntimeError("stop before opening hardware"))
+    monkeypatch.setattr(GimArmRobot, "build", build)
+    with pytest.raises(RuntimeError, match="stop before opening hardware"):
+        GimArmPegInsertionEnv(
+            {"control_mode": "position"},
+            robot_info=_robot_info(GimArmConfig(node_rank=0, camera_serials=[])),
+        )
+    assert build.call_args.kwargs["control_mode"] == "position"
+
+
 def test_franka_depth_reaches_the_observation_only_when_asked_for():
     """A rig without a depth camera keeps the schema a policy already reads.
 
@@ -962,17 +1138,20 @@ def test_dual_franka_dummy_preserves_legacy_policy_schema():
     _assert_legacy_transition(env)
 
 
-def test_gim_arm_dummy_preserves_legacy_policy_schema():
-    env = GimArmEnv(
-        config=GimArmEnvConfig(
-            is_dummy=True,
-            enable_camera_player=False,
-            step_frequency=10000.0,
-        ),
-        worker_info=None,
-        robot_info=None,
-        env_idx=0,
+def _dummy_gim_arm(**overrides):
+    return GimArmPegInsertionEnv(
+        {
+            "is_dummy": True,
+            "enable_camera_player": False,
+            "step_frequency": 10000.0,
+            **overrides,
+        },
+        robot_info=_robot_info(GimArmConfig(node_rank=0, camera_serials=["dummy"])),
     )
+
+
+def test_gim_arm_dummy_preserves_legacy_policy_schema():
+    env = _dummy_gim_arm()
 
     assert env.action_space.shape == (7,)
     assert env.robot is None
@@ -1099,47 +1278,47 @@ def test_turtle2_refuses_a_camera_that_is_not_delivering():
         _turtle2_camera_check([0, 1, 2], [True, False, True])
 
 
-def test_gim_arm_reopens_the_existing_camera_after_a_stall(monkeypatch):
-    from rlinf.robotics.parts.cameras import CameraInfo
+def test_a_stalled_camera_is_reopened_and_read_again(monkeypatch):
+    """The stalled camera is reopened in place; one still delivering is left be."""
+    import queue
 
-    class Camera:
-        def __init__(self):
-            self._camera_info = CameraInfo("wrist_1", "camera")
-            self.reads = 0
+    from rlinf.robotics import Camera
+
+    class FakeCamera:
+        def __init__(self, stalled):
+            self.stalled = stalled
             self.reopens = 0
 
-        @property
-        def name(self) -> str:
-            """As BaseCamera exposes it, so the env need not reach inside."""
-            return self._camera_info.name
-
-        def get_frame(self):
-            self.reads += 1
-            if self.reads == 1:
-                raise __import__("queue").Empty
-            return np.zeros((8, 8, 3), dtype=np.uint8)
+        def is_ready(self):
+            return not self.stalled
 
         def reopen(self):
             self.reopens += 1
+            self.stalled = False
 
-    env = GimArmEnv.__new__(GimArmEnv)
-    camera = Camera()
-    env._cameras = [camera]
-    env._logger = SimpleNamespace(warning=lambda *args, **kwargs: None)
-    env.camera_player = SimpleNamespace(put_frame=lambda frames: None)
-    env.observation_space = gym.spaces.Dict(
-        {
-            "frames": gym.spaces.Dict(
-                {"wrist_1": gym.spaces.Box(0, 255, shape=(4, 4, 3), dtype=np.uint8)}
-            )
-        }
-    )
     monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+    env = _reach_on(HoldingArm())
+    try:
+        stalled, delivering = FakeCamera(True), FakeCamera(False)
+        read, parts_of_type = env.robot.get_observation, env.robot.parts_of_type
 
-    frames = env._get_camera_frames()
+        def get_observation():
+            if stalled.stalled:
+                raise queue.Empty
+            return read()
 
-    assert camera.reopens == 1
-    assert frames["wrist_1"].shape == (4, 4, 3)
+        monkeypatch.setattr(env.robot, "get_observation", get_observation)
+        monkeypatch.setattr(
+            env.robot,
+            "parts_of_type",
+            lambda kind: {"wrist_1": stalled, "wrist_2": delivering}
+            if kind is Camera
+            else parts_of_type(kind),
+        )
+        env.reset(seed=0)
+        assert (stalled.reopens, delivering.reopens) == (1, 0)
+    finally:
+        env.close()
 
 
 def test_dual_franka_reads_depth_beside_each_frame():
@@ -2105,15 +2284,9 @@ def test_the_no_gripper_default_does_not_wrap_a_dexterous_hand():
 
 
 def test_gim_arm_keeps_the_unwrapped_legacy_action_and_observation_schema():
-    from rlinf.envs.real.gim_arm.base import GimArmEnv, GimArmEnvConfig
     from rlinf.envs.real.wrappers import build_stack
 
-    env = GimArmEnv(
-        config=GimArmEnvConfig(is_dummy=True),
-        worker_info=None,
-        robot_info=None,
-        env_idx=0,
-    )
+    env = _dummy_gim_arm()
     wrapped = build_stack(env, {})
 
     assert wrapped is env
@@ -2579,7 +2752,6 @@ def test_every_env_declares_parts_that_tile_its_action():
         HandCommand,
     )
     from rlinf.envs.real.dosw1.base import DOSW1Env
-    from rlinf.envs.real.gim_arm.base import GimArmEnv
     from rlinf.envs.real.xsquare.base import Turtle2Env
 
     def cartesian(end_effector):
@@ -2591,7 +2763,7 @@ def test_every_env_declares_parts_that_tile_its_action():
     cases = [
         (7, cartesian(BinaryGripper())),
         (12, cartesian(HandCommand(6))),
-        (7, _declared(GimArmEnv)),
+        (7, _dummy_gim_arm().action_parts()),
         (7, _declared(Turtle2Env, config=SimpleNamespace(use_arm_ids=[1]))),
         (14, _declared(Turtle2Env, config=SimpleNamespace(use_arm_ids=[0, 1]))),
         (14, _declared(DOSW1Env)),
@@ -2614,11 +2786,10 @@ def test_a_two_armed_robot_names_both_arms():
 
 
 def test_two_arms_of_the_same_width_can_mean_different_things():
-    from rlinf.envs.real.gim_arm.base import GimArmEnv
     from rlinf.robotics.actions import ActionKind
 
     franka_arm = _dummy_franka().action_parts()[0]
-    gim_arm = _declared(GimArmEnv)[0]
+    gim_arm = _dummy_gim_arm().action_parts()[0]
 
     assert franka_arm.width == gim_arm.width == 6
     assert franka_arm.kind is ActionKind.CARTESIAN_DELTA

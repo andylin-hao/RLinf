@@ -135,19 +135,20 @@ always need a descriptor with camera serials. These serials can be synthetic
 for offline runs; dummy construction does not open or probe devices.
 
 The task dataclasses of the robots with their own env, ``DualFrankaEnvConfig``,
-``GimArmEnvConfig``, ``DOSW1EnvConfig``, and ``Turtle2EnvConfig``, keep their
-names. Their hardware counterparts remain in ``rlinf.robotics.robots``. For
-Turtle2, camera channels move from the task's ``use_camera_ids`` to the hardware
-field ``camera_ids``.
+``DOSW1EnvConfig``, and ``Turtle2EnvConfig``, keep their names. Their hardware
+counterparts remain in ``rlinf.robotics.robots``. For Turtle2, camera channels
+move from the task's ``use_camera_ids`` to the hardware field ``camera_ids``.
 
-Single-arm Franka, Piper, and SO-101 tasks run on ``TaskEnv``. A run still
+Single-arm Franka, Piper, SO-101, and GimArm tasks run on ``TaskEnv``. A run still
 passes one flat ``override_cfg``; each key goes to whichever of three configs
 declares it: ``RegisteredTaskEnvConfig`` for how an episode runs, the cameras,
 and a reward model; the control's config, ``CartesianControlConfig`` or
 ``JointControlConfig``, for action scales, gains, and joint bounds; and the
 task's config, such as ``PegInsertionConfig`` or ``JointReachConfig``, for
-targets and reward. A key none of them declares is refused, and a retired key
-such as ``hand_target_state`` is dropped with a warning. Piper's
+targets and reward. A preset with settings of its own adds a fourth, such as
+GimArm's ``GimArmOptions`` for the controller mode. A key none of them declares
+is refused, and a retired key such as ``hand_target_state`` is dropped with a
+warning. Piper's
 ``with_gripper`` hardware field determines whether the action has six joint
 values or seven values including the gripper opening.
 
@@ -207,6 +208,47 @@ roles, typed by category:
 responsible for camera placement and lifecycle; the env reads frames from the
 same whole-robot observation it builds the state from, so values from one step
 are not mixed with a later SDK read.
+
+Run One Task on Different Robots
+--------------------------------
+
+Because a task names what it needs rather than which robot provides it, one
+task class runs on robots with different kinematics and different controls.
+``PegInsertionEnv-v1`` and ``GimArmPegInsertionEnv-v1`` both run
+``PegInsertion``:
+
+.. code-block:: python
+
+   class PegInsertionEnv(FrankaEnv):         # Cartesian deltas, hand beside the arm
+       TASK = PegInsertion
+
+
+   class GimArmPegInsertionEnv(GimArmEnv):   # joint targets, gripper on the arm bus
+       TASK = PegInsertion
+       DEFAULTS = {
+           "reset_mode": "joint",
+           "safe_retract_qpos": (0.0, -1.5, 1.5, 0.0, 0.0, 0.0),
+       }
+
+The Franka preset moves the tool by Cartesian deltas inside the task's
+workspace. The GimArm preset sends absolute joint targets, for which a tool
+workspace has no meaning, so its control ignores it. The reward is the same on
+both, the tool's distance to the seated peg, because both arms report
+``tcp_pose``. Only the reset differs: a GimArm cannot be sent a tool pose, so
+``reset_mode="joint"`` retracts and rests through joint configurations instead
+of lifting the tool. An option like this names a real difference between arms;
+the task never branches on the robot's type.
+
+Settings that belong to one robot rather than to the task or the control, such
+as GimArm's controller mode, live in the preset's ``OPTIONS`` dataclass, which
+the preset passes on to ``Robot.from_config``. A preset's default for a setting
+its task does not declare is dropped, so a preset's defaults never stop it
+running another task.
+
+The unit tests compose ``PegInsertion(PegInsertionConfig(reset_mode="joint"))``
+with ``JointPositionControl`` on a fake joint arm, without a Gymnasium ID. The
+same composition tries an existing task on a new robot before that robot has a
+preset.
 
 Organize Wrappers by Responsibility
 -----------------------------------

@@ -146,7 +146,7 @@ def gim_arm() -> dict[str, types.ModuleType]:
         GimArmController=GimArmController,
         ButterworthFilter=ButterworthFilter,
         ControllerConfig=lambda **kwargs: types.SimpleNamespace(**kwargs),
-        # The modes GimArmEnvConfig.control_mode documents, keyed the way
+        # The modes GimArmOptions.control_mode documents, keyed the way
         # the driver looks them up: ControlMode[mode.upper()].
         ControlMode={
             name: name

@@ -46,7 +46,7 @@ from rlinf.envs.real.utils.frames import crop_region, policy_depth, policy_frame
 from rlinf.envs.real.utils.reward_model import RewardModel
 from rlinf.envs.real.utils.seeding import seed_sampled_spaces
 from rlinf.envs.real.utils.video import VideoPlayer
-from rlinf.robotics import Arm, Robot
+from rlinf.robotics import Arm, Camera, Robot
 from rlinf.robotics.actions import ActionKind, ActionPart
 from rlinf.robotics.discovery import RobotConfig, RobotDiscovery, RobotInfo
 from rlinf.robotics.parts.cameras import CameraInfo
@@ -132,6 +132,9 @@ class StateField:
         end_effector: Read it from the end effector the role's part carries.
         low: Lower bound of the space.
         high: Upper bound of the space.
+        absent: What to report for an end-effector field when the part
+            carries no end effector, so a rig without one keeps the policy's
+            layout. ``None`` requires the end effector.
     """
 
     key: str
@@ -141,6 +144,7 @@ class StateField:
     end_effector: bool = False
     low: float = -np.inf
     high: float = np.inf
+    absent: Optional[float] = None
 
 
 @dataclass(frozen=True)
@@ -397,6 +401,8 @@ class TaskEnv(gym.Env):
         for field in self.observation.state:
             need = needs.get(field.role, Needs())
             if field.end_effector:
+                if field.absent is not None:
+                    continue
                 extra = Needs(kind=need.kind, end_effector="any")
             else:
                 extra = Needs(kind=need.kind, observes=frozenset({field.field}))
@@ -427,19 +433,24 @@ class TaskEnv(gym.Env):
                 )
 
     def _read(self) -> Mapping[str, Any]:
-        """Read the whole robot once, giving a stalled camera time to return."""
+        """Read the whole robot once, reopening a camera that has stalled."""
         for attempt in range(1, self.READ_ATTEMPTS):
             try:
                 return self.robot.get_observation()
             except queue.Empty:
                 self._logger.warning(
-                    "A camera stopped producing frames; reading again in %.0fs "
-                    "(attempt %d of %d).",
+                    "A camera stopped producing frames; reopening it and reading "
+                    "again in %.0fs (attempt %d of %d).",
                     self.STALL_WAIT_S,
                     attempt + 1,
                     self.READ_ATTEMPTS,
                 )
                 time.sleep(self.STALL_WAIT_S)
+                # Reopen the camera in place rather than rebuilding it, which
+                # would drop the placement the robot gave it.
+                for camera in self.robot.parts_of_type(Camera).values():
+                    if not camera.is_ready():
+                        camera.reopen()
         return self.robot.get_observation()
 
     def _observe(self) -> dict[str, Any]:
@@ -450,6 +461,9 @@ class TaskEnv(gym.Env):
         for field in self.observation.state:
             if field.end_effector:
                 source = view.end_effector(field.role)
+                if source is None:
+                    state[field.key] = np.full(field.shape, field.absent, np.float32)
+                    continue
             else:
                 source = view.part(field.role)
             state[field.key] = np.array(source[field.field], dtype=np.float32)
@@ -581,6 +595,11 @@ class RegisteredTaskEnv(TaskEnv):
     #: Cameras the policy needs, checked before any hardware is touched.
     MIN_CAMERAS: ClassVar[int] = 0
 
+    #: Settings the preset reads itself, as a dataclass: options it passes to
+    #: the robot, such as a controller mode, and how it builds its control.
+    #: ``None`` when it reads none.
+    OPTIONS: ClassVar[Optional[type]] = None
+
     def __init__(
         self,
         override_cfg: Optional[Mapping[str, Any]] = None,
@@ -589,7 +608,18 @@ class RegisteredTaskEnv(TaskEnv):
         env_idx: int = 0,
     ) -> None:
         cls = type(self)
-        settings = {**cls.defaults(), **(override_cfg or {})}
+        owners = [RegisteredTaskEnvConfig, cls.CONTROL.CONFIG, cls.TASK.CONFIG]
+        if cls.OPTIONS is not None:
+            owners.append(cls.OPTIONS)
+        # A preset's default for a setting its task does not have is dropped,
+        # so a robot's defaults never stop it running a task that lacks one.
+        declared = {
+            field.name for owner in owners for field in dataclasses.fields(owner)
+        }
+        settings = {
+            key: value for key, value in cls.defaults().items() if key in declared
+        }
+        settings.update(override_cfg or {})
         for key, instead in cls._merged("RETIRED").items():
             if key in settings:
                 settings.pop(key)
@@ -598,11 +628,10 @@ class RegisteredTaskEnv(TaskEnv):
                     DeprecationWarning,
                     stacklevel=2,
                 )
-        config, control_config, task_config = split_overrides(
-            settings,
-            (RegisteredTaskEnvConfig, cls.CONTROL.CONFIG, cls.TASK.CONFIG),
-            owner=cls.__name__,
+        config, control_config, task_config, *options = split_overrides(
+            settings, owners, owner=cls.__name__
         )
+        self.options = options[0] if options else None
         self.robot_info = robot_info
         self.env_idx = env_idx
         self.hardware = get_hardware_config(
@@ -611,7 +640,7 @@ class RegisteredTaskEnv(TaskEnv):
         # Everything a config can get wrong is checked before the robot is
         # composed, so a bad run never opens hardware.
         task = cls.TASK(task_config)
-        control = cls.make_control(self.hardware, control_config)
+        control = cls.make_control(self.hardware, control_config, self.options)
         cameras = tuple(cls.camera_infos(self.hardware, config))
         if len(cameras) < cls.MIN_CAMERAS:
             raise ValueError(
@@ -630,6 +659,7 @@ class RegisteredTaskEnv(TaskEnv):
                 env_idx=env_idx,
                 node_rank=node_rank,
                 worker_rank=worker_rank,
+                **cls.robot_options(self.options),
             )
             if config.use_reward_model:
                 reward_model = RewardModel.launch(
@@ -696,9 +726,22 @@ class RegisteredTaskEnv(TaskEnv):
             )
 
     @classmethod
-    def make_control(cls, hardware: RobotConfig, config: Any) -> Control:
-        """The control this robot is driven with, from its hardware and settings."""
+    def make_control(
+        cls, hardware: RobotConfig, config: Any, options: Any = None
+    ) -> Control:
+        """The control this robot is driven with, from its hardware and settings.
+
+        Args:
+            hardware: The robot's hardware config.
+            config: The run's control settings, a ``CONTROL.CONFIG``.
+            options: The preset's own settings, an :attr:`OPTIONS`, or ``None``.
+        """
         raise NotImplementedError(f"{cls.__name__} does not define make_control().")
+
+    @classmethod
+    def robot_options(cls, options: Any) -> Mapping[str, Any]:
+        """Keyword options for ``ROBOT.from_config``, from :attr:`OPTIONS`."""
+        return {}
 
     @classmethod
     def make_observation(

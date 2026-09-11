@@ -303,16 +303,7 @@ class CartesianTarget(Task):
             pose: Rest pose to use instead of :meth:`rest_pose`.
         """
         arm = parts.arm()
-        joint_reset = bool(context.options.get("joint_reset", False))
-        if next(self._resets) == 0:
-            self._logger.info(
-                "Number of resets reached %d, resetting joints to initial position.",
-                self.config.joint_reset_cycle,
-            )
-            joint_reset = True
-        if joint_reset and self.config.joint_reset_qpos is not None:
-            arm.reset_joint(list(self.config.joint_reset_qpos))
-            time.sleep(0.5)
+        self.reset_joints_if_due(parts, context)
 
         pose = self.rest_pose() if pose is None else np.array(pose, dtype=np.float64)
         if self.config.enable_random_reset:
@@ -329,6 +320,23 @@ class CartesianTarget(Task):
 
         context.control.rest_end_effector(parts)
         arm.clear_errors()
+
+    def reset_joints_if_due(self, parts: Parts, context: ResetContext) -> None:
+        """Return the joints to ``joint_reset_qpos`` when a joint reset is due.
+
+        One is due every ``joint_reset_cycle`` episodes, and whenever the
+        reset's options ask for ``joint_reset``.
+        """
+        due = bool(context.options.get("joint_reset", False))
+        if next(self._resets) == 0:
+            self._logger.info(
+                "Number of resets reached %d, resetting joints to initial position.",
+                self.config.joint_reset_cycle,
+            )
+            due = True
+        if due and self.config.joint_reset_qpos is not None:
+            parts.arm().reset_joint(list(self.config.joint_reset_qpos))
+            time.sleep(0.5)
 
     def evaluate(self, reading: Reading, applied: "Applied") -> Evaluation:
         """Score the tool's distance to the target."""

@@ -42,7 +42,7 @@ class PiperEnv(RegisteredTaskEnv):
 
     @classmethod
     def make_control(
-        cls, hardware: PiperConfig, config: JointControlConfig
+        cls, hardware: PiperConfig, config: JointControlConfig, options: None = None
     ) -> JointPositionControl:
         """Six joints, then the gripper's opening when one is fitted."""
         gripper = ContinuousGripper() if hardware.with_gripper else None

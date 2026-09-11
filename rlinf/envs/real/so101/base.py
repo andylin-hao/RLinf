@@ -51,7 +51,7 @@ class SO101Env(RegisteredTaskEnv):
 
     @classmethod
     def make_control(
-        cls, hardware: SO101Config, config: JointControlConfig
+        cls, hardware: SO101Config, config: JointControlConfig, options: None = None
     ) -> JointPositionControl:
         """Five joints, then the gripper's opening."""
         return JointPositionControl(

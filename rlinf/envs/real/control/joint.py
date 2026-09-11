@@ -16,7 +16,7 @@
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Union
 
 import gymnasium as gym
 import numpy as np
@@ -25,7 +25,7 @@ from rlinf.envs.real.tasks.requirements import Needs, Parts, Reading, merge, nes
 from rlinf.robotics.actions import ActionKind, ActionPart
 
 from .base import Applied, Control
-from .end_effectors import ContinuousGripper
+from .end_effectors import BinaryGripper, ContinuousGripper
 
 
 @dataclass
@@ -40,17 +40,21 @@ class JointControlConfig:
 
 
 class JointPositionControl(Control):
-    """Drive one arm with absolute joint targets and a gripper opening.
+    """Drive one arm with absolute joint targets and a gripper channel.
 
     The action is ``dof`` joint positions in radians, clipped to the joint
-    bounds, followed by one gripper value when a gripper is driven. When the
-    gripper rides the arm, as on a shared servo bus, both go out in one
-    command.
+    bounds, followed by one gripper value when a gripper is driven. A
+    continuous gripper rides the arm's command, so both go out together, as
+    on a shared servo bus. A binary gripper is commanded after the arm, and
+    only when its channel asks for a change.
 
     Args:
         config: The joint bounds, which must be ``dof`` wide.
         dof: Joints the arm drives.
         gripper: How the gripper channel is read, or ``None`` for no channel.
+        gripper_fitted: Whether the robot has the gripper. A rig without one
+            keeps the channel, so a policy's action layout does not depend on
+            the rig, and ignores it.
         role: The role this control drives.
     """
 
@@ -61,7 +65,8 @@ class JointPositionControl(Control):
         config: JointControlConfig,
         *,
         dof: int,
-        gripper: Optional[ContinuousGripper] = None,
+        gripper: Optional[Union[ContinuousGripper, BinaryGripper]] = None,
+        gripper_fitted: bool = True,
         role: str = "arm",
     ) -> None:
         super().__init__(config)
@@ -82,6 +87,7 @@ class JointPositionControl(Control):
                 )
         self._dof = dof
         self._gripper = gripper
+        self._fitted = gripper is not None and gripper_fitted
         self._role = role
 
     def requirements(self) -> Mapping[str, Needs]:
@@ -89,7 +95,7 @@ class JointPositionControl(Control):
         return {
             self._role: Needs(
                 commands=frozenset({"joint_position"}),
-                end_effector="gripper" if self._gripper is not None else None,
+                end_effector="gripper" if self._fitted else None,
             )
         }
 
@@ -104,9 +110,12 @@ class JointPositionControl(Control):
         """Joint bounds, then the gripper's range."""
         low = self._low.astype(np.float32)
         high = self._high.astype(np.float32)
-        if self._gripper is not None:
+        if isinstance(self._gripper, ContinuousGripper):
             low = np.append(low, np.float32(self._gripper.low))
             high = np.append(high, np.float32(self._gripper.high))
+        elif isinstance(self._gripper, BinaryGripper):
+            low = np.append(low, np.float32(-1.0))
+            high = np.append(high, np.float32(1.0))
         return gym.spaces.Box(low, high)
 
     def dof(self) -> Mapping[str, Optional[int]]:
@@ -121,16 +130,44 @@ class JointPositionControl(Control):
 
     def reset(self, parts: Optional[Parts] = None) -> None:
         """Forget the gripper's last opening."""
-        if self._gripper is not None:
+        if isinstance(self._gripper, ContinuousGripper):
             self._gripper.reset()
 
     def apply(self, parts: Parts, action: np.ndarray, reading: Reading) -> Applied:
-        """Send the joint targets and the gripper opening together."""
+        """Send the joint targets, and the gripper with or after them."""
         bound = parts.bound[self._role]
         command = nest(bound.part, {"joint_position": action[: self._dof]})
-        moved = False
-        if self._gripper is not None:
+        if isinstance(self._gripper, ContinuousGripper) and self._fitted:
             target, moved = self._gripper.target(action[self._dof])
             merge(command, nest(bound.end_effector, {"target": target}))
+            parts.robot.send_action(command)
+            return Applied(ee_effective=moved)
         parts.robot.send_action(command)
-        return Applied(ee_effective=moved)
+        if isinstance(self._gripper, BinaryGripper) and self._fitted:
+            effector = parts.end_effector(self._role)
+            return Applied(
+                ee_effective=self._gripper.command(effector, float(action[self._dof]))
+            )
+        return Applied()
+
+    def grasp(self, parts: Parts) -> bool:
+        """Close a binary gripper; a rig without one has nothing to close."""
+        if not self._fitted:
+            return False
+        if isinstance(self._gripper, BinaryGripper):
+            return self._gripper.command(parts.end_effector(self._role), -1.0)
+        return super().grasp(parts)
+
+    def release(self, parts: Parts) -> bool:
+        """Open a binary gripper; a rig without one has nothing to open."""
+        if not self._fitted:
+            return False
+        if isinstance(self._gripper, BinaryGripper):
+            return self._gripper.command(parts.end_effector(self._role), 1.0)
+        return super().release(parts)
+
+    def gripper_open(self, parts: Parts) -> Optional[bool]:
+        """Whether a fitted binary gripper is open."""
+        if isinstance(self._gripper, BinaryGripper) and self._fitted:
+            return bool(parts.end_effector(self._role).is_open)
+        return None
