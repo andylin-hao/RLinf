@@ -12,15 +12,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for the collective timeout of the FSDP device mesh.
+"""Tests for the FSDP device mesh and the process groups derived from it.
 
-``init_device_mesh`` creates the default process group itself when none exists,
-using whatever watchdog timeout the backend ships with — 30 minutes for
-NCCL/Gloo, about 60 for HCCL, in every case below the 180 minutes RLinf gives
-its own groups. A mesh dimension that spans the whole world reuses that group,
-so every FSDP collective inherits that timeout, and no environment variable can
-raise it. ``create_device_mesh`` therefore creates the group first, with the
-same ``RLINF_TIMEOUT`` that RLinf applies to its own inter-worker groups.
+Two properties of that mesh are easy to get wrong and silent when they are, so
+they are pinned here: the timeout its collectives run under, and which of its
+dimensions a gradient norm reduces over.
+
+The timeout. ``init_device_mesh`` creates the default process group itself when
+none exists, using whatever watchdog timeout the backend ships with — 30 minutes
+for NCCL/Gloo, about 60 for HCCL, in every case below the 180 minutes RLinf
+gives its own groups. A mesh dimension that spans the whole world reuses that
+group, so every FSDP collective inherits that timeout, and no environment
+variable can raise it. ``create_device_mesh`` therefore creates the group first,
+with the same ``RLINF_TIMEOUT`` that RLinf applies to its own inter-worker
+groups.
+
+The reduction group. FSDP leaves each rank only its slice of every gradient, so
+a norm over one of them is not the gradient's norm. ``gradient_reduction_group``
+picks the dimension the shards are spread over, which stays ``fsdp`` even once a
+replicated ``ddp`` dimension exists beside it.
 """
 
 import logging
