@@ -79,6 +79,8 @@ SFP 比 flow matching 多需要一个字段 ``action_states``，即每一帧之�
 归一化统计量
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+转换后的数据集中动作仍是原始量纲，因此下一步要统计出模型训练所用的尺度：
+
 .. code:: bash
 
    python toolkits/lerobot/calculate_norm_stats.py \

@@ -106,6 +106,9 @@ frame. Pass ``--raw-dataset-names`` to convert a subset of the suites, and
 Normalization Statistics
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
+The converted dataset still holds raw action units, so the next step measures
+the scale the model trains in:
+
 .. code:: bash
 
    python toolkits/lerobot/calculate_norm_stats.py \
