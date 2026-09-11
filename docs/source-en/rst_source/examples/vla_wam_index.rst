@@ -1,13 +1,51 @@
 Embodied Models
 ===============
 
-This category groups examples in which the **model or policy class** is the headline. They show how to onboard a specific model family in RLinf — checkpoint loading, processor / config wiring, action head, lightweight MLP policies, and a reference RL fine-tuning recipe — independent of any single benchmark.
+Choose a model or policy class to find its installation, checkpoint, and RL training workflow. For examples organized by benchmark, see :doc:`simulators_index`.
 
-If you are starting from "I want to train or RL-fine-tune model *X*", this is the right entry point. For benchmark-driven examples see :doc:`simulators_index`.
+.. _model-hardware-support:
+
+Hardware Support
+----------------
+
+NVIDIA is the default backend in the model recipes. For AMD, Huawei Ascend, or Moore Threads, use the combinations below; the links open setup and launch instructions on the model page. These combinations have hardware e2e jobs in the repository.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 22 36 42
+
+   * - Model
+     - Hardware
+     - Environment and Scope
+   * - :doc:`OpenVLA-OFT <embodied/openvla_oft>`
+     - :ref:`AMD ROCm <openvla-oft-amd>` · :ref:`Huawei Ascend CANN <openvla-oft-ascend>`
+     - LIBERO · Goal GRPO
+   * - :doc:`GR00T N1.5 <embodied/gr00t>`
+     - :ref:`Huawei Ascend CANN <gr00t-hardware>`
+     - LIBERO · Spatial PPO
+   * - :doc:`π₀.₅ (OpenPI) <embodied/pi0>`
+     - :ref:`Moore Threads MUSA <pi0-hardware>`
+     - LIBERO-10 · ManiSkill plate-25 PPO; ManiSkill requires vendor simulator packages and CPU physics.
+
+Model Recipes
+-------------
+
+Open a model page for the full workflow and its supported environments.
 
 .. raw:: html
 
    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; align-items: flex-start; justify-items: center; max-width: 980px; margin: 0 auto;">
+
+     <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
+       <a href="embodied/openvla_oft.html" style="display: block;"><img src="https://openvla-oft.github.io/static/images/libero_task_performance_results.png"
+            style="width: 100%; height: 200px; object-fit: contain; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" /></a>
+       <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
+         <a href="embodied/openvla_oft.html" style="text-decoration: underline; color: blue;">
+           <b>OpenVLA-OFT</b>
+         </a><br>
+         LIBERO training on NVIDIA CUDA, AMD ROCm, and Huawei Ascend CANN
+       </p>
+     </div>
 
      <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
        <a href="embodied/mlp.html" style="display: block;"><img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/3_layer_mlp.jpg"
@@ -115,6 +153,7 @@ If you are starting from "I want to train or RL-fine-tune model *X*", this is th
    :hidden:
    :maxdepth: 2
 
+   OpenVLA-OFT <embodied/openvla_oft>
    MLP <embodied/mlp>
    π₀ / π₀.₅ <embodied/pi0>
    GR00T <embodied/gr00t>

@@ -42,7 +42,7 @@
    .. grid-item-card:: 硬件
       :text-align: center
 
-      1 节点 · GPU
+      NVIDIA CUDA · :ref:`摩尔线程 MUSA <pi0-hardware>` （π₀.₅，LIBERO / ManiSkill）
 
 | **你将完成：** 安装 → 下载 SFT checkpoint → 选择配置 → 启动 ``run_embodiment.sh`` → 观察 ``env/success_once``。
 | **前置条件：** :doc:`安装 </rst_source/start/installation>` · 一个 π\ :sub:`0`\  / π\ :sub:`0.5`\  SFT checkpoint（见下文）。
@@ -99,6 +99,8 @@
 
 安装
 ----------------------------------------
+
+下方为 NVIDIA 安装步骤；其他硬件请按 :ref:`对应后端的步骤 <pi0-hardware>` 准备环境。
 
 .. include:: _setup_common.rst
 
@@ -403,6 +405,131 @@ env** 之间的流水线重叠，从而提升 rollout 效率。
 ::
 
    bash examples/embodiment/run_embodiment.sh libero_spatial_ppo_openpi_quickstart
+
+.. _pi0-hardware:
+
+在不同硬件后端上运行
+--------------------
+
+NVIDIA 使用上面的安装与启动流程。摩尔线程 MUSA 的 e2e 作业覆盖 **π₀.₅ + PPO**，环境为 **LIBERO-10** 和 **ManiSkill plate-25**。这些作业只覆盖 π₀.₅，尚不能据此确认 π₀ 或本页其他环境在 MUSA 上的支持情况。
+
+摩尔线程 MUSA
+~~~~~~~~~~~~~
+
+在摩尔线程容器内安装 OpenPI。安装脚本创建启用了 system site-packages 的虚拟环境，复用镜像中的 Python、PyTorch 和 ``torch_musa``，保留厂商的 torch 包，并跳过仅支持 CUDA 的依赖，包括 vLLM 和 SGLang 的构建。这些具身训练配置使用 ``rollout.generation_backend: huggingface``。
+
+运行 LIBERO 时，在宿主机启动 training-suite 镜像：
+
+.. code-block:: bash
+
+   export MUSA_IMAGE=registry.mthreads.com/mcctest/ai/training-suite:v2.1.5-musa4.3.7
+   docker run -it --rm --runtime=mthreads \
+      --ipc=host --shm-size=100g \
+      -e MTHREADS_VISIBLE_DEVICES=all \
+      -v "$PWD":/workspace/RLinf -w /workspace/RLinf \
+      "$MUSA_IMAGE" bash
+
+进入容器后，确认设备可用，再安装 OpenPI 和 LIBERO：
+
+.. code-block:: bash
+
+   mthreads-gmi
+   python -c "import torch, torch_musa; print(torch.musa.device_count())"
+   bash requirements/install.sh --platform musa embodied --model openpi --env libero
+   source .venv/bin/activate
+
+中国大陆用户可添加 ``--use-mirror``。RLinf 会自动检测 MUSA 设备，并按已有 placement 配置分配给 worker。
+
+.. warning::
+
+   容器必须通过 ``--runtime=mthreads`` 加载驱动库。若设备数量为零，请先解决设备访问问题。保留镜像中的 PyTorch 与 ``torch_musa`` 配对版本；安装通用 torch wheel 可能覆盖 MUSA 版本。若所选 Transformers 模型加载路径请求 ``attn_implementation: flash_attention_2``，而 Transformers 无法检测到厂商的 flash-attention 包，请改用 ``sdpa``。
+
+如需从当前代码构建 RLinf 镜像，在宿主机使用 BuildKit：
+
+.. code-block:: bash
+
+   DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile \
+      --build-arg PLATFORM=musa \
+      --build-arg MUSA_VER=v2.1.5-musa4.3.7 \
+      --build-arg BUILD_TARGET=embodied-maniskill_libero \
+      -t rlinf:embodied-maniskill_libero-musa .
+
+将生成的 tag 设为容器命令中的 ``MUSA_IMAGE``，进入容器后用 ``source switch_env openpi`` 激活环境。BuildKit 只解析所选平台的构建阶段，无需拉取其他平台的基础镜像。
+
+.. warning::
+
+   MUSA 驱动库由容器 runtime 注入，镜像构建期间不能导入 torch。因此，依赖 ManiSkill 的资产下载会延后到容器运行时执行。公开的 ``maniskill_libero`` 构建目标不包含下文要求的厂商模拟器修改。
+
+在 MUSA 上运行 LIBERO
+~~~~~~~~~~~~~~~~~~~~~
+
+从前面的模型列表下载 ``RLinf/RLinf-Pi05-LIBERO-SFT``，在 ``examples/embodiment/config/libero_10_ppo_openpi_pi05.yaml`` 中设置 actor 和 rollout 的模型路径，并在已激活的环境中启用软件渲染。
+
+.. include:: _libero_osmesa.rst
+
+启动 LIBERO PPO 训练：
+
+.. code-block:: bash
+
+   bash examples/embodiment/run_embodiment.sh libero_10_ppo_openpi_pi05
+
+若要先做短程检查，可使用占用两张设备、环境数量较少的 MUSA CI 配置，将模型路径指向下载的 checkpoint：
+
+.. code-block:: bash
+
+   export REPO_PATH="$PWD"
+   bash tests/e2e_tests/embodied/run.sh libero_10_ppo_openpi_pi05_musa osmesa \
+      actor.model.model_path=/path/to/RLinf-Pi05-LIBERO-SFT \
+      rollout.model.model_path=/path/to/RLinf-Pi05-LIBERO-SFT
+
+测试脚本的第二个参数选择 OSMesa；训练脚本则通过 ``MUJOCO_GL`` 和 ``PYOPENGL_PLATFORM`` 选择渲染后端。
+
+在 MUSA 上运行 ManiSkill
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. TODO(agent): Pin the vendor RLinf image tag when a reproducible tag is recorded in the repository.
+
+使用 ``registry.mthreads.com/lgpublic/rlinf`` 下包含 MUSA 适配模拟器的厂商 RLinf 镜像。将 ``MUSA_IMAGE`` 设为厂商提供的确切 tag，按上面的容器命令启动，再激活镜像中的 OpenPI 环境。
+
+.. warning::
+
+   MUSA 上的 ManiSkill 同时依赖修改过的 SAPIEN 和与之匹配的 ManiSkill。标准 SAPIEN 无法创建所需的渲染系统；公开的 ManiSkill ``v3.0.0b22`` 还会导入厂商 SAPIEN 中缺失的传感器。``install.sh --env maniskill_libero`` 安装的是公开版本，无法构成这套模拟器环境。准备此流程时，请保留厂商提供的模拟器包。
+
+在运行中的厂商容器内下载资产：
+
+.. code-block:: bash
+
+   source switch_env openpi
+   download_assets --assets maniskill
+
+MUSA 测试配置为训练和评估都指定 CPU 物理仿真与显式的渲染设备：
+
+.. code-block:: yaml
+
+   env:
+     train:
+       total_num_envs: 2
+       init_params:
+         sim_backend: cpu
+         render_backend: "pci:0000:00:00.0"
+     eval:
+       total_num_envs: 2
+       init_params:
+         sim_backend: cpu
+         render_backend: "pci:0000:00:00.0"
+
+这些设置来自 ``tests/e2e_tests/embodied/maniskill_async_ppo_openpi_pi05_musa.yaml``。该配置将 actor、rollout 和 env 放在设备 ``0-1`` 上，并设定 ``rollout.pipeline_stage_num: 1``。在这一配置下，CPU 物理仿真要求每个环境 worker 运行一个环境；修改 placement 时，请保持各 ``total_num_envs`` 等于环境 worker 数量。MUSA 无法运行 CUDA PhysX 仿真，仅设置 OSMesa 变量也不能完成 SAPIEN 渲染器的配置。
+
+从前面的模型列表下载 ``RLinf/RLinf-Pi05-ManiSkill-25Main-SFT``，将以下路径替换为实际 checkpoint 路径，再运行小规模配置：
+
+.. code-block:: bash
+
+   export REPO_PATH="$PWD"
+   ROBOT_PLATFORM=BRIDGE bash tests/e2e_tests/embodied/run.sh maniskill_async_ppo_openpi_pi05_musa osmesa \
+      actor.model.model_path=/path/to/RLinf-Pi05-ManiSkill-25Main-SFT \
+      rollout.model.model_path=/path/to/RLinf-Pi05-ManiSkill-25Main-SFT
+
+虽然配置名包含 async，MUSA CI 作业实际使用同步的 ``run.sh`` 入口，这里也沿用该命令。小规模配置运行正常后，可调整 ``runner.max_epochs`` 和 episode 步数限制，延长训练。
 
 可视化与结果
 ----------------------------------------

@@ -44,7 +44,7 @@ GR00T模型强化学习训练
    .. grid-item-card:: 硬件
       :text-align: center
 
-      1 节点 · GPU
+      NVIDIA CUDA · :ref:`华为昇腾 CANN <gr00t-hardware>` （N1.5，LIBERO）
 
 | **你将完成：** 安装目标 GR00T 版本 → 下载 SFT / 任务 checkpoint → 选择配置 → 启动 ``run_embodiment.sh`` → 观察 ``env/success_once``。
 | **前置条件：** :doc:`安装 </rst_source/start/installation>` · 一个 GR00T LIBERO checkpoint（见下文）。
@@ -99,6 +99,8 @@ GR00T模型强化学习训练
 
 安装
 ----------------------------------------
+
+下方为 NVIDIA 安装步骤；其他硬件请按 :ref:`对应后端的步骤 <gr00t-hardware>` 准备环境。
 
 .. include:: _setup_common.rst
 
@@ -275,7 +277,7 @@ GR00T-N1.5引入了DataConfig类，用于描述模型训练所需的所有信息
 基于上述设计，除LIBERO外，在新环境中部署GR00T-N1.5之前，用户需要对其进行微调。
 微调指南可在 `GR00T-N1.5官方仓库的getting_started/finetune_new_embodiment.md <https://github.com/NVIDIA/Isaac-GR00T/blob/main/getting_started/finetune_new_embodiment.md>`_ 中找到。
 
-微调后，GR00T-N1.5会生成一个``experiment_cfg/metadata.json``文件，其中包含所有模态配置和微调数据集的统计信息。
+微调后，GR00T-N1.5会生成一个 ``experiment_cfg/metadata.json`` 文件，其中包含所有模态配置和微调数据集的统计信息。
 该文件对于GR00T-N1.5的推理和强化学习后训练至关重要。
 更多细节请参考 `GR00T-N1.5官方仓库的getting_started/GR00T_inference.ipynb <https://github.com/NVIDIA/Isaac-GR00T/blob/main/getting_started/GR00T_inference.ipynb>`__。
 
@@ -285,7 +287,7 @@ GR00T-N1.5引入了DataConfig类，用于描述模型训练所需的所有信息
 
 RLinf 框架针对GR00T-N1.6采用了高度解耦的两阶段训练架构：
 
-- **第一阶段（纯 SFT 预热）**：采用``Pure SFT Model``模式。模型完全脱离物理仿真环境，仅依赖离线专家数据集进行监督微调，专注拟合目标动作轨迹。
+- **第一阶段（纯 SFT 预热）**：采用 ``Pure SFT Model`` 模式。模型完全脱离物理仿真环境，仅依赖离线专家数据集进行监督微调，专注拟合目标动作轨迹。
 - **第二阶段（PPO 强化对齐）**：在SFT收敛的基础上，将模型载入基于FSDP的分布式Actor中，与仿真环境进行实时交互。
 
 **2. 极简的局部微调策略**
@@ -302,14 +304,14 @@ RLinf 框架针对GR00T-N1.6采用了高度解耦的两阶段训练架构：
 
 **4. 跨具身泛化（Cross-Embodiment）**
 
-- **具身标签（Embodiment Tag）**：依靠传入的配置标签（如``ROBOCASA_PANDA_OMRON``），系统能动态适配对应的状态编码器与动作空间。无论是单臂机械臂，还是四足机器人形态均可复用。
+- **具身标签（Embodiment Tag）**：依靠传入的配置标签（如 ``ROBOCASA_PANDA_OMRON``），系统能动态适配对应的状态编码器与动作空间。无论是单臂机械臂，还是四足机器人形态均可复用。
 
 **5. FSDP 分布式并行架构**
 
 - 底层系统针对Actor节点进行了重构（``EmbodiedFSDPActor``），能够跨GPU节点对模型权重、梯度与优化器状态进行分片切分（Sharding）。
 - 鉴于GR00T-N1.6参数规模的显著增长，RLinf的Actor节点已全面重构，打破了传统DDP的单卡显存瓶颈，极大提升了吞吐量。
 
-微调完成后，系统将在输出目录生成``metadata.json``等统计文件，保留推理和后续部署所需的关键模态信息。
+微调完成后，系统将在输出目录生成 ``metadata.json`` 等统计文件，保留推理和后续部署所需的关键模态信息。
 
 **N1.7:**
 
@@ -375,7 +377,7 @@ RLinf 框架针对GR00T-N1.6采用了高度解耦的两阶段训练架构：
    rollout:
       pipeline_stage_num: 2
 
-您也可以灵活配置env、rollout和actor组件的GPU数量，并通过``pipeline_stage_num``实现rollout与env之间的流水线重叠。
+你可以调整 env、rollout 和 actor 的 GPU 数量，并通过 ``pipeline_stage_num`` 配置 rollout 与 env 之间的流水线重叠。
 
 .. code:: yaml
 
@@ -535,6 +537,60 @@ GR00T-N1.5的动作头包含dropout层，这会干扰对数概率的计算，因
    bash examples/embodiment/run_embodiment.sh libero_spatial_ppo_gr00t_n1d7
 
 --------------
+
+.. _gr00t-hardware:
+
+在不同硬件后端上运行
+--------------------
+
+NVIDIA 使用上面各版本对应的安装流程。华为昇腾 CANN 的 e2e 作业覆盖 **GR00T N1.5 + LIBERO-Spatial + PPO**，这一范围不包含 N1.6、N1.7 或 IsaacLab。GR00T N1.5 也有 MUSA 兼容补丁，但当前工作流尚无 GR00T 的 MUSA e2e 作业。
+
+华为昇腾 CANN
+~~~~~~~~~~~~~
+
+使用昇腾 LIBERO 容器，或在已安装 CANN 和 NPU 驱动的宿主机上运行。
+
+.. include:: _ascend_libero.rst
+
+进入 RLinf 容器后，激活 N1.5 环境：
+
+.. code-block:: bash
+
+   source switch_env gr00t
+
+本地安装时，明确选择 N1.5 和 LIBERO：
+
+.. code-block:: bash
+
+   bash requirements/install.sh --platform ascend embodied --model gr00t --env libero
+   source .venv/bin/activate
+
+中国大陆用户可添加 ``--use-mirror``。安装脚本在 aarch64 上按需从源码构建 ``decord``，应用昇腾专用的 TensorFlow 版本约束，并跳过 CUDA flash-attention。加载模型时，RLinf 会应用 N1.5 的 NPU 补丁。
+
+按前面的模型下载步骤获取 N1.5 Spatial checkpoint，并在 ``examples/embodiment/config/libero_spatial_ppo_gr00t.yaml`` 中设置路径。
+
+.. include:: _model_path.rst
+
+在已激活的 N1.5 环境中启用软件渲染：
+
+.. include:: _libero_osmesa.rst
+
+启动已配置的 PPO 训练：
+
+.. code-block:: bash
+
+   bash examples/embodiment/run_embodiment.sh libero_spatial_ppo_gr00t
+
+若要使用昇腾 CI 配置做一次短程运行，设置 ``REPO_PATH`` 并覆盖其中的 checkpoint 路径：
+
+.. code-block:: bash
+
+   export REPO_PATH="$PWD"
+   bash tests/e2e_tests/embodied/run.sh libero_spatial_ppo_gr00t osmesa \
+      actor.model.model_path="$PWD/RLinf-Gr00t-SFT-Spatial" \
+      rollout.model.model_path="$PWD/RLinf-Gr00t-SFT-Spatial"
+
+该命令使用 ``tests/e2e_tests/embodied/libero_spatial_ppo_gr00t.yaml`` 和 OSMesa 渲染，与 ``.github/workflows/embodied-e2e-tests.yml`` 中的硬件作业一致。
 
 可视化与结果
 ----------------------------------------

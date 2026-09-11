@@ -35,7 +35,7 @@ RLinf is a flexible and scalable open-source RL infrastructure designed for Embo
 - [2026/08] 🎉 RLinf is officially welcomed into the **PyTorch Ecosystem**! We will continue to bring scalable embodied and agentic RL to PyTorch users, pushing model intelligence into the real world. Blog: [PyTorch Ecosystem Landscape Q3 Update](https://pytorch.org/blog/pytorch-ecosystem-landscape-q3-update/).
 - [2026/08] 🎉 Isaac Lab v3.0.0 officially adopts RLinf as its reinforcement learning (RL) training infrastructure. Doc: [RLinf on Isaac Lab](https://isaac-sim.github.io/IsaacLab/v3.0.0-beta2/source/overview/reinforcement-learning/rl_existing_scripts.html#rlinf).
 - [2026/08] 🔥 RLinf integrates Diffusion-NFT for SD3 and Wan2.2 video generation models. Doc: [RL for Video Generation Models](docs/source-en/rst_source/examples/video_models.rst).
-- [2026/08] 🔥 RLinf officially supports three more accelerators: Moore Threads (MUSA), Huawei Ascend (CANN), and AMD (ROCm). Docs: [Moore Threads MUSA](https://rlinf.readthedocs.io/en/latest/rst_source/guides/moore_threads_musa.html), [Ascend CANN](https://rlinf.readthedocs.io/en/latest/rst_source/guides/ascend_cann.html), [AMD ROCm](https://rlinf.readthedocs.io/en/latest/rst_source/guides/amd_rocm.html).
+- [2026/08] 🔥 RLinf supports Moore Threads (MUSA), Huawei Ascend (CANN), and AMD (ROCm). See the [hardware support matrix](#hardware-support) for model/environment combinations and setup instructions.
 - [2026/08] 🔥 RLinf supports GRPO training for Moonlight-16B-A3B (DeepSeek-V3 MLA + MoE). Doc: [Moonlight-16B GRPO](https://rlinf.readthedocs.io/en/latest/rst_source/examples/agentic/math_reasoning/moonlight.html).
 - [2026/08] 🔥 RLinf supports MolmoAct2 evaluation on LIBERO. Doc: [MolmoAct2](https://rlinf.readthedocs.io/en/latest/rst_source/examples/embodied/molmoact2.html).
 - [2026/08] 🎉 Two papers accepted to **OSDI 2026**: [RLinf](https://www.usenix.org/conference/osdi26/presentation/yu-chao) and [DynaRL](https://www.usenix.org/conference/osdi26/presentation/wang-yuanqing). DynaRL dynamically reallocates compute, memory, and communication across heterogeneous RL components to improve end-to-end training throughput. Doc: [DynaRL](https://rlinf.readthedocs.io/en/latest/rst_source/resources/publications/dynarl.html).
@@ -165,7 +165,7 @@ RLinf supports SFT, simulation RL, and real-world RL for World Action Models (WA
             <li><a href="https://rlinf.readthedocs.io/en/latest/rst_source/examples/embodied/sft_openpi.html">π₀ / π₀.₅ (OpenPI-PyTorch)</a> ✅</li>
             <li><a href="https://rlinf.readthedocs.io/en/latest/rst_source/examples/embodied/sft_openpi_rlinf.html">π₀ / π₀.₅ (OpenPI_RLinf)</a> ✅</li>
             <li><a href="https://rlinf.readthedocs.io/en/latest/rst_source/examples/embodied/maniskill.html">OpenVLA</a> ✅</li>
-            <li><a href="https://rlinf.readthedocs.io/en/latest/rst_source/examples/embodied/libero.html">OpenVLA-OFT</a> ✅</li>
+            <li><a href="https://rlinf.readthedocs.io/en/latest/rst_source/examples/embodied/openvla_oft.html">OpenVLA-OFT</a> ✅</li>
             <li><a href="https://rlinf.readthedocs.io/en/latest/rst_source/examples/embodied/gr00t.html">GR00T (N1.5, N1.6, N1.7)</a> ✅</li>
             <li><a href="https://rlinf.readthedocs.io/en/latest/rst_source/examples/embodied/dexbotic.html">Dexbotic</a> ✅</li>
             <li><a href="https://rlinf.readthedocs.io/en/latest/rst_source/examples/embodied/starvla.html">StarVLA</a> ✅</li>
@@ -289,6 +289,19 @@ RLinf supports SFT, simulation RL, and real-world RL for World Action Models (WA
     </tr>
   </tbody>
 </table>
+
+#### Hardware Support
+
+Choose a model and environment together, then follow the hardware link for setup. The component tables above list components independently; the matrix below records combinations with hardware e2e jobs in [the current CI workflow](.github/workflows/embodied-e2e-tests.yml). ✅ means an e2e job is configured; — means no such coverage is recorded here.
+
+| Model | Environment | NVIDIA CUDA | Huawei Ascend CANN | Moore Threads MUSA | AMD ROCm |
+|---|---|:---:|:---:|:---:|:---:|
+| [OpenVLA-OFT](https://rlinf.readthedocs.io/en/latest/rst_source/examples/embodied/openvla_oft.html) | LIBERO | ✅ | [✅](https://rlinf.readthedocs.io/en/latest/rst_source/examples/embodied/openvla_oft.html#openvla-oft-ascend) | — | [✅](https://rlinf.readthedocs.io/en/latest/rst_source/examples/embodied/openvla_oft.html#openvla-oft-amd) |
+| [GR00T N1.5](https://rlinf.readthedocs.io/en/latest/rst_source/examples/embodied/gr00t.html) | LIBERO | ✅ | [✅](https://rlinf.readthedocs.io/en/latest/rst_source/examples/embodied/gr00t.html#gr00t-hardware) | — | — |
+| [π₀.₅ (OpenPI)](https://rlinf.readthedocs.io/en/latest/rst_source/examples/embodied/pi0.html) | LIBERO | ✅ | — | [✅](https://rlinf.readthedocs.io/en/latest/rst_source/examples/embodied/pi0.html#pi0-hardware) | — |
+| [π₀.₅ (OpenPI)](https://rlinf.readthedocs.io/en/latest/rst_source/examples/embodied/pi0.html) | ManiSkill | ✅ | — | [✅*](https://rlinf.readthedocs.io/en/latest/rst_source/examples/embodied/pi0.html#pi0-hardware) | — |
+
+\* ManiSkill on MUSA requires the vendor-modified SAPIEN and ManiSkill packages and CPU physics. LIBERO uses OSMesa on AMD, Ascend, and MUSA. The matrix covers embodied RL and the named model versions; it does not imply SFT, reasoning-engine, or other simulator support. GR00T N1.5 has MUSA compatibility patches, and the Ascend Docker target also installs original OpenVLA, but neither combination has a matching hardware e2e job.
 
 ### Agentic AI
 

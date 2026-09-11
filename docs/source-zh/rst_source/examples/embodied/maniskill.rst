@@ -42,7 +42,7 @@
    .. grid-item-card:: 硬件
       :text-align: center
 
-      1–2 节点 · 8–16 张 GPU
+      NVIDIA CUDA · :ref:`摩尔线程 MUSA <pi0-hardware>` （π₀.₅，厂商模拟器）
 
 | **你将完成：** 安装依赖 → 下载资产与基座模型 → 运行 ``run_embodiment.sh`` → 观察 ``env/success_once``。
 | **前置条件：** :doc:`安装 </rst_source/start/installation>` · ManiSkill 资产与基座检查点（见下文步骤）。

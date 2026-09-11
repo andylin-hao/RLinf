@@ -45,7 +45,7 @@ Fine-tune GR00T (N1.5 / N1.6 / N1.7) on LIBERO with PPO (actor-critic).
    .. grid-item-card:: Hardware
       :text-align: center
 
-      1 node · GPUs
+      NVIDIA CUDA · :ref:`Huawei Ascend CANN <gr00t-hardware>` (N1.5, LIBERO)
 
 | **You'll do:** install the target GR00T version → download the SFT / task checkpoint → pick a config → launch ``run_embodiment.sh`` → watch ``env/success_once``.
 | **Prerequisites:** :doc:`Installation </rst_source/start/installation>` · a GR00T LIBERO checkpoint (steps below).
@@ -100,6 +100,8 @@ Observation and Action
 
 Installation
 ------------
+
+Use the NVIDIA setup below, or follow :ref:`the backend-specific setup <gr00t-hardware>` for your hardware.
 
 .. include:: _setup_common.rst
 
@@ -539,6 +541,70 @@ Update the SFT model path:
    bash examples/embodiment/run_embodiment.sh libero_spatial_ppo_gr00t_n1d7
 
 --------------
+
+.. _gr00t-hardware:
+
+Run on Different Hardware Backends
+----------------------------------
+
+NVIDIA uses the version-specific setup above. Huawei Ascend CANN has an e2e
+job for **GR00T N1.5 + LIBERO-Spatial + PPO**. This coverage does not extend to
+N1.6, N1.7, or IsaacLab. GR00T N1.5 also has MUSA compatibility patches, but
+there is no GR00T MUSA e2e job in the current workflow.
+
+Huawei Ascend CANN
+~~~~~~~~~~~~~~~~~~
+
+Use the Ascend LIBERO container or a host with CANN and the NPU driver installed.
+
+.. include:: _ascend_libero.rst
+
+Inside the RLinf container, activate the N1.5 environment:
+
+.. code-block:: bash
+
+   source switch_env gr00t
+
+For a native installation, select N1.5 and LIBERO explicitly:
+
+.. code-block:: bash
+
+   bash requirements/install.sh --platform ascend embodied --model gr00t --env libero
+   source .venv/bin/activate
+
+Add ``--use-mirror`` for downloads from mainland China. The installer builds
+``decord`` from source when needed on aarch64, applies the Ascend TensorFlow
+pins, and skips CUDA flash-attention. RLinf applies the N1.5 NPU patches when
+loading the model.
+
+Download the N1.5 Spatial checkpoint from the model section above and set the
+paths in ``examples/embodiment/config/libero_spatial_ppo_gr00t.yaml``.
+
+.. include:: _model_path.rst
+
+Enable software rendering in the active N1.5 environment:
+
+.. include:: _libero_osmesa.rst
+
+Launch the configured PPO run:
+
+.. code-block:: bash
+
+   bash examples/embodiment/run_embodiment.sh libero_spatial_ppo_gr00t
+
+For a short run with the Ascend CI configuration, set ``REPO_PATH`` and override
+its checkpoint paths:
+
+.. code-block:: bash
+
+   export REPO_PATH="$PWD"
+   bash tests/e2e_tests/embodied/run.sh libero_spatial_ppo_gr00t osmesa \
+      actor.model.model_path="$PWD/RLinf-Gr00t-SFT-Spatial" \
+      rollout.model.model_path="$PWD/RLinf-Gr00t-SFT-Spatial"
+
+This uses ``tests/e2e_tests/embodied/libero_spatial_ppo_gr00t.yaml`` and the
+OSMesa renderer, matching the hardware job in
+``.github/workflows/embodied-e2e-tests.yml``.
 
 Visualization and Results
 -------------------------

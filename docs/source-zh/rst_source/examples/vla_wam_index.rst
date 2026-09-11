@@ -1,13 +1,51 @@
 具身模型
 ========
 
-本类示例以 **模型或策略类** 为主线，展示如何在 RLinf 中接入特定模型家族 —— 包括 checkpoint 加载、processor / config 接线、动作头实现、轻量级 MLP 策略，以及不依赖具体基准的一份强化学习微调参考配方。
+按模型或 policy 类型查找安装、checkpoint 和强化学习训练流程。若从基准出发选择示例，请参阅 :doc:`simulators_index`。
 
-如果你的出发点是 "我想训练或微调模型 *X*"，这里是合适的入口。若以基准为主线请参考 :doc:`simulators_index`\ 。
+.. _model-hardware-support:
+
+硬件支持
+------------
+
+模型示例默认使用 NVIDIA。若使用 AMD、华为昇腾或摩尔线程，请按下表选择组合；链接直接打开模型页中的安装与运行步骤。这些组合在仓库中有对应的硬件 e2e 作业。
+
+.. list-table::
+   :header-rows: 1
+   :widths: 22 36 42
+
+   * - 模型
+     - 硬件
+     - 环境与范围
+   * - :doc:`OpenVLA-OFT <embodied/openvla_oft>`
+     - :ref:`AMD ROCm <openvla-oft-amd>` · :ref:`华为昇腾 CANN <openvla-oft-ascend>`
+     - LIBERO · Goal GRPO
+   * - :doc:`GR00T N1.5 <embodied/gr00t>`
+     - :ref:`华为昇腾 CANN <gr00t-hardware>`
+     - LIBERO · Spatial PPO
+   * - :doc:`π₀.₅ (OpenPI) <embodied/pi0>`
+     - :ref:`摩尔线程 MUSA <pi0-hardware>`
+     - LIBERO-10 · ManiSkill plate-25 PPO；ManiSkill 需要厂商模拟器包和 CPU 物理仿真。
+
+模型示例
+--------
+
+选择模型页面，查看完整流程及其支持的环境。
 
 .. raw:: html
 
    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; align-items: flex-start; justify-items: center; max-width: 980px; margin: 0 auto;">
+
+     <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
+       <a href="embodied/openvla_oft.html" style="display: block;"><img src="https://openvla-oft.github.io/static/images/libero_task_performance_results.png"
+            style="width: 100%; height: 200px; object-fit: contain; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);" /></a>
+       <p style="margin-top: 8px; font-size: 14px; line-height: 1.4;">
+         <a href="embodied/openvla_oft.html" style="text-decoration: underline; color: blue;">
+           <b>OpenVLA-OFT</b>
+         </a><br>
+         在 NVIDIA CUDA、AMD ROCm 和华为昇腾 CANN 上运行 LIBERO 训练
+       </p>
+     </div>
 
      <div style="flex: 1 1 30%; max-width: 300px; text-align: center;">
        <a href="embodied/mlp.html" style="display: block;"><img src="https://raw.githubusercontent.com/RLinf/misc/main/pic/3_layer_mlp.jpg"
@@ -115,6 +153,7 @@
    :hidden:
    :maxdepth: 2
 
+   OpenVLA-OFT <embodied/openvla_oft>
    MLP <embodied/mlp>
    π₀ / π₀.₅ <embodied/pi0>
    GR00T <embodied/gr00t>

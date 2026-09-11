@@ -34,7 +34,7 @@ RLinf 是一个灵活且可扩展的开源框架，专为具身智能和智能�
 - [2026/08] 🎉 RLinf 正式入选 **PyTorch 生态**！我们将继续把可扩展的具身与智能体强化学习带给 PyTorch 用户，推动模型智能走进真实世界。博客：[PyTorch Ecosystem Landscape Q3 Update](https://pytorch.org/blog/pytorch-ecosystem-landscape-q3-update/)。
 - [2026/08] 🎉 Isaac Lab v3.0.0 正式采用 RLinf 作为其强化学习（RL）训练基础设施。文档：[Isaac Lab 中的 RLinf](https://isaac-sim.github.io/IsaacLab/v3.0.0-beta2/source/overview/reinforcement-learning/rl_existing_scripts.html#rlinf)。
 - [2026/08] 🔥 RLinf 集成 Diffusion-NFT，支持 SD3 和 Wan2.2 视频生成模型的强化学习。文档：[视频生成模型的强化学习](docs/source-zh/rst_source/examples/video_models.rst)。
-- [2026/08] 🔥 RLinf 正式支持三款新的加速卡：摩尔线程（MUSA）、华为昇腾（CANN）与 AMD（ROCm）。文档：[摩尔线程 MUSA](https://rlinf.readthedocs.io/zh-cn/latest/rst_source/guides/moore_threads_musa.html)、[华为昇腾 CANN](https://rlinf.readthedocs.io/zh-cn/latest/rst_source/guides/ascend_cann.html)、[AMD ROCm](https://rlinf.readthedocs.io/zh-cn/latest/rst_source/guides/amd_rocm.html)。
+- [2026/08] 🔥 RLinf 支持摩尔线程（MUSA）、华为昇腾（CANN）与 AMD（ROCm）。支持的模型与环境组合及运行步骤见[硬件支持矩阵](#硬件支持)。
 - [2026/08] 🔥 RLinf 支持 Moonlight-16B-A3B（DeepSeek-V3 MLA + MoE）的 GRPO 训练。文档：[Moonlight-16B GRPO](https://rlinf.readthedocs.io/zh-cn/latest/rst_source/examples/agentic/math_reasoning/moonlight.html)。
 - [2026/08] 🔥 RLinf 支持在 LIBERO 上评测 MolmoAct2。文档：[MolmoAct2](https://rlinf.readthedocs.io/zh-cn/latest/rst_source/examples/embodied/molmoact2.html)。
 - [2026/08] 🎉 两篇论文被 **OSDI 2026** 接收：[RLinf](https://www.usenix.org/conference/osdi26/presentation/yu-chao) 与 [DynaRL](https://www.usenix.org/conference/osdi26/presentation/wang-yuanqing)。DynaRL 在异构 RL 组件之间动态重分配计算、内存与通信资源，提升端到端训练吞吐。文档：[DynaRL](https://rlinf.readthedocs.io/zh-cn/latest/rst_source/resources/publications/dynarl.html)。
@@ -165,7 +165,7 @@ RLinf 支持 World Action Model（WAM）和 Vision-Language-Action Model（VLA�
             <li><a href="https://rlinf.readthedocs.io/zh-cn/latest/rst_source/examples/embodied/sft_openpi.html">π₀ / π₀.₅（OpenPI-PyTorch）</a> ✅</li>
             <li><a href="https://rlinf.readthedocs.io/zh-cn/latest/rst_source/examples/embodied/sft_openpi_rlinf.html">π₀ / π₀.₅（OpenPI_RLinf）</a> ✅</li>
             <li><a href="https://rlinf.readthedocs.io/zh-cn/latest/rst_source/examples/embodied/maniskill.html">OpenVLA</a> ✅</li>
-            <li><a href="https://rlinf.readthedocs.io/zh-cn/latest/rst_source/examples/embodied/libero.html">OpenVLA-OFT</a> ✅</li>
+            <li><a href="https://rlinf.readthedocs.io/zh-cn/latest/rst_source/examples/embodied/openvla_oft.html">OpenVLA-OFT</a> ✅</li>
             <li><a href="https://rlinf.readthedocs.io/zh-cn/latest/rst_source/examples/embodied/gr00t.html">GR00T (N1.5, N1.6, N1.7)</a> ✅</li>
             <li><a href="https://rlinf.readthedocs.io/zh-cn/latest/rst_source/examples/embodied/dexbotic.html">Dexbotic</a> ✅</li>
             <li><a href="https://rlinf.readthedocs.io/zh-cn/latest/rst_source/examples/embodied/starvla.html">StarVLA</a> ✅</li>
@@ -289,6 +289,19 @@ RLinf 支持 World Action Model（WAM）和 Vision-Language-Action Model（VLA�
     </tr>
   </tbody>
 </table>
+
+#### 硬件支持
+
+先选择模型与环境组合，再点击硬件列中的链接查看运行步骤。前面的表格分别列出各类组件；下表列出[当前 CI 工作流](.github/workflows/embodied-e2e-tests.yml)中有硬件 e2e 作业的组合。✅ 表示已配置 e2e 作业；— 表示这里未记录相应覆盖。
+
+| 模型 | 环境 | NVIDIA CUDA | 华为昇腾 CANN | 摩尔线程 MUSA | AMD ROCm |
+|---|---|:---:|:---:|:---:|:---:|
+| [OpenVLA-OFT](https://rlinf.readthedocs.io/zh-cn/latest/rst_source/examples/embodied/openvla_oft.html) | LIBERO | ✅ | [✅](https://rlinf.readthedocs.io/zh-cn/latest/rst_source/examples/embodied/openvla_oft.html#openvla-oft-ascend) | — | [✅](https://rlinf.readthedocs.io/zh-cn/latest/rst_source/examples/embodied/openvla_oft.html#openvla-oft-amd) |
+| [GR00T N1.5](https://rlinf.readthedocs.io/zh-cn/latest/rst_source/examples/embodied/gr00t.html) | LIBERO | ✅ | [✅](https://rlinf.readthedocs.io/zh-cn/latest/rst_source/examples/embodied/gr00t.html#gr00t-hardware) | — | — |
+| [π₀.₅ (OpenPI)](https://rlinf.readthedocs.io/zh-cn/latest/rst_source/examples/embodied/pi0.html) | LIBERO | ✅ | — | [✅](https://rlinf.readthedocs.io/zh-cn/latest/rst_source/examples/embodied/pi0.html#pi0-hardware) | — |
+| [π₀.₅ (OpenPI)](https://rlinf.readthedocs.io/zh-cn/latest/rst_source/examples/embodied/pi0.html) | ManiSkill | ✅ | — | [✅*](https://rlinf.readthedocs.io/zh-cn/latest/rst_source/examples/embodied/pi0.html#pi0-hardware) | — |
+
+\* MUSA 上的 ManiSkill 依赖厂商修改过的 SAPIEN、ManiSkill 及 CPU 物理仿真。AMD、昇腾和 MUSA 上的 LIBERO 使用 OSMesa。矩阵范围为具身强化学习及列出的模型版本，不代表 SFT、推理引擎或其他模拟器的支持情况。GR00T N1.5 已有 MUSA 兼容补丁，昇腾 Docker 目标也会安装原始 OpenVLA，但这两个组合尚无对应的硬件 e2e 作业。
 
 ### 智能体强化学习
 
