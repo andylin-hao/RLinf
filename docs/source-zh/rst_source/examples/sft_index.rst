@@ -39,7 +39,7 @@ VLA / WAM 模型监督微调
          <a href="embodied/sft_pi05_sfp.html" style="text-decoration: underline; color: blue;">
            <b>Streaming Flow Policy 监督微调</b>
          </a><br>
-         用 Streaming Flow Policy 目标在 LIBERO 上微调 Pi0.5
+         用 Streaming Flow Policy 目标在 LIBERO 上微调 π₀.₅
        </p>
      </div>
 

@@ -1,50 +1,84 @@
-Streaming Flow Policy SFT for Pi0.5
-===================================
+Streaming Flow Policy Supervised Fine-Tuning
+============================================
 
-This guide fine-tunes a Pi0.5 checkpoint on LIBERO with the Streaming Flow
-Policy (SFP) objective from `StreamingVLA <https://github.com/gen-robot/StreamingVLA>`_,
-covering dataset conversion, normalization statistics, configuration, and the
-training launch.
+.. figure:: https://raw.githubusercontent.com/gen-robot/StreamingVLA/main/assets/final_tea_01.png
+   :align: center
+   :width: 70%
 
-SFP changes only how the action expert is trained, not what the model is. An
-ordinary Pi0.5 denoises a whole action chunk at once, and its flow time is a
-denoising coordinate unrelated to robot time, so nothing is executable until
-every denoising step has run. SFP integrates the chunk into a trajectory and
-maps the flow time onto it instead: ``t=0`` is the action state the robot has
-reached, ``t=1`` is the end of the chunk, and the action expert regresses the
-trajectory velocity at ``t`` from a single suffix token. A policy trained this
-way can be integrated forward from wherever it currently is, which is what lets
-a caller overlap action generation with execution.
+   Streaming Flow Policy, from the `StreamingVLA
+   <https://github.com/gen-robot/StreamingVLA>`_ project.
 
-Because the architecture is untouched, training starts from a stock Pi0.5
-checkpoint and the result loads back into one. What the objective does need is
-an extra per-frame field, ``action_states``: the cumulative sum of the actions
-taken so far, which is where each chunk's trajectory begins. The steps below
-produce it.
+Fine-tune a π₀.₅ checkpoint on LIBERO with the **Streaming Flow Policy (SFP)**
+objective. SFP trains the action expert to follow an action *trajectory* rather
+than denoise a whole action chunk, which is what lets a caller keep executing
+while the next actions are still being produced. Only the objective changes:
+the architecture, the parameter shapes, and the checkpoint layout stay those of
+π₀.₅, so training starts from a stock ``pi05_libero`` checkpoint and its output
+loads back into one.
 
-RLinf implements the SFP training objective only. Rollout, simulator
-evaluation, and RL are not available for an SFP checkpoint yet, because they
-would need a trajectory sampler that does not exist; ``actor.model.openpi.task``
-values other than ``sft`` reject ``use_sfp`` rather than silently running the
-flow-matching sampler on it.
+Overview
+--------
 
+Train π₀.₅ on LIBERO demonstrations with the SFP objective, full-parameter, on one node.
 
-Install dependencies
---------------------
+.. grid:: 2 4 4 4
+   :gutter: 2
 
-SFP reuses the OpenPI environment. From the RLinf repository root:
+   .. grid-item-card:: Models
+      :text-align: center
 
-.. code:: bash
+      π₀.₅ (``openpi_rlinf``)
 
-   bash requirements/install.sh embodied --model openpi --env libero
-   source .venv/bin/activate
+   .. grid-item-card:: Methods
+      :text-align: center
 
+      Streaming Flow Policy
 
-Convert LIBERO to LeRobot
--------------------------
+   .. grid-item-card:: Data
+      :text-align: center
 
-Download the public `OpenVLA modified LIBERO RLDS dataset
-<https://huggingface.co/datasets/openvla/modified_libero_rlds>`_:
+      LIBERO · LeRobot format
+
+   .. grid-item-card:: Hardware
+      :text-align: center
+
+      1 node · 4 GPUs
+
+| **You'll do:** install OpenPI → convert LIBERO → compute norm stats → convert the π₀.₅ checkpoint → launch ``run_vla_sft.sh`` → watch the training loss.
+| **Prerequisites:** :doc:`Installation </rst_source/start/installation>` · disk space for the raw LIBERO RLDS data and its LeRobot copy.
+
+.. warning::
+
+   RLinf implements the SFP training objective only. Rollout, simulator
+   evaluation, and RL need a trajectory sampler that does not exist yet, so
+   ``actor.model.openpi.task`` values other than ``sft`` reject ``use_sfp``
+   rather than quietly running the flow-matching sampler on an SFP checkpoint.
+
+How Streaming Flow Policy Differs
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A π₀.₅ model denoises an entire action chunk at once. Its flow time is a
+denoising coordinate with no relation to robot time, so nothing in the chunk is
+executable until every denoising step has run.
+
+SFP integrates the chunk into a trajectory and maps the flow time onto it
+instead. ``t=0`` is the action state the robot has already reached, ``t=1`` is
+the end of the chunk, and the action expert regresses the trajectory velocity at
+``t`` from a single suffix token. A policy trained this way can be integrated
+forward from wherever it currently is.
+
+Two settings in the recipe follow from that. ``actor.model.openpi.use_sfp``
+selects the objective, and ``sfp_sigma`` with ``sfp_noise_decay`` control how
+much noise is injected at the start of the trajectory and how quickly it decays
+along it.
+
+Prepare the Dataset
+~~~~~~~~~~~~~~~~~~~
+
+SFP needs one field that flow matching does not: ``action_states``, the running
+total of the actions taken before each frame, which is where that frame's
+trajectory begins. Download the public `OpenVLA modified LIBERO RLDS dataset
+<https://huggingface.co/datasets/openvla/modified_libero_rlds>`_ and convert it:
 
 .. code:: bash
 
@@ -52,28 +86,25 @@ Download the public `OpenVLA modified LIBERO RLDS dataset
        --repo-type dataset \
        --local-dir /data/libero-rlds
 
-Choose where LeRobot datasets live, then convert the four LIBERO suites into
-one dataset:
-
-.. code:: bash
-
    export HF_LEROBOT_HOME=/data/lerobot
 
    python toolkits/lerobot/convert_libero_data_to_lerobot.py \
        --data-dir /data/libero-rlds \
        --repo-name local/libero_sfp
 
-The converter records ``action_states`` for every frame alongside the images,
-state, and action deltas, and writes the result to
-``$HF_LEROBOT_HOME/local/libero_sfp``. Pass ``--raw-dataset-names`` to convert a
-subset of the suites, and ``--overwrite`` to replace an existing dataset at that
-path. ``--repo-name`` must be relative to ``HF_LEROBOT_HOME``; an absolute path
-is rejected. Keep ``HF_LEROBOT_HOME`` set to the same value for the remaining
-steps.
+The converter merges the four LIBERO suites into
+``$HF_LEROBOT_HOME/local/libero_sfp`` and records ``action_states`` for every
+frame. Pass ``--raw-dataset-names`` to convert a subset of the suites, and
+``--overwrite`` to replace an existing dataset at that path.
 
+.. note::
 
-Compute normalization statistics
---------------------------------
+   ``--repo-name`` is resolved under ``HF_LEROBOT_HOME``; an absolute path is
+   rejected. Keep ``HF_LEROBOT_HOME`` at the same value for the statistics step
+   and for training, or the loader will not find the dataset.
+
+Normalization Statistics
+~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. code:: bash
 
@@ -84,22 +115,51 @@ Compute normalization statistics
 
 This writes ``/data/assets/libero_sfp/norm_stats.json`` with statistics for
 ``state``, ``actions``, and ``action_states``. The last entry is a copy of
-``actions``: SFP sums the initial state and the action deltas into one
-trajectory, so both must be scaled by the same statistics, and measuring the
-cumulative states separately would put them on a different scale.
+``actions``, because SFP sums the initial state and the action deltas into one
+trajectory and the two therefore have to be scaled by the same numbers.
 
-For the same reason, SFP normalizes by scale alone (dividing by
-``max(|q01|, |q99|)``) rather than with the affine quantile map OpenPI applies
-elsewhere. Pure scaling commutes with the cumulative sum, so accumulating
-normalized deltas gives the same trajectory as normalizing the accumulated one.
+The same requirement is why SFP divides by ``max(|q01|, |q99|)`` instead of
+using the affine quantile map OpenPI applies elsewhere: a pure scaling commutes
+with the sum, so accumulating normalized deltas gives the same trajectory as
+normalizing the accumulated one. An affine map shifts every value and breaks
+that identity.
 
+Installation
+------------
 
-Prepare the Pi0.5 checkpoint
-----------------------------
+.. include:: _setup_common.rst
+
+SFP runs in the OpenPI environment; no separate install target is needed.
+
+**Option 1: Docker image** — image tag ``agentic-rlinf0.4-maniskill_libero``:
+
+.. code:: bash
+
+   docker run -it --rm --gpus all \
+      --shm-size 20g \
+      --network host \
+      --name rlinf \
+      -v .:/workspace/RLinf \
+      rlinf/rlinf:agentic-rlinf0.4-maniskill_libero
+      # Mainland China mirror: docker.1ms.run/rlinf/rlinf:agentic-rlinf0.4-maniskill_libero
+
+   # Inside the container, switch to the OpenPI virtual environment:
+   source switch_env openpi
+
+**Option 2: Custom environment** — install bundle ``--env maniskill_libero``:
+
+.. code:: bash
+
+   # Add --use-mirror for faster downloads in mainland China.
+   bash requirements/install.sh embodied --model openpi --env maniskill_libero
+   source .venv/bin/activate
+
+Download the Model
+------------------
 
 Training starts from the official ``pi05_libero`` weights in RLinf's PyTorch
-layout, that is a directory containing ``model.safetensors``. In an `OpenPI
-<https://github.com/Physical-Intelligence/openpi>`_ checkout:
+layout, a directory holding ``model.safetensors``. Download and convert them
+from an `OpenPI <https://github.com/Physical-Intelligence/openpi>`_ checkout:
 
 .. code:: bash
 
@@ -110,12 +170,15 @@ layout, that is a directory containing ``model.safetensors``. In an `OpenPI
        --config_name pi05_libero \
        --output_path /data/checkpoints/pi05_libero_pytorch
 
+Run It
+------
 
-Configure and launch
---------------------
+**1. Configuration**
 
-Point ``examples/sft/config/libero_sft_pi05_sfp.yaml`` at the three paths
-created above:
+The recipe is split into a path-free model template,
+``examples/sft/config/model/pi0_5_sfp.yaml``, and the experiment config,
+``examples/sft/config/libero_sft_pi05_sfp.yaml``. Point the experiment config at
+the three paths produced above:
 
 .. code:: yaml
 
@@ -128,18 +191,30 @@ created above:
        openpi_data:
          norm_stats_path: /data/assets/libero_sfp/norm_stats.json
 
-The objective itself is selected in ``examples/sft/config/model/pi0_5_sfp.yaml``
-by ``actor.model.openpi.use_sfp``, with ``sfp_sigma`` and ``sfp_noise_decay``
-controlling how much noise is injected at the start of the trajectory and how
-quickly it decays along it. ``config_name: pi05_libero_sfp`` selects both the
-transform pipeline that carries ``action_states`` and, through its name, the
-matching SFT data loader.
+The model template selects the objective and the data pipeline together:
 
-The supplied recipe runs full-parameter FSDP SFT on four GPUs with fp32 master
-weights and bf16 compute. ``global_batch_size`` must stay a multiple of
-``micro_batch_size`` times the world size.
+.. code:: yaml
 
-Launch from the RLinf repository root:
+   openpi:
+     task: sft
+     config_name: "pi05_libero_sfp"
+     use_sfp: True
+     sfp_sigma: 0.16
+     sfp_noise_decay: 4.0
+
+``config_name`` does double duty. It picks the OpenPI data config that repacks
+and pads ``action_states``, and its name also selects the matching SFT data
+loader.
+
+The supplied recipe runs full-parameter FSDP on four GPUs with fp32 master
+weights and bf16 compute.
+
+.. warning::
+
+   ``global_batch_size`` must stay a multiple of ``micro_batch_size`` times the
+   world size, otherwise the actor rejects the config at startup.
+
+**2. Launch**
 
 .. code:: bash
 
@@ -147,7 +222,23 @@ Launch from the RLinf repository root:
    export HF_LEROBOT_HOME=/data/lerobot
    bash examples/sft/run_vla_sft.sh libero_sft_pi05_sfp
 
+What this command does: 1. composes the Hydra config and starts a Ray cluster;
+2. builds the π₀.₅ model with the SFP objective and loads the converted
+checkpoint; 3. streams LIBERO through the SFP data pipeline and trains.
+
+Visualization and Results
+-------------------------
+
+Monitor the **training loss** to confirm the model is fitting the
+demonstrations. For every logged metric, see :doc:`Training metrics
+<../../reference/metrics>`.
+
+.. code-block:: bash
+
+   # Launch TensorBoard
+   tensorboard --logdir ./logs
+
 ``run_vla_sft.sh`` overrides ``runner.logger.log_path`` with a timestamped
-directory under ``logs/``, so checkpoints appear in
+directory, so checkpoints land in
 ``logs/<timestamp>-libero_sft_pi05_sfp/checkpoints/global_step_<N>/``. To
-resume, set ``runner.resume_dir`` to one of those directories and relaunch.
+resume, point ``runner.resume_dir`` at one of them and relaunch.
