@@ -432,10 +432,9 @@ Run on Different Hardware Backends
 
 NVIDIA uses the installation and launch steps above. AMD ROCm, Huawei Ascend
 CANN, and Moore Threads MUSA support the OpenPI π₀ / π₀.₅ model family on
-LIBERO through the shared platform installer and scheduler device API. The
-MUSA hardware e2e job validates π₀.₅ on LIBERO-10; it is evidence for that path,
-not the boundary of OpenPI backend support. ManiSkill on MUSA is a separate
-π₀.₅ path because it requires vendor simulator packages and CPU physics.
+LIBERO through the shared platform installer and scheduler device API.
+ManiSkill on MUSA is a separate π₀.₅ path because it requires vendor simulator
+packages and CPU physics.
 
 AMD ROCm
 ~~~~~~~~
@@ -512,25 +511,11 @@ Launch the LIBERO PPO recipe:
 
    bash examples/embodiment/run_embodiment.sh libero_10_ppo_openpi_pi05
 
-For a short MUSA check, use the smaller hardware e2e config and point its model
-paths to your download:
-
-.. code-block:: bash
-
-   export REPO_PATH="$PWD"
-   bash tests/e2e_tests/embodied/run.sh libero_10_ppo_openpi_pi05_musa osmesa \
-      actor.model.model_path=/path/to/RLinf-Pi05-LIBERO-SFT \
-      rollout.model.model_path=/path/to/RLinf-Pi05-LIBERO-SFT
-
-AMD and Ascend have no dedicated OpenPI hardware e2e job. Use the regular
-recipe above for a short run and reduce its placement and batch sizes when
-needed.
-
 ManiSkill on MUSA
 ~~~~~~~~~~~~~~~~~
 
-The π₀.₅ ManiSkill path needs the vendor image that supplied the simulator stack
-used for MUSA validation:
+The π₀.₅ ManiSkill path needs the vendor image that supplies its simulator
+stack:
 
 .. code-block:: bash
 
@@ -551,8 +536,8 @@ used for MUSA validation:
    vendor simulator packages with those installed by
    ``install.sh --env maniskill_libero``.
 
-The hardware e2e config selects CPU physics and an explicit render device for
-both training and evaluation:
+The included MUSA configuration selects CPU physics and an explicit render
+device for both training and evaluation:
 
 .. code-block:: yaml
 
@@ -585,9 +570,9 @@ then run the small configuration with your checkpoint paths:
       actor.model.model_path=/path/to/RLinf-Pi05-ManiSkill-25Main-SFT \
       rollout.model.model_path=/path/to/RLinf-Pi05-ManiSkill-25Main-SFT
 
-Despite the config's name, the MUSA job launches it with the synchronous
-``run.sh`` entry point. Use that command for the short check, then adjust
-``runner.max_epochs`` and the episode limits for a longer run.
+Despite the config's name, launch it with the synchronous ``run.sh`` entry point
+shown above. Adjust ``runner.max_epochs`` and the episode limits for a longer
+run.
 
 Visualization and Results
 -------------------------

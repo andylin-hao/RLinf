@@ -47,9 +47,7 @@ The linked simulator pages cover its other environments.
 Tasks
 ~~~~~
 
-Start with LIBERO-Goal. AMD and Ascend also run this path in hardware e2e jobs;
-MUSA uses the same supported LIBERO recipe without a hardware e2e job. Other
-simulator workflows remain on their own pages.
+Start with LIBERO-Goal. Other simulator workflows remain on their own pages.
 
 .. list-table::
    :header-rows: 1
@@ -166,11 +164,9 @@ Run on Different Hardware Backends
 ----------------------------------
 
 NVIDIA uses the installation and launch above. AMD ROCm, Huawei Ascend CANN,
-and Moore Threads MUSA support OpenVLA-OFT on LIBERO. AMD and Ascend also run
-the LIBERO-Goal GRPO path in ``.github/workflows/embodied-e2e-tests.yml``;
-MUSA support follows the shared platform installer, scheduler device API, and
-model path. These instructions do not establish support for every environment
-in the Overview.
+and Moore Threads MUSA support OpenVLA-OFT on LIBERO through the shared platform
+installer, scheduler device API, and model path. These instructions do not
+establish support for every environment in the Overview.
 
 .. _openvla-oft-amd:
 
@@ -260,20 +256,6 @@ Start the configured GRPO run:
 .. code-block:: bash
 
    bash examples/embodiment/run_embodiment.sh libero_goal_grpo_openvlaoft
-
-For a short hardware-CI check on AMD or Ascend, point both workers to the local
-checkpoint and run:
-
-.. code-block:: bash
-
-   export REPO_PATH="$PWD"
-   bash tests/e2e_tests/embodied/run.sh libero_goal_grpo_openvlaoft osmesa \
-      actor.model.model_path="$PWD/checkpoints/Openvla-oft-SFT-libero-goal-traj1" \
-      rollout.model.model_path="$PWD/checkpoints/Openvla-oft-SFT-libero-goal-traj1"
-
-The test runner's second argument selects the renderer. MUSA has no dedicated
-OpenVLA-OFT hardware e2e job, so use the regular recipe above for a short run
-and reduce its placement and batch sizes when needed.
 
 Visualization and Results
 -------------------------

@@ -411,7 +411,7 @@ env** 之间的流水线重叠，从而提升 rollout 效率。
 在不同硬件后端上运行
 --------------------
 
-NVIDIA 使用上面的安装与启动流程。AMD ROCm、华为昇腾 CANN 和摩尔线程 MUSA 都通过共用平台安装器与 scheduler 设备 API 支持 OpenPI π₀ / π₀.₅ 系列在 LIBERO 上运行。MUSA 硬件 e2e 作业验证了 π₀.₅ + LIBERO-10，但这项验证不限定 OpenPI 的后端支持范围。MUSA 上的 ManiSkill 是单独的 π₀.₅ 路径，因为它依赖厂商模拟器包和 CPU 物理仿真。
+NVIDIA 使用上面的安装与启动流程。AMD ROCm、华为昇腾 CANN 和摩尔线程 MUSA 都通过共用平台安装器与 scheduler 设备 API 支持 OpenPI π₀ / π₀.₅ 系列在 LIBERO 上运行。MUSA 上的 ManiSkill 是单独的 π₀.₅ 路径，因为它依赖厂商模拟器包和 CPU 物理仿真。
 
 AMD ROCm
 ~~~~~~~~
@@ -474,21 +474,10 @@ MUSA 通过启用 system site-packages 的虚拟环境复用镜像中的 Python�
 
    bash examples/embodiment/run_embodiment.sh libero_10_ppo_openpi_pi05
 
-若要在 MUSA 上做短程检查，可使用规模较小的硬件 e2e 配置，并将模型路径指向下载的 checkpoint：
-
-.. code-block:: bash
-
-   export REPO_PATH="$PWD"
-   bash tests/e2e_tests/embodied/run.sh libero_10_ppo_openpi_pi05_musa osmesa \
-      actor.model.model_path=/path/to/RLinf-Pi05-LIBERO-SFT \
-      rollout.model.model_path=/path/to/RLinf-Pi05-LIBERO-SFT
-
-AMD 与昇腾当前没有 OpenPI 硬件 e2e 作业，可使用上面的常规示例做短程运行，并按需减小 placement 与 batch size。
-
 在 MUSA 上运行 ManiSkill
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
-π₀.₅ + ManiSkill 需要使用 MUSA 验证时所用的厂商镜像，其中已经包含配套的模拟器环境：
+π₀.₅ + ManiSkill 需要使用包含配套模拟器环境的厂商镜像：
 
 .. code-block:: bash
 
@@ -505,7 +494,7 @@ AMD 与昇腾当前没有 OpenPI 硬件 e2e 作业，可使用上面的常规示
 
    MUSA 上的 ManiSkill 需要该镜像中修改过的 SAPIEN 与匹配的 ManiSkill。公开的 ``sapien`` 与 ManiSkill ``v3.0.0b22`` 无法组成可用的 MUSA 模拟器环境。不要用 ``install.sh --env maniskill_libero`` 安装的公开包替换厂商模拟器包。
 
-硬件 e2e 配置为训练和评估指定 CPU 物理仿真与显式的渲染设备：
+MUSA 配置为训练和评估指定 CPU 物理仿真与显式的渲染设备：
 
 .. code-block:: yaml
 
@@ -532,7 +521,7 @@ AMD 与昇腾当前没有 OpenPI 硬件 e2e 作业，可使用上面的常规示
       actor.model.model_path=/path/to/RLinf-Pi05-ManiSkill-25Main-SFT \
       rollout.model.model_path=/path/to/RLinf-Pi05-ManiSkill-25Main-SFT
 
-虽然配置名包含 async，MUSA 作业实际使用同步的 ``run.sh`` 入口。短程检查应沿用该命令；需要延长训练时，再调整 ``runner.max_epochs`` 与 episode 步数限制。
+虽然配置名包含 async，仍应使用上面所示的同步 ``run.sh`` 入口。需要延长训练时，再调整 ``runner.max_epochs`` 与 episode 步数限制。
 
 可视化与结果
 ----------------------------------------

@@ -43,7 +43,7 @@ OpenVLA-OFT 强化学习训练
 任务
 ~~~~
 
-可先运行 LIBERO-Goal；AMD 和昇腾的硬件 e2e 作业也使用这个任务。MUSA 支持相同的 LIBERO 流程，但当前没有对应的硬件 e2e 作业。其他模拟器的完整流程保留在各自页面中。
+可先运行 LIBERO-Goal。其他模拟器的完整流程保留在各自页面中。
 
 .. list-table::
    :header-rows: 1
@@ -152,7 +152,7 @@ LIBERO 训练流程根据图像和任务提示生成动作块。
 在不同硬件后端上运行
 --------------------
 
-NVIDIA 使用上面的安装与启动流程。AMD ROCm、华为昇腾 CANN 和摩尔线程 MUSA 都支持 OpenVLA-OFT 在 LIBERO 上运行；``.github/workflows/embodied-e2e-tests.yml`` 还包含 AMD 与昇腾的 LIBERO-Goal GRPO 硬件 e2e 作业。MUSA 支持来自共用平台安装器、scheduler 设备 API 与模型运行路径。以下说明不代表概览中的其他环境也已支持这些后端。
+NVIDIA 使用上面的安装与启动流程。AMD ROCm、华为昇腾 CANN 和摩尔线程 MUSA 都通过共用平台安装器、scheduler 设备 API 与模型运行路径支持 OpenVLA-OFT 在 LIBERO 上运行。以下说明不代表概览中的其他环境也已支持这些后端。
 
 .. _openvla-oft-amd:
 
@@ -234,17 +234,6 @@ AMD ROCm
 .. code-block:: bash
 
    bash examples/embodiment/run_embodiment.sh libero_goal_grpo_openvlaoft
-
-若要在 AMD 或昇腾上使用硬件 CI 配置做一次短程检查，将两个 worker 都指向本地 checkpoint：
-
-.. code-block:: bash
-
-   export REPO_PATH="$PWD"
-   bash tests/e2e_tests/embodied/run.sh libero_goal_grpo_openvlaoft osmesa \
-      actor.model.model_path="$PWD/checkpoints/Openvla-oft-SFT-libero-goal-traj1" \
-      rollout.model.model_path="$PWD/checkpoints/Openvla-oft-SFT-libero-goal-traj1"
-
-测试脚本的第二个参数选择渲染后端。MUSA 当前没有 OpenVLA-OFT 硬件 e2e 作业，可使用上面的常规示例做短程运行，并按需减小 placement 与 batch size。
 
 可视化与结果
 ------------

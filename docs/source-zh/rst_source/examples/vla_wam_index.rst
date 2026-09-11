@@ -8,28 +8,24 @@
 硬件支持
 ------------
 
-模型示例默认使用 NVIDIA。AMD ROCm、华为昇腾 CANN 和摩尔线程 MUSA 也支持下列三个模型系列在 LIBERO 上运行。选择模型链接可查看安装与启动步骤；验证列用于区分后端支持与已有硬件 e2e 作业的路径。
+模型示例默认使用 NVIDIA。AMD ROCm、华为昇腾 CANN 和摩尔线程 MUSA 也支持下列三个模型系列在 LIBERO 上运行。选择模型链接可查看安装与启动步骤。
 
 .. list-table::
    :header-rows: 1
-   :widths: 22 32 28 18
+   :widths: 24 38 38
 
    * - 模型
      - 硬件
      - 环境与范围
-     - 非 NVIDIA e2e
    * - :doc:`OpenVLA-OFT <embodied/openvla_oft>`
      - :ref:`AMD ROCm · 华为昇腾 CANN · 摩尔线程 MUSA <openvla-oft-hardware>`
      - LIBERO · Goal GRPO
-     - AMD · 昇腾
    * - :doc:`GR00T N1.5 <embodied/gr00t>`
      - :ref:`AMD ROCm · 华为昇腾 CANN · 摩尔线程 MUSA <gr00t-hardware>`
      - LIBERO · Spatial PPO
-     - 昇腾
    * - :doc:`π₀ / π₀.₅ (OpenPI) <embodied/pi0>`
      - :ref:`AMD ROCm · 华为昇腾 CANN · 摩尔线程 MUSA <pi0-hardware>`
      - π₀ / π₀.₅ 可运行 LIBERO；MUSA 上的 π₀.₅ 还支持使用厂商模拟器包和 CPU 物理仿真的 ManiSkill。
-     - MUSA π₀.₅
 
 模型示例
 --------

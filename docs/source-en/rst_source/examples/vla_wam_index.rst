@@ -10,30 +10,24 @@ Hardware Support
 
 NVIDIA is the default backend in the model recipes. AMD ROCm, Huawei Ascend
 CANN, and Moore Threads MUSA also support the three model families below on
-LIBERO. Follow a model link for installation and launch instructions. The
-validation column distinguishes supported paths from those that also run in a
-hardware e2e job.
+LIBERO. Follow a model link for installation and launch instructions.
 
 .. list-table::
    :header-rows: 1
-   :widths: 22 32 28 18
+   :widths: 24 38 38
 
    * - Model
      - Hardware
      - Environment and Scope
-     - Non-NVIDIA e2e
    * - :doc:`OpenVLA-OFT <embodied/openvla_oft>`
      - :ref:`AMD ROCm · Huawei Ascend CANN · Moore Threads MUSA <openvla-oft-hardware>`
      - LIBERO · Goal GRPO
-     - AMD · Ascend
    * - :doc:`GR00T N1.5 <embodied/gr00t>`
      - :ref:`AMD ROCm · Huawei Ascend CANN · Moore Threads MUSA <gr00t-hardware>`
      - LIBERO · Spatial PPO
-     - Ascend
    * - :doc:`π₀ / π₀.₅ (OpenPI) <embodied/pi0>`
      - :ref:`AMD ROCm · Huawei Ascend CANN · Moore Threads MUSA <pi0-hardware>`
      - LIBERO for π₀ / π₀.₅; ManiSkill for π₀.₅ on MUSA with vendor simulator packages and CPU physics.
-     - MUSA π₀.₅
 
 Model Recipes
 -------------

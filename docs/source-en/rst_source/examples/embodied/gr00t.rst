@@ -550,9 +550,8 @@ Run on Different Hardware Backends
 ----------------------------------
 
 NVIDIA uses the version-specific setup above. AMD ROCm, Huawei Ascend CANN, and
-Moore Threads MUSA support GR00T N1.5 on LIBERO. The Ascend LIBERO-Spatial PPO
-path also has a hardware e2e job. N1.6, N1.7, and IsaacLab remain outside this
-non-NVIDIA recipe.
+Moore Threads MUSA support GR00T N1.5 on LIBERO. N1.6, N1.7, and IsaacLab
+remain outside this non-NVIDIA recipe.
 
 AMD ROCm
 ~~~~~~~~
@@ -639,19 +638,6 @@ Launch the configured PPO run:
 .. code-block:: bash
 
    bash examples/embodiment/run_embodiment.sh libero_spatial_ppo_gr00t
-
-For a short hardware-CI run on Ascend, set ``REPO_PATH`` and override the
-checkpoint paths:
-
-.. code-block:: bash
-
-   export REPO_PATH="$PWD"
-   bash tests/e2e_tests/embodied/run.sh libero_spatial_ppo_gr00t osmesa \
-      actor.model.model_path="$PWD/RLinf-Gr00t-SFT-Spatial" \
-      rollout.model.model_path="$PWD/RLinf-Gr00t-SFT-Spatial"
-
-AMD and MUSA have no dedicated GR00T hardware e2e job. Use the regular recipe
-above for a short run and reduce its placement and batch sizes when needed.
 
 Visualization and Results
 -------------------------

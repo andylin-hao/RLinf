@@ -543,7 +543,7 @@ GR00T-N1.5的动作头包含dropout层，这会干扰对数概率的计算，因
 在不同硬件后端上运行
 --------------------
 
-NVIDIA 使用上面各版本对应的安装流程。AMD ROCm、华为昇腾 CANN 和摩尔线程 MUSA 都支持 GR00T N1.5 在 LIBERO 上运行；昇腾的 LIBERO-Spatial PPO 路径还有硬件 e2e 作业。非 NVIDIA 的说明不包含 N1.6、N1.7 与 IsaacLab。
+NVIDIA 使用上面各版本对应的安装流程。AMD ROCm、华为昇腾 CANN 和摩尔线程 MUSA 都支持 GR00T N1.5 在 LIBERO 上运行。非 NVIDIA 的说明不包含 N1.6、N1.7 与 IsaacLab。
 
 AMD ROCm
 ~~~~~~~~
@@ -621,17 +621,6 @@ MUSA 使用共用设备与安装路径，并为 RADIO backbone 中的 CUDA capab
 .. code-block:: bash
 
    bash examples/embodiment/run_embodiment.sh libero_spatial_ppo_gr00t
-
-若要在昇腾上使用硬件 CI 配置做一次短程运行，设置 ``REPO_PATH`` 并覆盖 checkpoint 路径：
-
-.. code-block:: bash
-
-   export REPO_PATH="$PWD"
-   bash tests/e2e_tests/embodied/run.sh libero_spatial_ppo_gr00t osmesa \
-      actor.model.model_path="$PWD/RLinf-Gr00t-SFT-Spatial" \
-      rollout.model.model_path="$PWD/RLinf-Gr00t-SFT-Spatial"
-
-AMD 与 MUSA 当前没有 GR00T 硬件 e2e 作业，可使用上面的常规示例做短程运行，并按需减小 placement 与 batch size。
 
 可视化与结果
 ----------------------------------------
