@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from rlinf.envs.real.registry import register_tasks
 
-from .base import FrankaEnv, FrankaEnvConfig, FrankaRobotState
+from .base import FrankaEnv
 from .bin_relocation import FrankaBinRelocationEnv
 from .bottle import BottleEnv
 from .dex_pnp import DexpnpEnv
@@ -52,8 +52,6 @@ __all__ = [
     "DualFrankaTCPEnvConfig",
     "FrankaBinRelocationEnv",
     "FrankaEnv",
-    "FrankaEnvConfig",
-    "FrankaRobotState",
     "PegInsertionEnv",
     *_ENTRY_POINTS,
 ]

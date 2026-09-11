@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Optional
 import numpy as np
 
 from .requirements import Needs, Parts, Reading
+from .workspace import Workspace
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from rlinf.envs.real.control import Applied, Control
@@ -82,6 +83,9 @@ class ResetContext:
     options: Mapping[str, Any] = field(default_factory=dict)
     """The ``options`` passed to ``reset``."""
 
+    rate_hz: float = 10.0
+    """The env's control rate, for motions a reset streams to the arm."""
+
 
 class Task(ABC):
     """Task logic evaluated against a composed robot.
@@ -107,6 +111,15 @@ class Task(ABC):
     @abstractmethod
     def requirements(self) -> Mapping[str, Needs]:
         """What each role must report, accept, and carry."""
+
+    @property
+    def workspace(self) -> Optional[Workspace]:
+        """Where a control that commands poses may send the tool.
+
+        ``None`` leaves the tool unconstrained, as for a task that never asks
+        for a pose.
+        """
+        return None
 
     def validate(self, dof: Mapping[str, Optional[int]]) -> None:
         """Check settings that depend on the arm, before anything connects.

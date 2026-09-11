@@ -29,6 +29,7 @@ import gymnasium as gym
 import numpy as np
 
 from rlinf.envs.real.tasks.requirements import Needs, Parts, Reading
+from rlinf.envs.real.tasks.workspace import Workspace
 from rlinf.robotics.actions import ActionPart
 
 
@@ -83,8 +84,19 @@ class Control(ABC):
         """Joint bounds for ``role`` in radians, when the control keeps them."""
         return None
 
-    def reset(self) -> None:
-        """Forget anything carried between steps of the previous episode."""
+    def confine(self, workspace: Optional[Workspace]) -> None:
+        """Keep the poses this control commands inside a task's workspace.
+
+        A control that commands joints has no pose to keep inside it, so the
+        default ignores it.
+        """
+
+    def reset(self, parts: Optional[Parts] = None) -> None:
+        """Forget the previous episode and prepare the parts for the next.
+
+        Args:
+            parts: The parts filling each role; ``None`` in a dummy env.
+        """
 
     @abstractmethod
     def apply(self, parts: Parts, action: np.ndarray, reading: Reading) -> Applied:
@@ -95,3 +107,32 @@ class Control(ABC):
             action: One policy action.
             reading: The robot as read at the end of the previous step.
         """
+
+    # End-effector verbs a task's reset uses, through the same channel a
+    # policy drives, so a reset grasps the way a policy would.
+
+    def grasp(self, parts: Parts) -> bool:
+        """Close the end effector as a fully closing action would."""
+        raise NotImplementedError(f"{type(self).__name__} cannot grasp.")
+
+    def release(self, parts: Parts) -> bool:
+        """Open the end effector as a fully opening action would."""
+        raise NotImplementedError(f"{type(self).__name__} cannot release.")
+
+    def rest_end_effector(self, parts: Parts) -> None:
+        """Put the end effector at its resting pose, where it has one."""
+
+    # Context a teleoperation device reads to line its commands up with this
+    # action. ``None`` means the control has no such thing.
+
+    def action_scale(self) -> Optional[np.ndarray]:
+        """What one unit of each action channel moves, for a delta device."""
+        return None
+
+    def gripper_open(self, parts: Parts) -> Optional[bool]:
+        """Whether the gripper is open, for a device that toggles it."""
+        return None
+
+    def hand_reset_pose(self) -> Optional[np.ndarray]:
+        """The hand's resting finger pose, for a device that starts from it."""
+        return None

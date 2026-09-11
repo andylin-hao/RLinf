@@ -17,40 +17,56 @@ Define Task Data and Behavior
 -----------------------------
 
 Begin with the behavior that changes from task to task: targets, success rules,
-controller settings, and any task-specific reset motion. In
-``rlinf/envs/real/franka/``, the dataclass records those values and the env class
-adds behavior that cannot be expressed as data. Both live in one task module
-beside the shared ``base.py``:
+and any task-specific reset motion. A task in ``rlinf/envs/real/tasks/`` holds
+exactly that, written once for every robot that can run it. Peg insertion is a
+config dataclass and a class that adds its reset motion to ``CartesianTarget``:
 
 .. code-block:: python
 
    @dataclass
-   class PegInsertionConfig(FrankaEnvConfig):
-       task_description: str = "peg and insertion"
-       target_ee_pose: np.ndarray = field(default_factory=lambda: np.zeros(6))
+   class PegInsertionConfig(FixtureConfig):
        random_xy_range: float = 0.05
+       clip_z_range_high: float = 0.1
+       ...
 
-       def __post_init__(self):
-           # Only what differs from the shared impedance gains.
-           self.compliance_param = compliance(translational_stiffness=2000)
-           ...
 
+   class PegInsertion(CartesianTarget):
+       CONFIG = PegInsertionConfig
+       DESCRIPTION = "peg and insertion"
+
+       def reset(self, parts, context):
+           # Grip the peg and lift it clear of the slot before homing.
+           context.control.grasp(parts)
+           hold(parts)
+           lift(parts, context, 0.10)
+           self.go_to_rest(parts, context)
+
+``PegInsertionConfig`` gives the task one typed source for the target, the
+workspace around it, and reset randomization. The task states what it needs
+from the robot, an arm that reports ``tcp_pose``, and never builds an action:
+``context.control.grasp()`` closes the gripper through the same channel a policy
+drives, whichever control the robot is driven by.
+
+A robot preset such as ``FrankaEnv`` in ``rlinf/envs/real/franka/base.py``
+supplies the other half: the robot class, the control that turns a policy
+action into part commands, and the observation layout the policy reads. A task
+id is then one registration naming the task and the robot-side settings it wants
+by default:
+
+.. code-block:: python
 
    class PegInsertionEnv(FrankaEnv):
-       CONFIG_CLS = PegInsertionConfig
+       TASK = PegInsertion
+       DEFAULTS = {
+           "compliance_param": compliance(translational_stiffness=2000),
+           "action_scale": (0.02, 0.1, 1.0),
+       }
 
-       def go_to_rest(self, joint_reset=False):
-           # Lift clear of the slot before homing, or the peg catches.
-           ...
-
-``PegInsertionConfig`` gives inherited env code one typed source for the target,
-randomization, and controller settings. ``CONFIG_CLS`` tells
-``PegInsertionEnv`` which config to construct, while ``go_to_rest()`` changes
-only the reset sequence that depends on the physical task. ``compliance()`` merges your overrides onto ``COMPLIANCE_DEFAULTS`` and rejects
+``compliance()`` merges your overrides onto ``COMPLIANCE_DEFAULTS`` and rejects
 any gain the controller does not accept. A misspelled key fails here instead of
 reaching the impedance controller and being ignored. Peg insertion states one
-gain; bin relocation states eleven. Everything else in the config describes the
-task itself: poses, reward thresholds, and reset randomization.
+gain; bin relocation states eleven. A run's own settings override these
+defaults.
 
 Keep Hardware in the Robot Descriptor
 -------------------------------------
@@ -118,17 +134,20 @@ requires at least one camera even in dummy mode, so its dummy constructors
 always need a descriptor with camera serials. These serials can be synthetic
 for offline runs; dummy construction does not open or probe devices.
 
-The shared task dataclasses are named ``FrankaEnvConfig``,
-``DualFrankaEnvConfig``, ``GimArmEnvConfig``, ``DOSW1EnvConfig``, and
-``Turtle2EnvConfig``. Their hardware counterparts remain in
-``rlinf.robotics.robots``. For Turtle2, camera channels move from the task's
-``use_camera_ids`` to the hardware field ``camera_ids``.
+The task dataclasses of the robots with their own env, ``DualFrankaEnvConfig``,
+``GimArmEnvConfig``, ``DOSW1EnvConfig``, and ``Turtle2EnvConfig``, keep their
+names. Their hardware counterparts remain in ``rlinf.robotics.robots``. For
+Turtle2, camera channels move from the task's ``use_camera_ids`` to the hardware
+field ``camera_ids``.
 
-Piper and SO-101 tasks run on ``TaskEnv``. A run still passes one flat
-``override_cfg``; each key goes to whichever of three configs declares it:
-``TaskEnvConfig`` for how an episode runs, the control's ``JointControlConfig``
-for the joint bounds, and the task's config, such as ``JointReachConfig``, for
-targets and reward. A key none of them declares is refused. Piper's
+Single-arm Franka, Piper, and SO-101 tasks run on ``TaskEnv``. A run still
+passes one flat ``override_cfg``; each key goes to whichever of three configs
+declares it: ``RegisteredTaskEnvConfig`` for how an episode runs, the cameras,
+and a reward model; the control's config, ``CartesianControlConfig`` or
+``JointControlConfig``, for action scales, gains, and joint bounds; and the
+task's config, such as ``PegInsertionConfig`` or ``JointReachConfig``, for
+targets and reward. A key none of them declares is refused, and a retired key
+such as ``hand_target_state`` is dropped with a warning. Piper's
 ``with_gripper`` hardware field determines whether the action has six joint
 values or seven values including the gripper opening.
 
@@ -158,44 +177,36 @@ those references stale.
 Drive Hardware Through the Robotics Interface
 ---------------------------------------------
 
-Registration determines which env class is created; the constructed env then
-owns one composed robot for its entire lifetime. It builds the arm, end effector,
-and cameras, calls ``robot.connect()`` during initialization, and calls
-``robot.disconnect()`` from ``close()``. Each step obtains one nested result from
-``robot.get_observation()`` and sends named branches through
+Registration determines which env is created; the constructed ``TaskEnv`` then
+owns one composed robot for its entire lifetime. It binds the parts the task,
+control, and observation need, connects the robot during initialization, and
+disconnects it from ``close()``. Each step obtains one nested result from
+``robot.get_observation()``, and the control sends named branches through
 ``robot.send_action()`` rather than reaching around the robot to a driver or
 vendor SDK.
 
 This boundary is shared by different hardware layouts. Franka exposes its arm
 and end effector as sibling paths because they open separate connections.
 SO-101 exposes ``arm.end_effector`` because its gripper is another servo on the
-arm bus. ``SO101ReachEnv-v1`` still reads and commands that nested interface,
-then converts it to the six-value joint-and-gripper vector its policy expects.
+arm bus. Binding finds the end effector either way, so ``JointPositionControl``
+sends SO-101's joint targets and gripper opening in one command without
+knowing where the gripper sits.
 
 The step interface is deliberately small, but reset and readiness need category
-methods outside that stream. Setup code therefore retains typed parts selected
-from the same robot:
+methods outside that stream. A task reaches them through the parts bound to its
+roles, typed by category:
 
 .. code-block:: python
 
-   from rlinf.robotics import Arm, Camera
+   def home(self, parts, context):
+       arm = parts.arm()                  # the Arm filling the "arm" role
+       arm.reset_joint(self.config.reset_joint_qpos)
 
-   arm = robot.child("arm", Arm)
-   cameras = robot.parts_of_type(Camera)
-
-   if not arm.is_robot_up():
-       raise RuntimeError("The arm is not ready.")
-   arm.reset_joint(reset_qpos)
-   ready = all(camera.is_ready() for camera in cameras.values())
-
-``child("arm", Arm)`` verifies the required arm path and returns the ``Arm``
-interface used for readiness and reset. ``parts_of_type(Camera)`` returns all
-cameras by dotted path so the env can process frames without assuming their
-configured names. The robot remains responsible for camera placement and lifecycle. The env may
-keep camera references for frame processing, but it does not construct or close
-a second object for the same device. One whole-robot observation is also reused
-when the env builds its state and frames, so values from one step are not mixed
-with a later SDK read.
+``parts.arm()`` returns the ``Arm`` interface bound to the role, and
+``parts.end_effector()`` the end effector it carries. The robot remains
+responsible for camera placement and lifecycle; the env reads frames from the
+same whole-robot observation it builds the state from, so values from one step
+are not mixed with a later SDK read.
 
 Organize Wrappers by Responsibility
 -----------------------------------

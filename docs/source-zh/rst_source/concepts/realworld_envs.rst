@@ -8,30 +8,42 @@
 定义任务数据与行为
 ------------------
 
-先处理任务之间真正不同的内容：目标、成功条件、控制器参数和任务特有的复位运动。``rlinf/envs/real/franka/`` 中的每个任务对应一个模块；dataclass 保存这些配置值，无法用数据表达的行为则由 env class 覆盖，公共逻辑继续留在 ``base.py``。
+先处理任务之间真正不同的内容：目标、成功条件和任务特有的复位运动。``rlinf/envs/real/tasks/`` 中的任务只保存这些内容，并且只编写一次，供所有能运行它的机器人使用。插销任务由一个配置 dataclass 和一个 class 组成，后者在 ``CartesianTarget`` 的基础上加入自己的复位运动：
 
 .. code-block:: python
 
    @dataclass
-   class PegInsertionConfig(FrankaEnvConfig):
-       task_description: str = "peg and insertion"
-       target_ee_pose: np.ndarray = field(default_factory=lambda: np.zeros(6))
+   class PegInsertionConfig(FixtureConfig):
        random_xy_range: float = 0.05
+       clip_z_range_high: float = 0.1
+       ...
 
-       def __post_init__(self):
-           # 仅覆盖与公共阻抗参数不同的项。
-           self.compliance_param = compliance(translational_stiffness=2000)
-           ...
 
+   class PegInsertion(CartesianTarget):
+       CONFIG = PegInsertionConfig
+       DESCRIPTION = "peg and insertion"
+
+       def reset(self, parts, context):
+           # 先夹紧插销并抬离插孔，再返回初始位姿。
+           context.control.grasp(parts)
+           hold(parts)
+           lift(parts, context, 0.10)
+           self.go_to_rest(parts, context)
+
+``PegInsertionConfig`` 为任务统一提供目标、目标周围的工作空间和复位随机范围。任务只声明它对机器人的要求，即一个上报 ``tcp_pose`` 的机械臂，从不构造动作：无论机器人使用哪种控制，``context.control.grasp()`` 都通过 policy 所驱动的同一通道闭合夹爪。
+
+``rlinf/envs/real/franka/base.py`` 中的 ``FrankaEnv`` 等机器人 preset 提供另一半：机器人 class、把 policy 动作转换为零部件命令的控制，以及 policy 读取的观测布局。任务 ID 于是只需一次注册，指定任务以及该任务默认需要的机器人侧设置：
+
+.. code-block:: python
 
    class PegInsertionEnv(FrankaEnv):
-       CONFIG_CLS = PegInsertionConfig
+       TASK = PegInsertion
+       DEFAULTS = {
+           "compliance_param": compliance(translational_stiffness=2000),
+           "action_scale": (0.02, 0.1, 1.0),
+       }
 
-       def go_to_rest(self, joint_reset=False):
-           # 先抬离插孔，再返回初始位姿，避免插销卡住。
-           ...
-
-``PegInsertionConfig`` 为继承的 env 逻辑统一提供目标、随机范围和控制器设置，``CONFIG_CLS`` 则告诉 ``PegInsertionEnv`` 应构造哪一种配置。``go_to_rest()`` 只覆盖与插销任务相关的复位顺序。``compliance()`` 将任务参数合并到 ``COMPLIANCE_DEFAULTS``；字段名错误或控制器不支持相应参数时，该函数会立即报错。插销任务只覆盖一项参数，bin relocation 覆盖十一项，其余任务数据也保存在各自配置中。
+``compliance()`` 将任务参数合并到 ``COMPLIANCE_DEFAULTS``；字段名错误或控制器不支持相应参数时，该函数会立即报错。插销任务只覆盖一项参数，bin relocation 覆盖十一项。运行中的设置优先于这些默认值。
 
 将硬件设置保留在机器人描述中
 ----------------------------
@@ -65,9 +77,9 @@
 
 通过 scheduler 运行时，节点 probe 完成枚举，worker placement 分配 ``RobotInfo``，再由 ``RealWorldEnv`` 将其传给任务构造函数。环境只读取其中的硬件配置，不修改原对象。``camera_serials``、``robot_ip`` 等字段不再允许出现在任务 override 中，应移至硬件条目。若硬件默认值已能描述所需的观测空间，dummy 环境可以省略 ``robot_info``；需要其他相机布局或末端执行器时，也应传入对应布局的描述。Franka 在 dummy 模式下也要求至少一个相机，因此构造时始终需要带有相机序列号的描述。离线运行可以使用虚拟序列号；dummy 构造过程不会打开或探测设备。
 
-共享任务 dataclass 分别命名为 ``FrankaEnvConfig``、``DualFrankaEnvConfig``、``GimArmEnvConfig``、``DOSW1EnvConfig`` 和 ``Turtle2EnvConfig``，对应的硬件配置仍位于 ``rlinf.robotics.robots``。Turtle2 的相机通道从任务字段 ``use_camera_ids`` 移至硬件字段 ``camera_ids``。
+拥有独立 env 的机器人，其任务 dataclass 保持原名：``DualFrankaEnvConfig``、``GimArmEnvConfig``、``DOSW1EnvConfig`` 和 ``Turtle2EnvConfig``，对应的硬件配置仍位于 ``rlinf.robotics.robots``。Turtle2 的相机通道从任务字段 ``use_camera_ids`` 移至硬件字段 ``camera_ids``。
 
-Piper 和 SO-101 的任务运行在 ``TaskEnv`` 上。运行时仍然只传入一个扁平的 ``override_cfg``，其中每个 key 交给声明它的那一个配置：``TaskEnvConfig`` 负责 episode 如何运行，控制的 ``JointControlConfig`` 负责关节范围，任务配置（例如 ``JointReachConfig``）负责目标与奖励。三者都没有声明的 key 会被拒绝。Piper 的硬件字段 ``with_gripper`` 决定 action 包含 6 个关节值，还是包含夹爪开度的 7 个值。
+单臂 Franka、Piper 和 SO-101 的任务运行在 ``TaskEnv`` 上。运行时仍然只传入一个扁平的 ``override_cfg``，其中每个 key 交给声明它的那一个配置：``RegisteredTaskEnvConfig`` 负责 episode 如何运行、相机和 reward model；控制的配置（``CartesianControlConfig`` 或 ``JointControlConfig``）负责动作缩放、增益和关节范围；任务配置（例如 ``PegInsertionConfig`` 或 ``JointReachConfig``）负责目标与奖励。三者都没有声明的 key 会被拒绝，``hand_target_state`` 等已停用的 key 会被丢弃并给出警告。Piper 的硬件字段 ``with_gripper`` 决定 action 包含 6 个关节值，还是包含夹爪开度的 7 个值。
 
 注册任务
 --------
@@ -89,25 +101,19 @@ Piper 和 SO-101 的任务运行在 ``TaskEnv`` 上。运行时仍然只传入�
 通过机器人接口读写硬件
 ----------------------
 
-注册决定构造哪个 env class，env 实例随后在整个生命周期内持有同一台组合机器人。初始化时，它构建机械臂、末端执行器和相机，并调用 ``robot.connect()``；``close()`` 再通过 ``robot.disconnect()`` 释放资源。每个 step 只从 ``robot.get_observation()`` 取得一份嵌套观测，并通过 ``robot.send_action()`` 下发具名动作，不在旁路直接访问 driver 或厂商 SDK。
+注册决定构造哪个 env，``TaskEnv`` 实例随后在整个生命周期内持有同一台组合机器人。初始化时，它绑定任务、控制和观测所需的零部件，并连接机器人；``close()`` 再断开连接。每个 step 只从 ``robot.get_observation()`` 取得一份嵌套观测，控制通过 ``robot.send_action()`` 下发具名动作，不在旁路直接访问 driver 或厂商 SDK。
 
-不同硬件结构使用同一边界。Franka 的机械臂和末端执行器分别打开连接，因此使用并列路径；SO-101 的夹爪是机械臂总线上的另一个伺服，因此使用 ``arm.end_effector``。``SO101ReachEnv-v1`` 仍通过这套嵌套接口读写硬件，再将数据转换为 policy 使用的六维关节与夹爪向量。
+不同硬件结构使用同一边界。Franka 的机械臂和末端执行器分别打开连接，因此使用并列路径；SO-101 的夹爪是机械臂总线上的另一个伺服，因此使用 ``arm.end_effector``。绑定在两种结构下都能找到末端执行器，所以 ``JointPositionControl`` 无需知道夹爪的位置，就能把 SO-101 的关节目标和夹爪开度放在一条命令中下发。
 
-单步读写接口保持精简，就绪检查和复位则需要设备类别提供的方法。env 可以从同一机器人中保留具类型零部件，用于完成这些初始化操作：
+单步读写接口保持精简，就绪检查和复位则需要设备类别提供的方法。任务通过绑定到其角色上的零部件访问这些方法，零部件按类别提供类型：
 
 .. code-block:: python
 
-   from rlinf.robotics import Arm, Camera
+   def home(self, parts, context):
+       arm = parts.arm()                  # 填充 "arm" 角色的 Arm
+       arm.reset_joint(self.config.reset_joint_qpos)
 
-   arm = robot.child("arm", Arm)
-   cameras = robot.parts_of_type(Camera)
-
-   if not arm.is_robot_up():
-       raise RuntimeError("The arm is not ready.")
-   arm.reset_joint(reset_qpos)
-   ready = all(camera.is_ready() for camera in cameras.values())
-
-``child("arm", Arm)`` 检查任务要求的机械臂路径，并返回用于就绪检查和复位的 ``Arm`` 接口。``parts_of_type(Camera)`` 按完整路径返回所有相机，使 env 无需假设相机名称。相机的 placement 和生命周期仍由机器人管理；env 可以保留引用用于处理画面，但不应为同一设备构建或关闭第二个对象。构造当前步的状态和画面时，还应复用一次整机读取结果，避免混入后续 SDK 读取的数据。
+``parts.arm()`` 返回绑定到该角色的 ``Arm`` 接口，``parts.end_effector()`` 返回它携带的末端执行器。相机的 placement 和生命周期仍由机器人管理；env 从构造状态所用的同一份整机观测中读取画面，因此同一步的数据不会混入后续 SDK 读取的结果。
 
 按照职责组织 wrapper
 ---------------------

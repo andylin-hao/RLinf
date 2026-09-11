@@ -3965,12 +3965,17 @@ def test_a_worker_installs_the_fakes_for_itself():
 def test_a_wrapper_that_narrows_the_action_declares_it():
     from types import SimpleNamespace
 
-    from rlinf.envs.real.franka.base import FrankaEnv
+    from rlinf.envs.real.control import (
+        BinaryGripper,
+        CartesianControlConfig,
+        CartesianDeltaControl,
+    )
     from rlinf.envs.real.wrappers.transforms import GripperCloseEnv
 
-    inner = SimpleNamespace(
-        action_parts=lambda: FrankaEnv.action_parts(SimpleNamespace(_is_hand=False))
+    control = CartesianDeltaControl(
+        CartesianControlConfig(), end_effector=BinaryGripper()
     )
+    inner = SimpleNamespace(action_parts=control.action_parts)
     wrapper = GripperCloseEnv.__new__(GripperCloseEnv)
     wrapper.env = SimpleNamespace(get_wrapper_attr=lambda name: getattr(inner, name))
 
@@ -5824,16 +5829,19 @@ def test_dummy_env_and_wrapper_use_custom_driver_contract(registered_tool, monke
         wrapped.close()
 
 
-def test_connected_env_uses_part_dimensions(registered_tool):
+def test_a_hand_is_driven_one_channel_per_finger_of_its_driver(registered_tool):
+    from rlinf.envs.real.control import CartesianControlConfig
     from rlinf.envs.real.franka import FrankaEnv
+    from rlinf.robotics import FrankaConfig
+
+    hardware = FrankaConfig(node_rank=0, end_effector_type="pose_tool")
+    control = FrankaEnv.make_control(
+        hardware, CartesianControlConfig(hand_reset_state=[0.0] * 3)
+    )
+    assert control.action_parts()[-1].width == 3
 
     tool = registered_tool(gain=1.0)
-    env = FrankaEnv.__new__(FrankaEnv)
-    env._end_effector = tool
-    env._last_hand_command = None
-    env.config = SimpleNamespace(hand_action_scale=1.0)
-    assert env.action_parts()[-1].width == 3
-    env._end_effector_action(np.array([0.2, 0.4, 0.6]))
+    control.end_effector.command(tool, np.array([0.2, 0.4, 0.6]))
     np.testing.assert_allclose(tool.get_state(), [0.2, 0.4, 0.6])
 
 

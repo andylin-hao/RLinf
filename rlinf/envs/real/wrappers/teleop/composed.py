@@ -78,7 +78,11 @@ class ComposedTeleop(TeleopDevice):
 
     @classmethod
     def context_from(cls, env: gym.Env) -> dict[str, Any]:
-        """Collect the context an environment exposes to its devices."""
+        """Collect the context an environment exposes to its devices.
+
+        A getter the env lacks, or one that returns ``None`` because the env
+        has no such thing, leaves its key out.
+        """
         context: dict[str, Any] = {}
         for key, getter in cls.CONTEXT_GETTERS:
             try:
@@ -86,7 +90,9 @@ class ComposedTeleop(TeleopDevice):
             except AttributeError:
                 continue
             if callable(value):
-                context[key] = value()
+                value = value()
+                if value is not None:
+                    context[key] = value
         return context
 
     def before_reset(self, env: gym.Env, kwargs: dict[str, Any]) -> dict[str, Any]:

@@ -30,6 +30,7 @@ import copy
 import dataclasses
 import queue
 import time
+import warnings
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, ClassVar, Optional
@@ -38,14 +39,15 @@ import gymnasium as gym
 import numpy as np
 
 from rlinf.envs.real.control import Applied, Control
-from rlinf.envs.real.tasks import Parts, ResetContext, Task, bind
+from rlinf.envs.real.tasks import Needs, Parts, ResetContext, Task, bind
 from rlinf.envs.real.tasks.requirements import combine
 from rlinf.envs.real.utils.config import get_hardware_config
-from rlinf.envs.real.utils.frames import policy_frame
+from rlinf.envs.real.utils.frames import crop_region, policy_depth, policy_frame
+from rlinf.envs.real.utils.reward_model import RewardModel
 from rlinf.envs.real.utils.seeding import seed_sampled_spaces
 from rlinf.envs.real.utils.video import VideoPlayer
 from rlinf.robotics import Arm, Robot
-from rlinf.robotics.actions import ActionPart
+from rlinf.robotics.actions import ActionKind, ActionPart
 from rlinf.robotics.discovery import RobotConfig, RobotDiscovery, RobotInfo
 from rlinf.robotics.parts.cameras import CameraInfo
 from rlinf.scheduler import WorkerInfo
@@ -70,6 +72,51 @@ class TaskEnvConfig:
 
     enable_camera_player: bool = True
     """Show the cameras in a viewer window."""
+
+
+@dataclass
+class RegisteredTaskEnvConfig(TaskEnvConfig):
+    """What a registered id adds: camera layout and a learned reward."""
+
+    camera_names: Optional[Mapping[str, str]] = None
+    """Name each camera by serial. Unnamed cameras are ``wrist_1``,
+    ``wrist_2``, and so on, in the hardware's order."""
+
+    camera_crop_regions: Optional[Mapping[str, Sequence[float]]] = None
+    """``[top, left, bottom, right]`` fractions each camera is cropped to, by
+    serial. Uncropped cameras keep their centred square."""
+
+    enable_camera_depth: bool = False
+    """Capture depth beside every colour frame and hand it to the policy."""
+
+    use_reward_model: bool = False
+    """Score steps with a reward worker instead of the task."""
+
+    reward_worker_cfg: Optional[dict] = None
+    """The reward worker's config. The env worker fills this in."""
+
+    reward_worker_hardware_rank: Optional[int] = None
+    """Accelerator the reward worker runs on."""
+
+    reward_worker_node_rank: Optional[int] = None
+    """Node the reward worker runs on; ``None`` runs it beside the env."""
+
+    reward_worker_node_group: Optional[str] = None
+    """Node group the reward worker is placed in."""
+
+    reward_image_key: Optional[str] = None
+    """Camera the reward model scores; ``None`` takes the first by name."""
+
+    def __post_init__(self) -> None:
+        if self.camera_names is not None:
+            self.camera_names = {
+                str(serial): str(name) for serial, name in self.camera_names.items()
+            }
+        if self.camera_crop_regions is not None:
+            self.camera_crop_regions = {
+                str(serial): region
+                for serial, region in self.camera_crop_regions.items()
+            }
 
 
 @dataclass(frozen=True)
@@ -108,9 +155,10 @@ class ObservationSpec:
 class TaskEnv(gym.Env):
     """Run ``task`` on ``robot``, driven through ``control``.
 
-    Construction checks that the robot has what the task and control need,
-    before connecting it, then connects it, waits for its arms, and homes it.
-    A dummy env takes no robot and samples its observation space instead.
+    Construction checks that the robot has what the task, control, and
+    observation need, before connecting it, then connects it, waits for its
+    arms, and homes it. A dummy env takes no robot and samples its observation
+    space instead.
 
     Args:
         robot: The composed robot, connected or not; ``None`` when dummy.
@@ -118,6 +166,7 @@ class TaskEnv(gym.Env):
         control: How a policy's action reaches the robot.
         observation: What the policy reads.
         config: How episodes run.
+        reward_model: Scores steps in place of the task when given.
     """
 
     metadata = {"render_modes": []}
@@ -142,6 +191,7 @@ class TaskEnv(gym.Env):
         *,
         observation: ObservationSpec,
         config: Optional[TaskEnvConfig] = None,
+        reward_model: Optional[RewardModel] = None,
     ) -> None:
         self.config = config if config is not None else TaskEnvConfig()
         if robot is None and not self.config.is_dummy:
@@ -151,7 +201,9 @@ class TaskEnv(gym.Env):
         self.task = task
         self.control = control
         self.observation = observation
+        self.reward_model = reward_model
         task.validate(control.dof())
+        control.confine(task.workspace)
 
         self.action_space = control.action_space()
         self.observation_space = self._observation_space()
@@ -166,16 +218,13 @@ class TaskEnv(gym.Env):
         if self.config.is_dummy:
             return
 
-        self.parts = bind(
-            robot,
-            combine(task.requirements(), control.requirements()),
-            owner=type(task).__name__,
-        )
+        self.parts = bind(robot, self._requirements(), owner=type(task).__name__)
         if not robot.is_connected:
             robot.connect()
         self._wait_for_arms()
         self.camera_player = VideoPlayer(self.config.enable_camera_player)
         task.home(self.parts, self._context())
+        self._reading = self._read()
 
     # Protocol the wrapper stack and teleop read off the unwrapped env.
 
@@ -203,10 +252,19 @@ class TaskEnv(gym.Env):
         """Named slices of the action, for teleop and action wrappers."""
         return self.control.action_parts()
 
-    def get_joint_positions(self) -> np.ndarray:
-        """Joints of each driven arm as ``(arms, dof)``, zeros before a read."""
+    # Context teleoperation devices read to line their commands up with the
+    # action. A getter returns ``None`` where the control has no such thing.
+
+    def get_joint_positions(self) -> Optional[np.ndarray]:
+        """Joints of each driven arm as ``(arms, dof)``, zeros before a read.
+
+        ``None`` when the control does not know how many joints it drives.
+        """
+        dofs = self.control.dof()
+        if not dofs:
+            return None
         rows = []
-        for role, dof in self.control.dof().items():
+        for role, dof in dofs.items():
             joints = None
             if self._reading is not None and self.parts is not None:
                 joints = (
@@ -214,6 +272,37 @@ class TaskEnv(gym.Env):
                 )
             rows.append(np.zeros(dof or 0) if joints is None else np.asarray(joints))
         return np.stack(rows).astype(float)
+
+    def get_tcp_pose(self) -> Optional[np.ndarray]:
+        """The tool pose the next Cartesian delta is applied to, read now.
+
+        Reading here also moves the base of the next step's delta to this
+        pose, so a device's delta and the env's agree on where they start.
+        ``None`` when the action is not a Cartesian delta.
+        """
+        roles = [
+            part.name
+            for part in self.control.action_parts()
+            if part.kind is ActionKind.CARTESIAN_DELTA
+        ]
+        if not roles or self.parts is None:
+            return None
+        self._reading = self._read()
+        return np.asarray(self.parts.read(self._reading).arm(roles[0])["tcp_pose"])
+
+    def get_action_scale(self) -> Optional[np.ndarray]:
+        """What one unit of each action channel moves."""
+        return self.control.action_scale()
+
+    def get_gripper_open(self) -> Optional[bool]:
+        """Whether the gripper is open, for a device that toggles it."""
+        if self.parts is None:
+            return None
+        return self.control.gripper_open(self.parts)
+
+    def get_hand_reset_pose(self) -> Optional[np.ndarray]:
+        """The hand's resting finger pose."""
+        return self.control.hand_reset_pose()
 
     # Gymnasium API.
 
@@ -230,7 +319,7 @@ class TaskEnv(gym.Env):
         seed_sampled_spaces(seed, self._sample_space)
         self._num_steps = 0
         self._hold = 0
-        self.control.reset()
+        self.control.reset(self.parts)
         if self.config.is_dummy:
             return self._sample_space.sample(), {}
         self.task.reset(self.parts, self._context(options))
@@ -254,7 +343,7 @@ class TaskEnv(gym.Env):
             observation, reward = self._sample_space.sample(), 0.0
         else:
             observation = self._observe()
-            reward = self._score(applied)
+            reward = self._score(applied, observation)
         terminated = reward >= 1.0 and self._hold >= self.task.config.success_hold_steps
         truncated = self._num_steps >= self.config.max_num_steps
         return observation, reward * self.config.reward_scale, terminated, truncated, {}
@@ -290,11 +379,36 @@ class TaskEnv(gym.Env):
                     for camera in spec.cameras
                 }
             )
+        depth = [camera for camera in spec.cameras if camera.enable_depth]
+        if depth:
+            spaces["depths"] = gym.spaces.Dict(
+                {
+                    camera.name: gym.spaces.Box(
+                        0.0, np.inf, shape=spec.frame_size, dtype=np.float32
+                    )
+                    for camera in depth
+                }
+            )
         return gym.spaces.Dict(spaces)
+
+    def _requirements(self) -> dict[str, Needs]:
+        """What the task, the control, and the observed state need together."""
+        needs = combine(self.task.requirements(), self.control.requirements())
+        for field in self.observation.state:
+            need = needs.get(field.role, Needs())
+            if field.end_effector:
+                extra = Needs(kind=need.kind, end_effector="any")
+            else:
+                extra = Needs(kind=need.kind, observes=frozenset({field.field}))
+            needs[field.role] = need | extra
+        return needs
 
     def _context(self, options: Optional[Mapping[str, Any]] = None) -> ResetContext:
         return ResetContext(
-            rng=self.np_random, control=self.control, options=options or {}
+            rng=self.np_random,
+            control=self.control,
+            options=options or {},
+            rate_hz=self.config.step_frequency,
         )
 
     def _wait_for_arms(self) -> None:
@@ -341,26 +455,41 @@ class TaskEnv(gym.Env):
             state[field.key] = np.array(source[field.field], dtype=np.float32)
         observation: dict[str, Any] = {"state": state}
         if self.observation.cameras:
-            frames, display = {}, {}
+            frames, depths, display = {}, {}, {}
+            size = self.observation.frame_size
             for camera in self.observation.cameras:
+                captured = self._reading[camera.name]
                 frame, cropped = policy_frame(
-                    self._reading[camera.name]["frame"],
-                    self.observation.frame_size,
-                    camera.crop_region,
+                    captured["frame"], size, camera.crop_region
                 )
                 frames[camera.name] = frame
                 display[camera.name] = frame[..., ::-1]
                 display[f"{camera.name}_full"] = cropped
+                if camera.enable_depth and "depth" in captured:
+                    depths[camera.name] = policy_depth(
+                        captured["depth"], size, camera.crop_region
+                    )
             if self.camera_player is not None:
                 self.camera_player.put_frame(display)
             observation["frames"] = frames
+            if depths:
+                observation["depths"] = depths
         return observation
 
-    def _score(self, applied: Applied) -> float:
-        """The task's reward, less any gripper penalty, and the success streak."""
-        evaluation = self.task.evaluate(self.parts.read(self._reading), applied)
-        self._hold = self._hold + 1 if evaluation.in_zone else 0
-        reward = evaluation.reward
+    def _score(self, applied: Applied, observation: Mapping[str, Any]) -> float:
+        """The step's reward, less any gripper penalty, and the success streak.
+
+        A reward model, when there is one, scores the policy's frames in
+        place of the task, and a step it scores 1 or more counts toward the
+        streak.
+        """
+        if self.reward_model is not None:
+            reward = self.reward_model(observation.get("frames", {}))
+            in_zone = reward >= 1.0
+        else:
+            evaluation = self.task.evaluate(self.parts.read(self._reading), applied)
+            reward, in_zone = evaluation.reward, evaluation.in_zone
+        self._hold = self._hold + 1 if in_zone else 0
         config = self.task.config
         if (
             config.enable_gripper_penalty
@@ -444,6 +573,14 @@ class RegisteredTaskEnv(TaskEnv):
     #: replacing them.
     DEFAULTS: ClassVar[Mapping[str, Any]] = {}
 
+    #: Settings that no longer do anything, each with what to do instead. A
+    #: run that still passes one is warned rather than refused. Merged down
+    #: the class hierarchy like :attr:`DEFAULTS`.
+    RETIRED: ClassVar[Mapping[str, str]] = {}
+
+    #: Cameras the policy needs, checked before any hardware is touched.
+    MIN_CAMERAS: ClassVar[int] = 0
+
     def __init__(
         self,
         override_cfg: Optional[Mapping[str, Any]] = None,
@@ -453,9 +590,17 @@ class RegisteredTaskEnv(TaskEnv):
     ) -> None:
         cls = type(self)
         settings = {**cls.defaults(), **(override_cfg or {})}
+        for key, instead in cls._merged("RETIRED").items():
+            if key in settings:
+                settings.pop(key)
+                warnings.warn(
+                    f"{cls.__name__}: {key!r} is retired and ignored. {instead}",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
         config, control_config, task_config = split_overrides(
             settings,
-            (TaskEnvConfig, cls.CONTROL.CONFIG, cls.TASK.CONFIG),
+            (RegisteredTaskEnvConfig, cls.CONTROL.CONFIG, cls.TASK.CONFIG),
             owner=cls.__name__,
         )
         self.robot_info = robot_info
@@ -463,30 +608,60 @@ class RegisteredTaskEnv(TaskEnv):
         self.hardware = get_hardware_config(
             cls.robot_config(), robot_info, is_dummy=config.is_dummy
         )
-        cameras = tuple(cls.camera_infos(self.hardware))
-        robot = None
+        # Everything a config can get wrong is checked before the robot is
+        # composed, so a bad run never opens hardware.
+        task = cls.TASK(task_config)
+        control = cls.make_control(self.hardware, control_config)
+        cameras = tuple(cls.camera_infos(self.hardware, config))
+        if len(cameras) < cls.MIN_CAMERAS:
+            raise ValueError(
+                f"{cls.__name__} requires robot_info with at least "
+                f"{cls.MIN_CAMERAS} camera serial(s), including in dummy mode."
+            )
+        observation = cls.make_observation(self.hardware, cameras)
+
+        robot, reward_model = None, None
+        node_rank = worker_info.cluster_node_rank if worker_info else 0
+        worker_rank = worker_info.rank if worker_info else 0
         if not config.is_dummy:
             robot = cls.ROBOT.from_config(
                 self.hardware,
                 cameras={camera.name: camera for camera in cameras},
                 env_idx=env_idx,
-                node_rank=worker_info.cluster_node_rank if worker_info else 0,
-                worker_rank=worker_info.rank if worker_info else 0,
+                node_rank=node_rank,
+                worker_rank=worker_rank,
             )
+            if config.use_reward_model:
+                reward_model = RewardModel.launch(
+                    config.reward_worker_cfg,
+                    image_key=config.reward_image_key,
+                    node_rank=node_rank
+                    if config.reward_worker_node_rank is None
+                    else config.reward_worker_node_rank,
+                    node_group=config.reward_worker_node_group,
+                    hardware_rank=config.reward_worker_hardware_rank,
+                    env_idx=env_idx,
+                    worker_rank=worker_rank,
+                )
         super().__init__(
             robot,
-            cls.TASK(task_config),
-            cls.make_control(self.hardware, control_config),
-            observation=cls.make_observation(self.hardware, cameras),
+            task,
+            control,
+            observation=observation,
             config=config,
+            reward_model=reward_model,
         )
 
     @classmethod
     def defaults(cls) -> dict[str, Any]:
         """Defaults merged from the robot preset down to this task id."""
+        return cls._merged("DEFAULTS")
+
+    @classmethod
+    def _merged(cls, name: str) -> dict[str, Any]:
         merged: dict[str, Any] = {}
         for klass in reversed(cls.__mro__):
-            merged.update(vars(klass).get("DEFAULTS", {}))
+            merged.update(vars(klass).get(name, {}))
         return merged
 
     @classmethod
@@ -495,15 +670,29 @@ class RegisteredTaskEnv(TaskEnv):
         return RobotDiscovery.registry[cls.ROBOT.ROBOT_TYPE].config_cls
 
     @classmethod
-    def camera_infos(cls, hardware: RobotConfig) -> Iterable[CameraInfo]:
-        """Name the hardware's cameras ``wrist_1``, ``wrist_2``, and so on."""
+    def camera_infos(
+        cls, hardware: RobotConfig, config: RegisteredTaskEnvConfig
+    ) -> Iterable[CameraInfo]:
+        """Declare the hardware's cameras as the run names and crops them.
+
+        A camera is ``wrist_1``, ``wrist_2``, and so on in the hardware's
+        order unless ``camera_names`` names its serial.
+        """
         camera_type = getattr(hardware, "camera_type", None) or "realsense"
         serials = getattr(hardware, "camera_serials", None) or []
-        for index, serial in enumerate(serials):
+        names = config.camera_names or {}
+        regions = config.camera_crop_regions or {}
+        for index, serial in enumerate(map(str, serials), start=1):
+            name = names.get(serial, f"wrist_{index}")
+            region = regions.get(serial)
             yield CameraInfo(
-                name=f"wrist_{index + 1}",
+                name=name,
                 serial_number=serial,
                 camera_type=camera_type,
+                crop_region=None
+                if region is None
+                else crop_region(region, camera=name, serial=serial),
+                enable_depth=config.enable_camera_depth,
             )
 
     @classmethod

@@ -20,13 +20,44 @@ mounted for. Depth goes through the same crop so each pixel still lines up
 with the colour one beside it.
 """
 
-from typing import Optional
+from typing import Any, Optional
 
 import cv2
 import numpy as np
 
 #: A fractional crop, ``(top, left, bottom, right)``, each in ``0..1``.
 CropRegion = tuple[float, float, float, float]
+
+
+def crop_region(value: Any, *, camera: str, serial: str) -> CropRegion:
+    """Check a crop region from a config and return it as floats.
+
+    Args:
+        value: ``[top, left, bottom, right]``, each a fraction in ``0..1``.
+        camera: The camera's name, for the error message.
+        serial: The camera's serial, for the error message.
+
+    Raises:
+        ValueError: If the region is not four fractions enclosing an area.
+    """
+    where = f"crop_region for camera '{camera}' ({serial})"
+    if not isinstance(value, (list, tuple)) or len(value) != 4:
+        raise ValueError(f"Invalid {where}: expected [top, left, bottom, right].")
+    try:
+        top, left, bottom, right = (float(fraction) for fraction in value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"Invalid {where}: expected numeric values, got {value!r}."
+        ) from exc
+    if not all(0.0 <= fraction <= 1.0 for fraction in (top, left, bottom, right)):
+        raise ValueError(
+            f"Invalid {where}: values must be within [0, 1], got {value!r}."
+        )
+    if bottom <= top or right <= left:
+        raise ValueError(
+            f"Invalid {where}: expected bottom > top and right > left, got {value!r}."
+        )
+    return (top, left, bottom, right)
 
 
 def crop(frame: np.ndarray, region: Optional[CropRegion] = None) -> np.ndarray:

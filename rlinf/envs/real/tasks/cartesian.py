@@ -1,0 +1,340 @@
+# Copyright 2026 The RLinf Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Tasks scored by where the tool is: reach a fixture pose and stay there.
+
+:class:`CartesianTarget` is the whole task on its own, and the base of every
+task set up around a fixture -- a hole, a bottle, a bin. It owns the pose the
+reward measures against, the workspace around it, and the routine that brings
+the arm back to rest between episodes. A task built on it adds only what it
+does before that routine: lift a peg clear of its hole, let go of a cap.
+
+Poses in configs are ``[x, y, z, rx, ry, rz]`` with xyz Euler angles, in the
+frame the arm reports ``tcp_pose`` in. Poses sent to the arm are ``xyz`` plus
+an ``xyzw`` quaternion.
+"""
+
+import time
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from itertools import cycle
+from typing import TYPE_CHECKING, Optional
+
+import numpy as np
+from scipy.spatial.transform import Rotation as R
+
+from rlinf.robotics import Arm
+from rlinf.utils.logging import get_logger
+
+from .base import Evaluation, ResetContext, Task, TaskConfig
+from .requirements import Needs, Parts, Reading
+from .workspace import Workspace
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from rlinf.envs.real.control import Applied
+
+
+def _pose_array(value: Optional[Sequence[float]]) -> Optional[np.ndarray]:
+    return None if value is None else np.asarray(value, dtype=np.float64)
+
+
+@dataclass
+class CartesianTargetConfig(TaskConfig):
+    """Settings for :class:`CartesianTarget`."""
+
+    target_ee_pose: Sequence[float] = (0.5, 0.0, 0.1, -3.14, 0.0, 0.0)
+    """Fixture pose: what the reward measures against, and the centre of the
+    orientation window."""
+
+    reset_ee_pose: Optional[Sequence[float]] = (0.0,) * 6
+    """Pose the arm rests at between episodes."""
+
+    reward_threshold: Sequence[float] = (0.0,) * 6
+    """Per-axis success tolerance. Only the position entries are scored."""
+
+    ee_pose_limit_min: Optional[Sequence[float]] = (0.0,) * 6
+    """Lowest pose a policy may command."""
+
+    ee_pose_limit_max: Optional[Sequence[float]] = (0.0,) * 6
+    """Highest pose a policy may command."""
+
+    enable_random_reset: bool = False
+    """Perturb the rest pose at the start of each episode."""
+
+    random_xy_range: float = 0.0
+    """Largest rest-position perturbation along x and y, in metres."""
+
+    random_rz_range: float = 0.0
+    """Largest rest-yaw perturbation around the target's, in radians."""
+
+    joint_reset_qpos: Optional[Sequence[float]] = None
+    """Joint configuration of the periodic joint reset. ``None`` never resets
+    the joints."""
+
+    joint_reset_cycle: int = 20000
+    """Episodes between two joint resets."""
+
+    enable_gripper_penalty: bool = True
+    """Charge a gripper change, so a policy does not chatter the gripper."""
+
+    def __post_init__(self) -> None:
+        self.target_ee_pose = _pose_array(self.target_ee_pose)
+        self.reward_threshold = _pose_array(self.reward_threshold)
+        for name in ("reset_ee_pose", "ee_pose_limit_min", "ee_pose_limit_max"):
+            if getattr(self, name) is None:
+                raise ValueError(f"{type(self).__name__} needs {name!r}.")
+            setattr(self, name, _pose_array(getattr(self, name)))
+
+
+@dataclass
+class FixtureConfig(CartesianTargetConfig):
+    """A target with its workspace and rest pose laid out around it.
+
+    Left unset, the workspace reaches ``clip_*_range`` from the target on each
+    axis and 0.01 rad in roll and pitch, and the arm rests
+    ``clip_z_range_high`` above the target. Setting ``ee_pose_limit_*`` or
+    ``reset_ee_pose`` outright replaces the derived value.
+    """
+
+    target_ee_pose: Sequence[float] = (0.0,) * 6
+    reset_ee_pose: Optional[Sequence[float]] = None
+    reward_threshold: Sequence[float] = (0.01, 0.01, 0.01, 0.2, 0.2, 0.2)
+    ee_pose_limit_min: Optional[Sequence[float]] = None
+    ee_pose_limit_max: Optional[Sequence[float]] = None
+    enable_random_reset: bool = True
+
+    clip_x_range: float = 0.05
+    """Workspace half-width along x, in metres."""
+
+    clip_y_range: float = 0.05
+    """Workspace half-width along y, in metres."""
+
+    clip_z_range_low: float = 0.0
+    """How far below the target the workspace reaches, in metres."""
+
+    clip_z_range_high: float = 0.1
+    """How far above the target the workspace reaches, in metres."""
+
+    clip_rz_range: float = np.pi / 6
+    """Largest yaw away from the target's, in radians."""
+
+    def __post_init__(self) -> None:
+        target = np.asarray(self.target_ee_pose, dtype=np.float64)
+        if self.ee_pose_limit_min is None:
+            self.ee_pose_limit_min = target - np.array(
+                [
+                    self.clip_x_range,
+                    self.clip_y_range,
+                    self.clip_z_range_low,
+                    0.01,
+                    0.01,
+                    self.clip_rz_range,
+                ]
+            )
+        if self.ee_pose_limit_max is None:
+            self.ee_pose_limit_max = target + np.array(
+                [
+                    self.clip_x_range,
+                    self.clip_y_range,
+                    self.clip_z_range_high,
+                    0.01,
+                    0.01,
+                    self.clip_rz_range,
+                ]
+            )
+        if self.reset_ee_pose is None:
+            self.reset_ee_pose = target + np.array(
+                [0.0, 0.0, self.clip_z_range_high, 0.0, 0.0, 0.0]
+            )
+        super().__post_init__()
+
+
+def reach_target(
+    tcp_pose: np.ndarray,
+    target: np.ndarray,
+    threshold: np.ndarray,
+    *,
+    dense: bool,
+    gain: float = 500.0,
+) -> Evaluation:
+    """Score how close the tool's position is to a target's.
+
+    The tool is in the zone when every position axis is within its threshold,
+    which scores 1. Outside it, the sparse reward is 0 and the dense one
+    ``exp(-gain * |d|^2)`` for the position error ``d``.
+    """
+    delta = np.abs(np.asarray(tcp_pose[:3], dtype=np.float64) - target[:3])
+    if np.all(delta <= threshold[:3]):
+        return Evaluation(reward=1.0, in_zone=True)
+    reward = float(np.exp(-gain * np.sum(np.square(delta)))) if dense else 0.0
+    return Evaluation(reward=reward, in_zone=False)
+
+
+def tool_pose(arm: Arm) -> np.ndarray:
+    """The arm's tool pose as it reports it now."""
+    return np.array(arm.get_observation()["tcp_pose"], dtype=np.float64)
+
+
+def hold(parts: Parts, role: str = "arm") -> np.ndarray:
+    """Command the tool to stay where it is, and return that pose.
+
+    A reset starts from here so the arm does not resume toward the last
+    target a policy sent.
+    """
+    arm = parts.arm(role)
+    pose = tool_pose(arm)
+    arm.clear_errors()
+    arm.send_action({"tcp_pose": pose.astype(np.float32)})
+    return pose
+
+
+def lift(
+    parts: Parts,
+    context: ResetContext,
+    height: float,
+    *,
+    duration: float = 1.0,
+    role: str = "arm",
+) -> np.ndarray:
+    """Raise the tool ``height`` metres from where it is, and return the goal."""
+    arm = parts.arm(role)
+    pose = tool_pose(arm)
+    pose[2] += height
+    arm.move_to(pose, duration=duration, rate_hz=context.rate_hz, clear_errors=True)
+    return pose
+
+
+def release_and_back_off(parts: Parts, context: ResetContext) -> None:
+    """Open the end effector and back away from what it held.
+
+    The object gets 5 s to settle before the tool rises 3 cm, and 2 s more
+    before it rises another 2 cm.
+    """
+    context.control.release(parts)
+    hold(parts)
+    arm = parts.arm()
+    pose = tool_pose(arm)
+    pose[2] += 0.03
+    time.sleep(5)
+    arm.move_to(pose, duration=1.0, rate_hz=context.rate_hz, clear_errors=True)
+    time.sleep(2)
+    pose[2] += 0.02
+    arm.move_to(pose, duration=1.0, rate_hz=context.rate_hz, clear_errors=True)
+
+
+class CartesianTarget(Task):
+    """Bring the tool to a fixture pose and hold it there.
+
+    The reward is 1 while the tool's position is within
+    :attr:`CartesianTargetConfig.reward_threshold` of the target on every
+    axis. Orientation is not scored; the workspace keeps it near the target's.
+    """
+
+    CONFIG = CartesianTargetConfig
+
+    config: CartesianTargetConfig
+
+    def __init__(self, config: Optional[CartesianTargetConfig] = None) -> None:
+        super().__init__(config)
+        self._logger = get_logger()
+        self._resets = cycle(range(self.config.joint_reset_cycle))
+        next(self._resets)
+
+    def requirements(self) -> Mapping[str, Needs]:
+        """An arm that reports its tool pose."""
+        return {"arm": Needs(observes=frozenset({"tcp_pose"}))}
+
+    @property
+    def workspace(self) -> Workspace:
+        """The configured pose limits, with the window centred on the target."""
+        return Workspace(
+            low=self.config.ee_pose_limit_min,
+            high=self.config.ee_pose_limit_max,
+            target_euler=self.config.target_ee_pose[3:],
+        )
+
+    def rest_pose(self) -> np.ndarray:
+        """The configured rest pose, ``xyz`` plus an ``xyzw`` quaternion."""
+        pose = self.config.reset_ee_pose
+        return np.concatenate([pose[:3], R.from_euler("xyz", pose[3:]).as_quat()])
+
+    def home(self, parts: Parts, context: ResetContext) -> None:
+        """Move to the rest pose and let the arm settle."""
+        parts.arm().move_to(
+            self.rest_pose(),
+            duration=1.5,
+            rate_hz=context.rate_hz,
+            clear_errors=True,
+        )
+        time.sleep(1.0)
+
+    def reset(self, parts: Parts, context: ResetContext) -> None:
+        """Return to rest."""
+        self.go_to_rest(parts, context)
+
+    def go_to_rest(
+        self,
+        parts: Parts,
+        context: ResetContext,
+        pose: Optional[np.ndarray] = None,
+    ) -> None:
+        """Bring the arm to rest for the next episode.
+
+        Every ``joint_reset_cycle`` episodes, or when the reset's options ask
+        for ``joint_reset``, the joints first return to ``joint_reset_qpos``.
+        The tool then moves to the rest pose, perturbed when randomising, and
+        tries again up to twice more until it is within 2% of it. A hand goes
+        back to its resting pose, and any fault the motion latched is cleared.
+
+        Args:
+            parts: The bound parts.
+            context: The env's generator, control, and rate.
+            pose: Rest pose to use instead of :meth:`rest_pose`.
+        """
+        arm = parts.arm()
+        joint_reset = bool(context.options.get("joint_reset", False))
+        if next(self._resets) == 0:
+            self._logger.info(
+                "Number of resets reached %d, resetting joints to initial position.",
+                self.config.joint_reset_cycle,
+            )
+            joint_reset = True
+        if joint_reset and self.config.joint_reset_qpos is not None:
+            arm.reset_joint(list(self.config.joint_reset_qpos))
+            time.sleep(0.5)
+
+        pose = self.rest_pose() if pose is None else np.array(pose, dtype=np.float64)
+        if self.config.enable_random_reset:
+            xy, rz = self.config.random_xy_range, self.config.random_rz_range
+            pose[:2] += context.rng.uniform(-xy, xy, 2)
+            euler = self.config.target_ee_pose[3:].copy()
+            euler[-1] += context.rng.uniform(-rz, rz)
+            pose[3:] = R.from_euler("xyz", euler).as_quat()
+
+        for _ in range(3):
+            if np.allclose(tool_pose(arm)[:3], pose[:3], 0.02):
+                break
+            arm.move_to(pose, duration=1.5, rate_hz=context.rate_hz, clear_errors=True)
+
+        context.control.rest_end_effector(parts)
+        arm.clear_errors()
+
+    def evaluate(self, reading: Reading, applied: "Applied") -> Evaluation:
+        """Score the tool's distance to the target."""
+        return reach_target(
+            reading.arm()["tcp_pose"],
+            self.config.target_ee_pose,
+            self.config.reward_threshold,
+            dense=self.config.use_dense_reward,
+        )

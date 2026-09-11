@@ -15,13 +15,18 @@
 """Controls: how a policy's action reaches a robot's parts."""
 
 from .base import Applied, Control
-from .end_effectors import ContinuousGripper
+from .cartesian import CartesianControlConfig, CartesianDeltaControl
+from .end_effectors import BinaryGripper, ContinuousGripper, HandCommand
 from .joint import JointControlConfig, JointPositionControl
 
 __all__ = [
     "Applied",
+    "BinaryGripper",
+    "CartesianControlConfig",
+    "CartesianDeltaControl",
     "ContinuousGripper",
     "Control",
+    "HandCommand",
     "JointControlConfig",
     "JointPositionControl",
 ]

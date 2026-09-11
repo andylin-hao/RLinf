@@ -66,6 +66,7 @@ from rlinf.envs.sim.robotwin.seed_utils import partition_success_seeds
 from rlinf.robotics import (
     Arm,
     DualFrankaConfig,
+    EndEffector,
     FrankaConfig,
     PiperConfig,
     Robot,
@@ -416,34 +417,6 @@ def test_a_hardware_free_env_repeats_with_a_seed(module_name, class_name, overri
     assert not np.array_equal(observe(7), observe(8)), "a different seed must differ"
 
 
-def test_a_franka_observation_comes_from_one_snapshot():
-    """Every field a policy sees must describe the same instant.
-
-    _read_robot takes one snapshot per step and the observation is built from
-    it. Reading the gripper live instead would mix two moments in one
-    recorded transition, by up to a control period.
-    """
-    import ast
-    import inspect
-    import textwrap
-
-    source = textwrap.dedent(inspect.getsource(FrankaEnv._get_observation))
-    tree = ast.parse(source)
-
-    reads = {
-        ast.unparse(node.value)
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Attribute)
-        and ast.unparse(node).startswith(("self._franka_state", "self._end_effector"))
-    }
-    live = sorted(r for r in reads if r.startswith("self._end_effector"))
-
-    assert live == [], (
-        f"the observation reads hardware directly: {live}. "
-        "Take the value from self._franka_state, which _read_robot fills once."
-    )
-
-
 def test_franka_step_moves_the_arm_by_the_scaled_clipped_delta(monkeypatch):
     """One action is one Cartesian target: scaled, clipped, sent once.
 
@@ -496,6 +469,359 @@ def test_franka_step_moves_the_arm_by_the_scaled_clipped_delta(monkeypatch):
             assert yaw == pytest.approx(0.1, abs=1e-6)
         finally:
             env.close()
+
+
+class PoseArm(Arm):
+    """An arm whose tool goes wherever it is sent, logging what it is asked."""
+
+    def __init__(self, log: list, euler=(0.0, 0.0, 0.0)) -> None:
+        from scipy.spatial.transform import Rotation as R
+
+        self.log = log
+        self.pose = np.concatenate(
+            [[0.5, 0.0, 0.1], R.from_euler("xyz", euler).as_quat()]
+        )
+
+    @property
+    def observation_features(self) -> dict[str, Any]:
+        return {"tcp_pose": {}}
+
+    @property
+    def action_features(self) -> dict[str, Any]:
+        return {"tcp_pose": {}}
+
+    def _open(self) -> Any:
+        return "device"
+
+    def get_observation(self) -> dict[str, Any]:
+        return {"tcp_pose": self.pose.copy()}
+
+    def send_action(self, action: dict[str, Any]) -> dict[str, Any]:
+        self.pose = np.asarray(action["tcp_pose"], dtype=float)
+        self.log.append(("arm", self.pose.copy()))
+        return action
+
+    def clear_errors(self) -> None:
+        self.log.append(("clear",))
+
+    def reset_joint(self, positions) -> None:
+        self.log.append(("joints", [float(value) for value in positions]))
+
+    def reconfigure_compliance_params(self, params) -> None:
+        self.log.append(("compliance", dict(params)))
+
+
+class LatchGripper(EndEffector):
+    """A gripper that is open or closed, logging each change."""
+
+    is_gripper = True
+    action_dim = 1
+    state_dim = 1
+    control_mode = "binary"
+
+    def __init__(self, log: list) -> None:
+        self.log = log
+        self.latched_open = True
+
+    def _open(self) -> Any:
+        return "device"
+
+    def get_state(self) -> np.ndarray:
+        return np.array([1.0 if self.latched_open else 0.0])
+
+    def command(self, action) -> bool:
+        return True
+
+    @property
+    def is_open(self) -> bool:
+        return self.latched_open
+
+    def open(self, speed: float = 0.3) -> None:
+        self.log.append(("open",))
+        self.latched_open = True
+
+    def close(self, speed: float = 0.3, force: float = 130.0) -> None:
+        self.log.append(("close",))
+        self.latched_open = False
+
+
+def _fixture_on(log: list, task_cls=None, *, euler=(0.0, 0.0, 0.0), **settings):
+    """Compose a fixture task, Cartesian control, and a pose arm into one env."""
+    from rlinf.envs.real.control import (
+        BinaryGripper,
+        CartesianControlConfig,
+        CartesianDeltaControl,
+    )
+    from rlinf.envs.real.task_env import (
+        ObservationSpec,
+        StateField,
+        TaskEnv,
+        TaskEnvConfig,
+    )
+    from rlinf.envs.real.tasks import PegInsertion
+
+    task_cls = task_cls or PegInsertion
+    config = {
+        "target_ee_pose": [0.5, 0.0, 0.1, 0.0, 0.0, 0.0],
+        "enable_random_reset": False,
+        "joint_reset_qpos": [0.0] * 7,
+        **settings,
+    }
+    reward_model = config.pop("reward_model", None)
+    return TaskEnv(
+        Robot(arm=PoseArm(log, euler), end_effector=LatchGripper(log)),
+        task_cls(task_cls.CONFIG(**config)),
+        CartesianDeltaControl(
+            CartesianControlConfig(action_scale=(0.02, 0.1, 1.0)),
+            end_effector=BinaryGripper(settle_s=0.0),
+        ),
+        observation=ObservationSpec(
+            (
+                StateField("tcp_pose", "tcp_pose", (7,)),
+                StateField("gripper_position", "state", (1,), end_effector=True),
+            )
+        ),
+        config=TaskEnvConfig(step_frequency=1000.0, enable_camera_player=False),
+        reward_model=reward_model,
+    )
+
+
+def test_a_cartesian_step_grips_before_it_moves_and_composes_the_rotation(
+    monkeypatch,
+):
+    """The end effector acts first; the rotation is composed, not added.
+
+    Adding Euler deltas and composing rotations agree about a single axis, so
+    the arm starts yawed and the action rolls it.
+    """
+    from scipy.spatial.transform import Rotation as R
+
+    from rlinf.envs.real.tasks import CartesianTarget
+
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+    log: list = []
+    env = _fixture_on(
+        log,
+        CartesianTarget,
+        euler=(0.0, 0.0, 0.5),
+        reset_ee_pose=[0.5, 0.0, 0.1, 0.0, 0.0, 0.5],
+        ee_pose_limit_min=[0.49, -1.0, -1.0, -1.0, -1.0, -1.0],
+        ee_pose_limit_max=[0.51, 1.0, 1.0, 1.0, 1.0, 1.0],
+    )
+    try:
+        env.reset(seed=0)
+        log.clear()
+        _, reward, _, _, _ = env.step(np.array([1, 0, 0, 1, 0, 0, -1], np.float32))
+
+        assert [entry[0] for entry in log] == ["close", "clear", "arm"]
+        target = log[-1][1]
+        # x moves by the 0.02 m scale, then stops at the box's 0.51 m edge.
+        assert target[0] == pytest.approx(0.51)
+        composed = R.from_euler("xyz", [0.1, 0.0, 0.0]) * R.from_euler(
+            "xyz", [0.0, 0.0, 0.5]
+        )
+        assert (R.from_quat(target[3:]) * composed.inv()).magnitude() < 1e-5
+        # The grasp changed the gripper, which the task charges for.
+        assert reward == pytest.approx(-0.1)
+
+        log.clear()
+        _, reward, _, _, _ = env.step(np.array([0, 0, 0, 0, 0, 0, -1], np.float32))
+        assert "close" not in [entry[0] for entry in log]
+        assert reward == 0.0
+    finally:
+        env.close()
+
+
+def test_peg_insertion_lifts_the_peg_clear_before_returning_to_rest(monkeypatch):
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+    log: list = []
+    env = _fixture_on(log, joint_reset_qpos=[0.1] * 7)
+    try:
+        start = env.robot.child("arm").pose.copy()
+        log.clear()
+        env.reset(seed=0, options={"joint_reset": True})
+
+        kinds = [entry[0] for entry in log]
+        assert kinds[:2] == ["compliance", "close"]
+        joints = kinds.index("joints")
+        assert log[joints] == ("joints", [0.1] * 7)
+        before = [entry[1] for entry in log[:joints] if entry[0] == "arm"]
+        after = [entry[1] for entry in log[joints:] if entry[0] == "arm"]
+        # Held where it was, then lifted 10 cm, before the joints reset.
+        assert before[0] == pytest.approx(start)
+        assert before[-1][:3] == pytest.approx(start[:3] + [0.0, 0.0, 0.10])
+        # Then to rest, 10 cm above the target, and any fault cleared.
+        assert after[-1][:3] == pytest.approx([0.5, 0.0, 0.2])
+        assert kinds[-1] == "clear"
+    finally:
+        env.close()
+
+
+def test_bin_relocation_stops_at_the_wall_and_rests_over_the_starting_bin(
+    monkeypatch,
+):
+    from rlinf.envs.real.tasks import BinRelocation
+
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+    log: list = []
+    env = _fixture_on(log, BinRelocation)
+    try:
+        # A motion into the wall between the bins stops where it enters it.
+        wall = env.task.workspace
+        start = np.array([0.5, -0.1, 0.12, 0.0, 0.0, 0.0, 1.0])
+        into = np.array([0.5, 0.0, 0.12, 0.0, 0.0, 0.0, 1.0])
+        assert wall.clip(into, start)[:3] == pytest.approx([0.5, -0.03, 0.12])
+
+        for task_id, side in ((0, 0.1), (1, -0.1)):
+            env.task.set_task_id(task_id)
+            env.reset(seed=0)
+            assert env.robot.child("arm").pose[1] == pytest.approx(side)
+    finally:
+        env.close()
+
+
+@pytest.mark.parametrize(
+    "task_name",
+    ["CartesianTarget", "PegInsertion", "BottleCap", "BinRelocation", "PickPlace"],
+)
+def test_every_fixture_task_resets_and_steps_on_a_pose_arm(monkeypatch, task_name):
+    from rlinf.envs.real import tasks
+
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+    settings = {}
+    if task_name == "CartesianTarget":
+        settings = {
+            "reset_ee_pose": [0.5, 0.0, 0.2, 0.0, 0.0, 0.0],
+            "ee_pose_limit_min": [0.4, -0.1, 0.0, -0.1, -0.1, -0.1],
+            "ee_pose_limit_max": [0.6, 0.1, 0.3, 0.1, 0.1, 0.1],
+        }
+    env = _fixture_on([], getattr(tasks, task_name), **settings)
+    try:
+        observation, _ = env.reset(seed=0)
+        assert observation in env.observation_space
+        observation, reward, *_ = env.step(env.action_space.sample())
+        assert observation in env.observation_space
+        assert isinstance(reward, float)
+    finally:
+        env.close()
+
+
+def test_a_hand_is_rate_limited_from_its_resting_pose():
+    from rlinf.envs.real.control import HandCommand
+
+    sent = []
+    hand = SimpleNamespace(
+        command=lambda target: sent.append(np.array(target)),
+        reset=lambda state: sent.append(("rest", list(state))),
+    )
+    command = HandCommand(2, scale=2.0, max_delta=0.5, reset_state=[0.1, 0.1])
+
+    command.rest(hand)
+    command.command(hand, np.array([1.0, 0.0]))
+
+    assert sent[0] == ("rest", [0.1, 0.1])
+    # 2.0 wanted, from the scaled rest of 0.2: at most 0.5 closer.
+    assert sent[1] == pytest.approx([0.7, 0.0])
+
+
+def test_a_reward_model_scores_the_step_in_place_of_the_task(monkeypatch):
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+    scored = []
+    log: list = []
+    env = _fixture_on(
+        log,
+        target_ee_pose=[9.0, 9.0, 9.0, 0.0, 0.0, 0.0],
+        reward_model=lambda frames: scored.append(frames) or 1.0,
+    )
+    try:
+        env.reset(seed=0)
+        _, reward, terminated, _, _ = env.step(np.zeros(7, np.float32))
+        # The task would score this far-off pose 0; the model says 1.
+        assert (reward, terminated) == (1.0, True)
+        assert scored == [{}]
+    finally:
+        env.close()
+
+
+def test_teleop_context_leaves_out_what_an_env_does_not_have(monkeypatch):
+    from rlinf.envs.real.wrappers.teleop.composed import ComposedTeleop
+
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+    cartesian = _fixture_on([])
+    joint = _reach_on(HoldingArm())
+    try:
+        assert set(ComposedTeleop.context_from(cartesian)) == {
+            "tcp_pose",
+            "action_scale",
+            "gripper_open",
+        }
+        assert set(ComposedTeleop.context_from(joint)) == {"joint_positions"}
+    finally:
+        cartesian.close()
+        joint.close()
+
+
+def test_a_run_override_wins_over_a_task_default():
+    from rlinf.envs.real.franka import PegInsertionEnv
+
+    env = _dummy_franka(
+        PegInsertionEnv,
+        action_scale=[0.5, 0.2, 1.0],
+        compliance_param={"translational_stiffness": 900},
+        ee_pose_limit_min=[-1.0] * 6,
+        reset_ee_pose=[0.3, 0.0, 0.3, 3.14, 0.0, 0.0],
+    )
+    try:
+        assert env.control.config.action_scale == pytest.approx([0.5, 0.2, 1.0])
+        assert env.control.config.compliance_param == {"translational_stiffness": 900}
+        assert env.task.config.ee_pose_limit_min == pytest.approx([-1.0] * 6)
+        assert env.task.config.reset_ee_pose[0] == pytest.approx(0.3)
+        # What the run left alone is still derived around the target.
+        assert env.task.config.ee_pose_limit_max[0] == pytest.approx(0.05)
+    finally:
+        env.close()
+
+
+def test_a_retired_setting_is_warned_about_and_dropped():
+    from rlinf.envs.real.franka import PegInsertionEnv
+
+    with pytest.warns(DeprecationWarning, match="'hand_target_state' is retired"):
+        env = _dummy_franka(PegInsertionEnv, hand_target_state=[0.0] * 6)
+    env.close()
+    with pytest.raises(TypeError, match="unexpected keyword arguments"):
+        _dummy_franka(PegInsertionEnv, hand_targt_state=[0.0] * 6)
+
+
+def test_a_dummy_reset_starts_a_new_episode():
+    env = _dummy_franka()
+    try:
+        env.reset(seed=0)
+        env.step(env.action_space.sample())
+        env.step(env.action_space.sample())
+        env.reset(seed=1)
+        assert env.num_steps == 0
+    finally:
+        env.close()
+
+
+def test_a_run_names_and_crops_cameras_by_serial():
+    info = _robot_info(FrankaConfig(node_rank=0, camera_serials=["123", "456"]))
+    env = _dummy_franka(
+        robot_info=info,
+        # YAML reads an all-digit serial as a number.
+        camera_names={123: "front"},
+        camera_crop_regions={456: [0.0, 0.25, 1.0, 0.75]},
+    )
+    try:
+        assert sorted(env.observation_space["frames"].spaces) == ["front", "wrist_2"]
+        assert [camera.crop_region for camera in env.observation.cameras] == [
+            None,
+            (0.0, 0.25, 1.0, 0.75),
+        ]
+    finally:
+        env.close()
+    with pytest.raises(ValueError, match="expected bottom > top"):
+        _dummy_franka(robot_info=info, camera_crop_regions={"123": [0.5, 0, 0.5, 1]})
 
 
 def test_franka_depth_reaches_the_observation_only_when_asked_for():
@@ -773,53 +1099,6 @@ def test_turtle2_refuses_a_camera_that_is_not_delivering():
         _turtle2_camera_check([0, 1, 2], [True, False, True])
 
 
-def test_franka_builds_cameras_after_applying_hardware_info(monkeypatch):
-    from rlinf.envs.real.franka.base import FrankaEnvConfig
-    from rlinf.robotics import FrankaConfig, RobotInfo
-    from rlinf.robotics.robots.franka import FrankaRobot
-
-    captured = {}
-
-    class BuiltRobot:
-        def connect(self):
-            pass
-
-        def child(self, name, part_type=None):
-            # The env reaches for the arm and, beside it, the end effector,
-            # naming the class it expects each to be.
-            assert name in ("arm", "end_effector")
-            assert part_type is not None, "the env should say what it expects"
-            # is_hand is part of the end-effector contract: the env asks the
-            # part which kind it is rather than trusting the config alone.
-            return SimpleNamespace(owner=object(), is_hand=False, is_gripper=True)
-
-    def build(**kwargs):
-        captured.update(kwargs)
-        return BuiltRobot()
-
-    monkeypatch.setattr(FrankaRobot, "build", build)
-    env = FrankaEnv.__new__(FrankaEnv)
-    env.config = FrankaEnvConfig()
-    env.robot_info = RobotInfo(
-        type="Robot",
-        model="Franka",
-        config=FrankaConfig(
-            node_rank=0,
-            robot_ip="10.0.0.1",
-            camera_serials=["hardware-camera"],
-        ),
-    )
-    env.env_idx = 0
-    env.node_rank = 0
-    env.env_worker_rank = 3
-    env.hardware = env.robot_info.config
-
-    env._setup_hardware()
-
-    assert [info.serial_number for info in env._camera_infos] == ["hardware-camera"]
-    assert list(captured["cameras"]) == ["wrist_1"]
-
-
 def test_gim_arm_reopens_the_existing_camera_after_a_stall(monkeypatch):
     from rlinf.robotics.parts.cameras import CameraInfo
 
@@ -1020,20 +1299,16 @@ def test_dual_franka_does_not_wait_for_gripper_motion():
             executor.shutdown(wait=True)
 
 
-def test_franka_reward_model_waits_for_the_worker_result():
+def test_a_reward_model_waits_for_the_worker_result():
+    from rlinf.envs.real.utils.reward_model import RewardModel
+
     class Work:
         def wait(self):
             return [np.array([0.75], dtype=np.float32)]
 
-    env = FrankaEnv.__new__(FrankaEnv)
-    env.config = SimpleNamespace(reward_image_key=None)
-    env._reward_worker = SimpleNamespace(compute_reward=lambda _batch: Work())
+    model = RewardModel(SimpleNamespace(compute_reward=lambda _batch: Work()))
 
-    reward = env._compute_reward_model(
-        {"frames": {"wrist_1": np.zeros((4, 4, 3), dtype=np.uint8)}}
-    )
-
-    assert reward == pytest.approx(0.75)
+    assert model({"wrist_1": np.zeros((4, 4, 3), dtype=np.uint8)}) == 0.75
 
 
 def test_direct_gello_stream_keeps_both_arm_commands_concurrent():
@@ -1513,30 +1788,29 @@ def test_pose_math_is_not_filed_under_a_robot():
     assert not (_REAL / "franka" / "utils.py").exists()
 
 
-def test_task_configs_state_only_their_compliance_deltas():
+def test_task_registrations_state_only_their_compliance_deltas():
+    from rlinf.envs.real.franka import (
+        BottleEnv,
+        DexpnpEnv,
+        FrankaBinRelocationEnv,
+        PegInsertionEnv,
+    )
     from rlinf.envs.real.franka.base import COMPLIANCE_DEFAULTS
-    from rlinf.envs.real.franka.bin_relocation import BinEnvConfig
-    from rlinf.envs.real.franka.bottle import BottleConfig
-    from rlinf.envs.real.franka.dex_pnp import DexpnpConfig
-    from rlinf.envs.real.franka.peg_insertion import PegInsertionConfig
 
-    deltas = {
-        cls.__name__: {
-            key
-            for key, value in cls().compliance_param.items()
-            if COMPLIANCE_DEFAULTS[key] != value
-        }
-        for cls in (PegInsertionConfig, BottleConfig, BinEnvConfig, DexpnpConfig)
-    }
+    registrations = (PegInsertionEnv, BottleEnv, FrankaBinRelocationEnv, DexpnpEnv)
+    gains = {cls.__name__: cls.defaults()["compliance_param"] for cls in registrations}
 
     # Every task receives the complete gain set after defaults are applied.
-    for cls in (PegInsertionConfig, BottleConfig, BinEnvConfig, DexpnpConfig):
-        assert set(cls().compliance_param) == set(COMPLIANCE_DEFAULTS)
-    assert {name: len(keys) for name, keys in deltas.items()} == {
-        "PegInsertionConfig": 1,
-        "BottleConfig": 8,
-        "BinEnvConfig": 11,
-        "DexpnpConfig": 6,
+    for given in gains.values():
+        assert set(given) == set(COMPLIANCE_DEFAULTS)
+    assert {
+        name: sum(COMPLIANCE_DEFAULTS[key] != value for key, value in given.items())
+        for name, given in gains.items()
+    } == {
+        "PegInsertionEnv": 1,
+        "BottleEnv": 8,
+        "FrankaBinRelocationEnv": 11,
+        "DexpnpEnv": 6,
     }
 
 
@@ -1820,7 +2094,6 @@ def test_the_no_gripper_default_does_not_wrap_a_dexterous_hand():
                     end_effector_type="ruiyan_hand",
                 )
             ),
-            hand_target_state=np.zeros(6),
             hand_reset_state=np.zeros(6),
         ),
         {"teleop": "none", "use_relative_frame": False},
@@ -1884,10 +2157,10 @@ def test_a_task_env_runs_with_its_own_config():
         PegInsertionEnv, target_ee_pose=[0.5, 0.0, 0.1, -3.14, 0.0, 0.0]
     )
 
-    assert env.config.task_description == "peg and insertion"
+    assert env.task_description == "peg and insertion"
     # Task-specific gains override shared defaults.
-    assert set(env.config.compliance_param) == set(COMPLIANCE_DEFAULTS)
-    assert env.config.compliance_param["translational_stiffness"] == 2000
+    assert set(env.control.config.compliance_param) == set(COMPLIANCE_DEFAULTS)
+    assert env.control.config.compliance_param["translational_stiffness"] == 2000
 
     env.reset()
     observation, reward, terminated, truncated, info = env.step(
@@ -2299,19 +2572,25 @@ def _declared(cls, **attrs):
 
 
 def test_every_env_declares_parts_that_tile_its_action():
+    from rlinf.envs.real.control import (
+        BinaryGripper,
+        CartesianControlConfig,
+        CartesianDeltaControl,
+        HandCommand,
+    )
     from rlinf.envs.real.dosw1.base import DOSW1Env
-    from rlinf.envs.real.franka.base import FrankaEnv
     from rlinf.envs.real.gim_arm.base import GimArmEnv
     from rlinf.envs.real.xsquare.base import Turtle2Env
 
+    def cartesian(end_effector):
+        control = CartesianDeltaControl(
+            CartesianControlConfig(), end_effector=end_effector
+        )
+        return control.action_parts()
+
     cases = [
-        (7, _declared(FrankaEnv, _is_hand=False)),
-        (
-            12,
-            _declared(
-                FrankaEnv, _is_hand=True, _ee_interface=SimpleNamespace(action_dim=6)
-            ),
-        ),
+        (7, cartesian(BinaryGripper())),
+        (12, cartesian(HandCommand(6))),
         (7, _declared(GimArmEnv)),
         (7, _declared(Turtle2Env, config=SimpleNamespace(use_arm_ids=[1]))),
         (14, _declared(Turtle2Env, config=SimpleNamespace(use_arm_ids=[0, 1]))),
@@ -2335,11 +2614,10 @@ def test_a_two_armed_robot_names_both_arms():
 
 
 def test_two_arms_of_the_same_width_can_mean_different_things():
-    from rlinf.envs.real.franka.base import FrankaEnv
     from rlinf.envs.real.gim_arm.base import GimArmEnv
     from rlinf.robotics.actions import ActionKind
 
-    franka_arm = _declared(FrankaEnv, _is_hand=False)[0]
+    franka_arm = _dummy_franka().action_parts()[0]
     gim_arm = _declared(GimArmEnv)[0]
 
     assert franka_arm.width == gim_arm.width == 6
@@ -2592,17 +2870,17 @@ def test_shipped_configs_give_the_policy_the_action_width_it_expects():
                 if hardware_configs
                 else "franka_gripper"
             )
-            from rlinf.robotics.robots.franka import FrankaRobot
+            from rlinf.envs.real.control import CartesianControlConfig
 
             hardware = hardware_configs[0] if hardware_configs else {}
-            driver = FrankaRobot.end_effector_class(
-                backend=hardware.get("backend"),
-                gripper_type=hardware.get("gripper_type"),
-                end_effector_type=hardware.get("end_effector_type"),
-            )
-            parts = FrankaEnv.action_parts(
-                SimpleNamespace(_is_hand=driver.is_hand, _ee_interface=driver)
-            )
+            parts = FrankaEnv.make_control(
+                SimpleNamespace(
+                    backend=hardware.get("backend"),
+                    gripper_type=hardware.get("gripper_type"),
+                    end_effector_type=hardware.get("end_effector_type"),
+                ),
+                CartesianControlConfig(),
+            ).action_parts()
             width = sum(part.width for part in parts)
             if width != action_dim:
                 offenders.append(

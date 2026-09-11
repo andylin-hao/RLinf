@@ -119,7 +119,7 @@ class JointPositionControl(Control):
         """The joint bounds in radians."""
         return (self._low, self._high) if role == self._role else None
 
-    def reset(self) -> None:
+    def reset(self, parts: Optional[Parts] = None) -> None:
         """Forget the gripper's last opening."""
         if self._gripper is not None:
             self._gripper.reset()

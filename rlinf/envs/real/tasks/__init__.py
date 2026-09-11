@@ -19,20 +19,39 @@ the control and observation layout of one robot.
 """
 
 from .base import Evaluation, ResetContext, Task, TaskConfig
+from .bin_relocation import BinRelocation, BinRelocationConfig
+from .bottle import BottleCap, BottleCapConfig
+from .cartesian import CartesianTarget, CartesianTargetConfig, FixtureConfig
+from .peg_insertion import PegInsertion, PegInsertionConfig
+from .pick_place import PickPlace, PickPlaceConfig
 from .reach import JointReach, JointReachConfig
 from .requirements import Bound, Needs, Parts, Reading, RequirementError, bind
+from .workspace import Box, Workspace
 
 __all__ = [
-    "Needs",
+    "BinRelocation",
+    "BinRelocationConfig",
+    "BottleCap",
+    "BottleCapConfig",
     "Bound",
+    "Box",
+    "CartesianTarget",
+    "CartesianTargetConfig",
     "Evaluation",
+    "FixtureConfig",
     "JointReach",
     "JointReachConfig",
+    "Needs",
     "Parts",
+    "PegInsertion",
+    "PegInsertionConfig",
+    "PickPlace",
+    "PickPlaceConfig",
     "Reading",
     "RequirementError",
     "ResetContext",
     "Task",
     "TaskConfig",
+    "Workspace",
     "bind",
 ]
