@@ -7,7 +7,7 @@ OpenVLA-OFT 强化学习训练
 
    原始 OFT 微调研究的 LIBERO 结果（图片来源：`OpenVLA-OFT 项目 <https://openvla-oft.github.io/>`__）。
 
-使用 RLinf 对 OpenVLA-OFT 进行强化学习微调。本页先介绍 NVIDIA 上的 LIBERO + GRPO 训练流程，再说明如何在 AMD ROCm、华为昇腾 CANN 和摩尔线程 MUSA 上安装并运行同一模型。原始 OpenVLA 模型的训练流程见 :doc:`maniskill`。
+使用 RLinf 对 OpenVLA-OFT 进行强化学习微调。本页先介绍 NVIDIA 上的 LIBERO + GRPO 训练流程，再说明如何在 AMD ROCm、华为昇腾 CANN 和摩尔线程 MUSA 上使用同一模型运行 LIBERO 或 ManiSkill。原始 OpenVLA 模型的训练流程见 :doc:`maniskill`。
 
 概览
 ----
@@ -35,7 +35,7 @@ OpenVLA-OFT 强化学习训练
    .. grid-item-card:: 硬件
       :text-align: center
 
-      NVIDIA CUDA · :ref:`AMD ROCm · 华为昇腾 CANN · 摩尔线程 MUSA <openvla-oft-hardware>` （LIBERO）
+      NVIDIA CUDA · :ref:`AMD ROCm · 华为昇腾 CANN · 摩尔线程 MUSA <openvla-oft-hardware>` （LIBERO · ManiSkill）
 
 | **你将完成：** 安装 → 下载 LIBERO-Goal checkpoint → 设置模型路径 → 启动 GRPO → 观察 ``env/success_once``。
 | **前置条件：** :doc:`安装 </rst_source/start/installation>` · 所选后端的硬件和驱动。
@@ -152,7 +152,7 @@ LIBERO 训练流程根据图像和任务提示生成动作块。
 在不同硬件后端上运行
 --------------------
 
-NVIDIA 使用上面的安装与启动流程。AMD ROCm、华为昇腾 CANN 和摩尔线程 MUSA 都通过共用平台安装器、scheduler 设备 API 与模型运行路径支持 OpenVLA-OFT 在 LIBERO 上运行。以下说明不代表概览中的其他环境也已支持这些后端。
+NVIDIA 使用上面的安装与启动流程。AMD ROCm、华为昇腾 CANN 和摩尔线程 MUSA 都通过共用平台安装器、scheduler 设备 API 与模型运行路径支持 OpenVLA-OFT 在 LIBERO 和 ManiSkill 上运行。概览中的其他环境有各自的硬件要求。
 
 .. _openvla-oft-amd:
 
@@ -234,6 +234,40 @@ AMD ROCm
 .. code-block:: bash
 
    bash examples/embodiment/run_embodiment.sh libero_goal_grpo_openvlaoft
+
+在 AMD、昇腾或 MUSA 上运行 ManiSkill
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+AMD 与昇腾使用 OpenVLA-OFT 的 ManiSkill + LIBERO 组合环境。根据所选模型 accelerator 执行对应命令：
+
+.. code-block:: bash
+
+   # AMD ROCm
+   bash requirements/install.sh --platform amd --rocm 6.4 embodied --model openvla-oft --env maniskill_libero
+
+   # 华为昇腾 CANN
+   bash requirements/install.sh --platform ascend embodied --model openvla-oft --env maniskill_libero
+
+   source .venv/bin/activate
+
+MUSA 需要保留厂商模拟器包，并在厂商镜像中添加 OpenVLA-OFT 模型环境：
+
+.. include:: _musa_maniskill.rst
+
+.. code-block:: bash
+
+   bash requirements/install.sh --platform musa embodied --venv openvla-oft --model openvla-oft --env libero
+   source openvla-oft/bin/activate
+
+三种非 CUDA 后端均使用以下 CPU simulation 配置：
+
+.. include:: _maniskill_non_cuda.rst
+
+下载 ``RLinf/RLinf-OpenVLAOFT-ManiSkill-Base-Main`` 及其 LoRA adapter，在 ``examples/embodiment/config/maniskill_ppo_openvlaoft.yaml`` 中设置 ``model_path`` 与 ``lora_path``，并根据可用设备调整 placement 与 batch size 后启动 PPO：
+
+.. code-block:: bash
+
+   bash examples/embodiment/run_embodiment.sh maniskill_ppo_openvlaoft
 
 可视化与结果
 ------------

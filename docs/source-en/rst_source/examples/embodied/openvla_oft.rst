@@ -9,8 +9,8 @@ RL on OpenVLA-OFT
 
 Fine-tune OpenVLA-OFT with reinforcement learning in RLinf. This recipe starts
 with LIBERO and GRPO on NVIDIA, then shows how to install and launch the same
-model on AMD ROCm, Huawei Ascend CANN, and Moore Threads MUSA. For the original OpenVLA model, see
-:doc:`maniskill`.
+model on LIBERO or ManiSkill with AMD ROCm, Huawei Ascend CANN, and Moore
+Threads MUSA. For the original OpenVLA model, see :doc:`maniskill`.
 
 Overview
 --------
@@ -39,7 +39,7 @@ The linked simulator pages cover its other environments.
    .. grid-item-card:: Hardware
       :text-align: center
 
-      NVIDIA CUDA · :ref:`AMD ROCm · Huawei Ascend CANN · Moore Threads MUSA <openvla-oft-hardware>` (LIBERO)
+      NVIDIA CUDA · :ref:`AMD ROCm · Huawei Ascend CANN · Moore Threads MUSA <openvla-oft-hardware>` (LIBERO · ManiSkill)
 
 | **You'll do:** install → download a LIBERO-Goal checkpoint → set model paths → launch GRPO → watch ``env/success_once``.
 | **Prerequisites:** :doc:`Installation </rst_source/start/installation>` · hardware and drivers for your selected backend.
@@ -164,9 +164,9 @@ Run on Different Hardware Backends
 ----------------------------------
 
 NVIDIA uses the installation and launch above. AMD ROCm, Huawei Ascend CANN,
-and Moore Threads MUSA support OpenVLA-OFT on LIBERO through the shared platform
-installer, scheduler device API, and model path. These instructions do not
-establish support for every environment in the Overview.
+and Moore Threads MUSA support OpenVLA-OFT on LIBERO and ManiSkill through the
+shared platform installer, scheduler device API, and model path. The other
+environments in the Overview have separate hardware requirements.
 
 .. _openvla-oft-amd:
 
@@ -256,6 +256,45 @@ Start the configured GRPO run:
 .. code-block:: bash
 
    bash examples/embodiment/run_embodiment.sh libero_goal_grpo_openvlaoft
+
+ManiSkill on AMD, Ascend, or MUSA
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+On AMD or Ascend, install the combined ManiSkill and LIBERO environment for
+OpenVLA-OFT. Use the command for the selected model accelerator:
+
+.. code-block:: bash
+
+   # AMD ROCm
+   bash requirements/install.sh --platform amd --rocm 6.4 embodied --model openvla-oft --env maniskill_libero
+
+   # Huawei Ascend CANN
+   bash requirements/install.sh --platform ascend embodied --model openvla-oft --env maniskill_libero
+
+   source .venv/bin/activate
+
+For MUSA, keep the vendor simulator packages and add the OpenVLA-OFT model
+environment inside the vendor image:
+
+.. include:: _musa_maniskill.rst
+
+.. code-block:: bash
+
+   bash requirements/install.sh --platform musa embodied --venv openvla-oft --model openvla-oft --env libero
+   source openvla-oft/bin/activate
+
+Configure CPU simulation for all three non-CUDA backends:
+
+.. include:: _maniskill_non_cuda.rst
+
+Download ``RLinf/RLinf-OpenVLAOFT-ManiSkill-Base-Main`` and its LoRA adapter,
+then set ``model_path`` and ``lora_path`` in
+``examples/embodiment/config/maniskill_ppo_openvlaoft.yaml``. Launch the PPO
+recipe after adjusting placement and batch sizes for the available devices:
+
+.. code-block:: bash
+
+   bash examples/embodiment/run_embodiment.sh maniskill_ppo_openvlaoft
 
 Visualization and Results
 -------------------------

@@ -10,7 +10,9 @@ Hardware Support
 
 NVIDIA is the default backend in the model recipes. AMD ROCm, Huawei Ascend
 CANN, and Moore Threads MUSA also support the three model families below on
-LIBERO. Follow a model link for installation and launch instructions.
+LIBERO and ManiSkill. Follow a model link for installation and launch
+instructions. On non-CUDA backends, ManiSkill runs PhysX on CPU and selects the
+renderer independently.
 
 .. list-table::
    :header-rows: 1
@@ -21,13 +23,13 @@ LIBERO. Follow a model link for installation and launch instructions.
      - Environment and Scope
    * - :doc:`OpenVLA-OFT <embodied/openvla_oft>`
      - :ref:`AMD ROCm · Huawei Ascend CANN · Moore Threads MUSA <openvla-oft-hardware>`
-     - LIBERO · Goal GRPO
+     - LIBERO · ManiSkill
    * - :doc:`GR00T N1.5 <embodied/gr00t>`
      - :ref:`AMD ROCm · Huawei Ascend CANN · Moore Threads MUSA <gr00t-hardware>`
-     - LIBERO · Spatial PPO
+     - LIBERO · ManiSkill with a ``maniskill_widowx`` checkpoint
    * - :doc:`π₀ / π₀.₅ (OpenPI) <embodied/pi0>`
      - :ref:`AMD ROCm · Huawei Ascend CANN · Moore Threads MUSA <pi0-hardware>`
-     - LIBERO for π₀ / π₀.₅; ManiSkill for π₀.₅ on MUSA with vendor simulator packages and CPU physics.
+     - LIBERO · ManiSkill
 
 Model Recipes
 -------------

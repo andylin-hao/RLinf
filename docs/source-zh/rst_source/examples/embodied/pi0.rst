@@ -42,7 +42,7 @@
    .. grid-item-card:: 硬件
       :text-align: center
 
-      NVIDIA CUDA · :ref:`AMD ROCm · 华为昇腾 CANN · 摩尔线程 MUSA <pi0-hardware>` （π₀ / π₀.₅，LIBERO）
+      NVIDIA CUDA · :ref:`AMD ROCm · 华为昇腾 CANN · 摩尔线程 MUSA <pi0-hardware>` （π₀ / π₀.₅，LIBERO · ManiSkill）
 
 | **你将完成：** 安装 → 下载 SFT checkpoint → 选择配置 → 启动 ``run_embodiment.sh`` → 观察 ``env/success_once``。
 | **前置条件：** :doc:`安装 </rst_source/start/installation>` · 一个 π\ :sub:`0`\  / π\ :sub:`0.5`\  SFT checkpoint（见下文）。
@@ -411,7 +411,7 @@ env** 之间的流水线重叠，从而提升 rollout 效率。
 在不同硬件后端上运行
 --------------------
 
-NVIDIA 使用上面的安装与启动流程。AMD ROCm、华为昇腾 CANN 和摩尔线程 MUSA 都通过共用平台安装器与 scheduler 设备 API 支持 OpenPI π₀ / π₀.₅ 系列在 LIBERO 上运行。MUSA 上的 ManiSkill 是单独的 π₀.₅ 路径，因为它依赖厂商模拟器包和 CPU 物理仿真。
+NVIDIA 使用上面的安装与启动流程。AMD ROCm、华为昇腾 CANN 和摩尔线程 MUSA 都通过共用平台安装器与 scheduler 设备 API 支持 OpenPI π₀ / π₀.₅ 系列在 LIBERO 和 ManiSkill 上运行。非 CUDA 后端上的 ManiSkill 使用 CPU simulation；MUSA 还需要厂商模拟器包。
 
 AMD ROCm
 ~~~~~~~~
@@ -474,54 +474,38 @@ MUSA 通过启用 system site-packages 的虚拟环境复用镜像中的 Python�
 
    bash examples/embodiment/run_embodiment.sh libero_10_ppo_openpi_pi05
 
-在 MUSA 上运行 ManiSkill
-~~~~~~~~~~~~~~~~~~~~~~~~
+在 AMD、昇腾或 MUSA 上运行 ManiSkill
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-π₀.₅ + ManiSkill 需要使用包含配套模拟器环境的厂商镜像：
+AMD 与昇腾使用 OpenPI 的 ManiSkill + LIBERO 组合环境。根据所选模型 accelerator 执行对应命令：
 
 .. code-block:: bash
 
-   export MUSA_IMAGE=registry.mthreads.com/lgpublic/rlinf:rlinf0.2-maniskill_libero_openpi-0428-jingdong
-   docker run -it --rm --runtime=mthreads \
-      --ipc=host --shm-size=100g \
-      -e MTHREADS_VISIBLE_DEVICES=all \
-      -v "$PWD":/workspace/RLinf -w /workspace/RLinf \
-      "$MUSA_IMAGE" bash
+   # AMD ROCm
+   bash requirements/install.sh --platform amd --rocm 6.4 embodied --model openpi --env maniskill_libero
+
+   # 华为昇腾 CANN
+   bash requirements/install.sh --platform ascend embodied --model openpi --env maniskill_libero
+
+   source .venv/bin/activate
+
+MUSA 使用厂商模拟器镜像及其中已有的 OpenPI 环境：
+
+.. include:: _musa_maniskill.rst
+
+.. code-block:: bash
+
    source switch_env openpi
-   download_assets --assets maniskill
 
-.. warning::
+三种非 CUDA 后端均使用以下 CPU simulation 配置：
 
-   MUSA 上的 ManiSkill 需要该镜像中修改过的 SAPIEN 与匹配的 ManiSkill。公开的 ``sapien`` 与 ManiSkill ``v3.0.0b22`` 无法组成可用的 MUSA 模拟器环境。不要用 ``install.sh --env maniskill_libero`` 安装的公开包替换厂商模拟器包。
+.. include:: _maniskill_non_cuda.rst
 
-MUSA 配置为训练和评估指定 CPU 物理仿真与显式的渲染设备：
-
-.. code-block:: yaml
-
-   env:
-     train:
-       total_num_envs: 2
-       init_params:
-         sim_backend: cpu
-         render_backend: "pci:0000:00:00.0"
-     eval:
-       total_num_envs: 2
-       init_params:
-         sim_backend: cpu
-         render_backend: "pci:0000:00:00.0"
-
-这些设置来自 ``tests/e2e_tests/embodied/maniskill_async_ppo_openpi_pi05_musa.yaml``。该配置将 actor、rollout 和 env worker 放在设备 ``0-1`` 上，并设置 ``rollout.pipeline_stage_num: 1``。在这一配置中，CPU 物理仿真要求每个 env worker 运行一个环境；修改 placement 时，请保持各 ``total_num_envs`` 等于 env worker 数量。
-
-从前面的模型列表下载 ``RLinf/RLinf-Pi05-ManiSkill-25Main-SFT``，将以下路径替换为实际 checkpoint 路径，再运行小规模配置：
+π₀.₅ 需要下载 ``RLinf/RLinf-Pi05-ManiSkill-25Main-SFT``，并在 ``examples/embodiment/config/maniskill_ppo_openpi_pi05.yaml`` 中设置两个模型路径；π₀ 改用 ``maniskill_ppo_openpi.yaml``。根据可用设备调整 placement 与 batch size 后启动所选方案，例如：
 
 .. code-block:: bash
 
-   export REPO_PATH="$PWD"
-   ROBOT_PLATFORM=BRIDGE bash tests/e2e_tests/embodied/run.sh maniskill_async_ppo_openpi_pi05_musa osmesa \
-      actor.model.model_path=/path/to/RLinf-Pi05-ManiSkill-25Main-SFT \
-      rollout.model.model_path=/path/to/RLinf-Pi05-ManiSkill-25Main-SFT
-
-虽然配置名包含 async，仍应使用上面所示的同步 ``run.sh`` 入口。需要延长训练时，再调整 ``runner.max_epochs`` 与 episode 步数限制。
+   bash examples/embodiment/run_embodiment.sh maniskill_ppo_openpi_pi05
 
 可视化与结果
 ----------------------------------------

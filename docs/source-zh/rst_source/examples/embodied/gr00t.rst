@@ -16,7 +16,7 @@ GR00T模型强化学习训练
 
 .. note::
 
-   RLinf 同时支持 GR00T-N1.5、GR00T-N1.6 和 GR00T-N1.7。N1.6 引入了流匹配动作头、FSDP 训练和更强的跨具身支持；N1.7 则进一步将官方 backbone 升级到 Cosmos-Reason2-2B / Qwen3-VL，并显著扩展了官方通用 state/action 空间。版本差异以 **N1.5** / **N1.6** / **N1.7** 标注区分。本页的 AMD、昇腾与 MUSA 步骤适用于 N1.5 + LIBERO；这些后端上的 N1.6、N1.7 与 IsaacLab 需要分别验证。
+   RLinf 同时支持 GR00T-N1.5、GR00T-N1.6 和 GR00T-N1.7。N1.6 引入了流匹配动作头、FSDP 训练和更强的跨具身支持；N1.7 则进一步将官方 backbone 升级到 Cosmos-Reason2-2B / Qwen3-VL，并显著扩展了官方通用 state/action 空间。版本差异以 **N1.5** / **N1.6** / **N1.7** 标注区分。本页的 AMD、昇腾与 MUSA 步骤适用于 N1.5 + LIBERO 或 ManiSkill；这些后端上的 N1.6、N1.7 与 IsaacLab 需要分别验证。
 
 概览
 ----------------------------------------
@@ -29,7 +29,7 @@ GR00T模型强化学习训练
    .. grid-item-card:: 环境
       :text-align: center
 
-      LIBERO · IsaacLab
+      LIBERO · ManiSkill · IsaacLab
 
    .. grid-item-card:: 算法
       :text-align: center
@@ -44,7 +44,7 @@ GR00T模型强化学习训练
    .. grid-item-card:: 硬件
       :text-align: center
 
-      NVIDIA CUDA · :ref:`AMD ROCm · 华为昇腾 CANN · 摩尔线程 MUSA <gr00t-hardware>` （N1.5，LIBERO）
+      NVIDIA CUDA · :ref:`AMD ROCm · 华为昇腾 CANN · 摩尔线程 MUSA <gr00t-hardware>` （N1.5，LIBERO · ManiSkill）
 
 | **你将完成：** 安装目标 GR00T 版本 → 下载 SFT / 任务 checkpoint → 选择配置 → 启动 ``run_embodiment.sh`` → 观察 ``env/success_once``。
 | **前置条件：** :doc:`安装 </rst_source/start/installation>` · 一个 GR00T LIBERO checkpoint（见下文）。
@@ -543,7 +543,7 @@ GR00T-N1.5的动作头包含dropout层，这会干扰对数概率的计算，因
 在不同硬件后端上运行
 --------------------
 
-NVIDIA 使用上面各版本对应的安装流程。AMD ROCm、华为昇腾 CANN 和摩尔线程 MUSA 都支持 GR00T N1.5 在 LIBERO 上运行。非 NVIDIA 的说明不包含 N1.6、N1.7 与 IsaacLab。
+NVIDIA 使用上面各版本对应的安装流程。AMD ROCm、华为昇腾 CANN 和摩尔线程 MUSA 都支持 GR00T N1.5 在 LIBERO 和 ManiSkill 上运行。非 NVIDIA 的说明不包含 N1.6、N1.7 与 IsaacLab。
 
 AMD ROCm
 ~~~~~~~~
@@ -621,6 +621,47 @@ MUSA 使用共用设备与安装路径，并为 RADIO backbone 中的 CUDA capab
 .. code-block:: bash
 
    bash examples/embodiment/run_embodiment.sh libero_spatial_ppo_gr00t
+
+在 AMD、昇腾或 MUSA 上运行 ManiSkill
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+AMD 与昇腾使用 GR00T N1.5 的 ManiSkill + LIBERO 组合环境。根据所选模型 accelerator 执行对应命令：
+
+.. code-block:: bash
+
+   # AMD ROCm
+   bash requirements/install.sh --platform amd --rocm 6.4 embodied --model gr00t --env maniskill_libero
+
+   # 华为昇腾 CANN
+   bash requirements/install.sh --platform ascend embodied --model gr00t --env maniskill_libero
+
+   source .venv/bin/activate
+
+MUSA 需要保留厂商模拟器包，并在厂商镜像中添加 GR00T N1.5 模型环境：
+
+.. include:: _musa_maniskill.rst
+
+.. code-block:: bash
+
+   bash requirements/install.sh --platform musa embodied --venv gr00t --model gr00t --env libero
+   source gr00t/bin/activate
+
+三种非 CUDA 后端均使用以下 CPU simulation 配置：
+
+.. include:: _maniskill_non_cuda.rst
+
+RLinf 已提供 GR00T 的 ManiSkill observation 与 action 转换路径，但没有随仓库提供 ManiSkill GR00T 任务配置或 checkpoint。请从一个 ManiSkill 任务配置开始，并选择 metadata 中带有 ``maniskill_widowx`` embodiment head 的 GR00T N1.5 checkpoint。actor 模型配置需要包含：
+
+.. code-block:: yaml
+
+   actor:
+     model:
+       model_type: gr00t
+       model_path: /path/to/maniskill-gr00t-checkpoint
+       obs_converter_type: maniskill
+       embodiment_tag: maniskill_widowx
+
+将 ``rollout.model.model_path`` 指向同一 checkpoint，再通过 ``run_embodiment.sh`` 启动保存后的配置。环境的 action shape 与 normalization statistics 必须和 checkpoint metadata 一致。
 
 可视化与结果
 ----------------------------------------

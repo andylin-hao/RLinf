@@ -43,7 +43,7 @@ RL-fine-tune π\ :sub:`0`\  / π\ :sub:`0.5`\  on LIBERO, ManiSkill, MetaWorld, 
    .. grid-item-card:: Hardware
       :text-align: center
 
-      NVIDIA CUDA · :ref:`AMD ROCm · Huawei Ascend CANN · Moore Threads MUSA <pi0-hardware>` (π₀ / π₀.₅, LIBERO)
+      NVIDIA CUDA · :ref:`AMD ROCm · Huawei Ascend CANN · Moore Threads MUSA <pi0-hardware>` (π₀ / π₀.₅, LIBERO · ManiSkill)
 
 | **You'll do:** install → download an SFT checkpoint → pick a config → launch ``run_embodiment.sh`` → watch ``env/success_once``.
 | **Prerequisites:** :doc:`Installation </rst_source/start/installation>` · a π\ :sub:`0`\  / π\ :sub:`0.5`\  SFT checkpoint (steps below).
@@ -432,9 +432,9 @@ Run on Different Hardware Backends
 
 NVIDIA uses the installation and launch steps above. AMD ROCm, Huawei Ascend
 CANN, and Moore Threads MUSA support the OpenPI π₀ / π₀.₅ model family on
-LIBERO through the shared platform installer and scheduler device API.
-ManiSkill on MUSA is a separate π₀.₅ path because it requires vendor simulator
-packages and CPU physics.
+LIBERO and ManiSkill through the shared platform installer and scheduler device
+API. ManiSkill uses CPU simulation on the non-CUDA backends; MUSA additionally
+requires vendor simulator packages.
 
 AMD ROCm
 ~~~~~~~~
@@ -511,68 +511,42 @@ Launch the LIBERO PPO recipe:
 
    bash examples/embodiment/run_embodiment.sh libero_10_ppo_openpi_pi05
 
-ManiSkill on MUSA
-~~~~~~~~~~~~~~~~~
+ManiSkill on AMD, Ascend, or MUSA
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The π₀.₅ ManiSkill path needs the vendor image that supplies its simulator
-stack:
+On AMD or Ascend, install the combined ManiSkill and LIBERO environment for
+OpenPI. Use the command for the selected model accelerator:
 
 .. code-block:: bash
 
-   export MUSA_IMAGE=registry.mthreads.com/lgpublic/rlinf:rlinf0.2-maniskill_libero_openpi-0428-jingdong
-   docker run -it --rm --runtime=mthreads \
-      --ipc=host --shm-size=100g \
-      -e MTHREADS_VISIBLE_DEVICES=all \
-      -v "$PWD":/workspace/RLinf -w /workspace/RLinf \
-      "$MUSA_IMAGE" bash
+   # AMD ROCm
+   bash requirements/install.sh --platform amd --rocm 6.4 embodied --model openpi --env maniskill_libero
+
+   # Huawei Ascend CANN
+   bash requirements/install.sh --platform ascend embodied --model openpi --env maniskill_libero
+
+   source .venv/bin/activate
+
+For MUSA, use the vendor simulator image and its existing OpenPI environment:
+
+.. include:: _musa_maniskill.rst
+
+.. code-block:: bash
+
    source switch_env openpi
-   download_assets --assets maniskill
 
-.. warning::
+Configure CPU simulation for all three non-CUDA backends:
 
-   ManiSkill on MUSA requires both the modified SAPIEN and matching ManiSkill
-   packages in this image. The public ``sapien`` and ManiSkill ``v3.0.0b22``
-   packages do not form a working MUSA simulator stack. Do not replace the
-   vendor simulator packages with those installed by
-   ``install.sh --env maniskill_libero``.
+.. include:: _maniskill_non_cuda.rst
 
-The included MUSA configuration selects CPU physics and an explicit render
-device for both training and evaluation:
-
-.. code-block:: yaml
-
-   env:
-     train:
-       total_num_envs: 2
-       init_params:
-         sim_backend: cpu
-         render_backend: "pci:0000:00:00.0"
-     eval:
-       total_num_envs: 2
-       init_params:
-         sim_backend: cpu
-         render_backend: "pci:0000:00:00.0"
-
-These settings come from
-``tests/e2e_tests/embodied/maniskill_async_ppo_openpi_pi05_musa.yaml``. The
-config places actor, rollout, and env workers on devices ``0-1`` and sets
-``rollout.pipeline_stage_num: 1``. CPU physics runs one environment per env
-worker in this setup, so keep each ``total_num_envs`` equal to the env worker
-count when changing placement.
-
-Download ``RLinf/RLinf-Pi05-ManiSkill-25Main-SFT`` from the model list above,
-then run the small configuration with your checkpoint paths:
+For π₀.₅, download ``RLinf/RLinf-Pi05-ManiSkill-25Main-SFT`` and set both model
+paths in ``examples/embodiment/config/maniskill_ppo_openpi_pi05.yaml``. The π₀
+recipe uses ``maniskill_ppo_openpi.yaml`` instead. Adjust placement and batch
+sizes for the available devices, then launch the selected recipe; for example:
 
 .. code-block:: bash
 
-   export REPO_PATH="$PWD"
-   ROBOT_PLATFORM=BRIDGE bash tests/e2e_tests/embodied/run.sh maniskill_async_ppo_openpi_pi05_musa osmesa \
-      actor.model.model_path=/path/to/RLinf-Pi05-ManiSkill-25Main-SFT \
-      rollout.model.model_path=/path/to/RLinf-Pi05-ManiSkill-25Main-SFT
-
-Despite the config's name, launch it with the synchronous ``run.sh`` entry point
-shown above. Adjust ``runner.max_epochs`` and the episode limits for a longer
-run.
+   bash examples/embodiment/run_embodiment.sh maniskill_ppo_openpi_pi05
 
 Visualization and Results
 -------------------------

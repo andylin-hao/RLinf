@@ -292,16 +292,15 @@ RLinf supports SFT, simulation RL, and real-world RL for World Action Models (WA
 
 #### Hardware Support
 
-Choose a model and environment together, then follow the hardware link for setup. The component tables above list components independently; this matrix records the supported paths for the three model families covered by the hardware recipes. LIBERO is the shared cross-vendor environment, and the final row records the additional MUSA ManiSkill path. ✅ means the code and installer support the combination; — means no supported recipe is documented for that combination.
+Choose a model and environment together, then follow the model link for hardware setup. The component tables above list components independently; this matrix records the supported paths for the three model families covered by the hardware recipes. Each hardware backend applies to every environment listed in its row. ✅ means the code and installer support the combination; a compatible model checkpoint and task config are still required.
 
 | Model | Environment | NVIDIA CUDA | Huawei Ascend CANN | Moore Threads MUSA | AMD ROCm |
 |---|---|:---:|:---:|:---:|:---:|
-| [OpenVLA-OFT](docs/source-en/rst_source/examples/embodied/openvla_oft.rst) | LIBERO | ✅ | [✅](docs/source-en/rst_source/examples/embodied/openvla_oft.rst) | [✅](docs/source-en/rst_source/examples/embodied/openvla_oft.rst) | [✅](docs/source-en/rst_source/examples/embodied/openvla_oft.rst) |
-| [GR00T N1.5](docs/source-en/rst_source/examples/embodied/gr00t.rst) | LIBERO | ✅ | [✅](docs/source-en/rst_source/examples/embodied/gr00t.rst) | [✅](docs/source-en/rst_source/examples/embodied/gr00t.rst) | [✅](docs/source-en/rst_source/examples/embodied/gr00t.rst) |
-| [π₀ / π₀.₅ (OpenPI)](docs/source-en/rst_source/examples/embodied/pi0.rst) | LIBERO | ✅ | [✅](docs/source-en/rst_source/examples/embodied/pi0.rst) | [✅](docs/source-en/rst_source/examples/embodied/pi0.rst) | [✅](docs/source-en/rst_source/examples/embodied/pi0.rst) |
-| [π₀.₅ (OpenPI)](docs/source-en/rst_source/examples/embodied/pi0.rst) | ManiSkill | ✅ | — | [✅*](docs/source-en/rst_source/examples/embodied/pi0.rst) | — |
+| [OpenVLA-OFT](docs/source-en/rst_source/examples/embodied/openvla_oft.rst) | LIBERO · ManiSkill | ✅ | ✅ | ✅ | ✅ |
+| [GR00T N1.5](docs/source-en/rst_source/examples/embodied/gr00t.rst) | LIBERO · ManiSkill | ✅ | ✅ | ✅ | ✅ |
+| [π₀ / π₀.₅ (OpenPI)](docs/source-en/rst_source/examples/embodied/pi0.rst) | LIBERO · ManiSkill | ✅ | ✅ | ✅ | ✅ |
 
-\* ManiSkill on MUSA requires the vendor-modified SAPIEN and ManiSkill packages and CPU physics. LIBERO uses OSMesa on AMD, Ascend, and MUSA. The non-NVIDIA GR00T scope is N1.5; N1.6, N1.7, SFT, reasoning engines, and other simulators need separate validation.
+On non-CUDA backends, ManiSkill runs PhysX simulation on CPU and selects its renderer independently by PCI address. MUSA additionally requires the vendor-modified SAPIEN and ManiSkill packages. The GR00T ManiSkill path requires a checkpoint with a `maniskill_widowx` embodiment head; the non-NVIDIA GR00T scope is N1.5. LIBERO uses OSMesa on AMD, Ascend, and MUSA.
 
 ### Agentic AI
 

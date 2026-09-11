@@ -18,8 +18,8 @@ SFT cold-start, PPO training, evaluation, and visualization.
 .. note::
 
    RLinf supports GR00T-N1.5, GR00T-N1.6, and GR00T-N1.7. N1.6 introduced the Flow-Matching Action Head, FSDP-based training, and stronger cross-embodiment support. N1.7 further upgrades the official backbone to Cosmos-Reason2-2B / Qwen3-VL and expands the official universal state/action space. Version-specific differences are marked with **N1.5** / **N1.6** / **N1.7** labels.
-   The AMD, Ascend, and MUSA instructions on this page cover N1.5 with LIBERO;
-   validate N1.6, N1.7, and IsaacLab separately on those backends.
+   The AMD, Ascend, and MUSA instructions on this page cover N1.5 with LIBERO
+   or ManiSkill; validate N1.6, N1.7, and IsaacLab separately on those backends.
 
 Overview
 --------
@@ -32,7 +32,7 @@ Fine-tune GR00T (N1.5 / N1.6 / N1.7) on LIBERO with PPO (actor-critic).
    .. grid-item-card:: Environments
       :text-align: center
 
-      LIBERO · IsaacLab
+      LIBERO · ManiSkill · IsaacLab
 
    .. grid-item-card:: Algorithms
       :text-align: center
@@ -47,7 +47,7 @@ Fine-tune GR00T (N1.5 / N1.6 / N1.7) on LIBERO with PPO (actor-critic).
    .. grid-item-card:: Hardware
       :text-align: center
 
-      NVIDIA CUDA · :ref:`AMD ROCm · Huawei Ascend CANN · Moore Threads MUSA <gr00t-hardware>` (N1.5, LIBERO)
+      NVIDIA CUDA · :ref:`AMD ROCm · Huawei Ascend CANN · Moore Threads MUSA <gr00t-hardware>` (N1.5, LIBERO · ManiSkill)
 
 | **You'll do:** install the target GR00T version → download the SFT / task checkpoint → pick a config → launch ``run_embodiment.sh`` → watch ``env/success_once``.
 | **Prerequisites:** :doc:`Installation </rst_source/start/installation>` · a GR00T LIBERO checkpoint (steps below).
@@ -550,8 +550,8 @@ Run on Different Hardware Backends
 ----------------------------------
 
 NVIDIA uses the version-specific setup above. AMD ROCm, Huawei Ascend CANN, and
-Moore Threads MUSA support GR00T N1.5 on LIBERO. N1.6, N1.7, and IsaacLab
-remain outside this non-NVIDIA recipe.
+Moore Threads MUSA support GR00T N1.5 on LIBERO and ManiSkill. N1.6, N1.7, and
+IsaacLab remain outside this non-NVIDIA recipe.
 
 AMD ROCm
 ~~~~~~~~
@@ -638,6 +638,54 @@ Launch the configured PPO run:
 .. code-block:: bash
 
    bash examples/embodiment/run_embodiment.sh libero_spatial_ppo_gr00t
+
+ManiSkill on AMD, Ascend, or MUSA
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+On AMD or Ascend, install the combined ManiSkill and LIBERO environment for
+GR00T N1.5. Use the command for the selected model accelerator:
+
+.. code-block:: bash
+
+   # AMD ROCm
+   bash requirements/install.sh --platform amd --rocm 6.4 embodied --model gr00t --env maniskill_libero
+
+   # Huawei Ascend CANN
+   bash requirements/install.sh --platform ascend embodied --model gr00t --env maniskill_libero
+
+   source .venv/bin/activate
+
+For MUSA, keep the vendor simulator packages and add the GR00T N1.5 model
+environment inside the vendor image:
+
+.. include:: _musa_maniskill.rst
+
+.. code-block:: bash
+
+   bash requirements/install.sh --platform musa embodied --venv gr00t --model gr00t --env libero
+   source gr00t/bin/activate
+
+Configure CPU simulation for all three non-CUDA backends:
+
+.. include:: _maniskill_non_cuda.rst
+
+RLinf provides the ManiSkill observation and action conversion path for GR00T,
+but does not bundle a ManiSkill GR00T task config or checkpoint. Start from a
+ManiSkill task config and select a GR00T N1.5 checkpoint whose metadata contains
+the ``maniskill_widowx`` embodiment head. The actor model block must include:
+
+.. code-block:: yaml
+
+   actor:
+     model:
+       model_type: gr00t
+       model_path: /path/to/maniskill-gr00t-checkpoint
+       obs_converter_type: maniskill
+       embodiment_tag: maniskill_widowx
+
+Set ``rollout.model.model_path`` to the same checkpoint, then launch the saved
+config with ``run_embodiment.sh``. Match the environment's action shape and
+normalization statistics to the checkpoint metadata.
 
 Visualization and Results
 -------------------------

@@ -8,7 +8,7 @@
 硬件支持
 ------------
 
-模型示例默认使用 NVIDIA。AMD ROCm、华为昇腾 CANN 和摩尔线程 MUSA 也支持下列三个模型系列在 LIBERO 上运行。选择模型链接可查看安装与启动步骤。
+模型示例默认使用 NVIDIA。AMD ROCm、华为昇腾 CANN 和摩尔线程 MUSA 也支持下列三个模型系列在 LIBERO 与 ManiSkill 上运行。选择模型链接可查看安装与启动步骤；在非 CUDA 后端上，ManiSkill 使用 CPU 运行 PhysX，并独立选择 renderer。
 
 .. list-table::
    :header-rows: 1
@@ -19,13 +19,13 @@
      - 环境与范围
    * - :doc:`OpenVLA-OFT <embodied/openvla_oft>`
      - :ref:`AMD ROCm · 华为昇腾 CANN · 摩尔线程 MUSA <openvla-oft-hardware>`
-     - LIBERO · Goal GRPO
+     - LIBERO · ManiSkill
    * - :doc:`GR00T N1.5 <embodied/gr00t>`
      - :ref:`AMD ROCm · 华为昇腾 CANN · 摩尔线程 MUSA <gr00t-hardware>`
-     - LIBERO · Spatial PPO
+     - LIBERO · ManiSkill（需要带有 ``maniskill_widowx`` head 的 checkpoint）
    * - :doc:`π₀ / π₀.₅ (OpenPI) <embodied/pi0>`
      - :ref:`AMD ROCm · 华为昇腾 CANN · 摩尔线程 MUSA <pi0-hardware>`
-     - π₀ / π₀.₅ 可运行 LIBERO；MUSA 上的 π₀.₅ 还支持使用厂商模拟器包和 CPU 物理仿真的 ManiSkill。
+     - LIBERO · ManiSkill
 
 模型示例
 --------
