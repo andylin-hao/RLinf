@@ -26,7 +26,7 @@ arm's own bus goes out in the same command as the joints.
 """
 
 from abc import ABC, abstractmethod
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Optional
@@ -242,11 +242,14 @@ class ActionLayout:
 
     def grasp(self, parts: Parts) -> bool:
         """Close every end effector, through the policy's own channel."""
-        return any([channel.grasp(parts) for channel in self.channels])
+        # Every channel acts; a robot with two grippers closes both.
+        closed = [channel.grasp(parts) for channel in self.channels]
+        return any(closed)
 
     def release(self, parts: Parts) -> bool:
         """Open every end effector, through the policy's own channel."""
-        return any([channel.release(parts) for channel in self.channels])
+        opened = [channel.release(parts) for channel in self.channels]
+        return any(opened)
 
     def rest_end_effectors(self, parts: Parts) -> None:
         """Put every end effector at its resting state."""
@@ -277,7 +280,7 @@ class ActionLayout:
                 return channel.bounds()
         return None
 
-    def _slices(self, action: np.ndarray):
+    def _slices(self, action: np.ndarray) -> Iterator[tuple[Channel, np.ndarray]]:
         start = 0
         for channel in self.channels:
             yield channel, action[start : start + channel.width]

@@ -215,12 +215,12 @@ def bind(robot: Robot, needs: Mapping[str, Needs], *, owner: str) -> Parts:
             )
         # A field's name is not enough: a part whose numbers mean something
         # else is refused here rather than misread every step.
-        for field in sorted(need.observes - set(missing_obs)):
-            differs = mismatch(field, observed.get(field))
+        for name in sorted(need.observes - set(missing_obs)):
+            differs = mismatch(name, observed.get(name))
             if differs:
                 problems.append(f"{path} ({type(part).__name__}) {differs}")
-        for field in sorted(need.commands - set(missing_cmd)):
-            differs = mismatch(field, accepted.get(field))
+        for name in sorted(need.commands - set(missing_cmd)):
+            differs = mismatch(name, accepted.get(name))
             if differs:
                 problems.append(f"{path} ({type(part).__name__}) {differs}")
         effector_path = _effector_path(path, effectors)
