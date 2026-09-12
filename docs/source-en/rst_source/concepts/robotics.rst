@@ -91,6 +91,17 @@ command, and repeated calls are safe.
 The lifecycle is the same for every robot. What changes between robots is the
 set and nesting of the paths inside the observation and action dictionaries.
 
+Between episodes a task asks for what it wants rather than scripting it.
+``hold()`` stays where the arm is, so it stops chasing the last target a policy
+sent. ``clear(distance=..., qpos=...)`` gets clear of whatever the tool is
+touching: an arm driven by tool poses rises by the distance, and one driven by
+joint targets goes to the configuration named for it. ``go_home(Home(...))``
+travels to where the task wants the arm to wait, re-commanding it until it is
+within tolerance, and ``unwind(qpos)`` returns the joints to a known
+configuration. A task states both spellings of where to wait and each arm uses
+the one it can, which is why peg insertion is one task on a Franka and on a
+GimArm.
+
 Read the Interface Paths
 ------------------------
 

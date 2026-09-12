@@ -27,7 +27,7 @@ from typing import Any, Optional
 import numpy as np
 
 from .base import ResetContext
-from .cartesian import CartesianTarget, FixtureConfig, hold, lift
+from .cartesian import CartesianTarget, FixtureConfig
 from .requirements import Parts
 from .workspace import Box, Workspace
 
@@ -90,8 +90,9 @@ class BinRelocation(CartesianTarget):
         side = self.BIN_OFFSET if self.task_id == 0 else -self.BIN_OFFSET
         pose[1] = self.config.target_ee_pose[1] + side
 
+        arm = parts.arm()
         context.action.release(parts)
-        hold(parts)
+        arm.hold()
         time.sleep(0.5)
-        lift(parts, context, 0.10)
+        arm.clear(distance=0.10, rate_hz=context.rate_hz)
         self.go_to_rest(parts, context, pose)

@@ -23,7 +23,4 @@ class GimArmPegInsertionEnv(GimArmEnv):
     """Peg insertion, resting through joint configurations."""
 
     TASK = PegInsertion
-    DEFAULTS = {
-        "reset_mode": "joint",
-        "safe_retract_qpos": (0.0, -1.5, 1.5, 0.0, 0.0, 0.0),
-    }
+    DEFAULTS = {"safe_retract_qpos": (0.0, -1.5, 1.5, 0.0, 0.0, 0.0)}

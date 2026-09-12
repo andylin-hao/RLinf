@@ -35,17 +35,20 @@ config dataclass and a class that adds its reset motion to ``CartesianTarget``:
        DESCRIPTION = "peg and insertion"
 
        def reset(self, parts, context):
-           # Grip the peg and lift it clear of the slot before homing.
+           # Grip the peg and take it clear of the slot before homing.
+           arm = parts.arm()
            context.action.grasp(parts)
-           hold(parts)
-           lift(parts, context, 0.10)
+           arm.hold()
+           arm.clear(distance=self.config.clearance, qpos=self.config.safe_retract_qpos)
            self.go_to_rest(parts, context)
 
 ``PegInsertionConfig`` gives the task one typed source for the target, the
 workspace around it, and reset randomization. The task states what it needs
 from the robot, an arm that reports ``tcp_pose``, and never builds an action:
 ``context.action.grasp()`` closes the gripper through the same channel a policy
-drives, whichever channels the robot is driven by.
+drives, whichever channels the robot is driven by. It asks for clearance the
+same way, without saying how to take it: a Franka rises by the distance, and a
+GimArm goes to the configuration named as clear of the hole.
 
 A robot preset such as ``FrankaEnv`` in ``rlinf/envs/real/franka/base.py``
 supplies the other half: the robot class, the action channels that turn a
@@ -219,7 +222,7 @@ roles, typed by category:
 
    def home(self, parts, context):
        arm = parts.arm()                  # the Arm filling the "arm" role
-       arm.reset_joint(self.config.reset_joint_qpos)
+       arm.go_home(self.request(context))
 
 ``parts.arm()`` returns the ``Arm`` interface bound to the role, and
 ``parts.end_effector()`` the end effector it carries. The robot remains

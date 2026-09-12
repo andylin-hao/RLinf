@@ -39,6 +39,32 @@ ARM_STATE_FIELDS: tuple[str, ...] = (
 )
 
 
+@dataclass(frozen=True)
+class Home:
+    """Where a task wants an arm to wait between episodes.
+
+    A task states the same place in both spellings it might know, because
+    where an arm should wait is a task's business while how it gets there is
+    the arm's. An arm that takes tool poses travels to ``pose``; one that only
+    takes joint targets goes to ``qpos``. Whichever it cannot use it ignores.
+
+    Attributes:
+        pose: Tool pose, ``xyz`` plus an ``xyzw`` quaternion.
+        qpos: Joint configuration, one value per joint.
+        tolerance: Relative position tolerance the arm is asked to reach.
+        attempts: Times to re-command the pose before giving up on it.
+        duration: Seconds each motion is spread over.
+        rate_hz: Commands per second while travelling.
+    """
+
+    pose: "Optional[Sequence[float]]" = None
+    qpos: "Optional[Sequence[float]]" = None
+    tolerance: float = 0.02
+    attempts: int = 3
+    duration: float = 1.5
+    rate_hz: float = 10.0
+
+
 @dataclass
 class CartesianCompliance:
     """Cartesian impedance settings for a backend that runs the control loop."""
@@ -182,6 +208,103 @@ class Arm(ControllablePart):
             "configuration you want through send_action, or use a backend that "
             "implements reset_joint()."
         )
+
+    @property
+    def takes_poses(self) -> bool:
+        """Whether this arm can be commanded a tool pose."""
+        return "tcp_pose" in self.action_features
+
+    def hold(self) -> None:
+        """Stay where you are, and forget the target you were travelling to.
+
+        A reset starts from here, so the arm does not resume toward the last
+        target a policy sent while the scene is being put back.
+        """
+        reading = self.get_observation()
+        if self.takes_poses:
+            self.clear_errors()
+            pose = np.asarray(reading["tcp_pose"], dtype=float)
+            self.send_action({"tcp_pose": pose.astype(np.float32)})
+            return
+        joints = np.asarray(reading["arm_joint_position"], dtype=float)
+        self.send_action({"joint_position": joints})
+
+    def clear(
+        self,
+        *,
+        distance: "Optional[float]" = None,
+        qpos: "Optional[Sequence[float]]" = None,
+        duration: float = 1.0,
+        rate_hz: float = 10.0,
+        settle: float = 0.5,
+    ) -> None:
+        """Get clear of whatever the tool is touching.
+
+        An arm that takes tool poses rises ``distance`` from where it is. One
+        that does not goes to ``qpos``, a configuration known to be clear of
+        the fixture. An arm given neither has no way to get clear and stays
+        where it is.
+
+        Args:
+            distance: Metres of clearance a pose-driven arm should rise.
+            qpos: Configuration a joint-driven arm clears to.
+            duration: Seconds the motion is spread over.
+            rate_hz: Commands per second while travelling.
+            settle: Seconds to wait after a joint move.
+        """
+        if self.takes_poses and distance is not None:
+            pose = np.asarray(self.get_observation()["tcp_pose"], dtype=float)
+            pose[2] += distance
+            self.move_to(pose, duration=duration, rate_hz=rate_hz, clear_errors=True)
+            return
+        if qpos is not None:
+            self.reset_joint(list(qpos))
+            time.sleep(settle)
+
+    def go_home(self, home: "Home") -> None:
+        """Travel to where the task wants the arm to wait.
+
+        A pose-driven arm re-commands the pose until it is within
+        ``home.tolerance`` of it, because a controller that tracks a target
+        does not always arrive on the first attempt.
+
+        Raises:
+            NotImplementedError: If the arm can use neither spelling of the
+                request.
+        """
+        if self.takes_poses and home.pose is not None:
+            target = np.asarray(home.pose, dtype=float)
+            for _ in range(max(1, home.attempts)):
+                current = np.asarray(self.get_observation()["tcp_pose"], dtype=float)
+                if np.allclose(current[:3], target[:3], home.tolerance):
+                    return
+                self.move_to(
+                    target,
+                    duration=home.duration,
+                    rate_hz=home.rate_hz,
+                    clear_errors=True,
+                )
+            return
+        if home.qpos is not None:
+            self.reset_joint(list(home.qpos))
+            return
+        raise NotImplementedError(
+            f"{type(self).__name__} cannot be sent to a tool pose, and the "
+            "task named no joint configuration for it to wait at. Give the "
+            "task a rest configuration for this arm."
+        )
+
+    def unwind(self, qpos: "Optional[Sequence[float]]", settle: float = 0.5) -> None:
+        """Return the joints to a known configuration, unwinding any drift.
+
+        Args:
+            qpos: The configuration; ``None`` leaves the joints alone.
+            settle: Seconds to wait afterwards.
+        """
+        if qpos is None:
+            return
+        self.reset_joint(list(qpos))
+        time.sleep(settle)
 
     def move_to(
         self,

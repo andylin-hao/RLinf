@@ -48,8 +48,6 @@ what differs:
    from rlinf.envs.real.tasks.cartesian import (
        CartesianTarget,
        FixtureConfig,
-       hold,
-       lift,
        reach_target,
    )
    from rlinf.envs.real.tasks import Evaluation, Needs
@@ -71,8 +69,9 @@ what differs:
            return {"arm": Needs(observes=frozenset({"tcp_pose", "tcp_force"}))}
 
        def reset(self, parts, context):
-           hold(parts)
-           lift(parts, context, 0.05)
+           arm = parts.arm()
+           arm.hold()
+           arm.clear(distance=0.05, rate_hz=context.rate_hz)
            self.go_to_rest(parts, context)
 
        def evaluate(self, reading, applied):
@@ -102,8 +101,10 @@ each role's part must report, here ``tcp_force`` beside the ``tcp_pose``
 ``workspace`` is handed to the channels, which keep every commanded pose inside
 it. ``home()`` runs once after connecting, and ``reset()`` at the start of each
 episode, after the channels have applied the arm's compliance gains. The wipe
-lifts the cloth clear before ``go_to_rest()`` returns the arm to rest; peg
-insertion grips its peg and lifts it clear of the hole in the same place.
+asks the arm to hold and then to get clear before ``go_to_rest()`` sends it
+back to where it waits; peg insertion grips its peg first, in the same place.
+A task asks for clearance and never says how to take it, so the same reset
+runs on an arm that is driven by joint targets.
 ``evaluate()`` scores the reading taken after each step. ``in_zone`` counts
 toward the ``success_hold_steps`` streak that ends an episode, and the env
 subtracts the gripper penalty, so a task only reports what the step earned.

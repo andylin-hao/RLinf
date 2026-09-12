@@ -65,6 +65,9 @@ class GimArmEnv(RegisteredTaskEnv):
         "joint_limit_low": _DEFAULT_JOINT_LIMIT_LOW,
         "joint_limit_high": _DEFAULT_JOINT_LIMIT_HIGH,
         "joint_reset_qpos": (0.0,) * 6,
+        # This arm takes joint targets, not tool poses, so it waits at a
+        # configuration rather than at the task's rest pose.
+        "reset_joint_qpos": (0.0,) * 6,
     }
     RETIRED = {
         "save_video_path": "Record episodes with the env's video_cfg instead.",

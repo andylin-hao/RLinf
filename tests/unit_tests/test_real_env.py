@@ -930,6 +930,77 @@ def test_a_cartesian_step_grips_before_it_moves_and_composes_the_rotation(
         env.close()
 
 
+def test_an_arm_does_what_a_reset_asks_of_it(monkeypatch):
+    """The verbs a task's reset uses, spelled out in the commands they send.
+
+    A task states what it wants; these are the commands each arm sends for it,
+    and they are what the tasks used to write out by hand.
+    """
+    from rlinf.robotics.parts.arms.base import Home
+
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+    log: list = []
+    arm = PoseArm(log)
+    arm.connect()
+    try:
+        start = arm.pose.copy()
+
+        # Hold: clear the fault, then re-command exactly where it is.
+        arm.hold()
+        assert [entry[0] for entry in log] == ["clear", "arm"]
+        assert log[-1][1] == pytest.approx(start)
+
+        # Clear: rise by the distance asked for, in one commanded waypoint.
+        log.clear()
+        arm.clear(distance=0.10, duration=1.0, rate_hz=1.0)
+        assert [entry[0] for entry in log] == ["clear", "arm"]
+        assert log[-1][1][:3] == pytest.approx(start[:3] + [0.0, 0.0, 0.10])
+
+        # Home: command the rest pose until the arm is within tolerance of it,
+        # and stop once it is.
+        log.clear()
+        target = start.copy()
+        target[0] += 0.2
+        arm.go_home(Home(pose=target, duration=1.0, rate_hz=1.0))
+        assert [entry[0] for entry in log] == ["clear", "arm"]
+        assert log[-1][1] == pytest.approx(target)
+
+        log.clear()
+        arm.go_home(Home(pose=target, duration=1.0, rate_hz=1.0))
+        assert log == []
+    finally:
+        arm.disconnect()
+
+
+def test_a_joint_arm_does_the_same_through_configurations(monkeypatch):
+    """The same verbs on an arm that cannot be sent a pose."""
+    from rlinf.robotics.parts.arms.base import Home
+
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+    log: list = []
+    arm = JointPoseArm(log)
+    arm.connect()
+    try:
+        arm.joints = np.array([0.2] * 6)
+        arm.hold()
+        assert log == [("move", [0.2] * 6)]
+
+        log.clear()
+        arm.clear(distance=0.10, qpos=[0.5] * 6)
+        assert log == [("rest", [0.5] * 6)]
+
+        log.clear()
+        arm.go_home(Home(pose=np.zeros(7), qpos=[0.1] * 6))
+        assert log == [("rest", [0.1] * 6)]
+
+        log.clear()
+        arm.unwind(None)
+        arm.unwind([0.0] * 6)
+        assert log == [("rest", [0.0] * 6)]
+    finally:
+        arm.disconnect()
+
+
 def test_peg_insertion_lifts_the_peg_clear_before_returning_to_rest(monkeypatch):
     monkeypatch.setattr(time, "sleep", lambda _seconds: None)
     log: list = []
@@ -1181,10 +1252,10 @@ def _joint_peg_on(log: list, *, gripper: bool = True, **settings):
         Robot(**parts),
         PegInsertion(
             PegInsertionConfig(
-                reset_mode="joint",
                 target_ee_pose=[0.5, 0.0, 0.1, 0.0, 0.0, 0.0],
                 enable_random_reset=False,
-                **settings,
+                # An arm that takes no tool pose waits at a configuration.
+                **{"reset_joint_qpos": [0.0] * 6, **settings},
             )
         ),
         ActionLayout(
@@ -1225,6 +1296,9 @@ def test_peg_insertion_rests_through_joints_on_an_arm_driven_by_joints(monkeypat
         env.reset(seed=0, options={"joint_reset": True})
         assert log == [
             ("close",),
+            # Hold where it is, then clear the hole through the configuration
+            # named for it, then unwind, then wait at the rest configuration.
+            ("move", [0.1] * 6),
             ("rest", [0.0, -1.5, 1.5, 0.0, 0.0, 0.0]),
             ("rest", [0.3] * 6),
             ("rest", [0.1] * 6),
@@ -1254,6 +1328,14 @@ def test_a_joint_arm_without_its_gripper_keeps_the_gripper_channel(monkeypatch):
         env.close()
 
 
+def test_an_arm_that_takes_no_pose_needs_somewhere_to_wait(monkeypatch):
+    """Neither spelling of the rest place is a configuration error, not a crash."""
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+
+    with pytest.raises(NotImplementedError, match="no joint configuration"):
+        _joint_peg_on([], reset_joint_qpos=None)
+
+
 def test_peg_insertion_is_one_task_on_franka_and_gim_arm():
     from rlinf.envs.real.franka import PegInsertionEnv
     from rlinf.envs.real.policy import JointPositions, PoseDelta
@@ -1265,8 +1347,10 @@ def test_peg_insertion_is_one_task_on_franka_and_gim_arm():
         assert type(franka.task) is type(gim_arm.task) is PegInsertion
         assert isinstance(franka.action.channels[0], PoseDelta)
         assert isinstance(gim_arm.action.channels[0], JointPositions)
-        assert franka.task.config.reset_mode == "cartesian"
-        assert gim_arm.task.config.reset_mode == "joint"
+        # One task, no mode to pick: each arm reads the spelling it can use.
+        assert franka.task.config.reset_ee_pose is not None
+        assert franka.task.config.reset_joint_qpos is None
+        assert gim_arm.task.config.reset_joint_qpos == (0.0,) * 6
     finally:
         franka.close()
         gim_arm.close()

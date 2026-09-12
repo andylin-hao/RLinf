@@ -16,9 +16,14 @@
 
 :class:`CartesianTarget` is the whole task on its own, and the base of every
 task set up around a fixture -- a hole, a bottle, a bin. It owns the pose the
-reward measures against, the workspace around it, and the routine that brings
-the arm back to rest between episodes. A task built on it adds only what it
-does before that routine: lift a peg clear of its hole, let go of a cap.
+reward measures against, the workspace around it, and what has to happen
+between episodes. A task built on it adds only what it does before the arm
+goes back to waiting: take a peg clear of its hole, let go of a cap.
+
+A task asks an arm for what it wants, through the verbs every arm offers:
+hold where you are, get clear of what you are touching, go back to where you
+wait. How that is done belongs to the arm, which is why the same task runs on
+one driven by tool poses and one driven by joint targets.
 
 Poses in configs are ``[x, y, z, rx, ry, rz]`` with xyz Euler angles, in the
 frame the arm reports ``tcp_pose`` in. Poses sent to the arm are ``xyz`` plus
@@ -34,7 +39,7 @@ from typing import TYPE_CHECKING, Optional
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
-from rlinf.robotics import Arm
+from rlinf.robotics.parts.arms.base import Home
 from rlinf.utils.logging import get_logger
 
 from .base import Evaluation, ResetContext, Task, TaskConfig
@@ -84,6 +89,16 @@ class CartesianTargetConfig(TaskConfig):
 
     joint_reset_cycle: int = 20000
     """Episodes between two joint resets."""
+
+    reset_joint_qpos: Optional[Sequence[float]] = None
+    """Joint configuration the arm waits at between episodes, for an arm that
+    cannot be sent a tool pose. ``None`` leaves such an arm without a place to
+    wait. Not to be confused with ``joint_reset_qpos`` above, which is the
+    configuration the joints unwind to every ``joint_reset_cycle`` episodes."""
+
+    random_joint_noise: float = 0.02
+    """Largest perturbation of each rest joint when randomising, in radians,
+    for an arm that waits at a configuration."""
 
     enable_gripper_penalty: bool = True
     """Charge a gripper change, so a policy does not chatter the gripper."""
@@ -181,56 +196,19 @@ def reach_target(
     return Evaluation(reward=reward, in_zone=False)
 
 
-def tool_pose(arm: Arm) -> np.ndarray:
-    """The arm's tool pose as it reports it now."""
-    return np.array(arm.get_observation()["tcp_pose"], dtype=np.float64)
-
-
-def hold(parts: Parts, role: str = "arm") -> np.ndarray:
-    """Command the tool to stay where it is, and return that pose.
-
-    A reset starts from here so the arm does not resume toward the last
-    target a policy sent.
-    """
-    arm = parts.arm(role)
-    pose = tool_pose(arm)
-    arm.clear_errors()
-    arm.send_action({"tcp_pose": pose.astype(np.float32)})
-    return pose
-
-
-def lift(
-    parts: Parts,
-    context: ResetContext,
-    height: float,
-    *,
-    duration: float = 1.0,
-    role: str = "arm",
-) -> np.ndarray:
-    """Raise the tool ``height`` metres from where it is, and return the goal."""
-    arm = parts.arm(role)
-    pose = tool_pose(arm)
-    pose[2] += height
-    arm.move_to(pose, duration=duration, rate_hz=context.rate_hz, clear_errors=True)
-    return pose
-
-
 def release_and_back_off(parts: Parts, context: ResetContext) -> None:
     """Open the end effector and back away from what it held.
 
-    The object gets 5 s to settle before the tool rises 3 cm, and 2 s more
-    before it rises another 2 cm.
+    The object gets 5 s to settle before the tool takes 3 cm of clearance,
+    and 2 s more before it takes 2 cm more.
     """
-    context.action.release(parts)
-    hold(parts)
     arm = parts.arm()
-    pose = tool_pose(arm)
-    pose[2] += 0.03
+    context.action.release(parts)
+    arm.hold()
     time.sleep(5)
-    arm.move_to(pose, duration=1.0, rate_hz=context.rate_hz, clear_errors=True)
+    arm.clear(distance=0.03, rate_hz=context.rate_hz)
     time.sleep(2)
-    pose[2] += 0.02
-    arm.move_to(pose, duration=1.0, rate_hz=context.rate_hz, clear_errors=True)
+    arm.clear(distance=0.02, rate_hz=context.rate_hz)
 
 
 class CartesianTarget(Task):
@@ -270,14 +248,39 @@ class CartesianTarget(Task):
         return np.concatenate([pose[:3], R.from_euler("xyz", pose[3:]).as_quat()])
 
     def home(self, parts: Parts, context: ResetContext) -> None:
-        """Move to the rest pose and let the arm settle."""
-        parts.arm().move_to(
-            self.rest_pose(),
-            duration=1.5,
-            rate_hz=context.rate_hz,
-            clear_errors=True,
-        )
+        """Go to where the arm waits, and let it settle."""
+        parts.arm().go_home(self.request(context))
         time.sleep(1.0)
+
+    def request(self, context: ResetContext, pose: Optional[np.ndarray] = None) -> Home:
+        """Where the arm should wait, in both spellings a robot might take.
+
+        An arm driven by tool poses uses the rest pose; one driven by joint
+        targets uses the rest configuration. Randomising perturbs whichever
+        of the two the arm reads.
+        """
+        target = self.rest_pose() if pose is None else np.array(pose, dtype=float)
+        qpos = self.config.reset_joint_qpos
+        if self.config.enable_random_reset:
+            xy, rz = self.config.random_xy_range, self.config.random_rz_range
+            target[:2] += context.rng.uniform(-xy, xy, 2)
+            euler = self.config.target_ee_pose[3:].copy()
+            euler[-1] += context.rng.uniform(-rz, rz)
+            target[3:] = R.from_euler("xyz", euler).as_quat()
+            if qpos is not None:
+                noise = self.config.random_joint_noise
+                jittered = np.asarray(qpos, dtype=float) + context.rng.uniform(
+                    -noise, noise, size=len(qpos)
+                )
+                limits = context.action.joint_limits()
+                if limits is not None:
+                    jittered = np.clip(jittered, *limits)
+                qpos = list(jittered)
+        return Home(
+            pose=target,
+            qpos=qpos,
+            rate_hz=context.rate_hz,
+        )
 
     def reset(self, parts: Parts, context: ResetContext) -> None:
         """Return to rest."""
@@ -292,32 +295,19 @@ class CartesianTarget(Task):
         """Bring the arm to rest for the next episode.
 
         Every ``joint_reset_cycle`` episodes, or when the reset's options ask
-        for ``joint_reset``, the joints first return to ``joint_reset_qpos``.
-        The tool then moves to the rest pose, perturbed when randomising, and
-        tries again up to twice more until it is within 2% of it. A hand goes
-        back to its resting pose, and any fault the motion latched is cleared.
+        for ``joint_reset``, the joints first unwind to ``joint_reset_qpos``.
+        The arm then goes to where it waits, perturbed when randomising. A
+        hand goes back to its resting pose, and any fault the motion latched
+        is cleared.
 
         Args:
             parts: The bound parts.
-            context: The env's generator, control, and rate.
+            context: The env's generator, action layout, and rate.
             pose: Rest pose to use instead of :meth:`rest_pose`.
         """
         arm = parts.arm()
         self.reset_joints_if_due(parts, context)
-
-        pose = self.rest_pose() if pose is None else np.array(pose, dtype=np.float64)
-        if self.config.enable_random_reset:
-            xy, rz = self.config.random_xy_range, self.config.random_rz_range
-            pose[:2] += context.rng.uniform(-xy, xy, 2)
-            euler = self.config.target_ee_pose[3:].copy()
-            euler[-1] += context.rng.uniform(-rz, rz)
-            pose[3:] = R.from_euler("xyz", euler).as_quat()
-
-        for _ in range(3):
-            if np.allclose(tool_pose(arm)[:3], pose[:3], 0.02):
-                break
-            arm.move_to(pose, duration=1.5, rate_hz=context.rate_hz, clear_errors=True)
-
+        arm.go_home(self.request(context, pose))
         context.action.rest_end_effectors(parts)
         arm.clear_errors()
 
@@ -334,9 +324,8 @@ class CartesianTarget(Task):
                 self.config.joint_reset_cycle,
             )
             due = True
-        if due and self.config.joint_reset_qpos is not None:
-            parts.arm().reset_joint(list(self.config.joint_reset_qpos))
-            time.sleep(0.5)
+        if due:
+            parts.arm().unwind(self.config.joint_reset_qpos)
 
     def evaluate(self, reading: Reading, applied: "Applied") -> Evaluation:
         """Score the tool's distance to the target."""
