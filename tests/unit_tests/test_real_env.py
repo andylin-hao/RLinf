@@ -20,6 +20,7 @@ import dataclasses
 import importlib
 import importlib.util
 import io
+import logging
 import os
 import pickle
 import re
@@ -543,6 +544,110 @@ def test_a_channel_acts_where_its_phase_says(monkeypatch):
 
     assert order(Phase.BEFORE) == ["close", "clear", "arm"]
     assert order(Phase.AFTER) == ["clear", "arm", "close"]
+
+
+def _deferred_gripper_layout(log, hold):
+    """A pose channel and a slow gripper the step does not wait for."""
+    from rlinf.envs.real.policy import ActionLayout, BinaryGripper, PoseDelta
+    from rlinf.envs.real.tasks import bind
+
+    class SlowGripper(LatchGripper):
+        def close(self, speed: float = 0.3, force: float = 130.0) -> None:
+            time.sleep(hold)
+            super().close(speed, force)
+
+    robot = Robot(arm=PoseArm(log), end_effector=SlowGripper(log))
+    robot.connect()
+    layout = ActionLayout(
+        (PoseDelta("arm"), BinaryGripper("arm", settle_s=0.0, awaited=False))
+    )
+    return robot, layout, bind(robot, layout.requirements(), owner="test")
+
+
+def test_a_gripper_the_step_does_not_wait_for_still_reports_its_effect():
+    """A deferred latch leaves the step, but the step still scores it."""
+    log: list = []
+    hold = 0.4
+    robot, layout, parts = _deferred_gripper_layout(log, hold)
+    try:
+        start = time.time()
+        applied = layout.apply(
+            parts,
+            np.array([0, 0, 0, 0, 0, 0, -1.0]),
+            parts.read(robot.get_observation()),
+        )
+        elapsed = time.time() - start
+        # The step returned while the fingers were still closing.
+        assert elapsed < hold / 2
+        assert [entry[0] for entry in log] == ["clear", "arm"]
+        # The task is charged for the grasp in the step that asked for it.
+        assert applied.penalties == 1
+
+        layout.drain()
+        assert [entry[0] for entry in log] == ["clear", "arm", "close"]
+    finally:
+        layout.close()
+        robot.disconnect()
+
+
+def test_deferred_commands_to_one_role_keep_their_order():
+    """A role's queue runs one command at a time, in the order handed over."""
+    from rlinf.envs.real.policy import ActionLayout, BinaryGripper, PoseDelta
+
+    layout = ActionLayout((PoseDelta("arm"), BinaryGripper("arm", awaited=False)))
+    seen: list = []
+
+    def record(tag, hold):
+        def call():
+            time.sleep(hold)
+            seen.append(tag)
+
+        return call
+
+    try:
+        # The slow command is handed over first, so it must still finish first.
+        layout.defer("arm", record("first", 0.2))
+        layout.defer("arm", record("second", 0.0))
+        layout.drain()
+    finally:
+        layout.close()
+    assert seen == ["first", "second"]
+
+
+def test_a_deferred_command_that_fails_does_not_break_the_next_step(caplog):
+    """The step that caused it has returned, so the failure is logged."""
+    from rlinf.envs.real.policy import ActionLayout, BinaryGripper, PoseDelta
+
+    layout = ActionLayout((PoseDelta("arm"), BinaryGripper("arm", awaited=False)))
+
+    def explode():
+        raise RuntimeError("gripper bus went away")
+
+    try:
+        with caplog.at_level(logging.ERROR):
+            layout.defer("arm", explode)
+            layout.drain()
+    finally:
+        layout.close()
+    assert "gripper bus went away" in caplog.text
+
+
+def test_a_reset_waits_for_the_gripper_the_last_step_deferred():
+    """A reset commands the same parts, so it lets the latch land first."""
+    log: list = []
+    robot, layout, parts = _deferred_gripper_layout(log, 0.3)
+    try:
+        layout.apply(
+            parts,
+            np.array([0, 0, 0, 0, 0, 0, -1.0]),
+            parts.read(robot.get_observation()),
+        )
+        layout.reset(parts)
+        # The close landed before the reset could read or move the gripper.
+        assert "close" in [entry[0] for entry in log]
+    finally:
+        layout.close()
+        robot.disconnect()
 
 
 def test_a_policy_can_be_trained_on_the_drivers_own_colours():

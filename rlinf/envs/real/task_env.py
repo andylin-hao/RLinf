@@ -331,6 +331,8 @@ class TaskEnv(gym.Env):
         if self.camera_player is not None:
             self.camera_player.stop()
             self.camera_player = None
+        # Let a deferred command reach the robot before the robot goes away.
+        self.action.close()
         if self.robot is not None:
             self.robot.disconnect()
             self.robot = None

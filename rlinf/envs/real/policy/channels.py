@@ -20,7 +20,7 @@ same channels rather than a second env.
 """
 
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
@@ -308,6 +308,9 @@ class BinaryGripper(Channel):
         fitted: Whether the robot has the gripper. A rig without one keeps the
             channel, so the policy's action layout does not depend on the rig,
             and ignores it.
+        awaited: Whether a step waits for the fingers. A gripper slower than
+            the control period is commanded on the role's queue instead, and
+            the step reports what it asked for without blocking on it.
         name: Action part name.
     """
 
@@ -320,6 +323,7 @@ class BinaryGripper(Channel):
         settle_s: float = 0.6,
         phase: Phase = Phase.BEFORE,
         fitted: bool = True,
+        awaited: bool = True,
         name: str = "end_effector",
     ) -> None:
         super().__init__(
@@ -329,6 +333,7 @@ class BinaryGripper(Channel):
         self.scale = scale
         self.settle_s = settle_s
         self.fitted = fitted
+        self.awaited = awaited
 
     def bounds(self) -> tuple[np.ndarray, np.ndarray]:
         """One unit either way: closed at the bottom, open at the top."""
@@ -340,7 +345,13 @@ class BinaryGripper(Channel):
 
     def command(self, parts: Parts, values: np.ndarray, reading: Reading) -> Command:
         """Open or close the gripper, if this value asks for the other state."""
-        return Command(effect=self._latch(parts, float(values[0]) * self.scale))
+        act, effect = self._decide(parts, float(values[0]) * self.scale)
+        if act is None:
+            return Command(effect=effect)
+        if self.awaited:
+            act()
+            return Command(effect=effect)
+        return Command(effect=effect, defer=act)
 
     def grasp(self, parts: Parts) -> bool:
         """Close the gripper as a fully closing action would."""
@@ -358,18 +369,37 @@ class BinaryGripper(Channel):
             return {}
         return {"gripper_open": bool(parts.end_effector(self.role).is_open)}
 
-    def _latch(self, parts: Parts, value: float) -> Optional[Effect]:
+    def _decide(
+        self, parts: Parts, value: float
+    ) -> tuple[Optional[Callable[[], None]], Optional[Effect]]:
+        """What this value asks of the gripper, and the effect it has.
+
+        Deciding is separate from acting so that a caller which does not wait
+        for the fingers still learns, in the step that asked, whether the
+        gripper was asked to change.
+        """
         if not self.fitted:
-            return None
+            return None, None
         effector = parts.end_effector(self.role)
         if value <= -self.threshold and effector.is_open:
-            effector.close()
+            latch = effector.close
         elif value >= self.threshold and not effector.is_open:
-            effector.open()
+            latch = effector.open
         else:
-            return Effect(self.role, changed=False)
-        time.sleep(self.settle_s)
-        return Effect(self.role, changed=True)
+            return None, Effect(self.role, changed=False)
+
+        def act() -> None:
+            latch()
+            time.sleep(self.settle_s)
+
+        return act, Effect(self.role, changed=True)
+
+    def _latch(self, parts: Parts, value: float) -> Optional[Effect]:
+        """Act on ``value`` and wait for the fingers, as a reset does."""
+        act, effect = self._decide(parts, value)
+        if act is not None:
+            act()
+        return effect
 
 
 class HandCommand(Channel):

@@ -26,7 +26,8 @@ arm's own bus goes out in the same command as the joints.
 """
 
 from abc import ABC, abstractmethod
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Optional
@@ -37,6 +38,7 @@ import numpy as np
 from rlinf.envs.real.tasks.requirements import Needs, Parts, Reading, combine, merge
 from rlinf.envs.real.tasks.workspace import Workspace
 from rlinf.robotics.actions import ActionKind, ActionPart
+from rlinf.utils.logging import get_logger
 
 
 class Phase(Enum):
@@ -94,10 +96,15 @@ class Command:
         send: Nested part action, merged with every other command of the same
             phase into one ``send_action``.
         effect: What the command did, for a task that scores it.
+        defer: Work the step must not wait for, run on the role's own queue in
+            the order it was handed over. A channel driving a part whose
+            command takes longer than the control period returns the decision
+            here and the effect above, so the step still scores it.
     """
 
     send: Mapping[str, Any] = field(default_factory=dict)
     effect: Optional[Effect] = None
+    defer: Optional[Callable[[], None]] = None
 
 
 class Channel(ABC):
@@ -187,6 +194,10 @@ class ActionLayout:
         self.channels = tuple(channels)
         self.wrappers = tuple(wrappers)
         self.transforms = tuple(transforms)
+        # One worker per role, so deferred commands to a part stay in the
+        # order they were handed over while different roles run at once.
+        self._queues: dict[str, ThreadPoolExecutor] = {}
+        self._pending: list[Future[None]] = []
 
     @property
     def width(self) -> int:
@@ -217,8 +228,52 @@ class ActionLayout:
 
     def reset(self, parts: Optional[Parts] = None) -> None:
         """Forget the previous episode and set the parts up for the next."""
+        # A reset commands the same parts, so let the last episode's deferred
+        # commands land before it reads or moves them.
+        self.drain()
         for channel in self.channels:
             channel.reset(parts)
+
+    def defer(self, role: str, call: Callable[[], None]) -> None:
+        """Run ``call`` on ``role``'s queue without waiting for it.
+
+        Commands handed to one role run in order. A failure is logged rather
+        than raised, because by then the step that caused it has returned.
+        """
+        queue = self._queues.get(role)
+        if queue is None:
+            queue = ThreadPoolExecutor(
+                max_workers=1, thread_name_prefix=f"action-{role}"
+            )
+            self._queues[role] = queue
+        future = queue.submit(call)
+        future.add_done_callback(lambda done: self._report(role, done))
+        self._pending.append(future)
+
+    @staticmethod
+    def _report(role: str, future: "Future[None]") -> None:
+        """Log a deferred command that failed after its step returned."""
+        if future.cancelled():
+            return
+        error = future.exception()
+        if error is not None:
+            get_logger().error("Deferred command for role %r failed: %r", role, error)
+
+    def drain(self) -> None:
+        """Wait for every deferred command handed over so far."""
+        pending, self._pending = self._pending, []
+        for future in pending:
+            try:
+                future.result()
+            except BaseException:  # noqa: BLE001 - already logged by _report
+                pass
+
+    def close(self) -> None:
+        """Stop the deferral queues, letting queued commands finish."""
+        self.drain()
+        for queue in self._queues.values():
+            queue.shutdown(wait=True)
+        self._queues.clear()
 
     def apply(self, parts: Parts, action: np.ndarray, reading: Reading) -> Applied:
         """Command every channel from one action, phase by phase."""
@@ -234,8 +289,12 @@ class ActionLayout:
                     merge(pending, dict(command.send))
                 if command.effect is not None:
                     effects.append(command.effect)
+                if command.defer is not None:
+                    self.defer(channel.role, command.defer)
             if pending:
                 parts.robot.send_action(pending)
+        # Deferred commands that are already done should not pile up.
+        self._pending = [future for future in self._pending if not future.done()]
         return Applied(tuple(effects))
 
     # What a task's reset and a teleoperation device ask of the channels.

@@ -341,6 +341,15 @@ period, reads the whole robot once, and asks the task to score that reading.
 ``base_pose``, read from the base's ``pose``. ``close()`` disconnects the
 robot.
 
+A channel that drives a part slower than the control period should not make the
+step wait for it. Such a channel decides on the calling thread, so the step
+still reports what it asked for, and returns the actuation as ``Command.defer``
+instead of running it. The layout runs deferred work on a queue per role, in
+the order it was handed over, and lets it finish before the next reset and
+before the environment closes. ``BinaryGripper(awaited=False)`` is the shipped
+example: a gripper whose fingers take longer to close than one tick of a 10 Hz
+loop.
+
 The arm is on the robot but untouched, because neither the task nor the layout
 names it. A manipulation task adds an ``arm`` role, and the layout gains that
 arm's channels beside the base's; the base driver and the robot composition
