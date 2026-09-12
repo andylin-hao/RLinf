@@ -5060,6 +5060,45 @@ def test_so101_continuous_gripper_commands_do_not_wait_for_travel():
             robot.disconnect()
 
 
+@pytest.mark.parametrize("opening", [0.0, 1.0])
+@pytest.mark.parametrize("travel_per_read,seconds_per_read", [(0.5, 0.05), (3.0, 1.0)])
+def test_so101_gripper_keeps_moving_while_feedback_progresses(
+    monkeypatch, opening, travel_per_read, seconds_per_read
+):
+    from robot_mocks import mocked_sdks
+
+    from rlinf.robotics.parts.arms import so101
+
+    with mocked_sdks() as made:
+        follower = made["lerobot.robots.so_follower"].SO101Follower
+        follower.jaw_step = travel_per_read
+        follower.jaw_lag = 0
+        clock = [0.0]
+        original_read = follower.get_observation
+
+        def read(device):
+            clock[0] += seconds_per_read
+            return original_read(device)
+
+        monkeypatch.setattr(follower, "get_observation", read)
+        monkeypatch.setattr(so101, "time", SimpleNamespace(monotonic=lambda: clock[0]))
+        arm = so101.SO101Arm("/dev/mock-so101")
+        arm.connect()
+        device = follower.instances[-1]
+        device.positions["gripper.pos"] = 70.0 if opening else 30.0
+        try:
+            if opening:
+                arm.open_gripper()
+            else:
+                arm.close_gripper()
+            assert arm.get_state().gripper_position[0] == pytest.approx(
+                opening, abs=0.02
+            )
+            assert device.sent == [{"gripper.pos": opening * 100.0}]
+        finally:
+            arm.disconnect()
+
+
 def test_so101_repeated_targets_preserve_stall_relief_until_reversed():
     from robot_mocks import mocked_sdks
 

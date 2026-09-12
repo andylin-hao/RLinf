@@ -209,7 +209,9 @@ runs independently; the environment reuses frames up to ``camera_max_age``
 seconds old (default 0.5) instead of waiting for a new image at every step.
 Continuous gripper commands return without waiting for travel. The driver
 monitors stalled jaws and holds them at the measured opening to relieve
-pressure. Move the leader's gripper away from that opening before retrying
+pressure. Each measured advance toward the target restarts stall detection,
+so slow or sustained movement can continue while it makes progress.
+Move the leader's gripper away from that opening before retrying
 motion into the obstruction. The driver's ``open_gripper()`` and
 ``close_gripper()`` methods still wait for travel or stall relief.
 

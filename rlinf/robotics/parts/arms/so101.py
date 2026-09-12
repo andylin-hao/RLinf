@@ -96,10 +96,10 @@ class SO101Arm(BaseArm):
     #: Bus rate the STS3215 servos run at, matching lerobot's default.
     BAUDRATE: int = 1_000_000
 
-    #: Gripper travel, on that scale, below which the jaws count as stopped.
+    #: Target arrival and stall-release margin, on the gripper's 0..100 scale.
     GRIPPER_TOLERANCE: float = 2.0
 
-    #: Seconds to watch the jaws before giving up on them reaching a target.
+    #: Maximum seconds without progress before relieving a pending target.
     GRIPPER_SETTLE_TIMEOUT: float = 3.0
 
     #: Consecutive still polls that mean the jaws have stopped rather than
@@ -411,11 +411,14 @@ class SO101Arm(BaseArm):
                         direction = next_direction
                         deadline = time.monotonic() + self.GRIPPER_SETTLE_TIMEOUT
                         continue
-                    if abs(current - previous) < self.GRIPPER_TOLERANCE:
-                        still += 1
-                    else:
+                    # Track the furthest measured position toward the target.
+                    # Small advances count; jitter around one position does not.
+                    if (current - previous) * direction > 0:
                         previous = current
                         still = 0
+                        deadline = time.monotonic() + self.GRIPPER_SETTLE_TIMEOUT
+                    else:
+                        still += 1
                     if (
                         still >= self.GRIPPER_STALL_POLLS
                         or time.monotonic() >= deadline
