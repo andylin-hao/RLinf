@@ -1134,6 +1134,166 @@ def test_a_rest_pose_near_the_origin_counts_as_reached(monkeypatch):
         arm.disconnect()
 
 
+def test_a_waypoint_channel_does_not_recover_faults_every_command():
+    """Recovering at the control rate is traffic most controllers do not need.
+
+    The single-arm Franka clears a latched fault before each command because
+    its controller stops accepting targets after one. The dual-arm env this
+    channel replaced cleared only at reset, so asking for it by default put
+    a recovery call on every arm on every step.
+    """
+    from rlinf.envs.real.policy import ActionLayout, PoseTarget
+    from rlinf.envs.real.tasks import bind
+
+    log: list = []
+
+    class Counting(PoseArm):
+        def __init__(self, log):
+            super().__init__(log)
+            self.cleared = 0
+
+        def clear_errors(self):
+            self.cleared += 1
+
+    def drive(**settings):
+        arm = Counting(log)
+        robot = Robot(arm=arm)
+        robot.connect()
+        layout = ActionLayout(
+            (PoseTarget("arm", low=[-1.0] * 3, high=[1.0] * 3, **settings),)
+        )
+        parts = bind(robot, layout.requirements(), owner="test")
+        try:
+            for _ in range(3):
+                layout.apply(parts, np.zeros(9), parts.read(robot.get_observation()))
+        finally:
+            layout.close()
+            robot.disconnect()
+        return arm.cleared
+
+    assert drive() == 0
+    # A controller that needs it still says so.
+    assert drive(clear_errors=True) == 3
+
+
+def _reset_context(layout, **options):
+    """The context a task's reset is given, outside any environment."""
+    from rlinf.envs.real.tasks import ResetContext
+
+    return ResetContext(
+        rng=np.random.default_rng(0), action=layout, options=options, rate_hz=10.0
+    )
+
+
+def test_an_arm_still_travelling_is_given_time_to_arrive(monkeypatch):
+    """A controller that interpolates is still moving when the last waypoint
+    goes out, so judging it then reports a miss it was about to make good."""
+    from rlinf.robotics.parts.arms.base import Home
+
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+    log: list = []
+
+    class Smoothing(PoseArm):
+        """Arrives several reads after the motion, not the moment it is sent."""
+
+        def __init__(self, log):
+            super().__init__(log)
+            self.pending = None
+            self.reads = 0
+
+        def send_action(self, action):
+            self.pending = np.asarray(action["tcp_pose"], dtype=float)
+            self.reads = 0
+            log.append(("arm", self.pending.tolist()))
+            return action
+
+        def get_observation(self):
+            if self.pending is not None:
+                self.reads += 1
+                if self.reads >= 6:
+                    self.pose = self.pending
+            return {"tcp_pose": np.asarray(self.pose, dtype=float)}
+
+    arm = Smoothing(log)
+    arm.connect()
+    try:
+        target = np.zeros(7)
+        target[0], target[6] = 0.4, 1.0
+        # Without time to settle the arm is judged mid-motion and re-commanded.
+        arm.go_home(Home(pose=target, rate_hz=1.0, attempts=3))
+        impatient = len([entry for entry in log if entry[0] == "arm"])
+
+        arm.pose = np.zeros(7)
+        arm.pose[6] = 1.0
+        arm.pending = None
+        log.clear()
+        arm.go_home(Home(pose=target, rate_hz=1.0, attempts=3, arrive_within=5.0))
+        patient = len([entry for entry in log if entry[0] == "arm"])
+    finally:
+        arm.disconnect()
+
+    # Waiting means one motion instead of a motion per attempt.
+    assert patient < impatient
+
+
+def test_a_multi_arm_reset_clears_faults_even_with_nowhere_to_go():
+    """An arm already at rest still starts its next episode fault-free.
+
+    A homing motion clears faults as it goes, so the gap is the arm that is
+    already where it waits and therefore never moves. The environment this
+    task replaced cleared both arms at every reset regardless.
+    """
+    from rlinf.envs.real.policy import ActionLayout, BinaryGripper, PoseDelta
+    from rlinf.envs.real.tasks import MultiArmTarget, MultiArmTargetConfig, bind
+    from rlinf.robotics.parts.base import PartGroup
+
+    log: list = []
+
+    class Recording(PoseArm):
+        def __init__(self, side):
+            super().__init__(log)
+            self.side = side
+            self.cleared = 0
+
+        def clear_errors(self):
+            self.cleared += 1
+
+    arms = {side: Recording(side) for side in ("left", "right")}
+    robot = Robot(
+        **{
+            side: PartGroup(arm=arms[side], end_effector=LatchGripper(log))
+            for side in ("left", "right")
+        }
+    )
+    robot.connect()
+    layout = ActionLayout(
+        tuple(
+            channel
+            for side in ("left", "right")
+            for channel in (
+                PoseDelta(side, name=f"{side}.arm"),
+                BinaryGripper(side, settle_s=0.0, name=f"{side}.end_effector"),
+            )
+        )
+    )
+    parts = bind(robot, layout.requirements(), owner="test")
+    # The rest pose is where these arms already are, so neither one moves.
+    task = MultiArmTarget(
+        MultiArmTargetConfig(
+            roles=("left", "right"), reset_ee_pose=[0.5, 0.0, 0.1, 0.0, 0.0, 0.0]
+        )
+    )
+    try:
+        task.reset(parts, _reset_context(layout))
+    finally:
+        layout.close()
+        robot.disconnect()
+
+    assert not [entry for entry in log if entry[0] == "arm"], "an arm moved"
+    for side, arm in arms.items():
+        assert arm.cleared >= 1, f"{side} arm kept whatever the reset latched"
+
+
 def test_an_arm_that_never_arrives_is_reported_when_the_task_needs_it(monkeypatch):
     """A task whose next episode starts from the rest pose cannot go on."""
     from rlinf.robotics.parts.arms.base import Home

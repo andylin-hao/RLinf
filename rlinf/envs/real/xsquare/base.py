@@ -92,6 +92,9 @@ class Turtle2Env(RegisteredTaskEnv):
         # This controller interpolates toward its target, so the arm settles
         # near the rest pose rather than exactly on it.
         "reset_tolerance": 0.02,
+        # This controller smooths toward its target rather than jumping, so
+        # the arm is still moving when the last waypoint is sent.
+        "reset_arrive_within": 10.0,
         "enable_gripper_penalty": True,
     }
     REFUSED = {

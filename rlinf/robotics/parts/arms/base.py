@@ -16,7 +16,7 @@
 
 import time
 from abc import ABC, abstractmethod
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, fields
 from typing import Any, ClassVar, Optional, Protocol
 
@@ -61,6 +61,10 @@ class Home:
             whose next episode is meaningless from anywhere else. Off by
             default, because an arm left near its rest pose is usually better
             than an episode that never starts.
+        arrive_within: Seconds to keep watching for the arm to arrive after a
+            motion is commanded. A controller that interpolates toward a
+            target is still moving when the last waypoint is sent, so a task
+            on one gives it time rather than judging it immediately.
     """
 
     pose: "Optional[Sequence[float]]" = None
@@ -70,6 +74,7 @@ class Home:
     duration: float = 1.5
     rate_hz: float = 10.0
     require_arrival: bool = False
+    arrive_within: float = 0.0
 
 
 @dataclass
@@ -283,9 +288,14 @@ class Arm(ControllablePart):
         """
         if self.takes_poses and home.pose is not None:
             target = np.asarray(home.pose, dtype=float)
-            current = np.asarray(self.get_observation()["tcp_pose"], dtype=float)
+
+            def arrived() -> bool:
+                """Whether the tool is within tolerance of the rest pose."""
+                where = np.asarray(self.get_observation()["tcp_pose"], dtype=float)
+                return bool(np.all(np.abs(where[:3] - target[:3]) <= home.tolerance))
+
             for _ in range(max(1, home.attempts)):
-                if np.all(np.abs(current[:3] - target[:3]) <= home.tolerance):
+                if arrived():
                     return
                 self.move_to(
                     target,
@@ -293,13 +303,13 @@ class Arm(ControllablePart):
                     rate_hz=home.rate_hz,
                     clear_errors=True,
                 )
-                current = np.asarray(self.get_observation()["tcp_pose"], dtype=float)
-            if home.require_arrival and not np.all(
-                np.abs(current[:3] - target[:3]) <= home.tolerance
-            ):
+                if self._settles(arrived, home):
+                    return
+            if home.require_arrival and not arrived():
+                where = np.asarray(self.get_observation()["tcp_pose"], dtype=float)
                 raise RuntimeError(
                     f"{type(self).__name__} did not reach its rest pose in "
-                    f"{max(1, home.attempts)} attempts: at {current[:3].round(4)}, "
+                    f"{max(1, home.attempts)} attempts: at {where[:3].round(4)}, "
                     f"wanted {target[:3].round(4)}."
                 )
             return
@@ -311,6 +321,29 @@ class Arm(ControllablePart):
             "task named no joint configuration for it to wait at. Give the "
             "task a rest configuration for this arm."
         )
+
+    @staticmethod
+    def _settles(arrived: "Callable[[], bool]", home: "Home") -> bool:
+        """Watch for ``arrived`` for ``home.arrive_within`` seconds.
+
+        An arm whose controller interpolates toward a target is still moving
+        when the last waypoint is sent, so judging it then reports a miss it
+        was about to make good. Watching costs nothing on an arm that is
+        already there, because the first look ends it.
+
+        Returns:
+            Whether the arm arrived within the time allowed.
+        """
+        if home.arrive_within <= 0:
+            return arrived()
+        period = 1.0 / max(home.rate_hz, 1e-6)
+        deadline = time.time() + home.arrive_within
+        while True:
+            if arrived():
+                return True
+            if time.time() >= deadline:
+                return False
+            time.sleep(period)
 
     def unwind(self, qpos: "Optional[Sequence[float]]", settle: float = 0.5) -> None:
         """Return the joints to a known configuration, unwinding any drift.

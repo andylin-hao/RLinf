@@ -87,6 +87,7 @@ class ButtonConfig(MultiArmTargetConfig):
         self.ee_pose_limit_max = target + above
         super().__post_init__()
 
+
 class Button(MultiArmTarget):
     """Bring the tool onto a button and hold it there.
 

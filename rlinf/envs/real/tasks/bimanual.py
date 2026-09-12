@@ -110,6 +110,10 @@ class MultiArmTargetConfig(TaskConfig):
     reset_tolerance: float = 0.01
     """How near the rest pose counts as arrived, in metres on every axis."""
 
+    reset_arrive_within: float = 0.0
+    """Seconds to watch for an arm to reach its rest pose after the motion is
+    commanded, for a controller that interpolates toward its target."""
+
     enable_random_reset: bool = False
     """Perturb each arm's rest pose, so episodes do not all start alike."""
 
@@ -222,6 +226,7 @@ class MultiArmTarget(Task):
             tolerance=self.config.reset_tolerance,
             rate_hz=context.rate_hz,
             require_arrival=self.config.require_reset_arrival,
+            arrive_within=self.config.reset_arrive_within,
         )
 
     def reset(self, parts: Parts, context: ResetContext) -> None:
@@ -251,7 +256,11 @@ class MultiArmTarget(Task):
                 )
             time.sleep(self.config.pre_reset_settle_s)
         for index, role in enumerate(self.config.roles):
-            parts.arm(role).go_home(self.rest(index, context))
+            arm = parts.arm(role)
+            arm.go_home(self.rest(index, context))
+            # The motion back may have latched a fault, and the next episode
+            # starts from here.
+            arm.clear_errors()
         time.sleep(self.config.reset_settle_s)
 
     def _error(self, pose: np.ndarray, target: np.ndarray) -> np.ndarray:

@@ -293,7 +293,10 @@ class PoseTarget(Channel):
         rotation_limit: Bound on each of the six rotation numbers, left wide of
             one so a policy's output survives normalisation.
         compliance: Impedance gains applied to the arm at each reset.
-        clear_errors: Clear a latched fault before each command.
+        clear_errors: Clear a latched fault before each command. Off by
+            default: a controller that needs it says so, and asking every arm
+            to recover at the control rate is traffic most of them do not
+            need.
         name: Action part name; the role's own name by default.
     """
 
@@ -305,7 +308,7 @@ class PoseTarget(Channel):
         high: Optional[Sequence[float]] = None,
         rotation_limit: float = 1.5,
         compliance: Optional[Mapping[str, float]] = None,
-        clear_errors: bool = True,
+        clear_errors: bool = False,
         name: Optional[str] = None,
     ) -> None:
         self._low = None if low is None else np.asarray(low, dtype=np.float64)
@@ -368,7 +371,7 @@ class PoseTarget(Channel):
     def reset(self, parts: Optional[Parts]) -> None:
         """Forget the hemisphere and apply the episode's impedance gains."""
         self._last_quat = None
-        if parts is not None and self.compliance:
+        if parts is not None:
             parts.arm(self.role).reconfigure_compliance_params(self.compliance)
 
     def prepare(self, parts: Parts) -> None:
