@@ -31,6 +31,7 @@ from .action import (
 from .channels import (
     BinaryGripper,
     ContinuousGripper,
+    GripperWidth,
     HandCommand,
     JointActionConfig,
     JointPositions,
@@ -54,6 +55,7 @@ __all__ = [
     "Channel",
     "Command",
     "ContinuousGripper",
+    "GripperWidth",
     "Effect",
     "Encoder",
     "HandCommand",

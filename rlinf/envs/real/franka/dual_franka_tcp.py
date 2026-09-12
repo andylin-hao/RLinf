@@ -72,21 +72,25 @@ class DualFrankaTCPEnv(DualFrankaEnv):
 
     @classmethod
     def make_observation(
-        cls, hardware: DualFrankaConfig, cameras: tuple[CameraInfo, ...]
+        cls,
+        hardware: DualFrankaConfig,
+        cameras: tuple[CameraInfo, ...],
+        roles: tuple[str, ...] = SIDES,
     ) -> ObservationSpec:
-        """Both tool poses in the form the action uses, and both grippers."""
+        """Every tool pose in the form the action uses, and every gripper."""
+        arms = len(roles)
         state = (
             StateKey(
                 "gripper_position",
-                (2,),
-                tuple(Source("state", role=s, end_effector=True) for s in SIDES),
+                (arms,),
+                tuple(Source("state", role=r, end_effector=True) for r in roles),
                 low=-1.0,
                 high=1.0,
             ),
             StateKey(
                 "tcp_pose_rot6d",
-                (18,),
-                tuple(Source("tcp_pose", role=s, encode=pose_as_rot6d) for s in SIDES),
+                (9 * arms,),
+                tuple(Source("tcp_pose", role=r, encode=pose_as_rot6d) for r in roles),
             ),
         )
         # A dual-arm policy was trained on 224-pixel frames.

@@ -446,6 +446,71 @@ class ContinuousGripper(Channel):
         )
 
 
+class GripperWidth(Channel):
+    """A gripper opened to a width the policy asks for, in the driver's units.
+
+    Unlike :class:`ContinuousGripper`, which spans a normalised stroke, this
+    channel's numbers are the opening itself, which is what a policy trained
+    against a controller that reports a width was trained on.
+
+    Args:
+        role: The role whose end effector this channel drives.
+        low: Narrowest opening the gripper accepts.
+        high: Widest opening it accepts.
+        action_range: What the policy emits, when that is not the opening
+            range itself. A checkpoint trained with every channel normalised
+            sends one unit either way, and the opening it asks for is then
+            held inside ``low`` and ``high`` like any other.
+        enforce_close: Ignore the channel and hold the gripper at ``low``, for
+            a task that must not let go of what it is holding.
+        moved_tolerance: Change in opening between two steps that counts as
+            the gripper moving, for a task's gripper penalty.
+        name: Action part name.
+    """
+
+    def __init__(
+        self,
+        role: str = "arm",
+        *,
+        low: float = 0.0,
+        high: float = 1.0,
+        action_range: Optional[tuple[float, float]] = None,
+        enforce_close: bool = False,
+        moved_tolerance: float = 0.05,
+        name: str = "end_effector",
+    ) -> None:
+        super().__init__(
+            role=role, name=name, width=1, kind=ActionKind.GRIPPER, phase=Phase.WITH
+        )
+        self.low = low
+        self.high = high
+        self.action_range = action_range
+        self.enforce_close = enforce_close
+        self.moved_tolerance = moved_tolerance
+
+    def bounds(self) -> tuple[np.ndarray, np.ndarray]:
+        """What the policy emits: the opening range, or its own."""
+        low, high = self.action_range or (self.low, self.high)
+        return np.array([low]), np.array([high])
+
+    def requirements(self) -> Mapping[str, Needs]:
+        """A gripper that reports its opening and takes one."""
+        return {self.role: Needs(end_effector="gripper")}
+
+    def command(self, parts: Parts, values: np.ndarray, reading: Reading) -> Command:
+        """Open the gripper this wide, or hold it shut."""
+        target = self.low if self.enforce_close else float(values[0])
+        target = float(np.clip(target, self.low, self.high))
+        effector = parts.end_effector(self.role)
+        before = reading.end_effector(self.role)
+        opening = None if before is None else np.asarray(before["state"]).reshape(-1)[0]
+        effector.command(np.array([target], dtype=np.float32))
+        moved = opening is not None and abs(target - float(opening)) > (
+            self.moved_tolerance
+        )
+        return Command(effect=Effect(self.role, changed=bool(moved)))
+
+
 class BinaryGripper(Channel):
     """A gripper that is either open or closed.
 

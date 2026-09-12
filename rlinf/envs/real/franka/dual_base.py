@@ -130,10 +130,11 @@ class DualFrankaEnv(RegisteredTaskEnv):
         hardware: DualFrankaConfig,
         config: DualArmActionConfig,
         options: None = None,
+        roles: tuple[str, ...] = SIDES,
     ) -> ActionLayout:
-        """Each arm's channel, then its gripper, left arm first."""
+        """Each arm's channel, then its gripper, in the order the task names."""
         channels: list[Channel] = []
-        for side in SIDES:
+        for side in roles:
             channels.append(cls.arm_channel(side, hardware, config))
             channels.append(
                 BinaryGripper(
@@ -152,35 +153,48 @@ class DualFrankaEnv(RegisteredTaskEnv):
 
     @classmethod
     def make_observation(
-        cls, hardware: DualFrankaConfig, cameras: tuple[CameraInfo, ...]
+        cls,
+        hardware: DualFrankaConfig,
+        cameras: tuple[CameraInfo, ...],
+        roles: tuple[str, ...] = SIDES,
     ) -> ObservationSpec:
-        """Both arms' poses, twists, joints, wrenches and grippers, in order."""
-        both = tuple(Source("tcp_pose", role=side) for side in SIDES)
+        """Every driven arm's pose, twist, joints, wrench and gripper, in order."""
+        arms = len(roles)
         state = (
-            StateKey("tcp_pose", (14,), both),
-            StateKey("tcp_vel", (12,), tuple(Source("tcp_vel", role=s) for s in SIDES)),
+            StateKey(
+                "tcp_pose",
+                (7 * arms,),
+                tuple(Source("tcp_pose", role=r) for r in roles),
+            ),
+            StateKey(
+                "tcp_vel", (6 * arms,), tuple(Source("tcp_vel", role=r) for r in roles)
+            ),
             StateKey(
                 "joint_position",
-                (14,),
-                tuple(Source("arm_joint_position", role=s) for s in SIDES),
+                (7 * arms,),
+                tuple(Source("arm_joint_position", role=r) for r in roles),
             ),
             StateKey(
                 "joint_velocity",
-                (14,),
-                tuple(Source("arm_joint_velocity", role=s) for s in SIDES),
+                (7 * arms,),
+                tuple(Source("arm_joint_velocity", role=r) for r in roles),
             ),
             StateKey(
                 "gripper_position",
-                (2,),
-                tuple(Source("state", role=s, end_effector=True) for s in SIDES),
+                (arms,),
+                tuple(Source("state", role=r, end_effector=True) for r in roles),
                 low=-1.0,
                 high=1.0,
             ),
             StateKey(
-                "tcp_force", (6,), tuple(Source("tcp_force", role=s) for s in SIDES)
+                "tcp_force",
+                (3 * arms,),
+                tuple(Source("tcp_force", role=r) for r in roles),
             ),
             StateKey(
-                "tcp_torque", (6,), tuple(Source("tcp_torque", role=s) for s in SIDES)
+                "tcp_torque",
+                (3 * arms,),
+                tuple(Source("tcp_torque", role=r) for r in roles),
             ),
         )
         # A dual-arm policy was trained on 224-pixel frames.

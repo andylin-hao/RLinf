@@ -55,7 +55,11 @@ class SO101Env(RegisteredTaskEnv):
 
     @classmethod
     def make_action(
-        cls, hardware: SO101Config, config: JointActionConfig, options: None = None
+        cls,
+        hardware: SO101Config,
+        config: JointActionConfig,
+        options: None = None,
+        roles: tuple[str, ...] = ("arm",),
     ) -> ActionLayout:
         """Five joints, then the gripper's opening."""
         return ActionLayout(
@@ -72,7 +76,10 @@ class SO101Env(RegisteredTaskEnv):
 
     @classmethod
     def make_observation(
-        cls, hardware: SO101Config, cameras: tuple[CameraInfo, ...]
+        cls,
+        hardware: SO101Config,
+        cameras: tuple[CameraInfo, ...],
+        roles: tuple[str, ...] = ("arm",),
     ) -> ObservationSpec:
         """Joints, the gripper's opening, and the cameras."""
         state = (

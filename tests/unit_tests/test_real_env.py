@@ -60,7 +60,7 @@ from rlinf.envs.real.wrappers.teleop.intervention import (  # noqa: E402
     TeleopIntervention,
     TeleopSample,
 )
-from rlinf.envs.real.xsquare.base import Turtle2Env, Turtle2EnvConfig
+from rlinf.envs.real.xsquare.base import Turtle2Env
 from rlinf.envs.sim.robotwin.seed_utils import partition_success_seeds
 from rlinf.robotics import (
     Arm,
@@ -274,20 +274,46 @@ def test_a_field_that_means_something_else_is_refused():
     env.close()
 
 
-def test_turtle2_says_what_its_pose_vector_holds():
-    """The declaration lives with the driver that has the vendor layout."""
-    from robot_mocks import mocked_sdks
+def test_turtle2_reports_and_takes_the_canonical_pose():
+    """The controller's own vector is converted inside the driver.
 
-    from rlinf.robotics.fields import declared
+    Turtle2 reports position, Euler angles and the gripper's width in one
+    seven-number vector, and takes six numbers back. Converting it in the view
+    is what lets a task written against ``tcp_pose`` run on this arm; the
+    width stays the gripper's own state, where a task can still read it.
+    """
+    from robot_mocks import mocked_sdks
+    from scipy.spatial.transform import Rotation as R
+
+    from rlinf.robotics.fields import CANONICAL, declared
 
     with mocked_sdks():
         from rlinf.robotics.parts.arms.turtle2 import Turtle2Connection
 
-        arm = Turtle2Connection().parts["left"]
+        connection = Turtle2Connection()
+        arm = connection.parts["left"]
+        gripper = connection.parts["left_end_effector"]
 
-    meaning = declared(arm.observation_features["tcp_pose"])
-    assert meaning.layout == "xyz+rpy+gripper_width"
-    assert meaning.width == 7
+        assert declared(arm.observation_features["tcp_pose"]) == CANONICAL["tcp_pose"]
+        assert declared(arm.action_features["tcp_pose"]) == CANONICAL["tcp_pose"]
+
+        vendor = np.array([0.1, 0.2, 0.3, 0.4, -0.5, 0.6, 0.07])
+        connection._state.follow1_pos = vendor
+        pose = arm.get_observation()["tcp_pose"]
+        assert pose.shape == (7,)
+        assert pose[:3] == pytest.approx(vendor[:3])
+        expected = R.from_euler("xyz", vendor[3:6]).as_quat()
+        assert (R.from_quat(pose[3:]) * R.from_quat(expected).inv()).magnitude() < 1e-6
+        # The width is the gripper's, and it is still readable there.
+        assert gripper.get_state()[0] == pytest.approx(vendor[6])
+
+        # A canonical target reaches the controller as its own six numbers,
+        # leaving the gripper target this arm already holds alone.
+        connection.left_arm_target = [0.0] * 6 + [0.09]
+        arm.send_action({"tcp_pose": pose})
+        assert connection.left_arm_target[:3] == pytest.approx(vendor[:3])
+        assert connection.left_arm_target[3:6] == pytest.approx(vendor[3:6])
+        assert connection.left_arm_target[6] == pytest.approx(0.09)
 
 
 def test_a_task_drives_a_mobile_base_through_its_own_control():
@@ -662,7 +688,7 @@ def test_a_policy_can_be_trained_on_the_drivers_own_colours():
         TASK = JointReach
 
         @classmethod
-        def make_observation(cls, hardware, cameras):
+        def make_observation(cls, hardware, cameras, roles=("arm",)):
             spec = SO101Env.make_observation(hardware, cameras)
             return dataclasses.replace(spec, frame_order="bgr")
 
@@ -1071,6 +1097,75 @@ def test_an_arm_does_what_a_reset_asks_of_it(monkeypatch):
         log.clear()
         arm.go_home(Home(pose=target, duration=1.0, rate_hz=1.0))
         assert log == []
+    finally:
+        arm.disconnect()
+
+
+def test_a_rest_pose_near_the_origin_counts_as_reached(monkeypatch):
+    """How near is near enough is a distance, not a fraction of the pose.
+
+    A relative tolerance asks for micrometres of an arm resting close to its
+    own origin and centimetres of one resting far from it, so an arm that had
+    arrived was reported as stuck.
+    """
+    from rlinf.robotics.parts.arms.base import Home
+
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+    log: list = []
+
+    class NearlyThere(PoseArm):
+        def send_action(self, action):
+            # Stops half a millimetre short, as a smoothing controller does.
+            target = np.asarray(action["tcp_pose"], dtype=float)
+            self.pose = target.copy()
+            self.pose[0] -= 0.0005
+            log.append(("arm", self.pose.tolist()))
+            return action
+
+    arm = NearlyThere(log)
+    arm.connect()
+    try:
+        target = np.zeros(7)
+        target[0], target[2], target[6] = 0.015, 0.25, 1.0
+        arm.go_home(Home(pose=target, rate_hz=1.0, require_arrival=True))
+        # One attempt landed it within a centimetre, and that is arrived.
+        assert len([entry for entry in log if entry[0] == "arm"]) == 1
+    finally:
+        arm.disconnect()
+
+
+def test_an_arm_that_never_arrives_is_reported_when_the_task_needs_it(monkeypatch):
+    """A task whose next episode starts from the rest pose cannot go on."""
+    from rlinf.robotics.parts.arms.base import Home
+
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+    log: list = []
+
+    class Stuck(PoseArm):
+        def send_action(self, action):
+            # Accept the command and stay where it is, as a controller that
+            # is blocked or mis-tuned does.
+            log.append(("arm", np.asarray(action["tcp_pose"]).tolist()))
+            return action
+
+    arm = Stuck(log)
+    arm.connect()
+    try:
+        target = np.asarray(arm.pose, dtype=float).copy()
+        target[0] += 0.5
+        # By default the arm is left where it got to, and the episode starts.
+        arm.go_home(Home(pose=target, duration=1.0, rate_hz=1.0, attempts=2))
+
+        with pytest.raises(RuntimeError, match="did not reach its rest pose"):
+            arm.go_home(
+                Home(
+                    pose=target,
+                    duration=1.0,
+                    rate_hz=1.0,
+                    attempts=2,
+                    require_arrival=True,
+                )
+            )
     finally:
         arm.disconnect()
 
@@ -1775,11 +1870,14 @@ def test_dosw1_dummy_preserves_legacy_policy_schema():
 
 
 def test_turtle2_dummy_preserves_legacy_policy_schema():
-    env = Turtle2Env(
-        config=Turtle2EnvConfig(
-            is_dummy=True,
-            step_frequency=10000.0,
-        ),
+    from rlinf.envs.real.xsquare.button import ButtonEnv
+
+    env = ButtonEnv(
+        {
+            "is_dummy": True,
+            "step_frequency": 10000.0,
+            "target_ee_pose": [0.0, 0.0, 0.15, 0.0, 1.0, 0.0],
+        },
         worker_info=None,
         robot_info=None,
         env_idx=0,
@@ -1788,6 +1886,43 @@ def test_turtle2_dummy_preserves_legacy_policy_schema():
     assert env.action_space.shape == (7,)
     assert env.robot is None
     _assert_legacy_transition(env)
+
+
+def test_a_turtle2_run_names_the_arms_it_drives():
+    """One arm or two is the task's 'roles', not a list of indices."""
+    from rlinf.envs.real.xsquare.button import ButtonEnv
+
+    def build(**overrides):
+        return ButtonEnv(
+            {
+                "is_dummy": True,
+                "step_frequency": 10000.0,
+                "target_ee_pose": [0.0, 0.0, 0.15, 0.0, 1.0, 0.0],
+                **overrides,
+            },
+            worker_info=None,
+            robot_info=None,
+            env_idx=0,
+        )
+
+    # One arm keeps the plain names every single-armed robot uses, so the
+    # wrappers and devices written against those still fit.
+    one = build()
+    assert [part.name for part in one.action_parts()] == ["arm", "end_effector"]
+    assert one.action_space.shape == (7,)
+
+    both = build(roles=("left", "right"))
+    assert [part.name for part in both.action_parts()] == [
+        "left.arm",
+        "left.end_effector",
+        "right.arm",
+        "right.end_effector",
+    ]
+    assert both.action_space.shape == (14,)
+
+    # The old spelling drove the wrong arm if it were quietly ignored.
+    with pytest.raises(ValueError, match="use_arm_ids"):
+        build(use_arm_ids=[0, 1])
 
 
 class _TerminatingEnv(gym.Env):
@@ -1841,39 +1976,6 @@ def test_the_vector_env_keeps_stepping_a_terminated_env():
         assert reward.tolist() == [4.0, 4.0]
     finally:
         env.close()
-
-
-def _turtle2_camera_check(camera_ids, ready):
-    """Run _check_cameras against a rig with the given cameras."""
-    env = Turtle2Env.__new__(Turtle2Env)
-    env.config = SimpleNamespace(is_dummy=False)
-    env.hardware = SimpleNamespace(camera_ids=list(camera_ids))
-    env._camera_parts = lambda: [
-        SimpleNamespace(is_ready=lambda state=state: state) for state in ready
-    ]
-    env._check_cameras()
-
-
-def test_turtle2_accepts_a_camera_selected_by_a_nonzero_id():
-    """``camera_ids`` selects hardware; the parts are named by position.
-
-    The shipped default is ``[2]``, one camera, so reading the id as a slot
-    rejected a healthy rig.
-    """
-    _turtle2_camera_check([2], [True])
-    _turtle2_camera_check([1], [True])
-    _turtle2_camera_check([0, 1, 2], [True, True, True])
-
-
-def test_turtle2_refuses_a_camera_that_is_not_delivering():
-    """A stalled camera is still named by the id that selected it."""
-    with pytest.raises(ValueError, match="Camera 3 not available"):
-        _turtle2_camera_check([2], [False])
-    # Built short: the robot has fewer cameras than the config asked for.
-    with pytest.raises(ValueError, match="Camera 3 not available"):
-        _turtle2_camera_check([2], [])
-    with pytest.raises(ValueError, match="Camera 2 not available"):
-        _turtle2_camera_check([0, 1, 2], [True, False, True])
 
 
 def test_a_stalled_camera_is_reopened_and_read_again(monkeypatch):
@@ -3452,7 +3554,6 @@ def test_every_env_only_offers_teleop_devices_that_exist():
     from rlinf.envs.real.dosw1.base import DOSW1Env
     from rlinf.envs.real.franka.base import FrankaEnv
     from rlinf.envs.real.franka.dual_base import DualFrankaEnv
-    from rlinf.envs.real.xsquare.base import Turtle2Env
     from rlinf.robotics.parts.teleop import TeleopDevice
 
     known = set(TeleopDevice.names())
@@ -3486,7 +3587,6 @@ def test_every_env_declares_parts_that_tile_its_action():
         HandCommand,
         PoseDelta,
     )
-    from rlinf.envs.real.xsquare.base import Turtle2Env
 
     def cartesian(end_effector):
         return ActionLayout((PoseDelta("arm"), end_effector)).parts()
@@ -3495,8 +3595,6 @@ def test_every_env_declares_parts_that_tile_its_action():
         (7, cartesian(BinaryGripper("arm"))),
         (12, cartesian(HandCommand("arm", dim=6))),
         (7, _dummy_gim_arm().action_parts()),
-        (7, _declared(Turtle2Env, config=SimpleNamespace(use_arm_ids=[1]))),
-        (14, _declared(Turtle2Env, config=SimpleNamespace(use_arm_ids=[0, 1]))),
         (14, _declared(DOSW1Env)),
     ]
     for width, parts in cases:
@@ -3504,9 +3602,14 @@ def test_every_env_declares_parts_that_tile_its_action():
 
 
 def test_a_two_armed_robot_names_both_arms():
-    from rlinf.envs.real.xsquare.base import Turtle2Env
+    from rlinf.envs.real.franka.dual_franka_joint import (
+        DualFrankaJointActionConfig,
+        DualFrankaJointEnv,
+    )
 
-    parts = _declared(Turtle2Env, config=SimpleNamespace(use_arm_ids=[0, 1]))
+    parts = DualFrankaJointEnv.make_action(
+        None, DualFrankaJointActionConfig(), None, ("left", "right")
+    ).parts()
 
     assert [part.name for part in parts] == [
         "left.arm",

@@ -19,7 +19,7 @@ that provide method-based APIs. Each view borrows the host connection's
 lifecycle and presents the standard part interface.
 """
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import asdict, is_dataclass
 from typing import Any, Optional, Union, cast
 
@@ -68,6 +68,11 @@ class MethodArm(Arm):
         meanings: What this arm's numbers are, for a field whose numbers are
             not what its canonical name means. A field left out reports the
             canonical meaning.
+        decode: Per-field conversion from what the host reports to what the
+            canonical name means, for a controller whose own vector differs.
+            A converted field reports the canonical meaning.
+        encode: Per-field conversion the other way, from a canonical command
+            to what the host's method takes.
     """
 
     def __init__(
@@ -76,6 +81,8 @@ class MethodArm(Arm):
         commands: dict[str, str],
         state_fields: Optional[Union[tuple[str, ...], dict[str, str]]] = None,
         meanings: Optional[Mapping[str, FieldMeaning]] = None,
+        decode: Optional[Mapping[str, Callable[[Any], Any]]] = None,
+        encode: Optional[Mapping[str, Callable[[Any], Any]]] = None,
     ) -> None:
         self._host = self._owner = host
         self.commands = dict(commands)
@@ -85,8 +92,14 @@ class MethodArm(Arm):
             else {name: name for name in state_fields or ()}
         )
         self.meanings = dict(meanings or {})
+        self.decode = dict(decode or {})
+        self.encode = dict(encode or {})
 
     def _describe(self, name: str) -> dict[str, Any]:
+        # A converted field reaches the caller as the canonical name means,
+        # whatever the controller's own vector holds.
+        if name in self.decode or name in self.encode:
+            return describe(name)
         given = self.meanings.get(name)
         return {MEANING: given} if given is not None else describe(name)
 
@@ -108,7 +121,10 @@ class MethodArm(Arm):
         state = host_state(self._host)
         if not self.state_fields:
             return state
-        return {name: state[source] for name, source in self.state_fields.items()}
+        return {
+            name: self._convert(self.decode, name, state[source])
+            for name, source in self.state_fields.items()
+        }
 
     def send_action(self, action: Action) -> Observation:
         """Dispatch canonical command fields to the host's methods."""
@@ -117,9 +133,19 @@ class MethodArm(Arm):
             raise KeyError(f"Unknown arm actions: {sorted(unknown)}")
         applied: dict[str, Any] = {}
         for name, value in action.items():
-            getattr(self._host, self.commands[name])(value)
+            getattr(self._host, self.commands[name])(
+                self._convert(self.encode, name, value)
+            )
             applied[name] = value
         return applied
+
+    @staticmethod
+    def _convert(
+        table: Mapping[str, Callable[[Any], Any]], name: str, value: Any
+    ) -> Any:
+        """Run one field through its conversion, if it has one."""
+        convert = table.get(name)
+        return value if convert is None else convert(value)
 
 
 class MethodEndEffector(EndEffector):

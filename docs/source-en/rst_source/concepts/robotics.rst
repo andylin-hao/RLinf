@@ -165,12 +165,17 @@ reading a gripper width as part of a rotation:
 
 .. code-block:: text
 
-   RequirementError: CartesianTarget cannot run on Turtle2Robot: left
+   RequirementError: CartesianTarget cannot run on ExampleRobot: arm
    (MethodArm) reports 'tcp_pose' as xyz+rpy+gripper_width in m,rad in the
    base frame, not xyz+quat_xyzw in m in the base frame
 
 That refusal is the signal to convert inside the driver, which is where a
-vendor's convention belongs.
+vendor's convention belongs. ``MethodArm`` takes ``decode`` and ``encode``
+for exactly this: one conversion per field, each way, after which the part
+reports the canonical meaning and every task runs on it. Turtle2's controller
+speaks Euler angles and carries the gripper's width in the vector it calls
+``tcp_pose``; converting there is what lets it run the same tasks as a Franka,
+and the width stays the gripper's own state.
 
 Compose Parts Without Changing the Interface
 --------------------------------------------

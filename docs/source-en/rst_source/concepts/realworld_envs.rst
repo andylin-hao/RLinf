@@ -138,13 +138,15 @@ requires at least one camera even in dummy mode, so its dummy constructors
 always need a descriptor with camera serials. These serials can be synthetic
 for offline runs; dummy construction does not open or probe devices.
 
-The task dataclasses of the robots that still have their own env,
-``DOSW1EnvConfig`` and ``Turtle2EnvConfig``, keep their names. Their hardware
-counterparts remain in ``rlinf.robotics.robots``. For Turtle2, camera channels
-move from the task's ``use_camera_ids`` to the hardware field ``camera_ids``.
+The task dataclass of the one robot that still has its own env,
+``DOSW1EnvConfig``, keeps its name. Its hardware counterpart remains in
+``rlinf.robotics.robots``. For Turtle2, camera channels move from the task's
+``use_camera_ids`` to the hardware field ``camera_ids``, and the arms a run
+drives move from ``use_arm_ids`` to the task's ``roles``, which names them
+rather than numbering them.
 
-Dual-arm Franka, single-arm Franka, Piper, SO-101, and GimArm tasks run on
-``TaskEnv``. A run still
+Turtle2, dual-arm Franka, single-arm Franka, Piper, SO-101, and GimArm tasks
+run on ``TaskEnv``. A run still
 passes one flat ``override_cfg``; each key goes to whichever of three configs
 declares it: ``RegisteredTaskEnvConfig`` for how an episode runs, the cameras,
 and a reward model; the action channels' config, ``PoseActionConfig`` or

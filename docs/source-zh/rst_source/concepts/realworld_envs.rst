@@ -77,9 +77,9 @@
 
 通过 scheduler 运行时，节点 probe 完成枚举，worker placement 分配 ``RobotInfo``，再由 ``RealWorldEnv`` 将其传给任务构造函数。环境只读取其中的硬件配置，不修改原对象。``camera_serials``、``robot_ip`` 等字段不再允许出现在任务 override 中，应移至硬件条目。若硬件默认值已能描述所需的观测空间，dummy 环境可以省略 ``robot_info``；需要其他相机布局或末端执行器时，也应传入对应布局的描述。Franka 在 dummy 模式下也要求至少一个相机，因此构造时始终需要带有相机序列号的描述。离线运行可以使用虚拟序列号；dummy 构造过程不会打开或探测设备。
 
-仍然拥有独立 env 的机器人，其任务 dataclass 保持原名：``DOSW1EnvConfig`` 和 ``Turtle2EnvConfig``，对应的硬件配置仍位于 ``rlinf.robotics.robots``。Turtle2 的相机通道从任务字段 ``use_camera_ids`` 移至硬件字段 ``camera_ids``。
+唯一仍然拥有独立 env 的机器人是 DOSW1，其任务 dataclass 保持原名 ``DOSW1EnvConfig``，对应的硬件配置仍位于 ``rlinf.robotics.robots``。Turtle2 的相机通道从任务字段 ``use_camera_ids`` 移至硬件字段 ``camera_ids``；本次运行驱动哪几条机械臂，也从 ``use_arm_ids`` 的编号改为任务的 ``roles``，直接写出机械臂的名字。
 
-双臂 Franka、单臂 Franka、Piper、SO-101 和 GimArm 的任务运行在 ``TaskEnv`` 上。运行时仍然只传入一个扁平的 ``override_cfg``，其中每个 key 交给声明它的那一个配置：``RegisteredTaskEnvConfig`` 负责 episode 如何运行、相机和 reward model；动作通道的配置（``PoseActionConfig`` 或 ``JointActionConfig``）负责动作缩放、增益和关节范围；任务配置（例如 ``PegInsertionConfig`` 或 ``JointReachConfig``）负责目标与奖励。有自身设置的 preset 会再增加一个配置，例如 GimArm 用于控制模式的 ``GimArmOptions``。这些配置都没有声明的 key 会被拒绝，``hand_target_state`` 等已停用的 key 会被丢弃并给出警告。Piper 的硬件字段 ``with_gripper`` 决定 action 包含 6 个关节值，还是包含夹爪开度的 7 个值。
+Turtle2、双臂 Franka、单臂 Franka、Piper、SO-101 和 GimArm 的任务运行在 ``TaskEnv`` 上。运行时仍然只传入一个扁平的 ``override_cfg``，其中每个 key 交给声明它的那一个配置：``RegisteredTaskEnvConfig`` 负责 episode 如何运行、相机和 reward model；动作通道的配置（``PoseActionConfig`` 或 ``JointActionConfig``）负责动作缩放、增益和关节范围；任务配置（例如 ``PegInsertionConfig`` 或 ``JointReachConfig``）负责目标与奖励。有自身设置的 preset 会再增加一个配置，例如 GimArm 用于控制模式的 ``GimArmOptions``。这些配置都没有声明的 key 会被拒绝，``hand_target_state`` 等已停用的 key 会被丢弃并给出警告。Piper 的硬件字段 ``with_gripper`` 决定 action 包含 6 个关节值，还是包含夹爪开度的 7 个值。
 
 注册任务
 --------

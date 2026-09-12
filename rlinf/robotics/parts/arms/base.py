@@ -51,18 +51,25 @@ class Home:
     Attributes:
         pose: Tool pose, ``xyz`` plus an ``xyzw`` quaternion.
         qpos: Joint configuration, one value per joint.
-        tolerance: Relative position tolerance the arm is asked to reach.
+        tolerance: How near the pose counts as arrived, in metres. An
+            absolute distance, because a relative one asks for micrometres of
+            a rest pose near the origin and centimetres of one far from it.
         attempts: Times to re-command the pose before giving up on it.
         duration: Seconds each motion is spread over.
         rate_hz: Commands per second while travelling.
+        require_arrival: Raise if the arm never reaches the pose, for a task
+            whose next episode is meaningless from anywhere else. Off by
+            default, because an arm left near its rest pose is usually better
+            than an episode that never starts.
     """
 
     pose: "Optional[Sequence[float]]" = None
     qpos: "Optional[Sequence[float]]" = None
-    tolerance: float = 0.02
+    tolerance: float = 0.01
     attempts: int = 3
     duration: float = 1.5
     rate_hz: float = 10.0
+    require_arrival: bool = False
 
 
 @dataclass
@@ -271,18 +278,29 @@ class Arm(ControllablePart):
         Raises:
             NotImplementedError: If the arm can use neither spelling of the
                 request.
+            RuntimeError: If ``home.require_arrival`` is set and the arm is
+                still short of the pose after every attempt.
         """
         if self.takes_poses and home.pose is not None:
             target = np.asarray(home.pose, dtype=float)
+            current = np.asarray(self.get_observation()["tcp_pose"], dtype=float)
             for _ in range(max(1, home.attempts)):
-                current = np.asarray(self.get_observation()["tcp_pose"], dtype=float)
-                if np.allclose(current[:3], target[:3], home.tolerance):
+                if np.all(np.abs(current[:3] - target[:3]) <= home.tolerance):
                     return
                 self.move_to(
                     target,
                     duration=home.duration,
                     rate_hz=home.rate_hz,
                     clear_errors=True,
+                )
+                current = np.asarray(self.get_observation()["tcp_pose"], dtype=float)
+            if home.require_arrival and not np.all(
+                np.abs(current[:3] - target[:3]) <= home.tolerance
+            ):
+                raise RuntimeError(
+                    f"{type(self).__name__} did not reach its rest pose in "
+                    f"{max(1, home.attempts)} attempts: at {current[:3].round(4)}, "
+                    f"wanted {target[:3].round(4)}."
                 )
             return
         if home.qpos is not None:

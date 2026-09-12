@@ -26,9 +26,12 @@ per role in the order :attr:`MultiArmTargetConfig.roles` names them.
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import numpy as np
+from scipy.spatial.transform import Rotation as R
+
+from rlinf.robotics.parts.arms.base import Home
 
 from .base import Evaluation, ResetContext, Task, TaskConfig
 from .requirements import Needs, Parts, Reading
@@ -38,7 +41,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from rlinf.envs.real.policy import Applied
 
 
-def _rows(value, roles: Sequence[str], name: str, width: int) -> np.ndarray:
+def _rows(value: Any, roles: Sequence[str], name: str, width: int) -> np.ndarray:
     """Read a per-role table, accepting one row shared by every role."""
     array = np.asarray(value, dtype=np.float64)
     if array.ndim == 1:
@@ -63,35 +66,69 @@ class MultiArmTargetConfig(TaskConfig):
     """The arms this task drives, in the order its tables are indexed."""
 
     target_ee_pose: Sequence = field(
-        default_factory=lambda: np.zeros((2, 6), dtype=np.float64)
+        default_factory=lambda: np.zeros(6, dtype=np.float64)
     )
     """Where each tool must be, ``xyz`` plus xyz Euler angles."""
 
     reward_threshold: Sequence = field(
-        default_factory=lambda: np.full((2, 6), 0.01, dtype=np.float64)
+        default_factory=lambda: np.full(6, 0.01, dtype=np.float64)
     )
     """How close each tool must be on every position axis to be in its zone."""
 
     ee_pose_limit_min: Sequence = field(
-        default_factory=lambda: np.full((2, 6), -np.inf, dtype=np.float64)
+        default_factory=lambda: np.full(6, -np.inf, dtype=np.float64)
     )
     """Lowest pose each arm may be commanded to."""
 
     ee_pose_limit_max: Sequence = field(
-        default_factory=lambda: np.full((2, 6), np.inf, dtype=np.float64)
+        default_factory=lambda: np.full(6, np.inf, dtype=np.float64)
     )
     """Highest pose each arm may be commanded to."""
 
-    reset_joint_qpos: Sequence = field(
-        default_factory=lambda: np.zeros((2, 7), dtype=np.float64)
-    )
-    """Configuration each arm returns to between episodes."""
+    reset_joint_qpos: Optional[Sequence] = None
+    """Configuration each arm returns to between episodes, for an arm that
+    takes only joint targets. ``None`` leaves the reset to
+    ``reset_ee_pose``."""
+
+    reset_ee_pose: Optional[Sequence] = None
+    """Pose each arm returns to between episodes, for an arm commanded by
+    poses. ``None`` leaves the reset to ``reset_joint_qpos``."""
+
+    pre_reset_ee_pose: Optional[Sequence] = None
+    """Pose each arm passes through on its way back, to clear whatever it was
+    working on. ``None`` goes straight to the rest pose."""
+
+    pre_reset_settle_s: float = 2.0
+    """Seconds the arms are given to reach the pose they pass through."""
 
     reset_settle_s: float = 0.5
-    """Seconds the arms are given to reach that configuration."""
+    """Seconds the arms are given to reach their resting place."""
+
+    require_reset_arrival: bool = False
+    """Refuse to start an episode from anywhere but the rest pose."""
+
+    reset_tolerance: float = 0.01
+    """How near the rest pose counts as arrived, in metres on every axis."""
+
+    enable_random_reset: bool = False
+    """Perturb each arm's rest pose, so episodes do not all start alike."""
+
+    random_xy_range: float = 0.0
+    """Metres either way the rest position is perturbed in x and y."""
+
+    random_rpy_range: float = 0.0
+    """Radians either way each rest Euler angle is perturbed."""
+
+    score_dims: str = "xyz"
+    """What the reward measures: ``"xyz"`` for position alone, or
+    ``"xyz_rpy"`` to score orientation with it."""
 
     dense_gain: float = 500.0
-    """Steepness of the dense reward in the tools' combined position error."""
+    """Steepness of the dense reward in the tools' combined error."""
+
+    orientation_clip: str = "window"
+    """How the orientation half of the pose limits is applied: ``"window"``
+    around the target, or ``"box"`` per Euler angle."""
 
     def __post_init__(self) -> None:
         roles = tuple(self.roles)
@@ -108,15 +145,29 @@ class MultiArmTargetConfig(TaskConfig):
         self.ee_pose_limit_max = _rows(
             self.ee_pose_limit_max, roles, "ee_pose_limit_max", 6
         )
-        qpos = np.asarray(self.reset_joint_qpos, dtype=np.float64)
-        if qpos.ndim == 1:
-            qpos = np.tile(qpos, (len(roles), 1))
-        if qpos.shape[0] != len(roles):
+        if self.reset_joint_qpos is not None:
+            qpos = np.asarray(self.reset_joint_qpos, dtype=np.float64)
+            if qpos.ndim == 1:
+                qpos = np.tile(qpos, (len(roles), 1))
+            if qpos.shape[0] != len(roles):
+                raise ValueError(
+                    f"'reset_joint_qpos' needs {len(roles)} rows for roles "
+                    f"{list(roles)}, got shape {qpos.shape}."
+                )
+            self.reset_joint_qpos = qpos
+        for name in ("reset_ee_pose", "pre_reset_ee_pose"):
+            value = getattr(self, name)
+            if value is not None:
+                setattr(self, name, _rows(value, roles, name, 6))
+        if self.score_dims not in ("xyz", "xyz_rpy"):
             raise ValueError(
-                f"'reset_joint_qpos' needs {len(roles)} rows for roles "
-                f"{list(roles)}, got shape {qpos.shape}."
+                f"'score_dims' is 'xyz' or 'xyz_rpy', got {self.score_dims!r}."
             )
-        self.reset_joint_qpos = qpos
+        if self.orientation_clip not in ("window", "box"):
+            raise ValueError(
+                f"'orientation_clip' is 'window' or 'box', got "
+                f"{self.orientation_clip!r}."
+            )
 
 
 class MultiArmTarget(Task):
@@ -136,8 +187,7 @@ class MultiArmTarget(Task):
     def requirements(self) -> Mapping[str, Needs]:
         """One arm per role, each reporting its tool pose."""
         return {
-            role: Needs(observes=frozenset({"tcp_pose"}))
-            for role in self.config.roles
+            role: Needs(observes=frozenset({"tcp_pose"})) for role in self.config.roles
         }
 
     @property
@@ -148,12 +198,39 @@ class MultiArmTarget(Task):
                 low=self.config.ee_pose_limit_min[index],
                 high=self.config.ee_pose_limit_max[index],
                 target_euler=self.config.target_ee_pose[index][3:],
+                orientation=self.config.orientation_clip,
             )
             for index, role in enumerate(self.config.roles)
         }
 
+    def rest(self, index: int, context: ResetContext) -> Home:
+        """Where one arm waits, in both spellings, perturbed when randomising."""
+        pose = None
+        if self.config.reset_ee_pose is not None:
+            euler = np.array(self.config.reset_ee_pose[index], dtype=np.float64)
+            if self.config.enable_random_reset:
+                xy, rpy = self.config.random_xy_range, self.config.random_rpy_range
+                euler[:2] += context.rng.uniform(-xy, xy, 2)
+                euler[3:6] += context.rng.uniform(-rpy, rpy, 3)
+            pose = np.concatenate(
+                [euler[:3], R.from_euler("xyz", euler[3:6]).as_quat()]
+            )
+        qpos = self.config.reset_joint_qpos
+        return Home(
+            pose=pose,
+            qpos=None if qpos is None else qpos[index],
+            tolerance=self.config.reset_tolerance,
+            rate_hz=context.rate_hz,
+            require_arrival=self.config.require_reset_arrival,
+        )
+
     def reset(self, parts: Parts, context: ResetContext) -> None:
-        """Open the end effectors and return every arm to its configuration.
+        """Open the end effectors and return every arm to where it waits.
+
+        An arm with a rest pose travels to it, passing through
+        ``pre_reset_ee_pose`` first when the task names one, so the tool
+        leaves whatever it was working on before it crosses the bench. An arm
+        that takes only joint targets goes to its rest configuration instead.
 
         A teleoperation device that aligns itself to wherever the arms ended
         up asks for ``skip_reset_to_home``, which leaves them there.
@@ -161,9 +238,29 @@ class MultiArmTarget(Task):
         if context.options.get("skip_reset_to_home", False):
             return
         context.action.release(parts)
+        if self.config.pre_reset_ee_pose is not None:
+            for index, role in enumerate(self.config.roles):
+                euler = np.asarray(self.config.pre_reset_ee_pose[index])
+                parts.arm(role).go_home(
+                    Home(
+                        pose=np.concatenate(
+                            [euler[:3], R.from_euler("xyz", euler[3:6]).as_quat()]
+                        ),
+                        rate_hz=context.rate_hz,
+                    )
+                )
+            time.sleep(self.config.pre_reset_settle_s)
         for index, role in enumerate(self.config.roles):
-            parts.arm(role).reset_joint(self.config.reset_joint_qpos[index])
+            parts.arm(role).go_home(self.rest(index, context))
         time.sleep(self.config.reset_settle_s)
+
+    def _error(self, pose: np.ndarray, target: np.ndarray) -> np.ndarray:
+        """How far one tool is from its target, on the axes that are scored."""
+        delta = np.abs(pose[:3] - target[:3])
+        if self.config.score_dims == "xyz":
+            return delta
+        euler = R.from_quat(pose[3:7]).as_euler("xyz")
+        return np.concatenate([delta, np.abs(euler - target[3:6])])
 
     def evaluate(self, reading: Reading, applied: "Applied") -> Evaluation:
         """Score the tools together: all in their zones, or none of the credit."""
@@ -171,8 +268,8 @@ class MultiArmTarget(Task):
         in_zone = True
         for index, role in enumerate(self.config.roles):
             pose = np.asarray(reading.arm(role)["tcp_pose"], dtype=np.float64)
-            delta = np.abs(pose[:3] - self.config.target_ee_pose[index][:3])
-            if not np.all(delta <= self.config.reward_threshold[index][:3]):
+            delta = self._error(pose, self.config.target_ee_pose[index])
+            if not np.all(delta <= self.config.reward_threshold[index][: delta.size]):
                 in_zone = False
                 squared += float(np.sum(np.square(delta)))
         if in_zone:

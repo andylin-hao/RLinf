@@ -651,9 +651,12 @@ class RegisteredTaskEnv(TaskEnv):
         # Everything a config can get wrong is checked before the robot is
         # composed, so a bad run never opens hardware.
         task = cls.TASK(task_config)
-        action = cls.make_action(self.hardware, action_config, self.options)
+        # The task names the roles, so a preset builds one arm's channels or
+        # two from the same code.
+        roles = tuple(task.requirements())
+        action = cls.make_action(self.hardware, action_config, self.options, roles)
         cameras = tuple(cls.camera_infos(self.hardware, config))
-        observation = cls.make_observation(self.hardware, cameras)
+        observation = cls.make_observation(self.hardware, cameras, roles)
         if len(cameras) < observation.min_cameras:
             raise ValueError(
                 f"{cls.__name__} requires robot_info with at least "
@@ -739,7 +742,11 @@ class RegisteredTaskEnv(TaskEnv):
 
     @classmethod
     def make_action(
-        cls, hardware: RobotConfig, config: Any, options: Any = None
+        cls,
+        hardware: RobotConfig,
+        config: Any,
+        options: Any = None,
+        roles: tuple[str, ...] = ("arm",),
     ) -> ActionLayout:
         """The channels this robot's action is cut into.
 
@@ -747,6 +754,9 @@ class RegisteredTaskEnv(TaskEnv):
             hardware: The robot's hardware config.
             config: The run's action settings, an :attr:`ACTION_CONFIG`.
             options: The preset's own settings, an :attr:`OPTIONS`, or ``None``.
+            roles: The roles the task asks for, in the order it named them. A
+                robot with one arm has one role and can ignore this; one whose
+                task chooses how many arms to drive builds a channel per role.
         """
         raise NotImplementedError(f"{cls.__name__} does not define make_action().")
 
@@ -757,7 +767,10 @@ class RegisteredTaskEnv(TaskEnv):
 
     @classmethod
     def make_observation(
-        cls, hardware: RobotConfig, cameras: tuple[CameraInfo, ...]
+        cls,
+        hardware: RobotConfig,
+        cameras: tuple[CameraInfo, ...],
+        roles: tuple[str, ...] = ("arm",),
     ) -> ObservationSpec:
-        """What this robot's policy observes."""
+        """What this robot's policy observes, for the roles the task asks for."""
         raise NotImplementedError(f"{cls.__name__} does not define make_observation().")

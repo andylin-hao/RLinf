@@ -125,6 +125,7 @@ class FrankaEnv(RegisteredTaskEnv):
         hardware: FrankaConfig,
         config: PoseActionConfig,
         options: None = None,
+        roles: tuple[str, ...] = ("arm",),
     ) -> ActionLayout:
         """Tool deltas, then one gripper channel or one channel per finger."""
         part = cls.end_effector_class(hardware)
@@ -159,7 +160,10 @@ class FrankaEnv(RegisteredTaskEnv):
 
     @classmethod
     def make_observation(
-        cls, hardware: FrankaConfig, cameras: tuple[CameraInfo, ...]
+        cls,
+        hardware: FrankaConfig,
+        cameras: tuple[CameraInfo, ...],
+        roles: tuple[str, ...] = ("arm",),
     ) -> ObservationSpec:
         """Tool pose, twist and wrench, the end effector, and the cameras."""
         part = cls.end_effector_class(hardware)

@@ -99,11 +99,11 @@ SO-101 则共用一条伺服总线。五个机械臂关节和夹爪由同一个 
 
 .. code-block:: text
 
-   RequirementError: CartesianTarget cannot run on Turtle2Robot: left
+   RequirementError: CartesianTarget cannot run on ExampleRobot: arm
    (MethodArm) reports 'tcp_pose' as xyz+rpy+gripper_width in m,rad in the
    base frame, not xyz+quat_xyzw in m in the base frame
 
-这个报错正是提示：应当在 driver 内部完成转换，厂商约定本就属于那一层。
+这个报错正是提示：应当在 driver 内部完成转换，厂商约定本就属于那一层。``MethodArm`` 的 ``decode`` 和 ``encode`` 正是为此准备：每个字段两个方向各写一次转换，之后该零部件即按规范含义上报，所有任务都能在它上面运行。Turtle2 的控制器使用欧拉角，并把夹爪开度放在它称为 ``tcp_pose`` 的向量里；在 driver 内完成转换之后，它就能运行与 Franka 相同的任务，而开度仍然是夹爪自身的状态。
 
 组合零部件时保持接口一致
 ----------------------------

@@ -76,7 +76,11 @@ class GimArmEnv(RegisteredTaskEnv):
 
     @classmethod
     def make_action(
-        cls, hardware: GimArmConfig, config: JointActionConfig, options: GimArmOptions
+        cls,
+        hardware: GimArmConfig,
+        config: JointActionConfig,
+        options: GimArmOptions = None,
+        roles: tuple[str, ...] = ("arm",),
     ) -> ActionLayout:
         """Six joints, then a binary gripper channel, kept without a gripper."""
         return ActionLayout(
@@ -100,7 +104,10 @@ class GimArmEnv(RegisteredTaskEnv):
 
     @classmethod
     def make_observation(
-        cls, hardware: GimArmConfig, cameras: tuple[CameraInfo, ...]
+        cls,
+        hardware: GimArmConfig,
+        cameras: tuple[CameraInfo, ...],
+        roles: tuple[str, ...] = ("arm",),
     ) -> ObservationSpec:
         """Tool pose, twist and wrench, joints, the gripper, and the cameras."""
         state = (

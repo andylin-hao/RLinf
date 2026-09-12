@@ -75,12 +75,18 @@ class Workspace:
         target_euler: Orientation the window is centred on, so a window that
             straddles ``pi`` stays one interval.
         obstacles: Boxes inside the workspace a motion stops at.
+        orientation: How the orientation half of the box is applied.
+            ``"window"`` treats it as an interval around ``target_euler``, so
+            a range straddling ``pi`` stays one interval. ``"box"`` clips each
+            Euler angle to its own bounds, which is what a controller that
+            thinks in Euler angles was tuned against.
     """
 
     low: np.ndarray
     high: np.ndarray
     target_euler: np.ndarray
     obstacles: tuple[Box, ...] = ()
+    orientation: str = "window"
 
     def clip(self, pose: np.ndarray, start: np.ndarray) -> np.ndarray:
         """Bring a commanded pose inside the workspace.
@@ -96,12 +102,16 @@ class Workspace:
         """
         clipped = np.array(pose, dtype=np.float64)
         clipped[:3] = np.clip(clipped[:3], self.low[:3], self.high[:3])
-        euler = clip_euler_to_target_window(
-            euler=R.from_quat(clipped[3:]).as_euler("xyz"),
-            target_euler=self.target_euler,
-            lower_euler=self.low[3:],
-            upper_euler=self.high[3:],
-        )
+        euler = R.from_quat(clipped[3:]).as_euler("xyz")
+        if self.orientation == "box":
+            euler = np.clip(euler, self.low[3:], self.high[3:])
+        else:
+            euler = clip_euler_to_target_window(
+                euler=euler,
+                target_euler=self.target_euler,
+                lower_euler=self.low[3:],
+                upper_euler=self.high[3:],
+            )
         clipped[3:] = R.from_euler("xyz", euler).as_quat()
         for obstacle in self.obstacles:
             if obstacle.contains(clipped[:3]):

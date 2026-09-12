@@ -22,6 +22,7 @@ from .base import Evaluation, ResetContext, Task, TaskConfig
 from .bimanual import MultiArmTarget, MultiArmTargetConfig
 from .bin_relocation import BinRelocation, BinRelocationConfig
 from .bottle import BottleCap, BottleCapConfig
+from .button import Button, ButtonConfig
 from .cartesian import CartesianTarget, CartesianTargetConfig, FixtureConfig
 from .peg_insertion import PegInsertion, PegInsertionConfig
 from .pick_place import PickPlace, PickPlaceConfig
@@ -34,6 +35,8 @@ __all__ = [
     "BinRelocationConfig",
     "BottleCap",
     "BottleCapConfig",
+    "Button",
+    "ButtonConfig",
     "Bound",
     "Box",
     "CartesianTarget",

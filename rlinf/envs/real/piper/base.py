@@ -46,7 +46,11 @@ class PiperEnv(RegisteredTaskEnv):
 
     @classmethod
     def make_action(
-        cls, hardware: PiperConfig, config: JointActionConfig, options: None = None
+        cls,
+        hardware: PiperConfig,
+        config: JointActionConfig,
+        options: None = None,
+        roles: tuple[str, ...] = ("arm",),
     ) -> ActionLayout:
         """Six joints, then the gripper's opening when one is fitted."""
         channels = [
@@ -63,7 +67,10 @@ class PiperEnv(RegisteredTaskEnv):
 
     @classmethod
     def make_observation(
-        cls, hardware: PiperConfig, cameras: tuple[CameraInfo, ...]
+        cls,
+        hardware: PiperConfig,
+        cameras: tuple[CameraInfo, ...],
+        roles: tuple[str, ...] = ("arm",),
     ) -> ObservationSpec:
         """Joints and tool pose, the gripper's opening, and the cameras."""
         state = [
