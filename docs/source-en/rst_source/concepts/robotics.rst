@@ -142,6 +142,25 @@ with one more path segment. ``describe()`` exposes ``via`` to explain why the
 segment is nested and which paths share a resource; task code uses the paths and
 values. The complete description is diagnostic text, not a serialization format.
 
+A field's name is not the whole contract. Two arms can both report
+``tcp_pose`` and mean different things by it, and a task that scores one would
+quietly misread the other. ``rlinf/robotics/fields.py`` therefore states what
+each canonical name means: ``tcp_pose`` is seven numbers, a position in metres
+in the base frame followed by an ``xyzw`` quaternion; ``arm_joint_position`` is
+one number per joint in radians. A part that reports those numbers says
+nothing extra. A part whose numbers differ declares its own meaning, and
+binding a task to it then fails with both meanings named instead of the task
+reading a gripper width as part of a rotation:
+
+.. code-block:: text
+
+   RequirementError: CartesianTarget cannot run on Turtle2Robot: left
+   (MethodArm) reports 'tcp_pose' as xyz+rpy+gripper_width in m,rad in the
+   base frame, not xyz+quat_xyzw in m in the base frame
+
+That refusal is the signal to convert inside the driver, which is where a
+vendor's convention belongs.
+
 Compose Parts Without Changing the Interface
 --------------------------------------------
 

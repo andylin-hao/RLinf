@@ -22,6 +22,7 @@ from typing import Any, ClassVar, Optional, Protocol
 
 import numpy as np
 
+from rlinf.robotics.fields import describe
 from rlinf.robotics.parts.base import ControllablePart, Features, Observation
 from rlinf.robotics.pose import quat_slerp
 from rlinf.utils.logging import get_logger
@@ -266,7 +267,7 @@ class BaseArm(Arm, ABC):
     @property
     def observation_features(self) -> Features:
         """Describe the canonical arm observation fields."""
-        return {name: {} for name in self.STATE_FIELDS}
+        return {name: describe(name) for name in self.STATE_FIELDS}
 
     def get_observation(self) -> Observation:
         """Select the canonical fields out of this arm's state."""

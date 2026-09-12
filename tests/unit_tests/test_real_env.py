@@ -204,6 +204,93 @@ def test_a_task_refuses_a_robot_it_cannot_run_on_before_connecting_it():
     assert not arm.is_connected
 
 
+def test_a_field_that_means_something_else_is_refused():
+    """A name match is not a match: the numbers have to mean the same thing.
+
+    Turtle2's controller reports ``tcp_pose`` as position, Euler angles and
+    gripper width. A task that scores a canonical pose would read that width
+    as part of a rotation, so binding refuses it and says so.
+    """
+    from rlinf.envs.real.policy import (
+        ActionLayout,
+        BinaryGripper,
+        ObservationSpec,
+        PoseDelta,
+        Source,
+        StateKey,
+    )
+    from rlinf.envs.real.task_env import TaskEnv, TaskEnvConfig
+    from rlinf.envs.real.tasks import CartesianTarget, RequirementError
+    from rlinf.robotics.fields import FieldMeaning
+
+    class VendorPoseArm(PoseArm):
+        """An arm whose pose vector is not what ``tcp_pose`` means."""
+
+        @property
+        def observation_features(self):
+            return {
+                "tcp_pose": {
+                    "meaning": FieldMeaning(
+                        "xyz+rpy+gripper_width", "m,rad", 7, frame="base"
+                    )
+                }
+            }
+
+    def build(arm):
+        return TaskEnv(
+            Robot(arm=arm, end_effector=LatchGripper([])),
+            CartesianTarget(),
+            ActionLayout((PoseDelta("arm"), BinaryGripper("arm", settle_s=0.0))),
+            observation=ObservationSpec(
+                (StateKey("tcp_pose", (7,), (Source("tcp_pose"),)),)
+            ),
+            config=TaskEnvConfig(step_frequency=1000.0, enable_camera_player=False),
+        )
+
+    arm = VendorPoseArm([])
+    with pytest.raises(
+        RequirementError,
+        match=r"reports 'tcp_pose' as xyz\+rpy\+gripper_width in m,rad",
+    ):
+        build(arm)
+    assert not arm.is_connected
+
+    class WxyzArm(PoseArm):
+        """Same seven numbers, same unit, quaternion the other way round."""
+
+        @property
+        def observation_features(self):
+            return {
+                "tcp_pose": {
+                    "meaning": FieldMeaning("xyz+quat_wxyz", "m", 7, frame="base")
+                }
+            }
+
+    # The difference that a width or a dtype check would never catch.
+    with pytest.raises(RequirementError, match=r"as xyz\+quat_wxyz in m"):
+        build(WxyzArm([]))
+
+    # The same task on an arm that reports the canonical pose binds fine.
+    env = build(PoseArm([]))
+    env.close()
+
+
+def test_turtle2_says_what_its_pose_vector_holds():
+    """The declaration lives with the driver that has the vendor layout."""
+    from robot_mocks import mocked_sdks
+
+    from rlinf.robotics.fields import declared
+
+    with mocked_sdks():
+        from rlinf.robotics.parts.arms.turtle2 import Turtle2Connection
+
+        arm = Turtle2Connection().parts["left"]
+
+    meaning = declared(arm.observation_features["tcp_pose"])
+    assert meaning.layout == "xyz+rpy+gripper_width"
+    assert meaning.width == 7
+
+
 def test_a_task_drives_a_mobile_base_through_its_own_control():
     """A role binds to whatever part category it names, not only an arm."""
     from rlinf.envs.real.policy import (

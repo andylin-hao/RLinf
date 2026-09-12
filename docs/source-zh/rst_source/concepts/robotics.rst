@@ -93,6 +93,16 @@ SO-101 则共用一条伺服总线。五个机械臂关节和夹爪由同一个 
 
 嵌套动作并不是另一套 API，只是在同一个 ``send_action()`` 调用中增加了一层路径。``describe()`` 中的 ``via`` 用于解释层级和资源归属，任务代码仍只使用路径和对应数据。完整输出属于诊断信息，不是稳定的序列化格式。
 
+字段名并不等于完整的约定。两条机械臂可以都上报 ``tcp_pose``，含义却不同；按其中一种评分的任务会悄悄误读另一种。因此 ``rlinf/robotics/fields.py`` 规定了每个规范字段的含义：``tcp_pose`` 是 7 个数，先是 base 坐标系下以米为单位的位置，再是 ``xyzw`` 四元数；``arm_joint_position`` 是每个关节一个弧度值。上报这些数值的零部件无需额外说明；数值含义不同的零部件则声明自己的含义，此时把任务绑定到它会直接失败，并同时给出两种含义，而不是让任务把夹爪开度当成旋转的一部分：
+
+.. code-block:: text
+
+   RequirementError: CartesianTarget cannot run on Turtle2Robot: left
+   (MethodArm) reports 'tcp_pose' as xyz+rpy+gripper_width in m,rad in the
+   base frame, not xyz+quat_xyzw in m in the base frame
+
+这个报错正是提示：应当在 driver 内部完成转换，厂商约定本就属于那一层。
+
 组合零部件时保持接口一致
 ----------------------------
 

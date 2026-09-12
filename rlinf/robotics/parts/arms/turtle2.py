@@ -20,6 +20,7 @@ from typing import Any, Sequence
 import numpy as np
 from numpy.typing import ArrayLike
 
+from rlinf.robotics.fields import FieldMeaning
 from rlinf.robotics.parts.base import Connection, RobotPart
 from rlinf.robotics.parts.views import MethodArm, MethodCamera, MethodEndEffector
 from rlinf.utils.logging import get_logger
@@ -29,6 +30,9 @@ _ARM_SIDES: dict[str, str] = {"left": "follow1", "right": "follow2"}
 
 #: Index of the gripper value inside an arm's pose vector.
 _GRIPPER_STATE_INDEX = 6
+
+#: What this controller's pose vector holds, which is not a canonical pose.
+_VENDOR_POSE = FieldMeaning("xyz+rpy+gripper_width", "m,rad", 7, frame="base")
 
 
 @dataclass
@@ -89,6 +93,10 @@ class Turtle2Connection(Connection):
                     "joint_position": f"{prefix}_joints",
                     "joint_current": f"{prefix}_cur_data",
                 },
+                # This controller speaks Euler angles and carries the gripper
+                # width in the pose it reads and writes, so a task written
+                # against the canonical pose is refused rather than misled.
+                meanings={"tcp_pose": _VENDOR_POSE},
             )
             parts[f"{side}_end_effector"] = MethodEndEffector(
                 self,

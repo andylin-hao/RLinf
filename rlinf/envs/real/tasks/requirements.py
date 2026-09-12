@@ -27,6 +27,7 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from rlinf.robotics import Arm, EndEffector, Robot, RobotPart
+from rlinf.robotics.fields import mismatch
 
 
 class RequirementError(ValueError):
@@ -198,18 +199,30 @@ def bind(robot: Robot, needs: Mapping[str, Needs], *, owner: str) -> Parts:
             )
             continue
         part = candidates[path]
-        missing_obs = sorted(need.observes - set(part.observation_features))
+        observed = part.observation_features
+        accepted = part.action_features
+        missing_obs = sorted(need.observes - set(observed))
         if missing_obs:
             problems.append(
                 f"{path} ({type(part).__name__}) does not report {missing_obs}; "
-                f"it reports {sorted(part.observation_features)}"
+                f"it reports {sorted(observed)}"
             )
-        missing_cmd = sorted(need.commands - set(part.action_features))
+        missing_cmd = sorted(need.commands - set(accepted))
         if missing_cmd:
             problems.append(
                 f"{path} ({type(part).__name__}) does not accept {missing_cmd}; "
-                f"it accepts {sorted(part.action_features)}"
+                f"it accepts {sorted(accepted)}"
             )
+        # A field's name is not enough: a part whose numbers mean something
+        # else is refused here rather than misread every step.
+        for field in sorted(need.observes - set(missing_obs)):
+            differs = mismatch(field, observed.get(field))
+            if differs:
+                problems.append(f"{path} ({type(part).__name__}) {differs}")
+        for field in sorted(need.commands - set(missing_cmd)):
+            differs = mismatch(field, accepted.get(field))
+            if differs:
+                problems.append(f"{path} ({type(part).__name__}) {differs}")
         effector_path = _effector_path(path, effectors)
         if need.end_effector is not None:
             effector = effectors.get(effector_path) if effector_path else None

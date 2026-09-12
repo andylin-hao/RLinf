@@ -19,11 +19,13 @@ that provide method-based APIs. Each view borrows the host connection's
 lifecycle and presents the standard part interface.
 """
 
+from collections.abc import Mapping
 from dataclasses import asdict, is_dataclass
 from typing import Any, Optional, Union, cast
 
 import numpy as np
 
+from ..fields import MEANING, FieldMeaning, describe
 from .arms.base import Arm
 from .base import Action, Connection, Features, Observation
 from .cameras.base import Camera
@@ -63,6 +65,9 @@ class MethodArm(Arm):
         state_fields: Canonical observation names, either a tuple selecting
             host state fields verbatim or a map from canonical name to the
             host's own field name.
+        meanings: What this arm's numbers are, for a field whose numbers are
+            not what its canonical name means. A field left out reports the
+            canonical meaning.
     """
 
     def __init__(
@@ -70,6 +75,7 @@ class MethodArm(Arm):
         host: "Connection",
         commands: dict[str, str],
         state_fields: Optional[Union[tuple[str, ...], dict[str, str]]] = None,
+        meanings: Optional[Mapping[str, FieldMeaning]] = None,
     ) -> None:
         self._host = self._owner = host
         self.commands = dict(commands)
@@ -78,16 +84,21 @@ class MethodArm(Arm):
             if isinstance(state_fields, dict)
             else {name: name for name in state_fields or ()}
         )
+        self.meanings = dict(meanings or {})
+
+    def _describe(self, name: str) -> dict[str, Any]:
+        given = self.meanings.get(name)
+        return {MEANING: given} if given is not None else describe(name)
 
     @property
     def observation_features(self) -> Features:
         """Describe the state fields this view exposes."""
-        return {name: {} for name in self.state_fields}
+        return {name: self._describe(name) for name in self.state_fields}
 
     @property
     def action_features(self) -> Features:
         """Describe the canonical command names this view accepts."""
-        return {name: {} for name in self.commands}
+        return {name: self._describe(name) for name in self.commands}
 
     def reset(self) -> None:
         """Leave task-specific reset motion to the task environment."""
