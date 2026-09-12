@@ -181,6 +181,7 @@ class TaskEnv(gym.Env):
         self._sample_space = copy.deepcopy(self.observation_space)
         self._num_steps = 0
         self._hold = 0
+        self._in_zone = False
         self._reading: Optional[Mapping[str, Any]] = None
         self.parts: Optional[Parts] = None
         self.camera_player: Optional[VideoPlayer] = None
@@ -286,6 +287,7 @@ class TaskEnv(gym.Env):
         seed_sampled_spaces(seed, self._sample_space)
         self._num_steps = 0
         self._hold = 0
+        self._in_zone = False
         self.action.reset(self.parts)
         if self.config.is_dummy:
             return self._sample_space.sample(), {}
@@ -313,7 +315,16 @@ class TaskEnv(gym.Env):
             reward = self._score(applied, observation)
         terminated = reward >= 1.0 and self._hold >= self.task.config.success_hold_steps
         truncated = self._num_steps >= self.config.max_num_steps
-        return observation, reward * self.config.reward_scale, terminated, truncated, {}
+        # Whether this step reached the goal is the env's to report, so a
+        # runner does not have to guess it back out of the reward it scaled.
+        info = {"in_zone": self._in_zone}
+        return (
+            observation,
+            reward * self.config.reward_scale,
+            terminated,
+            truncated,
+            info,
+        )
 
     def close(self) -> None:
         """Stop the viewer and disconnect the robot."""
@@ -466,6 +477,7 @@ class TaskEnv(gym.Env):
         else:
             evaluation = self.task.evaluate(self.parts.read(self._reading), applied)
             reward, in_zone = evaluation.reward, evaluation.in_zone
+        self._in_zone = bool(in_zone)
         self._hold = self._hold + 1 if in_zone else 0
         config = self.task.config
         if config.enable_gripper_penalty:

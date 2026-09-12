@@ -1276,19 +1276,128 @@ def test_franka_depth_reaches_the_observation_only_when_asked_for():
             env.close()
 
 
+class _FakeWrappedEnv:
+    """Stands in for one wrapped env, answering what the adapter asks it."""
+
+    def __init__(self, num_steps: int = 1) -> None:
+        self.num_steps = num_steps
+        self.observation = None
+
+    def get_wrapper_attr(self, name: str):
+        return getattr(self, name)
+
+
+def _runner_env(*, max_episode_steps=None, num_steps=1, envs=None):
+    """A RealWorldEnv wrapped around a fake env, for the adapter's own logic."""
+    from omegaconf import OmegaConf
+
+    from rlinf.envs.real.env import RealWorldEnv
+
+    runner = RealWorldEnv.__new__(RealWorldEnv)
+    runner.num_envs = 1
+    runner.main_image_key = "wrist_1"
+    runner.task_descriptions = ["pick up the cube"]
+    runner.manual_episode_control_only = False
+    runner.auto_reset = False
+    runner.ignore_terminations = False
+    runner.cfg = OmegaConf.create({"max_episode_steps": max_episode_steps})
+    runner.env = SimpleNamespace(envs=envs or [_FakeWrappedEnv(num_steps)])
+    runner._init_metrics()
+    return runner
+
+
+def test_the_runner_takes_success_from_the_env_not_the_reward():
+    """A scaled or penalised reward no longer says whether the goal was met.
+
+    The env reports it; only an env that does not yet report it is read back
+    out of the reward.
+    """
+    runner = _runner_env()
+
+    # In the zone, but charged a gripper penalty: still a success.
+    assert runner._success_from({"in_zone": [True]}, np.array([0.9])) == [True]
+    # A reward of exactly 1 from reward_scale, but the task was not in the
+    # zone: not a success.
+    assert runner._success_from({"in_zone": [False]}, np.array([1.0])) == [False]
+    # An env that reports nothing keeps the old reading.
+    assert runner._success_from({}, np.array([1.0])) == [True]
+    assert runner._success_from({}, np.array([0.9])) == [False]
+
+
+def test_the_runner_caps_the_horizon_without_replacing_it():
+    """The env truncates on its own horizon; the runner only adds a cap."""
+    from rlinf.envs.real.env import RealWorldEnv
+
+    def truncation(max_episode_steps, num_steps, env_truncated):
+        runner = _runner_env(max_episode_steps=max_episode_steps, num_steps=num_steps)
+        stepped = (
+            {"state": {"q": np.zeros((1, 2), dtype=np.float32)}},
+            np.zeros(1, dtype=np.float32),
+            np.zeros(1, dtype=bool),
+            np.array([env_truncated]),
+            {},
+        )
+        runner.env.step = lambda _actions: stepped
+        _, _, _, truncations, _ = RealWorldEnv.step(
+            runner, np.zeros((1, 2), dtype=np.float32), auto_reset=False
+        )
+        return bool(np.asarray(truncations).reshape(-1)[0])
+
+    # The env's own horizon is honoured, with or without a runner cap.
+    assert truncation(None, 5, True)
+    assert truncation(100, 5, True)
+    # And the runner's cap ends an episode the env would have continued.
+    assert truncation(3, 3, False)
+    assert not truncation(3, 2, False)
+
+
+def test_a_state_only_policy_needs_no_frames():
+    """A camera-free rig reports no frames, and the runner asks for none."""
+    runner = _runner_env()
+
+    observation = runner._wrap_obs({"state": {"q": np.zeros((1, 3), np.float32)}})
+
+    assert "main_images" not in observation
+    assert observation["states"].shape == (1, 3)
+
+
+def test_the_state_order_is_the_one_the_env_declares():
+    """The vector a policy reads is ordered by the env, not by a sort here."""
+    from rlinf.envs.real.policy import ObservationSpec, Source, StateKey
+
+    keys = (
+        StateKey("zeta", (1,), (Source("zeta"),)),
+        StateKey("alpha", (2,), (Source("alpha"),)),
+    )
+    runner = _runner_env()
+    state = {
+        "alpha": np.array([[1.0, 2.0]], np.float32),
+        "zeta": np.array([[9.0]], np.float32),
+    }
+
+    # Left unsaid, the order is sorted by name: what every shipped checkpoint
+    # was trained on.
+    runner.env.envs[0].observation = ObservationSpec(keys)
+    assert ObservationSpec(keys).flatten() == ("alpha", "zeta")
+    assert runner._wrap_obs({"state": state})["states"].tolist() == [[1.0, 2.0, 9.0]]
+
+    # A policy trained on another order says so, and the runner follows it.
+    runner.env.envs[0].observation = ObservationSpec(keys, order=("zeta", "alpha"))
+    assert runner._wrap_obs({"state": state})["states"].tolist() == [[9.0, 1.0, 2.0]]
+
+    with pytest.raises(ValueError, match="must name every state key"):
+        ObservationSpec(keys, order=("zeta",))
+
+
 def test_depth_reaches_the_policy_split_like_the_frames_beside_it():
     """A policy reads depth the way it reads images: main view, then the rest.
 
     The runner never sees the per-camera dict, so depth has to follow the same
     main/extra split as the frames, keyed by the same camera.
     """
-    from rlinf.envs.real.env import RealWorldEnv
 
     def wrap(raw_observation):
-        env = RealWorldEnv.__new__(RealWorldEnv)
-        env.main_image_key = "wrist_1"
-        env.task_descriptions = ["pick up the cube"]
-        return env._wrap_obs(raw_observation)
+        return _runner_env()._wrap_obs(raw_observation)
 
     frames = {
         "wrist_1": np.zeros((1, 4, 4, 3), dtype=np.uint8),

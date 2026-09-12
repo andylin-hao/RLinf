@@ -346,6 +346,11 @@ class DOSW1Env(gym.Env):
                         enabled,
                     )
 
+    @property
+    def num_steps(self) -> int:
+        """Steps taken in the current episode."""
+        return self._num_steps
+
     def _dispatch_action(self, policy_action: np.ndarray) -> np.ndarray:
         if self.control_mode == ControlMode.MODEL:
             return self._execute_model_action(policy_action)

@@ -202,6 +202,15 @@ arm bus. Binding finds the end effector either way, so SO-101's joint channel
 and gripper channel go out in one command without either of them knowing where
 the gripper sits.
 
+One layer decides when an episode ends and whether it succeeded: the task env.
+It counts its own steps, truncates on its own horizon, applies the reward scale
+and the gripper penalty, and reports in its ``info`` whether the task counted
+the step as reaching the goal. ``RealWorldEnv`` reads those rather than
+recomputing them, and adds only what batching needs: its ``max_episode_steps``
+is a cap on top of the env's horizon, never a replacement for it, and the
+metric ``success_once`` comes from what the env reported rather than from
+comparing a scaled reward with one.
+
 The step interface is deliberately small, but reset and readiness need category
 methods outside that stream. A task reaches them through the parts bound to its
 roles, typed by category:
@@ -439,8 +448,9 @@ through robot I/O and the three wrapper families:
    * - ``real/registry.py``
      - ``task_factory`` and ``register_tasks``.
    * - ``real/env.py``
-     - ``RealWorldEnv``, the vectorized env the framework instantiates from
-       ``env_type: real``.
+     - ``RealWorldEnv``, which adapts one task env to the batched runner:
+       tensors, the main and extra camera split, auto-reset, metrics, and
+       action chunking. The episode itself belongs to the task env below it.
    * - ``real/task_env.py``
      - ``TaskEnv``, which runs one task on one robot, and
        ``RegisteredTaskEnv``, which builds it from a run's config for a

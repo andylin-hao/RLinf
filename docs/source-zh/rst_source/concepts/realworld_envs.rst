@@ -107,6 +107,8 @@
 
 不同硬件结构使用同一边界。Franka 的机械臂和末端执行器分别打开连接，因此使用并列路径；SO-101 的夹爪是机械臂总线上的另一个伺服，因此使用 ``arm.end_effector``。绑定在两种结构下都能找到末端执行器，所以 SO-101 的关节通道和夹爪通道都无需知道夹爪的位置，就能把关节目标和夹爪开度放在一条命令中下发。
 
+episode 的结束时机和成败由一层决定：任务 env。它统计自己的步数，按自己的时长上限截断，应用 reward scale 和夹爪惩罚，并在 ``info`` 中报告任务是否认为这一步达成了目标。``RealWorldEnv`` 读取这些结果，而不再重新计算，只补充批量化所需的部分：它的 ``max_episode_steps`` 是在 env 时长上限之上再加一道上限，而不是替代它；``success_once`` 指标来自 env 的报告，而不是把缩放后的 reward 与 1 比较。
+
 单步读写接口保持精简，就绪检查和复位则需要设备类别提供的方法。任务通过绑定到其角色上的零部件访问这些方法，零部件按类别提供类型：
 
 .. code-block:: python
@@ -260,7 +262,7 @@ env 侧仲裁能够保持清晰，前提是设备读取与动作映射分开。�
    * - ``real/registry.py``
      - ``task_factory`` 与 ``register_tasks``。
    * - ``real/env.py``
-     - ``RealWorldEnv``，框架根据 ``env_type: real`` 创建的向量化环境类。
+     - ``RealWorldEnv``，把一个任务 env 适配到批量化 runner：张量转换、主视角与额外视角的拆分、auto-reset、指标统计和 action chunk。episode 本身由它下层的任务 env 负责。
    * - ``real/task_env.py``
      - ``TaskEnv`` 在一台机器人上运行一个任务；``RegisteredTaskEnv`` 根据运行配置构造它，供 Gymnasium ID 使用。
    * - ``real/tasks/``

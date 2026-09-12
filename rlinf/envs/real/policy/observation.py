@@ -162,6 +162,9 @@ class ObservationSpec:
             trained on. Drivers deliver BGR; ``"rgb"`` flips it.
         min_cameras: Cameras this layout needs, checked before any hardware is
             touched.
+        order: The order the runner concatenates the state keys in. ``None``
+            sorts them by name, which is the order every shipped checkpoint
+            was trained on.
     """
 
     state: tuple[StateKey, ...]
@@ -169,11 +172,19 @@ class ObservationSpec:
     frame_size: tuple[int, int] = (128, 128)
     frame_order: str = "rgb"
     min_cameras: int = 0
+    order: Optional[tuple[str, ...]] = None
 
     def __post_init__(self) -> None:
         if self.frame_order not in ("rgb", "bgr"):
             raise ValueError(
                 f"frame_order must be 'rgb' or 'bgr', got {self.frame_order!r}."
+            )
+        if self.order is not None and sorted(self.order) != sorted(
+            key.key for key in self.state
+        ):
+            raise ValueError(
+                f"order {list(self.order)} must name every state key exactly "
+                f"once; the keys are {sorted(key.key for key in self.state)}."
             )
 
     @property
@@ -188,10 +199,11 @@ class ObservationSpec:
     def flatten(self) -> tuple[str, ...]:
         """The order the runner concatenates the state keys in.
 
-        A policy is trained against one order, so it is stated here rather
-        than left to however a dictionary happens to iterate. Sorted by name
-        is the order every shipped checkpoint was trained on.
+        A policy is trained against one order, so a spec states it rather than
+        leaving it to however a dictionary happens to iterate.
         """
+        if self.order is not None:
+            return tuple(self.order)
         return tuple(sorted(key.key for key in self.state))
 
     def requirements(self) -> list[Mapping[str, Needs]]:
