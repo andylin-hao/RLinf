@@ -30,6 +30,7 @@ from scipy.spatial.transform import Rotation as R
 from rlinf.envs.real.tasks.requirements import Needs, Parts, Reading, nest
 from rlinf.envs.real.tasks.workspace import Workspace
 from rlinf.robotics.actions import ActionKind
+from rlinf.utils.rot6d import rot6d_to_quat_xyzw_safe
 
 from .action import Channel, Command, Effect, Phase
 
@@ -79,7 +80,12 @@ class PoseActionConfig:
 
 
 class JointPositions(Channel):
-    """Absolute joint targets for one arm, in radians.
+    """Joint targets for one arm, in radians.
+
+    The channel commands the joints directly, so its bounds are the arm's
+    joint limits. With ``scale`` set it commands a change instead: the action
+    is one unit either way, multiplied by ``scale`` radians and added to the
+    joints as they were read, then held inside the same limits.
 
     Args:
         role: The role whose arm this channel drives.
@@ -87,6 +93,11 @@ class JointPositions(Channel):
         high: Highest target per joint.
         dof: Joints the arm has, when the robot knows; the bounds are checked
             against it so a mis-sized limit fails before anything connects.
+        scale: Radians per action unit, for an arm commanded by change. ``None``
+            commands the joints directly.
+        compliance: Impedance gains applied to the arm at each reset. An arm
+            running a Cartesian impedance controller underneath keeps them
+            whichever way a policy commands it.
         name: Action part name; the role's own name by default.
     """
 
@@ -97,6 +108,8 @@ class JointPositions(Channel):
         low: Optional[Sequence[float]],
         high: Optional[Sequence[float]],
         dof: Optional[int] = None,
+        scale: Optional[float] = None,
+        compliance: Optional[Mapping[str, float]] = None,
         name: Optional[str] = None,
     ) -> None:
         if low is None or high is None:
@@ -119,26 +132,49 @@ class JointPositions(Channel):
                     f"The arm has {dof} joints, so {label!r} needs {dof} values, "
                     f"got {bound.size}."
                 )
+        self.scale = scale
+        self.compliance = dict(compliance or {})
         super().__init__(
             role=role,
             name=name or role,
             width=int(self._low.size),
-            kind=ActionKind.JOINT_POSITION,
+            kind=ActionKind.JOINT_DELTA
+            if scale is not None
+            else ActionKind.JOINT_POSITION,
             phase=Phase.WITH,
         )
 
     def bounds(self) -> tuple[np.ndarray, np.ndarray]:
-        """The joint bounds."""
-        return self._low, self._high
+        """The joint limits, or one unit either way when commanded by change."""
+        if self.scale is None:
+            return self._low, self._high
+        return -np.ones(self._low.size), np.ones(self._low.size)
 
     def requirements(self) -> Mapping[str, Needs]:
-        """An arm that accepts joint targets."""
-        return {self.role: Needs(commands=frozenset({"joint_position"}))}
+        """An arm that accepts joint targets, and reports them when relative."""
+        needs = Needs(commands=frozenset({"joint_position"}))
+        if self.scale is not None:
+            needs = Needs(
+                observes=frozenset({"arm_joint_position"}),
+                commands=frozenset({"joint_position"}),
+            )
+        return {self.role: needs}
+
+    def reset(self, parts: Optional[Parts]) -> None:
+        """Apply the episode's impedance gains."""
+        if parts is not None and self.compliance:
+            parts.arm(self.role).reconfigure_compliance_params(self.compliance)
 
     def command(self, parts: Parts, values: np.ndarray, reading: Reading) -> Command:
-        """Ask the arm for these joints."""
+        """Ask the arm for these joints, or for this change to them."""
+        target = values
+        if self.scale is not None:
+            current = np.asarray(
+                reading.arm(self.role)["arm_joint_position"], dtype=np.float64
+            )
+            target = np.clip(current + values * self.scale, self._low, self._high)
         path = parts.bound[self.role].part
-        return Command(send=nest(path, {"joint_position": values}))
+        return Command(send=nest(path, {"joint_position": target}))
 
 
 class PoseDelta(Channel):
@@ -233,6 +269,126 @@ class PoseDelta(Channel):
     def teleop_context(self, parts: Optional[Parts]) -> Mapping[str, Any]:
         """The scales a delta device multiplies its own reading by."""
         return {"action_scale": self.scales}
+
+
+class PoseTarget(Channel):
+    """A tool pose for one arm, commanded directly rather than as a change.
+
+    The channel takes a position and a six-number rotation, the first two
+    columns of the rotation matrix, which is what a policy trained to emit
+    waypoints regresses. The rotation is turned back into a quaternion on the
+    hemisphere the last command used, so a controller interpolating between
+    two steps takes the short way round.
+
+    Because the channel asks for a position rather than a change to one, its
+    bounds are the reachable positions themselves. Those are the task's, so
+    they come from the workspace the task confines this channel to, and
+    ``low`` and ``high`` are only for a layout used without one.
+
+    Args:
+        role: The role whose arm this channel drives.
+        low: Lowest position the channel may ask for. ``None`` takes the
+            task's workspace.
+        high: Highest position the channel may ask for. ``None`` likewise.
+        rotation_limit: Bound on each of the six rotation numbers, left wide of
+            one so a policy's output survives normalisation.
+        compliance: Impedance gains applied to the arm at each reset.
+        clear_errors: Clear a latched fault before each command.
+        name: Action part name; the role's own name by default.
+    """
+
+    def __init__(
+        self,
+        role: str,
+        *,
+        low: Optional[Sequence[float]] = None,
+        high: Optional[Sequence[float]] = None,
+        rotation_limit: float = 1.5,
+        compliance: Optional[Mapping[str, float]] = None,
+        clear_errors: bool = True,
+        name: Optional[str] = None,
+    ) -> None:
+        self._low = None if low is None else np.asarray(low, dtype=np.float64)
+        self._high = None if high is None else np.asarray(high, dtype=np.float64)
+        for label, bound in (("low", self._low), ("high", self._high)):
+            if bound is not None and bound.shape != (3,):
+                raise ValueError(
+                    f"A pose target's {label!r} is three position values, got "
+                    f"shape {bound.shape}."
+                )
+        self.rotation_limit = float(rotation_limit)
+        self.compliance = dict(compliance or {})
+        self.clear_errors = clear_errors
+        self.workspace: Optional[Workspace] = None
+        self._last_quat: Optional[np.ndarray] = None
+        super().__init__(
+            role=role,
+            name=name or role,
+            width=9,
+            kind=ActionKind.CARTESIAN_POSE,
+            phase=Phase.WITH,
+        )
+
+    def bounds(self) -> tuple[np.ndarray, np.ndarray]:
+        """The position box, then the rotation numbers either way.
+
+        Raises:
+            ValueError: If neither this channel nor the task bounds the
+                positions it may ask for.
+        """
+        low, high = self._low, self._high
+        if low is None or high is None:
+            if self.workspace is None:
+                raise ValueError(
+                    f"PoseTarget({self.role!r}) asks for positions directly, so "
+                    "it needs bounds: give the task a workspace, or pass 'low' "
+                    "and 'high'."
+                )
+            low = np.asarray(self.workspace.low[:3], dtype=np.float64)
+            high = np.asarray(self.workspace.high[:3], dtype=np.float64)
+        limit = np.full(6, self.rotation_limit)
+        return (
+            np.concatenate([low, -limit]),
+            np.concatenate([high, limit]),
+        )
+
+    def requirements(self) -> Mapping[str, Needs]:
+        """An arm that reports a tool pose and accepts one."""
+        return {
+            self.role: Needs(
+                observes=frozenset({"tcp_pose"}),
+                commands=frozenset({"tcp_pose"}),
+            )
+        }
+
+    def confine(self, workspace: Optional[Workspace]) -> None:
+        """Keep every commanded pose inside ``workspace``."""
+        self.workspace = workspace
+
+    def reset(self, parts: Optional[Parts]) -> None:
+        """Forget the hemisphere and apply the episode's impedance gains."""
+        self._last_quat = None
+        if parts is not None and self.compliance:
+            parts.arm(self.role).reconfigure_compliance_params(self.compliance)
+
+    def prepare(self, parts: Parts) -> None:
+        """Clear a fault the last motion latched."""
+        if self.clear_errors:
+            parts.arm(self.role).clear_errors()
+
+    def command(self, parts: Parts, values: np.ndarray, reading: Reading) -> Command:
+        """Send this pose, on the hemisphere the last command used."""
+        current = np.asarray(reading.arm(self.role)["tcp_pose"], dtype=np.float64)
+        previous = self._last_quat if self._last_quat is not None else current[3:]
+        quat = rot6d_to_quat_xyzw_safe(values[3:9], fallback_quat_xyzw=previous)
+        if float(np.dot(quat, previous)) < 0.0:
+            quat = -quat
+        self._last_quat = quat
+        target = np.concatenate([values[:3], quat]).astype(np.float64)
+        if self.workspace is not None:
+            target = self.workspace.clip(target, current)
+        path = parts.bound[self.role].part
+        return Command(send=nest(path, {"tcp_pose": target}))
 
 
 class ContinuousGripper(Channel):

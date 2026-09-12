@@ -19,6 +19,7 @@ the control and observation layout of one robot.
 """
 
 from .base import Evaluation, ResetContext, Task, TaskConfig
+from .bimanual import MultiArmTarget, MultiArmTargetConfig
 from .bin_relocation import BinRelocation, BinRelocationConfig
 from .bottle import BottleCap, BottleCapConfig
 from .cartesian import CartesianTarget, CartesianTargetConfig, FixtureConfig
@@ -43,6 +44,8 @@ __all__ = [
     "JointReachConfig",
     "Needs",
     "Parts",
+    "MultiArmTarget",
+    "MultiArmTargetConfig",
     "PegInsertion",
     "PegInsertionConfig",
     "PickPlace",

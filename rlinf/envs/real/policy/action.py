@@ -30,7 +30,7 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 import gymnasium as gym
 import numpy as np
@@ -198,6 +198,7 @@ class ActionLayout:
         # order they were handed over while different roles run at once.
         self._queues: dict[str, ThreadPoolExecutor] = {}
         self._pending: list[Future[None]] = []
+        self._suspended: frozenset[str] = frozenset()
 
     @property
     def width(self) -> int:
@@ -221,10 +222,20 @@ class ActionLayout:
         """What every channel needs of the robot, merged by role."""
         return combine(*(channel.requirements() for channel in self.channels))
 
-    def confine(self, workspace: Optional[Workspace]) -> None:
-        """Hand the task's workspace to the channels that command poses."""
+    def confine(
+        self, workspace: "Optional[Union[Workspace, Mapping[str, Workspace]]]"
+    ) -> None:
+        """Hand the task's workspace to the channels that command poses.
+
+        One workspace confines every role. A task whose roles reach different
+        parts of the bench keys them by role instead, and a role it leaves out
+        is unconfined.
+        """
         for channel in self.channels:
-            channel.confine(workspace)
+            if isinstance(workspace, Mapping):
+                channel.confine(workspace.get(channel.role))
+            else:
+                channel.confine(workspace)
 
     def reset(self, parts: Optional[Parts] = None) -> None:
         """Forget the previous episode and set the parts up for the next."""
@@ -275,13 +286,29 @@ class ActionLayout:
             queue.shutdown(wait=True)
         self._queues.clear()
 
+    def suspend(self, names: Sequence[str] = ()) -> None:
+        """Leave these action parts to whoever else is commanding them.
+
+        A teleoperation device that streams its own commands between steps
+        names the parts it delivers, and the step stops commanding those so
+        the two do not fight over one controller. Calling this with nothing
+        hands them back.
+        """
+        unknown = set(names) - {channel.name for channel in self.channels}
+        if unknown:
+            raise KeyError(
+                f"This layout has no action parts {sorted(unknown)}; it has "
+                f"{sorted(channel.name for channel in self.channels)}."
+            )
+        self._suspended = frozenset(names)
+
     def apply(self, parts: Parts, action: np.ndarray, reading: Reading) -> Applied:
         """Command every channel from one action, phase by phase."""
         effects: list[Effect] = []
         for phase in Phase:
             pending: dict[str, Any] = {}
             for channel, values in self._slices(action):
-                if channel.phase is not phase:
+                if channel.phase is not phase or channel.name in self._suspended:
                     continue
                 channel.prepare(parts)
                 command = channel.command(parts, values, reading)

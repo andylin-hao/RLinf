@@ -134,25 +134,36 @@ def register_task_ids(
         The entry point names bound into ``namespace``, for ``__all__``.
 
     Raises:
-        ValueError: If one robot registers one task under two ids.
+        ValueError: If one robot registers one task under two ids without
+            either of them opting out with ``GENERIC_ID = False``.
     """
     from .task_env import RegisteredTaskEnv
 
     by_task: dict[type, dict[str, tuple[str, type]]] = {}
+    opted_out: set[type] = set()
     for table in tables:
         for env_id, env_cls in table.items():
             if not issubclass(env_cls, RegisteredTaskEnv):
+                continue
+            if not env_cls.GENERIC_ID:
+                # The id says how the robot is driven, which a robot-free id
+                # cannot pick for a run.
+                opted_out.add(env_cls.TASK)
                 continue
             presets = by_task.setdefault(env_cls.TASK, {})
             robot_type = env_cls.ROBOT.ROBOT_TYPE
             if robot_type in presets:
                 raise ValueError(
                     f"{robot_type} registers {env_cls.TASK.__name__} as both "
-                    f"{presets[robot_type][0]} and {env_id}."
+                    f"{presets[robot_type][0]} and {env_id}. Set "
+                    "'GENERIC_ID = False' on the ids that differ only in how "
+                    "the robot is driven."
                 )
             presets[robot_type] = (env_id, env_cls)
     names = []
     for task, presets in by_task.items():
+        if task in opted_out:
+            continue
         entry_point = task_on_robot(task, presets)
         namespace[entry_point.__name__] = entry_point
         register(

@@ -40,8 +40,8 @@ import gymnasium as gym
 import numpy as np
 
 from rlinf.envs.real.policy import ActionLayout, Applied, ObservationSpec
-from rlinf.envs.real.tasks import Needs, Parts, ResetContext, Task, bind
-from rlinf.envs.real.tasks.requirements import combine
+from rlinf.envs.real.tasks import Needs, Parts, Reading, ResetContext, Task, bind
+from rlinf.envs.real.tasks.requirements import at, combine
 from rlinf.envs.real.utils.config import get_hardware_config
 from rlinf.envs.real.utils.frames import crop_region, policy_depth, policy_frame
 from rlinf.envs.real.utils.reward_model import RewardModel
@@ -185,6 +185,7 @@ class TaskEnv(gym.Env):
         self._reading: Optional[Mapping[str, Any]] = None
         self.parts: Optional[Parts] = None
         self.camera_player: Optional[VideoPlayer] = None
+        self._camera_paths: Mapping[str, str] = {}
         if self.config.is_dummy:
             return
 
@@ -192,6 +193,11 @@ class TaskEnv(gym.Env):
         if not robot.is_connected:
             robot.connect()
         self._wait_for_arms()
+        # A camera composed inside a group, as a wrist camera is, reports under
+        # that group rather than at the top of the reading.
+        self._camera_paths = {
+            path.rsplit(".", 1)[-1]: path for path in robot.parts_of_type(Camera)
+        }
         self.camera_player = VideoPlayer(self.config.enable_camera_player)
         task.home(self.parts, self._context())
         self._reading = self._read()
@@ -263,6 +269,21 @@ class TaskEnv(gym.Env):
     def get_action_scale(self) -> Optional[np.ndarray]:
         """What one unit of each action channel moves."""
         return self.action.teleop_context(self.parts).get("action_scale")
+
+    def refresh_reading(self) -> Optional[Reading]:
+        """Read the robot again and keep it, for a device that moved it itself.
+
+        A streaming teleoperation device commands the arms between steps, so
+        the reading this env cached is behind the robot. Reading here brings
+        the two back together before the next step scores anything.
+
+        Returns:
+            The new reading by role, or ``None`` with no robot to read.
+        """
+        if self.parts is None or self.config.is_dummy:
+            return None
+        self._reading = self._read()
+        return self.parts.read(self._reading)
 
     def get_gripper_open(self) -> Optional[bool]:
         """Whether the gripper is open, for a device that toggles it."""
@@ -442,7 +463,7 @@ class TaskEnv(gym.Env):
             frames, depths, display = {}, {}, {}
             size = self.observation.frame_size
             for camera in self.observation.cameras:
-                captured = self._reading[camera.name]
+                captured = at(self._reading, self._camera_paths[camera.name])
                 frame, cropped = policy_frame(
                     captured["frame"],
                     size,
@@ -565,10 +586,22 @@ class RegisteredTaskEnv(TaskEnv):
     #: the class hierarchy like :attr:`DEFAULTS`.
     RETIRED: ClassVar[Mapping[str, str]] = {}
 
+    #: Settings that are gone and cannot be ignored, each with what to write
+    #: instead. A run passing one is refused, because carrying on would drive
+    #: the robot differently from what the setting asked for. Merged down the
+    #: class hierarchy like :attr:`DEFAULTS`.
+    REFUSED: ClassVar[Mapping[str, str]] = {}
+
     #: Settings the preset reads itself, as a dataclass: options it passes to
     #: the robot, such as a controller mode, and how it builds its channels.
     #: ``None`` when it reads none.
     OPTIONS: ClassVar[Optional[type]] = None
+
+    #: Whether this id may stand for its task's robot-free id, such as
+    #: ``PegInsertion-v1``. ``False`` on an id that differs from another on the
+    #: same robot in how the arms are driven, which a run must choose itself
+    #: because its checkpoint was trained against one action layout.
+    GENERIC_ID: ClassVar[bool] = True
 
     def __init__(
         self,
@@ -590,6 +623,14 @@ class RegisteredTaskEnv(TaskEnv):
             key: value for key, value in cls.defaults().items() if key in declared
         }
         settings.update(override_cfg or {})
+        refused = [key for key in cls._merged("REFUSED") if key in settings]
+        if refused:
+            instead = cls._merged("REFUSED")
+            lines = "\n".join(f"  {key!r}: {instead[key]}" for key in sorted(refused))
+            raise ValueError(
+                f"{cls.__name__} no longer takes these settings, and ignoring "
+                f"them would drive the robot differently:\n{lines}"
+            )
         for key, instead in cls._merged("RETIRED").items():
             if key in settings:
                 settings.pop(key)

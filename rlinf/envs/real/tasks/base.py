@@ -24,7 +24,7 @@ alike.
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, ClassVar, Optional
+from typing import TYPE_CHECKING, Any, ClassVar, Optional, Union
 
 import numpy as np
 
@@ -114,11 +114,12 @@ class Task(ABC):
         """What each role must report, accept, and carry."""
 
     @property
-    def workspace(self) -> Optional[Workspace]:
+    def workspace(self) -> "Optional[Union[Workspace, Mapping[str, Workspace]]]":
         """Where a control that commands poses may send the tool.
 
         ``None`` leaves the tool unconstrained, as for a task that never asks
-        for a pose.
+        for a pose. A task whose roles reach different parts of the bench
+        returns one workspace per role instead of one for all of them.
         """
         return None
 

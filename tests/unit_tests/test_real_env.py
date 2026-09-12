@@ -27,11 +27,9 @@ import re
 import subprocess
 import sys
 import textwrap
-import threading
 import time
 import types
 import warnings
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Optional
@@ -1921,161 +1919,165 @@ def test_a_stalled_camera_is_reopened_and_read_again(monkeypatch):
         env.close()
 
 
-def test_dual_franka_reads_depth_beside_each_frame():
-    """Both arms' cameras report depth through the same reading as the frame.
+def _dual_franka_parts(log, *, hold: float = 0.0):
+    """A two-armed robot with slow grippers, bound to the dual-arm layout."""
+    from rlinf.envs.real.franka.dual_base import DualArmActionConfig
+    from rlinf.envs.real.franka.dual_franka_joint import (
+        DualFrankaJointActionConfig,
+        DualFrankaJointEnv,
+    )
+    from rlinf.envs.real.tasks import bind
+    from rlinf.robotics.parts.base import PartGroup
 
-    The dual env reads each camera on its own so a stalled one cannot stall
-    the control loop, which is why depth has to arrive on that path too.
+    class SlowGripper(LatchGripper):
+        def __init__(self, side):
+            super().__init__(log)
+            self.side = side
+
+        def close(self, speed: float = 0.3, force: float = 130.0) -> None:
+            time.sleep(hold)
+            self.log.append(("close", self.side))
+            self.latched_open = False
+
+    class Recording(JointPoseArm):
+        def __init__(self, side):
+            super().__init__(log)
+            self.side = side
+            self.compliance = None
+
+        def reconfigure_compliance_params(self, params) -> None:
+            self.compliance = params
+
+    arms = {side: Recording(side) for side in ("left", "right")}
+    robot = Robot(
+        **{
+            side: PartGroup(arm=arms[side], end_effector=SlowGripper(side))
+            for side in ("left", "right")
+        }
+    )
+    robot.connect()
+    config = DualFrankaJointActionConfig(
+        compliance_param={"translational_stiffness": 800}
+    )
+    assert isinstance(config, DualArmActionConfig)
+    layout = DualFrankaJointEnv.make_action(None, config)
+    return robot, arms, layout, bind(robot, layout.requirements(), owner="test")
+
+
+def test_dual_franka_grips_both_hands_without_holding_the_control_loop():
+    """Each arm's grasp is asked for and scored, and neither delays the step."""
+    log: list = []
+    hold = 0.4
+    robot, _arms, layout, parts = _dual_franka_parts(log, hold=hold)
+    # Seven joints, then the gripper, per arm; both grippers fully closing.
+    action = np.zeros(16)
+    action[7] = -1.0
+    action[15] = -1.0
+    try:
+        start = time.time()
+        applied = layout.apply(parts, action, parts.read(robot.get_observation()))
+        elapsed = time.time() - start
+        # Two grippers on their own queues, and the step waits for neither.
+        assert elapsed < hold
+        # Both grasps are charged in the step that asked for them.
+        assert applied.penalties == 2
+        assert {effect.role for effect in applied.effects} == {"left", "right"}
+        layout.drain()
+        assert sorted(entry for entry in log if entry[0] == "close") == [
+            ("close", "left"),
+            ("close", "right"),
+        ]
+    finally:
+        layout.close()
+        robot.disconnect()
+
+
+def test_dual_franka_applies_the_runs_compliance_to_both_arms():
+    """Each arm's channel carries the gains, so a reset sets both."""
+    log: list = []
+    robot, arms, layout, parts = _dual_franka_parts(log)
+    try:
+        layout.reset(parts)
+    finally:
+        layout.close()
+        robot.disconnect()
+    for side, arm in arms.items():
+        assert arm.compliance == {"translational_stiffness": 800}, side
+
+
+def test_dual_franka_puts_each_wrist_camera_on_the_arm_it_rides():
+    """A camera's name carries its side, which is how the robot places it."""
+    from rlinf.envs.real.franka.dual_franka_joint import DualFrankaJointEnv
+    from rlinf.robotics.robots.dual_franka import DualFrankaRobot
+
+    hardware = DualFrankaConfig(
+        node_rank=0,
+        left_robot_ip="1.2.3.4",
+        right_robot_ip="1.2.3.5",
+        base_camera_serials=["base-1"],
+        left_camera_serials=["left-1"],
+        right_camera_serials=["right-1"],
+    )
+    infos = DualFrankaJointEnv.camera_infos(
+        hardware,
+        SimpleNamespace(camera_crop_regions={}, enable_camera_depth=False),
+    )
+    # Base cameras first, then each wrist, as every dual policy read them.
+    assert [info.name for info in infos] == [
+        "base_0_rgb",
+        "left_wrist_0_rgb",
+        "right_wrist_0_rgb",
+    ]
+
+    robot = DualFrankaRobot.from_config(
+        hardware, cameras={info.name: info for info in infos}
+    )
+    assert "left_wrist_0_rgb" in robot.child("left").children
+    assert "right_wrist_0_rgb" in robot.child("right").children
+    # Anything not named for a side stays at the top of the tree.
+    assert "base_0_rgb" in robot.children
+
+
+def test_a_camera_inside_an_arms_group_still_reaches_the_policy():
+    """A wrist camera reports under its arm, not at the top of the reading.
+
+    Every single-arm robot composes its cameras at the top of the tree, so
+    reading them by bare name worked until a two-armed robot put each wrist
+    camera in its own arm's group.
     """
-    near, far = 0.5, 1.5
+    from robot_mocks import mocked_sdks
+    from robot_mocks.cameras import SERIALS
 
-    class _Camera:
-        def __init__(self, with_depth):
-            self.timeouts = []
-            self._with_depth = with_depth
+    with mocked_sdks():
+        from rlinf.envs.real.franka.dual_franka_joint import DualFrankaJointEnv
 
-        def get_observation(self, timeout=5, attempts=1, wait=0.0):
-            self.timeouts.append(timeout)
-            frame = np.zeros((8, 8, 3), dtype=np.uint8)
-            if not self._with_depth:
-                return {"frame": frame}
-            # The near/far step sits off the resize grid so an averaging
-            # resample would show up as a distance nothing measured.
-            depth = np.full((8, 8), far, dtype=np.float32)
-            depth[:, :3] = near
-            return {"frame": frame, "depth": depth}
-
-    def read(with_depth):
-        env = DualFrankaJointEnv.__new__(DualFrankaJointEnv)
-        camera = _Camera(with_depth)
-        env._cameras = {"left_wrist_0_rgb": camera}
-        env._last_camera_frame = {}
-        env._logger = SimpleNamespace(error=lambda *args, **kwargs: None)
-        env.camera_player = SimpleNamespace(put_frame=lambda frames: None)
-        env.observation_space = gym.spaces.Dict(
-            {
-                "frames": gym.spaces.Dict(
-                    {
-                        "left_wrist_0_rgb": gym.spaces.Box(
-                            0, 255, shape=(4, 4, 3), dtype=np.uint8
-                        )
-                    }
+        env = DualFrankaJointEnv(
+            override_cfg={
+                "enable_camera_player": False,
+                "step_frequency": 10000.0,
+                "ee_pose_limit_min": (np.ones((2, 6)) * -1).tolist(),
+                "ee_pose_limit_max": np.ones((2, 6)).tolist(),
+            },
+            worker_info=None,
+            env_idx=0,
+            robot_info=_robot_info(
+                DualFrankaConfig(
+                    node_rank=0,
+                    left_robot_ip="0.0.0.0",
+                    right_robot_ip="0.0.0.1",
+                    left_camera_serials=[SERIALS[0]],
+                    base_camera_serials=[SERIALS[1]],
                 )
-            }
+            ),
         )
-        return camera, env._get_camera_observation()
-
-    camera, (frames, depths) = read(with_depth=False)
-    assert frames["left_wrist_0_rgb"].shape == (4, 4, 3)
-    assert depths == {}
-    # Read on the control period, not the default timeout, so a stalled
-    # camera falls back to its last reading instead of holding the loop.
-    assert camera.timeouts == [0.5]
-
-    _, (frames, depths) = read(with_depth=True)
-    depth = depths["left_wrist_0_rgb"]
-    assert depth.shape == (4, 4)
-    # Nearest resampling keeps every pixel at a measured distance.
-    distances = np.unique(depth)
-    assert len(distances) == 2
-    assert np.allclose(distances, [near, far])
-
-
-def test_dual_franka_declares_depth_only_where_a_camera_captures_it():
-    """The depth space follows the cameras, so a rig without one is unchanged."""
-
-    def camera_spaces(enable_camera_depth):
-        env = DualFrankaJointEnv.__new__(DualFrankaJointEnv)
-        env.hardware = DualFrankaConfig(
-            node_rank=0, base_camera_serials=["dummy"], camera_type="realsense"
-        )
-        env.config = SimpleNamespace(enable_camera_depth=enable_camera_depth)
-        return env._build_camera_spaces()
-
-    assert set(camera_spaces(False)) == {"frames"}
-
-    spaces = camera_spaces(True)
-    assert set(spaces) == {"frames", "depths"}
-    depth_space = spaces["depths"]["base_0_rgb"]
-    assert depth_space.shape == spaces["frames"]["base_0_rgb"].shape[:2]
-    assert depth_space.dtype == np.float32
-
-
-def test_dual_franka_runs_independent_arm_calls_concurrently():
-    env = DualFrankaJointEnv.__new__(DualFrankaJointEnv)
-    env._arm_executors = (
-        ThreadPoolExecutor(max_workers=1),
-        ThreadPoolExecutor(max_workers=1),
-    )
-    rendezvous = threading.Barrier(2)
-
-    def call(side):
-        rendezvous.wait(timeout=1.0)
-        return side
-
-    try:
-        assert env._run_arm_calls(lambda: call("left"), lambda: call("right")) == (
-            "left",
-            "right",
-        )
-    finally:
-        for executor in env._arm_executors:
-            executor.shutdown(wait=True)
-
-
-def test_dual_franka_applies_a_tasks_compliance_to_both_arms():
-    env = DualFrankaJointEnv.__new__(DualFrankaJointEnv)
-    env.config = SimpleNamespace(compliance_param={"translational_stiffness": 800})
-    env._arm_executors = (
-        ThreadPoolExecutor(max_workers=1),
-        ThreadPoolExecutor(max_workers=1),
-    )
-
-    class Arm:
-        def __init__(self):
-            self.applied = None
-
-        def reconfigure_compliance_params(self, params):
-            self.applied = params
-
-    env._left_arm, env._right_arm = Arm(), Arm()
-    try:
-        env._reconfigure_compliance()
-    finally:
-        for executor in env._arm_executors:
-            executor.shutdown(wait=True)
-
-    assert env._left_arm.applied == {"translational_stiffness": 800}
-    assert env._right_arm.applied == {"translational_stiffness": 800}
-
-
-def test_dual_franka_does_not_wait_for_gripper_motion():
-    env = DualFrankaJointEnv.__new__(DualFrankaJointEnv)
-    env.config = SimpleNamespace(binary_gripper_threshold=0.5)
-    env._logger = SimpleNamespace(warning=lambda *args, **kwargs: None)
-    env._arm_executors = (
-        ThreadPoolExecutor(max_workers=1),
-        ThreadPoolExecutor(max_workers=1),
-    )
-    entered = threading.Event()
-    release = threading.Event()
-
-    class Hand:
-        is_open = True
-
-        def close(self):
-            entered.set()
-            assert release.wait(timeout=1.0)
-
-    try:
-        changed = env._gripper_action(0, Hand(), -1.0)
-        assert changed
-        assert entered.wait(timeout=1.0)
-        assert not release.is_set(), "the control loop must not wait for the gripper"
-    finally:
-        release.set()
-        for executor in env._arm_executors:
-            executor.shutdown(wait=True)
+        try:
+            observation, _ = env.reset()
+            # The wrist camera is inside the left arm's group; the base camera
+            # is not. Both reach the policy under their own names.
+            assert set(observation["frames"]) == {"left_wrist_0_rgb", "base_0_rgb"}
+            assert "left_wrist_0_rgb" in env.robot.child("left").children
+        finally:
+            env.close()
 
 
 def test_a_reward_model_waits_for_the_worker_result():
@@ -2090,37 +2092,109 @@ def test_a_reward_model_waits_for_the_worker_result():
     assert model({"wrist_1": np.zeros((4, 4, 3), dtype=np.uint8)}) == 0.75
 
 
-def test_direct_gello_stream_keeps_both_arm_commands_concurrent():
+def _streaming_env(log, layout, parts):
+    """The little the streamer reads off the env it drives."""
+    return SimpleNamespace(
+        unwrapped=SimpleNamespace(
+            action=layout,
+            parts=parts,
+            refresh_reading=lambda: log.append(("refresh",)),
+        )
+    )
+
+
+def test_direct_gello_stream_commands_both_arms_and_defers_the_grippers():
+    """The stream drives the arms itself and queues each gripper edge."""
     from rlinf.envs.real.wrappers.teleop.adapters import DualGelloJointStream
-
-    rendezvous = threading.Barrier(2)
-
-    class Controller:
-        def move_joints(self, _target):
-            rendezvous.wait(timeout=1.0)
 
     class Leader:
         ready = True
 
+        def __init__(self, grip):
+            self.grip = grip
+
         def get_observation(self):
-            return {"joint_position": np.zeros(7), "grip": np.zeros(1)}
+            return {
+                "joint_position": np.full(6, 0.25),
+                "grip": np.array([self.grip]),
+            }
 
-    env = DualFrankaJointEnv.__new__(DualFrankaJointEnv)
-    env._left_ctrl = Controller()
-    env._right_ctrl = Controller()
-    env._arm_executors = (
-        ThreadPoolExecutor(max_workers=1),
-        ThreadPoolExecutor(max_workers=1),
-    )
-    streamer = DualGelloJointStream(
-        Leader(), Leader(), gripper_enabled=False, direct_stream=False
-    )
-
+    log: list = []
+    robot, _arms, layout, parts = _dual_franka_parts(log)
+    env = _streaming_env(log, layout, parts)
+    # A leader grip under 0.5 reads as open, so the first tick records open
+    # and the second, with the grip squeezed, is the edge that closes.
+    leaders = (Leader(0.0), Leader(0.0))
+    streamer = DualGelloJointStream(*leaders, gripper_enabled=True, direct_stream=False)
     try:
         streamer.stream_once(env)
+        # Both arms were commanded through the robot's own parts.
+        assert [entry[0] for entry in log].count("move") == 2
+        assert not [entry for entry in log if entry[0] == "close"]
+
+        for leader in leaders:
+            leader.grip = 0.9
+        streamer.stream_once(env)
+        layout.drain()
+        assert sorted(entry for entry in log if entry[0] == "close") == [
+            ("close", "left"),
+            ("close", "right"),
+        ]
     finally:
-        for executor in env._arm_executors:
-            executor.shutdown(wait=True)
+        layout.close()
+        robot.disconnect()
+
+
+def test_the_step_leaves_the_arms_to_a_stream_that_delivers_them():
+    """Two writers must never race one controller at different rates."""
+    log: list = []
+    robot, _arms, layout, parts = _dual_franka_parts(log)
+    action = np.zeros(16)
+    action[:7] = 0.1
+    action[8:15] = 0.1
+    try:
+        reading = parts.read(robot.get_observation())
+        layout.apply(parts, action, reading)
+        assert [entry[0] for entry in log].count("move") == 2
+
+        log.clear()
+        layout.suspend(("left.arm", "right.arm"))
+        layout.apply(parts, action, reading)
+        # The grippers are still the step's, only the arms are the stream's.
+        assert "move" not in [entry[0] for entry in log]
+
+        log.clear()
+        layout.suspend()
+        layout.apply(parts, action, reading)
+        assert [entry[0] for entry in log].count("move") == 2
+    finally:
+        layout.close()
+        robot.disconnect()
+
+
+def test_suspending_a_part_the_layout_does_not_have_is_refused():
+    """A streamer naming the wrong part would silently drive nothing."""
+    log: list = []
+    robot, _arms, layout, _parts = _dual_franka_parts(log)
+    try:
+        with pytest.raises(KeyError, match="left.gripper"):
+            layout.suspend(("left.gripper",))
+    finally:
+        layout.close()
+        robot.disconnect()
+
+
+def test_a_setting_that_cannot_be_ignored_is_refused_not_warned():
+    """Dropping 'joint_action_mode' would turn absolute targets into deltas."""
+    from rlinf.envs.real.franka.dual_franka_joint import DualFrankaJointEnv
+
+    with pytest.raises(ValueError, match="joint_action_mode"):
+        DualFrankaJointEnv(
+            override_cfg={"is_dummy": True, "joint_action_mode": "absolute"},
+            worker_info=None,
+            robot_info=None,
+            env_idx=0,
+        )
 
 
 class FakeEnv(gym.Env):

@@ -22,9 +22,9 @@ from .base import FrankaEnv
 from .bin_relocation import FrankaBinRelocationEnv
 from .bottle import BottleEnv
 from .dex_pnp import DexpnpEnv
-from .dual_base import DualFrankaEnv, DualFrankaEnvConfig
-from .dual_franka_joint import DualFrankaJointEnv, DualFrankaJointEnvConfig
-from .dual_franka_tcp import DualFrankaTCPEnv, DualFrankaTCPEnvConfig
+from .dual_base import DualArmActionConfig, DualFrankaEnv
+from .dual_franka_joint import DualFrankaJointActionConfig, DualFrankaJointEnv
+from .dual_franka_tcp import DualFrankaTCPActionConfig, DualFrankaTCPEnv
 from .peg_insertion import PegInsertionEnv
 
 #: Mapping from Gymnasium IDs to registered Franka environment classes.
@@ -46,10 +46,10 @@ __all__ = [
     "DexpnpEnv",
     "DualFrankaEnv",
     "DualFrankaJointEnv",
-    "DualFrankaJointEnvConfig",
-    "DualFrankaEnvConfig",
+    "DualFrankaJointActionConfig",
+    "DualArmActionConfig",
     "DualFrankaTCPEnv",
-    "DualFrankaTCPEnvConfig",
+    "DualFrankaTCPActionConfig",
     "FrankaBinRelocationEnv",
     "FrankaEnv",
     "PegInsertionEnv",

@@ -1763,6 +1763,48 @@ def test_parts_on_separate_connections_still_run_together():
     assert set(robot.child("left").children) >= {"arm", "end_effector"}
 
 
+def test_disjoint_connections_are_commanded_at_the_same_time():
+    """Two arms on their own connections move together, not one after another.
+
+    A dual-arm robot depends on this: commanding one arm must not cost the
+    other a control period.
+    """
+    import threading
+
+    rendezvous = threading.Barrier(2, timeout=2.0)
+
+    class Side(ControllablePart):
+        @property
+        def observation_features(self) -> dict:
+            return {"joint_position": {}}
+
+        @property
+        def action_features(self) -> dict:
+            return {"joint_position": {}}
+
+        def _open(self):
+            return "link"
+
+        def get_observation(self) -> dict:
+            return {"joint_position": 0.0}
+
+        def send_action(self, action):
+            # Neither side can pass this unless the other is already inside.
+            rendezvous.wait()
+            return action
+
+    robot = PartGroup(left=Side(), right=Side())
+    robot.connect()
+    try:
+        assert robot._batches() == [["left"], ["right"]]
+        applied = robot.send_action(
+            {"left": {"joint_position": 1.0}, "right": {"joint_position": 2.0}}
+        )
+    finally:
+        robot.disconnect()
+    assert set(applied) == {"left", "right"}
+
+
 def test_a_group_spanning_two_sessions_pulls_both_into_one_batch():
     class Riding(RobotPart):
         @property

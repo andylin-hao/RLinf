@@ -138,12 +138,13 @@ requires at least one camera even in dummy mode, so its dummy constructors
 always need a descriptor with camera serials. These serials can be synthetic
 for offline runs; dummy construction does not open or probe devices.
 
-The task dataclasses of the robots with their own env, ``DualFrankaEnvConfig``,
-``DOSW1EnvConfig``, and ``Turtle2EnvConfig``, keep their names. Their hardware
+The task dataclasses of the robots that still have their own env,
+``DOSW1EnvConfig`` and ``Turtle2EnvConfig``, keep their names. Their hardware
 counterparts remain in ``rlinf.robotics.robots``. For Turtle2, camera channels
 move from the task's ``use_camera_ids`` to the hardware field ``camera_ids``.
 
-Single-arm Franka, Piper, SO-101, and GimArm tasks run on ``TaskEnv``. A run still
+Dual-arm Franka, single-arm Franka, Piper, SO-101, and GimArm tasks run on
+``TaskEnv``. A run still
 passes one flat ``override_cfg``; each key goes to whichever of three configs
 declares it: ``RegisteredTaskEnvConfig`` for how an episode runs, the cameras,
 and a reward model; the action channels' config, ``PoseActionConfig`` or
@@ -185,6 +186,13 @@ the robot the run is given, taking that robot's preset from
 ``robot_info.type``, so a config can name the task and leave the robot to the
 cluster's hardware section. The robot-bound IDs stay registered. A dummy run
 with no robot descriptor has no robot to choose from and still uses one of them.
+
+A robot-free ID needs one preset per robot to choose from, which does not hold
+when a robot offers the same task under two ways of being driven. The dual-arm
+Franka registers ``MultiArmTarget`` twice, once commanded by joint targets and
+once by tool waypoints, and their action layouts differ in width, so a run must
+name the ID its checkpoint was trained against. Both set ``GENERIC_ID = False``,
+which leaves the task without a robot-free ID rather than picking one arbitrarily.
 
 Drive Hardware Through the Robotics Interface
 ---------------------------------------------
@@ -464,7 +472,9 @@ through robot I/O and the three wrapper families:
    * - ``real/policy/``
      - What the policy sends and reads: the action channels of each robot's
        layout, and the observation keys, encodings and colour order a
-       checkpoint is trained against.
+       checkpoint is trained against. A channel that drives a part slower than
+       the control period returns its actuation as ``Command.defer``, which the
+       layout runs on that role's own queue instead of making the step wait.
 
 Next
 ----

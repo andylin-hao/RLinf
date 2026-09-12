@@ -36,6 +36,7 @@ from .channels import (
     JointPositions,
     PoseActionConfig,
     PoseDelta,
+    PoseTarget,
 )
 from .observation import (
     Encoder,
@@ -62,6 +63,7 @@ __all__ = [
     "Phase",
     "PoseActionConfig",
     "PoseDelta",
+    "PoseTarget",
     "Source",
     "StateKey",
     "pose_as_rot6d",

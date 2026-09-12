@@ -149,7 +149,13 @@ class ComposedTeleop(TeleopDevice):
             apply_when_inactive = bool(parts)
             if not parts:
                 return TeleopSample(action=None, active=False, info=info)
-        if self.streamer is not None and self.streamer.streaming:
+        streaming = self.streamer is not None and self.streamer.streaming
+        # The step must not command a part the stream is already driving, or
+        # the two fight over one controller at different rates.
+        layout = getattr(env.unwrapped, "action", None)
+        if layout is not None and hasattr(layout, "suspend"):
+            layout.suspend(self.streamer.DELIVERS if streaming else ())
+        if streaming:
             # Record parts delivered outside env.step for dataset consumers.
             info = {**info, "streamed_parts": list(self.streamer.DELIVERS)}
         return TeleopSample(
