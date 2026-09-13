@@ -372,6 +372,15 @@ class Arm(ControllablePart):
         target arrives without a jump. The call returns once the last command
         is sent, not when the arm has settled.
 
+        This is the default rather than the contract, and it suits an arm that
+        advances only when it is commanded: a Franka clips how far one command
+        may carry it and then waits for the next, so crossing a distance takes
+        a sequence and supplying that sequence is the caller's job. An arm
+        whose controller keeps stepping toward a target on its own timer needs
+        the opposite -- the target once, and time -- and overrides this to hand
+        the pose over. What :meth:`hold`, :meth:`clear` and :meth:`go_home` ask
+        for is unchanged either way; only how the arm gets there differs.
+
         Args:
             pose: Target pose, ``xyz`` plus an ``xyzw`` quaternion, in the
                 frame the arm reports ``tcp_pose`` in.

@@ -102,6 +102,17 @@ configuration. A task states both spellings of where to wait and each arm uses
 the one it can, which is why peg insertion is one task on a Franka and on a
 GimArm.
 
+How an arm crosses the distance is its own business too. ``move_to()`` travels
+through evenly spaced targets, which suits an arm that advances only when it is
+commanded: a Franka clips how far one command may carry it and then waits for
+the next, so supplying the sequence is the caller's job. An arm whose
+controller keeps stepping toward a target on its own timer needs the opposite,
+and overrides ``move_to()`` to hand the pose over once. Turtle2 does: its
+controller walks the arm over at its own speed and stops inside its own
+tolerance, so feeding it a path would move the target out from under a loop
+that is already driving toward it. What ``clear()`` and ``go_home()`` ask for is
+unchanged either way.
+
 Read the Interface Paths
 ------------------------
 

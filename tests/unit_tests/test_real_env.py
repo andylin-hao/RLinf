@@ -274,6 +274,42 @@ def test_a_field_that_means_something_else_is_refused():
     env.close()
 
 
+def test_turtle2_is_given_a_destination_not_a_route():
+    """This arm's controller advances on its own timer, so one target is the
+    whole motion.
+
+    An arm that moves only when commanded needs the path supplied to it, one
+    waypoint per control tick, which is what the base implementation does.
+    Doing that here would move the target out from under a loop that is
+    already driving toward it.
+    """
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        from rlinf.robotics.parts.arms.turtle2 import Turtle2Connection
+
+        connection = Turtle2Connection()
+        arm = connection.parts["left"]
+
+        connection._state.follow1_pos = np.zeros(7)
+        connection.left_arm_target = [0.0] * 7
+        sent = []
+        host_send = connection.move_left_arm
+
+        def record(target):
+            sent.append(np.asarray(target, dtype=float).copy())
+            host_send(target)
+
+        connection.move_left_arm = record
+
+        target = np.array([0.3, 0.1, 0.2, 0.0, 0.0, 0.0, 1.0])
+        arm.move_to(target, duration=1.5, rate_hz=10.0)
+
+    # One target, not fifteen waypoints along the way to it.
+    assert len(sent) == 1
+    assert sent[0][:3] == pytest.approx(target[:3])
+
+
 def test_turtle2_reports_and_takes_the_canonical_pose():
     """The controller's own vector is converted inside the driver.
 

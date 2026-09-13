@@ -93,6 +93,38 @@ class Turtle2RobotState:
         return asdict(self)
 
 
+class Turtle2Arm(MethodArm):
+    """One Turtle2 arm, whose controller does its own travelling.
+
+    The smoothing loop in :class:`Turtle2Connection` holds a target and steps
+    the arm toward it at :attr:`Turtle2Connection.xyz_speed` until it is within
+    its own tolerance, on its own timer. Giving it a target is therefore the
+    whole of a motion, and the interpolated approach an arm that advances only
+    when commanded needs would instead move the target out from under it every
+    tick, leaving the loop permanently in its transient and the arm slower than
+    its own speed limit.
+    """
+
+    def move_to(
+        self,
+        pose: ArrayLike,
+        *,
+        duration: float = 1.5,
+        rate_hz: float = 10.0,
+        clear_errors: bool = False,
+    ) -> None:
+        """Hand the pose to the controller and let it do the travelling.
+
+        Args:
+            pose: Target pose, ``xyz`` plus an ``xyzw`` quaternion.
+            duration: Ignored; the controller's own speed sets the pace.
+            rate_hz: Ignored, for the same reason.
+            clear_errors: Ignored; this controller latches no faults.
+        """
+        del duration, rate_hz, clear_errors
+        self.send_action({"tcp_pose": np.asarray(pose, dtype=float)})
+
+
 class Turtle2Connection(Connection):
     """Shared ROS connection for the Turtle2 arms, grippers, and cameras."""
 
@@ -111,7 +143,7 @@ class Turtle2Connection(Connection):
         """Decompose the shared connection into per-side arms and cameras."""
         parts: dict[str, RobotPart] = {}
         for side, prefix in _ARM_SIDES.items():
-            parts[side] = MethodArm(
+            parts[side] = Turtle2Arm(
                 self,
                 commands={"tcp_pose": f"move_{side}_arm"},
                 state_fields={
