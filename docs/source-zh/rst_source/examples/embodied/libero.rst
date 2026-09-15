@@ -342,6 +342,8 @@ LIBERO-Pro 与 LIBERO-Plus 套件
       --name rlinf \
       -v .:/workspace/RLinf \
       rlinf/rlinf:agentic-rlinf0.4-liberopro   # 或 ...-liberoplus
+      # 国内镜像加速（LIBERO-Pro）：infinigence-ai-registry.cn-beijing.cr.aliyuncs.com/rlinf/rlinf:agentic-rlinf0.4-liberopro
+      # 国内镜像加速（LIBERO-Plus）：infinigence-ai-registry.cn-beijing.cr.aliyuncs.com/rlinf/rlinf:agentic-rlinf0.4-liberoplus
 
 **选项 2：自定义环境** —— 按套件选择安装包：
 
