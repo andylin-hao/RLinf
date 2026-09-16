@@ -637,12 +637,6 @@ configure_ascend() {
     PLATFORM_SYSTEM_SITE_PACKAGES=0
     PLATFORM_VENV_HOOK=""
     PLATFORM_COMMON_REQ_EXCLUDE_RE=""
-    # torch-npu tracks torch 1:1 and needs a matching CANN (2.11.0 wants CANN
-    # 8.5.0), so Ascend stays on torch 2.6. Bump with the hosts' CANN.
-    if [ -z "$TORCH_VERSION" ]; then
-        TORCH_VERSION="2.6.0"
-        echo "[install.sh] ascend: pinning torch ${TORCH_VERSION} to match torch-npu/CANN (pass --torch to override)."
-    fi
     if [ -z "${UV_TORCH_BACKEND:-}" ]; then
         # `cpu` keeps `uv pip install torch ...` calls fetching the CPU build
         # from download.pytorch.org/whl/cpu instead of PyPI's CUDA wheel.
