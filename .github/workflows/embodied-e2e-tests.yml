@@ -934,6 +934,68 @@ jobs:
           rm -rf .venv
           uv cache prune
 
+  embodied-openpi-libero-ascend-test:
+    runs-on: ascend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Create Ascend embodied environment
+        run: |
+          unset UV_DEFAULT_INDEX
+          export UV_PATH=/workspace/dataset/.uv
+          export UV_CACHE_DIR=/workspace/dataset/.uv_cache
+          export UV_PYTHON_INSTALL_DIR=/workspace/dataset/.uv_python
+          bash requirements/install.sh --platform ascend embodied --model openpi --env libero
+
+      - name: LIBERO-10 PPO OpenPI Pi05 test
+        timeout-minutes: 30
+        run: |
+          unset PYTHONPATH
+          export REPO_PATH=$(pwd)
+          export ROBOT_PLATFORM=LIBERO
+          source .venv/bin/activate
+          bash tests/e2e_tests/embodied/run.sh libero_10_ppo_openpi_pi05_musa osmesa
+          ray stop
+
+      - name: Clean up
+        run: |
+          rm -rf .venv
+          uv cache prune
+
+  embodied-openvla-maniskill-ascend-test:
+    runs-on: ascend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Create Ascend embodied environment
+        run: |
+          unset UV_DEFAULT_INDEX
+          export UV_PATH=/workspace/dataset/.uv
+          export UV_CACHE_DIR=/workspace/dataset/.uv_cache
+          export UV_PYTHON_INSTALL_DIR=/workspace/dataset/.uv_python
+          bash requirements/install.sh --platform ascend embodied --model openvla --env maniskill_libero
+
+      - name: ManiSkill PPO test
+        timeout-minutes: 30
+        run: |
+          unset PYTHONPATH
+          export REPO_PATH=$(pwd)
+          source .venv/bin/activate
+          # SAPIEN's GPU physx and renderer need CUDA: simulate on CPU, one env per rank.
+          bash tests/e2e_tests/embodied/run.sh maniskill_ppo_openvla osmesa \
+            env.train.init_params.sim_backend=cpu env.eval.init_params.sim_backend=cpu \
+            +env.train.init_params.render_backend=pci:0000:00:00.0 \
+            +env.eval.init_params.render_backend=pci:0000:00:00.0 \
+            env.train.total_num_envs=2 env.eval.total_num_envs=2 actor.global_batch_size=4
+          ray stop
+
+      - name: Clean up
+        run: |
+          rm -rf .venv
+          uv cache prune
+
   embodied-gr00t-isaaclab-test:
     runs-on: embodied
     steps:
