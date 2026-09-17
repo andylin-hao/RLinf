@@ -596,7 +596,7 @@ configure_amd() {
         "export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/radeon_icd.x86_64.json"
     )
     PLATFORM_FLASH_ATTN_INSTALL=1
-    PLATFORM_FLASH_ATTN_PREBUILT=0
+    PLATFORM_FLASH_ATTN_PREBUILT=1
     PLATFORM_RELAX_TORCHCODEC=1
     PLATFORM_TORCHCODEC_SPEC=""
     PLATFORM_EXTRA_OVERRIDES=()
@@ -1428,16 +1428,20 @@ print(f"{parts[0]}.{parts[1]}")
 EOF
 )
 
-    # Detect CUDA major, e.g. 12 from 12.4
-    local cuda_mm cuda_major
-    cuda_mm=$(detect_cuda_major_minor) || {
-        echo "[install.sh] Could not detect CUDA version; falling back to source build." >&2
-        FLASH_ATTENTION_FORCE_BUILD=TRUE uv pip install "flash-attn==${flash_ver}" --no-build-isolation
-        return 0
-    }
-    cuda_major="${cuda_mm%% *}"
-
-    local cu_tag="cu${cuda_major}"            # e.g. cu12
+    # Accelerator tag of the wheel: cu12 for CUDA 12.x, rocm7.2 for ROCm 7.2.
+    local cu_tag
+    if [ "$PLATFORM" = "amd" ]; then
+        cu_tag="rocm${ROCM_VERSION}"
+    else
+        local cuda_mm cuda_major
+        cuda_mm=$(detect_cuda_major_minor) || {
+            echo "[install.sh] Could not detect CUDA version; falling back to source build." >&2
+            FLASH_ATTENTION_FORCE_BUILD=TRUE uv pip install "flash-attn==${flash_ver}" --no-build-isolation
+            return 0
+        }
+        cuda_major="${cuda_mm%% *}"
+        cu_tag="cu${cuda_major}"
+    fi
     local torch_tag="torch${torch_mm}"        # e.g. torch2.6
 
     # Match flash-attn wheel ABI to the currently installed torch build.
