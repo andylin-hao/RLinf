@@ -806,18 +806,6 @@ apply_env_default_torch() {
     fi
 }
 
-# Models that require a different Torch family declare it here. An explicit
-# --torch value, including one already selected for an environment, wins.
-apply_model_default_torch() {
-    [ -n "$TORCH_VERSION" ] && return 0
-    case "$MODEL" in
-        fastwam)
-            TORCH_VERSION="2.7.1"
-            echo "[install.sh] Model '${MODEL}' pins torch ${TORCH_VERSION}; overriding the project default."
-            ;;
-    esac
-}
-
 configure_platform() {
     if [[ ! " ${SUPPORTED_PLATFORMS[*]} " =~ " $PLATFORM " ]]; then
         echo "--platform must be one of: ${SUPPORTED_PLATFORMS[*]} (got '$PLATFORM')." >&2
@@ -3345,7 +3333,6 @@ main() {
     parse_args "$@"
     validate_python_version
     apply_env_default_torch
-    apply_model_default_torch
     apply_agentic_torch_default
     configure_platform
     setup_mirror
