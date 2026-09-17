@@ -33,9 +33,9 @@ docker build -f docker/Dockerfile \
     -t rlinf:embodied-metaworld .
 ```
 
-### Building for AMD, Ascend, and Moore Threads
+### Building for Other Hardware Platforms
 
-AMD ROCm, Huawei Ascend CANN, and Moore Threads MUSA share the `embodied-maniskill_libero` image. With `PLATFORM` set to `amd`, `ascend`, or `musa`, that target installs the model families supported on these platforms, `openvla-oft`, `openpi`, and `gr00t`, instead of the full NVIDIA model set. The sections below cover the platform-specific base image, build arguments, and container runtime.
+Every `PLATFORM` builds the same image for a given `BUILD_TARGET`; only the base image and the platform packages that `install.sh` adds differ. Support for a model on a platform is listed in the documentation's hardware support table. The sections below cover the base image, build arguments, and container runtime for each non-NVIDIA platform.
 
 ### Building for AMD (ROCm)
 
