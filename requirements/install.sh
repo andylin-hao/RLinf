@@ -2589,8 +2589,36 @@ install_libero_env() {
 
 install_maniskill_libero_env() {
     install_libero_env
+    local maniskill_overrides=()
+    if is_aarch64_platform; then
+        # PyPI has no aarch64 wheels for ManiSkill's mplib==0.1.1 or for sapien.
+        # mplib is only used by ManiSkill's motion-planning examples, and SAPIEN
+        # publishes aarch64 wheels on its GitHub releases.
+        local py_tag override_file
+        py_tag=$(python -c 'import sys; print(f"cp{sys.version_info.major}{sys.version_info.minor}")')
+        override_file=$(mktemp)
+        cat > "$override_file" <<EOF
+mplib; platform_machine != 'aarch64'
+sapien @ ${GITHUB_PREFIX}https://github.com/haosulab/SAPIEN/releases/download/3.0.3/sapien-3.0.3-${py_tag}-${py_tag}-linux_aarch64.whl
+EOF
+        maniskill_overrides=(--override "$override_file")
+    fi
     # The largest git fetch in the install; truncates on slow links.
-    retry_cmd uv pip install git+${GITHUB_PREFIX}https://github.com/haosulab/ManiSkill.git@v3.0.0b22
+    retry_cmd uv pip install git+${GITHUB_PREFIX}https://github.com/haosulab/ManiSkill.git@v3.0.0b22 "${maniskill_overrides[@]}"
+    if [ ${#maniskill_overrides[@]} -gt 0 ]; then
+        rm -f "${maniskill_overrides[1]}"
+        # The aarch64 wheel bundles librt from glibc 2.28, which needs private
+        # symbols from a libpthread of the same release and fails to load on
+        # newer glibc. The system librt provides the same public symbols.
+        local sapien_libs system_librt bundled_librt
+        sapien_libs=$(python -c 'import importlib.util, pathlib; print(pathlib.Path(importlib.util.find_spec("sapien").origin).parents[1] / "sapien.libs")')
+        system_librt=$(ldconfig -p | awk '/librt\.so\.1 / {path = $NF} END {print path}')
+        if [ -n "$system_librt" ]; then
+            for bundled_librt in "$sapien_libs"/librt-*.so; do
+                [ -f "$bundled_librt" ] && [ ! -L "$bundled_librt" ] && ln -sf "$system_librt" "$bundled_librt"
+            done
+        fi
+    fi
 
     bash $SCRIPT_DIR/embodied/download_assets.sh --assets maniskill
 }
