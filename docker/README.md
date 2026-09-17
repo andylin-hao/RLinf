@@ -82,10 +82,10 @@ docker buildx build --platform linux/arm64 -f docker/Dockerfile \
     --build-arg BUILD_TARGET=embodied-maniskill_libero \
     --build-arg PLATFORM=ascend \
     --build-arg CANN_VER=9.1.1-910b \
-    -t rlinf:embodied-maniskill_libero-cann9.1-arm64 --load .
+    -t rlinf:embodied-maniskill_libero-cann9.1-arm64 .
 ```
 
-`--load` imports the image into the local Docker store. Use `--push` with a registry tag to publish it instead, and `docker save` / `docker load` to move a loaded image to an Ascend host without a registry.
+With Docker's default builder, the arm64 image lands in the local image store like a native build. A builder created with `docker buildx create` keeps results in its own cache: add `--load` to import the image, or `--push` with a registry tag to publish it. Move a local image to an Ascend host with `docker save` and `docker load`.
 
 Run the image with the host's NPU driver mounted:
 
