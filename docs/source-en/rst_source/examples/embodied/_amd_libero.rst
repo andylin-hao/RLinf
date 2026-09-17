@@ -7,11 +7,13 @@ Start it from the repository root on the host:
       --device=/dev/kfd --device=/dev/dri --group-add video \
       --ipc=host --shm-size 20g --network host \
       -v "$PWD":/workspace/RLinf -w /workspace/RLinf \
-      rlinf/rlinf:agentic-rlinf0.3-libero-rocm6.4 bash
+      rlinf/rlinf:agentic-rlinf0.4-maniskill_libero-rocm7.2 bash
 
-The ROCm 7.2.3 image uses tag
-``agentic-rlinf0.3-libero-rocm7.2.3``. For downloads from mainland China, use
-``docker.1ms.run/rlinf/rlinf`` with the same tag.
+This image builds on ROCm 7.2 and carries every ManiSkill and LIBERO model
+environment. The earlier LIBERO-only images remain available as
+``agentic-rlinf0.3-libero-rocm6.4`` and ``agentic-rlinf0.3-libero-rocm7.2.3``.
+For downloads from mainland China, use ``docker.1ms.run/rlinf/rlinf`` with the
+same tag.
 
 To build the shared model image from your checkout, run this command on the
 host, then substitute ``rlinf:embodied-maniskill_libero-rocm7.2`` in the

@@ -15,9 +15,9 @@
       -v /sys/fs/cgroup:/sys/fs/cgroup:ro \
       -v "$PWD":/workspace/RLinf \
       -w /workspace/RLinf \
-      rlinf/rlinf:agentic-rlinf0.3-libero-cann9.0 bash
+      rlinf/rlinf:agentic-rlinf0.4-maniskill_libero-cann9.1.1 bash
 
-中国大陆用户可使用 ``docker.1ms.run/rlinf/rlinf`` 下的同名镜像 tag。若要指定可用的 NPU，可将 ``--privileged`` 替换为以下设备参数，并为每张需要使用的 NPU 添加一项 ``/dev/davinciN``：
+该镜像基于面向 910B 的 CANN 9.1.1，包含全部 ManiSkill 与 LIBERO 模型环境，但只发布了 ``linux/amd64`` 版本。在 aarch64 昇腾宿主机上，请用下面的命令自行构建，或按 ``docker/README.md`` 的说明交叉构建；此前的 arm64 镜像仍可使用，tag 为 ``agentic-rlinf0.3-libero-cann9.0``。中国大陆用户可使用 ``docker.1ms.run/rlinf/rlinf`` 下的同名镜像 tag。若要指定可用的 NPU，可将 ``--privileged`` 替换为以下设备参数，并为每张需要使用的 NPU 添加一项 ``/dev/davinciN``：
 
 .. code-block:: text
 

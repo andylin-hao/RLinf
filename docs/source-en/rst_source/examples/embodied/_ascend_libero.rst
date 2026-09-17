@@ -17,10 +17,15 @@ mounted:
       -v /sys/fs/cgroup:/sys/fs/cgroup:ro \
       -v "$PWD":/workspace/RLinf \
       -w /workspace/RLinf \
-      rlinf/rlinf:agentic-rlinf0.3-libero-cann9.0 bash
+      rlinf/rlinf:agentic-rlinf0.4-maniskill_libero-cann9.1.1 bash
 
-For downloads from mainland China, the image is also available under
-``docker.1ms.run/rlinf/rlinf`` with the same tag. To expose specific NPUs,
+This image builds on CANN 9.1.1 for 910B and carries every ManiSkill and LIBERO
+model environment, but it is published for ``linux/amd64`` only. On an aarch64
+Ascend host, build the image yourself with the command below or cross-build it
+as ``docker/README.md`` describes; the earlier arm64 LIBERO-only image remains
+available as ``agentic-rlinf0.3-libero-cann9.0``. For downloads from mainland
+China, the image is also available under ``docker.1ms.run/rlinf/rlinf`` with the
+same tag. To expose specific NPUs,
 replace ``--privileged`` with the following device arguments, adding a
 ``/dev/davinciN`` entry for each NPU you will use:
 
