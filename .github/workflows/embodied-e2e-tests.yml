@@ -651,7 +651,9 @@ jobs:
           unset PYTHONPATH
           export REPO_PATH=$(pwd)
           source .venv/bin/activate
-          # SAPIEN's GPU physx and renderer need CUDA: simulate on CPU, one env per rank.
+          # SAPIEN's GPU physx needs CUDA: simulate on CPU, one env per rank.
+          # Mesa 23.2 RADV cannot create render images on these GPUs, so render with lavapipe.
+          export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json
           bash tests/e2e_tests/embodied/run.sh maniskill_ppo_openvla osmesa \
             env.train.init_params.sim_backend=cpu env.eval.init_params.sim_backend=cpu \
             +env.train.init_params.render_backend=pci:0000:00:00.0 \
