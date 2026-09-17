@@ -32,7 +32,7 @@ replace ``--privileged`` with the following device arguments, adding a
    --device=/dev/davinci0
 
 To build the image from your checkout, run this on the host and substitute
-``rlinf-libero-cann9`` for the image in the command above:
+``rlinf-maniskill_libero-cann9`` for the image in the command above:
 
 .. code-block:: bash
 
@@ -40,8 +40,8 @@ To build the image from your checkout, run this on the host and substitute
       --build-arg PLATFORM=ascend \
       --build-arg CANN_VER=9.1.1-910b \
       --build-arg UBUNTU_VER=22.04 \
-      --build-arg BUILD_TARGET=embodied-libero \
-      -t rlinf-libero-cann9 .
+      --build-arg BUILD_TARGET=embodied-maniskill_libero \
+      -t rlinf-maniskill_libero-cann9 .
 
 ``CANN_VER`` includes the hardware suffix in the Ascend base-image tag.
 The Dockerfile also accepts ``ASCEND_BASE_IMAGE`` to select a different full

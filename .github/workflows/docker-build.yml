@@ -1103,7 +1103,7 @@ jobs:
           outputs: type=cacheonly
           tags: rlinf:embodied-libero
 
-  build-embodied-libero-ascend-amd64:
+  build-embodied-maniskill_libero-ascend-amd64:
     runs-on: ubuntu-latest
     steps:
       - name: Maximize storage space
@@ -1151,20 +1151,20 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build embodied-libero (Ascend, amd64)
+      - name: Build embodied-maniskill_libero (Ascend, amd64)
         uses: docker/build-push-action@v6
         with:
           file: ./docker/Dockerfile
           push: false
           build-args: |
-            BUILD_TARGET=embodied-libero
+            BUILD_TARGET=embodied-maniskill_libero
             PLATFORM=ascend
             CANN_VER=9.1.1-910b
             NO_MIRROR=1
           outputs: type=cacheonly
-          tags: rlinf:embodied-libero-ascend-amd64
+          tags: rlinf:embodied-maniskill_libero-ascend-amd64
 
-  build-embodied-libero-ascend-arm64:
+  build-embodied-maniskill_libero-ascend-arm64:
     runs-on: ubuntu-24.04-arm
     steps:
       - name: Maximize storage space
@@ -1212,18 +1212,18 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build embodied-libero (Ascend, arm64)
+      - name: Build embodied-maniskill_libero (Ascend, arm64)
         uses: docker/build-push-action@v6
         with:
           file: ./docker/Dockerfile
           push: false
           build-args: |
-            BUILD_TARGET=embodied-libero
+            BUILD_TARGET=embodied-maniskill_libero
             PLATFORM=ascend
             CANN_VER=9.1.1-910b
             NO_MIRROR=1
           outputs: type=cacheonly
-          tags: rlinf:embodied-libero-ascend-arm64
+          tags: rlinf:embodied-maniskill_libero-ascend-arm64
 
   build-embodied-maniskill_libero-rocm:
     runs-on: ubuntu-latest

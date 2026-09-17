@@ -26,7 +26,7 @@
    --device=/dev/hisi_hdc
    --device=/dev/davinci0
 
-如需从当前代码构建镜像，在宿主机执行以下命令，再将上面启动命令中的镜像替换为 ``rlinf-libero-cann9``：
+如需从当前代码构建镜像，在宿主机执行以下命令，再将上面启动命令中的镜像替换为 ``rlinf-maniskill_libero-cann9``：
 
 .. code-block:: bash
 
@@ -34,7 +34,7 @@
       --build-arg PLATFORM=ascend \
       --build-arg CANN_VER=9.1.1-910b \
       --build-arg UBUNTU_VER=22.04 \
-      --build-arg BUILD_TARGET=embodied-libero \
-      -t rlinf-libero-cann9 .
+      --build-arg BUILD_TARGET=embodied-maniskill_libero \
+      -t rlinf-maniskill_libero-cann9 .
 
 ``CANN_VER`` 包含昇腾基础镜像 tag 中的硬件后缀。也可以通过 Dockerfile 的 ``ASCEND_BASE_IMAGE`` 参数指定完整的基础镜像地址。
