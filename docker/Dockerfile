@@ -8,7 +8,7 @@ ARG PLATFORM=nvidia
 ARG CUDA_VER=12.8.1
 ARG ROCM_VER=6.4
 ARG ROCM_ARCHS=gfx90a;gfx942
-ARG CANN_VER=9.0.0-910b
+ARG CANN_VER=9.1.1-910b
 ARG MUSA_VER=v2.1.5-musa4.3.7
 ARG UBUNTU_VER=22.04
 # Registry prefix for the Docker Hub base images, with a trailing slash.
@@ -228,22 +228,34 @@ RUN chmod +x /usr/local/bin/download_assets
 ##################################################################################################
 FROM embodied-common-image AS embodied-maniskill_libero-image
 
-# Install openvla env
-RUN bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} embodied --venv openvla --model openvla --env maniskill_libero && \
-    bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} embodied --venv openvla-oft --model openvla-oft --env maniskill_libero && \
-    bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} embodied --venv openpi --model openpi --env maniskill_libero && \
-    bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} embodied --venv gr00t --model gr00t --env maniskill_libero && \
-    bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} embodied --venv gr00t_n1d6 --model gr00t_n1d6 --env maniskill_libero && \
-    bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} embodied --venv gr00t_n1d7 --model gr00t_n1d7 --env maniskill_libero && \
-    bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} embodied --venv dexbotic --model dexbotic --env maniskill_libero && \
-    bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} embodied --venv starvla --model starvla --env maniskill_libero && \
-    bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} embodied --venv abot_m0 --model abot_m0 --env maniskill_libero
+# AMD installs the model families supported on ROCm. MUSA reuses the vendor
+# torch and installs only models that need no CUDA-only kernels.
+RUN if [ "${RLINF_PLATFORM}" = "musa" ]; then \
+        bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} embodied --venv openpi --model openpi --env maniskill_libero && \
+        bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} embodied --venv gr00t --model gr00t --env maniskill_libero; \
+    elif [ "${RLINF_PLATFORM}" = "amd" ]; then \
+        bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} embodied --venv openvla-oft --model openvla-oft --env maniskill_libero && \
+        bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} embodied --venv openpi --model openpi --env maniskill_libero && \
+        bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} embodied --venv gr00t --model gr00t --env maniskill_libero; \
+    else \
+        bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} embodied --venv openvla --model openvla --env maniskill_libero && \
+        bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} embodied --venv openvla-oft --model openvla-oft --env maniskill_libero && \
+        bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} embodied --venv openpi --model openpi --env maniskill_libero && \
+        bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} embodied --venv gr00t --model gr00t --env maniskill_libero && \
+        bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} embodied --venv gr00t_n1d6 --model gr00t_n1d6 --env maniskill_libero && \
+        bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} embodied --venv gr00t_n1d7 --model gr00t_n1d7 --env maniskill_libero && \
+        bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} embodied --venv dexbotic --model dexbotic --env maniskill_libero && \
+        bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} embodied --venv starvla --model starvla --env maniskill_libero && \
+        bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} embodied --venv abot_m0 --model abot_m0 --env maniskill_libero; \
+    fi
 
-RUN source switch_env openvla && download_assets ${INSTALL_MIRROR_OPTION} --dir /opt/assets --assets maniskill,openpi
+# openpi is installed on every platform and carries mani_skill for the asset download.
+RUN source switch_env openpi && download_assets ${INSTALL_MIRROR_OPTION} --dir /opt/assets --assets maniskill,openpi
 RUN link_assets
 
 # Set default env
-RUN echo "source ${UV_PATH}/openvla/bin/activate" >> ~/.bashrc
+RUN if [ -d "${UV_PATH}/openvla" ]; then default_venv=openvla; else default_venv=openpi; fi && \
+    echo "source ${UV_PATH}/${default_venv}/bin/activate" >> ~/.bashrc
 
 FROM embodied-common-image AS embodied-behavior-openvlaoft-image
 

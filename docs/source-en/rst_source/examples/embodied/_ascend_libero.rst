@@ -38,7 +38,7 @@ To build the image from your checkout, run this on the host and substitute
 
    DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile \
       --build-arg PLATFORM=ascend \
-      --build-arg CANN_VER=9.0.0-910b \
+      --build-arg CANN_VER=9.1.1-910b \
       --build-arg UBUNTU_VER=22.04 \
       --build-arg BUILD_TARGET=embodied-libero \
       -t rlinf-libero-cann9 .
