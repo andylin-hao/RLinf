@@ -1222,7 +1222,7 @@ jobs:
           build-args: |
             BUILD_TARGET=embodied-maniskill_libero
             PLATFORM=amd
-            ROCM_VER=6.4
+            ROCM_VER=7.2
             ROCM_ARCHS=gfx90a;gfx942
             NO_MIRROR=1
           outputs: type=cacheonly

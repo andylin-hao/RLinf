@@ -14,17 +14,17 @@ The ROCm 7.2.3 image uses tag
 ``docker.1ms.run/rlinf/rlinf`` with the same tag.
 
 To build the shared model image from your checkout, run this command on the
-host, then substitute ``rlinf:embodied-maniskill_libero-rocm6.4`` in the
+host, then substitute ``rlinf:embodied-maniskill_libero-rocm7.2`` in the
 container command above:
 
 .. code-block:: bash
 
    DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile \
       --build-arg PLATFORM=amd \
-      --build-arg ROCM_VER=6.4 \
+      --build-arg ROCM_VER=7.2 \
       --build-arg 'ROCM_ARCHS=gfx90a;gfx942' \
       --build-arg BUILD_TARGET=embodied-maniskill_libero \
-      -t rlinf:embodied-maniskill_libero-rocm6.4 .
+      -t rlinf:embodied-maniskill_libero-rocm7.2 .
 
 .. warning::
 

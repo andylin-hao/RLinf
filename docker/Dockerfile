@@ -6,7 +6,7 @@ ARG PLATFORM=nvidia
 # Per-platform runtime versions. Override these for common CUDA/ROCm/CANN bumps, or
 # override the full base-image args below for a different image family/Ubuntu.
 ARG CUDA_VER=12.8.1
-ARG ROCM_VER=6.4
+ARG ROCM_VER=7.2
 ARG ROCM_ARCHS=gfx90a;gfx942
 ARG CANN_VER=9.1.1-910b
 ARG MUSA_VER=v2.1.5-musa4.3.7

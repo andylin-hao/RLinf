@@ -39,15 +39,15 @@ Every `PLATFORM` builds the same image for a given `BUILD_TARGET`; only the base
 
 ### Building for AMD (ROCm)
 
-`PLATFORM=amd` builds on `rocm/dev-ubuntu-$UBUNTU_VER:$ROCM_VER-complete`, which is published for `linux/amd64` only. Set `ROCM_VER` to the host's ROCm release and `ROCM_ARCHS` to the `gfx` architectures of the target GPUs. GPUs are not visible during `docker build`, so extensions such as flash-attn compile for exactly the architectures listed there.
+`PLATFORM=amd` builds on `rocm/dev-ubuntu-$UBUNTU_VER:$ROCM_VER-complete`, which is published for `linux/amd64` only. Set `ROCM_VER` to the host's ROCm release and `ROCM_ARCHS` to the `gfx` architectures of the target GPUs. GPUs are not visible during `docker build`, so extensions such as flash-attn compile for exactly the architectures listed there. The default `ROCM_VER=7.2` installs prebuilt flash-attn wheels for Python 3.11 and 3.12; other ROCm releases compile flash-attn from source, which takes much longer.
 
 ```shell
 DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile \
     --build-arg BUILD_TARGET=embodied-maniskill_libero \
     --build-arg PLATFORM=amd \
-    --build-arg ROCM_VER=6.4 \
+    --build-arg ROCM_VER=7.2 \
     --build-arg 'ROCM_ARCHS=gfx90a;gfx942' \
-    -t rlinf:embodied-maniskill_libero-rocm6.4 .
+    -t rlinf:embodied-maniskill_libero-rocm7.2 .
 ```
 
 Run the image with the AMD kernel and render devices:
@@ -56,7 +56,7 @@ Run the image with the AMD kernel and render devices:
 docker run -it --rm \
     --device=/dev/kfd --device=/dev/dri --group-add video \
     --ipc=host --shm-size 20g --network host \
-    rlinf:embodied-maniskill_libero-rocm6.4 bash
+    rlinf:embodied-maniskill_libero-rocm7.2 bash
 ```
 
 ### Building for Huawei Ascend (CANN)
