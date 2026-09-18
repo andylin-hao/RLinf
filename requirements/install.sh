@@ -2695,7 +2695,16 @@ EOF
         # newer glibc. The system librt provides the same public symbols.
         local sapien_libs system_librt bundled_librt
         sapien_libs=$(python -c 'import importlib.util, pathlib; print(pathlib.Path(importlib.util.find_spec("sapien").origin).parents[1] / "sapien.libs")')
-        system_librt=$(ldconfig -p | awk '/librt\.so\.1 / {path = $NF} END {print path}')
+        # Look the library up by path: ldconfig is statically linked and crashes
+        # intermittently under QEMU user-mode emulation during arm64 cross-builds.
+        local libdir
+        system_librt=""
+        for libdir in "/lib/$(uname -m)-linux-gnu" "/usr/lib/$(uname -m)-linux-gnu" /lib64 /usr/lib64; do
+            if [ -e "$libdir/librt.so.1" ]; then
+                system_librt="$libdir/librt.so.1"
+                break
+            fi
+        done
         if [ -n "$system_librt" ]; then
             for bundled_librt in "$sapien_libs"/librt-*.so; do
                 [ -f "$bundled_librt" ] && [ ! -L "$bundled_librt" ] && ln -sf "$system_librt" "$bundled_librt"
