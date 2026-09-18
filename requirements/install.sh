@@ -357,6 +357,29 @@ detect_rocm_version() {
     echo "$mm"
 }
 
+# ISA of the first GPU the ROCm stack reports, e.g. gfx942. Prints it on
+# success, returns 1 when no GPU is visible; gfx000 is the CPU agent.
+detect_amd_gfx_arch() {
+    local raw=""
+    if command -v rocminfo &>/dev/null; then
+        raw=$(rocminfo 2>/dev/null | grep -oE 'gfx[0-9a-f]{3,}' | grep -v '^gfx000$' | head -n1)
+    fi
+    if [ -z "$raw" ] && command -v rocm_agent_enumerator &>/dev/null; then
+        raw=$(rocm_agent_enumerator 2>/dev/null | grep -oE 'gfx[0-9a-f]{3,}' | grep -v '^gfx000$' | head -n1)
+    fi
+    [ -z "$raw" ] && return 1
+    echo "$raw"
+}
+
+# Whether a gfx ISA is CDNA, the compute-only Instinct line. Those parts have no
+# rasterization hardware, so Mesa's RADV cannot render on them.
+amd_gfx_is_cdna() {
+    case "$1" in
+        gfx908|gfx90a|gfx940|gfx941|gfx942|gfx950) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 # Find a torch version on the PyTorch wheel index that has a +rocm<rocm_ver>
 # Linux x86_64 wheel matching PYTHON_VERSION's cpXY tag. Prefers the smallest
 # version >= 2.5; falls back to the highest available wheel if no >= 2.5 wheel
@@ -591,11 +614,28 @@ configure_amd() {
     # deps in [project.dependencies] so [tool.uv.sources] mappings actually
     # take effect (uv only applies sources to direct deps).
     PLATFORM_TORCH_PACKAGES=("torch" "torchvision" "torchaudio" "pytorch-triton-rocm" "triton-rocm")
-    PLATFORM_VENV_EXPORTS=(
-        "export AMD_VULKAN_ICD=RADV"
-        "export VK_DRIVER_FILES=/usr/share/vulkan/icd.d/radeon_icd.x86_64.json"
-        "export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/radeon_icd.x86_64.json"
-    )
+    # The Vulkan driver follows the GPU ISA, not the platform. RADV renders on
+    # RDNA; on CDNA it reports the card as a usable discrete GPU and then fails
+    # when SAPIEN allocates a render image, so those hosts render on Mesa's
+    # software rasterizer. VK_DRIVER_FILES wins over VK_ICD_FILENAMES and
+    # AMD_VULKAN_ICD steers Mesa back to RADV, so all three move together.
+    # Undetected GPUs keep the RADV defaults.
+    local gfx_arch
+    gfx_arch=$(detect_amd_gfx_arch) || gfx_arch=""
+    if [ -n "$gfx_arch" ] && amd_gfx_is_cdna "$gfx_arch"; then
+        echo "[install.sh] Detected CDNA (${gfx_arch}); rendering with Mesa lavapipe."
+        PLATFORM_VENV_EXPORTS=(
+            "unset AMD_VULKAN_ICD"
+            "export VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json"
+            "export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json"
+        )
+    else
+        PLATFORM_VENV_EXPORTS=(
+            "export AMD_VULKAN_ICD=RADV"
+            "export VK_DRIVER_FILES=/usr/share/vulkan/icd.d/radeon_icd.x86_64.json"
+            "export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/radeon_icd.x86_64.json"
+        )
+    fi
     PLATFORM_FLASH_ATTN_INSTALL=1
     PLATFORM_FLASH_ATTN_PREBUILT=1
     PLATFORM_RELAX_TORCHCODEC=1

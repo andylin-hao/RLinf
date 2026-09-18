@@ -652,8 +652,7 @@ jobs:
           export REPO_PATH=$(pwd)
           source .venv/bin/activate
           # SAPIEN's GPU physx needs CUDA: simulate on CPU, one env per rank.
-          # RADV does not support these compute-only accelerators, so render with lavapipe.
-          export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json
+          # install.sh points Vulkan at lavapipe on these compute-only accelerators.
           bash tests/e2e_tests/embodied/run.sh maniskill_ppo_openvla osmesa \
             env.train.init_params.sim_backend=cpu env.eval.init_params.sim_backend=cpu \
             +env.train.init_params.render_backend=pci:0000:00:00.0 \

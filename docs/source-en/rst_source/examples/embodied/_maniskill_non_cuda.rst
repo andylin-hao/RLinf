@@ -22,19 +22,11 @@ PCI address. RLinf preserves a ``pci:<domain>:<bus>:<slot>.<function>`` value
 before creating the environment; replace the sample address if the renderer
 inside your container uses another address.
 
-On AMD, the installed environment points Vulkan at Mesa's RADV driver, which
-renders on Radeon GPUs. RADV does not support compute-only AMD accelerators,
-which ``lspci`` lists as ``Processing accelerators``. On those devices SAPIEN
-fails with ``RuntimeError: cannot create image`` or ``failed to find device``,
-and a newer Mesa does not add support. Render with Mesa's lavapipe CPU renderer
-instead by running this after activating the environment:
-
-.. code-block:: bash
-
-   export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json
-
-lavapipe renders on the CPU, so each environment spends more CPU time per step
-than with GPU rendering.
+On AMD, ``install.sh`` picks the Vulkan driver from the GPU ISA and writes it
+into the environment: Radeon GPUs render on Mesa's RADV driver, while CDNA
+accelerators such as the Instinct line render on Mesa's lavapipe software
+rasterizer, because RADV cannot render on them. Rendering on the CPU costs more
+CPU time per step than a hardware renderer.
 
 .. warning::
 
