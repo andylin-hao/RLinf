@@ -3198,10 +3198,8 @@ install_opensora_world_model() {
     install_apex
 }
 
-# Print an empty, venv-owned uv cache directory for rebuilding one package from
-# scratch. Rebuilds must not clean the shared cache: with UV_LINK_MODE=symlink,
-# other venvs link into it. This cache lives as long as the venv, so any link
-# mode stays valid, and it is per package so emptying it breaks nothing else.
+# Empty per-package uv cache inside the venv, for rebuilds that must not clean the
+# shared cache (other venvs may symlink into it).
 fresh_uv_cache() {
     local dir
     dir="$(realpath "$VENV_DIR")/.uv-fresh-cache/$1"
@@ -3248,10 +3246,8 @@ install_roboverse_env() {
 
 #=======================AGENTIC INSTALLER=======================
 
-# transformer-engine-torch's setup.py deletes its build_tools/ after bdist_wheel,
-# and uv builds sdists inside its cache, so the next build of the same version
-# (another Python or torch) fails on the cached source. Retry once from a fresh
-# venv-owned cache (see fresh_uv_cache).
+# TE's setup.py deletes build_tools/ from uv's cached sdist, so rebuilds from the
+# shared cache fail; retry from a fresh cache.
 uv_install_te_from_source() {
     if NVTE_PYTORCH_FORCE_BUILD=TRUE uv pip install --no-build-isolation "$@"; then
         return 0
