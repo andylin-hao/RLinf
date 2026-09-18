@@ -3198,6 +3198,18 @@ install_opensora_world_model() {
     install_apex
 }
 
+# Print an empty, venv-owned uv cache directory for rebuilding one package from
+# scratch. Rebuilds must not clean the shared cache: with UV_LINK_MODE=symlink,
+# other venvs link into it. This cache lives as long as the venv, so any link
+# mode stays valid, and it is per package so emptying it breaks nothing else.
+fresh_uv_cache() {
+    local dir
+    dir="$(realpath "$VENV_DIR")/.uv-fresh-cache/$1"
+    rm -rf "$dir"
+    mkdir -p "$dir"
+    printf '%s\n' "$dir"
+}
+
 install_tensornvme() {
     local url="git+${GITHUB_PREFIX}https://github.com/fangqi-Zhu/TensorNVMe.git"
     uv pip install "$url" --no-build-isolation
@@ -3205,8 +3217,8 @@ install_tensornvme() {
     local tnvme_env=(env "LD_LIBRARY_PATH=$HOME/.tensornvme/lib:${LD_LIBRARY_PATH:-}")
     if ! "${tnvme_env[@]}" python -c "import tensornvme._C" >/dev/null 2>&1; then
         echo "[install.sh] tensornvme does not load against this torch; rebuilding."
-        uv cache clean tensornvme || true
-        uv pip install "$url" --no-build-isolation --reinstall-package tensornvme
+        UV_CACHE_DIR="$(fresh_uv_cache tensornvme)" \
+            uv pip install "$url" --no-build-isolation --reinstall-package tensornvme
         "${tnvme_env[@]}" python -c "import tensornvme._C" >/dev/null 2>&1 \
             || echo "[install.sh] WARNING: tensornvme still does not import; expected without a GPU, otherwise check the torch ABI."
     fi
@@ -3238,14 +3250,15 @@ install_roboverse_env() {
 
 # transformer-engine-torch's setup.py deletes its build_tools/ after bdist_wheel,
 # and uv builds sdists inside its cache, so the next build of the same version
-# (another Python or torch) fails on the cached source. Drop it and retry once.
+# (another Python or torch) fails on the cached source. Retry once from a fresh
+# venv-owned cache (see fresh_uv_cache).
 uv_install_te_from_source() {
     if NVTE_PYTORCH_FORCE_BUILD=TRUE uv pip install --no-build-isolation "$@"; then
         return 0
     fi
     echo "[install.sh] transformer-engine-torch build failed; retrying from a fresh sdist..."
-    uv cache clean transformer-engine-torch
-    NVTE_PYTORCH_FORCE_BUILD=TRUE uv pip install --no-build-isolation "$@"
+    NVTE_PYTORCH_FORCE_BUILD=TRUE UV_CACHE_DIR="$(fresh_uv_cache transformer-engine-torch)" \
+        uv pip install --no-build-isolation "$@"
 }
 
 install_te_2_17() {
