@@ -73,7 +73,7 @@ DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile \
     -t rlinf:embodied-maniskill_libero-cann9.1 .
 ```
 
-Most Ascend servers are aarch64. To build an aarch64 image on an x86_64 machine, register QEMU emulation for arm64 once, then build with `docker buildx` and `--platform linux/arm64`. Every `RUN` step, including the Python dependency installs, then runs under emulation and takes several times longer than a native build. Emulation is also less reliable than a native build: a run may fail partway through the model environment installs with `qemu: uncaught target signal 11 (Segmentation fault)`. The whole install is one `RUN`, so a crash restarts it. Retry the build, or build on an aarch64 host and move the image with `docker save` and `docker load`.
+Most Ascend servers are aarch64. To build an aarch64 image on an x86_64 machine, register QEMU emulation for arm64 once, then build with `docker buildx` and `--platform linux/arm64`. Every `RUN` step, including the Python dependency installs, then runs under emulation and takes several times longer than a native build.
 
 ```shell
 docker run --privileged --rm tonistiigi/binfmt --install arm64
@@ -84,6 +84,16 @@ docker buildx build --platform linux/arm64 -f docker/Dockerfile \
     --build-arg CANN_VER=9.1.1-910b \
     -t rlinf:embodied-maniskill_libero-cann9.1-arm64 .
 ```
+
+On some hosts, notably WSL2, statically linked arm64 programs such as `ldconfig` crash intermittently under emulation with `qemu: uncaught target signal 11 (Segmentation fault)`, depending on where the kernel randomly places their memory. `apt` runs `ldconfig` while installing packages, so a crash can fail the build. Disable address randomization while the build runs, then restore it:
+
+```shell
+sudo sysctl kernel.randomize_va_space=0
+# run the cross-build above
+sudo sysctl kernel.randomize_va_space=2
+```
+
+Building on an aarch64 host avoids emulation altogether.
 
 With Docker's default builder, the arm64 image lands in the local image store like a native build. A builder created with `docker buildx create` keeps results in its own cache: add `--load` to import the image, or `--push` with a registry tag to publish it. Move a local image to an Ascend host with `docker save` and `docker load`.
 
