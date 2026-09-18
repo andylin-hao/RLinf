@@ -1789,10 +1789,26 @@ EOF
     local decord_path
     decord_path=$(clone_or_reuse_repo DECORD_PATH "$VENV_DIR/decord" https://github.com/dmlc/decord.git -b v0.6.0 --recurse-submodules)
 
+    # decord's FindFFmpeg only locates the libraries when its own search picks
+    # up the distribution's arch-specific paths. Pass what pkg-config reports,
+    # which makes the finder accept them directly.
+    local ffmpeg_args=() ffmpeg_inc ffmpeg_libdir ffmpeg_libs component
+    if command -v pkg-config &>/dev/null && pkg-config --exists libavcodec libavformat; then
+        ffmpeg_inc=$(pkg-config --variable=includedir libavcodec)
+        ffmpeg_libdir=$(pkg-config --variable=libdir libavcodec)
+        ffmpeg_libs=""
+        for component in avformat avfilter avcodec avutil swresample avdevice; do
+            [ -f "${ffmpeg_libdir}/lib${component}.so" ] && ffmpeg_libs="${ffmpeg_libs}${ffmpeg_libs:+;}${ffmpeg_libdir}/lib${component}.so"
+        done
+        if [ -n "$ffmpeg_libs" ] && [ -d "$ffmpeg_inc" ]; then
+            ffmpeg_args=(-DFFMPEG_INCLUDE_DIR="$ffmpeg_inc" -DFFMPEG_LIBRARIES="$ffmpeg_libs")
+        fi
+    fi
+
     mkdir -p "$decord_path/build"
     (
         cd "$decord_path/build"
-        cmake .. -DUSE_CUDA=0 -DCMAKE_BUILD_TYPE=Release
+        cmake .. -DUSE_CUDA=0 -DCMAKE_BUILD_TYPE=Release "${ffmpeg_args[@]}"
         make -j"$(nproc)"
     )
     uv pip install "$decord_path/python" --no-build-isolation
