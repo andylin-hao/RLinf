@@ -943,6 +943,14 @@ EOF
     fi
 }
 
+install_ascend_tensorflow_pins() {
+    # TF 2.21 SIGSEGVs against Ray's protobuf 6.x on Ascend. Shared by every
+    # embodied model whose install pulls TensorFlow (GR00T, StarVLA, …).
+    [ "$PLATFORM" = "ascend" ] || return 0
+    echo "[install.sh] Applying Ascend TensorFlow compatibility pins"
+    uv pip install -r "$SCRIPT_DIR/embodied/models/ascend/tensorflow.txt"
+}
+
 install_musa_extras() {
     # Nothing to install; just fail here rather than mid-training.
     python - <<'EOF'
@@ -2117,24 +2125,15 @@ install_starvla_model() {
     esac
 
     local starvla_path
-    starvla_path=$(clone_or_reuse_repo STARVLA_PATH "$VENV_DIR/starVLA" https://github.com/starVLA/starVLA.git -b "${STARVLA_GIT_REF:-starVLA-1.2}" --depth 1)
+    starvla_path=$(clone_or_reuse_repo STARVLA_PATH "$VENV_DIR/starVLA" https://github.com/starVLA/starVLA.git -b "${STARVLA_GIT_REF:-starVLA-v1.6}" --depth 1)
 
     # Prefer upstream StarVLA requirements first when available.
     if [ -f "$starvla_path/requirements.txt" ]; then
-        # decord and eva-decord publish no Linux aarch64 wheels: build decord
-        # from source there and drop eva-decord, which provides the same module.
-        local starvla_overrides=()
-        if is_aarch64_platform; then
-            maybe_build_decord_from_source
-            local override_file
-            override_file=$(mktemp)
-            echo "eva-decord; platform_machine != 'aarch64'" > "$override_file"
-            starvla_overrides=(--override "$override_file")
-        fi
-        uv pip install -r "$starvla_path/requirements.txt" "${starvla_overrides[@]}"
-        if [ ${#starvla_overrides[@]} -gt 0 ]; then
-            rm -f "${starvla_overrides[1]}"
-        fi
+        maybe_build_decord_from_source
+        # eva-decord ships the same `decord` module as decord and has no
+        # aarch64 wheel, so install decord alone.
+        grep -Ev '^[[:space:]]*eva-decord' "$starvla_path/requirements.txt" \
+            | uv pip install -r -
     fi
 
     # Enforce RLinf-compatible runtime pins to avoid known breakages.
@@ -2151,6 +2150,7 @@ install_starvla_model() {
     fi
 
     install_flash_attn
+    install_ascend_tensorflow_pins
     uv pip uninstall pynvml || true
 }
 
@@ -2208,10 +2208,7 @@ install_gr00t_model() {
             exit 1
             ;;
     esac
-    if [ "$PLATFORM" = "ascend" ]; then
-        echo "[install.sh] Applying Ascend GR00T compatibility pins"
-        uv pip install -r "$SCRIPT_DIR/embodied/models/ascend/gr00t.txt"
-    fi
+    install_ascend_tensorflow_pins
     uv pip uninstall pynvml || true
 }
 
