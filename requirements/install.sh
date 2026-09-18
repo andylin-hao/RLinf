@@ -2256,6 +2256,7 @@ install_dexbotic_model() {
 
             local dexbotic_path
             dexbotic_path=$(clone_or_reuse_repo DEXBOTIC_PATH "$VENV_DIR/dexbotic" https://github.com/dexmal/dexbotic.git -b 0.2.0)
+            maybe_build_decord_from_source
             uv pip install -e "$dexbotic_path"
 
             install_${ENV_NAME}_env
@@ -2311,6 +2312,7 @@ install_abot_m0_model() {
 
     uv pip install -e "$abot_path" --no-deps
 
+    maybe_build_decord_from_source
     uv pip install -r $SCRIPT_DIR/embodied/models/abot.txt
 
     install_flash_attn
