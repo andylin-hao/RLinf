@@ -73,10 +73,10 @@ DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile \
     -t rlinf:embodied-maniskill_libero-cann9.1 .
 ```
 
-Most Ascend servers are aarch64. To build an aarch64 image on an x86_64 machine, register QEMU emulation for arm64 once, then build with `docker buildx` and `--platform linux/arm64`. Every `RUN` step, including the Python dependency installs, then runs under emulation and takes several times longer than a native build.
+Most Ascend servers are aarch64. To build an aarch64 image on an x86_64 machine, register QEMU emulation for arm64 once, then build with `docker buildx` and `--platform linux/arm64`. Every `RUN` step, including the Python dependency installs, then runs under emulation and takes several times longer than a native build. Pin the emulator to a recent release: the version in `tonistiigi/binfmt:latest` crashed with `qemu: uncaught target signal 11 (Segmentation fault)` partway through the model environment installs, and `qemu-v10.2.3` completes them.
 
 ```shell
-docker run --privileged --rm tonistiigi/binfmt --install arm64
+docker run --privileged --rm tonistiigi/binfmt:qemu-v10.2.3 --install arm64
 
 docker buildx build --platform linux/arm64 -f docker/Dockerfile \
     --build-arg BUILD_TARGET=embodied-maniskill_libero \
