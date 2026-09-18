@@ -20,9 +20,9 @@ mounted:
       rlinf/rlinf:agentic-rlinf0.4-maniskill_libero-cann9.1.1 bash
 
 This image builds on CANN 9.1.1 for 910B and carries every ManiSkill and LIBERO
-model environment. The tag above is the arm64 build, which matches most Ascend
-hosts; on x86_64 hosts, add the ``-amd64`` suffix
-(``agentic-rlinf0.4-maniskill_libero-cann9.1.1-amd64``). The earlier LIBERO-only
+model environment. The tag above carries both an arm64 and an amd64 build, so
+Docker pulls the one matching the host; the ``-arm64`` and ``-amd64`` tags name
+a single architecture. The earlier LIBERO-only
 image remains available as ``agentic-rlinf0.3-libero-cann9.0``. For downloads
 from mainland China, the image is also available under
 ``docker.1ms.run/rlinf/rlinf`` with the same tag. To expose specific NPUs,
