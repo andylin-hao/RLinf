@@ -2121,7 +2121,20 @@ install_starvla_model() {
 
     # Prefer upstream StarVLA requirements first when available.
     if [ -f "$starvla_path/requirements.txt" ]; then
-        uv pip install -r "$starvla_path/requirements.txt"
+        # decord and eva-decord publish no Linux aarch64 wheels: build decord
+        # from source there and drop eva-decord, which provides the same module.
+        local starvla_overrides=()
+        if is_aarch64_platform; then
+            maybe_build_decord_from_source
+            local override_file
+            override_file=$(mktemp)
+            echo "eva-decord; platform_machine != 'aarch64'" > "$override_file"
+            starvla_overrides=(--override "$override_file")
+        fi
+        uv pip install -r "$starvla_path/requirements.txt" "${starvla_overrides[@]}"
+        if [ ${#starvla_overrides[@]} -gt 0 ]; then
+            rm -f "${starvla_overrides[1]}"
+        fi
     fi
 
     # Enforce RLinf-compatible runtime pins to avoid known breakages.
