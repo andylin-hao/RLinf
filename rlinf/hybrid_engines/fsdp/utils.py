@@ -194,6 +194,28 @@ def _collect_ignored_params_for_fsdp2(
     return out
 
 
+def _module_has_single_floating_dtype(module: torch.nn.Module) -> bool:
+    dtype = None
+    for param in module.parameters():
+        if not param.is_floating_point():
+            continue
+        if dtype is None:
+            dtype = param.dtype
+        elif param.dtype != dtype:
+            return False
+    return dtype is not None
+
+
+def _pi0_fast_dtype_auto_wrap_policy(
+    module: torch.nn.Module, recurse: bool, nonwrapped_numel: int
+) -> bool:
+    if recurse:
+        return True
+    if nonwrapped_numel <= 0:
+        return False
+    return _module_has_single_floating_dtype(module)
+
+
 def get_fsdp_wrap_policy(module, config=None, is_lora=False, model_type=None):
     """
     FSDP wrap policy that handles both standard transformer models and VLA models.
@@ -255,6 +277,14 @@ def get_fsdp_wrap_policy(module, config=None, is_lora=False, model_type=None):
 
     # Build policies list
     policies = []
+
+    if (
+        SupportedModel(model_type) == SupportedModel.PI0_FAST
+        and not use_custom_wrap_policy
+    ):
+        # PI0-Fast mixes small FP32 embedding/norm parameters with a BF16 backbone.
+        # FSDP flat parameters must have one dtype, so split only on dtype-uniform modules.
+        policies.append(_pi0_fast_dtype_auto_wrap_policy)
 
     if SupportedModel(model_type) in [
         SupportedModel.CNN_POLICY,
@@ -632,6 +662,36 @@ def get_lr_scheduler(
             return min_mult + (1.0 - min_mult) * cosine
 
         return LambdaLR(optimizer, lr_lambda, last_epoch=last_epoch)
+    elif lr_scheduler == "fastwam_cosine":
+        # FastWAM's official trainer uses a LinearLR warmup followed by a
+        # torch CosineAnnealingLR with eta_min=learning_rate*0.01.
+        from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
+
+        num_training_steps = max(int(num_training_steps), 1)
+        num_warmup_steps = min(max(int(num_warmup_steps), 0), num_training_steps - 1)
+        remaining_steps = max(num_training_steps - num_warmup_steps, 1)
+        eta_min = optimizer.param_groups[0]["lr"] * 0.01
+        main_scheduler = CosineAnnealingLR(
+            optimizer,
+            T_max=remaining_steps,
+            eta_min=eta_min,
+            last_epoch=last_epoch,
+        )
+        if num_warmup_steps <= 0:
+            return main_scheduler
+
+        warmup_scheduler = LinearLR(
+            optimizer,
+            start_factor=1.0 / num_warmup_steps,
+            end_factor=1.0,
+            total_iters=num_warmup_steps,
+            last_epoch=last_epoch,
+        )
+        return SequentialLR(
+            optimizer,
+            schedulers=[warmup_scheduler, main_scheduler],
+            milestones=[num_warmup_steps],
+        )
     # PyTorch native
     elif lr_scheduler == "torch_constant":
         from torch.optim.lr_scheduler import ConstantLR

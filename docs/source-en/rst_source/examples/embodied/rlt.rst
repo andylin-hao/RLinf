@@ -103,9 +103,9 @@ Installation
       --network host \
       --name rlinf \
       -v .:/workspace/RLinf \
-      rlinf/rlinf:agentic-rlinf0.2-maniskill_libero
+      rlinf/rlinf:agentic-rlinf0.4-maniskill_libero
       # For mainland China users, you can use the following for better download speed:
-      # docker.1ms.run/rlinf/rlinf:agentic-rlinf0.2-maniskill_libero
+      # infinigence-ai-registry.cn-beijing.cr.aliyuncs.com/rlinf/rlinf:agentic-rlinf0.4-maniskill_libero
 
 Please switch to the OpenPI virtual environment via the built-in ``switch_env`` utility:
 
@@ -122,12 +122,10 @@ Please switch to the OpenPI virtual environment via the built-in ``switch_env`` 
    bash requirements/install.sh embodied --model openpi --env maniskill_libero
    source .venv/bin/activate
 
-RLT uses ``model_type: openpi_rlinf`` in the configs below. The install target
+RLT uses ``model_type: openpi`` in the configs below. The install target
 is still ``openpi`` because the vendored PyTorch model shares the OpenPI runtime
 and the RLT Stage 1 dataloader keeps using the OpenPI data pipeline for
-ManiSkill and real-world compatibility. This ``openpi_rlinf`` path is RLinf's
-vendored PyTorch Pi0.5 implementation aligned with the JAX OpenPI reference, not
-the older official OpenPI PyTorch path.
+ManiSkill and real-world compatibility.
 
 How RLT Works
 -------------
@@ -164,8 +162,7 @@ Important Stage 1 fields:
      model:
        openpi_data:
          repo_id: "realworld_peg_insertion_rlt_stage1"
-       model_type: "openpi_rlinf"
-       precision: fp32
+       model_type: "openpi"
        is_lora: False
        model_path: "/path/to/model"
        num_action_chunks: 20
@@ -176,7 +173,10 @@ Important Stage 1 fields:
          task: sft
          config_name: "pi05_franka_state"
          num_images_in_input: 1
-         action_horizon: ${actor.model.num_action_chunks}
+         # Network prediction horizon (Pi0Config.action_horizon). Matches official
+         # TrainConfig for config_name pi05_franka_state. Distinct from action_chunk
+         # / num_action_chunks, which is the env-executed (RLT) window.
+         action_horizon: 20
          action_chunk: ${actor.model.num_action_chunks}
          action_env_dim: ${actor.model.action_dim}
          num_steps: ${actor.model.num_steps}
@@ -278,7 +278,7 @@ Important Stage 2 fields:
        num_action_chunks: ${actor.model.num_action_chunks}
        ref_num_action_chunks: ${actor.model.ref_num_action_chunks}
      rlt_feature_model:
-       model_type: "openpi_rlinf"
+       model_type: "openpi"
        precision: bf16
        is_lora: False
        num_action_chunks: 20
@@ -293,8 +293,11 @@ Important Stage 2 fields:
          task: eval
          config_name: "pi05_franka_state"
          num_images_in_input: 1
+         # Network prediction horizon (Pi0Config.action_horizon). Matches official
+         # TrainConfig for config_name pi05_franka_state. Distinct from action_chunk
+         # / num_action_chunks, which is the env-executed (RLT) window.
+         action_horizon: 20
          action_chunk: ${actor.model.ref_num_action_chunks}
-         action_horizon: ${rollout.rlt_feature_model.num_action_chunks}
          action_env_dim: ${rollout.rlt_feature_model.action_dim}
          num_steps: ${rollout.rlt_feature_model.num_steps}
          model_action_dim: 32
