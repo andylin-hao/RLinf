@@ -49,7 +49,7 @@
 
 .. code-block:: bash
 
-   docker pull rlinf/rlinf:agentic-rlinf0.4-torch2.11.0-sglang0.5.12.post1-vllm0.23.0-megatron0.17.0-te2.17
+   docker pull rlinf/rlinf:agentic-rlinf0.4-torch2.11.0-sglang0.5.12.post1-vllm0.23.0-megatron0.18.0-te2.17
 
 如果你更倾向于本地环境，请安装 agentic 依赖栈：
 
