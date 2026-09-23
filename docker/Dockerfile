@@ -42,9 +42,9 @@ ENV AMD_VISIBLE_DEVICES=all
 FROM ${ASCEND_BASE_IMAGE} AS base-image-platform-ascend
 ENV ASCEND_VISIBLE_DEVICES=all
 FROM ${MUSA_BASE_IMAGE} AS base-image-platform-musa
-FROM ${KUNLUN_BASE_IMAGE} AS base-image-platform-kunlun
 ENV MTHREADS_VISIBLE_DEVICES=all
 ENV MTHREADS_DRIVER_CAPABILITIES=all
+FROM ${KUNLUN_BASE_IMAGE} AS base-image-platform-kunlun
 
 ##################################################################################################
 # Base images for different build targets — all derive from the platform base
