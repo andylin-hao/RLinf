@@ -52,7 +52,7 @@ We recommend the prebuilt Docker image:
 
 .. code-block:: bash
 
-   docker pull rlinf/rlinf:agentic-rlinf0.4-torch2.11.0-sglang0.5.12.post1-vllm0.23.0-megatron0.17.0-te2.17
+   docker pull rlinf/rlinf:agentic-rlinf0.4-torch2.11.0-sglang0.5.12.post1-vllm0.23.0-megatron0.18.0-te2.17
 
 If you prefer a local environment, install the agentic stack:
 
