@@ -61,9 +61,10 @@ If you prefer a local environment, install the agentic stack:
    bash requirements/install.sh agentic
 
 .. note::
-   The image above does not include ``flash-attn-4``, so it also runs on GPUs
+   The image above ships FA2 and no ``flash-attn-4``, so it also runs on GPUs
    older than ``sm90`` (such as an ``A100``). On Hopper or newer GPUs, the same
-   tag with a ``-fa4`` suffix keeps FA4:
+   tag with a ``-fa4`` suffix ships FA4 and no FA2, which RLinf then uses for
+   attention:
 
    .. code-block:: bash
 

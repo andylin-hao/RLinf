@@ -58,7 +58,7 @@
    bash requirements/install.sh agentic
 
 .. note::
-   上面的镜像不包含 ``flash-attn-4``，因此也能在早于 ``sm90`` 的 GPU（如 ``A100``）上运行。在 Hopper 及更新的 GPU 上，可以使用同一 tag 加 ``-fa4`` 后缀的镜像，其中保留了 FA4：
+   上面的镜像安装的是 FA2，不包含 ``flash-attn-4``，因此也能在早于 ``sm90`` 的 GPU（如 ``A100``）上运行。在 Hopper 及更新的 GPU 上，可以使用同一 tag 加 ``-fa4`` 后缀的镜像，其中安装 FA4 而不安装 FA2，RLinf 会相应改用 FA4 计算注意力：
 
    .. code-block:: bash
 

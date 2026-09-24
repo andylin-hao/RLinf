@@ -12,9 +12,11 @@ ARG CANN_VER=9.1.1-910b
 ARG MUSA_VER=v2.1.5-musa4.3.7
 ARG KUNLUN_VER=v1.7.2
 ARG UBUNTU_VER=22.04
-# Reason-image only. FA4 backward is sm90+ and Docker builds cannot probe the
-# GPU, so the default drops flash-attn-4 and the image also runs on Ampere
-# (e.g. A100). Pass --build-arg UNINSTALL_FA4=0 to keep FA4 for Hopper or newer.
+# Reason-image only. A venv carries one flash-attention variant: FA2 and FA4
+# share the flash_attn package. FA4 backward is sm90+ and Docker builds cannot
+# probe the GPU, so the default drops flash-attn-4 and installs FA2, which also
+# runs on Ampere (e.g. A100). Pass --build-arg UNINSTALL_FA4=0 to build the FA4
+# image for Hopper or newer; it ships FA4 and no FA2.
 ARG UNINSTALL_FA4=1
 # Registry prefix for the Docker Hub base images, with a trailing slash.
 # Empty pulls from Docker Hub; set e.g. REGISTRY_MIRROR=m.daocloud.io/docker.io/ when it is unreachable.
