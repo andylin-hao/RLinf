@@ -1165,9 +1165,13 @@ EOF
 }
 
 install_ascend_tensorflow_pins() {
-    # TF 2.21 SIGSEGVs against Ray's protobuf 6.x on Ascend. Shared by every
-    # embodied model whose install pulls TensorFlow (GR00T, StarVLA, …).
+    # TF 2.21 SIGSEGVs against Ray's protobuf 6.x on Ascend, taking down every
+    # worker that imports it. main() calls this after the model and environment
+    # installs, because those are what pull TensorFlow in, and which of them do
+    # is not something each install function should have to know. Pin only what
+    # is already installed: a venv with no TensorFlow does not want one.
     [ "$PLATFORM" = "ascend" ] || return 0
+    uv pip show tensorflow >/dev/null 2>&1 || return 0
     echo "[install.sh] Applying Ascend TensorFlow compatibility pins"
     uv pip install -r "$SCRIPT_DIR/embodied/models/ascend/tensorflow.txt"
 }
@@ -2682,7 +2686,6 @@ install_starvla_model() {
     fi
 
     install_flash_attn
-    install_ascend_tensorflow_pins
     uv pip uninstall pynvml || true
 }
 
@@ -2744,7 +2747,6 @@ install_gr00t_model() {
             exit 1
             ;;
     esac
-    install_ascend_tensorflow_pins
     uv pip uninstall pynvml || true
 }
 
@@ -2768,7 +2770,6 @@ install_gr00t_n1d6_model() {
             ;;
     esac
 
-    install_ascend_tensorflow_pins
     uv pip uninstall pynvml || true
 }
 
@@ -2792,7 +2793,6 @@ install_gr00t_n1d7_model() {
             ;;
     esac
 
-    install_ascend_tensorflow_pins
     uv pip uninstall pynvml || true
 }
 
@@ -4232,6 +4232,7 @@ main() {
     esac
 
     install_platform_extras
+    install_ascend_tensorflow_pins
     # Env/model installs may have changed the protobuf runtime or gencode.
     echo "[install.sh] Ensuring ${RAY_COMPAT_DEPS[*]} for Ray dashboard/agent"
     uv pip install "${RAY_COMPAT_DEPS[@]}"
