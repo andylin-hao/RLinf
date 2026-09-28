@@ -122,6 +122,17 @@ class AscendNPUManager(AcceleratorManager):
         return "npu"
 
     @staticmethod
+    def setup_worker_torch():
+        """Install the fused-kernel SDPA and rotary-embedding routes."""
+        from rlinf.utils.attention import (
+            install_npu_fused_rotary,
+            install_npu_sdpa_mask_cast,
+        )
+
+        install_npu_sdpa_mask_cast()
+        install_npu_fused_rotary()
+
+    @staticmethod
     def get_accel_pg_options(options: Optional["CollectiveGroupOptions"]):
         """Get the accelerator CCL process group options."""
         return None

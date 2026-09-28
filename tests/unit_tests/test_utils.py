@@ -555,3 +555,24 @@ def test_attn_implementation_passes_through_non_flash_choices(monkeypatch):
 
     _flash_availability(monkeypatch)
     assert resolve_attn_implementation("eager") == "eager"
+
+
+def test_boolean_attention_mask_casts_only_binary_float_masks():
+    # The NPU keeps its fused SDPA kernel for boolean masks; the cast must
+    # accept exactly the {0, dtype-min} masks HF models build and refuse any
+    # mask that encodes a real bias.
+    import torch
+
+    from rlinf.utils.attention import boolean_attention_mask
+
+    causal = torch.zeros(2, 1, 4, 4, dtype=torch.bfloat16)
+    causal[:, :, :, 2:] = torch.finfo(torch.bfloat16).min
+    out = boolean_attention_mask(causal)
+    assert out is not None and out.dtype == torch.bool
+    assert torch.equal(out, causal >= 0)
+
+    assert boolean_attention_mask(None) is None
+    assert boolean_attention_mask(causal.bool()) is None
+    biased = causal.clone()
+    biased[0, 0, 0, 0] = -1.5
+    assert boolean_attention_mask(biased) is None
