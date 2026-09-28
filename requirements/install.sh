@@ -2713,6 +2713,28 @@ install_abot_m0_model() {
 
     uv pip install -e "$abot_path" --no-deps
 
+    # ABot-M0 loads its VGGT spatial encoder from a hard-coded Hub id, which
+    # fails on a host with no route to huggingface.co. Read VGGT_MODEL_PATH when
+    # it is set so an image or an air-gapped run can point at a local copy, and
+    # keep the Hub id as the default. The file already imports os.
+    local abot_framework="$abot_path/ABot/model/framework/ABot_M0.py"
+    if [ -f "$abot_framework" ]; then
+        python - "$abot_framework" <<'EOF'
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+source = path.read_text()
+pinned = "VGGT.from_pretrained('facebook/VGGT-1B')"
+configurable = (
+    "VGGT.from_pretrained(os.environ.get('VGGT_MODEL_PATH', 'facebook/VGGT-1B'))"
+)
+if pinned in source:
+    path.write_text(source.replace(pinned, configurable))
+    print("[install.sh] ABot-M0 VGGT weights now honor VGGT_MODEL_PATH")
+EOF
+    fi
+
     maybe_build_decord_from_source
     uv pip install -r $SCRIPT_DIR/embodied/models/abot.txt
 
