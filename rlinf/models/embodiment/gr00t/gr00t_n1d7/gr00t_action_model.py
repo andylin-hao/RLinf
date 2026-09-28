@@ -835,6 +835,23 @@ class GR00T_N1_7_ForRLActionPrediction(Gr00tN1d7, BasePolicy):
         self.action_head.env_action_dim = self.action_dim
         self.action_head.valid_action_dim = self.valid_action_dim
 
+        # Whether the recipe trains any part of the backbone, per its tune
+        # flags. The parameter flags cannot answer this: upstream's
+        # set_trainable_parameters leaves stragglers outside language_model and
+        # visual (the untied lm_head) enabled, and FSDP's flat-parameter
+        # sharding later erases per-parameter requires_grad altogether. When
+        # nothing is meant to train, default_forward runs the backbone under
+        # no_grad, so backward never enters it -- which also keeps Ascend off
+        # backward kernels CANN lacks (Conv3DBackpropFilter, from Qwen3-VL's
+        # Conv3D patch embedding).
+        self._backbone_frozen = not (
+            getattr(config, "tune_llm", True)
+            or getattr(config, "tune_visual", True)
+            or getattr(config, "tune_top_llm_layers", 0)
+        )
+        if self._backbone_frozen:
+            logger.info("GR00T N1.7 backbone is fully frozen; skipping its backward.")
+
         self._no_split_modules = self.__class__._no_split_modules
         if hasattr(self, "config"):
             self.config.no_split_modules = self._no_split_modules
@@ -937,7 +954,11 @@ class GR00T_N1_7_ForRLActionPrediction(Gr00tN1d7, BasePolicy):
         )
 
         backbone_inputs, action_inputs = self.prepare_input(normalized_input)
-        backbone_outputs = self.backbone(backbone_inputs)
+        if getattr(self, "_backbone_frozen", False):
+            with torch.no_grad():
+                backbone_outputs = self.backbone(backbone_inputs)
+        else:
+            backbone_outputs = self.backbone(backbone_inputs)
 
         chains = forward_inputs["chains"]
         denoise_inds = forward_inputs["denoise_inds"]
