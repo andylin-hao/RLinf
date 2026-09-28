@@ -2768,6 +2768,7 @@ install_gr00t_n1d6_model() {
             ;;
     esac
 
+    install_ascend_tensorflow_pins
     uv pip uninstall pynvml || true
 }
 
@@ -2791,6 +2792,7 @@ install_gr00t_n1d7_model() {
             ;;
     esac
 
+    install_ascend_tensorflow_pins
     uv pip uninstall pynvml || true
 }
 
