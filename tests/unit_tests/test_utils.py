@@ -576,3 +576,19 @@ def test_boolean_attention_mask_casts_only_binary_float_masks():
     biased = causal.clone()
     biased[0, 0, 0, 0] = -1.5
     assert boolean_attention_mask(biased) is None
+
+
+def test_boolean_attention_mask_caches_per_live_tensor():
+    # One mask tensor flows through every layer of a forward; the verdict is
+    # cached so only the first layer pays the device sync, and an in-place
+    # edit or a new tensor gets a fresh verdict.
+    import torch
+
+    from rlinf.utils.attention import boolean_attention_mask
+
+    mask = torch.zeros(1, 1, 3, 3, dtype=torch.float32)
+    first = boolean_attention_mask(mask)
+    assert boolean_attention_mask(mask) is first
+
+    mask[0, 0, 0, 0] = -2.0  # bias now; version bump must invalidate
+    assert boolean_attention_mask(mask) is None
