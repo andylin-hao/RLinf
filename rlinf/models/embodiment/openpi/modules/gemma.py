@@ -40,7 +40,6 @@ from .utils import _str_to_dtype, gelu_glu, torch_compile_enabled
 
 PALIGEMMA_VOCAB_SIZE = 257_152
 
-
 @dataclasses.dataclass
 class Config:
     width: int
@@ -51,9 +50,7 @@ class Config:
     head_dim: int
     lora_configs: dict[str, lora.LoRAConfig] = dataclasses.field(default_factory=dict)
 
-
 Variant = Literal["dummy", "gemma_300m", "gemma_300m_lora", "gemma_2b", "gemma_2b_lora"]
-
 
 def get_config(variant: Variant) -> Config:
     """Returns config for specified gemma variant."""
@@ -127,7 +124,6 @@ def get_config(variant: Variant) -> Config:
         )
     raise ValueError(f"Unknown variant: {variant}")
 
-
 class RMSNorm(nn.Module):
     """RMSNorm with optional adaptive mode (adaRMS)."""
 
@@ -180,7 +176,6 @@ class RMSNorm(nn.Module):
         normed = normed * (1.0 + scale.float()) + shift.float()
         return normed.to(dtype), gate.to(dtype)
 
-
 class Embedder(nn.Module):
     """Embedder module."""
 
@@ -201,7 +196,6 @@ class Embedder(nn.Module):
 
     def decode(self, x: torch.Tensor) -> torch.Tensor:
         return F.linear(x, self.embedding.weight)
-
 
 # TODO: try use sdpa_attn
 class Attention(nn.Module):
@@ -300,7 +294,6 @@ class Attention(nn.Module):
         Returns:
             (outputs, new_kv_cache)
         """
-        dtype = next(x.dtype for x in xs if x is not None)
 
         q_parts, k_parts, v_parts = [], [], []
         for i, x in enumerate(xs):
@@ -341,41 +334,24 @@ class Attention(nn.Module):
 
         new_kv_cache = (k, v)
 
-        # Apply mask: shape (B, 1, T, S) -> broadcast to (B, K, G, T, S)
+        # Apply mask: shape (B, 1, T, S) -> broadcast over heads
         if attn_mask.dim() == 4:
             attn_mask = attn_mask[:, 0:1, :, :]  # (B, 1, T, S)
 
-        # GQA einsum pattern matching JAX:
-        q = q * (self.head_dim**-0.5)
-
-        # q: (B, T, num_heads, H) -> rearrange to (B, T, K, G, H)
-        # k: (B, S, num_kv_heads, H) -> stays (B, S, K, H)
         K = self.num_kv_heads
         G = self.num_heads // K
 
-        q_r = q.reshape(q.shape[0], q.shape[1], K, G, self.head_dim)
-        k_r = k.reshape(k.shape[0], k.shape[1], K, self.head_dim)
-        v_r = v.reshape(v.shape[0], v.shape[1], K, self.head_dim)
-
-        # einsum "BTKGH,BSKH->BKGTS"
-        logits = torch.einsum("BTKGH,BSKH->BKGTS", q_r.float(), k_r.float())
-
-        # Align mask to logits shape: logits is (B, K, G, T, S), mask is (B, 1, T, S)
-        # We need mask to be (B, 1, 1, T, S) so it broadcasts to (B, K, G, T, S)
-        big_neg = -2.3819763e38
-        mask_for_logits = attn_mask[:, :, None, :, :].expand_as(logits).bool()
-        masked_logits = torch.where(
-            mask_for_logits,
-            logits,
-            torch.tensor(big_neg, dtype=logits.dtype, device=logits.device),
+        # Fused SDPA in (B, heads, T, H) layout; keys/values repeat per query
+        # group. The kernel accumulates in fp32, replacing the explicit
+        # fp32-softmax einsum chain.
+        q_r = q.transpose(1, 2) * (self.head_dim**-0.5)
+        k_r = k.transpose(1, 2).repeat_interleave(G, dim=1)
+        v_r = v.transpose(1, 2).repeat_interleave(G, dim=1)
+        encoded = F.scaled_dot_product_attention(
+            q_r, k_r, v_r, attn_mask=attn_mask.bool(), scale=1.0
         )
-
-        probs = F.softmax(masked_logits, dim=-1).to(dtype)
-
-        # einsum "BKGTS,BSKH->BTKGH"
-        encoded = torch.einsum("BKGTS,BSKH->BTKGH", probs, v_r.to(dtype))
-        encoded = encoded.reshape(
-            encoded.shape[0], encoded.shape[1], K * G, self.head_dim
+        encoded = encoded.transpose(1, 2).reshape(
+            q.shape[0], q.shape[1], K * G, self.head_dim
         )
         # encoded: (B, T_total, num_heads, head_dim)
 
@@ -393,7 +369,6 @@ class Attention(nn.Module):
                 outputs.append(None)
 
         return outputs, new_kv_cache
-
 
 class FeedForward(nn.Module):
     """Feed forward module."""
@@ -418,7 +393,6 @@ class FeedForward(nn.Module):
         activations = gelu_glu(ff_gate, ff1)
         outputs = torch.matmul(activations, self.w_linear.to(dtype))
         return outputs
-
 
 class Block(nn.Module):
     """Transformer block with multi-expert attention and FFN."""
@@ -519,7 +493,6 @@ class Block(nn.Module):
         ]
 
         return xs, kv_cache
-
 
 class Module(nn.Module):
     """Gemma transformer with multi-expert support."""
@@ -644,7 +617,6 @@ class Module(nn.Module):
 
         return outputs, kv_cache
 
-
 def _apply_rope_eager(
     x: torch.Tensor, *, positions: torch.Tensor, max_wavelength: float = 10000.0
 ) -> torch.Tensor:
@@ -662,9 +634,7 @@ def _apply_rope_eager(
     res = torch.cat([x1 * cos - x2 * sin, x2 * cos + x1 * sin], dim=-1)
     return res.to(x.dtype)
 
-
 _apply_rope_compiled = torch.compile(_apply_rope_eager)
-
 
 def _apply_rope(
     x: torch.Tensor, *, positions: torch.Tensor, max_wavelength: float = 10000.0
@@ -672,14 +642,11 @@ def _apply_rope(
     fn = _apply_rope_compiled if torch_compile_enabled() else _apply_rope_eager
     return fn(x, positions=positions, max_wavelength=max_wavelength)
 
-
 def _fused_gated_residual_eager(x, y, gate):
     """Fuse the gated residual ``x + y * gate`` into a single kernel."""
     return x + y * gate
 
-
 _fused_gated_residual_compiled = torch.compile(_fused_gated_residual_eager)
-
 
 def _fused_gated_residual(x, y, gate):
     fn = (
@@ -688,7 +655,6 @@ def _fused_gated_residual(x, y, gate):
         else _fused_gated_residual_eager
     )
     return fn(x, y, gate)
-
 
 def _gated_residual(x, y, gate):
     if x is None:
