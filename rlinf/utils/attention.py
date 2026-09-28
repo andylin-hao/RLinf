@@ -68,17 +68,30 @@ def resolve_attn_implementation(preferred: str = "flash_attention_2") -> str:
     return "sdpa"
 
 
-def boolean_attention_mask(attn_mask):
-    """The boolean form of a {0, -inf} float mask, or None if it carries biases."""
+def boolean_attention_mask(attn_mask, _cache={}):
+    """The boolean form of a {0, -inf} float mask, or None if it carries biases.
+
+    Verifying the mask forces a device sync, and HF models pass one mask tensor
+    through every layer, so the verdict is cached per live tensor identity.
+    """
+    import weakref
+
     import torch
 
     if attn_mask is None or not attn_mask.dtype.is_floating_point:
         return None
+    entry = _cache.get(id(attn_mask))
+    if entry is not None:
+        ref, version, result = entry
+        if ref() is attn_mask and version == attn_mask._version:
+            return result
     floor = torch.finfo(attn_mask.dtype).min * 0.5
     keep = attn_mask >= 0
-    if bool((keep | (attn_mask <= floor)).all()):
-        return keep
-    return None
+    result = keep if bool((keep | (attn_mask <= floor)).all()) else None
+    if len(_cache) >= 8:
+        _cache.clear()
+    _cache[id(attn_mask)] = (weakref.ref(attn_mask), attn_mask._version, result)
+    return result
 
 
 def install_npu_sdpa_mask_cast() -> bool:
