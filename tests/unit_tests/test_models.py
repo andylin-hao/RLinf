@@ -1468,3 +1468,40 @@ def test_openpi_kernels_compile_only_where_inductor_can_run(monkeypatch):
     assert utils.torch_compile_enabled() is True
     utils.set_torch_compile(False)
     assert utils.torch_compile_enabled() is False
+
+
+def test_npu_sdpa_context_materializes_a_broadcast_mask():
+    # Ascend's attention kernel rejects a mask whose query dimension is 1, which
+    # CUDA broadcasts. GR00T's DiT builds exactly that, so the context has to
+    # expand it to the query length and leave every other mask alone.
+    from rlinf.models.embodiment.gr00t import npu_common
+
+    seen = {}
+
+    def record(query, key, value, attn_mask=None, *args, **kwargs):
+        seen["mask_shape"] = None if attn_mask is None else tuple(attn_mask.shape)
+        return torch.zeros_like(query)
+
+    original = torch.nn.functional.scaled_dot_product_attention
+    torch.nn.functional.scaled_dot_product_attention = record
+    try:
+        q = torch.zeros(2, 32, 51, 64)
+        kv = torch.zeros(2, 32, 570, 64)
+        with npu_common.npu_sdpa_context():
+            torch.nn.functional.scaled_dot_product_attention(
+                q, kv, kv, attn_mask=torch.zeros(2, 32, 1, 570)
+            )
+            assert seen["mask_shape"] == (2, 32, 51, 570)
+
+            # A mask that already spans the queries is passed through untouched.
+            torch.nn.functional.scaled_dot_product_attention(
+                q, kv, kv, attn_mask=torch.zeros(2, 32, 51, 570)
+            )
+            assert seen["mask_shape"] == (2, 32, 51, 570)
+
+            torch.nn.functional.scaled_dot_product_attention(q, kv, kv)
+            assert seen["mask_shape"] is None
+        # The context restores what it replaced.
+        assert torch.nn.functional.scaled_dot_product_attention is record
+    finally:
+        torch.nn.functional.scaled_dot_product_attention = original

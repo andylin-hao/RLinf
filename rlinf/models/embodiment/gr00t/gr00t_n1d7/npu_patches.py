@@ -62,6 +62,10 @@ def apply_npu_patches(patcher) -> dict | None:
         "transformers.models.qwen3_vl.modeling_qwen3_vl.Qwen3VLTextRMSNorm.forward",
         f"{_COMMON}.npu_rmsnorm_forward",
     )
+    patcher.add_patch(
+        "gr00t.model.modules.dit._sdpa_context",
+        f"{_COMMON}.npu_sdpa_context",
+    )
     patcher.skip_import("flash_attn")
 
     return {"flash_attn_stub": True}

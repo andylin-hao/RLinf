@@ -23,6 +23,7 @@ for backbone code that assumes the ``flash_attn`` package. The per-version
 
 from __future__ import annotations
 
+import contextlib
 import importlib.abc
 import importlib.util
 import inspect
@@ -108,6 +109,52 @@ def hide_unimportable_torchcodec() -> None:
         sys.meta_path.insert(0, _TorchcodecUnavailableFinder())
     except (ImportError, RuntimeError):
         pass
+
+
+@contextlib.contextmanager
+def npu_broadcast_safe_sdpa():
+    """Give the NPU attention kernel a mask it accepts, for the duration.
+
+    ``scaled_dot_product_attention`` on CUDA broadcasts an attention mask whose
+    query dimension is 1 over the real query length. Ascend's
+    ``FlashAttentionScore`` does not: it rejects the shape outright, for example
+    ``get unsupported atten_mask shape, the shape is [2, 32, 1, 570] ... Sq=[51]``
+    for GR00T's action-head DiT, which builds one mask row and relies on the
+    broadcast. Materializing that dimension keeps the mask's meaning and costs a
+    few megabytes.
+    """
+    original = torch.nn.functional.scaled_dot_product_attention
+
+    def scaled_dot_product_attention(
+        query, key, value, attn_mask=None, *args, **kwargs
+    ):
+        if (
+            attn_mask is not None
+            and attn_mask.dim() == 4
+            and attn_mask.shape[-2] == 1
+            and query.shape[-2] != 1
+        ):
+            attn_mask = attn_mask.expand(
+                *attn_mask.shape[:-2], query.shape[-2], attn_mask.shape[-1]
+            ).contiguous()
+        return original(query, key, value, attn_mask, *args, **kwargs)
+
+    torch.nn.functional.scaled_dot_product_attention = scaled_dot_product_attention
+    try:
+        yield
+    finally:
+        torch.nn.functional.scaled_dot_product_attention = original
+
+
+def npu_sdpa_context():
+    """Replacement for GR00T's ``_sdpa_context``, which is a no-op off CUDA.
+
+    GR00T wraps its DiT attention in that hook to force a safe SDPA path on
+    platforms where the fused kernel misbehaves. It selects the backend through
+    ``torch.backends.cuda``, which does nothing on Ascend, so this substitutes
+    the fix Ascend actually needs.
+    """
+    return npu_broadcast_safe_sdpa()
 
 
 def _npu_flash_attention_symbols() -> dict[str, object]:

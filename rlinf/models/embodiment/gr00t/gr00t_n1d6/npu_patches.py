@@ -67,6 +67,10 @@ def apply_npu_patches(patcher) -> dict | None:
         "transformers.models.qwen3.modeling_qwen3.Qwen3RMSNorm.forward",
         f"{_COMMON}.npu_rmsnorm_forward",
     )
+    patcher.add_patch(
+        "gr00t.model.modules.dit._sdpa_context",
+        f"{_COMMON}.npu_sdpa_context",
+    )
 
     return {
         "stop_flash_attention_binding": install_npu_flash_attention(
