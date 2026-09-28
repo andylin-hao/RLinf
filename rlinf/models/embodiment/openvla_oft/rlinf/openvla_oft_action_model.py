@@ -220,6 +220,13 @@ class OpenVLAOFTForRLActionPrediction(OpenVLAOFTForActionPrediction, BasePolicy)
                 f"In: What action should the robot take to {t.lower()}?\nOut: "
                 for t in env_obs["task_descriptions"]
             ]
+            # Image preprocessing (resize / crop / normalize) is tensor math;
+            # running it where the model lives turns a per-call host cost into
+            # sub-millisecond device work and shrinks the transfer to uint8.
+            device = next(self.parameters()).device
+            for key in ("main_images", "wrist_images"):
+                if isinstance(env_obs.get(key), torch.Tensor):
+                    env_obs[key] = env_obs[key].to(device, non_blocking=True)
             if env_obs["main_images"].ndim == 4:
                 env_obs["main_images"] = env_obs["main_images"].unsqueeze(1)
             assert env_obs["main_images"].ndim == 5
@@ -239,7 +246,6 @@ class OpenVLAOFTForRLActionPrediction(OpenVLAOFTForActionPrediction, BasePolicy)
                 )
 
             max_length = self.max_prompt_length
-            device = next(self.parameters()).device
             precision = next(self.parameters()).dtype
 
             primary_image = all_images.pop(0)
@@ -273,6 +279,16 @@ class OpenVLAOFTForRLActionPrediction(OpenVLAOFTForActionPrediction, BasePolicy)
                     [primary_pixel_values] + all_wrist_pixel_values, dim=1
                 )
 
+            # Check the tokenizer contract while the ids are still host
+            # tensors; on-device each of these would cost a sync.
+            host_ids = inputs["input_ids"]
+            host_mask = inputs["attention_mask"]
+            assert torch.all(host_ids[:, 0] == 1)
+            assert torch.all(host_mask[:, 0] == 1)
+            # last token is space ` `
+            assert torch.all(host_ids[:, -1] == 29871)
+            assert torch.all(host_mask[:, -1] == 1)
+
             input_ids = inputs["input_ids"].to(device=device, dtype=torch.long)
             attention_mask = inputs["attention_mask"].to(
                 device=device, dtype=torch.bool
@@ -287,13 +303,6 @@ class OpenVLAOFTForRLActionPrediction(OpenVLAOFTForActionPrediction, BasePolicy)
             "attention_mask": attention_mask,
             "pixel_values": pixel_values,
         }
-
-        # assert first token is 1
-        assert torch.all(input_ids[:, 0] == 1)
-        assert torch.all(attention_mask[:, 0] == 1)
-        # last token is space ` `
-        assert torch.all(input_ids[:, -1] == 29871)
-        assert torch.all(attention_mask[:, -1] == 1)
 
         n_prompt_tokens = input_ids.shape[-1] - 1
         # Calculate number of patches (including proprio token and/or diffusion timestep embedding if present)
