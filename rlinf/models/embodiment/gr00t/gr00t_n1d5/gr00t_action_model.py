@@ -639,6 +639,10 @@ class GR00T_N1_5_ForRLActionPrediction(GR00T_N1_5, BasePolicy):
             Dict[str, Any]: The transformed observation.
         """
         # Ensure correct dimensions before applying transforms
+        device = next(self.parameters()).device
+        for transform in getattr(self._modality_transform, "transforms", []):
+            if hasattr(transform, "set_device"):
+                transform.set_device(device)
         return self._modality_transform(obs)
 
     def unapply_transforms(self, action: dict[str, Any]) -> dict[str, Any]:

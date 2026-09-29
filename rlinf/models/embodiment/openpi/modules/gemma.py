@@ -347,11 +347,11 @@ class Attention(nn.Module):
         K = self.num_kv_heads
         G = self.num_heads // K
 
-        if not torch.is_grad_enabled():
-            # Rollout and logprob recompute: fused SDPA in (B, heads, T, H)
-            # layout, keys/values repeated per query group. Training keeps the
-            # fp32-softmax einsum below, whose backward outperforms the masked
-            # SDPA backward at these shapes.
+        if not torch.is_grad_enabled() or q.device.type == "npu":
+            # Fused SDPA in (B, heads, T, H) layout, keys/values repeated per
+            # query group. CUDA gradient passes stay on the fp32-softmax einsum
+            # below: the masked SDPA backward measures slower there, while the
+            # NPU kernel's backward is faster on both passes.
             q_r = q.transpose(1, 2) * (self.head_dim**-0.5)
             k_r = k.transpose(1, 2).repeat_interleave(G, dim=1)
             v_r = v.transpose(1, 2).repeat_interleave(G, dim=1)
