@@ -915,7 +915,11 @@ class GR00T_N1_7_ForRLActionPrediction(Gr00tN1d7, BasePolicy):
         if backbone_model_path is not None:
             processor_cfg.setdefault("transformers_loading_kwargs", {})
             processor_cfg["transformers_loading_kwargs"]["local_files_only"] = True
-        modality_transform = Gr00tN1d7Processor(**processor_cfg)
+        from rlinf.models.embodiment.gr00t.gr00t_n1d7.device_transform import (
+            BatchedQwenVLProcessor,
+        )
+
+        modality_transform = BatchedQwenVLProcessor(**processor_cfg)
         modality_config = getattr(modality_transform, "modality_configs", None)
         return modality_transform, modality_config
 
@@ -1077,6 +1081,8 @@ class GR00T_N1_7_ForRLActionPrediction(Gr00tN1d7, BasePolicy):
         mode: Literal["train", "eval"],
     ) -> tuple[torch.Tensor, dict[str, Any]]:
         """Run the policy and return normalized actions plus RL bookkeeping."""
+        if hasattr(self._modality_transform, "set_device"):
+            self._modality_transform.set_device(next(self.parameters()).device)
         normalized_input = self.apply_transforms(obs_copy)
         normalized_input = self._cast_float_tensors_to_compute_dtype(
             normalized_input,
