@@ -129,10 +129,14 @@ def build_device_vlm_inputs(
                 )
             images.append(chw)
 
+    device = images[0].device if images else None
+    if device is not None and device.type == "npu":
+        # CANN rejects the >8-dim copies inside the fast image processor, so
+        # only the resize runs on the NPU; the patch packing stays on host.
+        images = [img.cpu() for img in images]
     inputs = iface.processor(
         text=texts, images=images, padding=True, return_tensors="pt"
     )
-    device = images[0].device if images else None
     return {
         k: v.to(device) if device is not None and torch.is_tensor(v) else v
         for k, v in inputs.items()
