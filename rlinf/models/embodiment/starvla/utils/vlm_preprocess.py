@@ -61,6 +61,60 @@ def get_train_image_size(
     return None
 
 
+_TEMPLATE_CACHE: dict[tuple[str, int], str] = {}
+
+
+def _templated_text(processor: Any, instruction: str, num_images: int) -> str:
+    key = (instruction, num_images)
+    text = _TEMPLATE_CACHE.get(key)
+    if text is None:
+        conversation = [
+            {
+                "role": "user",
+                "content": [{"type": "image"}] * num_images
+                + [{"type": "text", "text": instruction}],
+            }
+        ]
+        text = processor.apply_chat_template(
+            conversation, tokenize=False, add_generation_prompt=True
+        )
+        if len(_TEMPLATE_CACHE) >= 64:
+            _TEMPLATE_CACHE.clear()
+        _TEMPLATE_CACHE[key] = text
+    return text
+
+
+def _build_device_vlm_inputs(
+    starvla_model: Any, examples: list[dict[str, Any]], iface: Any
+) -> dict[str, torch.Tensor]:
+    """Qwen-family inputs from device-tensor views, template cached per task."""
+    import torchvision.transforms.functional as TVF
+
+    target = get_train_image_size(starvla_model)
+    if isinstance(target, int):
+        target = (target, target)
+
+    texts, images = [], []
+    for example in examples:
+        views = example["image"]
+        texts.append(_templated_text(iface.processor, example["lang"], len(views)))
+        for img in views:
+            chw = img.permute(2, 0, 1) if img.shape[-1] in (1, 3) else img
+            if target is not None:
+                # Legacy path resizes PIL images (bicubic); match it on device.
+                chw = TVF.resize(
+                    chw,
+                    [target[1], target[0]],
+                    interpolation=TVF.InterpolationMode.BICUBIC,
+                    antialias=True,
+                )
+            images.append(chw)
+
+    return dict(
+        iface.processor(text=texts, images=images, padding=True, return_tensors="pt")
+    )
+
+
 def build_base_vlm_inputs(
     starvla_model: Any,
     *,
@@ -69,6 +123,15 @@ def build_base_vlm_inputs(
     vlm_interface: Any = None,
 ) -> dict[str, torch.Tensor]:
     """Build backbone-only VLM inputs from rollout examples."""
+    iface = vlm_interface or resolve_vlm_interface(starvla_model)
+    if (
+        examples
+        and torch.is_tensor(examples[0]["image"][0])
+        and hasattr(iface, "processor")
+        and vlm_type not in ("florence",)
+    ):
+        return _build_device_vlm_inputs(starvla_model, examples, iface)
+
     batch_images = [to_pil_preserve(example["image"]) for example in examples]
     instructions = [example["lang"] for example in examples]
 
@@ -86,7 +149,6 @@ def build_base_vlm_inputs(
             single_image_batch.append([views[0]])
         batch_images = single_image_batch
 
-    iface = vlm_interface or resolve_vlm_interface(starvla_model)
     build_inputs = getattr(iface, "build_qwenvl_inputs", None)
     if not callable(build_inputs):
         raise RuntimeError("VLM interface does not provide 'build_qwenvl_inputs(...)'.")
