@@ -223,22 +223,27 @@ class OpenVLAOFTForRLActionPrediction(OpenVLAOFTForActionPrediction, BasePolicy)
             # Image preprocessing (resize / crop / normalize) is tensor math;
             # running it where the model lives turns a per-call host cost into
             # sub-millisecond device work and shrinks the transfer to uint8.
+            # The moved tensors stay local: writing them back into env_obs
+            # would pin every stored rollout frame to accelerator memory.
             device = next(self.parameters()).device
-            for key in ("main_images", "wrist_images"):
-                if isinstance(env_obs.get(key), torch.Tensor):
-                    env_obs[key] = env_obs[key].to(device, non_blocking=True)
-            if env_obs["main_images"].ndim == 4:
-                env_obs["main_images"] = env_obs["main_images"].unsqueeze(1)
-            assert env_obs["main_images"].ndim == 5
+            main_images = env_obs["main_images"]
+            wrist_images = env_obs.get("wrist_images")
+            if isinstance(main_images, torch.Tensor):
+                main_images = main_images.to(device, non_blocking=True)
+            if main_images.ndim == 4:
+                main_images = main_images.unsqueeze(1)
+            assert main_images.ndim == 5
 
             all_images = [
-                env_obs["main_images"].permute(0, 1, 4, 2, 3)
+                main_images.permute(0, 1, 4, 2, 3)
             ]  # [B, 1, H, W, C] -> [B, 1, C, H, W]
             if self.vision_backbone.get_num_images_in_input() > 1:
-                if env_obs["wrist_images"].ndim == 4:
-                    env_obs["wrist_images"] = env_obs["wrist_images"].unsqueeze(1)
-                assert env_obs["wrist_images"].ndim == 5
-                wrist_imgs = env_obs["wrist_images"].permute(
+                if isinstance(wrist_images, torch.Tensor):
+                    wrist_images = wrist_images.to(device, non_blocking=True)
+                if wrist_images.ndim == 4:
+                    wrist_images = wrist_images.unsqueeze(1)
+                assert wrist_images.ndim == 5
+                wrist_imgs = wrist_images.permute(
                     0, 1, 4, 2, 3
                 )  # [B, N_IMG, H, W, C] -> [B, N_IMG, C, H, W]
                 all_images.extend(
