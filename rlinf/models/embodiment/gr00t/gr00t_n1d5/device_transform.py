@@ -34,14 +34,39 @@ from gr00t.model.transforms import GR00TTransform
 
 
 class BatchedEagleTransform(GR00TTransform):
-    """GR00TTransform whose Eagle leg runs batched on the model's device."""
+    """GR00TTransform whose Eagle leg runs batched on the model's device.
+
+    With a device set it also absorbs the eval-mode video legs (center crop at
+    ``crop_scale``, bilinear-antialias resize to ``video_size``), so raw frames
+    reach the device as uint8 and every pixel operation runs there.
+    """
 
     _device: torch.device | None = None
     _template_cache: dict[tuple[str, int], str] = {}
+    crop_scale: float = 0.95
+    video_size: int = 224
 
     def set_device(self, device) -> None:
         """Send Eagle pixel preprocessing to `device`; None keeps the host path."""
         self._device = torch.device(device) if device is not None else None
+
+    def _crop_resize(self, frames: torch.Tensor) -> torch.Tensor:
+        """Eval-mode video legs on device: center crop then bilinear resize."""
+        import torchvision.transforms.functional as TVF
+
+        b, n, c, h, w = frames.shape
+        flat = frames.reshape(b * n, c, h, w).float().div_(255.0)
+        flat = TVF.center_crop(
+            flat, [int(h * self.crop_scale), int(w * self.crop_scale)]
+        )
+        flat = TVF.resize(
+            flat,
+            [self.video_size, self.video_size],
+            interpolation=TVF.InterpolationMode.BILINEAR,
+            antialias=True,
+        )
+        flat = flat.mul_(255.0).round_().clamp_(0, 255).to(torch.uint8)
+        return flat.reshape(b, n, c, self.video_size, self.video_size)
 
     def _templated_text(self, language: str, num_images: int) -> str:
         key = (language, num_images)
@@ -65,6 +90,13 @@ class BatchedEagleTransform(GR00TTransform):
     _announced = False
 
     def apply_batch(self, data: dict, batch_size: int) -> dict:
+        import os
+
+        marker = os.environ.get("RLINF_EAGLE_PROBE")
+        if marker:
+            mode = "host" if self._device is None else f"device:{self._device}"
+            with open(marker, "a") as f:
+                f.write(f"{os.getpid()} {mode}\n")
         if self._device is None:
             return super().apply_batch(data, batch_size)
         if not BatchedEagleTransform._announced:
@@ -92,6 +124,8 @@ class BatchedEagleTransform(GR00TTransform):
         frames_dev = torch.from_numpy(np.ascontiguousarray(frames)).to(
             self._device, non_blocking=True
         )
+        if frames_dev.shape[-2] != self.video_size:
+            frames_dev = self._crop_resize(frames_dev)
         num_images = frames_dev.shape[1]
 
         text_list = []
