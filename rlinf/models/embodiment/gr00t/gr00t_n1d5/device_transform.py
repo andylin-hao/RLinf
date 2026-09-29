@@ -25,6 +25,7 @@ processor as device tensors, so the pixel math runs where the model lives.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import numpy as np
@@ -61,9 +62,22 @@ class BatchedEagleTransform(GR00TTransform):
             self._template_cache[key] = text
         return text
 
+    _announced = False
+
     def apply_batch(self, data: dict, batch_size: int) -> dict:
         if self._device is None:
             return super().apply_batch(data, batch_size)
+        if not BatchedEagleTransform._announced:
+            BatchedEagleTransform._announced = True
+            logging.getLogger(__name__).info(
+                "Eagle device preprocessing active on %s", self._device
+            )
+            import os
+
+            marker = os.environ.get("RLINF_EAGLE_PROBE")
+            if marker:
+                with open(marker, "a") as f:
+                    f.write(f"{os.getpid()} {self._device}\n")
 
         batch: dict[str, Any] = {}
 
