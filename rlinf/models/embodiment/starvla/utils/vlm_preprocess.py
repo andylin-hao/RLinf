@@ -94,10 +94,17 @@ def _templated_text(processor: Any, instruction: str, num_images: int) -> str:
     return text
 
 
-def _build_device_vlm_inputs(
-    starvla_model: Any, examples: list[dict[str, Any]], iface: Any
+def build_device_vlm_inputs(
+    starvla_model: Any,
+    examples: list[dict[str, Any]],
+    iface: Any,
+    instructions: Optional[list[str]] = None,
 ) -> dict[str, torch.Tensor]:
-    """Qwen-family inputs from device-tensor views, template cached per task."""
+    """Qwen-family inputs from device-tensor views, template cached per task.
+
+    ``instructions`` overrides each example's ``lang`` when an action head
+    decorates the prompt (for example OFT's action-token suffix).
+    """
     import torchvision.transforms.functional as TVF
 
     target = get_train_image_size(starvla_model)
@@ -105,15 +112,11 @@ def _build_device_vlm_inputs(
         target = (target, target)
 
     texts, images = [], []
-    for example in examples:
+    for i, example in enumerate(examples):
         views = example["image"]
-        texts.append(
-            _templated_text(
-                iface.processor,
-                _prompt_of(starvla_model, example["lang"]),
-                len(views),
-            )
-        )
+        raw = instructions[i] if instructions is not None else example["lang"]
+        prompt = _prompt_of(starvla_model, raw)
+        texts.append(_templated_text(iface.processor, prompt, len(views)))
         for img in views:
             chw = img.permute(2, 0, 1) if img.shape[-1] in (1, 3) else img
             if target is not None:
@@ -146,7 +149,7 @@ def build_base_vlm_inputs(
         and hasattr(iface, "processor")
         and vlm_type not in ("florence",)
     ):
-        return _build_device_vlm_inputs(starvla_model, examples, iface)
+        return build_device_vlm_inputs(starvla_model, examples, iface)
 
     batch_images = [to_pil_preserve(example["image"]) for example in examples]
     instructions = [example["lang"] for example in examples]
