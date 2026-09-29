@@ -61,7 +61,10 @@ class BatchedQwenVLProcessor(Gr00tN1d7Processor):
                 self._template_cache.clear()
             self._template_cache[key] = text
 
-        frames = torch.from_numpy(np.ascontiguousarray(images)).to(
-            self._device, non_blocking=True
-        )
+        frames = torch.from_numpy(np.ascontiguousarray(images))
+        if self._device.type != "npu":
+            # CANN's copy kernel rejects the >8-dim intermediates the fast
+            # image processor builds on device; NPU keeps the pixels on host
+            # and still gains the cached template and batched call.
+            frames = frames.to(self._device, non_blocking=True)
         return {"vlm_content": {"text": text, "images": list(frames.unbind(0))}}
