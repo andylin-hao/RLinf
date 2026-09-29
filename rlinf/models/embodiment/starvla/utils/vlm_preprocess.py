@@ -129,9 +129,14 @@ def build_device_vlm_inputs(
                 )
             images.append(chw)
 
-    return dict(
-        iface.processor(text=texts, images=images, padding=True, return_tensors="pt")
+    inputs = iface.processor(
+        text=texts, images=images, padding=True, return_tensors="pt"
     )
+    device = images[0].device if images else None
+    return {
+        k: v.to(device) if device is not None and torch.is_tensor(v) else v
+        for k, v in inputs.items()
+    }
 
 
 def build_base_vlm_inputs(
