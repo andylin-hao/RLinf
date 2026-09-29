@@ -491,7 +491,7 @@ class GR00T_N1_5_ForRLActionPrediction(GR00T_N1_5, BasePolicy):
 
     def eval(self):
         self._modality_transform.eval()
-        super().eval()
+        return super().eval()
 
     def _check_state_is_batched(self, obs: dict[str, Any]) -> bool:
         for k, v in obs.items():
