@@ -64,6 +64,16 @@ def get_train_image_size(
 _TEMPLATE_CACHE: dict[tuple[str, int], str] = {}
 
 
+def _prompt_of(starvla_model: Any, instruction: str) -> str:
+    vla_data = getattr(
+        getattr(getattr(starvla_model, "config", None), "datasets", None),
+        "vla_data",
+        None,
+    )
+    cot = getattr(vla_data, "CoT_prompt", None) if vla_data is not None else None
+    return cot.replace("{instruction}", instruction) if cot else instruction
+
+
 def _templated_text(processor: Any, instruction: str, num_images: int) -> str:
     key = (instruction, num_images)
     text = _TEMPLATE_CACHE.get(key)
@@ -97,7 +107,13 @@ def _build_device_vlm_inputs(
     texts, images = [], []
     for example in examples:
         views = example["image"]
-        texts.append(_templated_text(iface.processor, example["lang"], len(views)))
+        texts.append(
+            _templated_text(
+                iface.processor,
+                _prompt_of(starvla_model, example["lang"]),
+                len(views),
+            )
+        )
         for img in views:
             chw = img.permute(2, 0, 1) if img.shape[-1] in (1, 3) else img
             if target is not None:
