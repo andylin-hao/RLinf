@@ -511,6 +511,7 @@ class YamPico(TeleopDevice):
             infos["yam_pico_fault"] = self._fault
             return measured, infos
 
+        applied_solution = False
         if self._fault is None:
             for i, side in enumerate(SIDES):
                 action, replaced, _ = results[side]
@@ -551,10 +552,11 @@ class YamPico(TeleopDevice):
                     result.reason if not result.success else None
                 )
                 if not result.success:
-                    # Hold only this arm, retaining references for the next
-                    # frame. The other arm can still execute a valid solution.
+                    # Hold this arm's joints at the measured pose. The gripper
+                    # stays latched: a released trigger still commands the last
+                    # open/close, and the other arm can use a valid solution.
+                    target[i * 7 + 6] = self._grippers[i]
                     missed = f"{side}:ik:{result.reason}"
-                    self._grippers[i] = measured[i * 7 + 6]
                     now = time.monotonic()
                     if now - self._last_ik_warning >= 1.0:
                         self._logger.warning(
@@ -594,10 +596,16 @@ class YamPico(TeleopDevice):
                 elif action[6] > 0:
                     self._grippers[i] = 1.0
                 target[i * 7 + 6] = self._grippers[i]
-        # Reject solutions computed from a now-stale stream or a slow solve.
+                applied_solution = True
+        # A miss holds measured joints and must not end the take. Reject the
+        # tick when a controller dropped while solving, or a successful
+        # solution is already older than the tick budget.
         if self._fault is None and (
-            time.monotonic() - started > self._config.max_tick_s
-            or not all(arm.ready for arm in self._experts.values())
+            not all(arm.ready for arm in self._experts.values())
+            or (
+                applied_solution
+                and time.monotonic() - started > self._config.max_tick_s
+            )
         ):
             self.hold_until_released("stale_after_ik")
         infos["yam_pico_fault"] = self._fault

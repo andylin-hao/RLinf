@@ -236,6 +236,7 @@ class CollectEpisode(gym.Wrapper):
         ]
 
         self._closed = False
+        self._finalizing_on_exit = False
         self.logger = get_logger()
 
         os.makedirs(self.save_dir, exist_ok=True)
@@ -377,6 +378,18 @@ class CollectEpisode(gym.Wrapper):
                     result = self.env.close()
             except BaseException as error:
                 primary_error = error
+            # Images and the JSONL sidecar are already on disk. finalize()
+            # drops episode_buffer without save_episode, so close an open
+            # streaming take first and keep it with the success flag known so
+            # far. reset() does the same before the next episode starts.
+            if self.streaming:
+                try:
+                    for env_idx in range(self.num_envs):
+                        if self._stream_frames[env_idx] > 0:
+                            self._stream_end_episode(env_idx)
+                except BaseException as error:
+                    if primary_error is None:
+                        primary_error = error
             self._finalize_lerobot()
         except BaseException as error:
             if primary_error is None:
@@ -1047,6 +1060,10 @@ class CollectEpisode(gym.Wrapper):
             pickle.dump(episode_data, f)
 
     def _submit(self, fn, *args) -> None:
+        if self._finalizing_on_exit:
+            self._wait_futures()
+            fn(*args)
+            return
         if self._executor is None:
             return
         self._futures.append(self._executor.submit(fn, *args))
@@ -1060,6 +1077,9 @@ class CollectEpisode(gym.Wrapper):
             self._futures.pop(0).result()
 
     def _submit_save(self, fn, *args) -> None:
+        if self._finalizing_on_exit:
+            fn(*args)
+            return
         if self._save_executor is None:
             raise RuntimeError("streaming save executor is not available")
         future = self._save_executor.submit(fn, *args)
@@ -1127,6 +1147,7 @@ class CollectEpisode(gym.Wrapper):
         return first_error
 
     def _finalize_on_exit(self) -> None:
+        self._finalizing_on_exit = True
         self.close()
 
     def _update_success(self, env_idx: int, env_info) -> None:

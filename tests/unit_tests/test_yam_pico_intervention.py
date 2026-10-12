@@ -259,6 +259,100 @@ def test_ik_miss_retries_without_aborting_the_recording(station):
     assert info["left"]
 
 
+def test_ik_miss_keeps_the_latched_gripper(station):
+    """A miss holds joints, but a released trigger still commands the latch."""
+    arm = station.arms["left"]
+    arm.held = True
+    arm.action[6] = 1.0
+    assert station.env.step(np.zeros(14))[-1]["intervene_action"][6] == 1.0
+
+    follower = station.base.runtime._followers[0]
+    follower.target[6] = 0.4
+    measured = station.base.get_joint_positions()
+    arm.action[6] = 0.0
+    station.kinematics["left"].fail = True
+    missed = station.env.step(np.zeros(14))[-1]["intervene_action"]
+    np.testing.assert_allclose(missed[:6], measured[:6])
+    assert missed[6] == 1.0
+    assert station.device._grippers[0] == 1.0
+
+    station.kinematics["left"].fail = False
+    assert station.env.step(np.zeros(14))[-1]["intervene_action"][6] == 1.0
+
+
+def _delay_solves(station, monkeypatch, delays: dict[str, float]) -> None:
+    """Advance the IK clock by a fixed amount inside each named solve."""
+    clock = {"now": 0.0}
+
+    def monotonic() -> float:
+        return clock["now"]
+
+    monkeypatch.setattr(
+        "rlinf.robotics.parts.teleop.yam_pico.time.monotonic", monotonic
+    )
+    for side, delay in delays.items():
+        kinematics = station.kinematics[side]
+        original = kinematics.solve
+
+        def solve(target, seed, gripper, *, _original=original, _delay=delay):
+            clock["now"] += _delay
+            return _original(target, seed, gripper)
+
+        kinematics.solve = solve
+
+
+def test_slow_ik_miss_keeps_the_take(station, monkeypatch):
+    """Misses that overrun the tick budget are retried, not a stale fault."""
+    for arm in station.arms.values():
+        arm.held = True
+    assert press(station, "right_menu_button")[-1]["record_reset"]
+    _delay_solves(station, monkeypatch, {"left": 0.06, "right": 0.06})
+    station.kinematics["left"].fail = True
+    station.kinematics["right"].fail = True
+
+    info = station.env.step(np.zeros(14))[-1]
+    assert info["left_ik_fault"] == "solve_timeout"
+    assert info["right_ik_fault"] == "solve_timeout"
+    assert info["yam_pico_fault"] is None
+    assert station.device.fault is None
+    assert not info["pre_record"]
+    assert not info["record_reset"]
+    assert info["keyboard_event"] is None
+
+
+def test_stale_success_still_ends_the_take(station, monkeypatch):
+    """A successful solution older than the tick budget still holds both arms."""
+    for arm in station.arms.values():
+        arm.held = True
+    assert press(station, "right_menu_button")[-1]["record_reset"]
+    _delay_solves(station, monkeypatch, {"left": 0.02, "right": 0.09})
+    station.kinematics["right"].fail = True
+
+    info = station.env.step(np.zeros(14))[-1]
+    assert info["left_ik_fault"] is None
+    assert info["right_ik_fault"] == "solve_timeout"
+    assert info["yam_pico_fault"] == "stale_after_ik"
+    assert info["pre_record"]
+    assert info["record_reset"]
+    assert info["keyboard_event"] == "abort"
+
+
+def test_controller_drop_during_ik_still_holds(station):
+    """A controller that goes away mid-solve still latches a hold."""
+    station.arms["left"].held = True
+    original = station.kinematics["left"].solve
+
+    def solve(target, seed, gripper):
+        station.arms["left"].ready = False
+        station.kinematics["left"].fail = True
+        return original(target, seed, gripper)
+
+    station.kinematics["left"].solve = solve
+    info = station.env.step(np.zeros(14))[-1]
+    assert info["yam_pico_fault"] == "stale_after_ik"
+    assert station.device.fault == "stale_after_ik"
+
+
 def test_record_edges_abort_and_success_preserve_only_manual_boundary(station):
     station.arms["left"].held = True
     info = press(station, "right_menu_button")[-1]
@@ -345,6 +439,50 @@ def test_streaming_discards_operator_abort_but_keeps_fault_as_failure(
         fault = collector.step(np.zeros(14))[-1]
         assert fault["record_reset"] and not fault.get("episode_discarded", False)
         assert events[-1] == ("save", False, False)
+    finally:
+        collector.close()
+
+
+def test_close_saves_an_unfinished_streaming_episode(station, tmp_path, monkeypatch):
+    """Ctrl-C style close keeps the open take instead of dropping its buffer."""
+    from rlinf.envs.wrappers.collect_episode import CollectEpisode
+
+    collector = CollectEpisode(
+        PackedObservations(station.env),
+        str(tmp_path),
+        export_format="lerobot",
+        streaming=True,
+    )
+    events = []
+    monkeypatch.setattr(collector, "_submit", lambda fn, *args: fn(*args))
+    monkeypatch.setattr(
+        collector, "_stream_add_frame", lambda frame: events.append("frame")
+    )
+    monkeypatch.setattr(
+        collector,
+        "_stream_finish_episode",
+        lambda is_success, recording_invalid=False: events.append(
+            ("save", is_success, recording_invalid)
+        ),
+    )
+
+    def edge(button):
+        station.arms["right"].buttons = {}
+        collector.step(np.zeros(14))
+        station.arms["right"].buttons = {button: True}
+        return collector.step(np.zeros(14))
+
+    try:
+        collector.reset()
+        edge("right_menu_button")
+        station.arms["left"].held = True
+        collector.step(np.zeros(14))
+        assert collector._stream_frames[0] > 0
+        assert events.count("frame") > 0
+        assert not any(isinstance(event, tuple) for event in events)
+        collector.close()
+        assert events[-1] == ("save", False, False)
+        assert collector._stream_frames[0] == 0
     finally:
         collector.close()
 
