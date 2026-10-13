@@ -3997,6 +3997,11 @@ def test_every_shipped_robot_runs_on_faked_sdks():
             "is_dummy": False,
             "gripper_width_max": 0.08,
         },
+        "DualYam": {
+            "node_rank": 0,
+            "left_can_channel": "can0",
+            "right_can_channel": "can1",
+        },
     }
     with mocked_sdks():
         import rlinf.robotics.robots  # noqa: F401
@@ -5757,6 +5762,75 @@ def test_so101_takes_no_separately_wired_end_effector():
 
     with pytest.raises(TypeError, match="gripper_connection"):
         SO101Arm.declare("/dev/mock-so101", gripper_connection="/dev/ttyUSB0")
+
+
+def test_yam_sends_joints_and_gripper_as_one_target():
+    """i2rt takes the six joints and the gripper together, so each carries both."""
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks() as made:
+        from rlinf.robotics.parts.arms.yam import YamArm
+
+        arm = YamArm.declare("can0")
+        arm.connect()
+        try:
+            robot = made["i2rt.robots.get_robot"].robots[-1]
+            # A follower holds position and starts at the pose it stands at.
+            assert robot.settings["zero_gravity_mode"] is False
+            assert robot.commands[-1] == pytest.approx(robot.rest)
+
+            station = PartGroup(arm=arm)
+            station.send_action(
+                {
+                    "arm": {
+                        "joint_position": [0.1, 0.2, 0.3, 0.0, 0.0, 0.0],
+                        "end_effector": {"target": [0.25]},
+                    }
+                }
+            )
+            assert robot.commands[-1] == pytest.approx([0.1, 0.2, 0.3, 0, 0, 0, 0.25])
+
+            reading = station.get_observation()["arm"]
+            assert reading["arm_joint_position"] == pytest.approx(
+                [0.1, 0.2, 0.3, 0, 0, 0]
+            )
+            assert reading["end_effector"]["state"] == pytest.approx([0.25])
+        finally:
+            arm.disconnect()
+        assert robot.closed
+
+
+def test_yam_refuses_stale_feedback_but_still_holds():
+    """A read reports its feedback time and fails past the timeout; a hold still
+    reaches the arm."""
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks() as made:
+        from rlinf.robotics.parts.arms.yam import YamArm
+
+        arm = YamArm.declare("can0", feedback_timeout_s=0.05)
+        arm.connect()
+        robot = made["i2rt.robots.get_robot"].robots[-1]
+        server = robot._server_thread
+        try:
+            # The server is up but has stopped stamping feedback.
+            robot._stop_event.set()
+            server.join()
+            robot._server_thread = SimpleNamespace(
+                is_alive=lambda: True, join=lambda timeout=None: None
+            )
+            robot._joint_state.timestamp = stamp = time.time()
+            assert arm.get_state().timestamp == stamp
+            time.sleep(0.1)
+            with pytest.raises(RuntimeError, match="old"):
+                arm.get_observation()
+
+            sent = len(robot.commands)
+            arm.hold()
+            assert len(robot.commands) == sent + 1
+        finally:
+            robot._server_thread = server
+            arm.disconnect()
 
 
 def test_franky_preserves_a_complete_compliance_object(franky_arm):

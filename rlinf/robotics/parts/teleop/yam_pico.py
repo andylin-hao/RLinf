@@ -29,6 +29,7 @@ absolute joint angles.
 from __future__ import annotations
 
 import time
+from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Mapping, Optional, Sequence
 
@@ -38,16 +39,126 @@ from scipy.spatial.transform import Rotation
 from rlinf.utils.logging import get_logger
 
 from ...actions import ActionKind
+from ..arms.yam import YamIKConfig
 from ..base import Features, Observation
 from .base import TeleopAction, TeleopDevice
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
-    from rlinf.envs.real.yam.config import YamPicoConfig
-
     from .group import TeleopEntry
 
 #: The two arms a dual YAM station drives, in action-vector order.
 SIDES = ("left", "right")
+
+
+@dataclass
+class YamPicoConfig:
+    """Dual-controller PICO collection settings."""
+
+    hand: str = "dual"
+    zmq_addr: str = "ipc:///tmp/vr_data.ipc"
+    position_scale: float = 0.3
+    rotation_scale: float = 0.3
+    rotation_delta_frame: str = "operator"
+    control_threshold: float = 0.85
+    max_stale_s: float = 0.2
+    max_position_delta: float = 0.005
+    max_rotation_delta: float = 0.03
+    max_tick_s: float = 0.1
+    ik_backtrack_attempts: int = 0
+    record_button: str = "right_menu_button"
+    discard_button: str = "left_menu_button"
+    button_debounce_s: float = 0.2
+    keyboard_enabled: bool = False
+    wait_for_record_button: bool = True
+    # Log per-tick control-loop timing (camera wait vs compute vs gap).
+    log_control_timing: bool = False
+    left: dict[str, Any] = field(default_factory=dict)
+    right: dict[str, Any] = field(default_factory=dict)
+    ik: YamIKConfig | Mapping[str, Any] = field(default_factory=YamIKConfig)
+
+    def __post_init__(self) -> None:
+        if self.hand != "dual":
+            raise ValueError("YAM PICO collection requires hand='dual'")
+        if (
+            isinstance(self.ik_backtrack_attempts, bool)
+            or not isinstance(self.ik_backtrack_attempts, int)
+            or self.ik_backtrack_attempts < 0
+        ):
+            raise ValueError("pico.ik_backtrack_attempts must be a nonnegative integer")
+        if self.rotation_delta_frame not in ("operator", "controller_local"):
+            raise ValueError(
+                "pico.rotation_delta_frame must be operator or controller_local"
+            )
+        for name in (
+            "position_scale",
+            "rotation_scale",
+            "max_stale_s",
+            "max_position_delta",
+            "max_rotation_delta",
+            "max_tick_s",
+        ):
+            value = float(getattr(self, name))
+            if not np.isfinite(value) or value <= 0:
+                raise ValueError(f"pico.{name} must be finite and positive")
+            setattr(self, name, value)
+        if (
+            not np.isfinite(self.control_threshold)
+            or not 0 < self.control_threshold <= 1
+        ):
+            raise ValueError("pico.control_threshold must be within (0, 1]")
+        if not np.isfinite(self.button_debounce_s) or self.button_debounce_s < 0:
+            raise ValueError("pico.button_debounce_s must be finite and nonnegative")
+        if (
+            not isinstance(self.keyboard_enabled, bool)
+            or not isinstance(self.wait_for_record_button, bool)
+            or not isinstance(self.log_control_timing, bool)
+        ):
+            raise TypeError("PICO keyboard/wait/timing switches must be bools")
+        motion_buttons = {"A", "B", "X", "Y", "grip", "trigger"}
+        if (
+            not self.record_button
+            or not self.discard_button
+            or self.record_button == self.discard_button
+        ):
+            raise ValueError("PICO recording buttons must be nonempty and distinct")
+        if {self.record_button, self.discard_button} & motion_buttons:
+            raise ValueError("PICO recording buttons must not overlap motion buttons")
+        for side in ("left", "right"):
+            overrides = dict(getattr(self, side))
+            if set(overrides) - {"operator_to_robot_yaw"}:
+                raise ValueError(
+                    f"pico.{side} only supports operator_to_robot_yaw in v1"
+                )
+            if not np.isfinite(float(overrides.get("operator_to_robot_yaw", 0.0))):
+                raise ValueError(f"pico.{side}.operator_to_robot_yaw must be finite")
+            setattr(self, side, overrides)
+        if isinstance(self.ik, Mapping):
+            self.ik = YamIKConfig(**dict(self.ik))
+        if not isinstance(self.ik, YamIKConfig):
+            raise TypeError("pico.ik must be an IK configuration")
+
+    def expert_kwargs(self, side: str) -> dict[str, Any]:
+        """Build a normal Franka-compatible PicoExpert for one hand."""
+        if side not in {"left", "right"}:
+            raise ValueError("PICO side must be left or right")
+        return {
+            "hand": side,
+            "zmq_addr": self.zmq_addr,
+            "position_scale": self.position_scale,
+            "rotation_scale": self.rotation_scale,
+            "rotation_delta_frame": self.rotation_delta_frame,
+            "control_trigger": "grip",
+            "control_threshold": self.control_threshold,
+            "max_stale_s": self.max_stale_s,
+            "gripper_close_button": "X" if side == "left" else "A",
+            "gripper_open_button": "Y" if side == "left" else "B",
+            "calibration": {
+                "button": "trigger",
+                "auto_calibrate_on_start": True,
+                "required": True,
+            },
+            **getattr(self, side),
+        }
 
 
 def _delta_to_tcp_pose(
@@ -244,7 +355,7 @@ class YamPico(TeleopDevice):
 
     def __init__(
         self,
-        config: Mapping[str, Any] | "YamPicoConfig" | None = None,
+        config: Mapping[str, Any] | YamPicoConfig | None = None,
         *,
         joint_step_limits: Sequence[float],
         joint_lower: Optional[Sequence[Sequence[float]]] = None,
@@ -252,8 +363,6 @@ class YamPico(TeleopDevice):
         experts: Optional[Mapping[str, Any]] = None,
         kinematics: Optional[Mapping[str, Any]] = None,
     ) -> None:
-        from rlinf.envs.real.yam.config import YamPicoConfig
-
         self._config = (
             config
             if isinstance(config, YamPicoConfig)
@@ -291,7 +400,7 @@ class YamPico(TeleopDevice):
     def _build_kinematics(self) -> None:
         if self._kinematics:
             return
-        from rlinf.envs.real.yam.kinematics import YamKinematicsAdapter
+        from ..arms.yam import YamKinematicsAdapter
 
         self._kinematics = {
             side: YamKinematicsAdapter(
@@ -357,8 +466,6 @@ class YamPico(TeleopDevice):
         The guards live here rather than in a task factory because the device
         is built, and refuses, before any hardware is opened.
         """
-        from rlinf.envs.real.yam.config import YamPicoConfig
-
         from .group import TeleopEntry
 
         if options.get("drives") is not None:

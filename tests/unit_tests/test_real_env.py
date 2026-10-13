@@ -2912,6 +2912,92 @@ def test_piper_env_resizes_camera_frames_to_the_declared_shape():
             env.close()
 
 
+def _yam_env(**overrides):
+    """Build a dual YAM env against the faked i2rt and RealSense SDKs."""
+    from rlinf.envs.real.yam import DualYamJointEnv
+    from rlinf.robotics import DualYamConfig
+
+    settings = {
+        "joint_limit_min": [[-2.61799, 0.0, 0.0, -1.69297, -1.5708, -2.0944]] * 2,
+        "joint_limit_max": [[3.14159, 3.66519, 3.14159, 1.5708, 1.5708, 2.0944]] * 2,
+        "max_joint_delta": 0.05,
+        # Do not pace the test at the real 30 Hz control rate.
+        "step_frequency": 1000.0,
+        # The fake cameras capture 64x48.
+        "image_height": 48,
+        "image_width": 64,
+        "manual_episode_control_only": True,
+    }
+    settings.update(overrides)
+    hardware = DualYamConfig(
+        node_rank=0,
+        left_can_channel="can0",
+        right_can_channel="can1",
+        camera_serials=["MOCK0001", "MOCK0002", "MOCK0003"],
+        disable_validate=True,
+    )
+    return DualYamJointEnv(settings, robot_info=_robot_info(hardware))
+
+
+@pytest.mark.placement
+def test_yam_env_holds_each_command_to_a_step_per_tick():
+    """A far target moves one step a tick; a non-finite one holds both arms."""
+    from robot_mocks import mocked_sdks
+
+    with mocked_sdks():
+        env = _yam_env()
+        try:
+            observation, _ = env.reset()
+            assert observation["state"]["joint_position"].shape == (14,)
+            assert set(observation["frames"]) == {"top_rgb", "left_rgb", "right_rgb"}
+
+            target = np.zeros(14, dtype=np.float32)
+            target[[0, 7]] = 0.5
+            target[[6, 13]] = 1.5
+            observation, _, _, _, info = env.step(target)
+            state = observation["state"]["joint_position"]
+            assert info["action_clipped"]
+            assert state[[0, 7]] == pytest.approx([0.05, 0.05])
+            assert state[[6, 13]] == pytest.approx([1.0, 1.0])
+
+            target[2] = np.nan
+            observation, _, _, _, info = env.step(target)
+            assert info["action_rejected"] == "non_finite_action"
+            assert observation["state"]["joint_position"] == pytest.approx(state)
+        finally:
+            env.close()
+
+
+@pytest.mark.placement
+def test_yam_env_lets_a_joint_past_its_limit_move_back_but_not_further():
+    """A joint read past a task limit is not locked out of every command.
+
+    The fake arm rests at zero, so a J2 lower limit of 0.05 starts it outside.
+    """
+    from robot_mocks import mocked_sdks
+
+    lower = [[-2.61799, 0.05, 0.0, -1.69297, -1.5708, -2.0944]] * 2
+    with mocked_sdks():
+        env = _yam_env(joint_limit_min=lower)
+        try:
+            env.reset()
+            target = np.zeros(14, dtype=np.float32)
+            target[[1, 8]] = -0.5
+            observation, _, _, _, info = env.step(target)
+            assert info["action_rejected"] is None
+            assert observation["state"]["joint_position"][[1, 8]] == pytest.approx(
+                [0.0, 0.0]
+            )
+
+            target[[1, 8]] = 0.5
+            observation, *_ = env.step(target)
+            assert observation["state"]["joint_position"][[1, 8]] == pytest.approx(
+                [0.05, 0.05]
+            )
+        finally:
+            env.close()
+
+
 def test_so101_leader_reports_radians_and_a_zero_to_one_grip():
     """The leader is the same servos as the follower, so it converts alike."""
     from robot_mocks import mocked_sdks

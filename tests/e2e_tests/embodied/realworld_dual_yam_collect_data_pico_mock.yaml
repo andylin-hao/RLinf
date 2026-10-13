@@ -1,0 +1,88 @@
+# Dual-arm YAM PICO collection against faked vendor SDKs.
+#
+# Runs the collector the YAM guide launches, with both i2rt followers, the three
+# RealSense cameras, and the PICO publisher faked. The fake publisher holds both
+# controllers at rest and presses the right menu button every two seconds when
+# RLINF_FAKE_PICO=right_menu_button, so one take starts, is recorded, ends
+# successfully, and is streamed into a LeRobot shard.
+#
+# run.sh installs the fakes when the config name contains "mock".
+defaults:
+  - env/realworld_dual_yam_joint@env.eval
+  - override hydra/job_logging: stdout
+  - _self_
+
+hydra:
+  run:
+    dir: .
+  output_subdir: null
+  searchpath:
+    - file://${oc.env:REPO_PATH}/examples/embodiment/config
+
+cluster:
+  num_nodes: 1
+  component_placement:
+    env:
+      node_group: yam
+      placement: 0
+  node_groups:
+    - label: yam
+      node_ranks: 0
+      hardware:
+        type: DualYam
+        configs:
+          - node_rank: 0
+            left_can_channel: can0
+            right_can_channel: can1
+            camera_serials: [MOCK0001, MOCK0002, MOCK0003]
+
+runner:
+  task_type: embodied
+  logger:
+    log_path: /workspace/results/realworld_dual_yam_collect_data_pico_mock
+    project_name: rlinf
+    experiment_name: "ci-test"
+    logger_backends: ["tensorboard"]
+  num_data_episodes: 1
+  record_task_description: true
+
+seed: 1234
+
+env:
+  group_name: EnvGroup
+  eval:
+    max_episode_steps: 10000
+    max_steps_per_rollout_epoch: 10000
+    auto_reset: false
+    ignore_terminations: false
+    teleop: yam_pico
+    pico:
+      hand: dual
+      zmq_addr: ipc:///tmp/fake_pico.ipc
+      wait_for_record_button: true
+      record_button: right_menu_button
+      discard_button: left_menu_button
+      keyboard_enabled: false
+      left:
+        operator_to_robot_yaw: 0.0
+      right:
+        operator_to_robot_yaw: 0.0
+    override_cfg:
+      enforce_runtime_joint_limits: true
+      step_frequency: 30.0
+      manual_episode_control_only: true
+      # The fake cameras capture 64x48.
+      image_height: 48
+      image_width: 64
+      reset:
+        enabled: false
+      park_on_close:
+        enabled: false
+    data_collection:
+      enabled: true
+      save_dir: ${runner.logger.log_path}
+      export_format: lerobot_dataset
+      streaming: true
+      only_success: false
+      robot_type: dual_yam
+      fps: 30

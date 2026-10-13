@@ -34,10 +34,8 @@ import gymnasium as gym
 import numpy as np
 
 from rlinf.envs.real.wrappers.episode.keyboard import KeyboardListener
-from rlinf.robotics.parts.teleop.yam_pico import YamPico
+from rlinf.robotics.parts.teleop.yam_pico import YamPico, YamPicoConfig
 from rlinf.utils.logging import get_logger
-
-from .config import YamPicoConfig
 
 #: Keys the operator can press instead of reaching for a controller button.
 _KEYBOARD_KEYS = {"r": "record", "x": "discard"}
@@ -98,34 +96,29 @@ class YamPicoEpisode(gym.Wrapper):
         is told to keep each grip anchored across it. Any other reset re-anchors
         both grips.
         """
-        try:
-            self._ensure_keyboard()
-            controller = self._controller()
-            preserve = self._preserve_reference and not (
-                self.env.unwrapped.will_reset_to_configured_qpos(options)
-            )
-            self._preserve_reference = False
-            if preserve:
-                controller.preserve_reference()
-            else:
-                self._previous_buttons = None
-            self._recording = False
-            obs, info = self.env.reset(seed=seed, options=options)
-            skip_wait = bool((options or {}).get("skip_wait_for_start", False))
-            if self.config.wait_for_record_button and not skip_wait:
-                while not self._recording:
-                    obs, _, _, _, info = self._tick(preview=True)
-            return obs, self._decorate(info, None, False)
-        except BaseException:
-            self.close()
-            raise
+        self._ensure_keyboard()
+        controller = self._controller()
+        preserve = self._preserve_reference and not (
+            self.env.unwrapped.will_reset_to_configured_qpos(options)
+        )
+        self._preserve_reference = False
+        if preserve:
+            controller.preserve_reference()
+        else:
+            self._previous_buttons = None
+        self._recording = False
+        obs, info = self.env.reset(seed=seed, options=options)
+        skip_wait = bool((options or {}).get("skip_wait_for_start", False))
+        if self.config.wait_for_record_button and not skip_wait:
+            while not self._recording:
+                obs, _, _, _, info = self._tick(preview=True)
+        return obs, self._decorate(info, None, False)
 
     def step(self, action: Any) -> tuple[Any, float, bool, bool, dict[str, Any]]:
         """Advance the environment and apply the episode transitions it caused.
 
         A control path that throws leaves the arms holding their last target, so
-        the device is latched and the stack released rather than left engaged
-        with a stale command.
+        the device is latched rather than left engaged with a stale command.
         """
         started = time.monotonic()
         try:
@@ -136,24 +129,17 @@ class YamPicoEpisode(gym.Wrapper):
         return self._finish(*result, started=started)
 
     def _abort_control(self) -> None:
-        """Hold both arms and release the stack after a control-path failure.
+        """Hold both arms after a control-path failure.
 
         A failure anywhere under this wrapper leaves the arms holding their
         last target, so the device latches a fault that keeps them there until
-        both grips are released.
+        both grips are released. Whoever owns the env closes it.
         """
         try:
             self._controller().hold_until_released("control_error")
         except Exception:  # pragma: no cover - hardware failure path
             self._logger.exception("YAM PICO control-error latch failed")
-        try:
-            self.env.unwrapped.runtime.emergency_hold()
-        except Exception:  # pragma: no cover - hardware failure path
-            self._logger.exception("YAM PICO emergency hold failed")
-        try:
-            self.close()
-        except Exception:  # pragma: no cover - cleanup path
-            self._logger.exception("YAM PICO cleanup failed after control error")
+        self.env.unwrapped.emergency_hold()
 
     def close(self) -> None:
         """Close the keyboard and the environment, reporting the first failure."""
@@ -250,7 +236,7 @@ class YamPicoEpisode(gym.Wrapper):
         info["pico_active"] = info["left"] or info["right"]
         if (terminated or truncated) and not manual_done:
             controller.hold_until_released("episode_ended")
-            self.env.unwrapped.runtime.emergency_hold()
+            self.env.unwrapped.emergency_hold()
         if self.config.log_control_timing:
             self._report_timing(info, started)
         return (

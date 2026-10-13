@@ -127,10 +127,53 @@ def glove() -> dict[str, types.ModuleType]:
     return {"rlinf_dexhand": package, "rlinf_dexhand.glove": inner}
 
 
+def pico_packet(buttons: dict[str, bool] | None = None) -> str:
+    """Return one PICO publisher packet with both controllers at rest.
+
+    The headset faces forward, so the transport can calibrate from it, and no
+    grip is held, so no arm follows a controller.
+    """
+    import json
+
+    controller = {
+        "position": [0.0, 0.0, 0.0],
+        "orientation": [0.0, 0.0, 0.0, 1.0],
+        "grip": 0.0,
+        "trigger": 0.0,
+    }
+    return json.dumps(
+        {
+            "headset_pose": [0.0, 1.6, 0.0, 0.0, 0.0, 0.0, 1.0],
+            "left_controller": controller,
+            "right_controller": controller,
+            "buttons": dict(buttons or {}),
+        }
+    )
+
+
 def vr() -> types.ModuleType:
-    """Return a ``zmq`` module backed by a test-controlled packet queue."""
+    """Return a ``zmq`` module backed by a test-controlled packet queue.
+
+    ``RLINF_FAKE_PICO`` names a controller button the publisher presses for
+    ``RLINF_FAKE_PICO_PRESS`` seconds every ``RLINF_FAKE_PICO_PERIOD``
+    seconds, so a run that waits for an operator's button reaches its target
+    unattended. Queued ``packets`` are delivered first.
+    """
+    import os
+    import time
+
     fake = module("zmq")
     fake.packets: list[Any] = []
+    script = os.environ.get("RLINF_FAKE_PICO", "").strip()
+    period = float(os.environ.get("RLINF_FAKE_PICO_PERIOD", "2.0"))
+    press = float(os.environ.get("RLINF_FAKE_PICO_PRESS", "0.3"))
+    started = time.monotonic()
+
+    def scripted() -> str:
+        # Paced like a publisher, so a polling thread does not spin.
+        time.sleep(0.01)
+        phase = (time.monotonic() - started) % period
+        return pico_packet({script: phase >= period - press})
 
     class Socket:
         def __init__(self, *_a, **_k):
@@ -156,6 +199,8 @@ def vr() -> types.ModuleType:
 
         def recv_string(self, flags=0):
             if not fake.packets:
+                if script:
+                    return scripted()
                 raise fake.Again()
             packet = fake.packets.pop(0)
             return packet if isinstance(packet, str) else packet.decode("utf-8")
