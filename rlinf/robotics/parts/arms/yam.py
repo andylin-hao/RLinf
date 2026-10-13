@@ -550,6 +550,11 @@ class YamKinematicsAdapter:
             mink.VelocityLimit(self.model, dict.fromkeys(finger_names, 0.0)),
         ]
 
+    @property
+    def max_solve_s(self) -> float:
+        """Seconds a solve may take before its result is refused."""
+        return self.config.max_solve_s
+
     @staticmethod
     def _vector(q: np.ndarray) -> np.ndarray:
         q = np.asarray(q, dtype=np.float64)

@@ -27,7 +27,7 @@ import numpy as np
 from rlinf.envs.real.utils.config import get_hardware_config
 from rlinf.robotics import DualYamConfig, DualYamRobot, RobotInfo
 from rlinf.robotics.actions import ActionKind, ActionPart
-from rlinf.robotics.parts.arms.yam import YamArm
+from rlinf.robotics.parts.arms.yam import YamArm, YamKinematicsAdapter
 from rlinf.robotics.parts.base import PartGroup
 from rlinf.robotics.parts.cameras import BaseCamera, Camera, CameraInfo
 from rlinf.scheduler import WorkerInfo
@@ -62,12 +62,10 @@ class DualYamJointEnv(gym.Env):
 
     metadata = {"render_modes": []}
 
-    #: Teleop devices the shared stack may drive this environment with. The
-    #: device fills joint slots, so the shared ``pico`` device is not one of
-    #: them: there the arm slot means a Cartesian pose or delta. A device whose
-    #: action kind disagrees with :meth:`action_parts` is rejected when the
-    #: group is built, so this list only needs to name devices that fit.
-    TELEOP: tuple[str, ...] = ("yam_pico",)
+    #: Teleop devices the shared stack may drive this environment with. Each
+    #: arm takes joint positions, so ``pico`` solves its controller's pose
+    #: through :meth:`arm_kinematics`; give one entry per arm with ``drives``.
+    TELEOP: tuple[str, ...] = ("pico",)
     TELEOP_DEFAULT = "none"
     TELEOP_MARK_FLAG = True
 
@@ -185,8 +183,32 @@ class DualYamJointEnv(gym.Env):
             _SIDES,
         )
 
+    def arm_kinematics(self, side: Optional[str]) -> YamKinematicsAdapter:
+        """Build the kinematic model of one arm, for a device that solves IK.
+
+        Args:
+            side: ``"left"`` or ``"right"``, the arm's action branch.
+        """
+        if side not in _SIDES:
+            raise ValueError(
+                f"A dual YAM arm is 'left' or 'right', but a device asked for {side!r}."
+            )
+        index = _SIDES.index(side)
+        return YamKinematicsAdapter(
+            arm_type=self.hardware.arm_type,
+            gripper_type=self.hardware.gripper_type,
+            config=self.config.ik,
+            joint_lower=self.config.joint_limit_min[index],
+            joint_upper=self.config.joint_limit_max[index],
+        )
+
     def episode_wrappers(self, cfg: Mapping[str, Any]) -> list[Any]:
-        """Return PICO episode control when teleoperation is configured."""
+        """Return PICO episode control when teleoperation is configured.
+
+        Raises:
+            ValueError: If teleoperation is configured without runtime joint
+                limits, which hold each operator target to the task's range.
+        """
         if self.config.is_dummy:
             return []
         from rlinf.envs.real.wrappers.teleop.config import resolve_teleop_devices
@@ -195,14 +217,17 @@ class DualYamJointEnv(gym.Env):
             cfg, supported=self.TELEOP, default=self.TELEOP_DEFAULT
         ):
             return []
-        from rlinf.robotics.parts.teleop.yam_pico import YamPicoConfig
-
-        from .pico_episode import YamPicoEpisode
+        if not self.config.enforce_runtime_joint_limits:
+            raise ValueError(
+                "Teleoperating a YAM station needs enforce_runtime_joint_limits "
+                "true, but it is false."
+            )
+        from .pico_episode import YamPicoEpisode, YamPicoEpisodeConfig
 
         return [
             partial(
                 YamPicoEpisode,
-                config=YamPicoConfig(**dict(cfg.get("pico", {}))),
+                config=YamPicoEpisodeConfig(**dict(cfg.get("yam_episode", {}))),
             )
         ]
 

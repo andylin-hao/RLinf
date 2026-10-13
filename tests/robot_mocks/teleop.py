@@ -127,11 +127,17 @@ def glove() -> dict[str, types.ModuleType]:
     return {"rlinf_dexhand": package, "rlinf_dexhand.glove": inner}
 
 
-def pico_packet(buttons: dict[str, bool] | None = None) -> str:
-    """Return one PICO publisher packet with both controllers at rest.
+def pico_packet(
+    buttons: dict[str, bool] | None = None,
+    *,
+    left: dict[str, Any] | None = None,
+    right: dict[str, Any] | None = None,
+) -> str:
+    """Return one PICO publisher packet, both controllers at rest by default.
 
     The headset faces forward, so the transport can calibrate from it, and no
-    grip is held, so no arm follows a controller.
+    grip is held, so no arm follows a controller. ``left`` and ``right``
+    override fields of that controller, such as ``grip`` or ``position``.
     """
     import json
 
@@ -144,8 +150,8 @@ def pico_packet(buttons: dict[str, bool] | None = None) -> str:
     return json.dumps(
         {
             "headset_pose": [0.0, 1.6, 0.0, 0.0, 0.0, 0.0, 1.0],
-            "left_controller": controller,
-            "right_controller": controller,
+            "left_controller": {**controller, **(left or {})},
+            "right_controller": {**controller, **(right or {})},
             "buttons": dict(buttons or {}),
         }
     )
@@ -157,13 +163,15 @@ def vr() -> types.ModuleType:
     ``RLINF_FAKE_PICO`` names a controller button the publisher presses for
     ``RLINF_FAKE_PICO_PRESS`` seconds every ``RLINF_FAKE_PICO_PERIOD``
     seconds, so a run that waits for an operator's button reaches its target
-    unattended. Queued ``packets`` are delivered first.
+    unattended. Queued ``packets`` are delivered first; then ``frame``, when
+    set, is published over and over like a live controller.
     """
     import os
     import time
 
     fake = module("zmq")
     fake.packets: list[Any] = []
+    fake.frame: str | None = None
     script = os.environ.get("RLINF_FAKE_PICO", "").strip()
     period = float(os.environ.get("RLINF_FAKE_PICO_PERIOD", "2.0"))
     press = float(os.environ.get("RLINF_FAKE_PICO_PRESS", "0.3"))
@@ -199,6 +207,9 @@ def vr() -> types.ModuleType:
 
         def recv_string(self, flags=0):
             if not fake.packets:
+                if fake.frame is not None:
+                    time.sleep(0.002)
+                    return fake.frame
                 if script:
                     return scripted()
                 raise fake.Again()

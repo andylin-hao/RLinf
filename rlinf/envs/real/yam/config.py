@@ -22,6 +22,8 @@ from typing import Any
 
 import numpy as np
 
+from rlinf.robotics.parts.arms.yam import YamIKConfig
+
 from .types import NUM_ARM_JOINTS
 
 
@@ -142,6 +144,8 @@ class DualYamJointEnvConfig:
     park_on_close: YamResetConfig | Mapping[str, Any] = field(
         default_factory=YamResetConfig
     )
+    # Inverse kinematics a teleop device solves through to command joints.
+    ik: YamIKConfig | Mapping[str, Any] = field(default_factory=YamIKConfig)
 
     def __post_init__(self) -> None:
         if not isinstance(self.is_dummy, bool):
@@ -215,6 +219,10 @@ class DualYamJointEnvConfig:
             self.park_on_close = YamResetConfig(**dict(self.park_on_close))
         elif not isinstance(self.park_on_close, YamResetConfig):
             raise TypeError("park_on_close must be a mapping or YamResetConfig")
+        if isinstance(self.ik, Mapping):
+            self.ik = YamIKConfig(**dict(self.ik))
+        elif not isinstance(self.ik, YamIKConfig):
+            raise TypeError("ik must be a mapping or YamIKConfig")
         for block, block_name in (
             (self.reset, "reset"),
             (self.park_on_close, "park_on_close"),

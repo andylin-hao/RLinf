@@ -2998,6 +2998,65 @@ def test_yam_env_lets_a_joint_past_its_limit_move_back_but_not_further():
             env.close()
 
 
+@pytest.mark.placement
+def test_a_dropped_pico_holds_both_yam_arms_until_both_grips_release():
+    """Either controller dropping out holds both arms, even the one still valid.
+
+    Neither arm drives again until both grips have been let go together.
+    """
+    import time
+
+    from robot_mocks import mocked_sdks
+    from robot_mocks.arms import FreeToolKinematics
+    from robot_mocks.teleop import pico_packet
+
+    with mocked_sdks():
+        from rlinf.envs.real.wrappers import build_stack
+        from rlinf.robotics.parts.transports import pico as transport
+
+        zmq = transport.zmq
+        base = _yam_env()
+        base.arm_kinematics = lambda side: FreeToolKinematics()
+        env = build_stack(
+            base,
+            {
+                "teleop": [{"pico": {"drives": "left"}}, {"pico": {"drives": "right"}}],
+                "no_gripper": False,
+                "pico": {"zmq_addr": "tcp://x:1"},
+                "yam_episode": {"wait_for_record_button": False},
+            },
+        )
+
+        def tick(frame):
+            zmq.frame = frame
+            time.sleep(0.05)
+            return env.step(np.zeros(14, dtype=np.float32))[-1]
+
+        held = {"grip": 1.0}
+        broken = {"orientation": [0.0, 0.0, 0.0, 0.0]}
+        try:
+            zmq.frame = pico_packet()
+            env.reset()
+            assert tick(pico_packet())["pico_fault"] is None
+            assert tick(pico_packet(right=held))["right"]
+
+            # The left controller breaks while the right one still drives.
+            assert tick(pico_packet(left=broken, right=held))["pico_fault"]
+            moved = {**held, "position": [0.0, 0.0, -0.1]}
+            info = tick(pico_packet(left=broken, right=moved))
+            assert not info["right"]
+            assert np.allclose(info["accepted_action"][7:13], 0.0)
+
+            # The left comes back, but the right grip never let go.
+            info = tick(pico_packet(right=moved))
+            assert info["pico_fault"] is not None and not info["right"]
+
+            assert tick(pico_packet())["pico_fault"] is None
+            assert tick(pico_packet(right=held))["right"]
+        finally:
+            env.close()
+
+
 def test_so101_leader_reports_radians_and_a_zero_to_one_grip():
     """The leader is the same servos as the follower, so it converts alike."""
     from robot_mocks import mocked_sdks

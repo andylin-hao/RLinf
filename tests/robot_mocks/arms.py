@@ -980,6 +980,40 @@ def i2rt() -> dict[str, types.ModuleType]:
     return made
 
 
+class FreeToolKinematics:
+    """IK of a tool floating free, standing in for the YAM model in tests.
+
+    The YAM solver needs MuJoCo and mink, which the unit-test environment does
+    not install. Here joints 1-3 are the tool position and 4-6 its rotation
+    vector, so every pose solves exactly unless ``unreachable`` is set.
+    """
+
+    max_solve_s = 1.0
+
+    def __init__(self) -> None:
+        self.unreachable = False
+
+    def fk(self, joints: Any, gripper: float) -> np.ndarray:
+        from scipy.spatial.transform import Rotation
+
+        joints = np.asarray(joints, dtype=np.float64)
+        pose = np.eye(4)
+        pose[:3, 3] = joints[:3]
+        pose[:3, :3] = Rotation.from_rotvec(joints[3:6]).as_matrix()
+        return pose
+
+    def solve(self, target: np.ndarray, seed: Any, gripper: float) -> Any:
+        from scipy.spatial.transform import Rotation
+
+        from rlinf.robotics.parts.arms.yam import YamIKResult
+
+        joints = np.concatenate(
+            [target[:3, 3], Rotation.from_matrix(target[:3, :3]).as_rotvec()]
+        )
+        reason = "residual" if self.unreachable else None
+        return YamIKResult(reason is None, joints, 0.0, 0.0, 0.0, reason)
+
+
 def modules(**_: Any) -> dict[str, types.ModuleType]:
     """Return fake arm SDKs keyed by import name."""
     made = {"franky": franky()}

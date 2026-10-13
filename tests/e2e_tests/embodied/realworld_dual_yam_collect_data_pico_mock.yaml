@@ -55,18 +55,28 @@ env:
     max_steps_per_rollout_epoch: 10000
     auto_reset: false
     ignore_terminations: false
-    teleop: yam_pico
+    teleop:
+      - {pico: {drives: left}}
+      - {pico: {drives: right}}
     pico:
-      hand: dual
       zmq_addr: ipc:///tmp/fake_pico.ipc
+      calibration:
+        button: trigger
+        auto_calibrate_on_start: true
+        required: true
+      left:
+        gripper_close_button: X
+        gripper_open_button: Y
+        operator_to_robot_yaw: 0.0
+      right:
+        gripper_close_button: A
+        gripper_open_button: B
+        operator_to_robot_yaw: 0.0
+    yam_episode:
       wait_for_record_button: true
       record_button: right_menu_button
       discard_button: left_menu_button
       keyboard_enabled: false
-      left:
-        operator_to_robot_yaw: 0.0
-      right:
-        operator_to_robot_yaw: 0.0
     override_cfg:
       enforce_runtime_joint_limits: true
       step_frequency: 30.0

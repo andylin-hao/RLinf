@@ -11,6 +11,8 @@ use_fixed_reset_state_ids: false
 max_steps_per_rollout_epoch: 1000
 max_episode_steps: 1000
 main_image_key: top_rgb
+# Both arms carry a gripper.
+no_gripper: false
 
 video_cfg:
   save_video: false
