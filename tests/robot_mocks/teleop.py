@@ -157,31 +157,48 @@ def pico_packet(
     )
 
 
+#: Subscribing here replays :func:`operator_packet` instead of the queue.
+SCRIPTED_OPERATOR = "mock://pico-operator"
+
+
+def operator_packet(elapsed: float) -> str:
+    """Return what an operator's eight-second take publishes at ``elapsed``.
+
+    Press record at 1 s, hold both grips from 2 s while drifting both
+    controllers outward, close both grippers at 3 s and open them at 5 s, let
+    go at 6 s and press record again to end the take.
+    """
+    phase = elapsed % 8.0
+    offset = 0.003 * float(np.clip(phase - 2.0, 0.0, 2.0))
+    grip = float(2.0 <= phase < 6.0)
+    closing, opening = 3.0 <= phase < 3.4, 5.0 <= phase < 5.4
+    return pico_packet(
+        {
+            "right_menu_button": 1.0 <= phase < 1.4 or 6.0 <= phase < 6.4,
+            "X": closing,
+            "A": closing,
+            "Y": opening,
+            "B": opening,
+        },
+        left={"position": [-(0.25 + offset), 1.25, -0.4], "grip": grip},
+        right={"position": [0.25 + offset, 1.25, -0.4], "grip": grip},
+    )
+
+
 def vr() -> types.ModuleType:
     """Return a ``zmq`` module backed by a test-controlled packet queue.
 
-    ``RLINF_FAKE_PICO`` names a controller button the publisher presses for
-    ``RLINF_FAKE_PICO_PRESS`` seconds every ``RLINF_FAKE_PICO_PERIOD``
-    seconds, so a run that waits for an operator's button reaches its target
-    unattended. Queued ``packets`` are delivered first; then ``frame``, when
-    set, is published over and over like a live controller.
+    Queued ``packets`` are delivered first; then ``frame``, when set, is
+    published over and over like a live controller. A socket connected to
+    :data:`SCRIPTED_OPERATOR` instead receives an operator's take on repeat,
+    so a collection run reaches its target unattended.
     """
-    import os
     import time
 
     fake = module("zmq")
     fake.packets: list[Any] = []
     fake.frame: str | None = None
-    script = os.environ.get("RLINF_FAKE_PICO", "").strip()
-    period = float(os.environ.get("RLINF_FAKE_PICO_PERIOD", "2.0"))
-    press = float(os.environ.get("RLINF_FAKE_PICO_PRESS", "0.3"))
-    started = time.monotonic()
-
-    def scripted() -> str:
-        # Paced like a publisher, so a polling thread does not spin.
-        time.sleep(0.01)
-        phase = (time.monotonic() - started) % period
-        return pico_packet({script: phase >= period - press})
+    fake.operator_started: float | None = None
 
     class Socket:
         def __init__(self, *_a, **_k):
@@ -192,6 +209,8 @@ def vr() -> types.ModuleType:
 
         def connect(self, address):
             self.address = address
+            if address == SCRIPTED_OPERATOR and fake.operator_started is None:
+                fake.operator_started = time.monotonic()
 
         def set_hwm(self, value):
             self.hwm = value
@@ -206,12 +225,14 @@ def vr() -> types.ModuleType:
             self.closed = True
 
         def recv_string(self, flags=0):
+            if self.address == SCRIPTED_OPERATOR:
+                # Paced like a publisher, so a polling thread does not spin.
+                time.sleep(0.01)
+                return operator_packet(time.monotonic() - fake.operator_started)
             if not fake.packets:
                 if fake.frame is not None:
                     time.sleep(0.002)
                     return fake.frame
-                if script:
-                    return scripted()
                 raise fake.Again()
             packet = fake.packets.pop(0)
             return packet if isinstance(packet, str) else packet.decode("utf-8")

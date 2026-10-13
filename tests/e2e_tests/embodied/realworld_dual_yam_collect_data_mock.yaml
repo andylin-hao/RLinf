@@ -1,10 +1,10 @@
 # Dual-arm YAM PICO collection against faked vendor SDKs.
 #
 # Runs the collector the YAM guide launches, with both i2rt followers, the three
-# RealSense cameras, and the PICO publisher faked. The fake publisher holds both
-# controllers at rest and presses the right menu button every two seconds when
-# RLINF_FAKE_PICO=right_menu_button, so one take starts, is recorded, ends
-# successfully, and is streamed into a LeRobot shard.
+# RealSense cameras, and the PICO publisher faked. Where i2rt is installed its
+# YAM model and IK stay real. The publisher at mock://pico-operator replays an
+# operator's take: record, grip and move both arms, close then open both
+# grippers, release, and record again to end it as a success.
 #
 # run.sh installs the fakes when the config name contains "mock".
 defaults:
@@ -39,10 +39,10 @@ cluster:
 runner:
   task_type: embodied
   logger:
-    log_path: /workspace/results/realworld_dual_yam_collect_data_pico_mock
+    log_path: /workspace/results/realworld_dual_yam_collect_data_mock
     project_name: rlinf
-    experiment_name: "ci-test"
-    logger_backends: ["tensorboard"]
+    experiment_name: ci-test
+    logger_backends: [tensorboard]
   num_data_episodes: 1
   record_task_description: true
 
@@ -59,7 +59,15 @@ env:
       - {pico: {drives: left}}
       - {pico: {drives: right}}
     pico:
-      zmq_addr: ipc:///tmp/fake_pico.ipc
+      zmq_addr: mock://pico-operator
+      control_trigger: grip
+      control_threshold: 0.85
+      position_scale: 0.3
+      rotation_scale: 0.3
+      rotation_delta_frame: operator
+      max_stale_s: 0.2
+      max_tick_s: 0.1
+      ik_backtrack_attempts: 3
       calibration:
         button: trigger
         auto_calibrate_on_start: true
@@ -73,19 +81,35 @@ env:
         gripper_open_button: B
         operator_to_robot_yaw: 0.0
     yam_episode:
-      wait_for_record_button: true
       record_button: right_menu_button
       discard_button: left_menu_button
+      button_debounce_s: 0.2
       keyboard_enabled: false
+      wait_for_record_button: true
     override_cfg:
       enforce_runtime_joint_limits: true
       step_frequency: 30.0
       manual_episode_control_only: true
-      # The fake cameras capture 64x48.
       image_height: 48
       image_width: 64
+      ik:
+        site_name: grasp_site
+        solver: quadprog
+        max_iters: 30
+        dt: 0.01
+        position_tolerance: 0.001
+        rotation_tolerance: 0.01
+        max_solve_s: 0.03
+      # The fake followers start folded; raise them once so IK has room.
       reset:
-        enabled: false
+        enabled: true
+        mode: startup
+        left_qpos: [0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.75]
+        right_qpos: [0.1, 1.1, 1.1, 0.1, 0.1, 0.1, 0.25]
+        duration_s: 1.0
+        max_joint_delta: 0.05
+        tolerance: 0.01
+        timeout_s: 10.0
       park_on_close:
         enabled: false
     data_collection:

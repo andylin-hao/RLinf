@@ -825,6 +825,9 @@ def i2rt() -> dict[str, types.ModuleType]:
     exactly what RLinf sent. A server thread stamps the joint feedback, as the
     real SDK's does, which gives a stale-feedback check something to measure.
     ``FakeYam.rest`` is the pose a follower reports when it connects.
+
+    Where i2rt is installed only the followers are faked, so its YAM model
+    and IK solve for real; elsewhere a toy model stands in for both.
     """
     import tempfile
 
@@ -974,6 +977,8 @@ def i2rt() -> dict[str, types.ModuleType]:
     made["i2rt.robots.kinematics"] = module(
         "i2rt.robots.kinematics", Kinematics=Kinematics
     )
+    if importlib.machinery.PathFinder.find_spec("i2rt") is not None:
+        return {"i2rt.robots.get_robot": made["i2rt.robots.get_robot"]}
     made["i2rt"].robots = made["i2rt.robots"]
     for name in ("get_robot", "utils", "kinematics"):
         setattr(made["i2rt.robots"], name, made[f"i2rt.robots.{name}"])
