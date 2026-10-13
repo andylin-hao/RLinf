@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import threading
 import time
 import types
@@ -479,6 +480,10 @@ def lerobot() -> dict[str, types.ModuleType]:
             return dict(action)
 
     made = {parent.__name__: parent for parent in package("lerobot.robots.so_follower")}
+    spec = importlib.util.find_spec("lerobot")
+    if spec is not None and spec.submodule_search_locations is not None:
+        made["lerobot"].__path__ = list(spec.submodule_search_locations)
+        made["lerobot"].__spec__ = spec
     # lerobot 0.4 merged the SO-family followers into so_follower; the driver
     # prefers that path and falls back to the older one, so fake both.
     for leaf in ("so_follower", "so101_follower"):
@@ -760,9 +765,81 @@ def pyagxarm() -> dict[str, types.ModuleType]:
     }
 
 
+def i2rt() -> types.ModuleType:
+    """Fake physical YAM followers while retaining the installed SDK's models."""
+    fake = module("i2rt.robots.get_robot")
+    fake.robots = []
+
+    class Robot:
+        def __init__(self, channel: str, arm_type: Any, gripper_type: Any) -> None:
+            import mujoco
+            from i2rt.robots.utils import combine_arm_and_gripper_xml
+
+            xml_path = combine_arm_and_gripper_xml(arm_type, gripper_type)
+            try:
+                model = mujoco.MjModel.from_xml_path(xml_path)
+            finally:
+                Path(xml_path).unlink(missing_ok=True)
+            self.channel = channel
+            self.limits = model.jnt_range[:6].copy()
+            self.positions = np.array([0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.75])
+            if channel == "mock_right":
+                self.positions = np.array([0.1, 1.1, 1.1, 0.1, 0.1, 0.1, 0.25])
+            self.commands: list[np.ndarray] = []
+            self.closed = False
+            self.motor_chain = types.SimpleNamespace(running=True)
+            self._stop_event = threading.Event()
+            self._server_thread = threading.Thread(
+                target=self._stop_event.wait, daemon=True
+            )
+            self._server_thread.start()
+            fake.robots.append(self)
+
+        @property
+        def _joint_state(self) -> Any:
+            return types.SimpleNamespace(timestamp=time.time())
+
+        def get_joint_pos(self) -> np.ndarray:
+            if self.closed:
+                raise RuntimeError("YAM follower is closed")
+            return self.positions.copy()
+
+        def command_joint_pos(self, target: np.ndarray) -> None:
+            target = np.asarray(target, dtype=np.float64)
+            if self.closed or target.shape != (7,) or not np.isfinite(target).all():
+                raise ValueError("expected a finite seven-dimensional YAM command")
+            self.commands.append(target.copy())
+            self.positions = target.copy()
+
+        def get_robot_info(self) -> dict[str, Any]:
+            return {"joint_limits": self.limits.copy()}
+
+        def close(self) -> None:
+            self._stop_event.set()
+            self._server_thread.join(timeout=1.0)
+            self.motor_chain.running = False
+            self.closed = True
+
+    def get_yam_robot(
+        channel: str,
+        arm_type: Any,
+        gripper_type: Any,
+        zero_gravity_mode: bool,
+        ee_mass: float | None,
+        gripper_limits_override: np.ndarray | None,
+        enable_auto_recovery: bool,
+        use_coulomb_friction: bool,
+        gravity_comp_factor: np.ndarray | None = None,
+    ) -> Robot:
+        return Robot(channel, arm_type, gripper_type)
+
+    fake.get_yam_robot = get_yam_robot
+    return fake
+
+
 def modules(**_: Any) -> dict[str, types.ModuleType]:
     """Return fake arm SDKs keyed by import name."""
-    made = {"franky": franky()}
+    made = {"franky": franky(), "i2rt.robots.get_robot": i2rt()}
     made.update(ros())
     made.update(lerobot())
     made.update(pyagxarm())

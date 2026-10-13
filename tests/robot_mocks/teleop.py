@@ -129,8 +129,36 @@ def glove() -> dict[str, types.ModuleType]:
 
 def vr() -> types.ModuleType:
     """Return a ``zmq`` module backed by a test-controlled packet queue."""
+    import json
+    import time
+
     fake = module("zmq")
     fake.packets: list[Any] = []
+    fake.pico_started = None
+
+    def pico_packet() -> str:
+        phase = (time.monotonic() - fake.pico_started) % 8.0
+        packet = {
+            "headset_pose": [0.0, 1.5, 0.0, 0.0, 0.0, 0.0, 1.0],
+            "timestamp": time.time(),
+            "buttons": {
+                "right_menu_button": 1.0 <= phase < 1.4 or 6.0 <= phase < 6.4,
+                "left_menu_button": False,
+                "X": 3.0 <= phase < 3.4,
+                "A": 3.0 <= phase < 3.4,
+                "Y": 5.0 <= phase < 5.4,
+                "B": 5.0 <= phase < 5.4,
+            },
+        }
+        offset = 0.003 * np.clip(phase - 2.0, 0.0, 2.0)
+        for side, sign in (("left", -1), ("right", 1)):
+            packet[f"{side}_controller"] = {
+                "position": [sign * (0.25 + offset), 1.25, -0.4],
+                "orientation": [0.0, 0.0, 0.0, 1.0],
+                "grip": float(2.0 <= phase < 6.0),
+                "trigger": 0.0,
+            }
+        return json.dumps(packet)
 
     class Socket:
         def __init__(self, *_a, **_k):
@@ -141,6 +169,8 @@ def vr() -> types.ModuleType:
 
         def connect(self, address):
             self.address = address
+            if address == "mock://yam-pico" and fake.pico_started is None:
+                fake.pico_started = time.monotonic()
 
         def set_hwm(self, value):
             self.hwm = value
@@ -155,6 +185,9 @@ def vr() -> types.ModuleType:
             self.closed = True
 
         def recv_string(self, flags=0):
+            if self.address == "mock://yam-pico":
+                time.sleep(0.01)
+                return pico_packet()
             if not fake.packets:
                 raise fake.Again()
             packet = fake.packets.pop(0)

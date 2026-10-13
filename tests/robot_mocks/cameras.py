@@ -266,6 +266,8 @@ def opencv() -> types.ModuleType:
         BUFFERSIZE = 38
 
     def cvtColor(image, code):
+        if real_cv2 is not None:
+            return real_cv2.cvtColor(image, code)
         return np.zeros((_LUMOS_H, _LUMOS_W, 3), dtype=np.uint8)
 
     def resize(image, size, interpolation=None):
