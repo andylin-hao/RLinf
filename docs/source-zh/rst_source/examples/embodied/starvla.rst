@@ -231,6 +231,19 @@ RLinf 安装器将 starVLA 固定为 ``starVLA-v1.6``，并在 aarch64 上从源
 
    bash examples/embodiment/run_embodiment.sh libero_spatial_grpo_starvla
 
+如果使用 Qwen2.5-VL checkpoint，可以在实验配置中启用以下选项，减少 attention 中的数据复制和重复算子下发：
+
+.. code-block:: yaml
+
+   actor:
+     model:
+       starvla:
+         enable_npu_attention: True
+
+启用后，文本推理直接使用分组的 key/value head，视觉 attention 则通过昇腾 flash attention 一次处理多个图像窗口。该选项同时作用于 actor 和 rollout 模型，默认关闭，仅在昇腾上生效。StarVLA 安装器提供所需的 Transformers ``4.57.6`` 版本。
+
+因果 mask 和 padding mask 仍由 SDPA 的 mask builder 构造。文本 attention 需要计算梯度，或使用 dropout、浮点 mask 时，保留原有的 SDPA 路径，使反向计算沿用原来的累加方式。Checkpoint 参数和动作接口保持一致；启用后，应比较完整模型调用的耗时和任务成功率。
+
 可视化与结果
 ----------------------------------------
 

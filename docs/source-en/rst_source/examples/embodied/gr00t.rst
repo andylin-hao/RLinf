@@ -609,6 +609,11 @@ when loading the model: fused RMSNorm and rotary kernels, flash-attention
 served from Transformers' Ascend integration, and an attention-mask layout the
 NPU kernel accepts.
 
+For N1.5 and N1.6 with the legacy Transformers NPU integration, RLinf also reuses padding
+indices and sequence lengths across language layers and keeps the causal mask
+on the device. An in-place mask change invalidates the cached metadata. Training
+and inference retain the same native attention kernels and backward computation.
+
 .. include:: _ascend_torch.rst
 
 Moore Threads MUSA

@@ -15,6 +15,8 @@
      - 解耦 Env Worker 与 Rollout Worker，用于具身任务中的动态 rollout 调度。
    * - :doc:`观测压缩 <../obs_compression>`
      - 在 Env 到 Rollout 通道上无损压缩图像观测，节省带宽。
+   * - :doc:`终止观测的 value 推理 <../bootstrap_inference>`
+     - 合并终止观测，并在训练中直接计算 OpenVLA 的 value。
    * - :doc:`LoRA <../lora>`
      - 使用 LoRA adapter 训练。
    * - :doc:`自动 Placement <../auto_placement>`
@@ -32,6 +34,7 @@
    RTC <../rtc>
    Env Decoupled Mode <../env_decoupled_mode>
    观测压缩 <../obs_compression>
+   终止观测的 value 推理 <../bootstrap_inference>
    LoRA <../lora>
    自动 Placement <../auto_placement>
    动态调度 <../dynamic_scheduling>

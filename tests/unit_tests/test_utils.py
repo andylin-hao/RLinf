@@ -635,3 +635,64 @@ def test_boolean_attention_mask_caches_per_live_tensor():
 
     mask[0, 0, 0, 0] = -2.0  # bias now; version bump must invalidate
     assert boolean_attention_mask(mask) is None
+
+
+@pytest.mark.parametrize("capturing", [False, True])
+def test_npu_sdpa_mask_cast_preserves_updates_and_biases(monkeypatch, capturing):
+    from rlinf.scheduler.hardware.accelerators.ascend_npu import (
+        install_npu_sdpa_mask_cast,
+    )
+
+    monkeypatch.setattr(
+        torch,
+        "npu",
+        SimpleNamespace(
+            is_available=lambda: True,
+            is_current_stream_capturing=lambda: capturing,
+        ),
+        raising=False,
+    )
+    original = torch.nn.functional.scaled_dot_product_attention
+    # Restore the public entry point when this test ends.
+    monkeypatch.setattr(torch.nn.functional, "scaled_dot_product_attention", original)
+    assert install_npu_sdpa_mask_cast()
+    query = torch.randn(2, 4, 5, 8)
+    key, value = torch.randn_like(query), torch.randn_like(query)
+    mask = torch.zeros(2, 1, 5, 5)
+    mask[..., 3:] = torch.finfo(mask.dtype).min
+    expected = original(query, key, value, mask)
+    scalar_reads = []
+    original_bool = torch.Tensor.__bool__
+
+    def record_scalar_read(tensor):
+        scalar_reads.append(tensor.shape)
+        return original_bool(tensor)
+
+    with monkeypatch.context() as guard:
+        guard.setattr(torch.Tensor, "__bool__", record_scalar_read)
+        for _ in range(6):
+            actual = torch.nn.functional.scaled_dot_product_attention(
+                query, key, value, mask
+            )
+    assert len(scalar_reads) == (6 if capturing else 1)
+    torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+
+    # Reusing the same mask object must not retain an old conversion.
+    for changed in (0.0, -0.5, 0.5):
+        mask[..., 3:] = changed
+        actual = torch.nn.functional.scaled_dot_product_attention(
+            query, key, value, mask
+        )
+        torch.testing.assert_close(
+            actual, original(query, key, value, mask), rtol=0, atol=0
+        )
+
+    # Inference tensors have no version counter and cannot enter the cache.
+    with torch.inference_mode():
+        inference_mask = torch.zeros_like(mask)
+    actual = torch.nn.functional.scaled_dot_product_attention(
+        query, key, value, inference_mask
+    )
+    torch.testing.assert_close(
+        actual, original(query, key, value, inference_mask), rtol=0, atol=0
+    )

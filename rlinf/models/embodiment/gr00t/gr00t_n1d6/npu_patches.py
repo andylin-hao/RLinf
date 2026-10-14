@@ -29,6 +29,7 @@ from __future__ import annotations
 from rlinf.models.embodiment.gr00t.npu_common import (
     hide_unimportable_torchcodec,
     install_npu_flash_attention,
+    install_npu_flash_attention_cache,
     is_npu,
 )
 
@@ -49,6 +50,8 @@ def apply_npu_patches(patcher) -> dict | None:
 
     * fused NPU kernels for Qwen3 RMSNorm / rotary embedding (kept for the
       model's lifetime, not restored);
+    * cached padding metadata and device causal masks for the legacy
+      Transformers NPU attention integration;
     * the NPU flash-attention entry points in the vendored SigLIP2 module, bound
       as it is imported;
     * a meta-path finder that turns a CUDA-only torchcodec ``OSError`` into
@@ -58,6 +61,7 @@ def apply_npu_patches(patcher) -> dict | None:
         return None
 
     hide_unimportable_torchcodec()
+    install_npu_flash_attention_cache()
 
     patcher.add_patch(
         "transformers.models.qwen3.modeling_qwen3.apply_rotary_pos_emb",
@@ -83,8 +87,8 @@ def restore_npu_patches(patcher, state: dict | None) -> None:
     """Undo the process-global patches from :func:`apply_npu_patches`.
 
     ``state`` is that call's return value; ``None`` (off NPU) is a no-op. The
-    fused RMSNorm / rotary patches and the bindings already made are left in
-    place: the model built under them keeps calling those names.
+    fused RMSNorm / rotary patches, attention metadata cache, and established
+    bindings stay in place for the worker's lifetime.
     """
     if state is None:
         return
