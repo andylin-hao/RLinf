@@ -26,6 +26,10 @@ import numpy as np
 import torch
 from gr00t.model.gr00t_n1d7.processing_gr00t_n1d7 import Gr00tN1d7Processor
 
+from rlinf.models.embodiment.qwen_vl_npu_patchify import (
+    ensure_qwen_vl_npu_patchify_patch,
+)
+
 
 class BatchedQwenVLProcessor(Gr00tN1d7Processor):
     """Processor whose VLM leg runs from cached templates and device tensors."""
@@ -62,9 +66,10 @@ class BatchedQwenVLProcessor(Gr00tN1d7Processor):
             self._template_cache[key] = text
 
         frames = torch.from_numpy(np.ascontiguousarray(images))
-        if self._device.type != "npu":
-            # CANN's copy kernel rejects the >8-dim intermediates the fast
-            # image processor builds on device; NPU keeps the pixels on host
-            # and still gains the cached template and batched call.
+        if self._device is not None:
+            if self._device.type == "npu" and not ensure_qwen_vl_npu_patchify_patch():
+                # Staged packing unavailable: keep the pixels on host, where
+                # CANN accepts the fast image processor's copies.
+                return {"vlm_content": {"text": text, "images": list(frames.unbind(0))}}
             frames = frames.to(self._device, non_blocking=True)
         return {"vlm_content": {"text": text, "images": list(frames.unbind(0))}}

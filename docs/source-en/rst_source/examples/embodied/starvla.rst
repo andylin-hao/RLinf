@@ -253,6 +253,27 @@ LIBERO Spatial training:
 
    bash examples/embodiment/run_embodiment.sh libero_spatial_grpo_starvla
 
+For Qwen2.5-VL checkpoints, you can reduce attention overhead by adding this
+option to the experiment configuration:
+
+.. code-block:: yaml
+
+   actor:
+     model:
+       starvla:
+         enable_npu_attention: True
+
+This option uses native grouped key/value heads for text inference and processes
+vision windows together through Ascend flash attention. It applies to both actor
+and rollout models, is disabled by default, and takes effect only on Ascend. The
+StarVLA installer provides the required Transformers version, ``4.57.6``.
+
+Causal and padding masks retain the SDPA mask builder. Text attention with gradients,
+dropout, or a float mask uses the existing SDPA path, preserving its backward
+reductions. The checkpoint parameters and action
+interface stay the same; compare full model-call latency and task success when
+enabling the option.
+
 Visualization and Results
 -------------------------
 

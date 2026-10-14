@@ -36,7 +36,7 @@ class AscendNPUProfileConfig(ProfileConfig):
     """Ascend NPU profiling configuration."""
 
 
-def boolean_attention_mask(attn_mask, _cache={}):
+def boolean_attention_mask(attn_mask, _cache={}, *, use_cache: bool = True):
     """The boolean form of a {0, -inf} float mask, or None if it carries biases.
 
     Verifying the mask forces a device sync, and HF models pass one mask tensor
@@ -48,17 +48,20 @@ def boolean_attention_mask(attn_mask, _cache={}):
 
     if attn_mask is None or not attn_mask.dtype.is_floating_point:
         return None
-    entry = _cache.get(id(attn_mask))
+    use_cache = use_cache and not torch.is_inference(attn_mask)
+    version = attn_mask._version if use_cache else None
+    entry = _cache.get(id(attn_mask)) if use_cache else None
     if entry is not None:
-        ref, version, result = entry
-        if ref() is attn_mask and version == attn_mask._version:
+        ref, cached_version, result = entry
+        if ref() is attn_mask and cached_version == version:
             return result
     floor = torch.finfo(attn_mask.dtype).min * 0.5
-    keep = attn_mask >= 0
+    keep = attn_mask == 0
     result = keep if bool((keep | (attn_mask <= floor)).all()) else None
-    if len(_cache) >= 8:
-        _cache.clear()
-    _cache[id(attn_mask)] = (weakref.ref(attn_mask), attn_mask._version, result)
+    if use_cache:
+        if len(_cache) >= 8:
+            _cache.clear()
+        _cache[id(attn_mask)] = (weakref.ref(attn_mask), version, result)
     return result
 
 
@@ -84,9 +87,13 @@ def install_npu_sdpa_mask_cast() -> bool:
         query, key, value, attn_mask=None, *args, **kwargs
     ):
         if attn_mask is not None and attn_mask.dtype.is_floating_point:
-            floor = torch.finfo(attn_mask.dtype).min * 0.5
-            keep = attn_mask >= 0
-            if bool((keep | (attn_mask <= floor)).all()):
+            capturing = getattr(torch.npu, "is_current_stream_capturing", None)
+            # A captured graph must recompute the conversion after its input
+            # mask is copied in. Reusing an eager cached tensor would freeze it.
+            keep = boolean_attention_mask(
+                attn_mask, use_cache=capturing is not None and not capturing()
+            )
+            if keep is not None:
                 attn_mask = keep
         return original(query, key, value, attn_mask, *args, **kwargs)
 

@@ -218,6 +218,7 @@ def get_model(cfg: DictConfig, torch_dtype: torch.dtype | None = None):
         rl_head_config=rl_head_config,
         rl_denoising_steps=rl_denoising_steps,
         valid_action_dim=getattr(cfg, "action_dim", None),
+        vision_attention_batch_size=int(_get("vision_attention_batch_size", 0)),
     )
 
 

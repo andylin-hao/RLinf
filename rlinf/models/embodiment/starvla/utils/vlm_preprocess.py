@@ -24,6 +24,10 @@ from starVLA.training.trainer_utils.trainer_tools import (
     resize_images as resize_images,
 )
 
+from rlinf.models.embodiment.qwen_vl_npu_patchify import (
+    ensure_qwen_vl_npu_patchify_patch,
+)
+
 from .profile import resolve_vlm_interface
 
 
@@ -131,9 +135,10 @@ def build_device_vlm_inputs(
 
     device = images[0].device if images else None
     if device is not None and device.type == "npu":
-        # CANN rejects the >8-dim copies inside the fast image processor, so
-        # only the resize runs on the NPU; the patch packing stays on host.
-        images = [img.cpu() for img in images]
+        # The staged <=8-dim packing keeps the whole image leg on the NPU;
+        # without it CANN rejects the >8-dim copies and pixels stay on host.
+        if not ensure_qwen_vl_npu_patchify_patch():
+            images = [img.cpu() for img in images]
     inputs = iface.processor(
         text=texts, images=images, padding=True, return_tensors="pt"
     )

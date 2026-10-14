@@ -17,15 +17,16 @@ import torch
 from rlinf.models.embodiment.gr00t.npu_common import (
     hide_unimportable_torchcodec as _hide_unimportable_torchcodec,
 )
-from rlinf.models.embodiment.gr00t.npu_common import (
-    is_npu as _is_npu,
-)
 
 # Re-exported so the Patcher entries below, which name their replacements by
 # string path, keep resolving against this module.
 from rlinf.models.embodiment.gr00t.npu_common import (  # noqa: F401
+    install_npu_flash_attention_cache,
     npu_apply_rotary_pos_emb,
     npu_rmsnorm_forward,
+)
+from rlinf.models.embodiment.gr00t.npu_common import (
+    is_npu as _is_npu,
 )
 
 
@@ -52,6 +53,7 @@ def apply_npu_patches(patcher) -> dict | None:
 
     * fused NPU kernels for Qwen3 RMSNorm / rotary embedding (kept for the
       model's lifetime, not restored);
+    * padding metadata and causal-mask reuse in legacy NPU FlashAttention;
     * a ``get_device_capability`` sentinel so RADIO's import-time check passes;
     * a ``flash_attn`` stub so import sites succeed, cleared once the
       eagle_2_5_vl config loads so the absent package reads as unavailable;
@@ -68,6 +70,7 @@ def apply_npu_patches(patcher) -> dict | None:
         return None
 
     _hide_unimportable_torchcodec()
+    install_npu_flash_attention_cache()
 
     patcher.add_patch(
         "transformers.models.qwen3.modeling_qwen3.apply_rotary_pos_emb",

@@ -28,7 +28,8 @@ import importlib.abc
 import importlib.util
 import inspect
 import sys
-from typing import Callable, Iterable
+import weakref
+from typing import Any, Callable, Iterable
 
 import torch
 
@@ -45,6 +46,136 @@ def is_npu() -> bool:
     from rlinf.scheduler import AcceleratorType, Worker
 
     return Worker.accelerator_type == AcceleratorType.NPU
+
+
+class _TensorMetadataCache:
+    """Bounded metadata for live tensors, invalidated by in-place writes."""
+
+    def __init__(self, compute: Callable[[torch.Tensor], Any]):
+        self.compute = compute
+        self.entries: dict = {}
+
+    def get(self, tensor: torch.Tensor) -> Any:
+        capturing = getattr(torch.npu, "is_current_stream_capturing", None)
+        if torch.is_inference(tensor) or (capturing is not None and capturing()):
+            return self.compute(tensor)
+        entry = self.entries.get(id(tensor))
+        if entry is not None and entry[0]() is tensor and entry[1] == tensor._version:
+            return entry[2]
+        value = self.compute(tensor)
+        if len(self.entries) >= 8:
+            self.entries.clear()
+        self.entries[id(tensor)] = (weakref.ref(tensor), tensor._version, value)
+        return value
+
+
+def install_npu_flash_attention_cache() -> bool:
+    """Reuse padding metadata and causal masks in legacy NPU FlashAttention.
+
+    Keeps the native BSND/TND forward and backward kernels. Installs once for
+    this worker's lifetime; other backends and newer integrations are unchanged.
+    Inference tensors and graph capture bypass tensor metadata caching.
+    """
+    if not is_npu():
+        return False
+    from transformers import modeling_flash_attention_utils as flash_utils
+    from transformers.integrations import npu_flash_attention as native_flash
+
+    if getattr(flash_utils.flash_attn_func, "_rlinf_npu_metadata_cache", False):
+        return True
+    if (
+        hasattr(native_flash, "get_attn_mask_npu")
+        or flash_utils.flash_attn_func is not native_flash.npu_flash_attn_func
+        or flash_utils.flash_attn_varlen_func
+        is not native_flash.npu_flash_attn_varlen_func
+    ):
+        return False
+    original_unpad = flash_utils._get_unpad_data
+    metadata = _TensorMetadataCache(original_unpad)
+    offsets = _TensorMetadataCache(
+        lambda tensor: tuple(tensor[1:].detach().cpu().numpy().tolist())
+    )
+    causal_masks: dict[torch.device, torch.Tensor] = {}
+
+    def causal_mask(device: torch.device) -> torch.Tensor:
+        if device not in causal_masks:
+            causal_masks[device] = torch.triu(
+                torch.ones((2048, 2048), dtype=torch.bool, device=device), diagonal=1
+            )
+        return causal_masks[device]
+
+    def get_unpad_data(attention_mask: torch.Tensor):
+        if attention_mask.device.type != "npu":
+            return original_unpad(attention_mask)
+        return metadata.get(attention_mask)
+
+    def flash_attn_func(
+        q, k, v, dropout_p=0.0, softmax_scale=None, causal=False, **kwargs
+    ):
+        if q.device.type != "npu":
+            return native_flash.npu_flash_attn_func(
+                q,
+                k,
+                v,
+                dropout_p=dropout_p,
+                softmax_scale=softmax_scale,
+                causal=causal,
+                **kwargs,
+            )
+        return torch_npu.npu_fusion_attention(
+            q,
+            k,
+            v,
+            q.shape[2],
+            "BSND",
+            keep_prob=1.0 - dropout_p,
+            scale=softmax_scale,
+            atten_mask=causal_mask(q.device) if causal else None,
+            sparse_mode=native_flash.SPARSE_MODE if causal else 0,
+        )[0]
+
+    def flash_attn_varlen_func(
+        q,
+        k,
+        v,
+        cu_seqlens_q,
+        cu_seqlens_k,
+        dropout_p=0.0,
+        softmax_scale=None,
+        causal=False,
+        **kwargs,
+    ):
+        if q.device.type != "npu":
+            return native_flash.npu_flash_attn_varlen_func(
+                q,
+                k,
+                v,
+                cu_seqlens_q,
+                cu_seqlens_k,
+                dropout_p=dropout_p,
+                softmax_scale=softmax_scale,
+                causal=causal,
+                **kwargs,
+            )
+        return torch_npu.npu_fusion_attention(
+            q,
+            k,
+            v,
+            q.shape[1],
+            input_layout="TND",
+            keep_prob=1.0 - dropout_p,
+            scale=softmax_scale,
+            atten_mask=causal_mask(q.device) if causal else None,
+            sparse_mode=native_flash.SPARSE_MODE if causal else 0,
+            actual_seq_qlen=offsets.get(cu_seqlens_q),
+            actual_seq_kvlen=offsets.get(cu_seqlens_k),
+        )[0]
+
+    flash_attn_func._rlinf_npu_metadata_cache = True
+    flash_utils._get_unpad_data = get_unpad_data
+    flash_utils.flash_attn_func = flash_attn_func
+    flash_utils.flash_attn_varlen_func = flash_attn_varlen_func
+    return True
 
 
 def npu_rmsnorm_forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
