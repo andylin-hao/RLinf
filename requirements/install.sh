@@ -1579,6 +1579,12 @@ apply_model_default_torch() {
     [ -z "$TORCH_VERSION" ] || return 0
     local model_torch="-"
     case "$MODEL" in
+        openpi)
+            if [ "$ENV_NAME" = "yam" ]; then
+                # OpenPI 0.1.1 requires torch 2.7.1; sync its matching vision/codec stack.
+                model_torch="2.7.1"
+            fi
+            ;;
         sglang) model_torch=$(sglang_torch_version "${SGLANG_VERSION:-$EMBODIED_SGLANG_VERSION}") ;;
     esac
     [ "$model_torch" != "-" ] || return 0
@@ -2457,6 +2463,13 @@ install_openvla_oft_model() {
 
 install_openpi_model() {
     case "$ENV_NAME" in
+        yam)
+            create_and_sync_venv
+            install_common_embodied_deps
+            install_yam_env
+            uv pip install -r "$SCRIPT_DIR/embodied/models/openpi_yam.txt"
+            install_flash_attn
+            ;;
         behavior)
             PYTHON_VERSION="3.10"
             create_and_sync_venv
