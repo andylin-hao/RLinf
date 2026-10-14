@@ -31,7 +31,9 @@ def _graph_backend(device: torch.device):
     """
     if device.type == "npu":
         return _NpuGraphBackend()
-    return _CudaGraphBackend()
+    if device.type == "cuda":
+        return _CudaGraphBackend()
+    raise ValueError(f"Graph capture requires CUDA or NPU, got {device}.")
 
 
 class _CudaGraphBackend:
@@ -107,17 +109,19 @@ def graph_signature(tree: Any, prefix: str = "") -> tuple | None:
     such trees on the eager path instead of keying graphs by them.
     """
     if torch.is_tensor(tree):
-        return (prefix, tree.device.type, tuple(tree.shape), str(tree.dtype))
+        return (prefix, str(tree.device), tuple(tree.shape), str(tree.dtype))
     if isinstance(tree, str) or tree is None or isinstance(tree, (bool, int, float)):
-        return (prefix, tree if isinstance(tree, str) else repr(tree))
+        return (prefix, type(tree).__name__, tree)
     if isinstance(tree, Mapping):
+        if not all(isinstance(key, str) for key in tree):
+            return None
         parts = []
         for k in sorted(tree.keys(), key=str):
             sub = graph_signature(tree[k], f"{prefix}.{k}" if prefix else str(k))
             if sub is None:
                 return None
             parts.append(sub)
-        return tuple(parts)
+        return ("mapping", tuple(parts))
     if isinstance(tree, (list, tuple)):
         parts = []
         for i, v in enumerate(tree):
@@ -125,7 +129,7 @@ def graph_signature(tree: Any, prefix: str = "") -> tuple | None:
             if sub is None:
                 return None
             parts.append(sub)
-        return tuple(parts)
+        return (type(tree).__name__, tuple(parts))
     return None
 
 
@@ -140,19 +144,6 @@ def clone_tensor_tree(tree: Any) -> Any:
     if isinstance(tree, tuple):
         return tuple(clone_tensor_tree(v) for v in tree)
     return tree
-
-
-def copy_tensor_tree(dst: Any, src: Any) -> None:
-    """Copy tensor leaves of src into dst, leaving non-tensors untouched."""
-    if torch.is_tensor(dst):
-        dst.copy_(src)
-    elif isinstance(dst, Mapping):
-        for k in dst:
-            if k in src:
-                copy_tensor_tree(dst[k], src[k])
-    elif isinstance(dst, (list, tuple)):
-        for d, s in zip(dst, src):
-            copy_tensor_tree(d, s)
 
 
 def build_kv_cache(
@@ -177,8 +168,12 @@ def build_kv_cache(
     return kv_cache
 
 
-def _copy_tree_(dst: Any, src: Any, *, name: str = "") -> None:
-    """In-place copy src -> dst for nested structures of Tensors/dicts/lists/tuples."""
+def copy_tensor_tree(dst: Any, src: Any, *, name: str = "") -> None:
+    """Update static tensor buffers without changing their shape or dtype.
+
+    Mapping keys absent from ``src`` retain their existing values. Sequence
+    lengths and non-tensor metadata must match the captured structure.
+    """
     if torch.is_tensor(dst):
         if not torch.is_tensor(src):
             raise TypeError(f"{name}: dst is Tensor but src is {type(src)}")
@@ -191,13 +186,13 @@ def _copy_tree_(dst: Any, src: Any, *, name: str = "") -> None:
         dst.copy_(src)
         return
 
-    if isinstance(dst, dict):
-        if not isinstance(src, dict):
+    if isinstance(dst, Mapping):
+        if not isinstance(src, Mapping):
             raise TypeError(f"{name}: dst is dict but src is {type(src)}")
         for k in dst.keys():
             if k not in src:
                 continue
-            _copy_tree_(dst[k], src[k], name=f"{name}.{k}" if name else str(k))
+            copy_tensor_tree(dst[k], src[k], name=f"{name}.{k}" if name else str(k))
         return
 
     if isinstance(dst, (list, tuple)):
@@ -206,10 +201,12 @@ def _copy_tree_(dst: Any, src: Any, *, name: str = "") -> None:
         if len(dst) != len(src):
             raise ValueError(f"{name}: len mismatch dst={len(dst)} src={len(src)}")
         for i in range(len(dst)):
-            _copy_tree_(dst[i], src[i], name=f"{name}[{i}]")
+            copy_tensor_tree(dst[i], src[i], name=f"{name}[{i}]")
         return
 
-    if dst is None:
+    if dst is None or isinstance(dst, (str, bool, int, float)):
+        if type(dst) is not type(src) or dst != src:
+            raise ValueError(f"{name}: static metadata changed from {dst!r} to {src!r}")
         return
 
     raise TypeError(f"{name}: unsupported dst type {type(dst)}")
@@ -404,7 +401,7 @@ class CUDAGraphManager:
                 raise KeyError(
                     f"Graph '{name}': external input '{k}' not found in static input buffers."
                 )
-            _copy_tree_(graph_spec.inputs[k], inputs[k], name=f"{name}.inputs.{k}")
+            copy_tensor_tree(graph_spec.inputs[k], inputs[k], name=f"{name}.inputs.{k}")
 
         graph_spec.graph.replay()
         return graph_spec.outputs

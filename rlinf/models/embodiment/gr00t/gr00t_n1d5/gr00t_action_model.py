@@ -680,7 +680,7 @@ class GR00T_N1_5_ForRLActionPrediction(GR00T_N1_5, BasePolicy):
         """
         return self._modality_transform.unapply(action)
 
-    def capture_cuda_graph(self, train_batch_size: int, eval_batch_size: int):
+    def capture_cuda_graph(self, train_batch_size: int, eval_batch_size: int) -> None:
         """Enable lazy graph capture of the rollout backbone forward.
 
         Graphs are captured per input signature on the third occurrence: the
@@ -697,7 +697,7 @@ class GR00T_N1_5_ForRLActionPrediction(GR00T_N1_5, BasePolicy):
                 device=next(self.parameters()).device
             )
 
-    def release_cuda_graph(self):
+    def release_cuda_graph(self) -> None:
         super().release_cuda_graph()
         self._rl_graph_state.clear()
         self._rl_graph_specs.clear()
@@ -733,7 +733,7 @@ class GR00T_N1_5_ForRLActionPrediction(GR00T_N1_5, BasePolicy):
     def _capture_backbone_graph(self, key, backbone_inputs):
         from rlinf.utils.cuda_graph import GraphCaptureSpec
 
-        name = f"backbone_{abs(hash(key)) & 0xFFFFFF}"
+        name = f"backbone_{len(self._rl_graph_specs)}"
         inputs = clone_tensor_tree(backbone_inputs)
 
         def _fn(spec_inputs):

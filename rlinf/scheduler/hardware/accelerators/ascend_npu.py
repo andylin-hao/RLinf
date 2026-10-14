@@ -46,7 +46,11 @@ def boolean_attention_mask(attn_mask, _cache={}, *, use_cache: bool = True):
 
     import torch
 
-    if attn_mask is None or not attn_mask.dtype.is_floating_point:
+    if (
+        attn_mask is None
+        or not attn_mask.dtype.is_floating_point
+        or attn_mask.requires_grad
+    ):
         return None
     use_cache = use_cache and not torch.is_inference(attn_mask)
     version = attn_mask._version if use_cache else None
@@ -57,7 +61,11 @@ def boolean_attention_mask(attn_mask, _cache={}, *, use_cache: bool = True):
             return result
     floor = torch.finfo(attn_mask.dtype).min * 0.5
     keep = attn_mask == 0
-    result = keep if bool((keep | (attn_mask <= floor)).all()) else None
+    # An entirely masked finite row still has a softmax distribution. A
+    # boolean row instead yields zero, so only all-minus-inf rows may convert.
+    safe_rows = keep.any(dim=-1) | torch.isneginf(attn_mask).all(dim=-1)
+    convertible = (keep | (attn_mask <= floor)).all() & safe_rows.all()
+    result = keep if bool(convertible) else None
     if use_cache:
         if len(_cache) >= 8:
             _cache.clear()

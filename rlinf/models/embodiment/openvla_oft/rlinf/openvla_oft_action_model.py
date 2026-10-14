@@ -302,6 +302,19 @@ class OpenVLAOFTForRLActionPrediction(OpenVLAOFTForActionPrediction, BasePolicy)
 
             B, N, C, H, W = pixel_values.shape
             pixel_values = pixel_values.reshape(B, N * C, H, W)
+        else:
+            if input_ids is None or attention_mask is None or pixel_values is None:
+                raise ValueError(
+                    "Provide env_obs or input_ids, attention_mask and pixel_values."
+                )
+            assert torch.all(input_ids[:, 0] == 1), "Prompt must start with BOS."
+            assert torch.all(attention_mask[:, 0] == 1), "BOS must be unmasked."
+            assert torch.all(input_ids[:, -1] == 29871), (
+                "Prompt must end with a space token."
+            )
+            assert torch.all(attention_mask[:, -1] == 1), (
+                "Final prompt token must be unmasked."
+            )
 
         forward_inputs = {
             "input_ids": input_ids,

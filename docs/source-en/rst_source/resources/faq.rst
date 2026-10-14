@@ -278,6 +278,8 @@ and conversion are reused to avoid a device synchronization in every layer.
 An in-place mask update invalidates that cache. Masks carrying attention
 biases keep their floating-point representation. Graph capture bypasses the
 cache, and inference tensors without version counters are validated on each call.
+Masks that require gradients or contain an entirely blocked finite row also
+keep their floating-point representation to preserve SDPA's semantics.
 
 Numerical Precision / Inference backend
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

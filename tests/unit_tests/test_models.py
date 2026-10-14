@@ -54,6 +54,77 @@ from rlinf.utils.env_helpers.delay_sampler import (
 )
 
 
+@pytest.mark.parametrize("layout", ["hwc", "chw"])
+def test_evo_device_preprocessing_preserves_per_frame_ranges_and_clipping(layout):
+    from rlinf.models.embodiment.evo1.utils.data_pipeline import build_evo1_inputs
+
+    images = np.zeros((2, 8, 10, 3), dtype=np.float32)
+    images[0] = np.linspace(-0.5, 1.0, images[0].size).reshape(images[0].shape)
+    images[1] = np.linspace(-10, 300, images[1].size).reshape(images[1].shape)
+    if layout == "chw":
+        images = images.transpose(0, 3, 1, 2)
+    observation = {"main_images": images, "task_descriptions": ["pick", "place"]}
+    host = build_evo1_inputs(observation, image_size=6)
+    device = build_evo1_inputs(observation, image_size=6, device="cpu")
+    for host_views, device_views in zip(host[0], device[0]):
+        for expected, actual in zip(host_views, device_views):
+            torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+    torch.testing.assert_close(device[1], host[1])
+    assert device[2] == host[2]
+
+
+def test_openpi_fused_attention_preserves_fully_masked_query_rows():
+    from rlinf.models.embodiment.openpi.modules.gemma import Attention
+
+    config = SimpleNamespace(
+        width=16, num_heads=4, num_kv_heads=2, head_dim=4, lora_configs={}
+    )
+    model = Attention([config])
+    inputs = [torch.randn(2, 4, 16)]
+    positions = torch.arange(4).repeat(2, 1)
+    mask = torch.ones(2, 1, 4, 4, dtype=torch.bool).tril()
+    mask[:, :, 0] = False
+    for updated in (False, True):
+        if updated:
+            with torch.no_grad():
+                model.v_proj[0].weight.add_(0.1)
+        expected, _ = model(inputs, positions, mask)
+        with torch.no_grad():
+            actual, _ = model(inputs, positions, mask)
+        torch.testing.assert_close(actual[0], expected[0], rtol=1e-5, atol=1e-6)
+
+
+@pytest.mark.parametrize("aspect_ratio", ["pad", "square"])
+def test_dm0_tensor_images_match_native_padding_and_view_masks(aspect_ratio):
+    pytest.importorskip("dexbotic")
+    from PIL import Image
+    from transformers import SiglipImageProcessor
+
+    from rlinf.models.embodiment.dexbotic_dm0.dm0_policy import (
+        DexboticDM0ForRLActionPrediction,
+    )
+
+    model = DexboticDM0ForRLActionPrediction.__new__(DexboticDM0ForRLActionPrediction)
+    torch.nn.Module.__init__(model)
+    model.anchor = torch.nn.Parameter(torch.zeros(()))
+    model.config = SimpleNamespace(image_aspect_ratio=aspect_ratio)
+    model.model = SimpleNamespace(
+        mm_vision_module=SimpleNamespace(
+            image_processor=SiglipImageProcessor(size={"height": 6, "width": 6})
+        )
+    )
+    images = torch.full((2, 4, 6, 3), 31, dtype=torch.uint8)
+    expected = model.process_images(
+        [Image.fromarray(frame.numpy()) for frame in images]
+    )
+    actual, masks = model._process_images_for_training(
+        images, None, torch.device("cpu")
+    )
+    torch.testing.assert_close(actual[:, 0], expected, rtol=0, atol=1e-6)
+    assert masks.tolist() == [[True, False, False], [True, False, False]]
+    assert not torch.count_nonzero(actual[:, 1:])
+
+
 @pytest.mark.parametrize("precision", [None, "bf16"])
 def test_dexbotic_configured_precision_supports_actions_and_training(precision):
     source = os.environ.get("RLINF_DEXBOTIC_TEST_OBSERVATIONS")
@@ -1003,6 +1074,99 @@ def _load_starvla_util(name: str) -> ModuleType:
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+@pytest.fixture
+def starvla_preprocessing(monkeypatch):
+    from PIL import Image
+
+    image_tools = ModuleType("deployment.model_server.tools.image_tools")
+    image_tools.to_pil_preserve = lambda views: [
+        Image.fromarray(np.asarray(view.cpu() if torch.is_tensor(view) else view))
+        for view in views
+    ]
+    trainer_tools = ModuleType("starVLA.training.trainer_utils.trainer_tools")
+    trainer_tools.resize_images = lambda images, target_size: images
+    monkeypatch.setitem(sys.modules, image_tools.__name__, image_tools)
+    monkeypatch.setitem(sys.modules, trainer_tools.__name__, trainer_tools)
+    root = "starvla_preprocessing_under_test"
+    for suffix, directory in (
+        ("", _STARVLA_UTILS_DIR.parent),
+        (".utils", _STARVLA_UTILS_DIR),
+        (".action_heads", _STARVLA_UTILS_DIR.parent / "action_heads"),
+    ):
+        package = ModuleType(root + suffix)
+        package.__path__ = [str(directory)]
+        monkeypatch.setitem(sys.modules, package.__name__, package)
+    try:
+        yield SimpleNamespace(
+            data=importlib.import_module(root + ".utils.data_pipeline"),
+            vlm=importlib.import_module(root + ".utils.vlm_preprocess"),
+            oft=importlib.import_module(root + ".action_heads.oft"),
+        )
+    finally:
+        for name in list(sys.modules):
+            if name.startswith(root + "."):
+                sys.modules.pop(name, None)
+
+
+def test_starvla_device_views_match_host_clipping(starvla_preprocessing):
+    images = torch.linspace(-20, 300, 2 * 4 * 5 * 3).reshape(2, 4, 5, 3)
+    obs = {"main_images": images, "task_descriptions": ["pick", "place"]}
+    kwargs = {
+        "state_adapter_name": "none",
+        "prepare_state_tensor": None,
+        "include_state": False,
+    }
+    host = starvla_preprocessing.data.build_examples_from_env_obs(obs, **kwargs)
+    device = starvla_preprocessing.data.build_examples_from_env_obs(
+        obs, image_device="cpu", **kwargs
+    )
+    for expected, actual in zip(host, device):
+        np.testing.assert_array_equal(
+            actual["image"][0].numpy(), np.asarray(expected["image"][0])
+        )
+        assert actual["lang"] == expected["lang"]
+
+
+def test_starvla_prompt_cache_uses_each_processors_template(starvla_preprocessing):
+    class Processor:
+        def __init__(self, prefix):
+            self.prefix = prefix
+
+        def apply_chat_template(self, conversation, **kwargs):
+            return self.prefix + conversation[0]["content"][-1]["text"]
+
+        def __call__(self, *, text, images, **kwargs):
+            return {"input_ids": torch.tensor([[ord(prompt[0])] for prompt in text])}
+
+    examples = [{"image": [torch.zeros(4, 5, 3, dtype=torch.uint8)], "lang": "pick"}]
+    first, second = Processor("A"), Processor("B")
+    for processor in (first, second, first):
+        result = starvla_preprocessing.vlm.build_device_vlm_inputs(
+            SimpleNamespace(), examples, SimpleNamespace(processor=processor)
+        )
+        assert result["input_ids"].tolist() == [[ord(processor.prefix)]]
+
+
+def test_starvla_oft_keeps_the_host_builder_fallback_for_tensor_views(
+    starvla_preprocessing,
+):
+    class Interface:
+        def build_qwenvl_inputs(self, *, images, instructions):
+            return {
+                "pixel_values": torch.from_numpy(np.asarray(images[0][0]).copy()),
+                "prompt": instructions,
+            }
+
+    image = torch.full((4, 5, 3), 127, dtype=torch.uint8)
+    result = starvla_preprocessing.oft._build_oft_vlm_inputs(
+        SimpleNamespace(qwen_vl_interface=Interface(), action_token="x"),
+        num_action_chunks=2,
+        examples=[{"image": [image], "lang": "pick"}],
+    )
+    torch.testing.assert_close(result["pixel_values"], image)
+    assert "next 2 robot actions" in result["prompt"][0]
 
 
 @pytest.mark.parametrize(("source", "bound"), [("q01q99", 0.5), ("minmax", 1.0)])

@@ -64,7 +64,9 @@ def build_examples_from_env_obs(
 
         def to_views(x: Any) -> torch.Tensor:
             t = x if torch.is_tensor(x) else torch.as_tensor(np.asarray(x))
-            return t.to(torch.uint8).to(image_device, non_blocking=True)
+            if t.dtype != torch.uint8:
+                t = t.clamp(0, 255).to(torch.uint8)
+            return t.to(image_device, non_blocking=True)
 
         main_images_np = to_views(main_images)
         extra_view_images_np = (

@@ -355,8 +355,15 @@ class Attention(nn.Module):
             q_r = q.transpose(1, 2) * (self.head_dim**-0.5)
             k_r = k.transpose(1, 2).repeat_interleave(G, dim=1)
             v_r = v.transpose(1, 2).repeat_interleave(G, dim=1)
+            keep = attn_mask.bool()
+            has_keys = keep.any(dim=-1, keepdim=True)
+            # The eager finite-mask path produces uniform attention for a
+            # fully masked query. Zero its query and allow all keys to retain
+            # that behavior, including zero query/key gradients for the row.
+            q_r = q_r.masked_fill(~has_keys, 0)
+            keep = keep | ~has_keys
             encoded = F.scaled_dot_product_attention(
-                q_r, k_r, v_r, attn_mask=attn_mask.bool(), scale=1.0
+                q_r, k_r, v_r, attn_mask=keep, scale=1.0
             )
             encoded = encoded.transpose(1, 2).reshape(
                 q.shape[0], q.shape[1], K * G, self.head_dim
