@@ -14,8 +14,7 @@
 
 """YAM joint angles stay in radians and grippers use 0=closed, 1=open.
 
-Aloha's joint-sign and gripper conversions do not apply. ModelTransformFactory
-pads the 14-D state/actions after normalization.
+ModelTransformFactory pads the 14-D state/actions after normalization.
 """
 
 import dataclasses

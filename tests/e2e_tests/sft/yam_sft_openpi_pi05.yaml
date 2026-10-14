@@ -8,7 +8,7 @@ hydra:
 
 cluster:
   component_placement:
-    actor: 0-1
+    actor: 0
 
 runner:
   logger:
@@ -17,7 +17,7 @@ runner:
     logger_backends: null
   max_epochs: -1
   max_steps: 2
-  save_interval: 1
+  save_interval: 2
 
 data:
   train_data_paths: ${oc.env:YAM_CI_DATASET}
@@ -25,8 +25,10 @@ data:
 
 actor:
   micro_batch_size: 1
-  global_batch_size: 2
+  global_batch_size: 1
   model:
+    # Lower parameter/optimizer memory than the FP32 recipe for single-GPU CI.
+    precision: bf16
     model_path: /workspace/dataset/pi05_base
     openpi_data:
       norm_stats_path: ${oc.env:YAM_CI_DATASET}/norm_stats.json

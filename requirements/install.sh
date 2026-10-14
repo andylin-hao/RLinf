@@ -2466,7 +2466,10 @@ install_openpi_model() {
         yam)
             create_and_sync_venv
             install_common_embodied_deps
-            install_yam_env
+            # Replace only the SDK source; constraints preserve the other dependency contracts.
+            UV_OVERRIDE="${UV_OVERRIDE:-$SCRIPT_DIR/embodied/models/openpi_yam_sdk.txt}" \
+                UV_CONSTRAINT="${UV_CONSTRAINT:-$SCRIPT_DIR/embodied/models/openpi_yam.txt}" \
+                install_yam_env
             uv pip install -r "$SCRIPT_DIR/embodied/models/openpi_yam.txt"
             install_flash_attn
             ;;

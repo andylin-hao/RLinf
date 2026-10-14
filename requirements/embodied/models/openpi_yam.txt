@@ -1,3 +1,5 @@
+-r openpi_yam_sdk.txt
+numpy<2
 rlinf-openpi==0.1.1
 # Match stock metadata to OpenPI's forked transformers/tokenizers API.
 transformers==4.53.2

@@ -27,16 +27,21 @@ def local_tokenizer(monkeypatch):
     pytest.importorskip("openpi")
     from openpi.models import tokenizer
 
+    tokenized_input = {}
+
     class LocalTokenizer:
         def __init__(self, max_len):
             self.max_len = max_len
 
         def tokenize(self, prompt, state=None):
+            tokenized_input["prompt"] = prompt
+            tokenized_input["state"] = state
             return np.ones(self.max_len, dtype=np.int32), np.ones(
                 self.max_len, dtype=bool
             )
 
     monkeypatch.setattr(tokenizer, "PaligemmaTokenizer", LocalTokenizer)
+    return tokenized_input
 
 
 @pytest.mark.parametrize("stacked", [False, True])
@@ -100,6 +105,15 @@ def test_yam_policy_rejects_invalid_input(field):
         data["observation/image"] = np.full((8, 10, 3), np.nan)
     with pytest.raises(ValueError):
         YamInputs()(data)
+
+
+@pytest.mark.parametrize("actions", [np.zeros((30, 13)), np.full((30, 32), np.nan)])
+def test_yam_policy_rejects_invalid_model_output(actions):
+    pytest.importorskip("openpi")
+    from rlinf.models.embodiment.openpi.policies.yam_policy import YamOutputs
+
+    with pytest.raises(ValueError):
+        YamOutputs()({"actions": actions})
 
 
 def test_yam_joint_deltas_round_trip_without_changing_grippers(
@@ -180,6 +194,13 @@ def test_yam_openpi_recipes_use_the_same_model_contract(
     assert model["action_dim"] == 14
     assert model["num_action_chunks"] == executed_length
     assert model["openpi"]["action_chunk"] == executed_length
+    if config_name == "yam_sft_openpi_pi05":
+        assert resolved["cluster"]["component_placement"]["actor"] == 0
+        assert resolved["actor"]["micro_batch_size"] == 1
+        assert resolved["actor"]["global_batch_size"] == 1
+        assert model["precision"] == "bf16"
+        assert resolved["runner"]["max_steps"] == 2
+        assert resolved["runner"]["save_interval"] == 2
 
 
 def test_yam_recorded_data_runs_through_statistics_and_official_sft_loader(
@@ -257,3 +278,5 @@ def test_yam_recorded_data_runs_through_statistics_and_official_sft_loader(
     assert means[0] < means[1] < means[2]
     assert observation.tokenized_prompt.shape == (1, 200)
     assert observation.tokenized_prompt_mask.any()
+    assert local_tokenizer["prompt"] == "pick block"
+    assert local_tokenizer["state"].shape == (14,)

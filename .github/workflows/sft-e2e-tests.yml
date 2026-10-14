@@ -10,6 +10,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
+      - name: Check the shared Pi05 base weights
+        run: |
+          ls -lh /workspace/dataset/pi05_base/model.safetensors
+          test -s /workspace/dataset/pi05_base/model.safetensors
+
       - name: Create YAM OpenPI environment
         run: |
           unset UV_DEFAULT_INDEX
@@ -18,6 +23,7 @@ jobs:
           export UV_CACHE_DIR=/workspace/dataset/.uv_cache
           export UV_PYTHON_INSTALL_DIR=/workspace/dataset/.uv_python
           bash requirements/install.sh embodied --model openpi --env yam
+          uv pip check --python .venv/bin/python
 
       - name: YAM OpenPI data transforms and recorded-data loader
         timeout-minutes: 10
@@ -59,17 +65,19 @@ jobs:
       - name: Evaluate the YAM SFT checkpoint with mock robots
         timeout-minutes: 20
         run: |
-          ray stop
           export REPO_PATH=$(pwd)
           export RLINF_ROBOT_MOCKS=1
           export PYTHONPATH="${REPO_PATH}/tests:${REPO_PATH}/tests/robot_mocks:${REPO_PATH}"
           source .venv/bin/activate
+          ray stop
           bash tests/e2e_tests/evaluations/run.sh realworld_dual_yam_openpi_pi05_mock_eval
 
       - name: Clean up
         if: always()
         run: |
-          ray stop || true
+          if [ -x .venv/bin/ray ]; then
+            .venv/bin/ray stop || true
+          fi
           rm -rf .venv
           if [ -n "${YAM_CI_LOG_PATH:-}" ]; then
             rm -rf "${YAM_CI_LOG_PATH}"
