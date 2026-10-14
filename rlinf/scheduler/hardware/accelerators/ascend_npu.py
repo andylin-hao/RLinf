@@ -232,7 +232,7 @@ class AscendNPUManager(AcceleratorManager):
         return "npu"
 
     @staticmethod
-    def setup_worker_torch():
+    def setup_worker_torch() -> None:
         """Install the fused-kernel SDPA and rotary-embedding routes."""
         install_npu_sdpa_mask_cast()
         install_npu_fused_rotary()

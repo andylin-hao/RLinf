@@ -123,6 +123,7 @@ class AcceleratorType(str, Enum):
     MUSA_GPU = "MUSA_GPU"
     KUNLUN_XPU = "KUNLUN_XPU"
     BIREN_GPU = "BIREN_GPU"
+    METAX_GPU = "METAX_GPU"
 
 
 class AcceleratorManager:
@@ -219,7 +220,7 @@ class AcceleratorManager:
         raise NotImplementedError
 
     @staticmethod
-    def setup_worker_torch():
+    def setup_worker_torch() -> None:
         """Install torch adaptations for a worker process on this accelerator."""
         return None
 
@@ -367,6 +368,7 @@ class AcceleratorUtil:
         AcceleratorType.MUSA_GPU,
         AcceleratorType.KUNLUN_XPU,
         AcceleratorType.BIREN_GPU,
+        AcceleratorType.METAX_GPU,
     ]
 
     @staticmethod

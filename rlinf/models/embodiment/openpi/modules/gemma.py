@@ -300,6 +300,7 @@ class Attention(nn.Module):
         Returns:
             (outputs, new_kv_cache)
         """
+        dtype = next(x.dtype for x in xs if x is not None)
 
         q_parts, k_parts, v_parts = [], [], []
         for i, x in enumerate(xs):
@@ -381,8 +382,8 @@ class Attention(nn.Module):
                 logits,
                 torch.tensor(big_neg, dtype=logits.dtype, device=logits.device),
             )
-            probs = F.softmax(masked_logits, dim=-1).to(v.dtype)
-            encoded = torch.einsum("BKGTS,BSKH->BTKGH", probs, v_r.to(v.dtype))
+            probs = F.softmax(masked_logits, dim=-1).to(dtype)
+            encoded = torch.einsum("BKGTS,BSKH->BTKGH", probs, v_r.to(dtype))
             encoded = encoded.reshape(
                 encoded.shape[0], encoded.shape[1], K * G, self.head_dim
             )
@@ -472,6 +473,8 @@ class Block(nn.Module):
         positions: torch.Tensor,
         attn_mask: torch.Tensor,
         adarms_cond: list[torch.Tensor | None],
+        skip_prefix_ffn: bool = False,
+        prefix_requires_grad: bool = True,
     ) -> tuple[list[torch.Tensor | None], tuple[torch.Tensor, torch.Tensor]]:
         """Forward pass.
 
@@ -481,6 +484,8 @@ class Block(nn.Module):
             positions: (B, T) position indices
             attn_mask: attention mask
             adarms_cond: per-expert adaptive RMS norm conditioning (None = regular)
+            skip_prefix_ffn: Skip expert-0 outputs after attention.
+            prefix_requires_grad: Track gradients through the expert-0 FFN.
 
         Returns:
             (outputs, new_kv_cache)
@@ -510,10 +515,18 @@ class Block(nn.Module):
         # Pre-FFN norm
         out = []
         gates = []
+        if skip_prefix_ffn:
+            xs[0] = None
+        elif not prefix_requires_grad and xs[0] is not None:
+            xs[0] = xs[0].detach()
+
         for i, (x, config) in enumerate(zip(xs, self.configs, strict=True)):
             if x is not None:
-                x_norm, gate = self.pre_ffw_norms[i](x, adarms_cond[i])
-                x_ffn = self.mlps[i](x_norm)
+                with torch.set_grad_enabled(
+                    torch.is_grad_enabled() and (i != 0 or prefix_requires_grad)
+                ):
+                    x_norm, gate = self.pre_ffw_norms[i](x, adarms_cond[i])
+                    x_ffn = self.mlps[i](x_norm)
                 out.append(x_ffn)
                 gates.append(gate)
             else:
@@ -585,6 +598,8 @@ class Module(nn.Module):
         adarms_cond: Sequence[torch.Tensor | None] | None = None,
         *,
         kv_cache: tuple[torch.Tensor, torch.Tensor] | None = None,
+        return_prefix: bool = True,
+        prefix_requires_grad: bool = True,
     ) -> tuple[list[torch.Tensor | None], tuple[torch.Tensor, torch.Tensor]]:
         """Full transformer forward pass.
 
@@ -594,6 +609,8 @@ class Module(nn.Module):
             mask: (B, T, S) attention mask (bool)
             adarms_cond: per-expert adaptive conditioning (or None)
             kv_cache: optional KV cache for inference
+            return_prefix: Compute expert-0 outputs through the final FFN and norm.
+            prefix_requires_grad: Track gradients through the final prefix outputs.
 
         Returns:
             (outputs, new_kv_cache)
@@ -625,6 +642,8 @@ class Module(nn.Module):
         new_layer_kv_caches = []
         for i, layer in enumerate(self.layers):
             layer_kv = layer_kv_caches[i] if i < len(layer_kv_caches) else None
+            skip_prefix_ffn = not return_prefix and i == len(self.layers) - 1
+            layer_prefix_grad = prefix_requires_grad or i != len(self.layers) - 1
             if self.gradient_checkpointing and self.training:
                 xs, new_kv = torch.utils.checkpoint.checkpoint(
                     layer,
@@ -633,10 +652,20 @@ class Module(nn.Module):
                     positions,
                     mask,
                     adarms_cond,
+                    skip_prefix_ffn,
+                    layer_prefix_grad,
                     use_reentrant=self.gradient_checkpointing_use_reentrant,
                 )
             else:
-                xs, new_kv = layer(xs, layer_kv, positions, mask, adarms_cond)
+                xs, new_kv = layer(
+                    xs,
+                    layer_kv,
+                    positions,
+                    mask,
+                    adarms_cond,
+                    skip_prefix_ffn,
+                    layer_prefix_grad,
+                )
             new_layer_kv_caches.append(new_kv)
 
         # Return the list of per-layer KV caches
@@ -646,7 +675,10 @@ class Module(nn.Module):
         outputs = []
         for i in range(len(self.configs)):
             if xs[i] is not None:
-                out, _ = self.final_norms[i](xs[i], adarms_cond[i])
+                with torch.set_grad_enabled(
+                    torch.is_grad_enabled() and (i != 0 or prefix_requires_grad)
+                ):
+                    out, _ = self.final_norms[i](xs[i], adarms_cond[i])
                 outputs.append(out)
             else:
                 outputs.append(None)
