@@ -34,6 +34,46 @@ from rlinf.runners.reasoning_runner import ReasoningRunner
 from rlinf.utils.metric_utils import compute_evaluate_metrics, compute_rollout_metrics
 
 
+@pytest.mark.parametrize("scalar", [None, True, 1, 1.0])
+def test_graph_signatures_distinguish_static_metadata_types(scalar):
+    from rlinf.utils.cuda_graph import graph_signature
+
+    inputs = {"pixels": torch.zeros(2, 3), "mode": scalar}
+    assert graph_signature(inputs) != graph_signature({**inputs, "mode": str(scalar)})
+    assert graph_signature(inputs) == graph_signature(
+        dict(reversed(list(inputs.items())))
+    )
+    assert graph_signature({1: torch.zeros(2)}) is None
+    assert graph_signature([torch.zeros(2)]) != graph_signature((torch.zeros(2),))
+
+
+def test_graph_buffer_updates_preserve_structure_and_validate_static_inputs():
+    from rlinf.utils.cuda_graph import clone_tensor_tree, copy_tensor_tree
+
+    source = {"x": [torch.ones(2, 3), {"mode": "train"}], "unused": None}
+    buffers = clone_tensor_tree(source)
+    source["x"][0].mul_(2)
+    copy_tensor_tree(buffers, source)
+    torch.testing.assert_close(buffers["x"][0], source["x"][0])
+    source["x"][0].zero_()
+    assert torch.count_nonzero(buffers["x"][0]) == 6
+    with pytest.raises(ValueError, match="shape mismatch"):
+        copy_tensor_tree(buffers, {"x": [torch.ones(3), {"mode": "train"}]})
+    with pytest.raises(ValueError, match="dtype mismatch"):
+        copy_tensor_tree(
+            buffers, {"x": [torch.ones(2, 3, dtype=torch.float64), {"mode": "train"}]}
+        )
+    with pytest.raises(ValueError, match="static metadata changed"):
+        copy_tensor_tree(buffers, {"x": [torch.ones(2, 3), {"mode": "eval"}]})
+
+
+def test_graph_manager_rejects_unsupported_devices_before_initialization():
+    from rlinf.utils.cuda_graph import CUDAGraphManager
+
+    with pytest.raises(ValueError, match="requires CUDA or NPU"):
+        CUDAGraphManager(device=torch.device("cpu"))
+
+
 def test_compute_evaluate_metrics_reports_interact_delay_wait_time_stats():
     metrics = compute_evaluate_metrics(
         [
@@ -656,4 +696,29 @@ def test_npu_sdpa_mask_cast_preserves_updates_and_biases(monkeypatch, capturing)
     )
     torch.testing.assert_close(
         actual, original(query, key, value, inference_mask), rtol=0, atol=0
+    )
+
+    # Finite additive masks retain a softmax distribution for an entirely
+    # masked row; boolean masks instead produce zero for that row.
+    for blocked_value in (torch.finfo(mask.dtype).min, -torch.inf):
+        blocked_mask = torch.full_like(mask, blocked_value)
+        torch.testing.assert_close(
+            torch.nn.functional.scaled_dot_product_attention(
+                query, key, value, blocked_mask
+            ),
+            original(query, key, value, blocked_mask),
+            rtol=0,
+            atol=0,
+        )
+
+    additive_mask = torch.zeros_like(mask, requires_grad=True)
+    expected = original(query, key, value, additive_mask)
+    actual = torch.nn.functional.scaled_dot_product_attention(
+        query, key, value, additive_mask
+    )
+    torch.testing.assert_close(
+        torch.autograd.grad(actual.sum(), additive_mask)[0],
+        torch.autograd.grad(expected.sum(), additive_mask)[0],
+        rtol=0,
+        atol=0,
     )

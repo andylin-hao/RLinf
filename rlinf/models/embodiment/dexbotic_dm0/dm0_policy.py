@@ -262,14 +262,17 @@ class DexboticDM0ForRLActionPrediction(BasePolicy, DM0ForCausalLM):
                 else t.to(torch.uint8)
             )
         t = t.permute(0, 3, 1, 2)  # [B, C, H, W]
+        proc = self.model.mm_vision_module.image_processor
         h, w = t.shape[-2:]
-        if h != w:
+        if h != w and getattr(self.config, "image_aspect_ratio", "pad") == "pad":
             side = max(h, w)
             pad_h, pad_w = side - h, side - w
-            t = torch.nn.functional.pad(
-                t, (pad_w // 2, pad_w - pad_w // 2, pad_h // 2, pad_h - pad_h // 2)
+            background = t.new_tensor([int(mean * 255) for mean in proc.image_mean])
+            padded = (
+                background.view(1, -1, 1, 1).expand(t.shape[0], -1, side, side).clone()
             )
-        proc = self.model.mm_vision_module.image_processor
+            padded[:, :, pad_h // 2 : pad_h // 2 + h, pad_w // 2 : pad_w // 2 + w] = t
+            t = padded
         size = (proc.size["height"], proc.size["width"])
         t = TVF.resize(
             t, list(size), interpolation=TVF.InterpolationMode.BICUBIC, antialias=True
@@ -278,7 +281,18 @@ class DexboticDM0ForRLActionPrediction(BasePolicy, DM0ForCausalLM):
         return TVF.normalize(t, proc.image_mean, proc.image_std)
 
     def _process_images_for_training(self, raw_main_images, raw_wrist_images, device):
-        if torch.is_tensor(raw_main_images) and device is not None:
+        if (
+            torch.is_tensor(raw_main_images)
+            and raw_main_images.dtype == torch.uint8
+            and (
+                raw_wrist_images is None
+                or (
+                    torch.is_tensor(raw_wrist_images)
+                    and raw_wrist_images.dtype == torch.uint8
+                )
+            )
+            and device is not None
+        ):
             views = [self._device_view_batch(raw_main_images, device)]
             if raw_wrist_images is not None:
                 views.append(self._device_view_batch(raw_wrist_images, device))

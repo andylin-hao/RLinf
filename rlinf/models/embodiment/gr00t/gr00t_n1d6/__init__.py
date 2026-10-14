@@ -56,9 +56,8 @@ def get_model(cfg: DictConfig, torch_dtype=torch.bfloat16):
     # Register the accelerator-specific patches (a no-op off Ascend) before
     # applying, and restore the process-global ones once construction finishes.
     npu_patch_state = apply_npu_patches(Patcher)
-    Patcher.apply()
-
     try:
+        Patcher.apply()
         from gr00t.data.embodiment_tags import EmbodimentTag
 
         from rlinf.models.embodiment.gr00t.gr00t_n1d6.gr00t_action_model import (

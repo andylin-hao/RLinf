@@ -117,15 +117,18 @@ def build_evo1_inputs(
         per_stack: list[torch.Tensor] = []
         for stack in view_stacks:
             arr = stack.reshape(batch_size, -1, *stack.shape[-3:])  # [B, N, H, W, C]
+            if arr.size and (arr.dtype != np.uint8 or arr.shape[-1] not in (1, 3)):
+                # Preserve per-frame range detection, clipping and CHW support
+                # for inputs outside the usual uint8 HWC environment contract.
+                arr = np.stack(
+                    [
+                        np.stack([_to_hwc_uint8(frame) for frame in sample])
+                        for sample in arr
+                    ]
+                )
             t = torch.from_numpy(np.ascontiguousarray(arr)).to(
                 device, non_blocking=True
             )
-            if t.dtype != torch.uint8:
-                t = (
-                    (t * 255).clamp(0, 255).to(torch.uint8)
-                    if t.max() <= 1
-                    else t.to(torch.uint8)
-                )
             b, n, h, w, c = t.shape
             t = t.permute(0, 1, 4, 2, 3).reshape(b * n, c, h, w).float().div_(255.0)
             if h != image_size or w != image_size:

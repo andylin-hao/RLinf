@@ -35,11 +35,13 @@ class BatchedQwenVLProcessor(Gr00tN1d7Processor):
     """Processor whose VLM leg runs from cached templates and device tensors."""
 
     _device: torch.device | None = None
-    _template_cache: dict[tuple[str, int], str] = {}
+    _template_cache: dict[tuple[str, int], str] | None = None
 
-    def set_device(self, device) -> None:
+    def set_device(self, device: torch.device | str | None) -> None:
         """Send frame preprocessing to `device`; None keeps the host path."""
         self._device = torch.device(device) if device is not None else None
+        if self._template_cache is None:
+            self._template_cache = {}
 
     def _apply_vlm_processing(self, images: np.ndarray, language: str):
         if self._device is None:

@@ -255,6 +255,8 @@ Ascend 上的 Transformer attention 执行较慢
 
 原地修改 mask 会使缓存失效。带有 attention bias 的 mask 仍保留浮点表示。Graph capture 会跳过缓存；没有版本计数器的 inference tensor 也会在每次调用时重新检查。
 
+需要计算梯度的 mask，以及存在整行被有限负值屏蔽的 mask，也保留浮点形式，以维持 SDPA 的计算语义。
+
 数值精度 / 推理后端
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

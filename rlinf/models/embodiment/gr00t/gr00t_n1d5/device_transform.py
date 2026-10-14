@@ -25,7 +25,6 @@ processor as device tensors, so the pixel math runs where the model lives.
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 import numpy as np
@@ -42,13 +41,15 @@ class BatchedEagleTransform(GR00TTransform):
     """
 
     _device: torch.device | None = None
-    _template_cache: dict[tuple[str, int], str] = {}
+    _template_cache: dict[tuple[str, int], str] | None = None
     crop_scale: float = 0.95
     video_size: int = 224
 
-    def set_device(self, device) -> None:
+    def set_device(self, device: torch.device | str | None) -> None:
         """Send Eagle pixel preprocessing to `device`; None keeps the host path."""
         self._device = torch.device(device) if device is not None else None
+        if self._template_cache is None:
+            self._template_cache = {}
 
     def _crop_resize(self, frames: torch.Tensor) -> torch.Tensor:
         """Eval-mode video legs on device: center crop then bilinear resize."""
@@ -87,29 +88,9 @@ class BatchedEagleTransform(GR00TTransform):
             self._template_cache[key] = text
         return text
 
-    _announced = False
-
     def apply_batch(self, data: dict, batch_size: int) -> dict:
-        import os
-
-        marker = os.environ.get("RLINF_EAGLE_PROBE")
-        if marker:
-            mode = "host" if self._device is None else f"device:{self._device}"
-            with open(marker, "a") as f:
-                f.write(f"{os.getpid()} {mode}\n")
         if self._device is None:
             return super().apply_batch(data, batch_size)
-        if not BatchedEagleTransform._announced:
-            BatchedEagleTransform._announced = True
-            logging.getLogger(__name__).info(
-                "Eagle device preprocessing active on %s", self._device
-            )
-            import os
-
-            marker = os.environ.get("RLINF_EAGLE_PROBE")
-            if marker:
-                with open(marker, "a") as f:
-                    f.write(f"{os.getpid()} {self._device}\n")
 
         batch: dict[str, Any] = {}
 
@@ -124,8 +105,7 @@ class BatchedEagleTransform(GR00TTransform):
         frames_dev = torch.from_numpy(np.ascontiguousarray(frames)).to(
             self._device, non_blocking=True
         )
-        if frames_dev.shape[-2] != self.video_size:
-            frames_dev = self._crop_resize(frames_dev)
+        frames_dev = self._crop_resize(frames_dev)
         num_images = frames_dev.shape[1]
 
         text_list = []

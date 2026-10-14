@@ -65,9 +65,6 @@ def get_train_image_size(
     return None
 
 
-_TEMPLATE_CACHE: dict[tuple[str, int], str] = {}
-
-
 def _prompt_of(starvla_model: Any, instruction: str) -> str:
     vla_data = getattr(
         getattr(getattr(starvla_model, "config", None), "datasets", None),
@@ -79,8 +76,11 @@ def _prompt_of(starvla_model: Any, instruction: str) -> str:
 
 
 def _templated_text(processor: Any, instruction: str, num_images: int) -> str:
+    cache = getattr(processor, "_rlinf_template_cache", None)
+    if cache is None:
+        cache = processor._rlinf_template_cache = {}
     key = (instruction, num_images)
-    text = _TEMPLATE_CACHE.get(key)
+    text = cache.get(key)
     if text is None:
         conversation = [
             {
@@ -92,9 +92,9 @@ def _templated_text(processor: Any, instruction: str, num_images: int) -> str:
         text = processor.apply_chat_template(
             conversation, tokenize=False, add_generation_prompt=True
         )
-        if len(_TEMPLATE_CACHE) >= 64:
-            _TEMPLATE_CACHE.clear()
-        _TEMPLATE_CACHE[key] = text
+        if len(cache) >= 64:
+            cache.clear()
+        cache[key] = text
     return text
 
 
