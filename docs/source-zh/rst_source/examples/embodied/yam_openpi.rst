@@ -177,8 +177,9 @@ RPent 的 YAM OpenPI 接口采用相同的 ``pi05_yam_joint`` 约定：14 维动
    source .venv/bin/activate
    export RPENT_RLINF_ROOT="$(pwd)"
    git clone --branch main https://github.com/RLinf/RPent.git "$HOME/RPent-yam"
-   UV_CONSTRAINT="$RPENT_RLINF_ROOT/requirements/embodied/models/openpi_yam.txt" \
-       uv pip install -e "$HOME/RPent-yam[yam]"
+   uv pip install -e "$HOME/RPent-yam[yam]" \
+       "numpy<2" "transformers==4.53.2" "gym-aloha==0.1.3" \
+       "mujoco==3.12.0" "dm-control==1.0.40"
    uv pip check
 
 这会在现有的模型及机器人环境中安装 RPent 的 YAM 可选依赖，并保留已有依赖约束。按照 `RPent YAM 部署说明 <https://github.com/RLinf/RPent/blob/main/docs/source-zh/rst_source/real_world_robots/yam.rst>`_ 的 RPC 和控制服务启动章节，使用微调检查点及其数据集统计量；其中的 RLinf 路径设置采用前面导出的 ``RPENT_RLINF_ROOT``。启动 RPent 控制服务前，先结束原生评估，确保只有一个进程控制双臂。

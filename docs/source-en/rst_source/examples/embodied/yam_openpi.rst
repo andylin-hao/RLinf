@@ -248,8 +248,9 @@ nodes, run the following from the RLinf repository directory used above:
    source .venv/bin/activate
    export RPENT_RLINF_ROOT="$(pwd)"
    git clone --branch main https://github.com/RLinf/RPent.git "$HOME/RPent-yam"
-   UV_CONSTRAINT="$RPENT_RLINF_ROOT/requirements/embodied/models/openpi_yam.txt" \
-       uv pip install -e "$HOME/RPent-yam[yam]"
+   uv pip install -e "$HOME/RPent-yam[yam]" \
+       "numpy<2" "transformers==4.53.2" "gym-aloha==0.1.3" \
+       "mujoco==3.12.0" "dm-control==1.0.40"
    uv pip check
 
 This installs RPent's optional YAM dependencies in the existing model/robot environment while

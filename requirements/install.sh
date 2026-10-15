@@ -2466,11 +2466,14 @@ install_openpi_model() {
         yam)
             create_and_sync_venv
             install_common_embodied_deps
+            local yam_openpi_deps=(
+                "numpy<2" "transformers==4.53.2" "gym-aloha==0.1.3"
+                "mujoco==3.12.0" "dm-control==1.0.40"
+            )
             # Replace only the SDK source; constraints preserve the other dependency contracts.
             UV_OVERRIDE="${UV_OVERRIDE:-$SCRIPT_DIR/embodied/models/openpi_yam_sdk.txt}" \
-                UV_CONSTRAINT="${UV_CONSTRAINT:-$SCRIPT_DIR/embodied/models/openpi_yam.txt}" \
-                install_yam_env
-            uv pip install -r "$SCRIPT_DIR/embodied/models/openpi_yam.txt"
+                install_yam_env "${yam_openpi_deps[@]}"
+            uv pip install "rlinf-openpi==0.1.1" "${yam_openpi_deps[@]}"
             install_flash_attn
             ;;
         behavior)
@@ -3816,8 +3819,8 @@ install_dosw1_env() {
 install_yam_env() {
     uv pip install \
         --build-constraint "$SCRIPT_DIR/embodied/envs/yam-build-constraints.txt" \
-        -r "$SCRIPT_DIR/embodied/envs/yam.txt"
-    install_lerobot
+        -r "$SCRIPT_DIR/embodied/envs/yam.txt" "$@"
+    install_lerobot "$@"
     use_opencv_gui_wheel
 }
 
