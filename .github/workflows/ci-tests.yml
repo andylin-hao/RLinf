@@ -61,7 +61,7 @@ jobs:
               - '.github/workflows/install.yml'
             docker_filter: &docker
               - *install
-              - 'requirements/embodied/models/openpi_yam*.txt'
+              - 'requirements/embodied/envs/yam*.txt'
               - 'docker/**'
               - '.github/workflows/docker-build.yml'
             shared_filter: &shared
@@ -155,7 +155,7 @@ jobs:
               - 'examples/sft/**'
               - 'tests/e2e_tests/sft/**'
               - '.github/workflows/sft-e2e-tests.yml'
-              - 'requirements/embodied/models/openpi_yam*.txt'
+              - 'requirements/embodied/envs/yam*.txt'
               - 'rlinf/models/embodiment/openpi/dataconfig/yam_dataconfig.py'
               - 'rlinf/models/embodiment/openpi/dataconfig/__init__.py'
               - 'rlinf/models/embodiment/openpi/policies/yam_policy.py'

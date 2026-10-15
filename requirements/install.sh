@@ -2470,9 +2470,32 @@ install_openpi_model() {
                 "numpy<2" "transformers==4.53.2" "gym-aloha==0.1.3"
                 "mujoco==3.12.0" "dm-control==1.0.40"
             )
-            # Replace only the SDK source; constraints preserve the other dependency contracts.
-            UV_OVERRIDE="${UV_OVERRIDE:-$SCRIPT_DIR/embodied/models/openpi_yam_sdk.txt}" \
-                install_yam_env "${yam_openpi_deps[@]}"
+            (
+                local i2rt_spec i2rt_repo i2rt_build
+                i2rt_spec=$(sed -n 's/^i2rt @ git+//p' "$SCRIPT_DIR/embodied/envs/yam.txt")
+                i2rt_repo=$(clone_or_reuse_repo I2RT_PATH "$VENV_DIR/i2rt" "${i2rt_spec%@*}")
+                i2rt_build=$(mktemp -d)
+                trap 'rm -rf -- "$i2rt_build"' EXIT
+                git -C "$i2rt_repo" archive "${i2rt_spec##*@}" | tar -x -C "$i2rt_build"
+                # OpenPI needs NumPy 1; Rerun is only used by SDK visualization examples.
+                python - "$i2rt_build" <<'EOF'
+from pathlib import Path
+import sys
+
+root = Path(sys.argv[1])
+project = root / "pyproject.toml"
+text = project.read_text()
+text = text.replace('"numpy==2.2.6"', '"numpy>=1.26.4,<=2.2.6"')
+text = text.replace('    "rerun-sdk>=0.32.2",\n', '')
+text = text.replace(
+    "[project.optional-dependencies]\n",
+    '[project.optional-dependencies]\nvisualization = ["rerun-sdk>=0.32.2"]\n',
+)
+project.write_text(text)
+(root / "override.txt").write_text(f"i2rt @ {root.as_uri()}\n")
+EOF
+                install_yam_env --override "$i2rt_build/override.txt" "${yam_openpi_deps[@]}"
+            )
             uv pip install "rlinf-openpi==0.1.1" "${yam_openpi_deps[@]}"
             install_flash_attn
             ;;
