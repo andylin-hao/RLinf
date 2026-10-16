@@ -265,3 +265,43 @@ A matching action alone does not establish training correctness. Validation incl
 Random state is an execution result too. Comparing Python, CPU, and device RNG states identifies changes in random-call ordering. Value-only bootstrap deliberately skips stochastic action generation, so that difference needs to be stated and its learning effects checked separately rather than applying one unsuitable bitwise requirement to every optimization.
 
 A correct micro-batch update proves the training path can execute. A full learning curve addresses whether training remains effective over time. Resumes require model, optimizer, learning-rate scheduler, and per-rank RNG checks; reinitialized simulator and rollout state belong in the experiment conditions. Training-rollout success is also different from success on an independent evaluation set. Reporting both complete-call performance and the associated learning evidence gives each conclusion a clear scope.
+
+Observe Learning over Sustained Training
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Numerical comparisons check whether an update preserves expected behavior. Sustained training observes whether those updates accumulate into learning progress. For OpenVLA-OFT, we started from the same initial checkpoint on A100 and Ascend 910B3 and completed 45 epochs per platform under the same LIBERO-10 GRPO protocol. Both experiments were complete by October 17, 2026.
+
+Each platform used four accelerators, 32 training environments, BF16, micro batch 16, and global batch 8192. Each epoch contained 16 rollout rounds and four optimizer updates. The environment seed was 0, the actor seed was 1234, and the training sampling temperature was 1.6. The model had no value head. These batches and the experiment's purpose differ from the fixed-input performance measurements above.
+
+The experiment retained the original GRPO configuration: FSDP ``forward_prefetch`` and ``backward_prefetch`` were disabled on both platforms, and ``limit_all_gathers`` was ``False``. These curves describe sustained training under that configuration. Matched-input, four-rank numerical comparisons separately verified gradients and optimizer updates for the prefetch configuration.
+
+Both runs recorded all 45 success points with finite, nonzero gradient norms and exited successfully. Integrity checks covered every final checkpoint shard, optimizer state and progress, scheduler progress, and per-rank RNG state. Each optimizer reached 180 updates, and the scheduler reached epoch 45. The training-rollout metric ``env/success_once`` is the fraction of episodes that succeed at least once; the table uses the raw observations.
+
+.. list-table:: OpenVLA-OFT training-rollout success
+   :header-rows: 1
+   :widths: 28 24 24 24
+
+   * - Platform
+     - First 5 epochs, mean
+     - Epochs 41–45, mean
+     - Epoch 45
+   * - A100
+     - 11.37%
+     - 24.73%
+     - 24.22%
+   * - Ascend 910B3
+     - 13.01%
+     - 29.22%
+     - 30.47%
+
+.. figure:: https://raw.githubusercontent.com/RLinf/misc/4e86cb054172e447dcca68cc8e6d6b4b450331bf/pic/ascend_opt/learning_curves_en.png
+   :alt: Raw training success for 45 epochs per platform and observed historical references, with vertical dotted resume boundaries
+   :align: center
+
+   Training-rollout success by epoch. Historical curves end at A100 epoch 35 and Ascend epoch 15; vertical dotted lines mark resumes in the current runs.
+
+Both observed curves trend upward over training. Historical records cover only the first 35 A100 epochs and 15 Ascend epochs. Over each common interval, the current mean success was lower by 2.33 and 0.44 percentage points, respectively. These differences need to be considered alongside single-run variation, platform execution differences, and the resume conditions; the available data does not identify their cause.
+
+A100 resumed at the start of epochs 28 and 42; Ascend resumed at the start of epoch 13. Model, optimizer, scheduler, and RNG state were restored from checkpoints, while simulator and rollout state were reinitialized. The marked boundaries preserve this experiment condition, and each historical curve ends at its last observed record.
+
+Download the :download:`raw epoch metrics, gradient norms and historical records as CSV </_static/data/ascend_embodied_optimization/learning_curves.csv>`. Empty cells mean the historical record does not cover that epoch. There is one observed run per platform, and success is measured on training rollouts. This case shows sustained updates and learning progress for the stated OpenVLA-OFT configuration. Statistical equivalence and generalization performance require repeated runs across seeds and independent evaluation.
