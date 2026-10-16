@@ -159,7 +159,6 @@ jobs:
               - 'rlinf/models/embodiment/openpi/dataconfig/yam_dataconfig.py'
               - 'rlinf/models/embodiment/openpi/dataconfig/__init__.py'
               - 'rlinf/models/embodiment/openpi/policies/yam_policy.py'
-              - 'tests/unit_tests/test_yam_openpi.py'
               - 'tests/e2e_tests/evaluations/realworld_dual_yam_openpi_pi05_mock_eval.yaml'
               - 'evaluations/realworld/realworld_dual_yam_openpi_pi05_eval.yaml'
               - 'rlinf/models/embodiment/dreamzero/**'

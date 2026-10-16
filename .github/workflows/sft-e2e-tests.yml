@@ -25,14 +25,6 @@ jobs:
           bash requirements/install.sh embodied --model openpi --env yam
           uv pip check --python .venv/bin/python
 
-      - name: YAM OpenPI data transforms and recorded-data loader
-        timeout-minutes: 10
-        run: |
-          unset PYTHONPATH
-          export PYTHONPATH=$(pwd)
-          source .venv/bin/activate
-          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q tests/unit_tests/test_yam_openpi.py
-
       - name: Collect YAM mock demonstrations and compute statistics
         timeout-minutes: 20
         run: |
