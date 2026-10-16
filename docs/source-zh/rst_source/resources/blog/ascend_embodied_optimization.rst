@@ -263,3 +263,43 @@ FLOPs 按匹配输入下的实际路径独立统计，包括反向和重计算�
 随机状态也属于执行结果的一部分。相同输入下比较 Python、CPU 和设备 RNG 状态，可以识别随机调用顺序被改变的设计。对于明确省去随机动作生成的 value-only bootstrap，需要说明这种变化并单独检查学习效果，而不是要求所有优化都满足同一个不适用的 bitwise 条件。
 
 最后，固定 micro batch 的正确更新证明了训练路径可执行，完整学习曲线回答的是持续训练是否仍有效。恢复运行时，需要核对模型、optimizer、学习率 scheduler 及各 rank 的 RNG；模拟器与 rollout 状态若重新初始化，也必须在实验条件中说明。训练成功率来自实际 rollout，不能等同于独立评测集上的泛化成功率。最终结果应同时给出完整调用性能和相应学习证据，让读者知道每项结论的适用范围。
+
+持续训练是否形成学习进展
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+数值对照检查一次更新是否保持预期行为，持续训练则观察这些更新能否累积为学习进展。我们以 OpenVLA-OFT 为例，在 A100 和 Ascend 910B3 上从相同初始 checkpoint 出发，采用同一 LIBERO-10 GRPO 协议分别完成 45 个 epoch。两端实验均于 2026 年 10 月 17 日前完成。
+
+每个平台使用四张卡和 32 个训练环境，采用 BF16，micro batch 为 16，global batch 为 8192；每个 epoch 包含 16 轮 rollout 和 4 次 optimizer 更新。环境 seed 为 0，actor seed 为 1234，训练采样 temperature 为 1.6，模型不带 value head。这组配置服务于持续训练验证，与前面的固定输入性能测量具有不同的 batch 和目的。
+
+本实验保持原 GRPO 配置，两端均关闭 FSDP 的 ``forward_prefetch`` 和 ``backward_prefetch``，``limit_all_gathers`` 为 ``False``。本节曲线对应这一配置下的持续训练表现；预取配置的梯度和 optimizer 更新正确性由匹配输入的四卡数值对照验证。
+
+两端均记录了完整的 45 轮成功率与有限、非零的梯度 norm，并正常退出。最终四卡 checkpoint 的各分片完整性、optimizer 状态与进度、scheduler 进度和各 rank 的 RNG 状态均已核验：optimizer 累计更新 180 次，scheduler 进度为 45。训练 rollout 的 ``env/success_once`` 表示 episode 内至少成功一次的比例，下表直接由原始记录计算。
+
+.. list-table:: OpenVLA-OFT 的训练 rollout 成功率
+   :header-rows: 1
+   :widths: 28 24 24 24
+
+   * - 平台
+     - 前 5 个 epoch 平均值
+     - 第 41–45 个 epoch 平均值
+     - 第 45 个 epoch
+   * - A100
+     - 11.37%
+     - 24.73%
+     - 24.22%
+   * - Ascend 910B3
+     - 13.01%
+     - 29.22%
+     - 30.47%
+
+.. figure:: https://raw.githubusercontent.com/RLinf/misc/4e86cb054172e447dcca68cc8e6d6b4b450331bf/pic/ascend_opt/learning_curves_zh.png
+   :alt: 两平台各 45 个 epoch 的原始训练成功率及实际历史记录，竖向点线标明续训边界
+   :align: center
+
+   逐 epoch 的训练 rollout 成功率。历史曲线分别止于 A100 的第 35 轮和 Ascend 的第 15 轮；竖向点线标出本次训练的续训边界。
+
+两条实际曲线均随训练推进呈现上升趋势。历史记录只覆盖 A100 的前 35 个 epoch 和 Ascend 的前 15 个 epoch；在各自共有区间内，本次平均成功率分别低 2.33 和 0.44 个百分点。这些差异需要与单次运行波动、平台执行差异及续训条件共同考虑，现有数据不足以判定差异的具体来源。
+
+A100 在第 28、42 个 epoch 开始时续训，Ascend 在第 13 个 epoch 开始时续训。模型、optimizer、scheduler 和 RNG 从 checkpoint 恢复，模拟器与 rollout 状态重新初始化。图中的续训边界保留了这一实验条件，历史曲线则在最后一条实际记录处结束。
+
+原始逐轮指标、梯度 norm 和历史记录可下载为 :download:`CSV </_static/data/ascend_embodied_optimization/learning_curves.csv>`；空单元格表示历史记录未覆盖该 epoch。每个平台仅有一次已观察的运行，成功率统计自训练 rollout。本例表明这一 OpenVLA-OFT 配置完成了持续更新并出现学习进展；统计等价性与泛化性能仍需多 seed 重复实验和独立评测。
