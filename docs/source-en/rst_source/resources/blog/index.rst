@@ -1,7 +1,7 @@
 Blog
 ====
 
-The blog collects RLinf system designs, performance analyses, and application studies. Choose an article for the problem you are working on: embodied-model and simulator throughput, model training and evaluation integration, or online RL in an application.
+Explore RLinf engineering reports, system optimizations, and model integrations.
 
 .. grid:: 1 2 2 3
    :gutter: 2
@@ -12,43 +12,50 @@ The blog collects RLinf system designs, performance analyses, and application st
 
       Follow complete-call dependencies to understand metadata reuse, communication overlap, and graph execution.
 
-   .. grid-item-card:: BEHAVIOR Simulation Optimization
-      :link: behavior_system_optimization
+   .. grid-item-card:: Comparison with VeRL
+      :link: compare_with_verl
       :link-type: doc
 
-      Examine how observations, simulation work, and pipeline parallelism affect environment-interaction throughput.
-
-   .. grid-item-card:: Cosmos3 Training and Evaluation
-      :link: cosmos3_sft_and_sglang_evaluate
-      :link-type: doc
-
-      Explore Cosmos3-Nano fine-tuning, SGLang inference, and parallel simulator evaluation.
-
-   .. grid-item-card:: World Models and VLM Rewards
-      :link: worldloop_topreward
-      :link-type: doc
-
-      Use training-free visual-language rewards with WoVR and examine results across tasks.
+      Benchmark setup, configuration, and performance comparisons.
 
    .. grid-item-card:: Online RL for Code Completion
       :link: build_a_coding_online_rl_case
       :link-type: doc
 
-      Follow an end-to-end case from editor interaction to training feedback.
+      Connect code completion feedback to online policy training.
 
-   .. grid-item-card:: Benchmarking against VeRL
-      :link: compare_with_verl
+   .. grid-item-card:: BEHAVIOR System Optimization
+      :link: behavior_system_optimization
       :link-type: doc
 
-      Look up the environment, configuration, and results for collocated training comparisons.
+      Accelerate environment interaction for household manipulation tasks.
+
+   .. grid-item-card:: Cosmos3 with SGLang
+      :link: cosmos3_sft_and_sglang_evaluate
+      :link-type: doc
+
+      Fine-tune Cosmos3 and evaluate it with parallel inference.
+
+   .. grid-item-card:: WorldLoop and WoVR
+      :link: worldloop_topreward
+      :link-type: doc
+
+      Use a training-free VLM reward for world-model RL.
+
+   .. grid-item-card:: WoVR on Moore Threads S5000
+      :link: musa_wovr
+      :link-type: doc
+
+      MUSA adaptation, accuracy comparisons, and eight- and sixteen-GPU performance.
 
 .. toctree::
    :hidden:
    :maxdepth: 1
 
    Embodied Models on Ascend <ascend_embodied_optimization>
+   compare_with_verl
+   build_a_coding_online_rl_case
    behavior_system_optimization
    cosmos3_sft_and_sglang_evaluate
    worldloop_topreward
-   build_a_coding_online_rl_case
-   compare_with_verl
+   musa_wovr

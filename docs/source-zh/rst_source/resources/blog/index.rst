@@ -1,7 +1,7 @@
 博客
 ====
 
-博客收录 RLinf 的系统设计、性能分析和应用实践。根据要解决的问题，选择下列文章：具身模型与仿真吞吐优化、模型训练与评测集成，或在线强化学习的实际应用。
+阅读 RLinf 的工程实践、系统优化与模型集成文章。
 
 .. grid:: 1 2 2 3
    :gutter: 2
@@ -12,43 +12,50 @@
 
       从完整调用的数据依赖，解释控制信息复用、通信重叠和执行图的设计与收益。
 
-   .. grid-item-card:: BEHAVIOR 仿真优化
-      :link: behavior_system_optimization
-      :link-type: doc
-
-      分析观测生成、仿真执行与流水线并行如何影响环境交互吞吐。
-
-   .. grid-item-card:: Cosmos3 的训练与评测
-      :link: cosmos3_sft_and_sglang_evaluate
-      :link-type: doc
-
-      介绍 Cosmos3-Nano 微调、SGLang 推理与并行仿真评测的集成设计。
-
-   .. grid-item-card:: 世界模型与 VLM 奖励
-      :link: worldloop_topreward
-      :link-type: doc
-
-      在 WoVR 世界模型训练中使用无需训练的视觉语言奖励，并分析跨任务结果。
-
-   .. grid-item-card:: 在线代码强化学习
-      :link: build_a_coding_online_rl_case
-      :link-type: doc
-
-      从编辑器交互到训练反馈，说明代码补全在线强化学习的完整案例。
-
-   .. grid-item-card:: 与 VeRL 的基准对比
+   .. grid-item-card:: 与 VeRL 的对比
       :link: compare_with_verl
       :link-type: doc
 
-      查看共享式训练配置下的环境搭建、配置和性能结果。
+      对照测试环境、配置与性能结果。
+
+   .. grid-item-card:: 代码补全在线 RL
+      :link: build_a_coding_online_rl_case
+      :link-type: doc
+
+      将代码补全反馈接入在线 policy 训练。
+
+   .. grid-item-card:: BEHAVIOR 系统优化
+      :link: behavior_system_optimization
+      :link-type: doc
+
+      加速家庭操作任务中的环境交互。
+
+   .. grid-item-card:: Cosmos3 与 SGLang
+      :link: cosmos3_sft_and_sglang_evaluate
+      :link-type: doc
+
+      微调 Cosmos3，并通过并行推理完成评测。
+
+   .. grid-item-card:: WorldLoop 与 WoVR
+      :link: worldloop_topreward
+      :link-type: doc
+
+      为世界模型 RL 接入无需训练的 VLM 奖励。
+
+   .. grid-item-card:: 在摩尔线程 S5000 上复现 WoVR
+      :link: musa_wovr
+      :link-type: doc
+
+      MUSA 适配、精度对齐，以及 8 卡与 16 卡性能实践。
 
 .. toctree::
    :hidden:
    :maxdepth: 1
 
    Ascend 具身模型优化 <ascend_embodied_optimization>
+   compare_with_verl
+   build_a_coding_online_rl_case
    behavior_system_optimization
    cosmos3_sft_and_sglang_evaluate
    worldloop_topreward
-   build_a_coding_online_rl_case
-   compare_with_verl
+   musa_wovr
