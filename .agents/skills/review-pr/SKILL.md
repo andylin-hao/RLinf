@@ -117,10 +117,14 @@ Keep this concise (3-6 bullets), then move to findings.
 ## 5. Output format
 
 - Open with the PR URL and the brief explanation from section 4.
-- List **findings**, ordered by severity (highest first), as bullets:
-  - `Severity` + `Area/File`: issue summary
-  - `Suggested fix`: concrete action
-  - `Reference`: file:line in the diff, plus `origin/main:file:line` when the finding came from a main-branch cross-check
+- List **findings**, ordered by severity (highest first). Write every finding so a reviewer with little background in that part of the codebase can immediately grasp the problem:
+  - **Lead with the plain-language idea, not variable names**: start by briefly stating what the feature or test is *trying* to do, what actually happens instead, and why that causes a problem in practice.
+  - **Avoid dumping code, internal variable chains, and line numbers into the prose**: explain the cause and effect in everyday engineering terms first (e.g., "the episode is configured to be 4 steps long, and each call advances 2 steps, so calling it once stops halfway and never reaches the time limit"). Quote a short line of code or name a symbol only when it clarifies the point, not as a substitute for explaining it.
+  - Structure each finding as:
+    - `Severity` + `Area/File`: short, plain-English title of the problem.
+    - `Why this is a problem`: clear explanation of the expected behavior vs. what actually happens and its real-world impact, written for a reader unfamiliar with the module's internals.
+    - `Suggested fix`: concrete, easy-to-follow action to resolve it.
+    - `Reference`: keep exact `file:line` pointers (and `origin/main:file:line` for cross-checks) compactly at the end rather than scattered through the explanation.
 - The bulk of findings should be from categories (a) and (b). If you find none in those categories, say so explicitly — do not fabricate.
 - Group docs (c) findings together; tests/CI (d) together; style/PR-metadata (e) at the end.
 - Explicitly label findings discovered via **main-branch cross-check** (not only direct diff lines).
