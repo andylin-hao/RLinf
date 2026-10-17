@@ -636,7 +636,8 @@ class WorldModelEnv:
         raw_chunk_terminations = torch.zeros(
             self.num_envs, self.chunk, dtype=torch.bool, device=self.device
         )
-        raw_chunk_terminations[:, -1] = estimated_success
+        if not self.ignore_terminations:
+            raw_chunk_terminations[:, -1] = estimated_success
 
         raw_chunk_truncations = torch.zeros(
             self.num_envs, self.chunk, dtype=torch.bool, device=self.device
@@ -647,7 +648,9 @@ class WorldModelEnv:
             if self.terminate_at_max_episode_steps:
                 raw_chunk_terminations[:, -1] |= reached_limit
             else:
-                raw_chunk_truncations[:, -1] = reached_limit
+                raw_chunk_truncations[:, -1] = (
+                    reached_limit & ~raw_chunk_terminations[:, -1]
+                )
 
         past_terminations = raw_chunk_terminations.any(dim=1)
         past_truncations = raw_chunk_truncations.any(dim=1)
