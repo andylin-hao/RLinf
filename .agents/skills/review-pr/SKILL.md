@@ -117,14 +117,14 @@ Keep this concise (3-6 bullets), then move to findings.
 ## 5. Output format
 
 - Open with the PR URL and the brief explanation from section 4.
-- List **findings**, ordered by severity (highest first). Write every finding so a reviewer with little background in that part of the codebase can immediately grasp the problem:
-  - **Lead with the plain-language idea, not variable names**: start by briefly stating what the feature or test is *trying* to do, what actually happens instead, and why that causes a problem in practice.
-  - **Avoid dumping code, internal variable chains, and line numbers into the prose**: explain the cause and effect in everyday engineering terms first (e.g., "the episode is configured to be 4 steps long, and each call advances 2 steps, so calling it once stops halfway and never reaches the time limit"). Quote a short line of code or name a symbol only when it clarifies the point, not as a substitute for explaining it.
+- List **findings**, ordered by severity (highest first). Present every finding with **both** a plain-language explanation and a step-by-step code walkthrough so reviewers with any level of background can understand the issue and verify it in the diff:
+  - **Plain-language explanation (for context)**: start by explaining the problem in everyday engineering terms for a reviewer unfamiliar with the module's internals — what the code or test is *trying* to do, what actually happens instead, and why that causes a bug or regression in practice, without burying the core idea in variable names.
+  - **Step-by-step code trace (for verification)**: alongside the plain-language explanation, walk through the concrete execution path in the code (`file:line` in the PR diff and `origin/main:file:line` when cross-checking) showing how inputs/config values flow through the relevant lines and produce the wrong state or result.
   - Structure each finding as:
     - `Severity` + `Area/File`: short, plain-English title of the problem.
-    - `Why this is a problem`: clear explanation of the expected behavior vs. what actually happens and its real-world impact, written for a reader unfamiliar with the module's internals.
-    - `Suggested fix`: concrete, easy-to-follow action to resolve it.
-    - `Reference`: keep exact `file:line` pointers (and `origin/main:file:line` for cross-checks) compactly at the end rather than scattered through the explanation.
+    - `Why this is a problem`: plain-language explanation of expected vs. actual behavior and real-world impact, accessible to a reader with little background in that module.
+    - `Code walkthrough`: numbered or bulleted step-by-step trace through the exact lines and values (`file:line`) showing how the bug occurs in code.
+    - `Suggested fix`: concrete action or code change to resolve it.
 - The bulk of findings should be from categories (a) and (b). If you find none in those categories, say so explicitly — do not fabricate.
 - Group docs (c) findings together; tests/CI (d) together; style/PR-metadata (e) at the end.
 - Explicitly label findings discovered via **main-branch cross-check** (not only direct diff lines).
