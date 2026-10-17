@@ -249,7 +249,7 @@ FLOPs 按匹配输入下的实际路径独立统计，包括反向和重计算�
 
    A100 为各模型的比较基准。训练范围按对应 rank 配对计算；Evo-1 的实际结果单独标色。数据来自截至 2026 年 10 月 10 日完成的固定输入实验。
 
-图表数据、对应 TFLOPS 和 batch 配置可下载为 :download:`CSV </_static/data/ascend_embodied_optimization/model_performance.csv>`。训练比值按对应 rank 配对统计，不能用两平台 TFLOPS 范围的端点任意相除。
+图表数据、对应 TFLOPS 和 batch 配置可下载为 `CSV <https://raw.githubusercontent.com/RLinf/misc/536580ae126e13fc4ab4e43a85c372534bbd63f3/pic/ascend_opt/model_performance.csv>`__。训练比值按对应 rank 配对统计，不能用两平台 TFLOPS 范围的端点任意相除。
 
 10 个模型的动作、bootstrap 和全部训练 rank 比值达到 75%。Evo-1 的原生算子方案分别为 37.98%、38.10% 和 39.55%–41.19%，说明上述通用优化并不能覆盖所有模型的剩余性能差距。图中的模型结构、batch 和执行路径各不相同，跨模型的 TFLOPS 不能作为模型质量排序。这些数字对应测量时的模型与软件版本，在其他版本上部署时需要重新测量。
 
@@ -302,4 +302,4 @@ FLOPs 按匹配输入下的实际路径独立统计，包括反向和重计算�
 
 A100 在第 28、42 个 epoch 开始时续训，Ascend 在第 13 个 epoch 开始时续训。模型、optimizer、scheduler 和 RNG 从 checkpoint 恢复，模拟器与 rollout 状态重新初始化。图中的续训边界保留了这一实验条件，历史曲线则在最后一条实际记录处结束。
 
-原始逐轮指标、梯度 norm 和历史记录可下载为 :download:`CSV </_static/data/ascend_embodied_optimization/learning_curves.csv>`；空单元格表示历史记录未覆盖该 epoch。每个平台仅有一次已观察的运行，成功率统计自训练 rollout。本例表明这一 OpenVLA-OFT 配置完成了持续更新并出现学习进展；统计等价性与泛化性能仍需多 seed 重复实验和独立评测。
+原始逐轮指标、梯度 norm 和历史记录可下载为 `CSV <https://raw.githubusercontent.com/RLinf/misc/536580ae126e13fc4ab4e43a85c372534bbd63f3/pic/ascend_opt/learning_curves.csv>`__；空单元格表示历史记录未覆盖该 epoch。每个平台仅有一次已观察的运行，成功率统计自训练 rollout。本例表明这一 OpenVLA-OFT 配置完成了持续更新并出现学习进展；统计等价性与泛化性能仍需多 seed 重复实验和独立评测。
