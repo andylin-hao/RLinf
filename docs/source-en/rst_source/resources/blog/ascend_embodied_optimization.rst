@@ -251,7 +251,7 @@ FLOPs follow the actual matched execution path, including backward and recomputa
 
    A100 is the per-model reference. Training ranges pair corresponding ranks, and Evo-1 is highlighted. These fixed-input measurements were completed through October 10, 2026.
 
-Download the :download:`chart data, TFLOPS values and batch configuration as CSV </_static/data/ascend_embodied_optimization/model_performance.csv>`. Training ratios pair corresponding ranks; dividing arbitrary endpoints of the two TFLOPS ranges does not reproduce those ratios.
+Download the `chart data, TFLOPS values and batch configuration as CSV <https://raw.githubusercontent.com/RLinf/misc/536580ae126e13fc4ab4e43a85c372534bbd63f3/pic/ascend_opt/model_performance.csv>`__. Training ratios pair corresponding ranks; dividing arbitrary endpoints of the two TFLOPS ranges does not reproduce those ratios.
 
 Ten models reach 75% for action, bootstrap, and every training rank. Evo-1's native-operator design reaches 37.98%, 38.10%, and 39.55%–41.19%, respectively, showing that these shared techniques do not eliminate every model's remaining performance gap. Model architectures, batches, and execution paths differ; cross-model TFLOPS do not rank model quality. The results describe the model and software versions used in these experiments; deployments on other revisions require fresh measurements.
 
@@ -304,4 +304,4 @@ Both observed curves trend upward over training. Historical records cover only t
 
 A100 resumed at the start of epochs 28 and 42; Ascend resumed at the start of epoch 13. Model, optimizer, scheduler, and RNG state were restored from checkpoints, while simulator and rollout state were reinitialized. The marked boundaries preserve this experiment condition, and each historical curve ends at its last observed record.
 
-Download the :download:`raw epoch metrics, gradient norms and historical records as CSV </_static/data/ascend_embodied_optimization/learning_curves.csv>`. Empty cells mean the historical record does not cover that epoch. There is one observed run per platform, and success is measured on training rollouts. This case shows sustained updates and learning progress for the stated OpenVLA-OFT configuration. Statistical equivalence and generalization performance require repeated runs across seeds and independent evaluation.
+Download the `raw epoch metrics, gradient norms and historical records as CSV <https://raw.githubusercontent.com/RLinf/misc/536580ae126e13fc4ab4e43a85c372534bbd63f3/pic/ascend_opt/learning_curves.csv>`__. Empty cells mean the historical record does not cover that epoch. There is one observed run per platform, and success is measured on training rollouts. This case shows sustained updates and learning progress for the stated OpenVLA-OFT configuration. Statistical equivalence and generalization performance require repeated runs across seeds and independent evaluation.
