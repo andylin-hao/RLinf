@@ -589,9 +589,7 @@ ROCm 使用 PyTorch 的 CUDA 兼容 API，因此 GR00T N1.5 可直接使用共�
 
 N1.6 或 N1.7 使用 ``--model gr00t_n1d6`` 或 ``--model gr00t_n1d7``，环境为 ``--env maniskill_libero``。
 
-中国大陆用户可添加 ``--use-mirror``。安装脚本在 aarch64 上按需从源码构建 ``decord``，应用昇腾专用的 TensorFlow 版本约束，并跳过 CUDA flash-attention。加载模型时，RLinf 会应用各版本对应的 NPU 补丁：融合 RMSNorm 与 rotary kernel、由 Transformers 昇腾集成提供的 flash-attention，以及 NPU kernel 接受的注意力 mask 布局。
-
-N1.5 和 N1.6 使用旧版 Transformers NPU 集成时，RLinf 还会在语言模型的各层之间复用去除 padding 所需的索引和序列长度，并在设备上保留因果 mask。原地修改 mask 后，缓存的元数据会失效。训练与推理仍使用原有的注意力 kernel，反向计算保持一致。
+中国大陆用户可添加 ``--use-mirror``。安装脚本在 aarch64 上按需从源码构建 ``decord``，应用昇腾专用的 TensorFlow 版本约束，并跳过 CUDA flash-attention。加载模型时，RLinf 会应用各版本对应的 NPU 补丁。
 
 .. include:: _ascend_torch.rst
 

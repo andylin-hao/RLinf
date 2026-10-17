@@ -179,8 +179,7 @@ Launch a config with ``run_embodiment.sh``:
 
 For π₀, ``actor.model.precision`` controls the loaded parameter dtype. Set it to
 ``bf16`` for BF16 execution, and use the same precision in ``rollout.model``.
-Continuous state and action inputs are cast when they enter the projection
-layers. Leaving precision at ``null`` preserves the checkpoint's default dtype.
+Leaving precision at ``null`` preserves the checkpoint's default dtype.
 
 .. admonition:: Configure further
    :class: note

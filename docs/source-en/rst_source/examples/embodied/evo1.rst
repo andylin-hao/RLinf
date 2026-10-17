@@ -170,20 +170,9 @@ flow-matching SDE sampling / GRPO parameters under ``actor.model`` and ``algorit
       clip_ratio_low: 0.2
       clip_ratio_high: 0.28          # clip-higher: sustains improvement
 
-During RL rollout, the action head records the denoising trajectory and the
-stochastic step so training can recompute log-probabilities for the same actions.
-With ``rl_head_config.joint_logprob: False``, one stochastic step is shared across
-the batch; ``ignore_last: True`` excludes the final step when there is more than
-one step. Setting ``joint_logprob: True`` adds noise at every step. The sampler
-chooses these steps on the host before denoising, avoiding a device synchronization
-in each iteration while preserving the random draws. Evaluation uses deterministic
-transitions.
-
 When submitting the action-head kernels becomes a rollout bottleneck, enable
-graphs for the deterministic part of the training rollout. The graph uses the
-original attention implementation; noise sampling and time/action embedding
-preparation remain outside it. Keeping the rollout model resident lets later
-calls reuse captured graphs:
+graphs for the deterministic part of the training rollout. Keeping the rollout
+model resident lets later calls reuse captured graphs:
 
 .. code-block:: yaml
 
@@ -197,12 +186,10 @@ graphs, and reloading captures them again from the next rollout inputs.
 
 Large batches on Ascend can exhaust memory in the frozen InternVL vision
 attention. Set ``actor.model.evo1.vision_attention_batch_size: 8`` to compute
-its attention matrices for at most eight camera frames at once. The projections
-retain the full batch, preserving their BF16 rounding; sampling and stored
-rollout tensors keep their existing shapes. The default is ``0``, which uses
-native attention. CUDA, vision attention with gradients, and attention dropout use
-the native path. This setting reduces temporary memory and can add kernel
-launch overhead, so measure throughput with the intended rollout batch.
+its attention matrices for at most eight camera frames at once. The default is
+``0``, which uses native attention. The setting applies to frozen vision attention
+without dropout on Ascend. It reduces temporary memory and can add kernel launch
+overhead, so measure throughput with the intended rollout batch.
 
 Launch Commands
 ~~~~~~~~~~~~~~~

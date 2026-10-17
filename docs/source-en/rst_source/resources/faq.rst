@@ -266,21 +266,6 @@ inter-worker communication, which defaults to 180 minutes. Raise it with
 Ray captures the environment when it starts, so export this on every node
 **before** ``ray start``.
 
-Transformer Attention Runs Slowly on Ascend
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Check whether the attention mask makes ``torch_npu`` decompose SDPA into separate
-matmul and softmax kernels. RLinf converts floating-point masks containing only
-zeros and blocking negative values to boolean masks so attention can use the
-fused kernel. When decoder layers share an unchanged mask tensor, its validation
-and conversion are reused to avoid a device synchronization in every layer.
-
-An in-place mask update invalidates that cache. Masks carrying attention
-biases keep their floating-point representation. Graph capture bypasses the
-cache, and inference tensors without version counters are validated on each call.
-Masks that require gradients or contain an entirely blocked finite row also
-keep their floating-point representation to preserve SDPA's semantics.
-
 Numerical Precision / Inference backend
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

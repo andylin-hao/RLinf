@@ -604,15 +604,8 @@ For N1.6 or N1.7, use ``--model gr00t_n1d6`` or ``--model gr00t_n1d7`` with
 
 Add ``--use-mirror`` for downloads from mainland China. The installer builds
 ``decord`` from source when needed on aarch64, applies the Ascend TensorFlow
-pins, and skips CUDA flash-attention. RLinf applies each version's NPU patches
-when loading the model: fused RMSNorm and rotary kernels, flash-attention
-served from Transformers' Ascend integration, and an attention-mask layout the
-NPU kernel accepts.
-
-For N1.5 and N1.6 with the legacy Transformers NPU integration, RLinf also reuses padding
-indices and sequence lengths across language layers and keeps the causal mask
-on the device. An in-place mask change invalidates the cached metadata. Training
-and inference retain the same native attention kernels and backward computation.
+pins, and skips CUDA flash-attention. RLinf applies the version-specific NPU
+patches when loading the model.
 
 .. include:: _ascend_torch.rst
 

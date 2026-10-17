@@ -248,15 +248,6 @@ checkpoint 写入过慢，或者该 rank 挂在调试器里，而其余 rank 都
 
 Ray 会在启动时捕获环境变量，因此必须在每个节点上 ``ray start`` **之前** 导出。
 
-Ascend 上的 Transformer attention 执行较慢
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-先检查 attention mask 是否使 ``torch_npu`` 将 SDPA 拆成独立的矩阵乘法和 softmax 算子。对于仅包含零值和屏蔽位置所用负值的浮点 mask，RLinf 会将其转换为布尔 mask，使 attention 可以使用融合算子。多个 decoder 层共享同一个未修改的 mask 时，检查结果和转换后的 mask 会被复用，避免每层都触发一次设备同步。
-
-原地修改 mask 会使缓存失效。带有 attention bias 的 mask 仍保留浮点表示。Graph capture 会跳过缓存；没有版本计数器的 inference tensor 也会在每次调用时重新检查。
-
-需要计算梯度的 mask，以及存在整行被有限负值屏蔽的 mask，也保留浮点形式，以维持 SDPA 的计算语义。
-
 数值精度 / 推理后端
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
