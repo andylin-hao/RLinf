@@ -50,5 +50,5 @@ Use alongside the PR diff. **Always cross-reference against `origin/main`** (`gi
 - [ ] PR title in Conventional Commits format; PR Description + Checklist sections filled
 
 ## Output clarity
-- [ ] Each finding includes **both** a plain-language explanation for a reviewer with little background in that module (what it tries to do, what happens instead, and why it matters) **and** a step-by-step code walkthrough (`file:line` and concrete value/state trace) alongside it
+- [ ] Each finding includes **both** a plain-language explanation for a reviewer with little background in that module (what it tries to do, what happens instead, and why it matters) **and** a step-by-step code walkthrough that directly shows the key offending code snippet(s) inline rather than only pointing to line numbers
 

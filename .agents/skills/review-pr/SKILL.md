@@ -117,14 +117,14 @@ Keep this concise (3-6 bullets), then move to findings.
 ## 5. Output format
 
 - Open with the PR URL and the brief explanation from section 4.
-- List **findings**, ordered by severity (highest first). Present every finding with **both** a plain-language explanation and a step-by-step code walkthrough so reviewers with any level of background can understand the issue and verify it in the diff:
+- List **findings**, ordered by severity (highest first). Present every finding with **both** a plain-language explanation and a step-by-step code walkthrough with inline code snippets so reviewers can immediately understand the issue without having to look up line numbers in another tab:
   - **Plain-language explanation (for context)**: start by explaining the problem in everyday engineering terms for a reviewer unfamiliar with the module's internals — what the code or test is *trying* to do, what actually happens instead, and why that causes a bug or regression in practice, without burying the core idea in variable names.
-  - **Step-by-step code trace (for verification)**: alongside the plain-language explanation, walk through the concrete execution path in the code (`file:line` in the PR diff and `origin/main:file:line` when cross-checking) showing how inputs/config values flow through the relevant lines and produce the wrong state or result.
+  - **Step-by-step code trace with inline snippets (for verification)**: directly show the key code snippet(s) from the PR (and from `origin/main` when cross-checking) inline, and walk through how the execution flows through that snippet to produce the bug. Do not force reviewers to chase line numbers (`at line 639... then at line 654...`) without showing the code itself.
   - Structure each finding as:
     - `Severity` + `Area/File`: short, plain-English title of the problem.
     - `Why this is a problem`: plain-language explanation of expected vs. actual behavior and real-world impact, accessible to a reader with little background in that module.
-    - `Code walkthrough`: numbered or bulleted step-by-step trace through the exact lines and values (`file:line`) showing how the bug occurs in code.
-    - `Suggested fix`: concrete action or code change to resolve it.
+    - `Code walkthrough`: quote the key code snippet(s) directly in fenced code blocks (with file/line header for reference) and trace step by step how inputs/values flow through those lines to cause the issue.
+    - `Suggested fix`: concrete code change to resolve it.
 - The bulk of findings should be from categories (a) and (b). If you find none in those categories, say so explicitly — do not fabricate.
 - Group docs (c) findings together; tests/CI (d) together; style/PR-metadata (e) at the end.
 - Explicitly label findings discovered via **main-branch cross-check** (not only direct diff lines).
