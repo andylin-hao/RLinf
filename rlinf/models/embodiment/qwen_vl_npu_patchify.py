@@ -31,9 +31,11 @@ from typing import Any
 
 import torch
 
+from rlinf.scheduler import AcceleratorType, Worker
+
 
 def _is_npu() -> bool:
-    return hasattr(torch, "npu") and torch.npu.is_available()
+    return Worker.accelerator_type == AcceleratorType.NPU
 
 
 def _patchify_qwen_vl(
@@ -215,3 +217,12 @@ def ensure_qwen_vl_npu_patchify_patch() -> bool:
     Qwen2VLImageProcessorFast._preprocess = _qwen_vl_fast_preprocess_npu
     _PATCH_INSTALLED = True
     return True
+
+
+def qwen_vl_supports_device_images() -> bool:
+    """Whether Qwen-VL fast image processors can accept accelerator tensors.
+
+    Off Ascend NPU, upstream patch packing accepts device tensors directly; on
+    Ascend NPU, device tensors require the staged <=8-dim patch.
+    """
+    return not _is_npu() or ensure_qwen_vl_npu_patchify_patch()

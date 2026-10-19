@@ -33,16 +33,13 @@ from rlinf.models.embodiment.gr00t.simulation_io import (
     OBS_CONVERSION,
 )
 from rlinf.models.embodiment.gr00t.utils import (
+    backbone_graph_call,
+    capture_backbone_graph,
     squeeze_dict_values,
     unsqueeze_dict_values,
 )
 from rlinf.models.embodiment.modules.explore_noise_net import ExploreNoiseNet
 from rlinf.models.embodiment.modules.value_head import ValueHead
-from rlinf.utils.cuda_graph import (
-    clone_tensor_tree,
-    copy_tensor_tree,
-    graph_signature,
-)
 
 
 class SimulationContent:
@@ -547,18 +544,37 @@ class GR00T_N1_6_ForRLActionPrediction(Gr00tN1d6, BasePolicy):
         if modality_config is None or modality_transform is None:
             from transformers import AutoProcessor
 
+            from rlinf.models.embodiment.gr00t.gr00t_n1d6.device_transform import (
+                BatchedEagleProcessor,
+            )
+
             logging.info("loading Processor...")
-            if processor_path is not None:
-                processor_path = Path(processor_path)
-                with open(processor_path / "processor_config.json", "r") as f:
+            processor_required_files = (
+                "processor_config.json",
+                "statistics.json",
+                "embodiment_id.json",
+            )
+            candidates = (
+                [Path(processor_path)]
+                if processor_path is not None
+                else [Path(local_model_path) / "processor", Path(local_model_path)]
+            )
+            resolved_proc_dir = next(
+                (
+                    cand
+                    for cand in candidates
+                    if cand.is_dir()
+                    and all((cand / f).is_file() for f in processor_required_files)
+                ),
+                None,
+            )
+            if resolved_proc_dir is not None:
+                with open(resolved_proc_dir / "processor_config.json", "r") as f:
                     processor_cfg = json.load(f)["processor_kwargs"]
-                with open(processor_path / "statistics.json", "r") as f:
+                with open(resolved_proc_dir / "statistics.json", "r") as f:
                     processor_cfg["statistics"] = json.load(f)
-                with open(processor_path / "embodiment_id.json", "r") as f:
+                with open(resolved_proc_dir / "embodiment_id.json", "r") as f:
                     processor_cfg["embodiment_id_mapping"] = json.load(f)
-                from rlinf.models.embodiment.gr00t.gr00t_n1d6.device_transform import (
-                    BatchedEagleProcessor,
-                )
 
                 modality_transform = BatchedEagleProcessor(**processor_cfg)
                 modality_config = getattr(modality_transform, "modality_configs", None)
@@ -566,8 +582,12 @@ class GR00T_N1_6_ForRLActionPrediction(Gr00tN1d6, BasePolicy):
                 processor = AutoProcessor.from_pretrained(
                     str(local_model_path), trust_remote_code=True
                 )
-                modality_transform = processor
-                modality_config = getattr(processor, "modality_config", None)
+                modality_transform = BatchedEagleProcessor.upgrade(processor)
+                modality_config = getattr(
+                    modality_transform,
+                    "modality_configs",
+                    getattr(modality_transform, "modality_config", None),
+                )
 
             logging.info("Processor loaded safely. No model weights were touched.")
 
@@ -1101,58 +1121,10 @@ class GR00T_N1_6_ForRLActionPrediction(Gr00tN1d6, BasePolicy):
 
     def _backbone_graph_call(self, backbone_inputs):
         """Graph-routed backbone forward with eager warmup and fallback."""
-        key = graph_signature(backbone_inputs, "b")
-        if key is None:
-            return self.backbone(backbone_inputs)
-        state = self._rl_graph_state.get(key, 0)
-        if state < 2 or state < 0:
-            if state >= 0:
-                self._rl_graph_state[key] = state + 1
-            return self.backbone(backbone_inputs)
-        if key not in self._rl_graph_specs:
-            self._capture_backbone_graph(key, backbone_inputs)
-            if key not in self._rl_graph_specs:
-                return self.backbone(backbone_inputs)
-        spec = self._rl_graph_specs[key]
-        try:
-            copy_tensor_tree(spec["inputs"], backbone_inputs)
-            spec["graph"].replay()
-            # Outputs are static buffers; async channel sends may outlive the
-            # next replay, so hand out clones.
-            return clone_tensor_tree(spec["outputs"])
-        except Exception as error:  # noqa: BLE001
-            self._rl_graph_state[key] = -1
-            logging.warning(
-                "rollout graph replay failed (%s); falling back to eager", error
-            )
-            return self.backbone(backbone_inputs)
+        return backbone_graph_call(self, backbone_inputs)
 
     def _capture_backbone_graph(self, key, backbone_inputs):
-        from rlinf.utils.cuda_graph import GraphCaptureSpec
-
-        name = f"backbone_{len(self._rl_graph_specs)}"
-        inputs = clone_tensor_tree(backbone_inputs)
-
-        def _fn(spec_inputs):
-            return self.backbone(spec_inputs)
-
-        try:
-            graph_spec = self.cuda_graph_manager.capture(
-                GraphCaptureSpec(
-                    name=name,
-                    func=_fn,
-                    inputs=inputs,
-                    warmup_iters=0,
-                )
-            )
-            self._rl_graph_specs[key] = {
-                "graph": graph_spec.graph,
-                "inputs": graph_spec.inputs,
-                "outputs": graph_spec.outputs,
-            }
-        except Exception as error:  # noqa: BLE001
-            self._rl_graph_state[key] = -1
-            logging.warning("rollout graph capture failed (%s); staying eager", error)
+        return capture_backbone_graph(self, key, backbone_inputs)
 
     def _get_rl_action(
         self,

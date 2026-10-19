@@ -27,7 +27,7 @@ import torch
 from gr00t.model.gr00t_n1d7.processing_gr00t_n1d7 import Gr00tN1d7Processor
 
 from rlinf.models.embodiment.qwen_vl_npu_patchify import (
-    ensure_qwen_vl_npu_patchify_patch,
+    qwen_vl_supports_device_images,
 )
 
 
@@ -68,10 +68,6 @@ class BatchedQwenVLProcessor(Gr00tN1d7Processor):
             self._template_cache[key] = text
 
         frames = torch.from_numpy(np.ascontiguousarray(images))
-        if self._device is not None:
-            if self._device.type == "npu" and not ensure_qwen_vl_npu_patchify_patch():
-                # Staged packing unavailable: keep the pixels on host, where
-                # CANN accepts the fast image processor's copies.
-                return {"vlm_content": {"text": text, "images": list(frames.unbind(0))}}
+        if self._device is not None and qwen_vl_supports_device_images():
             frames = frames.to(self._device, non_blocking=True)
         return {"vlm_content": {"text": text, "images": list(frames.unbind(0))}}

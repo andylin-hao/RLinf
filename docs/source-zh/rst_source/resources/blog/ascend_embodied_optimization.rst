@@ -127,19 +127,23 @@ GR00T N1.6/N1.7 的最终训练组合也启用了预取，现有实验没有单�
 预先确定的控制量只读取一次
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-若采样器已经生成完整 timestep 序列，循环内的 ``.item()`` 读取就没有必要逐步发生。已测 π₀/π₀.₅ 原型先调用原采样器产生设备 timestep，再一次性取得 CPU 列表，后续按原顺序取值：
+当去噪循环已经在主机侧确定调度表或随机步骤索引时，在循环内通过 ``.item()`` 从设备 tensor 逐步读回控制标量会引入不必要的同步。``rlinf/models/embodiment/evo1/evo1_rl_head.py`` 中的 ``rl_denoise_sample`` 先在主机上抽取一次 ``selected_step``，同时把训练回放所需的 ``denoise_inds`` 写入设备，而循环内的分支直接读取主机整数：
 
 .. code-block:: python
 
-   timesteps = rl_sampler.get_timesteps(num_steps, device)
-   timestep_values = timesteps.detach().cpu().tolist()
-   for idx in range(num_steps):
-       t_val = float(timestep_values[idx])
-       # The original step uses t_val and the current action tensor.
+   selected_step: int | None = None
+   if mode == "train" and not joint_logprob:
+       selected_step = random.randint(0, last_step)
+   for idx in range(N):
+       step_mode = (
+           "train"
+           if mode == "train" and (joint_logprob or idx == selected_step)
+           else "eval"
+       )
 
-这个设计保留采样器的原始数值，改变的是同步发生的位置。先在 CPU 上另算一组“看起来一样”的时间值，可能因 dtype 与运算顺序不同而改变后续结果。对于依赖当前网络输出才能确定的控制量，则无法提前搬到循环外。
+被选中的步骤与随机数调用顺序保持不变，只是消除了循环内的设备到主机往返。若用不同 dtype 或运算顺序另算一组控制量，可能改变后续数值；依赖当前网络输出才能确定的控制量，则无法提前搬到循环外。
 
-Evo-1 的随机步骤选择遵循相同原则，但来源不同。其 RL 采样先用 Python 随机数生成器（RNG）选择需要注入噪声的步骤，这个结果本来就在 CPU 上。实现让循环直接使用该结果，同时将训练回放需要的步骤索引保存在输出中，避免先写入设备再逐步读回。随机调用的次数与顺序保持原流程；噪声生成和完整去噪轨迹仍参与后续 logprob 回放。
+同一原则也适用于 π₀ 与 π₀.₅ rollout 中预先确定的 timestep 序列：在主机侧保留调度表即可避免逐步标量同步，同时保持传入网络的 tensor 数值不变。随机调用的次数与顺序保持原流程；噪声生成和完整去噪轨迹仍参与后续 logprob 回放。
 
 主机执行条件会放大或抵消这类节省。增加 CPU 线程数可能加速大型预处理，也可能增加小算子的线程协调成本。本次 π₀/π₀.₅ 对照同时采用了 8 个 CPU 线程，因此 64.48% 和 8.78% 的完整动作吞吐提升分别属于各自的组合配置，无法再拆成控制量处理与线程数的独立收益。
 

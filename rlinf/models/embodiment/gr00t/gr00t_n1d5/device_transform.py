@@ -43,7 +43,7 @@ class BatchedEagleTransform(GR00TTransform):
     _device: torch.device | None = None
     _template_cache: dict[tuple[str, int], str] | None = None
     crop_scale: float = 0.95
-    video_size: int = 224
+    video_size: int | tuple[int, int] = 224
 
     def set_device(self, device: torch.device | str | None) -> None:
         """Send Eagle pixel preprocessing to `device`; None keeps the host path."""
@@ -51,23 +51,44 @@ class BatchedEagleTransform(GR00TTransform):
         if self._template_cache is None:
             self._template_cache = {}
 
+    def configure_from_pipeline(self, transforms: list[Any]) -> None:
+        """Sync ``crop_scale`` and ``video_size`` from upstream video transforms."""
+        crop_scale = 1.0
+        video_size: int | tuple[int, int] = self.video_size
+        for transform in transforms:
+            cls_name = type(transform).__name__
+            if cls_name == "VideoCrop":
+                crop_scale = float(getattr(transform, "scale", 0.95))
+            elif cls_name == "VideoResize":
+                height = int(getattr(transform, "height", 224))
+                width = int(getattr(transform, "width", 224))
+                video_size = (height, width)
+        self.crop_scale = crop_scale
+        self.video_size = video_size
+
     def _crop_resize(self, frames: torch.Tensor) -> torch.Tensor:
         """Eval-mode video legs on device: center crop then bilinear resize."""
         import torchvision.transforms.functional as TVF
 
         b, n, c, h, w = frames.shape
-        flat = frames.reshape(b * n, c, h, w).float().div_(255.0)
-        flat = TVF.center_crop(
-            flat, [int(h * self.crop_scale), int(w * self.crop_scale)]
+        target_h, target_w = (
+            (self.video_size, self.video_size)
+            if isinstance(self.video_size, int)
+            else self.video_size
         )
+        flat = frames.reshape(b * n, c, h, w).float().div_(255.0)
+        if self.crop_scale < 1.0:
+            flat = TVF.center_crop(
+                flat, [int(h * self.crop_scale), int(w * self.crop_scale)]
+            )
         flat = TVF.resize(
             flat,
-            [self.video_size, self.video_size],
+            [target_h, target_w],
             interpolation=TVF.InterpolationMode.BILINEAR,
             antialias=True,
         )
         flat = flat.mul_(255.0).round_().clamp_(0, 255).to(torch.uint8)
-        return flat.reshape(b, n, c, self.video_size, self.video_size)
+        return flat.reshape(b, n, c, target_h, target_w)
 
     def _templated_text(self, language: str, num_images: int) -> str:
         key = (language, num_images)
@@ -89,7 +110,7 @@ class BatchedEagleTransform(GR00TTransform):
         return text
 
     def apply_batch(self, data: dict, batch_size: int) -> dict:
-        if self._device is None:
+        if self._device is None or getattr(self, "training", False):
             return super().apply_batch(data, batch_size)
 
         batch: dict[str, Any] = {}

@@ -88,6 +88,14 @@ class Evo1ForRLActionPrediction(nn.Module, BasePolicy):
     ):
         super().__init__()
         self.evo1 = evo1_model
+        embedder_model = getattr(getattr(self.evo1, "embedder", None), "model", None)
+        language_model = getattr(embedder_model, "language_model", None)
+        if language_model is not None:
+            from rlinf.models.embodiment.evo1.npu_patches import (
+                mask_padded_language_attention,
+            )
+
+            mask_padded_language_attention(language_model)
         if vision_attention_batch_size:
             from rlinf.models.embodiment.evo1.npu_patches import (
                 set_vision_attention_batch_size,
@@ -178,7 +186,7 @@ class Evo1ForRLActionPrediction(nn.Module, BasePolicy):
                     "velocity": rlh.flow_velocity_from_embeddings(action_head, **data)
                 }
 
-            self.cuda_graph_manager.capture(
+            graph_spec = self.cuda_graph_manager.capture(
                 GraphCaptureSpec(
                     name=name,
                     func=head_call,
@@ -186,6 +194,7 @@ class Evo1ForRLActionPrediction(nn.Module, BasePolicy):
                     external_inputs=set(inputs),
                 )
             )
+            return graph_spec.outputs["velocity"].clone()
         # The next denoising step overwrites the graph's output buffer.
         return self.cuda_graph_manager.replay(name, inputs)["velocity"].clone()
 
@@ -273,9 +282,9 @@ class Evo1ForRLActionPrediction(nn.Module, BasePolicy):
         )
         action_mask[:, : self.action_dim] = 1.0
 
-        autocast_enabled = device.type == "cuda"
+        autocast_enabled = device.type != "cpu"
         with torch.autocast(
-            device_type="cuda", dtype=torch.bfloat16, enabled=autocast_enabled
+            device_type=device.type, dtype=torch.bfloat16, enabled=autocast_enabled
         ):
             fused = self.evo1.get_vl_embeddings(
                 images=images,
@@ -310,9 +319,9 @@ class Evo1ForRLActionPrediction(nn.Module, BasePolicy):
         action_mask_3d = self._action_mask_3d(batch_size, device)
         embodiment_id = torch.zeros(batch_size, dtype=torch.long, device=device)
 
-        autocast_enabled = device.type == "cuda"
+        autocast_enabled = device.type != "cpu"
         with torch.autocast(
-            device_type="cuda", dtype=torch.bfloat16, enabled=autocast_enabled
+            device_type=device.type, dtype=torch.bfloat16, enabled=autocast_enabled
         ):
             fused = self.evo1.get_vl_embeddings(
                 images=images,
@@ -520,9 +529,9 @@ class Evo1ForRLActionPrediction(nn.Module, BasePolicy):
         ]
         embodiment_id = forward_inputs["embodiment_id"].to(device)
 
-        autocast_enabled = device.type == "cuda"
+        autocast_enabled = device.type != "cpu"
         with torch.autocast(
-            device_type="cuda", dtype=torch.bfloat16, enabled=autocast_enabled
+            device_type=device.type, dtype=torch.bfloat16, enabled=autocast_enabled
         ):
             fused = self.evo1.get_vl_embeddings(
                 images=images,

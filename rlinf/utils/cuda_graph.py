@@ -19,85 +19,58 @@ from typing import Any
 
 import torch
 
+from rlinf.scheduler import Worker
 
-def _graph_backend(device: torch.device):
-    """Device-specific graph calls for CUDA and Ascend NPU.
 
-    torch_npu mirrors the CUDA graph API (NPUGraph, the ``graph`` context
-    manager, pool handles), so one manager serves both; NPU graphs do not
-    expose ``register_generator_state``, so generator registration is a
-    CUDA-only feature and callers must keep sampling outside the captured
-    region on NPU.
+class _GraphBackend:
+    """Platform-resolved graph backend for CUDA and Ascend NPU devices.
+
+    ``torch_npu`` mirrors the CUDA graph API (``NPUGraph``, ``graph`` context
+    manager, ``graph_pool_handle``), while generator state registration is
+    checked dynamically on the platform's graph class.
     """
-    if device.type == "npu":
-        return _NpuGraphBackend()
-    if device.type == "cuda":
-        return _CudaGraphBackend()
-    raise ValueError(f"Graph capture requires CUDA or NPU, got {device}.")
 
+    def __init__(self, device: torch.device):
+        platform = getattr(torch, device.type, None)
+        graph_cls = (
+            getattr(platform, "CUDAGraph", None) or getattr(platform, "NPUGraph", None)
+            if platform is not None
+            else None
+        )
+        if platform is None or graph_cls is None:
+            raise ValueError(f"Graph capture requires CUDA or NPU, got {device}.")
+        self.device_type = device.type
+        self.platform = platform
+        self.graph_cls = graph_cls
+        self.supports_generators = hasattr(
+            graph_cls, "register_generator_state"
+        ) and hasattr(platform, "default_generators")
 
-class _CudaGraphBackend:
-    @staticmethod
-    def new_graph():
-        return torch.cuda.CUDAGraph()
+    def new_graph(self):
+        return self.graph_cls()
 
-    @staticmethod
-    def graph_ctx(graph, pool):
-        return torch.cuda.graph(graph, pool=pool)
+    def graph_ctx(self, graph, pool):
+        return self.platform.graph(graph, pool=pool)
 
-    @staticmethod
-    def pool_handle():
-        return torch.cuda.graph_pool_handle()
+    def pool_handle(self):
+        return self.platform.graph_pool_handle()
 
-    @staticmethod
-    def synchronize():
-        torch.cuda.synchronize()
+    def synchronize(self):
+        self.platform.synchronize()
 
-    @staticmethod
-    def empty_cache():
-        torch.cuda.empty_cache()
+    def empty_cache(self):
+        self.platform.empty_cache()
 
-    @staticmethod
-    def default_generator(index):
-        return torch.cuda.default_generators[index]
+    def current_device(self) -> int:
+        return self.platform.current_device()
 
-    supports_generators = True
+    def default_generator(self, index: int):
+        if not self.supports_generators:
+            return None
+        return self.platform.default_generators[index]
 
-    @staticmethod
-    def is_device_tensor(tensor: torch.Tensor) -> bool:
-        return tensor.is_cuda
-
-
-class _NpuGraphBackend:
-    @staticmethod
-    def new_graph():
-        return torch.npu.NPUGraph()
-
-    @staticmethod
-    def graph_ctx(graph, pool):
-        return torch.npu.graph(graph, pool=pool)
-
-    @staticmethod
-    def pool_handle():
-        return torch.npu.graph_pool_handle()
-
-    @staticmethod
-    def synchronize():
-        torch.npu.synchronize()
-
-    @staticmethod
-    def empty_cache():
-        torch.npu.empty_cache()
-
-    @staticmethod
-    def default_generator(index):
-        return None
-
-    supports_generators = False
-
-    @staticmethod
-    def is_device_tensor(tensor: torch.Tensor) -> bool:
-        return tensor.device.type == "npu"
+    def is_device_tensor(self, tensor: torch.Tensor) -> bool:
+        return tensor.device.type == self.device_type
 
 
 def graph_signature(tree: Any, prefix: str = "") -> tuple | None:
@@ -278,8 +251,9 @@ class CUDAGraphManager:
         device: torch.device | None = None,
         create_graph_pool: bool = True,
     ):
-        self.device = device or torch.device("cuda")
-        self.backend = _graph_backend(self.device)
+        default_device = Worker.torch_device_type or "cuda"
+        self.device = device or torch.device(default_device)
+        self.backend = _GraphBackend(self.device)
         self.graphs: dict[str, GraphSpec] = {}
         # Shared memory pool for all graphs to optimize memory usage
         self.graph_pool = None
@@ -297,7 +271,7 @@ class CUDAGraphManager:
         if not self.backend.supports_generators:
             if spec.register_default_cuda_generator or spec.cuda_generators:
                 raise RuntimeError(
-                    "NPU graphs do not support registering generator state; "
+                    f"{self.device.type.upper()} graphs do not support registering generator state; "
                     "keep sampling outside the captured region."
                 )
             return
@@ -313,12 +287,51 @@ class CUDAGraphManager:
             device_index = (
                 self.device.index
                 if self.device.index is not None
-                else torch.cuda.current_device()
+                else self.backend.current_device()
             )
             graph.register_generator_state(self.backend.default_generator(device_index))
 
         for generator in spec.cuda_generators:
             graph.register_generator_state(generator)
+
+    def _snapshot_generators(
+        self,
+        spec: GraphCaptureSpec,
+    ) -> list[tuple[torch.Generator, torch.Tensor]]:
+        if not self.backend.supports_generators:
+            return []
+        device_index = (
+            self.device.index
+            if self.device.index is not None
+            else self.backend.current_device()
+        )
+        default_gen = self.backend.default_generator(device_index)
+        generators: list[torch.Generator] = []
+        if default_gen is not None:
+            generators.append(default_gen)
+        for gen in spec.cuda_generators:
+            if all(gen is not existing for existing in generators):
+                generators.append(gen)
+        return [(gen, gen.get_state()) for gen in generators]
+
+    def _restore_generators(
+        self,
+        snapshots: list[tuple[torch.Generator, torch.Tensor]],
+    ) -> None:
+        if not snapshots:
+            return
+        try:
+            recovery_graph = self.backend.new_graph()
+            if hasattr(recovery_graph, "register_generator_state"):
+                for gen, _ in snapshots:
+                    recovery_graph.register_generator_state(gen)
+                dummy = torch.empty(1, device=self.device)
+                with self.backend.graph_ctx(recovery_graph, None):
+                    dummy.zero_()
+            for gen, state in snapshots:
+                gen.set_state(state)
+        except Exception:  # noqa: BLE001
+            pass
 
     def capture(
         self,
@@ -349,12 +362,17 @@ class CUDAGraphManager:
 
         graph = self.backend.new_graph()
         self._register_generators(graph, spec)
+        generator_snapshots = self._snapshot_generators(spec)
 
         # Use shared pool if requested for memory optimization
         pool = self.graph_pool if use_shared_pool else None
 
-        with self.backend.graph_ctx(graph, pool):
-            outputs = spec.func(spec.inputs)
+        try:
+            with self.backend.graph_ctx(graph, pool):
+                outputs = spec.func(spec.inputs)
+        except BaseException:
+            self._restore_generators(generator_snapshots)
+            raise
         _assert_on_device_tree(
             outputs,
             name=f"{spec.name}.outputs",

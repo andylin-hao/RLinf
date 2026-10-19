@@ -75,6 +75,45 @@ def test_graph_manager_rejects_unsupported_devices_before_initialization():
         CUDAGraphManager(device=torch.device("cpu"))
 
 
+def test_graph_manager_restores_generators_after_failed_capture():
+    from rlinf.utils.cuda_graph import CUDAGraphManager, GraphCaptureSpec
+
+    if not torch.cuda.is_available():
+        pytest.skip("CUDA required for intragraph generator state capture")
+    device = torch.device("cuda", torch.cuda.current_device())
+    manager = CUDAGraphManager(device=device, create_graph_pool=False)
+    x = torch.ones(4, device=device)
+    torch.cuda.manual_seed(1234)
+    _ = torch.randn(4, device=device)
+    expected = torch.randn(4, device=device)
+
+    torch.cuda.manual_seed(1234)
+    calls = 0
+
+    def fail_on_capture(inputs):
+        nonlocal calls
+        calls += 1
+        noise = torch.randn_like(inputs["x"])
+        if calls > 1:
+            # Boolean mask indexing invalidates CUDA stream capture after the
+            # RNG kernel has already incremented offset_intragraph_.
+            _ = noise[noise > -10]
+        return {"y": noise}
+
+    spec = GraphCaptureSpec(
+        name="failing_capture",
+        func=fail_on_capture,
+        inputs={"x": x},
+        warmup_iters=1,
+        register_default_cuda_generator=True,
+    )
+    with pytest.raises(RuntimeError):
+        manager.capture(spec, use_shared_pool=False)
+
+    actual = torch.randn(4, device=device)
+    torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+
+
 def test_compute_evaluate_metrics_reports_interact_delay_wait_time_stats():
     metrics = compute_evaluate_metrics(
         [

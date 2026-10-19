@@ -18,6 +18,8 @@ from typing import Any
 
 import torch
 
+from rlinf.scheduler import AcceleratorType, Worker
+
 
 def npu_grouped_attention_forward(
     module: torch.nn.Module,
@@ -38,7 +40,7 @@ def npu_grouped_attention_forward(
     from transformers.integrations.sdpa_attention import sdpa_attention_forward
 
     if (
-        query.device.type != "npu"
+        query.device.type != Worker.torch_device_type
         or query.dtype not in (torch.bfloat16, torch.float16)
         # Grouped BF16 backward accumulates key/value gradients differently
         # from SDPA's repeated heads. Preserve the trained model's reductions.
@@ -118,8 +120,6 @@ def enable_qwen_vl_npu_attention(model: torch.nn.Module) -> bool:
     Raises:
         ValueError: The model is not Qwen2.5-VL.
     """
-    from rlinf.scheduler import AcceleratorType, Worker
-
     if Worker.accelerator_type != AcceleratorType.NPU:
         return False
     if model.config.model_type not in ("qwen2_5_vl", "qwen2_5_vl_text"):

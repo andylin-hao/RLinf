@@ -70,6 +70,21 @@ class BatchedEagleProcessor(Gr00tN1d6Processor):
     _device: torch.device | None = None
     _template_cache: dict[tuple[str, int], str] | None = None
 
+    @classmethod
+    def upgrade(cls, processor):
+        """Upgrade a loaded Gr00tN1d6Processor instance to BatchedEagleProcessor."""
+        if isinstance(processor, cls):
+            return processor
+        if isinstance(processor, Gr00tN1d6Processor):
+            processor.__class__ = cls
+            for attr in ("collator", "data_collator"):
+                collator = getattr(processor, attr, None)
+                if isinstance(collator, Gr00tN1d6DataCollator) and not isinstance(
+                    collator, BatchedEagleCollator
+                ):
+                    collator.__class__ = BatchedEagleCollator
+        return processor
+
     def set_device(self, device: torch.device | str | None) -> None:
         """Send frame preprocessing to `device`; None keeps the host path."""
         self._device = torch.device(device) if device is not None else None
@@ -99,6 +114,30 @@ class BatchedEagleProcessor(Gr00tN1d6Processor):
             if len(self._template_cache) >= 64:
                 self._template_cache.clear()
             self._template_cache[key] = text
+
+        if images.ndim == 4:
+            _, _, height, width = images.shape
+            pixels_per_token = getattr(self.processor, "pixels_per_token", 784)
+            factor = max(1, int(round(pixels_per_token**0.5)))
+            resized_h = max(factor, round(height / factor) * factor)
+            resized_w = max(factor, round(width / factor) * factor)
+            if (resized_h, resized_w) != (height, width):
+                from PIL import Image
+
+                images = np.stack(
+                    [
+                        np.transpose(
+                            np.asarray(
+                                Image.fromarray(np.transpose(frame, (1, 2, 0))).resize(
+                                    (resized_w, resized_h)
+                                )
+                            ),
+                            (2, 0, 1),
+                        )
+                        for frame in images
+                    ],
+                    axis=0,
+                )
 
         frames = torch.from_numpy(np.ascontiguousarray(images)).to(
             self._device, non_blocking=True

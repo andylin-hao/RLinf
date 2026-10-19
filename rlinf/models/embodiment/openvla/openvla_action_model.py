@@ -629,10 +629,15 @@ class OpenVLAForRLActionPrediction(OpenVLAForBatchActionPrediction, BasePolicy):
             max_length=self.max_prompt_length,
         )
 
-        input_ids = processed_obs["input_ids"].to(device=device, dtype=torch.long)
-        attention_mask = processed_obs["attention_mask"].to(
-            device=device, dtype=torch.bool
-        )
+        input_ids = processed_obs["input_ids"]
+        attention_mask = processed_obs["attention_mask"]
+        assert torch.all(input_ids[:, 0] == 1)
+        assert torch.all(attention_mask[:, 0] == 1)
+        assert torch.all(input_ids[:, -1] == 29871)
+        assert torch.all(attention_mask[:, -1] == 1)
+
+        input_ids = input_ids.to(device=device, dtype=torch.long)
+        attention_mask = attention_mask.to(device=device, dtype=torch.bool)
         pixel_values = processed_obs["pixel_values"].to(device=device, dtype=precision)
 
         return {
@@ -678,19 +683,17 @@ class OpenVLAForRLActionPrediction(OpenVLAForBatchActionPrediction, BasePolicy):
             input_ids = processed_obs["input_ids"]
             attention_mask = processed_obs["attention_mask"]
             pixel_values = processed_obs["pixel_values"]
+        else:
+            assert torch.all(input_ids[:, 0] == 1)
+            assert torch.all(attention_mask[:, 0] == 1)
+            assert torch.all(input_ids[:, -1] == 29871)
+            assert torch.all(attention_mask[:, -1] == 1)
 
         forward_inputs = {
             "input_ids": input_ids,
             "attention_mask": attention_mask,
             "pixel_values": pixel_values,
         }
-
-        # assert first token is 1
-        assert torch.all(input_ids[:, 0] == 1)
-        assert torch.all(attention_mask[:, 0] == 1)
-        # last token is space ` `
-        assert torch.all(input_ids[:, -1] == 29871)
-        assert torch.all(attention_mask[:, -1] == 1)
 
         generated_results: GenerateDecoderOnlyOutput = self.generate(
             input_ids,

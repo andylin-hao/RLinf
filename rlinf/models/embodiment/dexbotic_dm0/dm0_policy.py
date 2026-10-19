@@ -30,6 +30,7 @@ from PIL import Image
 from transformers import DynamicCache
 
 from rlinf.models.embodiment.base_policy import BasePolicy
+from rlinf.scheduler import Worker
 from rlinf.utils.logging import get_logger
 
 
@@ -280,17 +281,16 @@ class DexboticDM0ForRLActionPrediction(BasePolicy, DM0ForCausalLM):
         t = t.float() * proc.rescale_factor
         return TVF.normalize(t, proc.image_mean, proc.image_std)
 
+    @staticmethod
+    def _is_uint8_batch(value) -> bool:
+        return (torch.is_tensor(value) and value.dtype == torch.uint8) or (
+            isinstance(value, np.ndarray) and value.dtype == np.uint8
+        )
+
     def _process_images_for_training(self, raw_main_images, raw_wrist_images, device):
         if (
-            torch.is_tensor(raw_main_images)
-            and raw_main_images.dtype == torch.uint8
-            and (
-                raw_wrist_images is None
-                or (
-                    torch.is_tensor(raw_wrist_images)
-                    and raw_wrist_images.dtype == torch.uint8
-                )
-            )
+            self._is_uint8_batch(raw_main_images)
+            and (raw_wrist_images is None or self._is_uint8_batch(raw_wrist_images))
             and device is not None
         ):
             views = [self._device_view_batch(raw_main_images, device)]
@@ -417,7 +417,8 @@ class DexboticDM0ForRLActionPrediction(BasePolicy, DM0ForCausalLM):
             prefix_attn_mask_2d,
             position_embeddings,
         )
-        torch.cuda.empty_cache()
+        if Worker.torch_platform is not None:
+            Worker.torch_platform.empty_cache()
         return prefix_padding_mask, prefix_attn_mask, past_key_values
 
     def get_suffix_out(
@@ -621,59 +622,9 @@ class DexboticDM0ForRLActionPrediction(BasePolicy, DM0ForCausalLM):
         batch_size = raw_images.shape[0]
         device = states.device
 
-        if torch.is_tensor(raw_images):
-            images, image_masks = self._process_images_for_training(
-                raw_images, processed_obs.get("observation/wrist_image"), device
-            )
-        else:
-            base_pil_images = []
-            for i in range(batch_size):
-                img_np = raw_images[i].cpu().numpy()
-                if img_np.dtype != np.uint8:
-                    img_np = (
-                        (img_np * 255).astype(np.uint8)
-                        if img_np.max() <= 1.0
-                        else img_np.astype(np.uint8)
-                    )
-                base_pil_images.append(Image.fromarray(img_np))
-
-            wrist_pil_images = []
-            if "observation/wrist_image" in processed_obs:
-                for i in range(batch_size):
-                    wrist_np = (
-                        processed_obs["observation/wrist_image"][i]
-                        .cpu()
-                        .numpy()
-                        .astype(np.uint8)
-                    )
-                    wrist_pil_images.append(Image.fromarray(wrist_np))
-
-            images_list = []
-            for i in range(batch_size):
-                pil_list = [base_pil_images[i]]
-                if wrist_pil_images:
-                    pil_list.append(wrist_pil_images[i])
-                images_list.append(self.process_images(pil_list))
-
-            images = torch.stack(images_list, dim=0).to(
-                device=device, dtype=next(self.parameters()).dtype
-            )
-            num_views = images.shape[1]
-            required_num_images = 3
-            if num_views < required_num_images:
-                pad_size = required_num_images - num_views
-                padding = torch.zeros(
-                    batch_size,
-                    pad_size,
-                    *images.shape[2:],
-                    dtype=images.dtype,
-                    device=device,
-                )
-                images = torch.cat([images, padding], dim=1)
-            image_masks = torch.zeros(
-                batch_size, required_num_images, dtype=torch.bool, device=device
-            )
-            image_masks[:, :num_views] = True
+        images, image_masks = self._process_images_for_training(
+            raw_images, processed_obs.get("observation/wrist_image"), device
+        )
 
         target_dtype = next(self.parameters()).dtype
         num_steps = self.num_steps

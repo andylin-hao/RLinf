@@ -56,7 +56,8 @@ def get_model(cfg: Any, torch_dtype: Any = None) -> Any:
 
     model_cfg = cfg.openpi
     set_torch_compile(
-        bool(OmegaConf.select(model_cfg, "torch_compile", default=inductor_available()))
+        bool(OmegaConf.select(model_cfg, "torch_compile", default=True))
+        and inductor_available()
     )
     # Existing Pi0.5 templates predate the explicit switch, so preserve their
     # behavior by default. Pi0 templates set this field to False explicitly.

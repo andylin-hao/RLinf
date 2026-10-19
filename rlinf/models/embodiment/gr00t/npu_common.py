@@ -41,10 +41,11 @@ except ImportError:
     torch_npu = None
 
 
+from rlinf.scheduler import AcceleratorType, Worker
+
+
 def is_npu() -> bool:
     """Whether this worker runs on an Ascend NPU, per the Worker device API."""
-    from rlinf.scheduler import AcceleratorType, Worker
-
     return Worker.accelerator_type == AcceleratorType.NPU
 
 
@@ -56,12 +57,15 @@ class _TensorMetadataCache:
         self.entries: dict = {}
 
     def get(self, tensor: torch.Tensor) -> Any:
-        capturing = getattr(torch.npu, "is_current_stream_capturing", None)
-        if torch.is_inference(tensor) or (capturing is not None and capturing()):
+        if torch.is_inference(tensor):
             return self.compute(tensor)
         entry = self.entries.get(id(tensor))
         if entry is not None and entry[0]() is tensor and entry[1] == tensor._version:
             return entry[2]
+        platform = Worker.torch_platform or getattr(torch, tensor.device.type, None)
+        capturing = getattr(platform, "is_current_stream_capturing", None)
+        if capturing is not None and capturing():
+            return self.compute(tensor)
         value = self.compute(tensor)
         if len(self.entries) >= 8:
             self.entries.clear()
@@ -105,14 +109,14 @@ def install_npu_flash_attention_cache() -> bool:
         return causal_masks[device]
 
     def get_unpad_data(attention_mask: torch.Tensor):
-        if attention_mask.device.type != "npu":
+        if attention_mask.device.type != Worker.torch_device_type:
             return original_unpad(attention_mask)
         return metadata.get(attention_mask)
 
     def flash_attn_func(
         q, k, v, dropout_p=0.0, softmax_scale=None, causal=False, **kwargs
     ):
-        if q.device.type != "npu":
+        if q.device.type != Worker.torch_device_type:
             return native_flash.npu_flash_attn_func(
                 q,
                 k,
@@ -145,7 +149,7 @@ def install_npu_flash_attention_cache() -> bool:
         causal=False,
         **kwargs,
     ):
-        if q.device.type != "npu":
+        if q.device.type != Worker.torch_device_type:
             return native_flash.npu_flash_attn_varlen_func(
                 q,
                 k,
@@ -173,6 +177,8 @@ def install_npu_flash_attention_cache() -> bool:
 
     flash_attn_func._rlinf_npu_metadata_cache = True
     flash_utils._get_unpad_data = get_unpad_data
+    if hasattr(native_flash, "_get_unpad_data"):
+        native_flash._get_unpad_data = get_unpad_data
     flash_utils.flash_attn_func = flash_attn_func
     flash_utils.flash_attn_varlen_func = flash_attn_varlen_func
     return True
@@ -302,6 +308,7 @@ def _npu_flash_attention_symbols() -> dict[str, object]:
     Which names exist depends on the Transformers release: 4.51 exports the
     padding helpers, 4.57 no longer does. Only what is present is returned.
     """
+    from transformers import modeling_flash_attention_utils as flash_utils
     from transformers.integrations import npu_flash_attention as npu_fa
 
     symbols: dict[str, object] = {}
@@ -317,6 +324,16 @@ def _npu_flash_attention_symbols() -> dict[str, object]:
         if value is not None:
             symbols[name] = value
 
+    if getattr(
+        getattr(flash_utils, "flash_attn_func", None),
+        "_rlinf_npu_metadata_cache",
+        False,
+    ):
+        for name in ("flash_attn_func", "flash_attn_varlen_func"):
+            cached = getattr(flash_utils, name, None)
+            if cached is not None:
+                symbols[name] = cached
+
     varlen = symbols.get("flash_attn_varlen_func")
     if varlen is not None:
         # Callers gate a `window_size` kwarg on this. The NPU entry points take
@@ -330,11 +347,18 @@ def _npu_flash_attention_symbols() -> dict[str, object]:
 def bind_npu_flash_attention(module) -> None:
     """Bind the NPU flash-attention entry points into ``module``'s namespace.
 
-    Only names the module left undefined are filled in, so a module that found
-    real kernels keeps them.
+    Only names the module left undefined or bound to the uncached NPU fallback
+    are updated, so a module that found real kernels keeps them.
     """
+    from transformers.integrations import npu_flash_attention as npu_fa
+
+    uncached = {
+        getattr(npu_fa, "npu_flash_attn_func", None),
+        getattr(npu_fa, "npu_flash_attn_varlen_func", None),
+    } - {None}
     for name, value in _npu_flash_attention_symbols().items():
-        if getattr(module, name, None) is None:
+        current = getattr(module, name, None)
+        if current is None or current in uncached:
             setattr(module, name, value)
 
 

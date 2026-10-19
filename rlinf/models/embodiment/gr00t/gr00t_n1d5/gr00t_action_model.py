@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import json
-import logging
 import random
 from pathlib import Path
 from typing import Any, Literal, Optional, Union
@@ -38,16 +37,13 @@ from rlinf.models.embodiment.gr00t.simulation_io import (
     OBS_CONVERSION,
 )
 from rlinf.models.embodiment.gr00t.utils import (
+    backbone_graph_call,
+    capture_backbone_graph,
     squeeze_dict_values,
     unsqueeze_dict_values,
 )
 from rlinf.models.embodiment.modules.explore_noise_net import ExploreNoiseNet
 from rlinf.models.embodiment.modules.value_head import ValueHead
-from rlinf.utils.cuda_graph import (
-    clone_tensor_tree,
-    copy_tensor_tree,
-    graph_signature,
-)
 
 
 class FlowMatchingActionHeadForRLActionPrediction(FlowmatchingActionHead):
@@ -405,8 +401,10 @@ class FlowMatchingActionHeadForRLActionPrediction(FlowmatchingActionHead):
 
     @staticmethod
     def _use_fp32_normal(device):
-        device_type = torch.device(device).type
-        return device_type == "npu"
+        del device
+        from rlinf.scheduler import AcceleratorType, Worker
+
+        return Worker.accelerator_type == AcceleratorType.NPU
 
     def get_value(self, vl_embs, state_features):
         # TODO: add value vlm mode param
@@ -652,20 +650,34 @@ class GR00T_N1_5_ForRLActionPrediction(GR00T_N1_5, BasePolicy):
         """
         # Ensure correct dimensions before applying transforms
         device = next(self.parameters()).device
-        members = getattr(self._modality_transform, "transforms", [])
-        if any(hasattr(t, "set_device") for t in members):
-            # The device Eagle transform absorbs the video legs, so pixels
-            # cross once as uint8 and every image operation runs on device.
-            kept = [
-                t
-                for t in members
-                if hasattr(t, "set_device") or "Video" not in type(t).__name__
-            ]
-            if len(kept) != len(members):
+        orig_members = getattr(
+            self._modality_transform,
+            "_rlinf_orig_transforms",
+            getattr(self._modality_transform, "transforms", []),
+        )
+        if any(hasattr(t, "set_device") for t in orig_members):
+            if not hasattr(self._modality_transform, "_rlinf_orig_transforms"):
+                self._modality_transform._rlinf_orig_transforms = list(orig_members)
+                for transform in orig_members:
+                    if hasattr(transform, "configure_from_pipeline"):
+                        transform.configure_from_pipeline(orig_members)
+            if getattr(self._modality_transform, "training", False):
+                self._modality_transform.transforms = list(orig_members)
+                for transform in orig_members:
+                    if hasattr(transform, "set_device"):
+                        transform.set_device(None)
+            else:
+                # The device Eagle transform absorbs the eval video legs, so
+                # pixels cross once as uint8 and every image op runs on device.
+                kept = [
+                    t
+                    for t in orig_members
+                    if hasattr(t, "set_device") or "Video" not in type(t).__name__
+                ]
                 self._modality_transform.transforms = kept
-            for transform in kept:
-                if hasattr(transform, "set_device"):
-                    transform.set_device(device)
+                for transform in kept:
+                    if hasattr(transform, "set_device"):
+                        transform.set_device(device)
         return self._modality_transform(obs)
 
     def unapply_transforms(self, action: dict[str, Any]) -> dict[str, Any]:
@@ -704,58 +716,10 @@ class GR00T_N1_5_ForRLActionPrediction(GR00T_N1_5, BasePolicy):
 
     def _backbone_graph_call(self, backbone_inputs):
         """Graph-routed backbone forward with eager warmup and fallback."""
-        key = graph_signature(backbone_inputs, "b")
-        if key is None:
-            return self.backbone(backbone_inputs)
-        state = self._rl_graph_state.get(key, 0)
-        if state < 2 or state < 0:
-            if state >= 0:
-                self._rl_graph_state[key] = state + 1
-            return self.backbone(backbone_inputs)
-        if key not in self._rl_graph_specs:
-            self._capture_backbone_graph(key, backbone_inputs)
-            if key not in self._rl_graph_specs:
-                return self.backbone(backbone_inputs)
-        spec = self._rl_graph_specs[key]
-        try:
-            copy_tensor_tree(spec["inputs"], backbone_inputs)
-            spec["graph"].replay()
-            # Outputs are static buffers; async channel sends may outlive the
-            # next replay, so hand out clones.
-            return clone_tensor_tree(spec["outputs"])
-        except Exception as error:  # noqa: BLE001
-            self._rl_graph_state[key] = -1
-            logging.warning(
-                "rollout graph replay failed (%s); falling back to eager", error
-            )
-            return self.backbone(backbone_inputs)
+        return backbone_graph_call(self, backbone_inputs)
 
     def _capture_backbone_graph(self, key, backbone_inputs):
-        from rlinf.utils.cuda_graph import GraphCaptureSpec
-
-        name = f"backbone_{len(self._rl_graph_specs)}"
-        inputs = clone_tensor_tree(backbone_inputs)
-
-        def _fn(spec_inputs):
-            return self.backbone(spec_inputs)
-
-        try:
-            graph_spec = self.cuda_graph_manager.capture(
-                GraphCaptureSpec(
-                    name=name,
-                    func=_fn,
-                    inputs=inputs,
-                    warmup_iters=0,
-                )
-            )
-            self._rl_graph_specs[key] = {
-                "graph": graph_spec.graph,
-                "inputs": graph_spec.inputs,
-                "outputs": graph_spec.outputs,
-            }
-        except Exception as error:  # noqa: BLE001
-            self._rl_graph_state[key] = -1
-            logging.warning("rollout graph capture failed (%s); staying eager", error)
+        return capture_backbone_graph(self, key, backbone_inputs)
 
     def _get_rl_action(
         self,

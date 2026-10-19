@@ -73,9 +73,15 @@ def test_evo_device_preprocessing_preserves_per_frame_ranges_and_clipping(layout
     assert device[2] == host[2]
 
 
-def test_openpi_fused_attention_preserves_fully_masked_query_rows():
+def test_openpi_fused_attention_preserves_fully_masked_query_rows(monkeypatch):
+    import rlinf.models.embodiment.openpi.modules.utils as openpi_utils
     from rlinf.models.embodiment.openpi.modules.gemma import Attention
 
+    monkeypatch.setattr(
+        openpi_utils,
+        "_sdpa_attention_enabled",
+        openpi_utils._sdpa_attention_enabled,
+    )
     config = SimpleNamespace(
         width=16, num_heads=4, num_kv_heads=2, head_dim=4, lora_configs={}
     )
@@ -88,14 +94,25 @@ def test_openpi_fused_attention_preserves_fully_masked_query_rows():
         if updated:
             with torch.no_grad():
                 model.v_proj[0].weight.add_(0.1)
-        expected, _ = model(inputs, positions, mask)
-        with torch.no_grad():
-            actual, _ = model(inputs, positions, mask)
+        openpi_utils.set_sdpa_attention(False)
+        eager_in = inputs[0].detach().clone().requires_grad_(True)
+        expected, _ = model([eager_in], positions, mask)
+        expected[0].sum().backward()
+
+        openpi_utils.set_sdpa_attention(True)
+        fused_in = inputs[0].detach().clone().requires_grad_(True)
+        actual, _ = model([fused_in], positions, mask)
+        actual[0].sum().backward()
+
         torch.testing.assert_close(actual[0], expected[0], rtol=1e-5, atol=1e-6)
+        torch.testing.assert_close(fused_in.grad, eager_in.grad, rtol=1e-5, atol=1e-6)
 
 
 @pytest.mark.parametrize("aspect_ratio", ["pad", "square"])
-def test_dm0_tensor_images_match_native_padding_and_view_masks(aspect_ratio):
+@pytest.mark.parametrize("policy_kind", ["dm0", "pi0"])
+def test_dm0_tensor_images_match_native_padding_and_view_masks(
+    aspect_ratio, policy_kind
+):
     pytest.importorskip("dexbotic")
     from PIL import Image
     from transformers import SiglipImageProcessor
@@ -103,8 +120,16 @@ def test_dm0_tensor_images_match_native_padding_and_view_masks(aspect_ratio):
     from rlinf.models.embodiment.dexbotic_dm0.dm0_policy import (
         DexboticDM0ForRLActionPrediction,
     )
+    from rlinf.models.embodiment.dexbotic_pi.dexbotic_pi_policy import (
+        DexboticPi0ForRLActionPrediction,
+    )
 
-    model = DexboticDM0ForRLActionPrediction.__new__(DexboticDM0ForRLActionPrediction)
+    cls = (
+        DexboticDM0ForRLActionPrediction
+        if policy_kind == "dm0"
+        else DexboticPi0ForRLActionPrediction
+    )
+    model = cls.__new__(cls)
     torch.nn.Module.__init__(model)
     model.anchor = torch.nn.Parameter(torch.zeros(()))
     model.config = SimpleNamespace(image_aspect_ratio=aspect_ratio)
@@ -117,16 +142,19 @@ def test_dm0_tensor_images_match_native_padding_and_view_masks(aspect_ratio):
     expected = model.process_images(
         [Image.fromarray(frame.numpy()) for frame in images]
     )
-    actual, masks = model._process_images_for_training(
-        images, None, torch.device("cpu")
-    )
-    torch.testing.assert_close(actual[:, 0], expected, rtol=0, atol=1e-6)
-    assert masks.tolist() == [[True, False, False], [True, False, False]]
-    assert not torch.count_nonzero(actual[:, 1:])
+    for raw in (images, images.numpy()):
+        actual, masks = model._process_images_for_training(
+            raw, None, torch.device("cpu")
+        )
+        torch.testing.assert_close(actual[:, 0], expected, rtol=0, atol=1e-6)
+        assert masks.tolist() == [[True, False, False], [True, False, False]]
+        assert not torch.count_nonzero(actual[:, 1:])
 
 
 @pytest.mark.parametrize("precision", [None, "bf16"])
-def test_dexbotic_configured_precision_supports_actions_and_training(precision):
+def test_dexbotic_configured_precision_supports_actions_and_training(
+    precision, monkeypatch
+):
     source = os.environ.get("RLINF_DEXBOTIC_TEST_OBSERVATIONS")
     if source is None:
         pytest.skip("Dexbotic checkpoint and captured observations required")
@@ -139,6 +167,7 @@ def test_dexbotic_configured_precision_supports_actions_and_training(precision):
     from rlinf.utils.cuda_graph import clone_tensor_tree
 
     repo = Path(__file__).resolve().parents[2]
+    monkeypatch.setenv("REPO_PATH", str(repo))
     with initialize_config_dir(
         config_dir=str(repo / "tests/e2e_tests/embodied"), version_base=None
     ):
@@ -282,6 +311,37 @@ def test_evo_vision_attention_chunking_is_inert_off_npu(monkeypatch):
     reference = vision(images)
     assert set_vision_attention_batch_size(vision, 8) == 0
     torch.testing.assert_close(vision(images), reference, rtol=0, atol=0)
+
+
+def test_evo_mask_padded_language_attention_zeros_masked_query_rows():
+    from rlinf.models.embodiment.evo1.npu_patches import (
+        mask_padded_language_attention,
+    )
+
+    class Qwen2Attention(torch.nn.Module):
+        def forward(
+            self, hidden_states, position_embeddings, attention_mask=None, **kwargs
+        ):
+            return hidden_states + 1.0, None
+
+    class DummyLM(torch.nn.Module):
+        def __init__(self, attn_impl: str):
+            super().__init__()
+            self.config = SimpleNamespace(_attn_implementation=attn_impl)
+            self.attn = Qwen2Attention()
+
+    fa2_lm = DummyLM("flash_attention_2")
+    assert mask_padded_language_attention(fa2_lm) == 0
+
+    eager_lm = DummyLM("eager")
+    assert mask_padded_language_attention(eager_lm) == 1
+    hidden = torch.ones(1, 3, 4)
+    mask = torch.zeros(1, 1, 3, 3)
+    mask[:, :, :, 1] = float("-inf")
+    out, _ = eager_lm.attn(hidden, (None, None), attention_mask=mask)
+    torch.testing.assert_close(out[:, 0], torch.full((1, 4), 2.0))
+    torch.testing.assert_close(out[:, 1], torch.zeros((1, 4)))
+    torch.testing.assert_close(out[:, 2], torch.full((1, 4), 2.0))
 
 
 def test_evo_chunked_vision_preserves_actions_replay_gradients_and_rng(monkeypatch):
@@ -520,7 +580,9 @@ def test_qwen_npu_attention_preserves_masks_cache_gradients_and_weight_updates(
         if not torch.npu.is_available():
             pytest.skip("Ascend NPU required")
     vendor = pytest.importorskip("transformers.models.qwen2_5_vl.modeling_qwen2_5_vl")
-    if not hasattr(vendor, "Qwen2_5_VLTextModel"):
+    if not hasattr(vendor, "Qwen2_5_VLTextModel") or not hasattr(
+        vendor.Qwen2_5_VLTextModel, "set_attn_implementation"
+    ):
         pytest.skip("Transformers Qwen2.5-VL text attention interface required")
     from transformers.models.qwen2_5_vl.configuration_qwen2_5_vl import (
         Qwen2_5_VLTextConfig,
@@ -648,7 +710,9 @@ def test_qwen_npu_attention_preserves_vision_windows_and_weight_updates(monkeypa
     if not torch.npu.is_available():
         pytest.skip("Ascend NPU required")
     vendor = pytest.importorskip("transformers.models.qwen2_5_vl.modeling_qwen2_5_vl")
-    if not hasattr(vendor, "Qwen2_5_VLTextModel"):
+    if not hasattr(vendor, "Qwen2_5_VLTextModel") or not hasattr(
+        vendor.Qwen2_5_VLModel, "set_attn_implementation"
+    ):
         pytest.skip("Transformers Qwen2.5-VL attention interface required")
     from transformers.models.qwen2_5_vl.configuration_qwen2_5_vl import Qwen2_5_VLConfig
 
@@ -2397,11 +2461,13 @@ def _gr00t_npu_patch_modules():
     return {"n1d5": n1d5, "n1d6": n1d6, "n1d7": n1d7}
 
 
-def test_gr00t_npu_patches_are_inert_off_ascend():
+def test_gr00t_npu_patches_are_inert_off_ascend(monkeypatch):
     # Every GR00T version registers its Ascend patches through the same pair of
     # calls, and off NPU both do nothing, so a CUDA run is untouched.
+    from rlinf.scheduler import AcceleratorType
     from rlinf.utils.patcher import Patcher
 
+    monkeypatch.setattr(Worker, "accelerator_type", AcceleratorType.NO_ACCEL)
     for version, module in _gr00t_npu_patch_modules().items():
         Patcher.clear()
         state = module.apply_npu_patches(Patcher)
@@ -2474,11 +2540,13 @@ def test_npu_flash_attention_binding_reaches_a_later_import(monkeypatch, tmp_pat
     assert unbound.flash_attn_func is None
 
 
-def test_npu_flash_attention_cache_is_inert_off_ascend():
+def test_npu_flash_attention_cache_is_inert_off_ascend(monkeypatch):
     from rlinf.models.embodiment.gr00t.npu_common import (
         install_npu_flash_attention_cache,
     )
+    from rlinf.scheduler import AcceleratorType
 
+    monkeypatch.setattr(Worker, "accelerator_type", AcceleratorType.NO_ACCEL)
     assert not install_npu_flash_attention_cache()
 
 
@@ -2671,3 +2739,53 @@ def test_qwen_patchify_matches_upstream_10d_layout(
     staged = _patchify_qwen_vl(patches, patch, t_p, merge)
     assert staged.shape == upstream.shape
     torch.testing.assert_close(staged, upstream)
+
+
+def test_gr00t_n1d6_batched_eagle_processor_aligns_frames_to_patch_factor(monkeypatch):
+    from PIL import Image
+
+    class FakeCollator:
+        pass
+
+    class FakeProcessor:
+        pass
+
+    processing_mod = ModuleType("gr00t.model.gr00t_n1d6.processing_gr00t_n1d6")
+    processing_mod.Gr00tN1d6DataCollator = FakeCollator
+    processing_mod.Gr00tN1d6Processor = FakeProcessor
+    for name in ("gr00t", "gr00t.model", "gr00t.model.gr00t_n1d6"):
+        monkeypatch.setitem(sys.modules, name, ModuleType(name))
+    monkeypatch.setitem(sys.modules, processing_mod.__name__, processing_mod)
+
+    mod_name = "rlinf.models.embodiment.gr00t.gr00t_n1d6.device_transform"
+    monkeypatch.delitem(sys.modules, mod_name, raising=False)
+    device_transform = importlib.import_module(mod_name)
+
+    proc = FakeProcessor()
+    proc.collator = FakeCollator()
+    proc.processor = SimpleNamespace(
+        pixels_per_token=784,
+        apply_chat_template=lambda conv, **kw: f"prompt:{len(conv[0]['content'])}",
+    )
+    device_transform.BatchedEagleProcessor.upgrade(proc)
+    proc.set_device("cpu")
+
+    # 256x256 is not divisible by sqrt(784)=28 (or SigLIP2 patch_size=14);
+    # smart_resize rounds it to 252x252 (9*28 = 18*14) matching PIL resize.
+    raw_256 = np.arange(2 * 3 * 256 * 256, dtype=np.uint8).reshape(2, 3, 256, 256)
+    out_256 = proc._apply_vlm_processing(raw_256, "pick up bowl")["vlm_content"]
+    assert out_256["text"] == "prompt:3"
+    assert len(out_256["images"]) == 2
+    expected_0 = np.transpose(
+        np.asarray(
+            Image.fromarray(np.transpose(raw_256[0], (1, 2, 0))).resize((252, 252))
+        ),
+        (2, 0, 1),
+    )
+    assert out_256["images"][0].shape == (3, 252, 252)
+    torch.testing.assert_close(out_256["images"][0], torch.from_numpy(expected_0))
+
+    # 224x224 is already a multiple of 28 and passes through without resizing.
+    raw_224 = np.zeros((1, 3, 224, 224), dtype=np.uint8)
+    out_224 = proc._apply_vlm_processing(raw_224, "pick up bowl")["vlm_content"]
+    assert out_224["images"][0].shape == (3, 224, 224)

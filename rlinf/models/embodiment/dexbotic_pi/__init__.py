@@ -21,7 +21,6 @@ from omegaconf import DictConfig
 
 def get_model(cfg: DictConfig, torch_dtype=None):
     import safetensors.torch
-    import torch
     from dexbotic.data.dataset.transform.action import ActionNorm, PadState
     from dexbotic.data.dataset.transform.common import ToNumpy, ToTensor
     from dexbotic.data.dataset.transform.output import AbsoluteAction, ActionDenorm
@@ -32,13 +31,14 @@ def get_model(cfg: DictConfig, torch_dtype=None):
     from rlinf.models.embodiment.dexbotic_pi.dexbotic_pi_policy import (
         DexboticPi0ForRLActionPrediction,
     )
+    from rlinf.scheduler import Worker
     from rlinf.utils.logging import get_logger
 
     logger = get_logger()
 
-    if torch.cuda.is_available():
-        torch.cuda.reset_peak_memory_stats()
-        torch.cuda.empty_cache()
+    if Worker.torch_platform is not None and Worker.torch_platform.is_available():
+        Worker.torch_platform.reset_peak_memory_stats()
+        Worker.torch_platform.empty_cache()
 
     if not cfg.model_path or not os.path.exists(cfg.model_path):
         raise ValueError(f"Model path does not exist: {cfg.model_path}")

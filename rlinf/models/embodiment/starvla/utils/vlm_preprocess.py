@@ -25,7 +25,7 @@ from starVLA.training.trainer_utils.trainer_tools import (
 )
 
 from rlinf.models.embodiment.qwen_vl_npu_patchify import (
-    ensure_qwen_vl_npu_patchify_patch,
+    qwen_vl_supports_device_images,
 )
 
 from .profile import resolve_vlm_interface
@@ -134,11 +134,8 @@ def build_device_vlm_inputs(
             images.append(chw)
 
     device = images[0].device if images else None
-    if device is not None and device.type == "npu":
-        # The staged <=8-dim packing keeps the whole image leg on the NPU;
-        # without it CANN rejects the >8-dim copies and pixels stay on host.
-        if not ensure_qwen_vl_npu_patchify_patch():
-            images = [img.cpu() for img in images]
+    if device is not None and not qwen_vl_supports_device_images():
+        images = [img.cpu() for img in images]
     inputs = iface.processor(
         text=texts, images=images, padding=True, return_tensors="pt"
     )

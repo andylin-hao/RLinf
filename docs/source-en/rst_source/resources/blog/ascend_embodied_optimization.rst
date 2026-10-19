@@ -25,8 +25,6 @@ Bootstrap has a different consumer: it needs the next observation's value to est
 
 These consumers establish the design boundaries. Reuse control metadata for its actual lifetime, overlap necessary work when dependencies permit it, and trim unused outputs only after checking the call contract. Each change then needs measurement through the complete interface to establish whether the local saving shortens the critical path.
 
-The discussion distinguishes repository implementations, existing configuration combinations, and measured local prototypes. A performance result remains tied to the source and configuration used for that measurement.
-
 Move Attention Metadata off the Per-Layer Critical Path
 -------------------------------------------------------
 
@@ -56,9 +54,9 @@ The tensor cache checks object identity and version. Ordinary PyTorch tensors up
 
 Inference tensors do not offer the same version-tracking conditions. Graph capture also requires computations to follow the current dynamic contents written into captured inputs. These paths recompute metadata. Reuse is conditional on proving that it remains valid; callers should not inherit an undocumented obligation to keep a cache correct.
 
-Vision grids follow a related but shorter scope. ``grid_thw`` describes patch counts along time, height, and width; ``[1, 3, 2]`` describes one frame with a 3 × 2 patch grid. Position encoding and window indexing both consume those integers. The measured prototype prepares one CPU description inside a visual forward, shares it between consumers, and clears the scope when the call exits. A later image with the same grid still requires fresh feature extraction. Sharing grid descriptions must not turn into sharing image results.
+Vision grids follow a related but shorter scope. ``grid_thw`` describes patch counts along time, height, and width; ``[1, 3, 2]`` describes one frame with a 3 × 2 patch grid. Position encoding and window indexing both consume those integers. Preparing one CPU description inside a visual forward, sharing it between consumers, and clearing the scope when the call exits avoids duplicate device-to-host reads. A later image with the same grid still requires fresh feature extraction. Sharing grid descriptions must not turn into sharing image results.
 
-The call scope gives cleanup an explicit boundary. Entry stores the device grid and its CPU copy; position-processing methods confirm that they received the current grid before using the copy. A ``finally`` block restores the previous scope on exit. The measured inference and training prototypes apply this design to the examined visual paths. The inference prototype covers single-frame images; other temporal layouts must retain their original position-encoding rules.
+The call scope gives cleanup an explicit boundary. Entry stores the device grid and its CPU copy; position-processing methods confirm that they received the current grid before using the copy. A ``finally`` block restores the previous scope on exit. Single-frame images use the fast path, while other temporal layouts retain their original position-encoding rules.
 
 At B32, StarVLA complete-action latency falls from 0.764 s to 0.654 s, improving throughput by 16.96%; the same-batch GR00T N1.7 comparison yields 10.83%. Adding position and grid processing to the StarVLA M16 baseline with FSDP prefetch improves per-rank training-call throughput by 8.28%–29.52%. The first two comparisons isolate grid processing. The training result combines position and grid changes and cannot be attributed entirely to one CPU copy.
 
@@ -76,7 +74,7 @@ Scope and Measured Contribution
 
 The GR00T N1.5/N1.6 comparisons keep batch size fixed and toggle the metadata cache. GR00T N1.6 B16 action latency falls from 4.249 s to 1.122 s, improving sample throughput by 278.62%. GR00T N1.5 falls from 1.067 s to 0.361 s, a 195.52% improvement. Their four-rank training-call gains are 37.01%–39.04% and 41.76%–42.32%, respectively. Repeated metadata preparation accounted for a substantial part of the original complete-call cost.
 
-OpenVLA's reference already contains its earlier mask cache. The measured view-reuse prototype additionally checks storage, shape, stride, offset, dtype, device, and version before reusing a verdict for the same underlying data. Its layout conditions are more specific than the repository's tensor-identity cache. Adding this prototype improves B64 action throughput by 3.51% and bootstrap by 1.15%. The available saving depends on the repeated work left in each baseline; the GR00T gains are not predictions for OpenVLA or another Transformers version.
+OpenVLA's reference already contains its earlier mask cache. Checking storage, shape, stride, offset, dtype, device, and version before reusing a verdict for views of the same underlying data improves B64 action throughput by 3.51% and bootstrap by 1.15%. The available saving depends on the repeated work left in each baseline; the GR00T gains are not predictions for OpenVLA or another Transformers version.
 
 Overlap Sharded Parameter Communication with Compute
 ----------------------------------------------------
@@ -129,19 +127,23 @@ Communication overlap addresses dependencies between devices. Action generation 
 Read Predetermined Control Values Once
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Once the sampler has generated its timestep sequence, reading each value with ``.item()`` inside the loop adds avoidable synchronization. The measured π₀/π₀.₅ prototype first calls the original sampler, transfers the resulting sequence to a CPU list once, and uses it in the original order:
+When a denoising loop already knows its schedule or stochastic step index on the host, reading control scalars back from a device tensor with ``.item()`` inside the loop adds avoidable synchronization. In ``rlinf/models/embodiment/evo1/evo1_rl_head.py``, ``rl_denoise_sample`` draws ``selected_step`` once on the host, records ``denoise_inds`` on the device for replay, and branches directly on the host integer at each denoising step:
 
 .. code-block:: python
 
-   timesteps = rl_sampler.get_timesteps(num_steps, device)
-   timestep_values = timesteps.detach().cpu().tolist()
-   for idx in range(num_steps):
-       t_val = float(timestep_values[idx])
-       # The original step uses t_val and the current action tensor.
+   selected_step: int | None = None
+   if mode == "train" and not joint_logprob:
+       selected_step = random.randint(0, last_step)
+   for idx in range(N):
+       step_mode = (
+           "train"
+           if mode == "train" and (joint_logprob or idx == selected_step)
+           else "eval"
+       )
 
-The sampler's values stay unchanged; only the synchronization point moves. Independently reconstructing apparently equivalent values on the CPU can change results through dtype and operation ordering. A control value that depends on later network outputs cannot be moved out of the loop this way.
+The sampled step and RNG call order stay unchanged; only the device-to-host round trip inside the loop is removed. Independently reconstructing control values with different dtype or operation ordering can alter results, and a value that depends on later network outputs cannot be moved out of the loop this way.
 
-Evo-1's random-step selection has a different source but follows the same principle. Python's random-number generator (RNG) already selects the step that receives noise on the host. The implementation uses that selection directly in the loop and separately stores the indices needed for replay, avoiding a device round trip. Random calls retain their count and order; noise and the full denoising trajectory still participate in later logprob replay.
+The same principle applies to precomputed timestep tables in π₀ and π₀.₅ rollouts: keeping the schedule accessible on the host avoids per-step scalar synchronization while preserving the exact tensor values passed into the network. Random calls retain their count and order; noise and the full denoising trajectory still participate in later logprob replay.
 
 Host configuration can amplify or offset these savings. More CPU threads may help large preprocessing work while adding coordination cost for small operations. The π₀/π₀.₅ comparisons also use eight CPU threads, so their complete-action throughput gains of 64.48% and 8.78% belong to those combination configurations. They cannot be split into independent control-handling and thread-count gains.
 

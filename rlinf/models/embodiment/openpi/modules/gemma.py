@@ -36,7 +36,12 @@ import torch.utils.checkpoint
 
 from . import lora
 from .lora import FeedForward as LoRAFeedForward
-from .utils import _str_to_dtype, gelu_glu, torch_compile_enabled
+from .utils import (
+    _str_to_dtype,
+    gelu_glu,
+    sdpa_attention_enabled,
+    torch_compile_enabled,
+)
 
 PALIGEMMA_VOCAB_SIZE = 257_152
 
@@ -300,6 +305,7 @@ class Attention(nn.Module):
         Returns:
             (outputs, new_kv_cache)
         """
+        dtype = next(x.dtype for x in xs if x is not None)
 
         q_parts, k_parts, v_parts = [], [], []
         for i, x in enumerate(xs):
@@ -347,11 +353,10 @@ class Attention(nn.Module):
         K = self.num_kv_heads
         G = self.num_heads // K
 
-        if not torch.is_grad_enabled() or q.device.type == "npu":
-            # Fused SDPA in (B, heads, T, H) layout, keys/values repeated per
-            # query group. CUDA gradient passes stay on the fp32-softmax einsum
-            # below: the masked SDPA backward measures slower there, while the
-            # NPU kernel's backward is faster on both passes.
+        if sdpa_attention_enabled():
+            # Fused SDPA in (B, heads, T, H) layout with keys/values repeated per
+            # query group. Selected per accelerator via Worker.accelerator_type so
+            # rollout and training use the same attention backend.
             q_r = q.transpose(1, 2) * (self.head_dim**-0.5)
             k_r = k.transpose(1, 2).repeat_interleave(G, dim=1)
             v_r = v.transpose(1, 2).repeat_interleave(G, dim=1)
@@ -381,8 +386,8 @@ class Attention(nn.Module):
                 logits,
                 torch.tensor(big_neg, dtype=logits.dtype, device=logits.device),
             )
-            probs = F.softmax(masked_logits, dim=-1).to(v.dtype)
-            encoded = torch.einsum("BKGTS,BSKH->BTKGH", probs, v_r.to(v.dtype))
+            probs = F.softmax(masked_logits, dim=-1).to(dtype)
+            encoded = torch.einsum("BKGTS,BSKH->BTKGH", probs, v_r.to(dtype))
             encoded = encoded.reshape(
                 encoded.shape[0], encoded.shape[1], K * G, self.head_dim
             )

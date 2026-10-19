@@ -220,7 +220,7 @@ class AcceleratorManager:
         raise NotImplementedError
 
     @staticmethod
-    def setup_worker_torch():
+    def setup_worker_torch() -> None:
         """Install torch adaptations for a worker process on this accelerator."""
         return None
 
