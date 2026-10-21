@@ -662,6 +662,8 @@ class WorldModelEnv:
         infos = self._record_metrics(
             chunk_rewards_tensors.sum(dim=1), estimated_success, {}
         )
+        if self.ignore_terminations:
+            infos["episode"]["success_at_end"] = estimated_success.clone()
 
         if past_dones.any() and self.auto_reset:
             episode_info = infos["episode"]
