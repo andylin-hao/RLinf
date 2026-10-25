@@ -191,8 +191,8 @@ class Connection(ABC, metaclass=ConnectionMeta):
     #: Whether automatic fault recovery is enabled on this connection.
     enable_fault_recovery: bool = True
 
-    #: Whether the joint-tracking stall watchdog is enabled.
-    enable_stall_detection: bool = True
+    #: Whether the heuristic joint-tracking stall watchdog is enabled.
+    enable_stall_detection: bool = False
 
     #: Minimum command-to-actual position error (rad) required to count a step as stalled.
     stall_position_threshold: float = 0.05

@@ -947,7 +947,7 @@ class R2Connection(Connection):
         enable_shm: bool = False,
         controller_mode: int = R2_MODE_SERVOJ,
         enable_fault_recovery: bool = True,
-        enable_stall_detection: bool = True,
+        enable_stall_detection: bool = False,
         stall_position_threshold: float = 0.05,
         stall_velocity_threshold: float = 0.002,
         stall_steps_threshold: int = 15,

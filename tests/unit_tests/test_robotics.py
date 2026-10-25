@@ -6986,8 +6986,15 @@ def test_r2_fault_diagnosis_and_configurable_auto_recovery():
     import pytest
     from robot_mocks import mocked_sdks
 
-    from rlinf.robotics import FaultLevel, HealthStatus, R2Robot
+    from rlinf.robotics import FaultLevel, HealthStatus, R2Config, R2Robot
     from rlinf.robotics.parts.arms.r2 import R2_MODE_HOLD, R2Connection
+
+    default_cfg = R2Config(node_rank=0)
+    assert default_cfg.enable_fault_recovery is True
+    assert default_cfg.enable_stall_detection is False
+    default_conn = R2Connection()
+    assert default_conn.enable_fault_recovery is True
+    assert default_conn.enable_stall_detection is False
 
     with mocked_sdks():
         conn = R2Connection(

@@ -121,14 +121,9 @@ env 需要把具名机器人数据转换为 policy 使用的观测和动作格�
 故障诊断与自动恢复
 ------------------
 
-真机控制器在运行中可能退出流式控制模式、触发关节位置或速度保护阈值，或在 episode 中途触发碰撞保护。因此，所有 ``Connection``、``RobotPart``、``PartGroup`` 和 ``Robot`` 在组合的每一层都提供签名一致的 ``diagnose()``、``recover()``、``clear_errors()``、``configure_fault_recovery()`` 与 ``consume_recovery_event()``。
+长时间真机运行中，控制器可能退出流式控制模式、触发关节位置或速度保护阈值，或在 episode 中途触发碰撞保护。处理这类中断需要拆开两件事：如何让底层硬件恢复可控状态，以及如何处理被打断的当前轨迹。机器人接口将硬件恢复收敛在机器人边界内，而把轨迹处理留给 env。
 
-``diagnose()`` 返回 ``HealthStatus`` 诊断快照，并通过 ``FaultLevel`` 将当前硬件状态归为四类：
-
-- ``FaultLevel.OK``：控制器健康且正常跟踪指令。
-- ``FaultLevel.MODE_DROP``：未锁存硬件故障，但控制器退出了流式控制模式，或在跟踪关节目标时发生停滞。
-- ``FaultLevel.RECOVERABLE_FAULT``：锁存了运动故障或下掉使能的关节轴（如关节限位、速度超限或自碰撞保护），可通过软件恢复。
-- ``FaultLevel.UNRECOVERABLE_FAULT``：触发急停、安全锁或连接断开，需要人工介入。
+调用方可以在 ``Robot`` 或任意子组合与零部件上通过 ``diagnose()`` 与 ``recover()`` 检查并恢复硬件：
 
 .. code-block:: python
 
@@ -136,13 +131,16 @@ env 需要把具名机器人数据转换为 policy 使用的观测和动作格�
    if not status.healthy:
        robot.recover()
 
-``Connection.recover()`` 在基类中实现了通用的分级恢复状态机，``Connection.update_stall_watchdog()`` 则提供可复用的关节跟踪停滞看门狗：
+恢复采用分级策略，避免轻微中断触发完整复位。``diagnose()`` 通过 ``FaultLevel`` 将硬件状态分为四类，``recover()`` 则按严重程度执行对应动作：
 
-1. 遇到 ``FaultLevel.MODE_DROP`` 时，``recover()`` 调用 ``_recover_mode()``\ （例如在 ``R2Connection`` 中先将内部缓存的目标关节角同步到当前实测关节角以避免位置阶跃，再重新切回流式控制模式）。
-2. 遇到 ``FaultLevel.RECOVERABLE_FAULT`` 时，``recover()`` 调用 ``clear_errors()`` 同步目标角、清除控制器故障、重新为下掉的关节轴上使能并恢复控制模式。
-3. 滑动时间窗熔断器（``recovery_cooldown_window`` 秒内最多允许 ``max_recovery_attempts`` 次自动恢复）会在故障反复触发或达到 ``FaultLevel.UNRECOVERABLE_FAULT`` 时抛出 ``RuntimeError``。
+- ``FaultLevel.OK``：控制器健康且正常跟踪指令。
+- ``FaultLevel.MODE_DROP``：未锁存硬件故障，但控制器退出了流式控制模式，或在跟踪关节目标时发生停滞；恢复时只需重新切回流式控制模式，无需重置驱动器。
+- ``FaultLevel.RECOVERABLE_FAULT``：锁存了运动故障或有关节轴下掉使能（如关节限位、速度超限或自碰撞保护）；恢复时依次清除控制器故障、重新为关节轴上使能并恢复控制模式。
+- ``FaultLevel.UNRECOVERABLE_FAULT``：触发急停、安全锁或连接断开，无法通过软件清除，需要人工介入。
 
-过于敏感的停滞检测在慢速或柔顺运动下可能引发误判，因此 ``RobotConfig`` 基类为所有注册机器人统一提供了自动恢复开关与停滞检测阈值（也可通过 ``configure_fault_recovery()`` 动态配置）：
+无论哪一级恢复，在重新上使能或切回控制模式前，底层连接都会先将内部缓存的目标关节角同步到当前实测关节角，让机器人在原位保持当前姿态，避免切回瞬间朝故障前的旧目标发生跳变。如果遇到不可恢复故障，或在 ``recovery_cooldown_window`` 秒内连续触发超过 ``max_recovery_attempts`` 次自动恢复，滑动时间窗熔断器会停止尝试并抛出异常交由人工处理。
+
+开启 ``enable_fault_recovery`` 后，底层连接会在每次下发指令前检查健康状态，并在原位自动恢复明确的硬件故障。相比之下，关节跟踪停滞检测（``enable_stall_detection``）依赖位置误差与速度阈值，在精细慢速靠近或柔顺接触时存在误判可能，因此默认关闭（``false``）。确需停滞检测的场景可以在硬件配置中显式开启并调整阈值：
 
 .. code-block:: yaml
 
@@ -150,14 +148,14 @@ env 需要把具名机器人数据转换为 policy 使用的观测和动作格�
      type: R2
      config:
        enable_fault_recovery: true
-       enable_stall_detection: true
+       enable_stall_detection: false
        stall_position_threshold: 0.05
        stall_velocity_threshold: 0.002
        stall_steps_threshold: 15
        max_recovery_attempts: 3
        recovery_cooldown_window: 10.0
 
-在真机强化学习训练采样中，被中途故障恢复打断的 episode 会出现状态与动作跳变。env 在每个 step 通过 ``robot.consume_recovery_event()`` 取出恢复事件并写入 ``info["robot_fault"]``；当 ``R2EnvConfig.truncate_on_fault_recovery`` 为 ``True`` 时，当前 step 会标记为 ``truncated=True``，由 rollout runner 截断该条轨迹并在下一轮采样前自动执行 ``reset()``。将底层硬件恢复与 episode 截断分离后，任务代码同样无需依赖部署位置。
+即便原位恢复本身足够平顺，控制流在恢复瞬间仍经历过短暂停顿，这会破坏强化学习单步转移的连续性。env 在每个 step 结束后检查本次动作是否发生过自动恢复，将故障诊断信息记入 ``info["robot_fault"]``，并在开启 ``truncate_on_fault_recovery`` 时将当前 step 标记为 ``truncated=True``，交由 rollout runner 截断该条轨迹并在下一轮采样前执行复位。将底层硬件恢复与 episode 截断分离后，任务代码同样无需依赖部署位置。
 
 任务代码不依赖部署位置
 ----------------------

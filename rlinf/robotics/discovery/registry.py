@@ -53,8 +53,8 @@ class RobotConfig(HardwareConfig):
     enable_fault_recovery: bool = True
     """Whether to automatically diagnose and recover from recoverable hardware faults."""
 
-    enable_stall_detection: bool = True
-    """Whether to run the joint-tracking stall watchdog when fault recovery is enabled."""
+    enable_stall_detection: bool = False
+    """Whether to run the heuristic joint-tracking stall watchdog when fault recovery is enabled."""
 
     stall_position_threshold: float = 0.05
     """Minimum command-to-actual position error (rad) required to count a step as stalled."""
