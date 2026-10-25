@@ -50,6 +50,39 @@ class RobotConfig(HardwareConfig):
     that dials it.
     """
 
+    enable_fault_recovery: bool = True
+    """Whether to automatically diagnose and recover from recoverable hardware faults."""
+
+    enable_stall_detection: bool = True
+    """Whether to run the joint-tracking stall watchdog when fault recovery is enabled."""
+
+    stall_position_threshold: float = 0.05
+    """Minimum command-to-actual position error (rad) required to count a step as stalled."""
+
+    stall_velocity_threshold: float = 0.002
+    """Maximum actual joint motion (rad or rad/s) below which a step is considered stalled."""
+
+    stall_steps_threshold: int = 15
+    """Consecutive stalled streaming steps required before triggering stall recovery."""
+
+    max_recovery_attempts: int = 3
+    """Maximum automatic recovery attempts allowed within ``recovery_cooldown_window``."""
+
+    recovery_cooldown_window: float = 10.0
+    """Sliding time window (seconds) used by the recovery circuit breaker."""
+
+    def fault_recovery_settings(self) -> dict[str, Any]:
+        """Return the fault-detection and auto-recovery parameters as a dictionary."""
+        return {
+            "enable_fault_recovery": bool(self.enable_fault_recovery),
+            "enable_stall_detection": bool(self.enable_stall_detection),
+            "stall_position_threshold": float(self.stall_position_threshold),
+            "stall_velocity_threshold": float(self.stall_velocity_threshold),
+            "stall_steps_threshold": int(self.stall_steps_threshold),
+            "max_recovery_attempts": int(self.max_recovery_attempts),
+            "recovery_cooldown_window": float(self.recovery_cooldown_window),
+        }
+
     def hardware_model(self, robot_type: str) -> str:
         """Return the hardware model reported to the scheduler."""
         return robot_type

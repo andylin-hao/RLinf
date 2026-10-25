@@ -192,8 +192,9 @@ Diagnose and Recover from Hardware Faults
 Physical controllers can drop out of streaming mode, hit a joint or velocity
 protection limit, or trip a collision check mid-episode. Every ``Connection``,
 ``RobotPart``, ``PartGroup``, and ``Robot`` therefore exposes ``diagnose()``,
-``clear_errors()``, and ``consume_recovery_event()`` with the same signature at
-every level of the composition.
+``recover()``, ``clear_errors()``, ``configure_fault_recovery()``, and
+``consume_recovery_event()`` with the same signature at every level of the
+composition.
 
 ``diagnose()`` returns a ``HealthStatus`` snapshot classifying the hardware into
 one of four ``FaultLevel`` values:
@@ -211,27 +212,26 @@ one of four ``FaultLevel`` values:
 
    status = robot.diagnose()
    if not status.healthy:
-       if not status.recoverable:
-           raise RuntimeError(status.error_message)
-       robot.clear_errors()
+       robot.recover()
 
-When a driver supports transparent auto-recovery (such as ``R2Connection`` on
-``R2Robot``), ``send_action()`` and ``reset_joint()`` run a tiered recovery
-sequence automatically when a fault or tracking stall is detected:
+``Connection.recover()`` implements a shared tiered recovery state machine and
+``Connection.update_stall_watchdog()`` provides a reusable joint-tracking stall
+detector across all drivers:
 
-1. For ``FaultLevel.MODE_DROP``, the connection synchronizes its internal
-   command targets to the measured joint positions to prevent a position step,
-   then re-asserts the streaming controller mode.
-2. For ``FaultLevel.RECOVERABLE_FAULT``, ``clear_errors()`` synchronizes command
-   targets to the measured state, clears controller faults, re-enables disabled
-   axes, and restores the controller mode.
+1. For ``FaultLevel.MODE_DROP``, ``recover()`` calls ``_recover_mode()`` (which
+   in ``R2Connection`` synchronizes internal command targets to the measured
+   joint positions to prevent a position step, then re-asserts streaming mode).
+2. For ``FaultLevel.RECOVERABLE_FAULT``, ``recover()`` calls ``clear_errors()``
+   to synchronize command targets, clear controller faults, re-enable disabled
+   axes, and restore the controller mode.
 3. A sliding-window circuit breaker (``max_recovery_attempts`` within
    ``recovery_cooldown_window`` seconds) raises ``RuntimeError`` if a fault
    recurs repeatedly or reaches ``FaultLevel.UNRECOVERABLE_FAULT``.
 
 Because aggressive stall detection can trigger false-positive recoveries during
-slow or compliant motions, both automatic recovery and the stall watchdog are
-configurable in ``R2Config``:
+slow or compliant motions, ``RobotConfig`` defines the fault-recovery switches
+and stall-watchdog thresholds for every registered robot type (and
+``configure_fault_recovery()`` applies them to any ``Connection`` or ``Robot``):
 
 .. code-block:: yaml
 

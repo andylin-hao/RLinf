@@ -20,6 +20,7 @@ named tree from those parts. ``Connection.parts`` describes components backed
 by one session; ``RobotPart.children`` describes the public robot tree.
 """
 
+import time
 from abc import ABC, ABCMeta, abstractmethod
 from collections.abc import Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
@@ -36,6 +37,8 @@ from typing import (
     TypeVar,
     overload,
 )
+
+import numpy as np
 
 from rlinf.utils.logging import get_logger
 
@@ -185,6 +188,36 @@ class Connection(ABC, metaclass=ConnectionMeta):
     #: Cached child parts for stable identity across tree traversals.
     _beneath: "Optional[dict[str, RobotPart]]" = None
 
+    #: Whether automatic fault recovery is enabled on this connection.
+    enable_fault_recovery: bool = True
+
+    #: Whether the joint-tracking stall watchdog is enabled.
+    enable_stall_detection: bool = True
+
+    #: Minimum command-to-actual position error (rad) required to count a step as stalled.
+    stall_position_threshold: float = 0.05
+
+    #: Maximum actual joint motion (rad or rad/s) below which a step is considered stalled.
+    stall_velocity_threshold: float = 0.002
+
+    #: Consecutive stalled streaming steps required before triggering stall recovery.
+    stall_steps_threshold: int = 15
+
+    #: Maximum automatic recovery attempts allowed within :attr:`recovery_cooldown_window`.
+    max_recovery_attempts: int = 3
+
+    #: Sliding time window (seconds) used by the recovery circuit breaker.
+    recovery_cooldown_window: float = 10.0
+
+    #: Consecutive stalled streaming steps recorded by :meth:`update_stall_watchdog`.
+    _stall_counter: int = 0
+
+    #: Previous actual joint vector recorded by :meth:`update_stall_watchdog`.
+    _prev_actual_joints: Optional[np.ndarray] = None
+
+    #: Monotonic timestamps of recent automatic recovery attempts.
+    _recovery_timestamps: "Optional[list[float]]" = None
+
     #: Most recent fault-recovery event recorded by this connection, if any.
     _last_recovery_event: "Optional[dict[str, Any]]" = None
 
@@ -322,6 +355,218 @@ class Connection(ABC, metaclass=ConnectionMeta):
             if callable(fn):
                 return fn()
         return True
+
+    def _recover_mode(self) -> Any:
+        """Restore streaming control after a :attr:`FaultLevel.MODE_DROP`."""
+        if self._owner is not None:
+            fn = getattr(self._owner, "_recover_mode", None)
+            if callable(fn):
+                return fn()
+        self.clear_errors()
+        return "clear_errors"
+
+    def configure_fault_recovery(
+        self,
+        config: Optional[Any] = None,
+        *,
+        enable_fault_recovery: Optional[bool] = None,
+        enable_stall_detection: Optional[bool] = None,
+        stall_position_threshold: Optional[float] = None,
+        stall_velocity_threshold: Optional[float] = None,
+        stall_steps_threshold: Optional[int] = None,
+        max_recovery_attempts: Optional[int] = None,
+        recovery_cooldown_window: Optional[float] = None,
+    ) -> None:
+        """Configure fault-detection switches, stall thresholds, and circuit-breaker limits."""
+        if self._owner is not None:
+            self._owner.configure_fault_recovery(
+                config,
+                enable_fault_recovery=enable_fault_recovery,
+                enable_stall_detection=enable_stall_detection,
+                stall_position_threshold=stall_position_threshold,
+                stall_velocity_threshold=stall_velocity_threshold,
+                stall_steps_threshold=stall_steps_threshold,
+                max_recovery_attempts=max_recovery_attempts,
+                recovery_cooldown_window=recovery_cooldown_window,
+            )
+            return
+
+        if config is not None:
+            settings = (
+                config.fault_recovery_settings()
+                if hasattr(config, "fault_recovery_settings")
+                else dict(config)
+                if isinstance(config, Mapping)
+                else {
+                    k: getattr(config, k)
+                    for k in (
+                        "enable_fault_recovery",
+                        "enable_stall_detection",
+                        "stall_position_threshold",
+                        "stall_velocity_threshold",
+                        "stall_steps_threshold",
+                        "max_recovery_attempts",
+                        "recovery_cooldown_window",
+                    )
+                    if hasattr(config, k)
+                }
+            )
+        else:
+            settings = {}
+
+        overrides = {
+            "enable_fault_recovery": enable_fault_recovery,
+            "enable_stall_detection": enable_stall_detection,
+            "stall_position_threshold": stall_position_threshold,
+            "stall_velocity_threshold": stall_velocity_threshold,
+            "stall_steps_threshold": stall_steps_threshold,
+            "max_recovery_attempts": max_recovery_attempts,
+            "recovery_cooldown_window": recovery_cooldown_window,
+        }
+        for key, val in overrides.items():
+            if val is not None:
+                settings[key] = val
+
+        if "enable_fault_recovery" in settings:
+            self.enable_fault_recovery = bool(settings["enable_fault_recovery"])
+        if "enable_stall_detection" in settings:
+            self.enable_stall_detection = bool(settings["enable_stall_detection"])
+        if "stall_position_threshold" in settings:
+            val = float(settings["stall_position_threshold"])
+            if val <= 0.0:
+                raise ValueError(f"stall_position_threshold must be > 0, got {val!r}.")
+            self.stall_position_threshold = val
+        if "stall_velocity_threshold" in settings:
+            val = float(settings["stall_velocity_threshold"])
+            if val < 0.0:
+                raise ValueError(f"stall_velocity_threshold must be >= 0, got {val!r}.")
+            self.stall_velocity_threshold = val
+        if "stall_steps_threshold" in settings:
+            steps = int(settings["stall_steps_threshold"])
+            if steps < 1:
+                raise ValueError(f"stall_steps_threshold must be >= 1, got {steps!r}.")
+            self.stall_steps_threshold = steps
+        if "max_recovery_attempts" in settings:
+            attempts = int(settings["max_recovery_attempts"])
+            if attempts < 1:
+                raise ValueError(
+                    f"max_recovery_attempts must be >= 1, got {attempts!r}."
+                )
+            self.max_recovery_attempts = attempts
+        if "recovery_cooldown_window" in settings:
+            window = float(settings["recovery_cooldown_window"])
+            if window <= 0.0:
+                raise ValueError(
+                    f"recovery_cooldown_window must be > 0, got {window!r}."
+                )
+            self.recovery_cooldown_window = window
+
+    def recover(self, trigger: str = "manual") -> HealthStatus:
+        """Diagnose and execute tiered recovery, enforcing the cooldown circuit breaker."""
+        if self._owner is not None:
+            fn = getattr(self._owner, "recover", None)
+            if callable(fn):
+                return fn(trigger=trigger)
+        status = self.diagnose()
+        if status.healthy:
+            self._stall_counter = 0
+            return status
+
+        logger = get_logger()
+        cls_name = type(self).__name__
+        if status.level == FaultLevel.UNRECOVERABLE_FAULT:
+            msg = f"Unrecoverable {cls_name} hardware fault ({trigger}): {status.error_message}"
+            logger.error(msg)
+            raise RuntimeError(msg)
+
+        now = time.monotonic()
+        if self._recovery_timestamps is None:
+            self._recovery_timestamps = []
+        self._recovery_timestamps = [
+            t
+            for t in self._recovery_timestamps
+            if (now - t) <= self.recovery_cooldown_window
+        ]
+        if len(self._recovery_timestamps) >= self.max_recovery_attempts:
+            msg = (
+                f"{cls_name} fault recovery exceeded max_recovery_attempts="
+                f"{self.max_recovery_attempts} within {self.recovery_cooldown_window}s "
+                f"({trigger}): {status.error_message}"
+            )
+            logger.error(msg)
+            raise RuntimeError(msg)
+
+        self._recovery_timestamps.append(now)
+        attempt = len(self._recovery_timestamps)
+        if status.level == FaultLevel.MODE_DROP:
+            logger.warning(
+                f"{cls_name} mode drop / tracking stall detected ({trigger}, attempt "
+                f"{attempt}/{self.max_recovery_attempts}): {status.error_message}."
+            )
+            res = self._recover_mode()
+            action = res if isinstance(res, str) else "recover_mode"
+        else:
+            logger.warning(
+                f"{cls_name} recoverable hardware fault detected ({trigger}, attempt "
+                f"{attempt}/{self.max_recovery_attempts}): {status.error_message}."
+            )
+            res = self.clear_errors()
+            action = res if isinstance(res, str) else "clear_errors"
+
+        self._stall_counter = 0
+        self._last_recovery_event = {
+            "trigger": trigger,
+            "action": action,
+            "attempt": attempt,
+            "timestamp": now,
+            **status.to_dict(),
+        }
+        return self.diagnose()
+
+    def update_stall_watchdog(
+        self,
+        commanded: Any,
+        actual: Any,
+        velocities: Optional[Any] = None,
+        *,
+        trigger: str = "stall_watchdog",
+    ) -> Optional[HealthStatus]:
+        """Update the joint-tracking stall counter and trigger :meth:`recover` on stall."""
+        if not self.enable_fault_recovery or not self.enable_stall_detection:
+            return None
+        cmd_vec = np.asarray(commanded, dtype=np.float32).reshape(-1)
+        act_vec = np.asarray(actual, dtype=np.float32).reshape(-1)
+        if cmd_vec.size == 0 or cmd_vec.size != act_vec.size:
+            return None
+
+        cmd_delta = float(np.max(np.abs(cmd_vec - act_vec)))
+        if (
+            self._prev_actual_joints is not None
+            and self._prev_actual_joints.shape == act_vec.shape
+        ):
+            pos_step_delta = float(np.max(np.abs(act_vec - self._prev_actual_joints)))
+        else:
+            pos_step_delta = 0.0
+
+        meas_vel = 0.0
+        if velocities is not None:
+            vel_vec = np.asarray(velocities, dtype=np.float32).reshape(-1)
+            if vel_vec.size > 0:
+                meas_vel = float(np.max(np.abs(vel_vec)))
+
+        vel_delta = max(pos_step_delta, meas_vel)
+        self._prev_actual_joints = act_vec.copy()
+        if (
+            cmd_delta > self.stall_position_threshold
+            and vel_delta < self.stall_velocity_threshold
+        ):
+            self._stall_counter += 1
+        else:
+            self._stall_counter = 0
+
+        if self._stall_counter >= self.stall_steps_threshold:
+            return self.recover(trigger=trigger)
+        return None
 
     def consume_recovery_event(self) -> Optional[dict[str, Any]]:
         """Return and clear the most recent fault-recovery event, if any."""
@@ -942,6 +1187,37 @@ class PartGroup(ControllablePart):
             if res is False:
                 ok = False
         return ok
+
+    def configure_fault_recovery(
+        self,
+        config: Optional[Any] = None,
+        *,
+        enable_fault_recovery: Optional[bool] = None,
+        enable_stall_detection: Optional[bool] = None,
+        stall_position_threshold: Optional[float] = None,
+        stall_velocity_threshold: Optional[float] = None,
+        stall_steps_threshold: Optional[int] = None,
+        max_recovery_attempts: Optional[int] = None,
+        recovery_cooldown_window: Optional[float] = None,
+    ) -> None:
+        """Configure fault-detection and recovery parameters on every owning connection."""
+        for owner in self.owners():
+            owner.configure_fault_recovery(
+                config,
+                enable_fault_recovery=enable_fault_recovery,
+                enable_stall_detection=enable_stall_detection,
+                stall_position_threshold=stall_position_threshold,
+                stall_velocity_threshold=stall_velocity_threshold,
+                stall_steps_threshold=stall_steps_threshold,
+                max_recovery_attempts=max_recovery_attempts,
+                recovery_cooldown_window=recovery_cooldown_window,
+            )
+
+    def recover(self, trigger: str = "manual") -> HealthStatus:
+        """Diagnose and execute tiered recovery across every owning connection."""
+        for owner in self.owners():
+            owner.recover(trigger=trigger)
+        return self.diagnose()
 
     def consume_recovery_event(self) -> Optional[dict[str, Any]]:
         """Return and clear any fault-recovery event recorded by owning connections."""

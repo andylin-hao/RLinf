@@ -7083,17 +7083,17 @@ def test_r2_fault_diagnosis_and_configurable_auto_recovery():
             conn._session.state["stalled"] = False
             conn.enable_stall_detection = True
 
-            # 6. Disabling fault recovery leaves faults untouched
-            conn.enable_fault_recovery = False
+            # 6. Disabling fault recovery leaves faults untouched; robot.recover() clears manually
+            robot.configure_fault_recovery(enable_fault_recovery=False)
             conn._session.state["fault_code"] = 304
             robot.send_action(
                 {"left": {"arm": {"joint_position": np.full(7, 0.9, dtype=np.float32)}}}
             )
             assert robot.consume_recovery_event() is None
             assert robot.diagnose().error_code == 304
-            assert robot.clear_errors() is True
-            assert robot.diagnose().healthy is True
-            conn.enable_fault_recovery = True
+            assert robot.recover(trigger="manual").healthy is True
+            assert robot.consume_recovery_event()["trigger"] == "manual"
+            robot.configure_fault_recovery(enable_fault_recovery=True)
 
             # 7. Circuit breaker raises RuntimeError when persistent fault exceeds max_recovery_attempts=2
             conn._recovery_timestamps.clear()
@@ -7110,7 +7110,9 @@ def test_r2_fault_diagnosis_and_configurable_auto_recovery():
             conn._recovery_timestamps.clear()
             conn._session.state["fault_code"] = 401
             assert robot.diagnose().level == FaultLevel.UNRECOVERABLE_FAULT
-            with pytest.raises(RuntimeError, match="Unrecoverable R2 hardware fault"):
+            with pytest.raises(
+                RuntimeError, match="Unrecoverable R2Connection hardware fault"
+            ):
                 robot.send_action({"left": {"arm": {"joint_position": target_q}}})
         finally:
             robot.disconnect()

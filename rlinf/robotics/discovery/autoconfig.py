@@ -34,7 +34,19 @@ class RobotAutoConfig:
     """
 
     #: Fields that are never auto-resolved (placement / structural fields).
-    SKIP_FIELDS: frozenset[str] = frozenset({"node_rank"})
+    SKIP_FIELDS: frozenset[str] = frozenset(
+        {
+            "node_rank",
+            "disable_validate",
+            "enable_fault_recovery",
+            "enable_stall_detection",
+            "stall_position_threshold",
+            "stall_velocity_threshold",
+            "stall_steps_threshold",
+            "max_recovery_attempts",
+            "recovery_cooldown_window",
+        }
+    )
 
     @classmethod
     def resolve(

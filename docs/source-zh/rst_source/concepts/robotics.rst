@@ -121,7 +121,7 @@ env 需要把具名机器人数据转换为 policy 使用的观测和动作格�
 故障诊断与自动恢复
 ------------------
 
-真机控制器在运行中可能退出流式控制模式、触发关节位置或速度保护阈值，或在 episode 中途触发碰撞保护。因此，所有 ``Connection``、``RobotPart``、``PartGroup`` 和 ``Robot`` 在组合的每一层都提供签名一致的 ``diagnose()``、``clear_errors()`` 与 ``consume_recovery_event()``。
+真机控制器在运行中可能退出流式控制模式、触发关节位置或速度保护阈值，或在 episode 中途触发碰撞保护。因此，所有 ``Connection``、``RobotPart``、``PartGroup`` 和 ``Robot`` 在组合的每一层都提供签名一致的 ``diagnose()``、``recover()``、``clear_errors()``、``configure_fault_recovery()`` 与 ``consume_recovery_event()``。
 
 ``diagnose()`` 返回 ``HealthStatus`` 诊断快照，并通过 ``FaultLevel`` 将当前硬件状态归为四类：
 
@@ -134,17 +134,15 @@ env 需要把具名机器人数据转换为 policy 使用的观测和动作格�
 
    status = robot.diagnose()
    if not status.healthy:
-       if not status.recoverable:
-           raise RuntimeError(status.error_message)
-       robot.clear_errors()
+       robot.recover()
 
-对于支持无感自动恢复的 driver（例如 ``R2Robot`` 使用的 ``R2Connection``），``send_action()`` 和 ``reset_joint()`` 会在检测到故障或跟踪停滞时按故障级别自动执行分级恢复：
+``Connection.recover()`` 在基类中实现了通用的分级恢复状态机，``Connection.update_stall_watchdog()`` 则提供可复用的关节跟踪停滞看门狗：
 
-1. 遇到 ``FaultLevel.MODE_DROP`` 时，connection 先将内部缓存的目标关节角同步到当前实测关节角，避免模式恢复瞬间产生位置阶跃，再重新切回流式控制模式。
-2. 遇到 ``FaultLevel.RECOVERABLE_FAULT`` 时，``clear_errors()`` 会将内部目标同步到实测状态，清除控制器故障，重新为下掉的关节轴上使能，并恢复控制模式。
+1. 遇到 ``FaultLevel.MODE_DROP`` 时，``recover()`` 调用 ``_recover_mode()``\ （例如在 ``R2Connection`` 中先将内部缓存的目标关节角同步到当前实测关节角以避免位置阶跃，再重新切回流式控制模式）。
+2. 遇到 ``FaultLevel.RECOVERABLE_FAULT`` 时，``recover()`` 调用 ``clear_errors()`` 同步目标角、清除控制器故障、重新为下掉的关节轴上使能并恢复控制模式。
 3. 滑动时间窗熔断器（``recovery_cooldown_window`` 秒内最多允许 ``max_recovery_attempts`` 次自动恢复）会在故障反复触发或达到 ``FaultLevel.UNRECOVERABLE_FAULT`` 时抛出 ``RuntimeError``。
 
-过于敏感的停滞检测在慢速或柔顺运动下可能引发误判，因此自动故障恢复开关和停滞检测阈值均可在 ``R2Config`` 中按需配置：
+过于敏感的停滞检测在慢速或柔顺运动下可能引发误判，因此 ``RobotConfig`` 基类为所有注册机器人统一提供了自动恢复开关与停滞检测阈值（也可通过 ``configure_fault_recovery()`` 动态配置）：
 
 .. code-block:: yaml
 

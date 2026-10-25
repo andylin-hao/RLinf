@@ -993,17 +993,6 @@ class R2Connection(Connection):
                 f"Unknown R2 camera names {unknown_cameras}; "
                 f"valid names are {sorted(R2_CAMERA_TOPICS)}."
             )
-        if not np.isfinite(stall_position_threshold) or stall_position_threshold <= 0:
-            raise ValueError("stall_position_threshold must be finite and positive.")
-        if not np.isfinite(stall_velocity_threshold) or stall_velocity_threshold < 0:
-            raise ValueError("stall_velocity_threshold must be finite and nonnegative.")
-        if int(stall_steps_threshold) < 1:
-            raise ValueError("stall_steps_threshold must be at least 1.")
-        if int(max_recovery_attempts) < 1:
-            raise ValueError("max_recovery_attempts must be at least 1.")
-        if not np.isfinite(recovery_cooldown_window) or recovery_cooldown_window <= 0:
-            raise ValueError("recovery_cooldown_window must be finite and positive.")
-
         self.body_dof = resolved_body_dof
         self.end_effector_type = resolved_ee_type
         self.detected_body_dof: Optional[int] = None
@@ -1014,13 +1003,15 @@ class R2Connection(Connection):
         self.use_compressed_camera = use_compressed_camera
         self.enable_shm = enable_shm
         self.controller_mode = controller_mode
-        self.enable_fault_recovery = bool(enable_fault_recovery)
-        self.enable_stall_detection = bool(enable_stall_detection)
-        self.stall_position_threshold = float(stall_position_threshold)
-        self.stall_velocity_threshold = float(stall_velocity_threshold)
-        self.stall_steps_threshold = int(stall_steps_threshold)
-        self.max_recovery_attempts = int(max_recovery_attempts)
-        self.recovery_cooldown_window = float(recovery_cooldown_window)
+        self.configure_fault_recovery(
+            enable_fault_recovery=enable_fault_recovery,
+            enable_stall_detection=enable_stall_detection,
+            stall_position_threshold=stall_position_threshold,
+            stall_velocity_threshold=stall_velocity_threshold,
+            stall_steps_threshold=stall_steps_threshold,
+            max_recovery_attempts=max_recovery_attempts,
+            recovery_cooldown_window=recovery_cooldown_window,
+        )
         self.node_name = node_name
         self._logger = get_logger()
 
@@ -2244,70 +2235,18 @@ class R2Connection(Connection):
             self._last_recovery_event = None
             return event
 
+    def _recover_mode(self) -> str:
+        """Synchronize command state and re-assert ServoJ mode after a mode drop or stall."""
+        self._sync_cmd_to_actual()
+        self.switch_controller(R2_MODE_SERVOJ)
+        return "switch_controller(SERVOJ)"
+
     def _check_and_recover(self, trigger_reason: str) -> HealthStatus:
-        """Diagnose and execute tiered recovery, enforcing the cooldown circuit breaker."""
-        status = self.diagnose()
-        if status.healthy:
-            self._stall_counter = 0
-            return status
-
-        logger = get_logger()
-        if status.level == FaultLevel.UNRECOVERABLE_FAULT:
-            logger.error(
-                f"Unrecoverable R2 hardware fault ({trigger_reason}): {status.error_message}"
-            )
-            raise RuntimeError(
-                f"Unrecoverable R2 hardware fault ({trigger_reason}): {status.error_message}"
-            )
-
-        now = time.monotonic()
-        self._recovery_timestamps = [
-            t
-            for t in self._recovery_timestamps
-            if (now - t) <= self.recovery_cooldown_window
-        ]
-        if len(self._recovery_timestamps) >= self.max_recovery_attempts:
-            logger.error(
-                f"R2 fault recovery exceeded max_recovery_attempts={self.max_recovery_attempts} "
-                f"within {self.recovery_cooldown_window}s ({trigger_reason}): {status.error_message}"
-            )
-            raise RuntimeError(
-                f"R2 fault recovery exceeded max_recovery_attempts={self.max_recovery_attempts} "
-                f"within {self.recovery_cooldown_window}s ({trigger_reason}): {status.error_message}"
-            )
-
-        self._recovery_timestamps.append(now)
-        attempt = len(self._recovery_timestamps)
-        if status.level == FaultLevel.MODE_DROP:
-            logger.warning(
-                f"R2 mode drop / tracking stall detected ({trigger_reason}, attempt "
-                f"{attempt}/{self.max_recovery_attempts}): {status.error_message}. "
-                "Syncing command state and re-asserting ServoJ mode."
-            )
-            self._sync_cmd_to_actual()
-            self.switch_controller(R2_MODE_SERVOJ)
-            action = "switch_controller(SERVOJ)"
-        else:
-            logger.warning(
-                f"R2 recoverable hardware fault detected ({trigger_reason}, attempt "
-                f"{attempt}/{self.max_recovery_attempts}): {status.error_message}. "
-                "Clearing faults, re-enabling body axes, and restoring controller mode."
-            )
-            self.clear_errors()
-            action = "clear_errors+set_axis_enable+switch_controller"
-
-        with self._lock:
-            self._last_recovery_event = {
-                "trigger": trigger_reason,
-                "action": action,
-                "attempt": attempt,
-                "timestamp": now,
-                **status.to_dict(),
-            }
-        return self.diagnose()
+        """Diagnose and execute tiered recovery via :meth:`Connection.recover`."""
+        return self.recover(trigger=trigger_reason)
 
     def _update_stall_watchdog(self) -> None:
-        """Update the ServoJ joint-tracking stall counter and recover if threshold is reached."""
+        """Update the ServoJ joint-tracking stall counter via :meth:`Connection.update_stall_watchdog`."""
         if not self.enable_fault_recovery or not self.enable_stall_detection:
             return
         if (
@@ -2317,13 +2256,6 @@ class R2Connection(Connection):
         ):
             return
         post_state = self.get_state()
-        act_vec = np.concatenate(
-            [
-                post_state.left_joint_positions,
-                post_state.right_joint_positions,
-                post_state.waist_positions,
-            ]
-        )
         cmd_vec = np.concatenate(
             [
                 self._cmd_left_arm,
@@ -2331,37 +2263,21 @@ class R2Connection(Connection):
                 self._cmd_waist,
             ]
         )
-        cmd_delta = float(np.max(np.abs(cmd_vec - act_vec)))
-        if (
-            self._prev_actual_joints is not None
-            and self._prev_actual_joints.shape == act_vec.shape
-        ):
-            pos_step_delta = float(np.max(np.abs(act_vec - self._prev_actual_joints)))
-        else:
-            pos_step_delta = 0.0
-        meas_vel = float(
-            np.max(
-                np.concatenate(
-                    [
-                        np.abs(post_state.left_joint_velocities),
-                        np.abs(post_state.right_joint_velocities),
-                        np.abs(post_state.waist_velocities),
-                    ]
-                )
-            )
+        act_vec = np.concatenate(
+            [
+                post_state.left_joint_positions,
+                post_state.right_joint_positions,
+                post_state.waist_positions,
+            ]
         )
-        vel_delta = max(pos_step_delta, meas_vel)
-        self._prev_actual_joints = act_vec.copy()
-        if (
-            cmd_delta > self.stall_position_threshold
-            and vel_delta < self.stall_velocity_threshold
-        ):
-            self._stall_counter += 1
-        else:
-            self._stall_counter = 0
-
-        if self._stall_counter >= self.stall_steps_threshold:
-            self._check_and_recover("servoj_stall")
+        vel_vec = np.concatenate(
+            [
+                post_state.left_joint_velocities,
+                post_state.right_joint_velocities,
+                post_state.waist_velocities,
+            ]
+        )
+        self.update_stall_watchdog(cmd_vec, act_vec, vel_vec, trigger="servoj_stall")
 
     def _build_whole_body_joint_vector(
         self,

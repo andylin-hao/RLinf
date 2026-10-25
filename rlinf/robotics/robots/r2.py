@@ -196,27 +196,6 @@ class R2Config(RobotConfig):
     controller_mode: int = R2_MODE_SERVOJ
     """Initial motion controller mode (0: Hold, 1: MoveJ, 2: ServoJ, 3: GravityComp)."""
 
-    enable_fault_recovery: bool = True
-    """Whether to automatically diagnose and recover from recoverable motion faults."""
-
-    enable_stall_detection: bool = True
-    """Whether to run the ServoJ joint-tracking stall watchdog when fault recovery is enabled."""
-
-    stall_position_threshold: float = 0.05
-    """Minimum command-to-actual position error (rad) required to count a step as stalled."""
-
-    stall_velocity_threshold: float = 0.002
-    """Maximum actual joint motion (rad or rad/s) below which a step is considered stalled."""
-
-    stall_steps_threshold: int = 15
-    """Consecutive stalled ServoJ steps required before triggering stall recovery."""
-
-    max_recovery_attempts: int = 3
-    """Maximum automatic recovery attempts allowed within ``recovery_cooldown_window``."""
-
-    recovery_cooldown_window: float = 10.0
-    """Sliding time window (seconds) used by the recovery circuit breaker."""
-
     controller_node_rank: Optional[int] = None
     """Optional node rank where the RFrame connection worker should be placed."""
 
