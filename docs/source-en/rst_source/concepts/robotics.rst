@@ -182,24 +182,23 @@ environment only consumes their observations.
 
 Existing policies that expect flat vectors use ``LegacyObservationAdapter`` and
 ``VectorActionAdapter`` at this boundary. The adapters translate representation;
-the robot interface remains named and nested. Beyond normal observation and
-action translation, a long-running rollout also needs a uniform way to inspect
-and recover from hardware faults at this same boundary.
+the robot interface remains named and nested.
 
 Diagnose and Recover from Hardware Faults
 -----------------------------------------
 
-During a long real-world run, a controller can drop out of streaming mode, hit
-a joint or velocity protection limit, or trip a collision check mid-episode.
-Handling those interruptions requires answering two questions: how to detect
-and clear the hardware fault without disturbing normal control, and how to
-handle the trajectory that was interrupted. The robotics interface keeps fault
-detection and in-place hardware recovery inside the robot boundary while
-leaving trajectory handling to the environment.
+During a real-world run, a controller may drop out of its streaming control
+mode or trip a joint limit, velocity limit, or collision protection check,
+leaving the drives disabled and the robot unresponsive. When that happens, two
+things need to occur in sequence: first, the robot driver must clear the
+hardware fault, re-enable the drives, and restore the control mode so the robot
+can move again; second, during reinforcement learning, the environment needs to
+know that the current step was interrupted so it can decide whether to end the
+episode.
 
-Callers can inspect and recover hardware explicitly through ``diagnose()`` and
-``recover()`` on the ``Robot`` (or any composed group or part), or let the
-connection recover automatically before sending each command:
+You can call ``diagnose()`` to inspect health and ``recover()`` to clear faults
+directly on the ``Robot`` (or any part), or enable automatic recovery so the
+underlying connection checks and recovers before sending each command:
 
 .. code-block:: python
 
@@ -207,41 +206,44 @@ connection recover automatically before sending each command:
    if not status.healthy:
        robot.recover()
 
-Fault Detection Without Slowing High-Frequency Control
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+How Fault Detection Works
+^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Querying controller health through synchronous RPCs on every step would stall a
-50–100 Hz control loop. Instead, the connection subscribes to the controller's
-status and fault streams in the background and caches the latest run mode,
-system state, error code, and per-axis enable flags in memory. Before each
-command is sent, the pre-command health check only reads those in-memory flags.
-When the robot is healthy, detection costs a few in-memory comparisons and adds
-zero network or RPC latency to the control loop.
+High-frequency joint or Cartesian control typically runs at 50–100 Hz. Querying
+controller health through a synchronous RPC on every step would block the
+control loop. Instead, the connection subscribes to the controller's status
+topics in the background and caches the active control mode, system state,
+error code, and per-axis enable flags in memory. Before sending each command,
+the driver only checks those cached values in memory. When the robot is
+healthy, the check is a few in-memory comparisons and adds no RPC latency to
+high-frequency control.
 
-Only when a cached flag indicates an anomaly, or when the caller explicitly
-invokes ``robot.diagnose()``, does the connection assemble a full
-``HealthStatus`` snapshot and classify the hardware into one of four
-``FaultLevel`` states:
+Only when a cached value indicates an anomaly, or when you call
+``robot.diagnose()`` explicitly, does the connection assemble a full
+``HealthStatus`` diagnostic result and classify the state into one of four
+``FaultLevel`` values:
 
-- ``FaultLevel.OK``: the controller is healthy and tracking commands.
-- ``FaultLevel.MODE_DROP``: no hardware fault is latched, but the controller
-  dropped out of its streaming mode or stalled while tracking joint targets.
-- ``FaultLevel.RECOVERABLE_FAULT``: a motion fault or disabled axis is latched
-  (such as a joint limit, velocity limit, or self-collision check) and can be
-  cleared in software.
+- ``FaultLevel.OK``: the controller is healthy and responding to commands.
+- ``FaultLevel.MODE_DROP``: no hardware error is latched, but the controller
+  exited its streaming control mode or stalled while tracking joint targets.
+- ``FaultLevel.RECOVERABLE_FAULT``: a motion protection check (such as a joint
+  limit, velocity limit, or self-collision check) triggered or an axis dropped
+  its enable state, which can be cleared in software.
 - ``FaultLevel.UNRECOVERABLE_FAULT``: an emergency stop, safety lock, or lost
-  session requires human intervention and cannot be cleared in software.
+  connection occurred, which cannot be cleared in software and requires human
+  intervention.
 
-Deterministic controller signals (error codes, disabled axes, and mode drops)
-have no false positives, so automatic fault recovery
-(``enable_fault_recovery``) is enabled by default. By contrast, joint-tracking
-stall detection (``enable_stall_detection``) is an optional in-memory watchdog
-that checks whether joint error stays above ``stall_position_threshold`` while
-joint velocity stays below ``stall_velocity_threshold`` for
-``stall_steps_threshold`` consecutive steps. Because slow fine-positioning or
-compliant contact can look like a stall, ``enable_stall_detection`` defaults to
-``false`` and can be enabled and tuned in the hardware configuration when
-needed:
+Controller error codes, disabled axes, and mode drops are deterministic signals
+from the hardware controller and do not produce false positives, so automatic
+fault recovery (``enable_fault_recovery``) is enabled by default. In addition
+to hardware-reported faults, the connection provides an optional joint-tracking
+stall detector (``enable_stall_detection``): it triggers when the error between
+target and measured joint angles stays above ``stall_position_threshold`` while
+measured joint velocity stays below ``stall_velocity_threshold`` for
+``stall_steps_threshold`` consecutive steps. Because slow fine alignment or
+compliant contact can also match that condition, ``enable_stall_detection`` is
+disabled (``false``) by default to avoid false recoveries, and can be enabled
+and tuned in the hardware configuration when needed:
 
 .. code-block:: yaml
 
@@ -256,42 +258,43 @@ needed:
        max_recovery_attempts: 3
        recovery_cooldown_window: 10.0
 
-Tiered Recovery and Its Impact on Control
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+How Recovery Works and How It Affects Control
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-When a fault is detected, ``recover()`` matches its action to the fault
-severity so that minor interruptions do not trigger a disruptive full reset:
+When a fault is detected, ``recover()`` selects the recovery steps according to
+``FaultLevel`` rather than resetting the entire controller every time:
 
-- For ``FaultLevel.MODE_DROP``, recovery only re-asserts the active streaming
-  control mode without resetting the drives.
-- For ``FaultLevel.RECOVERABLE_FAULT``, recovery clears the controller fault,
-  re-enables any disabled drives, and restores the streaming control mode.
-- For ``FaultLevel.UNRECOVERABLE_FAULT``, or when recoveries exceed
-  ``max_recovery_attempts`` within ``recovery_cooldown_window`` seconds, a
-  sliding-window circuit breaker stops automatic recovery and raises a
-  ``RuntimeError`` for human intervention.
+- ``FaultLevel.MODE_DROP``: switches the controller back to streaming mode
+  without resetting the motor drives.
+- ``FaultLevel.RECOVERABLE_FAULT``: clears the controller error code,
+  re-enables any disabled joint axes, and switches back to streaming mode.
+- ``FaultLevel.UNRECOVERABLE_FAULT``: raises ``RuntimeError`` immediately. For
+  recoverable faults, if automatic recovery is triggered more than
+  ``max_recovery_attempts`` times within ``recovery_cooldown_window`` seconds,
+  the underlying cause is still present and the circuit breaker also stops
+  retrying and raises ``RuntimeError``.
 
-To prevent a sudden jump when control resumes, the connection always
-synchronizes its internal command target to the current measured joint
-positions before re-enabling drives or switching back to streaming mode. Even
-if a policy continued stepping its target while the arm was faulted, the first
-command after recovery holds the robot at its current pose rather than snapping
-toward a stale pre-fault target.
+Recovery also has to prevent position jumps. While the robot is stopped by a
+fault, an upper-level policy may keep stepping its target joint angles away
+from the robot's actual position. Re-enabling the drives and immediately
+sending that old target would cause the arm to jerk toward it. Before
+re-enabling drives or switching back to streaming mode, the connection
+overwrites its cached target joint angles with the robot's current measured
+joint angles. The first command after recovery therefore holds the robot at its
+current pose.
 
-In terms of control timing, normal fault-free steps experience no added latency.
-On the single step where a fault actually occurs, the synchronous service calls
-that clear the fault and re-enable the axes pause the command stream for roughly
-50–300 ms while the robot holds its position in place, after which control
-resumes immediately. For teleoperation or evaluation scripts, that allows the
-task to continue seamlessly. For reinforcement learning data collection,
-however, that brief pause breaks the Markov continuity of the interrupted step.
-At the end of each step, the environment therefore checks whether a recovery
-occurred, records the diagnostic snapshot in ``info["robot_fault"]``, and when
-``truncate_on_fault_recovery`` is enabled, marks the step as ``truncated=True``
-so the rollout runner closes the interrupted trajectory cleanly and resets the
-robot before starting the next episode. Keeping hardware recovery in the
-connection and episode control in the environment also keeps placement out of
-task code.
+During fault-free operation, this mechanism adds no delay to the control loop.
+Only on the step where a fault actually occurs do the synchronous service calls
+(clearing errors, enabling axes, and switching modes) pause the command stream
+for roughly 50–300 ms while the robot stays in place, after which subsequent
+commands resume normally. In teleoperation or evaluation scripts, execution
+continues without restarting the program. In reinforcement learning data
+collection, however, a 50–300 ms pause breaks the transition continuity of that
+step. At the end of each step, the environment checks whether an automatic
+recovery occurred, records the fault details in ``info["robot_fault"]``, and
+when ``truncate_on_fault_recovery`` is enabled, marks the step with
+``truncated=True`` so the rollout runner ends the interrupted trajectory and
+resets the robot before the next episode.
 
 Keep Placement Out of Task Code
 -------------------------------
