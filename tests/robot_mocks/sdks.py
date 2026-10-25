@@ -515,6 +515,9 @@ def r2() -> dict[str, types.ModuleType]:
         def _build_navi_msg(self, msg_cls: Any) -> Any:
             msg = msg_cls()
             msg.pose = _make_pose(self.base_pose[0], self.base_pose[1], 0.0)
+            msg.current_pose = types.SimpleNamespace(
+                x=self.base_pose[0], y=self.base_pose[1], theta=self.base_pose[2]
+            )
             msg.velocity = _make_twist(
                 vx=self.base_vel[0], vy=self.base_vel[1], wz=self.base_vel[2]
             )
@@ -551,6 +554,20 @@ def r2() -> dict[str, types.ModuleType]:
             for msg_cls, cb in self.callbacks.get(topic, []):
                 cb(builder(msg_cls))
 
+        def _sync_tcp_from_joints(self) -> None:
+            try:
+                from rlinf.robotics.parts.arms.r2 import compute_r2_arm_fk_and_jacobian
+
+                ql = [self.joints.get(f"J_ArmL_{i}", 0.0) for i in range(1, 8)]
+                qr = [self.joints.get(f"J_ArmR_{i}", 0.0) for i in range(1, 8)]
+                pl, _, _, _ = compute_r2_arm_fk_and_jacobian("left", ql)
+                pr, _, _, _ = compute_r2_arm_fk_and_jacobian("right", qr)
+                self.left_pose = _make_pose(float(pl[0]), float(pl[1]), float(pl[2]))
+                self.right_pose = _make_pose(float(pr[0]), float(pr[1]), float(pr[2]))
+                self._notify("/Motion/TCP", self._build_tcp_msg)
+            except Exception:
+                pass
+
         def handle_send(self, topic: str, msg: Any) -> None:
             if topic == "/Motion/ServoJ":
                 names = list(getattr(msg, "name", []))
@@ -565,6 +582,7 @@ def r2() -> dict[str, types.ModuleType]:
                     if idx < len(efforts):
                         self.efforts[name] = float(efforts[idx])
                 self._notify("/Motion/JointState", self._build_joint_msg)
+                self._sync_tcp_from_joints()
             elif topic == "/teleop/chassis_Twist":
                 vx = float(msg.linear.x)
                 vy = float(msg.linear.y)
@@ -586,6 +604,7 @@ def r2() -> dict[str, types.ModuleType]:
                     if idx < len(targets):
                         self.joints[name] = float(targets[idx])
                 self._notify("/Motion/JointState", self._build_joint_msg)
+                self._sync_tcp_from_joints()
                 return types.SimpleNamespace(success=True)
             if topic == "/Motion/MoveC":
                 arm = int(getattr(req, "arm", 0))

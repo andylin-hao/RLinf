@@ -6826,11 +6826,26 @@ def test_r2_connection_and_robot_variants_run_on_faked_rframe():
 
     from rlinf.robotics.parts.arms.r2 import (
         R2_HAND_FINGER_ORDER,
+        R2_LEFT_READY_QPOS,
         R2_MODE_GRAVITY_COMP,
         R2_MODE_SERVOJ,
+        R2_RIGHT_READY_QPOS,
         R2Connection,
+        compute_r2_arm_cartesian_step,
+        compute_r2_arm_fk_and_jacobian,
     )
     from rlinf.robotics.robots.r2 import R2Robot
+
+    p_r0, _, _, _ = compute_r2_arm_fk_and_jacobian("right", R2_RIGHT_READY_QPOS)
+    q_r_fwd = compute_r2_arm_cartesian_step(
+        "right", R2_RIGHT_READY_QPOS, [0.04, 0.0, 0.0]
+    )
+    p_r1, _, _, _ = compute_r2_arm_fk_and_jacobian("right", q_r_fwd)
+    assert np.allclose(p_r1 - p_r0, [0.04, 0.0, 0.0], atol=2e-3)
+    p_l0, _, _, _ = compute_r2_arm_fk_and_jacobian("left", R2_LEFT_READY_QPOS)
+    q_l_up = compute_r2_arm_cartesian_step("left", R2_LEFT_READY_QPOS, [0.0, 0.0, 0.04])
+    p_l1, _, _, _ = compute_r2_arm_fk_and_jacobian("left", q_l_up)
+    assert np.allclose(p_l1 - p_l0, [0.0, 0.0, 0.04], atol=2e-3)
 
     with mocked_sdks():
         # 1. Default 21-DoF dual-arm + parallel grippers + mobile base + depth cameras

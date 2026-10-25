@@ -16,7 +16,9 @@
 
 from __future__ import annotations
 
+import os
 import threading
+import time
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field
 from typing import Any, Optional
@@ -57,7 +59,27 @@ R2_RIGHT_ARM_JOINTS: tuple[str, ...] = (
     "J_ArmR_6",
     "J_ArmR_7",
 )
+R2_REAL_LEFT_ARM_JOINTS: tuple[str, ...] = (
+    "J_LeftArm1",
+    "J_LeftArm2",
+    "J_LeftArm3",
+    "J_LeftArm4",
+    "J_LeftArm5",
+    "J_LeftArm6",
+    "J_LeftArm7",
+)
+R2_REAL_RIGHT_ARM_JOINTS: tuple[str, ...] = (
+    "J_RightArm1",
+    "J_RightArm2",
+    "J_RightArm3",
+    "J_RightArm4",
+    "J_RightArm5",
+    "J_RightArm6",
+    "J_RightArm7",
+)
 R2_NECK_JOINTS: tuple[str, ...] = ("J_NeckYaw", "J_NeckPitch")
+R2_REAL_NECK_JOINTS_21DOF: tuple[str, ...] = ("J_NeckYaw", "J_NeckPitch")
+R2_REAL_NECK_JOINTS_20DOF: tuple[str, ...] = ("J_NeckPitch",)
 R2_WAIST_JOINTS_21DOF: tuple[str, ...] = (
     "J_WaistPitch_1",
     "J_WaistPitch_2",
@@ -70,6 +92,13 @@ R2_WAIST_JOINTS_20DOF: tuple[str, ...] = (
     "J_WaistPitch",
     "J_WaistRoll",
     "J_WaistYaw",
+)
+R2_REAL_WAIST_JOINTS: tuple[str, ...] = (
+    "J_AnklePitch",
+    "J_Knee",
+    "J_HipPitch",
+    "J_HipRoll",
+    "J_HipYaw",
 )
 R2_GRIPPER_JOINTS: tuple[str, ...] = ("GripperL", "GripperR")
 R2_HAND_FINGER_ORDER: tuple[str, ...] = (
@@ -97,38 +126,279 @@ R2_HAND_JOINTS_RIGHT: tuple[str, ...] = (
     "HandR_ThumbRot",
 )
 
+R2_LEFT_ARM_LIMITS_LOW = np.array(
+    [-2.74, 0.0, -2.82, -2.33, -2.82, -1.45, -1.45], dtype=np.float32
+)
+R2_LEFT_ARM_LIMITS_HIGH = np.array(
+    [1.34, 3.14, 2.82, 0.02, 2.82, 1.45, 1.45], dtype=np.float32
+)
+R2_RIGHT_ARM_LIMITS_LOW = np.array(
+    [-2.74, -3.14, -2.82, -0.02, -2.82, -1.45, -1.45], dtype=np.float32
+)
+R2_RIGHT_ARM_LIMITS_HIGH = np.array(
+    [1.34, 0.0, 2.82, 2.33, 2.82, 1.45, 1.45], dtype=np.float32
+)
+R2_WAIST_LIMITS_LOW = np.array([0.0, 0.0, -0.38, -0.47, -1.95], dtype=np.float32)
+R2_WAIST_LIMITS_HIGH = np.array([1.48, 2.39, 1.62, 0.47, 1.95], dtype=np.float32)
+R2_NECK_LIMITS_LOW = np.array([-1.57, -0.698], dtype=np.float32)
+R2_NECK_LIMITS_HIGH = np.array([1.57, 0.349], dtype=np.float32)
+
+R2_LEFT_READY_QPOS = np.array(
+    [-0.35, 0.20, 1.00, -0.70, 0.0, -0.30, 0.0], dtype=np.float32
+)
+R2_RIGHT_READY_QPOS = np.array(
+    [-0.35, -0.20, 1.00, 0.70, 0.0, -0.30, 0.0], dtype=np.float32
+)
+
+_R2_WAIST_URDF_CHAIN: tuple[tuple[np.ndarray, np.ndarray], ...] = (
+    (np.array([0.0, 0.073, 0.345]), np.array([0.0, -1.0, 0.0])),
+    (np.array([0.0, 0.0, 0.34]), np.array([0.0, 1.0, 0.0])),
+    (np.array([0.0, 0.0, 0.3]), np.array([0.0, -1.0, 0.0])),
+    (np.array([-0.056, -0.0732, 0.14]), np.array([1.0, 0.0, 0.0])),
+    (np.array([0.056, 0.0, 0.065]), np.array([0.0, 0.0, 1.0])),
+)
+
+_R2_LEFT_ARM_URDF_CHAIN: tuple[tuple[str, np.ndarray, np.ndarray, np.ndarray], ...] = (
+    ("fixed", np.array([0.0, 0.0925, 0.242]), np.zeros(3), np.zeros(3)),
+    ("rev", np.array([0.0, 0.0229, 0.0]), np.zeros(3), np.array([0.0, 1.0, 0.0])),
+    ("rev", np.array([-0.0594, 0.058, 0.0]), np.zeros(3), np.array([1.0, 0.0, 0.0])),
+    ("rev", np.array([0.06, 0.0, -0.09]), np.zeros(3), np.array([0.0, 0.0, 1.0])),
+    ("rev", np.array([-0.059, -0.01, -0.21]), np.zeros(3), np.array([1.0, 0.0, 0.0])),
+    ("rev", np.array([0.059, 0.01, -0.0956]), np.zeros(3), np.array([0.0, 0.0, 1.0])),
+    ("rev", np.array([0.0, 0.034, -0.1374]), np.zeros(3), np.array([0.0, -1.0, 0.0])),
+    (
+        "rev",
+        np.array([-0.0364, -0.034, -0.058]),
+        np.zeros(3),
+        np.array([1.0, 0.0, 0.0]),
+    ),
+    ("fixed", np.array([0.0364, 0.0, -0.058]), np.zeros(3), np.zeros(3)),
+    (
+        "fixed",
+        np.array([0.0, 0.0, -0.013]),
+        np.array([3.1415926, 0.0, -1.5707963]),
+        np.zeros(3),
+    ),
+    (
+        "fixed",
+        np.array([0.0, 0.0, 0.0]),
+        np.array([0.0, 0.0, -1.571428]),
+        np.zeros(3),
+    ),
+    ("fixed", np.array([0.0, 0.0, 0.122]), np.array([0.0, 0.0, -1.57]), np.zeros(3)),
+)
+
+_R2_RIGHT_ARM_URDF_CHAIN: tuple[tuple[str, np.ndarray, np.ndarray, np.ndarray], ...] = (
+    ("fixed", np.array([0.0, -0.0925, 0.242]), np.zeros(3), np.zeros(3)),
+    ("rev", np.array([0.0, -0.0229, 0.0]), np.zeros(3), np.array([0.0, 1.0, 0.0])),
+    ("rev", np.array([-0.0594, -0.058, 0.0]), np.zeros(3), np.array([1.0, 0.0, 0.0])),
+    ("rev", np.array([0.06, 0.0, -0.09]), np.zeros(3), np.array([0.0, 0.0, -1.0])),
+    ("rev", np.array([-0.059, 0.01, -0.21]), np.zeros(3), np.array([1.0, 0.0, 0.0])),
+    ("rev", np.array([0.059, -0.01, -0.0956]), np.zeros(3), np.array([0.0, 0.0, -1.0])),
+    ("rev", np.array([0.0, 0.034, -0.1374]), np.zeros(3), np.array([0.0, -1.0, 0.0])),
+    (
+        "rev",
+        np.array([-0.0364, -0.034, -0.058]),
+        np.zeros(3),
+        np.array([1.0, 0.0, 0.0]),
+    ),
+    ("fixed", np.array([0.0364, 0.0, -0.058]), np.zeros(3), np.zeros(3)),
+    (
+        "fixed",
+        np.array([0.0, 0.0, -0.013]),
+        np.array([3.1415926, 0.0, -1.5707963]),
+        np.zeros(3),
+    ),
+    ("fixed", np.array([0.0, 0.0, 0.0]), np.array([0.0, 0.0, -1.57]), np.zeros(3)),
+    ("fixed", np.array([0.0, 0.0, 0.122]), np.array([0.0, 0.0, -1.57]), np.zeros(3)),
+)
+
+
+def compute_r2_arm_fk_and_jacobian(
+    side: str,
+    q_arm: Sequence[float] | np.ndarray,
+    q_waist: Optional[Sequence[float] | np.ndarray] = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Compute TCP position, Euler RPY, and 3x7 position/rotation Jacobians in ``base_link``."""
+    if side not in ("left", "right"):
+        raise ValueError(f"Expected side 'left' or 'right', got {side!r}.")
+    q_a = np.asarray(q_arm, dtype=np.float64).reshape(7)
+    w = (
+        np.zeros(5, dtype=np.float64)
+        if q_waist is None
+        else np.asarray(q_waist, dtype=np.float64).reshape(-1)
+    )
+    T = np.eye(4, dtype=np.float64)
+    for idx, (xyz, axis) in enumerate(_R2_WAIST_URDF_CHAIN):
+        T_o = np.eye(4, dtype=np.float64)
+        T_o[:3, 3] = xyz
+        T = T @ T_o
+        if idx < w.size and abs(w[idx]) > 0.0:
+            T_q = np.eye(4, dtype=np.float64)
+            T_q[:3, :3] = R.from_rotvec(axis * float(w[idx])).as_matrix()
+            T = T @ T_q
+
+    chain = _R2_LEFT_ARM_URDF_CHAIN if side == "left" else _R2_RIGHT_ARM_URDF_CHAIN
+    origins: list[np.ndarray] = []
+    axes: list[np.ndarray] = []
+    a_idx = 0
+    for jtype, xyz, rpy, axis in chain:
+        T_o = np.eye(4, dtype=np.float64)
+        if np.any(rpy):
+            T_o[:3, :3] = R.from_euler("xyz", rpy).as_matrix()
+        T_o[:3, 3] = xyz
+        T = T @ T_o
+        if jtype == "rev":
+            origins.append(T[:3, 3].copy())
+            axes.append(T[:3, :3] @ axis)
+            T_q = np.eye(4, dtype=np.float64)
+            T_q[:3, :3] = R.from_rotvec(axis * float(q_a[a_idx])).as_matrix()
+            T = T @ T_q
+            a_idx += 1
+
+    p_tip = T[:3, 3].copy()
+    rpy_tip = R.from_matrix(T[:3, :3]).as_euler("xyz", degrees=False)
+    J_pos = np.zeros((3, 7), dtype=np.float64)
+    J_rot = np.zeros((3, 7), dtype=np.float64)
+    for i in range(7):
+        J_pos[:, i] = np.cross(axes[i], p_tip - origins[i])
+        J_rot[:, i] = axes[i]
+    return (
+        p_tip.astype(np.float32),
+        rpy_tip.astype(np.float32),
+        J_pos.astype(np.float32),
+        J_rot.astype(np.float32),
+    )
+
+
+def compute_r2_arm_cartesian_step(
+    side: str,
+    q_init: Sequence[float] | np.ndarray,
+    delta_xyz: Sequence[float] | np.ndarray,
+    *,
+    q_waist: Optional[Sequence[float] | np.ndarray] = None,
+    max_step_rad: float = 0.35,
+) -> np.ndarray:
+    """Solve a joint-limit-projected damped-least-squares IK step for a 3D TCP delta ``[dx, dy, dz]``."""
+    lo = (R2_LEFT_ARM_LIMITS_LOW if side == "left" else R2_RIGHT_ARM_LIMITS_LOW).astype(
+        np.float64
+    )
+    hi = (
+        R2_LEFT_ARM_LIMITS_HIGH if side == "left" else R2_RIGHT_ARM_LIMITS_HIGH
+    ).astype(np.float64)
+    q0 = np.clip(np.asarray(q_init, dtype=np.float64).reshape(7), lo, hi)
+    q = q0.copy()
+    d_xyz = np.asarray(delta_xyz, dtype=np.float64).reshape(3)
+    p0, _, Jp0, _ = compute_r2_arm_fk_and_jacobian(side, q, q_waist)
+    target_p = p0.astype(np.float64) + d_xyz
+
+    if d_xyz[2] > 0.0 and float(np.linalg.norm(Jp0[2, :])) < 0.12:
+        out_sign = 1.0 if side == "left" else -1.0
+        elbow_sign = -1.0 if side == "left" else 1.0
+        q[0] = np.clip(q[0] - 0.15, lo[0], hi[0])
+        q[1] = np.clip(q[1] + out_sign * 0.18, lo[1], hi[1])
+        q[3] = np.clip(q[3] + elbow_sign * 0.30, lo[3], hi[3])
+
+    weights = np.diag([1.0, 1.0, 0.8, 1.0, 0.5, 0.4, 0.4])
+    for _ in range(30):
+        p, _, Jp_f32, _ = compute_r2_arm_fk_and_jacobian(side, q, q_waist)
+        err = target_p - p.astype(np.float64)
+        if float(np.linalg.norm(err)) < 1e-4:
+            break
+        J_eff = Jp_f32.astype(np.float64).copy()
+        for j in range(7):
+            if (q[j] <= lo[j] + 1e-3 and float(np.dot(J_eff[:, j], err)) < 0.0) or (
+                q[j] >= hi[j] - 1e-3 and float(np.dot(J_eff[:, j], err)) > 0.0
+            ):
+                J_eff[:, j] = 0.0
+        JJT = J_eff @ weights @ J_eff.T + (0.03**2) * np.eye(3, dtype=np.float64)
+        dq = weights @ J_eff.T @ np.linalg.solve(JJT, err)
+        q = np.clip(q + 0.6 * dq, lo, hi)
+
+    dq_total = q - q0
+    max_abs = float(np.max(np.abs(dq_total)))
+    if max_abs > max_step_rad:
+        dq_total = dq_total * (max_step_rad / max_abs)
+    return np.clip(q0 + dq_total, lo, hi).astype(np.float32)
+
+
 R2_CAMERA_TOPICS: dict[str, dict[str, Any]] = {
     "head": {
         "color": "/drivers/camera/zed/image_raw",
         "compressed": "/drivers/camera/zed/image_raw/compressed",
         "depth": "/drivers/camera/zed/depth",
+        "real_color": "/robby/sensors/camera/head/color/raw",
+        "real_compressed": "/robby/sensors/camera/head/color/compressed",
+        "real_depth": "/robby/sensors/camera/head/depth/raw",
         "resolution": (1280, 720),
     },
     "wrist_left": {
         "color": "/drivers/camera/wrist_left/color/image_raw",
         "compressed": "/drivers/camera/wrist_left/color/image_raw/compressed",
         "depth": "/drivers/camera/wrist_left/depth/image_rect_raw",
+        "real_color": "/robby/sensors/camera/wrist_left/color/raw",
+        "real_compressed": "/robby/sensors/camera/wrist_left/color/compressed",
+        "real_depth": "/robby/sensors/camera/wrist_left/depth/raw",
         "resolution": (640, 480),
     },
     "wrist_right": {
         "color": "/drivers/camera/wrist_right/color/image_raw",
         "compressed": "/drivers/camera/wrist_right/color/image_raw/compressed",
         "depth": "/drivers/camera/wrist_right/depth/image_rect_raw",
+        "real_color": "/robby/sensors/camera/wrist_right/color/raw",
+        "real_compressed": "/robby/sensors/camera/wrist_right/color/compressed",
+        "real_depth": "/robby/sensors/camera/wrist_right/depth/raw",
         "resolution": (640, 480),
     },
     "navigation_front": {
         "color": "/drivers/camera/navigation_front/color/image_raw",
         "compressed": "/drivers/camera/navigation_front/color/image_raw/compressed",
         "depth": "/drivers/camera/navigation_front/depth/image_rect_raw",
+        "real_color": "/robby/sensors/camera/chassis_front/color/raw",
+        "real_compressed": "/robby/sensors/camera/chassis_front/color/compressed",
+        "real_depth": "/robby/sensors/camera/chassis_front/depth/raw",
         "resolution": (640, 480),
     },
     "navigation_rear": {
         "color": "/drivers/camera/navigation_rear/color/image_raw",
         "compressed": "/drivers/camera/navigation_rear/color/image_raw/compressed",
         "depth": "/drivers/camera/navigation_rear/depth/image_rect_raw",
+        "real_color": "/robby/sensors/camera/chassis_rear/color/raw",
+        "real_compressed": "/robby/sensors/camera/chassis_rear/color/compressed",
+        "real_depth": "/robby/sensors/camera/chassis_rear/depth/raw",
         "resolution": (640, 480),
     },
 }
+
+_SHARED_RFRAME_APP: Any = None
+_SHARED_RFRAME_LOCK = threading.Lock()
+
+
+def _get_shared_rframe_app(rframe_mod: Any) -> Any:
+    """Return a process-wide initialized ``rframe.App`` singleton."""
+    global _SHARED_RFRAME_APP
+    with _SHARED_RFRAME_LOCK:
+        if "FASTRTPS_DEFAULT_PROFILES_FILE" not in os.environ and os.path.isfile(
+            "/opt/robbyant/dynamic_participant.xml"
+        ):
+            os.environ["FASTRTPS_DEFAULT_PROFILES_FILE"] = (
+                "/opt/robbyant/dynamic_participant.xml"
+            )
+        if _SHARED_RFRAME_APP is None:
+            app = rframe_mod.App()
+            if hasattr(app, "init"):
+                app.init()
+            _SHARED_RFRAME_APP = app
+        return _SHARED_RFRAME_APP
+
+
+def _ros2_type_name(msg_cls: Any) -> str:
+    """Derive a ``pkg/msg/Type`` string from a ROS2 Python message class."""
+    mod = getattr(msg_cls, "__module__", "")
+    parts = mod.split(".")
+    if len(parts) >= 2 and parts[1] in ("msg", "srv"):
+        return f"{parts[0]}/{parts[1]}/{msg_cls.__name__}"
+    return msg_cls.__name__
 
 
 def _pose_to_xyz_rpy(pose: Any) -> np.ndarray:
@@ -212,6 +482,30 @@ def _decode_image_message(
             )
         return np.zeros((height, width), dtype=np.float32)
 
+    if (
+        encoding in ("16uc1", "yuyv", "yuv422", "yuv422_yuy2")
+        or len(raw) == height * width * 2
+    ):
+        count = height * width * 2
+        if len(raw) >= count:
+            yuyv = np.frombuffer(raw[:count], dtype=np.uint8).reshape(
+                (height, width, 2)
+            )
+            try:
+                import cv2
+
+                return np.ascontiguousarray(
+                    cv2.cvtColor(yuyv, cv2.COLOR_YUV2RGB_YUY2), dtype=np.uint8
+                )
+            except ImportError:
+                y = yuyv[:, :, 0].astype(np.float32)
+                u = np.repeat(yuyv[:, 0::2, 1].astype(np.float32) - 128.0, 2, axis=1)
+                v = np.repeat(yuyv[:, 1::2, 1].astype(np.float32) - 128.0, 2, axis=1)
+                r = np.clip(y + 1.402 * v, 0, 255).astype(np.uint8)
+                g = np.clip(y - 0.344136 * u - 0.714136 * v, 0, 255).astype(np.uint8)
+                b = np.clip(y + 1.772 * u, 0, 255).astype(np.uint8)
+                return np.ascontiguousarray(np.stack([r, g, b], axis=-1))
+
     channels = 4 if ("rgba" in encoding or "bgra" in encoding) else 3
     count = height * width * channels
     if len(raw) < count:
@@ -230,7 +524,7 @@ def infer_r2_hardware(
     names: Sequence[str] = (),
     positions: Sequence[float] = (),
 ) -> tuple[Optional[int], Optional[str]]:
-    """Infer ``(body_dof, end_effector_type)`` from a ``/Motion/JointState`` sample.
+    """Infer ``(body_dof, end_effector_type)`` from a ``JointState`` sample.
 
     Returns ``None`` for either field when the message does not carry enough
     information to distinguish the hardware variant.
@@ -245,12 +539,22 @@ def infer_r2_hardware(
             for j in ("J_WaistPitch_1", "J_WaistPitch_2", "J_WaistPitch_3")
         )
         has_20 = any(j in name_set for j in ("J_WaistLift", "J_WaistPitch"))
+        has_real_joints = any(
+            j in name_set
+            for j in R2_REAL_WAIST_JOINTS
+            + R2_REAL_LEFT_ARM_JOINTS
+            + R2_REAL_RIGHT_ARM_JOINTS
+        )
         if has_21 and not has_20:
             body_dof = 21
         elif has_20 and not has_21:
             body_dof = 20
         elif has_21:
             body_dof = 21
+        elif has_real_joints:
+            body_dof = (
+                21 if ("J_NeckYaw" in name_set and "J_NeckPitch" in name_set) else 20
+            )
 
         has_hand = any(j.startswith(("HandL_", "HandR_")) for j in name_set)
         has_gripper = "GripperL" in name_set or "GripperR" in name_set
@@ -260,17 +564,23 @@ def infer_r2_hardware(
             end_effector_type = "gripper"
         elif has_gripper:
             end_effector_type = "gripper"
-        elif any(j in name_set for j in R2_LEFT_ARM_JOINTS + R2_RIGHT_ARM_JOINTS):
+        elif any(
+            j in name_set
+            for j in R2_LEFT_ARM_JOINTS
+            + R2_RIGHT_ARM_JOINTS
+            + R2_REAL_LEFT_ARM_JOINTS
+            + R2_REAL_RIGHT_ARM_JOINTS
+        ):
             end_effector_type = "none"
     elif positions:
         n = len(positions)
         if n in (20, 22, 32):
             body_dof = 20
-        elif n in (21, 23, 33):
+        elif n in (21, 23, 25, 33):
             body_dof = 21
         if n in (32, 33):
             end_effector_type = "hand"
-        elif n in (22, 23):
+        elif n in (22, 23, 25):
             end_effector_type = "gripper"
         elif n in (20, 21):
             end_effector_type = "none"
@@ -663,10 +973,23 @@ class R2Connection(Connection):
         }
 
         self._session: Any = None
+        self._is_real_rframe: bool = False
+        self._active_real_mode: Optional[int] = None
+        self._rclpy_node: Any = None
+        self._rclpy_clients: dict[str, Any] = {}
         self._readers: list[Any] = []
         self._writers: dict[str, Any] = {}
         self._services: dict[str, Any] = {}
         self._msg_types: dict[str, Any] = {}
+        self._cmd_left_arm: Optional[np.ndarray] = None
+        self._cmd_right_arm: Optional[np.ndarray] = None
+        self._cmd_waist: Optional[np.ndarray] = None
+        self._cmd_neck: Optional[np.ndarray] = None
+        self._cmd_left_gripper: Optional[float] = None
+        self._cmd_right_gripper: Optional[float] = None
+        self._cmd_left_hand: Optional[np.ndarray] = None
+        self._cmd_right_hand: Optional[np.ndarray] = None
+        self._chassis_cmd_started: bool = False
 
     def _set_body_dof(self, body_dof: int) -> None:
         """Update the waist and body joint tables to match ``body_dof`` (20 or 21)."""
@@ -695,13 +1018,7 @@ class R2Connection(Connection):
         default_end_effector_type: str = "gripper",
         node_name: str = "rlinf_r2_probe",
     ) -> tuple[int, str]:
-        """Probe ``/Motion/JointState`` over RFrame to detect ``(body_dof, end_effector_type)``.
-
-        Opens a temporary RFrame reader on ``/Motion/JointState``, inspects the
-        first message received within ``timeout`` seconds, and falls back to
-        ``(default_body_dof, default_end_effector_type)`` when no message arrives
-        or the RFrame SDK is unavailable.
-        """
+        """Probe ``JointState`` over RFrame to detect ``(body_dof, end_effector_type)``."""
         try:
             import rframe
             from sensor_msgs.msg import JointState
@@ -723,43 +1040,38 @@ class R2Connection(Connection):
                 detected_ee = ee
             ready.set()
 
+        is_mock = hasattr(rframe, "Session")
         session = (
-            rframe.Session(node_name) if hasattr(rframe, "Session") else rframe.App()
+            rframe.Session(node_name) if is_mock else _get_shared_rframe_app(rframe)
         )
-        if not hasattr(rframe, "Session") and hasattr(session, "init"):
-            session.init()
         channel: Any = None
         try:
-            for topic in ("/Motion/JointState", "/robotic/joint_states"):
+            if is_mock:
                 cfg = rframe.ChannelConfig()
-                if hasattr(cfg, "topic_name"):
-                    cfg.topic_name = topic
-                if hasattr(cfg, "topic"):
-                    cfg.topic = topic
-                cfg.channel_type = getattr(
-                    rframe.ChannelType,
-                    "READER",
-                    getattr(rframe.ChannelType, "HYBRID", 0),
-                )
-                if hasattr(rframe, "HandlerType") and hasattr(cfg, "handler_type"):
-                    cfg.handler_type = rframe.HandlerType.READER
+                cfg.topic_name = "/Motion/JointState"
+                cfg.channel_type = rframe.ChannelType.READER
                 if hasattr(cfg, "enable_shm"):
                     cfg.enable_shm = enable_shm
-                channel = (
-                    session.create_hybrid_channel(cfg)
-                    if hasattr(session, "create_hybrid_channel")
-                    else rframe.HybridChannel(cfg)
-                )
+                channel = session.create_hybrid_channel(cfg)
                 channel.register_typed_callback(JointState, _on_msg)
-                if ready.is_set():
-                    break
-            ready.wait(timeout=timeout)
+                ready.wait(timeout=timeout)
+            else:
+                cfg = rframe.ChannelConfig(
+                    topic="/robotic/joint_states",
+                    handler_type=rframe.HandlerType.READER,
+                    channel_type=rframe.ChannelType.HYBRID,
+                    enable_shm=True,
+                    enable_ros2=True,
+                    type_name="sensor_msgs/msg/JointState",
+                    ros2_qos={"reliability": "best_effort"},
+                )
+                channel = rframe.HybridChannel(cfg)
+                channel.register_typed_callback(JointState, _on_msg)
+                ready.wait(timeout=max(timeout, 2.5))
         finally:
             if channel is not None and hasattr(channel, "close"):
                 channel.close()
-            if hasattr(session, "shutdown"):
-                session.shutdown()
-            elif hasattr(session, "close"):
+            if is_mock and hasattr(session, "close"):
                 session.close()
 
         return (
@@ -810,16 +1122,38 @@ class R2Connection(Connection):
         rframe = self._msg_types["rframe"]
         if hasattr(self._session, "create_hybrid_channel"):
             return self._session.create_hybrid_channel(config)
+        if self._is_real_rframe:
+            return rframe.HybridChannel(config)
         return rframe.HybridChannel(self._session, config)
 
-    def _subscribe(self, topic: str, msg_cls: Any, callback: Any) -> Any:
+    def _subscribe(
+        self,
+        topic: str,
+        msg_cls: Any,
+        callback: Any,
+        *,
+        reliability: str = "reliable",
+        memory_size: int = 65536,
+    ) -> Any:
         """Register a typed reader channel on ``topic``."""
         rframe = self._msg_types["rframe"]
-        cfg = rframe.ChannelConfig()
-        cfg.topic_name = topic
-        cfg.channel_type = rframe.ChannelType.READER
-        if hasattr(cfg, "enable_shm"):
-            cfg.enable_shm = self.enable_shm
+        if self._is_real_rframe:
+            cfg = rframe.ChannelConfig(
+                topic=topic,
+                handler_type=rframe.HandlerType.READER,
+                channel_type=rframe.ChannelType.HYBRID,
+                memory_size=memory_size,
+                enable_shm=True,
+                enable_ros2=True,
+                type_name=_ros2_type_name(msg_cls),
+                ros2_qos={"reliability": reliability},
+            )
+        else:
+            cfg = rframe.ChannelConfig()
+            cfg.topic_name = topic
+            cfg.channel_type = rframe.ChannelType.READER
+            if hasattr(cfg, "enable_shm"):
+                cfg.enable_shm = self.enable_shm
         channel = self._create_channel(cfg)
         channel.register_typed_callback(msg_cls, callback)
         self._readers.append(channel)
@@ -828,17 +1162,35 @@ class R2Connection(Connection):
     def _advertise(self, topic: str, msg_cls: Any) -> Any:
         """Create a writer channel on ``topic``."""
         rframe = self._msg_types["rframe"]
-        cfg = rframe.ChannelConfig()
-        cfg.topic_name = topic
-        cfg.channel_type = rframe.ChannelType.WRITER
-        if hasattr(cfg, "enable_shm"):
-            cfg.enable_shm = self.enable_shm
+        if self._is_real_rframe:
+            cfg = rframe.ChannelConfig(
+                topic=topic,
+                handler_type=rframe.HandlerType.WRITER,
+                channel_type=rframe.ChannelType.HYBRID,
+                enable_shm=True,
+                enable_ros2=True,
+                type_name=_ros2_type_name(msg_cls),
+            )
+        else:
+            cfg = rframe.ChannelConfig()
+            cfg.topic_name = topic
+            cfg.channel_type = rframe.ChannelType.WRITER
+            if hasattr(cfg, "enable_shm"):
+                cfg.enable_shm = self.enable_shm
         channel = self._create_channel(cfg)
         self._writers[topic] = (channel, msg_cls)
         return channel
 
     def _client(self, service_name: str, srv_cls: Any) -> Any:
         """Create an RPC client channel on ``service_name``."""
+        if self._is_real_rframe:
+            if self._rclpy_node is not None:
+                client = self._rclpy_node.create_client(srv_cls, service_name)
+                self._rclpy_clients[service_name] = (client, srv_cls)
+                self._services[service_name] = (client, srv_cls)
+                return client
+            self._services[service_name] = (None, srv_cls)
+            return None
         rframe = self._msg_types["rframe"]
         cfg = rframe.ChannelConfig()
         cfg.topic_name = service_name
@@ -854,16 +1206,8 @@ class R2Connection(Connection):
         import rframe
         from geometry_msgs.msg import Pose, Twist, WrenchStamped
         from navigation_msgs.msg import NaviState
-        from navigation_msgs.srv import NavigationControl
         from r2_motion_msgs.msg import TCP
-        from r2_motion_msgs.srv import (
-            ForwardKine,
-            InverseKine,
-            MoveC,
-            MoveJ,
-            SetLoad,
-            SwitchController,
-        )
+        from r2_motion_msgs.srv import MoveJ
         from rdiagnostic_msgs.msg import HealthState
         from sensor_msgs.msg import (
             BatteryState,
@@ -872,9 +1216,7 @@ class R2Connection(Connection):
             Imu,
             JointState,
         )
-        from state_machine_msgs.srv import SwitchMode
         from std_srvs.srv import Trigger
-        from task_msgs.srv import AssignTask
 
         self._msg_types = {
             "rframe": rframe,
@@ -882,31 +1224,237 @@ class R2Connection(Connection):
             "Twist": Twist,
             "WrenchStamped": WrenchStamped,
             "NaviState": NaviState,
-            "NavigationControl": NavigationControl,
             "TCP": TCP,
-            "ForwardKine": ForwardKine,
-            "InverseKine": InverseKine,
-            "MoveC": MoveC,
             "MoveJ": MoveJ,
-            "SetLoad": SetLoad,
-            "SwitchController": SwitchController,
             "HealthState": HealthState,
             "BatteryState": BatteryState,
             "CompressedImage": CompressedImage,
             "Image": Image,
             "Imu": Imu,
             "JointState": JointState,
-            "SwitchMode": SwitchMode,
             "Trigger": Trigger,
-            "AssignTask": AssignTask,
         }
+
+        self._is_real_rframe = not hasattr(rframe, "Session")
+        self._readers.clear()
+        self._writers.clear()
+        self._services.clear()
+        self._rclpy_clients.clear()
+
+        if self._is_real_rframe:
+            from r2_motion_msgs.msg import ServoJ, ServoRYHandDual
+            from r2_motion_msgs.srv import (
+                GetSystemState,
+                GetTcp,
+                MoveGripper,
+                MoveL,
+                MoveRYHandDual,
+            )
+            from r2_motion_msgs.srv import SwitchMode as MotionSwitchMode
+            from state_machine_msgs.srv import ChangeState
+
+            self._msg_types.update(
+                {
+                    "ServoJ": ServoJ,
+                    "ServoRYHandDual": ServoRYHandDual,
+                    "GetSystemState": GetSystemState,
+                    "GetTcp": GetTcp,
+                    "MoveGripper": MoveGripper,
+                    "MoveL": MoveL,
+                    "MoveRYHandDual": MoveRYHandDual,
+                    "MotionSwitchMode": MotionSwitchMode,
+                    "ChangeState": ChangeState,
+                }
+            )
+            self._session = _get_shared_rframe_app(rframe)
+
+            self._subscribe(
+                "/robotic/joint_states",
+                JointState,
+                self._on_joint_state,
+                reliability="best_effort",
+            )
+            self._subscribe(
+                "/robotic/tcp_data",
+                TCP,
+                self._on_tcp,
+                reliability="reliable",
+            )
+            self._subscribe(
+                "/robotic/ft_sensor_left",
+                WrenchStamped,
+                self._on_left_wrench,
+                reliability="reliable",
+            )
+            self._subscribe(
+                "/robotic/ft_sensor_right",
+                WrenchStamped,
+                self._on_right_wrench,
+                reliability="reliable",
+            )
+            self._subscribe(
+                "/robotic/Imu",
+                Imu,
+                self._on_imu,
+                reliability="best_effort",
+            )
+            self._subscribe(
+                "/battery_state",
+                BatteryState,
+                self._on_battery,
+                reliability="best_effort",
+            )
+            self._subscribe(
+                "/diagnostic",
+                HealthState,
+                self._on_health_state,
+                reliability="best_effort",
+            )
+
+            if self.enable_base:
+                self._subscribe(
+                    "/navi/state",
+                    NaviState,
+                    self._on_navi_state,
+                    reliability="best_effort",
+                )
+                try:
+                    from nav_msgs.msg import Odometry
+
+                    self._subscribe(
+                        "/chassis/est_odom",
+                        Odometry,
+                        self._on_navi_state,
+                        reliability="best_effort",
+                    )
+                except ImportError:
+                    pass
+
+            for cam_name in self.camera_names:
+                spec = R2_CAMERA_TOPICS[cam_name]
+                resolution = spec["resolution"]
+                if self.use_compressed_camera:
+                    self._subscribe(
+                        spec["real_compressed"],
+                        CompressedImage,
+                        self._make_camera_callback(
+                            cam_name,
+                            compressed=True,
+                            depth=False,
+                            resolution=resolution,
+                        ),
+                        reliability="best_effort",
+                        memory_size=4 * 1024 * 1024,
+                    )
+                else:
+                    self._subscribe(
+                        spec["real_color"],
+                        Image,
+                        self._make_camera_callback(
+                            cam_name,
+                            compressed=False,
+                            depth=False,
+                            resolution=resolution,
+                        ),
+                        reliability="best_effort",
+                        memory_size=8 * 1024 * 1024,
+                    )
+                if self.enable_depth:
+                    self._subscribe(
+                        spec["real_depth"],
+                        Image,
+                        self._make_camera_callback(
+                            cam_name,
+                            compressed=False,
+                            depth=True,
+                            resolution=resolution,
+                        ),
+                        reliability="best_effort",
+                        memory_size=8 * 1024 * 1024,
+                    )
+
+            self._advertise("/robotic/servoj_data", ServoJ)
+            self._advertise("/robotic/servo_ry_hand_data", ServoRYHandDual)
+            if self.enable_base:
+                self._advertise("/chassis/cmd_vel", Twist)
+
+            try:
+                import rclpy
+
+                if not rclpy.ok():
+                    rclpy.init()
+                self._rclpy_node = rclpy.create_node(self.node_name)
+                self._msg_types["rclpy"] = rclpy
+            except Exception:
+                self._rclpy_node = None
+
+            self._client("/robotic/switch_mode_cmd", MotionSwitchMode)
+            self._client("/robotic/movej_cmd", MoveJ)
+            self._client("/robotic/movel_cmd", MoveL)
+            self._client("/robotic/move_gripper_cmd", MoveGripper)
+            self._client("/robotic/move_ryhand_cmd", MoveRYHandDual)
+            self._client("/robotic/release_stop", Trigger)
+            self._client("/robotic/get_system_state_cmd", GetSystemState)
+            self._client("/robotic/get_tcp_cmd", GetTcp)
+            self._client("/change_state", ChangeState)
+            try:
+                from r2_motion_msgs.srv import SetAxisEnable
+
+                self._client("/robotic/set_axis_enable_cmd", SetAxisEnable)
+            except ImportError:
+                pass
+            try:
+                from rdiagnostic_msgs.srv import ClearFaults
+
+                self._client("/clear_faults", ClearFaults)
+            except ImportError:
+                pass
+            if self.enable_base:
+                try:
+                    from std_srvs.srv import SetBool
+
+                    self._client("/chassis/cmd_start", SetBool)
+                except ImportError:
+                    pass
+
+            self._state_ready.wait(timeout=5.0)
+            for cam_name in self.camera_names:
+                self._camera_events[cam_name].wait(timeout=2.0)
+            st_resp = self._call_service(
+                "/robotic/get_system_state_cmd", lambda _req: None, timeout=2.0
+            )
+            if st_resp is not None and getattr(st_resp, "state", 2) == 4:
+                self.clear_errors()
+            self.switch_controller(self.controller_mode)
+            return self._session
+
+        from navigation_msgs.srv import NavigationControl
+        from r2_motion_msgs.srv import (
+            ForwardKine,
+            InverseKine,
+            MoveC,
+            SetLoad,
+            SwitchController,
+        )
+        from state_machine_msgs.srv import SwitchMode
+        from task_msgs.srv import AssignTask
+
+        self._msg_types.update(
+            {
+                "NavigationControl": NavigationControl,
+                "ForwardKine": ForwardKine,
+                "InverseKine": InverseKine,
+                "MoveC": MoveC,
+                "SetLoad": SetLoad,
+                "SwitchController": SwitchController,
+                "SwitchMode": SwitchMode,
+                "AssignTask": AssignTask,
+            }
+        )
 
         if hasattr(rframe, "init"):
             rframe.init()
         self._session = rframe.Session(self.node_name)
-        self._readers.clear()
-        self._writers.clear()
-        self._services.clear()
 
         self._subscribe("/Motion/JointState", JointState, self._on_joint_state)
         self._subscribe("/Motion/TCP", TCP, self._on_tcp)
@@ -971,11 +1519,24 @@ class R2Connection(Connection):
 
     def _release(self, device: Any) -> None:
         """Close all channels and shut down the RFrame session."""
-        if self.enable_base and "/teleop/chassis_Twist" in self._writers:
+        if self.enable_base and (
+            "/teleop/chassis_Twist" in self._writers
+            or "/chassis/cmd_vel" in self._writers
+        ):
             try:
                 self.stop_base()
             except Exception:
                 pass
+            if self._chassis_cmd_started and "/chassis/cmd_start" in self._services:
+                try:
+                    self._call_service(
+                        "/chassis/cmd_start",
+                        lambda req: setattr(req, "data", False),
+                        timeout=1.0,
+                    )
+                except Exception:
+                    pass
+                self._chassis_cmd_started = False
         for channel in self._readers:
             if hasattr(channel, "close"):
                 channel.close()
@@ -985,10 +1546,26 @@ class R2Connection(Connection):
         for channel, _ in self._services.values():
             if hasattr(channel, "close"):
                 channel.close()
+        if self._rclpy_node is not None:
+            try:
+                self._rclpy_node.destroy_node()
+            except Exception:
+                pass
+            self._rclpy_node = None
+        self._rclpy_clients.clear()
         self._readers.clear()
         self._writers.clear()
         self._services.clear()
-        if hasattr(device, "close"):
+        self._active_real_mode = None
+        self._cmd_left_arm = None
+        self._cmd_right_arm = None
+        self._cmd_waist = None
+        self._cmd_neck = None
+        self._cmd_left_gripper = None
+        self._cmd_right_gripper = None
+        self._cmd_left_hand = None
+        self._cmd_right_hand = None
+        if not self._is_real_rframe and hasattr(device, "close"):
             device.close()
         self._session = None
 
@@ -1015,6 +1592,20 @@ class R2Connection(Connection):
                     self._camera_events[camera_name].set()
 
         return _callback
+
+    @staticmethod
+    def _lookup_joint_values(
+        source: dict[str, float],
+        primary_names: Sequence[str],
+        fallback_names: Sequence[str] = (),
+    ) -> np.ndarray:
+        out = np.zeros(len(primary_names), dtype=np.float32)
+        for idx, name in enumerate(primary_names):
+            if name in source:
+                out[idx] = source[name]
+            elif idx < len(fallback_names) and fallback_names[idx] in source:
+                out[idx] = source[fallback_names[idx]]
+        return out
 
     def _on_joint_state(self, msg: Any) -> None:
         names = list(getattr(msg, "name", []))
@@ -1043,52 +1634,45 @@ class R2Connection(Connection):
                     self._joint_map_efforts[name] = float(efforts[idx])
 
             if names:
-                self._state.left_joint_positions = np.array(
-                    [self._joint_map_positions.get(j, 0.0) for j in R2_LEFT_ARM_JOINTS],
-                    dtype=np.float32,
+                self._state.left_joint_positions = self._lookup_joint_values(
+                    self._joint_map_positions,
+                    R2_LEFT_ARM_JOINTS,
+                    R2_REAL_LEFT_ARM_JOINTS,
                 )
-                self._state.left_joint_velocities = np.array(
-                    [
-                        self._joint_map_velocities.get(j, 0.0)
-                        for j in R2_LEFT_ARM_JOINTS
-                    ],
-                    dtype=np.float32,
+                self._state.left_joint_velocities = self._lookup_joint_values(
+                    self._joint_map_velocities,
+                    R2_LEFT_ARM_JOINTS,
+                    R2_REAL_LEFT_ARM_JOINTS,
                 )
-                self._state.left_joint_torques = np.array(
-                    [self._joint_map_efforts.get(j, 0.0) for j in R2_LEFT_ARM_JOINTS],
-                    dtype=np.float32,
+                self._state.left_joint_torques = self._lookup_joint_values(
+                    self._joint_map_efforts,
+                    R2_LEFT_ARM_JOINTS,
+                    R2_REAL_LEFT_ARM_JOINTS,
                 )
-                self._state.right_joint_positions = np.array(
-                    [
-                        self._joint_map_positions.get(j, 0.0)
-                        for j in R2_RIGHT_ARM_JOINTS
-                    ],
-                    dtype=np.float32,
+                self._state.right_joint_positions = self._lookup_joint_values(
+                    self._joint_map_positions,
+                    R2_RIGHT_ARM_JOINTS,
+                    R2_REAL_RIGHT_ARM_JOINTS,
                 )
-                self._state.right_joint_velocities = np.array(
-                    [
-                        self._joint_map_velocities.get(j, 0.0)
-                        for j in R2_RIGHT_ARM_JOINTS
-                    ],
-                    dtype=np.float32,
+                self._state.right_joint_velocities = self._lookup_joint_values(
+                    self._joint_map_velocities,
+                    R2_RIGHT_ARM_JOINTS,
+                    R2_REAL_RIGHT_ARM_JOINTS,
                 )
-                self._state.right_joint_torques = np.array(
-                    [self._joint_map_efforts.get(j, 0.0) for j in R2_RIGHT_ARM_JOINTS],
-                    dtype=np.float32,
+                self._state.right_joint_torques = self._lookup_joint_values(
+                    self._joint_map_efforts,
+                    R2_RIGHT_ARM_JOINTS,
+                    R2_REAL_RIGHT_ARM_JOINTS,
                 )
-                self._state.waist_positions = np.array(
-                    [
-                        self._joint_map_positions.get(j, 0.0)
-                        for j in self.waist_joint_names
-                    ],
-                    dtype=np.float32,
+                self._state.waist_positions = self._lookup_joint_values(
+                    self._joint_map_positions,
+                    self.waist_joint_names,
+                    R2_REAL_WAIST_JOINTS,
                 )
-                self._state.waist_velocities = np.array(
-                    [
-                        self._joint_map_velocities.get(j, 0.0)
-                        for j in self.waist_joint_names
-                    ],
-                    dtype=np.float32,
+                self._state.waist_velocities = self._lookup_joint_values(
+                    self._joint_map_velocities,
+                    self.waist_joint_names,
+                    R2_REAL_WAIST_JOINTS,
                 )
                 self._state.neck_positions = np.array(
                     [self._joint_map_positions.get(j, 0.0) for j in R2_NECK_JOINTS],
@@ -1099,12 +1683,16 @@ class R2Connection(Connection):
                     dtype=np.float32,
                 )
                 if "GripperL" in self._joint_map_positions:
+                    raw_l = float(self._joint_map_positions["GripperL"])
+                    val_l = 1.0 - raw_l if self._is_real_rframe else raw_l
                     self._state.left_gripper_position = np.array(
-                        [self._joint_map_positions["GripperL"]], dtype=np.float32
+                        [np.clip(val_l, 0.0, 1.0)], dtype=np.float32
                     )
                 if "GripperR" in self._joint_map_positions:
+                    raw_r = float(self._joint_map_positions["GripperR"])
+                    val_r = 1.0 - raw_r if self._is_real_rframe else raw_r
                     self._state.right_gripper_position = np.array(
-                        [self._joint_map_positions["GripperR"]], dtype=np.float32
+                        [np.clip(val_r, 0.0, 1.0)], dtype=np.float32
                     )
                 if any(j in self._joint_map_positions for j in R2_HAND_JOINTS_LEFT):
                     self._state.left_hand_position = np.array(
@@ -1230,11 +1818,24 @@ class R2Connection(Connection):
                 self._state.is_healthy = bool(msg.is_healthy)
             elif hasattr(msg, "fault_level"):
                 self._state.is_healthy = int(msg.fault_level) == 0
+            elif hasattr(msg, "severity_level"):
+                self._state.is_healthy = int(msg.severity_level) == 0
 
     def _on_navi_state(self, msg: Any) -> None:
         with self._lock:
-            if hasattr(msg, "pose"):
-                pose_vec = _pose_to_xyz_rpy(msg.pose)
+            if hasattr(msg, "current_pose"):
+                cp = msg.current_pose
+                self._state.base_pose = np.array(
+                    [
+                        float(getattr(cp, "x", 0.0)),
+                        float(getattr(cp, "y", 0.0)),
+                        float(getattr(cp, "theta", 0.0)),
+                    ],
+                    dtype=np.float32,
+                )
+            elif hasattr(msg, "pose"):
+                inner_pose = msg.pose.pose if hasattr(msg.pose, "pose") else msg.pose
+                pose_vec = _pose_to_xyz_rpy(inner_pose)
                 self._state.base_pose = np.array(
                     [pose_vec[0], pose_vec[1], pose_vec[5]], dtype=np.float32
                 )
@@ -1251,6 +1852,11 @@ class R2Connection(Connection):
                 vel = msg.velocity
                 self._state.base_velocity = np.array(
                     [vel.linear.x, vel.linear.y, vel.angular.z], dtype=np.float32
+                )
+            elif hasattr(msg, "twist"):
+                tw = msg.twist.twist if hasattr(msg.twist, "twist") else msg.twist
+                self._state.base_velocity = np.array(
+                    [tw.linear.x, tw.linear.y, tw.angular.z], dtype=np.float32
                 )
 
     def _require_connected(self) -> Any:
@@ -1297,6 +1903,78 @@ class R2Connection(Connection):
         """Return the latest state snapshot as a plain dictionary for part views."""
         return self.get_state().to_dict()
 
+    def _ensure_cmd_state(self, state: R2RobotState) -> None:
+        """Lazily initialize commanded target state from the first measured state snapshot."""
+        if self._cmd_left_arm is None:
+            self._cmd_left_arm = state.left_joint_positions.copy()
+        if self._cmd_right_arm is None:
+            self._cmd_right_arm = state.right_joint_positions.copy()
+        if (
+            self._cmd_waist is None
+            or self._cmd_waist.size != state.waist_positions.size
+        ):
+            self._cmd_waist = state.waist_positions.copy()
+        if self._cmd_neck is None:
+            self._cmd_neck = state.neck_positions.copy()
+        if self._cmd_left_gripper is None:
+            self._cmd_left_gripper = float(state.left_gripper_position[0])
+        if self._cmd_right_gripper is None:
+            self._cmd_right_gripper = float(state.right_gripper_position[0])
+        if self._cmd_left_hand is None:
+            self._cmd_left_hand = state.left_hand_position.copy()
+        if self._cmd_right_hand is None:
+            self._cmd_right_hand = state.right_hand_position.copy()
+
+    def _build_whole_body_joint_vector(
+        self,
+        *,
+        left_arm: Optional[Sequence[float]] = None,
+        right_arm: Optional[Sequence[float]] = None,
+        waist: Optional[Sequence[float]] = None,
+        neck: Optional[Sequence[float]] = None,
+    ) -> list[float]:
+        """Pack whole-body joints in R2 order: ``waist (5) + left_arm (7) + right_arm (7) + neck (1 or 2)``."""
+        state = self.get_state()
+        self._ensure_cmd_state(state)
+        w_vec = np.zeros(5, dtype=np.float32)
+        src_w = (
+            np.asarray(waist, dtype=np.float32).reshape(-1)
+            if waist is not None
+            else (
+                self._cmd_waist
+                if self._cmd_waist is not None
+                else state.waist_positions
+            )
+        )
+        w_vec[: min(5, src_w.size)] = src_w[: min(5, src_w.size)]
+        l_vec = (
+            np.asarray(left_arm, dtype=np.float32).reshape(7)
+            if left_arm is not None
+            else (
+                self._cmd_left_arm
+                if self._cmd_left_arm is not None
+                else state.left_joint_positions
+            )
+        )
+        r_vec = (
+            np.asarray(right_arm, dtype=np.float32).reshape(7)
+            if right_arm is not None
+            else (
+                self._cmd_right_arm
+                if self._cmd_right_arm is not None
+                else state.right_joint_positions
+            )
+        )
+        n_vec = (
+            np.asarray(neck, dtype=np.float32).reshape(2)
+            if neck is not None
+            else (
+                self._cmd_neck if self._cmd_neck is not None else state.neck_positions
+            )
+        )
+        neck_slice = n_vec if self.body_dof == 21 else n_vec[1:2]
+        return [float(x) for x in np.concatenate([w_vec, l_vec, r_vec, neck_slice])]
+
     def _publish_servoj(
         self,
         joint_names: Sequence[str],
@@ -1305,12 +1983,94 @@ class R2Connection(Connection):
         efforts: Optional[Sequence[float]] = None,
     ) -> None:
         self._require_connected()
-        channel, msg_cls = self._writers["/Motion/ServoJ"]
+        if "/Motion/ServoJ" in self._writers:
+            channel, msg_cls = self._writers["/Motion/ServoJ"]
+            msg = msg_cls()
+            msg.name = list(joint_names)
+            msg.position = [float(x) for x in positions]
+            msg.velocity = (
+                [float(x) for x in velocities] if velocities is not None else []
+            )
+            msg.effort = [float(x) for x in efforts] if efforts is not None else []
+            channel.send(msg)
+            return
+
+        if "/robotic/servoj_data" not in self._writers:
+            return
+        name_to_pos = {
+            str(n): float(p) for n, p in zip(joint_names, positions, strict=False)
+        }
+        state = self.get_state()
+        self._ensure_cmd_state(state)
+
+        if (
+            any(n.startswith(("HandL_", "HandR_")) for n in name_to_pos)
+            and "/robotic/servo_ry_hand_data" in self._writers
+        ):
+            h_ch, h_cls = self._writers["/robotic/servo_ry_hand_data"]
+            h_msg = h_cls()
+            assert self._cmd_left_hand is not None and self._cmd_right_hand is not None
+            for idx, jn in enumerate(R2_HAND_JOINTS_LEFT):
+                if jn in name_to_pos:
+                    self._cmd_left_hand[idx] = name_to_pos[jn]
+            for idx, jn in enumerate(R2_HAND_JOINTS_RIGHT):
+                if jn in name_to_pos:
+                    self._cmd_right_hand[idx] = name_to_pos[jn]
+            h_msg.left_finger_open_ratio = [float(x) for x in self._cmd_left_hand]
+            h_msg.right_finger_open_ratio = [float(x) for x in self._cmd_right_hand]
+            h_ch.send(h_msg)
+            return
+
+        assert (
+            self._cmd_left_arm is not None
+            and self._cmd_right_arm is not None
+            and self._cmd_waist is not None
+            and self._cmd_neck is not None
+            and self._cmd_left_gripper is not None
+            and self._cmd_right_gripper is not None
+        )
+
+        for idx, (jn, rjn) in enumerate(
+            zip(R2_LEFT_ARM_JOINTS, R2_REAL_LEFT_ARM_JOINTS, strict=True)
+        ):
+            if jn in name_to_pos:
+                self._cmd_left_arm[idx] = name_to_pos[jn]
+            elif rjn in name_to_pos:
+                self._cmd_left_arm[idx] = name_to_pos[rjn]
+        for idx, (jn, rjn) in enumerate(
+            zip(R2_RIGHT_ARM_JOINTS, R2_REAL_RIGHT_ARM_JOINTS, strict=True)
+        ):
+            if jn in name_to_pos:
+                self._cmd_right_arm[idx] = name_to_pos[jn]
+            elif rjn in name_to_pos:
+                self._cmd_right_arm[idx] = name_to_pos[rjn]
+        for idx, jn in enumerate(self.waist_joint_names):
+            if jn in name_to_pos and idx < self._cmd_waist.size:
+                self._cmd_waist[idx] = name_to_pos[jn]
+        for idx, rjn in enumerate(R2_REAL_WAIST_JOINTS):
+            if rjn in name_to_pos and idx < self._cmd_waist.size:
+                self._cmd_waist[idx] = name_to_pos[rjn]
+        for idx, jn in enumerate(R2_NECK_JOINTS):
+            if jn in name_to_pos:
+                self._cmd_neck[idx] = name_to_pos[jn]
+        if "GripperL" in name_to_pos:
+            self._cmd_left_gripper = float(np.clip(name_to_pos["GripperL"], 0.0, 1.0))
+        if "GripperR" in name_to_pos:
+            self._cmd_right_gripper = float(np.clip(name_to_pos["GripperR"], 0.0, 1.0))
+
+        if self._is_real_rframe and self._active_real_mode != R2_MODE_SERVOJ:
+            self.switch_controller(R2_MODE_SERVOJ)
+
+        channel, msg_cls = self._writers["/robotic/servoj_data"]
         msg = msg_cls()
-        msg.name = list(joint_names)
-        msg.position = [float(x) for x in positions]
-        msg.velocity = [float(x) for x in velocities] if velocities is not None else []
-        msg.effort = [float(x) for x in efforts] if efforts is not None else []
+        msg.joint = self._build_whole_body_joint_vector(
+            left_arm=self._cmd_left_arm,
+            right_arm=self._cmd_right_arm,
+            waist=self._cmd_waist,
+            neck=self._cmd_neck,
+        )
+        msg.gripper_l = float(np.clip(1.0 - self._cmd_left_gripper, 0.0, 1.0))
+        msg.gripper_r = float(np.clip(1.0 - self._cmd_right_gripper, 0.0, 1.0))
         channel.send(msg)
 
     def _call_service(
@@ -1323,6 +2083,17 @@ class R2Connection(Connection):
         req_cls = getattr(srv_cls, "Request", srv_cls)
         req = req_cls()
         configure_request(req)
+        if hasattr(channel, "call_async") and self._rclpy_node is not None:
+            rclpy = self._msg_types.get("rclpy")
+            if hasattr(channel, "wait_for_service"):
+                if not channel.wait_for_service(timeout_sec=min(timeout, 2.0)):
+                    return None
+            future = channel.call_async(req)
+            if rclpy is not None:
+                rclpy.spin_until_future_complete(
+                    self._rclpy_node, future, timeout_sec=timeout
+                )
+            return future.result() if future.done() else None
         if hasattr(channel, "call"):
             return channel.call(req, timeout=timeout)
         return None
@@ -1340,22 +2111,77 @@ class R2Connection(Connection):
         def _fill(req: Any) -> None:
             req.mode = int(mode)
 
-        resp = self._call_service("/Motion/SwitchController", _fill)
+        srv_name = (
+            "/Motion/SwitchController"
+            if "/Motion/SwitchController" in self._services
+            else "/robotic/switch_mode_cmd"
+        )
+        resp = self._call_service(srv_name, _fill)
         self.controller_mode = int(mode)
-        return bool(getattr(resp, "success", True))
+        if resp is not None:
+            self._active_real_mode = int(mode)
+        return bool(getattr(resp, "success", resp is not None))
 
     def switch_system_mode(self, mode: int) -> bool:
         """Switch the R2 system state machine mode via ``/state_machine/switch_mode``."""
 
         def _fill(req: Any) -> None:
-            req.mode = int(mode)
+            if hasattr(req, "mode"):
+                req.mode = int(mode)
+            elif hasattr(req, "transition") and hasattr(req.transition, "id"):
+                req.transition.id = int(mode)
 
-        resp = self._call_service("/state_machine/switch_mode", _fill)
+        srv_name = (
+            "/state_machine/switch_mode"
+            if "/state_machine/switch_mode" in self._services
+            else "/change_state"
+        )
+        resp = self._call_service(srv_name, _fill)
         return bool(getattr(resp, "success", True))
 
     def clear_errors(self) -> bool:
-        """Clear motion controller faults via ``/Motion/ClearError``."""
-        resp = self._call_service("/Motion/ClearError", lambda _req: None)
+        """Clear motion controller faults and re-enable body axes."""
+        if self._is_real_rframe:
+            if "/clear_faults" in self._services:
+                self._call_service("/clear_faults", lambda _req: None, timeout=1.5)
+            if "/robotic/set_axis_enable_cmd" in self._services:
+                body_slaves = [
+                    1002,
+                    1003,
+                    1004,
+                    1005,
+                    1006,
+                    1007,
+                    1008,
+                    1012,
+                    1013,
+                    1014,
+                    1015,
+                    1016,
+                    1017,
+                    1018,
+                    1022,
+                    1023,
+                    1024,
+                    1025,
+                    1026,
+                    1027,
+                    1028,
+                ]
+
+                def _fill_enable(req: Any) -> None:
+                    req.slave_addrs = body_slaves
+                    req.enable = True
+
+                self._call_service(
+                    "/robotic/set_axis_enable_cmd", _fill_enable, timeout=10.0
+                )
+        srv_name = (
+            "/Motion/ClearError"
+            if "/Motion/ClearError" in self._services
+            else "/robotic/release_stop"
+        )
+        resp = self._call_service(srv_name, lambda _req: None, timeout=1.5)
         return bool(getattr(resp, "success", True))
 
     def set_payload(
@@ -1382,18 +2208,35 @@ class R2Connection(Connection):
     ) -> dict[str, np.ndarray]:
         """Compute forward kinematics for whole-body or dual-arm joint positions."""
         q = [float(x) for x in joint_positions]
+        if "/Motion/ForwardKine" in self._services:
 
-        def _fill(req: Any) -> None:
-            req.joint_positions = q
+            def _fill(req: Any) -> None:
+                req.joint_positions = q
 
-        resp = self._call_service("/Motion/ForwardKine", _fill)
-        poses = list(getattr(resp, "tcp_pose", []))
-        if len(poses) >= 2:
-            return {
-                "left_tcp_pose": _pose_to_xyz_rpy(poses[0]),
-                "right_tcp_pose": _pose_to_xyz_rpy(poses[1]),
-            }
+            resp = self._call_service("/Motion/ForwardKine", _fill)
+            poses = list(getattr(resp, "tcp_pose", []))
+            if len(poses) >= 2:
+                return {
+                    "left_tcp_pose": _pose_to_xyz_rpy(poses[0]),
+                    "right_tcp_pose": _pose_to_xyz_rpy(poses[1]),
+                }
         state = self.get_state()
+        if len(q) >= 14:
+            q_arr = np.asarray(q, dtype=np.float32)
+            if len(q) >= 19:
+                w_q = q_arr[:5]
+                l_q = q_arr[5:12]
+                r_q = q_arr[12:19]
+            else:
+                w_q = state.waist_positions
+                l_q = q_arr[:7]
+                r_q = q_arr[7:14]
+            l_p, l_rpy, _, _ = compute_r2_arm_fk_and_jacobian("left", l_q, w_q)
+            r_p, r_rpy, _, _ = compute_r2_arm_fk_and_jacobian("right", r_q, w_q)
+            return {
+                "left_tcp_pose": np.concatenate([l_p, l_rpy]).astype(np.float32),
+                "right_tcp_pose": np.concatenate([r_p, r_rpy]).astype(np.float32),
+            }
         return {
             "left_tcp_pose": state.left_tcp_pose,
             "right_tcp_pose": state.right_tcp_pose,
@@ -1405,7 +2248,7 @@ class R2Connection(Connection):
         left_tcp_pose: Optional[np.ndarray] = None,
         right_tcp_pose: Optional[np.ndarray] = None,
     ) -> dict[str, np.ndarray]:
-        """Compute inverse kinematics via ``/Motion/InverseKine``."""
+        """Compute inverse kinematics via ``/Motion/InverseKine`` or URDF Jacobian IK."""
         state = self.get_state()
         left_target = (
             np.asarray(left_tcp_pose, dtype=np.float32).reshape(6)
@@ -1417,29 +2260,52 @@ class R2Connection(Connection):
             if right_tcp_pose is not None
             else state.right_tcp_pose
         )
-        pose_cls = self._msg_types["Pose"]
+        if "/Motion/InverseKine" in self._services:
+            pose_cls = self._msg_types["Pose"]
 
-        def _fill(req: Any) -> None:
-            req.tcp_pose = [
-                _xyz_rpy_to_pose(left_target, pose_cls),
-                _xyz_rpy_to_pose(right_target, pose_cls),
-            ]
-            req.reference_joint_positions = list(
-                np.concatenate(
-                    [state.left_joint_positions, state.right_joint_positions]
-                ).astype(float)
+            def _fill(req: Any) -> None:
+                req.tcp_pose = [
+                    _xyz_rpy_to_pose(left_target, pose_cls),
+                    _xyz_rpy_to_pose(right_target, pose_cls),
+                ]
+                req.reference_joint_positions = list(
+                    np.concatenate(
+                        [state.left_joint_positions, state.right_joint_positions]
+                    ).astype(float)
+                )
+
+            resp = self._call_service("/Motion/InverseKine", _fill)
+            sol = np.asarray(getattr(resp, "joint_positions", []), dtype=np.float32)
+            if sol.size >= 14:
+                return {
+                    "left_joint_positions": sol[:7].copy(),
+                    "right_joint_positions": sol[7:14].copy(),
+                }
+        self._ensure_cmd_state(state)
+        q_l = (
+            self._cmd_left_arm
+            if self._cmd_left_arm is not None
+            else state.left_joint_positions
+        )
+        q_r = (
+            self._cmd_right_arm
+            if self._cmd_right_arm is not None
+            else state.right_joint_positions
+        )
+        q_w = self._cmd_waist if self._cmd_waist is not None else state.waist_positions
+        if left_tcp_pose is not None:
+            p_l, _, _, _ = compute_r2_arm_fk_and_jacobian("left", q_l, q_w)
+            q_l = compute_r2_arm_cartesian_step(
+                "left", q_l, left_target[:3] - p_l, q_waist=q_w
             )
-
-        resp = self._call_service("/Motion/InverseKine", _fill)
-        sol = np.asarray(getattr(resp, "joint_positions", []), dtype=np.float32)
-        if sol.size >= 14:
-            return {
-                "left_joint_positions": sol[:7].copy(),
-                "right_joint_positions": sol[7:14].copy(),
-            }
+        if right_tcp_pose is not None:
+            p_r, _, _, _ = compute_r2_arm_fk_and_jacobian("right", q_r, q_w)
+            q_r = compute_r2_arm_cartesian_step(
+                "right", q_r, right_target[:3] - p_r, q_waist=q_w
+            )
         return {
-            "left_joint_positions": state.left_joint_positions,
-            "right_joint_positions": state.right_joint_positions,
+            "left_joint_positions": q_l.copy(),
+            "right_joint_positions": q_r.copy(),
         }
 
     def move_left_arm_joint(self, positions: np.ndarray) -> None:
@@ -1513,8 +2379,26 @@ class R2Connection(Connection):
         *,
         max_velocity: Optional[np.ndarray] = None,
     ) -> bool:
-        """Execute a point-to-point joint trajectory on the left arm via ``/Motion/MoveJ``."""
+        """Execute a point-to-point joint trajectory on the left arm via ``MoveJ``."""
         q = np.asarray(positions, dtype=np.float32).reshape(7)
+        self._ensure_cmd_state(self.get_state())
+        self._cmd_left_arm = q.copy()
+        if "/Motion/MoveJ" not in self._services:
+            if self._is_real_rframe and self._active_real_mode != R2_MODE_HOLD:
+                self.switch_controller(R2_MODE_HOLD)
+            whole_q = self._build_whole_body_joint_vector(left_arm=q)
+
+            def _fill_real(req: Any) -> None:
+                req.task_id = 1
+                req.joint = whole_q
+                req.scale = 0.5
+                req.start = True
+
+            resp = self._call_service(
+                "/robotic/movej_cmd", _fill_real, timeout=max(duration + 5.0, 5.0)
+            )
+            err = getattr(resp, "error_code", None)
+            return bool(getattr(err, "code", 0) == 0) if err is not None else True
 
         def _fill(req: Any) -> None:
             req.joint_names = list(R2_LEFT_ARM_JOINTS)
@@ -1538,8 +2422,26 @@ class R2Connection(Connection):
         *,
         max_velocity: Optional[np.ndarray] = None,
     ) -> bool:
-        """Execute a point-to-point joint trajectory on the right arm via ``/Motion/MoveJ``."""
+        """Execute a point-to-point joint trajectory on the right arm via ``MoveJ``."""
         q = np.asarray(positions, dtype=np.float32).reshape(7)
+        self._ensure_cmd_state(self.get_state())
+        self._cmd_right_arm = q.copy()
+        if "/Motion/MoveJ" not in self._services:
+            if self._is_real_rframe and self._active_real_mode != R2_MODE_HOLD:
+                self.switch_controller(R2_MODE_HOLD)
+            whole_q = self._build_whole_body_joint_vector(right_arm=q)
+
+            def _fill_real(req: Any) -> None:
+                req.task_id = 1
+                req.joint = whole_q
+                req.scale = 0.5
+                req.start = True
+
+            resp = self._call_service(
+                "/robotic/movej_cmd", _fill_real, timeout=max(duration + 5.0, 5.0)
+            )
+            err = getattr(resp, "error_code", None)
+            return bool(getattr(err, "code", 0) == 0) if err is not None else True
 
         def _fill(req: Any) -> None:
             req.joint_names = list(R2_RIGHT_ARM_JOINTS)
@@ -1557,9 +2459,26 @@ class R2Connection(Connection):
         return bool(getattr(resp, "success", True))
 
     def move_left_arm_cartesian(self, pose: np.ndarray, duration: float = 1.0) -> bool:
-        """Move the left arm TCP to ``pose`` ``[x, y, z, r, p, y]`` via ``/Motion/MoveC``."""
+        """Move the left arm TCP to ``pose`` ``[x, y, z, r, p, y]``."""
         target = np.asarray(pose, dtype=np.float32).reshape(6)
         pose_cls = self._msg_types["Pose"]
+        if "/Motion/MoveC" not in self._services:
+            if self._is_real_rframe and self._active_real_mode != R2_MODE_HOLD:
+                self.switch_controller(R2_MODE_HOLD)
+            state = self.get_state()
+
+            def _fill_real(req: Any) -> None:
+                req.task_id = 1
+                req.pose_l = _xyz_rpy_to_pose(target, pose_cls)
+                req.pose_r = _xyz_rpy_to_pose(state.right_tcp_pose, pose_cls)
+                req.scale = 0.5
+                req.start = True
+
+            resp = self._call_service(
+                "/robotic/movel_cmd", _fill_real, timeout=max(duration + 5.0, 5.0)
+            )
+            err = getattr(resp, "error_code", None)
+            return bool(getattr(err, "code", 0) == 0) if err is not None else True
 
         def _fill(req: Any) -> None:
             req.arm = 0
@@ -1572,9 +2491,26 @@ class R2Connection(Connection):
         return bool(getattr(resp, "success", True))
 
     def move_right_arm_cartesian(self, pose: np.ndarray, duration: float = 1.0) -> bool:
-        """Move the right arm TCP to ``pose`` ``[x, y, z, r, p, y]`` via ``/Motion/MoveC``."""
+        """Move the right arm TCP to ``pose`` ``[x, y, z, r, p, y]``."""
         target = np.asarray(pose, dtype=np.float32).reshape(6)
         pose_cls = self._msg_types["Pose"]
+        if "/Motion/MoveC" not in self._services:
+            if self._is_real_rframe and self._active_real_mode != R2_MODE_HOLD:
+                self.switch_controller(R2_MODE_HOLD)
+            state = self.get_state()
+
+            def _fill_real(req: Any) -> None:
+                req.task_id = 1
+                req.pose_l = _xyz_rpy_to_pose(state.left_tcp_pose, pose_cls)
+                req.pose_r = _xyz_rpy_to_pose(target, pose_cls)
+                req.scale = 0.5
+                req.start = True
+
+            resp = self._call_service(
+                "/robotic/movel_cmd", _fill_real, timeout=max(duration + 5.0, 5.0)
+            )
+            err = getattr(resp, "error_code", None)
+            return bool(getattr(err, "code", 0) == 0) if err is not None else True
 
         def _fill(req: Any) -> None:
             req.arm = 1
@@ -1605,42 +2541,59 @@ class R2Connection(Connection):
         val = float(
             np.clip(np.asarray(position, dtype=np.float32).reshape(-1)[0], 0.0, 1.0)
         )
-        self._publish_servoj(("GripperL",), (val,))
         with self._lock:
             self._state.left_gripper_position = np.array([val], dtype=np.float32)
+        self._publish_servoj(("GripperL",), (val,))
 
     def move_right_gripper(self, position: Any) -> None:
         """Command the right parallel gripper position in ``[0.0, 1.0]``."""
         val = float(
             np.clip(np.asarray(position, dtype=np.float32).reshape(-1)[0], 0.0, 1.0)
         )
-        self._publish_servoj(("GripperR",), (val,))
         with self._lock:
             self._state.right_gripper_position = np.array([val], dtype=np.float32)
+        self._publish_servoj(("GripperR",), (val,))
 
     def move_left_hand(self, positions: Any) -> None:
         """Command the 6-DoF left dexterous hand ``(little, ring, middle, index, thumb_bend, thumb_rotation)``."""
         arr = np.asarray(positions, dtype=np.float32).reshape(6)
-        self._publish_servoj(R2_HAND_JOINTS_LEFT, arr)
         with self._lock:
             self._state.left_hand_position = arr.copy()
+        self._publish_servoj(R2_HAND_JOINTS_LEFT, arr)
 
     def move_right_hand(self, positions: Any) -> None:
         """Command the 6-DoF right dexterous hand ``(little, ring, middle, index, thumb_bend, thumb_rotation)``."""
         arr = np.asarray(positions, dtype=np.float32).reshape(6)
-        self._publish_servoj(R2_HAND_JOINTS_RIGHT, arr)
         with self._lock:
             self._state.right_hand_position = arr.copy()
+        self._publish_servoj(R2_HAND_JOINTS_RIGHT, arr)
 
     def move_base(self, velocity: np.ndarray) -> None:
-        """Publish planar chassis velocity ``[vx, vy, wz]`` on ``/teleop/chassis_Twist``."""
+        """Publish planar chassis velocity ``[vx, vy, wz]``."""
         self._require_connected()
-        if "/teleop/chassis_Twist" not in self._writers:
+        topic = (
+            "/teleop/chassis_Twist"
+            if "/teleop/chassis_Twist" in self._writers
+            else "/chassis/cmd_vel"
+        )
+        if topic not in self._writers:
             raise RuntimeError(
                 "R2 mobile base is not enabled on this connection (enable_base=False)."
             )
         vel = np.asarray(velocity, dtype=np.float32).reshape(3)
-        channel, msg_cls = self._writers["/teleop/chassis_Twist"]
+        if (
+            self._is_real_rframe
+            and not self._chassis_cmd_started
+            and bool(np.any(np.abs(vel) > 1e-6))
+            and "/chassis/cmd_start" in self._services
+        ):
+            self._call_service(
+                "/chassis/cmd_start",
+                lambda req: setattr(req, "data", True),
+                timeout=1.0,
+            )
+            self._chassis_cmd_started = True
+        channel, msg_cls = self._writers[topic]
         msg = msg_cls()
         msg.linear.x = float(vel[0])
         msg.linear.y = float(vel[1])
@@ -1652,9 +2605,34 @@ class R2Connection(Connection):
         with self._lock:
             self._state.base_velocity = vel.copy()
 
+    def move_base_pulse(
+        self,
+        velocity: Sequence[float] | np.ndarray,
+        duration: float = 0.5,
+        rate_hz: float = 20.0,
+    ) -> dict[str, np.ndarray]:
+        """Stream planar chassis velocity ``[vx, vy, wz]`` for ``duration`` seconds and stop."""
+        vel = np.asarray(velocity, dtype=np.float32).reshape(3)
+        dt = 1.0 / max(float(rate_hz), 1.0)
+        steps = max(1, int(round(max(float(duration), 0.0) / dt)))
+        for _ in range(steps):
+            self.move_base(vel)
+            if self._is_real_rframe:
+                time.sleep(dt)
+        state_during = self.get_state()
+        self.stop_base()
+        state_after = self.get_state()
+        return {
+            "base_pose": state_after.base_pose,
+            "base_velocity": state_during.base_velocity,
+        }
+
     def stop_base(self) -> None:
         """Zero the chassis velocity command and cancel active navigation if supported."""
-        if "/teleop/chassis_Twist" in self._writers:
+        if (
+            "/teleop/chassis_Twist" in self._writers
+            or "/chassis/cmd_vel" in self._writers
+        ):
             self.move_base(np.zeros(3, dtype=np.float32))
         if "/navigation/control" in self._services:
             self._call_service(
