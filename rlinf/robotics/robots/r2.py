@@ -46,6 +46,13 @@ class R2Robot(Robot):
         use_compressed_camera: bool = False,
         enable_shm: bool = False,
         controller_mode: int = R2_MODE_SERVOJ,
+        enable_fault_recovery: bool = True,
+        enable_stall_detection: bool = True,
+        stall_position_threshold: float = 0.05,
+        stall_velocity_threshold: float = 0.002,
+        stall_steps_threshold: int = 15,
+        max_recovery_attempts: int = 3,
+        recovery_cooldown_window: float = 10.0,
         node_rank: Optional[int] = None,
         name: Optional[str] = None,
     ) -> R2Connection:
@@ -61,6 +68,13 @@ class R2Robot(Robot):
             use_compressed_camera=use_compressed_camera,
             enable_shm=enable_shm,
             controller_mode=controller_mode,
+            enable_fault_recovery=enable_fault_recovery,
+            enable_stall_detection=enable_stall_detection,
+            stall_position_threshold=stall_position_threshold,
+            stall_velocity_threshold=stall_velocity_threshold,
+            stall_steps_threshold=stall_steps_threshold,
+            max_recovery_attempts=max_recovery_attempts,
+            recovery_cooldown_window=recovery_cooldown_window,
             node_rank=node_rank,
             worker_name=name,
         )
@@ -95,6 +109,13 @@ class R2Robot(Robot):
         use_compressed_camera: bool = False,
         enable_shm: bool = False,
         controller_mode: int = R2_MODE_SERVOJ,
+        enable_fault_recovery: bool = True,
+        enable_stall_detection: bool = True,
+        stall_position_threshold: float = 0.05,
+        stall_velocity_threshold: float = 0.002,
+        stall_steps_threshold: int = 15,
+        max_recovery_attempts: int = 3,
+        recovery_cooldown_window: float = 10.0,
         env_idx: int = 0,
         node_rank: Optional[int] = None,
         worker_rank: int = 0,
@@ -126,6 +147,13 @@ class R2Robot(Robot):
             use_compressed_camera=use_compressed_camera,
             enable_shm=enable_shm,
             controller_mode=controller_mode,
+            enable_fault_recovery=enable_fault_recovery,
+            enable_stall_detection=enable_stall_detection,
+            stall_position_threshold=stall_position_threshold,
+            stall_velocity_threshold=stall_velocity_threshold,
+            stall_steps_threshold=stall_steps_threshold,
+            max_recovery_attempts=max_recovery_attempts,
+            recovery_cooldown_window=recovery_cooldown_window,
             node_rank=ctrl_rank,
             name=worker_name,
         )
@@ -167,6 +195,27 @@ class R2Config(RobotConfig):
 
     controller_mode: int = R2_MODE_SERVOJ
     """Initial motion controller mode (0: Hold, 1: MoveJ, 2: ServoJ, 3: GravityComp)."""
+
+    enable_fault_recovery: bool = True
+    """Whether to automatically diagnose and recover from recoverable motion faults."""
+
+    enable_stall_detection: bool = True
+    """Whether to run the ServoJ joint-tracking stall watchdog when fault recovery is enabled."""
+
+    stall_position_threshold: float = 0.05
+    """Minimum command-to-actual position error (rad) required to count a step as stalled."""
+
+    stall_velocity_threshold: float = 0.002
+    """Maximum actual joint motion (rad or rad/s) below which a step is considered stalled."""
+
+    stall_steps_threshold: int = 15
+    """Consecutive stalled ServoJ steps required before triggering stall recovery."""
+
+    max_recovery_attempts: int = 3
+    """Maximum automatic recovery attempts allowed within ``recovery_cooldown_window``."""
+
+    recovery_cooldown_window: float = 10.0
+    """Sliding time window (seconds) used by the recovery circuit breaker."""
 
     controller_node_rank: Optional[int] = None
     """Optional node rank where the RFrame connection worker should be placed."""

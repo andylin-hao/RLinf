@@ -104,6 +104,9 @@ class R2EnvConfig:
     enable_gripper_penalty: bool = False
     """Whether to charge :pyattr:`gripper_penalty` for end-effector motion."""
 
+    truncate_on_fault_recovery: bool = True
+    """Whether to mark the current episode as ``truncated=True`` after an automatic hardware fault recovery."""
+
     def __post_init__(self) -> None:
         """Coerce and validate active arms and joint bound arrays."""
         self.active_arms = tuple(self.active_arms)
@@ -247,6 +250,13 @@ class R2Env(gym.Env):
             use_compressed_camera=hardware.use_compressed_camera,
             enable_shm=hardware.enable_shm,
             controller_mode=hardware.controller_mode,
+            enable_fault_recovery=hardware.enable_fault_recovery,
+            enable_stall_detection=hardware.enable_stall_detection,
+            stall_position_threshold=hardware.stall_position_threshold,
+            stall_velocity_threshold=hardware.stall_velocity_threshold,
+            stall_steps_threshold=hardware.stall_steps_threshold,
+            max_recovery_attempts=hardware.max_recovery_attempts,
+            recovery_cooldown_window=hardware.recovery_cooldown_window,
             env_idx=self.env_idx,
             node_rank=controller_node_rank,
             worker_rank=self.env_worker_rank,
@@ -392,9 +402,17 @@ class R2Env(gym.Env):
             and self._success_hold_counter >= self.config.success_hold_steps
         )
         truncated = self._num_steps >= self.config.max_num_steps
+        info: dict[str, Any] = {}
+        if not self.config.is_dummy and self.robot is not None:
+            recovery_event = self.robot.consume_recovery_event()
+            if recovery_event is not None:
+                info["robot_fault"] = recovery_event
+                if self.config.truncate_on_fault_recovery:
+                    truncated = True
+                    info["fault_truncated"] = True
         step_time = time.monotonic() - start_time
         time.sleep(max(0.0, (1.0 / self.config.step_frequency) - step_time))
-        return observation, reward, terminated, truncated, {}
+        return observation, reward, terminated, truncated, info
 
     def get_joint_positions(self) -> np.ndarray:
         """Return active arm joints shaped ``(num_active_arms, 7)``."""
@@ -419,6 +437,8 @@ class R2Env(gym.Env):
             return self._get_observation(), {}
 
         self.go_to_rest()
+        if self.robot is not None:
+            self.robot.consume_recovery_event()
         return self._get_observation(), {}
 
     def go_to_rest(self) -> None:

@@ -182,8 +182,78 @@ environment only consumes their observations.
 
 Existing policies that expect flat vectors use ``LegacyObservationAdapter`` and
 ``VectorActionAdapter`` at this boundary. The adapters translate representation;
-the robot interface remains named and nested. That separation is also what lets
-placement change without reaching task code.
+the robot interface remains named and nested. Beyond normal observation and
+action translation, a long-running rollout also needs a uniform way to inspect
+and recover from hardware faults at this same boundary.
+
+Diagnose and Recover from Hardware Faults
+-----------------------------------------
+
+Physical controllers can drop out of streaming mode, hit a joint or velocity
+protection limit, or trip a collision check mid-episode. Every ``Connection``,
+``RobotPart``, ``PartGroup``, and ``Robot`` therefore exposes ``diagnose()``,
+``clear_errors()``, and ``consume_recovery_event()`` with the same signature at
+every level of the composition.
+
+``diagnose()`` returns a ``HealthStatus`` snapshot classifying the hardware into
+one of four ``FaultLevel`` values:
+
+- ``FaultLevel.OK``: the controller is healthy and tracking commands.
+- ``FaultLevel.MODE_DROP``: no hardware fault is latched, but the controller
+  dropped out of its streaming mode or stalled while tracking joint targets.
+- ``FaultLevel.RECOVERABLE_FAULT``: a motion fault or disabled axis is latched
+  (such as a joint limit, velocity limit, or self-collision check) and can be
+  cleared in software.
+- ``FaultLevel.UNRECOVERABLE_FAULT``: an emergency stop, safety lock, or
+  disconnected session requires human intervention.
+
+.. code-block:: python
+
+   status = robot.diagnose()
+   if not status.healthy:
+       if not status.recoverable:
+           raise RuntimeError(status.error_message)
+       robot.clear_errors()
+
+When a driver supports transparent auto-recovery (such as ``R2Connection`` on
+``R2Robot``), ``send_action()`` and ``reset_joint()`` run a tiered recovery
+sequence automatically when a fault or tracking stall is detected:
+
+1. For ``FaultLevel.MODE_DROP``, the connection synchronizes its internal
+   command targets to the measured joint positions to prevent a position step,
+   then re-asserts the streaming controller mode.
+2. For ``FaultLevel.RECOVERABLE_FAULT``, ``clear_errors()`` synchronizes command
+   targets to the measured state, clears controller faults, re-enables disabled
+   axes, and restores the controller mode.
+3. A sliding-window circuit breaker (``max_recovery_attempts`` within
+   ``recovery_cooldown_window`` seconds) raises ``RuntimeError`` if a fault
+   recurs repeatedly or reaches ``FaultLevel.UNRECOVERABLE_FAULT``.
+
+Because aggressive stall detection can trigger false-positive recoveries during
+slow or compliant motions, both automatic recovery and the stall watchdog are
+configurable in ``R2Config``:
+
+.. code-block:: yaml
+
+   hardware:
+     type: R2
+     config:
+       enable_fault_recovery: true
+       enable_stall_detection: true
+       stall_position_threshold: 0.05
+       stall_velocity_threshold: 0.002
+       stall_steps_threshold: 15
+       max_recovery_attempts: 3
+       recovery_cooldown_window: 10.0
+
+During real-world reinforcement learning, an episode interrupted by a mid-step
+fault recovery has a discontinuous transition. The environment consumes the
+recorded recovery event via ``robot.consume_recovery_event()``, attaches it to
+``info["robot_fault"]``, and when ``R2EnvConfig.truncate_on_fault_recovery`` is
+``True``, marks the step as ``truncated=True`` so the rollout runner closes the
+trajectory cleanly and resets the robot before the next episode. That separation
+between driver recovery and episode control also keeps placement out of task
+code.
 
 Keep Placement Out of Task Code
 -------------------------------

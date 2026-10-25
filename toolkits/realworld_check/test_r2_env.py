@@ -87,10 +87,12 @@ HELP = """
   base <turn_left|turn_right> [scale]       rotate chassis for 0.5s and stop
   base stop                                 stop chassis immediately
 
-  === Postures & Status ===
+  === Postures, Diagnostics & Status ===
   ready / pose ready                        move active arms to bent-elbow ready posture
   home  / pose home                         return arms, waist, and head to zero
   where                                     print joints, TCP xyz, grippers, waist, head, base
+  diag                                      print hardware fault and health diagnosis
+  recover                                   clear faults, re-enable body axes, and restore ServoJ
   help / quit
 """
 
@@ -377,6 +379,29 @@ def _run_interactive(
         if cmd in ("where", "status"):
             obs = env._get_observation()
             _print_status(env, obs, host)
+            continue
+        if cmd in ("diag", "diagnose", "health"):
+            diag_target = getattr(env, "robot", None) or host
+            if diag_target is None or not hasattr(diag_target, "diagnose"):
+                print("  diagnose: unavailable (dummy mode)")
+            else:
+                status = diag_target.diagnose()
+                print(f"  diagnose: {status.to_dict()}")
+            continue
+        if cmd in ("recover", "clear", "clear_errors"):
+            rec_target = getattr(env, "robot", None) or host
+            if rec_target is None or not hasattr(rec_target, "clear_errors"):
+                print("  recover: unavailable (dummy mode)")
+            else:
+                ok = rec_target.clear_errors()
+                status = rec_target.diagnose()
+                obs = env._get_observation()
+                joints = np.array(obs["state"]["arm_joint_position"], dtype=np.float32)
+                if host is not None:
+                    rstate = host.get_state()
+                    waist_q = np.array(rstate.waist_positions, dtype=np.float32)
+                    neck_q = np.array(rstate.neck_positions, dtype=np.float32)
+                print(f"  recover: ok={ok} | status={status.to_dict()}")
             continue
 
         target_joints = joints.copy()

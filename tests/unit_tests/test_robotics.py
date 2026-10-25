@@ -6978,3 +6978,139 @@ def test_r2_connection_and_robot_variants_run_on_faked_rframe():
         finally:
             rframe.Session.default_body_dof = 21
             rframe.Session.default_end_effector_type = "gripper"
+
+
+def test_r2_fault_diagnosis_and_configurable_auto_recovery():
+    """R2Robot and R2Connection diagnose faults, auto-recover when enabled, and respect thresholds."""
+    import numpy as np
+    import pytest
+    from robot_mocks import mocked_sdks
+
+    from rlinf.robotics import FaultLevel, HealthStatus, R2Robot
+    from rlinf.robotics.parts.arms.r2 import R2_MODE_HOLD, R2Connection
+
+    with mocked_sdks():
+        conn = R2Connection(
+            body_dof=21,
+            end_effector_type="gripper",
+            cameras=(),
+            enable_fault_recovery=True,
+            enable_stall_detection=True,
+            stall_position_threshold=0.05,
+            stall_velocity_threshold=0.002,
+            stall_steps_threshold=3,
+            max_recovery_attempts=2,
+            recovery_cooldown_window=10.0,
+        )
+        robot = R2Robot(**R2Robot.build_arms(conn))
+        robot.connect()
+        try:
+            # 1. Healthy baseline
+            diag = robot.diagnose()
+            assert isinstance(diag, HealthStatus)
+            assert diag.healthy is True
+            assert diag.level == FaultLevel.OK
+            assert diag.recoverable is True
+
+            # 2. Level 1: Mode drop recovery (mode=0 -> auto switch_controller(2))
+            conn._session.state["mode"] = R2_MODE_HOLD
+            diag_drop = robot.diagnose()
+            assert diag_drop.healthy is False
+            assert diag_drop.level == FaultLevel.MODE_DROP
+            assert diag_drop.recoverable is True
+
+            target_q = np.full(7, 0.2, dtype=np.float32)
+            robot.send_action({"left": {"arm": {"joint_position": target_q}}})
+            event = robot.consume_recovery_event()
+            assert event is not None
+            assert event["level"] == "mode_drop"
+            assert event["action"] == "switch_controller(SERVOJ)"
+            assert robot.diagnose().healthy is True
+            assert np.allclose(
+                robot.get_observation()["left"]["arm"]["joint_position"], target_q
+            )
+
+            # 3. Level 2: Recoverable axis/controller fault (error_code=501 on J_Knee=1027)
+            conn._recovery_timestamps.clear()
+            conn._session.state["fault_code"] = 501
+            conn._session.state["disabled_slaves"] = [1027]
+            conn._session.state["system_state"] = 4
+            diag_fault = robot.diagnose()
+            assert diag_fault.healthy is False
+            assert diag_fault.level == FaultLevel.RECOVERABLE_FAULT
+            assert diag_fault.error_code == 501
+            assert "J_Knee" in diag_fault.fault_parts
+
+            next_q = np.full(7, 0.35, dtype=np.float32)
+            robot.send_action({"left": {"arm": {"joint_position": next_q}}})
+            event2 = robot.consume_recovery_event()
+            assert event2 is not None
+            assert event2["level"] == "recoverable_fault"
+            assert event2["error_code"] == 501
+            assert "J_Knee" in event2["fault_parts"]
+            assert robot.diagnose().healthy is True
+            assert np.allclose(
+                robot.get_observation()["left"]["arm"]["joint_position"], next_q
+            )
+
+            # 4. Stall watchdog: triggers after stall_steps_threshold=3 stalled ServoJ steps
+            conn._recovery_timestamps.clear()
+            conn._session.state["stalled"] = True
+            stall_target = np.full(7, 0.6, dtype=np.float32)
+            robot.send_action({"left": {"arm": {"joint_position": stall_target}}})
+            assert robot.consume_recovery_event() is None
+            robot.send_action({"left": {"arm": {"joint_position": stall_target}}})
+            assert robot.consume_recovery_event() is None
+            robot.send_action({"left": {"arm": {"joint_position": stall_target}}})
+            stall_event = robot.consume_recovery_event()
+            assert stall_event is not None
+            assert stall_event["trigger"] == "servoj_stall"
+            assert conn._session.state["stalled"] is False
+
+            # 5. Disabling stall detection suppresses stall triggers
+            conn.enable_stall_detection = False
+            conn._stall_counter = 0
+            conn._session.state["stalled"] = True
+            for _ in range(5):
+                robot.send_action(
+                    {
+                        "left": {
+                            "arm": {"joint_position": np.full(7, 0.8, dtype=np.float32)}
+                        }
+                    }
+                )
+            assert robot.consume_recovery_event() is None
+            conn._session.state["stalled"] = False
+            conn.enable_stall_detection = True
+
+            # 6. Disabling fault recovery leaves faults untouched
+            conn.enable_fault_recovery = False
+            conn._session.state["fault_code"] = 304
+            robot.send_action(
+                {"left": {"arm": {"joint_position": np.full(7, 0.9, dtype=np.float32)}}}
+            )
+            assert robot.consume_recovery_event() is None
+            assert robot.diagnose().error_code == 304
+            assert robot.clear_errors() is True
+            assert robot.diagnose().healthy is True
+            conn.enable_fault_recovery = True
+
+            # 7. Circuit breaker raises RuntimeError when persistent fault exceeds max_recovery_attempts=2
+            conn._recovery_timestamps.clear()
+            conn._session.state["fault_code"] = 501
+            conn._session.state["persistent_fault"] = True
+            robot.send_action({"left": {"arm": {"joint_position": target_q}}})
+            robot.send_action({"left": {"arm": {"joint_position": target_q}}})
+            with pytest.raises(RuntimeError, match="exceeded max_recovery_attempts=2"):
+                robot.send_action({"left": {"arm": {"joint_position": target_q}}})
+
+            # 8. Unrecoverable fault (401 emergency stop) raises immediately
+            conn._session.state["persistent_fault"] = False
+            robot.clear_errors()
+            conn._recovery_timestamps.clear()
+            conn._session.state["fault_code"] = 401
+            assert robot.diagnose().level == FaultLevel.UNRECOVERABLE_FAULT
+            with pytest.raises(RuntimeError, match="Unrecoverable R2 hardware fault"):
+                robot.send_action({"left": {"arm": {"joint_position": target_q}}})
+        finally:
+            robot.disconnect()

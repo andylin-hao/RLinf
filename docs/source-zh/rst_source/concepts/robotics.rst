@@ -116,7 +116,50 @@ env 需要把具名机器人数据转换为 policy 使用的观测和动作格�
 
 连接前取得的具类型零部件仍用于 step 循环之外的初始化。当前真机 env 通过 ``Arm`` 检查就绪状态、恢复错误并复位关节，通过 ``parts_of_type(Camera)`` 查找画面来源。相机的 placement 和生命周期仍由机器人管理，env 只消费观测结果。
 
-现有 policy 如果使用扁平向量，可在这一边界通过 ``LegacyObservationAdapter`` 和 ``VectorActionAdapter`` 转换。adapter 只改变表示形式，机器人接口仍保留具名嵌套结构。正因为任务只依赖这套接口，placement 才能独立调整。
+现有 policy 如果使用扁平向量，可在这一边界通过 ``LegacyObservationAdapter`` 和 ``VectorActionAdapter`` 转换。adapter 只改变表示形式，机器人接口仍保留具名嵌套结构。除常规的观测和动作转换外，长时间运行的 rollout 还需要在同一边界上统一检查并恢复硬件故障。
+
+故障诊断与自动恢复
+------------------
+
+真机控制器在运行中可能退出流式控制模式、触发关节位置或速度保护阈值，或在 episode 中途触发碰撞保护。因此，所有 ``Connection``、``RobotPart``、``PartGroup`` 和 ``Robot`` 在组合的每一层都提供签名一致的 ``diagnose()``、``clear_errors()`` 与 ``consume_recovery_event()``。
+
+``diagnose()`` 返回 ``HealthStatus`` 诊断快照，并通过 ``FaultLevel`` 将当前硬件状态归为四类：
+
+- ``FaultLevel.OK``：控制器健康且正常跟踪指令。
+- ``FaultLevel.MODE_DROP``：未锁存硬件故障，但控制器退出了流式控制模式，或在跟踪关节目标时发生停滞。
+- ``FaultLevel.RECOVERABLE_FAULT``：锁存了运动故障或下掉使能的关节轴（如关节限位、速度超限或自碰撞保护），可通过软件恢复。
+- ``FaultLevel.UNRECOVERABLE_FAULT``：触发急停、安全锁或连接断开，需要人工介入。
+
+.. code-block:: python
+
+   status = robot.diagnose()
+   if not status.healthy:
+       if not status.recoverable:
+           raise RuntimeError(status.error_message)
+       robot.clear_errors()
+
+对于支持无感自动恢复的 driver（例如 ``R2Robot`` 使用的 ``R2Connection``），``send_action()`` 和 ``reset_joint()`` 会在检测到故障或跟踪停滞时按故障级别自动执行分级恢复：
+
+1. 遇到 ``FaultLevel.MODE_DROP`` 时，connection 先将内部缓存的目标关节角同步到当前实测关节角，避免模式恢复瞬间产生位置阶跃，再重新切回流式控制模式。
+2. 遇到 ``FaultLevel.RECOVERABLE_FAULT`` 时，``clear_errors()`` 会将内部目标同步到实测状态，清除控制器故障，重新为下掉的关节轴上使能，并恢复控制模式。
+3. 滑动时间窗熔断器（``recovery_cooldown_window`` 秒内最多允许 ``max_recovery_attempts`` 次自动恢复）会在故障反复触发或达到 ``FaultLevel.UNRECOVERABLE_FAULT`` 时抛出 ``RuntimeError``。
+
+过于敏感的停滞检测在慢速或柔顺运动下可能引发误判，因此自动故障恢复开关和停滞检测阈值均可在 ``R2Config`` 中按需配置：
+
+.. code-block:: yaml
+
+   hardware:
+     type: R2
+     config:
+       enable_fault_recovery: true
+       enable_stall_detection: true
+       stall_position_threshold: 0.05
+       stall_velocity_threshold: 0.002
+       stall_steps_threshold: 15
+       max_recovery_attempts: 3
+       recovery_cooldown_window: 10.0
+
+在真机强化学习训练采样中，被中途故障恢复打断的 episode 会出现状态与动作跳变。env 在每个 step 通过 ``robot.consume_recovery_event()`` 取出恢复事件并写入 ``info["robot_fault"]``；当 ``R2EnvConfig.truncate_on_fault_recovery`` 为 ``True`` 时，当前 step 会标记为 ``truncated=True``，由 rollout runner 截断该条轨迹并在下一轮采样前自动执行 ``reset()``。将底层硬件恢复与 episode 截断分离后，任务代码同样无需依赖部署位置。
 
 任务代码不依赖部署位置
 ----------------------

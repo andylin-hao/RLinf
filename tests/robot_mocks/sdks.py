@@ -493,6 +493,15 @@ def r2() -> dict[str, types.ModuleType]:
             self.base_pose = [0.0, 0.0, 0.0]
             self.base_vel = [0.0, 0.0, 0.0]
             self.mode = 2
+            self.state: dict[str, Any] = {
+                "fault_code": 0,
+                "error_msg": "",
+                "disabled_slaves": [],
+                "system_state": 2,
+                "mode": 2,
+                "stalled": False,
+                "persistent_fault": False,
+            }
 
         def create_hybrid_channel(self, config: ChannelConfig) -> HybridChannel:
             return HybridChannel(self, config)
@@ -570,6 +579,17 @@ def r2() -> dict[str, types.ModuleType]:
 
         def handle_send(self, topic: str, msg: Any) -> None:
             if topic == "/Motion/ServoJ":
+                if (
+                    self.state.get("fault_code", 0) != 0
+                    or bool(self.state.get("disabled_slaves"))
+                    or self.state.get("system_state", 2) == 4
+                    or self.state.get("mode", 2) != 2
+                    or bool(self.state.get("stalled", False))
+                ):
+                    for k in self.velocities:
+                        self.velocities[k] = 0.0
+                    self._notify("/Motion/JointState", self._build_joint_msg)
+                    return
                 names = list(getattr(msg, "name", []))
                 positions = list(getattr(msg, "position", []))
                 velocities = list(getattr(msg, "velocity", []))
@@ -596,8 +616,31 @@ def r2() -> dict[str, types.ModuleType]:
         def handle_call(self, topic: str, req: Any) -> Any:
             if topic == "/Motion/SwitchController":
                 self.mode = int(getattr(req, "mode", 2))
+                self.state["mode"] = self.mode
+                self.state["stalled"] = False
+                return types.SimpleNamespace(success=True)
+            if topic == "/Motion/ClearError":
+                if self.state.get("persistent_fault", False):
+                    return types.SimpleNamespace(success=False)
+                self.state["fault_code"] = 0
+                self.state["error_msg"] = ""
+                self.state["disabled_slaves"] = []
+                self.state["system_state"] = 2
+                self.state["stalled"] = False
                 return types.SimpleNamespace(success=True)
             if topic == "/Motion/MoveJ":
+                if (
+                    self.state.get("fault_code", 0) != 0
+                    or self.state.get("system_state", 2) == 4
+                ):
+                    fc = int(self.state.get("fault_code", 501) or 501)
+                    return types.SimpleNamespace(
+                        success=False,
+                        error_code=types.SimpleNamespace(
+                            code=fc,
+                            msg=str(self.state.get("error_msg", "fault")),
+                        ),
+                    )
                 names = list(getattr(req, "joint_names", []))
                 targets = list(getattr(req, "target_positions", []))
                 for idx, name in enumerate(names):

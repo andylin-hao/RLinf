@@ -26,7 +26,13 @@ from typing import Any, Optional
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
-from rlinf.robotics.parts.base import Connection, Features, RobotPart
+from rlinf.robotics.parts.base import (
+    Connection,
+    FaultLevel,
+    Features,
+    HealthStatus,
+    RobotPart,
+)
 from rlinf.robotics.parts.end_effectors import BaseHand
 from rlinf.robotics.parts.mobility.base import MobileBase
 from rlinf.robotics.parts.views import (
@@ -35,11 +41,58 @@ from rlinf.robotics.parts.views import (
     MethodEndEffector,
     host_state,
 )
+from rlinf.utils.logging import get_logger
 
 R2_MODE_HOLD = 0
 R2_MODE_MOVEJ = 1
 R2_MODE_SERVOJ = 2
 R2_MODE_GRAVITY_COMP = 3
+
+R2_SLAVE_ADDR_TO_JOINT: dict[int, str] = {
+    1002: "J_LeftArm1",
+    1003: "J_LeftArm2",
+    1004: "J_LeftArm3",
+    1005: "J_LeftArm4",
+    1006: "J_LeftArm5",
+    1007: "J_LeftArm6",
+    1008: "J_LeftArm7",
+    1012: "J_RightArm1",
+    1013: "J_RightArm2",
+    1014: "J_RightArm3",
+    1015: "J_RightArm4",
+    1016: "J_RightArm5",
+    1017: "J_RightArm6",
+    1018: "J_RightArm7",
+    1022: "J_NeckYaw",
+    1023: "J_NeckPitch",
+    1024: "J_WaistRoll",
+    1025: "J_WaistYaw",
+    1026: "J_Hip",
+    1027: "J_Knee",
+    1028: "J_Ankle",
+}
+
+R2_BODY_SLAVE_ADDRS: tuple[int, ...] = tuple(R2_SLAVE_ADDR_TO_JOINT.keys())
+
+R2_ERROR_CODES: dict[int, str] = {
+    0: "SUCCESS",
+    301: "JOINT_LIMIT_EXCEEDED",
+    302: "VELOCITY_LIMIT_EXCEEDED",
+    303: "ACCELERATION_LIMIT_EXCEEDED",
+    304: "COLLISION_DETECTED",
+    401: "IK_NO_SOLUTION",
+    402: "SINGULARITY_DETECTED",
+    403: "TRAJECTORY_PLANNING_FAILED",
+    501: "AXIS_NOT_ENABLED",
+    502: "AXIS_FAULT",
+    503: "EMERGENCY_STOP_ACTIVE",
+    504: "COMMUNICATION_TIMEOUT",
+    505: "PROTECTIVE_STOP_ACTIVE",
+    601: "INVALID_PARAMETER",
+    602: "MODE_NOT_SUPPORTED",
+    603: "ROBOT_BUSY",
+    604: "TASK_ID_CONFLICT",
+}
 
 R2_LEFT_ARM_JOINTS: tuple[str, ...] = (
     "J_ArmL_1",
@@ -893,6 +946,13 @@ class R2Connection(Connection):
         use_compressed_camera: bool = False,
         enable_shm: bool = False,
         controller_mode: int = R2_MODE_SERVOJ,
+        enable_fault_recovery: bool = True,
+        enable_stall_detection: bool = True,
+        stall_position_threshold: float = 0.05,
+        stall_velocity_threshold: float = 0.002,
+        stall_steps_threshold: int = 15,
+        max_recovery_attempts: int = 3,
+        recovery_cooldown_window: float = 10.0,
         node_name: str = "rlinf_r2_controller",
     ) -> None:
         if body_dof in (None, "auto"):
@@ -933,6 +993,16 @@ class R2Connection(Connection):
                 f"Unknown R2 camera names {unknown_cameras}; "
                 f"valid names are {sorted(R2_CAMERA_TOPICS)}."
             )
+        if not np.isfinite(stall_position_threshold) or stall_position_threshold <= 0:
+            raise ValueError("stall_position_threshold must be finite and positive.")
+        if not np.isfinite(stall_velocity_threshold) or stall_velocity_threshold < 0:
+            raise ValueError("stall_velocity_threshold must be finite and nonnegative.")
+        if int(stall_steps_threshold) < 1:
+            raise ValueError("stall_steps_threshold must be at least 1.")
+        if int(max_recovery_attempts) < 1:
+            raise ValueError("max_recovery_attempts must be at least 1.")
+        if not np.isfinite(recovery_cooldown_window) or recovery_cooldown_window <= 0:
+            raise ValueError("recovery_cooldown_window must be finite and positive.")
 
         self.body_dof = resolved_body_dof
         self.end_effector_type = resolved_ee_type
@@ -944,7 +1014,15 @@ class R2Connection(Connection):
         self.use_compressed_camera = use_compressed_camera
         self.enable_shm = enable_shm
         self.controller_mode = controller_mode
+        self.enable_fault_recovery = bool(enable_fault_recovery)
+        self.enable_stall_detection = bool(enable_stall_detection)
+        self.stall_position_threshold = float(stall_position_threshold)
+        self.stall_velocity_threshold = float(stall_velocity_threshold)
+        self.stall_steps_threshold = int(stall_steps_threshold)
+        self.max_recovery_attempts = int(max_recovery_attempts)
+        self.recovery_cooldown_window = float(recovery_cooldown_window)
         self.node_name = node_name
+        self._logger = get_logger()
 
         self.waist_joint_names = (
             R2_WAIST_JOINTS_21DOF if resolved_body_dof == 21 else R2_WAIST_JOINTS_20DOF
@@ -990,6 +1068,13 @@ class R2Connection(Connection):
         self._cmd_left_hand: Optional[np.ndarray] = None
         self._cmd_right_hand: Optional[np.ndarray] = None
         self._chassis_cmd_started: bool = False
+        self._system_state_code: int = 2
+        self._last_error_code: int = 0
+        self._last_error_msg: str = ""
+        self._disabled_slaves: tuple[int, ...] = ()
+        self._stall_counter: int = 0
+        self._prev_actual_joints: Optional[np.ndarray] = None
+        self._recovery_timestamps: list[float] = []
 
     def _set_body_dof(self, body_dof: int) -> None:
         """Update the waist and body joint tables to match ``body_dof`` (20 or 21)."""
@@ -1310,6 +1395,17 @@ class R2Connection(Connection):
                 self._on_health_state,
                 reliability="best_effort",
             )
+            try:
+                from r2_motion_msgs.msg import ControllerState
+
+                self._subscribe(
+                    "/robby_motion_node/state",
+                    ControllerState,
+                    self._on_controller_state,
+                    reliability="best_effort",
+                )
+            except ImportError:
+                pass
 
             if self.enable_base:
                 self._subscribe(
@@ -1423,9 +1519,14 @@ class R2Connection(Connection):
             st_resp = self._call_service(
                 "/robotic/get_system_state_cmd", lambda _req: None, timeout=2.0
             )
-            if st_resp is not None and getattr(st_resp, "state", 2) == 4:
+            if (
+                (st_resp is not None and getattr(st_resp, "state", 2) == 4)
+                or self._last_error_code != 0
+                or len(self._disabled_slaves) > 0
+            ):
                 self.clear_errors()
-            self.switch_controller(self.controller_mode)
+            else:
+                self.switch_controller(self.controller_mode)
             return self._session
 
         from navigation_msgs.srv import NavigationControl
@@ -1565,6 +1666,14 @@ class R2Connection(Connection):
         self._cmd_right_gripper = None
         self._cmd_left_hand = None
         self._cmd_right_hand = None
+        self._system_state_code = 2
+        self._last_error_code = 0
+        self._last_error_msg = ""
+        self._disabled_slaves = ()
+        self._stall_counter = 0
+        self._prev_actual_joints = None
+        self._recovery_timestamps.clear()
+        self._last_recovery_event = None
         if not self._is_real_rframe and hasattr(device, "close"):
             device.close()
         self._session = None
@@ -1821,6 +1930,26 @@ class R2Connection(Connection):
             elif hasattr(msg, "severity_level"):
                 self._state.is_healthy = int(msg.severity_level) == 0
 
+    def _on_controller_state(self, msg: Any) -> None:
+        with self._lock:
+            if hasattr(msg, "run_mode"):
+                self._active_real_mode = int(msg.run_mode)
+            if hasattr(msg, "state"):
+                self._system_state_code = int(msg.state)
+            err_code = int(getattr(msg, "error_code", 0))
+            if err_code != 0:
+                self._last_error_code = err_code
+                self._last_error_msg = str(getattr(msg, "error_msg", ""))
+            slaves = list(getattr(msg, "slave_addrs", []))
+            enabled = list(getattr(msg, "enabled", []))
+            if slaves and len(slaves) == len(enabled):
+                disabled = [
+                    int(addr)
+                    for addr, is_en in zip(slaves, enabled, strict=False)
+                    if int(addr) in R2_SLAVE_ADDR_TO_JOINT and not bool(is_en)
+                ]
+                self._disabled_slaves = tuple(disabled)
+
     def _on_navi_state(self, msg: Any) -> None:
         with self._lock:
             if hasattr(msg, "current_pose"):
@@ -1925,6 +2054,315 @@ class R2Connection(Connection):
         if self._cmd_right_hand is None:
             self._cmd_right_hand = state.right_hand_position.copy()
 
+    def _sync_cmd_to_actual(self, state: Optional[R2RobotState] = None) -> None:
+        """Synchronize internal commanded joint targets to the latest measured robot state."""
+        snap = state if state is not None else self.get_state()
+        self._cmd_left_arm = snap.left_joint_positions.copy()
+        self._cmd_right_arm = snap.right_joint_positions.copy()
+        self._cmd_waist = snap.waist_positions.copy()
+        self._cmd_neck = snap.neck_positions.copy()
+        self._cmd_left_gripper = float(snap.left_gripper_position[0])
+        self._cmd_right_gripper = float(snap.right_gripper_position[0])
+        self._cmd_left_hand = snap.left_hand_position.copy()
+        self._cmd_right_hand = snap.right_hand_position.copy()
+        self._stall_counter = 0
+        self._prev_actual_joints = None
+
+    def _apply_cmd_targets(self, name_to_pos: dict[str, float]) -> None:
+        """Update cached whole-body command targets from a ``joint_name -> position`` mapping."""
+        assert (
+            self._cmd_left_arm is not None
+            and self._cmd_right_arm is not None
+            and self._cmd_waist is not None
+            and self._cmd_neck is not None
+            and self._cmd_left_gripper is not None
+            and self._cmd_right_gripper is not None
+        )
+        for idx, (jn, rjn) in enumerate(
+            zip(R2_LEFT_ARM_JOINTS, R2_REAL_LEFT_ARM_JOINTS, strict=True)
+        ):
+            if jn in name_to_pos:
+                self._cmd_left_arm[idx] = name_to_pos[jn]
+            elif rjn in name_to_pos:
+                self._cmd_left_arm[idx] = name_to_pos[rjn]
+        for idx, (jn, rjn) in enumerate(
+            zip(R2_RIGHT_ARM_JOINTS, R2_REAL_RIGHT_ARM_JOINTS, strict=True)
+        ):
+            if jn in name_to_pos:
+                self._cmd_right_arm[idx] = name_to_pos[jn]
+            elif rjn in name_to_pos:
+                self._cmd_right_arm[idx] = name_to_pos[rjn]
+        for idx, jn in enumerate(self.waist_joint_names):
+            if jn in name_to_pos and idx < self._cmd_waist.size:
+                self._cmd_waist[idx] = name_to_pos[jn]
+        for idx, rjn in enumerate(R2_REAL_WAIST_JOINTS):
+            if rjn in name_to_pos and idx < self._cmd_waist.size:
+                self._cmd_waist[idx] = name_to_pos[rjn]
+        for idx, jn in enumerate(R2_NECK_JOINTS):
+            if jn in name_to_pos:
+                self._cmd_neck[idx] = name_to_pos[jn]
+        if "GripperL" in name_to_pos:
+            self._cmd_left_gripper = float(np.clip(name_to_pos["GripperL"], 0.0, 1.0))
+        if "GripperR" in name_to_pos:
+            self._cmd_right_gripper = float(np.clip(name_to_pos["GripperR"], 0.0, 1.0))
+
+    def _sync_mock_diagnostics(self) -> None:
+        """Pull simulated fault and mode fields from a mock RFrame session when present."""
+        if self._is_real_rframe or self._session is None:
+            return
+        mock_st = getattr(self._session, "state", None)
+        if not isinstance(mock_st, dict):
+            return
+        with self._lock:
+            fc = int(mock_st.get("fault_code", 0))
+            if fc != 0:
+                self._last_error_code = fc
+                self._last_error_msg = str(mock_st.get("error_msg", ""))
+            slaves = mock_st.get("disabled_slaves")
+            if slaves:
+                self._disabled_slaves = tuple(int(x) for x in slaves)
+            sys_st = int(mock_st.get("system_state", 2))
+            if sys_st != 2:
+                self._system_state_code = sys_st
+            if "mode" in mock_st:
+                self._active_real_mode = int(mock_st["mode"])
+
+    def _has_active_fault_or_mode_drop(self, *, check_mode: bool = True) -> bool:
+        """Fast non-RPC check for latched faults, disabled axes, or mode drop."""
+        self._sync_mock_diagnostics()
+        with self._lock:
+            if self._last_error_code != 0:
+                return True
+            if len(self._disabled_slaves) > 0:
+                return True
+            if self._system_state_code == 4:
+                return True
+            if not self._state.is_healthy:
+                return True
+            if (
+                check_mode
+                and self.controller_mode == R2_MODE_SERVOJ
+                and self._active_real_mode is not None
+                and self._active_real_mode != R2_MODE_SERVOJ
+            ):
+                return True
+        return False
+
+    def diagnose(self) -> HealthStatus:
+        """Return a structured hardware diagnostic snapshot for the R2 connection."""
+        if self._owner is not None:
+            return self._owner.diagnose()
+        if self._session is None:
+            return HealthStatus(
+                healthy=False,
+                level=FaultLevel.UNRECOVERABLE_FAULT,
+                error_code=-1,
+                error_message="R2Connection is not connected.",
+            )
+        self._sync_mock_diagnostics()
+        if "/robotic/get_system_state_cmd" in self._services:
+            resp = self._call_service(
+                "/robotic/get_system_state_cmd", lambda _req: None, timeout=0.5
+            )
+            if resp is not None and hasattr(resp, "state"):
+                with self._lock:
+                    self._system_state_code = int(resp.state)
+
+        state = self.get_state()
+        with self._lock:
+            err_code = self._last_error_code
+            err_msg = self._last_error_msg
+            disabled_slaves = self._disabled_slaves
+            sys_state = self._system_state_code
+            active_mode = (
+                self._active_real_mode
+                if self._active_real_mode is not None
+                else self.controller_mode
+            )
+            stall_steps = self._stall_counter
+
+        fault_parts = tuple(
+            R2_SLAVE_ADDR_TO_JOINT.get(addr, str(addr)) for addr in disabled_slaves
+        )
+        if err_code in (401, 402):
+            level = FaultLevel.UNRECOVERABLE_FAULT
+        elif (
+            err_code != 0
+            or len(disabled_slaves) > 0
+            or sys_state == 4
+            or not state.is_healthy
+        ):
+            level = FaultLevel.RECOVERABLE_FAULT
+        elif (
+            self.controller_mode == R2_MODE_SERVOJ and active_mode != R2_MODE_SERVOJ
+        ) or (
+            self.enable_stall_detection and stall_steps >= self.stall_steps_threshold
+        ):
+            level = FaultLevel.MODE_DROP
+        else:
+            level = FaultLevel.OK
+
+        reasons: list[str] = []
+        if err_code != 0:
+            desc = R2_ERROR_CODES.get(err_code, "Motion controller error")
+            detail_suffix = f" ({err_msg})" if err_msg and err_msg != desc else ""
+            reasons.append(f"error_code={err_code}: {desc}{detail_suffix}")
+        if fault_parts:
+            reasons.append(f"disabled_axes={list(fault_parts)}")
+        if sys_state == 4:
+            reasons.append("system_state=4 (Fault)")
+        if not state.is_healthy:
+            reasons.append("health_monitor=unhealthy")
+        if self.controller_mode == R2_MODE_SERVOJ and active_mode != R2_MODE_SERVOJ:
+            reasons.append(
+                f"controller_mode_drop (expected={R2_MODE_SERVOJ}, active={active_mode})"
+            )
+        if self.enable_stall_detection and stall_steps >= self.stall_steps_threshold:
+            reasons.append(f"joint_tracking_stall (steps={stall_steps})")
+
+        return HealthStatus(
+            healthy=(level == FaultLevel.OK),
+            level=level,
+            error_code=err_code,
+            error_message="; ".join(reasons),
+            fault_parts=fault_parts,
+            details={
+                "system_state": sys_state,
+                "controller_mode": active_mode,
+                "disabled_slaves": list(disabled_slaves),
+                "stall_counter": stall_steps,
+                "battery_percentage": state.battery_percentage,
+            },
+        )
+
+    def consume_recovery_event(self) -> Optional[dict[str, Any]]:
+        """Pop and return the most recent automatic recovery event, if any."""
+        if self._owner is not None:
+            return self._owner.consume_recovery_event()
+        with self._lock:
+            event = self._last_recovery_event
+            self._last_recovery_event = None
+            return event
+
+    def _check_and_recover(self, trigger_reason: str) -> HealthStatus:
+        """Diagnose and execute tiered recovery, enforcing the cooldown circuit breaker."""
+        status = self.diagnose()
+        if status.healthy:
+            self._stall_counter = 0
+            return status
+
+        logger = get_logger()
+        if status.level == FaultLevel.UNRECOVERABLE_FAULT:
+            logger.error(
+                f"Unrecoverable R2 hardware fault ({trigger_reason}): {status.error_message}"
+            )
+            raise RuntimeError(
+                f"Unrecoverable R2 hardware fault ({trigger_reason}): {status.error_message}"
+            )
+
+        now = time.monotonic()
+        self._recovery_timestamps = [
+            t
+            for t in self._recovery_timestamps
+            if (now - t) <= self.recovery_cooldown_window
+        ]
+        if len(self._recovery_timestamps) >= self.max_recovery_attempts:
+            logger.error(
+                f"R2 fault recovery exceeded max_recovery_attempts={self.max_recovery_attempts} "
+                f"within {self.recovery_cooldown_window}s ({trigger_reason}): {status.error_message}"
+            )
+            raise RuntimeError(
+                f"R2 fault recovery exceeded max_recovery_attempts={self.max_recovery_attempts} "
+                f"within {self.recovery_cooldown_window}s ({trigger_reason}): {status.error_message}"
+            )
+
+        self._recovery_timestamps.append(now)
+        attempt = len(self._recovery_timestamps)
+        if status.level == FaultLevel.MODE_DROP:
+            logger.warning(
+                f"R2 mode drop / tracking stall detected ({trigger_reason}, attempt "
+                f"{attempt}/{self.max_recovery_attempts}): {status.error_message}. "
+                "Syncing command state and re-asserting ServoJ mode."
+            )
+            self._sync_cmd_to_actual()
+            self.switch_controller(R2_MODE_SERVOJ)
+            action = "switch_controller(SERVOJ)"
+        else:
+            logger.warning(
+                f"R2 recoverable hardware fault detected ({trigger_reason}, attempt "
+                f"{attempt}/{self.max_recovery_attempts}): {status.error_message}. "
+                "Clearing faults, re-enabling body axes, and restoring controller mode."
+            )
+            self.clear_errors()
+            action = "clear_errors+set_axis_enable+switch_controller"
+
+        with self._lock:
+            self._last_recovery_event = {
+                "trigger": trigger_reason,
+                "action": action,
+                "attempt": attempt,
+                "timestamp": now,
+                **status.to_dict(),
+            }
+        return self.diagnose()
+
+    def _update_stall_watchdog(self) -> None:
+        """Update the ServoJ joint-tracking stall counter and recover if threshold is reached."""
+        if not self.enable_fault_recovery or not self.enable_stall_detection:
+            return
+        if (
+            self._cmd_left_arm is None
+            or self._cmd_right_arm is None
+            or self._cmd_waist is None
+        ):
+            return
+        post_state = self.get_state()
+        act_vec = np.concatenate(
+            [
+                post_state.left_joint_positions,
+                post_state.right_joint_positions,
+                post_state.waist_positions,
+            ]
+        )
+        cmd_vec = np.concatenate(
+            [
+                self._cmd_left_arm,
+                self._cmd_right_arm,
+                self._cmd_waist,
+            ]
+        )
+        cmd_delta = float(np.max(np.abs(cmd_vec - act_vec)))
+        if (
+            self._prev_actual_joints is not None
+            and self._prev_actual_joints.shape == act_vec.shape
+        ):
+            pos_step_delta = float(np.max(np.abs(act_vec - self._prev_actual_joints)))
+        else:
+            pos_step_delta = 0.0
+        meas_vel = float(
+            np.max(
+                np.concatenate(
+                    [
+                        np.abs(post_state.left_joint_velocities),
+                        np.abs(post_state.right_joint_velocities),
+                        np.abs(post_state.waist_velocities),
+                    ]
+                )
+            )
+        )
+        vel_delta = max(pos_step_delta, meas_vel)
+        self._prev_actual_joints = act_vec.copy()
+        if (
+            cmd_delta > self.stall_position_threshold
+            and vel_delta < self.stall_velocity_threshold
+        ):
+            self._stall_counter += 1
+        else:
+            self._stall_counter = 0
+
+        if self._stall_counter >= self.stall_steps_threshold:
+            self._check_and_recover("servoj_stall")
+
     def _build_whole_body_joint_vector(
         self,
         *,
@@ -1983,6 +2421,21 @@ class R2Connection(Connection):
         efforts: Optional[Sequence[float]] = None,
     ) -> None:
         self._require_connected()
+        if self.enable_fault_recovery and self._has_active_fault_or_mode_drop():
+            self._check_and_recover("servoj_fault")
+
+        name_to_pos = {
+            str(n): float(p) for n, p in zip(joint_names, positions, strict=False)
+        }
+        state = self.get_state()
+        self._ensure_cmd_state(state)
+        is_hand_cmd = any(n.startswith(("HandL_", "HandR_")) for n in name_to_pos)
+        is_body_cmd = any(
+            not n.startswith(("HandL_", "HandR_", "Gripper")) for n in name_to_pos
+        )
+        if not is_hand_cmd:
+            self._apply_cmd_targets(name_to_pos)
+
         if "/Motion/ServoJ" in self._writers:
             channel, msg_cls = self._writers["/Motion/ServoJ"]
             msg = msg_cls()
@@ -1993,20 +2446,14 @@ class R2Connection(Connection):
             )
             msg.effort = [float(x) for x in efforts] if efforts is not None else []
             channel.send(msg)
+            if is_body_cmd:
+                self._update_stall_watchdog()
             return
 
         if "/robotic/servoj_data" not in self._writers:
             return
-        name_to_pos = {
-            str(n): float(p) for n, p in zip(joint_names, positions, strict=False)
-        }
-        state = self.get_state()
-        self._ensure_cmd_state(state)
 
-        if (
-            any(n.startswith(("HandL_", "HandR_")) for n in name_to_pos)
-            and "/robotic/servo_ry_hand_data" in self._writers
-        ):
+        if is_hand_cmd and "/robotic/servo_ry_hand_data" in self._writers:
             h_ch, h_cls = self._writers["/robotic/servo_ry_hand_data"]
             h_msg = h_cls()
             assert self._cmd_left_hand is not None and self._cmd_right_hand is not None
@@ -2030,34 +2477,6 @@ class R2Connection(Connection):
             and self._cmd_right_gripper is not None
         )
 
-        for idx, (jn, rjn) in enumerate(
-            zip(R2_LEFT_ARM_JOINTS, R2_REAL_LEFT_ARM_JOINTS, strict=True)
-        ):
-            if jn in name_to_pos:
-                self._cmd_left_arm[idx] = name_to_pos[jn]
-            elif rjn in name_to_pos:
-                self._cmd_left_arm[idx] = name_to_pos[rjn]
-        for idx, (jn, rjn) in enumerate(
-            zip(R2_RIGHT_ARM_JOINTS, R2_REAL_RIGHT_ARM_JOINTS, strict=True)
-        ):
-            if jn in name_to_pos:
-                self._cmd_right_arm[idx] = name_to_pos[jn]
-            elif rjn in name_to_pos:
-                self._cmd_right_arm[idx] = name_to_pos[rjn]
-        for idx, jn in enumerate(self.waist_joint_names):
-            if jn in name_to_pos and idx < self._cmd_waist.size:
-                self._cmd_waist[idx] = name_to_pos[jn]
-        for idx, rjn in enumerate(R2_REAL_WAIST_JOINTS):
-            if rjn in name_to_pos and idx < self._cmd_waist.size:
-                self._cmd_waist[idx] = name_to_pos[rjn]
-        for idx, jn in enumerate(R2_NECK_JOINTS):
-            if jn in name_to_pos:
-                self._cmd_neck[idx] = name_to_pos[jn]
-        if "GripperL" in name_to_pos:
-            self._cmd_left_gripper = float(np.clip(name_to_pos["GripperL"], 0.0, 1.0))
-        if "GripperR" in name_to_pos:
-            self._cmd_right_gripper = float(np.clip(name_to_pos["GripperR"], 0.0, 1.0))
-
         if self._is_real_rframe and self._active_real_mode != R2_MODE_SERVOJ:
             self.switch_controller(R2_MODE_SERVOJ)
 
@@ -2072,6 +2491,8 @@ class R2Connection(Connection):
         msg.gripper_l = float(np.clip(1.0 - self._cmd_left_gripper, 0.0, 1.0))
         msg.gripper_r = float(np.clip(1.0 - self._cmd_right_gripper, 0.0, 1.0))
         channel.send(msg)
+        if is_body_cmd:
+            self._update_stall_watchdog()
 
     def _call_service(
         self, service_name: str, configure_request: Any, timeout: float = 5.0
@@ -2083,6 +2504,7 @@ class R2Connection(Connection):
         req_cls = getattr(srv_cls, "Request", srv_cls)
         req = req_cls()
         configure_request(req)
+        resp = None
         if hasattr(channel, "call_async") and self._rclpy_node is not None:
             rclpy = self._msg_types.get("rclpy")
             if hasattr(channel, "wait_for_service"):
@@ -2093,10 +2515,22 @@ class R2Connection(Connection):
                 rclpy.spin_until_future_complete(
                     self._rclpy_node, future, timeout_sec=timeout
                 )
-            return future.result() if future.done() else None
-        if hasattr(channel, "call"):
-            return channel.call(req, timeout=timeout)
-        return None
+            resp = future.result() if future.done() else None
+        elif hasattr(channel, "call"):
+            resp = channel.call(req, timeout=timeout)
+
+        err_obj = getattr(resp, "error_code", None) if resp is not None else None
+        if err_obj is not None:
+            code = int(
+                getattr(err_obj, "code", err_obj if isinstance(err_obj, int) else 0)
+            )
+            if code != 0:
+                with self._lock:
+                    self._last_error_code = code
+                    self._last_error_msg = str(
+                        getattr(err_obj, "msg", getattr(resp, "error_msg", ""))
+                    )
+        return resp
 
     def switch_controller(self, mode: int) -> bool:
         """Switch the R2 motion controller mode (0: Hold, 1: MoveJ, 2: ServoJ, 3: GravityComp)."""
@@ -2140,34 +2574,13 @@ class R2Connection(Connection):
         return bool(getattr(resp, "success", True))
 
     def clear_errors(self) -> bool:
-        """Clear motion controller faults and re-enable body axes."""
+        """Clear motion controller faults, re-enable body axes, and restore controller mode."""
+        self._sync_cmd_to_actual()
         if self._is_real_rframe:
             if "/clear_faults" in self._services:
                 self._call_service("/clear_faults", lambda _req: None, timeout=1.5)
             if "/robotic/set_axis_enable_cmd" in self._services:
-                body_slaves = [
-                    1002,
-                    1003,
-                    1004,
-                    1005,
-                    1006,
-                    1007,
-                    1008,
-                    1012,
-                    1013,
-                    1014,
-                    1015,
-                    1016,
-                    1017,
-                    1018,
-                    1022,
-                    1023,
-                    1024,
-                    1025,
-                    1026,
-                    1027,
-                    1028,
-                ]
+                body_slaves = list(R2_BODY_SLAVE_ADDRS)
 
                 def _fill_enable(req: Any) -> None:
                     req.slave_addrs = body_slaves
@@ -2182,6 +2595,14 @@ class R2Connection(Connection):
             else "/robotic/release_stop"
         )
         resp = self._call_service(srv_name, lambda _req: None, timeout=1.5)
+        with self._lock:
+            self._last_error_code = 0
+            self._last_error_msg = ""
+            self._disabled_slaves = ()
+            self._system_state_code = 2
+            self._state.is_healthy = True
+            self._stall_counter = 0
+        self.switch_controller(self.controller_mode)
         return bool(getattr(resp, "success", True))
 
     def set_payload(
@@ -2380,6 +2801,10 @@ class R2Connection(Connection):
         max_velocity: Optional[np.ndarray] = None,
     ) -> bool:
         """Execute a point-to-point joint trajectory on the left arm via ``MoveJ``."""
+        if self.enable_fault_recovery and self._has_active_fault_or_mode_drop(
+            check_mode=False
+        ):
+            self._check_and_recover("movej_precheck")
         q = np.asarray(positions, dtype=np.float32).reshape(7)
         self._ensure_cmd_state(self.get_state())
         self._cmd_left_arm = q.copy()
@@ -2398,7 +2823,18 @@ class R2Connection(Connection):
                 "/robotic/movej_cmd", _fill_real, timeout=max(duration + 5.0, 5.0)
             )
             err = getattr(resp, "error_code", None)
-            return bool(getattr(err, "code", 0) == 0) if err is not None else True
+            ok = bool(getattr(err, "code", 0) == 0) if err is not None else True
+            if not ok and self.enable_fault_recovery:
+                self._check_and_recover("movej_retry")
+                self._cmd_left_arm = q.copy()
+                if self._is_real_rframe and self._active_real_mode != R2_MODE_HOLD:
+                    self.switch_controller(R2_MODE_HOLD)
+                resp = self._call_service(
+                    "/robotic/movej_cmd", _fill_real, timeout=max(duration + 5.0, 5.0)
+                )
+                err = getattr(resp, "error_code", None)
+                ok = bool(getattr(err, "code", 0) == 0) if err is not None else True
+            return ok
 
         def _fill(req: Any) -> None:
             req.joint_names = list(R2_LEFT_ARM_JOINTS)
@@ -2413,7 +2849,15 @@ class R2Connection(Connection):
         resp = self._call_service(
             "/Motion/MoveJ", _fill, timeout=max(duration + 5.0, 5.0)
         )
-        return bool(getattr(resp, "success", True))
+        ok = bool(getattr(resp, "success", True))
+        if not ok and self.enable_fault_recovery:
+            self._check_and_recover("movej_retry")
+            self._cmd_left_arm = q.copy()
+            resp = self._call_service(
+                "/Motion/MoveJ", _fill, timeout=max(duration + 5.0, 5.0)
+            )
+            ok = bool(getattr(resp, "success", True))
+        return ok
 
     def move_right_arm_movej(
         self,
@@ -2423,6 +2867,10 @@ class R2Connection(Connection):
         max_velocity: Optional[np.ndarray] = None,
     ) -> bool:
         """Execute a point-to-point joint trajectory on the right arm via ``MoveJ``."""
+        if self.enable_fault_recovery and self._has_active_fault_or_mode_drop(
+            check_mode=False
+        ):
+            self._check_and_recover("movej_precheck")
         q = np.asarray(positions, dtype=np.float32).reshape(7)
         self._ensure_cmd_state(self.get_state())
         self._cmd_right_arm = q.copy()
@@ -2441,7 +2889,18 @@ class R2Connection(Connection):
                 "/robotic/movej_cmd", _fill_real, timeout=max(duration + 5.0, 5.0)
             )
             err = getattr(resp, "error_code", None)
-            return bool(getattr(err, "code", 0) == 0) if err is not None else True
+            ok = bool(getattr(err, "code", 0) == 0) if err is not None else True
+            if not ok and self.enable_fault_recovery:
+                self._check_and_recover("movej_retry")
+                self._cmd_right_arm = q.copy()
+                if self._is_real_rframe and self._active_real_mode != R2_MODE_HOLD:
+                    self.switch_controller(R2_MODE_HOLD)
+                resp = self._call_service(
+                    "/robotic/movej_cmd", _fill_real, timeout=max(duration + 5.0, 5.0)
+                )
+                err = getattr(resp, "error_code", None)
+                ok = bool(getattr(err, "code", 0) == 0) if err is not None else True
+            return ok
 
         def _fill(req: Any) -> None:
             req.joint_names = list(R2_RIGHT_ARM_JOINTS)
@@ -2456,7 +2915,15 @@ class R2Connection(Connection):
         resp = self._call_service(
             "/Motion/MoveJ", _fill, timeout=max(duration + 5.0, 5.0)
         )
-        return bool(getattr(resp, "success", True))
+        ok = bool(getattr(resp, "success", True))
+        if not ok and self.enable_fault_recovery:
+            self._check_and_recover("movej_retry")
+            self._cmd_right_arm = q.copy()
+            resp = self._call_service(
+                "/Motion/MoveJ", _fill, timeout=max(duration + 5.0, 5.0)
+            )
+            ok = bool(getattr(resp, "success", True))
+        return ok
 
     def move_left_arm_cartesian(self, pose: np.ndarray, duration: float = 1.0) -> bool:
         """Move the left arm TCP to ``pose`` ``[x, y, z, r, p, y]``."""

@@ -4930,3 +4930,57 @@ def test_r2_reach_env_dummy_and_faked_sdk(monkeypatch):
         finally:
             rframe.Session.default_body_dof = 21
             rframe.Session.default_end_effector_type = "gripper"
+
+        # 4. Fault recovery during step() truncates episode when truncate_on_fault_recovery=True
+        fault_cfg = R2Config(
+            node_rank=0,
+            cameras=[],
+            enable_fault_recovery=True,
+            enable_stall_detection=True,
+            stall_steps_threshold=3,
+        )
+        fault_env = R2ReachEnv(
+            override_cfg={
+                "is_dummy": False,
+                "enable_camera_player": False,
+                "step_frequency": 10000.0,
+                "max_num_steps": 50,
+                "truncate_on_fault_recovery": True,
+            },
+            worker_info=None,
+            robot_info=_robot_info(fault_cfg),
+            env_idx=0,
+        )
+        try:
+            fault_env.reset(seed=11)
+            conn = fault_env.robot.owners()[0]
+            conn._session.state["fault_code"] = 501
+            conn._session.state["disabled_slaves"] = [1027]
+            conn._session.state["system_state"] = 4
+
+            action = np.full(fault_env.action_space.shape, 0.15, dtype=np.float32)
+            obs, _reward, terminated, truncated, info = fault_env.step(action)
+            assert fault_env.observation_space.contains(obs)
+            assert not terminated
+            assert truncated is True
+            assert info.get("fault_truncated") is True
+            assert "robot_fault" in info
+            assert info["robot_fault"]["error_code"] == 501
+            assert "J_Knee" in info["robot_fault"]["fault_parts"]
+            assert fault_env.robot.diagnose().healthy is True
+
+            # Subsequent step after recovery runs normally without truncation
+            obs2, _, _, truncated2, info2 = fault_env.step(action)
+            assert truncated2 is False
+            assert "robot_fault" not in info2
+
+            # When truncate_on_fault_recovery=False, recovery still reports info["robot_fault"] without truncating
+            fault_env.config.truncate_on_fault_recovery = False
+            conn._recovery_timestamps.clear()
+            conn._session.state["fault_code"] = 304
+            _, _, _, truncated3, info3 = fault_env.step(action)
+            assert truncated3 is False
+            assert "fault_truncated" not in info3
+            assert info3["robot_fault"]["error_code"] == 304
+        finally:
+            fault_env.close()

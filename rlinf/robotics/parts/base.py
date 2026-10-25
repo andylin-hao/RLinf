@@ -25,6 +25,7 @@ from collections.abc import Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, field
+from enum import Enum
 from functools import partial
 from importlib import import_module
 from typing import (
@@ -65,6 +66,56 @@ Observation = dict[str, Any]
 #: One command, by the names :attr:`action_features` declared, shaped like the
 #: observation it answers.
 Action = Mapping[str, Any]
+
+
+class FaultLevel(str, Enum):
+    """Severity and recoverability of a hardware condition."""
+
+    OK = "ok"
+    MODE_DROP = "mode_drop"
+    RECOVERABLE_FAULT = "recoverable_fault"
+    UNRECOVERABLE_FAULT = "unrecoverable_fault"
+
+
+_FAULT_SEVERITY: dict[FaultLevel, int] = {
+    FaultLevel.OK: 0,
+    FaultLevel.MODE_DROP: 1,
+    FaultLevel.RECOVERABLE_FAULT: 2,
+    FaultLevel.UNRECOVERABLE_FAULT: 3,
+}
+
+
+@dataclass(frozen=True)
+class HealthStatus:
+    """Structured hardware health and fault diagnosis for a connection or robot."""
+
+    healthy: bool = True
+    level: FaultLevel = FaultLevel.OK
+    error_code: int = 0
+    error_message: str = ""
+    fault_parts: tuple[str, ...] = ()
+    details: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def recoverable(self) -> bool:
+        """Whether :meth:`Connection.clear_errors` can clear this condition."""
+        return self.level in (
+            FaultLevel.OK,
+            FaultLevel.MODE_DROP,
+            FaultLevel.RECOVERABLE_FAULT,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a plain dictionary representation of this health status."""
+        return {
+            "healthy": self.healthy,
+            "level": self.level.value,
+            "recoverable": self.recoverable,
+            "error_code": self.error_code,
+            "error_message": self.error_message,
+            "fault_parts": list(self.fault_parts),
+            "details": dict(self.details),
+        }
 
 
 @dataclass(frozen=True)
@@ -133,6 +184,9 @@ class Connection(ABC, metaclass=ConnectionMeta):
 
     #: Cached child parts for stable identity across tree traversals.
     _beneath: "Optional[dict[str, RobotPart]]" = None
+
+    #: Most recent fault-recovery event recorded by this connection, if any.
+    _last_recovery_event: "Optional[dict[str, Any]]" = None
 
     def _open(self) -> Any:
         """Open the hardware and return its vendor handle."""
@@ -246,6 +300,38 @@ class Connection(ABC, metaclass=ConnectionMeta):
 
     def reset(self) -> None:
         """Reset this connection when it has resettable state."""
+
+    def diagnose(self) -> HealthStatus:
+        """Return a structured health and fault diagnosis for this connection."""
+        if self._owner is not None:
+            fn = getattr(self._owner, "diagnose", None)
+            if callable(fn):
+                return fn()
+        if not self.is_connected:
+            return HealthStatus(
+                healthy=False,
+                level=FaultLevel.UNRECOVERABLE_FAULT,
+                error_message=f"{type(self).__name__} is not connected.",
+            )
+        return HealthStatus()
+
+    def clear_errors(self) -> Any:
+        """Clear a latched fault so this connection accepts commands again."""
+        if self._owner is not None:
+            fn = getattr(self._owner, "clear_errors", None)
+            if callable(fn):
+                return fn()
+        return True
+
+    def consume_recovery_event(self) -> Optional[dict[str, Any]]:
+        """Return and clear the most recent fault-recovery event, if any."""
+        if self._owner is not None:
+            fn = getattr(self._owner, "consume_recovery_event", None)
+            if callable(fn):
+                return fn()
+        event = self._last_recovery_event
+        self._last_recovery_event = None
+        return event
 
     # Driver registry
 
@@ -817,6 +903,56 @@ class PartGroup(ControllablePart):
     def reset(self) -> None:
         """Reset every part."""
         self._fan_out(lambda part: part.reset())
+
+    def diagnose(self) -> HealthStatus:
+        """Aggregate health and fault diagnoses across every owning connection."""
+        owners = self.owners()
+        if not owners:
+            return HealthStatus()
+        statuses = [owner.diagnose() for owner in owners]
+        if len(statuses) == 1:
+            return statuses[0]
+        healthy = all(s.healthy for s in statuses)
+        level = max(statuses, key=lambda s: _FAULT_SEVERITY.get(s.level, 0)).level
+        error_code = next((s.error_code for s in statuses if s.error_code != 0), 0)
+        messages = [s.error_message for s in statuses if s.error_message]
+        fault_parts: list[str] = []
+        for s in statuses:
+            for p in s.fault_parts:
+                if p not in fault_parts:
+                    fault_parts.append(p)
+        details = {
+            f"{type(owner).__name__}#{idx + 1}": status.to_dict()
+            for idx, (owner, status) in enumerate(zip(owners, statuses))
+        }
+        return HealthStatus(
+            healthy=healthy,
+            level=level,
+            error_code=error_code,
+            error_message="; ".join(messages),
+            fault_parts=tuple(fault_parts),
+            details=details,
+        )
+
+    def clear_errors(self) -> bool:
+        """Clear latched faults across every owning connection in this group."""
+        ok = True
+        for owner in self.owners():
+            res = owner.clear_errors()
+            if res is False:
+                ok = False
+        return ok
+
+    def consume_recovery_event(self) -> Optional[dict[str, Any]]:
+        """Return and clear any fault-recovery event recorded by owning connections."""
+        events: list[dict[str, Any]] = []
+        for owner in self.owners():
+            event = owner.consume_recovery_event()
+            if event is not None:
+                events.append(event)
+        if not events:
+            return None
+        return events[0] if len(events) == 1 else {"events": events}
 
     def get_observation(self) -> Observation:
         """Read observations into the named part tree."""
