@@ -947,10 +947,6 @@ class R2Connection(Connection):
         enable_shm: bool = False,
         controller_mode: int = R2_MODE_SERVOJ,
         enable_fault_recovery: bool = True,
-        enable_stall_detection: bool = False,
-        stall_position_threshold: float = 0.05,
-        stall_velocity_threshold: float = 0.002,
-        stall_steps_threshold: int = 15,
         max_recovery_attempts: int = 3,
         recovery_cooldown_window: float = 10.0,
         node_name: str = "rlinf_r2_controller",
@@ -1005,10 +1001,6 @@ class R2Connection(Connection):
         self.controller_mode = controller_mode
         self.configure_fault_recovery(
             enable_fault_recovery=enable_fault_recovery,
-            enable_stall_detection=enable_stall_detection,
-            stall_position_threshold=stall_position_threshold,
-            stall_velocity_threshold=stall_velocity_threshold,
-            stall_steps_threshold=stall_steps_threshold,
             max_recovery_attempts=max_recovery_attempts,
             recovery_cooldown_window=recovery_cooldown_window,
         )
@@ -1063,8 +1055,6 @@ class R2Connection(Connection):
         self._last_error_code: int = 0
         self._last_error_msg: str = ""
         self._disabled_slaves: tuple[int, ...] = ()
-        self._stall_counter: int = 0
-        self._prev_actual_joints: Optional[np.ndarray] = None
         self._recovery_timestamps: list[float] = []
 
     def _set_body_dof(self, body_dof: int) -> None:
@@ -1661,8 +1651,6 @@ class R2Connection(Connection):
         self._last_error_code = 0
         self._last_error_msg = ""
         self._disabled_slaves = ()
-        self._stall_counter = 0
-        self._prev_actual_joints = None
         self._recovery_timestamps.clear()
         self._last_recovery_event = None
         if not self._is_real_rframe and hasattr(device, "close"):
@@ -2056,8 +2044,6 @@ class R2Connection(Connection):
         self._cmd_right_gripper = float(snap.right_gripper_position[0])
         self._cmd_left_hand = snap.left_hand_position.copy()
         self._cmd_right_hand = snap.right_hand_position.copy()
-        self._stall_counter = 0
-        self._prev_actual_joints = None
 
     def _apply_cmd_targets(self, name_to_pos: dict[str, float]) -> None:
         """Update cached whole-body command targets from a ``joint_name -> position`` mapping."""
@@ -2118,10 +2104,12 @@ class R2Connection(Connection):
             if "mode" in mock_st:
                 self._active_real_mode = int(mock_st["mode"])
 
-    def _has_active_fault_or_mode_drop(self, *, check_mode: bool = True) -> bool:
+    def _has_active_fault(self, *, check_mode: bool = True) -> bool:
         """Fast non-RPC check for latched faults, disabled axes, or mode drop."""
         self._sync_mock_diagnostics()
         with self._lock:
+            if self._cached_health is not None and not self._cached_health.healthy:
+                return True
             if self._last_error_code != 0:
                 return True
             if len(self._disabled_slaves) > 0:
@@ -2170,7 +2158,6 @@ class R2Connection(Connection):
                 if self._active_real_mode is not None
                 else self.controller_mode
             )
-            stall_steps = self._stall_counter
 
         fault_parts = tuple(
             R2_SLAVE_ADDR_TO_JOINT.get(addr, str(addr)) for addr in disabled_slaves
@@ -2184,11 +2171,7 @@ class R2Connection(Connection):
             or not state.is_healthy
         ):
             level = FaultLevel.RECOVERABLE_FAULT
-        elif (
-            self.controller_mode == R2_MODE_SERVOJ and active_mode != R2_MODE_SERVOJ
-        ) or (
-            self.enable_stall_detection and stall_steps >= self.stall_steps_threshold
-        ):
+        elif self.controller_mode == R2_MODE_SERVOJ and active_mode != R2_MODE_SERVOJ:
             level = FaultLevel.MODE_DROP
         else:
             level = FaultLevel.OK
@@ -2208,8 +2191,6 @@ class R2Connection(Connection):
             reasons.append(
                 f"controller_mode_drop (expected={R2_MODE_SERVOJ}, active={active_mode})"
             )
-        if self.enable_stall_detection and stall_steps >= self.stall_steps_threshold:
-            reasons.append(f"joint_tracking_stall (steps={stall_steps})")
 
         return HealthStatus(
             healthy=(level == FaultLevel.OK),
@@ -2221,7 +2202,6 @@ class R2Connection(Connection):
                 "system_state": sys_state,
                 "controller_mode": active_mode,
                 "disabled_slaves": list(disabled_slaves),
-                "stall_counter": stall_steps,
                 "battery_percentage": state.battery_percentage,
             },
         )
@@ -2236,48 +2216,10 @@ class R2Connection(Connection):
             return event
 
     def _recover_mode(self) -> str:
-        """Synchronize command state and re-assert ServoJ mode after a mode drop or stall."""
+        """Synchronize command state and re-assert ServoJ mode after a mode drop."""
         self._sync_cmd_to_actual()
         self.switch_controller(R2_MODE_SERVOJ)
         return "switch_controller(SERVOJ)"
-
-    def _check_and_recover(self, trigger_reason: str) -> HealthStatus:
-        """Diagnose and execute tiered recovery via :meth:`Connection.recover`."""
-        return self.recover(trigger=trigger_reason)
-
-    def _update_stall_watchdog(self) -> None:
-        """Update the ServoJ joint-tracking stall counter via :meth:`Connection.update_stall_watchdog`."""
-        if not self.enable_fault_recovery or not self.enable_stall_detection:
-            return
-        if (
-            self._cmd_left_arm is None
-            or self._cmd_right_arm is None
-            or self._cmd_waist is None
-        ):
-            return
-        post_state = self.get_state()
-        cmd_vec = np.concatenate(
-            [
-                self._cmd_left_arm,
-                self._cmd_right_arm,
-                self._cmd_waist,
-            ]
-        )
-        act_vec = np.concatenate(
-            [
-                post_state.left_joint_positions,
-                post_state.right_joint_positions,
-                post_state.waist_positions,
-            ]
-        )
-        vel_vec = np.concatenate(
-            [
-                post_state.left_joint_velocities,
-                post_state.right_joint_velocities,
-                post_state.waist_velocities,
-            ]
-        )
-        self.update_stall_watchdog(cmd_vec, act_vec, vel_vec, trigger="servoj_stall")
 
     def _build_whole_body_joint_vector(
         self,
@@ -2337,8 +2279,7 @@ class R2Connection(Connection):
         efforts: Optional[Sequence[float]] = None,
     ) -> None:
         self._require_connected()
-        if self.enable_fault_recovery and self._has_active_fault_or_mode_drop():
-            self._check_and_recover("servoj_fault")
+        self._check_and_recover("servoj_fault")
 
         name_to_pos = {
             str(n): float(p) for n, p in zip(joint_names, positions, strict=False)
@@ -2346,9 +2287,6 @@ class R2Connection(Connection):
         state = self.get_state()
         self._ensure_cmd_state(state)
         is_hand_cmd = any(n.startswith(("HandL_", "HandR_")) for n in name_to_pos)
-        is_body_cmd = any(
-            not n.startswith(("HandL_", "HandR_", "Gripper")) for n in name_to_pos
-        )
         if not is_hand_cmd:
             self._apply_cmd_targets(name_to_pos)
 
@@ -2362,8 +2300,6 @@ class R2Connection(Connection):
             )
             msg.effort = [float(x) for x in efforts] if efforts is not None else []
             channel.send(msg)
-            if is_body_cmd:
-                self._update_stall_watchdog()
             return
 
         if "/robotic/servoj_data" not in self._writers:
@@ -2407,8 +2343,6 @@ class R2Connection(Connection):
         msg.gripper_l = float(np.clip(1.0 - self._cmd_left_gripper, 0.0, 1.0))
         msg.gripper_r = float(np.clip(1.0 - self._cmd_right_gripper, 0.0, 1.0))
         channel.send(msg)
-        if is_body_cmd:
-            self._update_stall_watchdog()
 
     def _call_service(
         self, service_name: str, configure_request: Any, timeout: float = 5.0
@@ -2517,7 +2451,7 @@ class R2Connection(Connection):
             self._disabled_slaves = ()
             self._system_state_code = 2
             self._state.is_healthy = True
-            self._stall_counter = 0
+            self._cached_health = None
         self.switch_controller(self.controller_mode)
         return bool(getattr(resp, "success", True))
 
@@ -2717,10 +2651,8 @@ class R2Connection(Connection):
         max_velocity: Optional[np.ndarray] = None,
     ) -> bool:
         """Execute a point-to-point joint trajectory on the left arm via ``MoveJ``."""
-        if self.enable_fault_recovery and self._has_active_fault_or_mode_drop(
-            check_mode=False
-        ):
-            self._check_and_recover("movej_precheck")
+        if self.enable_fault_recovery and self._has_active_fault(check_mode=False):
+            self.recover("movej_precheck")
         q = np.asarray(positions, dtype=np.float32).reshape(7)
         self._ensure_cmd_state(self.get_state())
         self._cmd_left_arm = q.copy()
@@ -2741,7 +2673,7 @@ class R2Connection(Connection):
             err = getattr(resp, "error_code", None)
             ok = bool(getattr(err, "code", 0) == 0) if err is not None else True
             if not ok and self.enable_fault_recovery:
-                self._check_and_recover("movej_retry")
+                self.recover("movej_retry")
                 self._cmd_left_arm = q.copy()
                 if self._is_real_rframe and self._active_real_mode != R2_MODE_HOLD:
                     self.switch_controller(R2_MODE_HOLD)
@@ -2767,7 +2699,7 @@ class R2Connection(Connection):
         )
         ok = bool(getattr(resp, "success", True))
         if not ok and self.enable_fault_recovery:
-            self._check_and_recover("movej_retry")
+            self.recover("movej_retry")
             self._cmd_left_arm = q.copy()
             resp = self._call_service(
                 "/Motion/MoveJ", _fill, timeout=max(duration + 5.0, 5.0)
@@ -2783,10 +2715,8 @@ class R2Connection(Connection):
         max_velocity: Optional[np.ndarray] = None,
     ) -> bool:
         """Execute a point-to-point joint trajectory on the right arm via ``MoveJ``."""
-        if self.enable_fault_recovery and self._has_active_fault_or_mode_drop(
-            check_mode=False
-        ):
-            self._check_and_recover("movej_precheck")
+        if self.enable_fault_recovery and self._has_active_fault(check_mode=False):
+            self.recover("movej_precheck")
         q = np.asarray(positions, dtype=np.float32).reshape(7)
         self._ensure_cmd_state(self.get_state())
         self._cmd_right_arm = q.copy()
@@ -2807,7 +2737,7 @@ class R2Connection(Connection):
             err = getattr(resp, "error_code", None)
             ok = bool(getattr(err, "code", 0) == 0) if err is not None else True
             if not ok and self.enable_fault_recovery:
-                self._check_and_recover("movej_retry")
+                self.recover("movej_retry")
                 self._cmd_right_arm = q.copy()
                 if self._is_real_rframe and self._active_real_mode != R2_MODE_HOLD:
                     self.switch_controller(R2_MODE_HOLD)
@@ -2833,7 +2763,7 @@ class R2Connection(Connection):
         )
         ok = bool(getattr(resp, "success", True))
         if not ok and self.enable_fault_recovery:
-            self._check_and_recover("movej_retry")
+            self.recover("movej_retry")
             self._cmd_right_arm = q.copy()
             resp = self._call_service(
                 "/Motion/MoveJ", _fill, timeout=max(duration + 5.0, 5.0)

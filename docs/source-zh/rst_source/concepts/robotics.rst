@@ -134,16 +134,21 @@ env 需要把具名机器人数据转换为 policy 使用的观测和动作格�
 故障检测机制
 ^^^^^^^^^^^^
 
-高频关节或笛卡尔控制通常运行在 50–100 Hz。如果每一步下发指令前都通过同步服务调用去查询控制器状态，通信耗时就会阻塞控制回路。为此，底层连接在后台订阅控制器的状态话题，将当前控制模式、系统状态、错误码和各关节轴使能状态缓存在内存中。每次下发指令前，驱动只读取内存里的这些状态值。正常运行时，单步检查只是几次内存数值比较，不发起任何远程调用，因此不会影响高频控制的实时性。
+高频关节或笛卡尔控制通常运行在 50–100 Hz。如果每次下发指令前都额外发起一次同步远程调用或串口往返去查询控制器状态，通信耗时就会阻塞控制回路。为此，``Connection`` 将故障的“采集上报”与下发指令前的“状态检查”解耦，通过内存中的健康状态缓存同时兼容 ROS 和非 ROS 机器人：
 
-只有当内存中的状态值出现异常，或者外部主动调用 ``robot.diagnose()`` 时，连接才会生成完整的 ``HealthStatus`` 诊断结果，并按 ``FaultLevel`` 将当前状态分为四类：
+1. **异步状态回调或 SDK 后台线程**\ （如 ROS/RFrame 状态话题、UDP 状态广播或 SocketCAN 监听线程）：当后台回调收到错误帧或控制模式切换时，调用 ``self.report_health(...)`` 将 ``HealthStatus`` 记入内存。
+2. **随观测帧捎带的状态字节**\ （如 RS-485/TTL 串口舵机或 CANopen PDO 报文，在读取关节角的同时已在返回帧中包含错误位图）：当 ``get_observation()`` 通过 ``get_state()`` 读取最新硬件状态时，``Connection.read_state()`` 会自动把该状态传给 ``_inspect_state_health(state)`` 并更新内存中的健康状态，无需发起第二次总线读取。
+
+每次下发控制指令前，框架只检查内存里缓存的健康状态。正常运行时，单步检查只是一次内存读取，不增加任何 RPC 或总线通信耗时，因此不会影响 50–100 Hz 高频控制的实时性。
+
+当内存缓存记录了故障，或者外部主动调用 ``robot.diagnose()`` 时，连接会返回 ``HealthStatus`` 诊断结果，并按 ``FaultLevel`` 将当前状态分为四类：
 
 - ``FaultLevel.OK``：控制器正常，能够响应控制指令。
-- ``FaultLevel.MODE_DROP``：未触发硬件报错，但控制器退出了流式控制模式，或关节跟踪发生停滞。
+- ``FaultLevel.MODE_DROP``：未触发硬件报错，但控制器退出了流式控制模式。
 - ``FaultLevel.RECOVERABLE_FAULT``：触发了关节限位、速度超限或自碰撞等保护，或有关节轴掉使能，可通过软件清除。
 - ``FaultLevel.UNRECOVERABLE_FAULT``：触发急停、安全锁或连接断开，无法由软件清除，需要人工处理。
 
-控制器上报的错误码、轴掉使能和控制模式退出都是明确的硬件状态，不会产生误报，因此自动故障恢复（``enable_fault_recovery``）默认开启。除硬件上报的状态外，连接还提供可选的关节跟踪停滞检测（``enable_stall_detection``）：如果关节目标角与实测角的误差连续 ``stall_steps_threshold`` 步超过 ``stall_position_threshold``，且关节实测速度低于 ``stall_velocity_threshold``，就判定为跟踪停滞。由于慢速精细对齐或柔顺接触时也可能出现类似状态，为避免误触发恢复，``enable_stall_detection`` 默认关闭（``false``），有需要时可在硬件配置中开启并调整阈值：
+由于控制器上报的错误码、轴掉使能和控制模式退出都是明确的硬件状态，不会产生误报，因此自动故障恢复（``enable_fault_recovery``）默认开启，可在硬件 YAML 配置或运行时通过 ``robot.configure_fault_recovery(...)`` 调整：
 
 .. code-block:: yaml
 
@@ -151,10 +156,6 @@ env 需要把具名机器人数据转换为 policy 使用的观测和动作格�
      type: R2
      config:
        enable_fault_recovery: true
-       enable_stall_detection: false
-       stall_position_threshold: 0.05
-       stall_velocity_threshold: 0.002
-       stall_steps_threshold: 15
        max_recovery_attempts: 3
        recovery_cooldown_window: 10.0
 
@@ -167,9 +168,56 @@ env 需要把具名机器人数据转换为 policy 使用的观测和动作格�
 - ``FaultLevel.RECOVERABLE_FAULT``：依次清除控制器错误码、重新为掉使能的关节轴上使能，再切回流式控制模式。
 - ``FaultLevel.UNRECOVERABLE_FAULT``：直接抛出 ``RuntimeError`` 停止运行；对于可恢复故障，如果在 ``recovery_cooldown_window`` 秒内连续触发恢复超过 ``max_recovery_attempts`` 次，说明故障原因仍未消除，熔断机制也会停止重试并抛出 ``RuntimeError``。
 
-恢复过程中还有一个关键问题：故障发生后机器人停在原地，但上层算法可能还在继续更新目标位置。如果重新上使能后直接发送旧目标，机械臂就会突然朝旧目标猛冲。为了避免跳变，底层连接在重新上使能或切回控制模式前，会先用机器人当前的实测关节角覆盖内部缓存的目标关节角。这样恢复后的第一帧指令就是当前姿态，机器人会平稳停在原位。
+恢复过程中还需要防止位置跳变：故障发生后机器人停在原地，但上层策略可能还在继续更新目标关节角。如果重新上使能后直接发送旧目标，机械臂就会突然朝旧目标猛冲。为了避免跳变，底层连接在重新上使能或切回流式控制模式前，会先用机器人当前的实测关节角覆盖内部缓存的目标关节角。这样恢复后的第一帧指令就是当前姿态，机器人会平稳停在原位。
 
-对控制回路而言，无故障运行时没有任何额外耗时；只有在故障实际触发的那一个 step，清错、上使能和切模式这几次同步服务调用会让控制流暂停约 50–300 ms，期间机器人保持原位，随后即可继续接收后续指令。在遥操作或测试脚本中，操作可以直接继续，不必重启程序；但在强化学习数据采集中，中间这几十到几百毫秒的停顿会使当前 step 的状态转移不再连续。因此，env 会在每个 step 结束时检查刚才是否发生过自动恢复，将故障信息记入 ``info["robot_fault"]``，并在开启 ``truncate_on_fault_recovery`` 时将该 step 标记为 ``truncated=True``，通知 rollout runner 结束当前轨迹并在下一轮采样前复位机器人。
+对控制回路而言，无故障运行时没有任何额外耗时；只有在故障实际触发的那一个 step，清错、上使能和切模式这几次同步恢复调用会让控制流暂停约 50–300 ms，期间机器人保持原位，随后即可继续接收后续指令。在遥操作或评估脚本中，操作可以直接继续，不必重启程序；但在强化学习数据采集中，中间这几十到几百毫秒的停顿会使当前 step 的状态转移不再连续。因此，env 会在每个 step 结束时检查刚才是否发生过自动恢复，将故障信息记入 ``info["robot_fault"]``，并在开启 ``truncate_on_fault_recovery`` 时将该 step 标记为 ``truncated=True``，通知 rollout runner 结束当前轨迹并在下一轮采样前复位机器人。
+
+为新机器人接入故障检测与恢复
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+为新机器人驱动（任何继承自 ``Connection`` 或 ``ControllablePart`` 的类）接入这套故障检测与自动恢复接口时，只需根据硬件通信方式二选一上报故障，并实现 ``clear_errors()``：
+
+- **方式一（异步回调或后台线程）**：在后台状态监听回调中调用 ``self.report_health(HealthStatus(...))``。
+- **方式二（观测帧捎带状态位）**：重写 ``_inspect_state_health(self, state) -> HealthStatus | None``，从 ``get_state()`` 返回的硬件状态中提取错误字段。
+- **恢复动作**：实现 ``clear_errors(self) -> bool``，在其中将内部目标角同步到实测角、清除驱动器报错并恢复控制模式（若控制模式掉线可单独切回而不必清错，还可按需重写 ``_recover_mode(self) -> str``）。
+
+.. code-block:: python
+
+   from rlinf.robotics import ControllablePart, FaultLevel, HealthStatus
+
+
+   class MyArmDriver(ControllablePart):
+       # 方式二：在每次读取观测状态时检查随帧捎带的错误码
+       def _inspect_state_health(self, state: dict) -> HealthStatus:
+           err = int(state.get("error_code", 0))
+           if err != 0:
+               return HealthStatus(
+                   healthy=False,
+                   level=FaultLevel.RECOVERABLE_FAULT,
+                   error_code=err,
+                   error_message=f"drive fault {err}",
+               )
+           return HealthStatus(healthy=True)
+
+       # 或方式一：在 SDK 异步状态回调中调用 self.report_health(...)
+       def _on_sdk_error_callback(self, err_code: int, msg: str) -> None:
+           self.report_health(
+               HealthStatus(
+                   healthy=(err_code == 0),
+                   level=FaultLevel.RECOVERABLE_FAULT
+                   if err_code
+                   else FaultLevel.OK,
+                   error_code=err_code,
+                   error_message=msg,
+               )
+           )
+
+       def clear_errors(self) -> bool:
+           self._sync_cmd_to_actual()
+           self._sdk.reset_faults()
+           return True
+
+实现上述方法后，``robot.diagnose()``、``robot.recover()``、下发指令前的自动检查与分级恢复、冷却窗口熔断以及 ``robot.consume_recovery_event()`` 都会自动生效，无需再编写额外调度逻辑。
 
 任务代码不依赖部署位置
 ----------------------

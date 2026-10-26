@@ -4938,8 +4938,6 @@ def test_r2_reach_env_dummy_and_faked_sdk(monkeypatch):
             node_rank=0,
             cameras=[],
             enable_fault_recovery=True,
-            enable_stall_detection=True,
-            stall_steps_threshold=3,
         )
         fault_env = R2ReachEnv(
             override_cfg={

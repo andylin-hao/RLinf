@@ -210,22 +210,33 @@ How Fault Detection Works
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
 High-frequency joint or Cartesian control typically runs at 50–100 Hz. Querying
-controller health through a synchronous RPC on every step would block the
-control loop. Instead, the connection subscribes to the controller's status
-topics in the background and caches the active control mode, system state,
-error code, and per-axis enable flags in memory. Before sending each command,
-the driver only checks those cached values in memory. When the robot is
-healthy, the check is a few in-memory comparisons and adds no RPC latency to
-high-frequency control.
+controller health through an extra synchronous RPC or serial round-trip before
+every command would block the control loop. Instead, ``Connection`` separates
+fault *reporting* from pre-command *checking* through an in-memory health latch
+that supports both ROS and non-ROS hardware:
 
-Only when a cached value indicates an anomaly, or when you call
-``robot.diagnose()`` explicitly, does the connection assemble a full
-``HealthStatus`` diagnostic result and classify the state into one of four
-``FaultLevel`` values:
+1. **Asynchronous callbacks or SDK background threads** (such as ROS/RFrame
+   status topics, UDP state broadcasts, or a SocketCAN listener thread): when
+   the background callback receives an error frame or mode change, it records a
+   ``HealthStatus`` in memory via ``self.report_health(...)``.
+2. **Observation frame piggybacking** (such as RS-485/TTL serial servos or
+   CANopen PDO frames whose state-read response already includes an error
+   bitmask alongside joint angles): when ``get_observation()`` reads a fresh
+   hardware frame via ``get_state()``, ``Connection.read_state()``
+   automatically passes that state to ``_inspect_state_health(state)`` and
+   updates the in-memory health status without a second bus transaction.
+
+Before sending each command, the framework only checks that cached in-memory
+fault state. When the robot is healthy, the check is an in-memory read and adds
+no RPC or bus latency to 50–100 Hz control.
+
+When a fault is latched, or when you call ``robot.diagnose()`` explicitly, the
+connection returns a ``HealthStatus`` that classifies the state into one of
+four ``FaultLevel`` values:
 
 - ``FaultLevel.OK``: the controller is healthy and responding to commands.
 - ``FaultLevel.MODE_DROP``: no hardware error is latched, but the controller
-  exited its streaming control mode or stalled while tracking joint targets.
+  exited its streaming control mode.
 - ``FaultLevel.RECOVERABLE_FAULT``: a motion protection check (such as a joint
   limit, velocity limit, or self-collision check) triggered or an axis dropped
   its enable state, which can be cleared in software.
@@ -233,17 +244,10 @@ Only when a cached value indicates an anomaly, or when you call
   connection occurred, which cannot be cleared in software and requires human
   intervention.
 
-Controller error codes, disabled axes, and mode drops are deterministic signals
-from the hardware controller and do not produce false positives, so automatic
-fault recovery (``enable_fault_recovery``) is enabled by default. In addition
-to hardware-reported faults, the connection provides an optional joint-tracking
-stall detector (``enable_stall_detection``): it triggers when the error between
-target and measured joint angles stays above ``stall_position_threshold`` while
-measured joint velocity stays below ``stall_velocity_threshold`` for
-``stall_steps_threshold`` consecutive steps. Because slow fine alignment or
-compliant contact can also match that condition, ``enable_stall_detection`` is
-disabled (``false``) by default to avoid false recoveries, and can be enabled
-and tuned in the hardware configuration when needed:
+Because controller error codes, disabled axes, and mode drops are deterministic
+hardware signals that do not produce false positives, automatic fault recovery
+(``enable_fault_recovery``) is enabled by default and can be configured in the
+hardware YAML or at runtime via ``robot.configure_fault_recovery(...)``:
 
 .. code-block:: yaml
 
@@ -251,10 +255,6 @@ and tuned in the hardware configuration when needed:
      type: R2
      config:
        enable_fault_recovery: true
-       enable_stall_detection: false
-       stall_position_threshold: 0.05
-       stall_velocity_threshold: 0.002
-       stall_steps_threshold: 15
        max_recovery_attempts: 3
        recovery_cooldown_window: 10.0
 
@@ -284,17 +284,76 @@ joint angles. The first command after recovery therefore holds the robot at its
 current pose.
 
 During fault-free operation, this mechanism adds no delay to the control loop.
-Only on the step where a fault actually occurs do the synchronous service calls
-(clearing errors, enabling axes, and switching modes) pause the command stream
-for roughly 50–300 ms while the robot stays in place, after which subsequent
-commands resume normally. In teleoperation or evaluation scripts, execution
-continues without restarting the program. In reinforcement learning data
-collection, however, a 50–300 ms pause breaks the transition continuity of that
-step. At the end of each step, the environment checks whether an automatic
+Only on the step where a fault actually occurs do the synchronous recovery
+calls (clearing errors, enabling axes, and switching modes) pause the command
+stream for roughly 50–300 ms while the robot stays in place, after which
+subsequent commands resume normally. In teleoperation or evaluation scripts,
+execution continues without restarting the program. In reinforcement learning
+data collection, however, a 50–300 ms pause breaks the transition continuity of
+that step. At the end of each step, the environment checks whether an automatic
 recovery occurred, records the fault details in ``info["robot_fault"]``, and
 when ``truncate_on_fault_recovery`` is enabled, marks the step with
 ``truncated=True`` so the rollout runner ends the interrupted trajectory and
 resets the robot before the next episode.
+
+Integrating Fault Detection for a New Robot
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+To add fault detection and automatic recovery to a new robot driver (any
+``Connection`` or ``ControllablePart`` subclass), implement one of the two
+fault-reporting patterns together with ``clear_errors()``:
+
+- **Pattern 1 (asynchronous callback or background thread)**: call
+  ``self.report_health(HealthStatus(...))`` whenever the background listener
+  receives a fault or mode change.
+- **Pattern 2 (observation frame piggybacking)**: override
+  ``_inspect_state_health(self, state) -> HealthStatus | None`` to inspect the
+  error field already present in the state returned by ``get_state()``.
+- **Recovery action**: implement ``clear_errors(self) -> bool`` to sync cached
+  command targets to measured joint angles, clear the drive fault, and restore
+  control mode (and optionally override ``_recover_mode(self) -> str`` when
+  mode drops can be restored without a full fault reset).
+
+.. code-block:: python
+
+   from rlinf.robotics import ControllablePart, FaultLevel, HealthStatus
+
+
+   class MyArmDriver(ControllablePart):
+       # Pattern 2: inspect the error bitmask piggybacked on each state read
+       def _inspect_state_health(self, state: dict) -> HealthStatus:
+           err = int(state.get("error_code", 0))
+           if err != 0:
+               return HealthStatus(
+                   healthy=False,
+                   level=FaultLevel.RECOVERABLE_FAULT,
+                   error_code=err,
+                   error_message=f"drive fault {err}",
+               )
+           return HealthStatus(healthy=True)
+
+       # Or Pattern 1: call self.report_health(...) from an async SDK callback
+       def _on_sdk_error_callback(self, err_code: int, msg: str) -> None:
+           self.report_health(
+               HealthStatus(
+                   healthy=(err_code == 0),
+                   level=FaultLevel.RECOVERABLE_FAULT
+                   if err_code
+                   else FaultLevel.OK,
+                   error_code=err_code,
+                   error_message=msg,
+               )
+           )
+
+       def clear_errors(self) -> bool:
+           self._sync_cmd_to_actual()
+           self._sdk.reset_faults()
+           return True
+
+With those methods in place, ``robot.diagnose()``, ``robot.recover()``,
+pre-command automatic recovery, the cooldown circuit breaker, and
+``robot.consume_recovery_event()`` work automatically without additional
+plumbing.
 
 Keep Placement Out of Task Code
 -------------------------------

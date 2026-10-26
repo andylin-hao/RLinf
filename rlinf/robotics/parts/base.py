@@ -38,8 +38,6 @@ from typing import (
     overload,
 )
 
-import numpy as np
-
 from rlinf.utils.logging import get_logger
 
 _KeyType = TypeVar("_KeyType")
@@ -191,29 +189,15 @@ class Connection(ABC, metaclass=ConnectionMeta):
     #: Whether automatic fault recovery is enabled on this connection.
     enable_fault_recovery: bool = True
 
-    #: Whether the heuristic joint-tracking stall watchdog is enabled.
-    enable_stall_detection: bool = False
-
-    #: Minimum command-to-actual position error (rad) required to count a step as stalled.
-    stall_position_threshold: float = 0.05
-
-    #: Maximum actual joint motion (rad or rad/s) below which a step is considered stalled.
-    stall_velocity_threshold: float = 0.002
-
-    #: Consecutive stalled streaming steps required before triggering stall recovery.
-    stall_steps_threshold: int = 15
-
     #: Maximum automatic recovery attempts allowed within :attr:`recovery_cooldown_window`.
     max_recovery_attempts: int = 3
 
     #: Sliding time window (seconds) used by the recovery circuit breaker.
     recovery_cooldown_window: float = 10.0
 
-    #: Consecutive stalled streaming steps recorded by :meth:`update_stall_watchdog`.
-    _stall_counter: int = 0
-
-    #: Previous actual joint vector recorded by :meth:`update_stall_watchdog`.
-    _prev_actual_joints: Optional[np.ndarray] = None
+    #: Latest health snapshot reported in memory by callbacks or state reads.
+    _cached_health: Optional[HealthStatus] = None
+    _pre_command_checked: bool = False
 
     #: Monotonic timestamps of recent automatic recovery attempts.
     _recovery_timestamps: "Optional[list[float]]" = None
@@ -334,6 +318,51 @@ class Connection(ABC, metaclass=ConnectionMeta):
     def reset(self) -> None:
         """Reset this connection when it has resettable state."""
 
+    def report_health(self, status: Optional[HealthStatus]) -> None:
+        """Record the latest hardware health snapshot in memory without blocking I/O.
+
+        Drivers with asynchronous status callbacks (such as ROS topics, RFrame
+        streams, or UDP/CAN SDK threads) or state-piggybacked reads can call
+        this method to update the cached health checked before each command.
+        """
+        if self._owner is not None:
+            self._owner.report_health(status)
+            return
+        self._cached_health = status
+
+    def _inspect_state_health(self, state: Any) -> Optional[HealthStatus]:
+        """Extract health status from a hardware state reading when piggybacked.
+
+        Override this hook on drivers whose status flags arrive inside the
+        normal :meth:`get_state` response packet (such as serial servo buses or
+        PDO frames). :meth:`read_state` passes each fresh hardware reading here
+        and caches any returned :class:`HealthStatus` via :meth:`report_health`.
+        """
+        return None
+
+    def _has_active_fault(self) -> bool:
+        """Fast non-blocking in-memory check for an active fault or mode drop.
+
+        Called before dispatching commands when :attr:`enable_fault_recovery`
+        is ``True``. Must only inspect in-memory state so high-frequency
+        control loops incur no RPC or bus latency.
+        """
+        if self._owner is not None:
+            return self._owner._has_active_fault()
+        return self._cached_health is not None and not self._cached_health.healthy
+
+    def _check_and_recover(
+        self, trigger: str = "pre_command"
+    ) -> Optional[HealthStatus]:
+        """Check in-memory fault state and run :meth:`recover` when faulted."""
+        if self._owner is not None:
+            return self._owner._check_and_recover(trigger)
+        if self._pre_command_checked:
+            return None
+        if self.enable_fault_recovery and self._has_active_fault():
+            return self.recover(trigger=trigger)
+        return None
+
     def diagnose(self) -> HealthStatus:
         """Return a structured health and fault diagnosis for this connection."""
         if self._owner is not None:
@@ -346,6 +375,8 @@ class Connection(ABC, metaclass=ConnectionMeta):
                 level=FaultLevel.UNRECOVERABLE_FAULT,
                 error_message=f"{type(self).__name__} is not connected.",
             )
+        if self._cached_health is not None:
+            return self._cached_health
         return HealthStatus()
 
     def clear_errors(self) -> Any:
@@ -370,22 +401,14 @@ class Connection(ABC, metaclass=ConnectionMeta):
         config: Optional[Any] = None,
         *,
         enable_fault_recovery: Optional[bool] = None,
-        enable_stall_detection: Optional[bool] = None,
-        stall_position_threshold: Optional[float] = None,
-        stall_velocity_threshold: Optional[float] = None,
-        stall_steps_threshold: Optional[int] = None,
         max_recovery_attempts: Optional[int] = None,
         recovery_cooldown_window: Optional[float] = None,
     ) -> None:
-        """Configure fault-detection switches, stall thresholds, and circuit-breaker limits."""
+        """Configure automatic fault-recovery switches and circuit-breaker limits."""
         if self._owner is not None:
             self._owner.configure_fault_recovery(
                 config,
                 enable_fault_recovery=enable_fault_recovery,
-                enable_stall_detection=enable_stall_detection,
-                stall_position_threshold=stall_position_threshold,
-                stall_velocity_threshold=stall_velocity_threshold,
-                stall_steps_threshold=stall_steps_threshold,
                 max_recovery_attempts=max_recovery_attempts,
                 recovery_cooldown_window=recovery_cooldown_window,
             )
@@ -401,10 +424,6 @@ class Connection(ABC, metaclass=ConnectionMeta):
                     k: getattr(config, k)
                     for k in (
                         "enable_fault_recovery",
-                        "enable_stall_detection",
-                        "stall_position_threshold",
-                        "stall_velocity_threshold",
-                        "stall_steps_threshold",
                         "max_recovery_attempts",
                         "recovery_cooldown_window",
                     )
@@ -416,10 +435,6 @@ class Connection(ABC, metaclass=ConnectionMeta):
 
         overrides = {
             "enable_fault_recovery": enable_fault_recovery,
-            "enable_stall_detection": enable_stall_detection,
-            "stall_position_threshold": stall_position_threshold,
-            "stall_velocity_threshold": stall_velocity_threshold,
-            "stall_steps_threshold": stall_steps_threshold,
             "max_recovery_attempts": max_recovery_attempts,
             "recovery_cooldown_window": recovery_cooldown_window,
         }
@@ -429,23 +444,6 @@ class Connection(ABC, metaclass=ConnectionMeta):
 
         if "enable_fault_recovery" in settings:
             self.enable_fault_recovery = bool(settings["enable_fault_recovery"])
-        if "enable_stall_detection" in settings:
-            self.enable_stall_detection = bool(settings["enable_stall_detection"])
-        if "stall_position_threshold" in settings:
-            val = float(settings["stall_position_threshold"])
-            if val <= 0.0:
-                raise ValueError(f"stall_position_threshold must be > 0, got {val!r}.")
-            self.stall_position_threshold = val
-        if "stall_velocity_threshold" in settings:
-            val = float(settings["stall_velocity_threshold"])
-            if val < 0.0:
-                raise ValueError(f"stall_velocity_threshold must be >= 0, got {val!r}.")
-            self.stall_velocity_threshold = val
-        if "stall_steps_threshold" in settings:
-            steps = int(settings["stall_steps_threshold"])
-            if steps < 1:
-                raise ValueError(f"stall_steps_threshold must be >= 1, got {steps!r}.")
-            self.stall_steps_threshold = steps
         if "max_recovery_attempts" in settings:
             attempts = int(settings["max_recovery_attempts"])
             if attempts < 1:
@@ -469,7 +467,6 @@ class Connection(ABC, metaclass=ConnectionMeta):
                 return fn(trigger=trigger)
         status = self.diagnose()
         if status.healthy:
-            self._stall_counter = 0
             return status
 
         logger = get_logger()
@@ -500,7 +497,7 @@ class Connection(ABC, metaclass=ConnectionMeta):
         attempt = len(self._recovery_timestamps)
         if status.level == FaultLevel.MODE_DROP:
             logger.warning(
-                f"{cls_name} mode drop / tracking stall detected ({trigger}, attempt "
+                f"{cls_name} mode drop detected ({trigger}, attempt "
                 f"{attempt}/{self.max_recovery_attempts}): {status.error_message}."
             )
             res = self._recover_mode()
@@ -513,7 +510,7 @@ class Connection(ABC, metaclass=ConnectionMeta):
             res = self.clear_errors()
             action = res if isinstance(res, str) else "clear_errors"
 
-        self._stall_counter = 0
+        self._cached_health = None
         self._last_recovery_event = {
             "trigger": trigger,
             "action": action,
@@ -522,51 +519,6 @@ class Connection(ABC, metaclass=ConnectionMeta):
             **status.to_dict(),
         }
         return self.diagnose()
-
-    def update_stall_watchdog(
-        self,
-        commanded: Any,
-        actual: Any,
-        velocities: Optional[Any] = None,
-        *,
-        trigger: str = "stall_watchdog",
-    ) -> Optional[HealthStatus]:
-        """Update the joint-tracking stall counter and trigger :meth:`recover` on stall."""
-        if not self.enable_fault_recovery or not self.enable_stall_detection:
-            return None
-        cmd_vec = np.asarray(commanded, dtype=np.float32).reshape(-1)
-        act_vec = np.asarray(actual, dtype=np.float32).reshape(-1)
-        if cmd_vec.size == 0 or cmd_vec.size != act_vec.size:
-            return None
-
-        cmd_delta = float(np.max(np.abs(cmd_vec - act_vec)))
-        if (
-            self._prev_actual_joints is not None
-            and self._prev_actual_joints.shape == act_vec.shape
-        ):
-            pos_step_delta = float(np.max(np.abs(act_vec - self._prev_actual_joints)))
-        else:
-            pos_step_delta = 0.0
-
-        meas_vel = 0.0
-        if velocities is not None:
-            vel_vec = np.asarray(velocities, dtype=np.float32).reshape(-1)
-            if vel_vec.size > 0:
-                meas_vel = float(np.max(np.abs(vel_vec)))
-
-        vel_delta = max(pos_step_delta, meas_vel)
-        self._prev_actual_joints = act_vec.copy()
-        if (
-            cmd_delta > self.stall_position_threshold
-            and vel_delta < self.stall_velocity_threshold
-        ):
-            self._stall_counter += 1
-        else:
-            self._stall_counter = 0
-
-        if self._stall_counter >= self.stall_steps_threshold:
-            return self.recover(trigger=trigger)
-        return None
 
     def consume_recovery_event(self) -> Optional[dict[str, Any]]:
         """Return and clear the most recent fault-recovery event, if any."""
@@ -646,6 +598,15 @@ class Connection(ABC, metaclass=ConnectionMeta):
         """
         return set()
 
+    def _fetch_state_and_health(self) -> Any:
+        """Read hardware state once and update cached health when piggybacked."""
+        state = self.get_state()
+        if type(self)._inspect_state_health is not Connection._inspect_state_health:
+            status = self._inspect_state_health(state)
+            if status is not None:
+                self.report_health(status)
+        return state
+
     def read_state(self) -> Any:
         """This connection's state, shared for the duration of one read.
 
@@ -656,10 +617,10 @@ class Connection(ABC, metaclass=ConnectionMeta):
         that wants fresh state always gets it.
         """
         if self._state_snapshot is None:
-            return self.get_state()
+            return self._fetch_state_and_health()
         if not self._state_snapshot:
             # First reader inside the snapshot pays for the hardware read.
-            self._state_snapshot.append(self.get_state())
+            self._state_snapshot.append(self._fetch_state_and_health())
         return self._state_snapshot[0]
 
     def read_subtree(self, kind: str) -> dict[str, Any]:
@@ -1042,7 +1003,24 @@ class PartGroup(ControllablePart):
         """Apply a part's fields and route child branches recursively."""
         riders = part.children
         own = {name: value for name, value in action.items() if name not in riders}
-        applied: dict[str, Any] = dict(part.send_action(own)) if own else {}
+        if own:
+            owner = None if isinstance(part, PartGroup) else part.owner
+            if (
+                isinstance(owner, Connection)
+                and owner._group is None
+                and owner.is_connected
+            ):
+                owner._check_and_recover("pre_command")
+                owner._pre_command_checked = True
+                try:
+                    sent = part.send_action(own)
+                finally:
+                    owner._pre_command_checked = False
+            else:
+                sent = part.send_action(own)
+            applied: dict[str, Any] = dict(sent) if sent is not None else {}
+        else:
+            applied = {}
         for name, value in action.items():
             if name not in riders:
                 continue
@@ -1193,10 +1171,6 @@ class PartGroup(ControllablePart):
         config: Optional[Any] = None,
         *,
         enable_fault_recovery: Optional[bool] = None,
-        enable_stall_detection: Optional[bool] = None,
-        stall_position_threshold: Optional[float] = None,
-        stall_velocity_threshold: Optional[float] = None,
-        stall_steps_threshold: Optional[int] = None,
         max_recovery_attempts: Optional[int] = None,
         recovery_cooldown_window: Optional[float] = None,
     ) -> None:
@@ -1205,10 +1179,6 @@ class PartGroup(ControllablePart):
             owner.configure_fault_recovery(
                 config,
                 enable_fault_recovery=enable_fault_recovery,
-                enable_stall_detection=enable_stall_detection,
-                stall_position_threshold=stall_position_threshold,
-                stall_velocity_threshold=stall_velocity_threshold,
-                stall_steps_threshold=stall_steps_threshold,
                 max_recovery_attempts=max_recovery_attempts,
                 recovery_cooldown_window=recovery_cooldown_window,
             )

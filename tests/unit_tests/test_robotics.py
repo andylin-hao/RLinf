@@ -7294,20 +7294,25 @@ def test_r2_connection_and_robot_variants_run_on_faked_rframe():
 
 
 def test_r2_fault_diagnosis_and_configurable_auto_recovery():
-    """R2Robot and R2Connection diagnose faults, auto-recover when enabled, and respect thresholds."""
+    """R2Robot, R2Connection, and generic Connections diagnose faults and auto-recover via Case 1 and Case 2."""
     import numpy as np
     import pytest
     from robot_mocks import mocked_sdks
 
-    from rlinf.robotics import FaultLevel, HealthStatus, R2Config, R2Robot
+    from rlinf.robotics import (
+        ControllablePart,
+        FaultLevel,
+        HealthStatus,
+        R2Config,
+        R2Robot,
+        Robot,
+    )
     from rlinf.robotics.parts.arms.r2 import R2_MODE_HOLD, R2Connection
 
     default_cfg = R2Config(node_rank=0)
     assert default_cfg.enable_fault_recovery is True
-    assert default_cfg.enable_stall_detection is False
     default_conn = R2Connection()
     assert default_conn.enable_fault_recovery is True
-    assert default_conn.enable_stall_detection is False
 
     with mocked_sdks():
         conn = R2Connection(
@@ -7315,10 +7320,6 @@ def test_r2_fault_diagnosis_and_configurable_auto_recovery():
             end_effector_type="gripper",
             cameras=(),
             enable_fault_recovery=True,
-            enable_stall_detection=True,
-            stall_position_threshold=0.05,
-            stall_velocity_threshold=0.002,
-            stall_steps_threshold=3,
             max_recovery_attempts=2,
             recovery_cooldown_window=10.0,
         )
@@ -7373,37 +7374,7 @@ def test_r2_fault_diagnosis_and_configurable_auto_recovery():
                 robot.get_observation()["left"]["arm"]["joint_position"], next_q
             )
 
-            # 4. Stall watchdog: triggers after stall_steps_threshold=3 stalled ServoJ steps
-            conn._recovery_timestamps.clear()
-            conn._session.state["stalled"] = True
-            stall_target = np.full(7, 0.6, dtype=np.float32)
-            robot.send_action({"left": {"arm": {"joint_position": stall_target}}})
-            assert robot.consume_recovery_event() is None
-            robot.send_action({"left": {"arm": {"joint_position": stall_target}}})
-            assert robot.consume_recovery_event() is None
-            robot.send_action({"left": {"arm": {"joint_position": stall_target}}})
-            stall_event = robot.consume_recovery_event()
-            assert stall_event is not None
-            assert stall_event["trigger"] == "servoj_stall"
-            assert conn._session.state["stalled"] is False
-
-            # 5. Disabling stall detection suppresses stall triggers
-            conn.enable_stall_detection = False
-            conn._stall_counter = 0
-            conn._session.state["stalled"] = True
-            for _ in range(5):
-                robot.send_action(
-                    {
-                        "left": {
-                            "arm": {"joint_position": np.full(7, 0.8, dtype=np.float32)}
-                        }
-                    }
-                )
-            assert robot.consume_recovery_event() is None
-            conn._session.state["stalled"] = False
-            conn.enable_stall_detection = True
-
-            # 6. Disabling fault recovery leaves faults untouched; robot.recover() clears manually
+            # 4. Disabling fault recovery leaves faults untouched; robot.recover() clears manually
             robot.configure_fault_recovery(enable_fault_recovery=False)
             conn._session.state["fault_code"] = 304
             robot.send_action(
@@ -7415,7 +7386,7 @@ def test_r2_fault_diagnosis_and_configurable_auto_recovery():
             assert robot.consume_recovery_event()["trigger"] == "manual"
             robot.configure_fault_recovery(enable_fault_recovery=True)
 
-            # 7. Circuit breaker raises RuntimeError when persistent fault exceeds max_recovery_attempts=2
+            # 5. Circuit breaker raises RuntimeError when persistent fault exceeds max_recovery_attempts=2
             conn._recovery_timestamps.clear()
             conn._session.state["fault_code"] = 501
             conn._session.state["persistent_fault"] = True
@@ -7424,7 +7395,7 @@ def test_r2_fault_diagnosis_and_configurable_auto_recovery():
             with pytest.raises(RuntimeError, match="exceeded max_recovery_attempts=2"):
                 robot.send_action({"left": {"arm": {"joint_position": target_q}}})
 
-            # 8. Unrecoverable fault (401 emergency stop) raises immediately
+            # 6. Unrecoverable fault (401 emergency stop) raises immediately
             conn._session.state["persistent_fault"] = False
             robot.clear_errors()
             conn._recovery_timestamps.clear()
@@ -7436,3 +7407,88 @@ def test_r2_fault_diagnosis_and_configurable_auto_recovery():
                 robot.send_action({"left": {"arm": {"joint_position": target_q}}})
         finally:
             robot.disconnect()
+
+    # 7. Generic Connection fault hooks: Case 1 (report_health) & Case 2 (_inspect_state_health)
+    class _SerialServoArm(ControllablePart):
+        def __init__(self) -> None:
+            self.hw_error_byte = 0
+            self.cleared_count = 0
+            self.last_cmd = np.zeros(2, dtype=np.float32)
+
+        def _open(self) -> Any:
+            return "serial_bus"
+
+        def _release(self, device: Any) -> None:
+            pass
+
+        @property
+        def observation_features(self) -> dict[str, dict]:
+            return {"q": {"shape": (2,)}}
+
+        @property
+        def action_features(self) -> dict[str, dict]:
+            return {"q": {"shape": (2,)}}
+
+        def get_state(self) -> dict[str, Any]:
+            return {"q": self.last_cmd.copy(), "error_byte": self.hw_error_byte}
+
+        def get_observation(self) -> dict[str, np.ndarray]:
+            state = self.read_state()
+            return {"q": state["q"]}
+
+        def _inspect_state_health(self, state: Any) -> Optional[HealthStatus]:
+            err = int(state.get("error_byte", 0))
+            if err != 0:
+                return HealthStatus(
+                    healthy=False,
+                    level=FaultLevel.RECOVERABLE_FAULT,
+                    error_code=err,
+                    error_message=f"servo_error={err}",
+                )
+            return HealthStatus(healthy=True)
+
+        def clear_errors(self) -> bool:
+            self.hw_error_byte = 0
+            self.cleared_count += 1
+            return True
+
+        def send_action(self, action: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+            self.last_cmd = np.asarray(action["q"], dtype=np.float32)
+            return {"q": self.last_cmd}
+
+    servo = _SerialServoArm()
+    generic_robot = Robot(arm=servo)
+    generic_robot.connect()
+    try:
+        # Case 2: Observation frame piggybacking via _inspect_state_health
+        servo.hw_error_byte = 0x04
+        generic_robot.get_observation()
+        assert generic_robot.diagnose().healthy is False
+        assert generic_robot.diagnose().error_code == 0x04
+        generic_robot.send_action(
+            {"arm": {"q": np.array([0.1, 0.2], dtype=np.float32)}}
+        )
+        ev = generic_robot.consume_recovery_event()
+        assert ev is not None and ev["error_code"] == 0x04
+        assert servo.cleared_count == 1
+        assert generic_robot.diagnose().healthy is True
+
+        # Case 1: Async callback / background thread reporting via report_health()
+        servo.report_health(
+            HealthStatus(
+                healthy=False,
+                level=FaultLevel.RECOVERABLE_FAULT,
+                error_code=99,
+                error_message="async_can_emcy",
+            )
+        )
+        assert generic_robot.diagnose().healthy is False
+        generic_robot.send_action(
+            {"arm": {"q": np.array([0.3, 0.4], dtype=np.float32)}}
+        )
+        ev_async = generic_robot.consume_recovery_event()
+        assert ev_async is not None and ev_async["error_code"] == 99
+        assert servo.cleared_count == 2
+        assert generic_robot.diagnose().healthy is True
+    finally:
+        generic_robot.disconnect()
