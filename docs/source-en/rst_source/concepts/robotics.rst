@@ -1,28 +1,29 @@
 Robotics Interface
 ==================
 
-This page explains how task and environment code uses ``rlinf.robotics`` to
+This page explains how task and ``env`` code uses the robotics interface to
 inspect, connect, read from, and control a physical robot. It follows the
-workflow from single-robot calls to full environment integration:
+workflow from single-robot calls to full system integration:
 
-1. Connect, read observations, and send actions on a single robot.
-2. Address parts by path and compose multi-part robots with ``RobotPart`` and
-   ``PartGroup``.
-3. Smooth large motion steps and batch multi-part commands on shared
-   connections with ``MotionProfile`` and ``batch_commands()``.
-4. Diagnose and automatically recover from hardware faults with ``diagnose()``
-   and ``recover()``.
-5. Connect the composed robot to ``RealWorldEnv`` and multi-node placement.
+1. How to connect a single robot, read observations, and send control actions.
+2. How to assemble multi-part robots and access each part by path.
+3. How the connection layer smooths large moves and combines multi-part
+   commands automatically.
+4. How hardware faults are detected and recovered in place without position
+   jumps.
+5. How reinforcement learning environments and multi-node clusters use the
+   composed robot.
 
-Internal details of hardware sessions, resource ownership, and worker placement
-are covered in :doc:`Robotics Architecture <robotics_architecture>`.
+Internal details of hardware sessions, resource ownership, and process
+placement are covered in :doc:`Robotics Architecture <robotics_architecture>`.
 
 Connect, Read, and Control a Robot
 ----------------------------------
 
-A caller uses a robot in four steps: build and inspect the declaration, select
-any parts needed for setup, connect and run the ``step`` loop, then disconnect.
-The example below shows all four steps together:
+Controlling a robot typically follows four steps: build and inspect the robot
+structure, select any parts needed for setup, connect hardware and run the
+``step`` loop, then disconnect. The example below shows all four steps
+together:
 
 .. code-block:: python
 
@@ -56,49 +57,46 @@ The example below shows all four steps together:
    finally:
        robot.disconnect()
 
-``build_robot()`` looks up the registered robot builder and returns an
-unconnected ``Robot``. Building the object only records hardware parameters and
-placement; it does not import a vendor SDK or open a device. Because
-``describe()`` reads that declaration, you can inspect part paths, target
-nodes, and connection ownership even when the hardware is offline.
+Construction only records hardware parameters and target nodes; it does not
+import a vendor SDK or open a device. ``build_robot()`` returns an unconnected
+``Robot`` object, and ``describe()`` prints the part paths, target nodes, and
+underlying connections even when the robot is powered off.
 
-Before connecting, setup code can look up specific parts. ``child("arm", Arm)``
-returns the part at ``arm`` and verifies that it is an ``Arm`` (which also gives
-your editor the static type ``Arm``). ``parts_of_type(Camera)`` walks the full
-robot tree and returns all cameras keyed by their dotted path. Use ``child()``
-when the task expects a fixed path name, and ``parts_of_type()`` when you want
-all devices of a category regardless of how they are named.
+Before connecting, setup code can look up specific parts. When you know a fixed
+path (such as ``arm``), ``child("arm", Arm)`` returns that part and verifies
+its type. When you want all devices of a category regardless of how they are
+named, ``parts_of_type(Camera)`` walks the full robot tree and returns a
+dictionary keyed by path.
 
-``connect()`` opens each underlying ``Connection`` once and rolls back any
-already-opened connections if a later one fails. After connecting, category
-methods such as ``Arm.is_robot_up()`` and ``Camera.is_ready()`` verify that
-hardware is ready, while ``clear_errors()`` and ``reset_joint()`` handle setup
-and reset outside the per-step control loop.
+``connect()`` opens each underlying connection in order and closes any
+already-opened connections if a later one fails. Once connected,
+``is_robot_up()`` and ``is_ready()`` verify that the arm and cameras are ready,
+while ``clear_errors()`` and ``reset_joint()`` handle error clearing and initial
+pose reset before the ``step`` loop begins.
 
-Inside the control loop, ``get_observation()`` reads all parts once and returns
-a nested dictionary keyed by part path. ``send_action()`` takes a matching
-dictionary, dispatches only the branches present in that call, and returns the
-values actually sent as ``applied``. Calling ``disconnect()`` inside
-``finally`` closes all connections in reverse order even if a read or command
-raises an error, and repeated ``disconnect()`` calls are safe.
+Inside the ``step`` loop, two calls handle data exchange: ``get_observation()``
+reads all parts once into a nested dictionary keyed by path, and
+``send_action()`` takes a matching dictionary, sends only the branches provided
+in that call, and returns the applied values. Putting ``disconnect()`` inside
+``finally`` guarantees that all connections close in reverse order even if a
+read or command fails, and repeated calls are safe.
 
-Every robot follows this same call sequence. What differs from one robot to
-another is the set of paths in the observation and action dictionaries.
+Every robot uses this same call sequence; robots differ only in the paths inside
+their observation and action dictionaries.
 
-Part Paths and Robot Composition
---------------------------------
+Assemble a Robot and Access Its Parts
+-------------------------------------
 
-The keys inside ``get_observation()`` and ``send_action()`` come directly from
+The paths used by ``get_observation()`` and ``send_action()`` come directly from
 how parts are named and connected when the robot is assembled. Adding or
-grouping parts introduces new path prefixes without changing the read and
-command methods.
+grouping parts only adds path levels without changing the read or command calls.
 
 Independent Connections vs. Shared Buses
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-The keyword name given to a part becomes its first path segment, and any child
-part attached to it adds another segment. Comparing Franka and SO-101 shows why
-some paths are flat and others are nested.
+The name assigned to a part becomes its first path segment, and any sub-part
+attached to the same communication bus adds another level below it. Comparing a
+single-arm Franka with an SO-101 arm shows both layouts.
 
 On a single-arm Franka, the arm controller and the Franka Hand use separate
 network endpoints, so ``arm`` and ``end_effector`` sit at the same level:
@@ -109,12 +107,12 @@ network endpoints, so ``arm`` and ``end_effector`` sit at the same level:
    ├── arm           FrankaROSArm         node=1     via FrankaROSArm#1
    └── end_effector  FrankaGripper        node=1     via FrankaGripper#2
 
-The two different ``via`` IDs in ``describe()`` indicate two independent
-``Connection`` objects.
+The different ``via`` IDs in ``describe()`` show that each part owns its own
+connection.
 
-On an SO-101 arm, the five arm joints and the gripper share a single serial
-servo bus. Because the gripper is driven through the arm's ``Connection``, it
-appears under ``arm`` as ``arm.end_effector`` and shares ``SO101Arm#1``:
+On an SO-101 arm, the five arm joints and the gripper share one serial servo
+bus. Because the gripper communicates through the arm's connection, it sits
+under ``arm`` as ``arm.end_effector`` and shares ``SO101Arm#1``:
 
 .. code-block:: text
 
@@ -122,7 +120,7 @@ appears under ``arm`` as ``arm.end_effector`` and shares ``SO101Arm#1``:
    └── arm               SO101Arm             node=0     via SO101Arm#1
        └── end_effector  MethodEndEffector    node=0     via SO101Arm#1
 
-Observations and actions follow that same structure:
+Observations and actions mirror that path hierarchy:
 
 .. code-block:: python
 
@@ -138,98 +136,92 @@ Observations and actions follow that same structure:
        }
    )
 
-Compose RobotPart and PartGroup
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Assemble Multi-Part Robots
+^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-When assembling a ``Robot``, any ``RobotPart`` can be passed directly as a
-keyword argument—for example, ``Robot(base=base, arm=arm, end_effector=hand)``
-creates the top-level paths ``base``, ``arm``, and ``end_effector``. If a
-shared ``Connection`` drives multiple subsystems (such as a whole-body or
-dual-arm controller) and has no single observation of its own, call
-``session.part("left")`` to select a readable ``RobotPart`` and pass that to
+When assembling a robot, each readable part (``RobotPart``) can be passed
+directly to ``Robot`` as a keyword argument—for example,
+``Robot(base=base, arm=arm, end_effector=hand)`` creates the top-level paths
+``base``, ``arm``, and ``end_effector``. If a single shared connection
+(``Connection``) drives multiple subsystems such as a dual-arm or whole-body
+controller, call ``session.part("left")`` to select each part and pass it to
 ``Robot``.
 
-When several parts belong to one logical unit (such as a left arm plus its
-gripper), wrap them in a ``PartGroup`` to add a path prefix like ``left`` or
-``right``:
+When several parts form one logical unit (such as a left arm and its gripper),
+``PartGroup`` groups them under a prefix such as ``left`` or ``right``:
 
 .. code-block:: python
 
    left_qpos = observation["left"]["arm"]["arm_joint_position"]
    right_gripper = observation["right"]["end_effector"]["state"]
 
-``Robot`` does not hardcode slots like ``arms`` or ``cameras``. A mobile base,
-waist, head, or third arm is simply added under its own name while callers keep
-using ``get_observation()`` and ``send_action()``. When several parts share one
-hardware ``Connection``, however, sending commands safely requires smoothing
-large target steps and coordinating multi-part updates on that shared channel.
+The interface does not require fixed slots such as ``arms`` or ``cameras``. A
+mobile base, waist, head, or third arm is simply added under a chosen name while
+callers continue using ``get_observation()`` and ``send_action()``. When
+multiple parts share one physical connection, however, keeping hardware motion
+smooth and conflict-free requires the connection to coordinate trajectory
+smoothing and multi-part updates.
 
-Smooth Motion and Batch Multi-Part Commands
+Smooth Motion and Coordinate Multiple Parts
 -------------------------------------------
 
 High-frequency streaming controllers (typically 50–100 Hz) expect small,
-continuous target updates. They can fault or drop out of streaming mode in
-three common situations:
+continuous target updates. In practice, three situations commonly cause sudden
+jerks or make a controller drop out of streaming mode:
 
-1. A command jumps too far in a single control tick.
-2. A joint is physically held back by gravity or contact while its command
-   target keeps advancing, building up a large gap that snaps the joint once
-   released.
-3. On a shared whole-body bus, calling ``left_arm`` and ``right_arm`` methods
-   one after another starts two separate blocking trajectory streams back to
-   back.
+1. A single command jumps further than a motor can safely move in one frame.
+2. A joint is physically held back by gravity or contact while its target angle
+   keeps advancing, building up a large gap that snaps the joint once released.
+3. On a dual-arm or whole-body robot sharing one connection, calling left-arm
+   and right-arm methods one after another sends two blocking whole-body
+   trajectory streams back to back.
 
-``Connection`` prevents these issues through ``MotionProfile``,
-``JointGroupSpec``, and ``batch_commands()``.
+The connection layer handles all three cases automatically so task code does not
+need manual interpolation loops.
 
-Smooth Trajectories and Velocity Pulses with MotionProfile
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Smooth Large Moves and Base Velocity Pulses
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Each ``Connection`` holds a ``MotionProfile`` (configured at construction or at
-runtime via ``configure_motion_profile()``, with ``control_rate_hz`` and
-``pulse_rate_hz`` defaulting to ``50.0`` Hz) and optional ``JointGroupSpec``
-entries for joint groups with different mechanical inertia, such as waist,
-arms, and neck.
+Whenever a command is sent, the underlying connection applies three protections:
 
-When a command arrives, ``MotionProfile`` and ``JointGroupSpec`` handle three
-tasks:
+- **Cap accumulated target drift**: if external resistance or a brief pause
+  prevents a joint from keeping up with previous commands, the cached target
+  angle can drift ahead of the measured angle. When that gap exceeds a safety
+  threshold, the connection pulls the interpolation start back toward the
+  measured angle before computing the next step.
+- **Interpolate large moves smoothly**: small per-step changes within the
+  single-frame step limit are sent immediately with zero extra delay. Larger
+  moves (such as ``reset_joint()`` or large waypoint jumps) are automatically
+  split into a raised-cosine trajectory with zero velocity at both ends,
+  followed by several holding frames so the motors settle cleanly.
+- **Stream continuous base velocity pulses**: many mobile bases have a hardware
+  watchdog that stops the base if velocity frames do not arrive continuously.
+  The connection streams a smooth acceleration, cruise, and cosine-deceleration
+  curve at the configured rate and ends with explicit zero-velocity frames.
 
-- **Prevent target wind-up (``reanchor()``)**: if external resistance or a
-  brief pause prevented a joint from reaching previous commands, the cached
-  target angle can drift ahead of the measured angle. Whenever that gap exceeds
-  ``max_drift``, ``reanchor()`` pulls the command starting point back toward
-  the measured angle before computing the next step.
-- **Interpolate large moves (``generate_trajectory()``)**: if a target change
-  is within the per-tick ``max_step``, the connection sends it immediately with
-  no extra delay. If the move is larger (such as ``reset_joint()`` or a
-  waypoint jump), ``generate_trajectory()`` splits it into a smooth
-  raised-cosine (:math:`C^1` smoothstep) trajectory with zero velocity at the
-  start and end, followed by ``hold_steps`` holding frames at the target.
-- **Stream continuous base pulses (``generate_velocity_pulse()``)**: mobile
-  bases with hardware watchdogs stop abruptly if velocity commands do not
-  arrive continuously. ``generate_velocity_pulse()`` streams a smooth ramp-up,
-  cruise, and cosine ramp-down curve at ``pulse_rate_hz`` and finishes with
-  explicit zero-velocity stop frames.
+By default, connections run streaming and pulse loops at ``50.0`` Hz (stored in
+``MotionProfile``, with optional ``JointGroupSpec`` limits for joint groups of
+different inertia such as waist, arms, and neck). To use a different control
+rate or adjust step limits, pass them at initialization or call
+``configure_motion_profile()`` at runtime.
 
-Batch Multi-Part Commands with batch_commands()
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Combine Multi-Part Commands on a Shared Connection
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-On a dual-arm or whole-body robot whose parts share one ``Connection``, calling
+On a dual-arm or whole-body robot whose parts share one connection, calling
 ``left_arm.reset_joint(...)`` followed by ``right_arm.reset_joint(...)`` would
-normally run two separate trajectories one after the other: the first moves the
-left arm while locking the right arm at its old target, and the abrupt switch
-to the second trajectory stream can cause the controller to exit streaming
-mode.
+normally run two separate trajectories in sequence: the first moves the left arm
+while locking the right arm at its old target, and the abrupt handover to the
+second stream often causes the controller to fault or exit streaming mode.
 
-Wrapping multiple part calls in ``with robot.batch_commands():`` (or
-``connection.batch_commands()``) combines them into a single trajectory. Inside
-the ``with`` block, each part only updates its slice of the connection's cached
-target vector; when the block exits, ``_flush_command_batch()`` interpolates
-and streams all updated joint groups together:
+Wrapping multiple part calls in ``with robot.batch_commands():`` combines them
+into a single synchronized trajectory. Inside the ``with`` block, each part only
+updates its own slice of the target joint angles; when the block exits, the
+connection interpolates and streams all updated joints together:
 
 .. code-block:: python
 
-   # Optionally adjust control rate or step limits at runtime.
+   # Optionally adjust control rate or per-step limits at runtime.
    robot.child("left_arm").connection.configure_motion_profile(
        control_rate_hz=100.0,
        max_step=0.006,
@@ -240,21 +232,21 @@ and streams all updated joint groups together:
        robot.child("left_arm").reset_joint(left_home_qpos)
        robot.child("right_arm").reset_joint(right_home_qpos)
 
-During ``step`` execution, ``robot.send_action({...})`` automatically enables
-``batch_commands()`` across every ``Connection`` involved, so multi-part
-``policy`` actions are always combined. You only need
-``with robot.batch_commands():`` when calling methods like ``reset_joint()``
-across multiple parts during initialization or reset.
+During the normal ``step`` loop, ``robot.send_action({...})`` automatically
+batches commands across every connection involved, so multi-part ``policy``
+actions are always combined. You only need ``with robot.batch_commands():`` when
+calling methods such as ``reset_joint()`` across multiple parts during setup or
+reset.
 
 Diagnose and Recover from Hardware Faults
 -----------------------------------------
 
 Motion smoothing prevents software-induced jumps, but physical collisions or
-joint limits can still trigger hardware protection during a run, disabling
-motor drives or dropping the controller out of streaming mode. You can call
-``diagnose()`` and ``recover()`` explicitly on the ``Robot`` (or any part), or
-leave automatic recovery enabled so ``Connection`` checks and recovers before
-sending each command:
+joint limits can still trigger hardware protection during a run, disabling motor
+drives or dropping the controller out of streaming mode. You can call
+``diagnose()`` to inspect health and ``recover()`` to clear faults on the
+``Robot`` (or any part), or keep automatic recovery enabled so the connection
+checks and recovers before sending each command:
 
 .. code-block:: python
 
@@ -262,29 +254,27 @@ sending each command:
    if not status.healthy:
        robot.recover()
 
-Detect and Classify Faults Without Blocking Control
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Detect Faults Without Blocking the Control Loop
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Querying hardware health through an extra synchronous RPC or serial round-trip
-before every 50–100 Hz command would slow down the control loop. Instead,
-``Connection`` caches a ``HealthStatus`` in memory and updates it through two
-non-blocking channels:
+before every 50–100 Hz command would stall the control loop. Instead, the
+connection caches a health status (``HealthStatus``) in memory and updates it
+through two non-blocking paths:
 
-1. **Asynchronous status callbacks (``report_health()``)**: when a background
-   listener (such as a ROS/RFrame status subscriber, UDP broadcast listener, or
-   SocketCAN thread) receives an error code or mode change, it updates the
-   cached ``HealthStatus`` via ``self.report_health(...)``.
-2. **State-read inspection (``_inspect_state_health()``)**: for buses whose
-   normal state response already includes an error bitmask alongside joint
-   angles (such as RS-485/TTL serial servos or CANopen PDO frames),
-   ``Connection.read_state()`` passes each fresh state from ``get_state()`` to
-   ``_inspect_state_health(state)`` and updates the cached health without a
-   second bus read.
+1. **Background status callbacks**: when a background listener (such as a
+   ROS/RFrame status subscriber, UDP broadcast listener, or SocketCAN thread)
+   receives an error code or mode change, it updates the cached health status in
+   memory.
+2. **Inspection during state reads**: for hardware whose normal joint-state
+   packet already includes an error bitmask (such as serial servos or CANopen
+   frames), the connection checks that field while reading observations without
+   making a second bus request.
 
-Before sending each command, ``Connection`` checks this in-memory status with
-zero communication overhead. When a fault is recorded, or when you call
-``robot.diagnose()``, the returned ``HealthStatus`` classifies the state into
-one of four ``FaultLevel`` values:
+Before sending each command, the connection only reads this in-memory status,
+adding zero communication overhead during normal operation. When a fault is
+recorded or when you call ``robot.diagnose()``, the returned ``HealthStatus``
+indicates the severity with ``FaultLevel``:
 
 - ``FaultLevel.OK``: the controller is healthy and ready for commands.
 - ``FaultLevel.MODE_DROP``: no hardware error is latched, but the controller
@@ -309,47 +299,48 @@ configured in the hardware YAML or at runtime via
        max_recovery_attempts: 3
        recovery_cooldown_window: 10.0
 
-Recover in Place Without Position Jumps
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Recover by Severity Without Position Jumps
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-When a fault is detected, ``recover()`` runs only the steps needed for that
-``FaultLevel``:
+When recovery runs, ``recover()`` executes only the steps required for that
+fault level:
 
-- ``FaultLevel.MODE_DROP``: switches the controller back to streaming mode
-  without resetting the motor drives.
-- ``FaultLevel.RECOVERABLE_FAULT``: clears the controller error code,
-  re-enables any disabled joint axes, and restores streaming mode.
-- ``FaultLevel.UNRECOVERABLE_FAULT``: raises ``RuntimeError`` immediately. For
-  recoverable faults, if automatic recovery triggers more than
-  ``max_recovery_attempts`` times within ``recovery_cooldown_window`` seconds,
-  the circuit breaker also stops retrying and raises ``RuntimeError``.
+- **Streaming mode drop (``FaultLevel.MODE_DROP``)**: switches the controller
+  back to streaming mode without resetting the motor drives.
+- **Recoverable drive fault (``FaultLevel.RECOVERABLE_FAULT``)**: clears the
+  controller error code, re-enables any disabled joint axes, and restores
+  streaming mode.
+- **Unrecoverable or repeating faults**: raises ``RuntimeError`` immediately on
+  ``FaultLevel.UNRECOVERABLE_FAULT``. For recoverable faults, if automatic
+  recovery triggers more than ``max_recovery_attempts`` times within
+  ``recovery_cooldown_window`` seconds, the circuit breaker also stops retrying
+  and raises ``RuntimeError``.
 
-To prevent the robot from jerking when drives re-enable, ``Connection``
-overwrites its cached target joint angles with the current measured joint
-angles before enabling axes or restoring streaming mode. Even if an upper-level
-``policy`` kept stepping its target while the arm was stopped, the first
-command after recovery holds the robot at its current pose.
+To prevent the arm from jerking when drives re-enable, the connection overwrites
+its cached target joint angles with the current measured joint angles before
+enabling axes or restoring streaming mode. Even if an upper-level ``policy``
+kept advancing its target while the robot was stopped, the first command after
+recovery holds the robot at its current pose.
 
-During normal fault-free operation, this mechanism adds no delay. Only on the
-``step`` where a fault actually occurs do the recovery calls pause the command
-stream for roughly 50–300 ms while the robot stays in place, after which
-subsequent commands continue normally.
+During normal operation this mechanism adds no delay; only on the ``step`` where
+a fault is actively cleared do the recovery calls pause the command stream for
+roughly 50–300 ms while the robot stays in place.
 
-Support Fault Recovery in a New Driver
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Add Fault Recovery to a New Driver
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-To add fault detection and automatic recovery to a new driver (any
+To support fault detection and automatic recovery in a new driver (any
 ``Connection`` or ``ControllablePart`` subclass), report health through either
-channel and implement ``clear_errors()``:
+path and implement ``clear_errors()``:
 
-- **Channel 1 (async callback or background thread)**: call
+- **Option 1 (background status callback)**: call
   ``self.report_health(HealthStatus(...))`` when the listener receives a fault
   or mode change.
-- **Channel 2 (state-read inspection)**: override
+- **Option 2 (inspection during state reads)**: override
   ``_inspect_state_health(self, state) -> HealthStatus | None`` to check the
   error field in the state dict returned by ``get_state()``.
 - **Recovery action**: implement ``clear_errors(self) -> bool`` to sync cached
-  targets to measured angles, clear the drive fault, and restore control mode
+  targets to measured angles, clear the hardware error, and restore control mode
   (and optionally override ``_recover_mode(self) -> str`` if mode drops can be
   restored without a full fault reset).
 
@@ -359,7 +350,7 @@ channel and implement ``clear_errors()``:
 
 
    class MyArmDriver(ControllablePart):
-       # Channel 2: inspect the error code included in each state read
+       # Option 2: inspect the error code included in each state read
        def _inspect_state_health(self, state: dict) -> HealthStatus:
            err = int(state.get("error_code", 0))
            if err != 0:
@@ -371,7 +362,7 @@ channel and implement ``clear_errors()``:
                )
            return HealthStatus(healthy=True)
 
-       # Or Channel 1: call self.report_health(...) from an async SDK callback
+       # Or Option 1: report health from an async SDK callback
        def _on_sdk_error_callback(self, err_code: int, msg: str) -> None:
            self.report_health(
                HealthStatus(
@@ -390,54 +381,53 @@ channel and implement ``clear_errors()``:
            return True
 
 With those methods defined, ``robot.diagnose()``, ``robot.recover()``,
-pre-command automatic recovery, the cooldown circuit breaker, and
-``robot.consume_recovery_event()`` work automatically.
+pre-command automatic recovery, the cooldown circuit breaker, and recovery event
+recording work automatically.
 
-Use the Robot in RealWorldEnv and Multi-Node Clusters
+Use the Robot in Environments and Multi-Node Clusters
 -----------------------------------------------------
 
-Because part paths, motion smoothing, and fault recovery are handled inside
-``Robot`` and ``Connection``, ``RealWorldEnv`` and the cluster scheduler can
-drive any robot composition through the same interface.
+Once part paths, motion smoothing, and fault recovery are handled by the robot
+interface, reinforcement learning environments and the cluster scheduler can
+drive any robot composition in a uniform way.
 
-Connect to RealWorldEnv and Handle Fault-Interrupted Episodes
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Connect to an Environment and Handle Interrupted Episodes
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-A ``RobotPart`` defines how to read a sensor or move an actuator; a
-``RealWorldEnv`` subclass defines task rewards, termination conditions, episode
-resets, and Gymnasium spaces:
+Robot parts read sensors and drive actuators, while the task environment
+(inheriting from ``RealWorldEnv``) defines rewards, termination conditions,
+``episode`` resets, and Gymnasium spaces:
 
-- **Observations and actions**: each ``step`` calls ``robot.get_observation()``
-  once to build both ``state`` and camera ``frames`` (reusing a single state
-  snapshot across parts that share a ``Connection``), and calls
-  ``robot.send_action()`` to send commands. When a ``policy`` expects flat
+- **Observation and action conversion**: each ``step`` calls
+  ``robot.get_observation()`` once to build ``state`` and camera ``frames``
+  (reusing a single state snapshot across parts that share a connection), and
+  calls ``robot.send_action()`` to send commands. When a ``policy`` expects flat
   vectors, ``LegacyObservationAdapter`` and ``VectorActionAdapter`` convert
   between flat arrays and nested robot dicts.
-- **Episode setup**: part references fetched via ``child()`` or
-  ``parts_of_type()`` before ``connect()`` are used during ``reset()`` to check
-  readiness, clear errors, and move arms back to their rest pose.
-- **Fault-interrupted episodes**: in teleoperation or standalone evaluation,
-  control can continue right after a 50–300 ms automatic recovery. In RL data
-  collection, however, that pause breaks the transition continuity of the
-  current ``step``. At the end of each ``step``, ``RealWorldEnv`` calls
+- **Episode initialization and reset**: part references fetched via ``child()``
+  or ``parts_of_type()`` before ``connect()`` are used during ``reset()`` to
+  check readiness, clear errors, and return arms to their initial pose.
+- **Truncating fault-interrupted episodes**: in teleoperation or standalone
+  evaluation, control can continue right after a 50–300 ms automatic recovery.
+  In RL data collection, however, that pause breaks the transition continuity of
+  the current ``step``. At the end of each ``step``, the ``env`` calls
   ``robot.consume_recovery_event()``, records any fault details in
   ``info["robot_fault"]``, and when ``truncate_on_fault_recovery`` is enabled,
   marks the ``step`` with ``truncated=True`` so the rollout runner ends the
   interrupted ``episode`` and resets the robot.
 
-Place Connections Across Processes and Nodes
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Run Parts Across Processes and Nodes
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Part paths identify capabilities, not where the driver process runs. A camera
-in the ``env`` process and an arm worker on another machine still appear in the
-same ``robot.get_observation()`` dict because ``node_rank`` and ``worker_name``
-are configured on each owning ``Connection`` rather than in the path.
-Independent connections run concurrently, while parts sharing one
-``Connection`` run in declaration order so the underlying SDK session is never
-called concurrently.
+Part paths describe what capabilities the robot has, not which process runs the
+driver. A camera in the ``env`` process and an arm worker on another machine
+still appear in the same ``robot.get_observation()`` dict because ``node_rank``
+and ``worker_name`` are configured on each underlying connection. Independent
+connections run concurrently, while parts sharing one connection run in
+declaration order so the vendor SDK is never called concurrently.
 
-Moving a part to another process or node only changes its ``Connection``
-placement arguments; ``env`` and ``policy`` code stays unchanged.
+Moving a part to another process or node only changes its connection placement
+parameters; ``env`` and ``policy`` code stays unchanged.
 
 Choose What to Read Next
 ------------------------
@@ -447,7 +437,7 @@ Choose What to Read Next
 - :doc:`Adding a Robot <../extending/new_robot>`: implement and register a new
   sensor, actuator, or robot composition.
 - :doc:`Robotics Architecture <robotics_architecture>`: see how ``parts``,
-  ``children``, shared connections, lifecycle, and worker placement are
-  implemented.
+  ``children``, shared ``Connection`` objects, lifecycle, and worker placement
+  are implemented.
 - :doc:`Teleoperation <../guides/teleoperation>`: combine operator input
   devices with a robot.
