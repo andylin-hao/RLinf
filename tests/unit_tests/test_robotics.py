@@ -7186,6 +7186,8 @@ def test_r2_connection_and_robot_variants_run_on_faked_rframe():
 
             left_q = np.linspace(0.1, 0.7, 7, dtype=np.float32)
             right_q = np.linspace(-0.1, -0.7, 7, dtype=np.float32)
+            base_conn = robot.owners()[0]
+            base_conn._session.published.clear()
             robot.send_action(
                 {
                     "left": {
@@ -7201,6 +7203,13 @@ def test_r2_connection_and_robot_variants_run_on_faked_rframe():
                     },
                 }
             )
+            servoj_msgs = [
+                msg
+                for topic, msg in base_conn._session.published
+                if topic == "/Motion/ServoJ"
+            ]
+            assert len(servoj_msgs) == 1
+            assert len(servoj_msgs[0].name) == 16
             obs_after = robot.get_observation()
             assert np.allclose(obs_after["left"]["arm"]["joint_position"], left_q)
             assert np.allclose(obs_after["right"]["arm"]["joint_position"], right_q)
@@ -7208,7 +7217,28 @@ def test_r2_connection_and_robot_variants_run_on_faked_rframe():
             assert np.allclose(obs_after["right"]["gripper"]["state"], [0.75])
             assert np.allclose(obs_after["base"]["base_velocity"], [0.2, -0.1, 0.05])
 
-            assert robot.child("left").child("arm").reset_joint(np.zeros(7))
+            robot.configure_motion_profile(
+                control_rate_hz=100.0,
+                pulse_rate_hz=100.0,
+                max_step=0.01,
+                interpolation_step=0.005,
+            )
+            assert base_conn.motion_profile.control_rate_hz == 100.0
+            assert np.isclose(base_conn.motion_profile.dt, 0.01)
+            dt_pulse, up_v, cruise_v, down_v = (
+                base_conn.motion_profile.generate_velocity_pulse(
+                    [0.2, 0.0, 0.0], 0.5, ramp_up=0.1, ramp_down=0.1
+                )
+            )
+            assert np.isclose(dt_pulse, 0.01)
+            assert len(up_v) == 10 and len(cruise_v) == 50 and len(down_v) == 10
+
+            with robot.batch_commands():
+                assert robot.child("left").child("arm").reset_joint(np.zeros(7))
+                assert robot.child("right").child("arm").reset_joint(np.zeros(7))
+            obs_reset = robot.get_observation()
+            assert np.allclose(obs_reset["left"]["arm"]["joint_position"], 0.0)
+            assert np.allclose(obs_reset["right"]["arm"]["joint_position"], 0.0)
             assert robot.child("left").child("arm").clear_errors()
             assert robot.child("base").navigate_to(1.0, 2.0, yaw=0.5)
             robot.child("base").stop()
@@ -7405,6 +7435,51 @@ def test_r2_fault_diagnosis_and_configurable_auto_recovery():
                 RuntimeError, match="Unrecoverable R2Connection hardware fault"
             ):
                 robot.send_action({"left": {"arm": {"joint_position": target_q}}})
+
+            # 6b. Real /diagnostic HealthState ignores peripheral sensor warnings
+            # (e.g. S.DEP[0]-W-410, severity_level=2) and flags motion errors (M.*, severity >= 4)
+            import types
+
+            robot.clear_errors()
+            conn._on_health_state(
+                types.SimpleNamespace(
+                    severity_level=2,
+                    errors=[
+                        types.SimpleNamespace(
+                            severity_level=2, code_str="S.DEP[0]-W-410"
+                        )
+                    ],
+                )
+            )
+            assert conn.get_state().is_healthy is True
+            conn._on_health_state(
+                types.SimpleNamespace(
+                    severity_level=4,
+                    errors=[
+                        types.SimpleNamespace(severity_level=4, code_str="M.ARM-E-501")
+                    ],
+                )
+            )
+            assert conn.get_state().is_healthy is False
+            robot.clear_errors()
+
+            # 6c. Delayed JointState discovery resyncs pre-discovery zero-latched _cmd_* targets
+            conn._joint_map_positions.clear()
+            conn._state.left_joint_positions = np.zeros(7, dtype=np.float32)
+            conn._sync_cmd_to_actual()
+            assert conn._cmd_synced_from_joint_state is False
+            conn._on_joint_state(
+                types.SimpleNamespace(
+                    name=["J_LeftArm1", "J_NeckYaw"],
+                    position=[0.42, 0.05],
+                    velocity=[],
+                    effort=[],
+                )
+            )
+            conn.move_neck_joint(np.array([0.12, 0.0], dtype=np.float32))
+            assert conn._cmd_synced_from_joint_state is True
+            assert np.isclose(conn._cmd_left_arm[0], 0.42)
+            assert np.isclose(conn._cmd_neck[0], 0.12)
         finally:
             robot.disconnect()
 

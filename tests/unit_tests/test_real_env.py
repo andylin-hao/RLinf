@@ -4871,7 +4871,9 @@ def test_r2_reach_env_dummy_and_faked_sdk(monkeypatch):
         ),
     )
     with mocked_sdks():
-        cfg = R2Config(node_rank=0, enable_base=True)
+        cfg = R2Config(node_rank=0)
+        assert cfg.enable_base is True
+        assert cfg.cameras == ["head", "wrist_left", "wrist_right"]
         env = R2ReachEnv(
             override_cfg={
                 "is_dummy": False,
@@ -4908,7 +4910,7 @@ def test_r2_reach_env_dummy_and_faked_sdk(monkeypatch):
         rframe.Session.default_body_dof = 20
         rframe.Session.default_end_effector_type = "hand"
         try:
-            auto_cfg = R2Config(node_rank=0, cameras=[])
+            auto_cfg = R2Config(node_rank=0, enable_base=False, cameras=[])
             hand_env = R2ReachEnv(
                 override_cfg={
                     "is_dummy": False,

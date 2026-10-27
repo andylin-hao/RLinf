@@ -32,7 +32,6 @@ from __future__ import annotations
 import argparse
 import contextlib
 import signal
-import time
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Optional
@@ -83,8 +82,8 @@ HELP = """
   head <left|right|up|down|home> [mult]     turn or pitch head, or return to zero
 
   === Mobile Base Control (omnidirectional wheeled chassis) ===
-  base <fwd|back|left|right> [scale]        drive/strafe chassis for 0.5s and stop
-  base <turn_left|turn_right> [scale]       rotate chassis for 0.5s and stop
+  base <fwd|back|left|right> [mult] [spd]   drive/strafe chassis (mult scales distance/time)
+  base <turn_left|turn_right> [mult] [spd]  rotate chassis (mult scales angle/time)
   base stop                                 stop chassis immediately
 
   === Postures, Diagnostics & Status ===
@@ -212,6 +211,36 @@ def _print_status(env: Any, obs: dict[str, Any], host: Any) -> None:
             )
         except Exception:
             pass
+    frames = obs.get("frames")
+    if isinstance(frames, dict) and frames:
+        cam_summary = ", ".join(
+            f"{k}: {tuple(v.shape)} (mean={float(np.mean(v)):.1f})"
+            for k, v in frames.items()
+            if isinstance(v, np.ndarray)
+        )
+        if cam_summary:
+            print(f"  cameras:         {cam_summary}")
+
+
+def _smooth_alpha(step_i: int, n_interp: int, *, smooth: bool) -> float:
+    progress = min(1.0, float(step_i) / float(max(n_interp, 1)))
+    if not smooth:
+        return progress
+    return 0.5 * (1.0 - float(np.cos(np.pi * progress)))
+
+
+def _build_env_action(env: Any, q_joints: np.ndarray, grips: np.ndarray) -> np.ndarray:
+    action = np.zeros(env.action_space.shape, dtype=np.float32)
+    offset = 0
+    for idx, _side in enumerate(env.config.active_arms):
+        q_slice = slice(idx * 7, (idx + 1) * 7)
+        action[offset : offset + 7] = q_joints[q_slice]
+        offset += 7
+        if env._ee_dim > 0:
+            g_val = float(grips[idx]) if idx < grips.size else float(grips[0])
+            action[offset : offset + env._ee_dim] = g_val
+            offset += env._ee_dim
+    return action
 
 
 def _step_arm_smooth(
@@ -226,28 +255,63 @@ def _step_arm_smooth(
     diff = target_joints - current_joints
     max_abs = float(np.max(np.abs(diff))) if diff.size else 0.0
     is_real_rate = not env.config.is_dummy and float(env.config.step_frequency) < 1000.0
+    host = _get_connection_host(env) if is_real_rate else None
+
+    if is_real_rate and host is not None:
+        active_arms = tuple(env.config.active_arms)
+        l_target = (
+            target_joints[
+                active_arms.index("left") * 7 : (active_arms.index("left") + 1) * 7
+            ]
+            if "left" in active_arms
+            else None
+        )
+        r_target = (
+            target_joints[
+                active_arms.index("right") * 7 : (active_arms.index("right") + 1) * 7
+            ]
+            if "right" in active_arms
+            else None
+        )
+        l_grip = (
+            float(grips[active_arms.index("left")])
+            if (gripper_changed and env._ee_dim == 1 and "left" in active_arms)
+            else None
+        )
+        r_grip = (
+            float(
+                grips[
+                    active_arms.index("right")
+                    if active_arms.index("right") < grips.size
+                    else 0
+                ]
+            )
+            if (gripper_changed and env._ee_dim == 1 and "right" in active_arms)
+            else None
+        )
+        host.move_body_smooth(
+            left_arm=l_target,
+            right_arm=r_target,
+            left_gripper=l_grip,
+            right_gripper=r_grip,
+            max_step_rad=0.003,
+            rate_hz=50.0,
+        )
+        final_obs, _, _, _, _ = env.step(_build_env_action(env, target_joints, grips))
+        return final_obs
+
     step_cap = (
         min(max(max_delta_rad, 0.01), 0.018)
         if is_real_rate
         else max(max_delta_rad, 0.03)
     )
     n_interp = max(1, int(np.ceil(max_abs / step_cap)))
-    hold_steps = (12 if gripper_changed else 5) if is_real_rate else 0
+    hold_steps = (30 if gripper_changed else 5) if is_real_rate else 0
     total_steps = n_interp + hold_steps
     for step_i in range(1, total_steps + 1):
-        alpha = min(1.0, float(step_i) / float(n_interp))
+        alpha = _smooth_alpha(step_i, n_interp, smooth=is_real_rate)
         q_interp = current_joints + alpha * diff
-        action = np.zeros(env.action_space.shape, dtype=np.float32)
-        offset = 0
-        for idx, _side in enumerate(env.config.active_arms):
-            q_slice = slice(idx * 7, (idx + 1) * 7)
-            action[offset : offset + 7] = q_interp[q_slice]
-            offset += 7
-            if env._ee_dim > 0:
-                g_val = float(grips[idx]) if idx < grips.size else float(grips[0])
-                action[offset : offset + env._ee_dim] = g_val
-                offset += env._ee_dim
-        env.step(action)
+        env.step(_build_env_action(env, q_interp, grips))
     return env._get_observation()
 
 
@@ -414,49 +478,47 @@ def _run_interactive(
 
         if cmd == "home":
             if host is not None:
-                is_real_rate = (
-                    not env.config.is_dummy
-                    and float(env.config.step_frequency) < 1000.0
-                )
-                dt = 1.0 / max(float(env.config.step_frequency), 1.0)
                 rstate = host.get_state()
                 waist_start = np.array(rstate.waist_positions, dtype=np.float32)
-                neck_start = np.array(rstate.neck_positions, dtype=np.float32)
                 waist_q = np.zeros_like(waist_start)
                 if waist_q.size >= 5:
                     waist_q[0] = max(0.01, min(float(waist_start[0]), 0.015))
                     waist_q[1] = max(0.02, min(float(waist_start[1]), 0.03))
-                neck_q = np.zeros_like(neck_start)
-                n_w = max(
-                    1,
-                    int(
-                        np.ceil(
-                            max(
-                                float(np.max(np.abs(waist_start - waist_q))),
-                                float(np.max(np.abs(neck_start - neck_q))),
-                            )
-                            / (0.004 if is_real_rate else 0.05)
-                        )
-                    ),
+                neck_q = np.zeros_like(
+                    np.array(rstate.neck_positions, dtype=np.float32)
                 )
-                for s_i in range(1, n_w + 1):
-                    alpha = float(s_i) / float(n_w)
-                    host.move_waist_joint(
-                        (waist_start + alpha * (waist_q - waist_start)).astype(
-                            np.float32
-                        )
+                host.move_body_smooth(
+                    waist=waist_q,
+                    neck=neck_q,
+                    max_step_rad=0.002,
+                    rate_hz=50.0,
+                )
+                rstate = host.get_state()
+                for idx, side in enumerate(env.config.active_arms):
+                    q_meas = (
+                        rstate.left_joint_positions
+                        if side == "left"
+                        else rstate.right_joint_positions
                     )
-                    host.move_neck_joint(
-                        (neck_start + alpha * (neck_q - neck_start)).astype(np.float32)
+                    joints[idx * 7 : (idx + 1) * 7] = np.asarray(
+                        q_meas, dtype=np.float32
                     )
-                    if is_real_rate:
-                        time.sleep(dt)
-            obs, _ = env.reset()
-            joints = np.array(obs["state"]["arm_joint_position"], dtype=np.float32)
-            _print_status(env, obs, host)
-            continue
+            rest_q = np.asarray(env.config.reset_joint_qpos, dtype=np.float32)
+            target_joints[:] = rest_q[: target_joints.size]
+            needs_arm_step = True
 
-        if cmd == "ready":
+        elif cmd == "ready":
+            if host is not None:
+                rstate = host.get_state()
+                for idx, side in enumerate(env.config.active_arms):
+                    q_meas = (
+                        rstate.left_joint_positions
+                        if side == "left"
+                        else rstate.right_joint_positions
+                    )
+                    joints[idx * 7 : (idx + 1) * 7] = np.asarray(
+                        q_meas, dtype=np.float32
+                    )
             for idx, side in enumerate(env.config.active_arms):
                 target_joints[idx * 7 : (idx + 1) * 7] = (
                     R2_LEFT_READY_QPOS if side == "left" else R2_RIGHT_READY_QPOS
@@ -570,19 +632,11 @@ def _run_interactive(
 
             if w_target.size == 5:
                 w_target = np.clip(w_target, R2_WAIST_LIMITS_LOW, R2_WAIST_LIMITS_HIGH)
-            w_step_cap = 0.004 if is_real_rate else max(step_rad, 0.03)
-            n_interp = max(
-                1,
-                int(np.ceil(float(np.max(np.abs(w_target - waist_q))) / w_step_cap)),
+            host.move_body_smooth(
+                waist=w_target.astype(np.float32),
+                max_step_rad=0.002,
+                rate_hz=50.0,
             )
-            total_steps = n_interp + (5 if is_real_rate else 0)
-            dt = 1.0 / max(float(env.config.step_frequency), 1.0)
-            for s_i in range(1, total_steps + 1):
-                alpha = min(1.0, float(s_i) / float(n_interp))
-                q_step = waist_q + alpha * (w_target - waist_q)
-                host.move_waist_joint(q_step.astype(np.float32))
-                if is_real_rate:
-                    time.sleep(dt)
             waist_q = w_target.astype(np.float32)
             obs = env._get_observation()
             _print_status(env, obs, host)
@@ -614,19 +668,11 @@ def _run_interactive(
                 print(f"Unknown head command {sub_op!r}; type help")
                 continue
             n_target = np.clip(n_target, R2_NECK_LIMITS_LOW, R2_NECK_LIMITS_HIGH)
-            n_step_cap = 0.008 if is_real_rate else max(step_rad, 0.03)
-            n_interp = max(
-                1,
-                int(np.ceil(float(np.max(np.abs(n_target - neck_q))) / n_step_cap)),
+            host.move_body_smooth(
+                neck=n_target.astype(np.float32),
+                max_step_rad=0.003,
+                rate_hz=50.0,
             )
-            total_steps = n_interp + (6 if is_real_rate else 0)
-            dt = 1.0 / max(float(env.config.step_frequency), 1.0)
-            for s_i in range(1, total_steps + 1):
-                alpha = min(1.0, float(s_i) / float(n_interp))
-                q_step = neck_q + alpha * (n_target - neck_q)
-                host.move_neck_joint(q_step.astype(np.float32))
-                if is_real_rate:
-                    time.sleep(dt)
             neck_q = n_target.astype(np.float32)
             obs = env._get_observation()
             _print_status(env, obs, host)
@@ -636,7 +682,8 @@ def _run_interactive(
                 print("Base control requires a connected R2 host")
                 continue
             sub_op = words[1].lower()
-            scale = float(words[2]) if len(words) >= 3 else 1.0
+            mult = float(words[2]) if len(words) >= 3 else 1.0
+            speed_scale = float(words[3]) if len(words) >= 4 else 1.0
             base_dirs: dict[str, np.ndarray] = {
                 "fwd": np.array([0.15, 0.0, 0.0], dtype=np.float32),
                 "forward": np.array([0.15, 0.0, 0.0], dtype=np.float32),
@@ -655,15 +702,22 @@ def _run_interactive(
             if sub_op not in base_dirs:
                 print(f"Unknown base command {sub_op!r}; type help")
                 continue
-            vel = base_dirs[sub_op] * float(scale)
+            sign = -1.0 if mult < 0.0 else 1.0
+            abs_mult = abs(mult)
+            if abs_mult >= 1.0:
+                vel = base_dirs[sub_op] * float(sign * speed_scale)
+                duration = 1.0 * abs_mult
+            else:
+                vel = base_dirs[sub_op] * float(mult * speed_scale)
+                duration = 1.0
             pulse_info = host.move_base_pulse(
                 vel,
-                duration=0.45,
-                rate_hz=float(env.config.step_frequency),
+                duration=duration,
+                rate_hz=max(float(env.config.step_frequency), 50.0),
             )
             obs = env._get_observation()
             print(
-                "  base pulse vel: ",
+                f"  base pulse ({duration:.2f}s): vel=",
                 _fmt_vec(pulse_info["base_velocity"], 3),
                 "| base pose:",
                 _fmt_vec(pulse_info["base_pose"], 3),
@@ -709,15 +763,28 @@ def main() -> None:
     )
     parser.add_argument(
         "--enable-base",
+        dest="enable_base",
         action="store_true",
-        help="include the omnidirectional wheeled chassis",
+        default=True,
+        help="include the omnidirectional wheeled chassis (enabled by default)",
+    )
+    parser.add_argument(
+        "--no-base",
+        dest="enable_base",
+        action="store_false",
+        help="disable the omnidirectional wheeled chassis",
     )
     parser.add_argument(
         "--cameras",
         type=str,
         nargs="*",
         default=["head", "wrist_left", "wrist_right"],
-        help="R2 camera names to subscribe to",
+        help="R2 camera names to subscribe to (default: head wrist_left wrist_right)",
+    )
+    parser.add_argument(
+        "--no-cameras",
+        action="store_true",
+        help="disable camera subscriptions",
     )
     parser.add_argument(
         "--step",
@@ -728,8 +795,8 @@ def main() -> None:
     parser.add_argument(
         "--steps",
         type=int,
-        default=5,
-        help="number of batch steps when not running interactively (default 5)",
+        default=None,
+        help="number of batch steps when running non-interactively (default 5)",
     )
     parser.add_argument(
         "--fps",
@@ -744,10 +811,17 @@ def main() -> None:
         help="maximum reset joint speed in degrees per second (default 30)",
     )
     parser.add_argument(
+        "--reset",
+        dest="reset",
+        action="store_true",
+        default=False,
+        help="reset active arms to rest configuration before starting (disabled by default)",
+    )
+    parser.add_argument(
         "--no-reset",
         dest="reset",
         action="store_false",
-        help="start from current arm pose instead of resetting first",
+        help="start from current arm pose instead of resetting first (default)",
     )
     parser.add_argument(
         "--no-move",
@@ -756,8 +830,17 @@ def main() -> None:
     )
     parser.add_argument(
         "--interactive",
+        dest="interactive",
         action="store_true",
-        help="enter interactive command prompt",
+        default=True,
+        help="enter interactive command prompt (enabled by default)",
+    )
+    parser.add_argument(
+        "--no-interactive",
+        "--batch",
+        dest="interactive",
+        action="store_false",
+        help="run batch steps instead of entering the interactive prompt",
     )
     parser.add_argument(
         "--commands",
@@ -791,9 +874,15 @@ def main() -> None:
         from rlinf.robotics import R2Config
         from rlinf.robotics.discovery import RobotDiscovery
 
-        enable_base = bool(
-            args.enable_base or args.interactive or args.commands is not None
-        )
+        enable_base = bool(args.enable_base)
+        if args.no_cameras or (
+            len(args.cameras) == 1 and args.cameras[0].lower() == "none"
+        ):
+            camera_list: list[str] = []
+        elif len(args.cameras) == 0:
+            camera_list = ["head", "wrist_left", "wrist_right"]
+        else:
+            camera_list = list(args.cameras)
         cfg = R2Config(
             node_rank=0,
             body_dof=None if args.body_dof == "auto" else int(args.body_dof),
@@ -801,7 +890,7 @@ def main() -> None:
                 None if args.end_effector == "auto" else args.end_effector
             ),
             enable_base=enable_base,
-            cameras=list(args.cameras),
+            cameras=camera_list,
         )
         discovery = RobotDiscovery.registry["R2"].discovery_cls
         resources = discovery.enumerate(node_rank=0, configs=[cfg])
@@ -809,7 +898,8 @@ def main() -> None:
         print(
             f"R2 hardware config: body_dof={resolved_cfg.body_dof}, "
             f"end_effector_type={resolved_cfg.end_effector_type!r}, "
-            f"enable_base={resolved_cfg.enable_base}"
+            f"enable_base={resolved_cfg.enable_base}, "
+            f"cameras={resolved_cfg.cameras}"
         )
 
         env = R2ReachEnv(
@@ -822,7 +912,12 @@ def main() -> None:
             robot_info=resources.infos[0],
         )
         try:
-            if args.interactive or args.commands is not None:
+            use_batch = (
+                args.no_move
+                or (args.steps is not None and args.commands is None)
+                or not args.interactive
+            )
+            if not use_batch or args.commands is not None:
                 parsed_cmds = (
                     [c.strip() for c in args.commands.split(";") if c.strip()]
                     if args.commands is not None
@@ -837,7 +932,7 @@ def main() -> None:
             else:
                 _run_batch_steps(
                     env,
-                    steps=args.steps,
+                    steps=5 if args.steps is None else args.steps,
                     delta_rad=float(np.deg2rad(args.step)),
                     reset=args.reset,
                     no_move=args.no_move,

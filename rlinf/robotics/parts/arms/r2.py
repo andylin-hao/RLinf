@@ -19,7 +19,7 @@ from __future__ import annotations
 import os
 import threading
 import time
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from typing import Any, Optional
 
@@ -31,6 +31,8 @@ from rlinf.robotics.parts.base import (
     FaultLevel,
     Features,
     HealthStatus,
+    JointGroupSpec,
+    MotionProfile,
     RobotPart,
 )
 from rlinf.robotics.parts.end_effectors import BaseHand
@@ -482,6 +484,16 @@ def _xyz_rpy_to_pose(pose_vec: np.ndarray, pose_cls: Any) -> Any:
     return msg
 
 
+def _as_byte_view(data: Any) -> memoryview | bytes:
+    """Return a zero-copy ``memoryview`` when ``data`` supports the buffer protocol."""
+    if data is None:
+        return b""
+    try:
+        return memoryview(data).cast("B")
+    except TypeError:
+        return bytes(data)
+
+
 def _decode_image_message(
     msg: Any,
     *,
@@ -491,9 +503,9 @@ def _decode_image_message(
 ) -> np.ndarray:
     """Decode a sensor_msgs/Image or CompressedImage message into a NumPy array."""
     width_default, height_default = fallback_resolution
+    raw = _as_byte_view(getattr(msg, "data", b""))
     if compressed:
-        raw = bytes(getattr(msg, "data", b""))
-        if not raw:
+        if len(raw) == 0:
             return np.zeros((height_default, width_default, 3), dtype=np.uint8)
         try:
             import cv2
@@ -516,7 +528,6 @@ def _decode_image_message(
     height = int(getattr(msg, "height", 0) or height_default)
     width = int(getattr(msg, "width", 0) or width_default)
     encoding = str(getattr(msg, "encoding", "rgb8")).lower()
-    raw = bytes(getattr(msg, "data", b""))
 
     if depth:
         if "16uc1" in encoding or "mono16" in encoding:
@@ -794,6 +805,24 @@ class R2Arm(MethodArm):
         fn = getattr(self._host, f"move_{self.side}_arm_movej")
         return bool(fn(positions, duration=duration, max_velocity=max_velocity))
 
+    def reset_dual_joint(
+        self,
+        left_positions: Sequence[float] | np.ndarray,
+        right_positions: Sequence[float] | np.ndarray,
+        duration: float = 3.0,
+        *,
+        max_velocity: Optional[float | Sequence[float] | np.ndarray] = None,
+    ) -> bool:
+        """Move both arms simultaneously and smoothly to their target positions."""
+        return bool(
+            self._host.move_dual_arm_movej(
+                left_positions,
+                right_positions,
+                duration=duration,
+                max_velocity=max_velocity,
+            )
+        )
+
     def clear_errors(self) -> bool:
         """Clear motion controller faults on the shared R2 connection."""
         return bool(self._host.clear_errors())
@@ -940,7 +969,7 @@ class R2Connection(Connection):
         *,
         body_dof: Optional[int | str] = None,
         end_effector_type: Optional[str] = "gripper",
-        enable_base: bool = False,
+        enable_base: bool = True,
         cameras: Sequence[str] = ("head", "wrist_left", "wrist_right"),
         enable_depth: bool = False,
         use_compressed_camera: bool = False,
@@ -949,6 +978,8 @@ class R2Connection(Connection):
         enable_fault_recovery: bool = True,
         max_recovery_attempts: int = 3,
         recovery_cooldown_window: float = 10.0,
+        control_rate_hz: float = 50.0,
+        motion_profile: Optional[MotionProfile | Mapping[str, Any]] = None,
         node_name: str = "rlinf_r2_controller",
     ) -> None:
         if body_dof in (None, "auto"):
@@ -1004,6 +1035,11 @@ class R2Connection(Connection):
             max_recovery_attempts=max_recovery_attempts,
             recovery_cooldown_window=recovery_cooldown_window,
         )
+        self.configure_motion_profile(
+            motion_profile,
+            control_rate_hz=control_rate_hz,
+            pulse_rate_hz=control_rate_hz,
+        )
         self.node_name = node_name
         self._logger = get_logger()
 
@@ -1029,6 +1065,8 @@ class R2Connection(Connection):
 
         self._camera_frames: dict[str, np.ndarray] = {}
         self._camera_depths: dict[str, np.ndarray] = {}
+        self._camera_raw_frames: dict[str, tuple[Any, bool, tuple[int, int]]] = {}
+        self._camera_raw_depths: dict[str, tuple[Any, tuple[int, int]]] = {}
         self._camera_events: dict[str, threading.Event] = {
             name: threading.Event() for name in self.camera_names
         }
@@ -1050,12 +1088,110 @@ class R2Connection(Connection):
         self._cmd_right_gripper: Optional[float] = None
         self._cmd_left_hand: Optional[np.ndarray] = None
         self._cmd_right_hand: Optional[np.ndarray] = None
+        self._cmd_synced_from_joint_state: bool = False
+        self._in_smooth_stream: bool = False
+        self._flushing_command_batch: bool = False
+        self._staged_servoj_targets: dict[str, float] = {}
+        self._staged_smooth_targets: dict[str, Any] = {}
+        self._staged_movej_calls: list[
+            tuple[str, np.ndarray, float, Optional[np.ndarray]]
+        ] = []
         self._chassis_cmd_started: bool = False
         self._system_state_code: int = 2
         self._last_error_code: int = 0
         self._last_error_msg: str = ""
         self._disabled_slaves: tuple[int, ...] = ()
         self._recovery_timestamps: list[float] = []
+
+    @property
+    def joint_group_specs(self) -> dict[str, JointGroupSpec]:
+        """Return the :class:`JointGroupSpec` table for R2 body joint groups."""
+        w_dim = len(self.waist_joint_names)
+        return {
+            "waist": JointGroupSpec(
+                name="waist",
+                dim=w_dim,
+                low=R2_WAIST_LIMITS_LOW[:w_dim],
+                high=R2_WAIST_LIMITS_HIGH[:w_dim],
+            ),
+            "left_arm": JointGroupSpec(
+                name="left_arm",
+                dim=7,
+                low=R2_LEFT_ARM_LIMITS_LOW,
+                high=R2_LEFT_ARM_LIMITS_HIGH,
+            ),
+            "right_arm": JointGroupSpec(
+                name="right_arm",
+                dim=7,
+                low=R2_RIGHT_ARM_LIMITS_LOW,
+                high=R2_RIGHT_ARM_LIMITS_HIGH,
+            ),
+            "neck": JointGroupSpec(
+                name="neck",
+                dim=2,
+                low=R2_NECK_LIMITS_LOW,
+                high=R2_NECK_LIMITS_HIGH,
+            ),
+        }
+
+    def _reanchor_cmd_state(self, state: R2RobotState) -> None:
+        """Re-anchor any drifted cached command group to its measured hardware state."""
+        specs = self.joint_group_specs
+        profile = self.motion_profile
+        self._cmd_waist = specs["waist"].reanchor(
+            self._cmd_waist, state.waist_positions, profile
+        )
+        self._cmd_left_arm = specs["left_arm"].reanchor(
+            self._cmd_left_arm, state.left_joint_positions, profile
+        )
+        self._cmd_right_arm = specs["right_arm"].reanchor(
+            self._cmd_right_arm, state.right_joint_positions, profile
+        )
+        self._cmd_neck = specs["neck"].reanchor(
+            self._cmd_neck, state.neck_positions, profile
+        )
+
+    def _on_command_batch_begin(self) -> None:
+        """Clear staging buffers when an outer command batch begins."""
+        self._staged_servoj_targets.clear()
+        self._staged_smooth_targets.clear()
+        self._staged_movej_calls.clear()
+
+    def _on_command_batch_cancel(self) -> None:
+        """Discard staged targets when a command batch aborts."""
+        self._staged_servoj_targets.clear()
+        self._staged_smooth_targets.clear()
+        self._staged_movej_calls.clear()
+
+    def _flush_command_batch(self) -> bool:
+        """Flush staged ServoJ, smooth, and MoveJ commands atomically in one pass."""
+        ok = True
+        self._flushing_command_batch = True
+        try:
+            if self._staged_servoj_targets:
+                servoj_targets = dict(self._staged_servoj_targets)
+                self._staged_servoj_targets.clear()
+                self._publish_servoj(
+                    tuple(servoj_targets.keys()),
+                    tuple(servoj_targets.values()),
+                )
+            if self._staged_smooth_targets:
+                smooth_kwargs = dict(self._staged_smooth_targets)
+                self._staged_smooth_targets.clear()
+                ok = self.move_body_smooth(**smooth_kwargs) and ok
+            if self._staged_movej_calls:
+                calls = list(self._staged_movej_calls)
+                self._staged_movej_calls.clear()
+                for side, q, duration, max_vel in calls:
+                    fn = (
+                        self.move_left_arm_movej
+                        if side == "left"
+                        else self.move_right_arm_movej
+                    )
+                    ok = fn(q, duration=duration, max_velocity=max_vel) and ok
+        finally:
+            self._flushing_command_batch = False
+        return ok
 
     def _set_body_dof(self, body_dof: int) -> None:
         """Update the waist and body joint tables to match ``body_dof`` (20 or 21)."""
@@ -1340,6 +1476,12 @@ class R2Connection(Connection):
                 self._on_joint_state,
                 reliability="best_effort",
             )
+            t_adv = time.monotonic()
+            self._advertise("/robotic/servoj_data", ServoJ)
+            self._advertise("/robotic/servo_ry_hand_data", ServoRYHandDual)
+            if self.enable_base:
+                self._advertise("/chassis/cmd_vel", Twist)
+
             self._subscribe(
                 "/robotic/tcp_data",
                 TCP,
@@ -1450,11 +1592,6 @@ class R2Connection(Connection):
                         memory_size=8 * 1024 * 1024,
                     )
 
-            self._advertise("/robotic/servoj_data", ServoJ)
-            self._advertise("/robotic/servo_ry_hand_data", ServoRYHandDual)
-            if self.enable_base:
-                self._advertise("/chassis/cmd_vel", Twist)
-
             try:
                 import rclpy
 
@@ -1486,6 +1623,13 @@ class R2Connection(Connection):
                 self._client("/clear_faults", ClearFaults)
             except ImportError:
                 pass
+            try:
+                from r2_sensor_msgs.srv import SetLEDColor, SetLEDMode
+
+                self._client("/head/set_led_mode", SetLEDMode)
+                self._client("/head/set_led_color", SetLEDColor)
+            except ImportError:
+                pass
             if self.enable_base:
                 try:
                     from std_srvs.srv import SetBool
@@ -1494,12 +1638,12 @@ class R2Connection(Connection):
                 except ImportError:
                     pass
 
-            self._state_ready.wait(timeout=5.0)
-            for cam_name in self.camera_names:
-                self._camera_events[cam_name].wait(timeout=2.0)
             st_resp = self._call_service(
                 "/robotic/get_system_state_cmd", lambda _req: None, timeout=2.0
             )
+            self._state_ready.wait(timeout=5.0)
+            for cam_name in self.camera_names:
+                self._camera_events[cam_name].wait(timeout=2.0)
             if (
                 (st_resp is not None and getattr(st_resp, "state", 2) == 4)
                 or self._last_error_code != 0
@@ -1508,6 +1652,12 @@ class R2Connection(Connection):
                 self.clear_errors()
             else:
                 self.switch_controller(self.controller_mode)
+            rem_rtps = 1.8 - (time.monotonic() - t_adv)
+            if rem_rtps > 0.0:
+                time.sleep(rem_rtps)
+            self._state_ready.clear()
+            self._state_ready.wait(timeout=4.0)
+            self._sync_cmd_to_actual()
             return self._session
 
         from navigation_msgs.srv import NavigationControl
@@ -1638,6 +1788,10 @@ class R2Connection(Connection):
         self._readers.clear()
         self._writers.clear()
         self._services.clear()
+        self._camera_frames.clear()
+        self._camera_depths.clear()
+        self._camera_raw_frames.clear()
+        self._camera_raw_depths.clear()
         self._active_real_mode = None
         self._cmd_left_arm = None
         self._cmd_right_arm = None
@@ -1647,6 +1801,7 @@ class R2Connection(Connection):
         self._cmd_right_gripper = None
         self._cmd_left_hand = None
         self._cmd_right_hand = None
+        self._cmd_synced_from_joint_state = False
         self._system_state_code = 2
         self._last_error_code = 0
         self._last_error_msg = ""
@@ -1666,17 +1821,13 @@ class R2Connection(Connection):
         resolution: tuple[int, int],
     ) -> Any:
         def _callback(msg: Any) -> None:
-            decoded = _decode_image_message(
-                msg,
-                compressed=compressed,
-                depth=depth,
-                fallback_resolution=resolution,
-            )
             with self._lock:
                 if depth:
-                    self._camera_depths[camera_name] = decoded
+                    self._camera_raw_depths[camera_name] = (msg, resolution)
+                    self._camera_depths.pop(camera_name, None)
                 else:
-                    self._camera_frames[camera_name] = decoded
+                    self._camera_raw_frames[camera_name] = (msg, compressed, resolution)
+                    self._camera_frames.pop(camera_name, None)
                     self._camera_events[camera_name].set()
 
         return _callback
@@ -1907,7 +2058,16 @@ class R2Connection(Connection):
             elif hasattr(msg, "fault_level"):
                 self._state.is_healthy = int(msg.fault_level) == 0
             elif hasattr(msg, "severity_level"):
-                self._state.is_healthy = int(msg.severity_level) == 0
+                if hasattr(msg, "errors"):
+                    errors = list(getattr(msg, "errors", []) or [])
+                    has_motion_fault = any(
+                        int(getattr(err, "severity_level", 0)) >= 4
+                        and str(getattr(err, "code_str", "")).startswith(("M.", "EC"))
+                        for err in errors
+                    )
+                    self._state.is_healthy = not has_motion_fault
+                else:
+                    self._state.is_healthy = int(msg.severity_level) < 4
 
     def _on_controller_state(self, msg: Any) -> None:
         with self._lock:
@@ -2013,29 +2173,37 @@ class R2Connection(Connection):
 
     def _ensure_cmd_state(self, state: R2RobotState) -> None:
         """Lazily initialize commanded target state from the first measured state snapshot."""
-        if self._cmd_left_arm is None:
+        with self._lock:
+            has_joint_state = bool(self._joint_map_positions)
+        resync_uninitialized = has_joint_state and not self._cmd_synced_from_joint_state
+        if self._cmd_left_arm is None or resync_uninitialized:
             self._cmd_left_arm = state.left_joint_positions.copy()
-        if self._cmd_right_arm is None:
+        if self._cmd_right_arm is None or resync_uninitialized:
             self._cmd_right_arm = state.right_joint_positions.copy()
         if (
             self._cmd_waist is None
             or self._cmd_waist.size != state.waist_positions.size
+            or resync_uninitialized
         ):
             self._cmd_waist = state.waist_positions.copy()
-        if self._cmd_neck is None:
+        if self._cmd_neck is None or resync_uninitialized:
             self._cmd_neck = state.neck_positions.copy()
-        if self._cmd_left_gripper is None:
+        if self._cmd_left_gripper is None or resync_uninitialized:
             self._cmd_left_gripper = float(state.left_gripper_position[0])
-        if self._cmd_right_gripper is None:
+        if self._cmd_right_gripper is None or resync_uninitialized:
             self._cmd_right_gripper = float(state.right_gripper_position[0])
-        if self._cmd_left_hand is None:
+        if self._cmd_left_hand is None or resync_uninitialized:
             self._cmd_left_hand = state.left_hand_position.copy()
-        if self._cmd_right_hand is None:
+        if self._cmd_right_hand is None or resync_uninitialized:
             self._cmd_right_hand = state.right_hand_position.copy()
+        if has_joint_state:
+            self._cmd_synced_from_joint_state = True
 
     def _sync_cmd_to_actual(self, state: Optional[R2RobotState] = None) -> None:
         """Synchronize internal commanded joint targets to the latest measured robot state."""
         snap = state if state is not None else self.get_state()
+        with self._lock:
+            has_joint_state = bool(self._joint_map_positions)
         self._cmd_left_arm = snap.left_joint_positions.copy()
         self._cmd_right_arm = snap.right_joint_positions.copy()
         self._cmd_waist = snap.waist_positions.copy()
@@ -2044,6 +2212,7 @@ class R2Connection(Connection):
         self._cmd_right_gripper = float(snap.right_gripper_position[0])
         self._cmd_left_hand = snap.left_hand_position.copy()
         self._cmd_right_hand = snap.right_hand_position.copy()
+        self._cmd_synced_from_joint_state = has_joint_state
 
     def _apply_cmd_targets(self, name_to_pos: dict[str, float]) -> None:
         """Update cached whole-body command targets from a ``joint_name -> position`` mapping."""
@@ -2271,6 +2440,32 @@ class R2Connection(Connection):
         neck_slice = n_vec if self.body_dof == 21 else n_vec[1:2]
         return [float(x) for x in np.concatenate([w_vec, l_vec, r_vec, neck_slice])]
 
+    def _send_real_servoj_frame(self) -> None:
+        """Publish the current whole-body ``_cmd_*`` state to ``/robotic/servoj_data``."""
+        if "/robotic/servoj_data" not in self._writers:
+            return
+        assert (
+            self._cmd_left_arm is not None
+            and self._cmd_right_arm is not None
+            and self._cmd_waist is not None
+            and self._cmd_neck is not None
+            and self._cmd_left_gripper is not None
+            and self._cmd_right_gripper is not None
+        )
+        if self._is_real_rframe and self._active_real_mode != R2_MODE_SERVOJ:
+            self.switch_controller(R2_MODE_SERVOJ)
+        channel, msg_cls = self._writers["/robotic/servoj_data"]
+        msg = msg_cls()
+        msg.joint = self._build_whole_body_joint_vector(
+            left_arm=self._cmd_left_arm,
+            right_arm=self._cmd_right_arm,
+            waist=self._cmd_waist,
+            neck=self._cmd_neck,
+        )
+        msg.gripper_l = float(np.clip(1.0 - self._cmd_left_gripper, 0.0, 1.0))
+        msg.gripper_r = float(np.clip(1.0 - self._cmd_right_gripper, 0.0, 1.0))
+        channel.send(msg)
+
     def _publish_servoj(
         self,
         joint_names: Sequence[str],
@@ -2279,6 +2474,16 @@ class R2Connection(Connection):
         efforts: Optional[Sequence[float]] = None,
     ) -> None:
         self._require_connected()
+        if (
+            self.in_command_batch
+            and not self._flushing_command_batch
+            and velocities is None
+            and efforts is None
+        ):
+            for n, p in zip(joint_names, positions, strict=False):
+                self._staged_servoj_targets[str(n)] = float(p)
+            return
+
         self._check_and_recover("servoj_fault")
 
         name_to_pos = {
@@ -2287,10 +2492,11 @@ class R2Connection(Connection):
         state = self.get_state()
         self._ensure_cmd_state(state)
         is_hand_cmd = any(n.startswith(("HandL_", "HandR_")) for n in name_to_pos)
-        if not is_hand_cmd:
-            self._apply_cmd_targets(name_to_pos)
+        has_body_cmd = any(not n.startswith(("HandL_", "HandR_")) for n in name_to_pos)
 
         if "/Motion/ServoJ" in self._writers:
+            if has_body_cmd:
+                self._apply_cmd_targets(name_to_pos)
             channel, msg_cls = self._writers["/Motion/ServoJ"]
             msg = msg_cls()
             msg.name = list(joint_names)
@@ -2303,6 +2509,8 @@ class R2Connection(Connection):
             return
 
         if "/robotic/servoj_data" not in self._writers:
+            if has_body_cmd:
+                self._apply_cmd_targets(name_to_pos)
             return
 
         if is_hand_cmd and "/robotic/servo_ry_hand_data" in self._writers:
@@ -2318,7 +2526,8 @@ class R2Connection(Connection):
             h_msg.left_finger_open_ratio = [float(x) for x in self._cmd_left_hand]
             h_msg.right_finger_open_ratio = [float(x) for x in self._cmd_right_hand]
             h_ch.send(h_msg)
-            return
+            if not has_body_cmd:
+                return
 
         assert (
             self._cmd_left_arm is not None
@@ -2329,20 +2538,54 @@ class R2Connection(Connection):
             and self._cmd_right_gripper is not None
         )
 
-        if self._is_real_rframe and self._active_real_mode != R2_MODE_SERVOJ:
-            self.switch_controller(R2_MODE_SERVOJ)
+        if self._is_real_rframe and not self._in_smooth_stream:
+            self._reanchor_cmd_state(state)
+            starts = {
+                "waist": self._cmd_waist.copy(),
+                "left_arm": self._cmd_left_arm.copy(),
+                "right_arm": self._cmd_right_arm.copy(),
+                "neck": self._cmd_neck.copy(),
+            }
+            self._apply_cmd_targets(name_to_pos)
+            specs = self.joint_group_specs
+            self._cmd_waist = specs["waist"].clamp(self._cmd_waist)
+            self._cmd_left_arm = specs["left_arm"].clamp(self._cmd_left_arm)
+            self._cmd_right_arm = specs["right_arm"].clamp(self._cmd_right_arm)
+            self._cmd_neck = specs["neck"].clamp(self._cmd_neck)
+            targets = {
+                "waist": self._cmd_waist.copy(),
+                "left_arm": self._cmd_left_arm.copy(),
+                "right_arm": self._cmd_right_arm.copy(),
+                "neck": self._cmd_neck.copy(),
+            }
+            if any(
+                spec.needs_interpolation(
+                    starts[group], targets[group], self.motion_profile
+                )
+                for group, spec in specs.items()
+            ):
+                dt, frames = self.motion_profile.generate_trajectory(
+                    starts, targets, hold_steps=0
+                )
+                self._in_smooth_stream = True
+                try:
+                    for frame in frames:
+                        t0 = time.monotonic()
+                        self._cmd_waist = frame["waist"]
+                        self._cmd_left_arm = frame["left_arm"]
+                        self._cmd_right_arm = frame["right_arm"]
+                        self._cmd_neck = frame["neck"]
+                        self._send_real_servoj_frame()
+                        time.sleep(max(0.0, dt - (time.monotonic() - t0)))
+                finally:
+                    self._in_smooth_stream = False
+                return
 
-        channel, msg_cls = self._writers["/robotic/servoj_data"]
-        msg = msg_cls()
-        msg.joint = self._build_whole_body_joint_vector(
-            left_arm=self._cmd_left_arm,
-            right_arm=self._cmd_right_arm,
-            waist=self._cmd_waist,
-            neck=self._cmd_neck,
-        )
-        msg.gripper_l = float(np.clip(1.0 - self._cmd_left_gripper, 0.0, 1.0))
-        msg.gripper_r = float(np.clip(1.0 - self._cmd_right_gripper, 0.0, 1.0))
-        channel.send(msg)
+            self._send_real_servoj_frame()
+            return
+
+        self._apply_cmd_targets(name_to_pos)
+        self._send_real_servoj_frame()
 
     def _call_service(
         self, service_name: str, configure_request: Any, timeout: float = 5.0
@@ -2371,26 +2614,34 @@ class R2Connection(Connection):
 
         err_obj = getattr(resp, "error_code", None) if resp is not None else None
         if err_obj is not None:
-            code = int(
-                getattr(err_obj, "code", err_obj if isinstance(err_obj, int) else 0)
+            raw_code = getattr(
+                err_obj,
+                "code",
+                getattr(
+                    err_obj,
+                    "error_code",
+                    err_obj if isinstance(err_obj, int) else 0,
+                ),
             )
-            if code != 0:
+            code = int(raw_code or 0)
+            is_sticky_query = (
+                service_name == "/robotic/get_system_state_cmd"
+                and getattr(resp, "state", 2) != 4
+            )
+            if code != 0 and not is_sticky_query:
                 with self._lock:
                     self._last_error_code = code
                     self._last_error_msg = str(
-                        getattr(err_obj, "msg", getattr(resp, "error_msg", ""))
+                        getattr(
+                            err_obj,
+                            "msg",
+                            getattr(err_obj, "message", getattr(resp, "error_msg", "")),
+                        )
                     )
         return resp
 
-    def switch_controller(self, mode: int) -> bool:
-        """Switch the R2 motion controller mode (0: Hold, 1: MoveJ, 2: ServoJ, 3: GravityComp)."""
-        if mode not in (
-            R2_MODE_HOLD,
-            R2_MODE_MOVEJ,
-            R2_MODE_SERVOJ,
-            R2_MODE_GRAVITY_COMP,
-        ):
-            raise ValueError(f"Unsupported R2 controller mode {mode!r}.")
+    def _switch_real_mode(self, mode: int) -> bool:
+        """Send a controller mode switch command without altering the configured target mode."""
 
         def _fill(req: Any) -> None:
             req.mode = int(mode)
@@ -2401,10 +2652,28 @@ class R2Connection(Connection):
             else "/robotic/switch_mode_cmd"
         )
         resp = self._call_service(srv_name, _fill)
-        self.controller_mode = int(mode)
         if resp is not None:
             self._active_real_mode = int(mode)
         return bool(getattr(resp, "success", resp is not None))
+
+    def switch_controller(self, mode: int) -> bool:
+        """Switch the R2 motion controller mode (0: Hold, 1: MoveJ, 2: ServoJ, 3: GravityComp)."""
+        if mode not in (
+            R2_MODE_HOLD,
+            R2_MODE_MOVEJ,
+            R2_MODE_SERVOJ,
+            R2_MODE_GRAVITY_COMP,
+        ):
+            raise ValueError(f"Unsupported R2 controller mode {mode!r}.")
+        target_mode = int(mode)
+        self.controller_mode = target_mode
+        if self._is_real_rframe and target_mode == R2_MODE_SERVOJ:
+            self._switch_real_mode(R2_MODE_HOLD)
+            time.sleep(0.15)
+        ok = self._switch_real_mode(target_mode)
+        if self._is_real_rframe and target_mode == R2_MODE_SERVOJ:
+            time.sleep(0.15)
+        return ok
 
     def switch_system_mode(self, mode: int) -> bool:
         """Switch the R2 system state machine mode via ``/state_machine/switch_mode``."""
@@ -2425,8 +2694,10 @@ class R2Connection(Connection):
 
     def clear_errors(self) -> bool:
         """Clear motion controller faults, re-enable body axes, and restore controller mode."""
+        target_mode = self.controller_mode
         self._sync_cmd_to_actual()
         if self._is_real_rframe:
+            self._switch_real_mode(R2_MODE_HOLD)
             if "/clear_faults" in self._services:
                 self._call_service("/clear_faults", lambda _req: None, timeout=1.5)
             if "/robotic/set_axis_enable_cmd" in self._services:
@@ -2439,6 +2710,39 @@ class R2Connection(Connection):
                 self._call_service(
                     "/robotic/set_axis_enable_cmd", _fill_enable, timeout=10.0
                 )
+            if "/head/set_led_mode" in self._services:
+                try:
+
+                    def _fill_led_mode(req: Any) -> None:
+                        req.device_id = 0
+                        req.mode = 1
+                        req.r = 255
+                        req.g = 255
+                        req.b = 255
+                        req.period_ms = 0
+                        req.percentage = 100
+                        req.duration_ms = 0
+
+                    self._call_service(
+                        "/head/set_led_mode", _fill_led_mode, timeout=0.5
+                    )
+                except Exception:
+                    pass
+            if "/head/set_led_color" in self._services:
+                try:
+
+                    def _fill_led_color(req: Any) -> None:
+                        req.device_id = 0
+                        req.led_indices = []
+                        req.r = 255
+                        req.g = 255
+                        req.b = 255
+
+                    self._call_service(
+                        "/head/set_led_color", _fill_led_color, timeout=0.5
+                    )
+                except Exception:
+                    pass
         srv_name = (
             "/Motion/ClearError"
             if "/Motion/ClearError" in self._services
@@ -2452,7 +2756,9 @@ class R2Connection(Connection):
             self._system_state_code = 2
             self._state.is_healthy = True
             self._cached_health = None
-        self.switch_controller(self.controller_mode)
+            self._chassis_cmd_started = False
+        self.switch_controller(target_mode)
+        self._sync_cmd_to_actual()
         return bool(getattr(resp, "success", True))
 
     def set_payload(
@@ -2643,6 +2949,169 @@ class R2Connection(Connection):
             R2_RIGHT_ARM_JOINTS, state.right_joint_positions, efforts=tau
         )
 
+    def move_body_smooth(
+        self,
+        *,
+        left_arm: Optional[Sequence[float] | np.ndarray] = None,
+        right_arm: Optional[Sequence[float] | np.ndarray] = None,
+        waist: Optional[Sequence[float] | np.ndarray] = None,
+        neck: Optional[Sequence[float] | np.ndarray] = None,
+        left_gripper: Optional[float] = None,
+        right_gripper: Optional[float] = None,
+        duration: Optional[float] = None,
+        max_velocity: Optional[float | Sequence[float] | np.ndarray] = None,
+        max_step_rad: Optional[float] = None,
+        rate_hz: Optional[float] = None,
+    ) -> bool:
+        """Synchronously interpolate whole-body targets over ``ServoJ`` with raised-cosine smoothing."""
+        self._require_connected()
+        if self.in_command_batch and not self._flushing_command_batch:
+            for key, val in (
+                ("left_arm", left_arm),
+                ("right_arm", right_arm),
+                ("waist", waist),
+                ("neck", neck),
+                ("left_gripper", left_gripper),
+                ("right_gripper", right_gripper),
+                ("duration", duration),
+                ("max_velocity", max_velocity),
+                ("max_step_rad", max_step_rad),
+                ("rate_hz", rate_hz),
+            ):
+                if val is not None:
+                    self._staged_smooth_targets[key] = val
+            return True
+
+        if not self._is_real_rframe or "/Motion/MoveJ" in self._services:
+            if waist is not None:
+                self.move_waist_joint(np.asarray(waist, dtype=np.float32))
+            if neck is not None:
+                self.move_neck_joint(np.asarray(neck, dtype=np.float32))
+            if left_arm is not None:
+                self.move_left_arm_joint(np.asarray(left_arm, dtype=np.float32))
+            if right_arm is not None:
+                self.move_right_arm_joint(np.asarray(right_arm, dtype=np.float32))
+            if left_gripper is not None:
+                self.move_left_gripper(left_gripper)
+            if right_gripper is not None:
+                self.move_right_gripper(right_gripper)
+            return True
+
+        if self.enable_fault_recovery and self._has_active_fault(check_mode=True):
+            self.recover("move_body_smooth_precheck")
+        elif self._active_real_mode != R2_MODE_SERVOJ:
+            self.switch_controller(R2_MODE_SERVOJ)
+
+        self._sync_cmd_to_actual()
+        state = self.get_state()
+        specs = self.joint_group_specs
+        starts = {
+            "waist": state.waist_positions.astype(np.float32).copy(),
+            "left_arm": state.left_joint_positions.astype(np.float32).copy(),
+            "right_arm": state.right_joint_positions.astype(np.float32).copy(),
+            "neck": state.neck_positions.astype(np.float32).copy(),
+        }
+        targets = {
+            "waist": (
+                specs["waist"].clamp(waist)
+                if waist is not None
+                else starts["waist"].copy()
+            ),
+            "left_arm": (
+                specs["left_arm"].clamp(left_arm)
+                if left_arm is not None
+                else starts["left_arm"].copy()
+            ),
+            "right_arm": (
+                specs["right_arm"].clamp(right_arm)
+                if right_arm is not None
+                else starts["right_arm"].copy()
+            ),
+            "neck": (
+                specs["neck"].clamp(neck) if neck is not None else starts["neck"].copy()
+            ),
+        }
+
+        gripper_changed = False
+        if left_gripper is not None:
+            gl_val = float(np.clip(float(left_gripper), 0.0, 1.0))
+            gripper_changed = gripper_changed or (
+                abs(gl_val - float(self._cmd_left_gripper or 0.0)) > 1e-3
+            )
+            self._cmd_left_gripper = gl_val
+        if right_gripper is not None:
+            gr_val = float(np.clip(float(right_gripper), 0.0, 1.0))
+            gripper_changed = gripper_changed or (
+                abs(gr_val - float(self._cmd_right_gripper or 0.0)) > 1e-3
+            )
+            self._cmd_right_gripper = gr_val
+
+        hold_steps = (
+            self.motion_profile.effector_hold_steps
+            if gripper_changed
+            else self.motion_profile.hold_steps
+        )
+        dt, frames = self.motion_profile.generate_trajectory(
+            starts,
+            targets,
+            max_step_rad=max_step_rad,
+            max_velocity=max_velocity,
+            min_steps=self.motion_profile.p2p_min_steps,
+            hold_steps=hold_steps,
+            rate_hz=rate_hz,
+        )
+
+        self._in_smooth_stream = True
+        try:
+            for frame in frames:
+                t0 = time.monotonic()
+                self._cmd_waist = frame["waist"]
+                self._cmd_left_arm = frame["left_arm"]
+                self._cmd_right_arm = frame["right_arm"]
+                self._cmd_neck = frame["neck"]
+                self._send_real_servoj_frame()
+                time.sleep(max(0.0, dt - (time.monotonic() - t0)))
+        finally:
+            self._in_smooth_stream = False
+
+        return not self._has_active_fault(check_mode=True)
+
+    def _stream_real_servoj_movej(
+        self,
+        *,
+        left_arm: Optional[np.ndarray] = None,
+        right_arm: Optional[np.ndarray] = None,
+        duration: float = 3.0,
+        max_velocity: Optional[np.ndarray] = None,
+    ) -> bool:
+        """Smoothly interpolate arm joint targets over ``ServoJ`` on real RFrame."""
+        return self.move_body_smooth(
+            left_arm=left_arm,
+            right_arm=right_arm,
+            duration=duration,
+            max_velocity=max_velocity,
+        )
+
+    def move_dual_arm_movej(
+        self,
+        left_positions: np.ndarray,
+        right_positions: np.ndarray,
+        duration: float = 3.0,
+        *,
+        max_velocity: Optional[np.ndarray] = None,
+    ) -> bool:
+        """Execute a simultaneous point-to-point joint trajectory on both arms."""
+        q_l = np.asarray(left_positions, dtype=np.float32).reshape(7)
+        q_r = np.asarray(right_positions, dtype=np.float32).reshape(7)
+        with self.batch_commands():
+            ok_l = self.move_left_arm_movej(
+                q_l, duration=duration, max_velocity=max_velocity
+            )
+            ok_r = self.move_right_arm_movej(
+                q_r, duration=duration, max_velocity=max_velocity
+            )
+        return bool(ok_l and ok_r)
+
     def move_left_arm_movej(
         self,
         positions: np.ndarray,
@@ -2651,38 +3120,18 @@ class R2Connection(Connection):
         max_velocity: Optional[np.ndarray] = None,
     ) -> bool:
         """Execute a point-to-point joint trajectory on the left arm via ``MoveJ``."""
+        q = np.asarray(positions, dtype=np.float32).reshape(7)
+        if self._is_real_rframe and "/Motion/MoveJ" not in self._services:
+            return self._stream_real_servoj_movej(
+                left_arm=q, duration=duration, max_velocity=max_velocity
+            )
+        if self.in_command_batch and not self._flushing_command_batch:
+            self._staged_movej_calls.append(("left", q, float(duration), max_velocity))
+            return True
         if self.enable_fault_recovery and self._has_active_fault(check_mode=False):
             self.recover("movej_precheck")
-        q = np.asarray(positions, dtype=np.float32).reshape(7)
         self._ensure_cmd_state(self.get_state())
         self._cmd_left_arm = q.copy()
-        if "/Motion/MoveJ" not in self._services:
-            if self._is_real_rframe and self._active_real_mode != R2_MODE_HOLD:
-                self.switch_controller(R2_MODE_HOLD)
-            whole_q = self._build_whole_body_joint_vector(left_arm=q)
-
-            def _fill_real(req: Any) -> None:
-                req.task_id = 1
-                req.joint = whole_q
-                req.scale = 0.5
-                req.start = True
-
-            resp = self._call_service(
-                "/robotic/movej_cmd", _fill_real, timeout=max(duration + 5.0, 5.0)
-            )
-            err = getattr(resp, "error_code", None)
-            ok = bool(getattr(err, "code", 0) == 0) if err is not None else True
-            if not ok and self.enable_fault_recovery:
-                self.recover("movej_retry")
-                self._cmd_left_arm = q.copy()
-                if self._is_real_rframe and self._active_real_mode != R2_MODE_HOLD:
-                    self.switch_controller(R2_MODE_HOLD)
-                resp = self._call_service(
-                    "/robotic/movej_cmd", _fill_real, timeout=max(duration + 5.0, 5.0)
-                )
-                err = getattr(resp, "error_code", None)
-                ok = bool(getattr(err, "code", 0) == 0) if err is not None else True
-            return ok
 
         def _fill(req: Any) -> None:
             req.joint_names = list(R2_LEFT_ARM_JOINTS)
@@ -2715,38 +3164,18 @@ class R2Connection(Connection):
         max_velocity: Optional[np.ndarray] = None,
     ) -> bool:
         """Execute a point-to-point joint trajectory on the right arm via ``MoveJ``."""
+        q = np.asarray(positions, dtype=np.float32).reshape(7)
+        if self._is_real_rframe and "/Motion/MoveJ" not in self._services:
+            return self._stream_real_servoj_movej(
+                right_arm=q, duration=duration, max_velocity=max_velocity
+            )
+        if self.in_command_batch and not self._flushing_command_batch:
+            self._staged_movej_calls.append(("right", q, float(duration), max_velocity))
+            return True
         if self.enable_fault_recovery and self._has_active_fault(check_mode=False):
             self.recover("movej_precheck")
-        q = np.asarray(positions, dtype=np.float32).reshape(7)
         self._ensure_cmd_state(self.get_state())
         self._cmd_right_arm = q.copy()
-        if "/Motion/MoveJ" not in self._services:
-            if self._is_real_rframe and self._active_real_mode != R2_MODE_HOLD:
-                self.switch_controller(R2_MODE_HOLD)
-            whole_q = self._build_whole_body_joint_vector(right_arm=q)
-
-            def _fill_real(req: Any) -> None:
-                req.task_id = 1
-                req.joint = whole_q
-                req.scale = 0.5
-                req.start = True
-
-            resp = self._call_service(
-                "/robotic/movej_cmd", _fill_real, timeout=max(duration + 5.0, 5.0)
-            )
-            err = getattr(resp, "error_code", None)
-            ok = bool(getattr(err, "code", 0) == 0) if err is not None else True
-            if not ok and self.enable_fault_recovery:
-                self.recover("movej_retry")
-                self._cmd_right_arm = q.copy()
-                if self._is_real_rframe and self._active_real_mode != R2_MODE_HOLD:
-                    self.switch_controller(R2_MODE_HOLD)
-                resp = self._call_service(
-                    "/robotic/movej_cmd", _fill_real, timeout=max(duration + 5.0, 5.0)
-                )
-                err = getattr(resp, "error_code", None)
-                ok = bool(getattr(err, "code", 0) == 0) if err is not None else True
-            return ok
 
         def _fill(req: Any) -> None:
             req.joint_names = list(R2_RIGHT_ARM_JOINTS)
@@ -2774,24 +3203,12 @@ class R2Connection(Connection):
     def move_left_arm_cartesian(self, pose: np.ndarray, duration: float = 1.0) -> bool:
         """Move the left arm TCP to ``pose`` ``[x, y, z, r, p, y]``."""
         target = np.asarray(pose, dtype=np.float32).reshape(6)
-        pose_cls = self._msg_types["Pose"]
         if "/Motion/MoveC" not in self._services:
-            if self._is_real_rframe and self._active_real_mode != R2_MODE_HOLD:
-                self.switch_controller(R2_MODE_HOLD)
-            state = self.get_state()
-
-            def _fill_real(req: Any) -> None:
-                req.task_id = 1
-                req.pose_l = _xyz_rpy_to_pose(target, pose_cls)
-                req.pose_r = _xyz_rpy_to_pose(state.right_tcp_pose, pose_cls)
-                req.scale = 0.5
-                req.start = True
-
-            resp = self._call_service(
-                "/robotic/movel_cmd", _fill_real, timeout=max(duration + 5.0, 5.0)
+            ik = self.inverse_kinematics(left_tcp_pose=target)
+            return self.move_body_smooth(
+                left_arm=ik["left_joint_positions"], duration=duration
             )
-            err = getattr(resp, "error_code", None)
-            return bool(getattr(err, "code", 0) == 0) if err is not None else True
+        pose_cls = self._msg_types["Pose"]
 
         def _fill(req: Any) -> None:
             req.arm = 0
@@ -2806,24 +3223,12 @@ class R2Connection(Connection):
     def move_right_arm_cartesian(self, pose: np.ndarray, duration: float = 1.0) -> bool:
         """Move the right arm TCP to ``pose`` ``[x, y, z, r, p, y]``."""
         target = np.asarray(pose, dtype=np.float32).reshape(6)
-        pose_cls = self._msg_types["Pose"]
         if "/Motion/MoveC" not in self._services:
-            if self._is_real_rframe and self._active_real_mode != R2_MODE_HOLD:
-                self.switch_controller(R2_MODE_HOLD)
-            state = self.get_state()
-
-            def _fill_real(req: Any) -> None:
-                req.task_id = 1
-                req.pose_l = _xyz_rpy_to_pose(state.left_tcp_pose, pose_cls)
-                req.pose_r = _xyz_rpy_to_pose(target, pose_cls)
-                req.scale = 0.5
-                req.start = True
-
-            resp = self._call_service(
-                "/robotic/movel_cmd", _fill_real, timeout=max(duration + 5.0, 5.0)
+            ik = self.inverse_kinematics(right_tcp_pose=target)
+            return self.move_body_smooth(
+                right_arm=ik["right_joint_positions"], duration=duration
             )
-            err = getattr(resp, "error_code", None)
-            return bool(getattr(err, "code", 0) == 0) if err is not None else True
+        pose_cls = self._msg_types["Pose"]
 
         def _fill(req: Any) -> None:
             req.arm = 1
@@ -2854,8 +3259,9 @@ class R2Connection(Connection):
         val = float(
             np.clip(np.asarray(position, dtype=np.float32).reshape(-1)[0], 0.0, 1.0)
         )
-        with self._lock:
-            self._state.left_gripper_position = np.array([val], dtype=np.float32)
+        if not self._is_real_rframe:
+            with self._lock:
+                self._state.left_gripper_position = np.array([val], dtype=np.float32)
         self._publish_servoj(("GripperL",), (val,))
 
     def move_right_gripper(self, position: Any) -> None:
@@ -2863,22 +3269,25 @@ class R2Connection(Connection):
         val = float(
             np.clip(np.asarray(position, dtype=np.float32).reshape(-1)[0], 0.0, 1.0)
         )
-        with self._lock:
-            self._state.right_gripper_position = np.array([val], dtype=np.float32)
+        if not self._is_real_rframe:
+            with self._lock:
+                self._state.right_gripper_position = np.array([val], dtype=np.float32)
         self._publish_servoj(("GripperR",), (val,))
 
     def move_left_hand(self, positions: Any) -> None:
         """Command the 6-DoF left dexterous hand ``(little, ring, middle, index, thumb_bend, thumb_rotation)``."""
         arr = np.asarray(positions, dtype=np.float32).reshape(6)
-        with self._lock:
-            self._state.left_hand_position = arr.copy()
+        if not self._is_real_rframe:
+            with self._lock:
+                self._state.left_hand_position = arr.copy()
         self._publish_servoj(R2_HAND_JOINTS_LEFT, arr)
 
     def move_right_hand(self, positions: Any) -> None:
         """Command the 6-DoF right dexterous hand ``(little, ring, middle, index, thumb_bend, thumb_rotation)``."""
         arr = np.asarray(positions, dtype=np.float32).reshape(6)
-        with self._lock:
-            self._state.right_hand_position = arr.copy()
+        if not self._is_real_rframe:
+            with self._lock:
+                self._state.right_hand_position = arr.copy()
         self._publish_servoj(R2_HAND_JOINTS_RIGHT, arr)
 
     def move_base(self, velocity: np.ndarray) -> None:
@@ -2922,17 +3331,59 @@ class R2Connection(Connection):
         self,
         velocity: Sequence[float] | np.ndarray,
         duration: float = 0.5,
-        rate_hz: float = 20.0,
+        rate_hz: Optional[float] = None,
+        *,
+        ramp_up: Optional[float] = None,
+        ramp_down: Optional[float] = None,
     ) -> dict[str, np.ndarray]:
         """Stream planar chassis velocity ``[vx, vy, wz]`` for ``duration`` seconds and stop."""
         vel = np.asarray(velocity, dtype=np.float32).reshape(3)
-        dt = 1.0 / max(float(rate_hz), 1.0)
-        steps = max(1, int(round(max(float(duration), 0.0) / dt)))
-        for _ in range(steps):
-            self.move_base(vel)
-            if self._is_real_rframe:
-                time.sleep(dt)
+        total_duration = max(float(duration), 0.0)
+        if not self._is_real_rframe:
+            eff_hz = (
+                float(rate_hz)
+                if rate_hz is not None
+                else float(self.motion_profile.pulse_rate_hz)
+            )
+            dt = 1.0 / max(eff_hz, 1.0)
+            steps = max(1, int(round(total_duration / dt)))
+            for _ in range(steps):
+                self.move_base(vel)
+            state_during = self.get_state()
+            self.stop_base()
+            state_after = self.get_state()
+            return {
+                "base_pose": state_after.base_pose,
+                "base_velocity": state_during.base_velocity,
+            }
+
+        self._chassis_cmd_started = False
+        dt, up_frames, cruise_frames, down_frames = (
+            self.motion_profile.generate_velocity_pulse(
+                vel,
+                total_duration,
+                rate_hz=rate_hz,
+                ramp_up=ramp_up,
+                ramp_down=ramp_down,
+            )
+        )
+        for frame_vel in up_frames:
+            t0 = time.monotonic()
+            self.move_base(frame_vel)
+            time.sleep(max(0.0, dt - (time.monotonic() - t0)))
+
+        for frame_vel in cruise_frames:
+            t0 = time.monotonic()
+            self.move_base(frame_vel)
+            time.sleep(max(0.0, dt - (time.monotonic() - t0)))
+
         state_during = self.get_state()
+
+        for frame_vel in down_frames:
+            t0 = time.monotonic()
+            self.move_base(frame_vel)
+            time.sleep(max(0.0, dt - (time.monotonic() - t0)))
+
         self.stop_base()
         state_after = self.get_state()
         return {
@@ -2987,10 +3438,24 @@ class R2Connection(Connection):
         event = self._camera_events.get(camera_name)
         if event is not None and not event.is_set():
             event.wait(timeout=0.5)
+        raw_entry: Optional[tuple[Any, bool, tuple[int, int]]] = None
         with self._lock:
             frame = self._camera_frames.get(camera_name)
             if frame is not None:
                 return frame.copy()
+            raw_entry = self._camera_raw_frames.get(camera_name)
+        if raw_entry is not None:
+            raw_msg, compressed, resolution = raw_entry
+            decoded = _decode_image_message(
+                raw_msg,
+                compressed=compressed,
+                depth=False,
+                fallback_resolution=resolution,
+            )
+            with self._lock:
+                if self._camera_raw_frames.get(camera_name) is raw_entry:
+                    self._camera_frames[camera_name] = decoded
+            return decoded.copy()
         width, height = R2_CAMERA_TOPICS[camera_name]["resolution"]
         return np.zeros((height, width, 3), dtype=np.uint8)
 
@@ -2999,10 +3464,24 @@ class R2Connection(Connection):
         self._require_connected()
         if not self.enable_depth:
             return None
+        raw_entry: Optional[tuple[Any, tuple[int, int]]] = None
         with self._lock:
             depth = self._camera_depths.get(camera_name)
             if depth is not None:
                 return depth.copy()
+            raw_entry = self._camera_raw_depths.get(camera_name)
+        if raw_entry is not None:
+            raw_msg, resolution = raw_entry
+            decoded = _decode_image_message(
+                raw_msg,
+                compressed=False,
+                depth=True,
+                fallback_resolution=resolution,
+            )
+            with self._lock:
+                if self._camera_raw_depths.get(camera_name) is raw_entry:
+                    self._camera_depths[camera_name] = decoded
+            return decoded.copy()
         width, height = R2_CAMERA_TOPICS[camera_name]["resolution"]
         return np.zeros((height, width), dtype=np.float32)
 

@@ -442,14 +442,15 @@ class R2Env(gym.Env):
         if self.robot is None:
             return
         rest = np.asarray(self.config.reset_joint_qpos, dtype=np.float32)
-        for idx, side in enumerate(self._active_arms):
-            q_slice = slice(idx * ARM_DOF, (idx + 1) * ARM_DOF)
-            arm = self.robot.child(side).child("arm")
-            arm.reset_joint(
-                rest[q_slice],
-                duration=self.config.reset_duration,
-                max_velocity=self.config.reset_joint_speed,
-            )
+        with self.robot.batch_commands():
+            for idx, side in enumerate(self._active_arms):
+                q_slice = slice(idx * ARM_DOF, (idx + 1) * ARM_DOF)
+                arm = self.robot.child(side).child("arm")
+                arm.reset_joint(
+                    rest[q_slice],
+                    duration=self.config.reset_duration,
+                    max_velocity=self.config.reset_joint_speed,
+                )
 
     def _calc_step_reward(
         self, observation: dict[str, Any], ee_moved: bool = False

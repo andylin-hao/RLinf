@@ -40,7 +40,7 @@ class R2Robot(Robot):
         *,
         body_dof: Optional[int | str] = None,
         end_effector_type: Optional[str] = "gripper",
-        enable_base: bool = False,
+        enable_base: bool = True,
         cameras: Sequence[str] = ("head", "wrist_left", "wrist_right"),
         enable_depth: bool = False,
         use_compressed_camera: bool = False,
@@ -95,7 +95,7 @@ class R2Robot(Robot):
         *,
         body_dof: Optional[int | str] = None,
         end_effector_type: Optional[str] = "gripper",
-        enable_base: bool = False,
+        enable_base: bool = True,
         cameras: Sequence[str] = ("head", "wrist_left", "wrist_right"),
         enable_depth: bool = False,
         use_compressed_camera: bool = False,
@@ -160,7 +160,7 @@ class R2Config(RobotConfig):
     end_effector_type: Optional[str] = None
     """End-effector variant (``"gripper"``, ``"hand"``, or ``"none"``); ``None`` or ``"auto"`` auto-detects."""
 
-    enable_base: bool = False
+    enable_base: bool = True
     """Whether to include the omnidirectional wheeled chassis part."""
 
     cameras: list[str] = field(
