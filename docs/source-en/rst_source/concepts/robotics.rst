@@ -355,6 +355,79 @@ pre-command automatic recovery, the cooldown circuit breaker, and
 ``robot.consume_recovery_event()`` work automatically without additional
 plumbing.
 
+Smooth Motion and Coordinate Multi-Part Commands
+------------------------------------------------
+
+Clearing a fault restores a stopped controller, but preventing faults during
+normal operation depends on how commands reach the drives. High-frequency
+streaming controllers reject targets that jump too far in a single tick, drift
+away from measured joint angles under load, or arrive as two back-to-back
+whole-body command streams when left and right arms are commanded one after
+another. The robotics interface handles these cases at the ``Connection``
+boundary through configurable motion profiles and command batching.
+
+How Trajectory Smoothing and Drift Re-Anchoring Work
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Every ``Connection`` owns a ``MotionProfile`` (configured at construction or via
+``configure_motion_profile()``, with ``control_rate_hz`` and ``pulse_rate_hz``
+defaulting to ``50.0`` Hz) and can declare per-group ``JointGroupSpec`` limits
+for mechanical groups with different inertia, such as waist, arms, and neck.
+
+When a new target arrives, the connection first prevents target wind-up via
+``reanchor()``. If gravity, friction, or a temporary pause kept a joint from
+reaching previous targets, the cached command position could otherwise drift far
+ahead of the physical joint and cause a sudden snap when motion resumes.
+Whenever the gap between cached target and measured angle exceeds ``max_drift``,
+the connection pulls its starting anchor back toward the measured angle before
+computing the next step.
+
+If the requested change fits within a single tick's ``max_step``, the connection
+sends it directly with zero extra latency. When a move is larger (such as a
+scripted waypoint, an IK jump, or ``reset_joint()``), ``generate_trajectory()``
+subdivides the displacement into a raised-cosine (:math:`C^1` smoothstep)
+interpolation with zero velocity at both ends and appends ``hold_steps``
+settling frames so the controller converges cleanly. For velocity-controlled
+mobile bases whose hardware watchdogs require continuous frames,
+``generate_velocity_pulse()`` streams a smooth ramp-up, cruise, and cosine
+ramp-down at ``pulse_rate_hz`` and finishes with explicit zero-velocity stop
+frames.
+
+Coordinate Multi-Part Commands on a Shared Bus
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+On a dual-arm or whole-body robot whose parts share a single ``Connection``,
+calling ``left_arm.reset_joint(...)`` and ``right_arm.reset_joint(...)`` one
+after another would normally launch two separate trajectories in series: the
+first stream moves the left arm while holding the right arm at its old target,
+and the immediate handover to the second stream can cause the controller to drop
+out of streaming mode.
+
+Wrapping direct part calls in ``with robot.batch_commands():`` (or
+``connection.batch_commands()``) coalesces them into one synchronized update.
+Inside the ``with`` block, each part only updates its slice of the connection's
+target state; when the block exits, ``_flush_command_batch()`` interpolates and
+streams all modified joint groups together in a single trajectory:
+
+.. code-block:: python
+
+   # Adjust streaming rate or step caps at runtime if needed.
+   robot.child("left_arm").connection.configure_motion_profile(
+       control_rate_hz=100.0,
+       max_step=0.006,
+   )
+
+   # Coalesce separate part commands into one whole-body trajectory.
+   with robot.batch_commands():
+       robot.child("left_arm").reset_joint(left_home_qpos)
+       robot.child("right_arm").reset_joint(right_home_qpos)
+
+``robot.send_action({...})`` automatically activates ``batch_commands()`` across
+all connections touched in that step, so policy rollouts coalesce multi-part
+actions without extra code. Use ``with robot.batch_commands():`` when calling
+imperative part methods such as ``reset_joint()`` across multiple parts during
+setup or episode reset.
+
 Keep Placement Out of Task Code
 -------------------------------
 
