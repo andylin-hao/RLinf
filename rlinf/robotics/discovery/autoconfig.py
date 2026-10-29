@@ -39,12 +39,9 @@ class RobotAutoConfig:
             "node_rank",
             "disable_validate",
             "enable_fault_recovery",
-            "enable_stall_detection",
-            "stall_position_threshold",
-            "stall_velocity_threshold",
-            "stall_steps_threshold",
             "max_recovery_attempts",
             "recovery_cooldown_window",
+            "motion_profile",
         }
     )
 

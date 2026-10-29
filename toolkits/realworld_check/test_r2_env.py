@@ -31,8 +31,10 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import os
 import signal
-from collections.abc import Sequence
+import time
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, Optional
 
@@ -41,11 +43,13 @@ import numpy as np
 from rlinf.robotics.parts.arms.r2 import (
     R2_LEFT_ARM_LIMITS_HIGH,
     R2_LEFT_ARM_LIMITS_LOW,
+    R2_LEFT_HOME_QPOS,
     R2_LEFT_READY_QPOS,
     R2_NECK_LIMITS_HIGH,
     R2_NECK_LIMITS_LOW,
     R2_RIGHT_ARM_LIMITS_HIGH,
     R2_RIGHT_ARM_LIMITS_LOW,
+    R2_RIGHT_HOME_QPOS,
     R2_RIGHT_READY_QPOS,
     R2_WAIST_LIMITS_HIGH,
     R2_WAIST_LIMITS_LOW,
@@ -86,9 +90,13 @@ HELP = """
   base <turn_left|turn_right> [mult] [spd]  rotate chassis (mult scales angle/time)
   base stop                                 stop chassis immediately
 
+  === VR Teleoperation (PICO) ===
+  pico [zmq_addr]                           run PICO VR teleoperation loop until Ctrl-C
+                                            (grip: arms, trigger/X/Y/A/B: grippers, thumbsticks: base)
+
   === Postures, Diagnostics & Status ===
   ready / pose ready                        move active arms to bent-elbow ready posture
-  home  / pose home                         return arms, waist, and head to zero
+  home  / pose home                         return arms, waist, and head to home posture
   where                                     print joints, TCP xyz, grippers, waist, head, base
   diag                                      print hardware fault and health diagnosis
   recover                                   clear faults, re-enable body axes, and restore ServoJ
@@ -294,11 +302,9 @@ def _step_arm_smooth(
             right_arm=r_target,
             left_gripper=l_grip,
             right_gripper=r_grip,
-            max_step_rad=0.003,
-            rate_hz=50.0,
+            max_velocity=0.15,
         )
-        final_obs, _, _, _, _ = env.step(_build_env_action(env, target_joints, grips))
-        return final_obs
+        return env._get_observation()
 
     step_cap = (
         min(max(max_delta_rad, 0.01), 0.018)
@@ -384,12 +390,238 @@ def _apply_arm_command(
     return q_new
 
 
+def _deadzone_curve(val: float, deadzone: float = 0.15) -> float:
+    mag = abs(float(val))
+    if mag <= deadzone:
+        return 0.0
+    scaled = min(1.0, (mag - deadzone) / max(1e-6, 1.0 - deadzone))
+    return float(np.copysign(scaled * scaled, val))
+
+
+def _pico_thumbstick_base_velocity(
+    readings: Sequence[Mapping[str, Any]],
+    prev_vel: np.ndarray,
+    *,
+    max_vx: float = 0.25,
+    max_vy: float = 0.20,
+    max_wz: float = 0.45,
+) -> np.ndarray:
+    """Map PICO left/right controller thumbsticks (``axis``) to planar base ``[vx, vy, wz]``."""
+    lx, ly = 0.0, 0.0
+    rx, ry = 0.0, 0.0
+    for r in readings:
+        if not r.get("ready", False):
+            continue
+        axis = r.get("axis", (0.0, 0.0))
+        if axis is None or len(axis) < 2:
+            continue
+        hand = str(r.get("hand", "")).lower()
+        if hand == "left":
+            lx, ly = _deadzone_curve(axis[0]), _deadzone_curve(axis[1])
+        elif hand == "right":
+            rx, ry = _deadzone_curve(axis[0]), _deadzone_curve(axis[1])
+
+    vx = (ly if abs(ly) > 1e-4 else ry) * max_vx
+    vy = -lx * max_vy
+    wz = -rx * max_wz
+    target = np.array([vx, vy, wz], dtype=np.float32)
+    smoothed = 0.4 * np.asarray(prev_vel, dtype=np.float32) + 0.6 * target
+    smoothed[np.abs(smoothed) < 1e-3] = 0.0
+    return smoothed
+
+
+def _run_pico_teleop(
+    env: Any,
+    *,
+    zmq_addr: Optional[str] = None,
+    max_steps: Optional[int] = None,
+) -> dict[str, Any]:
+    """Run a live PICO VR teleoperation loop against ``env``."""
+    from rlinf.envs.real.wrappers.teleop.builder import build_teleop
+
+    addr = zmq_addr or os.environ.get("R2_PICO_ZMQ_ADDR", "ipc:///tmp/vr_data.ipc")
+    active_arms = tuple(env.config.active_arms)
+    devices: list[Any] = (
+        [{"pico": {"drives": side}} for side in active_arms]
+        if len(active_arms) > 1
+        else ["pico"]
+    )
+    has_gripper = getattr(env, "_ee_type", "") == "gripper"
+    orig_freq = float(env.config.step_frequency)
+    orig_step_limits = tuple(env.config.joint_step_limits)
+    is_live_robot = not env.config.is_dummy and orig_freq < 1000.0
+    if is_live_robot:
+        env.config.step_frequency = max(orig_freq, 50.0)
+        env.config.joint_step_limits = (
+            0.045,
+            0.045,
+            0.045,
+            0.045,
+            0.05,
+            0.05,
+            0.05,
+        )
+
+    pico_cfg: dict[str, Any] = {
+        "zmq_addr": addr,
+        "control_trigger": "grip",
+        "control_threshold": 0.85,
+        "gripper_trigger": "trigger",
+        "gripper_close_threshold": 0.5,
+        "position_scale": float(os.environ.get("R2_PICO_SCALE", "1.0")),
+        "rotation_scale": float(os.environ.get("R2_PICO_ROT_SCALE", "0.85")),
+        "rotation_delta_frame": "operator",
+        "ik_backtrack_attempts": 3,
+        "max_tick_s": 0.25,
+        "max_stale_s": 0.3,
+        "calibration": {
+            "enabled": True,
+            "auto_calibrate_on_start": bool(
+                int(os.environ.get("R2_PICO_AUTO_CALIBRATE", "0"))
+            ),
+            "auto_calibrate_on_grip": bool(
+                int(os.environ.get("R2_PICO_CALIBRATE_ON_GRIP", "0"))
+            ),
+            "required": False,
+            "button": "menu_button",
+        },
+        "left": {
+            "gripper_close_button": "X",
+            "gripper_open_button": "Y",
+        },
+        "right": {
+            "gripper_close_button": "A",
+            "gripper_open_button": "B",
+        },
+    }
+
+    teleop = build_teleop(
+        env,
+        {
+            "no_gripper": not has_gripper,
+            "pico": pico_cfg,
+        },
+        devices,
+    )
+    # Allow left and right controllers to operate independently even if one
+    # controller is resting on the desk or temporarily out of camera view.
+    teleop.interlock = None
+    host = _get_connection_host(env)
+    enable_base = bool(getattr(env.hardware, "enable_base", False))
+    base_vel = np.zeros(3, dtype=np.float32)
+    try:
+        if not env.config.is_dummy:
+            if host is not None:
+                with contextlib.suppress(Exception):
+                    if not host.diagnose().healthy:
+                        host.clear_errors()
+            env._get_observation()
+        deadline = time.monotonic() + 0.5
+        while time.monotonic() < deadline:
+            if all(entry.device._device.ready for entry in teleop.group.entries):
+                break
+            time.sleep(0.01)
+        teleop.reset(env)
+        policy_action = env.get_joint_positions()
+        # Clear the initial release_grip latch if controllers are already streaming idle packets.
+        teleop.read(env, policy_action)
+        readings = [entry.device._device.last_reading for entry in teleop.group.entries]
+        stream_ready = any(r.get("ready", False) for r in readings)
+        print(
+            f"  PICO teleoperation active on {addr} "
+            f"(arms={active_arms}, gripper={has_gripper}, base={enable_base}, "
+            f"rate={env.config.step_frequency:.0f}Hz, stream_ready={stream_ready})."
+        )
+        if not stream_ready:
+            print(
+                "  [WARN] No ZeroMQ VR data received yet on "
+                f"{addr}. Ensure start_pico_service.sh is running."
+            )
+        else:
+            for r in readings:
+                hand = r.get("hand", "?")
+                valid = not r.get("invalid_pose", False)
+                print(
+                    f"  PICO {hand} controller: tracking={'OK' if valid else 'IDLE/UNTRACKED (wake controller)'}, "
+                    f"grip={r.get('control_value', 0.0):.2f}, trigger={r.get('trigger', 0.0):.2f}"
+                )
+        print(
+            "  Controls:\n"
+            "    - Side grip (squeeze & hold): move left/right arm\n"
+            "    - Index trigger (squeeze=close, release=open) or X/Y (left) & A/B (right): control grippers\n"
+            "    - Left thumbstick: drive chassis forward/back & strafe left/right\n"
+            "    - Right thumbstick: turn chassis left/right (and drive fwd/back when left stick is idle)\n"
+            "    - Menu button: recalibrate headset yaw | Ctrl-C: stop"
+        )
+        step_idx = 0
+        while max_steps is None or step_idx < max_steps:
+            sample = teleop.read(env, policy_action)
+            applied = (
+                sample.action.astype(np.float32)
+                if sample.action is not None
+                else policy_action.copy()
+            )
+            if enable_base and applied.size >= 3:
+                live_readings = [
+                    entry.device._device.last_reading for entry in teleop.group.entries
+                ]
+                base_vel = _pico_thumbstick_base_velocity(live_readings, base_vel)
+                applied[-3:] = base_vel
+            try:
+                _, _, _, _, step_info = env.step(applied)
+            except RuntimeError as exc:
+                print(
+                    f"\n  [WARN] Hardware fault during PICO teleop ({exc}); "
+                    "recovering and holding arms. Release and re-squeeze grip to continue."
+                )
+                if host is not None:
+                    with contextlib.suppress(Exception):
+                        host.recover(trigger="pico_teleop_fault")
+                env._get_observation()
+                policy_action = env.get_joint_positions()
+                for entry in teleop.group.entries:
+                    entry.device.hold_until_released("fault_recovery")
+                step_idx += 1
+                continue
+            if step_info.get("robot_fault"):
+                print(
+                    f"\n  [WARN] Arm fault recovered ({step_info['robot_fault']}); "
+                    "holding arms. Release and re-squeeze grip to continue."
+                )
+                env._get_observation()
+                policy_action = env.get_joint_positions()
+                for entry in teleop.group.entries:
+                    entry.device.hold_until_released("fault_recovery")
+            else:
+                policy_action = applied.copy()
+            step_idx += 1
+        last_obs = env._get_observation()
+    except KeyboardInterrupt:
+        # ROS 2 can deliver one Ctrl-C twice; a second one must not cut the
+        # teardown short.
+        with _deferred_interrupts():
+            print("\n  PICO teleoperation stopped.")
+            last_obs = env._get_observation()
+    finally:
+        with _deferred_interrupts():
+            if enable_base and host is not None:
+                try:
+                    host.stop_base()
+                except Exception:
+                    pass
+            env.config.step_frequency = orig_freq
+            env.config.joint_step_limits = orig_step_limits
+            teleop.close()
+    return last_obs
+
+
 def _run_interactive(
     env: Any,
     *,
     step_rad: float,
     reset: bool,
     commands: Optional[Sequence[str]] = None,
+    pico_zmq_addr: Optional[str] = None,
 ) -> None:
     if reset:
         env.reset()
@@ -444,6 +676,19 @@ def _run_interactive(
             obs = env._get_observation()
             _print_status(env, obs, host)
             continue
+        if cmd in ("pico", "teleop", "vr"):
+            addr = words[1] if len(words) >= 2 else pico_zmq_addr
+            obs = _run_pico_teleop(env, zmq_addr=addr)
+            joints = np.array(obs["state"]["arm_joint_position"], dtype=np.float32)
+            if (
+                "gripper_position" in obs["state"]
+                and len(obs["state"]["gripper_position"]) >= num_arms
+            ):
+                grips = np.array(
+                    obs["state"]["gripper_position"][:num_arms], dtype=np.float32
+                )
+            _print_status(env, obs, host)
+            continue
         if cmd in ("diag", "diagnose", "health"):
             diag_target = getattr(env, "robot", None) or host
             if diag_target is None or not hasattr(diag_target, "diagnose"):
@@ -490,8 +735,7 @@ def _run_interactive(
                 host.move_body_smooth(
                     waist=waist_q,
                     neck=neck_q,
-                    max_step_rad=0.002,
-                    rate_hz=50.0,
+                    max_velocity=0.1,
                 )
                 rstate = host.get_state()
                 for idx, side in enumerate(env.config.active_arms):
@@ -503,8 +747,10 @@ def _run_interactive(
                     joints[idx * 7 : (idx + 1) * 7] = np.asarray(
                         q_meas, dtype=np.float32
                     )
-            rest_q = np.asarray(env.config.reset_joint_qpos, dtype=np.float32)
-            target_joints[:] = rest_q[: target_joints.size]
+            for idx, side in enumerate(env.config.active_arms):
+                target_joints[idx * 7 : (idx + 1) * 7] = (
+                    R2_LEFT_HOME_QPOS if side == "left" else R2_RIGHT_HOME_QPOS
+                )
             needs_arm_step = True
 
         elif cmd == "ready":
@@ -578,22 +824,6 @@ def _run_interactive(
                 else:
                     w_target[:] = 0.0
             elif sub_op in ("down", "squat") and w_target.size >= 3:
-                if is_real_rate:
-                    safe_joints = joints.copy()
-                    need_clearance = False
-                    for arm_i, arm_s in enumerate(env.config.active_arms):
-                        j2_idx = arm_i * 7 + 1
-                        if arm_s == "left" and safe_joints[j2_idx] < 0.12:
-                            safe_joints[j2_idx] = 0.15
-                            need_clearance = True
-                        elif arm_s == "right" and safe_joints[j2_idx] > -0.12:
-                            safe_joints[j2_idx] = -0.15
-                            need_clearance = True
-                    if need_clearance:
-                        obs = _step_arm_smooth(
-                            env, joints, safe_joints, grips, step_rad
-                        )
-                        joints = safe_joints.copy()
                 sq_delta = min(delta, 0.03)
                 w_target[0] = max(0.01, float(w_target[0])) + sq_delta
                 w_target[1] = max(0.02, float(w_target[1])) + 2.0 * sq_delta
@@ -634,8 +864,7 @@ def _run_interactive(
                 w_target = np.clip(w_target, R2_WAIST_LIMITS_LOW, R2_WAIST_LIMITS_HIGH)
             host.move_body_smooth(
                 waist=w_target.astype(np.float32),
-                max_step_rad=0.002,
-                rate_hz=50.0,
+                max_velocity=0.1,
             )
             waist_q = w_target.astype(np.float32)
             obs = env._get_observation()
@@ -670,8 +899,7 @@ def _run_interactive(
             n_target = np.clip(n_target, R2_NECK_LIMITS_LOW, R2_NECK_LIMITS_HIGH)
             host.move_body_smooth(
                 neck=n_target.astype(np.float32),
-                max_step_rad=0.003,
-                rate_hz=50.0,
+                max_velocity=0.15,
             )
             neck_q = n_target.astype(np.float32)
             obs = env._get_observation()
@@ -736,7 +964,11 @@ def _run_interactive(
                 step_rad,
                 gripper_changed=gripper_changed,
             )
-            joints = target_joints.copy()
+            joints = (
+                target_joints.copy()
+                if env.config.is_dummy
+                else np.array(obs["state"]["arm_joint_position"], dtype=np.float32)
+            )
             _print_status(env, obs, host)
 
 
@@ -853,6 +1085,17 @@ def main() -> None:
         action="store_true",
         help="enable the camera preview window (disabled by default)",
     )
+    parser.add_argument(
+        "--pico",
+        action="store_true",
+        help="start directly in PICO VR teleoperation mode",
+    )
+    parser.add_argument(
+        "--pico-zmq-addr",
+        type=str,
+        default=None,
+        help="ZeroMQ endpoint for PICO VR stream (default: R2_PICO_ZMQ_ADDR or ipc:///tmp/vr_data.ipc)",
+    )
     args = parser.parse_args()
     if not np.isfinite(args.fps) or args.fps <= 0:
         parser.error("--fps must be finite and positive")
@@ -871,8 +1114,7 @@ def main() -> None:
 
     with context:
         from rlinf.envs.real.r2 import R2ReachEnv
-        from rlinf.robotics import R2Config
-        from rlinf.robotics.discovery import RobotDiscovery
+        from rlinf.robotics import R2Config, RobotInfo
 
         enable_base = bool(args.enable_base)
         if args.no_cameras or (
@@ -880,26 +1122,26 @@ def main() -> None:
         ):
             camera_list: list[str] = []
         elif len(args.cameras) == 0:
-            camera_list = ["head", "wrist_left", "wrist_right"]
+            camera_list = (
+                []
+                if args.pico and not args.enable_camera_player
+                else ["head", "wrist_left", "wrist_right"]
+            )
         else:
             camera_list = list(args.cameras)
         cfg = R2Config(
-            node_rank=0,
             body_dof=None if args.body_dof == "auto" else int(args.body_dof),
             end_effector_type=(
                 None if args.end_effector == "auto" else args.end_effector
             ),
             enable_base=enable_base,
             cameras=camera_list,
+            use_compressed_camera=not args.mock,
         )
-        discovery = RobotDiscovery.registry["R2"].discovery_cls
-        resources = discovery.enumerate(node_rank=0, configs=[cfg])
-        resolved_cfg = resources.infos[0].config
-        print(
-            f"R2 hardware config: body_dof={resolved_cfg.body_dof}, "
-            f"end_effector_type={resolved_cfg.end_effector_type!r}, "
-            f"enable_base={resolved_cfg.enable_base}, "
-            f"cameras={resolved_cfg.cameras}"
+        robot_info = RobotInfo(
+            type="R2",
+            model=cfg.hardware_model("R2"),
+            config=cfg,
         )
 
         env = R2ReachEnv(
@@ -909,34 +1151,52 @@ def main() -> None:
                 "reset_joint_speed": float(np.deg2rad(args.reset_speed)),
                 "reset_on_init": False,
             },
-            robot_info=resources.infos[0],
+            robot_info=robot_info,
+        )
+        resolved_cfg = env.hardware
+        print(
+            f"R2 hardware config: body_dof={resolved_cfg.body_dof}, "
+            f"end_effector_type={resolved_cfg.end_effector_type!r}, "
+            f"enable_base={resolved_cfg.enable_base}, "
+            f"cameras={resolved_cfg.cameras}"
         )
         try:
-            use_batch = (
-                args.no_move
-                or (args.steps is not None and args.commands is None)
-                or not args.interactive
-            )
-            if not use_batch or args.commands is not None:
-                parsed_cmds = (
-                    [c.strip() for c in args.commands.split(";") if c.strip()]
-                    if args.commands is not None
-                    else None
-                )
-                _run_interactive(
+            if args.pico:
+                if args.reset:
+                    env.reset()
+                obs = _run_pico_teleop(
                     env,
-                    step_rad=float(np.deg2rad(args.step)),
-                    reset=args.reset,
-                    commands=parsed_cmds,
+                    zmq_addr=args.pico_zmq_addr,
+                    max_steps=args.steps,
                 )
+                _print_status(env, obs, _get_connection_host(env))
             else:
-                _run_batch_steps(
-                    env,
-                    steps=5 if args.steps is None else args.steps,
-                    delta_rad=float(np.deg2rad(args.step)),
-                    reset=args.reset,
-                    no_move=args.no_move,
+                use_batch = (
+                    args.no_move
+                    or (args.steps is not None and args.commands is None)
+                    or not args.interactive
                 )
+                if not use_batch or args.commands is not None:
+                    parsed_cmds = (
+                        [c.strip() for c in args.commands.split(";") if c.strip()]
+                        if args.commands is not None
+                        else None
+                    )
+                    _run_interactive(
+                        env,
+                        step_rad=float(np.deg2rad(args.step)),
+                        reset=args.reset,
+                        commands=parsed_cmds,
+                        pico_zmq_addr=args.pico_zmq_addr,
+                    )
+                else:
+                    _run_batch_steps(
+                        env,
+                        steps=5 if args.steps is None else args.steps,
+                        delta_rad=float(np.deg2rad(args.step)),
+                        reset=args.reset,
+                        no_move=args.no_move,
+                    )
         finally:
             with _deferred_interrupts():
                 env.close()

@@ -30,7 +30,14 @@ from rlinf.envs.real.utils.seeding import seed_sampled_spaces
 from rlinf.envs.real.utils.video import VideoPlayer
 from rlinf.robotics import Camera, R2Config, R2Robot, RobotInfo
 from rlinf.robotics.actions import ActionKind, ActionPart
-from rlinf.robotics.parts.arms.r2 import R2_HAND_FINGER_ORDER
+from rlinf.robotics.parts.arms.r2 import (
+    R2_HAND_FINGER_ORDER,
+    R2_LEFT_HOME_QPOS,
+    R2_RIGHT_HOME_QPOS,
+    R2IKConfig,
+    R2KinematicsAdapter,
+)
+from rlinf.robotics.parts.base import PartGroup
 from rlinf.robotics.parts.cameras import BaseCamera
 from rlinf.scheduler import WorkerInfo
 from rlinf.utils.logging import get_logger
@@ -59,7 +66,11 @@ class R2EnvConfig:
     active_arms: tuple[str, ...] = ("left", "right")
     """Active R2 arms controlled by the environment: subset of ``('left', 'right')``."""
 
-    reset_joint_qpos: list[float] = field(default_factory=lambda: [0.0] * (ARM_DOF * 2))
+    reset_joint_qpos: list[float] = field(
+        default_factory=lambda: [
+            float(x) for x in np.concatenate([R2_LEFT_HOME_QPOS, R2_RIGHT_HOME_QPOS])
+        ]
+    )
     """Rest joint configuration in radians across active arms."""
 
     reset_duration: float = 2.0
@@ -107,6 +118,28 @@ class R2EnvConfig:
     truncate_on_fault_recovery: bool = True
     """Whether to mark the current episode as ``truncated=True`` after an automatic hardware fault recovery."""
 
+    joint_step_limits: tuple[float, ...] = (
+        0.08,
+        0.08,
+        0.08,
+        0.08,
+        0.12,
+        0.12,
+        0.12,
+    )
+    """Maximum per-tick joint step in radians for each of the 7 arm joints during teleoperation."""
+
+    teleop_max_joint_lead: float = 0.3
+    """Largest gap in radians a teleoperation command may run ahead of the measured joints.
+
+    PICO teleoperation integrates its own joint command, so the per-tick step
+    limit bounds its speed however far the streamed arm lags; this bound stops
+    the command running away from an arm that is blocked.
+    """
+
+    ik: R2IKConfig = field(default_factory=R2IKConfig)
+    """Inverse-kinematics solver configuration used by PICO VR teleoperation."""
+
     def __post_init__(self) -> None:
         """Coerce and validate active arms and joint bound arrays."""
         self.active_arms = tuple(self.active_arms)
@@ -136,16 +169,32 @@ class R2EnvConfig:
         self.joint_limit_low = low
         self.joint_limit_high = high
         if len(self.reset_joint_qpos) == ARM_DOF * 2 and len(self.active_arms) == 1:
-            self.reset_joint_qpos = list(self.reset_joint_qpos[:ARM_DOF])
+            self.reset_joint_qpos = list(
+                self.reset_joint_qpos[:ARM_DOF]
+                if self.active_arms[0] == "left"
+                else self.reset_joint_qpos[ARM_DOF:]
+            )
         if len(self.target_joint_qpos) == ARM_DOF * 2 and len(self.active_arms) == 1:
             self.target_joint_qpos = list(self.target_joint_qpos[:ARM_DOF])
+        step_limits = tuple(float(x) for x in self.joint_step_limits)
+        if len(step_limits) != ARM_DOF or any(
+            not np.isfinite(x) or x <= 0.0 for x in step_limits
+        ):
+            raise ValueError(
+                f"joint_step_limits must have {ARM_DOF} positive finite values, "
+                f"got {self.joint_step_limits!r}."
+            )
+        self.joint_step_limits = step_limits
+        if not isinstance(self.ik, R2IKConfig):
+            self.ik = R2IKConfig(**dict(self.ik))
 
 
 class R2Env(gym.Env):
     """Robbyant R2 environment with absolute joint-position actions."""
 
-    TELEOP = ()
+    TELEOP: tuple[str, ...] = ("pico",)
     TELEOP_DEFAULT = "none"
+    TELEOP_MARK_FLAG = True
     ACTION_WRAPPERS = ()
     TRANSFORMS = ()
 
@@ -176,9 +225,7 @@ class R2Env(gym.Env):
             if not self.config.is_dummy:
                 from rlinf.robotics.parts.arms.r2 import R2Connection
 
-                probed_dof, probed_ee = R2Connection.probe_hardware(
-                    enable_shm=self.hardware.enable_shm
-                )
+                probed_dof, probed_ee = R2Connection.probe_hardware()
                 if self.hardware.body_dof in (None, "auto"):
                     self.hardware.body_dof = probed_dof
                 if self.hardware.end_effector_type in (None, "auto"):
@@ -191,7 +238,7 @@ class R2Env(gym.Env):
 
         self.robot_info = robot_info
         self.env_idx = env_idx
-        self.node_rank = 0
+        self.node_rank: Optional[int] = None
         self.env_worker_rank = 0
         if worker_info is not None:
             self.node_rank = worker_info.cluster_node_rank
@@ -212,8 +259,12 @@ class R2Env(gym.Env):
         self._num_steps = 0
         self._success_hold_counter = 0
         self._last_ee: Optional[np.ndarray] = None
+        self._last_step_end: Optional[float] = None
+        self._has_measured_state = False
         self._joints = np.zeros(ARM_DOF * len(self._active_arms))
+        self._waist_qpos: Optional[np.ndarray] = None
         self.robot: Optional[R2Robot] = None
+        self._state_robot: Optional[PartGroup] = None
 
         if not self.config.is_dummy:
             self._setup_hardware()
@@ -248,16 +299,24 @@ class R2Env(gym.Env):
             cameras=hardware.cameras,
             enable_depth=hardware.enable_depth,
             use_compressed_camera=hardware.use_compressed_camera,
-            enable_shm=hardware.enable_shm,
             controller_mode=hardware.controller_mode,
             enable_fault_recovery=hardware.enable_fault_recovery,
             max_recovery_attempts=hardware.max_recovery_attempts,
             recovery_cooldown_window=hardware.recovery_cooldown_window,
+            motion_profile=hardware.motion_profile,
+            gripper_min_closure=hardware.gripper_min_closure,
             env_idx=self.env_idx,
             node_rank=controller_node_rank,
             worker_rank=self.env_worker_rank,
         )
         self.robot.connect()
+        self._state_robot = PartGroup(
+            **{
+                name: part
+                for name, part in self.robot._children.items()
+                if not isinstance(part, Camera)
+            }
+        )
 
     def _init_action_obs_spaces(self) -> None:
         """Build the joint-space action and observation spaces."""
@@ -321,22 +380,80 @@ class R2Env(gym.Env):
 
         self.observation_space = gym.spaces.Dict(spaces)
         self._base_observation_space = copy.deepcopy(self.observation_space)
+        self._action_state = self._default_action_state()
+
+    def _default_action_state(self) -> np.ndarray:
+        """Build a within-limits initial action state from ``reset_joint_qpos``."""
+        rest_q = np.asarray(self.config.reset_joint_qpos, dtype=np.float32)
+        chunks: list[np.ndarray] = []
+        for idx, _side in enumerate(self._active_arms):
+            q_slice = slice(idx * ARM_DOF, (idx + 1) * ARM_DOF)
+            chunks.append(
+                np.clip(
+                    rest_q[q_slice],
+                    self._joint_limit_low[q_slice],
+                    self._joint_limit_high[q_slice],
+                ).astype(np.float32)
+            )
+            if self._ee_dim > 0:
+                chunks.append(np.zeros(self._ee_dim, dtype=np.float32))
+        if self.hardware.enable_base:
+            chunks.append(np.zeros(3, dtype=np.float32))
+        return np.concatenate(chunks).astype(np.float32)
 
     def action_parts(self) -> tuple[ActionPart, ...]:
         """Return the ordered action parts matching ``self.action_space``."""
         parts: list[ActionPart] = []
+        single = len(self._active_arms) == 1
         for side in self._active_arms:
-            parts.append(ActionPart(f"{side}_arm", ARM_DOF, ActionKind.JOINT_POSITION))
+            prefix = "" if single else f"{side}."
+            parts.append(ActionPart(f"{prefix}arm", ARM_DOF, ActionKind.JOINT_POSITION))
             if self._ee_dim > 0:
-                kind = (
-                    ActionKind.GRIPPER
-                    if self._ee_type == "gripper"
-                    else ActionKind.HAND
-                )
-                parts.append(ActionPart(f"{side}_end_effector", self._ee_dim, kind))
+                if self._ee_type == "gripper":
+                    parts.append(
+                        ActionPart(
+                            f"{prefix}end_effector",
+                            self._ee_dim,
+                            ActionKind.GRIPPER,
+                        )
+                    )
+                else:
+                    parts.append(
+                        ActionPart(f"{prefix}hand", self._ee_dim, ActionKind.HAND)
+                    )
         if self.hardware.enable_base:
             parts.append(ActionPart("base", 3, ActionKind.BASE_VELOCITY))
         return tuple(parts)
+
+    def arm_kinematics(self, side: Optional[str] = None) -> R2KinematicsAdapter:
+        """Build the 7-DoF FK/IK model of one R2 arm for PICO teleoperation."""
+        resolved_side = (
+            self._active_arms[0]
+            if (side is None and len(self._active_arms) == 1)
+            else side
+        )
+        if resolved_side not in self._active_arms:
+            raise ValueError(
+                f"Expected active R2 arm in {self._active_arms}, got {side!r}."
+            )
+        idx = self._active_arms.index(resolved_side)
+        q_slice = slice(idx * ARM_DOF, (idx + 1) * ARM_DOF)
+        return R2KinematicsAdapter(
+            resolved_side,
+            config=self.config.ik,
+            joint_lower=self._joint_limit_low[q_slice],
+            joint_upper=self._joint_limit_high[q_slice],
+            waist_qpos=self._measured_waist_qpos,
+        )
+
+    def _measured_waist_qpos(self) -> Optional[np.ndarray]:
+        """Return the measured waist for IK, read once per observation."""
+        if self._waist_qpos is None and self.robot is not None:
+            arm = self.robot.child(self._active_arms[0]).child("arm")
+            self._waist_qpos = np.asarray(
+                arm.owner.read_state()["waist_positions"], dtype=np.float64
+            ).reshape(-1)
+        return self._waist_qpos
 
     def step(self, action: np.ndarray) -> tuple[Any, float, bool, bool, dict[str, Any]]:
         """Execute one step on the R2 robot."""
@@ -388,6 +505,8 @@ class R2Env(gym.Env):
                 self._last_ee = combined_ee
 
             self.robot.send_action(robot_action)
+        else:
+            self._action_state = action.copy()
 
         self._num_steps += 1
         observation = self._get_observation()
@@ -406,13 +525,34 @@ class R2Env(gym.Env):
                 if self.config.truncate_on_fault_recovery:
                     truncated = True
                     info["fault_truncated"] = True
-        step_time = time.monotonic() - start_time
-        time.sleep(max(0.0, (1.0 / self.config.step_frequency) - step_time))
+        period = 1.0 / self.config.step_frequency
+        cycle_start = (
+            self._last_step_end
+            if self._last_step_end is not None
+            and (start_time - self._last_step_end) < 2.0 * period
+            else start_time
+        )
+        step_time = time.monotonic() - cycle_start
+        time.sleep(max(0.0, period - step_time))
+        self._last_step_end = time.monotonic()
         return observation, reward, terminated, truncated, info
 
     def get_joint_positions(self) -> np.ndarray:
-        """Return active arm joints shaped ``(num_active_arms, 7)``."""
-        return self._joints.reshape(len(self._active_arms), ARM_DOF).copy()
+        """Return measured joints and end-effectors laid out in ``action_parts()`` order."""
+        if (
+            not hasattr(self, "_action_state")
+            or self._action_state.size != self.action_space.shape[0]
+            or (
+                not getattr(self, "_has_measured_state", False)
+                and not self.config.is_dummy
+            )
+        ):
+            self._get_observation()
+        return getattr(
+            self,
+            "_action_state",
+            np.zeros(self.action_space.shape, dtype=np.float32),
+        ).copy()
 
     @property
     def num_steps(self) -> int:
@@ -429,7 +569,9 @@ class R2Env(gym.Env):
         self._num_steps = 0
         self._success_hold_counter = 0
         self._last_ee = None
+        self._last_step_end = None
         if self.config.is_dummy:
+            self._action_state = self._default_action_state()
             return self._get_observation(), {}
 
         self.go_to_rest()
@@ -438,11 +580,16 @@ class R2Env(gym.Env):
         return self._get_observation(), {}
 
     def go_to_rest(self) -> None:
-        """Move active R2 arms to :pyattr:`R2EnvConfig.reset_joint_qpos`."""
+        """Move active R2 arms to :pyattr:`R2EnvConfig.reset_joint_qpos`.
+
+        Raises:
+            RuntimeError: When the move does not complete, so no episode
+                starts from wherever the arms stopped.
+        """
         if self.robot is None:
             return
         rest = np.asarray(self.config.reset_joint_qpos, dtype=np.float32)
-        with self.robot.batch_commands():
+        with self.robot.batch_commands() as batch:
             for idx, side in enumerate(self._active_arms):
                 q_slice = slice(idx * ARM_DOF, (idx + 1) * ARM_DOF)
                 arm = self.robot.child(side).child("arm")
@@ -451,6 +598,11 @@ class R2Env(gym.Env):
                     duration=self.config.reset_duration,
                     max_velocity=self.config.reset_joint_speed,
                 )
+        if not batch.ok:
+            raise RuntimeError(
+                f"R2 did not reach its rest pose {np.round(rest, 3).tolist()}: "
+                f"{self.robot.diagnose().error_message or 'the move did not complete'}."
+            )
 
     def _calc_step_reward(
         self, observation: dict[str, Any], ee_moved: bool = False
@@ -476,7 +628,11 @@ class R2Env(gym.Env):
         if self.config.is_dummy or self.robot is None:
             return self._base_observation_space.sample()
 
-        raw = self.robot.get_observation()
+        state_source = (
+            self._state_robot if self._state_robot is not None else self.robot
+        )
+        raw = state_source.get_observation()
+        self._waist_qpos = None
         joint_chunks: list[np.ndarray] = []
         tcp_chunks: list[np.ndarray] = []
         ee_chunks: list[np.ndarray] = []
@@ -498,6 +654,18 @@ class R2Env(gym.Env):
 
         joints = np.concatenate(joint_chunks)
         self._joints = joints.astype(float)
+        action_chunks: list[np.ndarray] = []
+        for idx in range(len(self._active_arms)):
+            action_chunks.append(joint_chunks[idx])
+            if self._ee_dim > 0:
+                if idx < len(ee_chunks):
+                    action_chunks.append(np.clip(ee_chunks[idx], 0.0, 1.0))
+                else:
+                    action_chunks.append(np.zeros(self._ee_dim, dtype=np.float32))
+        if self.hardware.enable_base:
+            action_chunks.append(np.zeros(3, dtype=np.float32))
+        self._action_state = np.concatenate(action_chunks).astype(np.float32)
+        self._has_measured_state = True
         state_obs: dict[str, Any] = {
             "arm_joint_position": joints,
             "tcp_pose": np.concatenate(tcp_chunks),
@@ -517,7 +685,7 @@ class R2Env(gym.Env):
         observation: dict[str, Any] = {"state": state_obs}
         if "frames" in self.observation_space.spaces:
             observation["frames"] = self._get_camera_frames()
-        return copy.deepcopy(observation)
+        return observation
 
     def _open_cameras(self) -> None:
         """Collect the camera views composed into ``self.robot``."""

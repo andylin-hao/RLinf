@@ -41,16 +41,19 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     )
     from .parts import (
         Action,
+        CommandBatch,
         Connection,
         ControllablePart,
         FaultLevel,
         Features,
         HealthStatus,
         JointGroupSpec,
+        JointStream,
         MotionProfile,
         Observation,
         PartGroup,
         RobotPart,
+        SetpointStreamer,
     )
     from .parts.arms import ARM_STATE_FIELDS, Arm, ArmState, BaseArm
     from .parts.cameras import BaseCamera, Camera, CameraInfo
@@ -83,16 +86,19 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 _MODULE_GROUPS: dict[str, tuple[str, ...]] = {
     ".parts": (
         "Action",
+        "CommandBatch",
         "Connection",
         "ControllablePart",
         "FaultLevel",
         "Features",
         "HealthStatus",
         "JointGroupSpec",
+        "JointStream",
         "MotionProfile",
         "Observation",
         "PartGroup",
         "RobotPart",
+        "SetpointStreamer",
     ),
     ".parts.arms": ("ARM_STATE_FIELDS", "Arm", "ArmState", "BaseArm"),
     # Load each device category only when requested.
@@ -152,6 +158,7 @@ __all__ = [
     "BaseHand",
     "Camera",
     "CameraInfo",
+    "CommandBatch",
     "Connection",
     "ControllablePart",
     "DOSW1Robot",
@@ -169,6 +176,7 @@ __all__ = [
     "GimArmRobot",
     "HealthStatus",
     "JointGroupSpec",
+    "JointStream",
     "LegacyObservationAdapter",
     "MethodArm",
     "MethodCamera",
@@ -190,6 +198,7 @@ __all__ = [
     "RobotRegistration",
     "SO101Config",
     "SO101Robot",
+    "SetpointStreamer",
     "Turtle2Config",
     "Turtle2Robot",
     "VectorActionAdapter",

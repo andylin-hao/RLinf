@@ -17,9 +17,10 @@
 from __future__ import annotations
 
 import types
-from typing import Any
+from typing import Any, Optional
 
 import numpy as np
+from scipy.spatial.transform import Rotation as R
 
 from ._fakes import module
 
@@ -331,409 +332,387 @@ def airbot() -> dict[str, types.ModuleType]:
     }
 
 
-def r2() -> dict[str, types.ModuleType]:
-    """Return fake ``rframe`` and R2 ROS2 message/service modules."""
-    waist_21 = (
-        "J_WaistPitch_1",
-        "J_WaistPitch_2",
-        "J_WaistPitch_3",
-        "J_WaistRoll",
-        "J_WaistYaw",
-    )
-    waist_20 = (
-        "J_WaistLift",
-        "J_WaistPitch",
-        "J_WaistRoll",
-        "J_WaistYaw",
-    )
-    neck_and_arms = (
-        "J_NeckYaw",
-        "J_NeckPitch",
-        "J_ArmL_1",
-        "J_ArmL_2",
-        "J_ArmL_3",
-        "J_ArmL_4",
-        "J_ArmL_5",
-        "J_ArmL_6",
-        "J_ArmL_7",
-        "J_ArmR_1",
-        "J_ArmR_2",
-        "J_ArmR_3",
-        "J_ArmR_4",
-        "J_ArmR_5",
-        "J_ArmR_6",
-        "J_ArmR_7",
-    )
-    gripper_joints = ("GripperL", "GripperR")
-    hand_joints = (
-        "HandL_Little",
-        "HandL_Ring",
-        "HandL_Middle",
-        "HandL_Index",
-        "HandL_ThumbBend",
-        "HandL_ThumbRot",
-        "HandR_Little",
-        "HandR_Ring",
-        "HandR_Middle",
-        "HandR_Index",
-        "HandR_ThumbBend",
-        "HandR_ThumbRot",
+class R2Controller:
+    """A simulated R2 motion controller behind the robot's RFrame/ROS 2 interface.
+
+    It publishes ``/robotic/joint_states`` at 100 Hz from its own thread, as
+    the robot does, tracks ``/robotic/servoj_data`` frames only while it is in
+    ServoJ mode with no fault, and answers the services the driver calls.
+    Tests drive faults through :meth:`set_main_state`, :meth:`report_health`,
+    :attr:`error_code`, :attr:`service_errors`, :attr:`send_fails`, and
+    :attr:`shut_down`.
+    """
+
+    WAIST = ("J_AnklePitch", "J_Knee", "J_HipPitch", "J_HipRoll", "J_HipYaw")
+    LEFT = tuple(f"J_LeftArm{i}" for i in range(1, 8))
+    RIGHT = tuple(f"J_RightArm{i}" for i in range(1, 8))
+    GRIPPERS = ("J_LeftGripper", "J_RightGripper")
+    HANDS = tuple(
+        f"Hand{side}_{finger}"
+        for side in ("L", "R")
+        for finger in ("Little", "Ring", "Middle", "Index", "ThumbBend", "ThumbRot")
     )
 
-    def _make_pose(x: float = 0.3, y: float = 0.0, z: float = 0.2) -> Any:
-        return types.SimpleNamespace(
-            position=types.SimpleNamespace(x=float(x), y=float(y), z=float(z)),
-            orientation=types.SimpleNamespace(x=0.0, y=0.0, z=0.0, w=1.0),
+    def __init__(self) -> None:
+        import threading
+
+        self.lock = threading.Lock()
+        self.run_mode = 0
+        self.state = 2
+        self.error_code = 0
+        self.main_state = 4
+        #: Error code a service answers with, by service name.
+        self.service_errors: dict[str, int] = {}
+        #: Set to mimic Ctrl-C: RFrame's ROS 2 handler tears the transport
+        #: down, so rclpy reports shutdown and every send fails.
+        self.shut_down = False
+        #: Set to make every send fail while ROS 2 stays up.
+        self.send_fails = False
+        #: Clear to make clearing faults leave the controller's fault in place.
+        self.clearable = True
+        #: Set to publish no joint states, as a robot whose motion node is down.
+        self.silent = False
+        self.frames: list[tuple[float, list[float], float, float]] = []
+        self.hand_frames: list[Any] = []
+        self.base_commands: list[list[float]] = []
+        self.base_pose = [0.0, 0.0, 0.0]
+        self.base_velocity = [0.0, 0.0, 0.0]
+        self.calls: list[tuple[str, Any]] = []
+        self.readers: dict[str, list[tuple[Any, Any]]] = {}
+        self._stop = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+        self.configure()
+
+    def configure(
+        self, *, body_dof: int = 21, end_effector_type: str = "gripper"
+    ) -> None:
+        """Choose the hardware variant the joint states describe."""
+        neck = ("J_NeckYaw", "J_NeckPitch") if body_dof == 21 else ("J_NeckPitch",)
+        effector = {"gripper": self.GRIPPERS, "hand": self.HANDS}.get(
+            end_effector_type, ()
+        )
+        self.neck = neck
+        self.joints = dict.fromkeys(
+            self.WAIST + self.LEFT + self.RIGHT + neck + effector, 0.0
         )
 
-    def _make_twist(
-        vx: float = 0.0, vy: float = 0.0, vz: float = 0.0, wz: float = 0.0
-    ) -> Any:
+    def start(self) -> None:
+        import threading
+
+        if self._thread is None:
+            self._stop.clear()
+            self._thread = threading.Thread(target=self._publish_loop, daemon=True)
+            self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=1.0)
+            self._thread = None
+
+    @property
+    def tracking(self) -> bool:
+        """Whether ServoJ frames move the joints."""
+        return self.run_mode == 2 and self.error_code == 0 and self.main_state != 7
+
+    def deliver(self, topic: str, build: Any) -> None:
+        for msg_cls, callback in list(self.readers.get(topic, [])):
+            callback(build(msg_cls))
+
+    def joint_state(self, msg_cls: Any) -> Any:
+        msg = msg_cls()
+        with self.lock:
+            msg.name = list(self.joints)
+            msg.position = list(self.joints.values())
+        msg.velocity = [0.0] * len(msg.name)
+        msg.effort = [0.0] * len(msg.name)
+        return msg
+
+    def tcp(self, _msg_cls: Any) -> Any:
+        from rlinf.robotics.parts.arms.r2 import compute_r2_arm_fk_and_jacobian
+
+        with self.lock:
+            waist = [self.joints[j] for j in self.WAIST]
+            arms = {
+                "left": [self.joints[j] for j in self.LEFT],
+                "right": [self.joints[j] for j in self.RIGHT],
+            }
+        poses = {}
+        for side, q in arms.items():
+            p, rpy, _, _ = compute_r2_arm_fk_and_jacobian(side, q, waist)
+            quat = R.from_euler("xyz", rpy).as_quat()
+            poses[f"pose_{side[0]}"] = types.SimpleNamespace(
+                position=types.SimpleNamespace(x=p[0], y=p[1], z=p[2]),
+                orientation=types.SimpleNamespace(
+                    x=quat[0], y=quat[1], z=quat[2], w=quat[3]
+                ),
+            )
+        return types.SimpleNamespace(**poses)
+
+    def navi(self, _msg_cls: Any) -> Any:
+        vx, vy, wz = self.base_velocity
         return types.SimpleNamespace(
-            linear=types.SimpleNamespace(x=float(vx), y=float(vy), z=float(vz)),
-            angular=types.SimpleNamespace(x=0.0, y=0.0, z=float(wz)),
+            current_pose=types.SimpleNamespace(
+                x=self.base_pose[0], y=self.base_pose[1], theta=self.base_pose[2]
+            ),
+            velocity=types.SimpleNamespace(
+                linear=types.SimpleNamespace(x=vx, y=vy, z=0.0),
+                angular=types.SimpleNamespace(x=0.0, y=0.0, z=wz),
+            ),
         )
 
-    class TCP:
-        def __init__(self) -> None:
-            self.tcp_pose = [_make_pose(0.3, 0.2, 0.2), _make_pose(0.3, -0.2, 0.2)]
-            self.tcp_twist = [_make_twist(), _make_twist()]
+    @staticmethod
+    def image(topic: str, msg_cls: Any) -> Any:
+        width, height = (1280, 720) if "/head/" in topic else (640, 480)
+        msg = msg_cls()
+        msg.height, msg.width = height, width
+        if "depth" in topic:
+            msg.encoding = "32FC1"
+            msg.data = bytes(height * width * 4)
+        elif "compressed" in topic:
+            msg.format = "jpeg"
+            msg.data = bytes(height * width * 3)
+        else:
+            msg.encoding = "rgb8"
+            msg.data = bytes(height * width * 3)
+        return msg
 
-    class NaviState:
-        def __init__(self) -> None:
-            self.pose = _make_pose(0.0, 0.0, 0.0)
-            self.velocity = _make_twist()
+    def _publish_loop(self) -> None:
+        while not self._stop.wait(0.01):
+            if not self.silent:
+                self.deliver("/robotic/joint_states", self.joint_state)
 
-    class HealthState:
-        def __init__(self) -> None:
-            self.is_healthy = True
-            self.fault_level = 0
+    def subscribed(self, topic: str, msg_cls: Any, callback: Any) -> None:
+        """Hand a new reader what the robot would publish next."""
+        if topic == "/robotic/joint_states":
+            if not self.silent:
+                callback(self.joint_state(msg_cls))
+            self.start()
+        elif topic == "/system_state":
+            callback(types.SimpleNamespace(current_main_state=self.main_state))
+        elif topic == "/robotic/tcp_data":
+            callback(self.tcp(msg_cls))
+        elif topic == "/navi/state":
+            callback(self.navi(msg_cls))
+        elif topic.startswith("/robby/sensors/camera/"):
+            callback(self.image(topic, msg_cls))
 
-    def _srv_cls(**req_defaults: Any) -> type:
-        class _Request:
-            def __init__(self) -> None:
-                for k, v in req_defaults.items():
-                    setattr(
-                        self,
-                        k,
-                        list(v) if isinstance(v, (list, tuple)) else v,
+    def receive(self, topic: str, msg: Any) -> None:
+        import time
+
+        if topic == "/robotic/servoj_data":
+            joint = list(msg.joint)
+            with self.lock:
+                self.frames.append(
+                    (time.monotonic(), joint, msg.gripper_l, msg.gripper_r)
+                )
+                if self.tracking:
+                    order = self.WAIST + self.LEFT + self.RIGHT + self.neck
+                    for name, value in zip(order, joint, strict=False):
+                        self.joints[name] = float(value)
+                    for name, value in zip(
+                        self.GRIPPERS, (msg.gripper_l, msg.gripper_r), strict=True
+                    ):
+                        if name in self.joints:
+                            self.joints[name] = float(value)
+            self.deliver("/robotic/tcp_data", self.tcp)
+        elif topic == "/robotic/servo_ry_hand_data":
+            self.hand_frames.append(msg)
+            with self.lock:
+                for names, ratios in (
+                    (self.HANDS[:6], msg.left_finger_open_ratio),
+                    (self.HANDS[6:], msg.right_finger_open_ratio),
+                ):
+                    for name, value in zip(names, ratios, strict=True):
+                        if name in self.joints:
+                            self.joints[name] = float(value)
+        elif topic == "/chassis/cmd_vel":
+            velocity = [float(msg.linear.x), float(msg.linear.y), float(msg.angular.z)]
+            self.base_commands.append(velocity)
+            self.base_velocity = velocity
+            for axis in range(3):
+                self.base_pose[axis] += velocity[axis] * 0.05
+            self.deliver("/navi/state", self.navi)
+
+    def set_main_state(self, main_state: int) -> None:
+        """Publish a ``/system_state`` main state, as the state manager does."""
+        self.main_state = int(main_state)
+        self.deliver(
+            "/system_state",
+            lambda cls: types.SimpleNamespace(current_main_state=self.main_state),
+        )
+
+    def report_health(
+        self, code_str: str, severity: int = 4, message: str = ""
+    ) -> None:
+        """Publish one ``/diagnostic`` HealthState carrying a single error."""
+        self.deliver(
+            "/diagnostic",
+            lambda cls: types.SimpleNamespace(
+                severity_level=severity,
+                errors=[
+                    types.SimpleNamespace(
+                        severity_level=severity, code_str=code_str, message=message
                     )
+                ],
+            ),
+        )
 
-        class _Response:
-            def __init__(self, **kwargs: Any) -> None:
-                self.success = True
-                self.message = ""
-                for k, v in kwargs.items():
-                    setattr(self, k, v)
+    def call(self, service: str, req: Any) -> Any:
+        self.calls.append((service, req))
+        error = types.SimpleNamespace(
+            error_code=self.service_errors.get(service, 0), message="all ok"
+        )
+        if service == "/robotic/switch_mode_cmd":
+            if self.main_state == 7:
+                error = types.SimpleNamespace(error_code=401, message="estop")
+                return types.SimpleNamespace(success=False, error_code=error)
+            self.run_mode = int(req.mode)
+        elif service == "/robotic/get_system_state_cmd":
+            return types.SimpleNamespace(
+                state=self.state,
+                message="IDLE",
+                error_code=types.SimpleNamespace(
+                    error_code=self.error_code, message=""
+                ),
+                run_mode=self.run_mode,
+            )
+        elif service in ("/clear_faults", "/robotic/release_stop"):
+            if self.main_state != 7 and self.clearable:
+                self.error_code = 0
+                self.state = 2
+        return types.SimpleNamespace(success=True, error_code=error)
 
-        return type("Service", (), {"Request": _Request, "Response": _Response})
 
-    class ChannelType:
+def r2(controller: Optional[R2Controller] = None) -> dict[str, types.ModuleType]:
+    """Return fake R2 SDK modules wired to ``controller``, or to a fresh one.
+
+    The controller is reachable as ``rframe.controller``. Services go through
+    rclpy clients, as on the robot.
+    """
+    controller = controller if controller is not None else R2Controller()
+
+    class HandlerType:
         READER = 0
         WRITER = 1
-        RPC_CLIENT = 2
-        RPC_SERVER = 3
+
+    class ChannelType:
+        HYBRID = 0
 
     class ChannelConfig:
-        def __init__(self) -> None:
-            self.topic_name = ""
-            self.channel_type = ChannelType.READER
-            self.enable_shm = False
+        def __init__(self, **kwargs: Any) -> None:
+            self.__dict__.update(kwargs)
 
     class HybridChannel:
-        def __init__(self, session: Session, config: ChannelConfig) -> None:
-            self.session = session
-            self.config = config
-            self.topic = config.topic_name
-            self.closed = False
+        def __init__(self, config: ChannelConfig) -> None:
+            self.topic = config.topic
 
         def register_typed_callback(self, msg_cls: Any, callback: Any) -> None:
-            self.session.callbacks.setdefault(self.topic, []).append(
-                (msg_cls, callback)
-            )
-            self.session.deliver_initial(self.topic, msg_cls, callback)
+            controller.readers.setdefault(self.topic, []).append((msg_cls, callback))
+            controller.subscribed(self.topic, msg_cls, callback)
 
         def send(self, msg: Any) -> None:
-            self.session.published.append((self.topic, msg))
-            self.session.handle_send(self.topic, msg)
-
-        def call(self, req: Any, timeout: float = 5.0) -> Any:
-            self.session.service_calls.append((self.topic, req, timeout))
-            return self.session.handle_call(self.topic, req)
+            if controller.shut_down or controller.send_fails:
+                raise AttributeError("'int' object has no attribute 'code'")
+            controller.receive(self.topic, msg)
 
         def close(self) -> None:
-            self.closed = True
+            for entry in list(controller.readers.get(self.topic, [])):
+                controller.readers[self.topic].remove(entry)
 
-    class Session:
-        default_body_dof: int = 21
-        default_end_effector_type: str = "gripper"
+    class App:
+        def init(self) -> None:
+            pass
 
-        def __init__(self, node_name: str = "r2") -> None:
-            self.node_name = node_name
-            self.closed = False
-            self.callbacks: dict[str, list[tuple[Any, Any]]] = {}
-            self.published: list[tuple[str, Any]] = []
-            self.service_calls: list[tuple[str, Any, float]] = []
-            waist = waist_20 if type(self).default_body_dof == 20 else waist_21
-            ee_type = type(self).default_end_effector_type
-            ee = (
-                gripper_joints
-                if ee_type == "gripper"
-                else (hand_joints if ee_type == "hand" else ())
-            )
-            active_names = waist + neck_and_arms + ee
-            self.joints: dict[str, float] = dict.fromkeys(active_names, 0.0)
-            if "GripperL" in self.joints:
-                self.joints["GripperL"] = 1.0
-                self.joints["GripperR"] = 1.0
-            self.velocities: dict[str, float] = dict.fromkeys(active_names, 0.0)
-            self.efforts: dict[str, float] = dict.fromkeys(active_names, 0.0)
-            self.left_pose = _make_pose(0.3, 0.2, 0.2)
-            self.right_pose = _make_pose(0.3, -0.2, 0.2)
-            self.base_pose = [0.0, 0.0, 0.0]
-            self.base_vel = [0.0, 0.0, 0.0]
-            self.mode = 2
-            self.state: dict[str, Any] = {
-                "fault_code": 0,
-                "error_msg": "",
-                "disabled_slaves": [],
-                "system_state": 2,
-                "mode": 2,
-                "stalled": False,
-                "persistent_fault": False,
-            }
+    class _Future:
+        def __init__(self, result: Any) -> None:
+            self._result = result
 
-        def create_hybrid_channel(self, config: ChannelConfig) -> HybridChannel:
-            return HybridChannel(self, config)
+        def done(self) -> bool:
+            return True
 
-        def _build_joint_msg(self, msg_cls: Any) -> Any:
-            msg = msg_cls()
-            names = list(self.joints.keys())
-            msg.name = names
-            msg.position = [self.joints[n] for n in names]
-            msg.velocity = [self.velocities.get(n, 0.0) for n in names]
-            msg.effort = [self.efforts.get(n, 0.0) for n in names]
-            return msg
+        def result(self) -> Any:
+            return self._result
 
-        def _build_tcp_msg(self, msg_cls: Any) -> Any:
-            msg = msg_cls()
-            msg.tcp_pose = [self.left_pose, self.right_pose]
-            msg.tcp_twist = [_make_twist(), _make_twist()]
-            return msg
+    class _Client:
+        def __init__(self, name: str) -> None:
+            self.name = name
 
-        def _build_navi_msg(self, msg_cls: Any) -> Any:
-            msg = msg_cls()
-            msg.pose = _make_pose(self.base_pose[0], self.base_pose[1], 0.0)
-            msg.current_pose = types.SimpleNamespace(
-                x=self.base_pose[0], y=self.base_pose[1], theta=self.base_pose[2]
-            )
-            msg.velocity = _make_twist(
-                vx=self.base_vel[0], vy=self.base_vel[1], wz=self.base_vel[2]
-            )
-            return msg
+        def wait_for_service(self, timeout_sec: float = 0.0) -> bool:
+            return True
 
-        def deliver_initial(self, topic: str, msg_cls: Any, callback: Any) -> None:
-            if topic == "/Motion/JointState":
-                callback(self._build_joint_msg(msg_cls))
-            elif topic == "/Motion/TCP":
-                callback(self._build_tcp_msg(msg_cls))
-            elif topic == "/navigation/state":
-                callback(self._build_navi_msg(msg_cls))
-            elif "camera" in topic:
-                width, height = (1280, 720) if "zed" in topic else (640, 480)
-                msg = msg_cls()
-                if "depth" in topic:
-                    msg.height = height
-                    msg.width = width
-                    msg.encoding = "32FC1"
-                    msg.data = bytes(height * width * 4)
-                elif "compressed" in topic:
-                    msg.format = "jpeg"
-                    msg.data = bytes(height * width * 3)
-                else:
-                    msg.height = height
-                    msg.width = width
-                    msg.encoding = "rgb8"
-                    msg.data = bytes(height * width * 3)
-                callback(msg)
-            else:
-                callback(msg_cls())
+        def call_async(self, req: Any) -> _Future:
+            return _Future(controller.call(self.name, req))
 
-        def _notify(self, topic: str, builder: Any) -> None:
-            for msg_cls, cb in self.callbacks.get(topic, []):
-                cb(builder(msg_cls))
+    class _Node:
+        def create_client(self, srv_cls: Any, name: str) -> _Client:
+            return _Client(name)
 
-        def _sync_tcp_from_joints(self) -> None:
-            try:
-                from rlinf.robotics.parts.arms.r2 import compute_r2_arm_fk_and_jacobian
+        def destroy_node(self) -> None:
+            controller.stop()
 
-                ql = [self.joints.get(f"J_ArmL_{i}", 0.0) for i in range(1, 8)]
-                qr = [self.joints.get(f"J_ArmR_{i}", 0.0) for i in range(1, 8)]
-                pl, _, _, _ = compute_r2_arm_fk_and_jacobian("left", ql)
-                pr, _, _, _ = compute_r2_arm_fk_and_jacobian("right", qr)
-                self.left_pose = _make_pose(float(pl[0]), float(pl[1]), float(pl[2]))
-                self.right_pose = _make_pose(float(pr[0]), float(pr[1]), float(pr[2]))
-                self._notify("/Motion/TCP", self._build_tcp_msg)
-            except Exception:
-                pass
+    def _service(**fields: Any) -> type:
+        def _request(self: Any) -> None:
+            self.__dict__.update(fields)
 
-        def handle_send(self, topic: str, msg: Any) -> None:
-            if topic == "/Motion/ServoJ":
-                if (
-                    self.state.get("fault_code", 0) != 0
-                    or bool(self.state.get("disabled_slaves"))
-                    or self.state.get("system_state", 2) == 4
-                    or self.state.get("mode", 2) != 2
-                    or bool(self.state.get("stalled", False))
-                ):
-                    for k in self.velocities:
-                        self.velocities[k] = 0.0
-                    self._notify("/Motion/JointState", self._build_joint_msg)
-                    return
-                names = list(getattr(msg, "name", []))
-                positions = list(getattr(msg, "position", []))
-                velocities = list(getattr(msg, "velocity", []))
-                efforts = list(getattr(msg, "effort", []))
-                for idx, name in enumerate(names):
-                    if idx < len(positions):
-                        self.joints[name] = float(positions[idx])
-                    if idx < len(velocities):
-                        self.velocities[name] = float(velocities[idx])
-                    if idx < len(efforts):
-                        self.efforts[name] = float(efforts[idx])
-                self._notify("/Motion/JointState", self._build_joint_msg)
-                self._sync_tcp_from_joints()
-            elif topic == "/teleop/chassis_Twist":
-                vx = float(msg.linear.x)
-                vy = float(msg.linear.y)
-                wz = float(msg.angular.z)
-                self.base_vel = [vx, vy, wz]
-                self.base_pose[0] += vx * 0.05
-                self.base_pose[1] += vy * 0.05
-                self.base_pose[2] += wz * 0.05
-                self._notify("/navigation/state", self._build_navi_msg)
+        request = type("Request", (), {"__init__": _request})
+        return type("Service", (), {"Request": request})
 
-        def handle_call(self, topic: str, req: Any) -> Any:
-            if topic == "/Motion/SwitchController":
-                self.mode = int(getattr(req, "mode", 2))
-                self.state["mode"] = self.mode
-                self.state["stalled"] = False
-                return types.SimpleNamespace(success=True)
-            if topic == "/Motion/ClearError":
-                if self.state.get("persistent_fault", False):
-                    return types.SimpleNamespace(success=False)
-                self.state["fault_code"] = 0
-                self.state["error_msg"] = ""
-                self.state["disabled_slaves"] = []
-                self.state["system_state"] = 2
-                self.state["stalled"] = False
-                return types.SimpleNamespace(success=True)
-            if topic == "/Motion/MoveJ":
-                if (
-                    self.state.get("fault_code", 0) != 0
-                    or self.state.get("system_state", 2) == 4
-                ):
-                    fc = int(self.state.get("fault_code", 501) or 501)
-                    return types.SimpleNamespace(
-                        success=False,
-                        error_code=types.SimpleNamespace(
-                            code=fc,
-                            msg=str(self.state.get("error_msg", "fault")),
-                        ),
-                    )
-                names = list(getattr(req, "joint_names", []))
-                targets = list(getattr(req, "target_positions", []))
-                for idx, name in enumerate(names):
-                    if idx < len(targets):
-                        self.joints[name] = float(targets[idx])
-                self._notify("/Motion/JointState", self._build_joint_msg)
-                self._sync_tcp_from_joints()
-                return types.SimpleNamespace(success=True)
-            if topic == "/Motion/MoveC":
-                arm = int(getattr(req, "arm", 0))
-                pose = getattr(req, "target_pose", None)
-                if pose is not None:
-                    if arm == 0:
-                        self.left_pose = pose
-                    else:
-                        self.right_pose = pose
-                self._notify("/Motion/TCP", self._build_tcp_msg)
-                return types.SimpleNamespace(success=True)
-            if topic == "/Motion/ForwardKine":
-                return types.SimpleNamespace(
-                    success=True, tcp_pose=[self.left_pose, self.right_pose]
-                )
-            if topic == "/Motion/InverseKine":
-                left_q = [self.joints[f"J_ArmL_{i}"] for i in range(1, 8)]
-                right_q = [self.joints[f"J_ArmR_{i}"] for i in range(1, 8)]
-                return types.SimpleNamespace(
-                    success=True, joint_positions=left_q + right_q
-                )
-            return types.SimpleNamespace(success=True)
-
-        def close(self) -> None:
-            self.closed = True
+    def _message(name: str) -> type:
+        return type(name, (), {})
 
     rframe_mod = module(
         "rframe",
-        init=lambda *_a, **_k: None,
-        shutdown=lambda *_a, **_k: None,
-        Session=Session,
+        App=App,
         ChannelConfig=ChannelConfig,
         ChannelType=ChannelType,
+        HandlerType=HandlerType,
         HybridChannel=HybridChannel,
+        controller=controller,
     )
-    r2_motion_msg = module("r2_motion_msgs.msg", TCP=TCP)
-    r2_motion_srv = module(
+    r2_msg = module(
+        "r2_motion_msgs.msg",
+        TCP=_message("TCP"),
+        ServoJ=_message("ServoJ"),
+        ServoRYHandDual=_message("ServoRYHandDual"),
+    )
+    r2_srv = module(
         "r2_motion_msgs.srv",
-        SwitchController=_srv_cls(mode=2),
-        MoveJ=_srv_cls(
-            joint_names=[], target_positions=[], duration=1.0, max_velocity=[]
-        ),
-        MoveC=_srv_cls(arm=0, target_pose=None, duration=1.0),
-        SetLoad=_srv_cls(arm=0, mass=0.0, com=[0.0, 0.0, 0.0]),
-        ForwardKine=_srv_cls(joint_positions=[]),
-        InverseKine=_srv_cls(tcp_pose=[], reference_joint_positions=[]),
+        GetSystemState=_service(),
+        SwitchMode=_service(mode=0),
+        SetAxisEnable=_service(),
+        SetGripperParam=_service(),
     )
-    r2_motion_pkg = module("r2_motion_msgs", msg=r2_motion_msg, srv=r2_motion_srv)
-
-    nav_msg = module("navigation_msgs.msg", NaviState=NaviState)
-    nav_srv = module("navigation_msgs.srv", NavigationControl=_srv_cls(command=0))
-    nav_pkg = module("navigation_msgs", msg=nav_msg, srv=nav_srv)
-
-    task_srv = module(
-        "task_msgs.srv",
-        AssignTask=_srv_cls(
-            task_type="navigation", target_x=0.0, target_y=0.0, target_yaw=0.0
-        ),
+    nav_msg = module("navigation_msgs.msg", NaviState=_message("NaviState"))
+    sm_msg = module("state_machine_msgs.msg", SystemState=_message("SystemState"))
+    diag_msg = module("rdiagnostic_msgs.msg", HealthState=_message("HealthState"))
+    diag_srv = module("rdiagnostic_msgs.srv", ClearFaults=_service())
+    std_srv = module("std_srvs.srv", Trigger=_service(), SetBool=_service(data=False))
+    system_srv = module("system_msgs.srv", PowerCtrl=_service(cmd=0))
+    rclpy_mod = module(
+        "rclpy",
+        ok=lambda: not controller.shut_down,
+        init=lambda *_a, **_k: None,
+        create_node=lambda _name: _Node(),
+        spin_until_future_complete=lambda *_a, **_k: None,
     )
-    task_pkg = module("task_msgs", srv=task_srv)
-
-    sm_srv = module("state_machine_msgs.srv", SwitchMode=_srv_cls(mode=0))
-    sm_pkg = module("state_machine_msgs", srv=sm_srv)
-
-    diag_msg = module("rdiagnostic_msgs.msg", HealthState=HealthState)
-    diag_pkg = module("rdiagnostic_msgs", msg=diag_msg)
-
-    std_srvs_srv = module("std_srvs.srv", Trigger=_srv_cls())
-    std_srvs_pkg = module("std_srvs", srv=std_srvs_srv)
-
     return {
         "rframe": rframe_mod,
-        "r2_motion_msgs": r2_motion_pkg,
-        "r2_motion_msgs.msg": r2_motion_msg,
-        "r2_motion_msgs.srv": r2_motion_srv,
-        "navigation_msgs": nav_pkg,
+        "rclpy": rclpy_mod,
+        "r2_motion_msgs": module("r2_motion_msgs", msg=r2_msg, srv=r2_srv),
+        "r2_motion_msgs.msg": r2_msg,
+        "r2_motion_msgs.srv": r2_srv,
+        "navigation_msgs": module("navigation_msgs", msg=nav_msg),
         "navigation_msgs.msg": nav_msg,
-        "navigation_msgs.srv": nav_srv,
-        "task_msgs": task_pkg,
-        "task_msgs.srv": task_srv,
-        "state_machine_msgs": sm_pkg,
-        "state_machine_msgs.srv": sm_srv,
-        "rdiagnostic_msgs": diag_pkg,
+        "state_machine_msgs": module("state_machine_msgs", msg=sm_msg),
+        "state_machine_msgs.msg": sm_msg,
+        "rdiagnostic_msgs": module("rdiagnostic_msgs", msg=diag_msg, srv=diag_srv),
         "rdiagnostic_msgs.msg": diag_msg,
-        "std_srvs": std_srvs_pkg,
-        "std_srvs.srv": std_srvs_srv,
+        "rdiagnostic_msgs.srv": diag_srv,
+        "std_srvs": module("std_srvs", srv=std_srv),
+        "std_srvs.srv": std_srv,
+        "system_msgs": module("system_msgs", srv=system_srv),
+        "system_msgs.srv": system_srv,
     }
 
 

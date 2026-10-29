@@ -59,6 +59,15 @@ class RobotConfig(HardwareConfig):
     recovery_cooldown_window: float = 10.0
     """Sliding time window (seconds) used by the recovery circuit breaker."""
 
+    motion_profile: Optional[dict[str, float]] = None
+    """Overrides for the connection's :class:`~rlinf.robotics.parts.motion.MotionProfile`.
+
+    Keys are profile fields such as ``control_rate_hz``, ``max_joint_velocity``
+    (rad/s), and ``max_joint_acceleration`` (rad/s^2). Connections that stream
+    joint setpoints apply them on top of their own defaults; others ignore
+    them.
+    """
+
     def fault_recovery_settings(self) -> dict[str, Any]:
         """Return the fault-detection and auto-recovery parameters as a dictionary."""
         return {

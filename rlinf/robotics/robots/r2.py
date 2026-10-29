@@ -16,7 +16,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Optional
 
@@ -44,11 +44,12 @@ class R2Robot(Robot):
         cameras: Sequence[str] = ("head", "wrist_left", "wrist_right"),
         enable_depth: bool = False,
         use_compressed_camera: bool = False,
-        enable_shm: bool = False,
         controller_mode: int = R2_MODE_SERVOJ,
         enable_fault_recovery: bool = True,
         max_recovery_attempts: int = 3,
         recovery_cooldown_window: float = 10.0,
+        motion_profile: Optional[Mapping[str, float]] = None,
+        gripper_min_closure: Sequence[float] = (0.0, 0.15),
         node_rank: Optional[int] = None,
         name: Optional[str] = None,
     ) -> R2Connection:
@@ -62,11 +63,12 @@ class R2Robot(Robot):
             cameras=tuple(cameras),
             enable_depth=enable_depth,
             use_compressed_camera=use_compressed_camera,
-            enable_shm=enable_shm,
             controller_mode=controller_mode,
             enable_fault_recovery=enable_fault_recovery,
             max_recovery_attempts=max_recovery_attempts,
             recovery_cooldown_window=recovery_cooldown_window,
+            motion_profile=motion_profile,
+            gripper_min_closure=gripper_min_closure,
             node_rank=node_rank,
             worker_name=name,
         )
@@ -99,11 +101,12 @@ class R2Robot(Robot):
         cameras: Sequence[str] = ("head", "wrist_left", "wrist_right"),
         enable_depth: bool = False,
         use_compressed_camera: bool = False,
-        enable_shm: bool = False,
         controller_mode: int = R2_MODE_SERVOJ,
         enable_fault_recovery: bool = True,
         max_recovery_attempts: int = 3,
         recovery_cooldown_window: float = 10.0,
+        motion_profile: Optional[Mapping[str, float]] = None,
+        gripper_min_closure: Sequence[float] = (0.0, 0.15),
         env_idx: int = 0,
         node_rank: Optional[int] = None,
         worker_rank: int = 0,
@@ -113,7 +116,7 @@ class R2Robot(Robot):
         if end_effector_type == "auto":
             from ..parts.arms.r2 import R2Connection
 
-            probed_dof, probed_ee = R2Connection.probe_hardware(enable_shm=enable_shm)
+            probed_dof, probed_ee = R2Connection.probe_hardware()
             if body_dof in (None, "auto"):
                 body_dof = probed_dof
             end_effector_type = probed_ee
@@ -133,11 +136,12 @@ class R2Robot(Robot):
             cameras=cameras,
             enable_depth=enable_depth,
             use_compressed_camera=use_compressed_camera,
-            enable_shm=enable_shm,
             controller_mode=controller_mode,
             enable_fault_recovery=enable_fault_recovery,
             max_recovery_attempts=max_recovery_attempts,
             recovery_cooldown_window=recovery_cooldown_window,
+            motion_profile=motion_profile,
+            gripper_min_closure=gripper_min_closure,
             node_rank=ctrl_rank,
             name=worker_name,
         )
@@ -154,8 +158,11 @@ class R2Robot(Robot):
 class R2Config(RobotConfig):
     """Hardware and placement configuration for a Robbyant R2 robot."""
 
+    node_rank: Optional[int] = None
+    """Optional node rank where the environment process runs. ``None`` runs locally without Ray."""
+
     body_dof: Optional[int] = None
-    """Whole-body joint count (20 or 21). ``None`` auto-detects from ``/Motion/JointState``."""
+    """Whole-body joint count (20 or 21). ``None`` auto-detects from ``/robotic/joint_states``."""
 
     end_effector_type: Optional[str] = None
     """End-effector variant (``"gripper"``, ``"hand"``, or ``"none"``); ``None`` or ``"auto"`` auto-detects."""
@@ -174,19 +181,21 @@ class R2Config(RobotConfig):
     use_compressed_camera: bool = False
     """Whether to subscribe to ``CompressedImage`` camera topics."""
 
-    enable_shm: bool = False
-    """Whether to enable RFrame shared-memory transport on local channels."""
-
     controller_mode: int = R2_MODE_SERVOJ
-    """Initial motion controller mode (0: Hold, 1: MoveJ, 2: ServoJ, 3: GravityComp)."""
+    """Motion controller mode to keep (0: auto, 1: remote, 2: ServoJ, 4: manual drag)."""
+
+    gripper_min_closure: list[float] = field(default_factory=lambda: [0.0, 0.15])
+    """Smallest closure the ServoJ stream sends to the (left, right) gripper, 0 fully open."""
 
     controller_node_rank: Optional[int] = None
     """Optional node rank where the RFrame connection worker should be placed."""
 
     def __post_init__(self) -> None:
         """Validate the configuration."""
-        assert isinstance(self.node_rank, int), (
-            f"'node_rank' in R2 config must be an integer. "
+        assert self.node_rank is None or (
+            not isinstance(self.node_rank, bool) and isinstance(self.node_rank, int)
+        ), (
+            f"'node_rank' in R2 config must be an integer or None. "
             f"But got {type(self.node_rank)}."
         )
 
@@ -198,7 +207,7 @@ class R2Discovery(RobotDiscovery):
 
     @classmethod
     def prepare(cls, config: RobotConfig, node_rank: int) -> None:
-        """Resolve ``body_dof`` and ``end_effector_type`` from ``/Motion/JointState`` when unset."""
+        """Resolve ``body_dof`` and ``end_effector_type`` from ``/robotic/joint_states`` when unset."""
         super().prepare(config, node_rank)
         if not isinstance(config, R2Config):
             return
@@ -215,9 +224,7 @@ class R2Discovery(RobotDiscovery):
 
         from ..parts.arms.r2 import R2Connection
 
-        probed_dof, probed_ee = R2Connection.probe_hardware(
-            enable_shm=config.enable_shm
-        )
+        probed_dof, probed_ee = R2Connection.probe_hardware()
         if needs_dof:
             config.body_dof = probed_dof
         if needs_ee:

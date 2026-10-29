@@ -25,7 +25,7 @@ from abc import ABC, ABCMeta, abstractmethod
 from collections.abc import Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack, contextmanager, nullcontext
-from dataclasses import dataclass, field, fields, replace
+from dataclasses import dataclass, field
 from enum import Enum
 from functools import partial
 from importlib import import_module
@@ -38,9 +38,9 @@ from typing import (
     overload,
 )
 
-import numpy as np
-
 from rlinf.utils.logging import get_logger
+
+from .motion import MotionProfile
 
 _KeyType = TypeVar("_KeyType")
 _ValueType = TypeVar("_ValueType")
@@ -88,6 +88,19 @@ _FAULT_SEVERITY: dict[FaultLevel, int] = {
 }
 
 
+@dataclass
+class CommandBatch:
+    """Outcome of one ``batch_commands()`` scope, set when the scope exits.
+
+    Commands issued inside the scope return as soon as they are staged, so
+    :attr:`ok` is the only report of whether they ran: it turns ``False`` when
+    the flush reports a staged command that did not complete, or when the
+    connection discarded the staged commands to hold after a fault recovery.
+    """
+
+    ok: bool = True
+
+
 @dataclass(frozen=True)
 class HealthStatus:
     """Structured hardware health and fault diagnosis for a connection or robot."""
@@ -119,340 +132,6 @@ class HealthStatus:
             "fault_parts": list(self.fault_parts),
             "details": dict(self.details),
         }
-
-
-@dataclass
-class MotionProfile:
-    """Configurable trajectory smoothing, velocity ramping, and safety limits.
-
-    Attributes:
-        control_rate_hz: Streaming control frequency in Hz (default ``50.0``).
-        max_step: Maximum single-step delta (rad) passed through without
-            sub-stepping (default ``0.008``).
-        interpolation_step: Target per-frame delta (rad) during smooth
-            sub-stepping (default ``0.003``).
-        max_drift: Maximum tolerated drift (rad) between cached command state
-            and measured state before re-anchoring (default ``0.02``).
-        min_interp_steps: Minimum frames generated when sub-stepping a
-            streaming command (default ``4``).
-        p2p_min_steps: Minimum frames generated for point-to-point smooth
-            moves (default ``10``).
-        hold_steps: Settling frames appended at the end of a point-to-point
-            move (default ``3``).
-        effector_hold_steps: Settling frames appended when an end-effector
-            changes target during a point-to-point move (default ``20``).
-        pulse_rate_hz: Streaming frequency in Hz for velocity pulses
-            (default ``50.0``).
-        pulse_ramp_up: Maximum acceleration ramp duration in seconds for
-            velocity pulses (default ``0.25``).
-        pulse_ramp_down: Maximum deceleration ramp duration in seconds for
-            velocity pulses (default ``0.35``).
-        pulse_ramp_up_ratio: Maximum ramp-up fraction of total pulse duration
-            (default ``0.3``).
-        pulse_ramp_down_ratio: Maximum ramp-down fraction of total pulse
-            duration (default ``0.4``).
-    """
-
-    control_rate_hz: float = 50.0
-    max_step: float = 0.008
-    interpolation_step: float = 0.003
-    max_drift: float = 0.02
-    min_interp_steps: int = 4
-    p2p_min_steps: int = 10
-    hold_steps: int = 3
-    effector_hold_steps: int = 20
-    pulse_rate_hz: float = 50.0
-    pulse_ramp_up: float = 0.25
-    pulse_ramp_down: float = 0.35
-    pulse_ramp_up_ratio: float = 0.3
-    pulse_ramp_down_ratio: float = 0.4
-
-    @property
-    def dt(self) -> float:
-        """Control cycle period in seconds derived from :attr:`control_rate_hz`."""
-        return 1.0 / max(float(self.control_rate_hz), 1e-3)
-
-    @property
-    def pulse_dt(self) -> float:
-        """Velocity pulse period in seconds derived from :attr:`pulse_rate_hz`."""
-        return 1.0 / max(float(self.pulse_rate_hz), 1e-3)
-
-    @classmethod
-    def from_config(
-        cls,
-        value: "Optional[MotionProfile | Mapping[str, Any]]" = None,
-        *,
-        defaults: "Optional[MotionProfile]" = None,
-        **overrides: Any,
-    ) -> "MotionProfile":
-        """Resolve a profile or mapping against ``defaults`` and keyword overrides."""
-        base = replace(defaults) if defaults is not None else cls()
-        given: dict[str, Any] = {}
-        if isinstance(value, cls):
-            base = replace(value)
-        elif value is not None:
-            given.update(dict(value))
-        for key, val in overrides.items():
-            if val is not None:
-                given[key] = val
-        if not given:
-            return base
-        valid_fields = {f.name: f.type for f in fields(cls)}
-        unknown = set(given) - set(valid_fields)
-        if unknown:
-            raise KeyError(
-                f"Unknown MotionProfile settings {sorted(unknown)}. "
-                f"Known: {sorted(valid_fields)}."
-            )
-        int_fields = {
-            "min_interp_steps",
-            "p2p_min_steps",
-            "hold_steps",
-            "effector_hold_steps",
-        }
-        coerced = {
-            k: (int(v) if k in int_fields else float(v)) for k, v in given.items()
-        }
-        return replace(base, **coerced)
-
-    @classmethod
-    def raised_cosine_alpha(cls, step_index: int, total_steps: int) -> float:
-        """Return the raised-cosine ease-in/ease-out factor in ``[0.0, 1.0]``."""
-        if total_steps <= 1:
-            return 1.0
-        clamped = min(max(int(step_index), 0), int(total_steps))
-        return 0.5 * (1.0 - float(np.cos(np.pi * (clamped / float(total_steps)))))
-
-    @classmethod
-    def raised_cosine_decay(cls, step_index: int, total_steps: int) -> float:
-        """Return the raised-cosine ease-out decay factor from ``1.0`` to ``0.0``."""
-        if total_steps <= 0:
-            return 0.0
-        clamped = min(max(int(step_index), 0), int(total_steps))
-        return 0.5 * (1.0 + float(np.cos(np.pi * (clamped / float(total_steps)))))
-
-    def step_interval(self, rate_hz: Optional[float] = None) -> float:
-        """Return the frame interval in seconds for ``rate_hz`` or :attr:`control_rate_hz`."""
-        hz = float(rate_hz) if rate_hz is not None else float(self.control_rate_hz)
-        return 1.0 / max(hz, 1e-3)
-
-    def reanchor(
-        self,
-        cached: Optional[np.ndarray],
-        measured: Sequence[float] | np.ndarray,
-        *,
-        max_drift: Optional[float] = None,
-    ) -> np.ndarray:
-        """Return ``measured`` when ``cached`` is unset or drifted beyond tolerance."""
-        meas = np.asarray(measured, dtype=np.float32).copy()
-        if cached is None:
-            return meas
-        cur = np.asarray(cached, dtype=np.float32)
-        if cur.shape != meas.shape or cur.size == 0:
-            return meas
-        tol = float(max_drift if max_drift is not None else self.max_drift)
-        if float(np.max(np.abs(cur - meas))) > tol:
-            return meas
-        return cur.copy()
-
-    def effective_step_cap(
-        self,
-        *,
-        max_step_rad: Optional[float] = None,
-        max_velocity: Optional[float | Sequence[float] | np.ndarray] = None,
-        rate_hz: Optional[float] = None,
-    ) -> float:
-        """Return the per-frame step cap in radians bounded by ``max_velocity``."""
-        dt = self.step_interval(rate_hz)
-        step_cap = max(
-            float(
-                max_step_rad if max_step_rad is not None else self.interpolation_step
-            ),
-            1e-4,
-        )
-        if max_velocity is not None:
-            v_arr = np.asarray(max_velocity, dtype=np.float32).reshape(-1)
-            v_lim = float(np.min(np.abs(v_arr))) if v_arr.size > 0 else 0.0
-            if v_lim > 1e-3:
-                step_cap = min(step_cap, v_lim * dt)
-        return step_cap
-
-    def compute_interp_steps(
-        self,
-        max_delta: float,
-        *,
-        max_step_rad: Optional[float] = None,
-        max_velocity: Optional[float | Sequence[float] | np.ndarray] = None,
-        min_steps: Optional[int] = None,
-        rate_hz: Optional[float] = None,
-    ) -> int:
-        """Compute the number of interpolation steps required for ``max_delta``."""
-        if float(max_delta) <= 1e-4:
-            return 1
-        step_cap = self.effective_step_cap(
-            max_step_rad=max_step_rad,
-            max_velocity=max_velocity,
-            rate_hz=rate_hz,
-        )
-        floor_steps = int(min_steps if min_steps is not None else self.min_interp_steps)
-        return max(floor_steps, int(np.ceil(float(max_delta) / step_cap)))
-
-    def generate_trajectory(
-        self,
-        starts: Mapping[str, np.ndarray],
-        targets: Mapping[str, np.ndarray],
-        *,
-        max_step_rad: Optional[float] = None,
-        max_velocity: Optional[float | Sequence[float] | np.ndarray] = None,
-        min_steps: Optional[int] = None,
-        hold_steps: Optional[int] = None,
-        rate_hz: Optional[float] = None,
-    ) -> tuple[float, list[dict[str, np.ndarray]]]:
-        """Generate ``(dt, frames)`` along a synchronized raised-cosine trajectory."""
-        dt = self.step_interval(rate_hz)
-        max_diff = 0.0
-        for key, start_arr in starts.items():
-            if key in targets and start_arr.size > 0:
-                diff = float(np.max(np.abs(targets[key] - start_arr)))
-                if diff > max_diff:
-                    max_diff = diff
-        n_interp = self.compute_interp_steps(
-            max_diff,
-            max_step_rad=max_step_rad,
-            max_velocity=max_velocity,
-            min_steps=min_steps,
-            rate_hz=rate_hz,
-        )
-        extra_hold = int(hold_steps if hold_steps is not None else 0)
-        total_steps = n_interp + max(0, extra_hold)
-        frames: list[dict[str, np.ndarray]] = []
-        for idx in range(1, total_steps + 1):
-            alpha = self.raised_cosine_alpha(idx, n_interp) if idx <= n_interp else 1.0
-            frame = {
-                key: (start_arr + alpha * (targets[key] - start_arr)).astype(np.float32)
-                for key, start_arr in starts.items()
-                if key in targets
-            }
-            frames.append(frame)
-        return dt, frames
-
-    def generate_velocity_pulse(
-        self,
-        velocity: Sequence[float] | np.ndarray,
-        duration: float,
-        *,
-        rate_hz: Optional[float] = None,
-        ramp_up: Optional[float] = None,
-        ramp_down: Optional[float] = None,
-    ) -> tuple[float, list[np.ndarray], list[np.ndarray], list[np.ndarray]]:
-        """Generate ``(dt, up_frames, cruise_frames, down_frames)`` for a smooth velocity pulse."""
-        vel = np.asarray(velocity, dtype=np.float32).copy()
-        total_duration = max(float(duration), 0.0)
-        eff_rate_hz = (
-            max(float(rate_hz), float(self.pulse_rate_hz))
-            if rate_hz is not None
-            else float(self.pulse_rate_hz)
-        )
-        dt = 1.0 / max(eff_rate_hz, 1.0)
-        up_dur = (
-            float(ramp_up)
-            if ramp_up is not None
-            else min(
-                float(self.pulse_ramp_up),
-                float(self.pulse_ramp_up_ratio) * total_duration,
-            )
-        )
-        down_dur = (
-            float(ramp_down)
-            if ramp_down is not None
-            else min(
-                float(self.pulse_ramp_down),
-                float(self.pulse_ramp_down_ratio) * total_duration,
-            )
-        )
-        up_steps = max(1, int(round(up_dur / dt))) if up_dur > 1e-3 else 0
-        cruise_steps = max(1, int(round(total_duration / dt)))
-        down_steps = max(1, int(round(down_dur / dt))) if down_dur > 1e-3 else 0
-
-        up_frames = [
-            (vel * self.raised_cosine_alpha(idx, up_steps)).astype(np.float32)
-            for idx in range(1, up_steps + 1)
-        ]
-        cruise_frames = [vel.copy() for _ in range(cruise_steps)]
-        down_frames = [
-            (vel * self.raised_cosine_decay(idx, down_steps)).astype(np.float32)
-            for idx in range(1, down_steps + 1)
-        ]
-        return dt, up_frames, cruise_frames, down_frames
-
-    def to_dict(self) -> dict[str, Any]:
-        """Serialize this motion profile into a plain dictionary."""
-        return {f.name: getattr(self, f.name) for f in fields(self)}
-
-
-@dataclass(frozen=True)
-class JointGroupSpec:
-    """Specification, limits, and drift guards for a named joint group.
-
-    Attributes:
-        name: Logical group identifier (e.g. ``"left_arm"``).
-        dim: Number of joints in this group.
-        low: Optional lower joint limits in radians.
-        high: Optional upper joint limits in radians.
-        max_step: Optional override for single-step pass-through limit (rad).
-        interpolation_step: Optional override for sub-stepping delta (rad).
-        max_drift: Optional override for command-to-measured drift tolerance (rad).
-    """
-
-    name: str
-    dim: int
-    low: Optional[np.ndarray] = None
-    high: Optional[np.ndarray] = None
-    max_step: Optional[float] = None
-    interpolation_step: Optional[float] = None
-    max_drift: Optional[float] = None
-
-    def clamp(self, values: Sequence[float] | np.ndarray) -> np.ndarray:
-        """Reshape ``values`` to ``(self.dim,)`` and clip to ``[self.low, self.high]``."""
-        arr = np.asarray(values, dtype=np.float32).reshape(self.dim)
-        if self.low is not None and self.high is not None:
-            low_b = np.asarray(self.low, dtype=np.float32).reshape(-1)[: self.dim]
-            high_b = np.asarray(self.high, dtype=np.float32).reshape(-1)[: self.dim]
-            return np.clip(arr, low_b, high_b).astype(np.float32)
-        return arr.copy()
-
-    def reanchor(
-        self,
-        cached: Optional[np.ndarray],
-        measured: Sequence[float] | np.ndarray,
-        profile: MotionProfile,
-    ) -> np.ndarray:
-        """Re-anchor ``cached`` to ``measured`` when drifted beyond tolerance."""
-        meas = np.asarray(measured, dtype=np.float32).reshape(self.dim)
-        tol = self.max_drift if self.max_drift is not None else profile.max_drift
-        return profile.reanchor(cached, meas, max_drift=tol)
-
-    def max_delta(
-        self,
-        start: Sequence[float] | np.ndarray,
-        target: Sequence[float] | np.ndarray,
-    ) -> float:
-        """Return the maximum absolute per-joint difference between ``start`` and ``target``."""
-        s_arr = np.asarray(start, dtype=np.float32).reshape(-1)
-        t_arr = np.asarray(target, dtype=np.float32).reshape(-1)
-        if s_arr.size == 0 or t_arr.size == 0:
-            return 0.0
-        return float(np.max(np.abs(t_arr - s_arr)))
-
-    def needs_interpolation(
-        self,
-        start: Sequence[float] | np.ndarray,
-        target: Sequence[float] | np.ndarray,
-        profile: MotionProfile,
-    ) -> bool:
-        """Return ``True`` when the step delta exceeds this group's pass-through threshold."""
-        limit = float(self.max_step if self.max_step is not None else profile.max_step)
-        return self.max_delta(start, target) > limit
 
 
 @dataclass(frozen=True)
@@ -534,6 +213,10 @@ class Connection(ABC, metaclass=ConnectionMeta):
     #: Latest health snapshot reported in memory by callbacks or state reads.
     _cached_health: Optional[HealthStatus] = None
     _pre_command_checked: bool = False
+
+    #: Set when a pre-command check recovered a fault; the connection then
+    #: holds, dispatching nothing more until the current command scope ends.
+    _holding_after_recovery: bool = False
 
     #: Monotonic timestamps of recent automatic recovery attempts.
     _recovery_timestamps: "Optional[list[float]]" = None
@@ -930,19 +613,27 @@ class Connection(ABC, metaclass=ConnectionMeta):
             self._command_batch_depth += 1
 
     def end_command_batch(self) -> bool:
-        """Exit a command-batching scope and flush when the outermost scope closes."""
+        """Exit a command-batching scope and flush when the outermost scope closes.
+
+        Returns:
+            Whether the staged commands ran. Inner scopes return ``True`` and
+            leave the answer to the outermost one.
+        """
         if self._owner is not None:
             return self._owner.end_command_batch()
         if self._command_batch_depth <= 0:
-            self._pre_command_checked = False
+            self._end_command_scope()
             return True
         self._command_batch_depth -= 1
-        if self._command_batch_depth == 0:
-            try:
-                return bool(self._flush_command_batch())
-            finally:
-                self._pre_command_checked = False
-        return True
+        if self._command_batch_depth > 0:
+            return True
+        try:
+            if self._holding_after_recovery:
+                self._on_command_batch_cancel()
+                return False
+            return bool(self._flush_command_batch())
+        finally:
+            self._end_command_scope()
 
     def cancel_command_batch(self) -> None:
         """Abort any active command-batching scope without flushing staged commands."""
@@ -950,24 +641,33 @@ class Connection(ABC, metaclass=ConnectionMeta):
             self._owner.cancel_command_batch()
             return
         self._command_batch_depth = 0
-        self._pre_command_checked = False
+        self._end_command_scope()
         self._on_command_batch_cancel()
 
+    def _end_command_scope(self) -> None:
+        """Re-arm the pre-command fault check and release a post-recovery hold."""
+        self._pre_command_checked = False
+        self._holding_after_recovery = False
+
     @contextmanager
-    def batch_commands(self) -> "Iterator[None]":
-        """Stage commands issued inside this block and flush them atomically on exit."""
+    def batch_commands(self) -> "Iterator[CommandBatch]":
+        """Stage commands issued inside this block and flush them atomically on exit.
+
+        Yields:
+            A :class:`CommandBatch` whose ``ok`` is set once the block exits.
+        """
+        batch = CommandBatch()
         target = self.owner
         if not target.is_connected or not target._batches_commands():
-            yield
+            yield batch
             return
         target.begin_command_batch()
         try:
-            yield
+            yield batch
         except BaseException:
             target.cancel_command_batch()
             raise
-        else:
-            target.end_command_batch()
+        batch.ok = target.end_command_batch()
 
     # Driver registry
 
@@ -1449,13 +1149,18 @@ class PartGroup(ControllablePart):
                 and owner._group is None
                 and owner.is_connected
             ):
-                owner._check_and_recover("pre_command")
+                # The first command after a recovery is dropped so the robot
+                # holds where recovery left it; the next one drives again.
+                if owner._check_and_recover("pre_command") is not None:
+                    owner._holding_after_recovery = True
                 owner._pre_command_checked = True
                 try:
-                    sent = part.send_action(own)
+                    sent = (
+                        None if owner._holding_after_recovery else part.send_action(own)
+                    )
                 finally:
                     if not owner.in_command_batch:
-                        owner._pre_command_checked = False
+                        owner._end_command_scope()
             else:
                 sent = part.send_action(own)
             applied: dict[str, Any] = dict(sent) if sent is not None else {}
@@ -1650,12 +1355,20 @@ class PartGroup(ControllablePart):
             owner.configure_motion_profile(profile, **overrides)
 
     @contextmanager
-    def batch_commands(self) -> "Iterator[None]":
-        """Open a :meth:`Connection.batch_commands` scope across every owning connection."""
+    def batch_commands(self) -> "Iterator[CommandBatch]":
+        """Open a :meth:`Connection.batch_commands` scope across every owning connection.
+
+        Yields:
+            A :class:`CommandBatch` that is ``ok`` once every connection's
+            batch ran.
+        """
+        batch = CommandBatch()
         with ExitStack() as stack:
-            for owner in self.owners():
-                stack.enter_context(owner.batch_commands())
-            yield
+            owner_batches = [
+                stack.enter_context(owner.batch_commands()) for owner in self.owners()
+            ]
+            yield batch
+        batch.ok = all(owner_batch.ok for owner_batch in owner_batches)
 
     def get_observation(self) -> Observation:
         """Read observations into the named part tree."""
