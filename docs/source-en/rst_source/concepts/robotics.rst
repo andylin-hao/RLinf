@@ -165,72 +165,107 @@ smoothing and multi-part updates.
 Smooth Motion and Coordinate Multiple Parts
 -------------------------------------------
 
-High-frequency streaming controllers (typically 50–100 Hz) expect small,
-continuous target updates. In practice, three situations commonly cause sudden
-jerks or make a controller drop out of streaming mode:
+High-frequency streaming controllers (typically 50–100 Hz) expect a steady
+stream of small, continuous setpoints, but commands from a ``policy`` or a
+teleoperation device rarely arrive that way. In practice three situations cause
+jerks, stutter, or a controller that drops out of streaming mode:
 
 1. A single command jumps further than a motor can safely move in one frame.
-2. A joint is physically held back by gravity or contact while its target angle
-   keeps advancing, building up a large gap that snaps the joint once released.
+2. Commands arrive slower or less regularly than the controller runs. Sending
+   each command as one setpoint turns the motion into a staircase, and any
+   pause in the command loop, such as a slow IK solve or a late teleoperation
+   sample, stops the arm and then lurches it forward.
 3. On a dual-arm or whole-body robot sharing one connection, calling left-arm
-   and right-arm methods one after another sends two blocking whole-body
-   trajectory streams back to back.
+   and right-arm methods one after another runs two separate trajectories back
+   to back.
 
-The connection layer handles all three cases automatically so task code does not
-need manual interpolation loops.
+The connection layer handles all three, so task code does not need its own
+interpolation loop.
 
-Smooth Large Moves and Base Velocity Pulses
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Stream Setpoints from a Fixed-Rate Loop
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Whenever a command is sent, the underlying connection applies three protections:
+A connection that streams joint positions separates the moment a command
+arrives from the moment a setpoint is sent. A command only moves the
+connection's goal and returns at once. A background loop sends one setpoint
+every control period and moves it toward the goal no faster than the joint
+velocity and acceleration limits allow. The limits apply per joint but scale
+all joints together, so the arm keeps its direction in joint space.
 
-- **Cap accumulated target drift**: if external resistance or a brief pause
-  prevents a joint from keeping up with previous commands, the cached target
-  angle can drift ahead of the measured angle. When that gap exceeds a safety
-  threshold, the connection pulls the interpolation start back toward the
-  measured angle before computing the next step.
-- **Interpolate large moves smoothly**: small per-step changes within the
-  single-frame step limit are sent immediately with zero extra delay. Larger
-  moves (such as ``reset_joint()`` or large waypoint jumps) are automatically
-  split into a raised-cosine trajectory with zero velocity at both ends,
-  followed by several holding frames so the motors settle cleanly.
-- **Stream continuous base velocity pulses**: many mobile bases have a hardware
-  watchdog that stops the base if velocity frames do not arrive continuously.
-  The connection streams a smooth acceleration, cruise, and cosine-deceleration
-  curve at the configured rate and ends with explicit zero-velocity frames.
+Because commands usually come at a lower or irregular rate, the loop carries the
+latest goal forward between commands at the velocity the last two goals
+implied, for at most one and a half command intervals. A teleoperated arm
+therefore follows the operator's hand smoothly instead of in steps, and a short
+stall in the command loop is bridged rather than felt. When the operator stops
+abruptly, the arm can run past the last goal by at most that interval's worth
+of motion before it settles back. A goal that moves faster than the velocity
+limit is a jump rather than a stream: the loop approaches it at the limits
+without carrying it forward, so it never overshoots.
 
-By default, connections run streaming and pulse loops at ``50.0`` Hz (stored in
-``MotionProfile``, with optional ``JointGroupSpec`` limits for joint groups of
-different inertia such as waist, arms, and neck). To use a different control
-rate or adjust step limits, pass them at initialization or call
-``configure_motion_profile()`` at runtime.
+Point-to-point moves such as ``reset_joint()`` play a raised-cosine trajectory
+from the current setpoint, with zero velocity at both ends. The move lasts at
+least the requested ``duration``, longer when the limits or a ``max_velocity``
+argument require it, and the call blocks until the move ends.
+
+Mobile bases need the same continuity for velocity commands, because many have
+a watchdog that stops the base when velocity frames pause. A base velocity
+pulse streams a smooth acceleration, cruise, and cosine deceleration at the
+configured rate and ends with explicit zero-velocity frames.
+
+The cost on the control path is small: ``send_action()`` returns as soon as the
+goal is updated, and each loop tick checks the in-memory fault state and sends
+one frame. The rate and limits live in ``MotionProfile`` (``control_rate_hz``,
+``max_joint_velocity`` in rad/s, ``max_joint_acceleration`` in rad/s², and
+``max_extrapolation_s``), and a ``JointGroupSpec`` can tighten them for a group
+with more inertia. The R2 connection streams at 100 Hz, allows the arms
+2.0 rad/s and 20.0 rad/s², and holds the waist, which carries both arms, to
+0.5 rad/s and 2.0 rad/s². Override any of them in the hardware config, or call
+``configure_motion_profile()`` at runtime:
+
+.. code-block:: yaml
+
+   hardware:
+     type: R2
+     config:
+       motion_profile:
+         max_joint_velocity: 1.5
+         max_joint_acceleration: 15.0
+
+A driver for another robot gets the same behavior by owning a ``JointStream``
+from ``rlinf.robotics.parts.motion`` rather than writing its own loop. It hands
+the stream five callables: one that sends a setpoint frame, one that reads the
+measured joints, one that reports a latched fault from memory, one that returns
+the per-joint limits, and one that returns the connection's ``MotionProfile``.
+Its commands then call ``track()`` with a new goal, or ``move()`` for a timed
+move, and ``hold()`` after recovering a fault, so the next command starts again
+from the measured joints instead of jumping back to a stale target.
 
 Combine Multi-Part Commands on a Shared Connection
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 On a dual-arm or whole-body robot whose parts share one connection, calling
 ``left_arm.reset_joint(...)`` followed by ``right_arm.reset_joint(...)`` would
-normally run two separate trajectories in sequence: the first moves the left arm
-while locking the right arm at its old target, and the abrupt handover to the
-second stream often causes the controller to fault or exit streaming mode.
+otherwise run two trajectories in sequence: the left arm moves while the right
+arm waits, and only then does the right arm start.
 
-Wrapping multiple part calls in ``with robot.batch_commands():`` combines them
-into a single synchronized trajectory. Inside the ``with`` block, each part only
-updates its own slice of the target joint angles; when the block exits, the
-connection interpolates and streams all updated joints together:
+Wrapping the calls in ``with robot.batch_commands() as batch:`` combines them
+into a single synchronized trajectory. Inside the block, each part updates only
+its own slice of the target joints and returns as soon as the target is staged;
+when the block exits, the connection moves every updated joint together.
+Because the calls inside the block return before anything moves, read
+``batch.ok`` afterwards to learn whether the combined move completed:
 
 .. code-block:: python
 
-   # Optionally adjust control rate or per-step limits at runtime.
-   robot.child("left_arm").connection.configure_motion_profile(
-       control_rate_hz=100.0,
-       max_step=0.006,
-   )
+   # Optionally adjust the control rate or joint limits at runtime.
+   robot.configure_motion_profile(control_rate_hz=100.0, max_joint_velocity=1.0)
 
    # Combine left and right arm resets into one synchronized trajectory.
-   with robot.batch_commands():
+   with robot.batch_commands() as batch:
        robot.child("left_arm").reset_joint(left_home_qpos)
        robot.child("right_arm").reset_joint(right_home_qpos)
+   if not batch.ok:
+       raise RuntimeError(f"Reset did not finish: {robot.diagnose().error_message}")
 
 During the normal ``step`` loop, ``robot.send_action({...})`` automatically
 batches commands across every connection involved, so multi-part ``policy``
@@ -315,6 +350,11 @@ fault level:
   recovery triggers more than ``max_recovery_attempts`` times within
   ``recovery_cooldown_window`` seconds, the circuit breaker also stops retrying
   and raises ``RuntimeError``.
+
+An emergency stop stays unrecoverable even after a person releases it. The R2
+connection latches it from the robot's ``/system_state`` and from motion error
+code 401, so automatic recovery never resumes motion after an emergency stop;
+once the robot is safe to move, call ``clear_errors()`` to resume.
 
 To prevent the arm from jerking when drives re-enable, the connection overwrites
 its cached target joint angles with the current measured joint angles before
