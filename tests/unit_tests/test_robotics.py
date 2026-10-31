@@ -24,6 +24,7 @@ import re
 import runpy
 import subprocess
 import sys
+import threading
 import time
 from collections.abc import Iterator
 from dataclasses import dataclass, fields
@@ -7441,6 +7442,35 @@ def test_joint_stream_streams_limited_setpoints_for_any_driver():
     assert stream._thread is None
 
 
+def test_a_braked_setpoint_stream_stops_within_its_limits():
+    """Braking ends a move early, along its direction, within the acceleration limit."""
+    from rlinf.robotics import MotionProfile, SetpointStreamer
+
+    vmax, amax, dt = 1.0, 4.0, 0.01
+    target = np.array([1.0, -0.6, 0.3])
+    streamer = SetpointStreamer(
+        np.zeros(3), max_velocity=vmax, max_acceleration=amax, max_extrapolation_s=0.1
+    )
+    duration = MotionProfile().move_duration(
+        target, max_velocity=vmax, max_acceleration=amax
+    )
+    done = streamer.start_move(target, 0.0, duration)
+    path = [streamer.step(k * dt, dt) for k in range(1, int(0.5 * duration / dt))]
+    rest = streamer.brake()
+    now = len(path) * dt
+    path += [streamer.step(now + k * dt, dt) for k in range(1, 100)]
+
+    assert done.is_set() and not streamer.move_completed
+    # The arm stops ahead of where it was braked, short of the old target.
+    braked_at = path[int(0.5 * duration / dt) - 2]
+    assert np.all(np.sign(rest - braked_at) == np.sign(target))
+    assert np.all(np.abs(rest) < np.abs(target))
+    velocity = np.diff(path, axis=0) / dt
+    assert np.abs(np.diff(velocity, axis=0)).max() <= amax * dt + 1e-9
+    assert np.max((np.asarray(path) - rest) * np.sign(target)) < 1e-4
+    np.testing.assert_allclose(path[-1], rest, atol=1e-6)
+
+
 def _wait_until(predicate: Any, timeout: float = 3.0) -> bool:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -7674,6 +7704,62 @@ def test_r2_streams_commands_from_a_fixed_rate_servo_loop():
         finally:
             robot.disconnect()
         assert conn._stream._thread is None
+
+
+def test_r2_hold_stops_a_running_move_and_base_pulse_where_they_are():
+    """hold() ends a move early; the next command starts from where the arm stopped."""
+    from robot_mocks import mocked_sdks
+
+    def _settled(arm: Any) -> bool:
+        before = arm.get_observation()["joint_position"]
+        time.sleep(0.05)
+        return np.allclose(arm.get_observation()["joint_position"], before, atol=1e-4)
+
+    with mocked_sdks() as made:
+        controller = made["rframe"].controller
+        robot = _r2_robot(enable_base=True)
+        robot.connect()
+        conn = robot.owners()[0]
+        arm = robot.child("left").child("arm")
+        try:
+            target = np.array([0.6, 0.5, 0.3, -0.8, 0.3, 0.3, 0.3], dtype=np.float32)
+            moved: dict[str, bool] = {}
+            mover = threading.Thread(
+                target=lambda: moved.setdefault(
+                    "ok", conn.move_body_smooth(left_arm=target, max_velocity=0.5)
+                )
+            )
+            mover.start()
+            time.sleep(0.4)
+            conn.hold()
+            mover.join(timeout=2.0)
+
+            assert moved == {"ok": False}
+            assert _wait_until(lambda: _settled(arm))
+            stopped = arm.get_observation()["joint_position"]
+            assert 0.05 < np.abs(stopped).max() and not np.allclose(
+                stopped, target, atol=0.05
+            )
+            # A head move afterwards leaves the stopped arm where it is.
+            assert conn.move_body_smooth(neck=[0.1, -0.2])
+            np.testing.assert_allclose(
+                arm.get_observation()["joint_position"], stopped, atol=1e-3
+            )
+
+            pulse = threading.Thread(
+                target=conn.move_base_pulse,
+                args=([0.2, 0.0, 0.0],),
+                kwargs={"duration": 3.0},
+            )
+            started = time.monotonic()
+            pulse.start()
+            time.sleep(0.3)
+            conn.hold()
+            pulse.join(timeout=2.0)
+            assert not pulse.is_alive() and time.monotonic() - started < 1.5
+            assert controller.base_commands[-1] == [0.0, 0.0, 0.0]
+        finally:
+            robot.disconnect()
 
 
 def test_r2_fault_handling_follows_the_controller_codes():

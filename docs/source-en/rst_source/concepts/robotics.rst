@@ -238,7 +238,12 @@ measured joints, one that reports a latched fault from memory, one that returns
 the per-joint limits, and one that returns the connection's ``MotionProfile``.
 Its commands then call ``track()`` with a new goal, or ``move()`` for a timed
 move, and ``hold()`` after recovering a fault, so the next command starts again
-from the measured joints instead of jumping back to a stale target.
+from the measured joints instead of jumping back to a stale target. To stop a
+motion early, for example when an operator or a planner cancels it, ``brake()``
+ends any running move and keeps streaming while the joints decelerate within
+their acceleration limit, so the arm stops smoothly instead of halting at the
+last setpoint sent. ``R2Connection.hold()`` uses it, can be called from another
+thread while a move runs, and also ends a chassis pulse.
 
 Combine Multi-Part Commands on a Shared Connection
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

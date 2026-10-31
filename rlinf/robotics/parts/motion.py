@@ -436,6 +436,26 @@ class SetpointStreamer:
         self._last_goal_time = None
         return self._move_done
 
+    def brake(self) -> np.ndarray:
+        """End a running move or tracked goal and come to rest within the limits.
+
+        The joints decelerate together, so the motion keeps its direction while
+        it stops.
+
+        Returns:
+            The setpoint the stream comes to rest at.
+        """
+        # Scaled together, every joint stops when the slowest-braking one does.
+        rest = self._q + self._v * float(np.max(np.abs(self._v) / self._amax)) / 2.0
+        self._finish_move(completed=False)
+        self._goal = rest
+        self._goal_time = None
+        self._goal_velocity = np.zeros_like(rest)
+        self._goal_interval = 0.0
+        self._last_goal = None
+        self._last_goal_time = None
+        return rest.copy()
+
     def abort_move(self) -> None:
         """End a running move where it stands, as not completed."""
         if self._move is not None:
@@ -628,6 +648,20 @@ class JointStream:
             if not finished:
                 streamer.abort_move()
             return finished and streamer.move_completed
+
+    def brake(self) -> Optional[np.ndarray]:
+        """End any running move and bring the joints to rest within the limits.
+
+        Unlike :meth:`hold`, the stream keeps sending, so the joints decelerate
+        instead of stopping at whatever setpoint was sent last.
+
+        Returns:
+            Where the joints come to rest, or ``None`` when the stream is idle.
+        """
+        with self._lock:
+            if not self._active or self._streamer is None:
+                return None
+            return self._streamer.brake()
 
     def hold(self) -> None:
         """Stop sending; the next command starts again from the measured joints."""

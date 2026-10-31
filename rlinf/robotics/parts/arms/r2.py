@@ -1524,6 +1524,7 @@ class R2Connection(Connection):
         self._last_ik_warning = -float("inf")
 
         self._chassis_cmd_started = False
+        self._base_pulse_stop = threading.Event()
         self._last_cmd_base_vel = np.zeros(3, dtype=np.float32)
         self._zero_base_frames_sent = 3
         self._active_mode: Optional[int] = None
@@ -2758,6 +2759,25 @@ class R2Connection(Connection):
             max_velocity=max_velocity,
         )
 
+    def hold(self) -> None:
+        """Stop the body and the chassis where they are, ending any running move.
+
+        The streamed joints come to rest within their acceleration limits, and
+        the commanded targets move to that rest point, so the next command
+        starts from it instead of resuming the stopped move. Safe to call from
+        another thread while a move runs; that move returns ``False``.
+        """
+        self._require_connected()
+        self._base_pulse_stop.set()
+        rest = self._stream.brake()
+        if rest is not None:
+            sizes = [self._targets[group].size for group in self.BODY_GROUPS]
+            for group, values in zip(
+                self.BODY_GROUPS, np.split(rest, np.cumsum(sizes)[:-1])
+            ):
+                self._targets[group] = values.astype(np.float32)
+        self.stop_base()
+
     def _move_body(
         self,
         targets: Mapping[str, Any],
@@ -2991,8 +3011,12 @@ class R2Connection(Connection):
         ramp_up: Optional[float] = None,
         ramp_down: Optional[float] = None,
     ) -> dict[str, np.ndarray]:
-        """Stream ``[vx, vy, wz]`` for ``duration`` seconds with smooth ramps, then stop."""
+        """Stream ``[vx, vy, wz]`` for ``duration`` seconds with smooth ramps, then stop.
+
+        :meth:`hold` ends the pulse early.
+        """
         self._chassis_cmd_started = False
+        self._base_pulse_stop.clear()
         dt, up_frames, cruise_frames, down_frames = (
             self.motion_profile.generate_velocity_pulse(
                 np.asarray(velocity, dtype=np.float32).reshape(3),
@@ -3005,6 +3029,8 @@ class R2Connection(Connection):
         state_during: Optional[R2RobotState] = None
         for frames in (up_frames, cruise_frames, down_frames):
             for frame_vel in frames:
+                if self._base_pulse_stop.is_set():
+                    break
                 started = time.monotonic()
                 self.move_base(frame_vel)
                 time.sleep(max(0.0, dt - (time.monotonic() - started)))
